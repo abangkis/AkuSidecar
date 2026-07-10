@@ -21,6 +21,11 @@ export const PENDING_NEW_CONTENT_ACTIONS = new Set([
   "activated",
   "failed",
 ]);
+export const PENDING_CONTENT_POLICIES = new Set(["detect_only", "reveal_if_present"]);
+export const RESTORATION_SCOPES = new Set(["pre_run_position", "post_reveal_start"]);
+export const PENDING_ACTIVATION_EVIDENCE = new Set([
+  "feed_fingerprint_changed",
+]);
 export const FEEDBACK_KINDS = new Set([
   "correct_lane",
   "wrong_lane",
@@ -176,6 +181,20 @@ function validateCoverage(value, limits) {
     pendingNewContentAction: PENDING_NEW_CONTENT_ACTIONS.has(value.pendingNewContentAction)
       ? value.pendingNewContentAction
       : null,
+    pendingContentActivationEvidence: PENDING_ACTIVATION_EVIDENCE.has(
+      value.pendingContentActivationEvidence,
+    )
+      ? value.pendingContentActivationEvidence
+      : null,
+    pendingContentPolicy: PENDING_CONTENT_POLICIES.has(value.pendingContentPolicy)
+      ? value.pendingContentPolicy
+      : null,
+    feedMutation: value.feedMutation === true,
+    sameTabMutation: value.sameTabMutation === true,
+    restorationScope: RESTORATION_SCOPES.has(value.restorationScope)
+      ? value.restorationScope
+      : null,
+    preActionScrollY: Math.trunc(finiteNumber(value.preActionScrollY, 0)),
     requestedScrolls,
     performedScrolls,
     snapshotCount: Math.min(

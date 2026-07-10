@@ -7,15 +7,23 @@ AkuSidecar is the local AkuBrowser runtime. It owns the pinned local UI, HTTP AP
 - Node.js 24 or newer
 - A local Codex login when using the `codex-sdk` provider
 
-## Run
+## Development
 
 ```powershell
 npm install
 $env:AKU_REASONING_PROVIDER='codex-sdk'
-npm start
+npm run dev
 ```
 
 Open `http://127.0.0.1:47821` in the same Chrome profile where AkuBridge is loaded.
+
+Development uses one visible process and one port. Vite runs as middleware inside the Sidecar HTTP server and hot-reloads `public/` assets. Node's watcher automatically restarts that same process when backend modules change, so neither path requires a manual restart.
+
+For the production-style static server without file watching:
+
+```powershell
+npm start
+```
 
 ## Configuration
 
@@ -25,9 +33,9 @@ Open `http://127.0.0.1:47821` in the same Chrome profile where AkuBridge is load
 - `AKU_CODEX_PATH` overrides the packaged Codex CLI path.
 - `AKU_CODEX_TIMEOUT_MS` defaults to `120000`.
 
-Gate 0B.1 uses a fixed native-capture budget: at most two 75%-viewport scrolls, three snapshots, and 45 seconds. AkuBridge restores the starting position and reports the actual movement in coverage. Computer Use is not an implicit fallback.
+Gate 0B uses a fixed native-capture budget: at most two 75%-viewport scrolls, three snapshots, and 45 seconds. AkuBridge restores the applicable capture baseline and reports the actual movement in coverage. Computer Use is not an implicit fallback.
 
-Coverage also distinguishes a detected platform fresh-content signal from an activated one. Gate 0B.1 records pending `New posts`/`Show posts` signals but does not click them.
+Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.
 
 ## Verification
 

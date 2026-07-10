@@ -14,6 +14,8 @@ const limits = {
   scrollFraction: 0.75,
   scrollSettleMs: 900,
   captureTimeoutMs: 45_000,
+  pendingContentTimeoutMs: 5_000,
+  pendingContentSettleMs: 700,
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
@@ -63,7 +65,13 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
         scrollContainer: "#workspace",
         pendingNewContent: true,
         pendingNewContentLabel: "New posts",
-        pendingNewContentAction: "not_activated",
+        pendingNewContentAction: "activated",
+        pendingContentActivationEvidence: "feed_fingerprint_changed",
+        pendingContentPolicy: "reveal_if_present",
+        feedMutation: true,
+        sameTabMutation: true,
+        restorationScope: "post_reveal_start",
+        preActionScrollY: 1_024,
         requestedScrolls: 2,
         performedScrolls: 2,
         snapshotCount: 3,
@@ -85,7 +93,10 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
   assert.equal(observation.coverage.restored, true);
   assert.equal(observation.coverage.scrollContainer, "#workspace");
   assert.equal(observation.coverage.pendingNewContent, true);
-  assert.equal(observation.coverage.pendingNewContentAction, "not_activated");
+  assert.equal(observation.coverage.pendingNewContentAction, "activated");
+  assert.equal(observation.coverage.pendingContentActivationEvidence, "feed_fingerprint_changed");
+  assert.equal(observation.coverage.feedMutation, true);
+  assert.equal(observation.coverage.restorationScope, "post_reveal_start");
   assert.deepEqual(observation.coverage.scrollDeltas, [675, 675]);
 });
 

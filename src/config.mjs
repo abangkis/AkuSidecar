@@ -36,6 +36,8 @@ export function loadConfig(env = process.env) {
       scrollFraction: 0.75,
       scrollSettleMs: 900,
       captureTimeoutMs: 45_000,
+      pendingContentTimeoutMs: 5_000,
+      pendingContentSettleMs: 700,
       maxBlocksPerSnapshot: 20,
       maxBlockCharacters: 4_000,
     },

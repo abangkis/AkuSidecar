@@ -195,13 +195,15 @@ function showProcessing(run) {
   elements.contractMode.textContent = humanize(run.mode);
   elements.contractSource.textContent = run.source === "x" ? "X" : "LinkedIn";
   elements.contractScrolls.textContent =
-    run.scrolls === 0 ? "No movement" : `Up to ${run.scrolls} native scroll(s), then restore`;
+    run.scrolls === 0
+      ? "Reveal pending content if present; no scrolling"
+      : `Reveal pending content if present; up to ${run.scrolls} native scroll(s)`;
 
   const copy = {
     waiting_for_bridge: ["Waiting for AkuBridge", "Sending one bounded capture request.", 18],
     capturing: [
       "Observing the source tab",
-      `Capturing up to ${run.scrolls + 1} viewport(s) with ${run.scrolls} native scroll(s), then restoring the starting position.`,
+      `Revealing pending fresh content when present, then capturing up to ${run.scrolls + 1} viewport(s) and restoring the resulting feed baseline.`,
       48,
     ],
     reasoning: ["Evaluating the observation", "Applying the provider-neutral result contract.", 76],
@@ -268,6 +270,20 @@ function buildCoverageList(coverage) {
       ? coverage.pendingNewContent
         ? `Pending new content: ${coverage.pendingNewContentLabel || "detected"} (${humanize(coverage.pendingNewContentAction)})`
         : "Pending new content: not detected"
+      : null,
+    coverage.pendingContentPolicy
+      ? `Pending-content policy: ${humanize(coverage.pendingContentPolicy)}`
+      : null,
+    coverage.pendingContentActivationEvidence
+      ? `Fresh-content activation evidence: ${humanize(coverage.pendingContentActivationEvidence)}`
+      : null,
+    coverage.feedMutation
+      ? `Feed mutation: same source tab changed; pre-action position ${coverage.preActionScrollY}, capture baseline ${coverage.originalScrollY}, final ${coverage.finalScrollY}`
+      : coverage.pendingContentPolicy
+        ? "Feed mutation: none"
+        : null,
+    coverage.restorationScope
+      ? `Restoration scope: ${humanize(coverage.restorationScope)}`
       : null,
     `Checked through: ${formatDate(coverage.checkedThrough)}`,
     `Reasoning provider: ${coverage.provider ?? "unknown"}`,

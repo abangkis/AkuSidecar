@@ -10,6 +10,8 @@ const limits = {
   scrollFraction: 0.75,
   scrollSettleMs: 900,
   captureTimeoutMs: 45_000,
+  pendingContentTimeoutMs: 5_000,
+  pendingContentSettleMs: 700,
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
@@ -27,6 +29,10 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     scrollFraction: 0.75,
     scrollSettleMs: 900,
     captureTimeoutMs: 45_000,
+    pendingContentPolicy: "reveal_if_present",
+    sameTabMutationAllowed: true,
+    pendingContentTimeoutMs: 5_000,
+    pendingContentSettleMs: 700,
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
     openIfMissing: false,
@@ -74,7 +80,7 @@ test("Gate 0B rejects inconsistent movement accounting", () => {
   );
 });
 
-test("Gate 0B.1 rejects inconsistent pending-content detection", () => {
+test("Gate 0B.2 rejects inconsistent pending-content activation", () => {
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
@@ -88,6 +94,34 @@ test("Gate 0B.1 rejects inconsistent pending-content detection", () => {
   );
 });
 
+test("Gate 0B.2 requires activated content to disclose same-tab mutation semantics", () => {
+  const command = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "linkedin", scrolls: 2 },
+    limits,
+  );
+  const observation = gate0bObservation();
+  observation.coverage.sameTabMutation = false;
+
+  assert.throws(
+    () => assertNativeCaptureOutcome(command, observation),
+    /same-tab feed mutation semantics/i,
+  );
+});
+
+test("Gate 0B.2 rejects activated content without bounded activation evidence", () => {
+  const command = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "linkedin", scrolls: 2 },
+    limits,
+  );
+  const observation = gate0bObservation();
+  observation.coverage.pendingContentActivationEvidence = null;
+
+  assert.throws(
+    () => assertNativeCaptureOutcome(command, observation),
+    /same-tab feed mutation semantics/i,
+  );
+});
+
 function gate0bObservation() {
   return {
     snapshots: [{}, {}, {}],
@@ -98,7 +132,13 @@ function gate0bObservation() {
       scrollContainer: "#workspace",
       pendingNewContent: true,
       pendingNewContentLabel: "New posts",
-      pendingNewContentAction: "not_activated",
+      pendingNewContentAction: "activated",
+      pendingContentActivationEvidence: "feed_fingerprint_changed",
+      pendingContentPolicy: "reveal_if_present",
+      feedMutation: true,
+      sameTabMutation: true,
+      restorationScope: "post_reveal_start",
+      preActionScrollY: 1_024,
       requestedScrolls: 2,
       performedScrolls: 2,
       snapshotCount: 3,

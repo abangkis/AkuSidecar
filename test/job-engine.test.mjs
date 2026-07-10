@@ -13,6 +13,8 @@ const limits = {
   scrollFraction: 0.75,
   scrollSettleMs: 900,
   captureTimeoutMs: 45_000,
+  pendingContentTimeoutMs: 5_000,
+  pendingContentSettleMs: 700,
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
@@ -109,6 +111,8 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
     assert.equal(command.payload.browserAdapter, "aku-bridge");
     assert.equal(command.payload.scrollFraction, 0.75);
     assert.equal(command.payload.captureTimeoutMs, 45_000);
+    assert.equal(command.payload.pendingContentPolicy, "reveal_if_present");
+    assert.equal(command.payload.sameTabMutationAllowed, true);
 
     engine.acceptBridgeObservation(command.id, run.id, multiViewportObservation());
     const completed = await engine.waitForRun(run.id);
@@ -119,6 +123,9 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
     assert.equal(completed.coverage.performedScrolls, 2);
     assert.equal(completed.coverage.restored, true);
     assert.equal(completed.coverage.fallbackUsed, false);
+    assert.equal(completed.coverage.pendingNewContentAction, "activated");
+    assert.equal(completed.coverage.feedMutation, true);
+    assert.equal(completed.coverage.restorationScope, "post_reveal_start");
   } finally {
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -364,7 +371,13 @@ function multiViewportObservation() {
       scrollContainer: "#workspace",
       pendingNewContent: true,
       pendingNewContentLabel: "New posts",
-      pendingNewContentAction: "not_activated",
+      pendingNewContentAction: "activated",
+      pendingContentActivationEvidence: "feed_fingerprint_changed",
+      pendingContentPolicy: "reveal_if_present",
+      feedMutation: true,
+      sameTabMutation: true,
+      restorationScope: "post_reveal_start",
+      preActionScrollY: 1_024,
       requestedScrolls: 2,
       performedScrolls: 2,
       snapshotCount: 3,

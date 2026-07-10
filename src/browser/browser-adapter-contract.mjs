@@ -10,7 +10,8 @@ const STOP_REASONS = new Set([
   "cancelled",
   "not_requested",
 ]);
-const PENDING_NEW_CONTENT_ACTIONS = new Set(["not_detected", "not_activated"]);
+const PENDING_NEW_CONTENT_ACTIONS = new Set(["not_detected", "not_activated", "activated"]);
+const PENDING_ACTIVATION_EVIDENCE = new Set(["feed_fingerprint_changed"]);
 
 export function buildNativeCaptureCommand(run, limits) {
   return {
@@ -20,6 +21,10 @@ export function buildNativeCaptureCommand(run, limits) {
     scrollFraction: limits.scrollFraction,
     scrollSettleMs: limits.scrollSettleMs,
     captureTimeoutMs: limits.captureTimeoutMs,
+    pendingContentPolicy: "reveal_if_present",
+    sameTabMutationAllowed: true,
+    pendingContentTimeoutMs: limits.pendingContentTimeoutMs,
+    pendingContentSettleMs: limits.pendingContentSettleMs,
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
     maxBlockCharacters: limits.maxBlockCharacters,
     openIfMissing: false,
@@ -67,13 +72,38 @@ export function assertNativeCaptureOutcome(commandPayload, observation) {
     throw new ContractError("Gate 0B observation must identify its source scroll container");
   }
   if (!PENDING_NEW_CONTENT_ACTIONS.has(coverage.pendingNewContentAction)) {
-    throw new ContractError("Gate 0B.1 observation requires a valid pending-content detection state");
+    throw new ContractError("Gate 0B.2 observation requires a valid pending-content action state");
   }
-  if (
-    (coverage.pendingNewContent && coverage.pendingNewContentAction !== "not_activated") ||
-    (!coverage.pendingNewContent && coverage.pendingNewContentAction !== "not_detected")
+  if (coverage.pendingContentPolicy !== commandPayload.pendingContentPolicy) {
+    throw new ContractError("Gate 0B.2 observation pending-content policy does not match its command");
+  }
+  const shouldReveal =
+    commandPayload.pendingContentPolicy === "reveal_if_present" &&
+    commandPayload.sameTabMutationAllowed === true;
+  const expectedPendingAction = coverage.pendingNewContent
+    ? shouldReveal
+      ? "activated"
+      : "not_activated"
+    : "not_detected";
+  if (coverage.pendingNewContentAction !== expectedPendingAction) {
+    throw new ContractError("Gate 0B.2 observation reported an inconsistent pending-content state");
+  }
+  if (coverage.pendingNewContentAction === "activated") {
+    if (
+      coverage.feedMutation !== true ||
+      coverage.sameTabMutation !== true ||
+      coverage.restorationScope !== "post_reveal_start" ||
+      !PENDING_ACTIVATION_EVIDENCE.has(coverage.pendingContentActivationEvidence)
+    ) {
+      throw new ContractError("Gate 0B.2 reveal must report its same-tab feed mutation semantics");
+    }
+  } else if (
+    coverage.feedMutation !== false ||
+    coverage.sameTabMutation !== false ||
+    coverage.restorationScope !== "pre_run_position" ||
+    Math.abs(coverage.preActionScrollY - coverage.originalScrollY) >= 2
   ) {
-    throw new ContractError("Gate 0B.1 observation reported an inconsistent pending-content state");
+    throw new ContractError("Gate 0B.2 no-reveal outcome must preserve the pre-run feed baseline");
   }
   if (
     coverage.restored &&

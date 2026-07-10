@@ -24,10 +24,15 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
     logger,
   });
   const bridgeToken = store.getOrCreateBridgeToken();
+  let frontend = null;
 
   const server = http.createServer(async (request, response) => {
     try {
-      applySecurityHeaders(response);
+      applySecurityHeaders(response, {
+        viteDevelopment: frontend?.name === "vite",
+        host: config.host,
+        port: config.port,
+      });
       applyExtensionCors(request, response);
       if (request.method === "OPTIONS") {
         response.writeHead(204);
@@ -49,6 +54,10 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
         });
         return;
       }
+      if (frontend) {
+        serveFrontend(frontend.middleware, request, response, logger);
+        return;
+      }
       serveStatic(response, url.pathname, config.publicDirectory);
     } catch (error) {
       const status = error instanceof ContractError ? 400 : 500;
@@ -64,6 +73,19 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
   return {
     server,
     engine,
+    setFrontend(nextFrontend) {
+      if (server.listening) {
+        throw new Error("The development frontend must be attached before the Sidecar starts.");
+      }
+      if (
+        !nextFrontend ||
+        typeof nextFrontend.middleware !== "function" ||
+        typeof nextFrontend.close !== "function"
+      ) {
+        throw new TypeError("A frontend requires middleware and close functions.");
+      }
+      frontend = nextFrontend;
+    },
     async start() {
       await new Promise((resolve, reject) => {
         server.once("error", reject);
@@ -75,12 +97,41 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
       return server.address();
     },
     async stop() {
-      if (!server.listening) return;
-      await new Promise((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      if (frontend) {
+        const currentFrontend = frontend;
+        frontend = null;
+        await currentFrontend.close();
+      }
+      if (server.listening) {
+        await new Promise((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
     },
   };
+}
+
+function serveFrontend(middleware, request, response, logger) {
+  middleware(request, response, (error) => {
+    if (error) {
+      logger.error?.("Vite frontend request failed", {
+        path: request.url,
+        error: error.message,
+      });
+      if (response.headersSent) {
+        response.destroy(error);
+      } else {
+        sendJson(response, 500, {
+          error: error.name ?? "Error",
+          message: error.message ?? "Vite frontend request failed",
+        });
+      }
+      return;
+    }
+    if (!response.writableEnded) {
+      sendJson(response, 404, { error: "NotFound", message: "Frontend route not found" });
+    }
+  });
 }
 
 async function handleApi({ request, response, url, engine, store, bridgeToken, config }) {
@@ -95,7 +146,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
 
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
     sendJson(response, 200, {
-      version: "0.2.1",
+      version: "0.3.0",
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
       bridgeToken,
@@ -241,13 +292,17 @@ function serveStatic(response, pathname, publicDirectory) {
   fs.createReadStream(absolute).pipe(response);
 }
 
-function applySecurityHeaders(response) {
+function applySecurityHeaders(response, { viteDevelopment = false, host, port } = {}) {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
   response.setHeader("X-Frame-Options", "DENY");
+  const styleSource = viteDevelopment ? "style-src 'self' 'unsafe-inline'" : "style-src 'self'";
+  const connectSource = viteDevelopment
+    ? `connect-src 'self' ws://${host}:${port}`
+    : "connect-src 'self'";
   response.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    `default-src 'self'; script-src 'self'; ${styleSource}; img-src 'self' data:; ${connectSource}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
   );
 }
 

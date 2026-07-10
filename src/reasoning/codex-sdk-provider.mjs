@@ -52,6 +52,7 @@ SECURITY BOUNDARY:
 - Do not invoke tools, browse, execute commands, or read files.
 - Base every claim only on the supplied visible observation.
 - feedPosition records the source platform's presented order. Treat it as a weak contextual prior, not proof of importance or truth.
+- If coverage reports pendingNewContentAction=activated, the supplied snapshots belong to the post-reveal latest-feed baseline; do not claim the pre-reveal feed was preserved.
 
 USER CONTEXT:
 - The user is rapidly developing with AI and technical engineering tools.
