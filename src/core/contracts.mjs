@@ -8,6 +8,19 @@ export const SOURCE_URL_KINDS = new Set([
   "source_page",
   "external_reference",
 ]);
+export const SCROLL_STOP_REASONS = new Set([
+  "budget_exhausted",
+  "no_movement",
+  "deadline",
+  "cancelled",
+  "not_requested",
+]);
+export const PENDING_NEW_CONTENT_ACTIONS = new Set([
+  "not_detected",
+  "not_activated",
+  "activated",
+  "failed",
+]);
 export const FEEDBACK_KINDS = new Set([
   "correct_lane",
   "wrong_lane",
@@ -36,7 +49,7 @@ export function validateRunRequest(input, limits) {
   const mode = input.mode ?? "catch_up";
   const source = input.source ?? "x";
   const maxItems = input.maxItems ?? limits.maxItems;
-  const scrolls = input.scrolls ?? 1;
+  const scrolls = input.scrolls ?? Math.min(limits.defaultScrolls ?? 0, limits.maxScrolls);
 
   if (!RUN_MODES.has(mode)) {
     throw new ContractError(`unsupported mode: ${mode}`);
@@ -91,6 +104,11 @@ export function validateBridgeObservation(input, limits) {
         ? snapshot.blocks.slice(0, limits.maxBlocksPerSnapshot)
         : [];
       return {
+        index: nonNegativeInteger(snapshot.index, snapshotIndex),
+        adapterVersion: cleanString(snapshot.adapterVersion, 100),
+        selectorCandidateCount: nonNegativeInteger(snapshot.selectorCandidateCount, 0),
+        visibleContainerCount: nonNegativeInteger(snapshot.visibleContainerCount, 0),
+        newCandidateCount: nonNegativeInteger(snapshot.newCandidateCount, 0),
         capturedAt: validDateString(snapshot.capturedAt) ?? new Date().toISOString(),
         scrollY: finiteNumber(snapshot.scrollY, 0),
         viewportHeight: finiteNumber(snapshot.viewportHeight, 0),
@@ -99,7 +117,7 @@ export function validateBridgeObservation(input, limits) {
           .filter((block) => block.text.length > 0),
       };
     }),
-    coverage: validateCoverage(input.coverage),
+    coverage: validateCoverage(input.coverage, limits),
   };
 }
 
@@ -120,21 +138,63 @@ function validateBlock(block, index, limits) {
     author: cleanString(block.author, 300),
     publishedAt: validDateString(block.publishedAt),
     permalink: safeHttpUrl(block.permalink),
+    feedPosition: nonNegativeInteger(block.feedPosition, 0),
     links,
   };
 }
 
-function validateCoverage(value) {
+function validateCoverage(value, limits) {
   if (!value || typeof value !== "object") {
-    return { status: "partial", notes: ["The bridge did not provide coverage details."] };
+    return {
+      status: "partial",
+      notes: ["The bridge did not provide coverage details."],
+      scrollDeltas: [],
+    };
   }
   const status = ["complete_within_scope", "partial", "unavailable"].includes(value.status)
     ? value.status
     : "partial";
+  const requestedScrolls = Math.min(
+    limits.maxScrolls,
+    nonNegativeInteger(value.requestedScrolls, 0),
+  );
+  const performedScrolls = Math.min(
+    requestedScrolls,
+    nonNegativeInteger(value.performedScrolls, 0),
+  );
   return {
     status,
     checkedThrough: validDateString(value.checkedThrough),
-    candidateCount: Math.max(0, Math.trunc(finiteNumber(value.candidateCount, 0))),
+    candidateCount: nonNegativeInteger(value.candidateCount, 0),
+    observedBlockCount: nonNegativeInteger(value.observedBlockCount, 0),
+    browserAdapter: cleanString(value.browserAdapter, 100),
+    captureMethod: cleanString(value.captureMethod, 100),
+    fallbackUsed: value.fallbackUsed === true,
+    scrollContainer: cleanString(value.scrollContainer, 200),
+    pendingNewContent: value.pendingNewContent === true,
+    pendingNewContentLabel: cleanString(value.pendingNewContentLabel, 200),
+    pendingNewContentAction: PENDING_NEW_CONTENT_ACTIONS.has(value.pendingNewContentAction)
+      ? value.pendingNewContentAction
+      : null,
+    requestedScrolls,
+    performedScrolls,
+    snapshotCount: Math.min(
+      limits.maxScrolls + 1,
+      nonNegativeInteger(value.snapshotCount, 0),
+    ),
+    scrollDeltas: Array.isArray(value.scrollDeltas)
+      ? value.scrollDeltas
+          .slice(0, limits.maxScrolls)
+          .map((delta) => Math.trunc(finiteNumber(delta, 0)))
+      : [],
+    scrollStopReason: SCROLL_STOP_REASONS.has(value.scrollStopReason)
+      ? value.scrollStopReason
+      : null,
+    originalScrollY: Math.trunc(finiteNumber(value.originalScrollY, 0)),
+    finalScrollY: Math.trunc(finiteNumber(value.finalScrollY, 0)),
+    restoreAttempted: value.restoreAttempted === true,
+    restored: value.restored === true,
+    elapsedMs: nonNegativeInteger(value.elapsedMs, 0),
     notes: Array.isArray(value.notes)
       ? value.notes.slice(0, 10).map((note) => cleanString(note, 500)).filter(Boolean)
       : [],
@@ -220,6 +280,10 @@ function validDateString(value) {
 
 function finiteNumber(value, fallback) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function nonNegativeInteger(value, fallback) {
+  return Math.max(0, Math.trunc(finiteNumber(value, fallback)));
 }
 
 function normalizeConfidence(value) {

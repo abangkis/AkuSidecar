@@ -10,6 +10,10 @@ import {
 const limits = {
   maxItems: 5,
   maxScrolls: 2,
+  defaultScrolls: 2,
+  scrollFraction: 0.75,
+  scrollSettleMs: 900,
+  captureTimeoutMs: 45_000,
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
@@ -24,6 +28,9 @@ test("run requests are bounded", () => {
   assert.equal(run.maxItems, 1);
   assert.equal(run.scrolls, 0);
 
+  const defaultRun = validateRunRequest({ mode: "catch_up", source: "x" }, limits);
+  assert.equal(defaultRun.scrolls, 2);
+
   assert.throws(
     () => validateRunRequest({ mode: "infinite", source: "x" }, limits),
     ContractError,
@@ -32,6 +39,54 @@ test("run requests are bounded", () => {
     () => validateRunRequest({ source: "x", scrolls: 99 }, limits),
     /scrolls must be between/,
   );
+});
+
+test("Gate 0B observations preserve bounded movement and platform-order evidence", () => {
+  const observation = validateBridgeObservation(
+    {
+      source: "linkedin",
+      pageUrl: "https://www.linkedin.com/feed/",
+      capturedAt: "2026-07-10T10:00:00Z",
+      snapshots: [
+        gate0bSnapshot(0, 0, 1),
+        gate0bSnapshot(1, 675, 2),
+        gate0bSnapshot(2, 1_350, 3),
+      ],
+      coverage: {
+        status: "partial",
+        checkedThrough: "2026-07-10T10:00:05Z",
+        candidateCount: 3,
+        observedBlockCount: 3,
+        browserAdapter: "aku-bridge",
+        captureMethod: "native_dom",
+        fallbackUsed: false,
+        scrollContainer: "#workspace",
+        pendingNewContent: true,
+        pendingNewContentLabel: "New posts",
+        pendingNewContentAction: "not_activated",
+        requestedScrolls: 2,
+        performedScrolls: 2,
+        snapshotCount: 3,
+        scrollDeltas: [675, 675],
+        scrollStopReason: "budget_exhausted",
+        originalScrollY: 0,
+        finalScrollY: 0,
+        restoreAttempted: true,
+        restored: true,
+        elapsedMs: 2_100,
+      },
+    },
+    limits,
+  );
+
+  assert.equal(observation.snapshots.length, 3);
+  assert.equal(observation.snapshots[2].blocks[0].feedPosition, 3);
+  assert.equal(observation.coverage.performedScrolls, 2);
+  assert.equal(observation.coverage.restored, true);
+  assert.equal(observation.coverage.scrollContainer, "#workspace");
+  assert.equal(observation.coverage.pendingNewContent, true);
+  assert.equal(observation.coverage.pendingNewContentAction, "not_activated");
+  assert.deepEqual(observation.coverage.scrollDeltas, [675, 675]);
 });
 
 test("browser observations accept only bounded http evidence", () => {
@@ -130,3 +185,25 @@ test("reasoning results require source-backed finite items", () => {
     /requires a valid sourceUrlKind/,
   );
 });
+
+function gate0bSnapshot(index, scrollY, feedPosition) {
+  return {
+    index,
+    adapterVersion: "linkedin-dom-v2",
+    selectorCandidateCount: 8,
+    visibleContainerCount: 1,
+    newCandidateCount: 1,
+    capturedAt: `2026-07-10T10:00:0${index}Z`,
+    scrollY,
+    viewportHeight: 900,
+    blocks: [
+      {
+        text: `Visible professional update ${index} with enough detail for bounded evidence.`,
+        author: "Example",
+        permalink: `https://www.linkedin.com/feed/update/urn:li:activity:${index}`,
+        feedPosition,
+        links: [],
+      },
+    ],
+  };
+}

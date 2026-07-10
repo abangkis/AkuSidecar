@@ -18,6 +18,10 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
       maxBodyBytes: 1_000_000,
       maxItems: 5,
       maxScrolls: 2,
+      defaultScrolls: 2,
+      scrollFraction: 0.75,
+      scrollSettleMs: 900,
+      captureTimeoutMs: 45_000,
       maxBlocksPerSnapshot: 20,
       maxBlockCharacters: 4_000,
     },
@@ -66,6 +70,7 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   const bootstrap = await jsonFetch(`${origin}/api/bootstrap`);
   assert.equal(bootstrap.provider, "http-test-provider");
   assert.equal(bootstrap.bridgeContractVersion, BRIDGE_CONTRACT_VERSION);
+  assert.equal(bootstrap.limits.defaultScrolls, 2);
   assert.ok(bootstrap.bridgeToken);
 
   const created = await jsonFetch(`${origin}/api/runs`, {

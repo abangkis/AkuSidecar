@@ -23,7 +23,9 @@ try {
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
   const html = await (await fetch(`${origin}/`)).text();
   assert.equal(bootstrap.bridgeContractVersion, BRIDGE_CONTRACT_VERSION);
+  assert.equal(bootstrap.limits.defaultScrolls, 2);
   assert.match(html, /<title>AkuBrowser<\/title>/);
+  assert.match(html, /FEASIBILITY GATE 0B\.1/);
   console.log(JSON.stringify({ status: "ok", provider: bootstrap.provider, bridgeContractVersion: bootstrap.bridgeContractVersion }));
 } finally {
   await app.stop();

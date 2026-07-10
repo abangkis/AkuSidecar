@@ -95,7 +95,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
 
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
     sendJson(response, 200, {
-      version: "0.1.0",
+      version: "0.2.1",
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
       bridgeToken,

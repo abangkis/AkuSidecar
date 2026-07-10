@@ -5,6 +5,10 @@ import {
   validateReasoningResult,
   validateRunRequest,
 } from "./contracts.mjs";
+import {
+  assertNativeCaptureOutcome,
+  buildNativeCaptureCommand,
+} from "../browser/browser-adapter-contract.mjs";
 
 export class JobEngine {
   constructor({ store, reasoningProvider, limits, logger = console }) {
@@ -18,15 +22,11 @@ export class JobEngine {
   startRun(input) {
     const request = validateRunRequest(input, this.limits);
     const run = this.store.createRun(request, this.reasoningProvider.name);
-    this.store.enqueueBridgeCommand(run.id, "collect_visible", {
-      mode: run.mode,
-      source: run.source,
-      scrolls: run.scrolls,
-      maxBlocksPerSnapshot: this.limits.maxBlocksPerSnapshot,
-      maxBlockCharacters: this.limits.maxBlockCharacters,
-      openIfMissing: false,
-      restoreScroll: true,
-    });
+    this.store.enqueueBridgeCommand(
+      run.id,
+      "collect_visible",
+      buildNativeCaptureCommand(run, this.limits),
+    );
     return this.store.getRun(run.id);
   }
 
@@ -68,6 +68,7 @@ export class JobEngine {
     if (observation.source !== run.source) {
       throw new ContractError("observation source does not match run source");
     }
+    assertNativeCaptureOutcome(command.payload, observation);
 
     this.store.saveObservation(runId, observation);
     this.store.completeBridgeCommand(commandId);
@@ -118,7 +119,7 @@ export class JobEngine {
         resultCount: result.items.length,
         provider: this.reasoningProvider.name,
         scopeStatement:
-          "Bounded visible-browser sample only; this is not a claim of complete feed coverage.",
+          "Bounded native-browser sample only; this is not a claim of complete feed coverage.",
       };
       this.store.completeRun(runId, result, coverage);
     } catch (error) {

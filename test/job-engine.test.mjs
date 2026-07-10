@@ -9,6 +9,10 @@ import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
 const limits = {
   maxItems: 5,
   maxScrolls: 2,
+  defaultScrolls: 2,
+  scrollFraction: 0.75,
+  scrollSettleMs: 900,
+  captureTimeoutMs: 45_000,
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
@@ -65,6 +69,60 @@ test("Gate 0 survives the browser-to-reasoning-to-SQLite flow and restart", asyn
   assert.equal(restored.status, "completed");
   assert.equal(restored.result.items[0].sourceUrl, "https://x.com/example/status/1");
   store.close();
+});
+
+test("Gate 0B carries a native multi-viewport capture through reasoning and coverage", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-test-"));
+  const store = new SqliteStateStore(path.join(directory, "state.db"));
+  try {
+    const provider = {
+      name: "multi-viewport-provider",
+      async analyze({ run, observation }) {
+        const block = observation.snapshots[2].blocks[0];
+        return {
+          summary: "The strongest item was found after bounded native scrolling.",
+          items: [
+            {
+              id: "after-scroll",
+              priority: "P1",
+              whatChanged: block.text,
+              whyItMatters: run.intent,
+              source: run.source,
+              sourceUrl: block.permalink,
+              sourceUrlKind: "native_post",
+              author: block.author,
+              publishedAt: null,
+              confidence: 0.85,
+              evidenceState: "primary",
+            },
+          ],
+          repeatedClaimsCollapsed: 0,
+          deferredByBudget: 0,
+          limitations: [],
+        };
+      },
+    };
+    const engine = new JobEngine({ store, reasoningProvider: provider, limits });
+    const run = engine.startRun({ source: "linkedin", maxItems: 1, scrolls: 2 });
+    const command = engine.claimBridgeCommand(run.id, "test-bridge");
+
+    assert.equal(command.payload.browserAdapter, "aku-bridge");
+    assert.equal(command.payload.scrollFraction, 0.75);
+    assert.equal(command.payload.captureTimeoutMs, 45_000);
+
+    engine.acceptBridgeObservation(command.id, run.id, multiViewportObservation());
+    const completed = await engine.waitForRun(run.id);
+
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.result.items[0].id, "after-scroll");
+    assert.equal(completed.coverage.snapshotCount, 3);
+    assert.equal(completed.coverage.performedScrolls, 2);
+    assert.equal(completed.coverage.restored, true);
+    assert.equal(completed.coverage.fallbackUsed, false);
+  } finally {
+    store.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("bridge failures stop at an explicit stage", () => {
@@ -265,6 +323,59 @@ function sampleObservation() {
       checkedThrough: "2026-07-10T10:00:00Z",
       candidateCount: 1,
       notes: ["One visible viewport; no scrolling."],
+    },
+  };
+}
+
+function multiViewportObservation() {
+  return {
+    source: "linkedin",
+    pageUrl: "https://www.linkedin.com/feed/",
+    pageTitle: "Feed | LinkedIn",
+    capturedAt: "2026-07-10T10:00:03Z",
+    snapshots: [0, 1, 2].map((index) => ({
+      index,
+      adapterVersion: "linkedin-dom-v2",
+      selectorCandidateCount: 8,
+      visibleContainerCount: 1,
+      newCandidateCount: 1,
+      capturedAt: `2026-07-10T10:00:0${index}Z`,
+      scrollY: index * 675,
+      viewportHeight: 900,
+      blocks: [
+        {
+          text: `Material professional update ${index} with enough detail to classify.`,
+          author: "Example",
+          publishedAt: null,
+          permalink: `https://www.linkedin.com/feed/update/urn:li:activity:${index}`,
+          feedPosition: index + 1,
+          links: [],
+        },
+      ],
+    })),
+    coverage: {
+      status: "partial",
+      checkedThrough: "2026-07-10T10:00:03Z",
+      candidateCount: 3,
+      observedBlockCount: 3,
+      browserAdapter: "aku-bridge",
+      captureMethod: "native_dom",
+      fallbackUsed: false,
+      scrollContainer: "#workspace",
+      pendingNewContent: true,
+      pendingNewContentLabel: "New posts",
+      pendingNewContentAction: "not_activated",
+      requestedScrolls: 2,
+      performedScrolls: 2,
+      snapshotCount: 3,
+      scrollDeltas: [675, 675],
+      scrollStopReason: "budget_exhausted",
+      originalScrollY: 0,
+      finalScrollY: 0,
+      restoreAttempted: true,
+      restored: true,
+      elapsedMs: 2_100,
+      notes: ["Bounded native fixture."],
     },
   };
 }

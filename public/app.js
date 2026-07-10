@@ -18,6 +18,7 @@ const elements = {
   progressBar: document.querySelector("#progress-bar"),
   contractMode: document.querySelector("#contract-mode"),
   contractSource: document.querySelector("#contract-source"),
+  contractScrolls: document.querySelector("#contract-scrolls"),
   cancelButton: document.querySelector("#cancel-button"),
   resultPanel: document.querySelector("#result-panel"),
   resultTitle: document.querySelector("#result-title"),
@@ -105,7 +106,10 @@ async function startRun() {
     source: form.get("source"),
     intent: form.get("intent"),
     maxItems: 1,
-    scrolls: 0,
+    scrolls: Math.min(
+      state.bootstrap?.limits?.defaultScrolls ?? 2,
+      state.bootstrap?.limits?.maxScrolls ?? 2,
+    ),
   };
 
   elements.runButton.disabled = true;
@@ -190,10 +194,16 @@ function showProcessing(run) {
   show(elements.processingPanel);
   elements.contractMode.textContent = humanize(run.mode);
   elements.contractSource.textContent = run.source === "x" ? "X" : "LinkedIn";
+  elements.contractScrolls.textContent =
+    run.scrolls === 0 ? "No movement" : `Up to ${run.scrolls} native scroll(s), then restore`;
 
   const copy = {
     waiting_for_bridge: ["Waiting for AkuBridge", "Sending one bounded capture request.", 18],
-    capturing: ["Observing the source tab", "Reading one already-visible browser sample without changing focus.", 48],
+    capturing: [
+      "Observing the source tab",
+      `Capturing up to ${run.scrolls + 1} viewport(s) with ${run.scrolls} native scroll(s), then restoring the starting position.`,
+      48,
+    ],
     reasoning: ["Evaluating the observation", "Applying the provider-neutral result contract.", 76],
   }[run.status] ?? ["Processing", "The bounded run is still active.", 32];
   elements.processingTitle.textContent = copy[0];
@@ -242,10 +252,27 @@ function buildCoverageList(coverage) {
     `Scope: ${coverage.scopeStatement ?? "Bounded browser sample."}`,
     `Snapshots: ${coverage.snapshotCount ?? 0}`,
     `Visible candidates observed: ${coverage.candidateCount ?? 0}`,
+    coverage.browserAdapter ? `Browser adapter: ${coverage.browserAdapter}` : null,
+    coverage.scrollContainer ? `Scroll container: ${coverage.scrollContainer}` : null,
+    Number.isInteger(coverage.requestedScrolls)
+      ? `Native scrolls: ${coverage.performedScrolls ?? 0} of ${coverage.requestedScrolls}`
+      : null,
+    coverage.scrollStopReason ? `Scroll stop reason: ${humanize(coverage.scrollStopReason)}` : null,
+    coverage.restoreAttempted
+      ? `Starting position restored: ${coverage.restored ? "yes" : "no"}`
+      : null,
+    coverage.browserAdapter
+      ? `Computer Use fallback: ${coverage.fallbackUsed ? "used" : "not used"}`
+      : null,
+    coverage.pendingNewContentAction
+      ? coverage.pendingNewContent
+        ? `Pending new content: ${coverage.pendingNewContentLabel || "detected"} (${humanize(coverage.pendingNewContentAction)})`
+        : "Pending new content: not detected"
+      : null,
     `Checked through: ${formatDate(coverage.checkedThrough)}`,
     `Reasoning provider: ${coverage.provider ?? "unknown"}`,
     ...(coverage.notes ?? []),
-  ];
+  ].filter(Boolean);
   for (const value of values) {
     const item = document.createElement("li");
     item.textContent = value;
