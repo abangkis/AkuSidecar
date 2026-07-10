@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { loadConfig } from "../src/config.mjs";
+import { BRIDGE_CONTRACT_VERSION, createAkuBrowserApp } from "../src/http/app.mjs";
+import { createReasoningProvider } from "../src/reasoning/provider-factory.mjs";
+import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
+
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-sidecar-smoke-"));
+const config = loadConfig({
+  AKU_BROWSER_PORT: "0",
+  AKU_DATABASE_PATH: path.join(directory, "smoke.db"),
+  AKU_REASONING_PROVIDER: "deterministic",
+});
+const store = new SqliteStateStore(config.databasePath);
+const reasoningProvider = await createReasoningProvider(config.reasoning);
+const app = createAkuBrowserApp({ config, store, reasoningProvider });
+
+try {
+  const address = await app.start();
+  const origin = `http://127.0.0.1:${address.port}`;
+  const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
+  const html = await (await fetch(`${origin}/`)).text();
+  assert.equal(bootstrap.bridgeContractVersion, BRIDGE_CONTRACT_VERSION);
+  assert.match(html, /<title>AkuBrowser<\/title>/);
+  console.log(JSON.stringify({ status: "ok", provider: bootstrap.provider, bridgeContractVersion: bootstrap.bridgeContractVersion }));
+} finally {
+  await app.stop();
+  store.close();
+  fs.rmSync(directory, { recursive: true, force: true });
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "items": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "priority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
+          "whatChanged": { "type": "string" },
+          "whyItMatters": { "type": "string" },
+          "source": { "type": "string", "enum": ["x", "linkedin"] },
+          "sourceUrl": { "type": "string" },
+          "author": { "type": "string" },
+          "publishedAt": { "type": ["string", "null"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidenceState": {
+            "type": "string",
+            "enum": ["primary", "secondary", "unverified"]
+          }
+        },
+        "required": [
+          "id",
+          "priority",
+          "whatChanged",
+          "whyItMatters",
+          "source",
+          "sourceUrl",
+          "author",
+          "publishedAt",
+          "confidence",
+          "evidenceState"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "repeatedClaimsCollapsed": { "type": "integer", "minimum": 0 },
+    "deferredByBudget": { "type": "integer", "minimum": 0 },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "summary",
+    "items",
+    "repeatedClaimsCollapsed",
+    "deferredByBudget",
+    "limitations"
+  ],
+  "additionalProperties": false
+}

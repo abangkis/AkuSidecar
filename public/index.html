@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AkuBrowser</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">FEASIBILITY GATE 0</p>
+          <h1>AkuBrowser</h1>
+          <p class="subtitle">A bounded, source-backed finish line—not another feed.</p>
+        </div>
+        <div class="system-status" aria-live="polite">
+          <span id="sidecar-status" class="status-pill status-neutral">AkuSidecar checking</span>
+          <span id="bridge-status" class="status-pill status-neutral">AkuBridge checking</span>
+        </div>
+      </header>
+
+      <section id="provider-notice" class="notice hidden" role="status"></section>
+
+      <section class="control-panel" aria-labelledby="session-heading">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">01 · INTENTIONAL SESSION</p>
+            <h2 id="session-heading">Choose the snapshot</h2>
+          </div>
+          <p class="scope-note">1 visible result · 0 scroll · read-only</p>
+        </div>
+
+        <form id="run-form">
+          <fieldset>
+            <legend>Mode</legend>
+            <div class="segmented-control">
+              <label>
+                <input type="radio" name="mode" value="catch_up" checked />
+                <span>Catch Up</span>
+              </label>
+              <label>
+                <input type="radio" name="mode" value="manual_live" />
+                <span>Manual Live</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <label class="field-label" for="source">Source</label>
+          <select id="source" name="source">
+            <option value="x">X</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+
+          <label class="field-label" for="intent">What matters in this session?</label>
+          <textarea
+            id="intent"
+            name="intent"
+            rows="3"
+            maxlength="500"
+          >Technical engineering and AI development changes that materially affect my current work.</textarea>
+
+          <div class="form-actions">
+            <button id="run-button" class="primary-button" type="submit">Run Gate 0 snapshot</button>
+            <p id="preflight-copy" class="preflight-copy">
+              Keep a signed-in X or LinkedIn tab open. The bridge will not focus, click, like, or reply.
+            </p>
+          </div>
+        </form>
+      </section>
+
+      <section id="processing-panel" class="processing-panel hidden" aria-live="polite">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">02 · BOUNDED PROCESS</p>
+            <h2 id="processing-title">Preparing snapshot</h2>
+          </div>
+          <button id="cancel-button" class="text-button" type="button">Cancel</button>
+        </div>
+        <div class="progress-track"><span id="progress-bar"></span></div>
+        <p id="processing-detail">Creating a local run.</p>
+        <dl class="run-contract">
+          <div><dt>Mode</dt><dd id="contract-mode">—</dd></div>
+          <div><dt>Source</dt><dd id="contract-source">—</dd></div>
+          <div><dt>Attention limit</dt><dd>1 result</dd></div>
+          <div><dt>Browser movement</dt><dd>0 scroll</dd></div>
+        </dl>
+      </section>
+
+      <section id="result-panel" class="result-panel hidden" aria-live="polite">
+        <div class="section-heading result-heading">
+          <div>
+            <p class="step-label">03 · FINITE RESULT</p>
+            <h2 id="result-title">Snapshot complete</h2>
+            <p id="result-meta" class="result-meta"></p>
+          </div>
+          <span id="coverage-badge" class="coverage-badge">Coverage partial</span>
+        </div>
+
+        <details class="coverage-details">
+          <summary>Coverage and limitations</summary>
+          <div id="coverage-content"></div>
+        </details>
+
+        <p id="result-summary" class="result-summary"></p>
+        <div id="result-items" class="result-items"></div>
+
+        <div id="finish-line" class="finish-line">
+          <p class="finish-kicker">FINISH LINE</p>
+          <h3 id="finish-title">Brief complete within selected scope</h3>
+          <p id="finish-stats"></p>
+          <button id="done-button" class="secondary-button" type="button">Done</button>
+        </div>
+      </section>
+
+      <section id="failure-panel" class="failure-panel hidden" role="alert">
+        <p class="step-label">RUN STOPPED</p>
+        <h2 id="failure-title">The bounded snapshot could not finish</h2>
+        <p id="failure-message"></p>
+        <button id="retry-button" class="secondary-button" type="button">Return to session setup</button>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

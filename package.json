@@ -1,0 +1,21 @@
+{
+  "name": "@aku-browser/sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AkuSidecar local runtime, state store, AkuBrowser UI, and reasoning adapters",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "test": "node --test --test-isolation=none",
+    "check": "node --check src/server.mjs && node --test --test-isolation=none",
+    "smoke:http": "node scripts/smoke-http.mjs",
+    "smoke:codex": "node scripts/smoke-codex.mjs"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "^0.144.1"
+  }
+}
