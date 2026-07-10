@@ -31,6 +31,7 @@ test("Gate 0 survives the browser-to-reasoning-to-SQLite flow and restart", asyn
             whyItMatters: run.intent,
             source: run.source,
             sourceUrl: observation.snapshots[0].blocks[0].permalink,
+            sourceUrlKind: "native_post",
             author: "Test author",
             publishedAt: null,
             confidence: 0.9,
@@ -107,6 +108,7 @@ test("reasoning cannot invent provenance outside the browser observation", async
                 whyItMatters: "This should never be accepted.",
                 source: "x",
                 sourceUrl: "https://example.invalid/not-observed",
+                sourceUrlKind: "source_page",
                 author: "Unknown",
                 publishedAt: null,
                 confidence: 0.9,
@@ -128,7 +130,108 @@ test("reasoning cannot invent provenance outside the browser observation", async
     const failed = await engine.waitForRun(run.id);
     assert.equal(failed.status, "failed");
     assert.equal(failed.error.stage, "reasoning");
-    assert.match(failed.error.message, /not present in the browser observation/i);
+    assert.match(failed.error.message, /not present in the matching browser-observation provenance lane/i);
+  } finally {
+    store.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("reasoning cannot relabel an external reference as a native post", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-test-"));
+  const store = new SqliteStateStore(path.join(directory, "state.db"));
+  try {
+    const engine = new JobEngine({
+      store,
+      reasoningProvider: {
+        name: "wrong-provenance-lane-provider",
+        async analyze() {
+          return {
+            summary: "Invalid provenance-lane fixture.",
+            items: [
+              {
+                id: "wrong-lane",
+                priority: "P2",
+                whatChanged: "A referenced page was observed.",
+                whyItMatters: "The URL must retain its actual provenance lane.",
+                source: "x",
+                sourceUrl: "https://example.com/reference",
+                sourceUrlKind: "native_post",
+                author: "Example",
+                publishedAt: null,
+                confidence: 0.7,
+                evidenceState: "secondary",
+              },
+            ],
+            repeatedClaimsCollapsed: 0,
+            deferredByBudget: 0,
+            limitations: [],
+          };
+        },
+      },
+      limits,
+      logger: { error() {} },
+    });
+    const run = engine.startRun({ source: "x", maxItems: 1, scrolls: 0 });
+    const command = engine.claimBridgeCommand(run.id, "test-bridge");
+    const observation = sampleObservation();
+    observation.snapshots[0].blocks[0].links = [
+      { text: "Reference", href: "https://example.com/reference" },
+    ];
+    engine.acceptBridgeObservation(command.id, run.id, observation);
+    const failed = await engine.waitForRun(run.id);
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.error.stage, "reasoning");
+    assert.match(failed.error.message, /native_post URL.*matching browser-observation provenance lane/i);
+  } finally {
+    store.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("source-page provenance is accepted when a native permalink is unavailable", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-test-"));
+  const store = new SqliteStateStore(path.join(directory, "state.db"));
+  try {
+    const engine = new JobEngine({
+      store,
+      reasoningProvider: {
+        name: "source-page-provider",
+        async analyze({ observation }) {
+          return {
+            summary: "Honest source-page fallback fixture.",
+            items: [
+              {
+                id: "source-page",
+                priority: "P3",
+                whatChanged: "A visible post had no native permalink in the DOM.",
+                whyItMatters: "The feed URL remains an honest, lower-resolution source.",
+                source: "x",
+                sourceUrl: observation.pageUrl,
+                sourceUrlKind: "source_page",
+                author: "Example",
+                publishedAt: null,
+                confidence: 0.5,
+                evidenceState: "unverified",
+              },
+            ],
+            repeatedClaimsCollapsed: 0,
+            deferredByBudget: 0,
+            limitations: ["The native post URL was unavailable."],
+          };
+        },
+      },
+      limits,
+    });
+    const run = engine.startRun({ source: "x", maxItems: 1, scrolls: 0 });
+    const command = engine.claimBridgeCommand(run.id, "test-bridge");
+    const observation = sampleObservation();
+    observation.snapshots[0].blocks[0].permalink = null;
+    engine.acceptBridgeObservation(command.id, run.id, observation);
+    const completed = await engine.waitForRun(run.id);
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.result.items[0].sourceUrlKind, "source_page");
+    assert.equal(completed.result.items[0].sourceUrl, "https://x.com/home");
   } finally {
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });

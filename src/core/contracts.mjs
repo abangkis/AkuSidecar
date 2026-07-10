@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 export const RUN_MODES = new Set(["catch_up", "manual_live"]);
 export const SOURCES = new Set(["x", "linkedin"]);
 export const PRIORITIES = new Set(["P1", "P2", "P3", "P4"]);
+export const SOURCE_URL_KINDS = new Set([
+  "native_post",
+  "source_page",
+  "external_reference",
+]);
 export const FEEDBACK_KINDS = new Set([
   "correct_lane",
   "wrong_lane",
@@ -160,6 +165,9 @@ function validateResultItem(item, index) {
   if (!sourceUrl) {
     throw new ContractError(`result item ${index} requires a sourceUrl`);
   }
+  if (!SOURCE_URL_KINDS.has(item.sourceUrlKind)) {
+    throw new ContractError(`result item ${index} requires a valid sourceUrlKind`);
+  }
   return {
     id: cleanString(item.id, 100) || randomUUID(),
     priority,
@@ -167,6 +175,7 @@ function validateResultItem(item, index) {
     whyItMatters: cleanString(item.whyItMatters, 1_000),
     source: SOURCES.has(item.source) ? item.source : "x",
     sourceUrl,
+    sourceUrlKind: item.sourceUrlKind,
     author: cleanString(item.author, 300),
     publishedAt: validDateString(item.publishedAt),
     confidence: normalizeConfidence(item.confidence),

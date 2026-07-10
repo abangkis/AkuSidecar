@@ -36,6 +36,7 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
             whyItMatters: run.intent,
             source: run.source,
             sourceUrl: block.permalink,
+            sourceUrlKind: "native_post",
             author: block.author,
             publishedAt: null,
             confidence: 0.8,

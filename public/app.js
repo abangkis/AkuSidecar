@@ -291,7 +291,7 @@ function buildResultItem(run, item) {
   link.href = item.sourceUrl;
   link.target = "_blank";
   link.rel = "noreferrer noopener";
-  link.textContent = "Open native source ↗";
+  link.textContent = provenanceLinkLabel(item.sourceUrlKind);
 
   const feedback = document.createElement("div");
   feedback.className = "feedback-actions";
@@ -318,6 +318,14 @@ function buildResultItem(run, item) {
   actions.append(link, feedback);
   article.append(header, title, why, provenance, actions);
   return article;
+}
+
+function provenanceLinkLabel(sourceUrlKind) {
+  return {
+    native_post: "Open native post",
+    source_page: "Open source feed",
+    external_reference: "Open referenced page",
+  }[sourceUrlKind] ?? "Open source";
 }
 
 function showFailure(error) {

@@ -11,19 +11,23 @@ export class DeterministicReasoningProvider {
       .filter((block) => block.text.length >= 40)
       .slice(0, run.maxItems);
 
-    const items = candidates.map((block) => ({
-      id: stableId(block.text) || randomUUID(),
-      priority: classifyPriority(block.text),
-      whatChanged: summarize(block.text),
-      whyItMatters:
-        "Development fallback only: this item was selected to verify the transport and result contract, not to make a trusted relevance judgment.",
-      source: run.source,
-      sourceUrl: block.permalink || block.links[0]?.href || observation.pageUrl,
-      author: block.author || "",
-      publishedAt: block.publishedAt || null,
-      confidence: 0.25,
-      evidenceState: "unverified",
-    }));
+    const items = candidates.map((block) => {
+      const sourceUrlKind = block.permalink ? "native_post" : "source_page";
+      return {
+        id: stableId(block.text) || randomUUID(),
+        priority: classifyPriority(block.text),
+        whatChanged: summarize(block.text),
+        whyItMatters:
+          "Development fallback only: this item was selected to verify the transport and result contract, not to make a trusted relevance judgment.",
+        source: run.source,
+        sourceUrl: block.permalink || observation.pageUrl,
+        sourceUrlKind,
+        author: block.author || "",
+        publishedAt: block.publishedAt || null,
+        confidence: 0.25,
+        evidenceState: "unverified",
+      };
+    });
 
     return {
       summary:

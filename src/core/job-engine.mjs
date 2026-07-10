@@ -129,15 +129,24 @@ export class JobEngine {
 }
 
 function assertObservedSources(result, observation) {
-  const observedUrls = new Set([observation.pageUrl]);
+  const observedUrls = {
+    native_post: new Set(),
+    source_page: new Set([observation.pageUrl]),
+    external_reference: new Set(),
+  };
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
-    if (block.permalink) observedUrls.add(block.permalink);
-    for (const link of block.links) observedUrls.add(link.href);
+    if (block.permalink) observedUrls.native_post.add(block.permalink);
+    for (const link of block.links) observedUrls.external_reference.add(link.href);
   }
   for (const item of result.items) {
-    if (!observedUrls.has(item.sourceUrl)) {
+    if (item.source !== observation.source) {
       throw new ContractError(
-        `reasoning result referenced a source URL that was not present in the browser observation: ${item.sourceUrl}`,
+        `reasoning result source ${item.source} does not match observation source ${observation.source}`,
+      );
+    }
+    if (!observedUrls[item.sourceUrlKind]?.has(item.sourceUrl)) {
+      throw new ContractError(
+        `reasoning result referenced a ${item.sourceUrlKind} URL that was not present in the matching browser-observation provenance lane: ${item.sourceUrl}`,
       );
     }
   }

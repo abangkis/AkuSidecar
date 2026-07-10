@@ -79,6 +79,7 @@ test("reasoning results require source-backed finite items", () => {
           whyItMatters: "It may change the current development workflow.",
           source: "x",
           sourceUrl: "https://x.com/example/status/1",
+          sourceUrlKind: "native_post",
           author: "Example",
           publishedAt: null,
           confidence: 0.8,
@@ -93,6 +94,7 @@ test("reasoning results require source-backed finite items", () => {
   );
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].priority, "P1");
+  assert.equal(result.items[0].sourceUrlKind, "native_post");
 
   assert.throws(
     () =>
@@ -102,11 +104,29 @@ test("reasoning results require source-backed finite items", () => {
             {
               priority: "P1",
               sourceUrl: "javascript:alert(1)",
+              sourceUrlKind: "native_post",
             },
           ],
         },
         1,
       ),
     /requires a sourceUrl/,
+  );
+
+  assert.throws(
+    () =>
+      validateReasoningResult(
+        {
+          items: [
+            {
+              priority: "P1",
+              sourceUrl: "https://x.com/example/status/1",
+              sourceUrlKind: "not-a-provenance-lane",
+            },
+          ],
+        },
+        1,
+      ),
+    /requires a valid sourceUrlKind/,
   );
 });

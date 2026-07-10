@@ -15,6 +15,10 @@
           "whyItMatters": { "type": "string" },
           "source": { "type": "string", "enum": ["x", "linkedin"] },
           "sourceUrl": { "type": "string" },
+          "sourceUrlKind": {
+            "type": "string",
+            "enum": ["native_post", "source_page", "external_reference"]
+          },
           "author": { "type": "string" },
           "publishedAt": { "type": ["string", "null"] },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -30,6 +34,7 @@
           "whyItMatters",
           "source",
           "sourceUrl",
+          "sourceUrlKind",
           "author",
           "publishedAt",
           "confidence",

@@ -64,7 +64,10 @@ OUTPUT CONTRACT:
 - Return at most ${run.maxItems} items.
 - Prefer material deltas over generic summaries.
 - Do not claim full-feed coverage.
-- Preserve an original supplied http(s) source URL for every item.
+- Preserve an original supplied http(s) source URL for every item and declare its provenance lane in sourceUrlKind.
+- Use sourceUrlKind=native_post only when sourceUrl exactly equals a supplied block.permalink.
+- If a social post has no block.permalink, use the observation.pageUrl with sourceUrlKind=source_page.
+- Use sourceUrlKind=external_reference only when the item primarily describes that supplied linked page or document; never use an external link as a substitute for a missing native-post URL.
 - If evidence is weak, say so through confidence/evidenceState/limitations.
 - No markdown outside the required JSON schema.
 

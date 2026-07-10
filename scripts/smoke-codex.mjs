@@ -50,6 +50,7 @@ console.log(
       provider: provider.name,
       itemCount: validated.items.length,
       priorities: validated.items.map((item) => item.priority),
+      provenanceKinds: validated.items.map((item) => item.sourceUrlKind),
       schemaValid: true,
     },
     null,
