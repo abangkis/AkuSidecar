@@ -26,6 +26,7 @@ export const RESTORATION_SCOPES = new Set(["pre_run_position", "post_reveal_star
 export const PENDING_ACTIVATION_EVIDENCE = new Set([
   "feed_fingerprint_changed",
 ]);
+export const ACQUISITION_DECISIONS = new Set(["finish", "request_follow_up"]);
 export const FEEDBACK_KINDS = new Set([
   "correct_lane",
   "wrong_lane",
@@ -82,6 +83,16 @@ export function validateRunRequest(input, limits) {
     scrolls,
     intent: cleanString(input.intent, 500) || defaultIntent,
   };
+}
+
+export function validateAcquisitionPlan(input) {
+  assertPlainObject(input, "acquisition plan");
+  if (!ACQUISITION_DECISIONS.has(input.decision)) {
+    throw new ContractError(`unsupported acquisition decision: ${input.decision}`);
+  }
+  const reason = cleanString(input.reason, 500);
+  if (!reason) throw new ContractError("acquisition plan reason is required");
+  return { decision: input.decision, reason };
 }
 
 export function validateBridgeObservation(input, limits) {
@@ -195,6 +206,13 @@ function validateCoverage(value, limits) {
       ? value.restorationScope
       : null,
     preActionScrollY: Math.trunc(finiteNumber(value.preActionScrollY, 0)),
+    acquisitionRound: Math.min(
+      limits.maxAcquisitionRounds ?? 1,
+      Math.max(1, nonNegativeInteger(value.acquisitionRound, 1)),
+    ),
+    continuationRequested: value.continuationRequested === true,
+    continuationAnchorMatched: value.continuationAnchorMatched === true,
+    captureStartScrollY: Math.trunc(finiteNumber(value.captureStartScrollY, 0)),
     requestedScrolls,
     performedScrolls,
     snapshotCount: Math.min(

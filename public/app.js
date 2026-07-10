@@ -3,6 +3,7 @@ const state = {
   bridgeReady: false,
   currentRun: null,
   pollTimer: null,
+  dispatchedRounds: new Set(),
 };
 
 const elements = {
@@ -99,6 +100,7 @@ function pingBridge() {
 
 async function startRun() {
   clearPoll();
+  state.dispatchedRounds.clear();
   hide(elements.resultPanel, elements.failurePanel);
   const form = new FormData(elements.runForm);
   const payload = {
@@ -120,7 +122,7 @@ async function startRun() {
     });
     state.currentRun = run;
     showProcessing(run);
-    dispatchToBridge(run.id);
+    dispatchToBridge(run);
     schedulePoll();
   } catch (error) {
     elements.runButton.disabled = false;
@@ -128,14 +130,17 @@ async function startRun() {
   }
 }
 
-function dispatchToBridge(runId) {
+function dispatchToBridge(run) {
   if (!state.bootstrap) return;
+  const dispatchKey = `${run.id}:${run.observations?.length ?? 0}`;
+  if (state.dispatchedRounds.has(dispatchKey)) return;
+  state.dispatchedRounds.add(dispatchKey);
   window.postMessage(
     {
       type: "AKU_BROWSER_DISPATCH",
       endpoint: window.location.origin,
       token: state.bootstrap.bridgeToken,
-      runId,
+      runId: run.id,
     },
     window.location.origin,
   );
@@ -151,6 +156,7 @@ async function pollRun() {
   try {
     const { run } = await api(`/api/runs/${encodeURIComponent(state.currentRun.id)}`);
     state.currentRun = run;
+    if (run.status === "waiting_for_bridge") dispatchToBridge(run);
     if (run.status === "completed") {
       clearPoll();
       showResult(run);
@@ -199,8 +205,15 @@ function showProcessing(run) {
       ? "Reveal pending content if present; no scrolling"
       : `Reveal pending content if present; up to ${run.scrolls} native scroll(s)`;
 
+  const followUp = (run.observations?.length ?? 0) > 0;
   const copy = {
-    waiting_for_bridge: ["Waiting for AkuBridge", "Sending one bounded capture request.", 18],
+    waiting_for_bridge: followUp
+      ? [
+          "Waiting for bounded follow-up",
+          "The provider requested one policy-controlled adjacent observation.",
+          58,
+        ]
+      : ["Waiting for AkuBridge", "Sending one bounded capture request.", 18],
     capturing: [
       "Observing the source tab",
       `Revealing pending fresh content when present, then capturing up to ${run.scrolls + 1} viewport(s) and restoring the resulting feed baseline.`,
@@ -252,6 +265,12 @@ function buildCoverageList(coverage) {
   const list = document.createElement("ul");
   const values = [
     `Scope: ${coverage.scopeStatement ?? "Bounded browser sample."}`,
+    Number.isInteger(coverage.acquisitionRounds)
+      ? `Acquisition rounds: ${coverage.acquisitionRounds} of ${state.bootstrap?.limits?.maxAcquisitionRounds ?? coverage.acquisitionRounds}`
+      : null,
+    coverage.providerFollowUpRequested
+      ? `Provider follow-up: ${coverage.providerFollowUpExecuted ? "executed" : "requested but not executable"}${coverage.providerFollowUpReason ? ` — ${coverage.providerFollowUpReason}` : ""}`
+      : "Provider follow-up: not requested",
     `Snapshots: ${coverage.snapshotCount ?? 0}`,
     `Visible candidates observed: ${coverage.candidateCount ?? 0}`,
     coverage.browserAdapter ? `Browser adapter: ${coverage.browserAdapter}` : null,

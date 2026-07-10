@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ContractError,
+  validateAcquisitionPlan,
   validateBridgeObservation,
   validateReasoningResult,
   validateRunRequest,
@@ -19,6 +20,23 @@ const limits = {
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
+
+test("Gate 0B.3 acquisition plans expose only a finite decision", () => {
+  assert.deepEqual(
+    validateAcquisitionPlan({
+      decision: "request_follow_up",
+      reason: "One adjacent viewport can resolve a concrete evidence gap.",
+    }),
+    {
+      decision: "request_follow_up",
+      reason: "One adjacent viewport can resolve a concrete evidence gap.",
+    },
+  );
+  assert.throws(
+    () => validateAcquisitionPlan({ decision: "open_url", reason: "Try another page." }),
+    /unsupported acquisition decision/,
+  );
+});
 
 test("run requests are bounded", () => {
   const run = validateRunRequest(

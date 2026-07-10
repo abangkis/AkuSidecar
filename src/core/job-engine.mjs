@@ -1,5 +1,6 @@
 import {
   ContractError,
+  validateAcquisitionPlan,
   validateBridgeObservation,
   validateFeedback,
   validateReasoningResult,
@@ -7,6 +8,7 @@ import {
 } from "./contracts.mjs";
 import {
   assertNativeCaptureOutcome,
+  buildObservationContinuation,
   buildNativeCaptureCommand,
 } from "../browser/browser-adapter-contract.mjs";
 
@@ -74,9 +76,9 @@ export class JobEngine {
     this.store.completeBridgeCommand(commandId);
     this.store.setRunStatus(runId, "reasoning");
 
-    const reasoningPromise = this.#reasonAboutRun(runId, run, observation)
+    const reasoningPromise = this.#processAcceptedObservation(runId, run, command, observation)
       .catch((error) => {
-        this.logger.error?.("reasoning failed", { runId, error: error.message });
+        this.logger.error?.("run processing failed", { runId, error: error.message });
       })
       .finally(() => this.activeReasoning.delete(runId));
     this.activeReasoning.set(runId, reasoningPromise);
@@ -106,16 +108,90 @@ export class JobEngine {
     return this.store.getRun(runId);
   }
 
-  async #reasonAboutRun(runId, run, observation) {
+  async #processAcceptedObservation(runId, run, command, observation) {
+    const acquisitionRound = command.payload.acquisitionRound ?? 1;
+    if (
+      acquisitionRound === 1 &&
+      run.scrolls > 0 &&
+      this.limits.maxAcquisitionRounds > 1 &&
+      typeof this.reasoningProvider.planAcquisition === "function"
+    ) {
+      let plan;
+      try {
+        plan = validateAcquisitionPlan(
+          await this.reasoningProvider.planAcquisition({
+            run,
+            observation,
+            budget: {
+              currentRound: 1,
+              maxRounds: this.limits.maxAcquisitionRounds,
+              followUpScrolls: this.limits.followUpScrolls,
+              sourceLocked: run.source,
+              continuationRequiresAnchor: true,
+            },
+          }),
+        );
+      } catch (error) {
+        this.store.failRun(runId, "acquisition_planning", error);
+        throw error;
+      }
+
+      if (this.store.getRun(runId)?.status === "cancelled") return;
+
+      if (plan.decision === "request_follow_up") {
+        const continuation = buildObservationContinuation(observation, this.limits);
+        if (continuation) {
+          const current = this.store.getRun(runId);
+          if (current?.status === "cancelled") return;
+          this.store.enqueueBridgeCommand(
+            runId,
+            "collect_visible",
+            buildNativeCaptureCommand(run, this.limits, {
+              acquisitionRound: 2,
+              scrolls: this.limits.followUpScrolls,
+              continuation,
+              followUpReason: plan.reason,
+            }),
+          );
+          this.store.setRunStatus(runId, "waiting_for_bridge");
+          return;
+        }
+      }
+
+      await this.#reasonAboutRun(runId, run, {
+        providerFollowUpRequested: plan.decision === "request_follow_up",
+        providerFollowUpExecuted: false,
+        providerFollowUpReason: plan.reason,
+      });
+      return;
+    }
+
+    await this.#reasonAboutRun(runId, run, {
+      providerFollowUpRequested: acquisitionRound > 1,
+      providerFollowUpExecuted: acquisitionRound > 1,
+      providerFollowUpReason: command.payload.followUpReason ?? "",
+    });
+  }
+
+  async #reasonAboutRun(runId, run, planning) {
     try {
-      const rawResult = await this.reasoningProvider.analyze({ run, observation });
+      if (this.store.getRun(runId)?.status === "cancelled") return;
+      const storedObservations = this.store
+        .getRun(runId)
+        .observations.map((entry) => entry.payload);
+      const observation = mergeObservations(storedObservations);
+      const rawResult = await this.reasoningProvider.analyze({
+        run,
+        observation,
+        observations: storedObservations,
+      });
       const result = validateReasoningResult(rawResult, run.maxItems);
       assertObservedSources(result, observation);
+      if (this.store.getRun(runId)?.status === "cancelled") return;
       const coverage = {
-        ...observation.coverage,
+        ...aggregateCoverage(storedObservations, planning),
         source: observation.source,
         checkedUrl: observation.pageUrl,
-        snapshotCount: observation.snapshots.length,
         resultCount: result.items.length,
         provider: this.reasoningProvider.name,
         scopeStatement:
@@ -132,7 +208,7 @@ export class JobEngine {
 function assertObservedSources(result, observation) {
   const observedUrls = {
     native_post: new Set(),
-    source_page: new Set([observation.pageUrl]),
+    source_page: new Set(observation.pageUrls ?? [observation.pageUrl]),
     external_reference: new Set(),
   };
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
@@ -151,4 +227,77 @@ function assertObservedSources(result, observation) {
       );
     }
   }
+}
+
+function mergeObservations(observations) {
+  if (observations.length === 0) throw new ContractError("run has no browser observations");
+  const first = observations[0];
+  for (const observation of observations) {
+    if (observation.source !== first.source) {
+      throw new ContractError("all acquisition rounds must use the same source");
+    }
+  }
+  return {
+    source: first.source,
+    pageUrl: first.pageUrl,
+    pageUrls: [...new Set(observations.map((observation) => observation.pageUrl))],
+    pageTitle: observations.at(-1).pageTitle,
+    capturedAt: observations.at(-1).capturedAt,
+    snapshots: observations.flatMap((observation) => observation.snapshots),
+    coverage: {
+      acquisitionRounds: observations.length,
+      rounds: observations.map((observation) => observation.coverage),
+    },
+  };
+}
+
+function aggregateCoverage(observations, planning) {
+  const first = observations[0].coverage;
+  const last = observations.at(-1).coverage;
+  const uniqueCandidates = new Set();
+  for (const block of observations.flatMap((observation) =>
+    observation.snapshots.flatMap((snapshot) => snapshot.blocks),
+  )) {
+    const key = block.permalink || block.text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (key) uniqueCandidates.add(key);
+  }
+  return {
+    ...first,
+    checkedThrough: last.checkedThrough,
+    candidateCount: uniqueCandidates.size,
+    observedBlockCount: observations.reduce(
+      (sum, observation) => sum + observation.coverage.observedBlockCount,
+      0,
+    ),
+    fallbackUsed: observations.some((observation) => observation.coverage.fallbackUsed),
+    requestedScrolls: observations.reduce(
+      (sum, observation) => sum + observation.coverage.requestedScrolls,
+      0,
+    ),
+    performedScrolls: observations.reduce(
+      (sum, observation) => sum + observation.coverage.performedScrolls,
+      0,
+    ),
+    snapshotCount: observations.reduce(
+      (sum, observation) => sum + observation.snapshots.length,
+      0,
+    ),
+    scrollDeltas: observations.flatMap((observation) => observation.coverage.scrollDeltas),
+    restoreAttempted: observations.every(
+      (observation) => observation.coverage.restoreAttempted,
+    ),
+    restored: observations.every((observation) => observation.coverage.restored),
+    finalScrollY: last.finalScrollY,
+    elapsedMs: observations.reduce(
+      (sum, observation) => sum + observation.coverage.elapsedMs,
+      0,
+    ),
+    acquisitionRounds: observations.length,
+    providerFollowUpRequested: planning.providerFollowUpRequested === true,
+    providerFollowUpExecuted: planning.providerFollowUpExecuted === true,
+    providerFollowUpReason: planning.providerFollowUpReason || "",
+    notes: observations.flatMap((observation, index) =>
+      observation.coverage.notes.map((note) => `Round ${index + 1}: ${note}`),
+    ),
+  };
 }

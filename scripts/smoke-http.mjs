@@ -24,9 +24,11 @@ try {
   const html = await (await fetch(`${origin}/`)).text();
   assert.equal(bootstrap.bridgeContractVersion, BRIDGE_CONTRACT_VERSION);
   assert.equal(bootstrap.limits.defaultScrolls, 2);
+  assert.equal(bootstrap.limits.maxAcquisitionRounds, 2);
+  assert.equal(bootstrap.limits.followUpScrolls, 1);
   assert.equal(bootstrap.limits.pendingContentTimeoutMs, 5_000);
   assert.match(html, /<title>AkuBrowser<\/title>/);
-  assert.match(html, /FEASIBILITY GATE 0B\.2/);
+  assert.match(html, /FEASIBILITY GATE 0B\.3/);
   console.log(JSON.stringify({ status: "ok", provider: bootstrap.provider, bridgeContractVersion: bootstrap.bridgeContractVersion }));
 } finally {
   await app.stop();

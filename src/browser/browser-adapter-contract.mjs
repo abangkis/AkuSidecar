@@ -13,16 +13,30 @@ const STOP_REASONS = new Set([
 const PENDING_NEW_CONTENT_ACTIONS = new Set(["not_detected", "not_activated", "activated"]);
 const PENDING_ACTIVATION_EVIDENCE = new Set(["feed_fingerprint_changed"]);
 
-export function buildNativeCaptureCommand(run, limits) {
+export function buildNativeCaptureCommand(run, limits, options = {}) {
+  const acquisitionRound = options.acquisitionRound ?? 1;
+  const continuation = options.continuation ?? null;
+  const maxAcquisitionRounds = limits.maxAcquisitionRounds ?? 1;
+  if (
+    !Number.isInteger(acquisitionRound) ||
+    acquisitionRound < 1 ||
+    acquisitionRound > Math.min(2, maxAcquisitionRounds)
+  ) {
+    throw new ContractError("acquisition round exceeds the deterministic Gate 0B.3 budget");
+  }
+  if ((acquisitionRound === 1 && continuation) || (acquisitionRound > 1 && !continuation)) {
+    throw new ContractError("Gate 0B.3 continuation is required only for a follow-up round");
+  }
+  const revealPendingContent = acquisitionRound === 1;
   return {
     mode: run.mode,
     source: run.source,
-    scrolls: run.scrolls,
+    scrolls: options.scrolls ?? run.scrolls,
     scrollFraction: limits.scrollFraction,
     scrollSettleMs: limits.scrollSettleMs,
     captureTimeoutMs: limits.captureTimeoutMs,
-    pendingContentPolicy: "reveal_if_present",
-    sameTabMutationAllowed: true,
+    pendingContentPolicy: revealPendingContent ? "reveal_if_present" : "detect_only",
+    sameTabMutationAllowed: revealPendingContent,
     pendingContentTimeoutMs: limits.pendingContentTimeoutMs,
     pendingContentSettleMs: limits.pendingContentSettleMs,
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
@@ -30,6 +44,28 @@ export function buildNativeCaptureCommand(run, limits) {
     openIfMissing: false,
     restoreScroll: true,
     browserAdapter: NATIVE_BROWSER_ADAPTER,
+    acquisitionRound,
+    maxAcquisitionRounds,
+    continuation,
+    followUpReason: options.followUpReason ?? "",
+  };
+}
+
+export function buildObservationContinuation(observation, limits) {
+  const frontier = observation.snapshots.at(-1);
+  if (!frontier) return null;
+  const anchorKeys = [];
+  for (const block of frontier.blocks) {
+    const key = blockIdentity(block);
+    if (!key || anchorKeys.includes(key)) continue;
+    anchorKeys.push(key);
+    if (anchorKeys.length >= (limits.maxContinuationAnchors ?? 3)) break;
+  }
+  if (anchorKeys.length === 0) return null;
+  return {
+    startScrollY: Math.max(0, Math.trunc(frontier.scrollY)),
+    anchorKeys,
+    settleMs: limits.scrollSettleMs,
   };
 }
 
@@ -39,6 +75,9 @@ export function assertNativeCaptureOutcome(commandPayload, observation) {
   const coverage = observation.coverage;
   if (coverage.browserAdapter !== NATIVE_BROWSER_ADAPTER) {
     throw new ContractError("Gate 0B observation did not identify AkuBridge as its browser adapter");
+  }
+  if (coverage.acquisitionRound !== (commandPayload.acquisitionRound ?? 1)) {
+    throw new ContractError("Gate 0B.3 observation acquisition round does not match its command");
   }
   if (coverage.captureMethod !== NATIVE_CAPTURE_METHOD || coverage.fallbackUsed !== false) {
     throw new ContractError("Gate 0B observation did not use the required native DOM capture path");
@@ -105,10 +144,32 @@ export function assertNativeCaptureOutcome(commandPayload, observation) {
   ) {
     throw new ContractError("Gate 0B.2 no-reveal outcome must preserve the pre-run feed baseline");
   }
+  if (commandPayload.continuation) {
+    if (
+      coverage.continuationRequested !== true ||
+      coverage.continuationAnchorMatched !== true ||
+      Math.abs(
+        coverage.captureStartScrollY - commandPayload.continuation.startScrollY,
+      ) >= 2
+    ) {
+      throw new ContractError(
+        "Gate 0B.3 continuation must prove its prior-observation frontier anchor",
+      );
+    }
+  } else if (coverage.continuationRequested === true) {
+    throw new ContractError("Gate 0B.3 observation reported an unrequested continuation");
+  }
   if (
     coverage.restored &&
     Math.abs(coverage.finalScrollY - coverage.originalScrollY) >= 2
   ) {
     throw new ContractError("Gate 0B observation claimed restoration with a mismatched final position");
   }
+}
+
+function blockIdentity(block) {
+  if (block?.permalink) return block.permalink;
+  return typeof block?.text === "string"
+    ? block.text.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 300)
+    : "";
 }

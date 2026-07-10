@@ -9,6 +9,9 @@ import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
 const limits = {
   maxItems: 5,
   maxScrolls: 2,
+  maxAcquisitionRounds: 2,
+  followUpScrolls: 1,
+  maxContinuationAnchors: 3,
   defaultScrolls: 2,
   scrollFraction: 0.75,
   scrollSettleMs: 900,
@@ -127,6 +130,118 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
     assert.equal(completed.coverage.feedMutation, true);
     assert.equal(completed.coverage.restorationScope, "post_reveal_start");
   } finally {
+    store.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Gate 0B.3 permits one provider-requested anchored follow-up", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-test-"));
+  const store = new SqliteStateStore(path.join(directory, "state.db"));
+  try {
+    const provider = {
+      name: "bounded-planning-provider",
+      async planAcquisition() {
+        return {
+          decision: "request_follow_up",
+          reason: "One adjacent viewport may contain the missing material delta.",
+        };
+      },
+      async analyze({ run, observation, observations }) {
+        const block = observation.snapshots.at(-1).blocks[0];
+        return {
+          summary: "The follow-up completed the bounded evidence set.",
+          items: [
+            {
+              id: "follow-up-result",
+              priority: "P1",
+              whatChanged: block.text,
+              whyItMatters: run.intent,
+              source: run.source,
+              sourceUrl: block.permalink,
+              sourceUrlKind: "native_post",
+              author: block.author,
+              publishedAt: null,
+              confidence: 0.85,
+              evidenceState: "primary",
+            },
+          ],
+          repeatedClaimsCollapsed: observations.length - 1,
+          deferredByBudget: 0,
+          limitations: [],
+        };
+      },
+    };
+    const engine = new JobEngine({ store, reasoningProvider: provider, limits });
+    const run = engine.startRun({ source: "linkedin", maxItems: 1, scrolls: 2 });
+    const firstCommand = engine.claimBridgeCommand(run.id, "test-bridge");
+
+    engine.acceptBridgeObservation(firstCommand.id, run.id, multiViewportObservation());
+    const waiting = await engine.waitForRun(run.id);
+    assert.equal(waiting.status, "waiting_for_bridge");
+    assert.equal(waiting.observations.length, 1);
+
+    const followUpCommand = engine.claimBridgeCommand(run.id, "test-bridge");
+    assert.equal(followUpCommand.payload.acquisitionRound, 2);
+    assert.equal(followUpCommand.payload.scrolls, 1);
+    assert.equal(followUpCommand.payload.continuation.startScrollY, 1_350);
+    assert.equal(followUpCommand.payload.continuation.anchorKeys.length, 1);
+    assert.equal(followUpCommand.payload.pendingContentPolicy, "detect_only");
+
+    engine.acceptBridgeObservation(
+      followUpCommand.id,
+      run.id,
+      followUpObservation(followUpCommand.payload.continuation),
+    );
+    const completed = await engine.waitForRun(run.id);
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.observations.length, 2);
+    assert.equal(completed.coverage.acquisitionRounds, 2);
+    assert.equal(completed.coverage.providerFollowUpRequested, true);
+    assert.equal(completed.coverage.providerFollowUpExecuted, true);
+    assert.equal(completed.coverage.snapshotCount, 5);
+    assert.equal(completed.coverage.performedScrolls, 3);
+    assert.equal(completed.result.items[0].id, "follow-up-result");
+  } finally {
+    store.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("cancelling during Gate 0B.3 planning cannot resurrect the run", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-test-"));
+  const store = new SqliteStateStore(path.join(directory, "state.db"));
+  let releasePlanning;
+  const planningGate = new Promise((resolve) => {
+    releasePlanning = resolve;
+  });
+  let analyzeCalls = 0;
+  try {
+    const provider = {
+      name: "cancellable-planning-provider",
+      async planAcquisition() {
+        await planningGate;
+        return { decision: "finish", reason: "The bounded evidence is sufficient." };
+      },
+      async analyze() {
+        analyzeCalls += 1;
+        return {};
+      },
+    };
+    const engine = new JobEngine({ store, reasoningProvider: provider, limits });
+    const run = engine.startRun({ source: "linkedin", maxItems: 1, scrolls: 2 });
+    const command = engine.claimBridgeCommand(run.id, "test-bridge");
+
+    engine.acceptBridgeObservation(command.id, run.id, multiViewportObservation());
+    const cancelled = engine.cancelRun(run.id);
+    assert.equal(cancelled.status, "cancelled");
+    releasePlanning();
+
+    const settled = await engine.waitForRun(run.id);
+    assert.equal(settled.status, "cancelled");
+    assert.equal(analyzeCalls, 0);
+  } finally {
+    releasePlanning?.();
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -389,6 +504,75 @@ function multiViewportObservation() {
       restored: true,
       elapsedMs: 2_100,
       notes: ["Bounded native fixture."],
+    },
+  };
+}
+
+function followUpObservation(continuation) {
+  return {
+    source: "linkedin",
+    pageUrl: "https://www.linkedin.com/feed/",
+    pageTitle: "Feed | LinkedIn",
+    capturedAt: "2026-07-10T10:00:06Z",
+    snapshots: [0, 1].map((index) => ({
+      index,
+      adapterVersion: "linkedin-dom-v2",
+      selectorCandidateCount: 8,
+      visibleContainerCount: 1,
+      newCandidateCount: 1,
+      capturedAt: `2026-07-10T10:00:0${5 + index}Z`,
+      scrollY: continuation.startScrollY + index * 675,
+      viewportHeight: 900,
+      blocks: [
+        {
+          text:
+            index === 0
+              ? "Material professional update 2 with enough detail to classify."
+              : "A follow-up viewport contained a material release with concrete details.",
+          author: "Example",
+          publishedAt: null,
+          permalink:
+            index === 0
+              ? "https://www.linkedin.com/feed/update/urn:li:activity:2"
+              : "https://www.linkedin.com/feed/update/urn:li:activity:follow-up",
+          feedPosition: 3 + index,
+          links: [],
+        },
+      ],
+    })),
+    coverage: {
+      status: "partial",
+      checkedThrough: "2026-07-10T10:00:06Z",
+      candidateCount: 2,
+      observedBlockCount: 2,
+      browserAdapter: "aku-bridge",
+      captureMethod: "native_dom",
+      fallbackUsed: false,
+      scrollContainer: "#workspace",
+      pendingNewContent: false,
+      pendingNewContentLabel: "",
+      pendingNewContentAction: "not_detected",
+      pendingContentActivationEvidence: null,
+      pendingContentPolicy: "detect_only",
+      feedMutation: false,
+      sameTabMutation: false,
+      restorationScope: "pre_run_position",
+      preActionScrollY: 0,
+      acquisitionRound: 2,
+      continuationRequested: true,
+      continuationAnchorMatched: true,
+      captureStartScrollY: continuation.startScrollY,
+      requestedScrolls: 1,
+      performedScrolls: 1,
+      snapshotCount: 2,
+      scrollDeltas: [675],
+      scrollStopReason: "budget_exhausted",
+      originalScrollY: 0,
+      finalScrollY: 0,
+      restoreAttempted: true,
+      restored: true,
+      elapsedMs: 1_200,
+      notes: ["Bounded follow-up fixture."],
     },
   };
 }

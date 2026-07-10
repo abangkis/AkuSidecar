@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AkuBrowser Gate 0B.3 Acquisition Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "reason"],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["finish", "request_follow_up"]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    }
+  }
+}

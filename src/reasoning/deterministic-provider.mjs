@@ -6,6 +6,13 @@ const OPINION = /\b(opinion|thoughts?|i think|my take|prediction|hot take)\b/i;
 export class DeterministicReasoningProvider {
   name = "deterministic-development-fallback";
 
+  async planAcquisition() {
+    return {
+      decision: "finish",
+      reason: "The deterministic development provider never requests additional browser acquisition.",
+    };
+  }
+
   async analyze({ run, observation }) {
     const candidates = uniqueBlocks(observation)
       .filter((block) => block.text.length >= 40)

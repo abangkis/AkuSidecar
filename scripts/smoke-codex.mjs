@@ -1,22 +1,20 @@
 import { loadConfig } from "../src/config.mjs";
 import { CodexSdkReasoningProvider } from "../src/reasoning/codex-sdk-provider.mjs";
-import { validateReasoningResult } from "../src/core/contracts.mjs";
+import { validateAcquisitionPlan, validateReasoningResult } from "../src/core/contracts.mjs";
 
 const config = loadConfig({
   ...process.env,
   AKU_REASONING_PROVIDER: "codex-sdk",
 });
 const provider = new CodexSdkReasoningProvider(config.reasoning);
-
-const result = await provider.analyze({
-  run: {
-    id: "synthetic-smoke-run",
-    mode: "catch_up",
-    source: "x",
-    intent: "Verify the provider-neutral structured result contract.",
-    maxItems: 1,
-  },
-  observation: {
+const run = {
+  id: "synthetic-smoke-run",
+  mode: "catch_up",
+  source: "x",
+  intent: "Verify the provider-neutral structured result contract.",
+  maxItems: 1,
+};
+const observation = {
     source: "x",
     pageUrl: "https://x.com/example/status/1",
     pageTitle: "Synthetic Gate 0 fixture",
@@ -40,7 +38,24 @@ const result = await provider.analyze({
       candidateCount: 1,
       notes: ["Synthetic fixture; no real browser data."],
     },
-  },
+};
+
+const plan = validateAcquisitionPlan(
+  await provider.planAcquisition({
+    run,
+    observation,
+    budget: {
+      currentRound: 1,
+      maxRounds: 2,
+      followUpScrolls: 1,
+      sourceLocked: "x",
+      continuationRequiresAnchor: true,
+    },
+  }),
+);
+const result = await provider.analyze({
+  run,
+  observation,
 });
 
 const validated = validateReasoningResult(result, 1);
@@ -48,6 +63,8 @@ console.log(
   JSON.stringify(
     {
       provider: provider.name,
+      acquisitionDecision: plan.decision,
+      acquisitionPlanSchemaValid: true,
       itemCount: validated.items.length,
       priorities: validated.items.map((item) => item.priority),
       provenanceKinds: validated.items.map((item) => item.sourceUrlKind),
