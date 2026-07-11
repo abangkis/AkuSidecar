@@ -125,6 +125,22 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
             actions: ["probe_readiness", "collect_visible", "collect_visible"],
           },
         ],
+        adapterHealth: {
+          state: "healthy",
+          strategies: ["[data-view-name=\"feed-full-update\"]"],
+          selectorCounts: { "[data-view-name=\"feed-full-update\"]": 8 },
+          fieldCoverage: { publishedAt: { present: 2, total: 3 } },
+          domSignature: "linkedin-dom-v2:8:3",
+        },
+        frontier: {
+          scrollY: 1_350,
+          anchorKeys: ["urn:li:activity:2", "urn:li:activity:3"],
+          newCandidateCount: 1,
+          hasMoreCandidateSignal: true,
+        },
+        sourceEvents: [
+          { type: "source_new_content_available", state: "activated", label: "New posts" },
+        ],
         fallbackUsed: false,
         scrollContainer: "#workspace",
         pendingNewContent: true,
@@ -142,6 +158,9 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
         sourceTabActivatedForReadiness: true,
         sourceTabBackgroundAtDispatch: true,
         sourceTabRecoveryCount: 1,
+        sourceTabOwnership: "managed",
+        sourceTabOpenedDisposition: "preserve",
+        sourceTabClosedAfterCapture: false,
         sourceReadinessRetryCount: 1,
         feedMutation: true,
         sameTabMutation: true,
@@ -164,6 +183,9 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
 
   assert.equal(observation.snapshots.length, 3);
   assert.equal(observation.snapshots[2].blocks[0].feedPosition, 3);
+  assert.equal(observation.snapshots[1].blocks[0].relationshipType, "repost");
+  assert.equal(observation.snapshots[2].blocks[0].contentKind, "document");
+  assert.equal(observation.snapshots[0].blocks[0].engagement.like, "42");
   assert.equal(observation.coverage.performedScrolls, 2);
   assert.equal(observation.coverage.restored, true);
   assert.equal(observation.coverage.scrollContainer, "#workspace");
@@ -175,6 +197,10 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
       actions: ["probe_readiness", "collect_visible"],
     },
   ]);
+  assert.equal(observation.coverage.adapterHealth.state, "healthy");
+  assert.equal(observation.coverage.frontier.hasMoreCandidateSignal, true);
+  assert.equal(observation.coverage.sourceEvents[0].type, "source_new_content_available");
+  assert.equal(observation.coverage.sourceTabOwnership, "managed");
   assert.equal(observation.coverage.pendingNewContent, true);
   assert.equal(observation.coverage.pendingNewContentAction, "activated");
   assert.equal(observation.coverage.pendingContentActivationEvidence, "feed_fingerprint_changed");
@@ -315,6 +341,12 @@ function gate0bSnapshot(index, scrollY, feedPosition) {
         text: `Visible professional update ${index} with enough detail for bounded evidence.`,
         author: "Example",
         permalink: `https://www.linkedin.com/feed/update/urn:li:activity:${index}`,
+        contentKind: index === 2 ? "document" : "post",
+        relationshipType: index === 1 ? "repost" : "original",
+        parentPermalink: index === 1
+          ? "https://www.linkedin.com/feed/update/urn:li:activity:0"
+          : null,
+        engagement: { like: "42", comment: "3" },
         feedPosition,
         links: [],
       },

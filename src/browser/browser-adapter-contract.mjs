@@ -44,6 +44,10 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     maxBlockCharacters: limits.maxBlockCharacters,
     openIfMissing:
       acquisitionRound === 1 && limits.missingSourceTabPolicy !== "fail_fast",
+    tabLifecycle: {
+      ownership: "shared",
+      openedTabDisposition: "preserve",
+    },
     restoreScroll: true,
     browserAdapter: NATIVE_BROWSER_ADAPTER,
     acquisitionRound,
@@ -60,6 +64,11 @@ export function buildObservationContinuation(observation, limits) {
   const frontier = observation.snapshots.at(-1);
   if (!frontier) return null;
   const anchorKeys = [];
+  for (const key of observation.coverage?.frontier?.anchorKeys ?? []) {
+    if (!key || anchorKeys.includes(key)) continue;
+    anchorKeys.push(key);
+    if (anchorKeys.length >= (limits.maxContinuationAnchors ?? 3)) break;
+  }
   for (const block of frontier.blocks) {
     const key = blockIdentity(block);
     if (!key || anchorKeys.includes(key)) continue;
@@ -68,7 +77,10 @@ export function buildObservationContinuation(observation, limits) {
   }
   if (anchorKeys.length === 0) return null;
   return {
-    startScrollY: Math.max(0, Math.trunc(frontier.scrollY)),
+    startScrollY: Math.max(
+      0,
+      Math.trunc(observation.coverage?.frontier?.scrollY ?? frontier.scrollY),
+    ),
     anchorKeys,
     settleMs: limits.scrollSettleMs,
   };

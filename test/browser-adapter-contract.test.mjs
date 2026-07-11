@@ -40,6 +40,7 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
     openIfMissing: true,
+    tabLifecycle: { ownership: "shared", openedTabDisposition: "preserve" },
     restoreScroll: true,
     browserAdapter: "aku-bridge",
     acquisitionRound: 1,
@@ -167,6 +168,13 @@ test("Gate 0B.2 rejects activated content without bounded activation evidence", 
 test("Gate 0B.3 follow-up is anchored to the prior observation frontier", () => {
   const continuation = buildObservationContinuation(
     {
+      coverage: {
+        frontier: {
+          scrollY: 1_360,
+          anchorKeys: ["urn:li:activity:coverage-frontier"],
+          hasMoreCandidateSignal: true,
+        },
+      },
       snapshots: [
         {
           scrollY: 1_350,
@@ -181,6 +189,8 @@ test("Gate 0B.3 follow-up is anchored to the prior observation frontier", () => 
     },
     limits,
   );
+  assert.equal(continuation.startScrollY, 1_360);
+  assert.equal(continuation.anchorKeys[0], "urn:li:activity:coverage-frontier");
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
@@ -206,7 +216,7 @@ test("Gate 0B.3 follow-up is anchored to the prior observation frontier", () => 
     acquisitionRound: 2,
     continuationRequested: true,
     continuationAnchorMatched: true,
-    captureStartScrollY: 1_350,
+    captureStartScrollY: 1_360,
     requestedScrolls: 1,
     performedScrolls: 1,
     snapshotCount: 2,

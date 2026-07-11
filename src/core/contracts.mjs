@@ -37,6 +37,14 @@ export const SOURCE_READINESS_STATES = new Set([
   "wrong_page",
 ]);
 export const ACQUISITION_DECISIONS = new Set(["finish", "request_follow_up"]);
+export const CONTENT_KINDS = new Set(["post", "article", "document", "video", "announcement"]);
+export const RELATIONSHIP_TYPES = new Set(["original", "repost", "quote", "reply"]);
+export const SOURCE_EVENT_TYPES = new Set([
+  "source_new_content_available",
+  "source_session_expired",
+  "source_feed_unavailable",
+  "source_layout_changed",
+]);
 export const KNOWLEDGE_DELTAS = new Set([
   "new_event",
   "material_update",
@@ -237,6 +245,12 @@ function validateBlock(source, block, index, limits) {
     permalink: safeHttpUrl(block.permalink),
     platformId: cleanString(block.platformId, 200),
     feedPosition: nonNegativeInteger(block.feedPosition, 0),
+    contentKind: CONTENT_KINDS.has(block.contentKind) ? block.contentKind : "post",
+    relationshipType: RELATIONSHIP_TYPES.has(block.relationshipType)
+      ? block.relationshipType
+      : "original",
+    parentPermalink: safeHttpUrl(block.parentPermalink),
+    engagement: validateEngagement(block.engagement),
     media: validateBlockMedia(source, block.media, limits),
     links,
   };
@@ -244,6 +258,14 @@ function validateBlock(source, block, index, limits) {
     ...validated,
     evidenceKey: evidenceKeyForBlock(source, validated),
   };
+}
+
+function validateEngagement(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => ["like", "comment", "repost", "reply", "bookmark", "view"].includes(key))
+    .map(([key, count]) => [key, cleanString(String(count ?? ""), 30)])
+    .filter(([, count]) => count));
 }
 
 function validateBlockMedia(source, value, limits) {
@@ -322,6 +344,9 @@ function validateCoverage(value, limits) {
           .filter((entry) => entry.source && entry.version)
           .slice(0, 20)
       : [],
+    adapterHealth: validateAdapterHealth(value.adapterHealth),
+    frontier: validateFrontier(value.frontier),
+    sourceEvents: validateSourceEvents(value.sourceEvents),
     fallbackUsed: value.fallbackUsed === true,
     scrollContainer: cleanString(value.scrollContainer, 200),
     pendingNewContent: value.pendingNewContent === true,
@@ -358,6 +383,13 @@ function validateCoverage(value, limits) {
       1,
       nonNegativeInteger(value.sourceTabRecoveryCount, 0),
     ),
+    sourceTabOwnership: ["shared", "managed"].includes(value.sourceTabOwnership)
+      ? value.sourceTabOwnership
+      : "shared",
+    sourceTabOpenedDisposition: ["preserve", "close_after_capture"].includes(
+      value.sourceTabOpenedDisposition,
+    ) ? value.sourceTabOpenedDisposition : "preserve",
+    sourceTabClosedAfterCapture: value.sourceTabClosedAfterCapture === true,
     sourceReadinessRetryCount: Math.min(
       1,
       nonNegativeInteger(value.sourceReadinessRetryCount, 0),
@@ -398,6 +430,56 @@ function validateCoverage(value, limits) {
       ? value.notes.slice(0, 10).map((note) => cleanString(note, 500)).filter(Boolean)
       : [],
   };
+}
+
+function validateAdapterHealth(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const fieldCoverage = value.fieldCoverage && typeof value.fieldCoverage === "object"
+    ? Object.fromEntries(Object.entries(value.fieldCoverage).slice(0, 20).map(([field, counts]) => [
+        cleanString(field, 100),
+        {
+          present: nonNegativeInteger(counts?.present, 0),
+          total: nonNegativeInteger(counts?.total, 0),
+        },
+      ]).filter(([field]) => field))
+    : {};
+  const selectorCounts = value.selectorCounts && typeof value.selectorCounts === "object"
+    ? Object.fromEntries(Object.entries(value.selectorCounts).slice(0, 30).map(([selector, count]) => [
+        cleanString(selector, 200),
+        nonNegativeInteger(count, 0),
+      ]).filter(([selector]) => selector))
+    : {};
+  return {
+    state: ["healthy", "degraded", "selector_mismatch"].includes(value.state)
+      ? value.state
+      : "degraded",
+    strategies: Array.isArray(value.strategies)
+      ? [...new Set(value.strategies.map((entry) => cleanString(entry, 200)).filter(Boolean))].slice(0, 10)
+      : [],
+    selectorCounts,
+    fieldCoverage,
+    domSignature: cleanString(value.domSignature, 1_000),
+  };
+}
+
+function validateFrontier(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return {
+    scrollY: Math.trunc(finiteNumber(value.scrollY, 0)),
+    anchorKeys: Array.isArray(value.anchorKeys)
+      ? [...new Set(value.anchorKeys.map((entry) => cleanString(entry, 500)).filter(Boolean))].slice(0, 20)
+      : [],
+    newCandidateCount: nonNegativeInteger(value.newCandidateCount, 0),
+    hasMoreCandidateSignal: value.hasMoreCandidateSignal === true,
+  };
+}
+
+function validateSourceEvents(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 10).map((event) => ({
+    type: SOURCE_EVENT_TYPES.has(event?.type) ? event.type : null,
+    state: cleanString(event?.state, 100),
+    label: cleanString(event?.label, 200),
+  })).filter((event) => event.type);
 }
 
 export function validateReasoningResult(input, maxItems) {
