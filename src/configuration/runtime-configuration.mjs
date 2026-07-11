@@ -15,6 +15,13 @@ const DEFINITIONS = {
     read: (config) => config.presentation.defaultLayout,
     apply: (config, value) => { config.presentation.defaultLayout = value; },
   },
+  streamWidth: {
+    key: "ui.stream_width",
+    applyMode: "live",
+    values: new Set(["compact", "social", "comfortable", "wide"]),
+    read: (config) => config.presentation.streamWidth,
+    apply: (config, value) => { config.presentation.streamWidth = value; },
+  },
   reasoningProvider: {
     key: "startup.reasoning_provider",
     applyMode: "restart",

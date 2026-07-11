@@ -6,7 +6,7 @@
     <title>AkuBrowser</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body data-external-session-discovery="active-v2">
+  <body data-external-session-discovery="active-v2" data-stream-width="social">
     <main class="shell">
       <header class="topbar">
         <div>
@@ -47,6 +47,16 @@
                 <option value="brief">Brief</option>
               </select>
             </label>
+            <label for="stream-width">
+              Stream width
+              <select id="stream-width" name="streamWidth">
+                <option value="social">Social feed (640 px) — default</option>
+                <option value="compact">Compact (560 px)</option>
+                <option value="comfortable">Comfortable (760 px)</option>
+                <option value="wide">Wide (920 px)</option>
+              </select>
+            </label>
+            <p class="settings-detail">Controls Session and Review Inbox width. Settings stays wide for easier configuration.</p>
             <label for="missing-source-tab-policy">
               Missing source tab
               <select id="missing-source-tab-policy" name="missingSourceTabPolicy">

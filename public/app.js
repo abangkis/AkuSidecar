@@ -9,6 +9,7 @@ const state = {
   dispatchedRounds: new Set(),
   currentView: "session",
   defaultPresentation: "source",
+  streamWidth: "social",
   runtimeConfiguration: null,
   reviewPage: 0,
   reviewLoading: false,
@@ -30,6 +31,7 @@ const elements = {
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
   defaultPresentation: document.querySelector("#default-presentation"),
+  streamWidth: document.querySelector("#stream-width"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
   planningPolicy: document.querySelector("#planning-policy"),
@@ -149,6 +151,7 @@ async function bootstrap() {
   try {
     state.bootstrap = await api("/api/bootstrap");
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
+    applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
     const reasoning = state.bootstrap.reasoning ?? {};
     setStatus(
@@ -1113,6 +1116,10 @@ function renderRuntimeSettings(configuration) {
   elements.defaultPresentation.value =
     presentation.persistedValue ?? presentation.effectiveValue;
   elements.defaultPresentation.disabled = presentation.source === "environment";
+  const streamWidth = configuration.streamWidth;
+  applyStreamWidth(streamWidth.effectiveValue);
+  elements.streamWidth.value = streamWidth.persistedValue ?? streamWidth.effectiveValue;
+  elements.streamWidth.disabled = streamWidth.source === "environment";
   const setting = configuration.missingSourceTabPolicy;
   elements.missingSourceTabPolicy.value = setting.persistedValue ?? setting.effectiveValue;
   const overridden = setting.source === "environment";
@@ -1155,6 +1162,7 @@ async function saveRuntimeSettings(event) {
   try {
     const values = {
       defaultPresentation: elements.defaultPresentation.value,
+      streamWidth: elements.streamWidth.value,
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
       planningPolicy: elements.planningPolicy.value,
@@ -1176,13 +1184,21 @@ async function saveRuntimeSettings(event) {
       configuration.missingSourceTabPolicy.effectiveValue;
     state.bootstrap.presentation.defaultLayout =
       configuration.defaultPresentation.effectiveValue;
+    state.bootstrap.presentation.streamWidth = configuration.streamWidth.effectiveValue;
     renderRuntimeSettings(configuration);
     updateScopeControls();
-    elements.runtimeSettingsStatus.textContent = "Saved for the next run.";
+    elements.runtimeSettingsStatus.textContent =
+      "Saved. Live settings are applied; startup changes still require a visible restart.";
   } catch (error) {
     elements.runtimeSettingsStatus.textContent = error.message;
     elements.saveRuntimeSettings.disabled = false;
   }
+}
+
+function applyStreamWidth(value) {
+  const allowed = new Set(["compact", "social", "comfortable", "wide"]);
+  state.streamWidth = allowed.has(value) ? value : "social";
+  document.body.dataset.streamWidth = state.streamWidth;
 }
 
 async function loadPilotReview({ append = false } = {}) {

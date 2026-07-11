@@ -71,6 +71,10 @@ export function loadConfig(env = process.env) {
         defaultValue: "source",
         environmentOverride: null,
       },
+      streamWidth: {
+        defaultValue: "social",
+        environmentOverride: null,
+      },
       reasoningProvider: {
         defaultValue: reasoningDefaults.provider ?? "deterministic",
         environmentOverride: providerOverride,
@@ -102,6 +106,7 @@ export function loadConfig(env = process.env) {
     },
     presentation: {
       defaultLayout: "source",
+      streamWidth: "social",
     },
     reasoning: {
       provider,
