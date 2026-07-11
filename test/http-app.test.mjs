@@ -119,6 +119,15 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   assert.equal(feedback.run.feedback.at(-1).kind, "useful");
   assert.equal(feedback.run.feedback.at(-1).itemId, completed.result.items[0].id);
 
+  const review = await jsonFetch(`${origin}/api/pilot/review?source=x&verdict=useful`);
+  assert.equal(review.review.summary.completedRuns, 1);
+  assert.equal(review.review.totalMatching, 1);
+  assert.equal(review.review.runs[0].id, completed.id);
+  assert.equal(review.review.window.pilotStartedAt, completed.createdAt);
+
+  const invalidReview = await fetch(`${origin}/api/pilot/review?verdict=unknown`);
+  assert.equal(invalidReview.status, 400);
+
   const knowledge = await jsonFetch(`${origin}/api/knowledge?source=x&mode=catch_up`);
   assert.equal(knowledge.knowledge.checkpoint.runId, completed.id);
   assert.equal(knowledge.knowledge.events[0].eventKey, "http-fixture-update");

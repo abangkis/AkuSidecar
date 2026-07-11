@@ -163,6 +163,21 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/pilot/review") {
+    const limit = Math.max(
+      1,
+      Math.min(100, Number.parseInt(url.searchParams.get("limit") ?? "50", 10)),
+    );
+    sendJson(response, 200, {
+      review: engine.getPilotReview({
+        limit,
+        source: url.searchParams.get("source") ?? "all",
+        verdict: url.searchParams.get("verdict") ?? "all",
+      }),
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/knowledge") {
     const source = url.searchParams.get("source") ?? "x";
     const mode = url.searchParams.get("mode") ?? "catch_up";

@@ -4,12 +4,22 @@ const state = {
   currentRun: null,
   pollTimer: null,
   dispatchedRounds: new Set(),
+  currentView: "session",
 };
 
 const elements = {
   sidecarStatus: document.querySelector("#sidecar-status"),
   bridgeStatus: document.querySelector("#bridge-status"),
   providerNotice: document.querySelector("#provider-notice"),
+  sessionViewButton: document.querySelector("#session-view-button"),
+  reviewViewButton: document.querySelector("#review-view-button"),
+  reviewPanel: document.querySelector("#review-panel"),
+  reviewRefreshButton: document.querySelector("#review-refresh-button"),
+  reviewMetrics: document.querySelector("#review-metrics"),
+  reviewSourceFilter: document.querySelector("#review-source-filter"),
+  reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
+  reviewMeta: document.querySelector("#review-meta"),
+  reviewRuns: document.querySelector("#review-runs"),
   controlPanel: document.querySelector(".control-panel"),
   runForm: document.querySelector("#run-form"),
   runButton: document.querySelector("#run-button"),
@@ -46,7 +56,7 @@ window.addEventListener("message", (event) => {
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
     setStatus(elements.bridgeStatus, "AkuBridge error", "error");
     if (state.currentRun && !isTerminal(state.currentRun.status)) {
-      showFailure({
+      reportRunFailure({
         stage: "browser_bridge",
         message: event.data.message || "AkuBridge could not dispatch the run.",
       });
@@ -62,6 +72,11 @@ elements.runForm.addEventListener("submit", async (event) => {
 elements.cancelButton.addEventListener("click", cancelCurrentRun);
 elements.doneButton.addEventListener("click", resetToSetup);
 elements.retryButton.addEventListener("click", resetToSetup);
+elements.sessionViewButton.addEventListener("click", showSessionView);
+elements.reviewViewButton.addEventListener("click", showReviewView);
+elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
+elements.reviewSourceFilter.addEventListener("change", loadPilotReview);
+elements.reviewVerdictFilter.addEventListener("change", loadPilotReview);
 
 await bootstrap();
 
@@ -99,6 +114,7 @@ function pingBridge() {
 }
 
 async function startRun() {
+  state.currentView = "session";
   clearPoll();
   state.dispatchedRounds.clear();
   hide(elements.resultPanel, elements.failurePanel);
@@ -159,22 +175,26 @@ async function pollRun() {
     if (run.status === "waiting_for_bridge") dispatchToBridge(run);
     if (run.status === "completed") {
       clearPoll();
-      showResult(run);
+      if (state.currentView === "review") await loadPilotReview();
+      else showResult(run);
       return;
     }
     if (["failed", "cancelled"].includes(run.status)) {
       clearPoll();
-      showFailure(run.error ?? {
-        stage: run.status,
-        message: run.status === "cancelled" ? "The run was cancelled." : "The run failed.",
-      });
+      if (state.currentView === "review") await loadPilotReview();
+      else {
+        showFailure(run.error ?? {
+          stage: run.status,
+          message: run.status === "cancelled" ? "The run was cancelled." : "The run failed.",
+        });
+      }
       return;
     }
-    showProcessing(run);
+    if (state.currentView === "session") showProcessing(run);
     schedulePoll();
   } catch (error) {
     clearPoll();
-    showFailure({ stage: "status", message: error.message });
+    reportRunFailure({ stage: "status", message: error.message });
   }
 }
 
@@ -261,7 +281,7 @@ function showResult(run) {
   ].join(" · ");
 }
 
-function buildEmptyResultFeedback(run) {
+function buildEmptyResultFeedback(run, onSaved = () => {}) {
   const container = document.createElement("div");
   container.className = "empty-result-feedback";
 
@@ -276,32 +296,109 @@ function buildEmptyResultFeedback(run) {
       .map((entry) => entry.kind),
   );
 
-  for (const [kind, label] of [
-    ["correct_empty", "Correctly empty"],
-    ["missed", "Missed something"],
-  ]) {
+  const verdict = (run.feedback ?? []).find(
+    (entry) => !entry.itemId && ["correct_empty", "missed"].includes(entry.kind),
+  );
+  for (const [kind, label] of [["correct_empty", "Correctly empty"]]) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "feedback-button";
     button.textContent = label;
     if (previous.has(kind)) {
       button.classList.add("selected");
-      button.disabled = true;
     }
+    button.disabled = Boolean(verdict);
     button.addEventListener("click", async () => {
-      await api(`/api/runs/${encodeURIComponent(run.id)}/feedback`, {
+      const response = await api(`/api/runs/${encodeURIComponent(run.id)}/feedback`, {
         method: "POST",
         body: JSON.stringify({ kind }),
       });
+      run.feedback = response.run.feedback;
       for (const candidate of actions.querySelectorAll("button")) {
         candidate.disabled = true;
       }
       button.classList.add("selected");
+      await onSaved();
     });
     actions.append(button);
   }
 
-  container.append(prompt, actions);
+  const missedButton = document.createElement("button");
+  missedButton.type = "button";
+  missedButton.className = "feedback-button";
+  missedButton.textContent = "Missed something";
+  if (previous.has("missed")) missedButton.classList.add("selected");
+  missedButton.disabled = Boolean(verdict);
+  actions.append(missedButton);
+
+  const missedForm = document.createElement("form");
+  missedForm.className = "missed-feedback-form hidden";
+  const noteLabel = document.createElement("label");
+  noteLabel.textContent = "What should have appeared? Description or post URL";
+  const note = document.createElement("textarea");
+  note.rows = 2;
+  note.maxLength = 500;
+  note.required = true;
+  note.placeholder = "What important information was missed?";
+  noteLabel.append(note);
+  const missedError = document.createElement("p");
+  missedError.className = "feedback-error hidden";
+  const formActions = document.createElement("div");
+  formActions.className = "feedback-actions";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "secondary-button";
+  submit.textContent = "Save missed note";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "text-button";
+  cancel.textContent = "Cancel";
+  formActions.append(cancel, submit);
+  missedForm.append(noteLabel, missedError, formActions);
+  missedButton.addEventListener("click", () => {
+    missedForm.classList.remove("hidden");
+    note.focus();
+  });
+  cancel.addEventListener("click", () => {
+    missedForm.classList.add("hidden");
+    missedError.classList.add("hidden");
+    note.value = "";
+  });
+  missedForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const value = note.value.trim();
+    if (!value) {
+      missedError.textContent = "Describe the important information that was missed.";
+      missedError.classList.remove("hidden");
+      return;
+    }
+    submit.disabled = true;
+    try {
+      const response = await api(`/api/runs/${encodeURIComponent(run.id)}/feedback`, {
+        method: "POST",
+        body: JSON.stringify({ kind: "missed", note: value }),
+      });
+      run.feedback = response.run.feedback;
+      missedButton.classList.add("selected");
+      for (const candidate of actions.querySelectorAll("button")) candidate.disabled = true;
+      missedForm.classList.add("hidden");
+      await onSaved();
+    } catch (error) {
+      missedError.textContent = error.message;
+      missedError.classList.remove("hidden");
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  container.append(prompt, actions, missedForm);
+
+  if (verdict?.note) {
+    const savedNote = document.createElement("p");
+    savedNote.className = "saved-feedback-note";
+    savedNote.textContent = verdict.note;
+    container.append(savedNote);
+  }
   return container;
 }
 
@@ -379,7 +476,7 @@ function buildCoverageList(coverage) {
   return list;
 }
 
-function buildResultItem(run, item) {
+function buildResultItem(run, item, onSaved = () => {}) {
   const article = document.createElement("article");
   article.className = "result-item";
 
@@ -426,6 +523,9 @@ function buildResultItem(run, item) {
 
   const feedback = document.createElement("div");
   feedback.className = "feedback-actions";
+  const previous = new Set(
+    (run.feedback ?? []).filter((entry) => entry.itemId === item.id).map((entry) => entry.kind),
+  );
   for (const [kind, label] of [
     ["useful", "Useful"],
     ["correct_lane", "Correct lane"],
@@ -436,19 +536,182 @@ function buildResultItem(run, item) {
     button.type = "button";
     button.className = "feedback-button";
     button.textContent = label;
+    if (previous.has(kind)) {
+      button.classList.add("selected");
+      button.disabled = true;
+    }
     button.addEventListener("click", async () => {
-      await api(`/api/runs/${encodeURIComponent(run.id)}/feedback`, {
+      const response = await api(`/api/runs/${encodeURIComponent(run.id)}/feedback`, {
         method: "POST",
         body: JSON.stringify({ kind, itemId: item.id }),
       });
+      run.feedback = response.run.feedback;
       button.classList.add("selected");
       button.disabled = true;
+      await onSaved();
     });
     feedback.append(button);
   }
   actions.append(link, feedback);
   article.append(header, title, why, provenance, actions);
   return article;
+}
+
+function showSessionView() {
+  state.currentView = "session";
+  elements.sessionViewButton.classList.add("selected");
+  elements.reviewViewButton.classList.remove("selected");
+  hide(elements.reviewPanel);
+  if (state.currentRun?.status === "completed") {
+    showResult(state.currentRun);
+  } else if (state.currentRun && !isTerminal(state.currentRun.status)) {
+    showProcessing(state.currentRun);
+  } else if (state.currentRun?.status === "failed") {
+    showFailure(state.currentRun.error ?? { stage: "run", message: "The run failed." });
+  } else {
+    hide(elements.processingPanel, elements.resultPanel, elements.failurePanel);
+    show(elements.controlPanel);
+  }
+}
+
+async function showReviewView() {
+  state.currentView = "review";
+  elements.reviewViewButton.classList.add("selected");
+  elements.sessionViewButton.classList.remove("selected");
+  hide(
+    elements.controlPanel,
+    elements.processingPanel,
+    elements.resultPanel,
+    elements.failurePanel,
+  );
+  show(elements.reviewPanel);
+  await loadPilotReview();
+}
+
+async function loadPilotReview() {
+  elements.reviewRefreshButton.disabled = true;
+  elements.reviewMeta.textContent = "Loading pilot evidence…";
+  try {
+    const params = new URLSearchParams({
+      limit: "50",
+      source: elements.reviewSourceFilter.value,
+      verdict: elements.reviewVerdictFilter.value,
+    });
+    const { review } = await api(`/api/pilot/review?${params}`);
+    renderPilotMetrics(review.summary);
+    elements.reviewMeta.textContent = [
+      `${review.totalMatching} matching run(s)`,
+      `latest ${review.runs.length} shown`,
+      review.window?.pilotStartedAt
+        ? `pilot cohort since ${formatDate(review.window.pilotStartedAt)}`
+        : null,
+      review.window?.truncated ? "metrics use the latest 500 runs" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    elements.reviewRuns.replaceChildren(
+      ...review.runs.map((run) => buildPilotRunCard(run)),
+    );
+    if (review.runs.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "review-empty";
+      empty.textContent = "No runs match these filters.";
+      elements.reviewRuns.append(empty);
+    }
+  } catch (error) {
+    elements.reviewMeta.textContent = error.message;
+  } finally {
+    elements.reviewRefreshButton.disabled = false;
+  }
+}
+
+function renderPilotMetrics(summary) {
+  const metrics = [
+    ["Completed", `${summary.completedRuns} / ${summary.totalRuns}`],
+    [
+      "Review coverage",
+      `${formatPercent(summary.reviewCoverage)} (${summary.reviewedRuns}/${summary.completedRuns})`,
+    ],
+    [
+      "Empty-result trust",
+      `${formatPercent(summary.emptyTrustRate)} (${summary.correctlyEmptyRuns}/${summary.correctlyEmptyRuns + summary.missedRuns})`,
+    ],
+    [
+      "Positive reviewed items",
+      `${formatPercent(summary.positiveItemRate)} (${summary.positiveReviewedItems}/${summary.reviewedItems})`,
+    ],
+    ["Median duration", formatDuration(summary.medianDurationMs)],
+    ["Failed runs", String(summary.failedRuns)],
+  ];
+  elements.reviewMetrics.replaceChildren(
+    ...metrics.map(([label, value]) => {
+      const card = document.createElement("div");
+      const term = document.createElement("span");
+      term.textContent = label;
+      const metric = document.createElement("strong");
+      metric.textContent = value;
+      card.append(term, metric);
+      return card;
+    }),
+  );
+}
+
+function buildPilotRunCard(run) {
+  const card = document.createElement("article");
+  card.className = "pilot-run-card";
+  const header = document.createElement("div");
+  header.className = "pilot-run-header";
+  const identity = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = `${run.source === "x" ? "X" : "LinkedIn"} · ${humanize(run.mode)}`;
+  const timestamp = document.createElement("p");
+  timestamp.textContent = `${formatDate(run.completedAt ?? run.createdAt)} · ${formatDuration(run.durationMs)}`;
+  identity.append(title, timestamp);
+  const status = document.createElement("span");
+  status.className = `status-pill ${run.status === "completed" ? "status-ok" : "status-error"}`;
+  status.textContent = humanize(run.status);
+  header.append(identity, status);
+
+  const intent = document.createElement("p");
+  intent.className = "pilot-run-intent";
+  intent.textContent = run.intent;
+  const summary = document.createElement("p");
+  summary.className = "result-summary";
+  summary.textContent = run.result?.summary ?? run.error?.message ?? "No result summary.";
+
+  const stats = document.createElement("p");
+  stats.className = "pilot-run-stats";
+  stats.textContent = [
+    `Shown ${run.result?.items?.length ?? 0}`,
+    `Candidates ${run.coverage?.candidateCount ?? 0}`,
+    `Delivered suppressed ${run.coverage?.deliveredEvidenceSuppressed ?? 0}`,
+    `Confirmed excluded ${run.coverage?.confirmedExcludedSuppressed ?? 0}`,
+    `Rounds ${run.coverage?.acquisitionRounds ?? 0}`,
+    run.coverage?.providerFollowUpExecuted ? "Follow-up yes" : "Follow-up no",
+    run.coverage?.restoreAttempted
+      ? `Restored ${run.coverage?.restored ? "yes" : "no"}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  card.append(header, intent, summary, stats);
+
+  if (run.status === "completed" && (run.result?.items?.length ?? 0) === 0) {
+    card.append(buildEmptyResultFeedback(run, loadPilotReview));
+  }
+  if ((run.result?.items?.length ?? 0) > 0) {
+    const details = document.createElement("details");
+    const label = document.createElement("summary");
+    label.textContent = `Review ${run.result.items.length} promoted item(s)`;
+    const items = document.createElement("div");
+    items.className = "result-items review-result-items";
+    for (const item of run.result.items) {
+      items.append(buildResultItem(run, item, loadPilotReview));
+    }
+    details.append(label, items);
+    card.append(details);
+  }
+  return card;
 }
 
 function provenanceLinkLabel(sourceUrlKind) {
@@ -460,17 +723,31 @@ function provenanceLinkLabel(sourceUrlKind) {
 }
 
 function showFailure(error) {
-  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel);
+  state.currentView = "session";
+  elements.sessionViewButton.classList.add("selected");
+  elements.reviewViewButton.classList.remove("selected");
+  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel, elements.reviewPanel);
   show(elements.failurePanel);
   elements.runButton.disabled = false;
   elements.failureTitle.textContent = `Stopped at ${humanize(error.stage || "unknown stage")}`;
   elements.failureMessage.textContent = error.message || "The run did not complete.";
 }
 
+function reportRunFailure(error) {
+  if (state.currentView === "review") {
+    elements.reviewMeta.textContent = `Active run status: ${error.message || "unavailable"}`;
+    return;
+  }
+  showFailure(error);
+}
+
 function resetToSetup() {
   clearPoll();
   state.currentRun = null;
-  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel);
+  state.currentView = "session";
+  elements.sessionViewButton.classList.add("selected");
+  elements.reviewViewButton.classList.remove("selected");
+  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel, elements.reviewPanel);
   show(elements.controlPanel);
   elements.runButton.disabled = false;
   pingBridge();
@@ -526,4 +803,13 @@ function formatDate(value) {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(date);
+}
+
+function formatPercent(value) {
+  return Number.isFinite(value) ? `${Math.round(value * 100)}%` : "Not rated";
+}
+
+function formatDuration(value) {
+  if (!Number.isFinite(value)) return "Unavailable";
+  return value < 10_000 ? `${(value / 1_000).toFixed(1)}s` : `${Math.round(value / 1_000)}s`;
 }

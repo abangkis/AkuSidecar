@@ -29,6 +29,9 @@ try {
   assert.equal(bootstrap.limits.pendingContentTimeoutMs, 5_000);
   assert.match(html, /<title>AkuBrowser<\/title>/);
   assert.match(html, /KNOWLEDGE CONTINUITY PILOT/);
+  assert.match(html, /Pilot Review/);
+  const review = await (await fetch(`${origin}/api/pilot/review`)).json();
+  assert.equal(review.review.summary.totalRuns, 0);
   console.log(JSON.stringify({ status: "ok", provider: bootstrap.provider, bridgeContractVersion: bootstrap.bridgeContractVersion }));
 } finally {
   await app.stop();

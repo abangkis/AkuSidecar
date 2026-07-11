@@ -17,6 +17,7 @@ import {
   filterKnownEvidence,
   uniqueEvidenceKeys,
 } from "./knowledge-continuity.mjs";
+import { buildPilotReview } from "./pilot-review.mjs";
 
 export class JobEngine {
   constructor({ store, reasoningProvider, limits, logger = console }) {
@@ -44,6 +45,43 @@ export class JobEngine {
 
   listRuns(limit) {
     return this.store.listRuns(limit);
+  }
+
+  getPilotReview(options = {}) {
+    const source = options.source ?? "all";
+    if (!["all", "x", "linkedin"].includes(source)) {
+      throw new ContractError("unsupported pilot review source");
+    }
+    const allowedVerdicts = new Set([
+      "all",
+      "unreviewed",
+      "correct",
+      "correct_empty",
+      "correct_lane",
+      "missed",
+      "useful",
+      "wrong_lane",
+      "duplicate",
+      "failed",
+    ]);
+    if (!allowedVerdicts.has(options.verdict ?? "all")) {
+      throw new ContractError("unsupported pilot review verdict");
+    }
+    const loaded = this.store.listRunsWithFeedback(501);
+    const truncated = loaded.length > 500;
+    const pilotStartedAt = this.store.getPilotReviewStartedAt();
+    const cohort = loaded
+      .slice(0, 500)
+      .filter((run) => !pilotStartedAt || run.createdAt >= pilotStartedAt);
+    return buildPilotReview(cohort, {
+      ...options,
+      source,
+      window: {
+        loaded: cohort.length,
+        truncated,
+        pilotStartedAt,
+      },
+    });
   }
 
   getKnowledgeContext(source, mode, limit = this.limits.maxKnowledgeContextEvents ?? 20) {
@@ -123,11 +161,38 @@ export class JobEngine {
     const run = this.store.getRun(runId);
     if (!run) throw new ContractError("run not found");
     const feedback = validateFeedback(input);
-    if (
-      feedback.kind === "correct_empty" &&
-      (feedback.itemId || run.status !== "completed" || (run.result?.items?.length ?? 0) !== 0)
-    ) {
-      throw new ContractError("correct_empty feedback requires a completed empty run");
+    const runLevel = ["correct_empty", "missed"].includes(feedback.kind);
+    if (runLevel) {
+      if (
+        feedback.itemId ||
+        run.status !== "completed" ||
+        (run.result?.items?.length ?? 0) !== 0
+      ) {
+        throw new ContractError(
+          `${feedback.kind} feedback requires a completed empty run without itemId`,
+        );
+      }
+      const existingVerdict = run.feedback.find(
+        (entry) => !entry.itemId && ["correct_empty", "missed"].includes(entry.kind),
+      );
+      if (existingVerdict?.kind === feedback.kind) return run;
+      if (existingVerdict) {
+        throw new ContractError("empty result already has a different verdict");
+      }
+    } else {
+      if (run.status !== "completed" || !feedback.itemId) {
+        throw new ContractError("item feedback requires a completed run and itemId");
+      }
+      if (!(run.result?.items ?? []).some((item) => item.id === feedback.itemId)) {
+        throw new ContractError("feedback itemId is not present in the run result");
+      }
+      if (
+        run.feedback.some(
+          (entry) => entry.itemId === feedback.itemId && entry.kind === feedback.kind,
+        )
+      ) {
+        return run;
+      }
     }
     return this.store.addFeedback(runId, feedback);
   }

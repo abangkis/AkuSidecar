@@ -12,6 +12,7 @@ export class SqliteStateStore {
     this.database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
     this.#migrate();
     this.#backfillConfirmedExclusions();
+    this.#initializePilotReviewStart();
   }
 
   close() {
@@ -82,6 +83,9 @@ export class SqliteStateStore {
         note TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE INDEX IF NOT EXISTS feedback_run_created
+        ON feedback(run_id, created_at);
 
       CREATE TABLE IF NOT EXISTS checkpoints (
         source TEXT NOT NULL,
@@ -188,6 +192,37 @@ export class SqliteStateStore {
     }
   }
 
+  #initializePilotReviewStart() {
+    const existing = this.getSetting("pilot_review_started_at");
+    if (existing) return;
+    const row = this.database
+      .prepare(`
+        SELECT MIN(r.created_at) AS started_at
+        FROM runs r
+        JOIN feedback f ON f.run_id = r.id
+      `)
+      .get();
+    if (row?.started_at) this.setSetting("pilot_review_started_at", row.started_at);
+  }
+
+  getSetting(key) {
+    return this.database.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value ?? null;
+  }
+
+  setSetting(key, value) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(`
+        INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `)
+      .run(key, value, now);
+  }
+
+  getPilotReviewStartedAt() {
+    return this.getSetting("pilot_review_started_at");
+  }
+
   getOrCreateBridgeToken() {
     const existing = this.database
       .prepare("SELECT value FROM settings WHERE key = ?")
@@ -238,6 +273,27 @@ export class SqliteStateStore {
       .prepare("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?")
       .all(limit);
     return rows.map(mapRun);
+  }
+
+  listRunsWithFeedback(limit = 501) {
+    const boundedLimit = Math.max(1, Math.min(501, Number.isFinite(limit) ? limit : 501));
+    const runs = this.database
+      .prepare("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?")
+      .all(boundedLimit)
+      .map(mapRun);
+    if (runs.length === 0) return runs;
+    const placeholders = runs.map(() => "?").join(", ");
+    const feedbackRows = this.database
+      .prepare(`SELECT * FROM feedback WHERE run_id IN (${placeholders}) ORDER BY created_at ASC`)
+      .all(...runs.map((run) => run.id));
+    const feedbackByRun = new Map();
+    for (const row of feedbackRows) {
+      const entries = feedbackByRun.get(row.run_id) ?? [];
+      entries.push(mapFeedback(row));
+      feedbackByRun.set(row.run_id, entries);
+    }
+    for (const run of runs) run.feedback = feedbackByRun.get(run.id) ?? [];
+    return runs;
   }
 
   getRun(id) {
@@ -597,6 +653,10 @@ export class SqliteStateStore {
 
       if (feedback.kind === "correct_empty") {
         this.#persistConfirmedExclusions(runId, now);
+      }
+      if (!this.getSetting("pilot_review_started_at")) {
+        const run = this.getRun(runId);
+        this.setSetting("pilot_review_started_at", run.createdAt);
       }
       this.database.exec("COMMIT");
     } catch (error) {

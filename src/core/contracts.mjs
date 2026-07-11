@@ -314,11 +314,15 @@ export function validateFeedback(input) {
   if (!FEEDBACK_KINDS.has(input.kind)) {
     throw new ContractError(`unsupported feedback kind: ${input.kind}`);
   }
-  return {
+  const feedback = {
     kind: input.kind,
     itemId: cleanString(input.itemId, 100),
     note: cleanString(input.note, 500),
   };
+  if (feedback.kind === "missed" && !feedback.note) {
+    throw new ContractError("missed feedback requires a note");
+  }
+  return feedback;
 }
 
 export function cleanString(value, maxLength) {

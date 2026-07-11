@@ -33,6 +33,10 @@ test("empty-result feedback is stored at run level", () => {
     itemId: "",
     note: "A release was omitted.",
   });
+  assert.throws(
+    () => validateFeedback({ kind: "missed" }),
+    /missed feedback requires a note/,
+  );
 });
 
 test("Gate 0B.3 acquisition plans expose only a finite decision", () => {

@@ -14,13 +14,58 @@
           <h1>AkuBrowser</h1>
           <p class="subtitle">A bounded, source-backed finish line—not another feed.</p>
         </div>
-        <div class="system-status" aria-live="polite">
-          <span id="sidecar-status" class="status-pill status-neutral">AkuSidecar checking</span>
-          <span id="bridge-status" class="status-pill status-neutral">AkuBridge checking</span>
+        <div class="topbar-actions">
+          <div class="system-status" aria-live="polite">
+            <span id="sidecar-status" class="status-pill status-neutral">AkuSidecar checking</span>
+            <span id="bridge-status" class="status-pill status-neutral">AkuBridge checking</span>
+          </div>
+          <nav class="view-switch" aria-label="AkuBrowser view">
+            <button id="session-view-button" class="view-button selected" type="button">Session</button>
+            <button id="review-view-button" class="view-button" type="button">Pilot Review</button>
+          </nav>
         </div>
       </header>
 
       <section id="provider-notice" class="notice hidden" role="status"></section>
+
+      <section id="review-panel" class="review-panel hidden" aria-labelledby="review-heading">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">PILOT EVALUATION</p>
+            <h2 id="review-heading">Review product behavior</h2>
+          </div>
+          <button id="review-refresh-button" class="text-button" type="button">Refresh</button>
+        </div>
+
+        <div id="review-metrics" class="review-metrics" aria-live="polite"></div>
+
+        <div class="review-filters">
+          <label>
+            Source
+            <select id="review-source-filter">
+              <option value="all">All sources</option>
+              <option value="x">X</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+          </label>
+          <label>
+            Verdict
+            <select id="review-verdict-filter">
+              <option value="all">All runs</option>
+              <option value="unreviewed">Needs review</option>
+              <option value="correct">Correct</option>
+              <option value="missed">Missed</option>
+              <option value="useful">Useful</option>
+              <option value="wrong_lane">Wrong lane</option>
+              <option value="duplicate">Duplicate</option>
+              <option value="failed">Failed</option>
+            </select>
+          </label>
+        </div>
+
+        <p id="review-meta" class="review-meta"></p>
+        <div id="review-runs" class="review-runs"></div>
+      </section>
 
       <section class="control-panel" aria-labelledby="session-heading">
         <div class="section-heading">

@@ -123,6 +123,36 @@ h3 {
   gap: 8px;
 }
 
+.topbar-actions {
+  display: grid;
+  justify-items: end;
+  gap: 14px;
+}
+
+.view-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.view-button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.view-button.selected {
+  background: rgba(183, 242, 108, 0.12);
+  color: var(--accent);
+}
+
 .status-pill,
 .coverage-badge,
 .priority-badge,
@@ -162,12 +192,108 @@ h3 {
 .control-panel,
 .processing-panel,
 .result-panel,
-.failure-panel {
+.failure-panel,
+.review-panel {
   margin-top: 24px;
   padding: clamp(22px, 4vw, 36px);
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(17, 22, 20, 0.96);
+}
+
+.review-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.review-metrics > div {
+  display: grid;
+  gap: 5px;
+  min-height: 84px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-raised);
+}
+
+.review-metrics span,
+.review-meta,
+.pilot-run-header p,
+.pilot-run-stats,
+.pilot-run-intent {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.review-metrics strong {
+  align-self: end;
+  font-size: 1.35rem;
+}
+
+.review-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.review-filters label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.review-meta {
+  margin: 18px 0 10px;
+}
+
+.review-runs {
+  display: grid;
+  gap: 12px;
+}
+
+.pilot-run-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(23, 29, 26, 0.72);
+}
+
+.pilot-run-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pilot-run-header h3,
+.pilot-run-header p,
+.pilot-run-stats {
+  margin-bottom: 4px;
+}
+
+.pilot-run-intent {
+  margin-top: 12px;
+}
+
+.pilot-run-card details {
+  margin-top: 14px;
+}
+
+.review-result-items {
+  margin-top: 12px;
+}
+
+.review-empty {
+  padding: 28px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .notice {
@@ -459,6 +585,7 @@ textarea:focus {
 
 .empty-result-feedback {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -467,6 +594,37 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
+}
+
+.missed-feedback-form {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  width: 100%;
+}
+
+.missed-feedback-form textarea {
+  width: 100%;
+}
+
+.missed-feedback-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.feedback-error {
+  margin: 0;
+  color: var(--danger) !important;
+  font-size: 0.78rem;
+}
+
+.saved-feedback-note {
+  width: 100%;
+  margin: 0;
+  color: var(--amber) !important;
 }
 
 .empty-result-feedback p {
@@ -516,6 +674,15 @@ textarea:focus {
   .system-status,
   .feedback-actions {
     justify-content: flex-start;
+  }
+
+  .topbar-actions {
+    justify-items: start;
+  }
+
+  .review-metrics,
+  .review-filters {
+    grid-template-columns: 1fr;
   }
 
   .preflight-copy {
