@@ -21,6 +21,7 @@ import {
 } from "./knowledge-continuity.mjs";
 import { buildPreferenceReplay } from "./preference-replay.mjs";
 import {
+  buildShadowComparison,
   fitOfflinePreferenceExperiment,
   preferenceExperimentStatus,
 } from "./offline-preference-experiment.mjs";
@@ -302,6 +303,15 @@ export class JobEngine {
     if (experiment.status !== "fitted") return experiment;
     const snapshot = this.store.savePreferenceModelSnapshot(experiment.snapshot);
     return preferenceExperimentStatus(runs, snapshot);
+  }
+
+  getPreferenceShadowComparison(limit = 500) {
+    const runs = this.store.listRunsWithFeedback(limit);
+    const status = preferenceExperimentStatus(
+      runs,
+      this.store.getLatestPreferenceModelSnapshot(),
+    );
+    return buildShadowComparison(status.currentSnapshot, runs);
   }
 
   async waitForRun(runId) {

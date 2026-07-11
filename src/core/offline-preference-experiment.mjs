@@ -82,23 +82,122 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
 }
 
 export function scorePreferenceCandidate(snapshot, candidate) {
+  return explainPreferenceCandidate(snapshot, candidate)?.probability ?? null;
+}
+
+export function explainPreferenceCandidate(snapshot, candidate) {
   if (!snapshot?.model || !candidate?.assessment) return null;
   const model = snapshot.model;
   const assessment = candidate.assessment;
-  let score = model.intercept;
-  score += categoricalWeight(model.categorical.source, candidate.source);
-  score += categoricalWeight(model.categorical.decision, candidate.decision);
-  score += categoricalWeight(model.categorical.contentType, assessment.contentType);
-  score += categoricalWeight(model.categorical.priority, assessment.recommendedPriority);
+  const contributions = [{ feature: "intercept", label: "base", value: model.intercept }];
+  addCategoricalContribution(contributions, "source", candidate.source, model.categorical.source);
+  addCategoricalContribution(contributions, "decision", candidate.decision, model.categorical.decision);
+  addCategoricalContribution(
+    contributions,
+    "content_type",
+    assessment.contentType,
+    model.categorical.contentType,
+  );
+  addCategoricalContribution(
+    contributions,
+    "priority",
+    assessment.recommendedPriority,
+    model.categorical.priority,
+  );
   for (const tag of assessment.topicTags ?? []) {
-    score += categoricalWeight(model.categorical.topicTag, tag);
+    addCategoricalContribution(contributions, "topic_tag", tag, model.categorical.topicTag);
   }
   for (const field of SCORE_FIELDS) {
     if (Number.isFinite(assessment[field])) {
-      score += (assessment[field] - 0.5) * model.continuous[field].weight;
+      contributions.push({
+        feature: field,
+        label: String(assessment[field]),
+        value: (assessment[field] - 0.5) * model.continuous[field].weight,
+      });
     }
   }
-  return sigmoid(score);
+  const rawScore = contributions.reduce((sum, entry) => sum + entry.value, 0);
+  return {
+    rawScore,
+    probability: sigmoid(rawScore),
+    contributions: contributions
+      .filter((entry) => Number.isFinite(entry.value) && entry.value !== 0)
+      .sort((left, right) => Math.abs(right.value) - Math.abs(left.value)),
+  };
+}
+
+export function buildShadowComparison(snapshot, runs, options = {}) {
+  const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 50)));
+  if (!snapshot?.model) {
+    return {
+      version: 1,
+      available: false,
+      liveInfluence: false,
+      reason: "no_current_snapshot",
+      summary: emptyShadowSummary(),
+      candidates: [],
+    };
+  }
+  const candidates = [];
+  let insufficientEvidence = 0;
+  for (const run of runs) {
+    for (const candidate of run.candidateEvaluations ?? []) {
+      const explanation = explainPreferenceCandidate(snapshot, {
+        ...candidate,
+        source: run.source,
+      });
+      if (!explanation) {
+        insufficientEvidence += 1;
+        continue;
+      }
+      const preferred = explanation.probability >= 0.5;
+      const movement = candidate.decision === "selected"
+        ? preferred ? "unchanged" : "would_move_down"
+        : preferred ? "would_move_up" : "unchanged";
+      candidates.push({
+        runId: run.id,
+        evidenceKey: candidate.evidenceKey,
+        source: run.source,
+        originalDecision: candidate.decision,
+        movement,
+        probability: explanation.probability,
+        distanceFromNeutral: Math.abs(explanation.probability - 0.5),
+        contentType: candidate.assessment.contentType,
+        recommendedPriority: candidate.assessment.recommendedPriority,
+        topicTags: candidate.assessment.topicTags ?? [],
+        contributions: explanation.contributions.slice(0, 8),
+      });
+    }
+  }
+  candidates.sort((left, right) =>
+    movementOrder(left.movement) - movementOrder(right.movement) ||
+    right.distanceFromNeutral - left.distanceFromNeutral ||
+    `${left.runId}:${left.evidenceKey}`.localeCompare(`${right.runId}:${right.evidenceKey}`),
+  );
+  const summary = {
+    scoredCandidates: candidates.length,
+    wouldMoveUp: candidates.filter((entry) => entry.movement === "would_move_up").length,
+    wouldMoveDown: candidates.filter((entry) => entry.movement === "would_move_down").length,
+    unchanged: candidates.filter((entry) => entry.movement === "unchanged").length,
+    insufficientEvidence,
+    sources: Object.fromEntries(["x", "linkedin"].map((source) => {
+      const entries = candidates.filter((entry) => entry.source === source);
+      return [source, {
+        scoredCandidates: entries.length,
+        wouldMoveUp: entries.filter((entry) => entry.movement === "would_move_up").length,
+        wouldMoveDown: entries.filter((entry) => entry.movement === "would_move_down").length,
+      }];
+    })),
+  };
+  return {
+    version: 1,
+    available: true,
+    liveInfluence: false,
+    snapshotId: snapshot.id,
+    datasetFingerprint: snapshot.datasetFingerprint,
+    summary,
+    candidates: candidates.slice(0, limit),
+  };
 }
 
 export function preferenceDatasetFingerprint(runs) {
@@ -233,6 +332,26 @@ function evaluateShadow(model, candidates) {
 
 function categoricalWeight(weights, label) {
   return label && Number.isFinite(weights?.[label]) ? weights[label] : 0;
+}
+
+function addCategoricalContribution(target, feature, label, weights) {
+  const value = categoricalWeight(weights, label);
+  if (label && value !== 0) target.push({ feature, label, value });
+}
+
+function movementOrder(value) {
+  return value === "would_move_up" ? 0 : value === "would_move_down" ? 1 : 2;
+}
+
+function emptyShadowSummary() {
+  return {
+    scoredCandidates: 0,
+    wouldMoveUp: 0,
+    wouldMoveDown: 0,
+    unchanged: 0,
+    insufficientEvidence: 0,
+    sources: {},
+  };
 }
 
 function average(values) {

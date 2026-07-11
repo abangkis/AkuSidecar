@@ -54,6 +54,7 @@ const elements = {
   preferenceReadinessDetail: document.querySelector("#preference-readiness-detail"),
   preferenceExperimentStatus: document.querySelector("#preference-experiment-status"),
   preferenceExperimentDetail: document.querySelector("#preference-experiment-detail"),
+  shadowComparisonDetail: document.querySelector("#shadow-comparison-detail"),
   fitPreferenceExperiment: document.querySelector("#fit-preference-experiment"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
@@ -1220,11 +1221,12 @@ async function loadPilotReview({ append = false } = {}) {
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
-    const [{ review }, { profile }, { replay }, { experiment }] = await Promise.all([
+    const [{ review }, { profile }, { replay }, { experiment }, { comparison }] = await Promise.all([
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
       api("/api/preferences/experiment"),
+      api("/api/preferences/shadow-comparison"),
     ]);
     if (
       review.runs.length === 0 &&
@@ -1243,6 +1245,7 @@ async function loadPilotReview({ append = false } = {}) {
       renderReasoningEconomics(review.summary.tokenUsage, review.runs);
       renderPreferenceReadiness(replay);
       renderPreferenceExperiment(experiment);
+      renderShadowComparison(comparison);
     }
     const shown = Math.min(review.pagination.offset + review.runs.length, REVIEW_MAX_RUNS);
     elements.reviewMeta.textContent = [
@@ -1314,6 +1317,23 @@ function renderPreferenceExperiment(experiment) {
         experiment.latestSnapshot ? "latest snapshot is stale" : "no snapshot persisted",
         "live influence off",
       ].join(" · ");
+}
+
+function renderShadowComparison(comparison) {
+  if (!comparison?.available) {
+    elements.shadowComparisonDetail.textContent =
+      "Waiting for a current fitted snapshot · live influence off.";
+    return;
+  }
+  const summary = comparison.summary;
+  elements.shadowComparisonDetail.textContent = [
+    `${summary.scoredCandidates} scored`,
+    `${summary.wouldMoveUp} would move up`,
+    `${summary.wouldMoveDown} would move down`,
+    `${summary.unchanged} unchanged`,
+    `${summary.insufficientEvidence} insufficient`,
+    "live influence off",
+  ].join(" · ");
 }
 
 function resetPilotReviewPage() {

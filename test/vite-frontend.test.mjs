@@ -54,6 +54,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   const appScript = await (await fetch(`${origin}/app.js`)).text();
   const styles = await (await fetch(`${origin}/styles.css`)).text();
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
+  const shadowComparison = await (
+    await fetch(`${origin}/api/preferences/shadow-comparison`)
+  ).json();
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
@@ -81,6 +84,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /referrerPolicy = "no-referrer"/);
   assert.match(appScript, /fitPreferenceExperiment/);
   assert.match(html, /Offline preference experiment/);
+  assert.match(html, /Shadow comparison/);
   assert.match(html, /default-presentation/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /ws:\/\/127\.0\.0\.1/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /https:\/\/pbs\.twimg\.com/);
@@ -89,4 +93,6 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(bootstrap.presentation.defaultLayout, "source");
   assert.equal(bootstrap.presentation.streamWidth, "social");
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
+  assert.equal(shadowComparison.comparison.available, false);
+  assert.equal(shadowComparison.comparison.liveInfluence, false);
 });

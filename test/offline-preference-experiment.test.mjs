@@ -4,12 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  buildShadowComparison,
+  explainPreferenceCandidate,
   fitOfflinePreferenceExperiment,
   preferenceDatasetFingerprint,
   preferenceExperimentStatus,
   scorePreferenceCandidate,
 } from "../src/core/offline-preference-experiment.mjs";
 import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
+import { syntheticPreferenceReadyRuns } from "../test-support/preference-ready-dataset.mjs";
 
 test("offline preference fitting is hard-blocked until every replay gate passes", () => {
   const runs = [runFixture(0, "more_like_this")];
@@ -22,7 +25,7 @@ test("offline preference fitting is hard-blocked until every replay gate passes"
 });
 
 test("fit creates a deterministic shadow-only snapshot after readiness", () => {
-  const runs = readyRuns();
+  const runs = syntheticPreferenceReadyRuns();
   const experiment = fitOfflinePreferenceExperiment(runs, {
     createdAt: "2026-07-11T00:00:00.000Z",
   });
@@ -43,6 +46,30 @@ test("fit creates a deterministic shadow-only snapshot after readiness", () => {
   });
   assert.ok(Number.isFinite(positiveScore));
   assert.ok(positiveScore >= 0 && positiveScore <= 1);
+  const explanation = explainPreferenceCandidate(experiment.snapshot, {
+    source: "x",
+    decision: "excluded",
+    assessment: assessment("release", ["engineering"], 0.9),
+  });
+  assert.equal(explanation.probability, positiveScore);
+  assert.ok(explanation.contributions.length > 0);
+
+  const comparison = buildShadowComparison(experiment.snapshot, runs);
+  assert.equal(comparison.available, true);
+  assert.equal(comparison.liveInfluence, false);
+  assert.equal(comparison.summary.scoredCandidates, 30);
+  assert.equal(
+    comparison.summary.wouldMoveUp + comparison.summary.wouldMoveDown + comparison.summary.unchanged,
+    30,
+  );
+  assert.ok(comparison.candidates.every((entry) => entry.contributions.length > 0));
+});
+
+test("shadow comparison remains unavailable without a current snapshot", () => {
+  const comparison = buildShadowComparison(null, syntheticPreferenceReadyRuns());
+  assert.equal(comparison.available, false);
+  assert.equal(comparison.reason, "no_current_snapshot");
+  assert.equal(comparison.liveInfluence, false);
 });
 
 test("preference snapshots are persisted idempotently by dataset fingerprint", (context) => {
@@ -52,7 +79,7 @@ test("preference snapshots are persisted idempotently by dataset fingerprint", (
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });
   });
-  const first = fitOfflinePreferenceExperiment(readyRuns(), {
+  const first = fitOfflinePreferenceExperiment(syntheticPreferenceReadyRuns(), {
     createdAt: "2026-07-11T00:00:00.000Z",
   }).snapshot;
   const duplicate = { ...first, id: "duplicate-id", createdAt: "2026-07-12T00:00:00.000Z" };
@@ -60,12 +87,6 @@ test("preference snapshots are persisted idempotently by dataset fingerprint", (
   assert.equal(store.savePreferenceModelSnapshot(duplicate).id, first.id);
   assert.equal(store.getLatestPreferenceModelSnapshot().datasetFingerprint, first.datasetFingerprint);
 });
-
-function readyRuns() {
-  return Array.from({ length: 30 }, (_, index) =>
-    runFixture(index, index < 6 ? "less_like_this" : "more_like_this"),
-  );
-}
 
 function runFixture(index, kind) {
   const source = index % 2 === 0 ? "x" : "linkedin";

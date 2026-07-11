@@ -245,6 +245,11 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/preferences/shadow-comparison") {
+    sendJson(response, 200, { comparison: engine.getPreferenceShadowComparison() });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/knowledge") {
     const source = url.searchParams.get("source") ?? "x";
     const mode = url.searchParams.get("mode") ?? "catch_up";
