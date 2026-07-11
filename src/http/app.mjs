@@ -206,11 +206,17 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
   if (request.method === "GET" && url.pathname === "/api/pilot/review") {
     const limit = Math.max(
       1,
-      Math.min(100, Number.parseInt(url.searchParams.get("limit") ?? "50", 10)),
+      Math.min(10, Number.parseInt(url.searchParams.get("limit") ?? "10", 10)),
+    );
+    const offset = Math.max(
+      0,
+      Math.min(40, Number.parseInt(url.searchParams.get("offset") ?? "0", 10)),
     );
     sendJson(response, 200, {
       review: engine.getPilotReview({
         limit,
+        offset,
+        maxRuns: 50,
         source: url.searchParams.get("source") ?? "all",
         verdict: url.searchParams.get("verdict") ?? "all",
       }),

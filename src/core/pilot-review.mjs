@@ -18,6 +18,8 @@ export function buildPilotReview(runs, options = {}) {
   const verdict = options.verdict ?? "all";
   if (!REVIEW_VERDICTS.has(verdict)) throw new TypeError("unsupported pilot review verdict");
   const limit = Math.max(1, Math.min(100, Number.isFinite(options.limit) ? options.limit : 50));
+  const offset = Math.max(0, Number.isFinite(options.offset) ? Math.trunc(options.offset) : 0);
+  const maxRuns = Math.max(limit, Number.isFinite(options.maxRuns) ? options.maxRuns : 50);
   const sourceRuns = source === "all" ? runs : runs.filter((run) => run.source === source);
   const filtered = sourceRuns.filter((run) => matchesVerdict(run, verdict));
   return {
@@ -25,7 +27,14 @@ export function buildPilotReview(runs, options = {}) {
     filters: { source, verdict },
     window: options.window ?? null,
     totalMatching: filtered.length,
-    runs: filtered.slice(0, limit).map(toReviewRun),
+    pagination: {
+      limit,
+      offset,
+      available: Math.min(filtered.length, maxRuns),
+      hasPrevious: offset > 0,
+      hasNext: offset + limit < Math.min(filtered.length, maxRuns),
+    },
+    runs: filtered.slice(offset, Math.min(offset + limit, maxRuns)).map(toReviewRun),
   };
 }
 

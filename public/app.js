@@ -10,7 +10,11 @@ const state = {
   currentView: "session",
   resultPresentation: "brief",
   runtimeConfiguration: null,
+  reviewPage: 0,
 };
+
+const REVIEW_PAGE_SIZE = 10;
+const REVIEW_MAX_RUNS = 50;
 
 const elements = {
   sidecarStatus: document.querySelector("#sidecar-status"),
@@ -45,6 +49,10 @@ const elements = {
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
   reviewMeta: document.querySelector("#review-meta"),
   reviewRuns: document.querySelector("#review-runs"),
+  reviewPagination: document.querySelector("#review-pagination"),
+  reviewPreviousPage: document.querySelector("#review-previous-page"),
+  reviewNextPage: document.querySelector("#review-next-page"),
+  reviewPageStatus: document.querySelector("#review-page-status"),
   controlPanel: document.querySelector(".control-panel"),
   runForm: document.querySelector("#run-form"),
   runButton: document.querySelector("#run-button"),
@@ -128,8 +136,10 @@ elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
-elements.reviewSourceFilter.addEventListener("change", loadPilotReview);
-elements.reviewVerdictFilter.addEventListener("change", loadPilotReview);
+elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
+elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
+elements.reviewPreviousPage.addEventListener("click", () => changePilotReviewPage(-1));
+elements.reviewNextPage.addEventListener("click", () => changePilotReviewPage(1));
 elements.resultBriefView.addEventListener("click", () => setResultPresentation("brief"));
 elements.resultSourceView.addEventListener("click", () => setResultPresentation("source"));
 for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
@@ -1153,7 +1163,8 @@ async function loadPilotReview() {
   elements.reviewMeta.textContent = "Loading pilot evidence…";
   try {
     const params = new URLSearchParams({
-      limit: "10",
+      limit: String(REVIEW_PAGE_SIZE),
+      offset: String(state.reviewPage * REVIEW_PAGE_SIZE),
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
@@ -1162,12 +1173,22 @@ async function loadPilotReview() {
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
     ]);
+    if (
+      review.runs.length === 0 &&
+      review.pagination.available > 0 &&
+      review.pagination.offset >= review.pagination.available
+    ) {
+      state.reviewPage = Math.ceil(review.pagination.available / REVIEW_PAGE_SIZE) - 1;
+      return loadPilotReview();
+    }
     renderPilotMetrics(review.summary);
     renderReasoningEconomics(review.summary.tokenUsage, review.runs);
     renderPreferenceReadiness(replay);
     elements.reviewMeta.textContent = [
       `${review.totalMatching} matching run(s)`,
-      `latest ${review.runs.length} shown`,
+      review.runs.length
+        ? `showing ${review.pagination.offset + 1}-${review.pagination.offset + review.runs.length}`
+        : "no runs shown",
       review.window?.pilotStartedAt
         ? `pilot cohort since ${formatDate(review.window.pilotStartedAt)}`
         : null,
@@ -1177,6 +1198,7 @@ async function loadPilotReview() {
       .filter(Boolean)
       .join(" · ");
     elements.reviewRuns.replaceChildren(...buildPilotRunGroups(review.runs));
+    renderPilotReviewPagination(review.pagination);
     if (review.runs.length === 0) {
       const empty = document.createElement("p");
       empty.className = "review-empty";
@@ -1188,6 +1210,27 @@ async function loadPilotReview() {
   } finally {
     elements.reviewRefreshButton.disabled = false;
   }
+}
+
+function resetPilotReviewPage() {
+  state.reviewPage = 0;
+  loadPilotReview();
+}
+
+function changePilotReviewPage(delta) {
+  state.reviewPage += delta;
+  loadPilotReview();
+}
+
+function renderPilotReviewPagination(pagination) {
+  const available = Math.min(pagination.available, REVIEW_MAX_RUNS);
+  const pageCount = Math.max(1, Math.ceil(available / REVIEW_PAGE_SIZE));
+  const currentPage = Math.min(state.reviewPage + 1, pageCount);
+  state.reviewPage = currentPage - 1;
+  elements.reviewPageStatus.textContent = `Page ${currentPage} of ${pageCount}`;
+  elements.reviewPreviousPage.disabled = !pagination.hasPrevious;
+  elements.reviewNextPage.disabled = !pagination.hasNext;
+  elements.reviewPagination.classList.toggle("hidden", available <= REVIEW_PAGE_SIZE);
 }
 
 function renderPreferenceReadiness(replay) {

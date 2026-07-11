@@ -61,6 +61,20 @@ test("pilot review rejects unknown verdicts", () => {
   );
 });
 
+test("pilot review pages ten runs within a fifty-run browsing boundary", () => {
+  const runs = Array.from({ length: 60 }, (_, index) => runFixture({ id: `run-${index}` }));
+  const review = buildPilotReview(runs, { limit: 10, offset: 40, maxRuns: 50 });
+  assert.equal(review.totalMatching, 60);
+  assert.deepEqual(review.runs.map((run) => run.id), runs.slice(40, 50).map((run) => run.id));
+  assert.deepEqual(review.pagination, {
+    limit: 10,
+    offset: 40,
+    available: 50,
+    hasPrevious: true,
+    hasNext: false,
+  });
+});
+
 test("pilot review ignores malformed legacy feedback outside its run context", () => {
   const runs = [
     runFixture({

@@ -298,6 +298,21 @@ h3 {
   gap: 12px;
 }
 
+.review-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.review-pagination span {
+  min-width: 110px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 .pilot-run-card {
   padding: 18px;
   border: 1px solid var(--line);
