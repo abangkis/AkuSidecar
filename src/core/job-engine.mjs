@@ -5,6 +5,7 @@ import {
   validateAcquisitionPlan,
   validateBridgeObservation,
   validateFeedback,
+  validatePreferenceFeedback,
   validateReasoningResult,
   validateRunRequest,
   validateUnifiedSessionRequest,
@@ -261,6 +262,29 @@ export class JobEngine {
     return this.store.addFeedback(runId, feedback);
   }
 
+  addPreferenceFeedback(runId, input) {
+    const run = this.store.getRun(runId);
+    if (!run || run.status !== "completed") {
+      throw new ContractError("preference feedback requires a completed run");
+    }
+    const feedback = validatePreferenceFeedback(input);
+    const candidate = run.candidateEvaluations.find(
+      (entry) => entry.evidenceKey === feedback.evidenceKey,
+    );
+    if (!candidate) throw new ContractError("preference feedback target was not evaluated");
+    if (feedback.kind === "should_show" && candidate.decision === "selected") {
+      throw new ContractError("should_show requires an unselected candidate");
+    }
+    if (feedback.kind === "should_not_show" && candidate.decision !== "selected") {
+      throw new ContractError("should_not_show requires a selected candidate");
+    }
+    return this.store.addPreferenceFeedback(runId, feedback);
+  }
+
+  getPreferenceProfile() {
+    return this.store.getPreferenceProfile();
+  }
+
   async waitForRun(runId) {
     await this.activeReasoning.get(runId);
     return this.store.getRun(runId);
@@ -393,6 +417,22 @@ export class JobEngine {
         });
         return;
       }
+      const planningGate = decideAcquisitionPlanning({
+        policy: this.limits.acquisitionPlanningPolicy,
+        observation,
+        unseenEvidenceCount: Math.max(
+          0,
+          observedEvidenceKeys.length - suppressedEvidenceKeys.size,
+        ),
+      });
+      if (!planningGate.invokeProvider) {
+        await this.#reasonAboutRun(runId, run, {
+          providerFollowUpRequested: false,
+          providerFollowUpExecuted: false,
+          providerFollowUpReason: planningGate.reason,
+        });
+        return;
+      }
       const knowledgeContext = this.store.getKnowledgeContext(
         run.source,
         run.mode,
@@ -400,8 +440,7 @@ export class JobEngine {
       );
       let plan;
       try {
-        plan = validateAcquisitionPlan(
-          await this.reasoningProvider.planAcquisition({
+        const providerResponse = await this.reasoningProvider.planAcquisition({
             run,
             observation,
             knowledgeContext,
@@ -413,9 +452,12 @@ export class JobEngine {
               continuationRequiresAnchor: true,
               knownEvidenceInCurrentSample: suppressedEvidenceKeys.size,
             },
-          }),
-        );
+          });
+        const invocation = unwrapProviderInvocation(providerResponse);
+        if (invocation.telemetry) this.store.saveReasoningInvocation(invocation.telemetry);
+        plan = validateAcquisitionPlan(invocation.output);
       } catch (error) {
+        if (error.reasoningTelemetry) this.store.saveReasoningInvocation(error.reasoningTelemetry);
         this.store.failRun(runId, "acquisition_planning", error);
         this.#advanceParentSessionForRun(runId);
         throw error;
@@ -492,7 +534,7 @@ export class JobEngine {
         run.mode,
         this.limits.maxKnowledgeContextEvents ?? 20,
       );
-      const rawResult =
+      const providerResponse =
         filtered.unseenEvidenceCount === 0 && suppressedEvidenceKeys.size > 0
           ? noNewEvidenceResult(filtered.exactDuplicatesSuppressed)
           : await this.reasoningProvider.analyze({
@@ -501,6 +543,9 @@ export class JobEngine {
               observations: storedObservations,
               knowledgeContext,
             });
+      const invocation = unwrapProviderInvocation(providerResponse);
+      if (invocation.telemetry) this.store.saveReasoningInvocation(invocation.telemetry);
+      const rawResult = invocation.output;
       const result = validateReasoningResult(rawResult, run.maxItems);
       assertObservedSources(result, filtered.observation);
       assertUniqueResultEvidence(result, suppressedEvidenceKeys);
@@ -522,8 +567,19 @@ export class JobEngine {
         scopeStatement:
           "Bounded native-browser sample only; this is not a claim of complete feed coverage.",
       };
-      this.store.completeRunWithKnowledge(runId, result, coverage);
+      this.store.completeRunWithKnowledge(
+        runId,
+        result,
+        coverage,
+        buildCandidateEvaluations(
+          run,
+          filtered.observation,
+          result,
+          invocation.evaluatedEvidenceKeys,
+        ),
+      );
     } catch (error) {
+      if (error.reasoningTelemetry) this.store.saveReasoningInvocation(error.reasoningTelemetry);
       this.store.failRun(runId, "reasoning", error);
       this.#advanceParentSessionForRun(runId);
       throw error;
@@ -536,6 +592,89 @@ export class JobEngine {
     if (!session || isUnifiedSessionTerminal(session.status)) return;
     this.#reconcileUnifiedSession(session.id);
   }
+}
+
+function unwrapProviderInvocation(response) {
+  if (
+    response &&
+    typeof response === "object" &&
+    Object.prototype.hasOwnProperty.call(response, "output") &&
+    Object.prototype.hasOwnProperty.call(response, "telemetry")
+  ) {
+    return response;
+  }
+  return { output: response, telemetry: null, evaluatedEvidenceKeys: null };
+}
+
+export function decideAcquisitionPlanning({
+  policy = "always",
+  observation,
+  unseenEvidenceCount,
+}) {
+  if (policy !== "deterministic_sparse_gap") {
+    return { invokeProvider: true, reason: "Provider planning policy is always." };
+  }
+  if (unseenEvidenceCount <= 0) {
+    return {
+      invokeProvider: false,
+      reason: "Deterministic planning gate: no unseen evidence requires another viewport.",
+    };
+  }
+  if (unseenEvidenceCount >= 3) {
+    return {
+      invokeProvider: false,
+      reason: `Deterministic planning gate: ${unseenEvidenceCount} unseen candidates are sufficient for bounded evaluation.`,
+    };
+  }
+  const coverage = observation.coverage ?? {};
+  if (
+    coverage.scrollStopReason !== "budget_exhausted" ||
+    !Number.isFinite(coverage.requestedScrolls) ||
+    !Number.isFinite(coverage.performedScrolls) ||
+    coverage.performedScrolls < coverage.requestedScrolls
+  ) {
+    return {
+      invokeProvider: false,
+      reason: "Deterministic planning gate: browser movement cannot justify another bounded viewport.",
+    };
+  }
+  return {
+    invokeProvider: true,
+    reason: `Deterministic planning gate: sparse sample (${unseenEvidenceCount}) may justify one anchored follow-up.`,
+  };
+}
+
+function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKeys = null) {
+  const selectedByEvidence = new Map(result.items.map((item) => [item.evidenceKey, item]));
+  const evaluated = Array.isArray(evaluatedEvidenceKeys)
+    ? new Set(evaluatedEvidenceKeys)
+    : null;
+  const unique = new Map();
+  for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
+    if (
+      !block.evidenceKey ||
+      unique.has(block.evidenceKey) ||
+      (evaluated && !evaluated.has(block.evidenceKey))
+    ) continue;
+    unique.set(block.evidenceKey, block);
+  }
+  return [...unique.values()].map((block) => {
+    const item = selectedByEvidence.get(block.evidenceKey) ?? null;
+    return {
+      evidenceKey: block.evidenceKey,
+      source: run.source,
+      decision: item ? "selected" : "excluded",
+      reasonCode: item ? "selected_by_provider" : "not_promoted_by_provider",
+      itemId: item?.id ?? null,
+      author: block.author ?? "",
+      text: block.text ?? "",
+      sourceUrl: block.permalink || observation.pageUrl,
+      publishedAt: block.publishedAt ?? null,
+      feedPosition: Number.isInteger(block.feedPosition) ? block.feedPosition : null,
+      policyVersion: "learning-loop-v0",
+      preferenceProfileVersion: 0,
+    };
+  });
 }
 
 export function buildUnifiedSessionOutcome(session, status = session.status) {

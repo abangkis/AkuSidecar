@@ -122,6 +122,59 @@ export class SqliteStateStore {
       CREATE INDEX IF NOT EXISTS feedback_run_created
         ON feedback(run_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS candidate_evaluations (
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        evidence_key TEXT NOT NULL,
+        source TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        reason_code TEXT NOT NULL,
+        item_id TEXT,
+        author TEXT NOT NULL,
+        text TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        published_at TEXT,
+        feed_position INTEGER,
+        policy_version TEXT NOT NULL,
+        preference_profile_version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(run_id, evidence_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS candidate_evaluations_run_decision
+        ON candidate_evaluations(run_id, decision, feed_position);
+
+      CREATE TABLE IF NOT EXISTS preference_feedback_events (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        evidence_key TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        reason_code TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS preference_feedback_run_created
+        ON preference_feedback_events(run_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS reasoning_invocations (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        phase TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        reasoning_effort TEXT,
+        duration_ms INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        input_tokens INTEGER,
+        cached_input_tokens INTEGER,
+        output_tokens INTEGER,
+        reasoning_output_tokens INTEGER,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS reasoning_invocations_run_created
+        ON reasoning_invocations(run_id, created_at);
+
       CREATE TABLE IF NOT EXISTS checkpoints (
         source TEXT NOT NULL,
         mode TEXT NOT NULL,
@@ -474,6 +527,34 @@ export class SqliteStateStore {
       feedbackByRun.set(row.run_id, entries);
     }
     for (const run of runs) run.feedback = feedbackByRun.get(run.id) ?? [];
+    const candidateRows = this.database
+      .prepare(`SELECT * FROM candidate_evaluations WHERE run_id IN (${placeholders}) ORDER BY feed_position ASC, created_at ASC`)
+      .all(...runs.map((run) => run.id));
+    const candidatesByRun = groupRows(candidateRows, "run_id", mapCandidateEvaluation);
+    const preferenceRows = this.database
+      .prepare(`SELECT * FROM preference_feedback_events WHERE run_id IN (${placeholders}) ORDER BY created_at ASC`)
+      .all(...runs.map((run) => run.id));
+    const preferenceByRun = groupRows(preferenceRows, "run_id", mapPreferenceFeedback);
+    const invocationRows = this.database
+      .prepare(`SELECT * FROM reasoning_invocations WHERE run_id IN (${placeholders}) ORDER BY created_at ASC`)
+      .all(...runs.map((run) => run.id));
+    const invocationsByRun = groupRows(invocationRows, "run_id", mapReasoningInvocation);
+    const sessionRows = this.database
+      .prepare(`
+        SELECT c.run_id, s.id AS session_id, s.created_at AS session_created_at
+        FROM unified_session_children c
+        JOIN unified_sessions s ON s.id = c.session_id
+        WHERE c.run_id IN (${placeholders})
+      `)
+      .all(...runs.map((run) => run.id));
+    const sessionByRun = new Map(sessionRows.map((row) => [row.run_id, row]));
+    for (const run of runs) {
+      run.candidateEvaluations = candidatesByRun.get(run.id) ?? [];
+      run.preferenceFeedback = preferenceByRun.get(run.id) ?? [];
+      run.reasoningInvocations = invocationsByRun.get(run.id) ?? [];
+      run.unifiedSessionId = sessionByRun.get(run.id)?.session_id ?? null;
+      run.unifiedSessionCreatedAt = sessionByRun.get(run.id)?.session_created_at ?? null;
+    }
     return runs;
   }
 
@@ -489,6 +570,28 @@ export class SqliteStateStore {
       .prepare("SELECT * FROM feedback WHERE run_id = ? ORDER BY created_at ASC")
       .all(id)
       .map(mapFeedback);
+    run.candidateEvaluations = this.database
+      .prepare("SELECT * FROM candidate_evaluations WHERE run_id = ? ORDER BY feed_position ASC, created_at ASC")
+      .all(id)
+      .map(mapCandidateEvaluation);
+    run.preferenceFeedback = this.database
+      .prepare("SELECT * FROM preference_feedback_events WHERE run_id = ? ORDER BY created_at ASC")
+      .all(id)
+      .map(mapPreferenceFeedback);
+    run.reasoningInvocations = this.database
+      .prepare("SELECT * FROM reasoning_invocations WHERE run_id = ? ORDER BY created_at ASC")
+      .all(id)
+      .map(mapReasoningInvocation);
+    const session = this.database
+      .prepare(`
+        SELECT s.id AS session_id, s.created_at AS session_created_at
+        FROM unified_session_children c
+        JOIN unified_sessions s ON s.id = c.session_id
+        WHERE c.run_id = ?
+      `)
+      .get(id);
+    run.unifiedSessionId = session?.session_id ?? null;
+    run.unifiedSessionCreatedAt = session?.session_created_at ?? null;
     return run;
   }
 
@@ -521,7 +624,7 @@ export class SqliteStateStore {
     return this.getRun(id);
   }
 
-  completeRunWithKnowledge(id, result, coverage) {
+  completeRunWithKnowledge(id, result, coverage, candidateEvaluations = []) {
     const run = this.getRun(id);
     if (!run) throw new Error("run not found");
     const now = new Date().toISOString();
@@ -581,6 +684,38 @@ export class SqliteStateStore {
         this.database
           .prepare("UPDATE knowledge_events SET current_version_id = ?, updated_at = ? WHERE id = ?")
           .run(versionId, now, event.id);
+      }
+
+      const insertCandidate = this.database.prepare(`
+        INSERT INTO candidate_evaluations(
+          run_id, evidence_key, source, decision, reason_code, item_id,
+          author, text, source_url, published_at, feed_position,
+          policy_version, preference_profile_version, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, evidence_key) DO UPDATE SET
+          decision = excluded.decision,
+          reason_code = excluded.reason_code,
+          item_id = excluded.item_id,
+          policy_version = excluded.policy_version,
+          preference_profile_version = excluded.preference_profile_version
+      `);
+      for (const candidate of candidateEvaluations) {
+        insertCandidate.run(
+          id,
+          candidate.evidenceKey,
+          candidate.source,
+          candidate.decision,
+          candidate.reasonCode,
+          candidate.itemId,
+          candidate.author,
+          candidate.text,
+          candidate.sourceUrl,
+          candidate.publishedAt,
+          candidate.feedPosition,
+          candidate.policyVersion,
+          candidate.preferenceProfileVersion,
+          now,
+        );
       }
 
       this.database
@@ -864,6 +999,61 @@ export class SqliteStateStore {
     }
     return this.getRun(runId);
   }
+
+  addPreferenceFeedback(runId, feedback) {
+    const latest = this.database
+      .prepare(`SELECT * FROM preference_feedback_events WHERE run_id = ? AND evidence_key = ? ORDER BY created_at DESC LIMIT 1`)
+      .get(runId, feedback.evidenceKey);
+    if (
+      latest &&
+      latest.kind === feedback.kind &&
+      (latest.reason_code ?? null) === feedback.reasonCode &&
+      (latest.note ?? "") === feedback.note
+    ) {
+      return this.getRun(runId);
+    }
+    const now = new Date().toISOString();
+    this.database
+      .prepare(`INSERT INTO preference_feedback_events(id, run_id, evidence_key, kind, reason_code, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(randomUUID(), runId, feedback.evidenceKey, feedback.kind, feedback.reasonCode, feedback.note, now);
+    return this.getRun(runId);
+  }
+
+  saveReasoningInvocation(telemetry) {
+    this.database
+      .prepare(`
+        INSERT INTO reasoning_invocations(
+          id, run_id, phase, provider, model, reasoning_effort, duration_ms,
+          status, input_tokens, cached_input_tokens, output_tokens,
+          reasoning_output_tokens, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        randomUUID(), telemetry.runId, telemetry.phase, telemetry.provider,
+        telemetry.model, telemetry.reasoningEffort, telemetry.durationMs,
+        telemetry.status, telemetry.inputTokens, telemetry.cachedInputTokens,
+        telemetry.outputTokens, telemetry.reasoningOutputTokens,
+        new Date().toISOString(),
+      );
+  }
+
+  getPreferenceProfile() {
+    const row = this.database.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN kind = 'should_show' THEN 1 ELSE 0 END) AS positive,
+             SUM(CASE WHEN kind = 'should_not_show' THEN 1 ELSE 0 END) AS negative,
+             MAX(created_at) AS updated_at
+      FROM preference_feedback_events
+    `).get();
+    return {
+      version: 0,
+      status: "collecting",
+      feedbackEventCount: Number(row.total ?? 0),
+      positiveCorrectionCount: Number(row.positive ?? 0),
+      negativeCorrectionCount: Number(row.negative ?? 0),
+      updatedAt: row.updated_at ?? null,
+    };
+  }
 }
 
 function mapRun(row) {
@@ -936,6 +1126,64 @@ function mapFeedback(row) {
     note: row.note,
     createdAt: row.created_at,
   };
+}
+
+function mapCandidateEvaluation(row) {
+  return {
+    runId: row.run_id,
+    evidenceKey: row.evidence_key,
+    source: row.source,
+    decision: row.decision,
+    reasonCode: row.reason_code,
+    itemId: row.item_id,
+    author: row.author,
+    text: row.text,
+    sourceUrl: row.source_url,
+    publishedAt: row.published_at,
+    feedPosition: row.feed_position,
+    policyVersion: row.policy_version,
+    preferenceProfileVersion: row.preference_profile_version,
+    createdAt: row.created_at,
+  };
+}
+
+function mapPreferenceFeedback(row) {
+  return {
+    id: row.id,
+    evidenceKey: row.evidence_key,
+    kind: row.kind,
+    reasonCode: row.reason_code,
+    note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
+function mapReasoningInvocation(row) {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    phase: row.phase,
+    provider: row.provider,
+    model: row.model,
+    reasoningEffort: row.reasoning_effort,
+    durationMs: row.duration_ms,
+    status: row.status,
+    inputTokens: row.input_tokens,
+    cachedInputTokens: row.cached_input_tokens,
+    outputTokens: row.output_tokens,
+    reasoningOutputTokens: row.reasoning_output_tokens,
+    createdAt: row.created_at,
+  };
+}
+
+function groupRows(rows, key, mapper) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const entries = grouped.get(row[key]) ?? [];
+    entries.push(mapper(row));
+    grouped.set(row[key], entries);
+  }
+  return grouped;
 }
 
 function mapCheckpoint(row) {

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "runId": { "type": "string" },
+    "evidenceKey": { "type": "string", "pattern": "^(x|linkedin):[a-f0-9]{24}$" },
+    "source": { "type": "string", "enum": ["x", "linkedin"] },
+    "decision": { "type": "string", "enum": ["selected", "deferred", "excluded"] },
+    "reasonCode": { "type": "string" },
+    "itemId": { "type": ["string", "null"] },
+    "author": { "type": "string" },
+    "text": { "type": "string" },
+    "sourceUrl": { "type": "string" },
+    "publishedAt": { "type": ["string", "null"] },
+    "feedPosition": { "type": ["integer", "null"] }
+  },
+  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "text", "sourceUrl", "publishedAt", "feedPosition"],
+  "additionalProperties": false
+}

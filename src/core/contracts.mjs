@@ -42,6 +42,16 @@ export const FEEDBACK_KINDS = new Set([
   "duplicate",
   "useful",
 ]);
+export const PREFERENCE_FEEDBACK_KINDS = new Set(["should_show", "should_not_show"]);
+export const PREFERENCE_REASON_CODES = new Set([
+  "wrong_topic",
+  "already_known",
+  "duplicate",
+  "stale_or_superseded",
+  "low_signal",
+  "wrong_priority",
+  "other",
+]);
 export const UNIFIED_SESSION_SOURCES = Object.freeze(["x", "linkedin"]);
 
 export class ContractError extends Error {
@@ -362,6 +372,26 @@ export function validateFeedback(input) {
     throw new ContractError("missed feedback requires a note");
   }
   return feedback;
+}
+
+export function validatePreferenceFeedback(input) {
+  assertPlainObject(input, "preference feedback");
+  if (!PREFERENCE_FEEDBACK_KINDS.has(input.kind)) {
+    throw new ContractError(`unsupported preference feedback kind: ${input.kind}`);
+  }
+  const evidenceKey = cleanString(input.evidenceKey, 80);
+  if (!/^(x|linkedin):[a-f0-9]{24}$/.test(evidenceKey)) {
+    throw new ContractError("preference feedback requires a valid evidenceKey");
+  }
+  const reasonCode = cleanString(input.reasonCode, 80) || null;
+  if (reasonCode && !PREFERENCE_REASON_CODES.has(reasonCode)) {
+    throw new ContractError(`unsupported preference reason code: ${reasonCode}`);
+  }
+  const note = cleanString(input.note, 500);
+  if (reasonCode === "other" && !note) {
+    throw new ContractError("other preference feedback requires a note");
+  }
+  return { kind: input.kind, evidenceKey, reasonCode, note };
 }
 
 export function cleanString(value, maxLength) {

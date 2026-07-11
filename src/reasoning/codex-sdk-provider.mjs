@@ -6,6 +6,7 @@ export class CodexSdkReasoningProvider {
 
   constructor(config) {
     this.config = config;
+    this.planningPolicy = config.planningPolicy;
     this.outputSchema = JSON.parse(fs.readFileSync(config.schemaPath, "utf8"));
     this.acquisitionPlanSchema = JSON.parse(
       fs.readFileSync(config.acquisitionPlanSchemaPath, "utf8"),
@@ -20,44 +21,115 @@ export class CodexSdkReasoningProvider {
       buildAcquisitionPlanPrompt(run, observation, knowledgeContext, budget),
       this.acquisitionPlanSchema,
       "Codex acquisition planning timed out",
+      "acquisition_planning",
+      run.id,
+      this.config.planningEffort,
+      [],
+      this.config.planningModel,
     );
   }
 
   async analyze({ run, observation, knowledgeContext }) {
+    const evidence = compactObservation(observation, 40_000);
     return this.#runStructured(
-      buildPrompt(run, observation, knowledgeContext),
+      buildPrompt(run, evidence, knowledgeContext),
       this.outputSchema,
       "Codex reasoning timed out",
+      "candidate_evaluation",
+      run.id,
+      this.config.evaluationEffort,
+      evidence.blocks.map((block) => block.evidenceKey).filter(Boolean),
+      this.config.evaluationModel,
     );
   }
 
-  async #runStructured(prompt, outputSchema, timeoutMessage) {
-    const thread = this.codex.startThread({
+  async #runStructured(
+    prompt,
+    outputSchema,
+    timeoutMessage,
+    phase,
+    runId,
+    reasoningEffort,
+    evaluatedEvidenceKeys = [],
+    model = this.config.model,
+  ) {
+    const startedAt = Date.now();
+    const threadOptions = {
       workingDirectory: this.config.workingDirectory,
       skipGitRepoCheck: true,
       sandboxMode: "read-only",
       approvalPolicy: "never",
       networkAccessEnabled: false,
       webSearchMode: "disabled",
-      modelReasoningEffort: "low",
-    });
+      modelReasoningEffort: reasoningEffort,
+    };
+    if (model) threadOptions.model = model;
+    const thread = this.codex.startThread(threadOptions);
 
-    const turn = await withTimeout(
-      thread.run(prompt, { outputSchema }),
-      this.config.timeoutMs,
-      timeoutMessage,
-    );
-
-    if (!turn.finalResponse) {
-      throw new Error("Codex returned no final response");
+    let turn;
+    try {
+      turn = await withTimeout(
+        thread.run(prompt, { outputSchema }),
+        this.config.timeoutMs,
+        timeoutMessage,
+      );
+    } catch (error) {
+      error.reasoningTelemetry = buildTelemetry({
+        runId,
+        phase,
+        provider: this.name,
+        model,
+        reasoningEffort,
+        durationMs: Date.now() - startedAt,
+        status: "failed",
+        usage: null,
+      });
+      throw error;
     }
 
+    const telemetry = buildTelemetry({
+      runId,
+      phase,
+      provider: this.name,
+      model,
+      reasoningEffort,
+      durationMs: Date.now() - startedAt,
+      status: "completed",
+      usage: turn.usage,
+    });
+    if (!turn.finalResponse) {
+      const error = new Error("Codex returned no final response");
+      error.reasoningTelemetry = { ...telemetry, status: "failed" };
+      throw error;
+    }
     try {
-      return JSON.parse(turn.finalResponse);
+      return {
+        output: JSON.parse(turn.finalResponse),
+        telemetry,
+        evaluatedEvidenceKeys,
+      };
     } catch (error) {
-      throw new Error(`Codex returned invalid JSON: ${error.message}`);
+      const invalid = new Error(`Codex returned invalid JSON: ${error.message}`);
+      invalid.reasoningTelemetry = { ...telemetry, status: "failed" };
+      throw invalid;
     }
   }
+}
+
+function buildTelemetry({ runId, phase, provider, model, reasoningEffort, durationMs, status, usage }) {
+  return {
+    runId,
+    phase,
+    provider,
+    model: model ?? null,
+    reasoningEffort: reasoningEffort ?? null,
+    durationMs,
+    status,
+    inputTokens: usage?.input_tokens ?? null,
+    cachedInputTokens: usage?.cached_input_tokens ?? null,
+    outputTokens: usage?.output_tokens ?? null,
+    reasoningOutputTokens: usage?.reasoning_output_tokens ?? null,
+  };
 }
 
 function buildAcquisitionPlanPrompt(run, observation, knowledgeContext, budget) {
@@ -92,8 +164,7 @@ ${JSON.stringify(evidence, null, 2)}
 </browser_observation>`;
 }
 
-function buildPrompt(run, observation, knowledgeContext) {
-  const evidence = compactObservation(observation, 40_000);
+function buildPrompt(run, evidence, knowledgeContext) {
   return `You are the reasoning provider for AkuBrowser Feasibility Gate 0.
 
 SECURITY BOUNDARY:

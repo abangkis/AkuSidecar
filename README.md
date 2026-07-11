@@ -29,6 +29,20 @@ npm start
 
 ## Configuration
 
+Codex reasoning can be tuned without changing source code:
+
+- `AKU_REASONING_PROVIDER=codex-sdk`
+- `AKU_CODEX_MODEL=<model id>`; omit it to inherit the Codex CLI default
+- `AKU_CODEX_PLANNING_MODEL=<model id>`; overrides only acquisition planning
+- `AKU_CODEX_EVALUATION_MODEL=<model id>`; overrides only candidate evaluation
+- `AKU_CODEX_PLANNING_EFFORT=minimal|low|medium|high|xhigh`
+- `AKU_CODEX_EVALUATION_EFFORT=minimal|low|medium|high|xhigh`
+- `AKU_CODEX_TIMEOUT_MS=<milliseconds>`
+
+Committed defaults live in `config/reasoning.json`: Luna High for the narrow acquisition-planning fallback, Terra High for candidate evaluation, and `deterministic_sparse_gap` so planning tokens are spent only when one or two unseen candidates and an exhausted movement budget make one anchored follow-up plausible. `AKU_CODEX_MODEL` remains a convenient shared override; phase-specific environment variables take precedence.
+
+The effective configured model and evaluation effort appear in the AkuBrowser header. Provider-reported input, cached-input, output, and reasoning-output tokens are stored per reasoning invocation for local performance and economic analysis. Token telemetry is not presented as a monetary cost unless a separate pricing contract is configured.
+
 - `AKU_BROWSER_PORT` defaults to `47821`.
 - `AKU_REASONING_PROVIDER` is `deterministic` or `codex-sdk`.
 - `AKU_DATABASE_PATH` overrides the local SQLite path.

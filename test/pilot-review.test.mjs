@@ -102,6 +102,18 @@ test("zero-evidence completed history is not treated as a reviewable empty resul
   assert.equal(review.totalMatching, 0);
 });
 
+test("pilot review preserves unified-session grouping metadata", () => {
+  const review = buildPilotReview([
+    {
+      ...runFixture({ id: "grouped-x" }),
+      unifiedSessionId: "unified-session-1",
+      unifiedSessionCreatedAt: "2026-07-11T09:00:00.000Z",
+    },
+  ]);
+  assert.equal(review.runs[0].unifiedSessionId, "unified-session-1");
+  assert.equal(review.runs[0].unifiedSessionCreatedAt, "2026-07-11T09:00:00.000Z");
+});
+
 function runFixture({
   id,
   source = "x",

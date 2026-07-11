@@ -139,6 +139,14 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     sendJson(response, 200, {
       status: "ok",
       provider: engine.reasoningProvider.name,
+      reasoning: {
+        model: config.reasoning?.evaluationModel ?? config.reasoning?.model ?? null,
+        planningModel: config.reasoning?.planningModel ?? config.reasoning?.model ?? null,
+        evaluationModel: config.reasoning?.evaluationModel ?? config.reasoning?.model ?? null,
+        planningEffort: config.reasoning?.planningEffort ?? null,
+        evaluationEffort: config.reasoning?.evaluationEffort ?? null,
+        planningPolicy: config.reasoning?.planningPolicy ?? null,
+      },
       time: new Date().toISOString(),
     });
     return;
@@ -149,6 +157,14 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
       version: "0.5.0",
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
+      reasoning: {
+        model: config.reasoning?.evaluationModel ?? config.reasoning?.model ?? null,
+        planningModel: config.reasoning?.planningModel ?? config.reasoning?.model ?? null,
+        evaluationModel: config.reasoning?.evaluationModel ?? config.reasoning?.model ?? null,
+        planningEffort: config.reasoning?.planningEffort ?? null,
+        evaluationEffort: config.reasoning?.evaluationEffort ?? null,
+        planningPolicy: config.reasoning?.planningPolicy ?? null,
+      },
       bridgeToken,
       limits: config.limits,
       supportedModes: ["catch_up", "manual_live"],
@@ -181,6 +197,11 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
         verdict: url.searchParams.get("verdict") ?? "all",
       }),
     });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/preferences/profile") {
+    sendJson(response, 200, { profile: engine.getPreferenceProfile() });
     return;
   }
 
@@ -273,6 +294,20 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, {
       run: engine.addFeedback(decodeURIComponent(feedbackMatch[1]), body),
+    });
+    return;
+  }
+
+  const preferenceFeedbackMatch = url.pathname.match(
+    /^\/api\/runs\/([^/]+)\/preference-feedback$/,
+  );
+  if (request.method === "POST" && preferenceFeedbackMatch) {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    sendJson(response, 201, {
+      run: engine.addPreferenceFeedback(
+        decodeURIComponent(preferenceFeedbackMatch[1]),
+        body,
+      ),
     });
     return;
   }

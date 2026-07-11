@@ -33,9 +33,17 @@ try {
   assert.match(html, /<title>AkuBrowser<\/title>/);
   assert.match(html, /UNIFIED KNOWLEDGE CONTINUITY/);
   assert.match(html, /Run unified brief/);
-  assert.match(html, /Pilot Review/);
+  assert.match(html, /Review Inbox/);
+  assert.match(html, /Reasoning config/);
+  assert.equal(bootstrap.reasoning.planningModel, "gpt-5.6-luna");
+  assert.equal(bootstrap.reasoning.evaluationModel, "gpt-5.6-terra");
+  assert.equal(bootstrap.reasoning.planningEffort, "high");
+  assert.equal(bootstrap.reasoning.evaluationEffort, "high");
+  assert.equal(bootstrap.reasoning.planningPolicy, "deterministic_sparse_gap");
   const review = await (await fetch(`${origin}/api/pilot/review`)).json();
   assert.equal(review.review.summary.totalRuns, 0);
+  const preference = await (await fetch(`${origin}/api/preferences/profile`)).json();
+  assert.equal(preference.profile.status, "collecting");
   console.log(JSON.stringify({ status: "ok", provider: bootstrap.provider, bridgeContractVersion: bootstrap.bridgeContractVersion }));
 } finally {
   await app.stop();

@@ -1,0 +1,12 @@
+{
+  "provider": "codex-sdk",
+  "acquisitionPlanning": {
+    "model": "gpt-5.6-luna",
+    "effort": "high",
+    "policy": "deterministic_sparse_gap"
+  },
+  "candidateEvaluation": {
+    "model": "gpt-5.6-terra",
+    "effort": "high"
+  }
+}

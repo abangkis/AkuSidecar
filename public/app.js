@@ -11,6 +11,7 @@ const state = {
 const elements = {
   sidecarStatus: document.querySelector("#sidecar-status"),
   bridgeStatus: document.querySelector("#bridge-status"),
+  reasoningStatus: document.querySelector("#reasoning-status"),
   providerNotice: document.querySelector("#provider-notice"),
   sessionViewButton: document.querySelector("#session-view-button"),
   reviewViewButton: document.querySelector("#review-view-button"),
@@ -110,6 +111,12 @@ async function bootstrap() {
   try {
     state.bootstrap = await api("/api/bootstrap");
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
+    const reasoning = state.bootstrap.reasoning ?? {};
+    setStatus(
+      elements.reasoningStatus,
+      `${friendlyModel(reasoning.evaluationModel || reasoning.model)} · eval ${reasoning.evaluationEffort || "default"}`,
+      "neutral",
+    );
     if (state.bootstrap.provider !== "codex-sdk") {
       elements.providerNotice.textContent =
         "Development fallback active. This run can verify plumbing, but its ranking must not be used to evaluate product quality.";
@@ -122,6 +129,8 @@ async function bootstrap() {
       showUnifiedProcessing(session);
       dispatchUnifiedSession(session);
       schedulePoll();
+    } else {
+      await showReviewView();
     }
     setTimeout(() => {
       if (!state.bridgeReady) {
@@ -784,6 +793,38 @@ function buildResultItem(run, item, onSaved = () => {}) {
     });
     feedback.append(button);
   }
+  const candidate = (run.candidateEvaluations ?? []).find(
+    (entry) => entry.evidenceKey === item.evidenceKey,
+  );
+  if (candidate) {
+    const hiddenSignal = document.createElement("button");
+    hiddenSignal.type = "button";
+    hiddenSignal.className = "feedback-button";
+    hiddenSignal.textContent = "Should not show";
+    const existing = [...(run.preferenceFeedback ?? [])]
+      .reverse()
+      .find((entry) => entry.evidenceKey === item.evidenceKey);
+    if (existing?.kind === "should_not_show") {
+      hiddenSignal.classList.add("selected");
+      hiddenSignal.disabled = true;
+    }
+    hiddenSignal.addEventListener("click", async () => {
+      const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "should_not_show",
+          evidenceKey: item.evidenceKey,
+          reasonCode: null,
+          note: "",
+        }),
+      });
+      run.preferenceFeedback = response.run.preferenceFeedback;
+      hiddenSignal.classList.add("selected");
+      hiddenSignal.disabled = true;
+      await onSaved();
+    });
+    feedback.append(hiddenSignal);
+  }
   actions.append(link, feedback);
   article.append(header, title, why, provenance, actions);
   return article;
@@ -840,8 +881,11 @@ async function loadPilotReview() {
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
-    const { review } = await api(`/api/pilot/review?${params}`);
-    renderPilotMetrics(review.summary);
+    const [{ review }, { profile }] = await Promise.all([
+      api(`/api/pilot/review?${params}`),
+      api("/api/preferences/profile"),
+    ]);
+    renderPilotMetrics(review.summary, review.runs);
     elements.reviewMeta.textContent = [
       `${review.totalMatching} matching run(s)`,
       `latest ${review.runs.length} shown`,
@@ -849,12 +893,11 @@ async function loadPilotReview() {
         ? `pilot cohort since ${formatDate(review.window.pilotStartedAt)}`
         : null,
       review.window?.truncated ? "metrics use the latest 500 runs" : null,
+      `preference ${profile.status} · ${profile.feedbackEventCount} correction(s)`,
     ]
       .filter(Boolean)
       .join(" · ");
-    elements.reviewRuns.replaceChildren(
-      ...review.runs.map((run) => buildPilotRunCard(run)),
-    );
+    elements.reviewRuns.replaceChildren(...buildPilotRunGroups(review.runs));
     if (review.runs.length === 0) {
       const empty = document.createElement("p");
       empty.className = "review-empty";
@@ -868,7 +911,10 @@ async function loadPilotReview() {
   }
 }
 
-function renderPilotMetrics(summary) {
+function renderPilotMetrics(summary, runs = []) {
+  const latestEvaluation = runs
+    .flatMap((run) => run.reasoningInvocations ?? [])
+    .find((entry) => entry.phase === "candidate_evaluation");
   const metrics = [
     ["Completed", `${summary.completedRuns} / ${summary.totalRuns}`],
     [
@@ -885,6 +931,14 @@ function renderPilotMetrics(summary) {
     ],
     ["Median duration", formatDuration(summary.medianDurationMs)],
     ["Failed runs", String(summary.failedRuns)],
+    ["Preference corrections", String(summary.preferenceCorrections ?? 0)],
+    ["Observed tokens", formatTokenUsage(summary.tokenUsage)],
+    [
+      "Reasoning setup",
+      latestEvaluation
+        ? `${friendlyModel(latestEvaluation.model)} · ${latestEvaluation.reasoningEffort || "default"}`
+        : "Not recorded",
+    ],
   ];
   elements.reviewMetrics.replaceChildren(
     ...metrics.map(([label, value]) => {
@@ -899,9 +953,45 @@ function renderPilotMetrics(summary) {
   );
 }
 
-function buildPilotRunCard(run) {
-  const card = document.createElement("article");
+function buildPilotRunGroups(runs) {
+  const groups = [];
+  const byKey = new Map();
+  for (const run of runs) {
+    const key = run.unifiedSessionId || `single:${run.id}`;
+    if (!byKey.has(key)) {
+      const group = { key, unified: Boolean(run.unifiedSessionId), runs: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    byKey.get(key).runs.push(run);
+  }
+  return groups.map((group, groupIndex) => {
+    const section = document.createElement("section");
+    section.className = `unified-review-group${group.unified ? " is-unified" : ""}`;
+    const heading = document.createElement("div");
+    heading.className = "unified-review-heading";
+    const title = document.createElement("h3");
+    title.textContent = group.unified ? "Unified session · X + LinkedIn" : "Legacy single-source run";
+    const meta = document.createElement("p");
+    const reference = group.runs[0];
+    meta.textContent = [
+      formatDate(reference.unifiedSessionCreatedAt ?? reference.createdAt),
+      group.unified ? `${group.runs.length}/2 source runs` : null,
+    ].filter(Boolean).join(" · ");
+    heading.append(title, meta);
+    section.append(heading);
+    for (const run of group.runs) {
+      section.append(buildPilotRunCard(run, groupIndex === 0));
+    }
+    return section;
+  });
+}
+
+function buildPilotRunCard(run, expanded = false) {
+  const card = document.createElement("details");
   card.className = "pilot-run-card";
+  card.open = expanded;
+  const cardSummary = document.createElement("summary");
   const header = document.createElement("div");
   header.className = "pilot-run-header";
   const identity = document.createElement("div");
@@ -913,7 +1003,19 @@ function buildPilotRunCard(run) {
   const status = document.createElement("span");
   status.className = `status-pill ${run.status === "completed" ? "status-ok" : "status-error"}`;
   status.textContent = humanize(run.status);
-  header.append(identity, status);
+  const badges = document.createElement("div");
+  badges.className = "pilot-run-badges";
+  const evaluationInvocation = [...(run.reasoningInvocations ?? [])]
+    .reverse()
+    .find((entry) => entry.phase === "candidate_evaluation");
+  if (evaluationInvocation) {
+    const reasoning = document.createElement("span");
+    reasoning.className = "status-pill status-neutral";
+    reasoning.textContent = `${friendlyModel(evaluationInvocation.model)} · ${evaluationInvocation.reasoningEffort || "default"}`;
+    badges.append(reasoning);
+  }
+  badges.append(status);
+  header.append(identity, badges);
 
   const intent = document.createElement("p");
   intent.className = "pilot-run-intent";
@@ -937,7 +1039,8 @@ function buildPilotRunCard(run) {
   ]
     .filter(Boolean)
     .join(" · ");
-  card.append(header, intent, summary, stats);
+  cardSummary.append(header);
+  card.append(cardSummary, intent, summary, stats);
 
   if (run.status === "completed" && (run.result?.items?.length ?? 0) === 0) {
     card.append(buildEmptyResultFeedback(run, loadPilotReview));
@@ -954,7 +1057,139 @@ function buildPilotRunCard(run) {
     details.append(label, items);
     card.append(details);
   }
+  if ((run.candidateEvaluations?.length ?? 0) > 0) {
+    const candidates = document.createElement("section");
+    candidates.className = "candidate-review-list";
+    const heading = document.createElement("h4");
+    heading.textContent = `${run.candidateEvaluations.length} evaluated candidate(s)`;
+    candidates.append(heading);
+    for (const candidate of run.candidateEvaluations) {
+      candidates.append(buildCandidateReview(run, candidate));
+    }
+    card.append(candidates);
+  } else if (run.status === "completed") {
+    const unavailable = document.createElement("p");
+    unavailable.className = "review-empty";
+    unavailable.textContent = run.reasoningInvocations?.length
+      ? "No new candidate required model evaluation in this bounded run."
+      : "Candidate decision history is unavailable for runs created before Learning Loop v0.";
+    card.append(unavailable);
+  }
+  if ((run.reasoningInvocations?.length ?? 0) > 0) {
+    const telemetry = document.createElement("p");
+    telemetry.className = "pilot-run-stats";
+    telemetry.textContent = summarizeRunTelemetry(run.reasoningInvocations);
+    card.append(telemetry);
+  }
   return card;
+}
+
+function buildCandidateReview(run, candidate) {
+  const article = document.createElement("article");
+  article.className = "candidate-review-item";
+  const meta = document.createElement("p");
+  meta.className = "pilot-run-stats";
+  meta.textContent = [
+    candidate.decision,
+    candidate.reasonCode,
+    candidate.author,
+    Number.isInteger(candidate.feedPosition) ? `feed #${candidate.feedPosition}` : null,
+  ].filter(Boolean).join(" · ");
+  const content = buildCandidateContent(candidate);
+  const actions = document.createElement("div");
+  actions.className = "result-actions";
+  const link = document.createElement("a");
+  link.className = "source-link";
+  link.href = candidate.sourceUrl;
+  link.target = "_blank";
+  link.rel = "noreferrer noopener";
+  link.textContent = "Open source";
+  const latest = [...(run.preferenceFeedback ?? [])]
+    .reverse()
+    .find((entry) => entry.evidenceKey === candidate.evidenceKey);
+  const correction = document.createElement("button");
+  correction.type = "button";
+  correction.className = "feedback-button";
+  correction.textContent = candidate.decision === "selected" ? "Should not show" : "Should show";
+  const kind = candidate.decision === "selected" ? "should_not_show" : "should_show";
+  if (latest?.kind === kind) {
+    correction.classList.add("selected");
+    correction.disabled = true;
+  }
+  correction.addEventListener("click", async () => {
+    const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
+      method: "POST",
+      body: JSON.stringify({
+        kind,
+        evidenceKey: candidate.evidenceKey,
+        reasonCode: null,
+        note: "",
+      }),
+    });
+    run.preferenceFeedback = response.run.preferenceFeedback;
+    correction.classList.add("selected");
+    correction.disabled = true;
+  });
+  actions.append(link, correction);
+  article.append(meta, content, actions);
+  return article;
+}
+
+function buildCandidateContent(candidate) {
+  const container = document.createElement("div");
+  container.className = "candidate-content";
+  let text = candidate.text.replace(/^Feed post\s+/i, "").trim();
+  if (candidate.source === "linkedin") {
+    const authorEnd = text.indexOf(" • ");
+    if (authorEnd > 0) {
+      const author = document.createElement("strong");
+      author.textContent = text.slice(0, authorEnd).trim();
+      container.append(author);
+    }
+    const bodyMatch = text.match(/(?:\b\d+[mhdw]\b|Promoted by [^•]+)\s*•\s*/i);
+    if (bodyMatch?.index !== undefined) {
+      const headerEnd = bodyMatch.index + bodyMatch[0].length;
+      const context = text.slice(authorEnd > 0 ? authorEnd + 3 : 0, headerEnd).trim();
+      if (context) {
+        const contextLine = document.createElement("span");
+        contextLine.className = "candidate-context";
+        contextLine.textContent = context;
+        container.append(contextLine);
+      }
+      text = text.slice(headerEnd).trim();
+    }
+  } else if (candidate.author && text.startsWith(candidate.author)) {
+    text = text.slice(candidate.author.length).trim();
+  }
+  const paragraph = document.createElement("p");
+  paragraph.textContent = text;
+  container.append(paragraph);
+  return container;
+}
+
+function formatTokenUsage(usage) {
+  if (!usage || usage.inputTokens === null) return "Not reported";
+  return `${usage.inputTokens.toLocaleString()} in · ${(usage.outputTokens ?? 0).toLocaleString()} out`;
+}
+
+function friendlyModel(model) {
+  return {
+    "gpt-5.6-sol": "GPT-5.6 Sol",
+    "gpt-5.6-terra": "GPT-5.6 Terra",
+    "gpt-5.6-luna": "GPT-5.6 Luna",
+  }[model] || model || "Codex default";
+}
+
+function summarizeRunTelemetry(invocations) {
+  const input = invocations.map((entry) => entry.inputTokens).filter(Number.isFinite);
+  const output = invocations.map((entry) => entry.outputTokens).filter(Number.isFinite);
+  const models = [...new Set(invocations.map((entry) => friendlyModel(entry.model)))];
+  const efforts = [...new Set(invocations.map((entry) => entry.reasoningEffort).filter(Boolean))];
+  return [
+    `Reasoning ${models.join(", ")} · ${efforts.join(", ") || "default effort"}`,
+    input.length ? `${input.reduce((sum, value) => sum + value, 0).toLocaleString()} input tokens` : "usage unavailable",
+    output.length ? `${output.reduce((sum, value) => sum + value, 0).toLocaleString()} output tokens` : null,
+  ].filter(Boolean).join(" · ");
 }
 
 function provenanceLinkLabel(sourceUrlKind) {

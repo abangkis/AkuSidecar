@@ -44,8 +44,7 @@ const observation = validateBridgeObservation({
     },
 }, config.limits);
 
-const plan = validateAcquisitionPlan(
-  await provider.planAcquisition({
+const planInvocation = await provider.planAcquisition({
     run,
     observation,
     budget: {
@@ -55,14 +54,14 @@ const plan = validateAcquisitionPlan(
       sourceLocked: "x",
       continuationRequiresAnchor: true,
     },
-  }),
-);
-const result = await provider.analyze({
+  });
+const plan = validateAcquisitionPlan(planInvocation.output);
+const resultInvocation = await provider.analyze({
   run,
   observation,
 });
 
-const validated = validateReasoningResult(result, 1);
+const validated = validateReasoningResult(resultInvocation.output, 1);
 console.log(
   JSON.stringify(
     {
@@ -74,6 +73,10 @@ console.log(
       provenanceKinds: validated.items.map((item) => item.sourceUrlKind),
       knowledgeDeltas: validated.items.map((item) => item.knowledgeDelta),
       schemaValid: true,
+      model: config.reasoning.model ?? "Codex CLI default",
+      planningEffort: config.reasoning.planningEffort,
+      evaluationEffort: config.reasoning.evaluationEffort,
+      usage: resultInvocation.telemetry,
     },
     null,
     2,

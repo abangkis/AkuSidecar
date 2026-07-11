@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "runId": { "type": "string" },
+    "phase": { "type": "string", "enum": ["acquisition_planning", "candidate_evaluation", "preference_synthesis"] },
+    "provider": { "type": "string" },
+    "model": { "type": ["string", "null"] },
+    "reasoningEffort": { "type": ["string", "null"], "enum": [null, "minimal", "low", "medium", "high", "xhigh"] },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "status": { "type": "string", "enum": ["completed", "failed"] },
+    "inputTokens": { "type": ["integer", "null"], "minimum": 0 },
+    "cachedInputTokens": { "type": ["integer", "null"], "minimum": 0 },
+    "outputTokens": { "type": ["integer", "null"], "minimum": 0 },
+    "reasoningOutputTokens": { "type": ["integer", "null"], "minimum": 0 }
+  },
+  "required": ["runId", "phase", "provider", "model", "reasoningEffort", "durationMs", "status", "inputTokens", "cachedInputTokens", "outputTokens", "reasoningOutputTokens"],
+  "additionalProperties": false
+}

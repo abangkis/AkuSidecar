@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "minimum": 0 },
+    "status": { "type": "string", "enum": ["collecting", "active"] },
+    "feedbackEventCount": { "type": "integer", "minimum": 0 },
+    "positiveCorrectionCount": { "type": "integer", "minimum": 0 },
+    "negativeCorrectionCount": { "type": "integer", "minimum": 0 },
+    "updatedAt": { "type": ["string", "null"] }
+  },
+  "required": ["version", "status", "feedbackEventCount", "positiveCorrectionCount", "negativeCorrectionCount", "updatedAt"],
+  "additionalProperties": false
+}

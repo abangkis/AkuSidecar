@@ -77,6 +77,11 @@ export function summarizePilotRuns(runs) {
     positiveItemRate: ratio(positiveItems.size, reviewedItems.size),
     wrongLaneFeedback: feedback.filter((entry) => entry.kind === "wrong_lane").length,
     duplicateFeedback: feedback.filter((entry) => entry.kind === "duplicate").length,
+    preferenceCorrections: runs.reduce(
+      (sum, run) => sum + (run.preferenceFeedback?.length ?? 0),
+      0,
+    ),
+    tokenUsage: summarizeTokenUsage(runs),
     missRate: ratio(missed.size, emptyVerdictCount),
     duplicateEscapeRate: ratio(
       new Set(
@@ -157,6 +162,8 @@ function toReviewRun(run) {
     intent: run.intent,
     status: run.status,
     provider: run.provider,
+    unifiedSessionId: run.unifiedSessionId ?? null,
+    unifiedSessionCreatedAt: run.unifiedSessionCreatedAt ?? null,
     createdAt: run.createdAt,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
@@ -165,8 +172,27 @@ function toReviewRun(run) {
     result: run.result,
     error: run.error,
     feedback: validFeedback(run),
+    candidateEvaluations: run.candidateEvaluations ?? [],
+    preferenceFeedback: run.preferenceFeedback ?? [],
+    reasoningInvocations: run.reasoningInvocations ?? [],
     reviewed: isReviewed(run),
   };
+}
+
+function summarizeTokenUsage(runs) {
+  const invocations = runs.flatMap((run) => run.reasoningInvocations ?? []);
+  return {
+    invocations: invocations.length,
+    inputTokens: sumReported(invocations, "inputTokens"),
+    cachedInputTokens: sumReported(invocations, "cachedInputTokens"),
+    outputTokens: sumReported(invocations, "outputTokens"),
+    reasoningOutputTokens: sumReported(invocations, "reasoningOutputTokens"),
+  };
+}
+
+function sumReported(entries, field) {
+  const reported = entries.map((entry) => entry[field]).filter(Number.isFinite);
+  return reported.length > 0 ? reported.reduce((sum, value) => sum + value, 0) : null;
 }
 
 function durationMs(run) {
