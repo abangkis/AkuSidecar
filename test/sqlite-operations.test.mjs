@@ -15,6 +15,7 @@ test("SQLite health and backup validate a consistent temporary database", (conte
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-sqlite-ops-"));
   const databasePath = path.join(directory, "state.db");
   const backupPath = path.join(directory, "backup", "state-backup.db");
+  const quotedBackupPath = path.join(directory, "backup", "state's-backup.db");
   const store = new SqliteStateStore(databasePath);
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   store.setSetting("fixture", "value");
@@ -29,6 +30,7 @@ test("SQLite health and backup validate a consistent temporary database", (conte
   assert.equal(backup.health.status, "healthy");
   assert.equal(fs.existsSync(backupPath), true);
   assert.throws(() => createSqliteBackup(databasePath, backupPath), /already exists/);
+  assert.equal(createSqliteBackup(databasePath, quotedBackupPath).health.status, "healthy");
 });
 
 test("pilot export excludes raw observations and retention stays preview-only", () => {

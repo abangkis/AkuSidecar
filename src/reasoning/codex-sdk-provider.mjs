@@ -132,7 +132,7 @@ function buildTelemetry({ runId, phase, provider, model, reasoningEffort, durati
   };
 }
 
-function buildAcquisitionPlanPrompt(run, observation, knowledgeContext, budget) {
+export function buildAcquisitionPlanPrompt(run, observation, knowledgeContext, budget) {
   const evidence = compactObservation(observation, 24_000);
   return `You are the bounded acquisition planner for AkuBrowser Gate 0B.3.
 
@@ -164,7 +164,7 @@ ${JSON.stringify(evidence, null, 2)}
 </browser_observation>`;
 }
 
-function buildPrompt(run, evidence, knowledgeContext) {
+export function buildPrompt(run, evidence, knowledgeContext) {
   return `You are the reasoning provider for AkuBrowser Feasibility Gate 0.
 
 SECURITY BOUNDARY:
@@ -224,7 +224,7 @@ function compactKnowledgeContext(value) {
   };
 }
 
-function compactObservation(observation, maxCharacters) {
+export function compactObservation(observation, maxCharacters) {
   const compact = {
     source: observation.source,
     pageUrl: observation.pageUrl,

@@ -59,9 +59,8 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   const shadowComparison = await (
     await fetch(`${origin}/api/preferences/shadow-comparison`)
   ).json();
-  const databaseHealth = await (
-    await fetch(`${origin}/api/operations/database/health`)
-  ).json();
+  const databaseHealthResponse = await fetch(`${origin}/api/operations/database/health`);
+  const databaseHealth = await databaseHealthResponse.json();
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
@@ -102,4 +101,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(shadowComparison.comparison.liveInfluence, false);
   assert.equal(databaseHealth.database.status, "healthy");
   assert.equal(path.basename(databaseHealth.database.databasePath), "state.db");
+  assert.equal(JSON.stringify(databaseHealth).includes(directory), false);
+  assert.equal(JSON.stringify(databaseHealth).includes("bridge_token"), false);
+  assert.equal(databaseHealthResponse.headers.has("access-control-allow-origin"), false);
 });
