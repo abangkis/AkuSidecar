@@ -36,6 +36,11 @@ test("Codex model and phase effort are explicit configurable runtime metadata", 
   assert.equal(config.reasoning.evaluationModel, "fixture-model");
   assert.equal(config.reasoning.planningEffort, "minimal");
   assert.equal(config.reasoning.evaluationEffort, "medium");
+  assert.equal(config.limits.missingSourceTabPolicy, "open_missing_tab");
+  assert.equal(
+    loadConfig({ AKU_MISSING_SOURCE_TAB_POLICY: "fail_fast" }).limits.missingSourceTabPolicy,
+    "fail_fast",
+  );
 });
 
 test("deterministic planning gate spends model tokens only on a sparse movable gap", () => {

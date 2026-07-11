@@ -41,7 +41,8 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     pendingContentSettleMs: limits.pendingContentSettleMs,
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
     maxBlockCharacters: limits.maxBlockCharacters,
-    openIfMissing: false,
+    openIfMissing:
+      acquisitionRound === 1 && limits.missingSourceTabPolicy !== "fail_fast",
     restoreScroll: true,
     browserAdapter: NATIVE_BROWSER_ADAPTER,
     acquisitionRound,

@@ -4,6 +4,11 @@ import path from "node:path";
 import { URL } from "node:url";
 import { ContractError } from "../core/contracts.mjs";
 import { JobEngine } from "../core/job-engine.mjs";
+import {
+  applyPersistedConfiguration,
+  configurationView,
+  updateDashboardConfiguration,
+} from "../configuration/runtime-configuration.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -17,6 +22,7 @@ const MIME_TYPES = new Map([
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
 
 export function createAkuBrowserApp({ config, store, reasoningProvider, logger = console }) {
+  applyPersistedConfiguration(config, store);
   const engine = new JobEngine({
     store,
     reasoningProvider,
@@ -135,6 +141,18 @@ function serveFrontend(middleware, request, response, logger) {
 }
 
 async function handleApi({ request, response, url, engine, store, bridgeToken, config }) {
+  if (request.method === "GET" && url.pathname === "/api/configuration/runtime") {
+    sendJson(response, 200, { configuration: configurationView(config, store) });
+    return;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/api/configuration/runtime") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    updateDashboardConfiguration(config, store, body);
+    sendJson(response, 200, { configuration: configurationView(config, store) });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, {
       status: "ok",
@@ -359,6 +377,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
 
   sendJson(response, 404, { error: "NotFound", message: "Route not found" });
 }
+
 
 function requireBridgeIdentity(request, store) {
   if (!store.matchesBridgeToken(request.headers["x-aku-bridge-token"])) {

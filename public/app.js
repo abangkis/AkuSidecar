@@ -6,6 +6,7 @@ const state = {
   pollTimer: null,
   dispatchedRounds: new Set(),
   currentView: "session",
+  runtimeConfiguration: null,
 };
 
 const elements = {
@@ -15,6 +16,21 @@ const elements = {
   providerNotice: document.querySelector("#provider-notice"),
   sessionViewButton: document.querySelector("#session-view-button"),
   reviewViewButton: document.querySelector("#review-view-button"),
+  settingsViewButton: document.querySelector("#settings-view-button"),
+  settingsPanel: document.querySelector("#settings-panel"),
+  runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
+  missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
+  missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
+  reasoningProvider: document.querySelector("#reasoning-provider"),
+  planningPolicy: document.querySelector("#planning-policy"),
+  evaluationModel: document.querySelector("#evaluation-model"),
+  evaluationEffort: document.querySelector("#evaluation-effort"),
+  planningModel: document.querySelector("#planning-model"),
+  planningEffort: document.querySelector("#planning-effort"),
+  reasoningTimeout: document.querySelector("#reasoning-timeout"),
+  startupSettingsDetail: document.querySelector("#startup-settings-detail"),
+  runtimeSettingsStatus: document.querySelector("#runtime-settings-status"),
+  saveRuntimeSettings: document.querySelector("#save-runtime-settings"),
   reviewPanel: document.querySelector("#review-panel"),
   reviewRefreshButton: document.querySelector("#review-refresh-button"),
   reviewMetrics: document.querySelector("#review-metrics"),
@@ -98,6 +114,8 @@ elements.doneButton.addEventListener("click", resetToSetup);
 elements.retryButton.addEventListener("click", resetToSetup);
 elements.sessionViewButton.addEventListener("click", showSessionView);
 elements.reviewViewButton.addEventListener("click", showReviewView);
+elements.settingsViewButton.addEventListener("click", showSettingsView);
+elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.reviewSourceFilter.addEventListener("change", loadPilotReview);
 elements.reviewVerdictFilter.addEventListener("change", loadPilotReview);
@@ -209,7 +227,9 @@ function updateScopeControls() {
   elements.singleSourceField.classList.toggle("hidden", unified);
   elements.runButton.textContent = unified ? "Run unified brief" : "Run advanced source";
   elements.preflightCopy.textContent = unified
-    ? "Keep signed-in X and LinkedIn feed tabs open. AkuBrowser checks them sequentially and never likes, replies, follows, or posts."
+    ? state.bootstrap?.limits?.missingSourceTabPolicy === "fail_fast"
+      ? "Keep signed-in X and LinkedIn feed tabs open. Missing source tabs fail fast under the active policy."
+      : "AkuBrowser reuses eligible source tabs or opens one inactive canonical feed tab when missing. It never likes, replies, follows, or posts."
     : "Advanced mode keeps one source run visible for adapter tracing and controlled pilot work.";
 }
 
@@ -838,7 +858,8 @@ function showSessionView() {
   state.currentView = "session";
   elements.sessionViewButton.classList.add("selected");
   elements.reviewViewButton.classList.remove("selected");
-  hide(elements.reviewPanel);
+  elements.settingsViewButton.classList.remove("selected");
+  hide(elements.reviewPanel, elements.settingsPanel);
   if (state.currentSession && isUnifiedTerminal(state.currentSession.status)) {
     if (["completed", "partial"].includes(state.currentSession.status)) {
       showUnifiedResult(state.currentSession);
@@ -866,14 +887,114 @@ async function showReviewView() {
   state.currentView = "review";
   elements.reviewViewButton.classList.add("selected");
   elements.sessionViewButton.classList.remove("selected");
+  elements.settingsViewButton.classList.remove("selected");
   hide(
     elements.controlPanel,
     elements.processingPanel,
     elements.resultPanel,
     elements.failurePanel,
+    elements.settingsPanel,
   );
   show(elements.reviewPanel);
   await loadPilotReview();
+}
+
+async function showSettingsView() {
+  state.currentView = "settings";
+  elements.settingsViewButton.classList.add("selected");
+  elements.sessionViewButton.classList.remove("selected");
+  elements.reviewViewButton.classList.remove("selected");
+  hide(
+    elements.controlPanel,
+    elements.processingPanel,
+    elements.resultPanel,
+    elements.failurePanel,
+    elements.reviewPanel,
+  );
+  show(elements.settingsPanel);
+  await loadRuntimeSettings();
+}
+
+async function loadRuntimeSettings() {
+  elements.runtimeSettingsStatus.textContent = "Loading…";
+  try {
+    const { configuration } = await api("/api/configuration/runtime");
+    renderRuntimeSettings(configuration);
+    elements.runtimeSettingsStatus.textContent = "";
+  } catch (error) {
+    elements.runtimeSettingsStatus.textContent = error.message;
+  }
+}
+
+function renderRuntimeSettings(configuration) {
+  state.runtimeConfiguration = configuration;
+  const setting = configuration.missingSourceTabPolicy;
+  elements.missingSourceTabPolicy.value = setting.persistedValue ?? setting.effectiveValue;
+  const overridden = setting.source === "environment";
+  elements.missingSourceTabPolicy.disabled = overridden;
+  elements.missingSourceTabDetail.textContent = overridden
+    ? `Effective: ${humanize(setting.effectiveValue)} · environment override; dashboard editing is disabled.`
+    : `Effective: ${humanize(setting.effectiveValue)} · source: ${setting.source} · applies to the next run.`;
+  const controls = {
+    reasoningProvider: elements.reasoningProvider,
+    planningPolicy: elements.planningPolicy,
+    evaluationModel: elements.evaluationModel,
+    evaluationEffort: elements.evaluationEffort,
+    planningModel: elements.planningModel,
+    planningEffort: elements.planningEffort,
+    timeoutMs: elements.reasoningTimeout,
+  };
+  for (const [name, control] of Object.entries(controls)) {
+    const entry = configuration[name];
+    control.value = entry.persistedValue ?? entry.effectiveValue ?? "";
+    control.disabled = entry.source === "environment";
+  }
+  elements.saveRuntimeSettings.disabled = Object.values(configuration)
+    .every((entry) => entry.source === "environment");
+  const restartNames = Object.entries(configuration)
+    .filter(([, entry]) => entry.restartRequired)
+    .map(([name]) => humanize(name));
+  const lockedNames = Object.entries(configuration)
+    .filter(([, entry]) => entry.source === "environment" && entry.applyMode === "restart")
+    .map(([name]) => humanize(name));
+  elements.startupSettingsDetail.textContent = [
+    restartNames.length ? `Restart required: ${restartNames.join(", ")}.` : "No pending restart changes.",
+    lockedNames.length ? `Environment override: ${lockedNames.join(", ")}.` : null,
+  ].filter(Boolean).join(" ");
+}
+
+async function saveRuntimeSettings(event) {
+  event.preventDefault();
+  elements.saveRuntimeSettings.disabled = true;
+  elements.runtimeSettingsStatus.textContent = "Saving…";
+  try {
+    const values = {
+      missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
+      reasoningProvider: elements.reasoningProvider.value,
+      planningPolicy: elements.planningPolicy.value,
+      evaluationModel: elements.evaluationModel.value,
+      evaluationEffort: elements.evaluationEffort.value,
+      planningModel: elements.planningModel.value,
+      planningEffort: elements.planningEffort.value,
+      timeoutMs: Number(elements.reasoningTimeout.value),
+    };
+    const update = Object.fromEntries(
+      Object.entries(values).filter(([name]) =>
+        state.runtimeConfiguration?.[name]?.source !== "environment"),
+    );
+    const { configuration } = await api("/api/configuration/runtime", {
+      method: "PUT",
+      body: JSON.stringify(update),
+    });
+    state.bootstrap.limits.missingSourceTabPolicy =
+      configuration.missingSourceTabPolicy.effectiveValue;
+    renderRuntimeSettings(configuration);
+    updateScopeControls();
+    elements.runtimeSettingsStatus.textContent = "Saved for the next run.";
+  } catch (error) {
+    elements.runtimeSettingsStatus.textContent = error.message;
+    elements.saveRuntimeSettings.disabled = false;
+  }
 }
 
 async function loadPilotReview() {
@@ -1253,7 +1374,8 @@ function showFailure(error) {
   state.currentView = "session";
   elements.sessionViewButton.classList.add("selected");
   elements.reviewViewButton.classList.remove("selected");
-  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel, elements.reviewPanel);
+  elements.settingsViewButton.classList.remove("selected");
+  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.settingsPanel);
   show(elements.failurePanel);
   elements.runButton.disabled = false;
   elements.failureTitle.textContent = `Stopped at ${humanize(error.stage || "unknown stage")}`;
@@ -1284,7 +1406,8 @@ function resetToSetup() {
   state.currentView = "session";
   elements.sessionViewButton.classList.add("selected");
   elements.reviewViewButton.classList.remove("selected");
-  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel, elements.reviewPanel);
+  elements.settingsViewButton.classList.remove("selected");
+  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel, elements.reviewPanel, elements.settingsPanel);
   show(elements.controlPanel);
   elements.runButton.disabled = false;
   pingBridge();

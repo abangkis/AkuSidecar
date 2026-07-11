@@ -23,11 +23,76 @@
           <nav class="view-switch" aria-label="AkuBrowser view">
             <button id="session-view-button" class="view-button selected" type="button">Session</button>
             <button id="review-view-button" class="view-button" type="button">Review Inbox</button>
+            <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
         </div>
       </header>
 
       <section id="provider-notice" class="notice hidden" role="status"></section>
+
+      <section id="settings-panel" class="settings-panel hidden" aria-labelledby="settings-heading">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">RUNTIME CONFIGURATION</p>
+            <h2 id="settings-heading">Browser behavior</h2>
+          </div>
+        </div>
+        <form id="runtime-settings-form" class="settings-form">
+          <fieldset>
+            <legend>Live settings</legend>
+            <label for="missing-source-tab-policy">
+              Missing source tab
+              <select id="missing-source-tab-policy" name="missingSourceTabPolicy">
+                <option value="open_missing_tab">Open canonical tab automatically</option>
+                <option value="fail_fast">Fail fast</option>
+              </select>
+            </label>
+            <p id="missing-source-tab-detail" class="settings-detail"></p>
+          </fieldset>
+          <fieldset>
+            <legend>Startup reasoning settings</legend>
+            <p class="settings-detail">Saved values become effective after you restart the visible AkuSidecar process.</p>
+            <div class="settings-grid">
+              <label>Provider
+                <select id="reasoning-provider" name="reasoningProvider">
+                  <option value="codex-sdk">Codex SDK</option>
+                  <option value="deterministic">Deterministic fallback</option>
+                </select>
+              </label>
+              <label>Planning policy
+                <select id="planning-policy" name="planningPolicy">
+                  <option value="deterministic_sparse_gap">Deterministic sparse gap</option>
+                  <option value="always">Always ask provider</option>
+                </select>
+              </label>
+              <label>Candidate evaluation model
+                <input id="evaluation-model" name="evaluationModel" maxlength="100" />
+              </label>
+              <label>Candidate evaluation effort
+                <select id="evaluation-effort" name="evaluationEffort">
+                  <option>minimal</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option>
+                </select>
+              </label>
+              <label>Acquisition planning model
+                <input id="planning-model" name="planningModel" maxlength="100" />
+              </label>
+              <label>Acquisition planning effort
+                <select id="planning-effort" name="planningEffort">
+                  <option>minimal</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option>
+                </select>
+              </label>
+              <label>Reasoning timeout (ms)
+                <input id="reasoning-timeout" name="timeoutMs" type="number" min="1000" max="600000" step="1000" />
+              </label>
+            </div>
+            <p id="startup-settings-detail" class="settings-detail"></p>
+          </fieldset>
+          <div class="settings-actions">
+            <button id="save-runtime-settings" class="primary-button" type="submit">Save runtime settings</button>
+            <span id="runtime-settings-status" class="settings-detail" role="status"></span>
+          </div>
+        </form>
+      </section>
 
       <section id="review-panel" class="review-panel hidden" aria-labelledby="review-heading">
         <div class="section-heading">

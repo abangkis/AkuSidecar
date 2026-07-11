@@ -39,7 +39,7 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     pendingContentSettleMs: 700,
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
-    openIfMissing: false,
+    openIfMissing: true,
     restoreScroll: true,
     browserAdapter: "aku-bridge",
     acquisitionRound: 1,
@@ -47,6 +47,26 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     continuation: null,
     followUpReason: "",
   });
+});
+
+test("missing source tab policy is configurable and follow-up never opens a replacement tab", () => {
+  const failFast = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "linkedin", scrolls: 2 },
+    { ...limits, missingSourceTabPolicy: "fail_fast" },
+  );
+  assert.equal(failFast.openIfMissing, false);
+
+  const followUp = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "linkedin", scrolls: 2 },
+    { ...limits, missingSourceTabPolicy: "open_missing_tab" },
+    {
+      acquisitionRound: 2,
+      scrolls: 1,
+      revealPendingContent: false,
+      continuation: { startScrollY: 100, anchorKeys: ["text:anchor"], settleMs: 900 },
+    },
+  );
+  assert.equal(followUp.openIfMissing, false);
 });
 
 test("Gate 0B accepts an auditable native scroll-and-restore outcome", () => {

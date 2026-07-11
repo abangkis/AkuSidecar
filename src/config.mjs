@@ -13,15 +13,47 @@ function parseInteger(value, fallback) {
 }
 
 const REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh"]);
+const MISSING_SOURCE_TAB_POLICIES = new Set(["open_missing_tab", "fail_fast"]);
+const REASONING_PROVIDERS = new Set(["deterministic", "codex-sdk"]);
+const PLANNING_POLICIES = new Set(["always", "deterministic_sparse_gap"]);
 
 function parseReasoningEffort(value, fallback) {
   return REASONING_EFFORTS.has(value) ? value : fallback;
 }
 
+function parseMissingSourceTabPolicy(value, fallback = "open_missing_tab") {
+  return MISSING_SOURCE_TAB_POLICIES.has(value) ? value : fallback;
+}
+
 export function loadConfig(env = process.env) {
   const port = parseInteger(env.AKU_BROWSER_PORT, 47821);
-  const provider = env.AKU_REASONING_PROVIDER ?? reasoningDefaults.provider ?? "deterministic";
   const sharedModel = env.AKU_CODEX_MODEL || null;
+  const missingSourceTabOverride = MISSING_SOURCE_TAB_POLICIES.has(
+    env.AKU_MISSING_SOURCE_TAB_POLICY,
+  )
+    ? env.AKU_MISSING_SOURCE_TAB_POLICY
+    : null;
+  const providerOverride = REASONING_PROVIDERS.has(env.AKU_REASONING_PROVIDER)
+    ? env.AKU_REASONING_PROVIDER
+    : null;
+  const provider = providerOverride ?? reasoningDefaults.provider ?? "deterministic";
+  const planningModelOverride = env.AKU_CODEX_PLANNING_MODEL || sharedModel || null;
+  const evaluationModelOverride = env.AKU_CODEX_EVALUATION_MODEL || sharedModel || null;
+  const planningEffortOverride = REASONING_EFFORTS.has(env.AKU_CODEX_PLANNING_EFFORT)
+    ? env.AKU_CODEX_PLANNING_EFFORT
+    : null;
+  const evaluationEffortOverride = REASONING_EFFORTS.has(env.AKU_CODEX_EVALUATION_EFFORT)
+    ? env.AKU_CODEX_EVALUATION_EFFORT
+    : null;
+  const planningPolicyOverride = PLANNING_POLICIES.has(env.AKU_CODEX_PLANNING_POLICY)
+    ? env.AKU_CODEX_PLANNING_POLICY
+    : null;
+  const parsedTimeoutOverride = env.AKU_CODEX_TIMEOUT_MS
+    ? parseInteger(env.AKU_CODEX_TIMEOUT_MS, null)
+    : null;
+  const timeoutOverride = Number.isInteger(parsedTimeoutOverride) && parsedTimeoutOverride >= 1_000
+    ? parsedTimeoutOverride
+    : null;
 
   return {
     host: "127.0.0.1",
@@ -30,6 +62,40 @@ export function loadConfig(env = process.env) {
     databasePath: env.AKU_DATABASE_PATH
       ? path.resolve(env.AKU_DATABASE_PATH)
       : path.join(projectRoot, "runtime", "aku-browser.db"),
+    runtimeConfiguration: {
+      missingSourceTabPolicy: {
+        defaultValue: "open_missing_tab",
+        environmentOverride: missingSourceTabOverride,
+      },
+      reasoningProvider: {
+        defaultValue: reasoningDefaults.provider ?? "deterministic",
+        environmentOverride: providerOverride,
+      },
+      planningModel: {
+        defaultValue: reasoningDefaults.acquisitionPlanning?.model ?? null,
+        environmentOverride: planningModelOverride,
+      },
+      evaluationModel: {
+        defaultValue: reasoningDefaults.candidateEvaluation?.model ?? null,
+        environmentOverride: evaluationModelOverride,
+      },
+      planningEffort: {
+        defaultValue: reasoningDefaults.acquisitionPlanning?.effort ?? "low",
+        environmentOverride: planningEffortOverride,
+      },
+      evaluationEffort: {
+        defaultValue: reasoningDefaults.candidateEvaluation?.effort ?? "low",
+        environmentOverride: evaluationEffortOverride,
+      },
+      planningPolicy: {
+        defaultValue: reasoningDefaults.acquisitionPlanning?.policy ?? "always",
+        environmentOverride: planningPolicyOverride,
+      },
+      timeoutMs: {
+        defaultValue: 120_000,
+        environmentOverride: timeoutOverride,
+      },
+    },
     reasoning: {
       provider,
       model: sharedModel || reasoningDefaults.candidateEvaluation?.model || null,
@@ -66,6 +132,9 @@ export function loadConfig(env = process.env) {
       workingDirectory: projectRoot,
     },
     limits: {
+      missingSourceTabPolicy: parseMissingSourceTabPolicy(
+        missingSourceTabOverride,
+      ),
       acquisitionPlanningPolicy:
         env.AKU_CODEX_PLANNING_POLICY ||
         reasoningDefaults.acquisitionPlanning?.policy ||

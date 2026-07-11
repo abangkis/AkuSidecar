@@ -38,6 +38,7 @@ Codex reasoning can be tuned without changing source code:
 - `AKU_CODEX_PLANNING_EFFORT=minimal|low|medium|high|xhigh`
 - `AKU_CODEX_EVALUATION_EFFORT=minimal|low|medium|high|xhigh`
 - `AKU_CODEX_TIMEOUT_MS=<milliseconds>`
+- `AKU_MISSING_SOURCE_TAB_POLICY=open_missing_tab|fail_fast`; optional advanced override for the dashboard setting
 
 Committed defaults live in `config/reasoning.json`: Luna High for the narrow acquisition-planning fallback, Terra High for candidate evaluation, and `deterministic_sparse_gap` so planning tokens are spent only when one or two unseen candidates and an exhausted movement budget make one anchored follow-up plausible. `AKU_CODEX_MODEL` remains a convenient shared override; phase-specific environment variables take precedence.
 
@@ -50,6 +51,12 @@ The effective configured model and evaluation effort appear in the AkuBrowser he
 - `AKU_CODEX_TIMEOUT_MS` defaults to `120000`.
 
 Gate 0B uses a fixed native-capture budget: at most two 75%-viewport scrolls, three snapshots, and 45 seconds. AkuBridge restores the applicable capture baseline and reports the actual movement in coverage. Computer Use is not an implicit fallback.
+
+When the initial acquisition cannot find the requested source, `open_missing_tab` lets AkuBridge create one inactive canonical feed tab (`https://x.com/home` or `https://www.linkedin.com/feed/`) and wait for it to load before capture. `fail_fast` preserves the earlier behavior. A follow-up round never opens a replacement tab because it must remain anchored to the original observation frontier.
+
+The normal configuration surface is the AkuBrowser `Settings` view. Its value is persisted in SQLite, applies to the next run without a restart, and survives Sidecar restarts. A valid environment variable remains available as an advanced recovery override and disables dashboard editing while active.
+
+The same view exposes the existing reasoning provider, evaluation/planning models, evaluation/planning efforts, acquisition-planning policy, and timeout. These are startup settings: saving them does not hot-swap the active provider or start a hidden process. The dashboard shows a pending restart until the user restarts the visible Sidecar process.
 
 Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.
 
