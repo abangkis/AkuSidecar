@@ -15,6 +15,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
     host: "127.0.0.1",
     port: 0,
     publicDirectory: path.join(projectRoot, "public"),
+    presentation: { defaultLayout: "source" },
     limits: {
       maxBodyBytes: 1_000_000,
       maxItems: 5,
@@ -66,7 +67,10 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(html, /review-scroll-sentinel/);
   assert.match(appScript, /mountPilotRunBody/);
   assert.match(appScript, /unmountPilotRunBody/);
+  assert.match(appScript, /buildItemPresentation/);
+  assert.match(html, /default-presentation/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /ws:\/\/127\.0\.0\.1/);
   assert.equal(bootstrap.provider, "vite-test-provider");
+  assert.equal(bootstrap.presentation.defaultLayout, "source");
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
 });

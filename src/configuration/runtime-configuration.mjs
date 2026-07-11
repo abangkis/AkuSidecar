@@ -8,6 +8,13 @@ const DEFINITIONS = {
     read: (config) => config.limits.missingSourceTabPolicy,
     apply: (config, value) => { config.limits.missingSourceTabPolicy = value; },
   },
+  defaultPresentation: {
+    key: "ui.default_presentation",
+    applyMode: "live",
+    values: new Set(["source", "brief"]),
+    read: (config) => config.presentation.defaultLayout,
+    apply: (config, value) => { config.presentation.defaultLayout = value; },
+  },
   reasoningProvider: {
     key: "startup.reasoning_provider",
     applyMode: "restart",
@@ -76,7 +83,7 @@ export function updateDashboardConfiguration(config, store, input) {
     const definition = DEFINITIONS[name];
     const value = normalize(definition, input[name]);
     store.setSetting(definition.key, String(value));
-    if (definition.applyMode === "next_run") definition.apply(config, value);
+    if (definition.applyMode !== "restart") definition.apply(config, value);
   }
 }
 

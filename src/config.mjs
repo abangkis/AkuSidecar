@@ -67,6 +67,10 @@ export function loadConfig(env = process.env) {
         defaultValue: "open_missing_tab",
         environmentOverride: missingSourceTabOverride,
       },
+      defaultPresentation: {
+        defaultValue: "source",
+        environmentOverride: null,
+      },
       reasoningProvider: {
         defaultValue: reasoningDefaults.provider ?? "deterministic",
         environmentOverride: providerOverride,
@@ -95,6 +99,9 @@ export function loadConfig(env = process.env) {
         defaultValue: 120_000,
         environmentOverride: timeoutOverride,
       },
+    },
+    presentation: {
+      defaultLayout: "source",
     },
     reasoning: {
       provider,

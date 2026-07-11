@@ -184,6 +184,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
         planningPolicy: config.reasoning?.planningPolicy ?? null,
       },
       bridgeToken,
+      presentation: config.presentation,
       limits: config.limits,
       supportedModes: ["catch_up", "manual_live"],
       supportedSources: ["x", "linkedin"],

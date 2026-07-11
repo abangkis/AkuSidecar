@@ -8,7 +8,7 @@ const state = {
   externalSessionDiscoveryInFlight: false,
   dispatchedRounds: new Set(),
   currentView: "session",
-  resultPresentation: "brief",
+  defaultPresentation: "source",
   runtimeConfiguration: null,
   reviewPage: 0,
   reviewLoading: false,
@@ -29,6 +29,7 @@ const elements = {
   settingsPanel: document.querySelector("#settings-panel"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
+  defaultPresentation: document.querySelector("#default-presentation"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
   planningPolicy: document.querySelector("#planning-policy"),
@@ -72,13 +73,8 @@ const elements = {
   resultMeta: document.querySelector("#result-meta"),
   coverageBadge: document.querySelector("#coverage-badge"),
   coverageContent: document.querySelector("#coverage-content"),
-  resultBriefView: document.querySelector("#result-brief-view"),
-  resultSourceView: document.querySelector("#result-source-view"),
-  sourceLayoutNote: document.querySelector("#source-layout-note"),
-  briefPresentation: document.querySelector("#brief-presentation"),
   resultSummary: document.querySelector("#result-summary"),
   resultItems: document.querySelector("#result-items"),
-  sourceLayoutItems: document.querySelector("#source-layout-items"),
   finishTitle: document.querySelector("#finish-title"),
   finishStats: document.querySelector("#finish-stats"),
   doneButton: document.querySelector("#done-button"),
@@ -137,8 +133,6 @@ elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
-elements.resultBriefView.addEventListener("click", () => setResultPresentation("brief"));
-elements.resultSourceView.addEventListener("click", () => setResultPresentation("source"));
 for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
   input.addEventListener("change", updateScopeControls);
 }
@@ -150,6 +144,7 @@ observePilotReviewScroll();
 async function bootstrap() {
   try {
     state.bootstrap = await api("/api/bootstrap");
+    state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
     const reasoning = state.bootstrap.reasoning ?? {};
     setStatus(
@@ -486,8 +481,6 @@ function showResult(run) {
   elements.coverageBadge.textContent = partial ? "Coverage partial" : "Complete within scope";
   elements.coverageBadge.classList.toggle("status-ok", !partial);
   elements.coverageContent.replaceChildren(buildCoverageList(coverage));
-  setResultPresentation("brief");
-
   elements.resultSummary.textContent = run.result?.summary || "No summary was returned.";
   elements.resultItems.replaceChildren();
   for (const item of run.result?.items ?? []) {
@@ -499,8 +492,6 @@ function showResult(run) {
     empty.textContent = "No visible item was promoted in this bounded sample.";
     elements.resultItems.append(empty, buildEmptyResultFeedback(run));
   }
-  renderSourceLayout((run.result?.items ?? []).map((item) => ({ run, item })));
-
   elements.finishTitle.textContent = partial
     ? "Brief complete—coverage partial"
     : "Brief complete within selected scope";
@@ -524,7 +515,6 @@ function showUnifiedResult(session) {
     : "Both source runs completed";
   elements.coverageBadge.classList.toggle("status-ok", !partial);
   elements.coverageContent.replaceChildren(buildUnifiedCoverage(session));
-  setResultPresentation("brief");
   elements.resultSummary.textContent = session.result?.summary || "No summary was returned.";
   elements.resultItems.replaceChildren();
 
@@ -532,11 +522,6 @@ function showUnifiedResult(session) {
     const child = session.children.find((candidate) => candidate.runId === entry.runId);
     if (child?.run) elements.resultItems.append(buildResultItem(child.run, entry.item));
   }
-  renderSourceLayout((session.result?.items ?? []).flatMap((entry) => {
-    const child = session.children.find((candidate) => candidate.runId === entry.runId);
-    return child?.run ? [{ run: child.run, item: entry.item }] : [];
-  }));
-
   for (const child of session.children.filter(
     (candidate) =>
       candidate.run?.status === "completed" &&
@@ -804,8 +789,8 @@ function buildCoverageList(coverage) {
 }
 
 function buildResultItem(run, item, onSaved = () => {}) {
-  const article = document.createElement("article");
-  article.className = "result-item";
+  const brief = document.createElement("div");
+  brief.className = "result-item item-layout-view";
 
   const header = document.createElement("div");
   header.className = "result-item-header";
@@ -839,6 +824,20 @@ function buildResultItem(run, item, onSaved = () => {}) {
     .filter(Boolean)
     .join(" · ");
 
+  const candidate = (run.candidateEvaluations ?? []).find(
+    (entry) => entry.evidenceKey === item.evidenceKey,
+  );
+  const actions = buildResultItemActions(run, item, candidate, onSaved);
+  brief.append(header, title, why, provenance);
+  return buildItemPresentation({
+    brief,
+    source: buildSourceLayoutCard(run, item, candidate),
+    actions,
+    className: "promoted-item-presentation",
+  });
+}
+
+function buildResultItemActions(run, item, candidate, onSaved) {
   const actions = document.createElement("div");
   actions.className = "result-actions";
   const link = document.createElement("a");
@@ -879,9 +878,6 @@ function buildResultItem(run, item, onSaved = () => {}) {
     });
     feedback.append(button);
   }
-  const candidate = (run.candidateEvaluations ?? []).find(
-    (entry) => entry.evidenceKey === item.evidenceKey,
-  );
   if (candidate) {
     feedback.append(
       buildPreferenceButton(run, item.evidenceKey, "more_like_this", "More like this", onSaved),
@@ -889,8 +885,7 @@ function buildResultItem(run, item, onSaved = () => {}) {
     );
   }
   actions.append(link, feedback);
-  article.append(header, title, why, provenance, actions);
-  return article;
+  return actions;
 }
 
 function buildPreferenceButton(run, evidenceKey, kind, label, onSaved = () => {}) {
@@ -933,38 +928,37 @@ function syncPreferenceButtons(run, evidenceKey) {
   }
 }
 
-function setResultPresentation(view) {
-  state.resultPresentation = view;
-  const source = view === "source";
-  elements.resultBriefView.classList.toggle("selected", !source);
-  elements.resultBriefView.setAttribute("aria-selected", String(!source));
-  elements.resultSourceView.classList.toggle("selected", source);
-  elements.resultSourceView.setAttribute("aria-selected", String(source));
-  elements.briefPresentation.classList.toggle("hidden", source);
-  elements.sourceLayoutItems.classList.toggle("hidden", !source);
-  elements.sourceLayoutNote.classList.toggle("hidden", !source);
-}
-
-function renderSourceLayout(entries) {
-  elements.sourceLayoutItems.replaceChildren();
-  if (entries.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "source-layout-empty";
-    empty.textContent = "No promoted source content is available in this bounded result.";
-    elements.sourceLayoutItems.append(empty);
-    return;
-  }
-  for (const { run, item } of entries) {
-    const candidate = (run.candidateEvaluations ?? []).find(
-      (entry) => entry.evidenceKey === item.evidenceKey,
-    );
-    elements.sourceLayoutItems.append(buildSourceLayoutCard(run, item, candidate));
-  }
+function buildItemPresentation({ brief, source, actions, className = "" }) {
+  const container = document.createElement("article");
+  container.className = `presentable-item ${className}`.trim();
+  const toolbar = document.createElement("div");
+  toolbar.className = "item-presentation-toolbar";
+  const note = document.createElement("span");
+  note.textContent = "Captured evidence · not a live source copy";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "presentation-toggle";
+  let layout = state.defaultPresentation;
+  const render = () => {
+    const sourceActive = layout === "source";
+    brief.classList.toggle("hidden", sourceActive);
+    source.classList.toggle("hidden", !sourceActive);
+    toggle.textContent = sourceActive ? "Switch to brief" : "Switch to source layout";
+    toggle.setAttribute("aria-pressed", String(sourceActive));
+  };
+  toggle.addEventListener("click", () => {
+    layout = layout === "source" ? "brief" : "source";
+    render();
+  });
+  toolbar.append(note, toggle);
+  container.append(toolbar, brief, source, actions);
+  render();
+  return container;
 }
 
 function buildSourceLayoutCard(run, item, candidate) {
   const source = item.source || candidate?.source || run.source;
-  const article = document.createElement("article");
+  const article = document.createElement("div");
   article.className = `source-layout-card source-${source}`;
 
   const header = document.createElement("header");
@@ -992,24 +986,7 @@ function buildSourceLayoutCard(run, item, candidate) {
     content.append(paragraph);
   }
 
-  const actions = document.createElement("div");
-  actions.className = "result-actions";
-  const link = document.createElement("a");
-  link.className = "source-link";
-  link.href = item.sourceUrl || candidate?.sourceUrl || "#";
-  link.target = "_blank";
-  link.rel = "noreferrer noopener";
-  link.textContent = provenanceLinkLabel(item.sourceUrlKind);
-  const feedback = document.createElement("div");
-  feedback.className = "feedback-actions";
-  if (item.evidenceKey) {
-    feedback.append(
-      buildPreferenceButton(run, item.evidenceKey, "more_like_this", "More like this"),
-      buildPreferenceButton(run, item.evidenceKey, "less_like_this", "Less like this"),
-    );
-  }
-  actions.append(link, feedback);
-  article.append(header, content, actions);
+  article.append(header, content);
   return article;
 }
 
@@ -1087,6 +1064,11 @@ async function loadRuntimeSettings() {
 
 function renderRuntimeSettings(configuration) {
   state.runtimeConfiguration = configuration;
+  const presentation = configuration.defaultPresentation;
+  state.defaultPresentation = presentation.effectiveValue;
+  elements.defaultPresentation.value =
+    presentation.persistedValue ?? presentation.effectiveValue;
+  elements.defaultPresentation.disabled = presentation.source === "environment";
   const setting = configuration.missingSourceTabPolicy;
   elements.missingSourceTabPolicy.value = setting.persistedValue ?? setting.effectiveValue;
   const overridden = setting.source === "environment";
@@ -1128,6 +1110,7 @@ async function saveRuntimeSettings(event) {
   elements.runtimeSettingsStatus.textContent = "Saving…";
   try {
     const values = {
+      defaultPresentation: elements.defaultPresentation.value,
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
       planningPolicy: elements.planningPolicy.value,
@@ -1147,6 +1130,8 @@ async function saveRuntimeSettings(event) {
     });
     state.bootstrap.limits.missingSourceTabPolicy =
       configuration.missingSourceTabPolicy.effectiveValue;
+    state.bootstrap.presentation.defaultLayout =
+      configuration.defaultPresentation.effectiveValue;
     renderRuntimeSettings(configuration);
     updateScopeControls();
     elements.runtimeSettingsStatus.textContent = "Saved for the next run.";
@@ -1550,8 +1535,8 @@ function sumInvocationTokens(invocations, field) {
 }
 
 function buildCandidateReview(run, candidate) {
-  const article = document.createElement("article");
-  article.className = "candidate-review-item";
+  const brief = document.createElement("div");
+  brief.className = "candidate-review-brief item-layout-view";
   const meta = document.createElement("p");
   meta.className = "pilot-run-stats";
   meta.textContent = [
@@ -1576,10 +1561,23 @@ function buildCandidateReview(run, candidate) {
   actions.append(buildPreferenceButton(
     run, candidate.evidenceKey, "less_like_this", "Less like this",
   ));
-  article.append(meta, content);
-  if (assessment) article.append(assessment);
-  article.append(actions);
-  return article;
+  brief.append(meta, content);
+  if (assessment) brief.append(assessment);
+  const sourceItem = {
+    source: candidate.source || run.source,
+    author: candidate.author,
+    publishedAt: candidate.publishedAt,
+    whatChanged: candidate.text,
+    sourceUrl: candidate.sourceUrl,
+    sourceUrlKind: candidate.sourceUrlKind,
+    evidenceKey: candidate.evidenceKey,
+  };
+  return buildItemPresentation({
+    brief,
+    source: buildSourceLayoutCard(run, sourceItem, candidate),
+    actions,
+    className: "candidate-review-item",
+  });
 }
 
 function buildCandidateAssessment(assessment) {

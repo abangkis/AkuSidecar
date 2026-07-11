@@ -507,13 +507,17 @@ h3 {
 }
 
 .candidate-review-item {
-  padding: 14px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.018);
 }
 
-.candidate-review-item > p:not(.pilot-run-stats) {
+.candidate-review-brief {
+  padding: 14px;
+}
+
+.candidate-review-brief > p:not(.pilot-run-stats) {
   margin: 8px 0 12px;
   line-height: 1.45;
 }
@@ -837,29 +841,42 @@ textarea:focus {
   line-height: 1.55;
 }
 
-.result-presentation {
-  display: inline-flex;
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 4px;
+.presentable-item {
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: 14px;
+  background: var(--panel-raised);
 }
 
-.presentation-tab {
-  padding: 7px 12px;
-  border: 0;
+.item-presentation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.item-presentation-toolbar span {
+  color: var(--quiet);
+  font-size: 0.72rem;
+}
+
+.presentation-toggle {
+  padding: 6px 9px;
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   background: transparent;
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.74rem;
   font-weight: 700;
 }
 
-.presentation-tab.selected {
-  background: rgba(183, 242, 108, 0.12);
-  color: var(--accent);
+.presentable-item > .result-actions {
+  margin: 0 18px;
+  padding-bottom: 14px;
 }
 
 .source-layout-note,
@@ -876,9 +893,7 @@ textarea:focus {
 
 .source-layout-card {
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel-raised);
+  background: transparent;
 }
 
 .source-layout-card > header {
@@ -943,9 +958,6 @@ textarea:focus {
 
 .result-item {
   padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel-raised);
 }
 
 .source-outcome {
