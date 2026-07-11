@@ -1153,7 +1153,7 @@ async function loadPilotReview() {
   elements.reviewMeta.textContent = "Loading pilot evidence…";
   try {
     const params = new URLSearchParams({
-      limit: "50",
+      limit: "10",
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
@@ -1355,6 +1355,22 @@ function buildPilotRunCard(run, expanded = false) {
   badges.append(status);
   header.append(identity, badges);
 
+  cardSummary.append(header, buildRunPhaseUsage(run));
+  card.append(cardSummary);
+  const syncBody = (event) => {
+    if (event && event.target !== card) return;
+    if (card.open) mountPilotRunBody(card, run);
+    else unmountPilotRunBody(card);
+  };
+  card.addEventListener("toggle", syncBody);
+  if (expanded) mountPilotRunBody(card, run);
+  return card;
+}
+
+function mountPilotRunBody(card, run) {
+  if (card.querySelector(".pilot-run-body")) return;
+  const body = document.createElement("div");
+  body.className = "pilot-run-body";
   const intent = document.createElement("p");
   intent.className = "pilot-run-intent";
   intent.textContent = run.intent;
@@ -1377,11 +1393,10 @@ function buildPilotRunCard(run, expanded = false) {
   ]
     .filter(Boolean)
     .join(" · ");
-  cardSummary.append(header, buildRunPhaseUsage(run));
-  card.append(cardSummary, intent, summary, stats);
+  body.append(intent, summary, stats);
 
   if (run.status === "completed" && (run.result?.items?.length ?? 0) === 0) {
-    card.append(buildEmptyResultFeedback(run, loadPilotReview));
+    body.append(buildEmptyResultFeedback(run, loadPilotReview));
   }
   if ((run.result?.items?.length ?? 0) > 0) {
     const details = document.createElement("details");
@@ -1393,7 +1408,7 @@ function buildPilotRunCard(run, expanded = false) {
       items.append(buildResultItem(run, item, loadPilotReview));
     }
     details.append(label, items);
-    card.append(details);
+    body.append(details);
   }
   if ((run.candidateEvaluations?.length ?? 0) > 0) {
     const candidates = document.createElement("section");
@@ -1404,16 +1419,20 @@ function buildPilotRunCard(run, expanded = false) {
     for (const candidate of run.candidateEvaluations) {
       candidates.append(buildCandidateReview(run, candidate));
     }
-    card.append(candidates);
+    body.append(candidates);
   } else if (run.status === "completed") {
     const unavailable = document.createElement("p");
     unavailable.className = "review-empty";
     unavailable.textContent = run.reasoningInvocations?.length
       ? "No new candidate required model evaluation in this bounded run."
       : "Candidate decision history is unavailable for runs created before Learning Loop v0.";
-    card.append(unavailable);
+    body.append(unavailable);
   }
-  return card;
+  card.append(body);
+}
+
+function unmountPilotRunBody(card) {
+  card.querySelector(".pilot-run-body")?.remove();
 }
 
 function buildRunPhaseUsage(run) {
