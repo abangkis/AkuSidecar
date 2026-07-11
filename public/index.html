@@ -112,75 +112,86 @@
       </section>
 
       <section id="review-panel" class="review-panel hidden" aria-labelledby="review-heading">
-        <div class="section-heading">
-          <div>
-            <p class="step-label">LEARNING LOOP</p>
-            <h2 id="review-heading">Tune the next brief</h2>
-          </div>
-          <button id="review-refresh-button" class="text-button" type="button">Refresh</button>
-        </div>
-
-        <div id="review-metrics" class="review-metrics" aria-live="polite"></div>
-        <p class="review-guidance">Signal what you want more or less of. The engine still owns timing and the finite attention boundary.</p>
-
-        <section class="preference-readiness" aria-labelledby="preference-readiness-heading">
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="step-label">OFFLINE REPLAY</p>
-              <h3 id="preference-readiness-heading">Preference engine readiness</h3>
+        <div class="review-layout">
+          <section class="review-stream" aria-labelledby="review-heading">
+            <div class="section-heading">
+              <div>
+                <p class="step-label">UNIFIED STREAM</p>
+                <h2 id="review-heading">X + LinkedIn sessions</h2>
+              </div>
+              <button id="review-refresh-button" class="text-button" type="button">Refresh</button>
             </div>
-            <span id="preference-readiness-status" class="status-pill status-neutral">Collecting</span>
-          </div>
-          <div id="preference-readiness-gates" class="readiness-gates"></div>
-          <p id="preference-readiness-detail" class="review-guidance"></p>
-          <div class="preference-experiment">
-            <div>
-              <strong>Offline preference experiment</strong>
-              <span id="preference-experiment-status" class="status-pill status-neutral">Blocked</span>
+            <p class="review-guidance">Review source-backed candidates and signal what you want more or less of.</p>
+
+            <div class="review-filters">
+              <label>
+                Source
+                <select id="review-source-filter">
+                  <option value="all">All sources</option>
+                  <option value="x">X</option>
+                  <option value="linkedin">LinkedIn</option>
+                </select>
+              </label>
+              <label>
+                Verdict
+                <select id="review-verdict-filter">
+                  <option value="all">All runs</option>
+                  <option value="unreviewed">Needs review</option>
+                  <option value="correct">Correct</option>
+                  <option value="missed">Missed</option>
+                  <option value="useful">Useful</option>
+                  <option value="wrong_lane">Wrong lane</option>
+                  <option value="duplicate">Duplicate</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </label>
             </div>
-            <p id="preference-experiment-detail" class="review-guidance"></p>
-            <button id="fit-preference-experiment" class="secondary-button" type="button" disabled>
-              Fit shadow snapshot
-            </button>
-          </div>
-        </section>
 
-        <section class="reasoning-economics" aria-labelledby="reasoning-economics-heading">
-          <div>
-            <p class="step-label">TOKEN ECONOMICS</p>
-            <h3 id="reasoning-economics-heading">Usage by reasoning phase</h3>
-          </div>
-          <div id="review-token-usage" class="reasoning-phase-grid" aria-live="polite"></div>
-        </section>
+            <p id="review-meta" class="review-meta"></p>
+            <div id="review-runs" class="review-runs"></div>
+            <div id="review-scroll-sentinel" class="review-scroll-sentinel" aria-live="polite">
+              Scroll to load more
+            </div>
+          </section>
 
-        <div class="review-filters">
-          <label>
-            Source
-            <select id="review-source-filter">
-              <option value="all">All sources</option>
-              <option value="x">X</option>
-              <option value="linkedin">LinkedIn</option>
-            </select>
-          </label>
-          <label>
-            Verdict
-            <select id="review-verdict-filter">
-              <option value="all">All runs</option>
-              <option value="unreviewed">Needs review</option>
-              <option value="correct">Correct</option>
-              <option value="missed">Missed</option>
-              <option value="useful">Useful</option>
-              <option value="wrong_lane">Wrong lane</option>
-              <option value="duplicate">Duplicate</option>
-              <option value="failed">Failed</option>
-            </select>
-          </label>
-        </div>
+          <aside class="review-telemetry" aria-labelledby="telemetry-heading">
+            <div>
+              <p class="step-label">PILOT TELEMETRY</p>
+              <h2 id="telemetry-heading">Learning loop</h2>
+            </div>
+            <div id="review-metrics" class="review-metrics" aria-live="polite"></div>
+            <p class="review-guidance">Telemetry is observational. The engine still owns timing and the finite attention boundary.</p>
 
-        <p id="review-meta" class="review-meta"></p>
-        <div id="review-runs" class="review-runs"></div>
-        <div id="review-scroll-sentinel" class="review-scroll-sentinel" aria-live="polite">
-          Scroll to load more
+            <section class="preference-readiness" aria-labelledby="preference-readiness-heading">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="step-label">OFFLINE REPLAY</p>
+                  <h3 id="preference-readiness-heading">Preference readiness</h3>
+                </div>
+                <span id="preference-readiness-status" class="status-pill status-neutral">Collecting</span>
+              </div>
+              <div id="preference-readiness-gates" class="readiness-gates"></div>
+              <p id="preference-readiness-detail" class="review-guidance"></p>
+              <div class="preference-experiment">
+                <div>
+                  <strong>Offline preference experiment</strong>
+                  <span id="preference-experiment-status" class="status-pill status-neutral">Blocked</span>
+                </div>
+                <p id="preference-experiment-detail" class="review-guidance"></p>
+                <button id="fit-preference-experiment" class="secondary-button" type="button" disabled>
+                  Fit shadow snapshot
+                </button>
+              </div>
+            </section>
+
+            <section class="reasoning-economics" aria-labelledby="reasoning-economics-heading">
+              <div>
+                <p class="step-label">TOKEN ECONOMICS</p>
+                <h3 id="reasoning-economics-heading">Usage by phase</h3>
+              </div>
+              <div id="review-token-usage" class="reasoning-phase-grid" aria-live="polite"></div>
+            </section>
+          </aside>
         </div>
       </section>
 

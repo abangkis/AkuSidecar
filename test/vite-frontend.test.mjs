@@ -15,7 +15,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
     host: "127.0.0.1",
     port: 0,
     publicDirectory: path.join(projectRoot, "public"),
-    presentation: { defaultLayout: "source" },
+    presentation: { defaultLayout: "source", streamWidth: "social" },
     limits: {
       maxBodyBytes: 1_000_000,
       maxItems: 5,
@@ -52,6 +52,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   const htmlResponse = await fetch(`${origin}/`);
   const html = await htmlResponse.text();
   const appScript = await (await fetch(`${origin}/app.js`)).text();
+  const styles = await (await fetch(`${origin}/styles.css`)).text();
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
 
   assert.equal(htmlResponse.status, 200);
@@ -67,6 +68,11 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /sourceReviewOrder/);
   assert.match(appScript, /sortReviewGroupCards/);
   assert.match(html, /review-scroll-sentinel/);
+  assert.match(html, /class="review-layout"/);
+  assert.match(html, /class="review-stream"/);
+  assert.match(html, /class="review-telemetry"/);
+  assert.match(styles, /grid-template-columns: minmax\(0, var\(--stream-width\)\) minmax\(0, 296px\)/);
+  assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(appScript, /mountPilotRunBody/);
   assert.match(appScript, /unmountPilotRunBody/);
   assert.match(appScript, /buildItemPresentation/);
@@ -80,5 +86,6 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(htmlResponse.headers.get("content-security-policy"), /https:\/\/\*\.licdn\.com/);
   assert.equal(bootstrap.provider, "vite-test-provider");
   assert.equal(bootstrap.presentation.defaultLayout, "source");
+  assert.equal(bootstrap.presentation.streamWidth, "social");
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
 });
