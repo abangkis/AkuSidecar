@@ -54,6 +54,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
+  assert.match(html, /Unified X \+ LinkedIn/);
+  assert.match(html, /Advanced single source/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /ws:\/\/127\.0\.0\.1/);
   assert.equal(bootstrap.provider, "vite-test-provider");
+  assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
 });

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akubrowser.local/contracts/unified-session.schema.json",
+  "title": "AkuBrowser Unified Session",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "mode": { "type": "string", "enum": ["catch_up", "manual_live"] },
+    "intent": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "sources": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "x" },
+        { "const": "linkedin" }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "maxItemsPerSource": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "maxItemsTotal": { "type": "integer", "minimum": 2, "maximum": 10 },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "completed", "partial", "failed", "cancelled"]
+    },
+    "activeSource": { "type": ["string", "null"], "enum": ["x", "linkedin", null] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "startedAt": { "type": ["string", "null"], "format": "date-time" },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" },
+    "children": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "enum": ["x", "linkedin"] },
+          "ordinal": { "type": "integer", "minimum": 0, "maximum": 1 },
+          "runId": { "type": ["string", "null"] },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "waiting_for_bridge",
+              "reasoning",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "run": { "type": ["object", "null"] }
+        },
+        "required": ["source", "ordinal", "runId", "status", "run"],
+        "additionalProperties": false
+      }
+    },
+    "result": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "summary": { "type": "string" },
+            "items": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sessionId": { "type": "string" },
+                  "runId": { "type": "string" },
+                  "item": {
+                    "$ref": "reasoning-result.schema.json#/properties/items/items"
+                  }
+                },
+                "required": ["sessionId", "runId", "item"],
+                "additionalProperties": false
+              }
+            },
+            "repeatedClaimsCollapsed": { "type": "integer", "minimum": 0 },
+            "deferredByBudget": { "type": "integer", "minimum": 0 },
+            "limitations": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": [
+            "summary",
+            "items",
+            "repeatedClaimsCollapsed",
+            "deferredByBudget",
+            "limitations"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "coverage": { "type": ["object", "null"] }
+  },
+  "required": [
+    "id",
+    "mode",
+    "intent",
+    "sources",
+    "maxItemsPerSource",
+    "maxItemsTotal",
+    "status",
+    "activeSource",
+    "createdAt",
+    "startedAt",
+    "completedAt",
+    "children",
+    "result",
+    "coverage"
+  ],
+  "additionalProperties": false
+}
+

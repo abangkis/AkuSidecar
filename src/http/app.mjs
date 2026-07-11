@@ -153,6 +153,12 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
       limits: config.limits,
       supportedModes: ["catch_up", "manual_live"],
       supportedSources: ["x", "linkedin"],
+      unifiedSession: {
+        sources: ["x", "linkedin"],
+        maxItemsPerSource: config.limits.maxItems,
+        maxItemsTotal: Math.min(10, config.limits.maxItems * 2),
+        execution: "sequential",
+      },
     });
     return;
   }
@@ -207,6 +213,36 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
   if (request.method === "POST" && url.pathname === "/api/runs") {
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, { run: engine.startRun(body) });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/sessions") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    sendJson(response, 201, { session: engine.startUnifiedSession(body) });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/sessions/active") {
+    sendJson(response, 200, { session: engine.getActiveUnifiedSession() });
+    return;
+  }
+
+  const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+  if (request.method === "GET" && sessionMatch) {
+    const session = engine.getUnifiedSession(decodeURIComponent(sessionMatch[1]));
+    if (!session) {
+      sendJson(response, 404, { error: "NotFound", message: "Unified session not found" });
+      return;
+    }
+    sendJson(response, 200, { session });
+    return;
+  }
+
+  const cancelSessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/cancel$/);
+  if (request.method === "POST" && cancelSessionMatch) {
+    sendJson(response, 200, {
+      session: engine.cancelUnifiedSession(decodeURIComponent(cancelSessionMatch[1])),
+    });
     return;
   }
 

@@ -7,6 +7,7 @@ import {
   validateFeedback,
   validateReasoningResult,
   validateRunRequest,
+  validateUnifiedSessionRequest,
 } from "../src/core/contracts.mjs";
 
 const limits = {
@@ -76,6 +77,24 @@ test("run requests are bounded", () => {
   assert.throws(
     () => validateRunRequest({ source: "x", scrolls: 99 }, limits),
     /scrolls must be between/,
+  );
+});
+
+test("unified session requests have a fixed source order and finite attention ceiling", () => {
+  const session = validateUnifiedSessionRequest(
+    { mode: "catch_up", maxItemsPerSource: 5, intent: "Material engineering changes." },
+    limits,
+  );
+  assert.deepEqual(session.sources, ["x", "linkedin"]);
+  assert.equal(session.maxItemsPerSource, 5);
+  assert.equal(session.maxItemsTotal, 10);
+  assert.throws(
+    () => validateUnifiedSessionRequest({ sources: ["linkedin", "x"] }, limits),
+    /sources must be x then linkedin/,
+  );
+  assert.throws(
+    () => validateUnifiedSessionRequest({ maxItemsPerSource: 6 }, limits),
+    /maxItemsPerSource must be between/,
   );
 });
 

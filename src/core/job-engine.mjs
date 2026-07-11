@@ -7,6 +7,7 @@ import {
   validateFeedback,
   validateReasoningResult,
   validateRunRequest,
+  validateUnifiedSessionRequest,
 } from "./contracts.mjs";
 import {
   assertNativeCaptureOutcome,
@@ -45,6 +46,45 @@ export class JobEngine {
 
   listRuns(limit) {
     return this.store.listRuns(limit);
+  }
+
+  startUnifiedSession(input) {
+    const request = validateUnifiedSessionRequest(input, this.limits);
+    this.store.createUnifiedSession(request);
+    return this.#reconcileUnifiedSession(request.id);
+  }
+
+  getUnifiedSession(id) {
+    if (!this.store.getUnifiedSession(id)) return null;
+    return this.#reconcileUnifiedSession(id);
+  }
+
+  getActiveUnifiedSession() {
+    const session = this.store.listOpenUnifiedSessions().at(-1);
+    return session ? this.#reconcileUnifiedSession(session.id) : null;
+  }
+
+  cancelUnifiedSession(id) {
+    let session = this.store.getUnifiedSession(id);
+    if (!session) throw new ContractError("unified session not found");
+    if (isUnifiedSessionTerminal(session.status)) return session;
+    const activeChild = session.children.find(
+      (child) => child.run && !isRunTerminal(child.run.status),
+    );
+    if (activeChild) this.store.cancelRun(activeChild.run.id);
+    session = this.#syncUnifiedSessionChildren(id);
+    session = {
+      ...session,
+      children: session.children.map((child) =>
+        child.status === "queued" ? { ...child, status: "cancelled" } : child,
+      ),
+    };
+    const completedCount = session.children.filter(
+      (child) => child.run?.status === "completed",
+    ).length;
+    const status = completedCount > 0 ? "partial" : "cancelled";
+    const outcome = buildUnifiedSessionOutcome(session, status);
+    return this.store.cancelUnifiedSession(id, status, outcome.result, outcome.coverage);
   }
 
   getPilotReview(options = {}) {
@@ -126,6 +166,12 @@ export class JobEngine {
     }
 
     const observation = validateBridgeObservation(rawObservation, this.limits);
+    if (command.payload.pendingContentRecovery) {
+      observation.coverage.pendingContentRecovery = command.payload.pendingContentRecovery;
+      observation.coverage.notes.push(
+        "Pending-content reveal timed out; capture continued once with native detect-only policy.",
+      );
+    }
     if (observation.source !== run.source) {
       throw new ContractError("observation source does not match run source");
     }
@@ -154,7 +200,23 @@ export class JobEngine {
       typeof rawError?.message === "string" ? rawError.message : "AkuBridge failed",
     );
     this.store.failBridgeCommand(commandId, error);
-    return this.store.failRun(runId, "browser_capture", error);
+    if (canRetryPendingContentDetectOnly(command, error)) {
+      const run = this.store.getRun(runId);
+      this.store.enqueueBridgeCommand(
+        runId,
+        "collect_visible",
+        buildNativeCaptureCommand(run, this.limits, {
+          acquisitionRound: command.payload.acquisitionRound ?? 1,
+          scrolls: command.payload.scrolls,
+          revealPendingContent: false,
+          pendingContentRecovery: "detect_only_after_reveal_timeout",
+        }),
+      );
+      return this.store.setRunStatus(runId, "waiting_for_bridge");
+    }
+    const failed = this.store.failRun(runId, "browser_capture", error);
+    this.#advanceParentSessionForRun(runId);
+    return failed;
   }
 
   addFeedback(runId, input) {
@@ -166,10 +228,12 @@ export class JobEngine {
       if (
         feedback.itemId ||
         run.status !== "completed" ||
-        (run.result?.items?.length ?? 0) !== 0
+        (run.result?.items?.length ?? 0) !== 0 ||
+        run.coverage?.status === "unavailable" ||
+        !runHasObservedEvidence(run)
       ) {
         throw new ContractError(
-          `${feedback.kind} feedback requires a completed empty run without itemId`,
+          `${feedback.kind} feedback requires a completed, evidence-bearing empty run without itemId`,
         );
       }
       const existingVerdict = run.feedback.find(
@@ -200,6 +264,97 @@ export class JobEngine {
   async waitForRun(runId) {
     await this.activeReasoning.get(runId);
     return this.store.getRun(runId);
+  }
+
+  async waitForUnifiedSession(sessionId) {
+    let session = this.getUnifiedSession(sessionId);
+    const activeRun = session?.children.find(
+      (child) => child.run && !isRunTerminal(child.run.status),
+    )?.run;
+    if (activeRun) await this.waitForRun(activeRun.id);
+    return this.getUnifiedSession(sessionId);
+  }
+
+  #syncUnifiedSessionChildren(sessionId) {
+    let session = this.store.getUnifiedSession(sessionId);
+    if (!session) throw new ContractError("unified session not found");
+    for (const child of session.children) {
+      if (child.run && child.status !== child.run.status) {
+        this.store.setUnifiedSessionChildStatus(sessionId, child.source, child.run.status);
+      }
+    }
+    return this.store.getUnifiedSession(sessionId);
+  }
+
+  #reconcileUnifiedSession(sessionId) {
+    let session = this.#syncUnifiedSessionChildren(sessionId);
+    if (isUnifiedSessionTerminal(session.status)) return session;
+
+    const activeChild = session.children.find(
+      (child) => child.run && !isRunTerminal(child.run.status),
+    );
+    if (activeChild) {
+      this.#recoverUnifiedSessionRun(activeChild.run);
+      return this.#syncUnifiedSessionChildren(sessionId);
+    }
+
+    const queuedChild = session.children.find((child) => child.status === "queued");
+    if (queuedChild) {
+      const run = this.startRun({
+        mode: session.mode,
+        source: queuedChild.source,
+        intent: session.intent,
+        maxItems: session.maxItemsPerSource,
+        scrolls: Math.min(
+          this.limits.defaultScrolls ?? 0,
+          this.limits.maxScrolls,
+        ),
+      });
+      return this.store.attachUnifiedSessionChild(sessionId, queuedChild.source, run.id);
+    }
+
+    session = this.store.getUnifiedSession(sessionId);
+    const completedCount = session.children.filter(
+      (child) => child.run?.status === "completed",
+    ).length;
+    const status =
+      completedCount === session.children.length
+        ? "completed"
+        : completedCount > 0
+          ? "partial"
+          : "failed";
+    const outcome = buildUnifiedSessionOutcome(session, status);
+    return this.store.completeUnifiedSession(sessionId, status, outcome.result, outcome.coverage);
+  }
+
+  #recoverUnifiedSessionRun(run) {
+    if (run.status !== "reasoning" || this.activeReasoning.has(run.id)) return;
+    const pendingCommand = this.store.getPendingBridgeCommandForRun(run.id);
+    if (pendingCommand) {
+      this.store.setRunStatus(run.id, "waiting_for_bridge");
+      return;
+    }
+    const command = this.store.getLatestBridgeCommandForRun(run.id);
+    const observation = run.observations?.at(-1)?.payload;
+    if (!command || !observation) {
+      this.store.failRun(
+        run.id,
+        "recovery",
+        new Error("Persisted reasoning run is missing its command or observation"),
+      );
+      return;
+    }
+    const reasoningPromise = this.#processAcceptedObservation(
+      run.id,
+      run,
+      command,
+      observation,
+    )
+      .catch((error) => {
+        this.logger.error?.("run recovery failed", { runId: run.id, error: error.message });
+      })
+      .finally(() => this.activeReasoning.delete(run.id));
+    this.activeReasoning.set(run.id, reasoningPromise);
   }
 
   async #processAcceptedObservation(runId, run, command, observation) {
@@ -262,6 +417,7 @@ export class JobEngine {
         );
       } catch (error) {
         this.store.failRun(runId, "acquisition_planning", error);
+        this.#advanceParentSessionForRun(runId);
         throw error;
       }
 
@@ -310,6 +466,11 @@ export class JobEngine {
         .observations.map((entry) => entry.payload);
       const observation = mergeObservations(storedObservations);
       const allEvidenceKeys = uniqueEvidenceKeys(observation);
+      if (allEvidenceKeys.length === 0) {
+        throw new ContractError(
+          "bounded browser capture produced no visible evidence blocks",
+        );
+      }
       const knownEvidenceKeys = this.store.getKnownEvidenceKeys(
         run.source,
         run.mode,
@@ -364,9 +525,123 @@ export class JobEngine {
       this.store.completeRunWithKnowledge(runId, result, coverage);
     } catch (error) {
       this.store.failRun(runId, "reasoning", error);
+      this.#advanceParentSessionForRun(runId);
       throw error;
     }
+    this.#advanceParentSessionForRun(runId);
   }
+
+  #advanceParentSessionForRun(runId) {
+    const session = this.store.getUnifiedSessionByRunId(runId);
+    if (!session || isUnifiedSessionTerminal(session.status)) return;
+    this.#reconcileUnifiedSession(session.id);
+  }
+}
+
+export function buildUnifiedSessionOutcome(session, status = session.status) {
+  const completedChildren = session.children.filter(
+    (child) => child.run?.status === "completed",
+  );
+  const mergedItems = mergeUnifiedItems(session.id, completedChildren, session.maxItemsTotal);
+  const completedSources = completedChildren.map((child) => child.source);
+  const failedSources = session.children
+    .filter((child) => child.status === "failed")
+    .map((child) => child.source);
+  const cancelledSources = session.children
+    .filter((child) => child.status === "cancelled")
+    .map((child) => child.source);
+  const limitations = completedChildren.flatMap((child) =>
+    (child.run.result?.limitations ?? []).map(
+      (limitation) => `${sourceLabel(child.source)}: ${limitation}`,
+    ),
+  );
+  if (status !== "completed") {
+    limitations.push("The unified brief is partial because not every requested source completed.");
+  }
+  const result = {
+    summary: `${mergedItems.length} material item${mergedItems.length === 1 ? "" : "s"} from ${completedSources.length} completed source${completedSources.length === 1 ? "" : "s"}.`,
+    items: mergedItems,
+    repeatedClaimsCollapsed: completedChildren.reduce(
+      (sum, child) => sum + (child.run.result?.repeatedClaimsCollapsed ?? 0),
+      0,
+    ),
+    deferredByBudget: completedChildren.reduce(
+      (sum, child) => sum + (child.run.result?.deferredByBudget ?? 0),
+      0,
+    ),
+    limitations,
+  };
+  const coverage = {
+    status,
+    requestedSources: [...session.sources],
+    completedSources,
+    failedSources,
+    cancelledSources,
+    resultCount: mergedItems.length,
+    resultCountBySource: Object.fromEntries(
+      session.children.map((child) => [child.source, child.run?.result?.items?.length ?? 0]),
+    ),
+    children: session.children.map((child) => ({
+      source: child.source,
+      runId: child.runId,
+      status: child.status,
+      coverage: child.run?.coverage ?? null,
+    })),
+    scopeStatement:
+      "Unified brief over bounded X and LinkedIn samples; this is not a claim of complete feed coverage.",
+  };
+  return { result, coverage };
+}
+
+export function mergeUnifiedItems(sessionId, completedChildren, maxItemsTotal = 10) {
+  const priorities = ["P1", "P2", "P3", "P4"];
+  const merged = [];
+  for (const priority of priorities) {
+    const queues = completedChildren.map((child) => ({
+      child,
+      items: (child.run.result?.items ?? []).filter((item) => item.priority === priority),
+      index: 0,
+    }));
+    while (queues.some((queue) => queue.index < queue.items.length)) {
+      for (const queue of queues) {
+        const item = queue.items[queue.index];
+        if (!item) continue;
+        merged.push({ sessionId, runId: queue.child.run.id, item });
+        queue.index += 1;
+        if (merged.length >= maxItemsTotal) return merged;
+      }
+    }
+  }
+  return merged;
+}
+
+function canRetryPendingContentDetectOnly(command, error) {
+  return (
+    command.payload.pendingContentPolicy === "reveal_if_present" &&
+    command.payload.acquisitionRound === 1 &&
+    !command.payload.pendingContentRecovery &&
+    /pending-content control did not reveal a changed, visible feed within the bounded deadline/i.test(
+      error.message,
+    )
+  );
+}
+
+function runHasObservedEvidence(run) {
+  return (run.observations ?? []).some(
+    (observation) => uniqueEvidenceKeys(observation.payload).length > 0,
+  );
+}
+
+function isRunTerminal(status) {
+  return ["completed", "failed", "cancelled"].includes(status);
+}
+
+function isUnifiedSessionTerminal(status) {
+  return ["completed", "partial", "failed", "cancelled"].includes(status);
+}
+
+function sourceLabel(source) {
+  return source === "x" ? "X" : "LinkedIn";
 }
 
 function assertObservedSources(result, observation) {

@@ -2,6 +2,7 @@ const state = {
   bootstrap: null,
   bridgeReady: false,
   currentRun: null,
+  currentSession: null,
   pollTimer: null,
   dispatchedRounds: new Set(),
   currentView: "session",
@@ -23,12 +24,16 @@ const elements = {
   controlPanel: document.querySelector(".control-panel"),
   runForm: document.querySelector("#run-form"),
   runButton: document.querySelector("#run-button"),
+  singleSourceField: document.querySelector("#single-source-field"),
+  preflightCopy: document.querySelector("#preflight-copy"),
   processingPanel: document.querySelector("#processing-panel"),
   processingTitle: document.querySelector("#processing-title"),
   processingDetail: document.querySelector("#processing-detail"),
+  sourceProgress: document.querySelector("#source-progress"),
   progressBar: document.querySelector("#progress-bar"),
   contractMode: document.querySelector("#contract-mode"),
   contractSource: document.querySelector("#contract-source"),
+  contractAttention: document.querySelector("#contract-attention"),
   contractScrolls: document.querySelector("#contract-scrolls"),
   cancelButton: document.querySelector("#cancel-button"),
   resultPanel: document.querySelector("#result-panel"),
@@ -54,8 +59,25 @@ window.addEventListener("message", (event) => {
     setStatus(elements.bridgeStatus, "AkuBridge ready", "ok");
   }
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
+    if (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) {
+      const activeChild = state.currentSession.children.find(
+        (child) => child.run && !isTerminal(child.run.status),
+      );
+      if (activeChild?.run) {
+        state.dispatchedRounds.delete(
+          `${activeChild.run.id}:${activeChild.run.observations?.length ?? 0}`,
+        );
+      }
+      setStatus(elements.bridgeStatus, "AkuBridge recovery pending", "warning");
+      elements.processingDetail.textContent =
+        "A source action could not be verified. AkuSidecar may retry once with bounded detect-only capture.";
+      return;
+    }
     setStatus(elements.bridgeStatus, "AkuBridge error", "error");
-    if (state.currentRun && !isTerminal(state.currentRun.status)) {
+    if (
+      (state.currentRun && !isTerminal(state.currentRun.status)) ||
+      (state.currentSession && !isUnifiedTerminal(state.currentSession.status))
+    ) {
       reportRunFailure({
         stage: "browser_bridge",
         message: event.data.message || "AkuBridge could not dispatch the run.",
@@ -77,8 +99,12 @@ elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.reviewSourceFilter.addEventListener("change", loadPilotReview);
 elements.reviewVerdictFilter.addEventListener("change", loadPilotReview);
+for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
+  input.addEventListener("change", updateScopeControls);
+}
 
 await bootstrap();
+updateScopeControls();
 
 async function bootstrap() {
   try {
@@ -90,6 +116,13 @@ async function bootstrap() {
       elements.providerNotice.classList.remove("hidden");
     }
     pingBridge();
+    const { session } = await api("/api/sessions/active");
+    if (session) {
+      state.currentSession = session;
+      showUnifiedProcessing(session);
+      dispatchUnifiedSession(session);
+      schedulePoll();
+    }
     setTimeout(() => {
       if (!state.bridgeReady) {
         setStatus(elements.bridgeStatus, "AkuBridge not detected", "warning");
@@ -119,30 +152,63 @@ async function startRun() {
   state.dispatchedRounds.clear();
   hide(elements.resultPanel, elements.failurePanel);
   const form = new FormData(elements.runForm);
-  const payload = {
-    mode: form.get("mode"),
-    source: form.get("source"),
-    intent: form.get("intent"),
-    maxItems: 1,
-    scrolls: Math.min(
-      state.bootstrap?.limits?.defaultScrolls ?? 2,
-      state.bootstrap?.limits?.maxScrolls ?? 2,
-    ),
-  };
-
   elements.runButton.disabled = true;
   try {
-    const { run } = await api("/api/runs", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    state.currentRun = run;
-    showProcessing(run);
-    dispatchToBridge(run);
+    if (form.get("scope") === "unified") {
+      const { session } = await api("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify({
+          mode: form.get("mode"),
+          intent: form.get("intent"),
+          maxItemsPerSource: state.bootstrap?.unifiedSession?.maxItemsPerSource ?? 5,
+        }),
+      });
+      state.currentRun = null;
+      state.currentSession = session;
+      showUnifiedProcessing(session);
+      dispatchUnifiedSession(session);
+    } else {
+      const { run } = await api("/api/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          mode: form.get("mode"),
+          source: form.get("source"),
+          intent: form.get("intent"),
+          maxItems: state.bootstrap?.limits?.maxItems ?? 5,
+          scrolls: Math.min(
+            state.bootstrap?.limits?.defaultScrolls ?? 2,
+            state.bootstrap?.limits?.maxScrolls ?? 2,
+          ),
+        }),
+      });
+      state.currentSession = null;
+      state.currentRun = run;
+      showProcessing(run);
+      dispatchToBridge(run);
+    }
     schedulePoll();
   } catch (error) {
     elements.runButton.disabled = false;
-    showFailure({ stage: "create_run", message: error.message });
+    showFailure({ stage: "create_session", message: error.message });
+  }
+}
+
+function updateScopeControls() {
+  const form = new FormData(elements.runForm);
+  const unified = form.get("scope") === "unified";
+  elements.singleSourceField.classList.toggle("hidden", unified);
+  elements.runButton.textContent = unified ? "Run unified brief" : "Run advanced source";
+  elements.preflightCopy.textContent = unified
+    ? "Keep signed-in X and LinkedIn feed tabs open. AkuBrowser checks them sequentially and never likes, replies, follows, or posts."
+    : "Advanced mode keeps one source run visible for adapter tracing and controlled pilot work.";
+}
+
+function dispatchUnifiedSession(session) {
+  const activeChild = session.children.find(
+    (child) => child.run && !isTerminal(child.run.status),
+  );
+  if (activeChild?.run.status === "waiting_for_bridge") {
+    dispatchToBridge(activeChild.run);
   }
 }
 
@@ -164,7 +230,12 @@ function dispatchToBridge(run) {
 
 function schedulePoll() {
   clearPoll();
-  state.pollTimer = setTimeout(pollRun, 700);
+  state.pollTimer = setTimeout(pollCurrent, 700);
+}
+
+async function pollCurrent() {
+  if (state.currentSession) await pollUnifiedSession();
+  else await pollRun();
 }
 
 async function pollRun() {
@@ -198,10 +269,53 @@ async function pollRun() {
   }
 }
 
+async function pollUnifiedSession() {
+  if (!state.currentSession) return;
+  try {
+    const { session } = await api(
+      `/api/sessions/${encodeURIComponent(state.currentSession.id)}`,
+    );
+    state.currentSession = session;
+    dispatchUnifiedSession(session);
+    if (isUnifiedTerminal(session.status)) {
+      clearPoll();
+      if (state.currentView === "review") await loadPilotReview();
+      else if (session.status === "failed" || session.status === "cancelled") {
+        showFailure({
+          stage: session.status,
+          message:
+            session.status === "cancelled"
+              ? "The bounded unified session was cancelled."
+              : "Neither requested source completed.",
+        });
+      } else {
+        showUnifiedResult(session);
+      }
+      return;
+    }
+    if (state.currentView === "session") showUnifiedProcessing(session);
+    schedulePoll();
+  } catch (error) {
+    clearPoll();
+    reportRunFailure({ stage: "session_status", message: error.message });
+  }
+}
+
 async function cancelCurrentRun() {
-  if (!state.currentRun) return;
+  if (!state.currentRun && !state.currentSession) return;
   elements.cancelButton.disabled = true;
   try {
+    if (state.currentSession) {
+      const { session } = await api(
+        `/api/sessions/${encodeURIComponent(state.currentSession.id)}/cancel`,
+        { method: "POST" },
+      );
+      state.currentSession = session;
+      clearPoll();
+      if (session.status === "partial") showUnifiedResult(session);
+      else showFailure({ stage: "cancelled", message: "The bounded unified session was cancelled." });
+      return;
+    }
     const { run } = await api(`/api/runs/${encodeURIComponent(state.currentRun.id)}/cancel`, {
       method: "POST",
     });
@@ -218,8 +332,10 @@ async function cancelCurrentRun() {
 function showProcessing(run) {
   hide(elements.controlPanel, elements.resultPanel, elements.failurePanel);
   show(elements.processingPanel);
+  elements.sourceProgress.replaceChildren();
   elements.contractMode.textContent = humanize(run.mode);
   elements.contractSource.textContent = run.source === "x" ? "X" : "LinkedIn";
+  elements.contractAttention.textContent = `Up to ${run.maxItems} result(s)`;
   elements.contractScrolls.textContent =
     run.scrolls === 0
       ? "Reveal pending content if present; no scrolling"
@@ -244,6 +360,41 @@ function showProcessing(run) {
   elements.processingTitle.textContent = copy[0];
   elements.processingDetail.textContent = copy[1];
   elements.progressBar.style.width = `${copy[2]}%`;
+}
+
+function showUnifiedProcessing(session) {
+  hide(elements.controlPanel, elements.resultPanel, elements.failurePanel);
+  show(elements.processingPanel);
+  const activeChild = session.children.find(
+    (child) => child.run && !isTerminal(child.run.status),
+  );
+  const activeLabel = activeChild ? sourceLabel(activeChild.source) : "next source";
+  elements.processingTitle.textContent = `Checking ${activeLabel}`;
+  elements.processingDetail.textContent =
+    activeChild?.run.status === "reasoning"
+      ? `Evaluating the bounded ${activeLabel} observation before moving to the next source.`
+      : `Running the bounded ${activeLabel} capture. Sources execute sequentially.`;
+  elements.contractMode.textContent = humanize(session.mode);
+  elements.contractSource.textContent = "X then LinkedIn";
+  elements.contractAttention.textContent = `Up to ${session.maxItemsPerSource} per source · ${session.maxItemsTotal} total`;
+  elements.contractScrolls.textContent = "Existing bounded policy per source";
+  const terminalCount = session.children.filter((child) =>
+    ["completed", "failed", "cancelled"].includes(child.status),
+  ).length;
+  const activeProgress = activeChild?.run.status === "reasoning" ? 32 : activeChild ? 14 : 0;
+  elements.progressBar.style.width = `${Math.min(94, terminalCount * 50 + activeProgress)}%`;
+  elements.sourceProgress.replaceChildren(
+    ...session.children.map((child) => {
+      const card = document.createElement("div");
+      const label = document.createElement("strong");
+      label.textContent = sourceLabel(child.source);
+      const status = document.createElement("span");
+      status.className = `status-pill ${child.status === "completed" ? "status-ok" : child.status === "failed" ? "status-error" : "status-neutral"}`;
+      status.textContent = humanize(child.status);
+      card.append(label, status);
+      return card;
+    }),
+  );
 }
 
 function showResult(run) {
@@ -281,9 +432,87 @@ function showResult(run) {
   ].join(" · ");
 }
 
+function showUnifiedResult(session) {
+  hide(elements.controlPanel, elements.processingPanel, elements.failurePanel);
+  show(elements.resultPanel);
+  setStatus(elements.bridgeStatus, "AkuBridge ready", "ok");
+  elements.runButton.disabled = false;
+  elements.resultTitle.textContent = `${humanize(session.mode)} unified brief`;
+  elements.resultMeta.textContent = `X + LinkedIn · ${session.result?.items?.length ?? 0} item(s) · as of ${formatDate(session.completedAt)}`;
+  const partial = session.status !== "completed";
+  elements.coverageBadge.textContent = partial
+    ? "Coverage partial"
+    : "Both source runs completed";
+  elements.coverageBadge.classList.toggle("status-ok", !partial);
+  elements.coverageContent.replaceChildren(buildUnifiedCoverage(session));
+  elements.resultSummary.textContent = session.result?.summary || "No summary was returned.";
+  elements.resultItems.replaceChildren();
+
+  for (const entry of session.result?.items ?? []) {
+    const child = session.children.find((candidate) => candidate.runId === entry.runId);
+    if (child?.run) elements.resultItems.append(buildResultItem(child.run, entry.item));
+  }
+
+  for (const child of session.children.filter(
+    (candidate) =>
+      candidate.run?.status === "completed" &&
+      (candidate.run.result?.items?.length ?? 0) === 0,
+  )) {
+    const outcome = document.createElement("section");
+    outcome.className = "source-outcome";
+    const title = document.createElement("h3");
+    title.textContent = `${sourceLabel(child.source)} · no item promoted`;
+    const summary = document.createElement("p");
+    summary.textContent = child.run.result?.summary ?? "No material item was promoted.";
+    outcome.append(title, summary, buildEmptyResultFeedback(child.run));
+    elements.resultItems.append(outcome);
+  }
+
+  elements.finishTitle.textContent =
+    session.mode === "catch_up" ? "End of catch-up" : "End of live brief";
+  elements.finishStats.textContent = [
+    `Shown: ${session.result?.items?.length ?? 0}`,
+    `X: ${session.coverage?.resultCountBySource?.x ?? 0}`,
+    `LinkedIn: ${session.coverage?.resultCountBySource?.linkedin ?? 0}`,
+    partial ? "One or more sources incomplete" : "Both source runs completed",
+  ].join(" · ");
+}
+
+function buildUnifiedCoverage(session) {
+  const container = document.createElement("div");
+  const summary = document.createElement("ul");
+  for (const child of session.children) {
+    const item = document.createElement("li");
+    item.textContent = `${sourceLabel(child.source)}: ${humanize(child.status)} · ${child.run?.result?.items?.length ?? 0} shown`;
+    summary.append(item);
+  }
+  const scope = document.createElement("p");
+  scope.textContent = session.coverage?.scopeStatement ?? "Bounded source samples.";
+  container.append(summary, scope);
+  for (const child of session.children.filter((candidate) => candidate.run?.coverage)) {
+    const details = document.createElement("details");
+    const label = document.createElement("summary");
+    label.textContent = `${sourceLabel(child.source)} acquisition details`;
+    details.append(label, buildCoverageList(child.run.coverage));
+    container.append(details);
+  }
+  return container;
+}
+
 function buildEmptyResultFeedback(run, onSaved = () => {}) {
   const container = document.createElement("div");
   container.className = "empty-result-feedback";
+
+  if (
+    run.coverage?.status === "unavailable" ||
+    !runHasDisplayEvidence(run)
+  ) {
+    const unavailable = document.createElement("p");
+    unavailable.textContent =
+      "This source captured no visible evidence, so the empty result cannot be rated.";
+    container.append(unavailable);
+    return container;
+  }
 
   const prompt = document.createElement("p");
   prompt.textContent = "Was this empty result correct?";
@@ -453,6 +682,9 @@ function buildCoverageList(coverage) {
     coverage.pendingContentPolicy
       ? `Pending-content policy: ${humanize(coverage.pendingContentPolicy)}`
       : null,
+    coverage.pendingContentRecovery
+      ? `Pending-content recovery: ${humanize(coverage.pendingContentRecovery)}`
+      : null,
     coverage.pendingContentActivationEvidence
       ? `Fresh-content activation evidence: ${humanize(coverage.pendingContentActivationEvidence)}`
       : null,
@@ -562,7 +794,18 @@ function showSessionView() {
   elements.sessionViewButton.classList.add("selected");
   elements.reviewViewButton.classList.remove("selected");
   hide(elements.reviewPanel);
-  if (state.currentRun?.status === "completed") {
+  if (state.currentSession && isUnifiedTerminal(state.currentSession.status)) {
+    if (["completed", "partial"].includes(state.currentSession.status)) {
+      showUnifiedResult(state.currentSession);
+    } else {
+      showFailure({
+        stage: state.currentSession.status,
+        message: "The unified session did not produce a completed source.",
+      });
+    }
+  } else if (state.currentSession) {
+    showUnifiedProcessing(state.currentSession);
+  } else if (state.currentRun?.status === "completed") {
     showResult(state.currentRun);
   } else if (state.currentRun && !isTerminal(state.currentRun.status)) {
     showProcessing(state.currentRun);
@@ -630,7 +873,7 @@ function renderPilotMetrics(summary) {
     ["Completed", `${summary.completedRuns} / ${summary.totalRuns}`],
     [
       "Review coverage",
-      `${formatPercent(summary.reviewCoverage)} (${summary.reviewedRuns}/${summary.completedRuns})`,
+      `${formatPercent(summary.reviewCoverage)} (${summary.reviewedRuns}/${summary.reviewableRuns ?? summary.completedRuns})`,
     ],
     [
       "Empty-result trust",
@@ -744,6 +987,7 @@ function reportRunFailure(error) {
 function resetToSetup() {
   clearPoll();
   state.currentRun = null;
+  state.currentSession = null;
   state.currentView = "session";
   elements.sessionViewButton.classList.add("selected");
   elements.reviewViewButton.classList.remove("selected");
@@ -788,6 +1032,25 @@ function clearPoll() {
 
 function isTerminal(status) {
   return ["completed", "failed", "cancelled"].includes(status);
+}
+
+function isUnifiedTerminal(status) {
+  return ["completed", "partial", "failed", "cancelled"].includes(status);
+}
+
+function sourceLabel(source) {
+  return source === "x" ? "X" : "LinkedIn";
+}
+
+function runHasDisplayEvidence(run) {
+  if ((run.observations?.length ?? 0) > 0) {
+    return run.observations.some((observation) =>
+      (observation.payload?.snapshots ?? []).some(
+        (snapshot) => (snapshot.blocks?.length ?? 0) > 0,
+      ),
+    );
+  }
+  return run.coverage?.observedBlockCount !== 0;
 }
 
 function humanize(value) {

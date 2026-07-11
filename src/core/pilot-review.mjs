@@ -32,7 +32,8 @@ export function buildPilotReview(runs, options = {}) {
 export function summarizePilotRuns(runs) {
   const completed = runs.filter((run) => run.status === "completed");
   const failed = runs.filter((run) => run.status === "failed");
-  const emptyRuns = completed.filter((run) => (run.result?.items?.length ?? 0) === 0);
+  const reviewable = completed.filter(isReviewableRun);
+  const emptyRuns = reviewable.filter((run) => (run.result?.items?.length ?? 0) === 0);
   const feedback = completed.flatMap((run) =>
     validFeedback(run).map((entry) => ({ ...entry, runId: run.id })),
   );
@@ -56,15 +57,16 @@ export function summarizePilotRuns(runs) {
   const completedDurations = completed
     .map(durationMs)
     .filter((value) => Number.isFinite(value) && value >= 0);
-  const reviewedRuns = completed.filter((run) => isReviewed(run)).length;
+  const reviewedRuns = reviewable.filter((run) => isReviewed(run)).length;
   const emptyVerdictCount = correctlyEmpty.size + missed.size;
 
   return {
     totalRuns: runs.length,
     completedRuns: completed.length,
     failedRuns: failed.length,
+    reviewableRuns: reviewable.length,
     reviewedRuns,
-    reviewCoverage: ratio(reviewedRuns, completed.length),
+    reviewCoverage: ratio(reviewedRuns, reviewable.length),
     emptyRuns: emptyRuns.length,
     correctlyEmptyRuns: correctlyEmpty.size,
     missedRuns: missed.size,
@@ -113,7 +115,7 @@ export function summarizePilotRuns(runs) {
 function matchesVerdict(run, verdict) {
   if (verdict === "all") return true;
   if (verdict === "failed") return run.status === "failed";
-  if (verdict === "unreviewed") return run.status === "completed" && !isReviewed(run);
+  if (verdict === "unreviewed") return isReviewableRun(run) && !isReviewed(run);
   const feedback = validFeedback(run);
   if (verdict === "correct") {
     return feedback.some((entry) =>
@@ -124,8 +126,14 @@ function matchesVerdict(run, verdict) {
 }
 
 function isReviewed(run) {
-  if (run.status !== "completed") return false;
+  if (!isReviewableRun(run)) return false;
   return validFeedback(run).length > 0;
+}
+
+function isReviewableRun(run) {
+  if (run.status !== "completed") return false;
+  if ((run.result?.items?.length ?? 0) > 0) return true;
+  return run.coverage?.status !== "unavailable" && run.coverage?.observedBlockCount !== 0;
 }
 
 function validFeedback(run) {
@@ -134,7 +142,7 @@ function validFeedback(run) {
   const itemIds = new Set(items.map((item) => item.id));
   return (run.feedback ?? []).filter((entry) => {
     if (EMPTY_VERDICTS.has(entry.kind)) {
-      if (entry.itemId || items.length !== 0) return false;
+      if (entry.itemId || items.length !== 0 || !isReviewableRun(run)) return false;
       return entry.kind !== "missed" || Boolean(entry.note?.trim());
     }
     return ITEM_VERDICTS.has(entry.kind) && Boolean(entry.itemId) && itemIds.has(entry.itemId);

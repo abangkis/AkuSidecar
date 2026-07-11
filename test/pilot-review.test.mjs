@@ -87,6 +87,21 @@ test("pilot review ignores malformed legacy feedback outside its run context", (
   assert.deepEqual(review.runs.flatMap((run) => run.feedback), []);
 });
 
+test("zero-evidence completed history is not treated as a reviewable empty result", () => {
+  const run = runFixture({
+    id: "unavailable-empty",
+    feedback: [{ kind: "correct_empty", itemId: null }],
+    coverageStatus: "unavailable",
+    observedBlockCount: 0,
+  });
+  const review = buildPilotReview([run], { verdict: "unreviewed" });
+  assert.equal(review.summary.completedRuns, 1);
+  assert.equal(review.summary.reviewableRuns, 0);
+  assert.equal(review.summary.emptyRuns, 0);
+  assert.equal(review.summary.reviewedRuns, 0);
+  assert.equal(review.totalMatching, 0);
+});
+
 function runFixture({
   id,
   source = "x",
@@ -96,6 +111,8 @@ function runFixture({
   durationMs = 5_000,
   suppressed = 0,
   rounds = 1,
+  coverageStatus = "partial",
+  observedBlockCount = 1,
   completedAt = "2026-07-11T01:00:05.000Z",
 }) {
   return {
@@ -112,6 +129,8 @@ function runFixture({
         ? new Date(new Date("2026-07-11T01:00:00.000Z").valueOf() + durationMs).toISOString()
         : completedAt,
     coverage: {
+      status: coverageStatus,
+      observedBlockCount,
       acquisitionRounds: rounds,
       exactDuplicatesSuppressed: suppressed,
     },

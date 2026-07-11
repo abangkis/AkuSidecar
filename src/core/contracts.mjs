@@ -42,6 +42,7 @@ export const FEEDBACK_KINDS = new Set([
   "duplicate",
   "useful",
 ]);
+export const UNIFIED_SESSION_SOURCES = Object.freeze(["x", "linkedin"]);
 
 export class ContractError extends Error {
   constructor(message, details = undefined) {
@@ -90,6 +91,44 @@ export function validateRunRequest(input, limits) {
     maxItems,
     scrolls,
     intent: cleanString(input.intent, 500) || defaultIntent,
+  };
+}
+
+export function validateUnifiedSessionRequest(input, limits) {
+  assertPlainObject(input, "unified session request");
+  const mode = input.mode ?? "catch_up";
+  if (!RUN_MODES.has(mode)) {
+    throw new ContractError(`unsupported mode: ${mode}`);
+  }
+  const sources = input.sources ?? UNIFIED_SESSION_SOURCES;
+  if (
+    !Array.isArray(sources) ||
+    sources.length !== UNIFIED_SESSION_SOURCES.length ||
+    sources.some((source, index) => source !== UNIFIED_SESSION_SOURCES[index])
+  ) {
+    throw new ContractError("unified session sources must be x then linkedin");
+  }
+  const maxItemsPerSource = input.maxItemsPerSource ?? limits.maxItems;
+  if (
+    !Number.isInteger(maxItemsPerSource) ||
+    maxItemsPerSource < 1 ||
+    maxItemsPerSource > limits.maxItems
+  ) {
+    throw new ContractError(
+      `maxItemsPerSource must be between 1 and ${limits.maxItems}`,
+    );
+  }
+  const defaultIntent =
+    mode === "manual_live"
+      ? "Show the material delta across X and LinkedIn right now."
+      : "Show what materially changed across X and LinkedIn since the previous checkpoints.";
+  return {
+    id: randomUUID(),
+    mode,
+    intent: cleanString(input.intent, 500) || defaultIntent,
+    sources: [...UNIFIED_SESSION_SOURCES],
+    maxItemsPerSource,
+    maxItemsTotal: Math.min(10, maxItemsPerSource * UNIFIED_SESSION_SOURCES.length),
   };
 }
 

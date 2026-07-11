@@ -74,7 +74,7 @@ test("feedback boundaries are contextual, exclusive, and idempotent", async (con
   const empty = await completeRun(engine, "empty-1", "Empty technical intent");
   assert.throws(
     () => engine.addFeedback(empty.id, { kind: "missed", itemId: "fake", note: "Missing" }),
-    /completed empty run without itemId/,
+    /evidence-bearing empty run without itemId/,
   );
   engine.addFeedback(empty.id, { kind: "correct_empty" });
   engine.addFeedback(empty.id, { kind: "correct_empty" });
@@ -99,7 +99,7 @@ test("feedback boundaries are contextual, exclusive, and idempotent", async (con
   const promoted = await completeRun(engine, "promoted-1", "Promoted technical intent");
   assert.throws(
     () => engine.addFeedback(promoted.id, { kind: "correct_empty" }),
-    /completed empty run/,
+    /evidence-bearing empty run/,
   );
   assert.throws(
     () => engine.addFeedback(promoted.id, { kind: "useful" }),
@@ -112,6 +112,23 @@ test("feedback boundaries are contextual, exclusive, and idempotent", async (con
   engine.addFeedback(promoted.id, { kind: "useful", itemId: "promoted-item" });
   engine.addFeedback(promoted.id, { kind: "useful", itemId: "promoted-item" });
   assert.equal(engine.getRun(promoted.id).feedback.length, 1);
+
+  const unavailable = engine.startRun({ source: "x", maxItems: 1, scrolls: 0 });
+  store.completeRun(
+    unavailable.id,
+    {
+      summary: "No evidence captured.",
+      items: [],
+      repeatedClaimsCollapsed: 0,
+      deferredByBudget: 0,
+      limitations: [],
+    },
+    { status: "unavailable", observedBlockCount: 0 },
+  );
+  assert.throws(
+    () => engine.addFeedback(unavailable.id, { kind: "correct_empty" }),
+    /evidence-bearing empty run/,
+  );
   store.close();
 });
 

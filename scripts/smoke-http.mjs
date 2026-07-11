@@ -27,8 +27,12 @@ try {
   assert.equal(bootstrap.limits.maxAcquisitionRounds, 2);
   assert.equal(bootstrap.limits.followUpScrolls, 1);
   assert.equal(bootstrap.limits.pendingContentTimeoutMs, 5_000);
+  assert.deepEqual(bootstrap.unifiedSession.sources, ["x", "linkedin"]);
+  assert.equal(bootstrap.unifiedSession.maxItemsPerSource, 5);
+  assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
   assert.match(html, /<title>AkuBrowser<\/title>/);
-  assert.match(html, /KNOWLEDGE CONTINUITY PILOT/);
+  assert.match(html, /UNIFIED KNOWLEDGE CONTINUITY/);
+  assert.match(html, /Run unified brief/);
   assert.match(html, /Pilot Review/);
   const review = await (await fetch(`${origin}/api/pilot/review`)).json();
   assert.equal(review.review.summary.totalRuns, 0);

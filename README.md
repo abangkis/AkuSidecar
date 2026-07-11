@@ -19,6 +19,8 @@ Open `http://127.0.0.1:47821` in the same Chrome profile where AkuBridge is load
 
 Development uses one visible process and one port. Vite runs as middleware inside the Sidecar HTTP server and hot-reloads `public/` assets. Node's watcher automatically restarts that same process when backend modules change, so neither path requires a manual restart.
 
+The default daily-use action creates one persisted Unified Session. AkuSidecar runs an X child followed by a LinkedIn child, keeps their checkpoints and feedback independent, and deterministically merges up to five validated items per source into one finite brief. Advanced/Pilot mode preserves the original single-source flow. Browser movement budgets remain unchanged.
+
 For the production-style static server without file watching:
 
 ```powershell
@@ -64,6 +66,15 @@ Feedback integrity is enforced by JobEngine:
 - repeated submission of the same verdict is idempotent.
 
 The review API is `GET /api/pilot/review`. Optional query parameters are `source`, `verdict`, and `limit`. The response intentionally returns result, coverage, and feedback evidence but not raw browser observations.
+
+## Unified Session API
+
+- `POST /api/sessions` creates the bounded X + LinkedIn parent session.
+- `GET /api/sessions/active` restores the latest non-terminal session after a page or Sidecar reload.
+- `GET /api/sessions/{sessionId}` reconciles child status, starts the next sequential source when appropriate, and returns the persisted unified result.
+- `POST /api/sessions/{sessionId}/cancel` cancels the active child and prevents queued sources from starting.
+
+Existing `/api/runs` and bridge-command endpoints remain source-specific. The bridge still receives one run ID at a time.
 
 ## Verification
 

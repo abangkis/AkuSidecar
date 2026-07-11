@@ -45,6 +45,41 @@ export class SqliteStateStore {
         error_json TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS unified_sessions (
+        id TEXT PRIMARY KEY,
+        mode TEXT NOT NULL,
+        intent TEXT NOT NULL,
+        sources_json TEXT NOT NULL,
+        max_items_per_source INTEGER NOT NULL,
+        max_items_total INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        active_source TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        result_json TEXT,
+        coverage_json TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS unified_session_children (
+        session_id TEXT NOT NULL REFERENCES unified_sessions(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        run_id TEXT UNIQUE REFERENCES runs(id) ON DELETE SET NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(session_id, source),
+        UNIQUE(session_id, ordinal)
+      );
+
+      CREATE INDEX IF NOT EXISTS unified_sessions_status
+        ON unified_sessions(status, updated_at);
+
+      CREATE INDEX IF NOT EXISTS unified_session_children_run
+        ON unified_session_children(run_id);
+
       CREATE TABLE IF NOT EXISTS bridge_commands (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -242,6 +277,152 @@ export class SqliteStateStore {
     const expected = Buffer.from(this.getOrCreateBridgeToken());
     const received = Buffer.from(candidate);
     return expected.length === received.length && timingSafeEqual(expected, received);
+  }
+
+  createUnifiedSession(session) {
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(`
+          INSERT INTO unified_sessions(
+            id, mode, intent, sources_json, max_items_per_source, max_items_total,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+        `)
+        .run(
+          session.id,
+          session.mode,
+          session.intent,
+          JSON.stringify(session.sources),
+          session.maxItemsPerSource,
+          session.maxItemsTotal,
+          now,
+          now,
+        );
+      const insertChild = this.database.prepare(`
+        INSERT INTO unified_session_children(
+          session_id, source, ordinal, status, created_at, updated_at
+        ) VALUES (?, ?, ?, 'queued', ?, ?)
+      `);
+      session.sources.forEach((source, ordinal) => {
+        insertChild.run(session.id, source, ordinal, now, now);
+      });
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getUnifiedSession(session.id);
+  }
+
+  getUnifiedSession(id) {
+    const row = this.database
+      .prepare("SELECT * FROM unified_sessions WHERE id = ?")
+      .get(id);
+    if (!row) return null;
+    const session = mapUnifiedSession(row);
+    session.children = this.database
+      .prepare("SELECT * FROM unified_session_children WHERE session_id = ? ORDER BY ordinal ASC")
+      .all(id)
+      .map((childRow) => {
+        const child = mapUnifiedSessionChild(childRow);
+        child.run = child.runId ? this.getRun(child.runId) : null;
+        return child;
+      });
+    return session;
+  }
+
+  getUnifiedSessionByRunId(runId) {
+    const row = this.database
+      .prepare("SELECT session_id FROM unified_session_children WHERE run_id = ?")
+      .get(runId);
+    return row ? this.getUnifiedSession(row.session_id) : null;
+  }
+
+  listOpenUnifiedSessions() {
+    return this.database
+      .prepare("SELECT id FROM unified_sessions WHERE status IN ('queued', 'running') ORDER BY created_at ASC")
+      .all()
+      .map((row) => this.getUnifiedSession(row.id));
+  }
+
+  attachUnifiedSessionChild(sessionId, source, runId) {
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(`
+          UPDATE unified_session_children
+          SET run_id = ?, status = 'waiting_for_bridge', updated_at = ?
+          WHERE session_id = ? AND source = ? AND status = 'queued'
+        `)
+        .run(runId, now, sessionId, source);
+      this.database
+        .prepare(`
+          UPDATE unified_sessions
+          SET status = 'running', active_source = ?, updated_at = ?,
+              started_at = COALESCE(started_at, ?)
+          WHERE id = ?
+        `)
+        .run(source, now, now, sessionId);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getUnifiedSession(sessionId);
+  }
+
+  setUnifiedSessionChildStatus(sessionId, source, status) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(`
+        UPDATE unified_session_children SET status = ?, updated_at = ?
+        WHERE session_id = ? AND source = ?
+      `)
+      .run(status, now, sessionId, source);
+    return this.getUnifiedSession(sessionId);
+  }
+
+  completeUnifiedSession(id, status, result, coverage) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(`
+        UPDATE unified_sessions
+        SET status = ?, active_source = NULL, updated_at = ?, completed_at = ?,
+            result_json = ?, coverage_json = ?
+        WHERE id = ?
+      `)
+      .run(status, now, now, JSON.stringify(result), JSON.stringify(coverage), id);
+    return this.getUnifiedSession(id);
+  }
+
+  cancelUnifiedSession(id, status, result, coverage) {
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(`
+          UPDATE unified_session_children
+          SET status = 'cancelled', updated_at = ?
+          WHERE session_id = ? AND status = 'queued'
+        `)
+        .run(now, id);
+      this.database
+        .prepare(`
+          UPDATE unified_sessions
+          SET status = ?, active_source = NULL, updated_at = ?, completed_at = ?,
+              result_json = ?, coverage_json = ?
+          WHERE id = ?
+        `)
+        .run(status, now, now, JSON.stringify(result), JSON.stringify(coverage), id);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getUnifiedSession(id);
   }
 
   createRun(run, provider) {
@@ -560,6 +741,24 @@ export class SqliteStateStore {
     return row ? mapBridgeCommand(row) : null;
   }
 
+  getLatestBridgeCommandForRun(runId) {
+    const row = this.database
+      .prepare("SELECT * FROM bridge_commands WHERE run_id = ? ORDER BY created_at DESC LIMIT 1")
+      .get(runId);
+    return row ? mapBridgeCommand(row) : null;
+  }
+
+  getPendingBridgeCommandForRun(runId) {
+    const row = this.database
+      .prepare(`
+        SELECT * FROM bridge_commands
+        WHERE run_id = ? AND status IN ('queued', 'claimed')
+        ORDER BY created_at DESC LIMIT 1
+      `)
+      .get(runId);
+    return row ? mapBridgeCommand(row) : null;
+  }
+
   claimBridgeCommand(runId, bridgeId) {
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -684,6 +883,36 @@ function mapRun(row) {
     coverage: parseJson(row.coverage_json),
     result: parseJson(row.result_json),
     error: parseJson(row.error_json),
+  };
+}
+
+function mapUnifiedSession(row) {
+  return {
+    id: row.id,
+    mode: row.mode,
+    intent: row.intent,
+    sources: parseJson(row.sources_json) ?? [],
+    maxItemsPerSource: row.max_items_per_source,
+    maxItemsTotal: row.max_items_total,
+    status: row.status,
+    activeSource: row.active_source,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    result: parseJson(row.result_json),
+    coverage: parseJson(row.coverage_json),
+    children: [],
+  };
+}
+
+function mapUnifiedSessionChild(row) {
+  return {
+    source: row.source,
+    ordinal: row.ordinal,
+    runId: row.run_id,
+    status: row.status,
+    run: null,
   };
 }
 

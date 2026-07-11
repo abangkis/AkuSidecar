@@ -10,7 +10,7 @@
     <main class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">KNOWLEDGE CONTINUITY PILOT</p>
+          <p class="eyebrow">UNIFIED KNOWLEDGE CONTINUITY</p>
           <h1>AkuBrowser</h1>
           <p class="subtitle">A bounded, source-backed finish line—not another feed.</p>
         </div>
@@ -71,9 +71,9 @@
         <div class="section-heading">
           <div>
             <p class="step-label">01 · INTENTIONAL SESSION</p>
-            <h2 id="session-heading">Choose the snapshot</h2>
+            <h2 id="session-heading">Choose the brief</h2>
           </div>
-          <p class="scope-note">1 result · reveal latest if pending · up to 2 scrolls</p>
+          <p class="scope-note">X + LinkedIn · up to 5 per source · finite result</p>
         </div>
 
         <form id="run-form">
@@ -91,11 +91,27 @@
             </div>
           </fieldset>
 
-          <label class="field-label" for="source">Source</label>
-          <select id="source" name="source">
-            <option value="x">X</option>
-            <option value="linkedin">LinkedIn</option>
-          </select>
+          <fieldset>
+            <legend>Source scope</legend>
+            <div class="segmented-control">
+              <label>
+                <input type="radio" name="scope" value="unified" checked />
+                <span>Unified X + LinkedIn</span>
+              </label>
+              <label>
+                <input type="radio" name="scope" value="single" />
+                <span>Advanced single source</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div id="single-source-field" class="hidden">
+            <label class="field-label" for="source">Advanced source</label>
+            <select id="source" name="source">
+              <option value="x">X</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+          </div>
 
           <label class="field-label" for="intent">What matters in this session?</label>
           <textarea
@@ -106,9 +122,9 @@
           >Technical engineering and AI development changes that materially affect my current work.</textarea>
 
           <div class="form-actions">
-            <button id="run-button" class="primary-button" type="submit">Run Gate 0B snapshot</button>
+            <button id="run-button" class="primary-button" type="submit">Run unified brief</button>
             <p id="preflight-copy" class="preflight-copy">
-              Keep a signed-in X or LinkedIn tab open. The bridge may activate only New posts/Show posts and move that tab to the latest feed; it will not like, reply, follow, or post.
+              Keep signed-in X and LinkedIn feed tabs open. AkuBrowser checks them sequentially and never likes, replies, follows, or posts.
             </p>
           </div>
         </form>
@@ -124,10 +140,11 @@
         </div>
         <div class="progress-track"><span id="progress-bar"></span></div>
         <p id="processing-detail">Creating a local run.</p>
+        <div id="source-progress" class="source-progress"></div>
         <dl class="run-contract">
           <div><dt>Mode</dt><dd id="contract-mode">—</dd></div>
           <div><dt>Source</dt><dd id="contract-source">—</dd></div>
-          <div><dt>Attention limit</dt><dd>1 result</dd></div>
+          <div><dt>Attention limit</dt><dd id="contract-attention">Up to 5 per source</dd></div>
           <div><dt>Browser movement</dt><dd id="contract-scrolls">Reveal pending content, then up to 2 native scrolls</dd></div>
         </dl>
       </section>
