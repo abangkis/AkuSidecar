@@ -1,5 +1,7 @@
 import {
   ContractError,
+  RUN_MODES,
+  SOURCES,
   validateAcquisitionPlan,
   validateBridgeObservation,
   validateFeedback,
@@ -11,6 +13,10 @@ import {
   buildObservationContinuation,
   buildNativeCaptureCommand,
 } from "../browser/browser-adapter-contract.mjs";
+import {
+  filterKnownEvidence,
+  uniqueEvidenceKeys,
+} from "./knowledge-continuity.mjs";
 
 export class JobEngine {
   constructor({ store, reasoningProvider, limits, logger = console }) {
@@ -38,6 +44,21 @@ export class JobEngine {
 
   listRuns(limit) {
     return this.store.listRuns(limit);
+  }
+
+  getKnowledgeContext(source, mode, limit = this.limits.maxKnowledgeContextEvents ?? 20) {
+    if (!SOURCES.has(source)) throw new ContractError(`unsupported source: ${source}`);
+    if (!RUN_MODES.has(mode)) throw new ContractError(`unsupported mode: ${mode}`);
+    return this.store.getKnowledgeContext(source, mode, limit);
+  }
+
+  getKnowledgeEventHistory(source, mode, eventKey, limit = 50) {
+    if (!SOURCES.has(source)) throw new ContractError(`unsupported source: ${source}`);
+    if (!RUN_MODES.has(mode)) throw new ContractError(`unsupported mode: ${mode}`);
+    if (typeof eventKey !== "string" || eventKey.length < 3) {
+      throw new ContractError("eventKey is required");
+    }
+    return this.store.getKnowledgeEventHistory(source, mode, eventKey, limit);
   }
 
   cancelRun(id) {
@@ -116,18 +137,31 @@ export class JobEngine {
       this.limits.maxAcquisitionRounds > 1 &&
       typeof this.reasoningProvider.planAcquisition === "function"
     ) {
+      const observedEvidenceKeys = uniqueEvidenceKeys(observation);
+      const knownEvidenceKeys = this.store.getKnownEvidenceKeys(
+        run.source,
+        run.mode,
+        observedEvidenceKeys,
+      );
+      const knowledgeContext = this.store.getKnowledgeContext(
+        run.source,
+        run.mode,
+        this.limits.maxKnowledgeContextEvents ?? 20,
+      );
       let plan;
       try {
         plan = validateAcquisitionPlan(
           await this.reasoningProvider.planAcquisition({
             run,
             observation,
+            knowledgeContext,
             budget: {
               currentRound: 1,
               maxRounds: this.limits.maxAcquisitionRounds,
               followUpScrolls: this.limits.followUpScrolls,
               sourceLocked: run.source,
               continuationRequiresAnchor: true,
+              knownEvidenceInCurrentSample: knownEvidenceKeys.size,
             },
           }),
         );
@@ -180,24 +214,47 @@ export class JobEngine {
         .getRun(runId)
         .observations.map((entry) => entry.payload);
       const observation = mergeObservations(storedObservations);
-      const rawResult = await this.reasoningProvider.analyze({
-        run,
-        observation,
-        observations: storedObservations,
-      });
+      const allEvidenceKeys = uniqueEvidenceKeys(observation);
+      const knownEvidenceKeys = this.store.getKnownEvidenceKeys(
+        run.source,
+        run.mode,
+        allEvidenceKeys,
+      );
+      const filtered = filterKnownEvidence(observation, knownEvidenceKeys);
+      const knowledgeContext = this.store.getKnowledgeContext(
+        run.source,
+        run.mode,
+        this.limits.maxKnowledgeContextEvents ?? 20,
+      );
+      const rawResult =
+        filtered.unseenEvidenceCount === 0 && knownEvidenceKeys.size > 0
+          ? noNewEvidenceResult(filtered.exactDuplicatesSuppressed)
+          : await this.reasoningProvider.analyze({
+              run,
+              observation: filtered.observation,
+              observations: storedObservations,
+              knowledgeContext,
+            });
       const result = validateReasoningResult(rawResult, run.maxItems);
-      assertObservedSources(result, observation);
+      assertObservedSources(result, filtered.observation);
+      assertUniqueResultEvidence(result, knownEvidenceKeys);
       if (this.store.getRun(runId)?.status === "cancelled") return;
       const coverage = {
         ...aggregateCoverage(storedObservations, planning),
         source: observation.source,
         checkedUrl: observation.pageUrl,
         resultCount: result.items.length,
+        previousCheckpointRunId: knowledgeContext.checkpoint?.runId ?? null,
+        previousCheckpointAt: knowledgeContext.checkpoint?.observedAt ?? null,
+        exactDuplicatesSuppressed: filtered.exactDuplicatesSuppressed,
+        unseenEvidenceCount: filtered.unseenEvidenceCount,
+        knowledgeContextEvents: knowledgeContext.events.length,
+        checkpointAdvanced: true,
         provider: this.reasoningProvider.name,
         scopeStatement:
           "Bounded native-browser sample only; this is not a claim of complete feed coverage.",
       };
-      this.store.completeRun(runId, result, coverage);
+      this.store.completeRunWithKnowledge(runId, result, coverage);
     } catch (error) {
       this.store.failRun(runId, "reasoning", error);
       throw error;
@@ -206,27 +263,59 @@ export class JobEngine {
 }
 
 function assertObservedSources(result, observation) {
-  const observedUrls = {
-    native_post: new Set(),
-    source_page: new Set(observation.pageUrls ?? [observation.pageUrl]),
-    external_reference: new Set(),
-  };
+  const blocksByEvidenceKey = new Map();
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
-    if (block.permalink) observedUrls.native_post.add(block.permalink);
-    for (const link of block.links) observedUrls.external_reference.add(link.href);
+    blocksByEvidenceKey.set(block.evidenceKey, block);
   }
+  const pageUrls = new Set(observation.pageUrls ?? [observation.pageUrl]);
   for (const item of result.items) {
     if (item.source !== observation.source) {
       throw new ContractError(
         `reasoning result source ${item.source} does not match observation source ${observation.source}`,
       );
     }
-    if (!observedUrls[item.sourceUrlKind]?.has(item.sourceUrl)) {
+    const block = blocksByEvidenceKey.get(item.evidenceKey);
+    if (!block) {
       throw new ContractError(
-        `reasoning result referenced a ${item.sourceUrlKind} URL that was not present in the matching browser-observation provenance lane: ${item.sourceUrl}`,
+        `reasoning result referenced evidence that was not present in the current browser observation: ${item.evidenceKey}`,
+      );
+    }
+    const sourceMatches =
+      (item.sourceUrlKind === "native_post" && block.permalink === item.sourceUrl) ||
+      (item.sourceUrlKind === "source_page" &&
+        !block.permalink &&
+        pageUrls.has(item.sourceUrl)) ||
+      (item.sourceUrlKind === "external_reference" &&
+        block.links.some((link) => link.href === item.sourceUrl));
+    if (!sourceMatches) {
+      throw new ContractError(
+        `reasoning result referenced a ${item.sourceUrlKind} URL outside its bound evidence block: ${item.sourceUrl}`,
       );
     }
   }
+}
+
+function assertUniqueResultEvidence(result, knownEvidenceKeys) {
+  const used = new Set();
+  for (const item of result.items) {
+    if (knownEvidenceKeys.has(item.evidenceKey)) {
+      throw new ContractError(`reasoning result attempted to promote previously delivered evidence: ${item.evidenceKey}`);
+    }
+    if (used.has(item.evidenceKey)) {
+      throw new ContractError(`reasoning result reused one evidence block more than once: ${item.evidenceKey}`);
+    }
+    used.add(item.evidenceKey);
+  }
+}
+
+function noNewEvidenceResult(suppressedCount) {
+  return {
+    summary: "No new visible evidence advanced the checkpoint in this bounded sample.",
+    items: [],
+    repeatedClaimsCollapsed: suppressedCount,
+    deferredByBudget: 0,
+    limitations: ["Every visible evidence block had already been delivered in this source and mode."],
+  };
 }
 
 function mergeObservations(observations) {

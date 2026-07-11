@@ -28,7 +28,7 @@ try {
   assert.equal(bootstrap.limits.followUpScrolls, 1);
   assert.equal(bootstrap.limits.pendingContentTimeoutMs, 5_000);
   assert.match(html, /<title>AkuBrowser<\/title>/);
-  assert.match(html, /FEASIBILITY GATE 0B\.3/);
+  assert.match(html, /KNOWLEDGE CONTINUITY PILOT/);
   console.log(JSON.stringify({ status: "ok", provider: bootstrap.provider, bridgeContractVersion: bootstrap.bridgeContractVersion }));
 } finally {
   await app.stop();

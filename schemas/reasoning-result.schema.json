@@ -19,6 +19,20 @@
             "type": "string",
             "enum": ["native_post", "source_page", "external_reference"]
           },
+          "evidenceKey": {
+            "type": "string",
+            "pattern": "^(x|linkedin):[a-f0-9]{24}$"
+          },
+          "eventKey": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "pattern": "^[a-z0-9][a-z0-9._:-]*$"
+          },
+          "knowledgeDelta": {
+            "type": "string",
+            "enum": ["new_event", "material_update", "context", "contradiction"]
+          },
           "author": { "type": "string" },
           "publishedAt": { "type": ["string", "null"] },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -35,6 +49,9 @@
           "source",
           "sourceUrl",
           "sourceUrlKind",
+          "evidenceKey",
+          "eventKey",
+          "knowledgeDelta",
           "author",
           "publishedAt",
           "confidence",

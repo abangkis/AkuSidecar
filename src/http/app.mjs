@@ -146,7 +146,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
 
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
     sendJson(response, 200, {
-      version: "0.4.0",
+      version: "0.5.0",
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
       bridgeToken,
@@ -160,6 +160,32 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
   if (request.method === "GET" && url.pathname === "/api/runs") {
     const limit = Math.max(1, Math.min(50, Number.parseInt(url.searchParams.get("limit") ?? "20", 10)));
     sendJson(response, 200, { runs: engine.listRuns(limit) });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/knowledge") {
+    const source = url.searchParams.get("source") ?? "x";
+    const mode = url.searchParams.get("mode") ?? "catch_up";
+    const limit = Number.parseInt(url.searchParams.get("limit") ?? "20", 10);
+    sendJson(response, 200, {
+      knowledge: engine.getKnowledgeContext(source, mode, limit),
+    });
+    return;
+  }
+
+  const knowledgeEventMatch = url.pathname.match(/^\/api\/knowledge\/events\/([^/]+)$/);
+  if (request.method === "GET" && knowledgeEventMatch) {
+    const source = url.searchParams.get("source") ?? "x";
+    const mode = url.searchParams.get("mode") ?? "catch_up";
+    const limit = Number.parseInt(url.searchParams.get("limit") ?? "50", 10);
+    sendJson(response, 200, {
+      versions: engine.getKnowledgeEventHistory(
+        source,
+        mode,
+        decodeURIComponent(knowledgeEventMatch[1]),
+        limit,
+      ),
+    });
     return;
   }
 

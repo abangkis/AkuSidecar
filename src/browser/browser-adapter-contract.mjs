@@ -168,6 +168,7 @@ export function assertNativeCaptureOutcome(commandPayload, observation) {
 }
 
 function blockIdentity(block) {
+  if (block?.platformId) return block.platformId;
   if (block?.permalink) return block.permalink;
   return typeof block?.text === "string"
     ? block.text.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 300)

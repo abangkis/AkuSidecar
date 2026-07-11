@@ -1,6 +1,10 @@
 import { loadConfig } from "../src/config.mjs";
 import { CodexSdkReasoningProvider } from "../src/reasoning/codex-sdk-provider.mjs";
-import { validateAcquisitionPlan, validateReasoningResult } from "../src/core/contracts.mjs";
+import {
+  validateAcquisitionPlan,
+  validateBridgeObservation,
+  validateReasoningResult,
+} from "../src/core/contracts.mjs";
 
 const config = loadConfig({
   ...process.env,
@@ -14,7 +18,7 @@ const run = {
   intent: "Verify the provider-neutral structured result contract.",
   maxItems: 1,
 };
-const observation = {
+const observation = validateBridgeObservation({
     source: "x",
     pageUrl: "https://x.com/example/status/1",
     pageTitle: "Synthetic Gate 0 fixture",
@@ -38,7 +42,7 @@ const observation = {
       candidateCount: 1,
       notes: ["Synthetic fixture; no real browser data."],
     },
-};
+}, config.limits);
 
 const plan = validateAcquisitionPlan(
   await provider.planAcquisition({
@@ -68,6 +72,7 @@ console.log(
       itemCount: validated.items.length,
       priorities: validated.items.map((item) => item.priority),
       provenanceKinds: validated.items.map((item) => item.sourceUrlKind),
+      knowledgeDeltas: validated.items.map((item) => item.knowledgeDelta),
       schemaValid: true,
     },
     null,

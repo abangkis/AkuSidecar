@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { evidenceKeyForBlock, normalizeEventKey } from "./knowledge-continuity.mjs";
 
 export const RUN_MODES = new Set(["catch_up", "manual_live"]);
 export const SOURCES = new Set(["x", "linkedin"]);
@@ -27,6 +28,12 @@ export const PENDING_ACTIVATION_EVIDENCE = new Set([
   "feed_fingerprint_changed",
 ]);
 export const ACQUISITION_DECISIONS = new Set(["finish", "request_follow_up"]);
+export const KNOWLEDGE_DELTAS = new Set([
+  "new_event",
+  "material_update",
+  "context",
+  "contradiction",
+]);
 export const FEEDBACK_KINDS = new Set([
   "correct_lane",
   "wrong_lane",
@@ -129,7 +136,7 @@ export function validateBridgeObservation(input, limits) {
         scrollY: finiteNumber(snapshot.scrollY, 0),
         viewportHeight: finiteNumber(snapshot.viewportHeight, 0),
         blocks: blocks
-          .map((block, blockIndex) => validateBlock(block, blockIndex, limits))
+          .map((block, blockIndex) => validateBlock(input.source, block, blockIndex, limits))
           .filter((block) => block.text.length > 0),
       };
     }),
@@ -137,7 +144,7 @@ export function validateBridgeObservation(input, limits) {
   };
 }
 
-function validateBlock(block, index, limits) {
+function validateBlock(source, block, index, limits) {
   assertPlainObject(block, `block ${index}`);
   const links = Array.isArray(block.links)
     ? block.links
@@ -149,13 +156,18 @@ function validateBlock(block, index, limits) {
         .filter((link) => link.href)
     : [];
 
-  return {
+  const validated = {
     text: cleanString(block.text, limits.maxBlockCharacters),
     author: cleanString(block.author, 300),
     publishedAt: validDateString(block.publishedAt),
     permalink: safeHttpUrl(block.permalink),
+    platformId: cleanString(block.platformId, 200),
     feedPosition: nonNegativeInteger(block.feedPosition, 0),
     links,
+  };
+  return {
+    ...validated,
+    evidenceKey: evidenceKeyForBlock(source, validated),
   };
 }
 
@@ -265,6 +277,17 @@ function validateResultItem(item, index) {
   if (!SOURCE_URL_KINDS.has(item.sourceUrlKind)) {
     throw new ContractError(`result item ${index} requires a valid sourceUrlKind`);
   }
+  const evidenceKey = cleanString(item.evidenceKey, 100);
+  if (!/^(x|linkedin):[a-f0-9]{24}$/.test(evidenceKey)) {
+    throw new ContractError(`result item ${index} requires a valid evidenceKey`);
+  }
+  const eventKey = normalizeEventKey(item.eventKey);
+  if (eventKey.length < 3) {
+    throw new ContractError(`result item ${index} requires a stable eventKey`);
+  }
+  if (!KNOWLEDGE_DELTAS.has(item.knowledgeDelta)) {
+    throw new ContractError(`result item ${index} requires a valid knowledgeDelta`);
+  }
   return {
     id: cleanString(item.id, 100) || randomUUID(),
     priority,
@@ -273,6 +296,9 @@ function validateResultItem(item, index) {
     source: SOURCES.has(item.source) ? item.source : "x",
     sourceUrl,
     sourceUrlKind: item.sourceUrlKind,
+    evidenceKey,
+    eventKey,
+    knowledgeDelta: item.knowledgeDelta,
     author: cleanString(item.author, 300),
     publishedAt: validDateString(item.publishedAt),
     confidence: normalizeConfidence(item.confidence),

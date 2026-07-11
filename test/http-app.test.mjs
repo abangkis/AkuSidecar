@@ -21,6 +21,7 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
       maxAcquisitionRounds: 2,
       followUpScrolls: 1,
       maxContinuationAnchors: 3,
+      maxKnowledgeContextEvents: 20,
       defaultScrolls: 2,
       scrollFraction: 0.75,
       scrollSettleMs: 900,
@@ -46,6 +47,9 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
             source: run.source,
             sourceUrl: block.permalink,
             sourceUrlKind: "native_post",
+            evidenceKey: block.evidenceKey,
+            eventKey: "http-fixture-update",
+            knowledgeDelta: "new_event",
             author: block.author,
             publishedAt: null,
             confidence: 0.8,
@@ -107,6 +111,15 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   const completed = await app.engine.waitForRun(created.run.id);
   assert.equal(completed.status, "completed");
   assert.equal(completed.result.items.length, 1);
+
+  const knowledge = await jsonFetch(`${origin}/api/knowledge?source=x&mode=catch_up`);
+  assert.equal(knowledge.knowledge.checkpoint.runId, completed.id);
+  assert.equal(knowledge.knowledge.events[0].eventKey, "http-fixture-update");
+  const history = await jsonFetch(
+    `${origin}/api/knowledge/events/http-fixture-update?source=x&mode=catch_up`,
+  );
+  assert.equal(history.versions.length, 1);
+  assert.equal(history.versions[0].evidenceKey, completed.result.items[0].evidenceKey);
 });
 
 function bridgeHeaders(token) {

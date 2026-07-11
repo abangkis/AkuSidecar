@@ -41,6 +41,9 @@ test("Gate 0 survives the browser-to-reasoning-to-SQLite flow and restart", asyn
             source: run.source,
             sourceUrl: observation.snapshots[0].blocks[0].permalink,
             sourceUrlKind: "native_post",
+            evidenceKey: observation.snapshots[0].blocks[0].evidenceKey,
+            eventKey: "gate-zero-test-event",
+            knowledgeDelta: "new_event",
             author: "Test author",
             publishedAt: null,
             confidence: 0.9,
@@ -95,6 +98,9 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
               source: run.source,
               sourceUrl: block.permalink,
               sourceUrlKind: "native_post",
+              evidenceKey: block.evidenceKey,
+              eventKey: "multi-viewport-test-event",
+              knowledgeDelta: "new_event",
               author: block.author,
               publishedAt: null,
               confidence: 0.85,
@@ -160,6 +166,9 @@ test("Gate 0B.3 permits one provider-requested anchored follow-up", async () => 
               source: run.source,
               sourceUrl: block.permalink,
               sourceUrlKind: "native_post",
+              evidenceKey: block.evidenceKey,
+              eventKey: "follow-up-test-event",
+              knowledgeDelta: "new_event",
               author: block.author,
               publishedAt: null,
               confidence: 0.85,
@@ -277,7 +286,7 @@ test("reasoning cannot invent provenance outside the browser observation", async
       store,
       reasoningProvider: {
         name: "hallucinating-provider",
-        async analyze() {
+        async analyze({ observation }) {
           return {
             summary: "Invalid provenance fixture.",
             items: [
@@ -289,6 +298,9 @@ test("reasoning cannot invent provenance outside the browser observation", async
                 source: "x",
                 sourceUrl: "https://example.invalid/not-observed",
                 sourceUrlKind: "source_page",
+                evidenceKey: observation.snapshots[0].blocks[0].evidenceKey,
+                eventKey: "unsupported-provenance-event",
+                knowledgeDelta: "new_event",
                 author: "Unknown",
                 publishedAt: null,
                 confidence: 0.9,
@@ -310,7 +322,7 @@ test("reasoning cannot invent provenance outside the browser observation", async
     const failed = await engine.waitForRun(run.id);
     assert.equal(failed.status, "failed");
     assert.equal(failed.error.stage, "reasoning");
-    assert.match(failed.error.message, /not present in the matching browser-observation provenance lane/i);
+    assert.match(failed.error.message, /outside its bound evidence block/i);
   } finally {
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -325,7 +337,7 @@ test("reasoning cannot relabel an external reference as a native post", async ()
       store,
       reasoningProvider: {
         name: "wrong-provenance-lane-provider",
-        async analyze() {
+        async analyze({ observation }) {
           return {
             summary: "Invalid provenance-lane fixture.",
             items: [
@@ -337,6 +349,9 @@ test("reasoning cannot relabel an external reference as a native post", async ()
                 source: "x",
                 sourceUrl: "https://example.com/reference",
                 sourceUrlKind: "native_post",
+                evidenceKey: observation.snapshots[0].blocks[0].evidenceKey,
+                eventKey: "external-reference-event",
+                knowledgeDelta: "new_event",
                 author: "Example",
                 publishedAt: null,
                 confidence: 0.7,
@@ -362,7 +377,7 @@ test("reasoning cannot relabel an external reference as a native post", async ()
     const failed = await engine.waitForRun(run.id);
     assert.equal(failed.status, "failed");
     assert.equal(failed.error.stage, "reasoning");
-    assert.match(failed.error.message, /native_post URL.*matching browser-observation provenance lane/i);
+    assert.match(failed.error.message, /native_post URL outside its bound evidence block/i);
   } finally {
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -389,6 +404,9 @@ test("source-page provenance is accepted when a native permalink is unavailable"
                 source: "x",
                 sourceUrl: observation.pageUrl,
                 sourceUrlKind: "source_page",
+                evidenceKey: observation.snapshots[0].blocks[0].evidenceKey,
+                eventKey: "source-page-fallback-event",
+                knowledgeDelta: "new_event",
                 author: "Example",
                 publishedAt: null,
                 confidence: 0.5,

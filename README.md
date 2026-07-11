@@ -39,6 +39,15 @@ Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New post
 
 Gate 0B.3 asks the configured ReasoningProvider only whether to finish or request one adjacent observation. A follow-up is capped at one scroll, locked to the same source, anchored to the last round-one viewport, and cannot activate fresh-content controls. Both rounds are stored and merged before the final result.
 
+## Knowledge continuity
+
+Every validated evidence block receives a deterministic identity. A completed run advances one checkpoint for its source and mode; only evidence previously delivered as a result is suppressed on later runs. New semantic deltas are attached to stable event keys and stored as append-only versions.
+
+The current frontier is inspectable through:
+
+- `GET /api/knowledge?source=x&mode=catch_up`
+- `GET /api/knowledge/events/{eventKey}?source=x&mode=catch_up`
+
 ## Verification
 
 ```powershell

@@ -271,6 +271,19 @@ function buildCoverageList(coverage) {
     coverage.providerFollowUpRequested
       ? `Provider follow-up: ${coverage.providerFollowUpExecuted ? "executed" : "requested but not executable"}${coverage.providerFollowUpReason ? ` — ${coverage.providerFollowUpReason}` : ""}`
       : "Provider follow-up: not requested",
+    coverage.previousCheckpointAt
+      ? `Previous checkpoint: ${formatDate(coverage.previousCheckpointAt)}`
+      : "Previous checkpoint: none; this run establishes the frontier",
+    Number.isInteger(coverage.exactDuplicatesSuppressed)
+      ? `Exact delivered duplicates suppressed: ${coverage.exactDuplicatesSuppressed}`
+      : null,
+    Number.isInteger(coverage.unseenEvidenceCount)
+      ? `Unseen evidence at reasoning: ${coverage.unseenEvidenceCount}`
+      : null,
+    Number.isInteger(coverage.knowledgeContextEvents)
+      ? `Prior frontier events supplied: ${coverage.knowledgeContextEvents}`
+      : null,
+    coverage.checkpointAdvanced ? "Checkpoint: advanced after this completed run" : null,
     `Snapshots: ${coverage.snapshotCount ?? 0}`,
     `Visible candidates observed: ${coverage.candidateCount ?? 0}`,
     coverage.browserAdapter ? `Browser adapter: ${coverage.browserAdapter}` : null,
@@ -328,7 +341,13 @@ function buildResultItem(run, item) {
   priority.textContent = item.priority;
   const evidence = document.createElement("span");
   evidence.className = "evidence-badge";
-  evidence.textContent = `${humanize(item.evidenceState)} · ${Math.round(item.confidence * 100)}%`;
+  evidence.textContent = [
+    humanize(item.evidenceState),
+    `${Math.round(item.confidence * 100)}%`,
+    item.knowledgeDelta ? humanize(item.knowledgeDelta) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   header.append(priority, evidence);
 
   const title = document.createElement("h3");

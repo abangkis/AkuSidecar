@@ -80,6 +80,53 @@ export class SqliteStateStore {
         note TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS checkpoints (
+        source TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        candidate_count INTEGER NOT NULL,
+        result_count INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(source, mode)
+      );
+
+      CREATE TABLE IF NOT EXISTS knowledge_events (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        event_key TEXT NOT NULL,
+        current_version_id TEXT,
+        first_seen_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(source, mode, event_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS knowledge_versions (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES knowledge_events(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        evidence_key TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        source_url_kind TEXT NOT NULL,
+        knowledge_delta TEXT NOT NULL,
+        claim TEXT NOT NULL,
+        published_at TEXT,
+        observed_at TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(source, mode, evidence_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS knowledge_versions_event
+        ON knowledge_versions(event_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS knowledge_versions_source_mode
+        ON knowledge_versions(source, mode, created_at);
     `);
   }
 
@@ -177,6 +224,153 @@ export class SqliteStateStore {
       `)
       .run(now, now, JSON.stringify(result), JSON.stringify(coverage), id);
     return this.getRun(id);
+  }
+
+  completeRunWithKnowledge(id, result, coverage) {
+    const run = this.getRun(id);
+    if (!run) throw new Error("run not found");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(`
+          UPDATE runs
+          SET status = 'completed', updated_at = ?, completed_at = ?,
+              result_json = ?, coverage_json = ?, error_json = NULL
+          WHERE id = ?
+        `)
+        .run(now, now, JSON.stringify(result), JSON.stringify(coverage), id);
+
+      for (const item of result.items) {
+        let event = this.database
+          .prepare("SELECT * FROM knowledge_events WHERE source = ? AND mode = ? AND event_key = ?")
+          .get(run.source, run.mode, item.eventKey);
+        if (!event) {
+          const eventId = randomUUID();
+          this.database
+            .prepare(`
+              INSERT INTO knowledge_events(
+                id, source, mode, event_key, first_seen_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?)
+            `)
+            .run(eventId, run.source, run.mode, item.eventKey, now, now);
+          event = { id: eventId };
+        }
+
+        const versionId = randomUUID();
+        this.database
+          .prepare(`
+            INSERT INTO knowledge_versions(
+              id, event_id, run_id, item_id, source, mode, evidence_key,
+              source_url, source_url_kind, knowledge_delta, claim,
+              published_at, observed_at, result_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .run(
+            versionId,
+            event.id,
+            id,
+            item.id,
+            run.source,
+            run.mode,
+            item.evidenceKey,
+            item.sourceUrl,
+            item.sourceUrlKind,
+            item.knowledgeDelta,
+            item.whatChanged,
+            item.publishedAt,
+            coverage.checkedThrough ?? now,
+            JSON.stringify(item),
+            now,
+          );
+        this.database
+          .prepare("UPDATE knowledge_events SET current_version_id = ?, updated_at = ? WHERE id = ?")
+          .run(versionId, now, event.id);
+      }
+
+      this.database
+        .prepare(`
+          INSERT INTO checkpoints(
+            source, mode, run_id, observed_at, candidate_count, result_count, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(source, mode) DO UPDATE SET
+            run_id = excluded.run_id,
+            observed_at = excluded.observed_at,
+            candidate_count = excluded.candidate_count,
+            result_count = excluded.result_count,
+            updated_at = excluded.updated_at
+        `)
+        .run(
+          run.source,
+          run.mode,
+          id,
+          coverage.checkedThrough ?? now,
+          coverage.candidateCount ?? 0,
+          result.items.length,
+          now,
+        );
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getRun(id);
+  }
+
+  getCheckpoint(source, mode) {
+    const row = this.database
+      .prepare("SELECT * FROM checkpoints WHERE source = ? AND mode = ?")
+      .get(source, mode);
+    return row ? mapCheckpoint(row) : null;
+  }
+
+  getKnownEvidenceKeys(source, mode, evidenceKeys) {
+    const unique = [...new Set(evidenceKeys)].filter(Boolean);
+    if (unique.length === 0) return new Set();
+    const placeholders = unique.map(() => "?").join(", ");
+    const rows = this.database
+      .prepare(`
+        SELECT evidence_key FROM knowledge_versions
+        WHERE source = ? AND mode = ? AND evidence_key IN (${placeholders})
+      `)
+      .all(source, mode, ...unique);
+    return new Set(rows.map((row) => row.evidence_key));
+  }
+
+  getKnowledgeContext(source, mode, limit = 20) {
+    const numericLimit = Number.isFinite(limit) ? Math.trunc(limit) : 20;
+    const boundedLimit = Math.max(1, Math.min(100, numericLimit));
+    const rows = this.database
+      .prepare(`
+        SELECT e.event_key, e.first_seen_at, e.updated_at,
+               v.evidence_key, v.knowledge_delta, v.claim, v.source_url,
+               v.source_url_kind, v.published_at, v.observed_at
+        FROM knowledge_events e
+        JOIN knowledge_versions v ON v.id = e.current_version_id
+        WHERE e.source = ? AND e.mode = ?
+        ORDER BY e.updated_at DESC
+        LIMIT ?
+      `)
+      .all(source, mode, boundedLimit);
+    return {
+      checkpoint: this.getCheckpoint(source, mode),
+      events: rows.map(mapKnowledgeEvent),
+    };
+  }
+
+  getKnowledgeEventHistory(source, mode, eventKey, limit = 50) {
+    const numericLimit = Number.isFinite(limit) ? Math.trunc(limit) : 50;
+    const boundedLimit = Math.max(1, Math.min(200, numericLimit));
+    const rows = this.database
+      .prepare(`
+        SELECT v.* FROM knowledge_versions v
+        JOIN knowledge_events e ON e.id = v.event_id
+        WHERE e.source = ? AND e.mode = ? AND e.event_key = ?
+        ORDER BY v.created_at ASC
+        LIMIT ?
+      `)
+      .all(source, mode, eventKey, boundedLimit);
+    return rows.map(mapKnowledgeVersion);
   }
 
   failRun(id, stage, error) {
@@ -366,6 +560,50 @@ function mapFeedback(row) {
     itemId: row.item_id,
     kind: row.kind,
     note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
+function mapCheckpoint(row) {
+  return {
+    source: row.source,
+    mode: row.mode,
+    runId: row.run_id,
+    observedAt: row.observed_at,
+    candidateCount: row.candidate_count,
+    resultCount: row.result_count,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapKnowledgeEvent(row) {
+  return {
+    eventKey: row.event_key,
+    firstSeenAt: row.first_seen_at,
+    updatedAt: row.updated_at,
+    evidenceKey: row.evidence_key,
+    knowledgeDelta: row.knowledge_delta,
+    claim: row.claim,
+    sourceUrl: row.source_url,
+    sourceUrlKind: row.source_url_kind,
+    publishedAt: row.published_at,
+    observedAt: row.observed_at,
+  };
+}
+
+function mapKnowledgeVersion(row) {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    itemId: row.item_id,
+    evidenceKey: row.evidence_key,
+    sourceUrl: row.source_url,
+    sourceUrlKind: row.source_url_kind,
+    knowledgeDelta: row.knowledge_delta,
+    claim: row.claim,
+    publishedAt: row.published_at,
+    observedAt: row.observed_at,
+    item: parseJson(row.result_json),
     createdAt: row.created_at,
   };
 }

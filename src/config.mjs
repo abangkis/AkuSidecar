@@ -40,6 +40,7 @@ export function loadConfig(env = process.env) {
       maxAcquisitionRounds: 2,
       followUpScrolls: 1,
       maxContinuationAnchors: 3,
+      maxKnowledgeContextEvents: 20,
       defaultScrolls: 2,
       scrollFraction: 0.75,
       scrollSettleMs: 900,
