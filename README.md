@@ -113,4 +113,15 @@ npm run smoke:codex
 
 `check:provider` is offline and quota-free. It validates the deterministic fallback against the same candidate coverage, provenance, planning, and telemetry envelope required from future local or open-source ReasoningProvider adapters. Passing this structural harness does not make the deterministic fallback suitable for pilot-quality ranking.
 
+Local data operations are explicit and never delete pilot state:
+
+```powershell
+npm run db:health
+npm run db:retention-preview -- --days 90
+npm run db:backup -- --output C:\path\to\new-backup.db
+npm run db:export -- --output C:\path\to\new-pilot-export.json
+```
+
+Backup uses SQLite `VACUUM INTO`, refuses to overwrite an existing target, and verifies the resulting database. The analysis export contains source content, candidate assessments, feedback, outcomes, and reasoning telemetry but excludes raw browser observations. Retention is preview-only; no delete operation exists.
+
 AkuSidecar does not import AkuBridge source. Their only runtime dependency is the versioned localhost bridge contract.

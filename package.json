@@ -13,6 +13,10 @@
     "test": "node --test --test-isolation=none",
     "check": "node --check src/server.mjs && node --test --test-isolation=none",
     "check:provider": "node scripts/check-provider-conformance.mjs",
+    "db:health": "node scripts/sqlite-ops.mjs health",
+    "db:backup": "node scripts/sqlite-ops.mjs backup",
+    "db:export": "node scripts/sqlite-ops.mjs export",
+    "db:retention-preview": "node scripts/sqlite-ops.mjs retention-preview",
     "smoke:http": "node scripts/smoke-http.mjs",
     "smoke:codex": "node scripts/smoke-codex.mjs"
   },
