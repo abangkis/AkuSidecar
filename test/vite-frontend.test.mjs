@@ -10,11 +10,13 @@ import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
 
 test("Vite middleware and the Sidecar API share one HTTP port", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-sidecar-vite-"));
-  const store = new SqliteStateStore(path.join(directory, "state.db"));
+  const databasePath = path.join(directory, "state.db");
+  const store = new SqliteStateStore(databasePath);
   const config = {
     host: "127.0.0.1",
     port: 0,
     publicDirectory: path.join(projectRoot, "public"),
+    databasePath,
     presentation: { defaultLayout: "source", streamWidth: "social" },
     limits: {
       maxBodyBytes: 1_000_000,
@@ -57,6 +59,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   const shadowComparison = await (
     await fetch(`${origin}/api/preferences/shadow-comparison`)
   ).json();
+  const databaseHealth = await (
+    await fetch(`${origin}/api/operations/database/health`)
+  ).json();
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
@@ -95,4 +100,6 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
   assert.equal(shadowComparison.comparison.available, false);
   assert.equal(shadowComparison.comparison.liveInfluence, false);
+  assert.equal(databaseHealth.database.status, "healthy");
+  assert.equal(path.basename(databaseHealth.database.databasePath), "state.db");
 });

@@ -10,6 +10,7 @@ import {
   updateDashboardConfiguration,
 } from "../configuration/runtime-configuration.mjs";
 import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
+import { inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -156,6 +157,8 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, {
+      version: "0.5.0",
+      bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       status: "ok",
       provider: engine.reasoningProvider.name,
       providerCapabilities: providerCapabilities(config.reasoning?.provider),
@@ -168,6 +171,17 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
         planningPolicy: config.reasoning?.planningPolicy ?? null,
       },
       time: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/operations/database/health") {
+    const health = inspectSqliteDatabase(config.databasePath);
+    sendJson(response, health.status === "healthy" ? 200 : 503, {
+      database: {
+        ...health,
+        databasePath: path.basename(health.databasePath),
+      },
     });
     return;
   }
