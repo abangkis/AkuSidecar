@@ -107,7 +107,10 @@ Existing `/api/runs` and bridge-command endpoints remain source-specific. The br
 
 ```powershell
 npm run check
+npm run check:provider
 npm run smoke:codex
 ```
+
+`check:provider` is offline and quota-free. It validates the deterministic fallback against the same candidate coverage, provenance, planning, and telemetry envelope required from future local or open-source ReasoningProvider adapters. Passing this structural harness does not make the deterministic fallback suitable for pilot-quality ranking.
 
 AkuSidecar does not import AkuBridge source. Their only runtime dependency is the versioned localhost bridge contract.

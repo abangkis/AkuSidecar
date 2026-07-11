@@ -12,6 +12,7 @@
     "dev": "node --watch src/server.mjs --vite",
     "test": "node --test --test-isolation=none",
     "check": "node --check src/server.mjs && node --test --test-isolation=none",
+    "check:provider": "node scripts/check-provider-conformance.mjs",
     "smoke:http": "node scripts/smoke-http.mjs",
     "smoke:codex": "node scripts/smoke-codex.mjs"
   },

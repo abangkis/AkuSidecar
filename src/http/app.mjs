@@ -9,6 +9,7 @@ import {
   configurationView,
   updateDashboardConfiguration,
 } from "../configuration/runtime-configuration.mjs";
+import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -157,6 +158,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     sendJson(response, 200, {
       status: "ok",
       provider: engine.reasoningProvider.name,
+      providerCapabilities: providerCapabilities(config.reasoning?.provider),
       reasoning: {
         model: config.reasoning?.evaluationModel ?? config.reasoning?.model ?? null,
         planningModel: config.reasoning?.planningModel ?? config.reasoning?.model ?? null,
@@ -175,6 +177,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
       version: "0.5.0",
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
+      providerCapabilities: providerCapabilities(config.reasoning?.provider),
       reasoning: {
         model: config.reasoning?.evaluationModel ?? config.reasoning?.model ?? null,
         planningModel: config.reasoning?.planningModel ?? config.reasoning?.model ?? null,
