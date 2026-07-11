@@ -11,6 +11,8 @@ const state = {
   resultPresentation: "brief",
   runtimeConfiguration: null,
   reviewPage: 0,
+  reviewLoading: false,
+  reviewHasNext: false,
 };
 
 const REVIEW_PAGE_SIZE = 10;
@@ -49,10 +51,7 @@ const elements = {
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
   reviewMeta: document.querySelector("#review-meta"),
   reviewRuns: document.querySelector("#review-runs"),
-  reviewPagination: document.querySelector("#review-pagination"),
-  reviewPreviousPage: document.querySelector("#review-previous-page"),
-  reviewNextPage: document.querySelector("#review-next-page"),
-  reviewPageStatus: document.querySelector("#review-page-status"),
+  reviewScrollSentinel: document.querySelector("#review-scroll-sentinel"),
   controlPanel: document.querySelector(".control-panel"),
   runForm: document.querySelector("#run-form"),
   runButton: document.querySelector("#run-button"),
@@ -138,8 +137,6 @@ elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
-elements.reviewPreviousPage.addEventListener("click", () => changePilotReviewPage(-1));
-elements.reviewNextPage.addEventListener("click", () => changePilotReviewPage(1));
 elements.resultBriefView.addEventListener("click", () => setResultPresentation("brief"));
 elements.resultSourceView.addEventListener("click", () => setResultPresentation("source"));
 for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
@@ -148,6 +145,7 @@ for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
 
 await bootstrap();
 updateScopeControls();
+observePilotReviewScroll();
 
 async function bootstrap() {
   try {
@@ -1158,13 +1156,17 @@ async function saveRuntimeSettings(event) {
   }
 }
 
-async function loadPilotReview() {
+async function loadPilotReview({ append = false } = {}) {
+  if (state.reviewLoading) return;
+  state.reviewLoading = true;
+  const requestedPage = append ? state.reviewPage + 1 : 0;
   elements.reviewRefreshButton.disabled = true;
-  elements.reviewMeta.textContent = "Loading pilot evidence…";
+  if (append) elements.reviewScrollSentinel.textContent = "Loading 10 more runs…";
+  else elements.reviewMeta.textContent = "Loading pilot evidence…";
   try {
     const params = new URLSearchParams({
       limit: String(REVIEW_PAGE_SIZE),
-      offset: String(state.reviewPage * REVIEW_PAGE_SIZE),
+      offset: String(requestedPage * REVIEW_PAGE_SIZE),
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
@@ -1179,16 +1181,20 @@ async function loadPilotReview() {
       review.pagination.offset >= review.pagination.available
     ) {
       state.reviewPage = Math.ceil(review.pagination.available / REVIEW_PAGE_SIZE) - 1;
+      state.reviewLoading = false;
       return loadPilotReview();
     }
-    renderPilotMetrics(review.summary);
-    renderReasoningEconomics(review.summary.tokenUsage, review.runs);
-    renderPreferenceReadiness(replay);
+    state.reviewPage = requestedPage;
+    state.reviewHasNext = review.pagination.hasNext;
+    if (!append) {
+      renderPilotMetrics(review.summary);
+      renderReasoningEconomics(review.summary.tokenUsage, review.runs);
+      renderPreferenceReadiness(replay);
+    }
+    const shown = Math.min(review.pagination.offset + review.runs.length, REVIEW_MAX_RUNS);
     elements.reviewMeta.textContent = [
       `${review.totalMatching} matching run(s)`,
-      review.runs.length
-        ? `showing ${review.pagination.offset + 1}-${review.pagination.offset + review.runs.length}`
-        : "no runs shown",
+      shown ? `${shown} loaded` : "no runs shown",
       review.window?.pilotStartedAt
         ? `pilot cohort since ${formatDate(review.window.pilotStartedAt)}`
         : null,
@@ -1197,8 +1203,9 @@ async function loadPilotReview() {
     ]
       .filter(Boolean)
       .join(" · ");
-    elements.reviewRuns.replaceChildren(...buildPilotRunGroups(review.runs));
-    renderPilotReviewPagination(review.pagination);
+    if (append) appendPilotRunGroups(review.runs);
+    else elements.reviewRuns.replaceChildren(...buildPilotRunGroups(review.runs, true));
+    renderPilotReviewScrollStatus(review.pagination, review.runs.length);
     if (review.runs.length === 0) {
       const empty = document.createElement("p");
       empty.className = "review-empty";
@@ -1206,31 +1213,40 @@ async function loadPilotReview() {
       elements.reviewRuns.append(empty);
     }
   } catch (error) {
-    elements.reviewMeta.textContent = error.message;
+    if (append) elements.reviewScrollSentinel.textContent = `Could not load more: ${error.message}`;
+    else elements.reviewMeta.textContent = error.message;
   } finally {
+    state.reviewLoading = false;
     elements.reviewRefreshButton.disabled = false;
   }
 }
 
 function resetPilotReviewPage() {
   state.reviewPage = 0;
+  state.reviewHasNext = false;
   loadPilotReview();
 }
 
-function changePilotReviewPage(delta) {
-  state.reviewPage += delta;
-  loadPilotReview();
-}
-
-function renderPilotReviewPagination(pagination) {
+function renderPilotReviewScrollStatus(pagination, receivedCount) {
   const available = Math.min(pagination.available, REVIEW_MAX_RUNS);
-  const pageCount = Math.max(1, Math.ceil(available / REVIEW_PAGE_SIZE));
-  const currentPage = Math.min(state.reviewPage + 1, pageCount);
-  state.reviewPage = currentPage - 1;
-  elements.reviewPageStatus.textContent = `Page ${currentPage} of ${pageCount}`;
-  elements.reviewPreviousPage.disabled = !pagination.hasPrevious;
-  elements.reviewNextPage.disabled = !pagination.hasNext;
-  elements.reviewPagination.classList.toggle("hidden", available <= REVIEW_PAGE_SIZE);
+  const loaded = Math.min(pagination.offset + receivedCount, available);
+  elements.reviewScrollSentinel.textContent = pagination.hasNext
+    ? `Scroll to load more · ${loaded} of ${available}`
+    : available > 0
+      ? `End of review window · ${available} run(s)`
+      : "No review history";
+}
+
+function observePilotReviewScroll() {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && state.reviewHasNext) {
+        loadPilotReview({ append: true });
+      }
+    },
+    { rootMargin: "240px 0px" },
+  );
+  observer.observe(elements.reviewScrollSentinel);
 }
 
 function renderPreferenceReadiness(replay) {
@@ -1334,7 +1350,7 @@ function formatTokenCount(value) {
   return Number.isFinite(value) ? value.toLocaleString() : "Not reported";
 }
 
-function buildPilotRunGroups(runs) {
+function buildPilotRunGroups(runs, expandFirst = false) {
   const groups = [];
   const byKey = new Map();
   for (const run of runs) {
@@ -1349,6 +1365,7 @@ function buildPilotRunGroups(runs) {
   return groups.map((group, groupIndex) => {
     const section = document.createElement("section");
     section.className = `unified-review-group${group.unified ? " is-unified" : ""}`;
+    section.dataset.reviewGroupKey = group.key;
     const heading = document.createElement("div");
     heading.className = "unified-review-heading";
     const title = document.createElement("h3");
@@ -1362,10 +1379,26 @@ function buildPilotRunGroups(runs) {
     heading.append(title, meta);
     section.append(heading);
     for (const run of group.runs) {
-      section.append(buildPilotRunCard(run, groupIndex === 0));
+      section.append(buildPilotRunCard(run, expandFirst && groupIndex === 0));
     }
     return section;
   });
+}
+
+function appendPilotRunGroups(runs) {
+  const groups = buildPilotRunGroups(runs, false);
+  const lastExisting = elements.reviewRuns.lastElementChild;
+  const firstNew = groups[0];
+  if (
+    lastExisting?.dataset.reviewGroupKey &&
+    firstNew?.dataset.reviewGroupKey === lastExisting.dataset.reviewGroupKey
+  ) {
+    for (const card of [...firstNew.querySelectorAll(":scope > .pilot-run-card")]) {
+      lastExisting.append(card);
+    }
+    groups.shift();
+  }
+  elements.reviewRuns.append(...groups);
 }
 
 function buildPilotRunCard(run, expanded = false) {
