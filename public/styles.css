@@ -340,6 +340,40 @@ h3 {
   font-size: 1.35rem;
 }
 
+.source-health {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.source-health-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.source-health-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.source-health-details strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.source-health-details p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .review-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

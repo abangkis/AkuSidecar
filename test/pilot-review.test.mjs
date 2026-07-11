@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPilotReview, summarizePilotRuns } from "../src/core/pilot-review.mjs";
+import {
+  buildPilotReview,
+  classifyRunFailure,
+  summarizePilotRuns,
+  summarizeSourceHealth,
+} from "../src/core/pilot-review.mjs";
 
 test("pilot review summarizes trust, item feedback, latency, and suppression", () => {
   const runs = [
@@ -128,6 +133,36 @@ test("pilot review preserves unified-session grouping metadata", () => {
   assert.equal(review.runs[0].unifiedSessionCreatedAt, "2026-07-11T09:00:00.000Z");
 });
 
+test("rolling source health separates current reliability from historical totals", () => {
+  const recent = Array.from({ length: 20 }, (_, index) => runFixture({
+    id: `recent-${index}`,
+    source: index % 2 === 0 ? "x" : "linkedin",
+    status: index === 0 ? "failed" : "completed",
+    createdAt: new Date(Date.UTC(2026, 6, 12, 0, 0, 20 - index)).toISOString(),
+    error: index === 0 ? { stage: "browser_capture", message: "No tab with id: 42" } : null,
+  }));
+  const historical = Array.from({ length: 25 }, (_, index) => runFixture({
+    id: `old-${index}`,
+    status: "failed",
+    createdAt: new Date(Date.UTC(2026, 6, 10, 0, 0, index)).toISOString(),
+  }));
+  const health = summarizeSourceHealth([...recent, ...historical]);
+
+  assert.equal(health.totalRuns, 20);
+  assert.equal(health.completedRuns, 19);
+  assert.equal(health.status, "healthy");
+  assert.deepEqual(health.failureCategories, [{ category: "stale_tab", count: 1 }]);
+  assert.equal(health.sources.x.totalRuns, 10);
+  assert.equal(health.sources.linkedin.totalRuns, 10);
+});
+
+test("failure taxonomy is deterministic and stage-aware", () => {
+  assert.equal(classifyRunFailure({ error: { message: "No open, rendered x tab was found." } }), "missing_tab");
+  assert.equal(classifyRunFailure({ error: { message: "LinkedIn source readiness failed: selector_mismatch" } }), "source_readiness");
+  assert.equal(classifyRunFailure({ error: { stage: "reasoning", message: "candidate assessment duplicated evidence" } }), "reasoning_contract");
+  assert.equal(classifyRunFailure({ error: { message: "The x follow-up frontier no longer matched" } }), "frontier_mismatch");
+});
+
 function runFixture({
   id,
   source = "x",
@@ -140,6 +175,8 @@ function runFixture({
   coverageStatus = "partial",
   observedBlockCount = 1,
   completedAt = "2026-07-11T01:00:05.000Z",
+  createdAt = "2026-07-11T01:00:00.000Z",
+  error = null,
 }) {
   return {
     id,
@@ -148,7 +185,7 @@ function runFixture({
     intent: "Technical engineering changes.",
     status,
     provider: "test-provider",
-    createdAt: "2026-07-11T01:00:00.000Z",
+    createdAt,
     startedAt: "2026-07-11T01:00:00.000Z",
     completedAt:
       completedAt && durationMs !== 5_000
@@ -161,7 +198,7 @@ function runFixture({
       exactDuplicatesSuppressed: suppressed,
     },
     result: status === "completed" ? { summary: "Fixture", items } : null,
-    error: status === "failed" ? { message: "Fixture failure" } : null,
+    error: status === "failed" ? (error ?? { message: "Fixture failure" }) : null,
     feedback,
   };
 }

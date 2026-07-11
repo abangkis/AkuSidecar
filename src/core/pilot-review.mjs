@@ -124,6 +124,86 @@ export function summarizePilotRuns(runs) {
       completed.filter((run) => run.coverage?.providerFollowUpExecuted).length,
       completed.length,
     ),
+    sourceHealth: summarizeSourceHealth(runs),
+  };
+}
+
+export function summarizeSourceHealth(runs, windowSize = 20) {
+  const boundedWindow = Math.max(5, Math.min(100, Math.trunc(windowSize)));
+  const recent = [...runs]
+    .filter((run) => ["completed", "failed"].includes(run.status))
+    .sort((left, right) => timestamp(right.createdAt) - timestamp(left.createdAt))
+    .slice(0, boundedWindow);
+  const sources = Object.fromEntries(
+    ["x", "linkedin"].map((source) => [
+      source,
+      summarizeHealthWindow(recent.filter((run) => run.source === source)),
+    ]),
+  );
+  return {
+    windowSize: boundedWindow,
+    ...summarizeHealthWindow(recent),
+    sources,
+    failureCategories: Object.entries(
+      recent
+        .filter((run) => run.status === "failed")
+        .reduce((counts, run) => {
+          const category = classifyRunFailure(run);
+          counts[category] = (counts[category] ?? 0) + 1;
+          return counts;
+        }, {}),
+    )
+      .map(([category, count]) => ({ category, count }))
+      .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category)),
+  };
+}
+
+export function classifyRunFailure(run) {
+  const stage = String(run?.error?.stage ?? "").toLowerCase();
+  const message = String(run?.error?.message ?? "").toLowerCase();
+  if (/no tab with id|invalid tab id|the tab was closed/.test(message)) return "stale_tab";
+  if (/no open, rendered .* tab/.test(message)) return "missing_tab";
+  if (/frontier.*no longer matched|continuation.*anchor/.test(message)) return "frontier_mismatch";
+  if (/source readiness|feed_not_visible|selector_mismatch|evidence-ready/.test(message)) {
+    return "source_readiness";
+  }
+  if (/pending-content|did not reveal a changed/.test(message)) return "pending_content";
+  if (/deadline|timed? out|exceeded.*timeout/.test(message)) return "capture_timeout";
+  if (/no visible evidence|zero evidence/.test(message)) return "zero_evidence";
+  if (stage.includes("reasoning") || /candidate assessment|reasoning/.test(message)) {
+    return "reasoning_contract";
+  }
+  return "other";
+}
+
+function summarizeHealthWindow(runs) {
+  const completed = runs.filter((run) => run.status === "completed").length;
+  const failed = runs.filter((run) => run.status === "failed").length;
+  const total = completed + failed;
+  const completionRate = ratio(completed, total);
+  const restorationFailures = runs.filter(
+    (run) => run.coverage?.restoreAttempted && run.coverage?.restored === false,
+  ).length;
+  const staleTabRecoveries = runs.reduce(
+    (sum, run) => sum + (run.coverage?.sourceTabRecoveryCount ?? 0),
+    0,
+  );
+  let status = "insufficient";
+  if (total >= 5) {
+    status = completionRate >= 0.9 && restorationFailures === 0
+      ? "healthy"
+      : completionRate >= 0.7
+        ? "degraded"
+        : "unstable";
+  }
+  return {
+    status,
+    totalRuns: total,
+    completedRuns: completed,
+    failedRuns: failed,
+    completionRate,
+    restorationFailures,
+    staleTabRecoveries,
   };
 }
 
@@ -242,6 +322,11 @@ function durationMs(run) {
   if (!run.startedAt || !run.completedAt) return null;
   const value = new Date(run.completedAt).valueOf() - new Date(run.startedAt).valueOf();
   return Number.isFinite(value) ? value : null;
+}
+
+function timestamp(value) {
+  const parsed = new Date(value).valueOf();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function ratio(numerator, denominator) {

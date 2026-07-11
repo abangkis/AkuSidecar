@@ -46,6 +46,8 @@ const elements = {
   reviewPanel: document.querySelector("#review-panel"),
   reviewRefreshButton: document.querySelector("#review-refresh-button"),
   reviewMetrics: document.querySelector("#review-metrics"),
+  sourceHealthStatus: document.querySelector("#source-health-status"),
+  sourceHealthDetails: document.querySelector("#source-health-details"),
   reviewTokenUsage: document.querySelector("#review-token-usage"),
   preferenceReadinessStatus: document.querySelector("#preference-readiness-status"),
   preferenceReadinessGates: document.querySelector("#preference-readiness-gates"),
@@ -1237,6 +1239,7 @@ async function loadPilotReview({ append = false } = {}) {
     state.reviewHasNext = review.pagination.hasNext;
     if (!append) {
       renderPilotMetrics(review.summary);
+      renderSourceHealth(review.summary.sourceHealth);
       renderReasoningEconomics(review.summary.tokenUsage, review.runs);
       renderPreferenceReadiness(replay);
       renderPreferenceExperiment(experiment);
@@ -1399,6 +1402,49 @@ function renderPilotMetrics(summary) {
       return card;
     }),
   );
+}
+
+function renderSourceHealth(health) {
+  elements.sourceHealthDetails.replaceChildren();
+  if (!health) {
+    setStatus(elements.sourceHealthStatus, "Unavailable", "neutral");
+    return;
+  }
+  const tone = health.status === "healthy"
+    ? "ok"
+    : health.status === "degraded" || health.status === "insufficient"
+      ? "warning"
+      : "error";
+  setStatus(elements.sourceHealthStatus, humanize(health.status), tone);
+  const rows = [
+    ["Window", `${health.totalRuns} of ${health.windowSize} latest source runs`],
+    ["Completion", `${formatPercent(health.completionRate)} (${health.completedRuns}/${health.totalRuns})`],
+    ["X", healthSummary(health.sources?.x)],
+    ["LinkedIn", healthSummary(health.sources?.linkedin)],
+    ["Restoration failures", String(health.restorationFailures ?? 0)],
+    ["Stale-tab recoveries", String(health.staleTabRecoveries ?? 0)],
+  ];
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    const term = document.createElement("span");
+    term.textContent = label;
+    const detail = document.createElement("strong");
+    detail.textContent = value;
+    row.append(term, detail);
+    elements.sourceHealthDetails.append(row);
+  }
+  if (health.failureCategories?.length) {
+    const failures = document.createElement("p");
+    failures.textContent = `Recent failures: ${health.failureCategories
+      .map((entry) => `${humanize(entry.category)} ${entry.count}`)
+      .join(" · ")}`;
+    elements.sourceHealthDetails.append(failures);
+  }
+}
+
+function healthSummary(value) {
+  if (!value?.totalRuns) return "No recent run";
+  return `${formatPercent(value.completionRate)} · ${value.completedRuns}/${value.totalRuns}`;
 }
 
 function renderReasoningEconomics(tokenUsage, runs) {
