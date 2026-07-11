@@ -97,6 +97,12 @@ window.addEventListener("message", (event) => {
   if (event.data.type === "AKU_BROWSER_BRIDGE_READY") {
     state.bridgeReady = true;
     setStatus(elements.bridgeStatus, "AkuBridge ready", "ok");
+    api("/api/operations/bridge/heartbeat", {
+      method: "POST",
+      body: JSON.stringify({ capabilities: event.data.capabilities ?? {} }),
+    }).catch(() => {
+      setStatus(elements.bridgeStatus, "AkuBridge diagnostics pending", "warning");
+    });
   }
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
     if (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) {
@@ -169,6 +175,7 @@ async function bootstrap() {
       elements.providerNotice.classList.remove("hidden");
     }
     pingBridge();
+    setInterval(pingBridge, 30_000);
     const { session } = await api("/api/sessions/active");
     if (session) {
       state.currentSession = session;

@@ -11,6 +11,7 @@ import {
 } from "../configuration/runtime-configuration.mjs";
 import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
 import { inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
+import { createBridgeDiagnostics } from "../operations/bridge-diagnostics.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -32,6 +33,7 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
     logger,
   });
   const bridgeToken = store.getOrCreateBridgeToken();
+  const bridgeDiagnostics = createBridgeDiagnostics();
   let frontend = null;
 
   const server = http.createServer(async (request, response) => {
@@ -58,6 +60,7 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
           engine,
           store,
           bridgeToken,
+          bridgeDiagnostics,
           config,
         });
         return;
@@ -142,7 +145,7 @@ function serveFrontend(middleware, request, response, logger) {
   });
 }
 
-async function handleApi({ request, response, url, engine, store, bridgeToken, config }) {
+async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config }) {
   if (request.method === "GET" && url.pathname === "/api/configuration/runtime") {
     sendJson(response, 200, { configuration: configurationView(config, store) });
     return;
@@ -183,6 +186,18 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
         databasePath: path.basename(health.databasePath),
       },
     });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/operations/bridge/heartbeat") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    sendJson(response, 202, { heartbeat: bridgeDiagnostics.recordHeartbeat(body) });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/operations/bridge/health") {
+    const runs = engine.listRuns(30).map((run) => engine.getRun(run.id)).filter(Boolean);
+    sendJson(response, 200, { bridge: bridgeDiagnostics.report(runs) });
     return;
   }
 
