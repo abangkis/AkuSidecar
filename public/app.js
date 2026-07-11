@@ -4,6 +4,8 @@ const state = {
   currentRun: null,
   currentSession: null,
   pollTimer: null,
+  externalSessionDiscoveryTimer: null,
+  externalSessionDiscoveryInFlight: false,
   dispatchedRounds: new Set(),
   currentView: "session",
   resultPresentation: "brief",
@@ -162,6 +164,7 @@ async function bootstrap() {
     } else {
       await showReviewView();
     }
+    startExternalSessionDiscovery();
     setTimeout(() => {
       if (!state.bridgeReady) {
         setStatus(elements.bridgeStatus, "AkuBridge not detected", "warning");
@@ -272,6 +275,31 @@ function dispatchToBridge(run) {
 function schedulePoll() {
   clearPoll();
   state.pollTimer = setTimeout(pollCurrent, 700);
+}
+
+function startExternalSessionDiscovery() {
+  if (state.externalSessionDiscoveryTimer) return;
+  state.externalSessionDiscoveryTimer = setInterval(async () => {
+    if (
+      state.externalSessionDiscoveryInFlight ||
+      (state.currentRun && !isTerminal(state.currentRun.status)) ||
+      (state.currentSession && !isUnifiedTerminal(state.currentSession.status))
+    ) return;
+    state.externalSessionDiscoveryInFlight = true;
+    try {
+      const { session } = await api("/api/sessions/active");
+      if (!session) return;
+      state.dispatchedRounds.clear();
+      state.currentSession = session;
+      if (state.currentView === "session") showUnifiedProcessing(session);
+      dispatchUnifiedSession(session);
+      schedulePoll();
+    } catch {
+      // Sidecar availability is reported by the normal status surface.
+    } finally {
+      state.externalSessionDiscoveryInFlight = false;
+    }
+  }, 1_000);
 }
 
 async function pollCurrent() {
@@ -939,7 +967,7 @@ function buildSourceLayoutCard(run, item, candidate) {
   context.textContent = [
     sourceLabel(source),
     item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run",
-  ].join(" Â· ");
+  ].join(" · ");
   identity.append(author, context);
   const sourceBadge = document.createElement("span");
   sourceBadge.className = "source-layout-badge";

@@ -50,12 +50,15 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
 
   const htmlResponse = await fetch(`${origin}/`);
   const html = await htmlResponse.text();
+  const appScript = await (await fetch(`${origin}/app.js`)).text();
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
   assert.match(html, /Unified X \+ LinkedIn/);
   assert.match(html, /Advanced single source/);
+  assert.match(appScript, /startExternalSessionDiscovery/);
+  assert.match(appScript, /\/api\/sessions\/active/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /ws:\/\/127\.0\.0\.1/);
   assert.equal(bootstrap.provider, "vite-test-provider");
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
