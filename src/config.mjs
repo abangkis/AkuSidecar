@@ -161,6 +161,7 @@ export function loadConfig(env = process.env) {
       pendingContentSettleMs: 700,
       maxBlocksPerSnapshot: 20,
       maxBlockCharacters: 4_000,
+      maxMediaPerBlock: 4,
     },
   };
 }

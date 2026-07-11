@@ -237,9 +237,10 @@ function compactObservation(observation, maxCharacters) {
   const seen = new Set();
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
     if (!block.evidenceKey || seen.has(block.evidenceKey)) continue;
-    const serialized = JSON.stringify(block);
+    const { media: _presentationOnlyMedia, ...reasoningBlock } = block;
+    const serialized = JSON.stringify(reasoningBlock);
     if (characters + serialized.length > maxCharacters) break;
-    compact.blocks.push(block);
+    compact.blocks.push(reasoningBlock);
     seen.add(block.evidenceKey);
     characters += serialized.length;
     if (compact.blocks.length >= 20) break;

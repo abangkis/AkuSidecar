@@ -21,6 +21,8 @@ Development uses one visible process and one port. Vite runs as middleware insid
 
 The default daily-use action creates one persisted Unified Session. AkuSidecar runs an X child followed by a LinkedIn child, keeps their checkpoints and feedback independent, and deterministically merges up to five validated items per source into one finite brief. Advanced/Pilot mode preserves the original single-source flow. Browser movement budgets remain unchanged.
 
+Source layout reconstructs each item from persisted candidate text, provenance, and at most four validated source images or video posters. Images are presentation-only, lazy-loaded without a referrer, and omitted from reasoning prompts. A cache miss may request the original allowlisted source CDN; AkuBrowser does not reopen or recapture the source page.
+
 For the production-style static server without file watching:
 
 ```powershell
@@ -89,6 +91,8 @@ Feedback integrity is enforced by JobEngine:
 The review API is `GET /api/pilot/review`. Optional query parameters are `source`, `verdict`, and `limit`. The response intentionally returns result, coverage, and feedback evidence but not raw browser observations.
 
 `GET /api/preferences/replay` provides deterministic offline calibration readiness over stored candidates, assessments, and preference signals. It reports coverage and descriptive tendencies without invoking a model or influencing live selection. The initial gates require 30 contextual-interest signals, including at least 15 `more_like_this` and 5 `less_like_this` signals, 20 assessment-matched signals, and feedback across 10 runs. Retired development-only preference kinds are deleted rather than carried as compatibility behavior.
+
+`GET /api/preferences/experiment` exposes the hard-gated shadow experiment state. `POST /api/preferences/experiment/fit` persists one versioned SQLite snapshot only after every replay gate passes. The snapshot uses stable run-level holdout evaluation and reports aggregate shadow behavior, but it never changes live ranking. Re-fitting an unchanged assessed dataset is idempotent by dataset fingerprint.
 
 ## Unified Session API
 

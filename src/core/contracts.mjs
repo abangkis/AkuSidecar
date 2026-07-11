@@ -237,12 +237,49 @@ function validateBlock(source, block, index, limits) {
     permalink: safeHttpUrl(block.permalink),
     platformId: cleanString(block.platformId, 200),
     feedPosition: nonNegativeInteger(block.feedPosition, 0),
+    media: validateBlockMedia(source, block.media, limits),
     links,
   };
   return {
     ...validated,
     evidenceKey: evidenceKeyForBlock(source, validated),
   };
+}
+
+function validateBlockMedia(source, value, limits) {
+  const maxItems = Number.isInteger(limits.maxMediaPerBlock)
+    ? Math.max(0, Math.min(4, limits.maxMediaPerBlock))
+    : 4;
+  const seen = new Set();
+  const media = [];
+  for (const entry of Array.isArray(value) ? value.slice(0, maxItems) : []) {
+    const url = safeSourceMediaUrl(source, entry?.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    media.push({
+      kind: entry?.kind === "video_poster" ? "video_poster" : "image",
+      url,
+      alt: cleanString(entry?.alt, 300),
+      width: Math.min(8_192, nonNegativeInteger(entry?.width, 0)),
+      height: Math.min(8_192, nonNegativeInteger(entry?.height, 0)),
+    });
+  }
+  return media;
+}
+
+function safeSourceMediaUrl(source, value) {
+  if (typeof value !== "string" || value.length > 4_000) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    if (source === "x" && !["pbs.twimg.com", "video.twimg.com"].includes(host)) return null;
+    if (source === "linkedin" && host !== "licdn.com" && !host.endsWith(".licdn.com")) return null;
+    url.hash = "";
+    return url.href;
+  } catch {
+    return null;
+  }
 }
 
 function validateCoverage(value, limits) {

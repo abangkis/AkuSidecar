@@ -20,6 +20,10 @@ import {
   uniqueEvidenceKeys,
 } from "./knowledge-continuity.mjs";
 import { buildPreferenceReplay } from "./preference-replay.mjs";
+import {
+  fitOfflinePreferenceExperiment,
+  preferenceExperimentStatus,
+} from "./offline-preference-experiment.mjs";
 import { buildPilotReview } from "./pilot-review.mjs";
 
 export class JobEngine {
@@ -282,6 +286,22 @@ export class JobEngine {
 
   getPreferenceReplay(limit = 500) {
     return buildPreferenceReplay(this.store.listRunsWithFeedback(limit));
+  }
+
+  getPreferenceExperiment(limit = 500) {
+    const runs = this.store.listRunsWithFeedback(limit);
+    return preferenceExperimentStatus(
+      runs,
+      this.store.getLatestPreferenceModelSnapshot(),
+    );
+  }
+
+  fitPreferenceExperiment(limit = 500) {
+    const runs = this.store.listRunsWithFeedback(limit);
+    const experiment = fitOfflinePreferenceExperiment(runs);
+    if (experiment.status !== "fitted") return experiment;
+    const snapshot = this.store.savePreferenceModelSnapshot(experiment.snapshot);
+    return preferenceExperimentStatus(runs, snapshot);
   }
 
   async waitForRun(runId) {
@@ -680,6 +700,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       author: block.author ?? "",
       text: block.text ?? "",
       sourceUrl: block.permalink || observation.pageUrl,
+      media: block.media ?? [],
       publishedAt: block.publishedAt ?? null,
       feedPosition: Number.isInteger(block.feedPosition) ? block.feedPosition : null,
       policyVersion: "learning-loop-v0",

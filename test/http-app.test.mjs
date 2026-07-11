@@ -85,6 +85,14 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   const replay = await jsonFetch(`${origin}/api/preferences/replay`);
   assert.equal(replay.replay.mode, "offline_replay");
   assert.equal(replay.replay.liveInfluence, false);
+  const experiment = await jsonFetch(`${origin}/api/preferences/experiment`);
+  assert.equal(experiment.experiment.status, "blocked");
+  assert.equal(experiment.experiment.liveInfluence, false);
+  const blockedFit = await jsonFetch(`${origin}/api/preferences/experiment/fit`, {
+    method: "POST",
+  });
+  assert.equal(blockedFit.experiment.status, "blocked");
+  assert.equal(store.getLatestPreferenceModelSnapshot(), null);
 
   const created = await jsonFetch(`${origin}/api/runs`, {
     method: "POST",

@@ -11,39 +11,7 @@ export const PREFERENCE_REPLAY_THRESHOLDS = Object.freeze({
 });
 
 export function buildPreferenceReplay(runs) {
-  const candidates = runs.flatMap((run) =>
-    (run.candidateEvaluations ?? []).map((candidate) => ({ run, candidate })),
-  );
-  const candidateByRunEvidence = new Map(
-    candidates.map(({ run, candidate }) => [key(run.id, candidate.evidenceKey), { run, candidate }]),
-  );
-  const signals = [];
-  const latestByCandidate = new Map();
-  for (const run of runs) {
-    for (const feedback of run.preferenceFeedback ?? []) {
-      latestByCandidate.set(key(run.id, feedback.evidenceKey), { run, feedback });
-    }
-  }
-  for (const { run, feedback } of latestByCandidate.values()) {
-      const polarity = POSITIVE_KINDS.has(feedback.kind)
-        ? "positive"
-        : NEGATIVE_KINDS.has(feedback.kind)
-          ? "negative"
-          : null;
-      if (!polarity) continue;
-      const matched = candidateByRunEvidence.get(key(run.id, feedback.evidenceKey));
-      signals.push({
-        runId: run.id,
-        source: run.source,
-        evidenceKey: feedback.evidenceKey,
-        kind: feedback.kind,
-        polarity,
-        decision: matched?.candidate.decision ?? null,
-        assessment: matched?.candidate.assessment ?? null,
-        matchedCandidate: Boolean(matched),
-      });
-  }
-
+  const { candidates, signals } = buildPreferenceSignals(runs);
   const positive = signals.filter((signal) => signal.polarity === "positive");
   const negative = signals.filter((signal) => signal.polarity === "negative");
   const assessed = signals.filter((signal) => signal.assessment);
@@ -102,6 +70,43 @@ export function buildPreferenceReplay(runs) {
         : null,
     ].filter(Boolean),
   };
+}
+
+export function buildPreferenceSignals(runs) {
+  const candidates = runs.flatMap((run) =>
+    (run.candidateEvaluations ?? []).map((candidate) => ({ run, candidate })),
+  );
+  const candidateByRunEvidence = new Map(
+    candidates.map(({ run, candidate }) => [key(run.id, candidate.evidenceKey), { run, candidate }]),
+  );
+  const signals = [];
+  const latestByCandidate = new Map();
+  for (const run of runs) {
+    for (const feedback of run.preferenceFeedback ?? []) {
+      latestByCandidate.set(key(run.id, feedback.evidenceKey), { run, feedback });
+    }
+  }
+  for (const { run, feedback } of latestByCandidate.values()) {
+      const polarity = POSITIVE_KINDS.has(feedback.kind)
+        ? "positive"
+        : NEGATIVE_KINDS.has(feedback.kind)
+          ? "negative"
+          : null;
+      if (!polarity) continue;
+      const matched = candidateByRunEvidence.get(key(run.id, feedback.evidenceKey));
+      signals.push({
+        runId: run.id,
+        source: run.source,
+        evidenceKey: feedback.evidenceKey,
+        kind: feedback.kind,
+        polarity,
+        decision: matched?.candidate.decision ?? null,
+        assessment: matched?.candidate.assessment ?? null,
+        matchedCandidate: Boolean(matched),
+      });
+  }
+
+  return { candidates, signals };
 }
 
 function aggregateLabels(signals, labelsForAssessment) {

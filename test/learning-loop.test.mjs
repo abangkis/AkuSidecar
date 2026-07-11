@@ -180,6 +180,13 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   assert.equal(selected.itemId, "selected-item");
   assert.equal(excluded.reasonCode, "not_promoted_by_provider");
   assert.equal(selected.assessment.recommendedPriority, "P1");
+  assert.deepEqual(selected.media, [{
+    kind: "image",
+    url: "https://pbs.twimg.com/media/selected.jpg",
+    alt: "Selected candidate diagram",
+    width: 640,
+    height: 360,
+  }]);
   assert.equal(excluded.assessment.contentType, "announcement");
   assert.equal(run.reasoningInvocations[0].inputTokens, 100);
 
@@ -257,6 +264,13 @@ function block(id, feedPosition) {
     permalink: `https://x.com/fixture/status/${id}`,
     publishedAt: null,
     feedPosition,
+    media: id === "selected" ? [{
+      kind: "image",
+      url: "https://pbs.twimg.com/media/selected.jpg",
+      alt: "Selected candidate diagram",
+      width: 640,
+      height: 360,
+    }] : [],
     links: [],
   };
 }

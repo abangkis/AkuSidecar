@@ -21,6 +21,7 @@ const limits = {
   pendingContentSettleMs: 700,
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
+  maxMediaPerBlock: 4,
 };
 
 test("empty-result feedback is stored at run level", () => {
@@ -185,6 +186,10 @@ test("browser observations accept only bounded http evidence", () => {
             {
               text: "A visible technical update with enough context to be a bounded candidate.",
               permalink: "https://x.com/example/status/1",
+              media: [
+                { kind: "image", url: "https://pbs.twimg.com/media/example.jpg#fragment", alt: "Architecture diagram", width: 640, height: 360 },
+                { kind: "image", url: "https://evil.example/tracker.png", width: 640, height: 360 },
+              ],
               links: [
                 { text: "valid", href: "https://example.com/" },
                 { text: "invalid", href: "javascript:alert(1)" },
@@ -200,6 +205,13 @@ test("browser observations accept only bounded http evidence", () => {
 
   assert.equal(observation.snapshots[0].blocks[0].links.length, 1);
   assert.equal(observation.snapshots[0].blocks[0].links[0].href, "https://example.com/");
+  assert.deepEqual(observation.snapshots[0].blocks[0].media, [{
+    kind: "image",
+    url: "https://pbs.twimg.com/media/example.jpg",
+    alt: "Architecture diagram",
+    width: 640,
+    height: 360,
+  }]);
   assert.equal(observation.coverage.status, "partial");
 });
 

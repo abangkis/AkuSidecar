@@ -48,6 +48,9 @@ const elements = {
   preferenceReadinessStatus: document.querySelector("#preference-readiness-status"),
   preferenceReadinessGates: document.querySelector("#preference-readiness-gates"),
   preferenceReadinessDetail: document.querySelector("#preference-readiness-detail"),
+  preferenceExperimentStatus: document.querySelector("#preference-experiment-status"),
+  preferenceExperimentDetail: document.querySelector("#preference-experiment-detail"),
+  fitPreferenceExperiment: document.querySelector("#fit-preference-experiment"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
   reviewMeta: document.querySelector("#review-meta"),
@@ -131,6 +134,7 @@ elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
+elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
 for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
@@ -986,8 +990,48 @@ function buildSourceLayoutCard(run, item, candidate) {
     content.append(paragraph);
   }
 
+  const media = buildSourceLayoutMedia(candidate?.media ?? [], source);
   article.append(header, content);
+  if (media) article.append(media);
   return article;
+}
+
+function buildSourceLayoutMedia(entries, source) {
+  const media = [];
+  for (const entry of entries.slice(0, 4)) {
+    const url = safePresentationMediaUrl(entry?.url, source);
+    if (!url) continue;
+    const figure = document.createElement("figure");
+    figure.className = "source-layout-media-item";
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = entry.alt || "Captured post image";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    image.addEventListener("error", () => figure.remove(), { once: true });
+    figure.append(image);
+    media.push(figure);
+  }
+  if (media.length === 0) return null;
+  const gallery = document.createElement("div");
+  gallery.className = `source-layout-media media-count-${media.length}`;
+  gallery.append(...media);
+  return gallery;
+}
+
+function safePresentationMediaUrl(value, source) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    if (source === "x" && !["pbs.twimg.com", "video.twimg.com"].includes(host)) return null;
+    if (source === "linkedin" && host !== "licdn.com" && !host.endsWith(".licdn.com")) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
 }
 
 function showSessionView() {
@@ -1155,10 +1199,11 @@ async function loadPilotReview({ append = false } = {}) {
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
-    const [{ review }, { profile }, { replay }] = await Promise.all([
+    const [{ review }, { profile }, { replay }, { experiment }] = await Promise.all([
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
+      api("/api/preferences/experiment"),
     ]);
     if (
       review.runs.length === 0 &&
@@ -1175,6 +1220,7 @@ async function loadPilotReview({ append = false } = {}) {
       renderPilotMetrics(review.summary);
       renderReasoningEconomics(review.summary.tokenUsage, review.runs);
       renderPreferenceReadiness(replay);
+      renderPreferenceExperiment(experiment);
     }
     const shown = Math.min(review.pagination.offset + review.runs.length, REVIEW_MAX_RUNS);
     elements.reviewMeta.textContent = [
@@ -1204,6 +1250,48 @@ async function loadPilotReview({ append = false } = {}) {
     state.reviewLoading = false;
     elements.reviewRefreshButton.disabled = false;
   }
+}
+
+async function fitPreferenceExperiment() {
+  elements.fitPreferenceExperiment.disabled = true;
+  elements.preferenceExperimentDetail.textContent = "Fitting shadow-only snapshot…";
+  try {
+    const { experiment } = await api("/api/preferences/experiment/fit", { method: "POST" });
+    renderPreferenceExperiment(experiment);
+  } catch (error) {
+    elements.preferenceExperimentDetail.textContent = error.message;
+  }
+}
+
+function renderPreferenceExperiment(experiment) {
+  const labels = {
+    blocked: "Blocked",
+    ready_to_fit: "Ready to fit",
+    fitted: "Shadow fitted",
+  };
+  const fitted = experiment.status === "fitted";
+  const ready = experiment.status === "ready_to_fit";
+  setStatus(
+    elements.preferenceExperimentStatus,
+    labels[experiment.status] ?? humanize(experiment.status),
+    fitted ? "ok" : ready ? "warning" : "neutral",
+  );
+  elements.fitPreferenceExperiment.disabled = !ready;
+  const snapshot = experiment.currentSnapshot;
+  elements.preferenceExperimentDetail.textContent = snapshot
+    ? [
+        `Snapshot v${snapshot.version}`,
+        `${snapshot.evaluation.holdoutSignals} holdout signal(s)`,
+        `agreement ${formatPercent(snapshot.evaluation.agreement)}`,
+        `balanced ${formatPercent(snapshot.evaluation.balancedAccuracy)}`,
+        `${snapshot.shadow.scoredCandidates} shadow-scored candidates`,
+        "live influence off",
+      ].join(" · ")
+    : [
+        `${experiment.readiness.passedGates}/${experiment.readiness.totalGates} readiness gates passed`,
+        experiment.latestSnapshot ? "latest snapshot is stale" : "no snapshot persisted",
+        "live influence off",
+      ].join(" · ");
 }
 
 function resetPilotReviewPage() {
@@ -1347,6 +1435,11 @@ function buildPilotRunGroups(runs, expandFirst = false) {
     }
     byKey.get(key).runs.push(run);
   }
+  for (const group of groups) {
+    if (group.unified) {
+      group.runs.sort((left, right) => sourceReviewOrder(left.source) - sourceReviewOrder(right.source));
+    }
+  }
   return groups.map((group, groupIndex) => {
     const section = document.createElement("section");
     section.className = `unified-review-group${group.unified ? " is-unified" : ""}`;
@@ -1370,6 +1463,10 @@ function buildPilotRunGroups(runs, expandFirst = false) {
   });
 }
 
+function sourceReviewOrder(source) {
+  return source === "x" ? 0 : source === "linkedin" ? 1 : 2;
+}
+
 function appendPilotRunGroups(runs) {
   const groups = buildPilotRunGroups(runs, false);
   const lastExisting = elements.reviewRuns.lastElementChild;
@@ -1381,14 +1478,26 @@ function appendPilotRunGroups(runs) {
     for (const card of [...firstNew.querySelectorAll(":scope > .pilot-run-card")]) {
       lastExisting.append(card);
     }
+    sortReviewGroupCards(lastExisting);
     groups.shift();
   }
   elements.reviewRuns.append(...groups);
 }
 
+function sortReviewGroupCards(group) {
+  const cards = [...group.querySelectorAll(":scope > .pilot-run-card")];
+  cards.sort(
+    (left, right) =>
+      sourceReviewOrder(left.dataset.reviewSource) -
+      sourceReviewOrder(right.dataset.reviewSource),
+  );
+  group.append(...cards);
+}
+
 function buildPilotRunCard(run, expanded = false) {
   const card = document.createElement("details");
   card.className = "pilot-run-card";
+  card.dataset.reviewSource = run.source;
   card.open = expanded;
   const cardSummary = document.createElement("summary");
   const header = document.createElement("div");

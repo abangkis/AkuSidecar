@@ -156,6 +156,17 @@ export class SqliteStateStore {
       CREATE INDEX IF NOT EXISTS preference_feedback_run_created
         ON preference_feedback_events(run_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS preference_model_snapshots (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        dataset_fingerprint TEXT NOT NULL UNIQUE,
+        snapshot_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS preference_model_snapshots_created
+        ON preference_model_snapshots(created_at DESC);
+
       CREATE TABLE IF NOT EXISTS reasoning_invocations (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -238,6 +249,7 @@ export class SqliteStateStore {
         ON evidence_dispositions(source, mode, intent_key, disposition);
     `);
     this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
+    this.#ensureColumn("candidate_evaluations", "media_json", "TEXT");
     this.database
       .prepare("DELETE FROM preference_feedback_events WHERE kind NOT IN ('more_like_this', 'less_like_this')")
       .run();
@@ -320,6 +332,38 @@ export class SqliteStateStore {
 
   getPilotReviewStartedAt() {
     return this.getSetting("pilot_review_started_at");
+  }
+
+  savePreferenceModelSnapshot(snapshot) {
+    this.database
+      .prepare(`
+        INSERT INTO preference_model_snapshots(
+          id, version, dataset_fingerprint, snapshot_json, created_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(dataset_fingerprint) DO NOTHING
+      `)
+      .run(
+        snapshot.id,
+        snapshot.version,
+        snapshot.datasetFingerprint,
+        JSON.stringify(snapshot),
+        snapshot.createdAt,
+      );
+    return this.getPreferenceModelSnapshotByFingerprint(snapshot.datasetFingerprint);
+  }
+
+  getPreferenceModelSnapshotByFingerprint(datasetFingerprint) {
+    const row = this.database
+      .prepare("SELECT snapshot_json FROM preference_model_snapshots WHERE dataset_fingerprint = ?")
+      .get(datasetFingerprint);
+    return row ? JSON.parse(row.snapshot_json) : null;
+  }
+
+  getLatestPreferenceModelSnapshot() {
+    const row = this.database
+      .prepare("SELECT snapshot_json FROM preference_model_snapshots ORDER BY created_at DESC, id DESC LIMIT 1")
+      .get();
+    return row ? JSON.parse(row.snapshot_json) : null;
   }
 
   getOrCreateBridgeToken() {
@@ -701,15 +745,16 @@ export class SqliteStateStore {
         INSERT INTO candidate_evaluations(
           run_id, evidence_key, source, decision, reason_code, item_id,
           author, text, source_url, published_at, feed_position,
-          policy_version, preference_profile_version, assessment_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          policy_version, preference_profile_version, assessment_json, media_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, evidence_key) DO UPDATE SET
           decision = excluded.decision,
           reason_code = excluded.reason_code,
           item_id = excluded.item_id,
           policy_version = excluded.policy_version,
           preference_profile_version = excluded.preference_profile_version,
-          assessment_json = excluded.assessment_json
+          assessment_json = excluded.assessment_json,
+          media_json = excluded.media_json
       `);
       for (const candidate of candidateEvaluations) {
         insertCandidate.run(
@@ -727,6 +772,7 @@ export class SqliteStateStore {
           candidate.policyVersion,
           candidate.preferenceProfileVersion,
           candidate.assessment ? JSON.stringify(candidate.assessment) : null,
+          JSON.stringify(candidate.media ?? []),
           now,
         );
       }
@@ -1168,6 +1214,7 @@ function mapCandidateEvaluation(row) {
     author: row.author,
     text: row.text,
     sourceUrl: row.source_url,
+    media: parseJson(row.media_json) ?? [],
     publishedAt: row.published_at,
     feedPosition: row.feed_position,
     policyVersion: row.policy_version,

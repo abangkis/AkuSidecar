@@ -235,6 +235,16 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/preferences/experiment") {
+    sendJson(response, 200, { experiment: engine.getPreferenceExperiment() });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/preferences/experiment/fit") {
+    sendJson(response, 200, { experiment: engine.fitPreferenceExperiment() });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/knowledge") {
     const source = url.searchParams.get("source") ?? "x";
     const mode = url.searchParams.get("mode") ?? "catch_up";
@@ -445,7 +455,7 @@ function applySecurityHeaders(response, { viteDevelopment = false, host, port } 
     : "connect-src 'self'";
   response.setHeader(
     "Content-Security-Policy",
-    `default-src 'self'; script-src 'self'; ${styleSource}; img-src 'self' data:; ${connectSource}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+    `default-src 'self'; script-src 'self'; ${styleSource}; img-src 'self' data: https://pbs.twimg.com https://video.twimg.com https://licdn.com https://*.licdn.com; ${connectSource}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
   );
 }
 
