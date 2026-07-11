@@ -133,6 +133,7 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
         sourceTabOpened: true,
         sourceTabActivatedForReadiness: true,
         sourceTabBackgroundAtDispatch: true,
+        sourceTabRecoveryCount: 1,
         sourceReadinessRetryCount: 1,
         feedMutation: true,
         sameTabMutation: true,
@@ -166,6 +167,7 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
   assert.equal(observation.coverage.sourceSelectorCandidateCount, 8);
   assert.equal(observation.coverage.sourceVisibleSelectorCandidateCount, 3);
   assert.equal(observation.coverage.sourceTabActivatedForReadiness, true);
+  assert.equal(observation.coverage.sourceTabRecoveryCount, 1);
   assert.equal(observation.coverage.sourceReadinessRetryCount, 1);
   assert.equal(observation.coverage.restorationScope, "post_reveal_start");
   assert.deepEqual(observation.coverage.scrollDeltas, [675, 675]);

@@ -340,6 +340,10 @@ function validateCoverage(value, limits) {
     sourceTabOpened: value.sourceTabOpened === true,
     sourceTabActivatedForReadiness: value.sourceTabActivatedForReadiness === true,
     sourceTabBackgroundAtDispatch: value.sourceTabBackgroundAtDispatch === true,
+    sourceTabRecoveryCount: Math.min(
+      1,
+      nonNegativeInteger(value.sourceTabRecoveryCount, 0),
+    ),
     sourceReadinessRetryCount: Math.min(
       1,
       nonNegativeInteger(value.sourceReadinessRetryCount, 0),

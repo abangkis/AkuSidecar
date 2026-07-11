@@ -766,6 +766,9 @@ function buildCoverageList(coverage) {
       ? "Source tab: temporarily activated for readiness"
       : null,
     coverage.sourceTabBackgroundAtDispatch ? "Source tab started in background" : null,
+    coverage.sourceTabRecoveryCount > 0
+      ? `Stale source-tab recoveries: ${coverage.sourceTabRecoveryCount}`
+      : null,
     Number.isInteger(coverage.sourceReadinessRetryCount)
       ? `Source readiness retries: ${coverage.sourceReadinessRetryCount}`
       : null,

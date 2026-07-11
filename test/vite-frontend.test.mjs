@@ -71,6 +71,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(html, /class="review-layout"/);
   assert.match(html, /class="review-stream"/);
   assert.match(html, /class="review-telemetry"/);
+  assert.match(html, /class="review-telemetry" aria-labelledby="telemetry-heading" tabindex="0"/);
   assert.match(styles, /grid-template-columns: minmax\(0, var\(--stream-width\)\) minmax\(0, 296px\)/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(appScript, /mountPilotRunBody/);
