@@ -27,6 +27,15 @@ export const RESTORATION_SCOPES = new Set(["pre_run_position", "post_reveal_star
 export const PENDING_ACTIVATION_EVIDENCE = new Set([
   "feed_fingerprint_changed",
 ]);
+export const SOURCE_READINESS_STATES = new Set([
+  "feed_ready",
+  "loading",
+  "login_required",
+  "selector_mismatch",
+  "feed_not_visible",
+  "page_shell",
+  "wrong_page",
+]);
 export const ACQUISITION_DECISIONS = new Set(["finish", "request_follow_up"]);
 export const KNOWLEDGE_DELTAS = new Set([
   "new_event",
@@ -278,6 +287,27 @@ function validateCoverage(value, limits) {
     pendingContentPolicy: PENDING_CONTENT_POLICIES.has(value.pendingContentPolicy)
       ? value.pendingContentPolicy
       : null,
+    sourceReadinessState: SOURCE_READINESS_STATES.has(value.sourceReadinessState)
+      ? value.sourceReadinessState
+      : null,
+    sourceReadinessWaitMs: nonNegativeInteger(value.sourceReadinessWaitMs, 0),
+    sourceSelectorCandidateCount: nonNegativeInteger(
+      value.sourceSelectorCandidateCount,
+      0,
+    ),
+    sourceVisibleSelectorCandidateCount: nonNegativeInteger(
+      value.sourceVisibleSelectorCandidateCount,
+      0,
+    ),
+    sourceLoadingIndicator: value.sourceLoadingIndicator === true,
+    sourceFeedRootPresent: value.sourceFeedRootPresent === true,
+    sourceTabOpened: value.sourceTabOpened === true,
+    sourceTabActivatedForReadiness: value.sourceTabActivatedForReadiness === true,
+    sourceTabBackgroundAtDispatch: value.sourceTabBackgroundAtDispatch === true,
+    sourceReadinessRetryCount: Math.min(
+      1,
+      nonNegativeInteger(value.sourceReadinessRetryCount, 0),
+    ),
     feedMutation: value.feedMutation === true,
     sameTabMutation: value.sameTabMutation === true,
     restorationScope: RESTORATION_SCOPES.has(value.restorationScope)

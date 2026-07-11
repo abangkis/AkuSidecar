@@ -27,7 +27,8 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
   if ((acquisitionRound === 1 && continuation) || (acquisitionRound > 1 && !continuation)) {
     throw new ContractError("Gate 0B.3 continuation is required only for a follow-up round");
   }
-  const revealPendingContent = options.revealPendingContent ?? acquisitionRound === 1;
+  const revealPendingContent = options.revealPendingContent
+    ?? (acquisitionRound === 1 && run.source !== "linkedin");
   return {
     mode: run.mode,
     source: run.source,

@@ -120,8 +120,8 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
     assert.equal(command.payload.browserAdapter, "aku-bridge");
     assert.equal(command.payload.scrollFraction, 0.75);
     assert.equal(command.payload.captureTimeoutMs, 45_000);
-    assert.equal(command.payload.pendingContentPolicy, "reveal_if_present");
-    assert.equal(command.payload.sameTabMutationAllowed, true);
+    assert.equal(command.payload.pendingContentPolicy, "detect_only");
+    assert.equal(command.payload.sameTabMutationAllowed, false);
 
     engine.acceptBridgeObservation(command.id, run.id, multiViewportObservation());
     const completed = await engine.waitForRun(run.id);
@@ -132,9 +132,9 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
     assert.equal(completed.coverage.performedScrolls, 2);
     assert.equal(completed.coverage.restored, true);
     assert.equal(completed.coverage.fallbackUsed, false);
-    assert.equal(completed.coverage.pendingNewContentAction, "activated");
-    assert.equal(completed.coverage.feedMutation, true);
-    assert.equal(completed.coverage.restorationScope, "post_reveal_start");
+    assert.equal(completed.coverage.pendingNewContentAction, "not_detected");
+    assert.equal(completed.coverage.feedMutation, false);
+    assert.equal(completed.coverage.restorationScope, "pre_run_position");
   } finally {
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -504,15 +504,15 @@ function multiViewportObservation() {
       captureMethod: "native_dom",
       fallbackUsed: false,
       scrollContainer: "#workspace",
-      pendingNewContent: true,
-      pendingNewContentLabel: "New posts",
-      pendingNewContentAction: "activated",
-      pendingContentActivationEvidence: "feed_fingerprint_changed",
-      pendingContentPolicy: "reveal_if_present",
-      feedMutation: true,
-      sameTabMutation: true,
-      restorationScope: "post_reveal_start",
-      preActionScrollY: 1_024,
+      pendingNewContent: false,
+      pendingNewContentLabel: "",
+      pendingNewContentAction: "not_detected",
+      pendingContentActivationEvidence: null,
+      pendingContentPolicy: "detect_only",
+      feedMutation: false,
+      sameTabMutation: false,
+      restorationScope: "pre_run_position",
+      preActionScrollY: 0,
       requestedScrolls: 2,
       performedScrolls: 2,
       snapshotCount: 3,

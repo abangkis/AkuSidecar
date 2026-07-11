@@ -712,6 +712,17 @@ function buildCoverageList(coverage) {
     coverage.pendingContentPolicy
       ? `Pending-content policy: ${humanize(coverage.pendingContentPolicy)}`
       : null,
+    coverage.sourceReadinessState
+      ? `Source readiness: ${humanize(coverage.sourceReadinessState)} after ${formatDuration(coverage.sourceReadinessWaitMs)} · ${coverage.sourceVisibleSelectorCandidateCount ?? 0}/${coverage.sourceSelectorCandidateCount ?? 0} visible selectors`
+      : null,
+    coverage.sourceTabOpened ? "Source tab: opened by AkuBridge" : null,
+    coverage.sourceTabActivatedForReadiness
+      ? "Source tab: temporarily activated for readiness"
+      : null,
+    coverage.sourceTabBackgroundAtDispatch ? "Source tab started in background" : null,
+    Number.isInteger(coverage.sourceReadinessRetryCount)
+      ? `Source readiness retries: ${coverage.sourceReadinessRetryCount}`
+      : null,
     coverage.pendingContentRecovery
       ? `Pending-content recovery: ${humanize(coverage.pendingContentRecovery)}`
       : null,
@@ -1197,7 +1208,7 @@ function buildPilotRunCard(run, expanded = false) {
   ]
     .filter(Boolean)
     .join(" · ");
-  cardSummary.append(header);
+  cardSummary.append(header, buildRunPhaseUsage(run));
   card.append(cardSummary, intent, summary, stats);
 
   if (run.status === "completed" && (run.result?.items?.length ?? 0) === 0) {
@@ -1233,13 +1244,45 @@ function buildPilotRunCard(run, expanded = false) {
       : "Candidate decision history is unavailable for runs created before Learning Loop v0.";
     card.append(unavailable);
   }
-  if ((run.reasoningInvocations?.length ?? 0) > 0) {
-    const telemetry = document.createElement("p");
-    telemetry.className = "pilot-run-stats";
-    telemetry.textContent = summarizeRunTelemetry(run.reasoningInvocations);
-    card.append(telemetry);
-  }
   return card;
+}
+
+function buildRunPhaseUsage(run) {
+  const container = document.createElement("div");
+  container.className = "run-phase-usage";
+  const configured = state.bootstrap?.reasoning ?? {};
+  const phases = [
+    ["Candidate evaluation", "candidate_evaluation", configured.evaluationModel, configured.evaluationEffort],
+    ["Acquisition planning", "acquisition_planning", configured.planningModel, configured.planningEffort],
+  ];
+  for (const [label, phase, configuredModel, configuredEffort] of phases) {
+    const invocations = (run.reasoningInvocations ?? []).filter((entry) => entry.phase === phase);
+    const latest = invocations.at(-1);
+    const article = document.createElement("article");
+    const heading = document.createElement("strong");
+    heading.textContent = label;
+    const setup = document.createElement("span");
+    setup.textContent = `${friendlyModel(latest?.model || configuredModel)} · ${latest?.reasoningEffort || configuredEffort || "default"}`;
+    const usage = document.createElement("span");
+    usage.textContent = invocations.length > 0
+      ? [
+          `${sumInvocationTokens(invocations, "inputTokens")} input`,
+          `${sumInvocationTokens(invocations, "cachedInputTokens")} cached`,
+          `${sumInvocationTokens(invocations, "outputTokens")} output`,
+          `${sumInvocationTokens(invocations, "reasoningOutputTokens")} reasoning`,
+        ].join(" · ")
+      : "Not invoked · 0 tokens";
+    article.append(heading, setup, usage);
+    container.append(article);
+  }
+  return container;
+}
+
+function sumInvocationTokens(invocations, field) {
+  const values = invocations.map((entry) => entry[field]).filter(Number.isFinite);
+  return values.length > 0
+    ? values.reduce((sum, value) => sum + value, 0).toLocaleString()
+    : "not reported";
 }
 
 function buildCandidateReview(run, candidate) {
@@ -1348,18 +1391,6 @@ function friendlyModel(model) {
     "gpt-5.6-terra": "GPT-5.6 Terra",
     "gpt-5.6-luna": "GPT-5.6 Luna",
   }[model] || model || "Codex default";
-}
-
-function summarizeRunTelemetry(invocations) {
-  const input = invocations.map((entry) => entry.inputTokens).filter(Number.isFinite);
-  const output = invocations.map((entry) => entry.outputTokens).filter(Number.isFinite);
-  const models = [...new Set(invocations.map((entry) => friendlyModel(entry.model)))];
-  const efforts = [...new Set(invocations.map((entry) => entry.reasoningEffort).filter(Boolean))];
-  return [
-    `Reasoning ${models.join(", ")} · ${efforts.join(", ") || "default effort"}`,
-    input.length ? `${input.reduce((sum, value) => sum + value, 0).toLocaleString()} input tokens` : "usage unavailable",
-    output.length ? `${output.reduce((sum, value) => sum + value, 0).toLocaleString()} output tokens` : null,
-  ].filter(Boolean).join(" · ");
 }
 
 function provenanceLinkLabel(sourceUrlKind) {

@@ -69,10 +69,20 @@ test("missing source tab policy is configurable and follow-up never opens a repl
   assert.equal(followUp.openIfMissing, false);
 });
 
+test("LinkedIn initial capture detects pending content without activating it", () => {
+  const command = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "linkedin", scrolls: 2 },
+    limits,
+  );
+  assert.equal(command.pendingContentPolicy, "detect_only");
+  assert.equal(command.sameTabMutationAllowed, false);
+});
+
 test("Gate 0B accepts an auditable native scroll-and-restore outcome", () => {
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
+    { revealPendingContent: true },
   );
   const observation = gate0bObservation();
 
@@ -83,6 +93,7 @@ test("Gate 0B rejects missing native coverage instead of silently falling back",
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
+    { revealPendingContent: true },
   );
   const observation = gate0bObservation();
   observation.coverage.captureMethod = "computer_use";
@@ -112,6 +123,7 @@ test("Gate 0B.2 rejects inconsistent pending-content activation", () => {
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
+    { revealPendingContent: true },
   );
   const observation = gate0bObservation();
   observation.coverage.pendingNewContent = false;
@@ -126,6 +138,7 @@ test("Gate 0B.2 requires activated content to disclose same-tab mutation semanti
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
+    { revealPendingContent: true },
   );
   const observation = gate0bObservation();
   observation.coverage.sameTabMutation = false;
@@ -140,6 +153,7 @@ test("Gate 0B.2 rejects activated content without bounded activation evidence", 
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
+    { revealPendingContent: true },
   );
   const observation = gate0bObservation();
   observation.coverage.pendingContentActivationEvidence = null;

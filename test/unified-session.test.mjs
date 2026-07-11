@@ -167,9 +167,10 @@ test("zero-evidence capture becomes a source failure instead of a correctly-empt
   await engine.waitForRun(xRun.id);
   session = engine.getUnifiedSession(session.id);
   assert.equal(session.children[0].status, "failed");
+  assert.equal(session.children[0].run.error.stage, "source_readiness");
   assert.match(
     session.children[0].run.error.message,
-    /produced no visible evidence blocks/,
+    /did not become evidence-ready/,
   );
   assert.equal(session.activeSource, "linkedin");
   store.close();

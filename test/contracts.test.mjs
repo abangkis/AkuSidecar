@@ -123,6 +123,16 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
         pendingNewContentAction: "activated",
         pendingContentActivationEvidence: "feed_fingerprint_changed",
         pendingContentPolicy: "reveal_if_present",
+        sourceReadinessState: "feed_ready",
+        sourceReadinessWaitMs: 1_250,
+        sourceSelectorCandidateCount: 8,
+        sourceVisibleSelectorCandidateCount: 3,
+        sourceLoadingIndicator: false,
+        sourceFeedRootPresent: true,
+        sourceTabOpened: true,
+        sourceTabActivatedForReadiness: true,
+        sourceTabBackgroundAtDispatch: true,
+        sourceReadinessRetryCount: 1,
         feedMutation: true,
         sameTabMutation: true,
         restorationScope: "post_reveal_start",
@@ -151,6 +161,11 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
   assert.equal(observation.coverage.pendingNewContentAction, "activated");
   assert.equal(observation.coverage.pendingContentActivationEvidence, "feed_fingerprint_changed");
   assert.equal(observation.coverage.feedMutation, true);
+  assert.equal(observation.coverage.sourceReadinessState, "feed_ready");
+  assert.equal(observation.coverage.sourceSelectorCandidateCount, 8);
+  assert.equal(observation.coverage.sourceVisibleSelectorCandidateCount, 3);
+  assert.equal(observation.coverage.sourceTabActivatedForReadiness, true);
+  assert.equal(observation.coverage.sourceReadinessRetryCount, 1);
   assert.equal(observation.coverage.restorationScope, "post_reveal_start");
   assert.deepEqual(observation.coverage.scrollDeltas, [675, 675]);
 });

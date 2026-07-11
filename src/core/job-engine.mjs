@@ -506,9 +506,11 @@ export class JobEngine {
       const observation = mergeObservations(storedObservations);
       const allEvidenceKeys = uniqueEvidenceKeys(observation);
       if (allEvidenceKeys.length === 0) {
-        throw new ContractError(
-          "bounded browser capture produced no visible evidence blocks",
+        const error = new Error(
+          `${sourceLabel(run.source)} did not become evidence-ready within the bounded capture`,
         );
+        error.name = "SourceReadinessError";
+        throw error;
       }
       const knownEvidenceKeys = this.store.getKnownEvidenceKeys(
         run.source,
@@ -582,7 +584,8 @@ export class JobEngine {
       );
     } catch (error) {
       if (error.reasoningTelemetry) this.store.saveReasoningInvocation(error.reasoningTelemetry);
-      this.store.failRun(runId, "reasoning", error);
+      const stage = error.name === "SourceReadinessError" ? "source_readiness" : "reasoning";
+      this.store.failRun(runId, stage, error);
       this.#advanceParentSessionForRun(runId);
       throw error;
     }
