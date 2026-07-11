@@ -237,6 +237,14 @@ export class SqliteStateStore {
       CREATE INDEX IF NOT EXISTS evidence_dispositions_scope
         ON evidence_dispositions(source, mode, intent_key, disposition);
     `);
+    this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
+  }
+
+  #ensureColumn(table, column, definition) {
+    const columns = this.database.prepare(`PRAGMA table_info(${table})`).all();
+    if (!columns.some((entry) => entry.name === column)) {
+      this.database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   #backfillConfirmedExclusions() {
@@ -690,14 +698,15 @@ export class SqliteStateStore {
         INSERT INTO candidate_evaluations(
           run_id, evidence_key, source, decision, reason_code, item_id,
           author, text, source_url, published_at, feed_position,
-          policy_version, preference_profile_version, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          policy_version, preference_profile_version, assessment_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, evidence_key) DO UPDATE SET
           decision = excluded.decision,
           reason_code = excluded.reason_code,
           item_id = excluded.item_id,
           policy_version = excluded.policy_version,
-          preference_profile_version = excluded.preference_profile_version
+          preference_profile_version = excluded.preference_profile_version,
+          assessment_json = excluded.assessment_json
       `);
       for (const candidate of candidateEvaluations) {
         insertCandidate.run(
@@ -714,6 +723,7 @@ export class SqliteStateStore {
           candidate.feedPosition,
           candidate.policyVersion,
           candidate.preferenceProfileVersion,
+          candidate.assessment ? JSON.stringify(candidate.assessment) : null,
           now,
         );
       }
@@ -1040,17 +1050,23 @@ export class SqliteStateStore {
   getPreferenceProfile() {
     const row = this.database.prepare(`
       SELECT COUNT(*) AS total,
-             SUM(CASE WHEN kind = 'should_show' THEN 1 ELSE 0 END) AS positive,
-             SUM(CASE WHEN kind = 'should_not_show' THEN 1 ELSE 0 END) AS negative,
-             MAX(created_at) AS updated_at
-      FROM preference_feedback_events
+             SUM(CASE WHEN p.kind IN ('more_like_this', 'should_show') THEN 1 ELSE 0 END) AS more_like_this,
+             SUM(CASE WHEN p.kind = 'should_not_show' THEN 1 ELSE 0 END) AS should_not_show,
+             SUM(CASE WHEN p.kind IN ('more_like_this', 'should_show') AND c.decision = 'selected' THEN 1 ELSE 0 END) AS selected_more_like_this,
+             SUM(CASE WHEN p.kind IN ('more_like_this', 'should_show') AND c.decision = 'excluded' THEN 1 ELSE 0 END) AS excluded_more_like_this,
+             MAX(p.created_at) AS updated_at
+      FROM preference_feedback_events p
+      LEFT JOIN candidate_evaluations c
+        ON c.run_id = p.run_id AND c.evidence_key = p.evidence_key
     `).get();
     return {
       version: 0,
       status: "collecting",
       feedbackEventCount: Number(row.total ?? 0),
-      positiveCorrectionCount: Number(row.positive ?? 0),
-      negativeCorrectionCount: Number(row.negative ?? 0),
+      moreLikeThisCount: Number(row.more_like_this ?? 0),
+      shouldNotShowCount: Number(row.should_not_show ?? 0),
+      selectedMoreLikeThisCount: Number(row.selected_more_like_this ?? 0),
+      excludedMoreLikeThisCount: Number(row.excluded_more_like_this ?? 0),
       updatedAt: row.updated_at ?? null,
     };
   }
@@ -1143,6 +1159,7 @@ function mapCandidateEvaluation(row) {
     feedPosition: row.feed_position,
     policyVersion: row.policy_version,
     preferenceProfileVersion: row.preference_profile_version,
+    assessment: parseJson(row.assessment_json),
     createdAt: row.created_at,
   };
 }

@@ -42,7 +42,23 @@ export const FEEDBACK_KINDS = new Set([
   "duplicate",
   "useful",
 ]);
-export const PREFERENCE_FEEDBACK_KINDS = new Set(["should_show", "should_not_show"]);
+export const PREFERENCE_FEEDBACK_KINDS = new Set([
+  "more_like_this",
+  "should_show",
+  "should_not_show",
+]);
+export const CANDIDATE_CONTENT_TYPES = new Set([
+  "release",
+  "tutorial",
+  "opinion",
+  "benchmark",
+  "announcement",
+  "hiring",
+  "promotion",
+  "news",
+  "research",
+  "other",
+]);
 export const PREFERENCE_REASON_CODES = new Set([
   "wrong_topic",
   "already_known",
@@ -306,6 +322,11 @@ export function validateReasoningResult(input, maxItems) {
   return {
     summary: cleanString(input.summary, 1_000),
     items: items.map((item, index) => validateResultItem(item, index)),
+    candidateAssessments: Array.isArray(input.candidateAssessments)
+      ? input.candidateAssessments
+          .slice(0, 20)
+          .map((assessment, index) => validateCandidateAssessment(assessment, index))
+      : [],
     repeatedClaimsCollapsed: Math.max(
       0,
       Math.trunc(finiteNumber(input.repeatedClaimsCollapsed, 0)),
@@ -314,6 +335,31 @@ export function validateReasoningResult(input, maxItems) {
     limitations: Array.isArray(input.limitations)
       ? input.limitations.slice(0, 10).map((value) => cleanString(value, 500)).filter(Boolean)
       : [],
+  };
+}
+
+function validateCandidateAssessment(value, index) {
+  assertPlainObject(value, `candidate assessment ${index}`);
+  const evidenceKey = cleanString(value.evidenceKey, 100);
+  if (!/^(x|linkedin):[a-f0-9]{24}$/.test(evidenceKey)) {
+    throw new ContractError(`candidate assessment ${index} requires a valid evidenceKey`);
+  }
+  return {
+    evidenceKey,
+    topicTags: Array.isArray(value.topicTags)
+      ? [...new Set(value.topicTags.map((tag) => cleanString(tag, 80)).filter(Boolean))].slice(0, 5)
+      : [],
+    contentType: CANDIDATE_CONTENT_TYPES.has(value.contentType)
+      ? value.contentType
+      : "other",
+    recommendedPriority: PRIORITIES.has(value.recommendedPriority)
+      ? value.recommendedPriority
+      : "P3",
+    intentRelevance: normalizeConfidence(value.intentRelevance),
+    novelty: normalizeConfidence(value.novelty),
+    urgency: normalizeConfidence(value.urgency),
+    actionability: normalizeConfidence(value.actionability),
+    rationale: cleanString(value.rationale, 500),
   };
 }
 
@@ -391,7 +437,12 @@ export function validatePreferenceFeedback(input) {
   if (reasonCode === "other" && !note) {
     throw new ContractError("other preference feedback requires a note");
   }
-  return { kind: input.kind, evidenceKey, reasonCode, note };
+  return {
+    kind: input.kind === "should_show" ? "more_like_this" : input.kind,
+    evidenceKey,
+    reasonCode,
+    note,
+  };
 }
 
 export function cleanString(value, maxLength) {

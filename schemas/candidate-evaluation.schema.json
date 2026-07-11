@@ -12,8 +12,23 @@
     "text": { "type": "string" },
     "sourceUrl": { "type": "string" },
     "publishedAt": { "type": ["string", "null"] },
-    "feedPosition": { "type": ["integer", "null"] }
+    "feedPosition": { "type": ["integer", "null"] },
+    "assessment": {
+      "type": ["object", "null"],
+      "properties": {
+        "topicTags": { "type": "array", "maxItems": 5, "items": { "type": "string" } },
+        "contentType": { "type": "string" },
+        "recommendedPriority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
+        "intentRelevance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
+        "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
+        "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rationale": { "type": "string" }
+      },
+      "required": ["topicTags", "contentType", "recommendedPriority", "intentRelevance", "novelty", "urgency", "actionability", "rationale"],
+      "additionalProperties": false
+    }
   },
-  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "text", "sourceUrl", "publishedAt", "feedPosition"],
+  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "text", "sourceUrl", "publishedAt", "feedPosition", "assessment"],
   "additionalProperties": false
 }

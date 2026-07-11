@@ -105,6 +105,17 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
             repeatedClaimsCollapsed: 0,
             deferredByBudget: 0,
             limitations: [],
+            candidateAssessments: observation.snapshots[0].blocks.map((block, index) => ({
+              evidenceKey: block.evidenceKey,
+              topicTags: ["technical-change"],
+              contentType: "announcement",
+              recommendedPriority: index === 0 ? "P1" : "P3",
+              intentRelevance: index === 0 ? 0.9 : 0.5,
+              novelty: 0.8,
+              urgency: index === 0 ? 0.7 : 0.2,
+              actionability: index === 0 ? 0.8 : 0.3,
+              rationale: "Fixture assessment grounded in the observed block.",
+            })),
           },
           telemetry: {
             runId: run.id,
@@ -134,16 +145,18 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   const excluded = run.candidateEvaluations.find((entry) => entry.decision === "excluded");
   assert.equal(selected.itemId, "selected-item");
   assert.equal(excluded.reasonCode, "not_promoted_by_provider");
+  assert.equal(selected.assessment.recommendedPriority, "P1");
+  assert.equal(excluded.assessment.contentType, "announcement");
   assert.equal(run.reasoningInvocations[0].inputTokens, 100);
 
   engine.addPreferenceFeedback(run.id, {
-    kind: "should_show",
+    kind: "more_like_this",
     evidenceKey: excluded.evidenceKey,
     reasonCode: null,
     note: "",
   });
   engine.addPreferenceFeedback(run.id, {
-    kind: "should_show",
+    kind: "more_like_this",
     evidenceKey: excluded.evidenceKey,
     reasonCode: null,
     note: "",
@@ -154,24 +167,30 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
     reasonCode: "low_signal",
     note: "",
   });
-  assert.equal(engine.getRun(run.id).preferenceFeedback.length, 2);
+  engine.addPreferenceFeedback(run.id, {
+    kind: "more_like_this",
+    evidenceKey: selected.evidenceKey,
+    reasonCode: null,
+    note: "",
+  });
+  assert.equal(engine.getRun(run.id).preferenceFeedback.length, 3);
   assert.deepEqual(engine.getPreferenceProfile(), {
     version: 0,
     status: "collecting",
-    feedbackEventCount: 2,
-    positiveCorrectionCount: 1,
-    negativeCorrectionCount: 1,
+    feedbackEventCount: 3,
+    moreLikeThisCount: 2,
+    shouldNotShowCount: 1,
+    selectedMoreLikeThisCount: 1,
+    excludedMoreLikeThisCount: 1,
     updatedAt: engine.getPreferenceProfile().updatedAt,
   });
-  assert.throws(
-    () => engine.addPreferenceFeedback(run.id, {
-      kind: "should_show",
-      evidenceKey: selected.evidenceKey,
-      reasonCode: null,
-      note: "",
-    }),
-    /unselected candidate/,
-  );
+  const legacy = engine.addPreferenceFeedback(run.id, {
+    kind: "should_show",
+    evidenceKey: excluded.evidenceKey,
+    reasonCode: null,
+    note: "legacy alias",
+  });
+  assert.equal(legacy.preferenceFeedback.at(-1).kind, "more_like_this");
   store.close();
 });
 

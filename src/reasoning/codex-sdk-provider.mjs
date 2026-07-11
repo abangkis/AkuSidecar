@@ -186,6 +186,11 @@ USER CONTEXT:
 
 OUTPUT CONTRACT:
 - Return at most ${run.maxItems} items.
+- Return exactly one candidateAssessment for every supplied block, including candidates not promoted into items.
+- candidateAssessments are descriptive inputs for a future preference engine; they do not guarantee presentation.
+- Keep topicTags compact and reusable. Score intentRelevance, novelty, urgency, and actionability independently from 0 to 1.
+- recommendedPriority describes the candidate's current-session lane even when it is not selected.
+- rationale must briefly explain the assessment without inventing facts outside the evidence.
 - Prefer material deltas over generic summaries.
 - Collapse repeated blocks observed across multiple viewport snapshots.
 - Every supplied block has an evidenceKey. Copy the exact evidenceKey of the single block supporting each result item.
@@ -229,11 +234,15 @@ function compactObservation(observation, maxCharacters) {
     blocks: [],
   };
   let characters = 0;
+  const seen = new Set();
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
+    if (!block.evidenceKey || seen.has(block.evidenceKey)) continue;
     const serialized = JSON.stringify(block);
     if (characters + serialized.length > maxCharacters) break;
     compact.blocks.push(block);
+    seen.add(block.evidenceKey);
     characters += serialized.length;
+    if (compact.blocks.length >= 20) break;
   }
   return compact;
 }

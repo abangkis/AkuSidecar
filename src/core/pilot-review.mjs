@@ -77,10 +77,11 @@ export function summarizePilotRuns(runs) {
     positiveItemRate: ratio(positiveItems.size, reviewedItems.size),
     wrongLaneFeedback: feedback.filter((entry) => entry.kind === "wrong_lane").length,
     duplicateFeedback: feedback.filter((entry) => entry.kind === "duplicate").length,
-    preferenceCorrections: runs.reduce(
-      (sum, run) => sum + (run.preferenceFeedback?.length ?? 0),
-      0,
-    ),
+    preferenceCorrections: runs.reduce((sum, run) => sum + (run.preferenceFeedback?.length ?? 0), 0),
+    moreLikeThisSignals: countPreference(runs, ["more_like_this", "should_show"]),
+    shouldNotShowSignals: countPreference(runs, ["should_not_show"]),
+    selectedMoreLikeThisSignals: countPreference(runs, ["more_like_this", "should_show"], "selected"),
+    excludedMoreLikeThisSignals: countPreference(runs, ["more_like_this", "should_show"], "excluded"),
     tokenUsage: summarizeTokenUsage(runs),
     missRate: ratio(missed.size, emptyVerdictCount),
     duplicateEscapeRate: ratio(
@@ -182,12 +183,41 @@ function toReviewRun(run) {
 function summarizeTokenUsage(runs) {
   const invocations = runs.flatMap((run) => run.reasoningInvocations ?? []);
   return {
+    ...summarizeInvocations(invocations),
+    byPhase: {
+      candidateEvaluation: summarizeInvocations(
+        invocations.filter((entry) => entry.phase === "candidate_evaluation"),
+      ),
+      acquisitionPlanning: summarizeInvocations(
+        invocations.filter((entry) => entry.phase === "acquisition_planning"),
+      ),
+    },
+  };
+}
+
+function summarizeInvocations(invocations) {
+  return {
     invocations: invocations.length,
     inputTokens: sumReported(invocations, "inputTokens"),
     cachedInputTokens: sumReported(invocations, "cachedInputTokens"),
     outputTokens: sumReported(invocations, "outputTokens"),
     reasoningOutputTokens: sumReported(invocations, "reasoningOutputTokens"),
   };
+}
+
+function countPreference(runs, kinds, decision = null) {
+  let count = 0;
+  for (const run of runs) {
+    const decisions = new Map(
+      (run.candidateEvaluations ?? []).map((candidate) => [candidate.evidenceKey, candidate.decision]),
+    );
+    for (const feedback of run.preferenceFeedback ?? []) {
+      if (kinds.includes(feedback.kind) && (!decision || decisions.get(feedback.evidenceKey) === decision)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
 }
 
 function sumReported(entries, field) {

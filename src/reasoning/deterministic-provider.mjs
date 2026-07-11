@@ -45,6 +45,17 @@ export class DeterministicReasoningProvider {
           ? `Development fallback produced ${items.length} bounded item(s). Codex reasoning was not used.`
           : "No visible candidate block met the minimum development threshold.",
       items,
+      candidateAssessments: uniqueBlocks(observation).map((block) => ({
+        evidenceKey: block.evidenceKey,
+        topicTags: [],
+        contentType: "other",
+        recommendedPriority: classifyPriority(block.text),
+        intentRelevance: 0.5,
+        novelty: 0.5,
+        urgency: 0.2,
+        actionability: 0.2,
+        rationale: "Deterministic development fallback assessment.",
+      })),
       repeatedClaimsCollapsed: countBlocks(observation) - uniqueBlocks(observation).length,
       deferredByBudget: Math.max(0, uniqueBlocks(observation).length - run.maxItems),
       limitations: [

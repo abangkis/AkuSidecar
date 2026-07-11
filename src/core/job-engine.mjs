@@ -272,9 +272,6 @@ export class JobEngine {
       (entry) => entry.evidenceKey === feedback.evidenceKey,
     );
     if (!candidate) throw new ContractError("preference feedback target was not evaluated");
-    if (feedback.kind === "should_show" && candidate.decision === "selected") {
-      throw new ContractError("should_show requires an unselected candidate");
-    }
     if (feedback.kind === "should_not_show" && candidate.decision !== "selected") {
       throw new ContractError("should_not_show requires a selected candidate");
     }
@@ -548,6 +545,11 @@ export class JobEngine {
       const rawResult = invocation.output;
       const result = validateReasoningResult(rawResult, run.maxItems);
       assertObservedSources(result, filtered.observation);
+      assertCandidateAssessments(
+        result,
+        filtered.observation,
+        invocation.evaluatedEvidenceKeys,
+      );
       assertUniqueResultEvidence(result, suppressedEvidenceKeys);
       if (this.store.getRun(runId)?.status === "cancelled") return;
       const coverage = {
@@ -646,6 +648,9 @@ export function decideAcquisitionPlanning({
 
 function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKeys = null) {
   const selectedByEvidence = new Map(result.items.map((item) => [item.evidenceKey, item]));
+  const assessmentByEvidence = new Map(
+    (result.candidateAssessments ?? []).map((assessment) => [assessment.evidenceKey, assessment]),
+  );
   const evaluated = Array.isArray(evaluatedEvidenceKeys)
     ? new Set(evaluatedEvidenceKeys)
     : null;
@@ -660,6 +665,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
   }
   return [...unique.values()].map((block) => {
     const item = selectedByEvidence.get(block.evidenceKey) ?? null;
+    const assessment = assessmentByEvidence.get(block.evidenceKey) ?? null;
     return {
       evidenceKey: block.evidenceKey,
       source: run.source,
@@ -673,8 +679,47 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       feedPosition: Number.isInteger(block.feedPosition) ? block.feedPosition : null,
       policyVersion: "learning-loop-v0",
       preferenceProfileVersion: 0,
+      assessment: assessment
+        ? {
+            topicTags: assessment.topicTags,
+            contentType: assessment.contentType,
+            recommendedPriority: assessment.recommendedPriority,
+            intentRelevance: assessment.intentRelevance,
+            novelty: assessment.novelty,
+            urgency: assessment.urgency,
+            actionability: assessment.actionability,
+            rationale: assessment.rationale,
+          }
+        : null,
     };
   });
+}
+
+function assertCandidateAssessments(result, observation, evaluatedEvidenceKeys) {
+  const observed = new Set(uniqueEvidenceKeys(observation));
+  const assessed = new Set();
+  for (const assessment of result.candidateAssessments ?? []) {
+    if (!observed.has(assessment.evidenceKey)) {
+      throw new ContractError(
+        `candidate assessment referenced evidence outside the current observation: ${assessment.evidenceKey}`,
+      );
+    }
+    if (assessed.has(assessment.evidenceKey)) {
+      throw new ContractError(`candidate assessment duplicated evidence: ${assessment.evidenceKey}`);
+    }
+    assessed.add(assessment.evidenceKey);
+  }
+  if (Array.isArray(evaluatedEvidenceKeys)) {
+    const expected = new Set(evaluatedEvidenceKeys);
+    if (
+      expected.size !== assessed.size ||
+      [...expected].some((evidenceKey) => !assessed.has(evidenceKey))
+    ) {
+      throw new ContractError(
+        "candidate assessments must cover every evidence block supplied to the reasoning provider",
+      );
+    }
+  }
 }
 
 export function buildUnifiedSessionOutcome(session, status = session.status) {
@@ -833,6 +878,7 @@ function noNewEvidenceResult(suppressedCount) {
   return {
     summary: "No new visible evidence advanced the checkpoint in this bounded sample.",
     items: [],
+    candidateAssessments: [],
     repeatedClaimsCollapsed: suppressedCount,
     deferredByBudget: 0,
     limitations: ["Every visible evidence block had already been delivered in this source and mode."],

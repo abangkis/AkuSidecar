@@ -18,6 +18,7 @@ const elements = {
   reviewPanel: document.querySelector("#review-panel"),
   reviewRefreshButton: document.querySelector("#review-refresh-button"),
   reviewMetrics: document.querySelector("#review-metrics"),
+  reviewTokenUsage: document.querySelector("#review-token-usage"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
   reviewMeta: document.querySelector("#review-meta"),
@@ -295,7 +296,7 @@ async function pollUnifiedSession() {
           message:
             session.status === "cancelled"
               ? "The bounded unified session was cancelled."
-              : "Neither requested source completed.",
+              : unifiedFailureMessage(session),
         });
       } else {
         showUnifiedResult(session);
@@ -797,37 +798,40 @@ function buildResultItem(run, item, onSaved = () => {}) {
     (entry) => entry.evidenceKey === item.evidenceKey,
   );
   if (candidate) {
-    const hiddenSignal = document.createElement("button");
-    hiddenSignal.type = "button";
-    hiddenSignal.className = "feedback-button";
-    hiddenSignal.textContent = "Should not show";
-    const existing = [...(run.preferenceFeedback ?? [])]
-      .reverse()
-      .find((entry) => entry.evidenceKey === item.evidenceKey);
-    if (existing?.kind === "should_not_show") {
-      hiddenSignal.classList.add("selected");
-      hiddenSignal.disabled = true;
-    }
-    hiddenSignal.addEventListener("click", async () => {
-      const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
-        method: "POST",
-        body: JSON.stringify({
-          kind: "should_not_show",
-          evidenceKey: item.evidenceKey,
-          reasonCode: null,
-          note: "",
-        }),
-      });
-      run.preferenceFeedback = response.run.preferenceFeedback;
-      hiddenSignal.classList.add("selected");
-      hiddenSignal.disabled = true;
-      await onSaved();
-    });
-    feedback.append(hiddenSignal);
+    feedback.append(
+      buildPreferenceButton(run, item.evidenceKey, "more_like_this", "More like this", onSaved),
+      buildPreferenceButton(run, item.evidenceKey, "should_not_show", "Should not show", onSaved),
+    );
   }
   actions.append(link, feedback);
   article.append(header, title, why, provenance, actions);
   return article;
+}
+
+function buildPreferenceButton(run, evidenceKey, kind, label, onSaved = () => {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "feedback-button";
+  button.textContent = label;
+  const matchesKind = (entry) => entry.kind === kind
+    || (kind === "more_like_this" && entry.kind === "should_show");
+  if ((run.preferenceFeedback ?? []).some(
+    (entry) => entry.evidenceKey === evidenceKey && matchesKind(entry),
+  )) {
+    button.classList.add("selected");
+    button.disabled = true;
+  }
+  button.addEventListener("click", async () => {
+    const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
+      method: "POST",
+      body: JSON.stringify({ kind, evidenceKey, reasonCode: null, note: "" }),
+    });
+    run.preferenceFeedback = response.run.preferenceFeedback;
+    button.classList.add("selected");
+    button.disabled = true;
+    await onSaved();
+  });
+  return button;
 }
 
 function showSessionView() {
@@ -841,7 +845,7 @@ function showSessionView() {
     } else {
       showFailure({
         stage: state.currentSession.status,
-        message: "The unified session did not produce a completed source.",
+        message: unifiedFailureMessage(state.currentSession),
       });
     }
   } else if (state.currentSession) {
@@ -885,7 +889,8 @@ async function loadPilotReview() {
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
     ]);
-    renderPilotMetrics(review.summary, review.runs);
+    renderPilotMetrics(review.summary);
+    renderReasoningEconomics(review.summary.tokenUsage, review.runs);
     elements.reviewMeta.textContent = [
       `${review.totalMatching} matching run(s)`,
       `latest ${review.runs.length} shown`,
@@ -893,7 +898,7 @@ async function loadPilotReview() {
         ? `pilot cohort since ${formatDate(review.window.pilotStartedAt)}`
         : null,
       review.window?.truncated ? "metrics use the latest 500 runs" : null,
-      `preference ${profile.status} · ${profile.feedbackEventCount} correction(s)`,
+      `preference ${profile.status} · ${profile.feedbackEventCount} signal(s)`,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -911,10 +916,7 @@ async function loadPilotReview() {
   }
 }
 
-function renderPilotMetrics(summary, runs = []) {
-  const latestEvaluation = runs
-    .flatMap((run) => run.reasoningInvocations ?? [])
-    .find((entry) => entry.phase === "candidate_evaluation");
+function renderPilotMetrics(summary) {
   const metrics = [
     ["Completed", `${summary.completedRuns} / ${summary.totalRuns}`],
     [
@@ -931,14 +933,8 @@ function renderPilotMetrics(summary, runs = []) {
     ],
     ["Median duration", formatDuration(summary.medianDurationMs)],
     ["Failed runs", String(summary.failedRuns)],
-    ["Preference corrections", String(summary.preferenceCorrections ?? 0)],
-    ["Observed tokens", formatTokenUsage(summary.tokenUsage)],
-    [
-      "Reasoning setup",
-      latestEvaluation
-        ? `${friendlyModel(latestEvaluation.model)} · ${latestEvaluation.reasoningEffort || "default"}`
-        : "Not recorded",
-    ],
+    ["More like this", String(summary.moreLikeThisSignals ?? 0)],
+    ["Should not show", String(summary.shouldNotShowSignals ?? 0)],
   ];
   elements.reviewMetrics.replaceChildren(
     ...metrics.map(([label, value]) => {
@@ -951,6 +947,47 @@ function renderPilotMetrics(summary, runs = []) {
       return card;
     }),
   );
+}
+
+function renderReasoningEconomics(tokenUsage, runs) {
+  const invocations = runs.flatMap((run) => run.reasoningInvocations ?? []);
+  const reasoning = state.bootstrap?.reasoning ?? {};
+  const phases = [
+    ["Candidate Evaluation", "candidate_evaluation", reasoning.evaluationModel, reasoning.evaluationEffort, tokenUsage?.byPhase?.candidateEvaluation],
+    ["Acquisition Planning", "acquisition_planning", reasoning.planningModel, reasoning.planningEffort, tokenUsage?.byPhase?.acquisitionPlanning],
+  ];
+  elements.reviewTokenUsage.replaceChildren(...phases.map(([label, phase, configuredModel, configuredEffort, usage]) => {
+    const latest = invocations.find((entry) => entry.phase === phase && entry.model);
+    const card = document.createElement("article");
+    const heading = document.createElement("div");
+    const title = document.createElement("h4");
+    title.textContent = label;
+    const setup = document.createElement("span");
+    const model = latest?.model || configuredModel;
+    const effort = latest?.reasoningEffort || configuredEffort;
+    setup.textContent = `${friendlyModel(model)} · ${effort || "default"}`;
+    heading.append(title, setup);
+    const stats = document.createElement("dl");
+    for (const [term, value] of [
+      ["Invocations", usage?.invocations ?? 0],
+      ["Input", formatTokenCount(usage?.inputTokens)],
+      ["Cached input", formatTokenCount(usage?.cachedInputTokens)],
+      ["Output", formatTokenCount(usage?.outputTokens)],
+      ["Reasoning output", formatTokenCount(usage?.reasoningOutputTokens)],
+    ]) {
+      const dt = document.createElement("dt");
+      dt.textContent = term;
+      const dd = document.createElement("dd");
+      dd.textContent = String(value);
+      stats.append(dt, dd);
+    }
+    card.append(heading, stats);
+    return card;
+  }));
+}
+
+function formatTokenCount(value) {
+  return Number.isFinite(value) ? value.toLocaleString() : "Not reported";
 }
 
 function buildPilotRunGroups(runs) {
@@ -1096,6 +1133,7 @@ function buildCandidateReview(run, candidate) {
     Number.isInteger(candidate.feedPosition) ? `feed #${candidate.feedPosition}` : null,
   ].filter(Boolean).join(" · ");
   const content = buildCandidateContent(candidate);
+  const assessment = candidate.assessment ? buildCandidateAssessment(candidate.assessment) : null;
   const actions = document.createElement("div");
   actions.className = "result-actions";
   const link = document.createElement("a");
@@ -1104,35 +1142,46 @@ function buildCandidateReview(run, candidate) {
   link.target = "_blank";
   link.rel = "noreferrer noopener";
   link.textContent = "Open source";
-  const latest = [...(run.preferenceFeedback ?? [])]
-    .reverse()
-    .find((entry) => entry.evidenceKey === candidate.evidenceKey);
-  const correction = document.createElement("button");
-  correction.type = "button";
-  correction.className = "feedback-button";
-  correction.textContent = candidate.decision === "selected" ? "Should not show" : "Should show";
-  const kind = candidate.decision === "selected" ? "should_not_show" : "should_show";
-  if (latest?.kind === kind) {
-    correction.classList.add("selected");
-    correction.disabled = true;
+  actions.append(link, buildPreferenceButton(
+    run, candidate.evidenceKey, "more_like_this", "More like this",
+  ));
+  if (candidate.decision === "selected") {
+    actions.append(buildPreferenceButton(
+      run, candidate.evidenceKey, "should_not_show", "Should not show",
+    ));
   }
-  correction.addEventListener("click", async () => {
-    const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
-      method: "POST",
-      body: JSON.stringify({
-        kind,
-        evidenceKey: candidate.evidenceKey,
-        reasonCode: null,
-        note: "",
-      }),
-    });
-    run.preferenceFeedback = response.run.preferenceFeedback;
-    correction.classList.add("selected");
-    correction.disabled = true;
-  });
-  actions.append(link, correction);
-  article.append(meta, content, actions);
+  article.append(meta, content);
+  if (assessment) article.append(assessment);
+  article.append(actions);
   return article;
+}
+
+function buildCandidateAssessment(assessment) {
+  const section = document.createElement("section");
+  section.className = "candidate-assessment";
+  const badges = document.createElement("div");
+  badges.className = "assessment-badges";
+  for (const label of [
+    assessment.recommendedPriority,
+    humanize(assessment.contentType),
+    ...(assessment.topicTags ?? []),
+  ].filter(Boolean)) {
+    const badge = document.createElement("span");
+    badge.textContent = label;
+    badges.append(badge);
+  }
+  const scores = document.createElement("p");
+  scores.className = "assessment-scores";
+  scores.textContent = [
+    ["relevance", assessment.intentRelevance],
+    ["novelty", assessment.novelty],
+    ["urgency", assessment.urgency],
+    ["actionability", assessment.actionability],
+  ].map(([label, value]) => `${label} ${formatPercent(value)}`).join(" · ");
+  const rationale = document.createElement("p");
+  rationale.textContent = assessment.rationale;
+  section.append(badges, scores, rationale);
+  return section;
 }
 
 function buildCandidateContent(candidate) {
@@ -1209,6 +1258,15 @@ function showFailure(error) {
   elements.runButton.disabled = false;
   elements.failureTitle.textContent = `Stopped at ${humanize(error.stage || "unknown stage")}`;
   elements.failureMessage.textContent = error.message || "The run did not complete.";
+}
+
+function unifiedFailureMessage(session) {
+  const failures = (session.children ?? [])
+    .filter((child) => child.run?.error?.message)
+    .map((child) => `${sourceLabel(child.source)}: ${child.run.error.message}`);
+  return failures.length > 0
+    ? failures.join(" | ")
+    : "Neither requested source completed.";
 }
 
 function reportRunFailure(error) {

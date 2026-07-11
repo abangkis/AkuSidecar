@@ -60,6 +60,33 @@
         "additionalProperties": false
       }
     },
+    "candidateAssessments": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidenceKey": { "type": "string", "pattern": "^(x|linkedin):[a-f0-9]{24}$" },
+          "topicTags": {
+            "type": "array",
+            "maxItems": 5,
+            "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+          },
+          "contentType": {
+            "type": "string",
+            "enum": ["release", "tutorial", "opinion", "benchmark", "announcement", "hiring", "promotion", "news", "research", "other"]
+          },
+          "recommendedPriority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
+          "intentRelevance": { "type": "number", "minimum": 0, "maximum": 1 },
+          "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
+          "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
+          "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "rationale": { "type": "string", "maxLength": 500 }
+        },
+        "required": ["evidenceKey", "topicTags", "contentType", "recommendedPriority", "intentRelevance", "novelty", "urgency", "actionability", "rationale"],
+        "additionalProperties": false
+      }
+    },
     "repeatedClaimsCollapsed": { "type": "integer", "minimum": 0 },
     "deferredByBudget": { "type": "integer", "minimum": 0 },
     "limitations": {
@@ -70,6 +97,7 @@
   "required": [
     "summary",
     "items",
+    "candidateAssessments",
     "repeatedClaimsCollapsed",
     "deferredByBudget",
     "limitations"

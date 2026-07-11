@@ -5,10 +5,12 @@
     "version": { "type": "integer", "minimum": 0 },
     "status": { "type": "string", "enum": ["collecting", "active"] },
     "feedbackEventCount": { "type": "integer", "minimum": 0 },
-    "positiveCorrectionCount": { "type": "integer", "minimum": 0 },
-    "negativeCorrectionCount": { "type": "integer", "minimum": 0 },
+    "moreLikeThisCount": { "type": "integer", "minimum": 0 },
+    "shouldNotShowCount": { "type": "integer", "minimum": 0 },
+    "selectedMoreLikeThisCount": { "type": "integer", "minimum": 0 },
+    "excludedMoreLikeThisCount": { "type": "integer", "minimum": 0 },
     "updatedAt": { "type": ["string", "null"] }
   },
-  "required": ["version", "status", "feedbackEventCount", "positiveCorrectionCount", "negativeCorrectionCount", "updatedAt"],
+  "required": ["version", "status", "feedbackEventCount", "moreLikeThisCount", "shouldNotShowCount", "selectedMoreLikeThisCount", "excludedMoreLikeThisCount", "updatedAt"],
   "additionalProperties": false
 }

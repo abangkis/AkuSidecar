@@ -33,13 +33,21 @@
         <div class="section-heading">
           <div>
             <p class="step-label">LEARNING LOOP</p>
-            <h2 id="review-heading">Correct the latest decisions</h2>
+            <h2 id="review-heading">Tune the next brief</h2>
           </div>
           <button id="review-refresh-button" class="text-button" type="button">Refresh</button>
         </div>
 
         <div id="review-metrics" class="review-metrics" aria-live="polite"></div>
-        <p class="review-guidance">The recommended set is accepted by default. Correct only decisions that would improve your next brief.</p>
+        <p class="review-guidance">Signal what you want more of and what did not deserve attention. The engine still owns timing and the finite attention boundary.</p>
+
+        <section class="reasoning-economics" aria-labelledby="reasoning-economics-heading">
+          <div>
+            <p class="step-label">TOKEN ECONOMICS</p>
+            <h3 id="reasoning-economics-heading">Usage by reasoning phase</h3>
+          </div>
+          <div id="review-token-usage" class="reasoning-phase-grid" aria-live="polite"></div>
+        </section>
 
         <div class="review-filters">
           <label>
