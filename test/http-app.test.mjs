@@ -114,10 +114,10 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
 
   const feedback = await jsonFetch(`${origin}/api/runs/${completed.id}/feedback`, {
     method: "POST",
-    body: JSON.stringify({ kind: "correct_empty" }),
+    body: JSON.stringify({ kind: "useful", itemId: completed.result.items[0].id }),
   });
-  assert.equal(feedback.run.feedback.at(-1).kind, "correct_empty");
-  assert.equal(feedback.run.feedback.at(-1).itemId, null);
+  assert.equal(feedback.run.feedback.at(-1).kind, "useful");
+  assert.equal(feedback.run.feedback.at(-1).itemId, completed.result.items[0].id);
 
   const knowledge = await jsonFetch(`${origin}/api/knowledge?source=x&mode=catch_up`);
   assert.equal(knowledge.knowledge.checkpoint.runId, completed.id);

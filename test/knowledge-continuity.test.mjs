@@ -78,6 +78,80 @@ test("checkpoint suppresses exact delivered evidence across restarts", async (co
   store.close();
 });
 
+test("correctly empty feedback suppresses evaluated evidence only for the same intent", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-negative-knowledge-test-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const databasePath = path.join(directory, "state.db");
+  let analyzeCalls = 0;
+  let planCalls = 0;
+  const provider = {
+    name: "negative-knowledge-provider",
+    async planAcquisition() {
+      planCalls += 1;
+      return {
+        decision: "request_follow_up",
+        reason: "The provider would inspect another viewport.",
+      };
+    },
+    async analyze() {
+      analyzeCalls += 1;
+      return {
+        summary: "Nothing material for this intent.",
+        items: [],
+        repeatedClaimsCollapsed: 0,
+        deferredByBudget: 0,
+        limitations: [],
+      };
+    },
+  };
+  let store = new SqliteStateStore(databasePath);
+  let engine = new JobEngine({ store, reasoningProvider: provider, limits });
+  const intent = "Technical engineering changes that affect my current work.";
+
+  const first = await executeRun(
+    engine,
+    observationFor("excluded-1", "A generic lifestyle post."),
+    intent,
+  );
+  engine.addFeedback(first.id, { kind: "correct_empty" });
+  assert.equal(analyzeCalls, 1);
+
+  store.close();
+  store = new SqliteStateStore(databasePath);
+  engine = new JobEngine({ store, reasoningProvider: provider, limits });
+  const repeatedRun = engine.startRun({
+    mode: "catch_up",
+    source: "x",
+    maxItems: 1,
+    scrolls: 2,
+    intent,
+  });
+  const repeatedCommand = engine.claimBridgeCommand(repeatedRun.id, "test-bridge");
+  engine.acceptBridgeObservation(
+    repeatedCommand.id,
+    repeatedRun.id,
+    nativeObservationFor("excluded-1", "A generic lifestyle post."),
+  );
+  const repeated = await engine.waitForRun(repeatedRun.id);
+  assert.equal(repeated.result.items.length, 0);
+  assert.equal(repeated.coverage.confirmedExcludedSuppressed, 1);
+  assert.equal(repeated.coverage.unseenEvidenceCount, 0);
+  assert.equal(repeated.coverage.acquisitionRounds, 1);
+  assert.equal(repeated.coverage.providerFollowUpRequested, false);
+  assert.equal(planCalls, 0);
+  assert.equal(analyzeCalls, 1);
+
+  const changedIntent = await executeRun(
+    engine,
+    observationFor("excluded-1", "A generic lifestyle post."),
+    "Lifestyle inspiration and nature photography.",
+  );
+  assert.equal(changedIntent.coverage.confirmedExcludedSuppressed, 0);
+  assert.equal(changedIntent.coverage.unseenEvidenceCount, 1);
+  assert.equal(analyzeCalls, 2);
+  store.close();
+});
+
 test("material updates append event history and advance the frontier", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-knowledge-test-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -125,8 +199,14 @@ test("material updates append event history and advance the frontier", async (co
   store.close();
 });
 
-async function executeRun(engine, observation) {
-  const run = engine.startRun({ mode: "catch_up", source: "x", maxItems: 1, scrolls: 0 });
+async function executeRun(engine, observation, intent = undefined) {
+  const run = engine.startRun({
+    mode: "catch_up",
+    source: "x",
+    maxItems: 1,
+    scrolls: 0,
+    ...(intent ? { intent } : {}),
+  });
   const command = engine.claimBridgeCommand(run.id, "test-bridge");
   engine.acceptBridgeObservation(command.id, run.id, observation);
   return engine.waitForRun(run.id);
@@ -161,6 +241,49 @@ function observationFor(statusId, text) {
       candidateCount: 1,
     },
   };
+}
+
+function nativeObservationFor(statusId, text) {
+  const observation = observationFor(statusId, text);
+  const baseBlock = observation.snapshots[0].blocks[0];
+  observation.snapshots = [0, 675, 1_350].map((scrollY, index) => ({
+    ...observation.snapshots[0],
+    scrollY,
+    blocks: index === 0 ? [baseBlock] : [],
+  }));
+  observation.coverage = {
+    ...observation.coverage,
+    observedBlockCount: 1,
+    browserAdapter: "aku-bridge",
+    captureMethod: "native_dom",
+    fallbackUsed: false,
+    scrollContainer: "window",
+    pendingNewContent: false,
+    pendingNewContentLabel: "",
+    pendingNewContentAction: "not_detected",
+    pendingContentActivationEvidence: null,
+    pendingContentPolicy: "reveal_if_present",
+    feedMutation: false,
+    sameTabMutation: false,
+    restorationScope: "pre_run_position",
+    preActionScrollY: 0,
+    acquisitionRound: 1,
+    continuationRequested: false,
+    continuationAnchorMatched: false,
+    captureStartScrollY: 0,
+    requestedScrolls: 2,
+    performedScrolls: 2,
+    snapshotCount: 3,
+    scrollDeltas: [675, 675],
+    scrollStopReason: "budget_exhausted",
+    originalScrollY: 0,
+    finalScrollY: 0,
+    restoreAttempted: true,
+    restored: true,
+    elapsedMs: 1_000,
+    notes: [],
+  };
+  return observation;
 }
 
 function resultForBlock(run, block, eventKey, knowledgeDelta) {

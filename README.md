@@ -41,7 +41,9 @@ Gate 0B.3 asks the configured ReasoningProvider only whether to finish or reques
 
 ## Knowledge continuity
 
-Every validated evidence block receives a deterministic identity. A completed run advances one checkpoint for its source and mode; only evidence previously delivered as a result is suppressed on later runs. New semantic deltas are attached to stable event keys and stored as append-only versions.
+Every validated evidence block receives a deterministic identity. A completed run advances one checkpoint for its source and mode. Evidence previously delivered as a result is suppressed on later runs. When the user marks an empty result `Correctly empty`, the observed evidence is also stored as `confirmed_excluded` and suppressed only for the same source, mode, and normalized intent. A changed intent makes it eligible again. New semantic deltas are attached to stable event keys and stored as append-only versions.
+
+If every evidence block in the initial bounded acquisition was already evaluated for the same intent, JobEngine finishes deterministically without asking the ReasoningProvider to plan another acquisition round.
 
 The current frontier is inspectable through:
 

@@ -7,6 +7,12 @@ export function evidenceKeyForBlock(source, block) {
   return `${source}:${digest}`;
 }
 
+export function intentKeyForText(intent) {
+  const normalized = normalizeEvidenceText(intent);
+  if (!normalized) return "";
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 24);
+}
+
 export function uniqueEvidenceKeys(observation) {
   return [
     ...new Set(

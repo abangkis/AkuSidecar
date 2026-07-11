@@ -120,8 +120,16 @@ export class JobEngine {
   }
 
   addFeedback(runId, input) {
-    if (!this.store.getRun(runId)) throw new ContractError("run not found");
-    return this.store.addFeedback(runId, validateFeedback(input));
+    const run = this.store.getRun(runId);
+    if (!run) throw new ContractError("run not found");
+    const feedback = validateFeedback(input);
+    if (
+      feedback.kind === "correct_empty" &&
+      (feedback.itemId || run.status !== "completed" || (run.result?.items?.length ?? 0) !== 0)
+    ) {
+      throw new ContractError("correct_empty feedback requires a completed empty run");
+    }
+    return this.store.addFeedback(runId, feedback);
   }
 
   async waitForRun(runId) {
@@ -143,6 +151,28 @@ export class JobEngine {
         run.mode,
         observedEvidenceKeys,
       );
+      const confirmedExcludedKeys = this.store.getConfirmedExcludedEvidenceKeys(
+        run.source,
+        run.mode,
+        run.intent,
+        observedEvidenceKeys,
+      );
+      const suppressedEvidenceKeys = new Set([
+        ...knownEvidenceKeys,
+        ...confirmedExcludedKeys,
+      ]);
+      if (
+        observedEvidenceKeys.length > 0 &&
+        suppressedEvidenceKeys.size === observedEvidenceKeys.length
+      ) {
+        await this.#reasonAboutRun(runId, run, {
+          providerFollowUpRequested: false,
+          providerFollowUpExecuted: false,
+          providerFollowUpReason:
+            "The initial bounded sample contained only previously evaluated evidence.",
+        });
+        return;
+      }
       const knowledgeContext = this.store.getKnowledgeContext(
         run.source,
         run.mode,
@@ -161,7 +191,7 @@ export class JobEngine {
               followUpScrolls: this.limits.followUpScrolls,
               sourceLocked: run.source,
               continuationRequiresAnchor: true,
-              knownEvidenceInCurrentSample: knownEvidenceKeys.size,
+              knownEvidenceInCurrentSample: suppressedEvidenceKeys.size,
             },
           }),
         );
@@ -220,14 +250,24 @@ export class JobEngine {
         run.mode,
         allEvidenceKeys,
       );
-      const filtered = filterKnownEvidence(observation, knownEvidenceKeys);
+      const confirmedExcludedKeys = this.store.getConfirmedExcludedEvidenceKeys(
+        run.source,
+        run.mode,
+        run.intent,
+        allEvidenceKeys,
+      );
+      const suppressedEvidenceKeys = new Set([
+        ...knownEvidenceKeys,
+        ...confirmedExcludedKeys,
+      ]);
+      const filtered = filterKnownEvidence(observation, suppressedEvidenceKeys);
       const knowledgeContext = this.store.getKnowledgeContext(
         run.source,
         run.mode,
         this.limits.maxKnowledgeContextEvents ?? 20,
       );
       const rawResult =
-        filtered.unseenEvidenceCount === 0 && knownEvidenceKeys.size > 0
+        filtered.unseenEvidenceCount === 0 && suppressedEvidenceKeys.size > 0
           ? noNewEvidenceResult(filtered.exactDuplicatesSuppressed)
           : await this.reasoningProvider.analyze({
               run,
@@ -237,7 +277,7 @@ export class JobEngine {
             });
       const result = validateReasoningResult(rawResult, run.maxItems);
       assertObservedSources(result, filtered.observation);
-      assertUniqueResultEvidence(result, knownEvidenceKeys);
+      assertUniqueResultEvidence(result, suppressedEvidenceKeys);
       if (this.store.getRun(runId)?.status === "cancelled") return;
       const coverage = {
         ...aggregateCoverage(storedObservations, planning),
@@ -247,6 +287,8 @@ export class JobEngine {
         previousCheckpointRunId: knowledgeContext.checkpoint?.runId ?? null,
         previousCheckpointAt: knowledgeContext.checkpoint?.observedAt ?? null,
         exactDuplicatesSuppressed: filtered.exactDuplicatesSuppressed,
+        deliveredEvidenceSuppressed: knownEvidenceKeys.size,
+        confirmedExcludedSuppressed: confirmedExcludedKeys.size,
         unseenEvidenceCount: filtered.unseenEvidenceCount,
         knowledgeContextEvents: knowledgeContext.events.length,
         checkpointAdvanced: true,

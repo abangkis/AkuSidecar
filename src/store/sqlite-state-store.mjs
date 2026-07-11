@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { intentKeyForText, uniqueEvidenceKeys } from "../core/knowledge-continuity.mjs";
 
 export class SqliteStateStore {
   constructor(databasePath) {
@@ -10,6 +11,7 @@ export class SqliteStateStore {
     this.database = new DatabaseSync(databasePath);
     this.database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
     this.#migrate();
+    this.#backfillConfirmedExclusions();
   }
 
   close() {
@@ -127,7 +129,63 @@ export class SqliteStateStore {
 
       CREATE INDEX IF NOT EXISTS knowledge_versions_source_mode
         ON knowledge_versions(source, mode, created_at);
+
+      CREATE TABLE IF NOT EXISTS evidence_dispositions (
+        source TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        intent_key TEXT NOT NULL,
+        intent_text TEXT NOT NULL,
+        evidence_key TEXT NOT NULL,
+        disposition TEXT NOT NULL,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(source, mode, intent_key, evidence_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS evidence_dispositions_scope
+        ON evidence_dispositions(source, mode, intent_key, disposition);
     `);
+  }
+
+  #backfillConfirmedExclusions() {
+    const rows = this.database
+      .prepare("SELECT DISTINCT run_id, created_at FROM feedback WHERE kind = 'correct_empty'")
+      .all();
+    for (const row of rows) {
+      this.#persistConfirmedExclusions(row.run_id, row.created_at);
+    }
+  }
+
+  #persistConfirmedExclusions(runId, createdAt) {
+    const run = this.getRun(runId);
+    if (!run || run.status !== "completed" || (run.result?.items?.length ?? 0) !== 0) {
+      return;
+    }
+    const intentKey = intentKeyForText(run.intent);
+    const evidenceKeys = [
+      ...new Set(run.observations.flatMap((entry) => uniqueEvidenceKeys(entry.payload))),
+    ];
+    const insert = this.database.prepare(`
+      INSERT INTO evidence_dispositions(
+        source, mode, intent_key, intent_text, evidence_key,
+        disposition, run_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, 'confirmed_excluded', ?, ?)
+      ON CONFLICT(source, mode, intent_key, evidence_key) DO UPDATE SET
+        disposition = excluded.disposition,
+        run_id = excluded.run_id,
+        created_at = excluded.created_at
+    `);
+    for (const evidenceKey of evidenceKeys) {
+      insert.run(
+        run.source,
+        run.mode,
+        intentKey,
+        run.intent,
+        evidenceKey,
+        runId,
+        createdAt,
+      );
+    }
   }
 
   getOrCreateBridgeToken() {
@@ -337,6 +395,22 @@ export class SqliteStateStore {
     return new Set(rows.map((row) => row.evidence_key));
   }
 
+  getConfirmedExcludedEvidenceKeys(source, mode, intent, evidenceKeys) {
+    const unique = [...new Set(evidenceKeys)].filter(Boolean);
+    const intentKey = intentKeyForText(intent);
+    if (unique.length === 0 || !intentKey) return new Set();
+    const placeholders = unique.map(() => "?").join(", ");
+    const rows = this.database
+      .prepare(`
+        SELECT evidence_key FROM evidence_dispositions
+        WHERE source = ? AND mode = ? AND intent_key = ?
+          AND disposition = 'confirmed_excluded'
+          AND evidence_key IN (${placeholders})
+      `)
+      .all(source, mode, intentKey, ...unique);
+    return new Set(rows.map((row) => row.evidence_key));
+  }
+
   getKnowledgeContext(source, mode, limit = 20) {
     const numericLimit = Number.isFinite(limit) ? Math.trunc(limit) : 20;
     const boundedLimit = Math.max(1, Math.min(100, numericLimit));
@@ -512,12 +586,23 @@ export class SqliteStateStore {
   addFeedback(runId, feedback) {
     const id = randomUUID();
     const now = new Date().toISOString();
-    this.database
-      .prepare(`
-        INSERT INTO feedback(id, run_id, item_id, kind, note, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `)
-      .run(id, runId, feedback.itemId || null, feedback.kind, feedback.note || null, now);
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(`
+          INSERT INTO feedback(id, run_id, item_id, kind, note, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `)
+        .run(id, runId, feedback.itemId || null, feedback.kind, feedback.note || null, now);
+
+      if (feedback.kind === "correct_empty") {
+        this.#persistConfirmedExclusions(runId, now);
+      }
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
     return this.getRun(runId);
   }
 }

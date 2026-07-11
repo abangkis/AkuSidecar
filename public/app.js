@@ -319,7 +319,13 @@ function buildCoverageList(coverage) {
       ? `Previous checkpoint: ${formatDate(coverage.previousCheckpointAt)}`
       : "Previous checkpoint: none; this run establishes the frontier",
     Number.isInteger(coverage.exactDuplicatesSuppressed)
-      ? `Exact delivered duplicates suppressed: ${coverage.exactDuplicatesSuppressed}`
+      ? `Exact evidence suppressed: ${coverage.exactDuplicatesSuppressed}`
+      : null,
+    Number.isInteger(coverage.deliveredEvidenceSuppressed)
+      ? `Previously delivered evidence suppressed: ${coverage.deliveredEvidenceSuppressed}`
+      : null,
+    Number.isInteger(coverage.confirmedExcludedSuppressed)
+      ? `User-confirmed exclusions suppressed for this intent: ${coverage.confirmedExcludedSuppressed}`
       : null,
     Number.isInteger(coverage.unseenEvidenceCount)
       ? `Unseen evidence at reasoning: ${coverage.unseenEvidenceCount}`
