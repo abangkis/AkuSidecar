@@ -308,6 +308,20 @@ function validateCoverage(value, limits) {
     observedBlockCount: nonNegativeInteger(value.observedBlockCount, 0),
     browserAdapter: cleanString(value.browserAdapter, 100),
     captureMethod: cleanString(value.captureMethod, 100),
+    adapterVersion: cleanString(value.adapterVersion, 100),
+    adapterCapabilities: Array.isArray(value.adapterCapabilities)
+      ? value.adapterCapabilities
+          .map((entry) => ({
+            source: cleanString(entry?.source, 30),
+            version: cleanString(entry?.version, 100),
+            actions: Array.isArray(entry?.actions)
+              ? [...new Set(entry.actions.map((action) => cleanString(action, 100)).filter(Boolean))]
+                  .slice(0, 20)
+              : [],
+          }))
+          .filter((entry) => entry.source && entry.version)
+          .slice(0, 20)
+      : [],
     fallbackUsed: value.fallbackUsed === true,
     scrollContainer: cleanString(value.scrollContainer, 200),
     pendingNewContent: value.pendingNewContent === true,

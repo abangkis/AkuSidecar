@@ -117,6 +117,14 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
         observedBlockCount: 3,
         browserAdapter: "aku-bridge",
         captureMethod: "native_dom",
+        adapterVersion: "linkedin-dom-v2",
+        adapterCapabilities: [
+          {
+            source: "linkedin",
+            version: "linkedin-dom-v2",
+            actions: ["probe_readiness", "collect_visible", "collect_visible"],
+          },
+        ],
         fallbackUsed: false,
         scrollContainer: "#workspace",
         pendingNewContent: true,
@@ -159,6 +167,14 @@ test("Gate 0B observations preserve bounded movement and platform-order evidence
   assert.equal(observation.coverage.performedScrolls, 2);
   assert.equal(observation.coverage.restored, true);
   assert.equal(observation.coverage.scrollContainer, "#workspace");
+  assert.equal(observation.coverage.adapterVersion, "linkedin-dom-v2");
+  assert.deepEqual(observation.coverage.adapterCapabilities, [
+    {
+      source: "linkedin",
+      version: "linkedin-dom-v2",
+      actions: ["probe_readiness", "collect_visible"],
+    },
+  ]);
   assert.equal(observation.coverage.pendingNewContent, true);
   assert.equal(observation.coverage.pendingNewContentAction, "activated");
   assert.equal(observation.coverage.pendingContentActivationEvidence, "feed_fingerprint_changed");

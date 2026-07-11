@@ -109,8 +109,9 @@ window.addEventListener("message", (event) => {
         );
       }
       setStatus(elements.bridgeStatus, "AkuBridge recovery pending", "warning");
-      elements.processingDetail.textContent =
-        "A source action could not be verified. AkuSidecar may retry once with bounded detect-only capture.";
+      elements.processingDetail.textContent = event.data.message
+        ? `AkuBridge dispatch failed: ${event.data.message}`
+        : "A source action could not be verified. AkuSidecar may retry once with bounded detect-only capture.";
       return;
     }
     setStatus(elements.bridgeStatus, "AkuBridge error", "error");
