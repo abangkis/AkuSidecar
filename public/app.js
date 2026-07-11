@@ -6,6 +6,7 @@ const state = {
   pollTimer: null,
   dispatchedRounds: new Set(),
   currentView: "session",
+  resultPresentation: "brief",
   runtimeConfiguration: null,
 };
 
@@ -35,6 +36,9 @@ const elements = {
   reviewRefreshButton: document.querySelector("#review-refresh-button"),
   reviewMetrics: document.querySelector("#review-metrics"),
   reviewTokenUsage: document.querySelector("#review-token-usage"),
+  preferenceReadinessStatus: document.querySelector("#preference-readiness-status"),
+  preferenceReadinessGates: document.querySelector("#preference-readiness-gates"),
+  preferenceReadinessDetail: document.querySelector("#preference-readiness-detail"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
   reviewMeta: document.querySelector("#review-meta"),
@@ -59,8 +63,13 @@ const elements = {
   resultMeta: document.querySelector("#result-meta"),
   coverageBadge: document.querySelector("#coverage-badge"),
   coverageContent: document.querySelector("#coverage-content"),
+  resultBriefView: document.querySelector("#result-brief-view"),
+  resultSourceView: document.querySelector("#result-source-view"),
+  sourceLayoutNote: document.querySelector("#source-layout-note"),
+  briefPresentation: document.querySelector("#brief-presentation"),
   resultSummary: document.querySelector("#result-summary"),
   resultItems: document.querySelector("#result-items"),
+  sourceLayoutItems: document.querySelector("#source-layout-items"),
   finishTitle: document.querySelector("#finish-title"),
   finishStats: document.querySelector("#finish-stats"),
   doneButton: document.querySelector("#done-button"),
@@ -119,6 +128,8 @@ elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.reviewSourceFilter.addEventListener("change", loadPilotReview);
 elements.reviewVerdictFilter.addEventListener("change", loadPilotReview);
+elements.resultBriefView.addEventListener("click", () => setResultPresentation("brief"));
+elements.resultSourceView.addEventListener("click", () => setResultPresentation("source"));
 for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
   input.addEventListener("change", updateScopeControls);
 }
@@ -439,6 +450,7 @@ function showResult(run) {
   elements.coverageBadge.textContent = partial ? "Coverage partial" : "Complete within scope";
   elements.coverageBadge.classList.toggle("status-ok", !partial);
   elements.coverageContent.replaceChildren(buildCoverageList(coverage));
+  setResultPresentation("brief");
 
   elements.resultSummary.textContent = run.result?.summary || "No summary was returned.";
   elements.resultItems.replaceChildren();
@@ -451,6 +463,7 @@ function showResult(run) {
     empty.textContent = "No visible item was promoted in this bounded sample.";
     elements.resultItems.append(empty, buildEmptyResultFeedback(run));
   }
+  renderSourceLayout((run.result?.items ?? []).map((item) => ({ run, item })));
 
   elements.finishTitle.textContent = partial
     ? "Brief complete—coverage partial"
@@ -475,6 +488,7 @@ function showUnifiedResult(session) {
     : "Both source runs completed";
   elements.coverageBadge.classList.toggle("status-ok", !partial);
   elements.coverageContent.replaceChildren(buildUnifiedCoverage(session));
+  setResultPresentation("brief");
   elements.resultSummary.textContent = session.result?.summary || "No summary was returned.";
   elements.resultItems.replaceChildren();
 
@@ -482,6 +496,10 @@ function showUnifiedResult(session) {
     const child = session.children.find((candidate) => candidate.runId === entry.runId);
     if (child?.run) elements.resultItems.append(buildResultItem(child.run, entry.item));
   }
+  renderSourceLayout((session.result?.items ?? []).flatMap((entry) => {
+    const child = session.children.find((candidate) => candidate.runId === entry.runId);
+    return child?.run ? [{ run: child.run, item: entry.item }] : [];
+  }));
 
   for (const child of session.children.filter(
     (candidate) =>
@@ -831,7 +849,7 @@ function buildResultItem(run, item, onSaved = () => {}) {
   if (candidate) {
     feedback.append(
       buildPreferenceButton(run, item.evidenceKey, "more_like_this", "More like this", onSaved),
-      buildPreferenceButton(run, item.evidenceKey, "should_not_show", "Should not show", onSaved),
+      buildPreferenceButton(run, item.evidenceKey, "less_like_this", "Less like this", onSaved),
     );
   }
   actions.append(link, feedback);
@@ -844,11 +862,9 @@ function buildPreferenceButton(run, evidenceKey, kind, label, onSaved = () => {}
   button.type = "button";
   button.className = "feedback-button";
   button.textContent = label;
-  const matchesKind = (entry) => entry.kind === kind
-    || (kind === "more_like_this" && entry.kind === "should_show");
-  if ((run.preferenceFeedback ?? []).some(
-    (entry) => entry.evidenceKey === evidenceKey && matchesKind(entry),
-  )) {
+  button.dataset.preferenceEvidence = evidenceKey;
+  button.dataset.preferenceKind = kind;
+  if (effectivePreferenceKind(run, evidenceKey) === kind) {
     button.classList.add("selected");
     button.disabled = true;
   }
@@ -858,11 +874,107 @@ function buildPreferenceButton(run, evidenceKey, kind, label, onSaved = () => {}
       body: JSON.stringify({ kind, evidenceKey, reasonCode: null, note: "" }),
     });
     run.preferenceFeedback = response.run.preferenceFeedback;
-    button.classList.add("selected");
-    button.disabled = true;
+    syncPreferenceButtons(run, evidenceKey);
     await onSaved();
   });
   return button;
+}
+
+function effectivePreferenceKind(run, evidenceKey) {
+  const latest = (run.preferenceFeedback ?? [])
+    .filter((entry) => entry.evidenceKey === evidenceKey)
+    .at(-1)?.kind;
+  return latest;
+}
+
+function syncPreferenceButtons(run, evidenceKey) {
+  const effective = effectivePreferenceKind(run, evidenceKey);
+  for (const button of document.querySelectorAll("[data-preference-evidence]")) {
+    if (button.dataset.preferenceEvidence !== evidenceKey) continue;
+    const selected = button.dataset.preferenceKind === effective;
+    button.classList.toggle("selected", selected);
+    button.disabled = selected;
+  }
+}
+
+function setResultPresentation(view) {
+  state.resultPresentation = view;
+  const source = view === "source";
+  elements.resultBriefView.classList.toggle("selected", !source);
+  elements.resultBriefView.setAttribute("aria-selected", String(!source));
+  elements.resultSourceView.classList.toggle("selected", source);
+  elements.resultSourceView.setAttribute("aria-selected", String(source));
+  elements.briefPresentation.classList.toggle("hidden", source);
+  elements.sourceLayoutItems.classList.toggle("hidden", !source);
+  elements.sourceLayoutNote.classList.toggle("hidden", !source);
+}
+
+function renderSourceLayout(entries) {
+  elements.sourceLayoutItems.replaceChildren();
+  if (entries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "source-layout-empty";
+    empty.textContent = "No promoted source content is available in this bounded result.";
+    elements.sourceLayoutItems.append(empty);
+    return;
+  }
+  for (const { run, item } of entries) {
+    const candidate = (run.candidateEvaluations ?? []).find(
+      (entry) => entry.evidenceKey === item.evidenceKey,
+    );
+    elements.sourceLayoutItems.append(buildSourceLayoutCard(run, item, candidate));
+  }
+}
+
+function buildSourceLayoutCard(run, item, candidate) {
+  const source = item.source || candidate?.source || run.source;
+  const article = document.createElement("article");
+  article.className = `source-layout-card source-${source}`;
+
+  const header = document.createElement("header");
+  const identity = document.createElement("div");
+  const author = document.createElement("strong");
+  author.textContent = candidate?.author || item.author || sourceLabel(source);
+  const context = document.createElement("span");
+  context.textContent = [
+    sourceLabel(source),
+    item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run",
+  ].join(" Â· ");
+  identity.append(author, context);
+  const sourceBadge = document.createElement("span");
+  sourceBadge.className = "source-layout-badge";
+  sourceBadge.textContent = source === "x" ? "X" : "in";
+  header.append(sourceBadge, identity);
+
+  const content = candidate?.text
+    ? buildCandidateContent({ ...candidate, source }, { includeIdentity: false })
+    : document.createElement("div");
+  content.classList.add("source-layout-content");
+  if (!candidate?.text) {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = item.whatChanged;
+    content.append(paragraph);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "result-actions";
+  const link = document.createElement("a");
+  link.className = "source-link";
+  link.href = item.sourceUrl || candidate?.sourceUrl || "#";
+  link.target = "_blank";
+  link.rel = "noreferrer noopener";
+  link.textContent = provenanceLinkLabel(item.sourceUrlKind);
+  const feedback = document.createElement("div");
+  feedback.className = "feedback-actions";
+  if (item.evidenceKey) {
+    feedback.append(
+      buildPreferenceButton(run, item.evidenceKey, "more_like_this", "More like this"),
+      buildPreferenceButton(run, item.evidenceKey, "less_like_this", "Less like this"),
+    );
+  }
+  actions.append(link, feedback);
+  article.append(header, content, actions);
+  return article;
 }
 
 function showSessionView() {
@@ -1017,12 +1129,14 @@ async function loadPilotReview() {
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
-    const [{ review }, { profile }] = await Promise.all([
+    const [{ review }, { profile }, { replay }] = await Promise.all([
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
+      api("/api/preferences/replay"),
     ]);
     renderPilotMetrics(review.summary);
     renderReasoningEconomics(review.summary.tokenUsage, review.runs);
+    renderPreferenceReadiness(replay);
     elements.reviewMeta.textContent = [
       `${review.totalMatching} matching run(s)`,
       `latest ${review.runs.length} shown`,
@@ -1048,6 +1162,33 @@ async function loadPilotReview() {
   }
 }
 
+function renderPreferenceReadiness(replay) {
+  const ready = replay.readiness.status === "ready_for_offline_fit";
+  setStatus(
+    elements.preferenceReadinessStatus,
+    ready ? "Ready for offline fit" : "Collecting",
+    ready ? "ok" : "neutral",
+  );
+  elements.preferenceReadinessGates.replaceChildren(
+    ...replay.readiness.gates.map((gate) => {
+      const card = document.createElement("div");
+      card.className = gate.passed ? "passed" : "pending";
+      const label = document.createElement("span");
+      label.textContent = humanize(gate.id);
+      const value = document.createElement("strong");
+      value.textContent = `${gate.observed} / ${gate.required}`;
+      card.append(label, value);
+      return card;
+    }),
+  );
+  elements.preferenceReadinessDetail.textContent = [
+    `${replay.dataset.evaluatedCandidates} evaluated candidates`,
+    `${replay.dataset.assessedCandidates} assessed`,
+    `${replay.dataset.assessedFeedback} feedback signals have structured assessment`,
+    "Live ranking influence remains disabled",
+  ].join(" · ");
+}
+
 function renderPilotMetrics(summary) {
   const metrics = [
     ["Completed", `${summary.completedRuns} / ${summary.totalRuns}`],
@@ -1066,7 +1207,7 @@ function renderPilotMetrics(summary) {
     ["Median duration", formatDuration(summary.medianDurationMs)],
     ["Failed runs", String(summary.failedRuns)],
     ["More like this", String(summary.moreLikeThisSignals ?? 0)],
-    ["Should not show", String(summary.shouldNotShowSignals ?? 0)],
+    ["Less like this", String(summary.lessLikeThisSignals ?? 0)],
   ];
   elements.reviewMetrics.replaceChildren(
     ...metrics.map(([label, value]) => {
@@ -1309,11 +1450,9 @@ function buildCandidateReview(run, candidate) {
   actions.append(link, buildPreferenceButton(
     run, candidate.evidenceKey, "more_like_this", "More like this",
   ));
-  if (candidate.decision === "selected") {
-    actions.append(buildPreferenceButton(
-      run, candidate.evidenceKey, "should_not_show", "Should not show",
-    ));
-  }
+  actions.append(buildPreferenceButton(
+    run, candidate.evidenceKey, "less_like_this", "Less like this",
+  ));
   article.append(meta, content);
   if (assessment) article.append(assessment);
   article.append(actions);
@@ -1348,16 +1487,16 @@ function buildCandidateAssessment(assessment) {
   return section;
 }
 
-function buildCandidateContent(candidate) {
+function buildCandidateContent(candidate, options = {}) {
   const container = document.createElement("div");
   container.className = "candidate-content";
-  let text = candidate.text.replace(/^Feed post\s+/i, "").trim();
+  let text = String(candidate.text ?? "").replace(/^Feed post\s+/i, "").trim();
   if (candidate.source === "linkedin") {
     const authorEnd = text.indexOf(" • ");
     if (authorEnd > 0) {
       const author = document.createElement("strong");
       author.textContent = text.slice(0, authorEnd).trim();
-      container.append(author);
+      if (options.includeIdentity !== false) container.append(author);
     }
     const bodyMatch = text.match(/(?:\b\d+[mhdw]\b|Promoted by [^•]+)\s*•\s*/i);
     if (bodyMatch?.index !== undefined) {

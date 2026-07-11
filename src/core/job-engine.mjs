@@ -19,6 +19,7 @@ import {
   filterKnownEvidence,
   uniqueEvidenceKeys,
 } from "./knowledge-continuity.mjs";
+import { buildPreferenceReplay } from "./preference-replay.mjs";
 import { buildPilotReview } from "./pilot-review.mjs";
 
 export class JobEngine {
@@ -272,14 +273,15 @@ export class JobEngine {
       (entry) => entry.evidenceKey === feedback.evidenceKey,
     );
     if (!candidate) throw new ContractError("preference feedback target was not evaluated");
-    if (feedback.kind === "should_not_show" && candidate.decision !== "selected") {
-      throw new ContractError("should_not_show requires a selected candidate");
-    }
     return this.store.addPreferenceFeedback(runId, feedback);
   }
 
   getPreferenceProfile() {
     return this.store.getPreferenceProfile();
+  }
+
+  getPreferenceReplay(limit = 500) {
+    return buildPreferenceReplay(this.store.listRunsWithFeedback(limit));
   }
 
   async waitForRun(runId) {

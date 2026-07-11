@@ -88,6 +88,8 @@ Feedback integrity is enforced by JobEngine:
 
 The review API is `GET /api/pilot/review`. Optional query parameters are `source`, `verdict`, and `limit`. The response intentionally returns result, coverage, and feedback evidence but not raw browser observations.
 
+`GET /api/preferences/replay` provides deterministic offline calibration readiness over stored candidates, assessments, and preference signals. It reports coverage and descriptive tendencies without invoking a model or influencing live selection. The initial gates require 30 contextual-interest signals, including at least 15 `more_like_this` and 5 `less_like_this` signals, 20 assessment-matched signals, and feedback across 10 runs. Retired development-only preference kinds are deleted rather than carried as compatibility behavior.
+
 ## Unified Session API
 
 - `POST /api/sessions` creates the bounded X + LinkedIn parent session.

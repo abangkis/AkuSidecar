@@ -104,7 +104,19 @@
         </div>
 
         <div id="review-metrics" class="review-metrics" aria-live="polite"></div>
-        <p class="review-guidance">Signal what you want more of and what did not deserve attention. The engine still owns timing and the finite attention boundary.</p>
+        <p class="review-guidance">Signal what you want more or less of. The engine still owns timing and the finite attention boundary.</p>
+
+        <section class="preference-readiness" aria-labelledby="preference-readiness-heading">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="step-label">OFFLINE REPLAY</p>
+              <h3 id="preference-readiness-heading">Preference engine readiness</h3>
+            </div>
+            <span id="preference-readiness-status" class="status-pill status-neutral">Collecting</span>
+          </div>
+          <div id="preference-readiness-gates" class="readiness-gates"></div>
+          <p id="preference-readiness-detail" class="review-guidance"></p>
+        </section>
 
         <section class="reasoning-economics" aria-labelledby="reasoning-economics-heading">
           <div>
@@ -239,8 +251,16 @@
           <div id="coverage-content"></div>
         </details>
 
-        <p id="result-summary" class="result-summary"></p>
-        <div id="result-items" class="result-items"></div>
+        <div class="result-presentation" role="tablist" aria-label="Result presentation">
+          <button id="result-brief-view" class="presentation-tab selected" type="button" role="tab" aria-selected="true">Brief</button>
+          <button id="result-source-view" class="presentation-tab" type="button" role="tab" aria-selected="false">Source layout</button>
+        </div>
+        <p id="source-layout-note" class="source-layout-note hidden">Captured source view reconstructed from the bounded evidence. It is not a live copy of the source page.</p>
+        <div id="brief-presentation">
+          <p id="result-summary" class="result-summary"></p>
+          <div id="result-items" class="result-items"></div>
+        </div>
+        <div id="source-layout-items" class="source-layout-items hidden"></div>
 
         <div id="finish-line" class="finish-line">
           <p class="finish-kicker">FINISH LINE</p>

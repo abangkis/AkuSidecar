@@ -6,11 +6,11 @@
     "status": { "type": "string", "enum": ["collecting", "active"] },
     "feedbackEventCount": { "type": "integer", "minimum": 0 },
     "moreLikeThisCount": { "type": "integer", "minimum": 0 },
-    "shouldNotShowCount": { "type": "integer", "minimum": 0 },
+    "lessLikeThisCount": { "type": "integer", "minimum": 0 },
     "selectedMoreLikeThisCount": { "type": "integer", "minimum": 0 },
     "excludedMoreLikeThisCount": { "type": "integer", "minimum": 0 },
     "updatedAt": { "type": ["string", "null"] }
   },
-  "required": ["version", "status", "feedbackEventCount", "moreLikeThisCount", "shouldNotShowCount", "selectedMoreLikeThisCount", "excludedMoreLikeThisCount", "updatedAt"],
+  "required": ["version", "status", "feedbackEventCount", "moreLikeThisCount", "lessLikeThisCount", "selectedMoreLikeThisCount", "excludedMoreLikeThisCount", "updatedAt"],
   "additionalProperties": false
 }

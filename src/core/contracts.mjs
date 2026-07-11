@@ -53,8 +53,7 @@ export const FEEDBACK_KINDS = new Set([
 ]);
 export const PREFERENCE_FEEDBACK_KINDS = new Set([
   "more_like_this",
-  "should_show",
-  "should_not_show",
+  "less_like_this",
 ]);
 export const CANDIDATE_CONTENT_TYPES = new Set([
   "release",
@@ -468,7 +467,7 @@ export function validatePreferenceFeedback(input) {
     throw new ContractError("other preference feedback requires a note");
   }
   return {
-    kind: input.kind === "should_show" ? "more_like_this" : input.kind,
+    kind: input.kind,
     evidenceKey,
     reasonCode,
     note,

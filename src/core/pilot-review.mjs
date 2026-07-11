@@ -78,10 +78,10 @@ export function summarizePilotRuns(runs) {
     wrongLaneFeedback: feedback.filter((entry) => entry.kind === "wrong_lane").length,
     duplicateFeedback: feedback.filter((entry) => entry.kind === "duplicate").length,
     preferenceCorrections: runs.reduce((sum, run) => sum + (run.preferenceFeedback?.length ?? 0), 0),
-    moreLikeThisSignals: countPreference(runs, ["more_like_this", "should_show"]),
-    shouldNotShowSignals: countPreference(runs, ["should_not_show"]),
-    selectedMoreLikeThisSignals: countPreference(runs, ["more_like_this", "should_show"], "selected"),
-    excludedMoreLikeThisSignals: countPreference(runs, ["more_like_this", "should_show"], "excluded"),
+    moreLikeThisSignals: countPreference(runs, ["more_like_this"]),
+    lessLikeThisSignals: countPreference(runs, ["less_like_this"]),
+    selectedMoreLikeThisSignals: countPreference(runs, ["more_like_this"], "selected"),
+    excludedMoreLikeThisSignals: countPreference(runs, ["more_like_this"], "excluded"),
     tokenUsage: summarizeTokenUsage(runs),
     missRate: ratio(missed.size, emptyVerdictCount),
     duplicateEscapeRate: ratio(
@@ -211,7 +211,11 @@ function countPreference(runs, kinds, decision = null) {
     const decisions = new Map(
       (run.candidateEvaluations ?? []).map((candidate) => [candidate.evidenceKey, candidate.decision]),
     );
+    const effective = new Map();
     for (const feedback of run.preferenceFeedback ?? []) {
+      effective.set(feedback.evidenceKey, feedback);
+    }
+    for (const feedback of effective.values()) {
       if (kinds.includes(feedback.kind) && (!decision || decisions.get(feedback.evidenceKey) === decision)) {
         count += 1;
       }

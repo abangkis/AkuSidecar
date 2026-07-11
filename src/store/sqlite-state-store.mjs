@@ -238,6 +238,9 @@ export class SqliteStateStore {
         ON evidence_dispositions(source, mode, intent_key, disposition);
     `);
     this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
+    this.database
+      .prepare("DELETE FROM preference_feedback_events WHERE kind NOT IN ('more_like_this', 'less_like_this')")
+      .run();
   }
 
   #ensureColumn(table, column, definition) {
@@ -540,7 +543,7 @@ export class SqliteStateStore {
       .all(...runs.map((run) => run.id));
     const candidatesByRun = groupRows(candidateRows, "run_id", mapCandidateEvaluation);
     const preferenceRows = this.database
-      .prepare(`SELECT * FROM preference_feedback_events WHERE run_id IN (${placeholders}) ORDER BY created_at ASC`)
+      .prepare(`SELECT * FROM preference_feedback_events WHERE run_id IN (${placeholders}) ORDER BY created_at ASC, id ASC`)
       .all(...runs.map((run) => run.id));
     const preferenceByRun = groupRows(preferenceRows, "run_id", mapPreferenceFeedback);
     const invocationRows = this.database
@@ -583,7 +586,7 @@ export class SqliteStateStore {
       .all(id)
       .map(mapCandidateEvaluation);
     run.preferenceFeedback = this.database
-      .prepare("SELECT * FROM preference_feedback_events WHERE run_id = ? ORDER BY created_at ASC")
+      .prepare("SELECT * FROM preference_feedback_events WHERE run_id = ? ORDER BY created_at ASC, id ASC")
       .all(id)
       .map(mapPreferenceFeedback);
     run.reasoningInvocations = this.database
@@ -1012,7 +1015,7 @@ export class SqliteStateStore {
 
   addPreferenceFeedback(runId, feedback) {
     const latest = this.database
-      .prepare(`SELECT * FROM preference_feedback_events WHERE run_id = ? AND evidence_key = ? ORDER BY created_at DESC LIMIT 1`)
+      .prepare(`SELECT * FROM preference_feedback_events WHERE run_id = ? AND evidence_key = ? ORDER BY created_at DESC, id DESC LIMIT 1`)
       .get(runId, feedback.evidenceKey);
     if (
       latest &&
@@ -1049,13 +1052,23 @@ export class SqliteStateStore {
 
   getPreferenceProfile() {
     const row = this.database.prepare(`
+      WITH ranked AS (
+        SELECT p.*,
+               ROW_NUMBER() OVER (
+                 PARTITION BY p.run_id, p.evidence_key
+                 ORDER BY p.created_at DESC, p.id DESC
+               ) AS preference_rank
+        FROM preference_feedback_events p
+      ), effective AS (
+        SELECT * FROM ranked WHERE preference_rank = 1
+      )
       SELECT COUNT(*) AS total,
-             SUM(CASE WHEN p.kind IN ('more_like_this', 'should_show') THEN 1 ELSE 0 END) AS more_like_this,
-             SUM(CASE WHEN p.kind = 'should_not_show' THEN 1 ELSE 0 END) AS should_not_show,
-             SUM(CASE WHEN p.kind IN ('more_like_this', 'should_show') AND c.decision = 'selected' THEN 1 ELSE 0 END) AS selected_more_like_this,
-             SUM(CASE WHEN p.kind IN ('more_like_this', 'should_show') AND c.decision = 'excluded' THEN 1 ELSE 0 END) AS excluded_more_like_this,
+             SUM(CASE WHEN p.kind = 'more_like_this' THEN 1 ELSE 0 END) AS more_like_this,
+             SUM(CASE WHEN p.kind = 'less_like_this' THEN 1 ELSE 0 END) AS less_like_this,
+             SUM(CASE WHEN p.kind = 'more_like_this' AND c.decision = 'selected' THEN 1 ELSE 0 END) AS selected_more_like_this,
+             SUM(CASE WHEN p.kind = 'more_like_this' AND c.decision = 'excluded' THEN 1 ELSE 0 END) AS excluded_more_like_this,
              MAX(p.created_at) AS updated_at
-      FROM preference_feedback_events p
+      FROM effective p
       LEFT JOIN candidate_evaluations c
         ON c.run_id = p.run_id AND c.evidence_key = p.evidence_key
     `).get();
@@ -1064,7 +1077,7 @@ export class SqliteStateStore {
       status: "collecting",
       feedbackEventCount: Number(row.total ?? 0),
       moreLikeThisCount: Number(row.more_like_this ?? 0),
-      shouldNotShowCount: Number(row.should_not_show ?? 0),
+      lessLikeThisCount: Number(row.less_like_this ?? 0),
       selectedMoreLikeThisCount: Number(row.selected_more_like_this ?? 0),
       excludedMoreLikeThisCount: Number(row.excluded_more_like_this ?? 0),
       updatedAt: row.updated_at ?? null,

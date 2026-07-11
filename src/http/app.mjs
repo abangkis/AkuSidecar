@@ -223,6 +223,11 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, c
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/preferences/replay") {
+    sendJson(response, 200, { replay: engine.getPreferenceReplay() });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/knowledge") {
     const source = url.searchParams.get("source") ?? "x";
     const mode = url.searchParams.get("mode") ?? "catch_up";

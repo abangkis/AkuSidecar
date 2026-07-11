@@ -43,6 +43,35 @@ test("Codex model and phase effort are explicit configurable runtime metadata", 
   );
 });
 
+test("startup removes retired development preference kinds", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-retired-preferences-"));
+  const databasePath = path.join(directory, "state.db");
+  let store = new SqliteStateStore(databasePath);
+  store.database.exec("PRAGMA foreign_keys = OFF");
+  store.database.prepare(`
+    INSERT INTO preference_feedback_events(
+      id, run_id, evidence_key, kind, reason_code, note, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    "retired-event",
+    "retired-run",
+    "x:000000000000000000000000",
+    "should_show",
+    null,
+    "development fixture",
+    "2026-07-11T00:00:00.000Z",
+  );
+  store.close();
+
+  store = new SqliteStateStore(databasePath);
+  const count = store.database
+    .prepare("SELECT COUNT(*) AS count FROM preference_feedback_events")
+    .get().count;
+  assert.equal(count, 0);
+  store.close();
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test("deterministic planning gate spends model tokens only on a sparse movable gap", () => {
   const coverage = {
     scrollStopReason: "budget_exhausted",
@@ -167,8 +196,8 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
     note: "",
   });
   engine.addPreferenceFeedback(run.id, {
-    kind: "should_not_show",
-    evidenceKey: selected.evidenceKey,
+    kind: "less_like_this",
+    evidenceKey: excluded.evidenceKey,
     reasonCode: "low_signal",
     note: "",
   });
@@ -182,20 +211,19 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   assert.deepEqual(engine.getPreferenceProfile(), {
     version: 0,
     status: "collecting",
-    feedbackEventCount: 3,
-    moreLikeThisCount: 2,
-    shouldNotShowCount: 1,
+    feedbackEventCount: 2,
+    moreLikeThisCount: 1,
+    lessLikeThisCount: 1,
     selectedMoreLikeThisCount: 1,
-    excludedMoreLikeThisCount: 1,
+    excludedMoreLikeThisCount: 0,
     updatedAt: engine.getPreferenceProfile().updatedAt,
   });
-  const legacy = engine.addPreferenceFeedback(run.id, {
+  assert.throws(() => engine.addPreferenceFeedback(run.id, {
     kind: "should_show",
     evidenceKey: excluded.evidenceKey,
     reasonCode: null,
-    note: "legacy alias",
-  });
-  assert.equal(legacy.preferenceFeedback.at(-1).kind, "more_like_this");
+    note: "retired alias",
+  }), /unsupported preference feedback kind/);
   store.close();
 });
 

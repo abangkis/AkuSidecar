@@ -393,6 +393,50 @@ h3 {
   font-size: 0.84rem;
 }
 
+.preference-readiness {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid rgba(143, 201, 255, 0.3);
+  border-radius: 12px;
+  background: rgba(143, 201, 255, 0.025);
+}
+
+.compact-heading {
+  align-items: center;
+}
+
+.compact-heading h3 {
+  margin: 2px 0 0;
+}
+
+.readiness-gates {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.readiness-gates > div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.readiness-gates .passed {
+  border-color: rgba(183, 242, 108, 0.4);
+}
+
+.readiness-gates span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.readiness-gates strong {
+  font-size: 0.92rem;
+}
+
 .reasoning-economics {
   margin: 22px 0;
   padding: 18px;
@@ -784,6 +828,105 @@ textarea:focus {
   line-height: 1.55;
 }
 
+.result-presentation {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.presentation-tab {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.presentation-tab.selected {
+  background: rgba(183, 242, 108, 0.12);
+  color: var(--accent);
+}
+
+.source-layout-note,
+.source-layout-empty {
+  margin: 0 0 14px;
+  color: var(--quiet);
+  font-size: 0.78rem;
+}
+
+.source-layout-items {
+  display: grid;
+  gap: 14px;
+}
+
+.source-layout-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-raised);
+}
+
+.source-layout-card > header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 16px 18px 12px;
+}
+
+.source-layout-card > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.source-layout-card > header span:not(.source-layout-badge) {
+  color: var(--quiet);
+  font-size: 0.75rem;
+}
+
+.source-layout-badge {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: #111;
+  color: #fff;
+  font-weight: 800;
+}
+
+.source-linkedin .source-layout-badge {
+  background: #0a66c2;
+}
+
+.source-layout-content {
+  padding: 4px 18px 18px;
+}
+
+.source-layout-content p {
+  margin: 8px 0 0;
+  color: var(--text);
+  line-height: 1.62;
+  white-space: pre-wrap;
+}
+
+.source-layout-content .candidate-context {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.source-layout-card > .result-actions {
+  margin: 0 18px;
+  padding-bottom: 14px;
+}
+
 .result-items {
   display: grid;
   gap: 14px;
@@ -981,6 +1124,7 @@ textarea:focus {
   .reasoning-phase-grid,
   .settings-grid,
   .run-phase-usage,
+  .readiness-gates,
   .review-filters,
   .source-progress {
     grid-template-columns: 1fr;
