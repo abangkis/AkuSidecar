@@ -35,6 +35,7 @@ export const KNOWLEDGE_DELTAS = new Set([
   "contradiction",
 ]);
 export const FEEDBACK_KINDS = new Set([
+  "correct_empty",
   "correct_lane",
   "wrong_lane",
   "missed",

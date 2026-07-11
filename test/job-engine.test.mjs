@@ -208,6 +208,8 @@ test("Gate 0B.3 permits one provider-requested anchored follow-up", async () => 
     assert.equal(completed.coverage.acquisitionRounds, 2);
     assert.equal(completed.coverage.providerFollowUpRequested, true);
     assert.equal(completed.coverage.providerFollowUpExecuted, true);
+    assert.equal(completed.coverage.continuationRequested, true);
+    assert.equal(completed.coverage.continuationAnchorMatched, true);
     assert.equal(completed.coverage.snapshotCount, 5);
     assert.equal(completed.coverage.performedScrolls, 3);
     assert.equal(completed.result.items[0].id, "follow-up-result");

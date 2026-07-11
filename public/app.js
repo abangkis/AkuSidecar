@@ -248,7 +248,7 @@ function showResult(run) {
     const empty = document.createElement("p");
     empty.className = "result-summary";
     empty.textContent = "No visible item was promoted in this bounded sample.";
-    elements.resultItems.append(empty);
+    elements.resultItems.append(empty, buildEmptyResultFeedback(run));
   }
 
   elements.finishTitle.textContent = partial
@@ -259,6 +259,50 @@ function showResult(run) {
     `Repeated claims collapsed: ${run.result?.repeatedClaimsCollapsed ?? 0}`,
     `Deferred by budget: ${run.result?.deferredByBudget ?? 0}`,
   ].join(" · ");
+}
+
+function buildEmptyResultFeedback(run) {
+  const container = document.createElement("div");
+  container.className = "empty-result-feedback";
+
+  const prompt = document.createElement("p");
+  prompt.textContent = "Was this empty result correct?";
+
+  const actions = document.createElement("div");
+  actions.className = "feedback-actions";
+  const previous = new Set(
+    (run.feedback ?? [])
+      .filter((entry) => !entry.itemId)
+      .map((entry) => entry.kind),
+  );
+
+  for (const [kind, label] of [
+    ["correct_empty", "Correctly empty"],
+    ["missed", "Missed something"],
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "feedback-button";
+    button.textContent = label;
+    if (previous.has(kind)) {
+      button.classList.add("selected");
+      button.disabled = true;
+    }
+    button.addEventListener("click", async () => {
+      await api(`/api/runs/${encodeURIComponent(run.id)}/feedback`, {
+        method: "POST",
+        body: JSON.stringify({ kind }),
+      });
+      for (const candidate of actions.querySelectorAll("button")) {
+        candidate.disabled = true;
+      }
+      button.classList.add("selected");
+    });
+    actions.append(button);
+  }
+
+  container.append(prompt, actions);
+  return container;
 }
 
 function buildCoverageList(coverage) {

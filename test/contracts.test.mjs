@@ -4,6 +4,7 @@ import {
   ContractError,
   validateAcquisitionPlan,
   validateBridgeObservation,
+  validateFeedback,
   validateReasoningResult,
   validateRunRequest,
 } from "../src/core/contracts.mjs";
@@ -20,6 +21,19 @@ const limits = {
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
+
+test("empty-result feedback is stored at run level", () => {
+  assert.deepEqual(validateFeedback({ kind: "correct_empty" }), {
+    kind: "correct_empty",
+    itemId: "",
+    note: "",
+  });
+  assert.deepEqual(validateFeedback({ kind: "missed", note: "A release was omitted." }), {
+    kind: "missed",
+    itemId: "",
+    note: "A release was omitted.",
+  });
+});
 
 test("Gate 0B.3 acquisition plans expose only a finite decision", () => {
   assert.deepEqual(

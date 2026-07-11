@@ -343,6 +343,9 @@ function mergeObservations(observations) {
 function aggregateCoverage(observations, planning) {
   const first = observations[0].coverage;
   const last = observations.at(-1).coverage;
+  const continuationRounds = observations.filter(
+    (observation) => observation.coverage.continuationRequested,
+  );
   const uniqueCandidates = new Set();
   for (const block of observations.flatMap((observation) =>
     observation.snapshots.flatMap((snapshot) => snapshot.blocks),
@@ -382,6 +385,12 @@ function aggregateCoverage(observations, planning) {
       0,
     ),
     acquisitionRounds: observations.length,
+    continuationRequested: continuationRounds.length > 0,
+    continuationAnchorMatched:
+      continuationRounds.length > 0 &&
+      continuationRounds.every(
+        (observation) => observation.coverage.continuationAnchorMatched === true,
+      ),
     providerFollowUpRequested: planning.providerFollowUpRequested === true,
     providerFollowUpExecuted: planning.providerFollowUpExecuted === true,
     providerFollowUpReason: planning.providerFollowUpReason || "",
