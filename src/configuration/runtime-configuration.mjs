@@ -22,6 +22,14 @@ const DEFINITIONS = {
     read: (config) => config.presentation.homePresentation,
     apply: (config, value) => { config.presentation.homePresentation = value; },
   },
+  timelineCapacity: {
+    key: "ui.timeline_capacity",
+    applyMode: "live",
+    parse: (value) => Number.parseInt(value, 10),
+    valid: (value) => Number.isInteger(value) && value >= 1 && value <= 50,
+    read: (config) => config.presentation.timelineCapacity,
+    apply: (config, value) => { config.presentation.timelineCapacity = value; },
+  },
   streamWidth: {
     key: "ui.stream_width",
     applyMode: "live",

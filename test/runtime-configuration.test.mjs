@@ -26,6 +26,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.missingSourceTabPolicy.source, "default");
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "source");
   assert.equal(response.configuration.homePresentation.effectiveValue, "timeline");
+  assert.equal(response.configuration.timelineCapacity.effectiveValue, 12);
   assert.equal(response.configuration.streamWidth.effectiveValue, "social");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "flow");
 
@@ -38,6 +39,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
       planningPolicy: "always",
       defaultPresentation: "brief",
       homePresentation: "overview",
+      timelineCapacity: 18,
       streamWidth: "comfortable",
       telemetryBehavior: "sticky",
     }),
@@ -49,6 +51,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.evaluationModel.restartRequired, true);
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "brief");
   assert.equal(response.configuration.homePresentation.effectiveValue, "overview");
+  assert.equal(response.configuration.timelineCapacity.effectiveValue, 18);
   assert.equal(response.configuration.defaultPresentation.restartRequired, false);
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
   assert.equal(response.configuration.streamWidth.restartRequired, false);
@@ -68,6 +71,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.planningPolicy.effectiveValue, "always");
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "brief");
   assert.equal(response.configuration.homePresentation.effectiveValue, "overview");
+  assert.equal(response.configuration.timelineCapacity.effectiveValue, 18);
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.equal(response.configuration.evaluationModel.restartRequired, false);

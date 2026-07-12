@@ -75,6 +75,10 @@ export function loadConfig(env = process.env) {
         defaultValue: "timeline",
         environmentOverride: null,
       },
+      timelineCapacity: {
+        defaultValue: 12,
+        environmentOverride: null,
+      },
       streamWidth: {
         defaultValue: "social",
         environmentOverride: null,
@@ -115,6 +119,7 @@ export function loadConfig(env = process.env) {
     presentation: {
       defaultLayout: "source",
       homePresentation: "timeline",
+      timelineCapacity: 12,
       streamWidth: "social",
       telemetryBehavior: "flow",
     },

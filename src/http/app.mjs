@@ -341,6 +341,24 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/timeline") {
+    const capacity = config.presentation?.timelineCapacity ?? 12;
+    const limit = boundedIntegerQuery(url, "limit", {
+      fallback: capacity,
+      minimum: 1,
+      maximum: Math.min(50, capacity),
+    });
+    const offset = boundedIntegerQuery(url, "offset", {
+      fallback: 0,
+      minimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+    sendJson(response, 200, {
+      timeline: engine.getTimelineFeed({ capacity, limit, offset }),
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/sessions/active") {
     sendJson(response, 200, { session: engine.getActiveUnifiedSession() });
     return;

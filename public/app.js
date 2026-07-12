@@ -11,6 +11,8 @@ const state = {
   dispatchedRounds: new Set(),
   currentView: "timeline",
   homePresentation: "timeline",
+  timelineCapacity: 12,
+  timelineFeed: null,
   defaultPresentation: "source",
   streamWidth: "social",
   telemetryBehavior: "flow",
@@ -34,6 +36,7 @@ const elements = {
   settingsViewButton: document.querySelector("#settings-view-button"),
   settingsPanel: document.querySelector("#settings-panel"),
   homePresentation: document.querySelector("#home-presentation"),
+  timelineCapacity: document.querySelector("#timeline-capacity"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
   defaultPresentation: document.querySelector("#default-presentation"),
@@ -77,11 +80,6 @@ const elements = {
   reviewMeta: document.querySelector("#review-meta"),
   reviewRuns: document.querySelector("#review-runs"),
   reviewScrollSentinel: document.querySelector("#review-scroll-sentinel"),
-  controlPanel: document.querySelector(".control-panel"),
-  runForm: document.querySelector("#run-form"),
-  runButton: document.querySelector("#run-button"),
-  singleSourceField: document.querySelector("#single-source-field"),
-  preflightCopy: document.querySelector("#preflight-copy"),
   processingPanel: document.querySelector("#processing-panel"),
   processingTitle: document.querySelector("#processing-title"),
   processingDetail: document.querySelector("#processing-detail"),
@@ -149,14 +147,9 @@ window.addEventListener("message", (event) => {
   }
 });
 
-elements.runForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await startRun();
-});
-
 elements.cancelButton.addEventListener("click", cancelCurrentRun);
-elements.doneButton.addEventListener("click", resetToSetup);
-elements.retryButton.addEventListener("click", resetToSetup);
+elements.doneButton.addEventListener("click", startRun);
+elements.retryButton.addEventListener("click", startRun);
 elements.sessionViewButton.addEventListener("click", showSessionView);
 elements.overviewViewButton.addEventListener("click", showOverviewView);
 elements.reviewViewButton.addEventListener("click", showReviewView);
@@ -166,15 +159,10 @@ elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
-elements.overviewRunButton.addEventListener("click", openTimelineRunner);
-elements.timelineRunnerButton.addEventListener("click", toggleTimelineRunner);
+elements.overviewRunButton.addEventListener("click", startRun);
+elements.timelineRunnerButton.addEventListener("click", startRun);
 elements.timelineRefreshButton.addEventListener("click", refreshTimeline);
-for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
-  input.addEventListener("change", updateScopeControls);
-}
-
 await bootstrap();
-updateScopeControls();
 observePilotReviewScroll();
 
 async function bootstrap() {
@@ -182,6 +170,7 @@ async function bootstrap() {
     state.bootstrap = await api("/api/bootstrap");
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
     state.homePresentation = state.bootstrap.presentation?.homePresentation ?? "timeline";
+    state.timelineCapacity = state.bootstrap.presentation?.timelineCapacity ?? 12;
     applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
     applyTelemetryBehavior(state.bootstrap.presentation?.telemetryBehavior ?? "flow");
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
@@ -206,7 +195,7 @@ async function bootstrap() {
       dispatchUnifiedSession(session);
       schedulePoll();
     } else {
-      await loadLatestTimelineSession();
+      await loadTimelineFeed();
       if (state.homePresentation === "overview") await showOverviewView();
       else showSessionView();
     }
@@ -218,7 +207,7 @@ async function bootstrap() {
     }, 1_200);
   } catch (error) {
     setStatus(elements.sidecarStatus, "AkuSidecar unavailable", "error");
-    elements.runButton.disabled = true;
+    setUpdateButtonsDisabled(true);
     elements.providerNotice.textContent = error.message;
     elements.providerNotice.classList.remove("hidden");
   }
@@ -235,63 +224,39 @@ function pingBridge() {
 }
 
 async function startRun() {
+  if (
+    (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) ||
+    (state.currentRun && !isTerminal(state.currentRun.status))
+  ) return;
   state.currentView = "timeline";
+  selectViewButton(elements.sessionViewButton);
+  hide(elements.overviewPanel, elements.reviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   clearPoll();
   state.dispatchedRounds.clear();
   hide(elements.resultPanel, elements.failurePanel);
-  const form = new FormData(elements.runForm);
-  elements.runButton.disabled = true;
+  setUpdateButtonsDisabled(true);
   try {
-    if (form.get("scope") === "unified") {
-      const { session } = await api("/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({
-          mode: form.get("mode"),
-          intent: form.get("intent"),
-          maxItemsPerSource: state.bootstrap?.unifiedSession?.maxItemsPerSource ?? 5,
-        }),
-      });
-      state.currentRun = null;
-      state.currentSession = session;
-      showUnifiedProcessing(session);
-      dispatchUnifiedSession(session);
-    } else {
-      const { run } = await api("/api/runs", {
-        method: "POST",
-        body: JSON.stringify({
-          mode: form.get("mode"),
-          source: form.get("source"),
-          intent: form.get("intent"),
-          maxItems: state.bootstrap?.limits?.maxItems ?? 5,
-          scrolls: Math.min(
-            state.bootstrap?.limits?.defaultScrolls ?? 2,
-            state.bootstrap?.limits?.maxScrolls ?? 2,
-          ),
-        }),
-      });
-      state.currentSession = null;
-      state.currentRun = run;
-      showProcessing(run);
-      dispatchToBridge(run);
-    }
+    const { session } = await api("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    state.currentRun = null;
+    state.currentSession = session;
+    showUnifiedProcessing(session);
+    dispatchUnifiedSession(session);
     schedulePoll();
   } catch (error) {
-    elements.runButton.disabled = false;
+    setUpdateButtonsDisabled(false);
     showFailure({ stage: "create_session", message: error.message });
   }
 }
 
-function updateScopeControls() {
-  const form = new FormData(elements.runForm);
-  const unified = form.get("scope") === "unified";
-  elements.singleSourceField.classList.toggle("hidden", unified);
-  elements.runButton.textContent = unified ? "Run unified brief" : "Run advanced source";
-  elements.preflightCopy.textContent = unified
-    ? state.bootstrap?.limits?.missingSourceTabPolicy === "fail_fast"
-      ? "Keep signed-in X and LinkedIn feed tabs open. Missing source tabs fail fast under the active policy."
-      : "AkuBrowser reuses eligible source tabs or opens one inactive canonical feed tab when missing. It never likes, replies, follows, or posts."
-    : "Advanced mode keeps one source run visible for adapter tracing and controlled pilot work.";
+function setUpdateButtonsDisabled(disabled) {
+  elements.timelineRunnerButton.disabled = disabled;
+  elements.overviewRunButton.disabled = disabled;
+  elements.doneButton.disabled = disabled;
+  elements.retryButton.disabled = disabled;
 }
 
 function dispatchUnifiedSession(session) {
@@ -362,6 +327,7 @@ async function pollRun() {
     if (run.status === "waiting_for_bridge") dispatchToBridge(run);
     if (run.status === "completed") {
       clearPoll();
+      setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
       else if (state.currentView === "overview") await loadOverview();
       else if (state.currentView === "timeline") showResult(run);
@@ -369,6 +335,7 @@ async function pollRun() {
     }
     if (["failed", "cancelled"].includes(run.status)) {
       clearPoll();
+      setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
       else if (state.currentView === "overview") await loadOverview();
       else if (state.currentView === "timeline") {
@@ -397,12 +364,14 @@ async function pollUnifiedSession() {
     dispatchUnifiedSession(session);
     if (isUnifiedTerminal(session.status)) {
       clearPoll();
+      setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
       else if (state.currentView === "overview") await loadOverview();
       else if (
         state.currentView === "timeline" &&
         (session.status === "failed" || session.status === "cancelled")
       ) {
+        setUpdateButtonsDisabled(false);
         showFailure({
           stage: session.status,
           message:
@@ -411,7 +380,8 @@ async function pollUnifiedSession() {
               : unifiedFailureMessage(session),
         });
       } else if (state.currentView === "timeline") {
-        showUnifiedResult(session);
+        await loadTimelineFeed();
+        showSessionView();
       }
       return;
     }
@@ -434,8 +404,11 @@ async function cancelCurrentRun() {
       );
       state.currentSession = session;
       clearPoll();
-      if (session.status === "partial") showUnifiedResult(session);
-      else showFailure({ stage: "cancelled", message: "The bounded unified session was cancelled." });
+      setUpdateButtonsDisabled(false);
+      if (session.status === "partial") {
+        await loadTimelineFeed();
+        showSessionView();
+      } else showFailure({ stage: "cancelled", message: "The bounded unified session was cancelled." });
       return;
     }
     const { run } = await api(`/api/runs/${encodeURIComponent(state.currentRun.id)}/cancel`, {
@@ -453,7 +426,7 @@ async function cancelCurrentRun() {
 
 function showProcessing(run) {
   show(elements.timelinePanel);
-  hide(elements.controlPanel, elements.resultPanel, elements.failurePanel);
+  hide(elements.resultPanel, elements.failurePanel);
   show(elements.processingPanel);
   elements.sourceProgress.replaceChildren();
   elements.contractMode.textContent = humanize(run.mode);
@@ -488,7 +461,7 @@ function showProcessing(run) {
 
 function showUnifiedProcessing(session) {
   show(elements.timelinePanel);
-  hide(elements.controlPanel, elements.resultPanel, elements.failurePanel);
+  hide(elements.resultPanel, elements.failurePanel);
   show(elements.processingPanel);
   const activeChild = session.children.find(
     (child) => child.run && !isTerminal(child.run.status),
@@ -525,9 +498,8 @@ function showUnifiedProcessing(session) {
 
 function showResult(run) {
   show(elements.timelinePanel);
-  hide(elements.controlPanel, elements.processingPanel, elements.failurePanel);
+  hide(elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
-  elements.runButton.disabled = false;
   elements.resultTitle.textContent = `${humanize(run.mode)} snapshot complete`;
   elements.resultMeta.textContent = `${run.source === "x" ? "X" : "LinkedIn"} · as of ${formatDate(run.completedAt)}`;
 
@@ -560,10 +532,9 @@ function showResult(run) {
 
 function showUnifiedResult(session) {
   show(elements.timelinePanel);
-  hide(elements.controlPanel, elements.processingPanel, elements.failurePanel);
+  hide(elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
   setStatus(elements.bridgeStatus, "AkuBridge ready", "ok");
-  elements.runButton.disabled = false;
   elements.resultTitle.textContent = `${humanize(session.mode)} unified brief`;
   elements.resultMeta.textContent = `X + LinkedIn · ${session.result?.items?.length ?? 0} item(s) · as of ${formatDate(session.completedAt)}`;
   const partial = session.status !== "completed";
@@ -601,6 +572,64 @@ function showUnifiedResult(session) {
     `X: ${session.coverage?.resultCountBySource?.x ?? 0}`,
     `LinkedIn: ${session.coverage?.resultCountBySource?.linkedin ?? 0}`,
     partial ? "One or more sources incomplete" : "Both source runs completed",
+  ].join(" · ");
+  syncTimelineChrome();
+}
+
+function renderTimelineFeed(timeline) {
+  hide(elements.processingPanel, elements.failurePanel);
+  show(elements.resultPanel);
+  setUpdateButtonsDisabled(false);
+  elements.resultTitle.textContent = "Bounded knowledge timeline";
+  elements.resultMeta.textContent = `${timeline.entries.length} retained update(s) · capacity ${timeline.capacity}`;
+  elements.coverageBadge.textContent = "Newest first";
+  elements.coverageBadge.classList.add("status-ok");
+
+  const coverage = document.createElement("ul");
+  for (const value of [
+    `Rolling capacity: ${timeline.capacity}`,
+    `Retained updates: ${timeline.summary.retained}`,
+    `Sessions scanned: ${timeline.summary.sessionsScanned}`,
+    `X retained: ${timeline.summary.sources?.x ?? 0}`,
+    `LinkedIn retained: ${timeline.summary.sources?.linkedin ?? 0}`,
+    "New evaluated updates enter first; the oldest retained items leave when capacity is full.",
+  ]) {
+    const item = document.createElement("li");
+    item.textContent = value;
+    coverage.append(item);
+  }
+  elements.coverageContent.replaceChildren(coverage);
+  elements.resultSummary.textContent = timeline.entries.length > 0
+    ? "The latest evaluated updates across completed bounded checks."
+    : "No update has been retained yet. Check active sources to establish the timeline.";
+  elements.resultItems.replaceChildren();
+
+  let previousSessionId = null;
+  for (const entry of timeline.entries) {
+    if (entry.sessionId !== previousSessionId) {
+      const marker = document.createElement("div");
+      marker.className = "timeline-batch-marker";
+      const label = document.createElement("strong");
+      label.textContent = `Checked ${formatDate(entry.sessionCompletedAt)}`;
+      const detail = document.createElement("span");
+      detail.textContent = "Unified X + LinkedIn";
+      marker.append(label, detail);
+      elements.resultItems.append(marker);
+      previousSessionId = entry.sessionId;
+    }
+    elements.resultItems.append(buildResultItem(
+      entry.run,
+      entry.item,
+      loadTimelineFeed,
+      { preferenceOnly: true },
+    ));
+  }
+
+  elements.finishTitle.textContent = "You’re caught up within this timeline";
+  elements.finishStats.textContent = [
+    `Retained: ${timeline.summary.retained} of ${timeline.capacity}`,
+    `X: ${timeline.summary.sources?.x ?? 0}`,
+    `LinkedIn: ${timeline.summary.sources?.linkedin ?? 0}`,
   ].join(" · ");
   syncTimelineChrome();
 }
@@ -849,7 +878,7 @@ function buildCoverageList(coverage) {
   return list;
 }
 
-function buildResultItem(run, item, onSaved = () => {}) {
+function buildResultItem(run, item, onSaved = () => {}, options = {}) {
   const brief = document.createElement("div");
   brief.className = "result-item item-layout-view";
 
@@ -888,7 +917,7 @@ function buildResultItem(run, item, onSaved = () => {}) {
   const candidate = (run.candidateEvaluations ?? []).find(
     (entry) => entry.evidenceKey === item.evidenceKey,
   );
-  const actions = buildResultItemActions(run, item, candidate, onSaved);
+  const actions = buildResultItemActions(run, item, candidate, onSaved, options);
   brief.append(header, title, why, provenance);
   return buildItemPresentation({
     brief,
@@ -898,7 +927,7 @@ function buildResultItem(run, item, onSaved = () => {}) {
   });
 }
 
-function buildResultItemActions(run, item, candidate, onSaved) {
+function buildResultItemActions(run, item, candidate, onSaved, options = {}) {
   const actions = document.createElement("div");
   actions.className = "result-actions";
   const link = document.createElement("a");
@@ -913,7 +942,7 @@ function buildResultItemActions(run, item, candidate, onSaved) {
   const previous = new Set(
     (run.feedback ?? []).filter((entry) => entry.itemId === item.id).map((entry) => entry.kind),
   );
-  for (const [kind, label] of [
+  for (const [kind, label] of options.preferenceOnly ? [] : [
     ["useful", "Useful"],
     ["correct_lane", "Correct lane"],
     ["wrong_lane", "Wrong lane"],
@@ -1128,14 +1157,12 @@ function showSessionView() {
   hide(elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   if (state.currentSession && isUnifiedTerminal(state.currentSession.status)) {
-    if (["completed", "partial"].includes(state.currentSession.status)) {
-      showUnifiedResult(state.currentSession);
-    } else {
+    if (!["completed", "partial"].includes(state.currentSession.status)) {
       showFailure({
         stage: state.currentSession.status,
         message: unifiedFailureMessage(state.currentSession),
       });
-    }
+    } else if (state.timelineFeed) renderTimelineFeed(state.timelineFeed);
   } else if (state.currentSession) {
     showUnifiedProcessing(state.currentSession);
   } else if (state.currentRun?.status === "completed") {
@@ -1144,9 +1171,14 @@ function showSessionView() {
     showProcessing(state.currentRun);
   } else if (state.currentRun?.status === "failed") {
     showFailure(state.currentRun.error ?? { stage: "run", message: "The run failed." });
+  } else if (state.timelineFeed) {
+    renderTimelineFeed(state.timelineFeed);
   } else {
-    hide(elements.processingPanel, elements.resultPanel, elements.failurePanel);
-    show(elements.controlPanel);
+    renderTimelineFeed({
+      capacity: state.timelineCapacity,
+      entries: [],
+      summary: { retained: 0, sessionsScanned: 0, newestSessionAt: null, sources: {} },
+    });
   }
   syncTimelineChrome();
 }
@@ -1186,18 +1218,21 @@ function selectViewButton(selected) {
   }
 }
 
-async function loadLatestTimelineSession() {
-  const { sessions } = await api("/api/sessions?limit=1&offset=0");
-  state.currentSession = sessions[0] ?? null;
+async function loadTimelineFeed() {
+  const { timeline } = await api(
+    `/api/timeline?limit=${encodeURIComponent(state.timelineCapacity)}&offset=0`,
+  );
+  state.timelineFeed = timeline;
+  state.currentSession = null;
   state.currentRun = null;
-  return state.currentSession;
+  return timeline;
 }
 
 async function refreshTimeline() {
   elements.timelineRefreshButton.disabled = true;
-  elements.timelineMeta.textContent = "Refreshing the latest evaluated session…";
+  elements.timelineMeta.textContent = "Refreshing the bounded timeline…";
   try {
-    await loadLatestTimelineSession();
+    await loadTimelineFeed();
     showSessionView();
   } catch (error) {
     elements.timelineMeta.textContent = error.message;
@@ -1206,38 +1241,22 @@ async function refreshTimeline() {
   }
 }
 
-function openTimelineRunner() {
-  showSessionView();
-  show(elements.controlPanel);
-  elements.timelineRunnerButton.textContent = "Close runner";
-  elements.controlPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function toggleTimelineRunner() {
-  if (elements.controlPanel.classList.contains("hidden")) openTimelineRunner();
-  else {
-    hide(elements.controlPanel);
-    syncTimelineChrome();
-  }
-}
-
 function syncTimelineChrome() {
-  const hasResult = Boolean(
-    state.currentSession && ["completed", "partial"].includes(state.currentSession.status),
-  ) || state.currentRun?.status === "completed";
-  elements.timelineRunnerButton.textContent = elements.controlPanel.classList.contains("hidden")
-    ? "Check for updates"
-    : "Close runner";
-  if (state.currentSession && hasResult) {
+  elements.timelineRunnerButton.textContent = "Check for updates";
+  if (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) {
+    elements.timelineMeta.textContent = "Checking active sources within the bounded acquisition policy.";
+  } else if (state.timelineFeed) {
     elements.timelineMeta.textContent = [
-      `${humanize(state.currentSession.mode)} · X + LinkedIn`,
-      `${state.currentSession.result?.items?.length ?? 0} evaluated update(s)`,
-      `completed ${formatDate(state.currentSession.completedAt)}`,
-    ].join(" · ");
+      `${state.timelineFeed.summary.retained} retained update(s)`,
+      `capacity ${state.timelineFeed.capacity}`,
+      state.timelineFeed.summary.newestSessionAt
+        ? `latest check ${formatDate(state.timelineFeed.summary.newestSessionAt)}`
+        : null,
+    ].filter(Boolean).join(" · ");
   } else if (state.currentRun?.status === "completed") {
     elements.timelineMeta.textContent = `${sourceLabel(state.currentRun.source)} · completed ${formatDate(state.currentRun.completedAt)}`;
   } else if (!state.currentSession && !state.currentRun) {
-    elements.timelineMeta.textContent = "No completed session yet. Run a bounded check to establish the timeline.";
+    elements.timelineMeta.textContent = "No retained updates yet. Run a bounded check to establish the timeline.";
   } else {
     elements.timelineMeta.textContent = "A bounded source check is in progress.";
   }
@@ -1330,6 +1349,11 @@ function renderRuntimeSettings(configuration) {
   elements.homePresentation.value =
     homePresentation.persistedValue ?? homePresentation.effectiveValue;
   elements.homePresentation.disabled = homePresentation.source === "environment";
+  const timelineCapacity = configuration.timelineCapacity;
+  state.timelineCapacity = timelineCapacity.effectiveValue;
+  elements.timelineCapacity.value =
+    timelineCapacity.persistedValue ?? timelineCapacity.effectiveValue;
+  elements.timelineCapacity.disabled = timelineCapacity.source === "environment";
   const presentation = configuration.defaultPresentation;
   state.defaultPresentation = presentation.effectiveValue;
   elements.defaultPresentation.value =
@@ -1386,6 +1410,7 @@ async function saveRuntimeSettings(event) {
   try {
     const values = {
       homePresentation: elements.homePresentation.value,
+      timelineCapacity: Number(elements.timelineCapacity.value),
       defaultPresentation: elements.defaultPresentation.value,
       streamWidth: elements.streamWidth.value,
       telemetryBehavior: elements.telemetryBehavior.value,
@@ -1412,11 +1437,13 @@ async function saveRuntimeSettings(event) {
       configuration.defaultPresentation.effectiveValue;
     state.bootstrap.presentation.homePresentation =
       configuration.homePresentation.effectiveValue;
+    state.bootstrap.presentation.timelineCapacity =
+      configuration.timelineCapacity.effectiveValue;
     state.bootstrap.presentation.streamWidth = configuration.streamWidth.effectiveValue;
     state.bootstrap.presentation.telemetryBehavior =
       configuration.telemetryBehavior.effectiveValue;
     renderRuntimeSettings(configuration);
-    updateScopeControls();
+    await loadTimelineFeed();
     elements.runtimeSettingsStatus.textContent =
       "Saved. Live settings are applied; startup changes still require a visible restart.";
   } catch (error) {
@@ -2140,10 +2167,10 @@ function provenanceLinkLabel(sourceUrlKind) {
 function showFailure(error) {
   state.currentView = "timeline";
   selectViewButton(elements.sessionViewButton);
-  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
+  hide(elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   show(elements.failurePanel);
-  elements.runButton.disabled = false;
+  setUpdateButtonsDisabled(false);
   elements.failureTitle.textContent = `Stopped at ${humanize(error.stage || "unknown stage")}`;
   elements.failureMessage.textContent = error.message || "The run did not complete.";
   syncTimelineChrome();
@@ -2172,20 +2199,6 @@ function reportRunFailure(error) {
     return;
   }
   showFailure(error);
-}
-
-function resetToSetup() {
-  clearPoll();
-  state.currentRun = null;
-  state.currentSession = null;
-  state.currentView = "timeline";
-  selectViewButton(elements.sessionViewButton);
-  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel, elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
-  show(elements.timelinePanel);
-  show(elements.controlPanel);
-  elements.runButton.disabled = false;
-  pingBridge();
-  syncTimelineChrome();
 }
 
 async function api(path, options = {}) {

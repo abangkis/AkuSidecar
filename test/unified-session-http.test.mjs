@@ -55,6 +55,11 @@ test("HTTP API drives one sequential unified session without changing the bridge
   assert.equal(timeline.pagination.hasNext, false);
   assert.equal("observations" in timeline.sessions[0].children[0].run, false);
   assert.equal(timeline.sessions[0].children[0].run.result.items.length, 1);
+  const feed = await jsonFetch(`${origin}/api/timeline?limit=1&offset=0`);
+  assert.equal(feed.timeline.capacity, 12);
+  assert.equal(feed.timeline.entries.length, 1);
+  assert.equal(feed.timeline.pagination.total, 2);
+  assert.equal("observations" in feed.timeline.entries[0].run, false);
   const noActive = await jsonFetch(`${origin}/api/sessions/active`);
   assert.equal(noActive.session, null);
 

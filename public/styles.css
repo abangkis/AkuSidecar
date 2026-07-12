@@ -269,6 +269,22 @@ h3 {
   gap: 8px;
 }
 
+.timeline-batch-marker {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 2px 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.timeline-batch-marker strong {
+  color: var(--text);
+}
+
 .runner-panel {
   border-color: var(--line-strong);
   background: rgba(17, 22, 20, 0.98);

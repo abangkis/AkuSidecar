@@ -88,6 +88,57 @@ export class JobEngine {
     };
   }
 
+  getTimelineFeed({ capacity = 12, limit = 12, offset = 0 } = {}) {
+    const sessions = this.store
+      .listPresentableUnifiedSessions(50, 0)
+      .map(projectUnifiedSessionForPresentation);
+    const entries = [];
+    const seenEvidence = new Set();
+    for (const session of sessions) {
+      for (const resultEntry of session.result?.items ?? []) {
+        const item = resultEntry.item;
+        const evidenceIdentity = `${item.source}:${item.evidenceKey}`;
+        if (seenEvidence.has(evidenceIdentity)) continue;
+        const child = session.children.find((candidate) => candidate.runId === resultEntry.runId);
+        if (!child?.run) continue;
+        seenEvidence.add(evidenceIdentity);
+        entries.push({
+          sessionId: session.id,
+          sessionMode: session.mode,
+          sessionCompletedAt: session.completedAt,
+          runId: child.run.id,
+          source: child.source,
+          item,
+          run: child.run,
+        });
+        if (entries.length >= capacity) break;
+      }
+      if (entries.length >= capacity) break;
+    }
+    const page = entries.slice(offset, offset + limit);
+    return {
+      version: 1,
+      capacity,
+      entries: page,
+      summary: {
+        retained: entries.length,
+        sessionsScanned: sessions.length,
+        newestSessionAt: sessions[0]?.completedAt ?? null,
+        sources: Object.fromEntries(["x", "linkedin"].map((source) => [
+          source,
+          entries.filter((entry) => entry.source === source).length,
+        ])),
+      },
+      pagination: {
+        total: entries.length,
+        offset,
+        limit,
+        returned: page.length,
+        hasNext: offset + page.length < entries.length,
+      },
+    };
+  }
+
   cancelUnifiedSession(id) {
     let session = this.store.getUnifiedSession(id);
     if (!session) throw new ContractError("unified session not found");

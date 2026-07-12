@@ -20,6 +20,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
     presentation: {
       defaultLayout: "source",
       homePresentation: "timeline",
+      timelineCapacity: 12,
       streamWidth: "social",
       telemetryBehavior: "flow",
     },
@@ -69,17 +70,20 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
-  assert.match(html, /Unified X \+ LinkedIn/);
+  assert.match(html, /Check for updates/);
   assert.match(html, /FINITE KNOWLEDGE TIMELINE/);
   assert.match(html, /SOURCE CONTROL PLANE/);
   assert.match(html, /id="overview-view-button"/);
   assert.match(html, /id="home-presentation"/);
-  assert.match(html, /Advanced single source/);
+  assert.match(html, /id="timeline-capacity"/);
+  assert.doesNotMatch(html, /id="run-form"/);
   assert.match(appScript, /startExternalSessionDiscovery/);
   assert.match(appScript, /\/api\/sessions\/active/);
   assert.match(appScript, /\/api\/sessions\?limit=1&offset=0/);
-  assert.match(appScript, /loadLatestTimelineSession/);
+  assert.match(appScript, /loadTimelineFeed/);
+  assert.match(appScript, /\/api\/timeline\?limit=/);
   assert.match(appScript, /renderOverviewSources/);
+  assert.match(appScript, /body: JSON\.stringify\(\{\}\)/);
   assert.match(appScript, /REVIEW_PAGE_SIZE = 10/);
   assert.match(appScript, /REVIEW_MAX_RUNS = 50/);
   assert.match(appScript, /IntersectionObserver/);
@@ -113,6 +117,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(bootstrap.provider, "vite-test-provider");
   assert.equal(bootstrap.presentation.defaultLayout, "source");
   assert.equal(bootstrap.presentation.homePresentation, "timeline");
+  assert.equal(bootstrap.presentation.timelineCapacity, 12);
   assert.equal(bootstrap.sourceRegistry.length, 2);
   assert.equal(bootstrap.sourceRegistry[0].behavior, "stream");
   assert.equal(bootstrap.presentation.streamWidth, "social");
