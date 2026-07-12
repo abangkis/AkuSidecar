@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { SOURCE_REGISTRY } from "../core/source-registry.mjs";
 import { URL } from "node:url";
 import { ContractError } from "../core/contracts.mjs";
 import { JobEngine } from "../core/job-engine.mjs";
@@ -217,6 +218,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
       },
       bridgeToken,
       presentation: config.presentation,
+      sourceRegistry: SOURCE_REGISTRY,
       limits: config.limits,
       supportedModes: ["catch_up", "manual_live"],
       supportedSources: ["x", "linkedin"],
@@ -325,6 +327,17 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   if (request.method === "POST" && url.pathname === "/api/sessions") {
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, { session: engine.startUnifiedSession(body) });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/sessions") {
+    const limit = boundedIntegerQuery(url, "limit", { fallback: 1, minimum: 1, maximum: 10 });
+    const offset = boundedIntegerQuery(url, "offset", {
+      fallback: 0,
+      minimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+    sendJson(response, 200, engine.getTimelineSessions({ limit, offset }));
     return;
   }
 

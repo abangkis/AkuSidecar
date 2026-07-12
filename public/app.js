@@ -9,7 +9,8 @@ const state = {
   externalSessionDiscoveryTimer: null,
   externalSessionDiscoveryInFlight: false,
   dispatchedRounds: new Set(),
-  currentView: "session",
+  currentView: "timeline",
+  homePresentation: "timeline",
   defaultPresentation: "source",
   streamWidth: "social",
   telemetryBehavior: "flow",
@@ -28,9 +29,11 @@ const elements = {
   reasoningStatus: document.querySelector("#reasoning-status"),
   providerNotice: document.querySelector("#provider-notice"),
   sessionViewButton: document.querySelector("#session-view-button"),
+  overviewViewButton: document.querySelector("#overview-view-button"),
   reviewViewButton: document.querySelector("#review-view-button"),
   settingsViewButton: document.querySelector("#settings-view-button"),
   settingsPanel: document.querySelector("#settings-panel"),
+  homePresentation: document.querySelector("#home-presentation"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
   defaultPresentation: document.querySelector("#default-presentation"),
@@ -48,6 +51,14 @@ const elements = {
   runtimeSettingsStatus: document.querySelector("#runtime-settings-status"),
   saveRuntimeSettings: document.querySelector("#save-runtime-settings"),
   reviewPanel: document.querySelector("#review-panel"),
+  overviewPanel: document.querySelector("#overview-panel"),
+  overviewSummary: document.querySelector("#overview-summary"),
+  overviewSources: document.querySelector("#overview-sources"),
+  overviewRunButton: document.querySelector("#overview-run-button"),
+  timelinePanel: document.querySelector("#timeline-panel"),
+  timelineMeta: document.querySelector("#timeline-meta"),
+  timelineRefreshButton: document.querySelector("#timeline-refresh-button"),
+  timelineRunnerButton: document.querySelector("#timeline-runner-button"),
   reviewRefreshButton: document.querySelector("#review-refresh-button"),
   reviewMetrics: document.querySelector("#review-metrics"),
   sourceHealthStatus: document.querySelector("#source-health-status"),
@@ -59,6 +70,7 @@ const elements = {
   preferenceExperimentStatus: document.querySelector("#preference-experiment-status"),
   preferenceExperimentDetail: document.querySelector("#preference-experiment-detail"),
   shadowComparisonDetail: document.querySelector("#shadow-comparison-detail"),
+  shadowCandidateList: document.querySelector("#shadow-candidate-list"),
   fitPreferenceExperiment: document.querySelector("#fit-preference-experiment"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
@@ -146,6 +158,7 @@ elements.cancelButton.addEventListener("click", cancelCurrentRun);
 elements.doneButton.addEventListener("click", resetToSetup);
 elements.retryButton.addEventListener("click", resetToSetup);
 elements.sessionViewButton.addEventListener("click", showSessionView);
+elements.overviewViewButton.addEventListener("click", showOverviewView);
 elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
@@ -153,6 +166,9 @@ elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
+elements.overviewRunButton.addEventListener("click", openTimelineRunner);
+elements.timelineRunnerButton.addEventListener("click", toggleTimelineRunner);
+elements.timelineRefreshButton.addEventListener("click", refreshTimeline);
 for (const input of elements.runForm.querySelectorAll('input[name="scope"]')) {
   input.addEventListener("change", updateScopeControls);
 }
@@ -165,6 +181,7 @@ async function bootstrap() {
   try {
     state.bootstrap = await api("/api/bootstrap");
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
+    state.homePresentation = state.bootstrap.presentation?.homePresentation ?? "timeline";
     applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
     applyTelemetryBehavior(state.bootstrap.presentation?.telemetryBehavior ?? "flow");
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
@@ -184,11 +201,14 @@ async function bootstrap() {
     const { session } = await api("/api/sessions/active");
     if (session) {
       state.currentSession = session;
+      show(elements.timelinePanel);
       showUnifiedProcessing(session);
       dispatchUnifiedSession(session);
       schedulePoll();
     } else {
-      await showReviewView();
+      await loadLatestTimelineSession();
+      if (state.homePresentation === "overview") await showOverviewView();
+      else showSessionView();
     }
     startExternalSessionDiscovery();
     setTimeout(() => {
@@ -215,7 +235,8 @@ function pingBridge() {
 }
 
 async function startRun() {
-  state.currentView = "session";
+  state.currentView = "timeline";
+  show(elements.timelinePanel);
   clearPoll();
   state.dispatchedRounds.clear();
   hide(elements.resultPanel, elements.failurePanel);
@@ -317,7 +338,7 @@ function startExternalSessionDiscovery() {
       if (!session) return;
       state.dispatchedRounds.clear();
       state.currentSession = session;
-      if (state.currentView === "session") showUnifiedProcessing(session);
+      if (state.currentView === "timeline") showUnifiedProcessing(session);
       dispatchUnifiedSession(session);
       schedulePoll();
     } catch {
@@ -342,13 +363,15 @@ async function pollRun() {
     if (run.status === "completed") {
       clearPoll();
       if (state.currentView === "review") await loadPilotReview();
-      else showResult(run);
+      else if (state.currentView === "overview") await loadOverview();
+      else if (state.currentView === "timeline") showResult(run);
       return;
     }
     if (["failed", "cancelled"].includes(run.status)) {
       clearPoll();
       if (state.currentView === "review") await loadPilotReview();
-      else {
+      else if (state.currentView === "overview") await loadOverview();
+      else if (state.currentView === "timeline") {
         showFailure(run.error ?? {
           stage: run.status,
           message: run.status === "cancelled" ? "The run was cancelled." : "The run failed.",
@@ -356,7 +379,7 @@ async function pollRun() {
       }
       return;
     }
-    if (state.currentView === "session") showProcessing(run);
+    if (state.currentView === "timeline") showProcessing(run);
     schedulePoll();
   } catch (error) {
     clearPoll();
@@ -375,7 +398,11 @@ async function pollUnifiedSession() {
     if (isUnifiedTerminal(session.status)) {
       clearPoll();
       if (state.currentView === "review") await loadPilotReview();
-      else if (session.status === "failed" || session.status === "cancelled") {
+      else if (state.currentView === "overview") await loadOverview();
+      else if (
+        state.currentView === "timeline" &&
+        (session.status === "failed" || session.status === "cancelled")
+      ) {
         showFailure({
           stage: session.status,
           message:
@@ -383,12 +410,12 @@ async function pollUnifiedSession() {
               ? "The bounded unified session was cancelled."
               : unifiedFailureMessage(session),
         });
-      } else {
+      } else if (state.currentView === "timeline") {
         showUnifiedResult(session);
       }
       return;
     }
-    if (state.currentView === "session") showUnifiedProcessing(session);
+    if (state.currentView === "timeline") showUnifiedProcessing(session);
     schedulePoll();
   } catch (error) {
     clearPoll();
@@ -425,6 +452,7 @@ async function cancelCurrentRun() {
 }
 
 function showProcessing(run) {
+  show(elements.timelinePanel);
   hide(elements.controlPanel, elements.resultPanel, elements.failurePanel);
   show(elements.processingPanel);
   elements.sourceProgress.replaceChildren();
@@ -455,9 +483,11 @@ function showProcessing(run) {
   elements.processingTitle.textContent = copy[0];
   elements.processingDetail.textContent = copy[1];
   elements.progressBar.style.width = `${copy[2]}%`;
+  syncTimelineChrome();
 }
 
 function showUnifiedProcessing(session) {
+  show(elements.timelinePanel);
   hide(elements.controlPanel, elements.resultPanel, elements.failurePanel);
   show(elements.processingPanel);
   const activeChild = session.children.find(
@@ -490,9 +520,11 @@ function showUnifiedProcessing(session) {
       return card;
     }),
   );
+  syncTimelineChrome();
 }
 
 function showResult(run) {
+  show(elements.timelinePanel);
   hide(elements.controlPanel, elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
   elements.runButton.disabled = false;
@@ -523,9 +555,11 @@ function showResult(run) {
     `Repeated claims collapsed: ${run.result?.repeatedClaimsCollapsed ?? 0}`,
     `Deferred by budget: ${run.result?.deferredByBudget ?? 0}`,
   ].join(" · ");
+  syncTimelineChrome();
 }
 
 function showUnifiedResult(session) {
+  show(elements.timelinePanel);
   hide(elements.controlPanel, elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
   setStatus(elements.bridgeStatus, "AkuBridge ready", "ok");
@@ -568,6 +602,7 @@ function showUnifiedResult(session) {
     `LinkedIn: ${session.coverage?.resultCountBySource?.linkedin ?? 0}`,
     partial ? "One or more sources incomplete" : "Both source runs completed",
   ].join(" · ");
+  syncTimelineChrome();
 }
 
 function buildUnifiedCoverage(session) {
@@ -1088,11 +1123,10 @@ function safePresentationMediaUrl(value, source) {
 }
 
 function showSessionView() {
-  state.currentView = "session";
-  elements.sessionViewButton.classList.add("selected");
-  elements.reviewViewButton.classList.remove("selected");
-  elements.settingsViewButton.classList.remove("selected");
-  hide(elements.reviewPanel, elements.settingsPanel);
+  state.currentView = "timeline";
+  selectViewButton(elements.sessionViewButton);
+  hide(elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
+  show(elements.timelinePanel);
   if (state.currentSession && isUnifiedTerminal(state.currentSession.status)) {
     if (["completed", "partial"].includes(state.currentSession.status)) {
       showUnifiedResult(state.currentSession);
@@ -1114,38 +1148,168 @@ function showSessionView() {
     hide(elements.processingPanel, elements.resultPanel, elements.failurePanel);
     show(elements.controlPanel);
   }
+  syncTimelineChrome();
 }
 
 async function showReviewView() {
   state.currentView = "review";
-  elements.reviewViewButton.classList.add("selected");
-  elements.sessionViewButton.classList.remove("selected");
-  elements.settingsViewButton.classList.remove("selected");
-  hide(
-    elements.controlPanel,
-    elements.processingPanel,
-    elements.resultPanel,
-    elements.failurePanel,
-    elements.settingsPanel,
-  );
+  selectViewButton(elements.reviewViewButton);
+  hide(elements.timelinePanel, elements.overviewPanel, elements.settingsPanel);
   show(elements.reviewPanel);
   await loadPilotReview();
 }
 
 async function showSettingsView() {
   state.currentView = "settings";
-  elements.settingsViewButton.classList.add("selected");
-  elements.sessionViewButton.classList.remove("selected");
-  elements.reviewViewButton.classList.remove("selected");
-  hide(
-    elements.controlPanel,
-    elements.processingPanel,
-    elements.resultPanel,
-    elements.failurePanel,
-    elements.reviewPanel,
-  );
+  selectViewButton(elements.settingsViewButton);
+  hide(elements.timelinePanel, elements.overviewPanel, elements.reviewPanel);
   show(elements.settingsPanel);
   await loadRuntimeSettings();
+}
+
+async function showOverviewView() {
+  state.currentView = "overview";
+  selectViewButton(elements.overviewViewButton);
+  hide(elements.timelinePanel, elements.reviewPanel, elements.settingsPanel);
+  show(elements.overviewPanel);
+  await loadOverview();
+}
+
+function selectViewButton(selected) {
+  for (const button of [
+    elements.sessionViewButton,
+    elements.overviewViewButton,
+    elements.reviewViewButton,
+    elements.settingsViewButton,
+  ]) {
+    button.classList.toggle("selected", button === selected);
+  }
+}
+
+async function loadLatestTimelineSession() {
+  const { sessions } = await api("/api/sessions?limit=1&offset=0");
+  state.currentSession = sessions[0] ?? null;
+  state.currentRun = null;
+  return state.currentSession;
+}
+
+async function refreshTimeline() {
+  elements.timelineRefreshButton.disabled = true;
+  elements.timelineMeta.textContent = "Refreshing the latest evaluated session…";
+  try {
+    await loadLatestTimelineSession();
+    showSessionView();
+  } catch (error) {
+    elements.timelineMeta.textContent = error.message;
+  } finally {
+    elements.timelineRefreshButton.disabled = false;
+  }
+}
+
+function openTimelineRunner() {
+  showSessionView();
+  show(elements.controlPanel);
+  elements.timelineRunnerButton.textContent = "Close runner";
+  elements.controlPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function toggleTimelineRunner() {
+  if (elements.controlPanel.classList.contains("hidden")) openTimelineRunner();
+  else {
+    hide(elements.controlPanel);
+    syncTimelineChrome();
+  }
+}
+
+function syncTimelineChrome() {
+  const hasResult = Boolean(
+    state.currentSession && ["completed", "partial"].includes(state.currentSession.status),
+  ) || state.currentRun?.status === "completed";
+  elements.timelineRunnerButton.textContent = elements.controlPanel.classList.contains("hidden")
+    ? "Check for updates"
+    : "Close runner";
+  if (state.currentSession && hasResult) {
+    elements.timelineMeta.textContent = [
+      `${humanize(state.currentSession.mode)} · X + LinkedIn`,
+      `${state.currentSession.result?.items?.length ?? 0} evaluated update(s)`,
+      `completed ${formatDate(state.currentSession.completedAt)}`,
+    ].join(" · ");
+  } else if (state.currentRun?.status === "completed") {
+    elements.timelineMeta.textContent = `${sourceLabel(state.currentRun.source)} · completed ${formatDate(state.currentRun.completedAt)}`;
+  } else if (!state.currentSession && !state.currentRun) {
+    elements.timelineMeta.textContent = "No completed session yet. Run a bounded check to establish the timeline.";
+  } else {
+    elements.timelineMeta.textContent = "A bounded source check is in progress.";
+  }
+}
+
+async function loadOverview() {
+  elements.overviewSummary.textContent = "Loading source state…";
+  try {
+    const [{ bridge }, timeline] = await Promise.all([
+      api("/api/operations/bridge/health"),
+      api("/api/sessions?limit=1&offset=0"),
+    ]);
+    const latest = timeline.sessions[0] ?? null;
+    renderOverviewSummary(latest, bridge);
+    renderOverviewSources(state.bootstrap?.sourceRegistry ?? [], bridge?.sources ?? {});
+  } catch (error) {
+    elements.overviewSummary.textContent = error.message;
+    elements.overviewSources.replaceChildren();
+  }
+}
+
+function renderOverviewSummary(latest, bridge) {
+  const values = [
+    ["Active sources", String(state.bootstrap?.sourceRegistry?.length ?? 0)],
+    ["Collection", "User-triggered"],
+    ["Latest session", latest ? formatDate(latest.completedAt) : "Not run yet"],
+    ["Bridge", humanize(bridge?.status ?? "unavailable")],
+  ];
+  elements.overviewSummary.replaceChildren(...values.map(([label, value]) => {
+    const card = document.createElement("article");
+    const term = document.createElement("span");
+    term.textContent = label;
+    const detail = document.createElement("strong");
+    detail.textContent = value;
+    card.append(term, detail);
+    return card;
+  }));
+}
+
+function renderOverviewSources(registry, healthBySource) {
+  const cards = registry.map((source) => {
+    const health = healthBySource[source.id] ?? {};
+    const card = document.createElement("article");
+    card.className = "overview-source-card";
+    const header = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = source.label;
+    const status = document.createElement("span");
+    status.className = `status-pill ${health.status === "healthy" ? "status-ok" : "status-neutral"}`;
+    status.textContent = humanize(health.status ?? "not observed");
+    header.append(title, status);
+    const description = document.createElement("p");
+    description.textContent = `${humanize(source.behavior)} source · ${humanize(source.accessMode)}`;
+    const facts = document.createElement("dl");
+    for (const [label, value] of [
+      ["State", humanize(source.activationState)],
+      ["Collection", humanize(source.collectionPolicy)],
+      ["Last checked", health.lastObservedAt ? formatDate(health.lastObservedAt) : "Not observed"],
+      ["Tab", health.lifecycle?.opened ? humanize(health.lifecycle.ownership ?? "open") : "Not currently reported"],
+    ]) {
+      const row = document.createElement("div");
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const detail = document.createElement("dd");
+      detail.textContent = value;
+      row.append(term, detail);
+      facts.append(row);
+    }
+    card.append(header, description, facts);
+    return card;
+  });
+  elements.overviewSources.replaceChildren(...cards);
 }
 
 async function loadRuntimeSettings() {
@@ -1161,6 +1325,11 @@ async function loadRuntimeSettings() {
 
 function renderRuntimeSettings(configuration) {
   state.runtimeConfiguration = configuration;
+  const homePresentation = configuration.homePresentation;
+  state.homePresentation = homePresentation.effectiveValue;
+  elements.homePresentation.value =
+    homePresentation.persistedValue ?? homePresentation.effectiveValue;
+  elements.homePresentation.disabled = homePresentation.source === "environment";
   const presentation = configuration.defaultPresentation;
   state.defaultPresentation = presentation.effectiveValue;
   elements.defaultPresentation.value =
@@ -1216,6 +1385,7 @@ async function saveRuntimeSettings(event) {
   elements.runtimeSettingsStatus.textContent = "Saving…";
   try {
     const values = {
+      homePresentation: elements.homePresentation.value,
       defaultPresentation: elements.defaultPresentation.value,
       streamWidth: elements.streamWidth.value,
       telemetryBehavior: elements.telemetryBehavior.value,
@@ -1240,6 +1410,8 @@ async function saveRuntimeSettings(event) {
       configuration.missingSourceTabPolicy.effectiveValue;
     state.bootstrap.presentation.defaultLayout =
       configuration.defaultPresentation.effectiveValue;
+    state.bootstrap.presentation.homePresentation =
+      configuration.homePresentation.effectiveValue;
     state.bootstrap.presentation.streamWidth = configuration.streamWidth.effectiveValue;
     state.bootstrap.presentation.telemetryBehavior =
       configuration.telemetryBehavior.effectiveValue;
@@ -1284,7 +1456,7 @@ async function loadPilotReview({ append = false } = {}) {
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
       api("/api/preferences/experiment"),
-      api("/api/preferences/shadow-comparison?limit=1&offset=0"),
+      api("/api/preferences/shadow-comparison?limit=5&offset=0"),
     ]);
     if (
       review.runs.length === 0 &&
@@ -1381,6 +1553,7 @@ function renderShadowComparison(comparison) {
   if (!comparison?.available) {
     elements.shadowComparisonDetail.textContent =
       "Waiting for a current fitted snapshot · live influence off.";
+    elements.shadowCandidateList.replaceChildren();
     return;
   }
   const summary = comparison.summary;
@@ -1395,6 +1568,54 @@ function renderShadowComparison(comparison) {
       : null,
     "live influence off",
   ].filter(Boolean).join(" · ");
+  renderShadowCandidates(comparison.candidates ?? [], summary.wouldMoveUp);
+}
+
+function renderShadowCandidates(candidates, totalPromotions) {
+  const promotions = candidates
+    .filter((candidate) => candidate.movement === "would_move_up")
+    .slice(0, 5);
+  if (promotions.length === 0) {
+    elements.shadowCandidateList.replaceChildren();
+    return;
+  }
+
+  const heading = document.createElement("p");
+  heading.className = "shadow-candidate-heading";
+  heading.textContent = `Reviewing ${promotions.length} of ${totalPromotions} shadow promotion(s)`;
+  const cards = promotions.map((candidate) => {
+    const card = document.createElement("article");
+    card.className = "shadow-candidate-card";
+
+    const meta = document.createElement("div");
+    meta.className = "shadow-candidate-meta";
+    const identity = document.createElement("strong");
+    identity.textContent = `${sourceLabel(candidate.source)} · ${candidate.author || "Unknown author"}`;
+    const score = document.createElement("span");
+    score.textContent = `${candidate.recommendedPriority} · ${formatPercent(candidate.probability)}`;
+    meta.append(identity, score);
+
+    const text = document.createElement("p");
+    text.className = "shadow-candidate-text";
+    text.textContent = candidate.text || "Captured candidate text is unavailable.";
+
+    const topics = document.createElement("p");
+    topics.className = "shadow-candidate-topics";
+    topics.textContent = (candidate.topicTags ?? []).slice(0, 4).join(" · ") || candidate.contentType;
+
+    card.append(meta, text, topics);
+    if (candidate.sourceUrl) {
+      const link = document.createElement("a");
+      link.className = "shadow-candidate-source";
+      link.href = candidate.sourceUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open source";
+      card.append(link);
+    }
+    return card;
+  });
+  elements.shadowCandidateList.replaceChildren(heading, ...cards);
 }
 
 function resetPilotReviewPage() {
@@ -1917,15 +2138,15 @@ function provenanceLinkLabel(sourceUrlKind) {
 }
 
 function showFailure(error) {
-  state.currentView = "session";
-  elements.sessionViewButton.classList.add("selected");
-  elements.reviewViewButton.classList.remove("selected");
-  elements.settingsViewButton.classList.remove("selected");
-  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.settingsPanel);
+  state.currentView = "timeline";
+  selectViewButton(elements.sessionViewButton);
+  hide(elements.controlPanel, elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
+  show(elements.timelinePanel);
   show(elements.failurePanel);
   elements.runButton.disabled = false;
   elements.failureTitle.textContent = `Stopped at ${humanize(error.stage || "unknown stage")}`;
   elements.failureMessage.textContent = error.message || "The run did not complete.";
+  syncTimelineChrome();
 }
 
 function unifiedFailureMessage(session) {
@@ -1942,6 +2163,14 @@ function reportRunFailure(error) {
     elements.reviewMeta.textContent = `Active run status: ${error.message || "unavailable"}`;
     return;
   }
+  if (state.currentView === "overview") {
+    elements.overviewSummary.textContent = `Active run status: ${error.message || "unavailable"}`;
+    return;
+  }
+  if (state.currentView === "settings") {
+    elements.runtimeSettingsStatus.textContent = `Active run status: ${error.message || "unavailable"}`;
+    return;
+  }
   showFailure(error);
 }
 
@@ -1949,14 +2178,14 @@ function resetToSetup() {
   clearPoll();
   state.currentRun = null;
   state.currentSession = null;
-  state.currentView = "session";
-  elements.sessionViewButton.classList.add("selected");
-  elements.reviewViewButton.classList.remove("selected");
-  elements.settingsViewButton.classList.remove("selected");
-  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel, elements.reviewPanel, elements.settingsPanel);
+  state.currentView = "timeline";
+  selectViewButton(elements.sessionViewButton);
+  hide(elements.processingPanel, elements.resultPanel, elements.failurePanel, elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
+  show(elements.timelinePanel);
   show(elements.controlPanel);
   elements.runButton.disabled = false;
   pingBridge();
+  syncTimelineChrome();
 }
 
 async function api(path, options = {}) {

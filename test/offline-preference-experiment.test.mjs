@@ -111,6 +111,10 @@ test("shadow promotion keeps provider priority as a conservative eligibility gua
     comparison.candidates.find((entry) => entry.evidenceKey === "x:blocked-p4").movement,
     "unchanged",
   );
+  assert.equal(
+    comparison.candidates.find((entry) => entry.evidenceKey === "x:eligible-p2").text,
+    null,
+  );
 });
 
 test("shadow comparison exposes every scored candidate for complete evaluation", () => {

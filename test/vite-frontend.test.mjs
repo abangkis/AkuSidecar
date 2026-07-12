@@ -17,7 +17,12 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
     port: 0,
     publicDirectory: path.join(projectRoot, "public"),
     databasePath,
-    presentation: { defaultLayout: "source", streamWidth: "social", telemetryBehavior: "flow" },
+    presentation: {
+      defaultLayout: "source",
+      homePresentation: "timeline",
+      streamWidth: "social",
+      telemetryBehavior: "flow",
+    },
     limits: {
       maxBodyBytes: 1_000_000,
       maxItems: 5,
@@ -65,9 +70,16 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
   assert.match(html, /Unified X \+ LinkedIn/);
+  assert.match(html, /FINITE KNOWLEDGE TIMELINE/);
+  assert.match(html, /SOURCE CONTROL PLANE/);
+  assert.match(html, /id="overview-view-button"/);
+  assert.match(html, /id="home-presentation"/);
   assert.match(html, /Advanced single source/);
   assert.match(appScript, /startExternalSessionDiscovery/);
   assert.match(appScript, /\/api\/sessions\/active/);
+  assert.match(appScript, /\/api\/sessions\?limit=1&offset=0/);
+  assert.match(appScript, /loadLatestTimelineSession/);
+  assert.match(appScript, /renderOverviewSources/);
   assert.match(appScript, /REVIEW_PAGE_SIZE = 10/);
   assert.match(appScript, /REVIEW_MAX_RUNS = 50/);
   assert.match(appScript, /IntersectionObserver/);
@@ -92,12 +104,17 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /fitPreferenceExperiment/);
   assert.match(html, /Offline preference experiment/);
   assert.match(html, /Shadow comparison/);
+  assert.match(html, /shadow-candidate-list/);
+  assert.match(appScript, /renderShadowCandidates/);
   assert.match(html, /default-presentation/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /ws:\/\/127\.0\.0\.1/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /https:\/\/pbs\.twimg\.com/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /https:\/\/\*\.licdn\.com/);
   assert.equal(bootstrap.provider, "vite-test-provider");
   assert.equal(bootstrap.presentation.defaultLayout, "source");
+  assert.equal(bootstrap.presentation.homePresentation, "timeline");
+  assert.equal(bootstrap.sourceRegistry.length, 2);
+  assert.equal(bootstrap.sourceRegistry[0].behavior, "stream");
   assert.equal(bootstrap.presentation.streamWidth, "social");
   assert.equal(bootstrap.presentation.telemetryBehavior, "flow");
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);

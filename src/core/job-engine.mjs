@@ -71,6 +71,23 @@ export class JobEngine {
     return session ? this.#reconcileUnifiedSession(session.id) : null;
   }
 
+  getTimelineSessions({ limit = 10, offset = 0 } = {}) {
+    const sessions = this.store
+      .listPresentableUnifiedSessions(limit, offset)
+      .map(projectUnifiedSessionForPresentation);
+    const total = this.store.countPresentableUnifiedSessions();
+    return {
+      sessions,
+      pagination: {
+        total,
+        offset,
+        limit,
+        returned: sessions.length,
+        hasNext: offset + sessions.length < total,
+      },
+    };
+  }
+
   cancelUnifiedSession(id) {
     let session = this.store.getUnifiedSession(id);
     if (!session) throw new ContractError("unified session not found");
@@ -629,6 +646,34 @@ export class JobEngine {
     if (!session || isUnifiedSessionTerminal(session.status)) return;
     this.#reconcileUnifiedSession(session.id);
   }
+}
+
+function projectUnifiedSessionForPresentation(session) {
+  return {
+    ...session,
+    children: session.children.map((child) => ({
+      ...child,
+      run: child.run ? projectRunForPresentation(child.run) : null,
+    })),
+  };
+}
+
+function projectRunForPresentation(run) {
+  return {
+    id: run.id,
+    mode: run.mode,
+    source: run.source,
+    intent: run.intent,
+    status: run.status,
+    createdAt: run.createdAt,
+    completedAt: run.completedAt,
+    coverage: run.coverage,
+    result: run.result,
+    feedback: run.feedback ?? [],
+    candidateEvaluations: run.candidateEvaluations ?? [],
+    preferenceFeedback: run.preferenceFeedback ?? [],
+    reasoningInvocations: run.reasoningInvocations ?? [],
+  };
 }
 
 function unwrapProviderInvocation(response) {

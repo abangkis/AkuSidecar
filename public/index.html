@@ -21,7 +21,8 @@
             <span id="reasoning-status" class="status-pill status-neutral">Reasoning config</span>
           </div>
           <nav class="view-switch" aria-label="AkuBrowser view">
-            <button id="session-view-button" class="view-button selected" type="button">Session</button>
+            <button id="session-view-button" class="view-button selected" type="button">Timeline</button>
+            <button id="overview-view-button" class="view-button" type="button">Overview</button>
             <button id="review-view-button" class="view-button" type="button">Review Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
@@ -45,6 +46,13 @@
           <fieldset class="settings-group">
             <legend>Live settings</legend>
             <div class="settings-card">
+            <label class="settings-row" for="home-presentation">
+              <span class="settings-copy"><strong>Default home view</strong><small>Choose the landing surface. Timeline remains finite; Overview shows source operations.</small></span>
+              <select id="home-presentation" name="homePresentation">
+                <option value="timeline">Timeline — default</option>
+                <option value="overview">Overview</option>
+              </select>
+            </label>
             <label class="settings-row" for="default-presentation">
               <span class="settings-copy"><strong>Default item layout</strong><small>Choose the initial presentation for every captured item.</small></span>
               <select id="default-presentation" name="defaultPresentation">
@@ -53,7 +61,7 @@
               </select>
             </label>
             <label class="settings-row" for="stream-width">
-              <span class="settings-copy"><strong>Stream width</strong><small>Controls the reading column in Session and Review Inbox.</small></span>
+              <span class="settings-copy"><strong>Stream width</strong><small>Controls the reading column in Timeline and Review Inbox.</small></span>
               <select id="stream-width" name="streamWidth">
                 <option value="social">Social feed (640 px) — default</option>
                 <option value="compact">Compact (560 px)</option>
@@ -202,6 +210,7 @@
               <div class="shadow-comparison" aria-live="polite">
                 <strong>Shadow comparison</strong>
                 <p id="shadow-comparison-detail" class="review-guidance">No current snapshot.</p>
+                <div id="shadow-candidate-list" class="shadow-candidate-list"></div>
               </div>
             </section>
 
@@ -216,7 +225,52 @@
         </div>
       </section>
 
-      <section class="control-panel" aria-labelledby="session-heading">
+      <section id="overview-panel" class="overview-panel hidden" aria-labelledby="overview-heading">
+        <div class="section-heading overview-heading">
+          <div>
+            <p class="step-label">SOURCE CONTROL PLANE</p>
+            <h2 id="overview-heading">Overview</h2>
+            <p class="review-guidance">Registered sources, acquisition readiness, and the latest bounded activity.</p>
+          </div>
+          <button id="overview-run-button" class="primary-button" type="button">Check for updates</button>
+        </div>
+        <div id="overview-summary" class="overview-summary" aria-live="polite"></div>
+        <section aria-labelledby="active-sources-heading">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="step-label">ACTIVE SOURCES</p>
+              <h3 id="active-sources-heading">Source registry</h3>
+            </div>
+            <span class="status-pill status-neutral">User-triggered</span>
+          </div>
+          <div id="overview-sources" class="overview-sources"></div>
+        </section>
+        <section class="overview-policy" aria-labelledby="collection-policy-heading">
+          <p class="step-label">COLLECTION POLICY</p>
+          <h3 id="collection-policy-heading">Bounded by source behavior</h3>
+          <div class="overview-policy-grid">
+            <article><strong>Stream</strong><span>Bounded capture, fresh-content detection, and knowledge checkpoints.</span></article>
+            <article><strong>Periodic</strong><span>Future change detection before reasoning is invoked.</span></article>
+            <article><strong>Static</strong><span>Future manual or infrequent content-hash revalidation.</span></article>
+            <article><strong>Push</strong><span>Future event-driven ingestion without browser polling.</span></article>
+          </div>
+        </section>
+      </section>
+
+      <section id="timeline-panel" class="timeline-panel" aria-labelledby="timeline-heading">
+        <div class="timeline-heading-row">
+          <div>
+            <p class="step-label">FINITE KNOWLEDGE TIMELINE</p>
+            <h2 id="timeline-heading">Latest evaluated updates</h2>
+            <p id="timeline-meta" class="review-guidance">Loading the latest completed session…</p>
+          </div>
+          <div class="timeline-actions">
+            <button id="timeline-refresh-button" class="text-button" type="button">Refresh</button>
+            <button id="timeline-runner-button" class="primary-button" type="button">Check for updates</button>
+          </div>
+        </div>
+
+      <section class="control-panel runner-panel" aria-labelledby="session-heading">
         <div class="section-heading">
           <div>
             <p class="step-label">01 · INTENTIONAL SESSION</p>
@@ -329,6 +383,7 @@
         <h2 id="failure-title">The bounded snapshot could not finish</h2>
         <p id="failure-message"></p>
         <button id="retry-button" class="secondary-button" type="button">Return to session setup</button>
+      </section>
       </section>
     </main>
 

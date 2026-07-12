@@ -455,6 +455,26 @@ export class SqliteStateStore {
       .map((row) => this.getUnifiedSession(row.id));
   }
 
+  listPresentableUnifiedSessions(limit = 10, offset = 0) {
+    const boundedLimit = Math.max(1, Math.min(50, Number.isFinite(limit) ? limit : 10));
+    const boundedOffset = Math.max(0, Number.isFinite(offset) ? offset : 0);
+    return this.database
+      .prepare(`
+        SELECT id FROM unified_sessions
+        WHERE status IN ('completed', 'partial')
+        ORDER BY completed_at DESC, created_at DESC
+        LIMIT ? OFFSET ?
+      `)
+      .all(boundedLimit, boundedOffset)
+      .map((row) => this.getUnifiedSession(row.id));
+  }
+
+  countPresentableUnifiedSessions() {
+    return this.database
+      .prepare("SELECT COUNT(*) AS count FROM unified_sessions WHERE status IN ('completed', 'partial')")
+      .get().count;
+  }
+
   attachUnifiedSessionChild(sessionId, source, runId) {
     const now = new Date().toISOString();
     this.database.exec("BEGIN IMMEDIATE");

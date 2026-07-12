@@ -15,6 +15,13 @@ const DEFINITIONS = {
     read: (config) => config.presentation.defaultLayout,
     apply: (config, value) => { config.presentation.defaultLayout = value; },
   },
+  homePresentation: {
+    key: "ui.home_presentation",
+    applyMode: "live",
+    values: new Set(["timeline", "overview"]),
+    read: (config) => config.presentation.homePresentation,
+    apply: (config, value) => { config.presentation.homePresentation = value; },
+  },
   streamWidth: {
     key: "ui.stream_width",
     applyMode: "live",
