@@ -307,6 +307,7 @@ async function saveOnboarding(event) {
     document.querySelector(".view-switch")?.classList.remove("hidden");
     await loadTimelineFeed();
     showSessionView();
+    startExternalSessionDiscovery();
   } catch (error) {
     elements.onboardingError.textContent = error.message;
   }
