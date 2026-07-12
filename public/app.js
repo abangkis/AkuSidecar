@@ -597,12 +597,14 @@ function renderTimelineFeed(timeline) {
       elements.resultItems.append(marker);
       previousSessionId = entry.sessionId;
     }
-    elements.resultItems.append(buildResultItem(
+    const timelineItem = buildResultItem(
       entry.run,
       entry.item,
       loadTimelineFeed,
       { preferenceOnly: true },
-    ));
+    );
+    if (entry.isLatestAddition) timelineItem.classList.add("timeline-new-item");
+    elements.resultItems.append(timelineItem);
   }
 
   elements.finishTitle.textContent = "You’re caught up within this timeline";

@@ -1219,9 +1219,15 @@ textarea:focus {
 }
 
 .update-progress {
+  position: sticky;
+  z-index: 20;
+  top: 12px;
   margin-top: 14px;
   padding: 16px 18px;
   border-radius: 12px;
+  border-color: rgba(183, 242, 108, 0.42);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
 }
 
 .update-progress-heading {
@@ -1263,6 +1269,11 @@ textarea:focus {
 .timeline-feed-mode > .coverage-details,
 .timeline-feed-mode > .result-summary {
   display: none;
+}
+
+.result-item.timeline-new-item {
+  border-color: rgba(183, 242, 108, 0.34);
+  background: rgba(183, 242, 108, 0.045);
 }
 
 .coverage-details {

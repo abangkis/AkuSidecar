@@ -124,6 +124,8 @@ export class JobEngine {
           source: child.source,
           item,
           run: child.run,
+          isLatestAddition:
+            session.id === latestSession?.id && !olderEvidence.has(evidenceIdentity),
         });
         if (entries.length >= capacity) break;
       }

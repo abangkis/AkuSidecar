@@ -12,6 +12,7 @@ test("bounded timeline retains newest updates and only enough older content to f
   assert.equal(timeline.entries.filter((entry) => entry.sessionId === "newest-ten").length, 10);
   assert.equal(timeline.entries.filter((entry) => entry.sessionId === "older").length, 2);
   assert.equal(timeline.summary.latestAdditions, 10);
+  assert.equal(timeline.entries.filter((entry) => entry.isLatestAddition).length, 10);
 
   const newestEight = sessionFixture("newest-eight", 8, "2026-07-12T03:00:00.000Z");
   timeline = engineFixture([newestEight, newestTen, older])
@@ -20,6 +21,7 @@ test("bounded timeline retains newest updates and only enough older content to f
   assert.equal(timeline.entries.filter((entry) => entry.sessionId === "newest-ten").length, 4);
   assert.equal(timeline.entries.some((entry) => entry.sessionId === "older"), false);
   assert.equal(timeline.summary.latestAdditions, 8);
+  assert.equal(timeline.entries.filter((entry) => entry.isLatestAddition).length, 8);
 });
 
 test("latest completed check reports zero additions without erasing the retained timeline", () => {
@@ -30,6 +32,7 @@ test("latest completed check reports zero additions without erasing the retained
   assert.equal(timeline.summary.latestAdditions, 0);
   assert.equal(timeline.summary.latestSessionId, "empty-latest");
   assert.equal(timeline.entries.length, 5);
+  assert.equal(timeline.entries.some((entry) => entry.isLatestAddition), false);
 });
 
 test("timeline details are paged inside the configured rolling capacity", () => {

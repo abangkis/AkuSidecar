@@ -91,6 +91,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /\/api\/timeline\?limit=/);
   assert.match(appScript, /renderOverviewSources/);
   assert.match(appScript, /renderFixedEngineConstraints/);
+  assert.match(appScript, /timeline-new-item/);
+  assert.match(styles, /\.update-progress \{[^}]*position: sticky/s);
+  assert.match(styles, /\.result-item\.timeline-new-item/);
   assert.match(appScript, /body: JSON\.stringify\(\{\}\)/);
   assert.match(appScript, /showTimelineDuringProcessing/);
   assert.match(appScript, /Reading \$\{label\} source/);
