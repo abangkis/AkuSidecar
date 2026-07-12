@@ -29,6 +29,11 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.timelineCapacity.effectiveValue, 12);
   assert.equal(response.configuration.streamWidth.effectiveValue, "social");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "flow");
+  assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x", "linkedin"]);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 5);
+  assert.equal(response.configuration.maxScrolls.effectiveValue, 2);
+  assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 2);
+  assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 20);
 
   response = await jsonFetch(`${origin}/api/configuration/runtime`, {
     method: "PUT",
@@ -42,6 +47,11 @@ test("dashboard runtime configuration applies to the next run and survives resta
       timelineCapacity: 18,
       streamWidth: "comfortable",
       telemetryBehavior: "sticky",
+      activeSources: ["x"],
+      maxItemsPerSource: 7,
+      maxScrolls: 3,
+      maxAcquisitionRounds: 1,
+      maxKnowledgeContextEvents: 30,
     }),
   });
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "fail_fast");
@@ -57,6 +67,22 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.streamWidth.restartRequired, false);
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.equal(response.configuration.telemetryBehavior.restartRequired, false);
+  assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x"]);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 7);
+  assert.equal(response.configuration.maxScrolls.effectiveValue, 3);
+  assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 1);
+  assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 30);
+
+  const bootstrap = await jsonFetch(`${origin}/api/bootstrap`);
+  assert.deepEqual(
+    bootstrap.sourceRegistry.map((source) => [source.id, source.activationState]),
+    [["x", "active"], ["linkedin", "inactive"]],
+  );
+  const xOnlySession = await jsonFetch(`${origin}/api/sessions`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  assert.deepEqual(xOnlySession.session.children.map((child) => child.source), ["x"]);
 
   await app.stop();
   store.close();
@@ -74,6 +100,11 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.timelineCapacity.effectiveValue, 18);
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
+  assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x"]);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 7);
+  assert.equal(response.configuration.maxScrolls.effectiveValue, 3);
+  assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 1);
+  assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 30);
   assert.equal(response.configuration.evaluationModel.restartRequired, false);
 });
 

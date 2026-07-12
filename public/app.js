@@ -10,7 +10,6 @@ const state = {
   externalSessionDiscoveryInFlight: false,
   dispatchedRounds: new Set(),
   currentView: "timeline",
-  homePresentation: "timeline",
   timelineCapacity: 12,
   timelineFeed: null,
   defaultPresentation: "source",
@@ -31,17 +30,20 @@ const elements = {
   reasoningStatus: document.querySelector("#reasoning-status"),
   providerNotice: document.querySelector("#provider-notice"),
   sessionViewButton: document.querySelector("#session-view-button"),
-  overviewViewButton: document.querySelector("#overview-view-button"),
   reviewViewButton: document.querySelector("#review-view-button"),
   settingsViewButton: document.querySelector("#settings-view-button"),
   settingsPanel: document.querySelector("#settings-panel"),
-  homePresentation: document.querySelector("#home-presentation"),
   timelineCapacity: document.querySelector("#timeline-capacity"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
   defaultPresentation: document.querySelector("#default-presentation"),
   streamWidth: document.querySelector("#stream-width"),
   telemetryBehavior: document.querySelector("#telemetry-behavior"),
+  maxItemsPerSource: document.querySelector("#max-items-per-source"),
+  maxScrolls: document.querySelector("#max-scrolls"),
+  maxAcquisitionRounds: document.querySelector("#max-acquisition-rounds"),
+  maxKnowledgeContextEvents: document.querySelector("#max-knowledge-context-events"),
+  fixedEngineConstraints: document.querySelector("#fixed-engine-constraints"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
   planningPolicy: document.querySelector("#planning-policy"),
@@ -54,10 +56,8 @@ const elements = {
   runtimeSettingsStatus: document.querySelector("#runtime-settings-status"),
   saveRuntimeSettings: document.querySelector("#save-runtime-settings"),
   reviewPanel: document.querySelector("#review-panel"),
-  overviewPanel: document.querySelector("#overview-panel"),
   overviewSummary: document.querySelector("#overview-summary"),
   overviewSources: document.querySelector("#overview-sources"),
-  overviewRunButton: document.querySelector("#overview-run-button"),
   timelinePanel: document.querySelector("#timeline-panel"),
   timelineMeta: document.querySelector("#timeline-meta"),
   timelineRefreshButton: document.querySelector("#timeline-refresh-button"),
@@ -83,12 +83,7 @@ const elements = {
   processingPanel: document.querySelector("#processing-panel"),
   processingTitle: document.querySelector("#processing-title"),
   processingDetail: document.querySelector("#processing-detail"),
-  sourceProgress: document.querySelector("#source-progress"),
   progressBar: document.querySelector("#progress-bar"),
-  contractMode: document.querySelector("#contract-mode"),
-  contractSource: document.querySelector("#contract-source"),
-  contractAttention: document.querySelector("#contract-attention"),
-  contractScrolls: document.querySelector("#contract-scrolls"),
   cancelButton: document.querySelector("#cancel-button"),
   resultPanel: document.querySelector("#result-panel"),
   resultTitle: document.querySelector("#result-title"),
@@ -151,7 +146,6 @@ elements.cancelButton.addEventListener("click", cancelCurrentRun);
 elements.doneButton.addEventListener("click", startRun);
 elements.retryButton.addEventListener("click", startRun);
 elements.sessionViewButton.addEventListener("click", showSessionView);
-elements.overviewViewButton.addEventListener("click", showOverviewView);
 elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
@@ -159,7 +153,6 @@ elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
-elements.overviewRunButton.addEventListener("click", startRun);
 elements.timelineRunnerButton.addEventListener("click", startRun);
 elements.timelineRefreshButton.addEventListener("click", refreshTimeline);
 await bootstrap();
@@ -169,7 +162,6 @@ async function bootstrap() {
   try {
     state.bootstrap = await api("/api/bootstrap");
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
-    state.homePresentation = state.bootstrap.presentation?.homePresentation ?? "timeline";
     state.timelineCapacity = state.bootstrap.presentation?.timelineCapacity ?? 12;
     applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
     applyTelemetryBehavior(state.bootstrap.presentation?.telemetryBehavior ?? "flow");
@@ -187,17 +179,19 @@ async function bootstrap() {
     }
     pingBridge();
     setInterval(pingBridge, 30_000);
-    const { session } = await api("/api/sessions/active");
+    const [{ session }, { timeline }] = await Promise.all([
+      api("/api/sessions/active"),
+      api(`/api/timeline?limit=${encodeURIComponent(state.timelineCapacity)}&offset=0`),
+    ]);
+    state.timelineFeed = timeline;
     if (session) {
       state.currentSession = session;
-      show(elements.timelinePanel);
       showUnifiedProcessing(session);
       dispatchUnifiedSession(session);
       schedulePoll();
     } else {
       await loadTimelineFeed();
-      if (state.homePresentation === "overview") await showOverviewView();
-      else showSessionView();
+      showSessionView();
     }
     startExternalSessionDiscovery();
     setTimeout(() => {
@@ -230,11 +224,11 @@ async function startRun() {
   ) return;
   state.currentView = "timeline";
   selectViewButton(elements.sessionViewButton);
-  hide(elements.overviewPanel, elements.reviewPanel, elements.settingsPanel);
+  hide(elements.reviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   clearPoll();
   state.dispatchedRounds.clear();
-  hide(elements.resultPanel, elements.failurePanel);
+  hide(elements.failurePanel);
   setUpdateButtonsDisabled(true);
   try {
     const { session } = await api("/api/sessions", {
@@ -254,7 +248,6 @@ async function startRun() {
 
 function setUpdateButtonsDisabled(disabled) {
   elements.timelineRunnerButton.disabled = disabled;
-  elements.overviewRunButton.disabled = disabled;
   elements.doneButton.disabled = disabled;
   elements.retryButton.disabled = disabled;
 }
@@ -329,7 +322,6 @@ async function pollRun() {
       clearPoll();
       setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
-      else if (state.currentView === "overview") await loadOverview();
       else if (state.currentView === "timeline") showResult(run);
       return;
     }
@@ -337,7 +329,6 @@ async function pollRun() {
       clearPoll();
       setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
-      else if (state.currentView === "overview") await loadOverview();
       else if (state.currentView === "timeline") {
         showFailure(run.error ?? {
           stage: run.status,
@@ -366,7 +357,6 @@ async function pollUnifiedSession() {
       clearPoll();
       setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
-      else if (state.currentView === "overview") await loadOverview();
       else if (
         state.currentView === "timeline" &&
         (session.status === "failed" || session.status === "cancelled")
@@ -425,78 +415,66 @@ async function cancelCurrentRun() {
 }
 
 function showProcessing(run) {
-  show(elements.timelinePanel);
-  hide(elements.resultPanel, elements.failurePanel);
-  show(elements.processingPanel);
-  elements.sourceProgress.replaceChildren();
-  elements.contractMode.textContent = humanize(run.mode);
-  elements.contractSource.textContent = run.source === "x" ? "X" : "LinkedIn";
-  elements.contractAttention.textContent = `Up to ${run.maxItems} result(s)`;
-  elements.contractScrolls.textContent =
-    run.scrolls === 0
-      ? "Reveal pending content if present; no scrolling"
-      : `Reveal pending content if present; up to ${run.scrolls} native scroll(s)`;
-
-  const followUp = (run.observations?.length ?? 0) > 0;
-  const copy = {
-    waiting_for_bridge: followUp
-      ? [
-          "Waiting for bounded follow-up",
-          "The provider requested one policy-controlled adjacent observation.",
-          58,
-        ]
-      : ["Waiting for AkuBridge", "Sending one bounded capture request.", 18],
-    capturing: [
-      "Observing the source tab",
-      `Revealing pending fresh content when present, then capturing up to ${run.scrolls + 1} viewport(s) and restoring the resulting feed baseline.`,
-      48,
-    ],
-    reasoning: ["Evaluating the observation", "Applying the provider-neutral result contract.", 76],
-  }[run.status] ?? ["Processing", "The bounded run is still active.", 32];
-  elements.processingTitle.textContent = copy[0];
-  elements.processingDetail.textContent = copy[1];
-  elements.progressBar.style.width = `${copy[2]}%`;
+  showTimelineDuringProcessing();
+  renderProcessingStep({ ...sourceStepState(run, 0), total: 7 });
   syncTimelineChrome();
 }
 
 function showUnifiedProcessing(session) {
-  show(elements.timelinePanel);
-  hide(elements.resultPanel, elements.failurePanel);
-  show(elements.processingPanel);
+  showTimelineDuringProcessing();
   const activeChild = session.children.find(
     (child) => child.run && !isTerminal(child.run.status),
   );
-  const activeLabel = activeChild ? sourceLabel(activeChild.source) : "next source";
-  elements.processingTitle.textContent = `Checking ${activeLabel}`;
-  elements.processingDetail.textContent =
-    activeChild?.run.status === "reasoning"
-      ? `Evaluating the bounded ${activeLabel} observation before moving to the next source.`
-      : `Running the bounded ${activeLabel} capture. Sources execute sequentially.`;
-  elements.contractMode.textContent = humanize(session.mode);
-  elements.contractSource.textContent = "X then LinkedIn";
-  elements.contractAttention.textContent = `Up to ${session.maxItemsPerSource} per source · ${session.maxItemsTotal} total`;
-  elements.contractScrolls.textContent = "Existing bounded policy per source";
-  const terminalCount = session.children.filter((child) =>
-    ["completed", "failed", "cancelled"].includes(child.status),
-  ).length;
-  const activeProgress = activeChild?.run.status === "reasoning" ? 32 : activeChild ? 14 : 0;
-  elements.progressBar.style.width = `${Math.min(94, terminalCount * 50 + activeProgress)}%`;
-  elements.sourceProgress.replaceChildren(
-    ...session.children.map((child) => {
-      const card = document.createElement("div");
-      const label = document.createElement("strong");
-      label.textContent = sourceLabel(child.source);
-      const status = document.createElement("span");
-      status.className = `status-pill ${child.status === "completed" ? "status-ok" : child.status === "failed" ? "status-error" : "status-neutral"}`;
-      status.textContent = humanize(child.status);
-      card.append(label, status);
-      return card;
-    }),
-  );
+  const queuedIndex = session.children.findIndex((child) => child.status === "queued");
+  const activeIndex = activeChild
+    ? session.children.findIndex((child) => child === activeChild)
+    : Math.max(0, queuedIndex);
+  const totalSteps = session.children.length * 5 + 2;
+  renderProcessingStep(activeChild?.run
+    ? { ...sourceStepState(activeChild.run, activeIndex), total: totalSteps }
+    : {
+        step: activeIndex === 0 ? 1 : 6,
+        label: `Preparing ${sourceLabel(session.children[activeIndex]?.source ?? "x")} source`,
+        total: totalSteps,
+      });
   syncTimelineChrome();
 }
 
+function showTimelineDuringProcessing() {
+  show(elements.timelinePanel);
+  hide(elements.failurePanel);
+  if (elements.resultPanel.classList.contains("hidden") && state.timelineFeed) {
+    renderTimelineFeed(state.timelineFeed);
+  }
+  show(elements.processingPanel);
+  setUpdateButtonsDisabled(true);
+}
+
+function sourceStepState(run, sourceIndex) {
+  const offset = sourceIndex === 0 ? 0 : 5;
+  const label = sourceLabel(run.source);
+  return {
+    queued: { step: 1 + offset, label: `Preparing ${label} source` },
+    waiting_for_bridge: { step: 2 + offset, label: `Opening ${label} source` },
+    capturing: { step: 3 + offset, label: `Reading ${label} source` },
+    reasoning: { step: 5 + offset, label: `Evaluating ${label} updates` },
+  }[run.status] ?? { step: 1 + offset, label: `Processing ${label} source` };
+}
+
+function renderProcessingStep({ step, label, total = 12 }) {
+  const safeTotal = Math.max(2, total);
+  const safeStep = Math.max(1, Math.min(safeTotal, step));
+  const progress = Math.round((safeStep / safeTotal) * 100);
+  elements.processingTitle.textContent = label;
+  elements.processingDetail.textContent = `${safeStep}/${safeTotal} steps`;
+  elements.progressBar.style.width = `${progress}%`;
+  elements.processingPanel
+    .querySelector(".progress-track")
+    ?.setAttribute("aria-valuenow", String(progress));
+}
+
 function showResult(run) {
+  elements.resultPanel.classList.remove("timeline-feed-mode");
   show(elements.timelinePanel);
   hide(elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
@@ -531,6 +509,7 @@ function showResult(run) {
 }
 
 function showUnifiedResult(session) {
+  elements.resultPanel.classList.remove("timeline-feed-mode");
   show(elements.timelinePanel);
   hide(elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
@@ -577,6 +556,7 @@ function showUnifiedResult(session) {
 }
 
 function renderTimelineFeed(timeline) {
+  elements.resultPanel.classList.add("timeline-feed-mode");
   hide(elements.processingPanel, elements.failurePanel);
   show(elements.resultPanel);
   setUpdateButtonsDisabled(false);
@@ -627,10 +607,8 @@ function renderTimelineFeed(timeline) {
 
   elements.finishTitle.textContent = "You’re caught up within this timeline";
   elements.finishStats.textContent = [
-    `Retained: ${timeline.summary.retained} of ${timeline.capacity}`,
-    `X: ${timeline.summary.sources?.x ?? 0}`,
-    `LinkedIn: ${timeline.summary.sources?.linkedin ?? 0}`,
-  ].join(" · ");
+    formatLatestAdditions(timeline.summary.latestAdditions),
+  ].join("");
   syncTimelineChrome();
 }
 
@@ -1154,7 +1132,7 @@ function safePresentationMediaUrl(value, source) {
 function showSessionView() {
   state.currentView = "timeline";
   selectViewButton(elements.sessionViewButton);
-  hide(elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
+  hide(elements.reviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   if (state.currentSession && isUnifiedTerminal(state.currentSession.status)) {
     if (!["completed", "partial"].includes(state.currentSession.status)) {
@@ -1186,7 +1164,7 @@ function showSessionView() {
 async function showReviewView() {
   state.currentView = "review";
   selectViewButton(elements.reviewViewButton);
-  hide(elements.timelinePanel, elements.overviewPanel, elements.settingsPanel);
+  hide(elements.timelinePanel, elements.settingsPanel);
   show(elements.reviewPanel);
   await loadPilotReview();
 }
@@ -1194,23 +1172,14 @@ async function showReviewView() {
 async function showSettingsView() {
   state.currentView = "settings";
   selectViewButton(elements.settingsViewButton);
-  hide(elements.timelinePanel, elements.overviewPanel, elements.reviewPanel);
+  hide(elements.timelinePanel, elements.reviewPanel);
   show(elements.settingsPanel);
-  await loadRuntimeSettings();
-}
-
-async function showOverviewView() {
-  state.currentView = "overview";
-  selectViewButton(elements.overviewViewButton);
-  hide(elements.timelinePanel, elements.reviewPanel, elements.settingsPanel);
-  show(elements.overviewPanel);
-  await loadOverview();
+  await Promise.all([loadRuntimeSettings(), loadOverview()]);
 }
 
 function selectViewButton(selected) {
   for (const button of [
     elements.sessionViewButton,
-    elements.overviewViewButton,
     elements.reviewViewButton,
     elements.settingsViewButton,
   ]) {
@@ -1246,13 +1215,9 @@ function syncTimelineChrome() {
   if (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) {
     elements.timelineMeta.textContent = "Checking active sources within the bounded acquisition policy.";
   } else if (state.timelineFeed) {
-    elements.timelineMeta.textContent = [
-      `${state.timelineFeed.summary.retained} retained update(s)`,
-      `capacity ${state.timelineFeed.capacity}`,
-      state.timelineFeed.summary.newestSessionAt
-        ? `latest check ${formatDate(state.timelineFeed.summary.newestSessionAt)}`
-        : null,
-    ].filter(Boolean).join(" · ");
+    elements.timelineMeta.textContent = state.timelineFeed.summary.newestSessionAt
+      ? `${formatLatestAdditions(state.timelineFeed.summary.latestAdditions)} · checked ${formatDate(state.timelineFeed.summary.newestSessionAt)}`
+      : "No update has run yet.";
   } else if (state.currentRun?.status === "completed") {
     elements.timelineMeta.textContent = `${sourceLabel(state.currentRun.source)} · completed ${formatDate(state.currentRun.completedAt)}`;
   } else if (!state.currentSession && !state.currentRun) {
@@ -1260,6 +1225,11 @@ function syncTimelineChrome() {
   } else {
     elements.timelineMeta.textContent = "A bounded source check is in progress.";
   }
+}
+
+function formatLatestAdditions(value) {
+  const count = Number.isInteger(value) && value >= 0 ? value : 0;
+  return `${count} ${count === 1 ? "addition" : "additions"}`;
 }
 
 async function loadOverview() {
@@ -1279,11 +1249,12 @@ async function loadOverview() {
 }
 
 function renderOverviewSummary(latest, bridge) {
+  const activeCount = (state.bootstrap?.sourceRegistry ?? [])
+    .filter((source) => source.activationState === "active").length;
   const values = [
-    ["Active sources", String(state.bootstrap?.sourceRegistry?.length ?? 0)],
-    ["Collection", "User-triggered"],
-    ["Latest session", latest ? formatDate(latest.completedAt) : "Not run yet"],
-    ["Bridge", humanize(bridge?.status ?? "unavailable")],
+    ["Active sources", String(activeCount)],
+    ["Available adapters", String(state.bootstrap?.sourceRegistry?.length ?? 0)],
+    ["Latest update", latest ? formatDate(latest.completedAt) : "Not run yet"],
   ];
   elements.overviewSummary.replaceChildren(...values.map(([label, value]) => {
     const card = document.createElement("article");
@@ -1307,12 +1278,24 @@ function renderOverviewSources(registry, healthBySource) {
     const status = document.createElement("span");
     status.className = `status-pill ${health.status === "healthy" ? "status-ok" : "status-neutral"}`;
     status.textContent = humanize(health.status ?? "not observed");
-    header.append(title, status);
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "source-toggle";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.value = source.id;
+    toggle.dataset.sourceToggle = "true";
+    toggle.checked = source.activationState === "active";
+    const toggleText = document.createElement("span");
+    toggleText.textContent = toggle.checked ? "Included" : "Excluded";
+    toggle.addEventListener("change", () => {
+      toggleText.textContent = toggle.checked ? "Included" : "Excluded";
+    });
+    toggleLabel.append(toggle, toggleText);
+    header.append(title, status, toggleLabel);
     const description = document.createElement("p");
     description.textContent = `${humanize(source.behavior)} source · ${humanize(source.accessMode)}`;
     const facts = document.createElement("dl");
     for (const [label, value] of [
-      ["State", humanize(source.activationState)],
       ["Collection", humanize(source.collectionPolicy)],
       ["Last checked", health.lastObservedAt ? formatDate(health.lastObservedAt) : "Not observed"],
       ["Tab", health.lifecycle?.opened ? humanize(health.lifecycle.ownership ?? "open") : "Not currently reported"],
@@ -1344,11 +1327,6 @@ async function loadRuntimeSettings() {
 
 function renderRuntimeSettings(configuration) {
   state.runtimeConfiguration = configuration;
-  const homePresentation = configuration.homePresentation;
-  state.homePresentation = homePresentation.effectiveValue;
-  elements.homePresentation.value =
-    homePresentation.persistedValue ?? homePresentation.effectiveValue;
-  elements.homePresentation.disabled = homePresentation.source === "environment";
   const timelineCapacity = configuration.timelineCapacity;
   state.timelineCapacity = timelineCapacity.effectiveValue;
   elements.timelineCapacity.value =
@@ -1368,6 +1346,17 @@ function renderRuntimeSettings(configuration) {
   elements.telemetryBehavior.value =
     telemetryBehavior.persistedValue ?? telemetryBehavior.effectiveValue;
   elements.telemetryBehavior.disabled = telemetryBehavior.source === "environment";
+  for (const [name, control] of Object.entries({
+    maxItemsPerSource: elements.maxItemsPerSource,
+    maxScrolls: elements.maxScrolls,
+    maxAcquisitionRounds: elements.maxAcquisitionRounds,
+    maxKnowledgeContextEvents: elements.maxKnowledgeContextEvents,
+  })) {
+    const entry = configuration[name];
+    control.value = entry.persistedValue ?? entry.effectiveValue;
+    control.disabled = entry.source === "environment";
+  }
+  renderFixedEngineConstraints();
   const setting = configuration.missingSourceTabPolicy;
   elements.missingSourceTabPolicy.value = setting.persistedValue ?? setting.effectiveValue;
   const overridden = setting.source === "environment";
@@ -1409,7 +1398,12 @@ async function saveRuntimeSettings(event) {
   elements.runtimeSettingsStatus.textContent = "Saving…";
   try {
     const values = {
-      homePresentation: elements.homePresentation.value,
+      activeSources: [...elements.overviewSources.querySelectorAll("[data-source-toggle]:checked")]
+        .map((control) => control.value),
+      maxItemsPerSource: Number(elements.maxItemsPerSource.value),
+      maxScrolls: Number(elements.maxScrolls.value),
+      maxAcquisitionRounds: Number(elements.maxAcquisitionRounds.value),
+      maxKnowledgeContextEvents: Number(elements.maxKnowledgeContextEvents.value),
       timelineCapacity: Number(elements.timelineCapacity.value),
       defaultPresentation: elements.defaultPresentation.value,
       streamWidth: elements.streamWidth.value,
@@ -1423,6 +1417,9 @@ async function saveRuntimeSettings(event) {
       planningEffort: elements.planningEffort.value,
       timeoutMs: Number(elements.reasoningTimeout.value),
     };
+    if (values.activeSources.length === 0) {
+      throw new Error("Keep at least one installed source active.");
+    }
     const update = Object.fromEntries(
       Object.entries(values).filter(([name]) =>
         state.runtimeConfiguration?.[name]?.source !== "environment"),
@@ -1435,8 +1432,18 @@ async function saveRuntimeSettings(event) {
       configuration.missingSourceTabPolicy.effectiveValue;
     state.bootstrap.presentation.defaultLayout =
       configuration.defaultPresentation.effectiveValue;
-    state.bootstrap.presentation.homePresentation =
-      configuration.homePresentation.effectiveValue;
+    state.bootstrap.sourceRegistry = state.bootstrap.sourceRegistry.map((source) => ({
+      ...source,
+      activationState: configuration.activeSources.effectiveValue.includes(source.id)
+        ? "active"
+        : "inactive",
+    }));
+    state.bootstrap.limits.maxItems = configuration.maxItemsPerSource.effectiveValue;
+    state.bootstrap.limits.maxScrolls = configuration.maxScrolls.effectiveValue;
+    state.bootstrap.limits.defaultScrolls = configuration.maxScrolls.effectiveValue;
+    state.bootstrap.limits.maxAcquisitionRounds = configuration.maxAcquisitionRounds.effectiveValue;
+    state.bootstrap.limits.maxKnowledgeContextEvents =
+      configuration.maxKnowledgeContextEvents.effectiveValue;
     state.bootstrap.presentation.timelineCapacity =
       configuration.timelineCapacity.effectiveValue;
     state.bootstrap.presentation.streamWidth = configuration.streamWidth.effectiveValue;
@@ -1444,12 +1451,36 @@ async function saveRuntimeSettings(event) {
       configuration.telemetryBehavior.effectiveValue;
     renderRuntimeSettings(configuration);
     await loadTimelineFeed();
+    await loadOverview();
     elements.runtimeSettingsStatus.textContent =
       "Saved. Live settings are applied; startup changes still require a visible restart.";
   } catch (error) {
     elements.runtimeSettingsStatus.textContent = error.message;
     elements.saveRuntimeSettings.disabled = false;
   }
+}
+
+function renderFixedEngineConstraints() {
+  const limits = state.bootstrap?.limits ?? {};
+  const facts = [
+    ["Unified output", "10 items maximum"],
+    ["Anchored follow-up", `${limits.followUpScrolls ?? 1} scroll`],
+    ["Continuation anchors", String(limits.maxContinuationAnchors ?? 3)],
+    ["Evidence blocks", `${limits.maxBlocksPerSnapshot ?? 20} per snapshot`],
+    ["Block size", `${limits.maxBlockCharacters ?? 4_000} characters`],
+    ["Media", `${limits.maxMediaPerBlock ?? 4} per block`],
+    ["Capture timeout", `${Math.round((limits.captureTimeoutMs ?? 45_000) / 1_000)}s`],
+    ["Fresh-content wait", `${Math.round((limits.pendingContentTimeoutMs ?? 5_000) / 1_000)}s`],
+  ];
+  elements.fixedEngineConstraints.replaceChildren(...facts.map(([label, value]) => {
+    const card = document.createElement("article");
+    const term = document.createElement("span");
+    term.textContent = label;
+    const detail = document.createElement("strong");
+    detail.textContent = value;
+    card.append(term, detail);
+    return card;
+  }));
 }
 
 function applyStreamWidth(value) {
@@ -2167,7 +2198,7 @@ function provenanceLinkLabel(sourceUrlKind) {
 function showFailure(error) {
   state.currentView = "timeline";
   selectViewButton(elements.sessionViewButton);
-  hide(elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.overviewPanel, elements.settingsPanel);
+  hide(elements.processingPanel, elements.resultPanel, elements.reviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   show(elements.failurePanel);
   setUpdateButtonsDisabled(false);
@@ -2188,10 +2219,6 @@ function unifiedFailureMessage(session) {
 function reportRunFailure(error) {
   if (state.currentView === "review") {
     elements.reviewMeta.textContent = `Active run status: ${error.message || "unavailable"}`;
-    return;
-  }
-  if (state.currentView === "overview") {
-    elements.overviewSummary.textContent = `Active run status: ${error.message || "unavailable"}`;
     return;
   }
   if (state.currentView === "settings") {

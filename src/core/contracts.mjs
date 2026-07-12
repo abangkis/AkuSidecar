@@ -145,10 +145,13 @@ export function validateUnifiedSessionRequest(input, limits) {
   const sources = input.sources ?? UNIFIED_SESSION_SOURCES;
   if (
     !Array.isArray(sources) ||
-    sources.length !== UNIFIED_SESSION_SOURCES.length ||
-    sources.some((source, index) => source !== UNIFIED_SESSION_SOURCES[index])
+    sources.length < 1 ||
+    sources.length > UNIFIED_SESSION_SOURCES.length ||
+    sources.some((source) => !UNIFIED_SESSION_SOURCES.includes(source)) ||
+    new Set(sources).size !== sources.length ||
+    sources.some((source, index) => source !== UNIFIED_SESSION_SOURCES.filter((candidate) => sources.includes(candidate))[index])
   ) {
-    throw new ContractError("unified session sources must be x then linkedin");
+    throw new ContractError("unified session sources must be an ordered non-empty subset of x then linkedin");
   }
   const maxItemsPerSource = input.maxItemsPerSource ?? limits.maxItems;
   if (
@@ -160,17 +163,18 @@ export function validateUnifiedSessionRequest(input, limits) {
       `maxItemsPerSource must be between 1 and ${limits.maxItems}`,
     );
   }
+  const sourceScope = sources.map((source) => source === "x" ? "X" : "LinkedIn").join(" and ");
   const defaultIntent =
     mode === "manual_live"
-      ? "Show the material delta across X and LinkedIn right now."
-      : "Show what materially changed across X and LinkedIn since the previous checkpoints.";
+      ? `Show the material delta across ${sourceScope} right now.`
+      : `Show what materially changed across ${sourceScope} since the previous checkpoints.`;
   return {
     id: randomUUID(),
     mode,
     intent: cleanString(input.intent, 500) || defaultIntent,
-    sources: [...UNIFIED_SESSION_SOURCES],
+    sources: [...sources],
     maxItemsPerSource,
-    maxItemsTotal: Math.min(10, maxItemsPerSource * UNIFIED_SESSION_SOURCES.length),
+    maxItemsTotal: Math.min(10, maxItemsPerSource * sources.length),
   };
 }
 

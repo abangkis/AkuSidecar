@@ -22,7 +22,6 @@
           </div>
           <nav class="view-switch" aria-label="AkuBrowser view">
             <button id="session-view-button" class="view-button selected" type="button">Timeline</button>
-            <button id="overview-view-button" class="view-button" type="button">Overview</button>
             <button id="review-view-button" class="view-button" type="button">Review Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
@@ -46,13 +45,6 @@
           <fieldset class="settings-group">
             <legend>Live settings</legend>
             <div class="settings-card">
-            <label class="settings-row" for="home-presentation">
-              <span class="settings-copy"><strong>Default home view</strong><small>Choose the landing surface. Timeline remains finite; Overview shows source operations.</small></span>
-              <select id="home-presentation" name="homePresentation">
-                <option value="timeline">Timeline — default</option>
-                <option value="overview">Overview</option>
-              </select>
-            </label>
             <label class="settings-row" for="timeline-capacity">
               <span class="settings-copy"><strong>Timeline capacity</strong><small>Maximum retained updates. New results displace the oldest items.</small></span>
               <input id="timeline-capacity" name="timelineCapacity" type="number" min="1" max="50" step="1" />
@@ -88,6 +80,36 @@
               </select>
             </label>
             </div>
+          </fieldset>
+          <fieldset class="settings-group">
+            <legend>Sources</legend>
+            <p class="settings-group-note">Choose which installed source adapters participate in the next update. At least one source must remain active.</p>
+            <div id="overview-summary" class="overview-summary" aria-live="polite"></div>
+            <div id="overview-sources" class="overview-sources source-settings"></div>
+            <p class="settings-group-note">Adding a new website requires an installed AkuBridge adapter. This screen activates or removes available adapters from the update set.</p>
+          </fieldset>
+          <fieldset class="settings-group">
+            <legend>Engine constraints</legend>
+            <p class="settings-group-note">Editable budgets apply to the next update. Fixed pilot boundaries remain visible for transparency.</p>
+            <div class="settings-card">
+              <label class="settings-row" for="max-items-per-source">
+                <span class="settings-copy"><strong>Items per source</strong><small>Maximum promoted candidates from one source. Unified output remains capped at 10.</small></span>
+                <input id="max-items-per-source" name="maxItemsPerSource" type="number" min="1" max="10" step="1" />
+              </label>
+              <label class="settings-row" for="max-scrolls">
+                <span class="settings-copy"><strong>Native scrolls per source</strong><small>Maximum bounded feed movements during the initial capture.</small></span>
+                <input id="max-scrolls" name="maxScrolls" type="number" min="0" max="5" step="1" />
+              </label>
+              <label class="settings-row" for="max-acquisition-rounds">
+                <span class="settings-copy"><strong>Acquisition rounds</strong><small>Initial capture plus at most one anchored follow-up.</small></span>
+                <input id="max-acquisition-rounds" name="maxAcquisitionRounds" type="number" min="1" max="2" step="1" />
+              </label>
+              <label class="settings-row" for="max-knowledge-context-events">
+                <span class="settings-copy"><strong>Knowledge context events</strong><small>Maximum prior knowledge events supplied to candidate evaluation.</small></span>
+                <input id="max-knowledge-context-events" name="maxKnowledgeContextEvents" type="number" min="1" max="100" step="1" />
+              </label>
+            </div>
+            <div id="fixed-engine-constraints" class="engine-constraint-grid" aria-label="Fixed pilot constraints"></div>
           </fieldset>
           <fieldset class="settings-group">
             <legend>Startup reasoning settings</legend>
@@ -229,38 +251,6 @@
         </div>
       </section>
 
-      <section id="overview-panel" class="overview-panel hidden" aria-labelledby="overview-heading">
-        <div class="section-heading overview-heading">
-          <div>
-            <p class="step-label">SOURCE CONTROL PLANE</p>
-            <h2 id="overview-heading">Overview</h2>
-            <p class="review-guidance">Registered sources, acquisition readiness, and the latest bounded activity.</p>
-          </div>
-          <button id="overview-run-button" class="primary-button" type="button">Check for updates</button>
-        </div>
-        <div id="overview-summary" class="overview-summary" aria-live="polite"></div>
-        <section aria-labelledby="active-sources-heading">
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="step-label">ACTIVE SOURCES</p>
-              <h3 id="active-sources-heading">Source registry</h3>
-            </div>
-            <span class="status-pill status-neutral">User-triggered</span>
-          </div>
-          <div id="overview-sources" class="overview-sources"></div>
-        </section>
-        <section class="overview-policy" aria-labelledby="collection-policy-heading">
-          <p class="step-label">COLLECTION POLICY</p>
-          <h3 id="collection-policy-heading">Bounded by source behavior</h3>
-          <div class="overview-policy-grid">
-            <article><strong>Stream</strong><span>Bounded capture, fresh-content detection, and knowledge checkpoints.</span></article>
-            <article><strong>Periodic</strong><span>Future change detection before reasoning is invoked.</span></article>
-            <article><strong>Static</strong><span>Future manual or infrequent content-hash revalidation.</span></article>
-            <article><strong>Push</strong><span>Future event-driven ingestion without browser polling.</span></article>
-          </div>
-        </section>
-      </section>
-
       <section id="timeline-panel" class="timeline-panel" aria-labelledby="timeline-heading">
         <div class="timeline-heading-row">
           <div>
@@ -274,23 +264,16 @@
           </div>
         </div>
 
-      <section id="processing-panel" class="processing-panel hidden" aria-live="polite">
-        <div class="section-heading">
+      <section id="processing-panel" class="processing-panel update-progress hidden" aria-live="polite">
+        <div class="update-progress-heading">
           <div>
             <p class="step-label">02 · BOUNDED PROCESS</p>
-            <h2 id="processing-title">Preparing snapshot</h2>
+            <h3 id="processing-title">Preparing source check</h3>
+            <p id="processing-detail">1/12 steps</p>
           </div>
           <button id="cancel-button" class="text-button" type="button">Cancel</button>
         </div>
-        <div class="progress-track"><span id="progress-bar"></span></div>
-        <p id="processing-detail">Creating a local run.</p>
-        <div id="source-progress" class="source-progress"></div>
-        <dl class="run-contract">
-          <div><dt>Mode</dt><dd id="contract-mode">—</dd></div>
-          <div><dt>Source</dt><dd id="contract-source">—</dd></div>
-          <div><dt>Attention limit</dt><dd id="contract-attention">Up to 5 per source</dd></div>
-          <div><dt>Browser movement</dt><dd id="contract-scrolls">Reveal pending content, then up to 2 native scrolls</dd></div>
-        </dl>
+        <div class="progress-track" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-bar"></span></div>
       </section>
 
       <section id="result-panel" class="result-panel hidden" aria-live="polite">

@@ -44,6 +44,39 @@ const DEFINITIONS = {
     read: (config) => config.presentation.telemetryBehavior,
     apply: (config, value) => { config.presentation.telemetryBehavior = value; },
   },
+  activeSources: {
+    key: "engine.active_sources",
+    applyMode: "next_run",
+    parse: parseActiveSources,
+    valid: (value) => Array.isArray(value) && value.length >= 1,
+    read: (config) => config.sources?.active ?? ["x", "linkedin"],
+    apply: (config, value) => {
+      config.sources ??= {};
+      config.sources.active = [...value];
+    },
+  },
+  maxItemsPerSource: integerDefinition(
+    "engine.max_items_per_source",
+    "maxItems",
+    { minimum: 1, maximum: 10 },
+  ),
+  maxScrolls: {
+    ...integerDefinition("engine.max_scrolls", "maxScrolls", { minimum: 0, maximum: 5 }),
+    apply(config, value) {
+      config.limits.maxScrolls = value;
+      config.limits.defaultScrolls = value;
+    },
+  },
+  maxAcquisitionRounds: integerDefinition(
+    "engine.max_acquisition_rounds",
+    "maxAcquisitionRounds",
+    { minimum: 1, maximum: 2 },
+  ),
+  maxKnowledgeContextEvents: integerDefinition(
+    "engine.max_knowledge_context_events",
+    "maxKnowledgeContextEvents",
+    { minimum: 1, maximum: 100 },
+  ),
   reasoningProvider: {
     key: "startup.reasoning_provider",
     applyMode: "restart",
@@ -163,6 +196,14 @@ function normalize(definition, value) {
   return valid ? parsed : null;
 }
 
+function parseActiveSources(value) {
+  const requested = Array.isArray(value)
+    ? value
+    : String(value ?? "").split(",");
+  const selected = new Set(requested.map((source) => String(source).trim()));
+  return ["x", "linkedin"].filter((source) => selected.has(source));
+}
+
 function reasoningDefinition(key, property, values) {
   return {
     key,
@@ -181,5 +222,16 @@ function modelDefinition(key, property) {
     valid: (value) => /^[a-z0-9][a-z0-9._-]{1,99}$/i.test(value),
     read: (config) => config.reasoning[property],
     apply: (config, value) => { config.reasoning[property] = value; },
+  };
+}
+
+function integerDefinition(key, property, { minimum, maximum }) {
+  return {
+    key,
+    applyMode: "next_run",
+    parse: (value) => Number.parseInt(value, 10),
+    valid: (value) => Number.isInteger(value) && value >= minimum && value <= maximum,
+    read: (config) => config.limits[property],
+    apply: (config, value) => { config.limits[property] = value; },
   };
 }

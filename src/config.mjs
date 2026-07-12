@@ -87,6 +87,26 @@ export function loadConfig(env = process.env) {
         defaultValue: "flow",
         environmentOverride: null,
       },
+      activeSources: {
+        defaultValue: ["x", "linkedin"],
+        environmentOverride: null,
+      },
+      maxItemsPerSource: {
+        defaultValue: 5,
+        environmentOverride: null,
+      },
+      maxScrolls: {
+        defaultValue: 2,
+        environmentOverride: null,
+      },
+      maxAcquisitionRounds: {
+        defaultValue: 2,
+        environmentOverride: null,
+      },
+      maxKnowledgeContextEvents: {
+        defaultValue: 20,
+        environmentOverride: null,
+      },
       reasoningProvider: {
         defaultValue: reasoningDefaults.provider ?? "deterministic",
         environmentOverride: providerOverride,
@@ -122,6 +142,9 @@ export function loadConfig(env = process.env) {
       timelineCapacity: 12,
       streamWidth: "social",
       telemetryBehavior: "flow",
+    },
+    sources: {
+      active: ["x", "linkedin"],
     },
     reasoning: {
       provider,

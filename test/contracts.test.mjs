@@ -81,7 +81,7 @@ test("run requests are bounded", () => {
   );
 });
 
-test("unified session requests have a fixed source order and finite attention ceiling", () => {
+test("unified session requests preserve canonical order for any active source subset", () => {
   const session = validateUnifiedSessionRequest(
     { mode: "catch_up", maxItemsPerSource: 5, intent: "Material engineering changes." },
     limits,
@@ -89,9 +89,16 @@ test("unified session requests have a fixed source order and finite attention ce
   assert.deepEqual(session.sources, ["x", "linkedin"]);
   assert.equal(session.maxItemsPerSource, 5);
   assert.equal(session.maxItemsTotal, 10);
+  const xOnly = validateUnifiedSessionRequest({ sources: ["x"] }, limits);
+  assert.deepEqual(xOnly.sources, ["x"]);
+  assert.equal(xOnly.maxItemsTotal, 5);
   assert.throws(
     () => validateUnifiedSessionRequest({ sources: ["linkedin", "x"] }, limits),
-    /sources must be x then linkedin/,
+    /ordered non-empty subset/,
+  );
+  assert.throws(
+    () => validateUnifiedSessionRequest({ sources: [] }, limits),
+    /ordered non-empty subset/,
   );
   assert.throws(
     () => validateUnifiedSessionRequest({ maxItemsPerSource: 6 }, limits),

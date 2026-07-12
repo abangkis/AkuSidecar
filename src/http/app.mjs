@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { SOURCE_REGISTRY } from "../core/source-registry.mjs";
+import { buildSourceRegistry, SOURCE_CATALOG } from "../core/source-registry.mjs";
 import { URL } from "node:url";
 import { ContractError } from "../core/contracts.mjs";
 import { JobEngine } from "../core/job-engine.mjs";
@@ -218,14 +218,17 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
       },
       bridgeToken,
       presentation: config.presentation,
-      sourceRegistry: SOURCE_REGISTRY,
+      sourceRegistry: buildSourceRegistry(config.sources?.active ?? ["x", "linkedin"]),
       limits: config.limits,
       supportedModes: ["catch_up", "manual_live"],
-      supportedSources: ["x", "linkedin"],
+      supportedSources: SOURCE_CATALOG.map((source) => source.id),
       unifiedSession: {
-        sources: ["x", "linkedin"],
+        sources: [...(config.sources?.active ?? ["x", "linkedin"])],
         maxItemsPerSource: config.limits.maxItems,
-        maxItemsTotal: Math.min(10, config.limits.maxItems * 2),
+        maxItemsTotal: Math.min(
+          10,
+          config.limits.maxItems * (config.sources?.active?.length ?? 2),
+        ),
         execution: "sequential",
       },
     });
@@ -326,7 +329,12 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "POST" && url.pathname === "/api/sessions") {
     const body = await readJson(request, config.limits.maxBodyBytes);
-    sendJson(response, 201, { session: engine.startUnifiedSession(body) });
+    sendJson(response, 201, {
+      session: engine.startUnifiedSession({
+        ...body,
+        sources: body.sources ?? config.sources?.active ?? ["x", "linkedin"],
+      }),
+    });
     return;
   }
 

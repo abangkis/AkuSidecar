@@ -92,6 +92,20 @@ export class JobEngine {
     const sessions = this.store
       .listPresentableUnifiedSessions(50, 0)
       .map(projectUnifiedSessionForPresentation);
+    const latestSession = sessions[0] ?? null;
+    const olderEvidence = new Set(
+      sessions.slice(1).flatMap((session) =>
+        (session.result?.items ?? []).map(({ item }) => `${item.source}:${item.evidenceKey}`),
+      ),
+    );
+    const latestEvidence = new Set();
+    let latestAdditions = 0;
+    for (const { item } of latestSession?.result?.items ?? []) {
+      const identity = `${item.source}:${item.evidenceKey}`;
+      if (latestEvidence.has(identity)) continue;
+      latestEvidence.add(identity);
+      if (!olderEvidence.has(identity)) latestAdditions += 1;
+    }
     const entries = [];
     const seenEvidence = new Set();
     for (const session of sessions) {
@@ -123,7 +137,10 @@ export class JobEngine {
       summary: {
         retained: entries.length,
         sessionsScanned: sessions.length,
-        newestSessionAt: sessions[0]?.completedAt ?? null,
+        newestSessionAt: latestSession?.completedAt ?? null,
+        latestSessionId: latestSession?.id ?? null,
+        latestSessionStatus: latestSession?.status ?? null,
+        latestAdditions,
         sources: Object.fromEntries(["x", "linkedin"].map((source) => [
           source,
           entries.filter((entry) => entry.source === source).length,
