@@ -287,6 +287,7 @@ export class SqliteStateStore {
     this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "media_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "avatar_url", "TEXT");
+    this.#ensureColumn("candidate_evaluations", "engagement_json", "TEXT");
     this.database
       .prepare("DELETE FROM preference_feedback_events WHERE kind NOT IN ('more_like_this', 'less_like_this')")
       .run();
@@ -905,8 +906,9 @@ export class SqliteStateStore {
         INSERT INTO candidate_evaluations(
           run_id, evidence_key, source, decision, reason_code, item_id,
           author, avatar_url, text, source_url, published_at, feed_position,
-          policy_version, preference_profile_version, assessment_json, media_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          policy_version, preference_profile_version, assessment_json, media_json,
+          engagement_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, evidence_key) DO UPDATE SET
           decision = excluded.decision,
           reason_code = excluded.reason_code,
@@ -914,7 +916,8 @@ export class SqliteStateStore {
           policy_version = excluded.policy_version,
           preference_profile_version = excluded.preference_profile_version,
           assessment_json = excluded.assessment_json,
-          media_json = excluded.media_json
+          media_json = excluded.media_json,
+          engagement_json = excluded.engagement_json
       `);
       for (const candidate of candidateEvaluations) {
         insertCandidate.run(
@@ -934,6 +937,7 @@ export class SqliteStateStore {
           candidate.preferenceProfileVersion,
           candidate.assessment ? JSON.stringify(candidate.assessment) : null,
           JSON.stringify(candidate.media ?? []),
+          JSON.stringify(candidate.engagement ?? {}),
           now,
         );
       }
@@ -1377,6 +1381,7 @@ function mapCandidateEvaluation(row) {
     text: row.text,
     sourceUrl: row.source_url,
     media: parseJson(row.media_json) ?? [],
+    engagement: parseJson(row.engagement_json) ?? {},
     publishedAt: row.published_at,
     feedPosition: row.feed_position,
     policyVersion: row.policy_version,

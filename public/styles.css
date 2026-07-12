@@ -1393,6 +1393,8 @@ textarea:focus {
   background: transparent;
 }
 
+.source-x { border: 1px solid var(--line-strong); border-radius: 16px; background: #080b09; }
+
 .source-layout-card > header {
   display: flex;
   align-items: center;
@@ -1496,6 +1498,7 @@ textarea:focus {
 }
 
 .source-layout-media-item {
+  position: relative;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -1503,6 +1506,9 @@ textarea:focus {
   cursor: zoom-in;
   background: #080b09;
 }
+
+.media-play-indicator { position: absolute; inset: 50% auto auto 50%; display: grid; width: 58px; height: 58px; place-items: center; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(8, 11, 9, 0.68); color: #fff; font-size: 1.25rem; pointer-events: none; }
+.source-layout-engagement { display: flex; justify-content: space-between; gap: 1rem; margin: 0 18px; padding: 12px 0 14px; border-top: 1px solid var(--line-strong); color: var(--quiet); font-size: 0.78rem; }
 
 .source-layout-media-item img {
   display: block;

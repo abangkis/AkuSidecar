@@ -1304,12 +1304,14 @@ function buildSourceLayoutCard(run, item, candidate) {
   const header = document.createElement("header");
   const identity = document.createElement("div");
   const author = document.createElement("strong");
-  author.textContent = candidate?.author || item.author || sourceLabel(source);
+  author.textContent = sourceIdentity(candidate?.author || item.author, source).displayName;
   const context = document.createElement("span");
   context.textContent = [
     sourceLabel(source),
     item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run",
   ].join(" · ");
+  const identityMeta = sourceIdentity(candidate?.author || item.author, source);
+  if (identityMeta.secondary) context.textContent = identityMeta.secondary;
   identity.append(author, context);
   const avatar = buildSourceAvatar(candidate?.avatarUrl, source, candidate?.author || item.author);
   header.append(avatar, identity);
@@ -1332,7 +1334,36 @@ function buildSourceLayoutCard(run, item, candidate) {
     const quote = content.querySelector(".x-quote-card");
     (quote ?? article).append(media);
   }
+  const engagement = buildSourceEngagement(candidate?.engagement ?? {}, source);
+  if (engagement) article.append(engagement);
   return article;
+}
+
+function sourceIdentity(value, source) {
+  const text = String(value ?? "").trim();
+  if (!text) return { displayName: sourceLabel(source) };
+  if (source !== "x") return { displayName: text };
+  const match = text.match(/^(.+?)\s+(@[A-Za-z0-9_]+)(?:\s+[Â·•]\s+(.+))?$/);
+  return {
+    displayName: match?.[1]?.trim() || text,
+    secondary: match ? [match[2], match[3]].filter(Boolean).join(" · ") : "",
+  };
+}
+
+function buildSourceEngagement(engagement, source) {
+  const definitions = source === "x"
+    ? [["reply", "○"], ["repost", "↻"], ["like", "♡"], ["view", "▥"], ["bookmark", "◇"]]
+    : [["like", "♡"], ["comment", "○"], ["repost", "↻"]];
+  const available = definitions.filter(([key]) => engagement[key]);
+  if (available.length === 0) return null;
+  const footer = document.createElement("footer");
+  footer.className = "source-layout-engagement";
+  for (const [key, icon] of available) {
+    const metric = document.createElement("span");
+    metric.textContent = `${icon} ${engagement[key]}`;
+    footer.append(metric);
+  }
+  return footer;
 }
 
 function buildLinkedInSourceLayoutContent(candidate) {
@@ -1426,7 +1457,14 @@ function buildSourceLayoutMedia(entries, source) {
     const viewerIndex = viewerEntries.length;
     viewerEntries.push({ url: fullPresentationMediaUrl(url, source), alt: image.alt });
     figure.addEventListener("click", () => openMediaViewer(viewerEntries, viewerIndex));
-    figure.append(image);
+    if (entry.kind === "video_poster") {
+      figure.classList.add("is-video-poster");
+      const play = document.createElement("span");
+      play.className = "media-play-indicator";
+      play.setAttribute("aria-hidden", "true");
+      play.textContent = "▶";
+      figure.append(image, play);
+    } else figure.append(image);
     media.push(figure);
   }
   if (media.length === 0) return null;

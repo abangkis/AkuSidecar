@@ -829,6 +829,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       text: block.text ?? "",
       sourceUrl: block.permalink || observation.pageUrl,
       media: block.media ?? [],
+      engagement: block.engagement ?? {},
       publishedAt: block.publishedAt ?? null,
       feedPosition: Number.isInteger(block.feedPosition) ? block.feedPosition : null,
       policyVersion: "learning-loop-v0",

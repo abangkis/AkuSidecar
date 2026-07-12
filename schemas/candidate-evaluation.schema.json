@@ -10,6 +10,7 @@
     "itemId": { "type": ["string", "null"] },
     "author": { "type": "string" },
     "avatarUrl": { "type": ["string", "null"], "format": "uri" },
+    "engagement": { "type": "object", "additionalProperties": { "type": "string" } },
     "text": { "type": "string" },
     "sourceUrl": { "type": "string" },
     "publishedAt": { "type": ["string", "null"] },
