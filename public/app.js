@@ -605,10 +605,18 @@ function buildCalibrationCard(sample) {
     link.href = candidate.sourceUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.textContent = "Open native post";
+    link.textContent = isNativePostUrl(candidate.sourceUrl, sample.source)
+      ? "Open native post"
+      : "Open source feed";
     card.append(link);
   }
   return card;
+}
+
+function isNativePostUrl(value, source) {
+  if (typeof value !== "string") return false;
+  if (source === "x") return /\/status\/\d+/.test(value);
+  return /linkedin\.com\/(?:feed\/update\/urn:li:(?:activity|share|ugcPost):\d+|posts\/[^/?#]+)/i.test(value);
 }
 
 function showPreviousCalibrationSample() {
