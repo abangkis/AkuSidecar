@@ -34,11 +34,11 @@
         <div class="onboarding-card">
           <p class="step-label">PERSONALIZE YOUR TIMELINE</p>
           <h2 id="onboarding-heading">Build your starting timeline</h2>
-          <p id="onboarding-step-label" class="review-guidance">Step 1 of 4</p>
+          <p id="onboarding-step-label" class="review-guidance">Step 1 of 2</p>
           <form id="onboarding-form">
             <div class="onboarding-step" data-onboarding-step="1">
               <strong>What do you want to see?</strong>
-              <p class="onboarding-explanation">Choose broad interests for your starting mix. They create room for relevant discovery; they are not permanent filters.</p>
+              <p class="onboarding-explanation">Choose up to five broad interests. They are a lightweight starting hint, while your source feeds and More/Less feedback remain the stronger behavioral evidence.</p>
               <div id="onboarding-interests" class="interest-grid">
                 <label><input type="checkbox" value="ai" /><span>✨ AI</span></label>
                 <label><input type="checkbox" value="technology" /><span>💻 Technology</span></label>
@@ -60,28 +60,11 @@
                 <label><input type="checkbox" value="culture" /><span>🌏 Culture</span></label>
                 <label><input type="checkbox" value="education" /><span>📚 Education</span></label>
               </div>
+              <p id="onboarding-interest-count" class="onboarding-selection-count">0 of 5 selected</p>
             </div>
             <div class="onboarding-step hidden" data-onboarding-step="2">
-              <label for="onboarding-refinement"><strong>Make those interests yours</strong></label>
-              <p class="onboarding-explanation">Describe what you hope to find inside the interests you selected. This refines priority within those categories; it does not add a conflicting category or permanently hide anything.</p>
-              <textarea id="onboarding-refinement" rows="5" placeholder="For example: Practical Codex workflows, creative uses of AI, major technology releases, and funny or visually beautiful posts."></textarea>
-              <p class="onboarding-impact"><strong>Current calibration behavior:</strong> this profile is stored and inspectable, while live ordering stays neutral. More Like This and Less Like This will teach the engine how to adjust it.</p>
-            </div>
-            <div class="onboarding-step hidden" data-onboarding-step="3">
-              <strong>Which content forms do you usually value?</strong>
-              <p class="onboarding-explanation">This affects the future mix, not eligibility. Choose the forms you are most likely to spend attention on.</p>
-              <div id="onboarding-content-types" class="onboarding-options">
-                <label><input type="checkbox" value="announcement" /> Announcements</label>
-                <label><input type="checkbox" value="tutorial" /> Tutorials</label>
-                <label><input type="checkbox" value="research" /> Research</label>
-                <label><input type="checkbox" value="opportunity" /> Opportunities</label>
-                <label><input type="checkbox" value="opinion" /> Opinions</label>
-                <label><input type="checkbox" value="discovery" /> New discoveries</label>
-              </div>
-            </div>
-            <div class="onboarding-step hidden" data-onboarding-step="4">
               <strong>Review your starting timeline</strong>
-              <p class="onboarding-explanation">Choose active sources and review the profile. You can change all of this later in Settings.</p>
+              <p class="onboarding-explanation">Choose the source feeds AkuBrowser should learn from. Your first update starts automatically after this step.</p>
               <div id="onboarding-sources" class="onboarding-options">
                 <label><input type="checkbox" value="x" /> X</label>
                 <label><input type="checkbox" value="linkedin" /> LinkedIn</label>
@@ -114,7 +97,7 @@
             <legend>Personalization</legend>
             <div class="settings-card">
               <div class="settings-row">
-                <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit your explicit interests, preferred content forms, and active sources.</small></span>
+                <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit your lightweight interest hints and active sources.</small></span>
                 <button id="edit-onboarding-profile" class="secondary-button" type="button">Edit profile</button>
               </div>
             </div>

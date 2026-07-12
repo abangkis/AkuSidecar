@@ -1,14 +1,6 @@
 import { ContractError } from "./contracts.mjs";
 
 const SETTING_KEY = "user.onboarding_profile_v0";
-const CONTENT_TYPES = new Set([
-  "announcement",
-  "tutorial",
-  "opinion",
-  "research",
-  "opportunity",
-  "discovery",
-]);
 const SOURCES = new Set(["x", "linkedin"]);
 const INTERESTS = new Set([
   "ai",
@@ -47,19 +39,13 @@ export function getOnboardingProfile(store) {
 
 export function saveOnboardingProfile(store, input, now = new Date()) {
   const selectedInterests = cleanEnumList(input?.selectedInterests, INTERESTS, "selectedInterests");
-  const interestRefinement = String(input?.interestRefinement ?? "").trim().slice(0, 800);
-  const preferredContentTypes = cleanEnumList(
-    input?.preferredContentTypes,
-    CONTENT_TYPES,
-    "preferredContentTypes",
-  );
   const activeSources = cleanEnumList(input?.activeSources, SOURCES, "activeSources");
 
   if (selectedInterests.length === 0) {
     throw new ContractError("Choose at least one interest.");
   }
-  if (preferredContentTypes.length === 0) {
-    throw new ContractError("Choose at least one preferred content form.");
+  if (selectedInterests.length > 5) {
+    throw new ContractError("Choose no more than five interests.");
   }
   if (activeSources.length === 0) {
     throw new ContractError("Choose at least one active source.");
@@ -70,8 +56,6 @@ export function saveOnboardingProfile(store, input, now = new Date()) {
     status: "completed",
     origin: "explicit_onboarding",
     selectedInterests,
-    interestRefinement,
-    preferredContentTypes,
     activeSources,
     completedAt: now.toISOString(),
   };

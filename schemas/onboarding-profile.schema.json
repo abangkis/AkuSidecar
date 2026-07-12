@@ -4,14 +4,12 @@
   "title": "AkuBrowser Onboarding Profile v0",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "status", "origin", "selectedInterests", "interestRefinement", "preferredContentTypes", "activeSources", "completedAt"],
+  "required": ["version", "status", "origin", "selectedInterests", "activeSources", "completedAt"],
   "properties": {
     "version": { "const": 0 },
     "status": { "const": "completed" },
     "origin": { "const": "explicit_onboarding" },
-    "selectedInterests": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["ai", "technology", "software_development", "science", "gaming", "comedy", "entertainment", "beauty_style", "art_design", "business", "finance", "sports", "food", "travel", "music", "health_fitness", "news_current_events", "culture", "education"] } },
-    "interestRefinement": { "type": "string", "maxLength": 800 },
-    "preferredContentTypes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["announcement", "tutorial", "opinion", "research", "opportunity", "discovery"] } },
+    "selectedInterests": { "type": "array", "minItems": 1, "maxItems": 5, "uniqueItems": true, "items": { "enum": ["ai", "technology", "software_development", "science", "gaming", "comedy", "entertainment", "beauty_style", "art_design", "business", "finance", "sports", "food", "travel", "music", "health_fitness", "news_current_events", "culture", "education"] } },
     "activeSources": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["x", "linkedin"] } },
     "completedAt": { "type": "string", "format": "date-time" }
   }
