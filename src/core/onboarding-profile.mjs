@@ -10,6 +10,27 @@ const CONTENT_TYPES = new Set([
   "discovery",
 ]);
 const SOURCES = new Set(["x", "linkedin"]);
+const INTERESTS = new Set([
+  "ai",
+  "technology",
+  "software_development",
+  "science",
+  "gaming",
+  "comedy",
+  "entertainment",
+  "beauty_style",
+  "art_design",
+  "business",
+  "finance",
+  "sports",
+  "food",
+  "travel",
+  "music",
+  "health_fitness",
+  "news_current_events",
+  "culture",
+  "education",
+]);
 
 export function getOnboardingProfile(store) {
   const raw = store.getSetting(SETTING_KEY);
@@ -25,8 +46,8 @@ export function getOnboardingProfile(store) {
 }
 
 export function saveOnboardingProfile(store, input, now = new Date()) {
-  const interestStatements = cleanStrings(input?.interestStatements, 10, 280);
-  const topicSeeds = cleanStrings(input?.topicSeeds, 20, 80);
+  const selectedInterests = cleanEnumList(input?.selectedInterests, INTERESTS, "selectedInterests");
+  const interestRefinement = String(input?.interestRefinement ?? "").trim().slice(0, 800);
   const preferredContentTypes = cleanEnumList(
     input?.preferredContentTypes,
     CONTENT_TYPES,
@@ -34,8 +55,8 @@ export function saveOnboardingProfile(store, input, now = new Date()) {
   );
   const activeSources = cleanEnumList(input?.activeSources, SOURCES, "activeSources");
 
-  if (interestStatements.length === 0 && topicSeeds.length === 0) {
-    throw new ContractError("Onboarding needs at least one explicit interest or topic seed.");
+  if (selectedInterests.length === 0) {
+    throw new ContractError("Choose at least one interest.");
   }
   if (preferredContentTypes.length === 0) {
     throw new ContractError("Choose at least one preferred content form.");
@@ -48,21 +69,14 @@ export function saveOnboardingProfile(store, input, now = new Date()) {
     version: 0,
     status: "completed",
     origin: "explicit_onboarding",
-    interestStatements,
-    topicSeeds,
+    selectedInterests,
+    interestRefinement,
     preferredContentTypes,
     activeSources,
     completedAt: now.toISOString(),
   };
   store.setSetting(SETTING_KEY, JSON.stringify(profile));
   return { status: "completed", profile };
-}
-
-function cleanStrings(value, maximum, maximumLength) {
-  if (!Array.isArray(value)) return [];
-  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))]
-    .slice(0, maximum)
-    .map((item) => item.slice(0, maximumLength));
 }
 
 function cleanEnumList(value, allowed, field) {

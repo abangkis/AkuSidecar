@@ -37,7 +37,7 @@ const elements = {
   onboardingForm: document.querySelector("#onboarding-form"),
   onboardingStepLabel: document.querySelector("#onboarding-step-label"),
   onboardingInterests: document.querySelector("#onboarding-interests"),
-  onboardingTopics: document.querySelector("#onboarding-topics"),
+  onboardingRefinement: document.querySelector("#onboarding-refinement"),
   onboardingContentTypes: document.querySelector("#onboarding-content-types"),
   onboardingSources: document.querySelector("#onboarding-sources"),
   onboardingSummary: document.querySelector("#onboarding-summary"),
@@ -241,14 +241,18 @@ function showOnboarding(editing) {
 
 function populateOnboarding(profile) {
   if (!profile) {
+    for (const input of elements.onboardingInterests.querySelectorAll("input")) input.checked = false;
+    elements.onboardingRefinement.value = "";
     for (const input of elements.onboardingContentTypes.querySelectorAll("input")) {
       input.checked = ["announcement", "tutorial", "research", "discovery"].includes(input.value);
     }
     for (const input of elements.onboardingSources.querySelectorAll("input")) input.checked = true;
     return;
   }
-  elements.onboardingInterests.value = profile.interestStatements.join("\n");
-  elements.onboardingTopics.value = profile.topicSeeds.join(", ");
+  for (const input of elements.onboardingInterests.querySelectorAll("input")) {
+    input.checked = profile.selectedInterests.includes(input.value);
+  }
+  elements.onboardingRefinement.value = profile.interestRefinement;
   for (const input of elements.onboardingContentTypes.querySelectorAll("input")) {
     input.checked = profile.preferredContentTypes.includes(input.value);
   }
@@ -258,28 +262,28 @@ function populateOnboarding(profile) {
 }
 
 function setOnboardingStep(step) {
-  state.onboardingStep = Math.max(1, Math.min(3, step));
+  state.onboardingStep = Math.max(1, Math.min(4, step));
   for (const panel of document.querySelectorAll("[data-onboarding-step]")) {
     panel.classList.toggle("hidden", Number(panel.dataset.onboardingStep) !== state.onboardingStep);
   }
-  elements.onboardingStepLabel.textContent = `Step ${state.onboardingStep} of 3`;
+  elements.onboardingStepLabel.textContent = `Step ${state.onboardingStep} of 4`;
   elements.onboardingBack.classList.toggle("hidden", state.onboardingStep === 1);
-  elements.onboardingNext.classList.toggle("hidden", state.onboardingStep === 3);
-  elements.onboardingFinish.classList.toggle("hidden", state.onboardingStep !== 3);
+  elements.onboardingNext.classList.toggle("hidden", state.onboardingStep === 4);
+  elements.onboardingFinish.classList.toggle("hidden", state.onboardingStep !== 4);
   elements.onboardingError.textContent = "";
-  if (state.onboardingStep === 3) {
+  if (state.onboardingStep === 4) {
     const profile = readOnboardingForm();
-    elements.onboardingSummary.textContent = `${profile.interestStatements.length + profile.topicSeeds.length} explicit interest signal(s) · ${profile.preferredContentTypes.length} content form(s) · ${profile.activeSources.length} source(s)`;
+    elements.onboardingSummary.textContent = `${profile.selectedInterests.length} interest(s) · ${profile.interestRefinement ? "refinement added" : "broad interests only"} · ${profile.preferredContentTypes.length} content form(s) · ${profile.activeSources.length} source(s)`;
   }
 }
 
 function advanceOnboarding() {
   const profile = readOnboardingForm();
-  if (state.onboardingStep === 1 && profile.interestStatements.length + profile.topicSeeds.length === 0) {
-    elements.onboardingError.textContent = "Add at least one interest or topic seed.";
+  if (state.onboardingStep === 1 && profile.selectedInterests.length === 0) {
+    elements.onboardingError.textContent = "Choose at least one interest.";
     return;
   }
-  if (state.onboardingStep === 2 && profile.preferredContentTypes.length === 0) {
+  if (state.onboardingStep === 3 && profile.preferredContentTypes.length === 0) {
     elements.onboardingError.textContent = "Choose at least one content form.";
     return;
   }
@@ -288,8 +292,8 @@ function advanceOnboarding() {
 
 function readOnboardingForm() {
   return {
-    interestStatements: elements.onboardingInterests.value.split("\n").map((value) => value.trim()).filter(Boolean),
-    topicSeeds: elements.onboardingTopics.value.split(",").map((value) => value.trim()).filter(Boolean),
+    selectedInterests: [...elements.onboardingInterests.querySelectorAll("input:checked")].map((input) => input.value),
+    interestRefinement: elements.onboardingRefinement.value.trim(),
     preferredContentTypes: [...elements.onboardingContentTypes.querySelectorAll("input:checked")].map((input) => input.value),
     activeSources: [...elements.onboardingSources.querySelectorAll("input:checked")].map((input) => input.value),
   };
