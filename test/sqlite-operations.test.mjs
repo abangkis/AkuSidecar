@@ -9,6 +9,7 @@ import {
   createSqliteBackup,
   inspectSqliteDatabase,
   previewRetention,
+  resetSqliteForOnboarding,
 } from "../src/store/sqlite-operations.mjs";
 
 test("SQLite health and backup validate a consistent temporary database", (context) => {
@@ -59,4 +60,29 @@ test("pilot export excludes raw observations and retention stays preview-only", 
   });
   assert.equal(preview.olderRuns, 1);
   assert.equal(preview.deletionExecuted, false);
+});
+
+test("onboarding reset is confirmation-gated and backup-first", (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-onboarding-reset-"));
+  const databasePath = path.join(directory, "state.db");
+  const backupPath = path.join(directory, "backup", "before-onboarding.db");
+  const store = new SqliteStateStore(databasePath);
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  store.setSetting("fixture", "preserved-in-backup");
+  store.close();
+
+  assert.throws(
+    () => resetSqliteForOnboarding(databasePath, backupPath, "no"),
+    /exact confirmation/,
+  );
+  assert.equal(fs.existsSync(databasePath), true);
+  const result = resetSqliteForOnboarding(
+    databasePath,
+    backupPath,
+    "RESET_ONBOARDING",
+  );
+  assert.equal(result.sourceRemoved, true);
+  assert.equal(result.backup.health.status, "healthy");
+  assert.equal(fs.existsSync(backupPath), true);
+  assert.equal(fs.existsSync(databasePath), false);
 });

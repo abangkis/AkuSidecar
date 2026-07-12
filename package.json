@@ -17,6 +17,7 @@
     "db:backup": "node scripts/sqlite-ops.mjs backup",
     "db:export": "node scripts/sqlite-ops.mjs export",
     "db:retention-preview": "node scripts/sqlite-ops.mjs retention-preview",
+    "db:reset-onboarding": "node scripts/sqlite-ops.mjs reset-onboarding",
     "smoke:http": "node scripts/smoke-http.mjs",
     "smoke:codex": "node scripts/smoke-codex.mjs"
   },

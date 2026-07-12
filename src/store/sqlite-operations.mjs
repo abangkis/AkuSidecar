@@ -66,6 +66,29 @@ export function createSqliteBackup(databasePath, targetPath) {
   return { source, target, health };
 }
 
+export function resetSqliteForOnboarding(databasePath, targetPath, confirmation) {
+  if (confirmation !== "RESET_ONBOARDING") {
+    throw new Error("reset requires the exact confirmation RESET_ONBOARDING");
+  }
+  const source = path.resolve(databasePath);
+  const before = inspectSqliteDatabase(source);
+  if (before.status !== "healthy") {
+    throw new Error("source database must be healthy before onboarding reset");
+  }
+  const backup = createSqliteBackup(source, targetPath);
+  for (const candidate of [source, `${source}-wal`, `${source}-shm`, `${source}-journal`]) {
+    if (fs.existsSync(candidate)) fs.rmSync(candidate);
+  }
+  return {
+    version: 1,
+    reset: "onboarding",
+    source,
+    backup,
+    previousCounts: before.counts,
+    sourceRemoved: !fs.existsSync(source),
+  };
+}
+
 export function buildPilotDatasetExport(runs, options = {}) {
   const createdAt = options.createdAt ?? new Date().toISOString();
   return {

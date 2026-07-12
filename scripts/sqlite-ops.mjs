@@ -7,6 +7,7 @@ import {
   createSqliteBackup,
   inspectSqliteDatabase,
   previewRetention,
+  resetSqliteForOnboarding,
 } from "../src/store/sqlite-operations.mjs";
 
 const [command = "health", ...args] = process.argv.slice(2);
@@ -37,6 +38,13 @@ if (command === "health") {
   } finally {
     store.close();
   }
+} else if (command === "reset-onboarding") {
+  const target = option(args, "--backup-output") ?? args[0];
+  const confirmation = option(args, "--confirm") ?? args[1];
+  if (!target || !confirmation) {
+    throw new Error("reset-onboarding requires <backup-output> RESET_ONBOARDING");
+  }
+  print(resetSqliteForOnboarding(config.databasePath, target, confirmation));
 } else {
   throw new Error(`unknown sqlite operation: ${command}`);
 }
