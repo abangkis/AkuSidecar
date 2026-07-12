@@ -80,7 +80,7 @@ test("shadow comparison remains unavailable without a current snapshot", () => {
   assert.equal(comparison.pagination.total, 0);
 });
 
-test("shadow promotion keeps provider priority as a conservative eligibility guardrail", () => {
+test("shadow promotion uses learned probability without retired priority lanes", () => {
   const baseRuns = syntheticPreferenceReadyRuns();
   const experiment = fitOfflinePreferenceExperiment(baseRuns, {
     createdAt: "2026-07-11T00:00:00.000Z",
@@ -109,7 +109,7 @@ test("shadow promotion keeps provider priority as a conservative eligibility gua
   );
   assert.equal(
     comparison.candidates.find((entry) => entry.evidenceKey === "x:blocked-p4").movement,
-    "unchanged",
+    "would_move_up",
   );
   assert.equal(
     comparison.candidates.find((entry) => entry.evidenceKey === "x:eligible-p2").text,

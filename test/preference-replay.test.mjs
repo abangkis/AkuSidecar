@@ -26,8 +26,8 @@ test("offline replay matches preference signals to structured candidate assessme
   assert.equal(replay.dataset.lessLikeThis, 1);
   assert.deepEqual(replay.dataset.sources, ["x"]);
   assert.equal(replay.tendencies.contentTypes[0].total, 1);
-  assert.equal(replay.tendencies.scoreAverages.intentRelevance.positive, 0.8);
-  assert.equal(replay.tendencies.scoreAverages.intentRelevance.negative, 0.4);
+  assert.equal(replay.tendencies.scoreAverages.novelty.positive, 0.8);
+  assert.equal(replay.tendencies.scoreAverages.novelty.negative, 0.4);
 });
 
 test("offline replay becomes fit-ready only after every calibration gate passes", () => {
@@ -75,13 +75,11 @@ function feedback(evidenceKey, kind) {
   return { evidenceKey, kind };
 }
 
-function assessment(contentType, topicTags, intentRelevance) {
+function assessment(contentType, topicTags, preferenceScore) {
   return {
     contentType,
     topicTags,
-    recommendedPriority: "P2",
-    intentRelevance,
-    novelty: 0.6,
+    novelty: preferenceScore,
     urgency: 0.3,
     actionability: 0.5,
     rationale: "Fixture assessment.",

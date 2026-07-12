@@ -13,6 +13,7 @@ import {
 import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
 import { inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
 import { createBridgeDiagnostics } from "../operations/bridge-diagnostics.mjs";
+import { getOnboardingProfile, saveOnboardingProfile } from "../core/onboarding-profile.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -147,6 +148,20 @@ function serveFrontend(middleware, request, response, logger) {
 }
 
 async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config }) {
+  if (request.method === "GET" && url.pathname === "/api/onboarding") {
+    sendJson(response, 200, { onboarding: getOnboardingProfile(store) });
+    return;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/api/onboarding") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    const onboarding = saveOnboardingProfile(store, body);
+    updateDashboardConfiguration(config, store, {
+      activeSources: onboarding.profile.activeSources,
+    });
+    sendJson(response, 200, { onboarding });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/api/configuration/runtime") {
     sendJson(response, 200, { configuration: configurationView(config, store) });
     return;
@@ -217,6 +232,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
         planningPolicy: config.reasoning?.planningPolicy ?? null,
       },
       bridgeToken,
+      onboarding: getOnboardingProfile(store),
       presentation: config.presentation,
       sourceRegistry: buildSourceRegistry(config.sources?.active ?? ["x", "linkedin"]),
       limits: config.limits,

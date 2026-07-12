@@ -189,7 +189,6 @@ h3 {
 
 .status-pill,
 .coverage-badge,
-.priority-badge,
 .evidence-badge {
   display: inline-flex;
   align-items: center;
@@ -201,6 +200,15 @@ h3 {
   font-weight: 700;
   white-space: nowrap;
 }
+
+.onboarding-panel { max-width: 760px; margin: 2rem auto; }
+.onboarding-card { padding: 2rem; border: 1px solid var(--border); border-radius: 20px; background: var(--panel); }
+.onboarding-step { display: grid; gap: 0.85rem; margin: 1.5rem 0; }
+.onboarding-step textarea, .onboarding-step input[type="text"] { width: 100%; box-sizing: border-box; }
+.onboarding-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.onboarding-options label { padding: 0.8rem; border: 1px solid var(--border); border-radius: 10px; }
+.onboarding-summary { padding: 1rem; border-radius: 10px; background: var(--panel-strong); }
+.onboarding-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem; }
 
 .status-ok {
   border-color: rgba(183, 242, 108, 0.45);
@@ -1504,16 +1512,6 @@ textarea:focus {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-}
-
-.priority-badge[data-priority="P1"] {
-  border-color: rgba(183, 242, 108, 0.5);
-  color: var(--accent);
-}
-
-.priority-badge[data-priority="P2"] {
-  border-color: rgba(143, 201, 255, 0.45);
-  color: var(--blue);
 }
 
 .result-item h3 {

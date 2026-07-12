@@ -1,6 +1,6 @@
 const POSITIVE_KINDS = new Set(["more_like_this"]);
 const NEGATIVE_KINDS = new Set(["less_like_this"]);
-const SCORE_FIELDS = ["intentRelevance", "novelty", "urgency", "actionability"];
+const SCORE_FIELDS = ["novelty", "urgency", "actionability"];
 
 export const PREFERENCE_REPLAY_THRESHOLDS = Object.freeze({
   feedbackEvents: 30,

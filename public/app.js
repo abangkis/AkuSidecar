@@ -19,6 +19,7 @@ const state = {
   reviewPage: 0,
   reviewLoading: false,
   reviewHasNext: false,
+  onboardingStep: 1,
 };
 
 const REVIEW_PAGE_SIZE = 10;
@@ -32,6 +33,19 @@ const elements = {
   sessionViewButton: document.querySelector("#session-view-button"),
   reviewViewButton: document.querySelector("#review-view-button"),
   settingsViewButton: document.querySelector("#settings-view-button"),
+  onboardingPanel: document.querySelector("#onboarding-panel"),
+  onboardingForm: document.querySelector("#onboarding-form"),
+  onboardingStepLabel: document.querySelector("#onboarding-step-label"),
+  onboardingInterests: document.querySelector("#onboarding-interests"),
+  onboardingTopics: document.querySelector("#onboarding-topics"),
+  onboardingContentTypes: document.querySelector("#onboarding-content-types"),
+  onboardingSources: document.querySelector("#onboarding-sources"),
+  onboardingSummary: document.querySelector("#onboarding-summary"),
+  onboardingError: document.querySelector("#onboarding-error"),
+  onboardingBack: document.querySelector("#onboarding-back"),
+  onboardingNext: document.querySelector("#onboarding-next"),
+  onboardingFinish: document.querySelector("#onboarding-finish"),
+  editOnboardingProfile: document.querySelector("#edit-onboarding-profile"),
   settingsPanel: document.querySelector("#settings-panel"),
   timelineCapacity: document.querySelector("#timeline-capacity"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
@@ -155,12 +169,17 @@ elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
 elements.timelineRunnerButton.addEventListener("click", startRun);
 elements.timelineRefreshButton.addEventListener("click", refreshTimeline);
+elements.onboardingBack.addEventListener("click", () => setOnboardingStep(state.onboardingStep - 1));
+elements.onboardingNext.addEventListener("click", advanceOnboarding);
+elements.onboardingForm.addEventListener("submit", saveOnboarding);
+elements.editOnboardingProfile.addEventListener("click", () => showOnboarding(true));
 await bootstrap();
 observePilotReviewScroll();
 
 async function bootstrap() {
   try {
     state.bootstrap = await api("/api/bootstrap");
+    populateOnboarding(state.bootstrap.onboarding?.profile);
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
     state.timelineCapacity = state.bootstrap.presentation?.timelineCapacity ?? 12;
     applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
@@ -179,6 +198,10 @@ async function bootstrap() {
     }
     pingBridge();
     setInterval(pingBridge, 30_000);
+    if (state.bootstrap.onboarding?.status !== "completed") {
+      showOnboarding(false);
+      return;
+    }
     const [{ session }, { timeline }] = await Promise.all([
       api("/api/sessions/active"),
       api(`/api/timeline?limit=${encodeURIComponent(state.timelineCapacity)}&offset=0`),
@@ -204,6 +227,88 @@ async function bootstrap() {
     setUpdateButtonsDisabled(true);
     elements.providerNotice.textContent = error.message;
     elements.providerNotice.classList.remove("hidden");
+  }
+}
+
+function showOnboarding(editing) {
+  state.onboardingStep = 1;
+  setOnboardingStep(1);
+  hide(elements.timelinePanel, elements.reviewPanel, elements.settingsPanel);
+  show(elements.onboardingPanel);
+  document.querySelector(".view-switch")?.classList.add("hidden");
+  if (editing) populateOnboarding(state.bootstrap?.onboarding?.profile);
+}
+
+function populateOnboarding(profile) {
+  if (!profile) {
+    for (const input of elements.onboardingContentTypes.querySelectorAll("input")) {
+      input.checked = ["announcement", "tutorial", "research", "discovery"].includes(input.value);
+    }
+    for (const input of elements.onboardingSources.querySelectorAll("input")) input.checked = true;
+    return;
+  }
+  elements.onboardingInterests.value = profile.interestStatements.join("\n");
+  elements.onboardingTopics.value = profile.topicSeeds.join(", ");
+  for (const input of elements.onboardingContentTypes.querySelectorAll("input")) {
+    input.checked = profile.preferredContentTypes.includes(input.value);
+  }
+  for (const input of elements.onboardingSources.querySelectorAll("input")) {
+    input.checked = profile.activeSources.includes(input.value);
+  }
+}
+
+function setOnboardingStep(step) {
+  state.onboardingStep = Math.max(1, Math.min(3, step));
+  for (const panel of document.querySelectorAll("[data-onboarding-step]")) {
+    panel.classList.toggle("hidden", Number(panel.dataset.onboardingStep) !== state.onboardingStep);
+  }
+  elements.onboardingStepLabel.textContent = `Step ${state.onboardingStep} of 3`;
+  elements.onboardingBack.classList.toggle("hidden", state.onboardingStep === 1);
+  elements.onboardingNext.classList.toggle("hidden", state.onboardingStep === 3);
+  elements.onboardingFinish.classList.toggle("hidden", state.onboardingStep !== 3);
+  elements.onboardingError.textContent = "";
+  if (state.onboardingStep === 3) {
+    const profile = readOnboardingForm();
+    elements.onboardingSummary.textContent = `${profile.interestStatements.length + profile.topicSeeds.length} explicit interest signal(s) · ${profile.preferredContentTypes.length} content form(s) · ${profile.activeSources.length} source(s)`;
+  }
+}
+
+function advanceOnboarding() {
+  const profile = readOnboardingForm();
+  if (state.onboardingStep === 1 && profile.interestStatements.length + profile.topicSeeds.length === 0) {
+    elements.onboardingError.textContent = "Add at least one interest or topic seed.";
+    return;
+  }
+  if (state.onboardingStep === 2 && profile.preferredContentTypes.length === 0) {
+    elements.onboardingError.textContent = "Choose at least one content form.";
+    return;
+  }
+  setOnboardingStep(state.onboardingStep + 1);
+}
+
+function readOnboardingForm() {
+  return {
+    interestStatements: elements.onboardingInterests.value.split("\n").map((value) => value.trim()).filter(Boolean),
+    topicSeeds: elements.onboardingTopics.value.split(",").map((value) => value.trim()).filter(Boolean),
+    preferredContentTypes: [...elements.onboardingContentTypes.querySelectorAll("input:checked")].map((input) => input.value),
+    activeSources: [...elements.onboardingSources.querySelectorAll("input:checked")].map((input) => input.value),
+  };
+}
+
+async function saveOnboarding(event) {
+  event.preventDefault();
+  try {
+    const { onboarding } = await api("/api/onboarding", {
+      method: "PUT",
+      body: JSON.stringify(readOnboardingForm()),
+    });
+    state.bootstrap.onboarding = onboarding;
+    hide(elements.onboardingPanel);
+    document.querySelector(".view-switch")?.classList.remove("hidden");
+    await loadTimelineFeed();
+    showSessionView();
+  } catch (error) {
+    elements.onboardingError.textContent = error.message;
   }
 }
 
@@ -864,10 +969,6 @@ function buildResultItem(run, item, onSaved = () => {}, options = {}) {
 
   const header = document.createElement("div");
   header.className = "result-item-header";
-  const priority = document.createElement("span");
-  priority.className = "priority-badge";
-  priority.dataset.priority = item.priority;
-  priority.textContent = item.priority;
   const evidence = document.createElement("span");
   evidence.className = "evidence-badge";
   evidence.textContent = [
@@ -877,7 +978,7 @@ function buildResultItem(run, item, onSaved = () => {}, options = {}) {
   ]
     .filter(Boolean)
     .join(" · ");
-  header.append(priority, evidence);
+  header.append(evidence);
 
   const title = document.createElement("h3");
   title.textContent = item.whatChanged;
@@ -1652,7 +1753,7 @@ function renderShadowCandidates(candidates, totalPromotions) {
     const identity = document.createElement("strong");
     identity.textContent = `${sourceLabel(candidate.source)} · ${candidate.author || "Unknown author"}`;
     const score = document.createElement("span");
-    score.textContent = `${candidate.recommendedPriority} · ${formatPercent(candidate.probability)}`;
+    score.textContent = `Preference match ${formatPercent(candidate.probability)}`;
     meta.append(identity, score);
 
     const text = document.createElement("p");
@@ -2122,7 +2223,6 @@ function buildCandidateAssessment(assessment) {
   const badges = document.createElement("div");
   badges.className = "assessment-badges";
   for (const label of [
-    assessment.recommendedPriority,
     humanize(assessment.contentType),
     ...(assessment.topicTags ?? []),
   ].filter(Boolean)) {
@@ -2133,7 +2233,6 @@ function buildCandidateAssessment(assessment) {
   const scores = document.createElement("p");
   scores.className = "assessment-scores";
   scores.textContent = [
-    ["relevance", assessment.intentRelevance],
     ["novelty", assessment.novelty],
     ["urgency", assessment.urgency],
     ["actionability", assessment.actionability],

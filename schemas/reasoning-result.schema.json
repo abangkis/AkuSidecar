@@ -10,7 +10,6 @@
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "priority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
           "whatChanged": { "type": "string" },
           "whyItMatters": { "type": "string" },
           "source": { "type": "string", "enum": ["x", "linkedin"] },
@@ -43,7 +42,6 @@
         },
         "required": [
           "id",
-          "priority",
           "whatChanged",
           "whyItMatters",
           "source",
@@ -76,14 +74,12 @@
             "type": "string",
             "enum": ["release", "tutorial", "opinion", "benchmark", "announcement", "hiring", "promotion", "news", "research", "other"]
           },
-          "recommendedPriority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
-          "intentRelevance": { "type": "number", "minimum": 0, "maximum": 1 },
           "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
           "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
           "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
           "rationale": { "type": "string", "maxLength": 500 }
         },
-        "required": ["evidenceKey", "topicTags", "contentType", "recommendedPriority", "intentRelevance", "novelty", "urgency", "actionability", "rationale"],
+        "required": ["evidenceKey", "topicTags", "contentType", "novelty", "urgency", "actionability", "rationale"],
         "additionalProperties": false
       }
     },

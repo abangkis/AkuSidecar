@@ -176,7 +176,7 @@ test("zero-evidence capture becomes a source failure instead of a correctly-empt
   store.close();
 });
 
-test("unified merge interleaves sources inside each priority lane", () => {
+test("unified merge round-robins sources while preserving platform order", () => {
   const children = [
     childFixture("x", [itemFixture("x-p1-a", "P1"), itemFixture("x-p1-b", "P1"), itemFixture("x-p2", "P2")]),
     childFixture("linkedin", [itemFixture("li-p1", "P1"), itemFixture("li-p2", "P2")]),
@@ -184,7 +184,7 @@ test("unified merge interleaves sources inside each priority lane", () => {
   const merged = mergeUnifiedItems("session-1", children, 10);
   assert.deepEqual(
     merged.map((entry) => entry.item.id),
-    ["x-p1-a", "li-p1", "x-p1-b", "x-p2", "li-p2"],
+    ["x-p1-a", "li-p1", "x-p1-b", "li-p2", "x-p2"],
   );
   assert.ok(merged.every((entry) => entry.sessionId === "session-1"));
 });

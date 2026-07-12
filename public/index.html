@@ -30,6 +30,50 @@
 
       <section id="provider-notice" class="notice hidden" role="status"></section>
 
+      <section id="onboarding-panel" class="onboarding-panel hidden" aria-labelledby="onboarding-heading">
+        <div class="onboarding-card">
+          <p class="step-label">PERSONALIZE YOUR TIMELINE</p>
+          <h2 id="onboarding-heading">Tell AkuBrowser what deserves your attention</h2>
+          <p id="onboarding-step-label" class="review-guidance">Step 1 of 3</p>
+          <form id="onboarding-form">
+            <div class="onboarding-step" data-onboarding-step="1">
+              <label for="onboarding-interests"><strong>What are you interested in?</strong></label>
+              <p class="settings-group-note">Use one line per interest. This is an explicit starting signal, not a permanent filter.</p>
+              <textarea id="onboarding-interests" rows="6" placeholder="Tools and ideas that improve how I build products"></textarea>
+              <label for="onboarding-topics"><strong>Optional topic seeds</strong></label>
+              <input id="onboarding-topics" type="text" placeholder="local AI, browser agents, product design" />
+            </div>
+            <div class="onboarding-step hidden" data-onboarding-step="2">
+              <strong>Which content forms do you usually value?</strong>
+              <p class="settings-group-note">Choose one or more. More Like This and Less Like This will refine these signals later.</p>
+              <div id="onboarding-content-types" class="onboarding-options">
+                <label><input type="checkbox" value="announcement" /> Announcements</label>
+                <label><input type="checkbox" value="tutorial" /> Tutorials</label>
+                <label><input type="checkbox" value="research" /> Research</label>
+                <label><input type="checkbox" value="opportunity" /> Opportunities</label>
+                <label><input type="checkbox" value="opinion" /> Opinions</label>
+                <label><input type="checkbox" value="discovery" /> New discoveries</label>
+              </div>
+            </div>
+            <div class="onboarding-step hidden" data-onboarding-step="3">
+              <strong>Choose your active sources</strong>
+              <p class="settings-group-note">AkuBrowser preserves each platform's order during the neutral transition.</p>
+              <div id="onboarding-sources" class="onboarding-options">
+                <label><input type="checkbox" value="x" /> X</label>
+                <label><input type="checkbox" value="linkedin" /> LinkedIn</label>
+              </div>
+              <div id="onboarding-summary" class="onboarding-summary"></div>
+            </div>
+            <p id="onboarding-error" class="settings-detail" role="alert"></p>
+            <div class="onboarding-actions">
+              <button id="onboarding-back" class="secondary-button hidden" type="button">Back</button>
+              <button id="onboarding-next" class="primary-button" type="button">Next</button>
+              <button id="onboarding-finish" class="primary-button hidden" type="submit">Start my timeline</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
       <section id="settings-panel" class="settings-panel hidden" aria-labelledby="settings-heading">
         <div class="section-heading">
           <div>
@@ -42,6 +86,15 @@
           </div>
         </div>
         <form id="runtime-settings-form" class="settings-form">
+          <fieldset class="settings-group">
+            <legend>Personalization</legend>
+            <div class="settings-card">
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit your explicit interests, preferred content forms, and active sources.</small></span>
+                <button id="edit-onboarding-profile" class="secondary-button" type="button">Edit profile</button>
+              </div>
+            </div>
+          </fieldset>
           <fieldset class="settings-group">
             <legend>Live settings</legend>
             <div class="settings-card">

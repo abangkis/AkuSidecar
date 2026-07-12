@@ -295,7 +295,7 @@ test("reasoning results require source-backed finite items", () => {
     1,
   );
   assert.equal(result.items.length, 1);
-  assert.equal(result.items[0].priority, "P1");
+  assert.equal(result.items[0].evidenceKey, "x:0123456789abcdef01234567");
   assert.equal(result.items[0].sourceUrlKind, "native_post");
 
   assert.throws(

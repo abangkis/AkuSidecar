@@ -1,8 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 
-const HIGH_SIGNAL = /\b(codex|gpt[- ]?5(?:\.6)?|sol|reset|release|released|launch|launched|shipping|available now|security|outage)\b/i;
-const OPINION = /\b(opinion|thoughts?|i think|my take|prediction|hot take)\b/i;
-
 export class DeterministicReasoningProvider {
   name = "deterministic-development-fallback";
 
@@ -15,14 +12,12 @@ export class DeterministicReasoningProvider {
 
   async analyze({ run, observation }) {
     const candidates = uniqueBlocks(observation)
-      .filter((block) => block.text.length >= 40)
       .slice(0, run.maxItems);
 
     const items = candidates.map((block) => {
       const sourceUrlKind = block.permalink ? "native_post" : "source_page";
       return {
         id: stableId(block.text) || randomUUID(),
-        priority: classifyPriority(block.text),
         whatChanged: summarize(block.text),
         whyItMatters:
           "Development fallback only: this item was selected to verify the transport and result contract, not to make a trusted relevance judgment.",
@@ -49,8 +44,6 @@ export class DeterministicReasoningProvider {
         evidenceKey: block.evidenceKey,
         topicTags: [],
         contentType: "other",
-        recommendedPriority: classifyPriority(block.text),
-        intentRelevance: 0.5,
         novelty: 0.5,
         urgency: 0.2,
         actionability: 0.2,
@@ -79,12 +72,6 @@ function uniqueBlocks(observation) {
 
 function countBlocks(observation) {
   return observation.snapshots.reduce((sum, snapshot) => sum + snapshot.blocks.length, 0);
-}
-
-function classifyPriority(text) {
-  if (HIGH_SIGNAL.test(text)) return "P1";
-  if (OPINION.test(text)) return "P2";
-  return "P3";
 }
 
 function summarize(text) {

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { buildPreferenceReplay, buildPreferenceSignals } from "./preference-replay.mjs";
 
-const SCORE_FIELDS = ["intentRelevance", "novelty", "urgency", "actionability"];
+const SCORE_FIELDS = ["novelty", "urgency", "actionability"];
 const SNAPSHOT_VERSION = 2;
-const PROMOTION_THRESHOLDS = Object.freeze({ P1: 0.5, P2: 0.5, P3: 0.6 });
+const PROMOTION_THRESHOLD = 0.6;
 const DEMOTION_THRESHOLD = 0.25;
 
 export function preferenceExperimentStatus(runs, latestSnapshot = null) {
@@ -74,11 +74,10 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
         purpose: "Allow a weakened topic to return under materially stronger future evidence.",
       },
       movementThresholds: {
-        promoteAtOrAbove: PROMOTION_THRESHOLDS,
+        promoteAtOrAbove: PROMOTION_THRESHOLD,
         demoteAtOrBelow: DEMOTION_THRESHOLD,
       },
       guardrails: {
-        p4PromotionAllowed: false,
         duplicateEvidenceCollapsed: true,
       },
     },
@@ -160,10 +159,7 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
         insufficientEvidence += 1;
         continue;
       }
-      const promotionThreshold =
-        PROMOTION_THRESHOLDS[candidate.assessment.recommendedPriority] ?? null;
-      const promotionEligible =
-        promotionThreshold !== null && explanation.probability >= promotionThreshold;
+      const promotionEligible = explanation.probability >= PROMOTION_THRESHOLD;
       const demotionEligible = explanation.probability <= DEMOTION_THRESHOLD;
       const movement = candidate.decision === "selected"
         ? demotionEligible ? "would_move_down" : "unchanged"
@@ -181,7 +177,6 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
         probability: explanation.probability,
         distanceFromNeutral: Math.abs(explanation.probability - 0.5),
         contentType: candidate.assessment.contentType,
-        recommendedPriority: candidate.assessment.recommendedPriority,
         topicTags: candidate.assessment.topicTags ?? [],
         contributions: explanation.contributions.slice(0, 8),
       });

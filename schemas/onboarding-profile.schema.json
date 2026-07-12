@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akubrowser.local/contracts/onboarding-profile.schema.json",
+  "title": "AkuBrowser Onboarding Profile v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "status", "origin", "interestStatements", "topicSeeds", "preferredContentTypes", "activeSources", "completedAt"],
+  "properties": {
+    "version": { "const": 0 },
+    "status": { "const": "completed" },
+    "origin": { "const": "explicit_onboarding" },
+    "interestStatements": { "type": "array", "maxItems": 10, "items": { "type": "string", "minLength": 1, "maxLength": 280 } },
+    "topicSeeds": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 80 } },
+    "preferredContentTypes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["announcement", "tutorial", "opinion", "research", "opportunity", "discovery"] } },
+    "activeSources": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["x", "linkedin"] } },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

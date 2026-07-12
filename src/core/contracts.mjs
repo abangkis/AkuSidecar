@@ -3,7 +3,6 @@ import { evidenceKeyForBlock, normalizeEventKey } from "./knowledge-continuity.m
 
 export const RUN_MODES = new Set(["catch_up", "manual_live"]);
 export const SOURCES = new Set(["x", "linkedin"]);
-export const PRIORITIES = new Set(["P1", "P2", "P3", "P4"]);
 export const SOURCE_URL_KINDS = new Set([
   "native_post",
   "source_page",
@@ -522,10 +521,6 @@ function validateCandidateAssessment(value, index) {
     contentType: CANDIDATE_CONTENT_TYPES.has(value.contentType)
       ? value.contentType
       : "other",
-    recommendedPriority: PRIORITIES.has(value.recommendedPriority)
-      ? value.recommendedPriority
-      : "P3",
-    intentRelevance: normalizeConfidence(value.intentRelevance),
     novelty: normalizeConfidence(value.novelty),
     urgency: normalizeConfidence(value.urgency),
     actionability: normalizeConfidence(value.actionability),
@@ -535,7 +530,6 @@ function validateCandidateAssessment(value, index) {
 
 function validateResultItem(item, index) {
   assertPlainObject(item, `result item ${index}`);
-  const priority = PRIORITIES.has(item.priority) ? item.priority : "P3";
   const sourceUrl = safeHttpUrl(item.sourceUrl);
   if (!sourceUrl) {
     throw new ContractError(`result item ${index} requires a sourceUrl`);
@@ -556,7 +550,6 @@ function validateResultItem(item, index) {
   }
   return {
     id: cleanString(item.id, 100) || randomUUID(),
-    priority,
     whatChanged: cleanString(item.whatChanged, 1_000),
     whyItMatters: cleanString(item.whyItMatters, 1_000),
     source: SOURCES.has(item.source) ? item.source : "x",

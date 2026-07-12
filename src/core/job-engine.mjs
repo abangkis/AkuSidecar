@@ -647,6 +647,7 @@ export class JobEngine {
         ...confirmedExcludedKeys,
       ]);
       const filtered = filterKnownEvidence(observation, suppressedEvidenceKeys);
+      const boundedObservation = filtered.observation;
       const knowledgeContext = this.store.getKnowledgeContext(
         run.source,
         run.mode,
@@ -657,7 +658,7 @@ export class JobEngine {
           ? noNewEvidenceResult(filtered.exactDuplicatesSuppressed)
           : await this.reasoningProvider.analyze({
               run,
-              observation: filtered.observation,
+              observation: boundedObservation,
               observations: storedObservations,
               knowledgeContext,
             });
@@ -668,9 +669,10 @@ export class JobEngine {
       assertObservedSources(result, filtered.observation);
       assertCandidateAssessments(
         result,
-        filtered.observation,
+        boundedObservation,
         invocation.evaluatedEvidenceKeys,
       );
+      assertPlatformOrderItems(result, invocation.evaluatedEvidenceKeys);
       assertUniqueResultEvidence(result, suppressedEvidenceKeys);
       if (this.store.getRun(runId)?.status === "cancelled") return;
       const coverage = {
@@ -696,7 +698,7 @@ export class JobEngine {
         coverage,
         buildCandidateEvaluations(
           run,
-          filtered.observation,
+          boundedObservation,
           result,
           invocation.evaluatedEvidenceKeys,
         ),
@@ -834,8 +836,6 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
         ? {
             topicTags: assessment.topicTags,
             contentType: assessment.contentType,
-            recommendedPriority: assessment.recommendedPriority,
-            intentRelevance: assessment.intentRelevance,
             novelty: assessment.novelty,
             urgency: assessment.urgency,
             actionability: assessment.actionability,
@@ -929,25 +929,39 @@ export function buildUnifiedSessionOutcome(session, status = session.status) {
 }
 
 export function mergeUnifiedItems(sessionId, completedChildren, maxItemsTotal = 10) {
-  const priorities = ["P1", "P2", "P3", "P4"];
   const merged = [];
-  for (const priority of priorities) {
-    const queues = completedChildren.map((child) => ({
-      child,
-      items: (child.run.result?.items ?? []).filter((item) => item.priority === priority),
-      index: 0,
-    }));
-    while (queues.some((queue) => queue.index < queue.items.length)) {
-      for (const queue of queues) {
-        const item = queue.items[queue.index];
-        if (!item) continue;
-        merged.push({ sessionId, runId: queue.child.run.id, item });
-        queue.index += 1;
-        if (merged.length >= maxItemsTotal) return merged;
-      }
+  const queues = completedChildren.map((child) => ({
+    child,
+    items: child.run.result?.items ?? [],
+    index: 0,
+  }));
+  while (queues.some((queue) => queue.index < queue.items.length)) {
+    for (const queue of queues) {
+      const item = queue.items[queue.index];
+      if (!item) continue;
+      merged.push({ sessionId, runId: queue.child.run.id, item });
+      queue.index += 1;
+      if (merged.length >= maxItemsTotal) return merged;
     }
   }
   return merged;
+}
+
+function assertPlatformOrderItems(result, evaluatedEvidenceKeys) {
+  if (!Array.isArray(evaluatedEvidenceKeys)) return;
+  const actual = result.items.map((item) => item.evidenceKey);
+  let previousIndex = -1;
+  const outOfOrder = actual.some((evidenceKey) => {
+    const index = evaluatedEvidenceKeys.indexOf(evidenceKey);
+    if (index < 0 || index <= previousIndex) return true;
+    previousIndex = index;
+    return false;
+  });
+  if (outOfOrder) {
+    throw new ContractError(
+      "result items must preserve supplied platform order",
+    );
+  }
 }
 
 function canRetryPendingContentDetectOnly(command, error) {

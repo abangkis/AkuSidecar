@@ -179,7 +179,7 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   const excluded = run.candidateEvaluations.find((entry) => entry.decision === "excluded");
   assert.equal(selected.itemId, "selected-item");
   assert.equal(excluded.reasonCode, "not_promoted_by_provider");
-  assert.equal(selected.assessment.recommendedPriority, "P1");
+  assert.equal(selected.assessment.contentType, "announcement");
   assert.deepEqual(selected.media, [{
     kind: "image",
     url: "https://pbs.twimg.com/media/selected.jpg",

@@ -18,14 +18,12 @@
       "properties": {
         "topicTags": { "type": "array", "maxItems": 5, "items": { "type": "string" } },
         "contentType": { "type": "string" },
-        "recommendedPriority": { "type": "string", "enum": ["P1", "P2", "P3", "P4"] },
-        "intentRelevance": { "type": "number", "minimum": 0, "maximum": 1 },
         "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
         "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
         "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
         "rationale": { "type": "string" }
       },
-      "required": ["topicTags", "contentType", "recommendedPriority", "intentRelevance", "novelty", "urgency", "actionability", "rationale"],
+      "required": ["topicTags", "contentType", "novelty", "urgency", "actionability", "rationale"],
       "additionalProperties": false
     }
   },
