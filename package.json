@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs --vite",
+    "dev": "node --watch-path=src src/server.mjs --vite",
     "test": "node --test --test-isolation=none",
     "check": "node --check src/server.mjs && node --test --test-isolation=none",
     "check:provider": "node scripts/check-provider-conformance.mjs",
