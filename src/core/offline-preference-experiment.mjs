@@ -127,7 +127,12 @@ export function explainPreferenceCandidate(snapshot, candidate) {
 }
 
 export function buildShadowComparison(snapshot, runs, options = {}) {
-  const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 50)));
+  const requestedLimit = Math.trunc(options.limit ?? 50);
+  const requestedOffset = Math.trunc(options.offset ?? 0);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(100, requestedLimit))
+    : 50;
+  const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
   if (!snapshot?.model) {
     return {
       version: 1,
@@ -136,6 +141,7 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
       reason: "no_current_snapshot",
       summary: emptyShadowSummary(),
       candidates: [],
+      pagination: shadowPagination(0, offset, limit, 0),
     };
   }
   const candidates = [];
@@ -196,7 +202,8 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
     snapshotId: snapshot.id,
     datasetFingerprint: snapshot.datasetFingerprint,
     summary,
-    candidates: candidates.slice(0, limit),
+    candidates: candidates.slice(offset, offset + limit),
+    pagination: shadowPagination(candidates.length, offset, limit, candidates.length),
   };
 }
 
@@ -351,6 +358,17 @@ function emptyShadowSummary() {
     unchanged: 0,
     insufficientEvidence: 0,
     sources: {},
+  };
+}
+
+function shadowPagination(total, offset, limit, available) {
+  const returned = Math.max(0, Math.min(limit, available - offset));
+  return {
+    total,
+    offset,
+    limit,
+    returned,
+    hasNext: offset + returned < total,
   };
 }
 

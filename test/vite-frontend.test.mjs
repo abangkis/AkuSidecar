@@ -17,7 +17,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
     port: 0,
     publicDirectory: path.join(projectRoot, "public"),
     databasePath,
-    presentation: { defaultLayout: "source", streamWidth: "social" },
+    presentation: { defaultLayout: "source", streamWidth: "social", telemetryBehavior: "flow" },
     limits: {
       maxBodyBytes: 1_000_000,
       maxItems: 5,
@@ -57,7 +57,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   const styles = await (await fetch(`${origin}/styles.css`)).text();
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
   const shadowComparison = await (
-    await fetch(`${origin}/api/preferences/shadow-comparison`)
+    await fetch(`${origin}/api/preferences/shadow-comparison?limit=10&offset=20`)
   ).json();
   const databaseHealthResponse = await fetch(`${origin}/api/operations/database/health`);
   const databaseHealth = await databaseHealthResponse.json();
@@ -80,8 +80,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(html, /class="review-telemetry"/);
   assert.match(html, /class="review-telemetry" aria-labelledby="telemetry-heading"/);
   assert.match(styles, /grid-template-columns: minmax\(0, var\(--stream-width\)\) minmax\(340px, 380px\)/);
-  assert.match(styles, /\.review-telemetry \{[^}]*overflow-y: auto/s);
+  assert.match(styles, /data-telemetry-behavior=\\?"sticky\\?"[^}]*\.review-telemetry \{[^}]*overflow-y: auto/s);
   assert.match(html, /form="runtime-settings-form">Save settings/);
+  assert.match(html, /telemetry-behavior/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(appScript, /mountPilotRunBody/);
   assert.match(appScript, /unmountPilotRunBody/);
@@ -98,9 +99,17 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(bootstrap.provider, "vite-test-provider");
   assert.equal(bootstrap.presentation.defaultLayout, "source");
   assert.equal(bootstrap.presentation.streamWidth, "social");
+  assert.equal(bootstrap.presentation.telemetryBehavior, "flow");
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
   assert.equal(shadowComparison.comparison.available, false);
   assert.equal(shadowComparison.comparison.liveInfluence, false);
+  assert.deepEqual(shadowComparison.comparison.pagination, {
+    total: 0,
+    offset: 20,
+    limit: 10,
+    returned: 0,
+    hasNext: false,
+  });
   assert.equal(databaseHealth.database.status, "healthy");
   assert.equal(path.basename(databaseHealth.database.databasePath), "state.db");
   assert.equal(JSON.stringify(databaseHealth).includes(directory), false);

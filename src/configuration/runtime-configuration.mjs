@@ -22,6 +22,13 @@ const DEFINITIONS = {
     read: (config) => config.presentation.streamWidth,
     apply: (config, value) => { config.presentation.streamWidth = value; },
   },
+  telemetryBehavior: {
+    key: "ui.telemetry_behavior",
+    applyMode: "live",
+    values: new Set(["flow", "sticky"]),
+    read: (config) => config.presentation.telemetryBehavior,
+    apply: (config, value) => { config.presentation.telemetryBehavior = value; },
+  },
   reasoningProvider: {
     key: "startup.reasoning_provider",
     applyMode: "restart",

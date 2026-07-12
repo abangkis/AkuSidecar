@@ -26,6 +26,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.missingSourceTabPolicy.source, "default");
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "source");
   assert.equal(response.configuration.streamWidth.effectiveValue, "social");
+  assert.equal(response.configuration.telemetryBehavior.effectiveValue, "flow");
 
   response = await jsonFetch(`${origin}/api/configuration/runtime`, {
     method: "PUT",
@@ -36,6 +37,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
       planningPolicy: "always",
       defaultPresentation: "brief",
       streamWidth: "comfortable",
+      telemetryBehavior: "sticky",
     }),
   });
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "fail_fast");
@@ -47,6 +49,8 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.defaultPresentation.restartRequired, false);
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
   assert.equal(response.configuration.streamWidth.restartRequired, false);
+  assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
+  assert.equal(response.configuration.telemetryBehavior.restartRequired, false);
 
   await app.stop();
   store.close();
@@ -61,6 +65,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.planningPolicy.effectiveValue, "always");
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "brief");
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
+  assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.equal(response.configuration.evaluationModel.restartRequired, false);
 });
 

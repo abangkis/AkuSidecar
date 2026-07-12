@@ -257,6 +257,12 @@ h3 {
 }
 
 .review-telemetry {
+  position: static;
+  max-height: none;
+  overflow: visible;
+}
+
+body[data-telemetry-behavior="sticky"] .review-telemetry {
   position: sticky;
   top: 24px;
   max-height: calc(100vh - 48px);

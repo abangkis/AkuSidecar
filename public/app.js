@@ -12,6 +12,7 @@ const state = {
   currentView: "session",
   defaultPresentation: "source",
   streamWidth: "social",
+  telemetryBehavior: "flow",
   runtimeConfiguration: null,
   reviewPage: 0,
   reviewLoading: false,
@@ -34,6 +35,7 @@ const elements = {
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
   defaultPresentation: document.querySelector("#default-presentation"),
   streamWidth: document.querySelector("#stream-width"),
+  telemetryBehavior: document.querySelector("#telemetry-behavior"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
   planningPolicy: document.querySelector("#planning-policy"),
@@ -164,6 +166,7 @@ async function bootstrap() {
     state.bootstrap = await api("/api/bootstrap");
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
     applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
+    applyTelemetryBehavior(state.bootstrap.presentation?.telemetryBehavior ?? "flow");
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
     const reasoning = state.bootstrap.reasoning ?? {};
     setStatus(
@@ -1167,6 +1170,11 @@ function renderRuntimeSettings(configuration) {
   applyStreamWidth(streamWidth.effectiveValue);
   elements.streamWidth.value = streamWidth.persistedValue ?? streamWidth.effectiveValue;
   elements.streamWidth.disabled = streamWidth.source === "environment";
+  const telemetryBehavior = configuration.telemetryBehavior;
+  applyTelemetryBehavior(telemetryBehavior.effectiveValue);
+  elements.telemetryBehavior.value =
+    telemetryBehavior.persistedValue ?? telemetryBehavior.effectiveValue;
+  elements.telemetryBehavior.disabled = telemetryBehavior.source === "environment";
   const setting = configuration.missingSourceTabPolicy;
   elements.missingSourceTabPolicy.value = setting.persistedValue ?? setting.effectiveValue;
   const overridden = setting.source === "environment";
@@ -1210,6 +1218,7 @@ async function saveRuntimeSettings(event) {
     const values = {
       defaultPresentation: elements.defaultPresentation.value,
       streamWidth: elements.streamWidth.value,
+      telemetryBehavior: elements.telemetryBehavior.value,
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
       planningPolicy: elements.planningPolicy.value,
@@ -1232,6 +1241,8 @@ async function saveRuntimeSettings(event) {
     state.bootstrap.presentation.defaultLayout =
       configuration.defaultPresentation.effectiveValue;
     state.bootstrap.presentation.streamWidth = configuration.streamWidth.effectiveValue;
+    state.bootstrap.presentation.telemetryBehavior =
+      configuration.telemetryBehavior.effectiveValue;
     renderRuntimeSettings(configuration);
     updateScopeControls();
     elements.runtimeSettingsStatus.textContent =
@@ -1246,6 +1257,12 @@ function applyStreamWidth(value) {
   const allowed = new Set(["compact", "social", "comfortable", "wide"]);
   state.streamWidth = allowed.has(value) ? value : "social";
   document.body.dataset.streamWidth = state.streamWidth;
+}
+
+function applyTelemetryBehavior(value) {
+  const allowed = new Set(["flow", "sticky"]);
+  state.telemetryBehavior = allowed.has(value) ? value : "flow";
+  document.body.dataset.telemetryBehavior = state.telemetryBehavior;
 }
 
 async function loadPilotReview({ append = false } = {}) {
@@ -1267,7 +1284,7 @@ async function loadPilotReview({ append = false } = {}) {
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
       api("/api/preferences/experiment"),
-      api("/api/preferences/shadow-comparison"),
+      api("/api/preferences/shadow-comparison?limit=1&offset=0"),
     ]);
     if (
       review.runs.length === 0 &&

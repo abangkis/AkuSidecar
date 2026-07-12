@@ -278,7 +278,15 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   }
 
   if (request.method === "GET" && url.pathname === "/api/preferences/shadow-comparison") {
-    sendJson(response, 200, { comparison: engine.getPreferenceShadowComparison() });
+    const limit = boundedIntegerQuery(url, "limit", { fallback: 50, minimum: 1, maximum: 100 });
+    const offset = boundedIntegerQuery(url, "offset", {
+      fallback: 0,
+      minimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+    sendJson(response, 200, {
+      comparison: engine.getPreferenceShadowComparison({ limit, offset }),
+    });
     return;
   }
 
@@ -435,6 +443,12 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   }
 
   sendJson(response, 404, { error: "NotFound", message: "Route not found" });
+}
+
+function boundedIntegerQuery(url, name, { fallback, minimum, maximum }) {
+  const parsed = Number.parseInt(url.searchParams.get(name) ?? "", 10);
+  const value = Number.isFinite(parsed) ? parsed : fallback;
+  return Math.max(minimum, Math.min(maximum, value));
 }
 
 

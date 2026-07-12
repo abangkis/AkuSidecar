@@ -75,6 +75,10 @@ export function loadConfig(env = process.env) {
         defaultValue: "social",
         environmentOverride: null,
       },
+      telemetryBehavior: {
+        defaultValue: "flow",
+        environmentOverride: null,
+      },
       reasoningProvider: {
         defaultValue: reasoningDefaults.provider ?? "deterministic",
         environmentOverride: providerOverride,
@@ -107,6 +111,7 @@ export function loadConfig(env = process.env) {
     presentation: {
       defaultLayout: "source",
       streamWidth: "social",
+      telemetryBehavior: "flow",
     },
     reasoning: {
       provider,

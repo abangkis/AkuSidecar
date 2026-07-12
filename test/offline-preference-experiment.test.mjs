@@ -58,6 +58,13 @@ test("fit creates a deterministic shadow-only snapshot after readiness", () => {
   assert.equal(comparison.available, true);
   assert.equal(comparison.liveInfluence, false);
   assert.equal(comparison.summary.scoredCandidates, 30);
+  assert.deepEqual(comparison.pagination, {
+    total: 30,
+    offset: 0,
+    limit: 50,
+    returned: 30,
+    hasNext: false,
+  });
   assert.equal(
     comparison.summary.wouldMoveUp + comparison.summary.wouldMoveDown + comparison.summary.unchanged,
     30,
@@ -70,6 +77,42 @@ test("shadow comparison remains unavailable without a current snapshot", () => {
   assert.equal(comparison.available, false);
   assert.equal(comparison.reason, "no_current_snapshot");
   assert.equal(comparison.liveInfluence, false);
+  assert.equal(comparison.pagination.total, 0);
+});
+
+test("shadow comparison exposes every scored candidate for complete evaluation", () => {
+  const baseRuns = syntheticPreferenceReadyRuns();
+  const experiment = fitOfflinePreferenceExperiment(baseRuns, {
+    createdAt: "2026-07-11T00:00:00.000Z",
+  });
+  const expandedRuns = Array.from({ length: 4 }, (_, batch) =>
+    baseRuns.map((run) => ({
+      ...run,
+      id: `${run.id}-batch-${batch}`,
+    })),
+  ).flat();
+
+  const firstPage = buildShadowComparison(experiment.snapshot, expandedRuns, {
+    limit: 100,
+    offset: 0,
+  });
+  const secondPage = buildShadowComparison(experiment.snapshot, expandedRuns, {
+    limit: 100,
+    offset: 100,
+  });
+
+  assert.equal(firstPage.summary.scoredCandidates, 120);
+  assert.equal(firstPage.candidates.length, 100);
+  assert.equal(firstPage.pagination.hasNext, true);
+  assert.equal(secondPage.summary.scoredCandidates, 120);
+  assert.equal(secondPage.candidates.length, 20);
+  assert.equal(secondPage.pagination.hasNext, false);
+  assert.equal(
+    new Set([...firstPage.candidates, ...secondPage.candidates].map((entry) =>
+      `${entry.runId}:${entry.evidenceKey}`,
+    )).size,
+    120,
+  );
 });
 
 test("preference snapshots are persisted idempotently by dataset fingerprint", (context) => {

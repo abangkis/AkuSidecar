@@ -305,13 +305,13 @@ export class JobEngine {
     return preferenceExperimentStatus(runs, snapshot);
   }
 
-  getPreferenceShadowComparison(limit = 500) {
-    const runs = this.store.listRunsWithFeedback(limit);
+  getPreferenceShadowComparison({ limit = 50, offset = 0, runLimit = 500 } = {}) {
+    const runs = this.store.listRunsWithFeedback(runLimit);
     const status = preferenceExperimentStatus(
       runs,
       this.store.getLatestPreferenceModelSnapshot(),
     );
-    return buildShadowComparison(status.currentSnapshot, runs);
+    return buildShadowComparison(status.currentSnapshot, runs, { limit, offset });
   }
 
   async waitForRun(runId) {
