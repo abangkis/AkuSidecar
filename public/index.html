@@ -36,19 +36,24 @@
             <p class="step-label">RUNTIME CONFIGURATION</p>
             <h2 id="settings-heading">Browser behavior</h2>
           </div>
+          <div class="settings-heading-actions">
+            <span id="runtime-settings-status" class="settings-detail" role="status"></span>
+            <button id="save-runtime-settings" class="primary-button" type="submit" form="runtime-settings-form">Save settings</button>
+          </div>
         </div>
         <form id="runtime-settings-form" class="settings-form">
-          <fieldset>
+          <fieldset class="settings-group">
             <legend>Live settings</legend>
-            <label for="default-presentation">
-              Default item layout
+            <div class="settings-card">
+            <label class="settings-row" for="default-presentation">
+              <span class="settings-copy"><strong>Default item layout</strong><small>Choose the initial presentation for every captured item.</small></span>
               <select id="default-presentation" name="defaultPresentation">
                 <option value="source">Source layout</option>
                 <option value="brief">Brief</option>
               </select>
             </label>
-            <label for="stream-width">
-              Stream width
+            <label class="settings-row" for="stream-width">
+              <span class="settings-copy"><strong>Stream width</strong><small>Controls the reading column in Session and Review Inbox.</small></span>
               <select id="stream-width" name="streamWidth">
                 <option value="social">Social feed (640 px) — default</option>
                 <option value="compact">Compact (560 px)</option>
@@ -56,58 +61,53 @@
                 <option value="wide">Wide (920 px)</option>
               </select>
             </label>
-            <p class="settings-detail">Controls Session and Review Inbox width. Settings stays wide for easier configuration.</p>
-            <label for="missing-source-tab-policy">
-              Missing source tab
+            <label class="settings-row" for="missing-source-tab-policy">
+              <span class="settings-copy"><strong>Missing source tab</strong><small id="missing-source-tab-detail"></small></span>
               <select id="missing-source-tab-policy" name="missingSourceTabPolicy">
                 <option value="open_missing_tab">Open canonical tab automatically</option>
                 <option value="fail_fast">Fail fast</option>
               </select>
             </label>
-            <p id="missing-source-tab-detail" class="settings-detail"></p>
+            </div>
           </fieldset>
-          <fieldset>
+          <fieldset class="settings-group">
             <legend>Startup reasoning settings</legend>
-            <p class="settings-detail">Saved values become effective after you restart the visible AkuSidecar process.</p>
-            <div class="settings-grid">
-              <label>Provider
+            <p class="settings-group-note">Saved values become effective after you restart the visible AkuSidecar process.</p>
+            <div class="settings-card">
+              <label class="settings-row"><span class="settings-copy"><strong>Provider</strong><small>Select the reasoning runtime used for new sessions.</small></span>
                 <select id="reasoning-provider" name="reasoningProvider">
                   <option value="codex-sdk">Codex SDK</option>
                   <option value="deterministic">Deterministic fallback</option>
                 </select>
               </label>
-              <label>Planning policy
+              <label class="settings-row"><span class="settings-copy"><strong>Planning policy</strong><small>Choose when acquisition planning spends model tokens.</small></span>
                 <select id="planning-policy" name="planningPolicy">
                   <option value="deterministic_sparse_gap">Deterministic sparse gap</option>
                   <option value="always">Always ask provider</option>
                 </select>
               </label>
-              <label>Candidate evaluation model
+              <label class="settings-row"><span class="settings-copy"><strong>Candidate evaluation model</strong><small>Model used to assess and prioritize captured candidates.</small></span>
                 <input id="evaluation-model" name="evaluationModel" maxlength="100" />
               </label>
-              <label>Candidate evaluation effort
+              <label class="settings-row"><span class="settings-copy"><strong>Candidate evaluation effort</strong><small>Reasoning depth for candidate evaluation.</small></span>
                 <select id="evaluation-effort" name="evaluationEffort">
                   <option>minimal</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option>
                 </select>
               </label>
-              <label>Acquisition planning model
+              <label class="settings-row"><span class="settings-copy"><strong>Acquisition planning model</strong><small>Model used when another bounded acquisition round may help.</small></span>
                 <input id="planning-model" name="planningModel" maxlength="100" />
               </label>
-              <label>Acquisition planning effort
+              <label class="settings-row"><span class="settings-copy"><strong>Acquisition planning effort</strong><small>Reasoning depth for the finite acquisition decision.</small></span>
                 <select id="planning-effort" name="planningEffort">
                   <option>minimal</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option>
                 </select>
               </label>
-              <label>Reasoning timeout (ms)
+              <label class="settings-row"><span class="settings-copy"><strong>Reasoning timeout</strong><small>Maximum provider time for one reasoning phase, in milliseconds.</small></span>
                 <input id="reasoning-timeout" name="timeoutMs" type="number" min="1000" max="600000" step="1000" />
               </label>
             </div>
-            <p id="startup-settings-detail" class="settings-detail"></p>
+            <p id="startup-settings-detail" class="settings-group-note"></p>
           </fieldset>
-          <div class="settings-actions">
-            <button id="save-runtime-settings" class="primary-button" type="submit">Save runtime settings</button>
-            <span id="runtime-settings-status" class="settings-detail" role="status"></span>
-          </div>
         </form>
       </section>
 
@@ -154,7 +154,7 @@
             </div>
           </section>
 
-          <aside class="review-telemetry" aria-labelledby="telemetry-heading" tabindex="0">
+          <aside class="review-telemetry" aria-labelledby="telemetry-heading">
             <div>
               <p class="step-label">PILOT TELEMETRY</p>
               <h2 id="telemetry-heading">Learning loop</h2>

@@ -78,8 +78,10 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(html, /class="review-layout"/);
   assert.match(html, /class="review-stream"/);
   assert.match(html, /class="review-telemetry"/);
-  assert.match(html, /class="review-telemetry" aria-labelledby="telemetry-heading" tabindex="0"/);
-  assert.match(styles, /grid-template-columns: minmax\(0, var\(--stream-width\)\) minmax\(0, 296px\)/);
+  assert.match(html, /class="review-telemetry" aria-labelledby="telemetry-heading"/);
+  assert.match(styles, /grid-template-columns: minmax\(0, var\(--stream-width\)\) minmax\(340px, 380px\)/);
+  assert.match(styles, /\.review-telemetry \{[^}]*overflow-y: auto/s);
+  assert.match(html, /form="runtime-settings-form">Save settings/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(appScript, /mountPilotRunBody/);
   assert.match(appScript, /unmountPilotRunBody/);

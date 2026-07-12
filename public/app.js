@@ -1,3 +1,5 @@
+import { parseXSourceText } from "./x-source-format.js";
+
 const state = {
   bootstrap: null,
   bridgeReady: false,
@@ -998,7 +1000,9 @@ function buildSourceLayoutCard(run, item, candidate) {
   header.append(sourceBadge, identity);
 
   const content = candidate?.text
-    ? buildCandidateContent({ ...candidate, source }, { includeIdentity: false })
+    ? source === "x"
+      ? buildXSourceLayoutContent(candidate)
+      : buildCandidateContent({ ...candidate, source }, { includeIdentity: false })
     : document.createElement("div");
   content.classList.add("source-layout-content");
   if (!candidate?.text) {
@@ -1009,8 +1013,37 @@ function buildSourceLayoutCard(run, item, candidate) {
 
   const media = buildSourceLayoutMedia(candidate?.media ?? [], source);
   article.append(header, content);
-  if (media) article.append(media);
+  if (media) {
+    const quote = content.querySelector(".x-quote-card");
+    (quote ?? article).append(media);
+  }
   return article;
+}
+
+function buildXSourceLayoutContent(candidate) {
+  const parsed = parseXSourceText(candidate);
+  const content = document.createElement("div");
+  content.className = "candidate-content source-layout-content x-source-content";
+  if (parsed.socialContext) {
+    const context = document.createElement("span");
+    context.className = "candidate-context x-social-context";
+    context.textContent = parsed.socialContext;
+    content.append(context);
+  }
+  const body = document.createElement("p");
+  body.textContent = parsed.body;
+  content.append(body);
+  if (parsed.quote) {
+    const quote = document.createElement("section");
+    quote.className = "x-quote-card";
+    const identity = document.createElement("strong");
+    identity.textContent = parsed.quote.identity;
+    const quoteBody = document.createElement("p");
+    quoteBody.textContent = parsed.quote.body;
+    quote.append(identity, quoteBody);
+    content.append(quote);
+  }
+  return content;
 }
 
 function buildSourceLayoutMedia(entries, source) {
