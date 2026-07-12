@@ -103,6 +103,7 @@ export function buildPreferenceSignals(runs) {
         decision: matched?.candidate.decision ?? null,
         assessment: matched?.candidate.assessment ?? null,
         matchedCandidate: Boolean(matched),
+        createdAt: feedback.createdAt ?? run.updatedAt ?? run.createdAt ?? null,
       });
   }
 

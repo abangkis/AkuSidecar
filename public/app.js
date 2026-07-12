@@ -1390,8 +1390,11 @@ function renderShadowComparison(comparison) {
     `${summary.wouldMoveDown} would move down`,
     `${summary.unchanged} unchanged`,
     `${summary.insufficientEvidence} insufficient`,
+    summary.duplicateCandidatesCollapsed
+      ? `${summary.duplicateCandidatesCollapsed} repeat appearances collapsed`
+      : null,
     "live influence off",
-  ].join(" · ");
+  ].filter(Boolean).join(" · ");
 }
 
 function resetPilotReviewPage() {

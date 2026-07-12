@@ -2,13 +2,16 @@ import { createHash } from "node:crypto";
 import { buildPreferenceReplay, buildPreferenceSignals } from "./preference-replay.mjs";
 
 const SCORE_FIELDS = ["intentRelevance", "novelty", "urgency", "actionability"];
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
+const PROMOTION_THRESHOLDS = Object.freeze({ P1: 0.5, P2: 0.5, P3: 0.6 });
+const DEMOTION_THRESHOLD = 0.25;
 
 export function preferenceExperimentStatus(runs, latestSnapshot = null) {
   const replay = buildPreferenceReplay(runs);
   const datasetFingerprint = preferenceDatasetFingerprint(runs);
   const ready = replay.readiness.status === "ready_for_offline_fit";
-  const currentSnapshot = latestSnapshot?.datasetFingerprint === datasetFingerprint
+  const currentSnapshot = latestSnapshot?.version === SNAPSHOT_VERSION &&
+    latestSnapshot.datasetFingerprint === datasetFingerprint
     ? latestSnapshot
     : null;
   return {
@@ -35,16 +38,16 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
   const status = preferenceExperimentStatus(runs);
   if (status.status === "blocked") return status;
   const { candidates, signals } = buildPreferenceSignals(runs);
-  const assessedSignals = signals.filter((signal) => signal.assessment);
+  const assessedSignals = deduplicateSignals(signals.filter((signal) => signal.assessment));
   const { training, holdout } = splitByRun(assessedSignals);
   const model = trainModel(training);
   const evaluation = evaluateModel(model, holdout);
-  const shadow = evaluateShadow(model, candidates);
+  const shadow = evaluateShadow(model, deduplicateCandidateEntries(candidates));
   const createdAt = options.createdAt ?? new Date().toISOString();
   const snapshot = {
     id: `preference-v${SNAPSHOT_VERSION}-${status.datasetFingerprint.slice(0, 16)}`,
     version: SNAPSHOT_VERSION,
-    policyVersion: "offline-preference-v1",
+    policyVersion: "offline-preference-v1.1",
     datasetFingerprint: status.datasetFingerprint,
     createdAt,
     liveInfluence: false,
@@ -70,6 +73,14 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
         active: false,
         purpose: "Allow a weakened topic to return under materially stronger future evidence.",
       },
+      movementThresholds: {
+        promoteAtOrAbove: PROMOTION_THRESHOLDS,
+        demoteAtOrBelow: DEMOTION_THRESHOLD,
+      },
+      guardrails: {
+        p4PromotionAllowed: false,
+        duplicateEvidenceCollapsed: true,
+      },
     },
   };
   return {
@@ -91,18 +102,11 @@ export function explainPreferenceCandidate(snapshot, candidate) {
   const assessment = candidate.assessment;
   const contributions = [{ feature: "intercept", label: "base", value: model.intercept }];
   addCategoricalContribution(contributions, "source", candidate.source, model.categorical.source);
-  addCategoricalContribution(contributions, "decision", candidate.decision, model.categorical.decision);
   addCategoricalContribution(
     contributions,
     "content_type",
     assessment.contentType,
     model.categorical.contentType,
-  );
-  addCategoricalContribution(
-    contributions,
-    "priority",
-    assessment.recommendedPriority,
-    model.categorical.priority,
   );
   for (const tag of assessment.topicTags ?? []) {
     addCategoricalContribution(contributions, "topic_tag", tag, model.categorical.topicTag);
@@ -135,7 +139,7 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
   const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
   if (!snapshot?.model) {
     return {
-      version: 1,
+      version: SNAPSHOT_VERSION,
       available: false,
       liveInfluence: false,
       reason: "no_current_snapshot",
@@ -145,9 +149,9 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
     };
   }
   const candidates = [];
+  const uniqueCandidates = deduplicateCandidates(runs);
   let insufficientEvidence = 0;
-  for (const run of runs) {
-    for (const candidate of run.candidateEvaluations ?? []) {
+  for (const { run, candidate } of uniqueCandidates) {
       const explanation = explainPreferenceCandidate(snapshot, {
         ...candidate,
         source: run.source,
@@ -156,10 +160,14 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
         insufficientEvidence += 1;
         continue;
       }
-      const preferred = explanation.probability >= 0.5;
+      const promotionThreshold =
+        PROMOTION_THRESHOLDS[candidate.assessment.recommendedPriority] ?? null;
+      const promotionEligible =
+        promotionThreshold !== null && explanation.probability >= promotionThreshold;
+      const demotionEligible = explanation.probability <= DEMOTION_THRESHOLD;
       const movement = candidate.decision === "selected"
-        ? preferred ? "unchanged" : "would_move_down"
-        : preferred ? "would_move_up" : "unchanged";
+        ? demotionEligible ? "would_move_down" : "unchanged"
+        : promotionEligible ? "would_move_up" : "unchanged";
       candidates.push({
         runId: run.id,
         evidenceKey: candidate.evidenceKey,
@@ -173,7 +181,6 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
         topicTags: candidate.assessment.topicTags ?? [],
         contributions: explanation.contributions.slice(0, 8),
       });
-    }
   }
   candidates.sort((left, right) =>
     movementOrder(left.movement) - movementOrder(right.movement) ||
@@ -186,6 +193,10 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
     wouldMoveDown: candidates.filter((entry) => entry.movement === "would_move_down").length,
     unchanged: candidates.filter((entry) => entry.movement === "unchanged").length,
     insufficientEvidence,
+    duplicateCandidatesCollapsed: runs.reduce(
+      (sum, run) => sum + (run.candidateEvaluations?.length ?? 0),
+      0,
+    ) - uniqueCandidates.length,
     sources: Object.fromEntries(["x", "linkedin"].map((source) => {
       const entries = candidates.filter((entry) => entry.source === source);
       return [source, {
@@ -196,7 +207,7 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
     })),
   };
   return {
-    version: 1,
+    version: SNAPSHOT_VERSION,
     available: true,
     liveInfluence: false,
     snapshotId: snapshot.id,
@@ -209,8 +220,7 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
 
 export function preferenceDatasetFingerprint(runs) {
   const { signals } = buildPreferenceSignals(runs);
-  const stable = signals
-    .filter((signal) => signal.assessment)
+  const stable = deduplicateSignals(signals.filter((signal) => signal.assessment))
     .map((signal) => ({
       runId: signal.runId,
       source: signal.source,
@@ -240,14 +250,12 @@ function trainModel(signals) {
   const positive = signals.filter((signal) => signal.polarity === "positive");
   const negative = signals.filter((signal) => signal.polarity === "negative");
   return {
-    type: "smoothed_additive_preference_v1",
+    type: "regularized_additive_preference_v1_1",
     classBalance: "equal_polarity",
     intercept: 0,
     categorical: {
       source: categoricalWeights(signals, (signal) => [signal.source]),
-      decision: categoricalWeights(signals, (signal) => [signal.decision]),
       contentType: categoricalWeights(signals, (signal) => [signal.assessment.contentType]),
-      priority: categoricalWeights(signals, (signal) => [signal.assessment.recommendedPriority]),
       topicTag: categoricalWeights(signals, (signal) => signal.assessment.topicTags ?? []),
     },
     continuous: Object.fromEntries(SCORE_FIELDS.map((field) => {
@@ -274,10 +282,52 @@ function categoricalWeights(signals, labelsForSignal) {
     }
   }
   return Object.fromEntries([...counts.entries()].map(([label, count]) => {
+    const support = count.positive + count.negative;
+    if (support < 3) return [label, 0];
     const positiveRate = (count.positive + 1) / (positiveTotal + 2);
     const negativeRate = (count.negative + 1) / (negativeTotal + 2);
-    return [label, clamp(Math.log(positiveRate / negativeRate), -2, 2)];
+    const supportShrinkage = Math.min(1, (support - 2) / 8);
+    const polarityShrinkage = count.positive > 0 && count.negative > 0 ? 1 : 0.2;
+    return [
+      label,
+      clamp(
+        Math.log(positiveRate / negativeRate) * supportShrinkage * polarityShrinkage,
+        -0.5,
+        0.5,
+      ),
+    ];
   }));
+}
+
+function deduplicateSignals(signals) {
+  const latest = new Map();
+  for (const signal of [...signals].sort(compareSignalRecency)) {
+    latest.set(`${signal.source}:${signal.evidenceKey}`, signal);
+  }
+  return [...latest.values()];
+}
+
+function compareSignalRecency(left, right) {
+  return String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")) ||
+    String(left.runId).localeCompare(String(right.runId));
+}
+
+function deduplicateCandidates(runs) {
+  return deduplicateCandidateEntries(runs.flatMap((run) =>
+    (run.candidateEvaluations ?? []).map((candidate) => ({ run, candidate })),
+  ));
+}
+
+function deduplicateCandidateEntries(entries) {
+  const latest = new Map();
+  const ordered = [...entries].sort((left, right) =>
+    String(left.run.createdAt ?? "").localeCompare(String(right.run.createdAt ?? "")) ||
+    String(left.run.id).localeCompare(String(right.run.id)),
+  );
+  for (const entry of ordered) {
+    latest.set(`${entry.run.source}:${entry.candidate.evidenceKey}`, entry);
+  }
+  return [...latest.values()];
 }
 
 function evaluateModel(model, signals) {
@@ -357,6 +407,7 @@ function emptyShadowSummary() {
     wouldMoveDown: 0,
     unchanged: 0,
     insufficientEvidence: 0,
+    duplicateCandidatesCollapsed: 0,
     sources: {},
   };
 }

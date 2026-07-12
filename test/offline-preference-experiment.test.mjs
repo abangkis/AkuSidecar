@@ -80,17 +80,61 @@ test("shadow comparison remains unavailable without a current snapshot", () => {
   assert.equal(comparison.pagination.total, 0);
 });
 
+test("shadow promotion keeps provider priority as a conservative eligibility guardrail", () => {
+  const baseRuns = syntheticPreferenceReadyRuns();
+  const experiment = fitOfflinePreferenceExperiment(baseRuns, {
+    createdAt: "2026-07-11T00:00:00.000Z",
+  });
+  const strongAssessment = assessment("release", ["engineering"], 0.95);
+  const comparison = buildShadowComparison(experiment.snapshot, [{
+    id: "guardrail-run",
+    source: "x",
+    candidateEvaluations: [
+      {
+        evidenceKey: "x:eligible-p2",
+        decision: "excluded",
+        assessment: { ...strongAssessment, recommendedPriority: "P2" },
+      },
+      {
+        evidenceKey: "x:blocked-p4",
+        decision: "excluded",
+        assessment: { ...strongAssessment, recommendedPriority: "P4" },
+      },
+    ],
+  }]);
+
+  assert.equal(
+    comparison.candidates.find((entry) => entry.evidenceKey === "x:eligible-p2").movement,
+    "would_move_up",
+  );
+  assert.equal(
+    comparison.candidates.find((entry) => entry.evidenceKey === "x:blocked-p4").movement,
+    "unchanged",
+  );
+});
+
 test("shadow comparison exposes every scored candidate for complete evaluation", () => {
   const baseRuns = syntheticPreferenceReadyRuns();
   const experiment = fitOfflinePreferenceExperiment(baseRuns, {
     createdAt: "2026-07-11T00:00:00.000Z",
   });
-  const expandedRuns = Array.from({ length: 4 }, (_, batch) =>
+  const repeatedRuns = Array.from({ length: 4 }, (_, batch) =>
     baseRuns.map((run) => ({
       ...run,
       id: `${run.id}-batch-${batch}`,
     })),
   ).flat();
+  const repeatedComparison = buildShadowComparison(experiment.snapshot, repeatedRuns);
+  assert.equal(repeatedComparison.summary.scoredCandidates, 30);
+  assert.equal(repeatedComparison.summary.duplicateCandidatesCollapsed, 90);
+
+  const expandedRuns = repeatedRuns.map((run) => ({
+    ...run,
+    candidateEvaluations: run.candidateEvaluations.map((candidate) => ({
+      ...candidate,
+      evidenceKey: `${candidate.evidenceKey}:${run.id}`,
+    })),
+  }));
 
   const firstPage = buildShadowComparison(experiment.snapshot, expandedRuns, {
     limit: 100,
