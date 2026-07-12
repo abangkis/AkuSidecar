@@ -22,6 +22,8 @@ const state = {
   onboardingStep: 1,
   calibration: null,
   calibrationOrdinal: 0,
+  mediaViewerEntries: [],
+  mediaViewerIndex: 0,
 };
 
 const REVIEW_PAGE_SIZE = 10;
@@ -54,7 +56,14 @@ const elements = {
   calibrationStatus: document.querySelector("#calibration-status"),
   calibrationPrevious: document.querySelector("#calibration-previous"),
   calibrationLess: document.querySelector("#calibration-less"),
+  calibrationNeutral: document.querySelector("#calibration-neutral"),
   calibrationMore: document.querySelector("#calibration-more"),
+  mediaViewer: document.querySelector("#media-viewer"),
+  mediaViewerImage: document.querySelector("#media-viewer-image"),
+  mediaViewerCount: document.querySelector("#media-viewer-count"),
+  mediaViewerPrevious: document.querySelector("#media-viewer-previous"),
+  mediaViewerNext: document.querySelector("#media-viewer-next"),
+  mediaViewerClose: document.querySelector("#media-viewer-close"),
   settingsPanel: document.querySelector("#settings-panel"),
   timelineCapacity: document.querySelector("#timeline-capacity"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
@@ -187,7 +196,11 @@ elements.onboardingInterests.addEventListener("change", updateInterestLimit);
 elements.editOnboardingProfile.addEventListener("click", () => showOnboarding(true));
 elements.calibrationPrevious.addEventListener("click", showPreviousCalibrationSample);
 elements.calibrationLess.addEventListener("click", () => decideCalibration({ label: "less_like_this" }));
+elements.calibrationNeutral.addEventListener("click", () => decideCalibration({ label: "neutral" }));
 elements.calibrationMore.addEventListener("click", () => decideCalibration({ label: "more_like_this" }));
+elements.mediaViewerClose.addEventListener("click", () => elements.mediaViewer.close());
+elements.mediaViewerPrevious.addEventListener("click", () => moveMediaViewer(-1));
+elements.mediaViewerNext.addEventListener("click", () => moveMediaViewer(1));
 for (const button of document.querySelectorAll("[data-calibration-issue]")) {
   button.addEventListener("click", () => decideCalibration({ issueCode: button.dataset.calibrationIssue }));
 }
@@ -552,11 +565,12 @@ function renderCalibration() {
   elements.calibrationProgressBar.style.width = `${progress}%`;
   elements.calibrationProgressBar.parentElement?.setAttribute("aria-valuenow", String(progress));
   elements.calibrationPrevious.disabled = state.calibrationOrdinal === 0;
+  const decisionLabels = { more_like_this: "More like this", neutral: "Neutral", less_like_this: "Less like this" };
   elements.calibrationStatus.textContent = sample?.label
-    ? `Current decision: ${sample.label === "more_like_this" ? "More like this" : "Less like this"}`
+    ? `Current decision: ${decisionLabels[sample.label] ?? sample.label}`
     : sample?.issueCode
       ? `Reported capture problem: ${sample.issueCode.replaceAll("_", " ")}`
-      : "Choose More or Less for this real source entry.";
+      : "Choose Less, Neutral, or More for this real source entry.";
   elements.calibrationCard.replaceChildren(buildCalibrationCard(sample));
 }
 
@@ -575,14 +589,17 @@ function buildCalibrationCard(sample) {
   const position = document.createElement("span");
   position.textContent = `Source position ${candidate.feedPosition ?? state.calibrationOrdinal + 1}`;
   header.append(source, position);
-  const author = document.createElement("h3");
-  author.textContent = candidate.author || "Captured source entry";
-  const text = document.createElement("p");
-  text.className = "calibration-entry-text";
-  text.textContent = candidate.text || candidate.summary || "No readable text was captured.";
-  card.append(header, author, text);
-  const media = buildSourceLayoutMedia(candidate.media ?? [], sample.source);
-  if (media) card.append(media);
+  const sourceCard = buildSourceLayoutCard(
+    { source: sample.source },
+    {
+      source: sample.source,
+      author: candidate.author,
+      publishedAt: candidate.publishedAt,
+      whatChanged: candidate.summary || "No readable text was captured.",
+    },
+    { ...candidate, source: sample.source },
+  );
+  card.append(header, sourceCard);
   if (candidate.sourceUrl) {
     const link = document.createElement("a");
     link.href = candidate.sourceUrl;
@@ -602,6 +619,7 @@ function showPreviousCalibrationSample() {
 async function decideCalibration(decision) {
   if (!state.calibration) return;
   elements.calibrationLess.disabled = true;
+  elements.calibrationNeutral.disabled = true;
   elements.calibrationMore.disabled = true;
   try {
     const { calibration } = await api(
@@ -626,6 +644,7 @@ async function decideCalibration(decision) {
     elements.calibrationStatus.textContent = error.message;
   } finally {
     elements.calibrationLess.disabled = false;
+    elements.calibrationNeutral.disabled = false;
     elements.calibrationMore.disabled = false;
   }
 }
@@ -1284,15 +1303,13 @@ function buildSourceLayoutCard(run, item, candidate) {
     item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run",
   ].join(" · ");
   identity.append(author, context);
-  const sourceBadge = document.createElement("span");
-  sourceBadge.className = "source-layout-badge";
-  sourceBadge.textContent = source === "x" ? "X" : "in";
-  header.append(sourceBadge, identity);
+  const avatar = buildSourceAvatar(candidate?.avatarUrl, source, candidate?.author || item.author);
+  header.append(avatar, identity);
 
   const content = candidate?.text
     ? source === "x"
       ? buildXSourceLayoutContent(candidate)
-      : buildCandidateContent({ ...candidate, source }, { includeIdentity: false })
+      : buildLinkedInSourceLayoutContent(candidate)
     : document.createElement("div");
   content.classList.add("source-layout-content");
   if (!candidate?.text) {
@@ -1308,6 +1325,52 @@ function buildSourceLayoutCard(run, item, candidate) {
     (quote ?? article).append(media);
   }
   return article;
+}
+
+function buildLinkedInSourceLayoutContent(candidate) {
+  const content = document.createElement("div");
+  content.className = "candidate-content source-layout-content linkedin-source-content";
+  let text = String(candidate.text ?? "").replace(/^Feed post\s+/i, "").trim();
+  const author = String(candidate.author ?? "").trim();
+  if (author) {
+    const index = text.indexOf(author);
+    if (index > 0) {
+      const socialContext = text.slice(0, index).trim();
+      if (socialContext) {
+        const context = document.createElement("span");
+        context.className = "candidate-context linkedin-social-context";
+        context.textContent = socialContext;
+        content.append(context);
+      }
+      text = text.slice(index + author.length).trim();
+    } else if (index === 0) text = text.slice(author.length).trim();
+  }
+  text = text
+    .replace(/^(?:Â·|•)\s*(?:1st|2nd|3rd\+?)\s*/i, "")
+    .replace(/^.{0,220}?\b\d+[mhdw]\b\s*(?:Â·|•)\s*/i, "")
+    .replace(/(?:\s+\d+(?:[.,]\d+)?[KMB]?){2,5}$/i, "")
+    .trim();
+  const paragraph = document.createElement("p");
+  paragraph.textContent = text || "No readable post text was captured.";
+  content.append(paragraph);
+  return content;
+}
+
+function buildSourceAvatar(value, source, author) {
+  const fallback = document.createElement("span");
+  fallback.className = "source-layout-badge";
+  fallback.textContent = source === "x" ? "X" : "in";
+  const url = safeAvatarUrl(value, source);
+  if (!url) return fallback;
+  const image = document.createElement("img");
+  image.className = "source-layout-avatar";
+  image.src = url;
+  image.alt = author ? `${author} avatar` : `${sourceLabel(source)} profile avatar`;
+  image.loading = "lazy";
+  image.decoding = "async";
+  image.referrerPolicy = "no-referrer";
+  image.addEventListener("error", () => image.replaceWith(fallback), { once: true });
+  return image;
 }
 
 function buildXSourceLayoutContent(candidate) {
@@ -1338,10 +1401,12 @@ function buildXSourceLayoutContent(candidate) {
 
 function buildSourceLayoutMedia(entries, source) {
   const media = [];
+  const viewerEntries = [];
   for (const entry of entries.slice(0, 4)) {
     const url = safePresentationMediaUrl(entry?.url, source);
     if (!url) continue;
-    const figure = document.createElement("figure");
+    const figure = document.createElement("button");
+    figure.type = "button";
     figure.className = "source-layout-media-item";
     const image = document.createElement("img");
     image.src = url;
@@ -1350,6 +1415,9 @@ function buildSourceLayoutMedia(entries, source) {
     image.decoding = "async";
     image.referrerPolicy = "no-referrer";
     image.addEventListener("error", () => figure.remove(), { once: true });
+    const viewerIndex = viewerEntries.length;
+    viewerEntries.push({ url: fullPresentationMediaUrl(url, source), alt: image.alt });
+    figure.addEventListener("click", () => openMediaViewer(viewerEntries, viewerIndex));
     figure.append(image);
     media.push(figure);
   }
@@ -1358,6 +1426,42 @@ function buildSourceLayoutMedia(entries, source) {
   gallery.className = `source-layout-media media-count-${media.length}`;
   gallery.append(...media);
   return gallery;
+}
+
+function openMediaViewer(entries, index) {
+  state.mediaViewerEntries = entries;
+  state.mediaViewerIndex = index;
+  renderMediaViewer();
+  elements.mediaViewer.showModal();
+}
+
+function moveMediaViewer(delta) {
+  const total = state.mediaViewerEntries.length;
+  if (total < 2) return;
+  state.mediaViewerIndex = (state.mediaViewerIndex + delta + total) % total;
+  renderMediaViewer();
+}
+
+function renderMediaViewer() {
+  const entry = state.mediaViewerEntries[state.mediaViewerIndex];
+  if (!entry) return;
+  elements.mediaViewerImage.src = entry.url;
+  elements.mediaViewerImage.alt = entry.alt;
+  elements.mediaViewerCount.textContent = `${state.mediaViewerIndex + 1} of ${state.mediaViewerEntries.length}`;
+  const multiple = state.mediaViewerEntries.length > 1;
+  elements.mediaViewerPrevious.classList.toggle("hidden", !multiple);
+  elements.mediaViewerNext.classList.toggle("hidden", !multiple);
+}
+
+function fullPresentationMediaUrl(value, source) {
+  const url = new URL(value);
+  if (source === "x" && url.hostname === "pbs.twimg.com") url.searchParams.set("name", "orig");
+  return url.href;
+}
+
+function safeAvatarUrl(value, source) {
+  const url = safePresentationMediaUrl(value, source);
+  return url;
 }
 
 function safePresentationMediaUrl(value, source) {

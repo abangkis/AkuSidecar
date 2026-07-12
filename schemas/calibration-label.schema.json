@@ -3,7 +3,7 @@
   "$id": "https://akubrowser.local/contracts/calibration-label.schema.json",
   "title": "AkuBrowser Calibration Label v0",
   "oneOf": [
-    { "type": "object", "additionalProperties": false, "required": ["label"], "properties": { "label": { "enum": ["more_like_this", "less_like_this"] } } },
+    { "type": "object", "additionalProperties": false, "required": ["label"], "properties": { "label": { "enum": ["more_like_this", "neutral", "less_like_this"] } } },
     { "type": "object", "additionalProperties": false, "required": ["issueCode"], "properties": { "issueCode": { "enum": ["capture_incomplete", "wrong_source", "duplicate", "formatting"] } } }
   ]
 }

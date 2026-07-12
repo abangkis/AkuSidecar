@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ContractError } from "./contracts.mjs";
 
-const LABELS = new Set(["more_like_this", "less_like_this"]);
+const LABELS = new Set(["more_like_this", "neutral", "less_like_this"]);
 const ISSUE_CODES = new Set(["capture_incomplete", "wrong_source", "duplicate", "formatting"]);
 
 export class CalibrationEngine {
@@ -90,7 +90,7 @@ export function sampleCandidates(children, { maxItems = 10, maxItemsPerSource = 
 function normalizeDecision(input) {
   if (LABELS.has(input?.label)) return { label: input.label, issueCode: null };
   if (ISSUE_CODES.has(input?.issueCode)) return { label: null, issueCode: input.issueCode };
-  throw new ContractError("Calibration decision requires More, Less, or a supported capture issue.");
+  throw new ContractError("Calibration decision requires More, Neutral, Less, or a supported capture issue.");
 }
 
 function buildSnapshot(session) {
@@ -102,6 +102,7 @@ function buildSnapshot(session) {
     createdAt: new Date().toISOString(),
     labels: {
       moreLikeThis: labeled.filter((sample) => sample.label === "more_like_this").length,
+      neutral: labeled.filter((sample) => sample.label === "neutral").length,
       lessLikeThis: labeled.filter((sample) => sample.label === "less_like_this").length,
       captureIssues: session.samples.filter((sample) => sample.issueCode).length,
     },

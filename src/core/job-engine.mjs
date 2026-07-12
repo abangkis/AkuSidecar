@@ -825,6 +825,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       reasonCode: item ? "selected_by_provider" : "not_promoted_by_provider",
       itemId: item?.id ?? null,
       author: block.author ?? "",
+      avatarUrl: block.avatarUrl ?? null,
       text: block.text ?? "",
       sourceUrl: block.permalink || observation.pageUrl,
       media: block.media ?? [],

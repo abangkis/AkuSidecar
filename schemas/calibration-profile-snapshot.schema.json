@@ -8,7 +8,7 @@
     "version": { "const": 0 },
     "origin": { "const": "calibration" },
     "calibrationSessionId": { "type": "string", "minLength": 1 },
-    "labels": { "type": "object", "required": ["moreLikeThis", "lessLikeThis", "captureIssues"] },
+    "labels": { "type": "object", "required": ["moreLikeThis", "neutral", "lessLikeThis", "captureIssues"] },
     "liveInfluence": { "const": false },
     "activationState": { "const": "shadow_only" }
   }

@@ -244,6 +244,7 @@ function validateBlock(source, block, index, limits) {
   const validated = {
     text: cleanString(block.text, limits.maxBlockCharacters),
     author: cleanString(block.author, 300),
+    avatarUrl: safeHttpUrl(block.avatarUrl),
     publishedAt: validDateString(block.publishedAt),
     permalink: safeHttpUrl(block.permalink),
     platformId: cleanString(block.platformId, 200),

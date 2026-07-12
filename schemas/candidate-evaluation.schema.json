@@ -9,6 +9,7 @@
     "reasonCode": { "type": "string" },
     "itemId": { "type": ["string", "null"] },
     "author": { "type": "string" },
+    "avatarUrl": { "type": ["string", "null"], "format": "uri" },
     "text": { "type": "string" },
     "sourceUrl": { "type": "string" },
     "publishedAt": { "type": ["string", "null"] },

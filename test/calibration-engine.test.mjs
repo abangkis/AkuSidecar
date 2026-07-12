@@ -17,12 +17,13 @@ test("calibration lifecycle stores forced labels separately and completes shadow
   assert.equal(session.sampleCount, 3);
   assert.equal(session.status, "reviewing");
   session = engine.decide(session.id, 0, { label: "more_like_this" });
-  session = engine.decide(session.id, 1, { issueCode: "formatting" });
+  session = engine.decide(session.id, 1, { label: "neutral" });
   session = engine.decide(session.id, 2, { label: "less_like_this" });
   assert.equal(session.status, "completed");
   assert.equal(session.snapshot.labels.moreLikeThis, 1);
+  assert.equal(session.snapshot.labels.neutral, 1);
   assert.equal(session.snapshot.labels.lessLikeThis, 1);
-  assert.equal(session.snapshot.labels.captureIssues, 1);
+  assert.equal(session.snapshot.labels.captureIssues, 0);
   assert.equal(session.snapshot.liveInfluence, false);
   assert.equal(engine.createFromUnifiedSession("unified-1").id, session.id);
 });

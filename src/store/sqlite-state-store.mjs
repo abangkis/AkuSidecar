@@ -286,6 +286,7 @@ export class SqliteStateStore {
     `);
     this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "media_json", "TEXT");
+    this.#ensureColumn("candidate_evaluations", "avatar_url", "TEXT");
     this.database
       .prepare("DELETE FROM preference_feedback_events WHERE kind NOT IN ('more_like_this', 'less_like_this')")
       .run();
@@ -903,9 +904,9 @@ export class SqliteStateStore {
       const insertCandidate = this.database.prepare(`
         INSERT INTO candidate_evaluations(
           run_id, evidence_key, source, decision, reason_code, item_id,
-          author, text, source_url, published_at, feed_position,
+          author, avatar_url, text, source_url, published_at, feed_position,
           policy_version, preference_profile_version, assessment_json, media_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, evidence_key) DO UPDATE SET
           decision = excluded.decision,
           reason_code = excluded.reason_code,
@@ -924,6 +925,7 @@ export class SqliteStateStore {
           candidate.reasonCode,
           candidate.itemId,
           candidate.author,
+          candidate.avatarUrl,
           candidate.text,
           candidate.sourceUrl,
           candidate.publishedAt,
@@ -1371,6 +1373,7 @@ function mapCandidateEvaluation(row) {
     reasonCode: row.reason_code,
     itemId: row.item_id,
     author: row.author,
+    avatarUrl: row.avatar_url,
     text: row.text,
     sourceUrl: row.source_url,
     media: parseJson(row.media_json) ?? [],
