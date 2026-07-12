@@ -14,6 +14,7 @@ import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
 import { inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
 import { createBridgeDiagnostics } from "../operations/bridge-diagnostics.mjs";
 import { getOnboardingProfile, saveOnboardingProfile } from "../core/onboarding-profile.mjs";
+import { CalibrationEngine } from "../core/calibration-engine.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -27,6 +28,13 @@ const MIME_TYPES = new Map([
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
 
 export function createAkuBrowserApp({ config, store, reasoningProvider, logger = console }) {
+  config.calibration ??= {
+    enabled: true,
+    triggerPolicy: "first_run",
+    batchSize: 10,
+    maxItemsPerSource: 5,
+    liveInfluence: false,
+  };
   applyPersistedConfiguration(config, store);
   const engine = new JobEngine({
     store,
@@ -35,6 +43,11 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
     logger,
   });
   const bridgeToken = store.getOrCreateBridgeToken();
+  const calibrationEngine = new CalibrationEngine({
+    store,
+    maxItems: config.calibration.batchSize,
+    maxItemsPerSource: config.calibration.maxItemsPerSource,
+  });
   const bridgeDiagnostics = createBridgeDiagnostics();
   let frontend = null;
 
@@ -64,6 +77,7 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
           bridgeToken,
           bridgeDiagnostics,
           config,
+          calibrationEngine,
         });
         return;
       }
@@ -86,6 +100,7 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
   return {
     server,
     engine,
+    calibrationEngine,
     setFrontend(nextFrontend) {
       if (server.listening) {
         throw new Error("The development frontend must be attached before the Sidecar starts.");
@@ -147,7 +162,44 @@ function serveFrontend(middleware, request, response, logger) {
   });
 }
 
-async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config }) {
+async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config, calibrationEngine }) {
+  if (request.method === "GET" && url.pathname === "/api/calibration/active") {
+    sendJson(response, 200, { calibration: calibrationEngine.getActive() });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/calibration/sessions") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    sendJson(response, 201, {
+      calibration: calibrationEngine.createFromUnifiedSession(body.unifiedSessionId, {
+        triggerKind: body.triggerKind,
+        maxItems: config.calibration.batchSize,
+      }),
+    });
+    return;
+  }
+
+  const calibrationMatch = url.pathname.match(/^\/api\/calibration\/sessions\/([^/]+)$/);
+  if (request.method === "GET" && calibrationMatch) {
+    const calibration = calibrationEngine.get(decodeURIComponent(calibrationMatch[1]));
+    sendJson(response, calibration ? 200 : 404, { calibration });
+    return;
+  }
+
+  const calibrationDecisionMatch = url.pathname.match(
+    /^\/api\/calibration\/sessions\/([^/]+)\/samples\/(\d+)$/,
+  );
+  if (request.method === "PUT" && calibrationDecisionMatch) {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    sendJson(response, 200, {
+      calibration: calibrationEngine.decide(
+        decodeURIComponent(calibrationDecisionMatch[1]),
+        Number.parseInt(calibrationDecisionMatch[2], 10),
+        body,
+      ),
+    });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/api/onboarding") {
     sendJson(response, 200, { onboarding: getOnboardingProfile(store) });
     return;
@@ -155,7 +207,14 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "PUT" && url.pathname === "/api/onboarding") {
     const body = await readJson(request, config.limits.maxBodyBytes);
+    const firstCompletion = getOnboardingProfile(store).status !== "completed";
     const onboarding = saveOnboardingProfile(store, body);
+    if (firstCompletion) {
+      store.setSetting(
+        "calibration.first_run_status",
+        config.calibration.enabled ? "pending" : "disabled",
+      );
+    }
     updateDashboardConfiguration(config, store, {
       activeSources: onboarding.profile.activeSources,
     });
@@ -233,6 +292,14 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
       },
       bridgeToken,
       onboarding: getOnboardingProfile(store),
+      calibration: {
+        firstRunStatus: store.getSetting("calibration.first_run_status") ?? "not_started",
+        active: calibrationEngine.getActive(),
+        enabled: config.calibration.enabled,
+        triggerPolicy: config.calibration.triggerPolicy,
+        batchSize: config.calibration.batchSize,
+        liveInfluence: false,
+      },
       presentation: config.presentation,
       sourceRegistry: buildSourceRegistry(config.sources?.active ?? ["x", "linkedin"]),
       limits: config.limits,

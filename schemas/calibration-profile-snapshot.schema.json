@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akubrowser.local/contracts/calibration-profile-snapshot.schema.json",
+  "title": "AkuBrowser Calibration Profile Snapshot v0",
+  "type": "object",
+  "required": ["version", "origin", "calibrationSessionId", "labels", "liveInfluence", "activationState"],
+  "properties": {
+    "version": { "const": 0 },
+    "origin": { "const": "calibration" },
+    "calibrationSessionId": { "type": "string", "minLength": 1 },
+    "labels": { "type": "object", "required": ["moreLikeThis", "lessLikeThis", "captureIssues"] },
+    "liveInfluence": { "const": false },
+    "activationState": { "const": "shadow_only" }
+  }
+}

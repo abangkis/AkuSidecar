@@ -10,6 +10,9 @@ const COUNTED_TABLES = [
   "preference_feedback_events",
   "reasoning_invocations",
   "preference_model_snapshots",
+  "calibration_sessions",
+  "calibration_samples",
+  "calibration_profile_snapshots",
   "knowledge_events",
   "knowledge_versions",
 ];

@@ -63,6 +63,26 @@ test("HTTP API drives one sequential unified session without changing the bridge
   const noActive = await jsonFetch(`${origin}/api/sessions/active`);
   assert.equal(noActive.session, null);
 
+  let { calibration } = await jsonFetch(`${origin}/api/calibration/sessions`, {
+    method: "POST",
+    body: JSON.stringify({ unifiedSessionId: session.id, triggerKind: "first_run" }),
+  });
+  assert.equal(calibration.status, "reviewing");
+  assert.equal(calibration.sampleCount, 2);
+  ({ calibration } = await jsonFetch(
+    `${origin}/api/calibration/sessions/${calibration.id}/samples/0`,
+    { method: "PUT", body: JSON.stringify({ label: "more_like_this" }) },
+  ));
+  ({ calibration } = await jsonFetch(
+    `${origin}/api/calibration/sessions/${calibration.id}/samples/1`,
+    { method: "PUT", body: JSON.stringify({ label: "less_like_this" }) },
+  ));
+  assert.equal(calibration.status, "completed");
+  assert.equal(calibration.snapshot.liveInfluence, false);
+  assert.equal(calibration.snapshot.activationState, "shadow_only");
+  const activeCalibration = await jsonFetch(`${origin}/api/calibration/active`);
+  assert.equal(activeCalibration.calibration, null);
+
   const missing = await fetch(`${origin}/api/sessions/missing`);
   assert.equal(missing.status, 404);
 });

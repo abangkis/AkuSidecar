@@ -55,6 +55,22 @@ const DEFINITIONS = {
       config.sources.active = [...value];
     },
   },
+  calibrationEnabled: {
+    key: "calibration.enabled",
+    applyMode: "live",
+    parse: (value) => value === true || value === "true",
+    valid: (value) => typeof value === "boolean",
+    read: (config) => config.calibration.enabled,
+    apply: (config, value) => { config.calibration.enabled = value; },
+  },
+  calibrationBatchSize: {
+    key: "calibration.batch_size",
+    applyMode: "next_run",
+    parse: (value) => Number.parseInt(value, 10),
+    valid: (value) => Number.isInteger(value) && value >= 2 && value <= 10,
+    read: (config) => config.calibration.batchSize,
+    apply: (config, value) => { config.calibration.batchSize = value; },
+  },
   maxItemsPerSource: integerDefinition(
     "engine.max_items_per_source",
     "maxItems",

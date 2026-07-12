@@ -32,11 +32,11 @@
 
       <section id="onboarding-panel" class="onboarding-panel hidden" aria-labelledby="onboarding-heading">
         <div class="onboarding-card">
-          <p class="step-label">PERSONALIZE YOUR TIMELINE</p>
-          <h2 id="onboarding-heading">Build your starting timeline</h2>
-          <p id="onboarding-step-label" class="review-guidance">Step 1 of 2</p>
+          <p class="step-label">CONNECT YOUR SOURCES</p>
+          <h2 id="onboarding-heading">Choose where AkuBrowser should look</h2>
+          <p id="onboarding-step-label" class="review-guidance">Source setup</p>
           <form id="onboarding-form">
-            <div class="onboarding-step" data-onboarding-step="1">
+            <div class="onboarding-step hidden" data-onboarding-step="0" data-experiment="interest-hints-off">
               <strong>What do you want to see?</strong>
               <p class="onboarding-explanation">Choose up to five broad interests. They are a lightweight starting hint, while your source feeds and More/Less feedback remain the stronger behavioral evidence.</p>
               <div id="onboarding-interests" class="interest-grid">
@@ -62,9 +62,9 @@
               </div>
               <p id="onboarding-interest-count" class="onboarding-selection-count">0 of 5 selected</p>
             </div>
-            <div class="onboarding-step hidden" data-onboarding-step="2">
-              <strong>Review your starting timeline</strong>
-              <p class="onboarding-explanation">Choose the source feeds AkuBrowser should learn from. Your first update starts automatically after this step.</p>
+            <div class="onboarding-step" data-onboarding-step="1">
+              <strong>Select active sources</strong>
+              <p class="onboarding-explanation">AkuBrowser begins with each website's existing order, then learns from your entry-level More/Less calibration. Your first bounded update starts automatically.</p>
               <div id="onboarding-sources" class="onboarding-options">
                 <label><input type="checkbox" value="x" /> X</label>
                 <label><input type="checkbox" value="linkedin" /> LinkedIn</label>
@@ -74,10 +74,42 @@
             <p id="onboarding-error" class="settings-detail" role="alert"></p>
             <div class="onboarding-actions">
               <button id="onboarding-back" class="secondary-button hidden" type="button">Previous</button>
-              <button id="onboarding-next" class="primary-button" type="button">Next</button>
-              <button id="onboarding-finish" class="primary-button hidden" type="submit">Start my timeline</button>
+              <button id="onboarding-next" class="primary-button hidden" type="button">Next</button>
+              <button id="onboarding-finish" class="primary-button" type="submit">Start setup</button>
             </div>
           </form>
+        </div>
+      </section>
+
+      <section id="calibration-panel" class="calibration-panel hidden" aria-labelledby="calibration-heading">
+        <div class="calibration-shell">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">CALIBRATION</p>
+              <h2 id="calibration-heading">Teach AkuBrowser from real entries</h2>
+              <p class="review-guidance">This lane is separate from the daily recommendation timeline. Every decision creates an explicit calibration label.</p>
+            </div>
+            <strong id="calibration-progress">0 of 0</strong>
+          </div>
+          <div class="progress-track" role="progressbar" aria-label="Calibration progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="calibration-progress-bar"></span>
+          </div>
+          <div id="calibration-card" class="calibration-card"></div>
+          <p id="calibration-status" class="settings-detail" role="status"></p>
+          <div class="calibration-actions">
+            <button id="calibration-previous" class="secondary-button" type="button">Previous</button>
+            <button id="calibration-less" class="secondary-button" type="button">Less like this</button>
+            <button id="calibration-more" class="primary-button" type="button">More like this</button>
+          </div>
+          <details class="calibration-issue">
+            <summary>Report capture problem</summary>
+            <div class="calibration-issue-actions">
+              <button type="button" data-calibration-issue="capture_incomplete">Incomplete capture</button>
+              <button type="button" data-calibration-issue="wrong_source">Wrong source</button>
+              <button type="button" data-calibration-issue="duplicate">Duplicate</button>
+              <button type="button" data-calibration-issue="formatting">Formatting problem</button>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -170,6 +202,23 @@
               </label>
             </div>
             <div id="fixed-engine-constraints" class="engine-constraint-grid" aria-label="Fixed pilot constraints"></div>
+          </fieldset>
+          <fieldset class="settings-group">
+            <legend>Calibration</legend>
+            <p class="settings-group-note">A separate forced-label experiment. It remains shadow-only and never changes the live timeline.</p>
+            <div class="settings-card">
+              <label class="settings-row" for="calibration-enabled">
+                <span class="settings-copy"><strong>First-run calibration</strong><small>Start calibration automatically after the first successful update.</small></span>
+                <input id="calibration-enabled" name="calibrationEnabled" type="checkbox" />
+              </label>
+              <label class="settings-row" for="calibration-batch-size">
+                <span class="settings-copy"><strong>Calibration batch size</strong><small>Real source candidates requiring an explicit More/Less decision (2-10).</small></span>
+                <input id="calibration-batch-size" name="calibrationBatchSize" type="number" min="2" max="10" step="1" />
+              </label>
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Activation boundary</strong><small>Trigger: first run only · ranking influence: disabled · snapshots: shadow analysis only.</small></span>
+              </div>
+            </div>
           </fieldset>
           <fieldset class="settings-group">
             <legend>Startup reasoning settings</legend>

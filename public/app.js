@@ -20,6 +20,8 @@ const state = {
   reviewLoading: false,
   reviewHasNext: false,
   onboardingStep: 1,
+  calibration: null,
+  calibrationOrdinal: 0,
 };
 
 const REVIEW_PAGE_SIZE = 10;
@@ -45,6 +47,14 @@ const elements = {
   onboardingNext: document.querySelector("#onboarding-next"),
   onboardingFinish: document.querySelector("#onboarding-finish"),
   editOnboardingProfile: document.querySelector("#edit-onboarding-profile"),
+  calibrationPanel: document.querySelector("#calibration-panel"),
+  calibrationProgress: document.querySelector("#calibration-progress"),
+  calibrationProgressBar: document.querySelector("#calibration-progress-bar"),
+  calibrationCard: document.querySelector("#calibration-card"),
+  calibrationStatus: document.querySelector("#calibration-status"),
+  calibrationPrevious: document.querySelector("#calibration-previous"),
+  calibrationLess: document.querySelector("#calibration-less"),
+  calibrationMore: document.querySelector("#calibration-more"),
   settingsPanel: document.querySelector("#settings-panel"),
   timelineCapacity: document.querySelector("#timeline-capacity"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
@@ -56,6 +66,8 @@ const elements = {
   maxScrolls: document.querySelector("#max-scrolls"),
   maxAcquisitionRounds: document.querySelector("#max-acquisition-rounds"),
   maxKnowledgeContextEvents: document.querySelector("#max-knowledge-context-events"),
+  calibrationEnabled: document.querySelector("#calibration-enabled"),
+  calibrationBatchSize: document.querySelector("#calibration-batch-size"),
   fixedEngineConstraints: document.querySelector("#fixed-engine-constraints"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
@@ -173,6 +185,12 @@ elements.onboardingNext.addEventListener("click", advanceOnboarding);
 elements.onboardingForm.addEventListener("submit", saveOnboarding);
 elements.onboardingInterests.addEventListener("change", updateInterestLimit);
 elements.editOnboardingProfile.addEventListener("click", () => showOnboarding(true));
+elements.calibrationPrevious.addEventListener("click", showPreviousCalibrationSample);
+elements.calibrationLess.addEventListener("click", () => decideCalibration({ label: "less_like_this" }));
+elements.calibrationMore.addEventListener("click", () => decideCalibration({ label: "more_like_this" }));
+for (const button of document.querySelectorAll("[data-calibration-issue]")) {
+  button.addEventListener("click", () => decideCalibration({ issueCode: button.dataset.calibrationIssue }));
+}
 await bootstrap();
 observePilotReviewScroll();
 
@@ -200,6 +218,11 @@ async function bootstrap() {
     setInterval(pingBridge, 30_000);
     if (state.bootstrap.onboarding?.status !== "completed") {
       showOnboarding(false);
+      return;
+    }
+    if (state.bootstrap.calibration?.active) {
+      showCalibration(state.bootstrap.calibration.active);
+      startExternalSessionDiscovery();
       return;
     }
     const [{ session }, { timeline }] = await Promise.all([
@@ -233,7 +256,7 @@ async function bootstrap() {
 function showOnboarding(editing) {
   state.onboardingStep = 1;
   setOnboardingStep(1);
-  hide(elements.timelinePanel, elements.reviewPanel, elements.settingsPanel);
+  hide(elements.timelinePanel, elements.reviewPanel, elements.settingsPanel, elements.calibrationPanel);
   show(elements.onboardingPanel);
   document.querySelector(".view-switch")?.classList.add("hidden");
   if (editing) populateOnboarding(state.bootstrap?.onboarding?.profile);
@@ -247,7 +270,7 @@ function populateOnboarding(profile) {
     return;
   }
   for (const input of elements.onboardingInterests.querySelectorAll("input")) {
-    input.checked = profile.selectedInterests.includes(input.value);
+    input.checked = (profile.selectedInterests ?? []).includes(input.value);
   }
   for (const input of elements.onboardingSources.querySelectorAll("input")) {
     input.checked = profile.activeSources.includes(input.value);
@@ -256,28 +279,23 @@ function populateOnboarding(profile) {
 }
 
 function setOnboardingStep(step) {
-  state.onboardingStep = Math.max(1, Math.min(2, step));
+  state.onboardingStep = 1;
   for (const panel of document.querySelectorAll("[data-onboarding-step]")) {
     panel.classList.toggle("hidden", Number(panel.dataset.onboardingStep) !== state.onboardingStep);
   }
-  elements.onboardingStepLabel.textContent = `Step ${state.onboardingStep} of 2`;
-  elements.onboardingBack.classList.toggle("hidden", state.onboardingStep === 1);
-  elements.onboardingNext.classList.toggle("hidden", state.onboardingStep === 2);
-  elements.onboardingFinish.classList.toggle("hidden", state.onboardingStep !== 2);
+  elements.onboardingStepLabel.textContent = "Source setup";
+  elements.onboardingBack.classList.add("hidden");
+  elements.onboardingNext.classList.add("hidden");
+  elements.onboardingFinish.classList.remove("hidden");
   elements.onboardingError.textContent = "";
-  if (state.onboardingStep === 2) {
+  if (state.onboardingStep === 1) {
     const profile = readOnboardingForm();
-    elements.onboardingSummary.textContent = `${profile.selectedInterests.length} lightweight interest hint(s) · ${profile.activeSources.length} source feed(s) · first update starts automatically`;
+    elements.onboardingSummary.textContent = `${profile.activeSources.length} source feed(s) · first update and calibration start automatically`;
   }
 }
 
 function advanceOnboarding() {
-  const profile = readOnboardingForm();
-  if (state.onboardingStep === 1 && profile.selectedInterests.length === 0) {
-    elements.onboardingError.textContent = "Choose at least one interest.";
-    return;
-  }
-  setOnboardingStep(state.onboardingStep + 1);
+  setOnboardingStep(1);
 }
 
 function updateInterestLimit() {
@@ -289,7 +307,6 @@ function updateInterestLimit() {
 
 function readOnboardingForm() {
   return {
-    selectedInterests: [...elements.onboardingInterests.querySelectorAll("input:checked")].map((input) => input.value),
     activeSources: [...elements.onboardingSources.querySelectorAll("input:checked")].map((input) => input.value),
   };
 }
@@ -303,6 +320,9 @@ async function saveOnboarding(event) {
       body: JSON.stringify(readOnboardingForm()),
     });
     state.bootstrap.onboarding = onboarding;
+    if (firstCompletion && state.bootstrap.calibration?.enabled !== false) {
+      state.bootstrap.calibration.firstRunStatus = "pending";
+    }
     hide(elements.onboardingPanel);
     document.querySelector(".view-switch")?.classList.remove("hidden");
     await loadTimelineFeed();
@@ -477,8 +497,12 @@ async function pollUnifiedSession() {
               : unifiedFailureMessage(session),
         });
       } else if (state.currentView === "timeline") {
-        await loadTimelineFeed();
-        showSessionView();
+        const calibration = await startPendingFirstCalibration(session);
+        if (calibration) showCalibration(calibration);
+        else {
+          await loadTimelineFeed();
+          showSessionView();
+        }
       }
       return;
     }
@@ -487,6 +511,122 @@ async function pollUnifiedSession() {
   } catch (error) {
     clearPoll();
     reportRunFailure({ stage: "session_status", message: error.message });
+  }
+}
+
+async function startPendingFirstCalibration(session) {
+  if (state.bootstrap?.calibration?.firstRunStatus !== "pending") return null;
+  try {
+    const { calibration } = await api("/api/calibration/sessions", {
+      method: "POST",
+      body: JSON.stringify({ unifiedSessionId: session.id, triggerKind: "first_run" }),
+    });
+    state.bootstrap.calibration.active = calibration;
+    return calibration;
+  } catch (error) {
+    elements.providerNotice.textContent = `Calibration could not start: ${error.message}`;
+    elements.providerNotice.classList.remove("hidden");
+    return null;
+  }
+}
+
+function showCalibration(calibration) {
+  state.calibration = calibration;
+  const unresolved = calibration.samples.findIndex((sample) => !sample.label && !sample.issueCode);
+  if (unresolved >= 0) state.calibrationOrdinal = unresolved;
+  else state.calibrationOrdinal = Math.max(0, calibration.samples.length - 1);
+  hide(elements.onboardingPanel, elements.timelinePanel, elements.reviewPanel, elements.settingsPanel);
+  show(elements.calibrationPanel);
+  document.querySelector(".view-switch")?.classList.add("hidden");
+  renderCalibration();
+}
+
+function renderCalibration() {
+  const calibration = state.calibration;
+  if (!calibration) return;
+  const total = calibration.samples.length;
+  const resolved = calibration.samples.filter((sample) => sample.label || sample.issueCode).length;
+  const sample = calibration.samples[state.calibrationOrdinal];
+  const progress = total ? Math.round((resolved / total) * 100) : 0;
+  elements.calibrationProgress.textContent = `${resolved} of ${total}`;
+  elements.calibrationProgressBar.style.width = `${progress}%`;
+  elements.calibrationProgressBar.parentElement?.setAttribute("aria-valuenow", String(progress));
+  elements.calibrationPrevious.disabled = state.calibrationOrdinal === 0;
+  elements.calibrationStatus.textContent = sample?.label
+    ? `Current decision: ${sample.label === "more_like_this" ? "More like this" : "Less like this"}`
+    : sample?.issueCode
+      ? `Reported capture problem: ${sample.issueCode.replaceAll("_", " ")}`
+      : "Choose More or Less for this real source entry.";
+  elements.calibrationCard.replaceChildren(buildCalibrationCard(sample));
+}
+
+function buildCalibrationCard(sample) {
+  const card = document.createElement("article");
+  card.className = "calibration-entry";
+  if (!sample) {
+    card.textContent = "No calibration entry is available.";
+    return card;
+  }
+  const candidate = sample.candidate ?? {};
+  const header = document.createElement("div");
+  header.className = "calibration-entry-header";
+  const source = document.createElement("strong");
+  source.textContent = sourceLabel(sample.source);
+  const position = document.createElement("span");
+  position.textContent = `Source position ${candidate.feedPosition ?? state.calibrationOrdinal + 1}`;
+  header.append(source, position);
+  const author = document.createElement("h3");
+  author.textContent = candidate.author || "Captured source entry";
+  const text = document.createElement("p");
+  text.className = "calibration-entry-text";
+  text.textContent = candidate.text || candidate.summary || "No readable text was captured.";
+  card.append(header, author, text);
+  const media = buildSourceLayoutMedia(candidate.media ?? [], sample.source);
+  if (media) card.append(media);
+  if (candidate.sourceUrl) {
+    const link = document.createElement("a");
+    link.href = candidate.sourceUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open native post";
+    card.append(link);
+  }
+  return card;
+}
+
+function showPreviousCalibrationSample() {
+  state.calibrationOrdinal = Math.max(0, state.calibrationOrdinal - 1);
+  renderCalibration();
+}
+
+async function decideCalibration(decision) {
+  if (!state.calibration) return;
+  elements.calibrationLess.disabled = true;
+  elements.calibrationMore.disabled = true;
+  try {
+    const { calibration } = await api(
+      `/api/calibration/sessions/${encodeURIComponent(state.calibration.id)}/samples/${state.calibrationOrdinal}`,
+      { method: "PUT", body: JSON.stringify(decision) },
+    );
+    state.calibration = calibration;
+    if (calibration.status === "completed") {
+      state.bootstrap.calibration = { firstRunStatus: "completed", active: null, liveInfluence: false };
+      hide(elements.calibrationPanel);
+      document.querySelector(".view-switch")?.classList.remove("hidden");
+      await loadTimelineFeed();
+      showSessionView();
+      return;
+    }
+    const next = calibration.samples.findIndex(
+      (sample, index) => index > state.calibrationOrdinal && !sample.label && !sample.issueCode,
+    );
+    state.calibrationOrdinal = next >= 0 ? next : Math.min(state.calibrationOrdinal + 1, calibration.samples.length - 1);
+    renderCalibration();
+  } catch (error) {
+    elements.calibrationStatus.textContent = error.message;
+  } finally {
+    elements.calibrationLess.disabled = false;
+    elements.calibrationMore.disabled = false;
   }
 }
 
@@ -1237,7 +1377,8 @@ function safePresentationMediaUrl(value, source) {
 function showSessionView() {
   state.currentView = "timeline";
   selectViewButton(elements.sessionViewButton);
-  hide(elements.reviewPanel, elements.settingsPanel);
+  hide(elements.reviewPanel, elements.settingsPanel, elements.calibrationPanel, elements.onboardingPanel);
+  document.querySelector(".view-switch")?.classList.remove("hidden");
   show(elements.timelinePanel);
   if (state.currentSession && isUnifiedTerminal(state.currentSession.status)) {
     if (!["completed", "partial"].includes(state.currentSession.status)) {
@@ -1269,7 +1410,7 @@ function showSessionView() {
 async function showReviewView() {
   state.currentView = "review";
   selectViewButton(elements.reviewViewButton);
-  hide(elements.timelinePanel, elements.settingsPanel);
+  hide(elements.timelinePanel, elements.settingsPanel, elements.calibrationPanel, elements.onboardingPanel);
   show(elements.reviewPanel);
   await loadPilotReview();
 }
@@ -1277,7 +1418,7 @@ async function showReviewView() {
 async function showSettingsView() {
   state.currentView = "settings";
   selectViewButton(elements.settingsViewButton);
-  hide(elements.timelinePanel, elements.reviewPanel);
+  hide(elements.timelinePanel, elements.reviewPanel, elements.calibrationPanel, elements.onboardingPanel);
   show(elements.settingsPanel);
   await Promise.all([loadRuntimeSettings(), loadOverview()]);
 }
@@ -1451,6 +1592,12 @@ function renderRuntimeSettings(configuration) {
   elements.telemetryBehavior.value =
     telemetryBehavior.persistedValue ?? telemetryBehavior.effectiveValue;
   elements.telemetryBehavior.disabled = telemetryBehavior.source === "environment";
+  const calibrationEnabled = configuration.calibrationEnabled;
+  elements.calibrationEnabled.checked = calibrationEnabled.persistedValue ?? calibrationEnabled.effectiveValue;
+  elements.calibrationEnabled.disabled = calibrationEnabled.source === "environment";
+  const calibrationBatchSize = configuration.calibrationBatchSize;
+  elements.calibrationBatchSize.value = calibrationBatchSize.persistedValue ?? calibrationBatchSize.effectiveValue;
+  elements.calibrationBatchSize.disabled = calibrationBatchSize.source === "environment";
   for (const [name, control] of Object.entries({
     maxItemsPerSource: elements.maxItemsPerSource,
     maxScrolls: elements.maxScrolls,
@@ -1513,6 +1660,8 @@ async function saveRuntimeSettings(event) {
       defaultPresentation: elements.defaultPresentation.value,
       streamWidth: elements.streamWidth.value,
       telemetryBehavior: elements.telemetryBehavior.value,
+      calibrationEnabled: elements.calibrationEnabled.checked,
+      calibrationBatchSize: Number(elements.calibrationBatchSize.value),
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
       planningPolicy: elements.planningPolicy.value,
@@ -1554,6 +1703,8 @@ async function saveRuntimeSettings(event) {
     state.bootstrap.presentation.streamWidth = configuration.streamWidth.effectiveValue;
     state.bootstrap.presentation.telemetryBehavior =
       configuration.telemetryBehavior.effectiveValue;
+    state.bootstrap.calibration.enabled = configuration.calibrationEnabled.effectiveValue;
+    state.bootstrap.calibration.batchSize = configuration.calibrationBatchSize.effectiveValue;
     renderRuntimeSettings(configuration);
     await loadTimelineFeed();
     await loadOverview();

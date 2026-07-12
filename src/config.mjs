@@ -91,6 +91,14 @@ export function loadConfig(env = process.env) {
         defaultValue: ["x", "linkedin"],
         environmentOverride: null,
       },
+      calibrationEnabled: {
+        defaultValue: true,
+        environmentOverride: null,
+      },
+      calibrationBatchSize: {
+        defaultValue: 10,
+        environmentOverride: null,
+      },
       maxItemsPerSource: {
         defaultValue: 5,
         environmentOverride: null,
@@ -145,6 +153,13 @@ export function loadConfig(env = process.env) {
     },
     sources: {
       active: ["x", "linkedin"],
+    },
+    calibration: {
+      enabled: true,
+      triggerPolicy: "first_run",
+      batchSize: 10,
+      maxItemsPerSource: 5,
+      liveInfluence: false,
     },
     reasoning: {
       provider,

@@ -167,6 +167,42 @@ export class SqliteStateStore {
       CREATE INDEX IF NOT EXISTS preference_model_snapshots_created
         ON preference_model_snapshots(created_at DESC);
 
+      CREATE TABLE IF NOT EXISTS calibration_sessions (
+        id TEXT PRIMARY KEY,
+        unified_session_id TEXT NOT NULL UNIQUE REFERENCES unified_sessions(id) ON DELETE CASCADE,
+        trigger_kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        max_items INTEGER NOT NULL,
+        sample_count INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS calibration_samples (
+        session_id TEXT NOT NULL REFERENCES calibration_sessions(id) ON DELETE CASCADE,
+        ordinal INTEGER NOT NULL,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        evidence_key TEXT NOT NULL,
+        source TEXT NOT NULL,
+        candidate_json TEXT NOT NULL,
+        label TEXT,
+        issue_code TEXT,
+        labeled_at TEXT,
+        PRIMARY KEY(session_id, ordinal),
+        UNIQUE(session_id, run_id, evidence_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS calibration_samples_session_label
+        ON calibration_samples(session_id, label, issue_code, ordinal);
+
+      CREATE TABLE IF NOT EXISTS calibration_profile_snapshots (
+        id TEXT PRIMARY KEY,
+        calibration_session_id TEXT NOT NULL UNIQUE REFERENCES calibration_sessions(id) ON DELETE CASCADE,
+        snapshot_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS reasoning_invocations (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -364,6 +400,109 @@ export class SqliteStateStore {
       .prepare("SELECT snapshot_json FROM preference_model_snapshots ORDER BY created_at DESC, id DESC LIMIT 1")
       .get();
     return row ? JSON.parse(row.snapshot_json) : null;
+  }
+
+  createCalibrationSession(session, samples) {
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare(`
+        INSERT INTO calibration_sessions(
+          id, unified_session_id, trigger_kind, status, max_items,
+          sample_count, created_at, updated_at
+        ) VALUES (?, ?, ?, 'reviewing', ?, ?, ?, ?)
+      `).run(
+        session.id,
+        session.unifiedSessionId,
+        session.triggerKind,
+        session.maxItems,
+        samples.length,
+        now,
+        now,
+      );
+      const insert = this.database.prepare(`
+        INSERT INTO calibration_samples(
+          session_id, ordinal, run_id, evidence_key, source, candidate_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      samples.forEach((sample, ordinal) => insert.run(
+        session.id,
+        ordinal,
+        sample.runId,
+        sample.evidenceKey,
+        sample.source,
+        JSON.stringify(sample.candidate),
+      ));
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getCalibrationSession(session.id);
+  }
+
+  getCalibrationSession(id) {
+    const row = this.database.prepare("SELECT * FROM calibration_sessions WHERE id = ?").get(id);
+    if (!row) return null;
+    const samples = this.database.prepare(
+      "SELECT * FROM calibration_samples WHERE session_id = ? ORDER BY ordinal ASC",
+    ).all(id).map(mapCalibrationSample);
+    const snapshotRow = this.database.prepare(
+      "SELECT snapshot_json FROM calibration_profile_snapshots WHERE calibration_session_id = ?",
+    ).get(id);
+    return mapCalibrationSession(row, samples, snapshotRow?.snapshot_json ?? null);
+  }
+
+  getCalibrationSessionByUnifiedSession(unifiedSessionId) {
+    const row = this.database.prepare(
+      "SELECT id FROM calibration_sessions WHERE unified_session_id = ?",
+    ).get(unifiedSessionId);
+    return row ? this.getCalibrationSession(row.id) : null;
+  }
+
+  getActiveCalibrationSession() {
+    const row = this.database.prepare(`
+      SELECT id FROM calibration_sessions
+      WHERE status IN ('reviewing', 'ready_for_review')
+      ORDER BY created_at ASC LIMIT 1
+    `).get();
+    return row ? this.getCalibrationSession(row.id) : null;
+  }
+
+  recordCalibrationDecision(id, ordinal, decision) {
+    const now = new Date().toISOString();
+    const result = this.database.prepare(`
+      UPDATE calibration_samples
+      SET label = ?, issue_code = ?, labeled_at = ?
+      WHERE session_id = ? AND ordinal = ?
+    `).run(decision.label ?? null, decision.issueCode ?? null, now, id, ordinal);
+    if (Number(result.changes) !== 1) return null;
+    this.database.prepare(
+      "UPDATE calibration_sessions SET updated_at = ? WHERE id = ?",
+    ).run(now, id);
+    return this.getCalibrationSession(id);
+  }
+
+  completeCalibrationSession(id, snapshot) {
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare(`
+        UPDATE calibration_sessions
+        SET status = 'completed', updated_at = ?, completed_at = ?
+        WHERE id = ?
+      `).run(now, now, id);
+      this.database.prepare(`
+        INSERT INTO calibration_profile_snapshots(
+          id, calibration_session_id, snapshot_json, created_at
+        ) VALUES (?, ?, ?, ?)
+      `).run(randomUUID(), id, JSON.stringify(snapshot), now);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getCalibrationSession(id);
   }
 
   getOrCreateBridgeToken() {
@@ -1252,6 +1391,39 @@ function mapPreferenceFeedback(row) {
     reasonCode: row.reason_code,
     note: row.note,
     createdAt: row.created_at,
+  };
+}
+
+function mapCalibrationSession(row, samples, snapshotJson) {
+  const resolved = samples.filter((sample) => sample.label || sample.issueCode).length;
+  return {
+    id: row.id,
+    unifiedSessionId: row.unified_session_id,
+    triggerKind: row.trigger_kind,
+    status: row.status,
+    maxItems: row.max_items,
+    sampleCount: row.sample_count,
+    resolvedCount: resolved,
+    currentOrdinal: samples.find((sample) => !sample.label && !sample.issueCode)?.ordinal ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+    samples,
+    snapshot: parseJson(snapshotJson),
+    liveInfluence: false,
+  };
+}
+
+function mapCalibrationSample(row) {
+  return {
+    ordinal: row.ordinal,
+    runId: row.run_id,
+    evidenceKey: row.evidence_key,
+    source: row.source,
+    candidate: parseJson(row.candidate_json),
+    label: row.label,
+    issueCode: row.issue_code,
+    labeledAt: row.labeled_at,
   };
 }
 
