@@ -5,7 +5,7 @@ import {
   createBridgeActions,
 } from "../src/operations/bridge-actions.mjs";
 
-const EXPECTED_BUILD = "aku-bridge-0.5.17-source-fidelity-v19";
+const EXPECTED_BUILD = "aku-bridge-0.5.18-source-fidelity-v20";
 
 test("reload_self is bounded, idempotent, and completes only on the expected heartbeat", () => {
   const clock = { value: Date.parse("2026-07-14T01:00:00.000Z") };
@@ -65,6 +65,25 @@ test("a pending long poll is woken immediately by a new reload action", async ()
   const delivered = await waiting;
   assert.equal(delivered.id, created.id);
   assert.equal(delivered.status, "delivered");
+});
+
+test("an aborted long poll cannot steal a later reload action", async () => {
+  const actions = createBridgeActions({
+    expectedBuildId: "aku-bridge-0.5.18-source-fidelity-v20",
+  });
+  const disconnected = new AbortController();
+  const staleWait = actions.waitForNext(30_000, { signal: disconnected.signal });
+  disconnected.abort();
+  assert.equal(await staleWait, null);
+
+  actions.requestReload({
+    requestId: "reload-after-abort",
+    actor: "codex",
+    reason: "prove stale waiters are removed",
+  });
+  const action = await actions.waitForNext(0);
+  assert.equal(action.requestId, "reload-after-abort");
+  assert.equal(action.status, "delivered");
 });
 
 test("expiry taxonomy preserves the last proven cooperative stage", () => {

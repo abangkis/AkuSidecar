@@ -93,18 +93,28 @@ export function createBridgeActions({
       return claimNext();
     },
 
-    waitForNext(waitMs = 0) {
+    waitForNext(waitMs = 0, { signal } = {}) {
       const immediate = claimNext();
       if (immediate || waitMs <= 0) return Promise.resolve(immediate);
       return new Promise((resolve) => {
         let timer;
-        const finishWait = () => {
+        const cleanup = () => {
           clearTimeout(timer);
           waiters.delete(finishWait);
+          signal?.removeEventListener("abort", cancelWait);
+        };
+        const finishWait = () => {
+          cleanup();
           resolve(claimNext());
+        };
+        const cancelWait = () => {
+          cleanup();
+          resolve(null);
         };
         timer = setTimeout(finishWait, waitMs);
         waiters.add(finishWait);
+        signal?.addEventListener("abort", cancelWait, { once: true });
+        if (signal?.aborted) cancelWait();
       });
     },
 

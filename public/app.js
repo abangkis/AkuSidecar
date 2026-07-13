@@ -178,6 +178,9 @@ window.addEventListener("message", (event) => {
       return;
     }
     setStatus(elements.bridgeStatus, "AkuBridge error", "error");
+    elements.providerNotice.textContent = event.data.message ||
+      "AkuBridge could not complete the requested operation.";
+    elements.providerNotice.classList.remove("hidden");
     if (
       (state.currentRun && !isTerminal(state.currentRun.status)) ||
       (state.currentSession && !isUnifiedTerminal(state.currentSession.status))
@@ -218,6 +221,10 @@ elements.mediaViewerNext.addEventListener("click", () => moveMediaViewer(1));
 for (const button of document.querySelectorAll("[data-calibration-issue]")) {
   button.addEventListener("click", () => decideCalibration({ issueCode: button.dataset.calibrationIssue }));
 }
+let bootstrapRetryTimer = null;
+let bridgePingStarted = false;
+let bridgeActionLoopStarted = false;
+
 await bootstrap();
 observePilotReviewScroll();
 
@@ -241,8 +248,13 @@ async function bootstrap() {
         "Development fallback active. This run can verify plumbing, but its ranking must not be used to evaluate product quality.";
       elements.providerNotice.classList.remove("hidden");
     }
+    if (bootstrapRetryTimer) clearTimeout(bootstrapRetryTimer);
+    bootstrapRetryTimer = null;
     pingBridge();
-    setInterval(pingBridge, 30_000);
+    if (!bridgePingStarted) {
+      bridgePingStarted = true;
+      setInterval(pingBridge, 30_000);
+    }
     startBridgeActionLoop();
     if (state.bootstrap.onboarding?.status !== "completed") {
       showOnboarding(false);
@@ -278,6 +290,12 @@ async function bootstrap() {
     setUpdateButtonsDisabled(true);
     elements.providerNotice.textContent = error.message;
     elements.providerNotice.classList.remove("hidden");
+    if (!bootstrapRetryTimer) {
+      bootstrapRetryTimer = setTimeout(() => {
+        bootstrapRetryTimer = null;
+        void bootstrap();
+      }, 1_000);
+    }
   }
 }
 
@@ -371,8 +389,6 @@ function pingBridge() {
     window.location.origin,
   );
 }
-
-let bridgeActionLoopStarted = false;
 
 function startBridgeActionLoop() {
   if (bridgeActionLoopStarted) return;

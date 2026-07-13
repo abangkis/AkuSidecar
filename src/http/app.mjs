@@ -314,7 +314,11 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "GET" && url.pathname === "/api/operations/bridge/actions/next") {
     const waitMs = parseBridgeActionWait(url.searchParams.get("waitMs"));
-    sendJson(response, 200, { action: await bridgeActions.waitForNext(waitMs) });
+    const waiter = new AbortController();
+    response.once("close", () => waiter.abort());
+    sendJson(response, 200, {
+      action: await bridgeActions.waitForNext(waitMs, { signal: waiter.signal }),
+    });
     return;
   }
 
