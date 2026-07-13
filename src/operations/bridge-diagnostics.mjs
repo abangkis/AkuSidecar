@@ -1,3 +1,5 @@
+import { evaluateBridgeCompatibility } from "./bridge-compatibility.mjs";
+
 const SOURCES = ["x", "linkedin"];
 const HEARTBEAT_FRESH_MS = 90_000;
 
@@ -12,6 +14,9 @@ export function createBridgeDiagnostics({ now = () => Date.now() } = {}) {
     report(runs = []) {
       return buildBridgeHealth({ heartbeat, runs, now: now() });
     },
+    compatibility() {
+      return evaluateBridgeCompatibility(heartbeat);
+    },
   };
 }
 
@@ -22,6 +27,8 @@ export function sanitizeHeartbeat(input, receivedAt = new Date().toISOString()) 
     bridgeId: clean(capabilities.bridgeId, 80),
     extensionVersion: clean(capabilities.extensionVersion, 40),
     runtimeRevision: clean(capabilities.runtimeRevision, 100),
+    buildId: clean(capabilities.buildId, 160),
+    adapterVersions: boundedStringMap(capabilities.adapterVersions, 10, 100),
     contractVersion: clean(capabilities.contractVersion, 100),
     manifestVersion: integer(capabilities.manifestVersion),
     sources: boundedStrings(capabilities.sources, 10, 30),
@@ -47,8 +54,11 @@ export function buildBridgeHealth({ heartbeat, runs = [], now = Date.now() }) {
   const sources = Object.fromEntries(SOURCES.map((source) => [source, latestSourceHealth(source, runs)]));
   const observed = Object.values(sources).filter((source) => source.status !== "unobserved");
   const degradedSources = observed.filter((source) => source.status !== "healthy").length;
+  const compatibility = evaluateBridgeCompatibility(heartbeat);
   const status = runtime.status === "unavailable"
     ? "unavailable"
+    : !compatibility.compatible
+      ? "incompatible"
     : runtime.status === "stale" || degradedSources > 0
       ? "degraded"
       : "healthy";
@@ -57,6 +67,7 @@ export function buildBridgeHealth({ heartbeat, runs = [], now = Date.now() }) {
     status,
     checkedAt: new Date(now).toISOString(),
     runtime,
+    compatibility,
     sources,
     summary: {
       observedSources: observed.length,
@@ -125,6 +136,13 @@ function boundedStrings(value, limit, max) {
 function boundedNumberMap(value, limit) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value).slice(0, limit).map(([key, count]) => [clean(key, 160), integer(count)]).filter(([key]) => key));
+}
+
+function boundedStringMap(value, limit, max) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).slice(0, limit)
+    .map(([key, entry]) => [clean(key, 80), clean(entry, max)])
+    .filter(([key, entry]) => key && entry));
 }
 
 function sanitizeFieldCoverage(value) {

@@ -255,12 +255,27 @@ function validateBlock(source, block, index, limits) {
       : "original",
     parentPermalink: safeHttpUrl(block.parentPermalink),
     engagement: validateEngagement(block.engagement),
+    presentation: validatePresentation(block.presentation),
     media: validateBlockMedia(source, block.media, limits),
     links,
   };
   return {
     ...validated,
     evidenceKey: evidenceKeyForBlock(source, validated),
+  };
+}
+
+function validatePresentation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return {
+    socialContext: cleanString(value.socialContext, 300),
+    socialContextAvatarUrl: safeHttpUrl(value.socialContextAvatarUrl),
+    headline: cleanString(value.headline, 500),
+    attributionText: cleanString(value.attributionText, 500),
+    connectionDegree: cleanString(value.connectionDegree, 30),
+    timestampText: cleanString(value.timestampText, 100),
+    edited: value.edited === true,
+    promoted: value.promoted === true,
   };
 }
 

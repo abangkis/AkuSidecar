@@ -10,7 +10,12 @@ const viteDevelopment = process.argv.includes("--vite");
 const store = new SqliteStateStore(config.databasePath);
 applyPersistedConfiguration(config, store);
 const reasoningProvider = await createReasoningProvider(config.reasoning);
-const app = createAkuBrowserApp({ config, store, reasoningProvider });
+const app = createAkuBrowserApp({
+  config,
+  store,
+  reasoningProvider,
+  enforceBridgeCompatibility: true,
+});
 
 try {
   if (viteDevelopment) await attachViteFrontend(app, config);

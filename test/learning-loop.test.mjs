@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { decideAcquisitionPlanning, JobEngine } from "../src/core/job-engine.mjs";
+import { decideAcquisitionPlanning, JobEngine, mergeCapturedBlock } from "../src/core/job-engine.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
 
@@ -23,6 +23,17 @@ const limits = {
   maxBlocksPerSnapshot: 20,
   maxBlockCharacters: 4_000,
 };
+
+test("later snapshots enrich the same captured post instead of freezing incomplete media", () => {
+  const merged = mergeCapturedBlock(
+    { evidenceKey: "x:fixture", author: "World and Science", avatarUrl: null, text: "Galaxy", media: [], engagement: { like: "10" }, presentation: {}, links: [], feedPosition: 1 },
+    { evidenceKey: "x:fixture", author: "World and Science", avatarUrl: "https://pbs.twimg.com/profile_images/avatar.jpg", text: "Galaxy", media: [{ kind: "image", url: "https://pbs.twimg.com/media/galaxy.jpg" }], engagement: { view: "1000" }, presentation: { timestampText: "8h" }, links: [], feedPosition: 1 },
+  );
+  assert.equal(merged.avatarUrl, "https://pbs.twimg.com/profile_images/avatar.jpg");
+  assert.equal(merged.media.length, 1);
+  assert.deepEqual(merged.engagement, { like: "10", view: "1000" });
+  assert.equal(merged.presentation.timestampText, "8h");
+});
 
 test("Codex model and phase effort are explicit configurable runtime metadata", () => {
   const config = loadConfig({

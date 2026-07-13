@@ -810,10 +810,9 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
     if (
       !block.evidenceKey ||
-      unique.has(block.evidenceKey) ||
       (evaluated && !evaluated.has(block.evidenceKey))
     ) continue;
-    unique.set(block.evidenceKey, block);
+    unique.set(block.evidenceKey, mergeCapturedBlock(unique.get(block.evidenceKey), block));
   }
   return [...unique.values()].map((block) => {
     const item = selectedByEvidence.get(block.evidenceKey) ?? null;
@@ -830,6 +829,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       sourceUrl: block.permalink || observation.pageUrl,
       media: block.media ?? [],
       engagement: block.engagement ?? {},
+      presentation: block.presentation ?? {},
       publishedAt: block.publishedAt ?? null,
       feedPosition: Number.isInteger(block.feedPosition) ? block.feedPosition : null,
       policyVersion: "learning-loop-v0",
@@ -846,6 +846,33 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
         : null,
     };
   });
+}
+
+export function mergeCapturedBlock(previous, current) {
+  if (!previous) return current;
+  const previousMedia = previous.media ?? [];
+  const currentMedia = current.media ?? [];
+  const media = currentMedia.length > previousMedia.length ? currentMedia : previousMedia;
+  return {
+    ...previous,
+    ...current,
+    author: current.author || previous.author,
+    avatarUrl: current.avatarUrl || previous.avatarUrl,
+    text: current.text.length >= previous.text.length ? current.text : previous.text,
+    permalink: current.permalink || previous.permalink,
+    platformId: current.platformId || previous.platformId,
+    publishedAt: current.publishedAt || previous.publishedAt,
+    feedPosition: Math.min(
+      ...[previous.feedPosition, current.feedPosition].filter(Number.isInteger),
+    ),
+    engagement: { ...(previous.engagement ?? {}), ...(current.engagement ?? {}) },
+    presentation: { ...(previous.presentation ?? {}), ...(current.presentation ?? {}) },
+    media,
+    links: [...new Map(
+      [...(previous.links ?? []), ...(current.links ?? [])].map((link) => [link.href, link]),
+    ).values()].slice(0, 10),
+    evidenceKey: current.evidenceKey,
+  };
 }
 
 function assertCandidateAssessments(result, observation, evaluatedEvidenceKeys) {

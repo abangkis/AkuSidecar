@@ -241,6 +241,15 @@ test("browser observations accept only bounded http evidence", () => {
                 { kind: "image", url: "https://pbs.twimg.com/media/example.jpg#fragment", alt: "Architecture diagram", width: 640, height: 360 },
                 { kind: "image", url: "https://evil.example/tracker.png", width: 640, height: 360 },
               ],
+              presentation: {
+                socialContext: "Reza Lesmana likes this",
+                socialContextAvatarUrl: "https://media.licdn.com/dms/image/context-avatar",
+                headline: "Cybersecurity Leader | Executive",
+                attributionText: "with Cassie Dell · Promoted · Partnership with LinkedIn",
+                connectionDegree: "2nd",
+                timestampText: "12h · Edited",
+                edited: true,
+              },
               links: [
                 { text: "valid", href: "https://example.com/" },
                 { text: "invalid", href: "javascript:alert(1)" },
@@ -263,6 +272,16 @@ test("browser observations accept only bounded http evidence", () => {
     width: 640,
     height: 360,
   }]);
+  assert.deepEqual(observation.snapshots[0].blocks[0].presentation, {
+    socialContext: "Reza Lesmana likes this",
+    socialContextAvatarUrl: "https://media.licdn.com/dms/image/context-avatar",
+    headline: "Cybersecurity Leader | Executive",
+    attributionText: "with Cassie Dell · Promoted · Partnership with LinkedIn",
+    connectionDegree: "2nd",
+    timestampText: "12h · Edited",
+    edited: true,
+    promoted: false,
+  });
   assert.equal(observation.coverage.status, "partial");
 });
 

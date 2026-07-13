@@ -27,7 +27,13 @@ const MIME_TYPES = new Map([
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
 
-export function createAkuBrowserApp({ config, store, reasoningProvider, logger = console }) {
+export function createAkuBrowserApp({
+  config,
+  store,
+  reasoningProvider,
+  logger = console,
+  enforceBridgeCompatibility = false,
+}) {
   config.calibration ??= {
     enabled: true,
     triggerPolicy: "first_run",
@@ -78,6 +84,7 @@ export function createAkuBrowserApp({ config, store, reasoningProvider, logger =
           bridgeDiagnostics,
           config,
           calibrationEngine,
+          enforceBridgeCompatibility,
         });
         return;
       }
@@ -162,7 +169,7 @@ function serveFrontend(middleware, request, response, logger) {
   });
 }
 
-async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config, calibrationEngine }) {
+async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config, calibrationEngine, enforceBridgeCompatibility }) {
   if (request.method === "GET" && url.pathname === "/api/calibration/active") {
     sendJson(response, 200, { calibration: calibrationEngine.getActive() });
     return;
@@ -266,7 +273,11 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "POST" && url.pathname === "/api/operations/bridge/heartbeat") {
     const body = await readJson(request, config.limits.maxBodyBytes);
-    sendJson(response, 202, { heartbeat: bridgeDiagnostics.recordHeartbeat(body) });
+    const heartbeat = bridgeDiagnostics.recordHeartbeat(body);
+    sendJson(response, 202, {
+      heartbeat,
+      compatibility: bridgeDiagnostics.compatibility(),
+    });
     return;
   }
 
@@ -405,12 +416,14 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   }
 
   if (request.method === "POST" && url.pathname === "/api/runs") {
+    if (enforceBridgeCompatibility) assertCompatibleBridge(bridgeDiagnostics);
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, { run: engine.startRun(body) });
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/sessions") {
+    if (enforceBridgeCompatibility) assertCompatibleBridge(bridgeDiagnostics);
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, {
       session: engine.startUnifiedSession({
@@ -565,6 +578,15 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   }
 
   sendJson(response, 404, { error: "NotFound", message: "Route not found" });
+}
+
+function assertCompatibleBridge(bridgeDiagnostics) {
+  const compatibility = bridgeDiagnostics.compatibility();
+  if (compatibility.compatible) return;
+  throw new ContractError(
+    `AkuBridge update/reload required: ${compatibility.reasons.join(" ")}`,
+    compatibility,
+  );
 }
 
 function boundedIntegerQuery(url, name, { fallback, minimum, maximum }) {

@@ -138,12 +138,26 @@ const elements = {
 window.addEventListener("message", (event) => {
   if (event.source !== window || !event.data || typeof event.data !== "object") return;
   if (event.data.type === "AKU_BROWSER_BRIDGE_READY") {
-    state.bridgeReady = true;
-    setStatus(elements.bridgeStatus, "AkuBridge ready", "ok");
     api("/api/operations/bridge/heartbeat", {
       method: "POST",
       body: JSON.stringify({ capabilities: event.data.capabilities ?? {} }),
+    }).then(({ heartbeat, compatibility }) => {
+      state.bridgeReady = compatibility?.compatible === true;
+      const label = state.bridgeReady
+        ? `AkuBridge ${heartbeat.extensionVersion} ready`
+        : "AkuBridge update required";
+      setStatus(elements.bridgeStatus, label, state.bridgeReady ? "ok" : "warning");
+      setUpdateButtonsDisabled(!state.bridgeReady);
+      elements.onboardingFinish.disabled = !state.bridgeReady;
+      if (!state.bridgeReady) {
+        elements.providerNotice.textContent = compatibility?.reasons?.join(" ") ||
+          "AkuBridge does not match this AkuSidecar build. Reload or update the extension.";
+        elements.providerNotice.classList.remove("hidden");
+      }
     }).catch(() => {
+      state.bridgeReady = false;
+      setUpdateButtonsDisabled(true);
+      elements.onboardingFinish.disabled = true;
       setStatus(elements.bridgeStatus, "AkuBridge diagnostics pending", "warning");
     });
   }
@@ -1298,6 +1312,7 @@ function buildItemPresentation({ brief, source, actions, className = "" }) {
 
 function buildSourceLayoutCard(run, item, candidate) {
   const source = item.source || candidate?.source || run.source;
+  const presentation = candidate?.presentation ?? {};
   const article = document.createElement("div");
   article.className = `source-layout-card source-${source}`;
 
@@ -1313,6 +1328,17 @@ function buildSourceLayoutCard(run, item, candidate) {
   const identityMeta = sourceIdentity(candidate?.author || item.author, source);
   if (identityMeta.secondary) context.textContent = identityMeta.secondary;
   identity.append(author, context);
+  if (source === "linkedin") {
+    context.textContent = [presentation.connectionDegree, presentation.timestampText]
+      .filter(Boolean)
+      .join(" · ") || (item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run");
+    if (presentation.headline) {
+      const headline = document.createElement("span");
+      headline.className = "source-layout-headline";
+      headline.textContent = presentation.headline;
+      identity.insertBefore(headline, context);
+    }
+  }
   const avatar = buildSourceAvatar(candidate?.avatarUrl, source, candidate?.author || item.author);
   header.append(avatar, identity);
 
@@ -1329,7 +1355,28 @@ function buildSourceLayoutCard(run, item, candidate) {
   }
 
   const media = buildSourceLayoutMedia(candidate?.media ?? [], source);
+  if (source === "linkedin" && presentation.socialContext) {
+    const socialContext = document.createElement("div");
+    socialContext.className = "linkedin-social-context-row";
+    const socialAvatar = buildSourceAvatar(
+      presentation.socialContextAvatarUrl,
+      source,
+      presentation.socialContext,
+      { compact: true, hideFallback: true },
+    );
+    const socialText = document.createElement("span");
+    socialText.textContent = presentation.socialContext;
+    if (socialAvatar) socialContext.append(socialAvatar);
+    socialContext.append(socialText);
+    article.append(socialContext);
+  }
   article.append(header, content);
+  if (source === "linkedin" && presentation.attributionText) {
+    const attribution = document.createElement("div");
+    attribution.className = "linkedin-attribution-row";
+    attribution.textContent = presentation.attributionText;
+    article.insertBefore(attribution, content);
+  }
   if (media) {
     const quote = content.querySelector(".x-quote-card");
     (quote ?? article).append(media);
@@ -1395,14 +1442,15 @@ function buildLinkedInSourceLayoutContent(candidate) {
   return content;
 }
 
-function buildSourceAvatar(value, source, author) {
+function buildSourceAvatar(value, source, author, { compact = false, hideFallback = false } = {}) {
   const fallback = document.createElement("span");
   fallback.className = "source-layout-badge";
   fallback.textContent = source === "x" ? "X" : "in";
   const url = safeAvatarUrl(value, source);
-  if (!url) return fallback;
+  if (!url) return hideFallback ? null : fallback;
   const image = document.createElement("img");
   image.className = "source-layout-avatar";
+  if (compact) image.classList.add("is-compact");
   image.src = url;
   image.alt = author ? `${author} avatar` : `${sourceLabel(source)} profile avatar`;
   image.loading = "lazy";

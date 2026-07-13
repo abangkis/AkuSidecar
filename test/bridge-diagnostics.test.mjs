@@ -12,6 +12,8 @@ test("heartbeat keeps operational capabilities and drops arbitrary content", () 
       bridgeId: "aku-bridge",
       extensionVersion: "0.5.0",
       runtimeRevision: "bridge-diagnostics-v1",
+      buildId: "fixture-build",
+      adapterVersions: { x: "x-dom-v1", linkedin: "linkedin-dom-v2" },
       sources: ["x", "linkedin"],
       actions: ["collect_visible", "collect_visible"],
       authority: "read_only_bounded",
@@ -22,6 +24,8 @@ test("heartbeat keeps operational capabilities and drops arbitrary content", () 
   }, "2026-07-12T01:00:00.000Z");
 
   assert.equal(heartbeat.runtimeRevision, "bridge-diagnostics-v1");
+  assert.equal(heartbeat.buildId, "fixture-build");
+  assert.deepEqual(heartbeat.adapterVersions, { x: "x-dom-v1", linkedin: "linkedin-dom-v2" });
   assert.deepEqual(heartbeat.actions, ["collect_visible"]);
   assert.equal(heartbeat.rawPostText, undefined);
   assert.equal(heartbeat.token, undefined);
@@ -32,16 +36,30 @@ test("bridge report distinguishes unavailable, healthy, stale, and degraded", ()
   const diagnostics = createBridgeDiagnostics({ now: () => clock.value });
   assert.equal(diagnostics.report().status, "unavailable");
 
-  diagnostics.recordHeartbeat({ runtimeRevision: "bridge-diagnostics-v1" });
+  diagnostics.recordHeartbeat(compatibleHeartbeat());
   assert.equal(diagnostics.report().status, "healthy");
+  assert.equal(diagnostics.compatibility().compatible, true);
 
   clock.value += 90_001;
   assert.equal(diagnostics.report().status, "degraded");
 });
 
+test("bridge compatibility rejects stale versions, revisions, and adapters", () => {
+  const diagnostics = createBridgeDiagnostics();
+  diagnostics.recordHeartbeat({
+    extensionVersion: "0.5.0",
+    runtimeRevision: "old-runtime",
+    buildId: "old-build",
+    adapterVersions: { x: "x-dom-v1", linkedin: "linkedin-dom-v2" },
+  });
+  const compatibility = diagnostics.compatibility();
+  assert.equal(compatibility.compatible, false);
+  assert.equal(compatibility.reasons.length, 5);
+});
+
 test("source health exposes diagnostics but no captured evidence", () => {
   const report = buildBridgeHealth({
-    heartbeat: sanitizeHeartbeat({ runtimeRevision: "bridge-diagnostics-v1" }, "2026-07-12T01:00:00.000Z"),
+    heartbeat: sanitizeHeartbeat(compatibleHeartbeat(), "2026-07-12T01:00:00.000Z"),
     now: Date.parse("2026-07-12T01:00:01.000Z"),
     runs: [{
       source: "linkedin",
@@ -75,3 +93,12 @@ test("source health exposes diagnostics but no captured evidence", () => {
   assert.equal(JSON.stringify(report).includes("private post"), false);
   assert.equal(JSON.stringify(report).includes("private author"), false);
 });
+
+function compatibleHeartbeat() {
+  return {
+    extensionVersion: "0.5.4",
+    runtimeRevision: "source-presentation-v6",
+    buildId: "aku-bridge-0.5.4-source-presentation-v6",
+    adapterVersions: { x: "x-dom-v2", linkedin: "linkedin-dom-v5" },
+  };
+}
