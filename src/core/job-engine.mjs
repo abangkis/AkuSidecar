@@ -95,13 +95,15 @@ export class JobEngine {
     const latestSession = sessions[0] ?? null;
     const olderEvidence = new Set(
       sessions.slice(1).flatMap((session) =>
-        (session.result?.items ?? []).map(({ item }) => `${item.source}:${item.evidenceKey}`),
+        (session.result?.items ?? []).map((resultEntry) =>
+          timelineEvidenceIdentity(session, resultEntry),
+        ),
       ),
     );
     const latestEvidence = new Set();
     let latestAdditions = 0;
-    for (const { item } of latestSession?.result?.items ?? []) {
-      const identity = `${item.source}:${item.evidenceKey}`;
+    for (const resultEntry of latestSession?.result?.items ?? []) {
+      const identity = timelineEvidenceIdentity(latestSession, resultEntry);
       if (latestEvidence.has(identity)) continue;
       latestEvidence.add(identity);
       if (!olderEvidence.has(identity)) latestAdditions += 1;
@@ -111,7 +113,7 @@ export class JobEngine {
     for (const session of sessions) {
       for (const resultEntry of session.result?.items ?? []) {
         const item = resultEntry.item;
-        const evidenceIdentity = `${item.source}:${item.evidenceKey}`;
+        const evidenceIdentity = timelineEvidenceIdentity(session, resultEntry);
         if (seenEvidence.has(evidenceIdentity)) continue;
         const child = session.children.find((candidate) => candidate.runId === resultEntry.runId);
         if (!child?.run) continue;
@@ -720,6 +722,20 @@ export class JobEngine {
   }
 }
 
+function timelineEvidenceIdentity(session, resultEntry) {
+  const item = resultEntry?.item ?? {};
+  const child = session?.children?.find((candidate) => candidate.runId === resultEntry?.runId);
+  const source = item.source || child?.source || "unknown";
+  const candidate = child?.run?.candidateEvaluations?.find(
+    (entry) => entry.evidenceKey === item.evidenceKey,
+  );
+  if (source === "linkedin" && candidate) {
+    const signature = capturedContentSignature(source, candidate);
+    if (signature) return `content:${signature}`;
+  }
+  return `${source}:${item.evidenceKey ?? ""}`;
+}
+
 function projectUnifiedSessionForPresentation(session) {
   return {
     ...session,
@@ -1173,7 +1189,11 @@ export function reconcileCapturedSnapshots(source, snapshots) {
 
 function capturedContentSignature(source, block) {
   const author = String(block?.author ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-  const text = String(block?.text ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  const text = String(block?.text ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s*([.,!?;:])\s*/g, "$1")
+    .trim();
   if (!author || text.length < 80) return null;
   return `${source}\u0000${author}\u0000${text.slice(0, 500)}`;
 }
