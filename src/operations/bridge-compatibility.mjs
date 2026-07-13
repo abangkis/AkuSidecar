@@ -1,7 +1,7 @@
 export const BRIDGE_REQUIREMENTS = Object.freeze({
-  minimumExtensionVersion: "0.5.5",
-  runtimeRevision: "source-fidelity-v7",
-  adapterVersions: Object.freeze({ x: "x-dom-v3", linkedin: "linkedin-dom-v6" }),
+  minimumExtensionVersion: "0.5.6",
+  runtimeRevision: "source-fidelity-v8",
+  adapterVersions: Object.freeze({ x: "x-dom-v4", linkedin: "linkedin-dom-v6" }),
 });
 
 export function evaluateBridgeCompatibility(heartbeat) {
