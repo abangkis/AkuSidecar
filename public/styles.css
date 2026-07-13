@@ -1473,10 +1473,32 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.018);
 }
 
-.x-quote-card > strong {
-  display: block;
-  padding: 13px 14px 0;
+.x-quote-card > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px 0;
+}
+
+.x-quote-card > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.x-quote-card > header strong {
+  overflow: hidden;
   font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-quote-card > header span {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .x-quote-card > p {
@@ -1488,6 +1510,12 @@ textarea:focus {
 
 .x-quote-card > .source-layout-media {
   margin-top: 0;
+}
+
+.x-quote-link {
+  display: inline-block;
+  padding: 0 14px 12px;
+  font-size: 0.78rem;
 }
 
 .source-layout-media {

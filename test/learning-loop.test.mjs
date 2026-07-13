@@ -31,13 +31,14 @@ const limits = {
 
 test("later snapshots enrich the same captured post instead of freezing incomplete media", () => {
   const merged = mergeCapturedBlock(
-    { evidenceKey: "x:fixture", author: "World and Science", avatarUrl: null, text: "Galaxy", media: [], engagement: { like: "10" }, presentation: {}, links: [], feedPosition: 1 },
-    { evidenceKey: "x:fixture", author: "World and Science", avatarUrl: "https://pbs.twimg.com/profile_images/avatar.jpg", text: "Galaxy", media: [{ kind: "image", url: "https://pbs.twimg.com/media/galaxy.jpg" }], engagement: { view: "1000" }, presentation: { timestampText: "8h" }, links: [], feedPosition: 1 },
+    { evidenceKey: "x:fixture", author: "World and Science", avatarUrl: null, text: "Galaxy", quotedPost: null, media: [], engagement: { like: "10" }, presentation: {}, links: [], feedPosition: 1 },
+    { evidenceKey: "x:fixture", author: "World and Science", avatarUrl: "https://pbs.twimg.com/profile_images/avatar.jpg", text: "Galaxy", quotedPost: { author: "Quoted author", avatarUrl: null, text: "Nested context", permalink: null, publishedAt: null, links: [], media: [] }, media: [{ kind: "image", url: "https://pbs.twimg.com/media/galaxy.jpg" }], engagement: { view: "1000" }, presentation: { timestampText: "8h" }, links: [], feedPosition: 1 },
   );
   assert.equal(merged.avatarUrl, "https://pbs.twimg.com/profile_images/avatar.jpg");
   assert.equal(merged.media.length, 1);
   assert.deepEqual(merged.engagement, { like: "10", view: "1000" });
   assert.equal(merged.presentation.timestampText, "8h");
+  assert.equal(merged.quotedPost.text, "Nested context");
 });
 
 test("later LinkedIn permalink recovery enriches duplicate captures before reasoning", () => {

@@ -1390,8 +1390,8 @@ function buildSourceLayoutCard(run, item, candidate) {
     article.insertBefore(attribution, content);
   }
   if (media) {
-    const quote = content.querySelector(".x-quote-card");
-    (quote ?? article).append(media);
+    const legacyQuote = candidate?.quotedPost ? null : content.querySelector(".x-quote-card");
+    (legacyQuote ?? article).append(media);
   }
   const engagement = buildSourceEngagement(candidate?.engagement ?? {}, source);
   if (engagement) article.append(engagement);
@@ -1489,17 +1489,52 @@ function buildXSourceLayoutContent(candidate) {
   const body = document.createElement("p");
   appendLinkedText(body, parsed.body, candidate.links ?? []);
   content.append(body);
-  if (parsed.quote) {
-    const quote = document.createElement("section");
-    quote.className = "x-quote-card";
-    const identity = document.createElement("strong");
-    identity.textContent = parsed.quote.identity;
-    const quoteBody = document.createElement("p");
-    appendLinkedText(quoteBody, parsed.quote.body, candidate.links ?? []);
-    quote.append(identity, quoteBody);
-    content.append(quote);
-  }
+  const quotedPost = candidate.quotedPost ?? (parsed.quote
+    ? { author: parsed.quote.identity, text: parsed.quote.body, links: [], media: [] }
+    : null);
+  if (quotedPost) content.append(buildXQuotedPostCard(quotedPost));
   return content;
+}
+
+function buildXQuotedPostCard(quotedPost) {
+  const quote = document.createElement("section");
+  quote.className = "x-quote-card";
+  const header = document.createElement("header");
+  const avatar = buildSourceAvatar(
+    quotedPost.avatarUrl,
+    "x",
+    quotedPost.author,
+    { compact: true },
+  );
+  const identity = document.createElement("div");
+  const parsedIdentity = sourceIdentity(quotedPost.author, "x");
+  const name = document.createElement("strong");
+  name.textContent = parsedIdentity.displayName;
+  const secondary = document.createElement("span");
+  secondary.textContent = parsedIdentity.secondary || (
+    quotedPost.publishedAt ? formatDate(quotedPost.publishedAt) : "Quoted post"
+  );
+  identity.append(name, secondary);
+  header.append(avatar, identity);
+  const quoteBody = document.createElement("p");
+  appendLinkedText(quoteBody, quotedPost.text, quotedPost.links ?? []);
+  quote.append(header, quoteBody);
+  const media = buildSourceLayoutMedia(
+    quotedPost.media ?? [],
+    "x",
+    quotedPost.permalink,
+  );
+  if (media) quote.append(media);
+  if (quotedPost.permalink) {
+    const link = document.createElement("a");
+    link.className = "x-quote-link";
+    link.href = quotedPost.permalink;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open quoted post";
+    quote.append(link);
+  }
+  return quote;
 }
 
 function buildSourceLayoutMedia(entries, source, sourceUrl) {

@@ -13,6 +13,9 @@ test("untrusted source instructions remain delimited evidence and media stays pr
   const compact = compactObservation(observation, 40_000);
   assert.equal(compact.blocks[0].text, injection);
   assert.equal("media" in compact.blocks[0], false);
+  assert.equal("avatarUrl" in compact.blocks[0].quotedPost, false);
+  assert.equal("media" in compact.blocks[0].quotedPost, false);
+  assert.equal(compact.blocks[0].quotedPost.text, "Quoted context remains available to reasoning.");
   assert.doesNotMatch(JSON.stringify(compact), /pbs\.twimg\.com/);
 
   const prompt = buildPrompt(fixtureRun(), compact, { checkpoint: null, events: [] });
@@ -78,6 +81,15 @@ function fixtureObservation() {
         author: "Untrusted source",
         permalink: "https://x.com/untrusted/status/1",
         media: [{ url: "https://pbs.twimg.com/media/private.jpg", kind: "image" }],
+        quotedPost: {
+          author: "Quoted source",
+          avatarUrl: "https://pbs.twimg.com/profile_images/private.jpg",
+          text: "Quoted context remains available to reasoning.",
+          permalink: null,
+          publishedAt: null,
+          links: [],
+          media: [{ url: "https://pbs.twimg.com/media/quoted-private.jpg", kind: "image" }],
+        },
       }],
     }],
   };

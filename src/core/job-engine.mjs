@@ -827,6 +827,9 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       avatarUrl: block.avatarUrl ?? null,
       text: block.text ?? "",
       sourceUrl: block.permalink || observation.pageUrl,
+      relationshipType: block.relationshipType ?? "original",
+      parentPermalink: block.parentPermalink ?? null,
+      quotedPost: block.quotedPost ?? null,
       media: block.media ?? [],
       links: block.links ?? [],
       engagement: block.engagement ?? {},
@@ -854,6 +857,7 @@ export function mergeCapturedBlock(previous, current) {
   const previousMedia = previous.media ?? [];
   const currentMedia = current.media ?? [];
   const media = currentMedia.length > previousMedia.length ? currentMedia : previousMedia;
+  const quotedPost = mergeQuotedPost(previous.quotedPost, current.quotedPost);
   return {
     ...previous,
     ...current,
@@ -868,11 +872,32 @@ export function mergeCapturedBlock(previous, current) {
     ),
     engagement: { ...(previous.engagement ?? {}), ...(current.engagement ?? {}) },
     presentation: { ...(previous.presentation ?? {}), ...(current.presentation ?? {}) },
+    quotedPost,
     media,
     links: [...new Map(
       [...(previous.links ?? []), ...(current.links ?? [])].map((link) => [link.href, link]),
     ).values()].slice(0, 10),
     evidenceKey: current.evidenceKey,
+  };
+}
+
+function mergeQuotedPost(previous, current) {
+  if (!previous) return current ?? null;
+  if (!current) return previous;
+  const previousMedia = previous.media ?? [];
+  const currentMedia = current.media ?? [];
+  return {
+    ...previous,
+    ...current,
+    author: current.author || previous.author || "",
+    avatarUrl: current.avatarUrl || previous.avatarUrl || null,
+    text: current.text.length >= previous.text.length ? current.text : previous.text,
+    permalink: current.permalink || previous.permalink || null,
+    publishedAt: current.publishedAt || previous.publishedAt || null,
+    links: (current.links?.length ?? 0) >= (previous.links?.length ?? 0)
+      ? current.links ?? []
+      : previous.links ?? [],
+    media: currentMedia.length >= previousMedia.length ? currentMedia : previousMedia,
   };
 }
 

@@ -234,7 +234,15 @@ export function compactObservation(observation, maxCharacters) {
   const seen = new Set();
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
     if (!block.evidenceKey || seen.has(block.evidenceKey)) continue;
-    const { media: _presentationOnlyMedia, ...reasoningBlock } = block;
+    const { media: _presentationOnlyMedia, quotedPost, ...reasoningBlock } = block;
+    if (quotedPost) {
+      const {
+        media: _quotedPresentationOnlyMedia,
+        avatarUrl: _quotedPresentationOnlyAvatar,
+        ...reasoningQuotedPost
+      } = quotedPost;
+      reasoningBlock.quotedPost = reasoningQuotedPost;
+    }
     const serialized = JSON.stringify(reasoningBlock);
     if (characters + serialized.length > maxCharacters) break;
     compact.blocks.push(reasoningBlock);

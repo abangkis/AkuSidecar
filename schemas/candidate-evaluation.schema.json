@@ -10,6 +10,34 @@
     "itemId": { "type": ["string", "null"] },
     "author": { "type": "string" },
     "avatarUrl": { "type": ["string", "null"], "format": "uri" },
+    "relationshipType": { "type": "string", "enum": ["original", "repost", "quote", "reply"] },
+    "parentPermalink": { "type": ["string", "null"], "format": "uri" },
+    "quotedPost": {
+      "type": ["object", "null"],
+      "properties": {
+        "author": { "type": "string" },
+        "avatarUrl": { "type": ["string", "null"], "format": "uri" },
+        "text": { "type": "string" },
+        "permalink": { "type": ["string", "null"], "format": "uri" },
+        "publishedAt": { "type": ["string", "null"] },
+        "links": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": { "type": "string" },
+              "href": { "type": "string", "format": "uri" }
+            },
+            "required": ["text", "href"],
+            "additionalProperties": false
+          }
+        },
+        "media": { "type": "array", "maxItems": 4, "items": { "type": "object" } }
+      },
+      "required": ["author", "avatarUrl", "text", "permalink", "publishedAt", "links", "media"],
+      "additionalProperties": false
+    },
     "engagement": { "type": "object", "additionalProperties": { "type": "string" } },
     "links": {
       "type": "array",
@@ -62,6 +90,6 @@
       "additionalProperties": false
     }
   },
-  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "avatarUrl", "text", "sourceUrl", "links", "media", "engagement", "presentation", "publishedAt", "feedPosition", "assessment"],
+  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "avatarUrl", "relationshipType", "parentPermalink", "quotedPost", "text", "sourceUrl", "links", "media", "engagement", "presentation", "publishedAt", "feedPosition", "assessment"],
   "additionalProperties": false
 }

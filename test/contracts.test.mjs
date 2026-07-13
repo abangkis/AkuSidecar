@@ -235,7 +235,7 @@ test("browser observations accept only bounded http evidence", () => {
           viewportHeight: 900,
           blocks: [
             {
-              text: "A visible technical update with enough context to be a bounded candidate.",
+              text: "A visible technical update.\n\n1 First item\n2 Second item",
               permalink: "https://x.com/example/status/1",
               media: [
                 { kind: "image", url: "https://pbs.twimg.com/media/example.jpg#fragment", alt: "Architecture diagram", width: 640, height: 360 },
@@ -249,6 +249,16 @@ test("browser observations accept only bounded http evidence", () => {
                 connectionDegree: "2nd",
                 timestampText: "12h · Edited",
                 edited: true,
+              },
+              relationshipType: "quote",
+              quotedPost: {
+                author: "Ian Bremmer @ianbremmer · 18h",
+                avatarUrl: "https://pbs.twimg.com/profile_images/ian-avatar.jpg",
+                text: "A quoted post body.\n\nIts second paragraph remains distinct.",
+                permalink: "https://x.com/ianbremmer/status/2076000000000000000",
+                publishedAt: "2026-07-13T00:00:00.000Z",
+                links: [{ text: "source", href: "https://example.com/quote" }],
+                media: [],
               },
               links: [
                 { text: "valid", href: "https://example.com/" },
@@ -265,6 +275,15 @@ test("browser observations accept only bounded http evidence", () => {
 
   assert.equal(observation.snapshots[0].blocks[0].links.length, 1);
   assert.equal(observation.snapshots[0].blocks[0].links[0].href, "https://example.com/");
+  assert.equal(observation.snapshots[0].blocks[0].relationshipType, "quote");
+  assert.equal(
+    observation.snapshots[0].blocks[0].text,
+    "A visible technical update.\n\n1 First item\n2 Second item",
+  );
+  assert.equal(
+    observation.snapshots[0].blocks[0].quotedPost.text,
+    "A quoted post body.\n\nIts second paragraph remains distinct.",
+  );
   assert.deepEqual(observation.snapshots[0].blocks[0].media, [{
     kind: "image",
     url: "https://pbs.twimg.com/media/example.jpg",

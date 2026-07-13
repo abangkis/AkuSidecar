@@ -242,7 +242,7 @@ function validateBlock(source, block, index, limits) {
     : [];
 
   const validated = {
-    text: cleanString(block.text, limits.maxBlockCharacters),
+    text: cleanStructuredText(block.text, limits.maxBlockCharacters),
     author: cleanString(block.author, 300),
     avatarUrl: safeHttpUrl(block.avatarUrl),
     publishedAt: validDateString(block.publishedAt),
@@ -254,6 +254,7 @@ function validateBlock(source, block, index, limits) {
       ? block.relationshipType
       : "original",
     parentPermalink: safeHttpUrl(block.parentPermalink),
+    quotedPost: validateQuotedPost(source, block.quotedPost, limits),
     engagement: validateEngagement(block.engagement),
     presentation: validatePresentation(block.presentation),
     media: validateBlockMedia(source, block.media, limits),
@@ -262,6 +263,30 @@ function validateBlock(source, block, index, limits) {
   return {
     ...validated,
     evidenceKey: evidenceKeyForBlock(source, validated),
+  };
+}
+
+function validateQuotedPost(source, value, limits) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const text = cleanStructuredText(value.text, limits.maxBlockCharacters);
+  if (!text) return null;
+  const links = Array.isArray(value.links)
+    ? value.links
+        .slice(0, 10)
+        .map((link) => ({
+          text: cleanString(link?.text, 300),
+          href: safeHttpUrl(link?.href),
+        }))
+        .filter((link) => link.href)
+    : [];
+  return {
+    author: cleanString(value.author, 300),
+    avatarUrl: safeHttpUrl(value.avatarUrl),
+    text,
+    permalink: safeHttpUrl(value.permalink),
+    publishedAt: validDateString(value.publishedAt),
+    links,
+    media: validateBlockMedia(source, value.media, limits),
   };
 }
 
@@ -641,6 +666,18 @@ export function validatePreferenceFeedback(input) {
 export function cleanString(value, maxLength) {
   if (typeof value !== "string") return "";
   return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+export function cleanStructuredText(value, maxLength) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[\t\f\v\u00a0 ]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, maxLength);
 }
 
 export function safeHttpUrl(value) {
