@@ -26,6 +26,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
+export const APP_VERSION = "0.5.5";
 
 export function createAkuBrowserApp({
   config,
@@ -242,7 +243,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, {
-      version: "0.5.0",
+      version: APP_VERSION,
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       status: "ok",
       provider: engine.reasoningProvider.name,
@@ -289,7 +290,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
     sendJson(response, 200, {
-      version: "0.5.0",
+      version: APP_VERSION,
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
       providerCapabilities: providerCapabilities(config.reasoning?.provider),

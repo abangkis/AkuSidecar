@@ -11,6 +11,39 @@
     "author": { "type": "string" },
     "avatarUrl": { "type": ["string", "null"], "format": "uri" },
     "engagement": { "type": "object", "additionalProperties": { "type": "string" } },
+    "links": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "href": { "type": "string", "format": "uri" }
+        },
+        "required": ["text", "href"],
+        "additionalProperties": false
+      }
+    },
+    "media": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["image", "video"] },
+          "url": { "type": "string", "format": "uri" },
+          "posterUrl": { "type": ["string", "null"], "format": "uri" },
+          "playbackUrl": { "type": ["string", "null"], "format": "uri" },
+          "playbackMode": { "type": ["string", "null"], "enum": ["inline", "native", null] },
+          "alt": { "type": "string" },
+          "width": { "type": "integer", "minimum": 0 },
+          "height": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["kind", "url", "posterUrl", "playbackUrl", "playbackMode", "alt", "width", "height"],
+        "additionalProperties": false
+      }
+    },
+    "presentation": { "type": "object" },
     "text": { "type": "string" },
     "sourceUrl": { "type": "string" },
     "publishedAt": { "type": ["string", "null"] },
@@ -29,6 +62,6 @@
       "additionalProperties": false
     }
   },
-  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "text", "sourceUrl", "publishedAt", "feedPosition", "assessment"],
+  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "avatarUrl", "text", "sourceUrl", "links", "media", "engagement", "presentation", "publishedAt", "feedPosition", "assessment"],
   "additionalProperties": false
 }

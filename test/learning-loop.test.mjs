@@ -3,7 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { decideAcquisitionPlanning, JobEngine, mergeCapturedBlock } from "../src/core/job-engine.mjs";
+import {
+  decideAcquisitionPlanning,
+  JobEngine,
+  mergeCapturedBlock,
+  reconcileCapturedSnapshots,
+} from "../src/core/job-engine.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
 
@@ -33,6 +38,24 @@ test("later snapshots enrich the same captured post instead of freezing incomple
   assert.equal(merged.media.length, 1);
   assert.deepEqual(merged.engagement, { like: "10", view: "1000" });
   assert.equal(merged.presentation.timestampText, "8h");
+});
+
+test("later LinkedIn permalink recovery enriches duplicate captures before reasoning", () => {
+  const text = "A sufficiently long LinkedIn post body that is repeated across bounded snapshots and later exposes an exact native post permalink.";
+  const rawSnapshots = [
+    { blocks: [{ evidenceKey: "linkedin:fallback", author: "Example Company", text, permalink: null, presentation: { permalinkSource: "unavailable" }, links: [], media: [] }] },
+    { blocks: [{ evidenceKey: "linkedin:native", author: "Example Company", text, permalink: "https://www.linkedin.com/feed/update/urn:li:share:7412345678901234567/", platformId: "linkedin:share:7412345678901234567", presentation: { permalinkSource: "embed_urn" }, links: [], media: [] }] },
+  ];
+  const snapshots = reconcileCapturedSnapshots("linkedin", rawSnapshots);
+  const blocks = snapshots.flatMap((snapshot) => snapshot.blocks);
+  assert.equal(new Set(blocks.map((block) => block.evidenceKey)).size, 1);
+  assert.ok(blocks.every((block) => block.permalink?.includes("urn:li:share:7412345678901234567")));
+  assert.ok(blocks.every((block) => block.presentation.permalinkSource === "embed_urn"));
+
+  const reversed = reconcileCapturedSnapshots("linkedin", [...rawSnapshots].reverse());
+  const reversedBlocks = reversed.flatMap((snapshot) => snapshot.blocks);
+  assert.equal(new Set(reversedBlocks.map((block) => block.evidenceKey)).size, 1);
+  assert.ok(reversedBlocks.every((block) => block.presentation.permalinkSource === "embed_urn"));
 });
 
 test("Codex model and phase effort are explicit configurable runtime metadata", () => {
@@ -194,9 +217,16 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   assert.deepEqual(selected.media, [{
     kind: "image",
     url: "https://pbs.twimg.com/media/selected.jpg",
+    posterUrl: null,
+    playbackUrl: null,
+    playbackMode: null,
     alt: "Selected candidate diagram",
     width: 640,
     height: 360,
+  }]);
+  assert.deepEqual(selected.links, [{
+    text: "Release notes",
+    href: "https://example.com/release",
   }]);
   assert.equal(excluded.assessment.contentType, "announcement");
   assert.equal(run.reasoningInvocations[0].inputTokens, 100);
@@ -282,6 +312,9 @@ function block(id, feedPosition) {
       width: 640,
       height: 360,
     }] : [],
-    links: [],
+    links: id === "selected" ? [{
+      text: "Release notes",
+      href: "https://example.com/release",
+    }] : [],
   };
 }

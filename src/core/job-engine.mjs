@@ -828,6 +828,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       text: block.text ?? "",
       sourceUrl: block.permalink || observation.pageUrl,
       media: block.media ?? [],
+      links: block.links ?? [],
       engagement: block.engagement ?? {},
       presentation: block.presentation ?? {},
       publishedAt: block.publishedAt ?? null,
@@ -1087,18 +1088,69 @@ function mergeObservations(observations) {
       throw new ContractError("all acquisition rounds must use the same source");
     }
   }
+  const snapshots = reconcileCapturedSnapshots(
+    first.source,
+    observations.flatMap((observation) => observation.snapshots),
+  );
   return {
     source: first.source,
     pageUrl: first.pageUrl,
     pageUrls: [...new Set(observations.map((observation) => observation.pageUrl))],
     pageTitle: observations.at(-1).pageTitle,
     capturedAt: observations.at(-1).capturedAt,
-    snapshots: observations.flatMap((observation) => observation.snapshots),
+    snapshots,
     coverage: {
       acquisitionRounds: observations.length,
       rounds: observations.map((observation) => observation.coverage),
     },
   };
+}
+
+export function reconcileCapturedSnapshots(source, snapshots) {
+  const bestBySignature = new Map();
+  for (const block of snapshots.flatMap((snapshot) => snapshot.blocks ?? [])) {
+    const signature = capturedContentSignature(source, block);
+    if (!signature) continue;
+    const previous = bestBySignature.get(signature);
+    const merged = mergeCapturedBlock(previous, block);
+    bestBySignature.set(signature, previous?.permalink && !block.permalink
+      ? {
+          ...merged,
+          permalink: previous.permalink,
+          platformId: previous.platformId,
+          evidenceKey: previous.evidenceKey,
+          presentation: {
+            ...(merged.presentation ?? {}),
+            ...(previous.presentation ?? {}),
+          },
+        }
+      : merged);
+  }
+  return snapshots.map((snapshot) => ({
+    ...snapshot,
+    blocks: (snapshot.blocks ?? []).map((block) => {
+      const best = bestBySignature.get(capturedContentSignature(source, block));
+      if (!best?.permalink || !best?.evidenceKey) return block;
+      return {
+        ...mergeCapturedBlock(block, best),
+        feedPosition: block.feedPosition,
+        permalink: best.permalink,
+        platformId: best.platformId || block.platformId,
+        evidenceKey: best.evidenceKey,
+        presentation: {
+          ...(block.presentation ?? {}),
+          ...(best.presentation ?? {}),
+        },
+      };
+    }),
+  }));
+}
+
+function capturedContentSignature(source, block) {
+  const author = String(block?.author ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  const text = String(block?.text ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!author || text.length < 80) return null;
+  return `${source}\u0000${author}\u0000${text.slice(0, 500)}`;
 }
 
 function aggregateCoverage(observations, planning) {

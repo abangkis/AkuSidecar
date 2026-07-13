@@ -276,6 +276,9 @@ function validatePresentation(value) {
     timestampText: cleanString(value.timestampText, 100),
     edited: value.edited === true,
     promoted: value.promoted === true,
+    permalinkSource: cleanString(value.permalinkSource, 50),
+    permalinkReason: cleanString(value.permalinkReason, 500),
+    contentExpansion: cleanString(value.contentExpansion, 50),
   };
 }
 
@@ -294,12 +297,23 @@ function validateBlockMedia(source, value, limits) {
   const seen = new Set();
   const media = [];
   for (const entry of Array.isArray(value) ? value.slice(0, maxItems) : []) {
-    const url = safeSourceMediaUrl(source, entry?.url);
+    const kind = entry?.kind === "video" || entry?.kind === "video_poster" ? "video" : "image";
+    const url = safeSourceMediaUrl(source, entry?.posterUrl || entry?.url);
     if (!url || seen.has(url)) continue;
+    const playbackUrl = kind === "video"
+      ? safeSourceMediaUrl(source, entry?.playbackUrl)
+      : null;
     seen.add(url);
     media.push({
-      kind: entry?.kind === "video_poster" ? "video_poster" : "image",
+      kind,
       url,
+      posterUrl: kind === "video" ? url : null,
+      playbackUrl,
+      playbackMode: kind === "video" && playbackUrl && entry?.playbackMode !== "native"
+        ? "inline"
+        : kind === "video"
+          ? "native"
+          : null,
       alt: cleanString(entry?.alt, 300),
       width: Math.min(8_192, nonNegativeInteger(entry?.width, 0)),
       height: Math.min(8_192, nonNegativeInteger(entry?.height, 0)),

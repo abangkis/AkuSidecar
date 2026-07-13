@@ -1362,7 +1362,11 @@ function buildSourceLayoutCard(run, item, candidate) {
     content.append(paragraph);
   }
 
-  const media = buildSourceLayoutMedia(candidate?.media ?? [], source);
+  const media = buildSourceLayoutMedia(
+    candidate?.media ?? [],
+    source,
+    candidate?.sourceUrl || item.sourceUrl,
+  );
   if (source === "linkedin" && presentation.socialContext) {
     const socialContext = document.createElement("div");
     socialContext.className = "linkedin-social-context-row";
@@ -1445,7 +1449,11 @@ function buildLinkedInSourceLayoutContent(candidate) {
     .replace(/(?:\s+\d+(?:[.,]\d+)?[KMB]?){2,5}$/i, "")
     .trim();
   const paragraph = document.createElement("p");
-  paragraph.textContent = text || "No readable post text was captured.";
+  appendLinkedText(
+    paragraph,
+    text || "No readable post text was captured.",
+    candidate.links ?? [],
+  );
   content.append(paragraph);
   return content;
 }
@@ -1479,7 +1487,7 @@ function buildXSourceLayoutContent(candidate) {
     content.append(context);
   }
   const body = document.createElement("p");
-  body.textContent = parsed.body;
+  appendLinkedText(body, parsed.body, candidate.links ?? []);
   content.append(body);
   if (parsed.quote) {
     const quote = document.createElement("section");
@@ -1487,19 +1495,58 @@ function buildXSourceLayoutContent(candidate) {
     const identity = document.createElement("strong");
     identity.textContent = parsed.quote.identity;
     const quoteBody = document.createElement("p");
-    quoteBody.textContent = parsed.quote.body;
+    appendLinkedText(quoteBody, parsed.quote.body, candidate.links ?? []);
     quote.append(identity, quoteBody);
     content.append(quote);
   }
   return content;
 }
 
-function buildSourceLayoutMedia(entries, source) {
+function buildSourceLayoutMedia(entries, source, sourceUrl) {
   const media = [];
   const viewerEntries = [];
   for (const entry of entries.slice(0, 4)) {
-    const url = safePresentationMediaUrl(entry?.url, source);
+    const isVideo = entry?.kind === "video" || entry?.kind === "video_poster";
+    const url = safePresentationMediaUrl(entry?.posterUrl || entry?.url, source);
     if (!url) continue;
+    if (isVideo) {
+      const playbackUrl = safePresentationMediaUrl(entry?.playbackUrl, source);
+      if (entry?.playbackMode === "inline" && playbackUrl) {
+        const video = document.createElement("video");
+        video.className = "source-layout-video";
+        video.controls = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.poster = url;
+        video.src = playbackUrl;
+        video.setAttribute("aria-label", entry.alt || "Captured post video");
+        media.push(video);
+        continue;
+      }
+      const nativeButton = document.createElement("button");
+      nativeButton.type = "button";
+      nativeButton.className = "source-layout-media-item is-video-poster";
+      nativeButton.setAttribute("aria-label", "Play video in native post");
+      const poster = document.createElement("img");
+      poster.src = url;
+      poster.alt = entry.alt || "Captured video preview";
+      poster.loading = "lazy";
+      poster.decoding = "async";
+      poster.referrerPolicy = "no-referrer";
+      poster.addEventListener("error", () => nativeButton.remove(), { once: true });
+      const play = document.createElement("span");
+      play.className = "media-play-indicator";
+      play.setAttribute("aria-hidden", "true");
+      play.textContent = "▶";
+      const nativePostUrl = safeNativePostUrl(sourceUrl, source);
+      nativeButton.disabled = !nativePostUrl;
+      nativeButton.addEventListener("click", () => {
+        if (nativePostUrl) window.open(nativePostUrl, "_blank", "noopener,noreferrer");
+      });
+      nativeButton.append(poster, play);
+      media.push(nativeButton);
+      continue;
+    }
     const figure = document.createElement("button");
     figure.type = "button";
     figure.className = "source-layout-media-item";
@@ -1513,14 +1560,7 @@ function buildSourceLayoutMedia(entries, source) {
     const viewerIndex = viewerEntries.length;
     viewerEntries.push({ url: fullPresentationMediaUrl(url, source), alt: image.alt });
     figure.addEventListener("click", () => openMediaViewer(viewerEntries, viewerIndex));
-    if (entry.kind === "video_poster") {
-      figure.classList.add("is-video-poster");
-      const play = document.createElement("span");
-      play.className = "media-play-indicator";
-      play.setAttribute("aria-hidden", "true");
-      play.textContent = "▶";
-      figure.append(image, play);
-    } else figure.append(image);
+    figure.append(image);
     media.push(figure);
   }
   if (media.length === 0) return null;
@@ -1528,6 +1568,74 @@ function buildSourceLayoutMedia(entries, source) {
   gallery.className = `source-layout-media media-count-${media.length}`;
   gallery.append(...media);
   return gallery;
+}
+
+function appendLinkedText(target, value, links) {
+  const text = String(value ?? "");
+  const candidates = [];
+  const seen = new Set();
+  for (const link of Array.isArray(links) ? links : []) {
+    const href = safeExternalContentUrl(link?.href);
+    const label = String(link?.text ?? "").trim();
+    if (!href || seen.has(`${label}\u0000${href}`)) continue;
+    seen.add(`${label}\u0000${href}`);
+    if (label.length >= 2) candidates.push({ label, href });
+    if (text.includes(href)) candidates.push({ label: href, href });
+  }
+  for (const match of text.matchAll(/https?:\/\/[^\s<>()]+/gi)) {
+    const label = match[0].replace(/[.,;:!?]+$/, "");
+    const href = safeExternalContentUrl(label);
+    if (href) candidates.push({ label, href });
+  }
+  const ranges = [];
+  for (const candidate of candidates.sort((a, b) => b.label.length - a.label.length)) {
+    let start = text.indexOf(candidate.label);
+    while (start >= 0) {
+      const end = start + candidate.label.length;
+      if (!ranges.some((range) => start < range.end && end > range.start)) {
+        ranges.push({ start, end, href: candidate.href });
+      }
+      start = text.indexOf(candidate.label, end);
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  let cursor = 0;
+  for (const range of ranges) {
+    target.append(document.createTextNode(text.slice(cursor, range.start)));
+    const anchor = document.createElement("a");
+    anchor.href = range.href;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.textContent = text.slice(range.start, range.end);
+    target.append(anchor);
+    cursor = range.end;
+  }
+  target.append(document.createTextNode(text.slice(cursor)));
+}
+
+function safeExternalContentUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeNativePostUrl(value, source) {
+  const href = safeExternalContentUrl(value);
+  if (!href) return null;
+  const url = new URL(href);
+  if (source === "x") {
+    return url.hostname === "x.com" && /\/status\/\d+/.test(url.pathname) ? url.href : null;
+  }
+  if (source === "linkedin") {
+    return url.hostname === "www.linkedin.com" && /\/feed\/update\/urn:li:/i.test(url.pathname)
+      ? url.href
+      : null;
+  }
+  return null;
 }
 
 function openMediaViewer(entries, index) {

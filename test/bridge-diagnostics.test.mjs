@@ -96,9 +96,9 @@ test("source health exposes diagnostics but no captured evidence", () => {
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.4",
-    runtimeRevision: "source-presentation-v6",
-    buildId: "aku-bridge-0.5.4-source-presentation-v6",
-    adapterVersions: { x: "x-dom-v2", linkedin: "linkedin-dom-v5" },
+    extensionVersion: "0.5.5",
+    runtimeRevision: "source-fidelity-v7",
+    buildId: "aku-bridge-0.5.5-source-fidelity-v7",
+    adapterVersions: { x: "x-dom-v3", linkedin: "linkedin-dom-v6" },
   };
 }

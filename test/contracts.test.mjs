@@ -268,6 +268,9 @@ test("browser observations accept only bounded http evidence", () => {
   assert.deepEqual(observation.snapshots[0].blocks[0].media, [{
     kind: "image",
     url: "https://pbs.twimg.com/media/example.jpg",
+    posterUrl: null,
+    playbackUrl: null,
+    playbackMode: null,
     alt: "Architecture diagram",
     width: 640,
     height: 360,
@@ -281,6 +284,9 @@ test("browser observations accept only bounded http evidence", () => {
     timestampText: "12h · Edited",
     edited: true,
     promoted: false,
+    permalinkSource: "",
+    permalinkReason: "",
+    contentExpansion: "",
   });
   assert.equal(observation.coverage.status, "partial");
 });
