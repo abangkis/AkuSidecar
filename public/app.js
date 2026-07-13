@@ -243,6 +243,8 @@ async function bootstrap() {
     }
     pingBridge();
     setInterval(pingBridge, 30_000);
+    pollBridgeActions();
+    setInterval(pollBridgeActions, 1_000);
     if (state.bootstrap.onboarding?.status !== "completed") {
       showOnboarding(false);
       return;
@@ -369,6 +371,31 @@ function pingBridge() {
     },
     window.location.origin,
   );
+}
+
+async function pollBridgeActions() {
+  if (!state.bootstrap) return;
+  try {
+    const { action } = await api("/api/operations/bridge/actions/next");
+    if (!action || action.type !== "reload_self") return;
+    state.bridgeReady = false;
+    setStatus(elements.bridgeStatus, "AkuBridge reload requested", "warning");
+    window.postMessage(
+      {
+        type: "AKU_BROWSER_BRIDGE_RELOAD_SELF",
+        actionId: action.id,
+        endpoint: window.location.origin,
+        token: state.bootstrap.bridgeToken,
+      },
+      window.location.origin,
+    );
+    // chrome.runtime.reload() invalidates the existing isolated content-script
+    // world. A bounded page refresh lets the reloaded manifest inject a fresh
+    // bridge and publish the build heartbeat without touching other tabs.
+    setTimeout(() => window.location.reload(), 1_000);
+  } catch {
+    // Cooperative actions are optional; normal AkuBrowser work stays available.
+  }
 }
 
 async function startRun() {

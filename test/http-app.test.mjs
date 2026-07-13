@@ -82,6 +82,48 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   assert.equal(bootstrap.limits.defaultScrolls, 2);
   assert.ok(bootstrap.bridgeToken);
 
+  const unauthorizedReload = await fetch(
+    `${origin}/api/operations/bridge/actions/reload-self`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "http-reload-1", actor: "codex", reason: "test reload" }),
+    },
+  );
+  assert.equal(unauthorizedReload.status, 400);
+  const requestedReload = await jsonFetch(
+    `${origin}/api/operations/bridge/actions/reload-self`,
+    {
+      method: "POST",
+      headers: bridgeHeaders(bootstrap.bridgeToken),
+      body: JSON.stringify({ requestId: "http-reload-1", actor: "codex", reason: "test reload" }),
+    },
+  );
+  assert.equal(requestedReload.action.type, "reload_self");
+  const deliveredReload = await jsonFetch(`${origin}/api/operations/bridge/actions/next`);
+  assert.equal(deliveredReload.action.status, "delivered");
+  await jsonFetch(
+    `${origin}/api/operations/bridge/actions/${requestedReload.action.id}/accept`,
+    { method: "POST", headers: bridgeHeaders(bootstrap.bridgeToken) },
+  );
+  await jsonFetch(`${origin}/api/operations/bridge/heartbeat`, {
+    method: "POST",
+    body: JSON.stringify({
+      capabilities: {
+        extensionVersion: "0.5.15",
+        runtimeRevision: "source-fidelity-v17",
+        buildId: "aku-bridge-0.5.15-source-fidelity-v17",
+        adapterVersions: { x: "x-dom-v12", linkedin: "linkedin-dom-v6" },
+        actions: ["reload_self"],
+      },
+    }),
+  });
+  const completedReload = await jsonFetch(
+    `${origin}/api/operations/bridge/actions/${requestedReload.action.id}`,
+    { headers: bridgeHeaders(bootstrap.bridgeToken) },
+  );
+  assert.equal(completedReload.action.status, "completed");
+
   const replay = await jsonFetch(`${origin}/api/preferences/replay`);
   assert.equal(replay.replay.mode, "offline_replay");
   assert.equal(replay.replay.liveInfluence, false);

@@ -1,7 +1,8 @@
 export const BRIDGE_REQUIREMENTS = Object.freeze({
-  minimumExtensionVersion: "0.5.14",
-  runtimeRevision: "source-fidelity-v16",
+  minimumExtensionVersion: "0.5.15",
+  runtimeRevision: "source-fidelity-v17",
   adapterVersions: Object.freeze({ x: "x-dom-v12", linkedin: "linkedin-dom-v6" }),
+  requiredActions: Object.freeze(["reload_self"]),
 });
 
 export function evaluateBridgeCompatibility(heartbeat) {
@@ -25,6 +26,9 @@ export function evaluateBridgeCompatibility(heartbeat) {
     for (const [source, required] of Object.entries(BRIDGE_REQUIREMENTS.adapterVersions)) {
       const actual = heartbeat.adapterVersions?.[source];
       if (actual !== required) reasons.push(`${source} adapter ${actual ?? "unknown"} must be ${required}.`);
+    }
+    for (const action of BRIDGE_REQUIREMENTS.requiredActions) {
+      if (!heartbeat.actions?.includes(action)) reasons.push(`AkuBridge must advertise ${action}.`);
     }
   }
   return {

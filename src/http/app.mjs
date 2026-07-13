@@ -13,6 +13,8 @@ import {
 import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
 import { inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
 import { createBridgeDiagnostics } from "../operations/bridge-diagnostics.mjs";
+import { createBridgeActions } from "../operations/bridge-actions.mjs";
+import { BRIDGE_REQUIREMENTS } from "../operations/bridge-compatibility.mjs";
 import { getOnboardingProfile, saveOnboardingProfile } from "../core/onboarding-profile.mjs";
 import { CalibrationEngine } from "../core/calibration-engine.mjs";
 
@@ -26,7 +28,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
-export const APP_VERSION = "0.5.14";
+export const APP_VERSION = "0.5.15";
 
 export function createAkuBrowserApp({
   config,
@@ -56,6 +58,9 @@ export function createAkuBrowserApp({
     maxItemsPerSource: config.calibration.maxItemsPerSource,
   });
   const bridgeDiagnostics = createBridgeDiagnostics();
+  const bridgeActions = createBridgeActions({
+    expectedBuildId: `aku-bridge-${BRIDGE_REQUIREMENTS.minimumExtensionVersion}-${BRIDGE_REQUIREMENTS.runtimeRevision}`,
+  });
   let frontend = null;
 
   const server = http.createServer(async (request, response) => {
@@ -83,6 +88,7 @@ export function createAkuBrowserApp({
           store,
           bridgeToken,
           bridgeDiagnostics,
+          bridgeActions,
           config,
           calibrationEngine,
           enforceBridgeCompatibility,
@@ -170,7 +176,7 @@ function serveFrontend(middleware, request, response, logger) {
   });
 }
 
-async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, config, calibrationEngine, enforceBridgeCompatibility }) {
+async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, bridgeActions, config, calibrationEngine, enforceBridgeCompatibility }) {
   if (request.method === "GET" && url.pathname === "/api/calibration/active") {
     sendJson(response, 200, { calibration: calibrationEngine.getActive() });
     return;
@@ -275,9 +281,11 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   if (request.method === "POST" && url.pathname === "/api/operations/bridge/heartbeat") {
     const body = await readJson(request, config.limits.maxBodyBytes);
     const heartbeat = bridgeDiagnostics.recordHeartbeat(body);
+    const cooperativeAction = bridgeActions.observeHeartbeat(heartbeat);
     sendJson(response, 202, {
       heartbeat,
       compatibility: bridgeDiagnostics.compatibility(),
+      cooperativeAction,
     });
     return;
   }
@@ -285,6 +293,57 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   if (request.method === "GET" && url.pathname === "/api/operations/bridge/health") {
     const runs = engine.listRuns(30).map((run) => engine.getRun(run.id)).filter(Boolean);
     sendJson(response, 200, { bridge: bridgeDiagnostics.report(runs) });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/operations/bridge/actions/reload-self") {
+    requireBridgeIdentity(request, store);
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    let action;
+    try {
+      action = bridgeActions.requestReload(
+        body,
+        bridgeDiagnostics.report().runtime.heartbeat,
+      );
+    } catch (error) {
+      throw new ContractError(error.message);
+    }
+    sendJson(response, 202, { action });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/operations/bridge/actions/next") {
+    sendJson(response, 200, { action: bridgeActions.next() });
+    return;
+  }
+
+  const bridgeActionMatch = url.pathname.match(
+    /^\/api\/operations\/bridge\/actions\/([^/]+)$/,
+  );
+  if (request.method === "GET" && bridgeActionMatch) {
+    requireBridgeIdentity(request, store);
+    try {
+      sendJson(response, 200, {
+        action: bridgeActions.get(decodeURIComponent(bridgeActionMatch[1])),
+      });
+    } catch (error) {
+      throw new ContractError(error.message);
+    }
+    return;
+  }
+
+  const bridgeActionAcceptMatch = url.pathname.match(
+    /^\/api\/operations\/bridge\/actions\/([^/]+)\/accept$/,
+  );
+  if (request.method === "POST" && bridgeActionAcceptMatch) {
+    requireBridgeIdentity(request, store);
+    try {
+      sendJson(response, 202, {
+        action: bridgeActions.accept(decodeURIComponent(bridgeActionAcceptMatch[1])),
+      });
+    } catch (error) {
+      throw new ContractError(error.message);
+    }
     return;
   }
 
