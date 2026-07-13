@@ -11,12 +11,15 @@ export function createBridgeActions({
   if (!expectedBuildId) throw new Error("expectedBuildId is required");
   let active = null;
   const retained = new Map();
+  const waiters = new Set();
+  let relayLastSeenAtMs = null;
 
   function expire() {
     if (!active || terminal(active.status) || now() <= active.expiresAtMs) return;
+    const errorCategory = expiryCategory(active, relayLastSeenAtMs);
     active = finish(active, "failed", now(), {
-      errorCategory: "extension_unreachable",
-      message: "AkuBridge did not complete reload_self before the bounded deadline.",
+      errorCategory,
+      message: expiryMessage(errorCategory),
     });
     retain(active);
   }
@@ -25,6 +28,23 @@ export function createBridgeActions({
     retained.delete(action.requestId);
     retained.set(action.requestId, action);
     while (retained.size > RETAINED_ACTIONS) retained.delete(retained.keys().next().value);
+  }
+
+  function claimNext() {
+    relayLastSeenAtMs = now();
+    expire();
+    if (!active || active.status !== "pending") return null;
+    active = {
+      ...active,
+      status: "delivered",
+      deliveredAt: timestamp(now()),
+    };
+    retain(active);
+    return publicAction(active);
+  }
+
+  function wakeWaiters() {
+    for (const wake of [...waiters]) wake();
   }
 
   return {
@@ -65,19 +85,27 @@ export function createBridgeActions({
         message: null,
       };
       retain(active);
+      wakeWaiters();
       return publicAction(active);
     },
 
     next() {
-      expire();
-      if (!active || active.status !== "pending") return null;
-      active = {
-        ...active,
-        status: "delivered",
-        deliveredAt: timestamp(now()),
-      };
-      retain(active);
-      return publicAction(active);
+      return claimNext();
+    },
+
+    waitForNext(waitMs = 0) {
+      const immediate = claimNext();
+      if (immediate || waitMs <= 0) return Promise.resolve(immediate);
+      return new Promise((resolve) => {
+        let timer;
+        const finishWait = () => {
+          clearTimeout(timer);
+          waiters.delete(finishWait);
+          resolve(claimNext());
+        };
+        timer = setTimeout(finishWait, waitMs);
+        waiters.add(finishWait);
+      });
     },
 
     accept(actionId) {
@@ -103,9 +131,17 @@ export function createBridgeActions({
     observeHeartbeat(heartbeat) {
       expire();
       if (!active || active.status !== "accepted") return null;
-      if (heartbeat?.buildId !== active.expectedBuildId) return publicAction(active);
+      const observedBuildId = clean(heartbeat?.buildId, 160);
+      active = {
+        ...active,
+        observedBuildId,
+        heartbeatObservedAt: timestamp(now()),
+      };
+      if (observedBuildId !== active.expectedBuildId) {
+        retain(active);
+        return publicAction(active);
+      }
       active = finish(active, "completed", now(), {
-        observedBuildId: heartbeat.buildId,
         message: "AkuBridge reload_self completed and the expected build heartbeat was observed.",
       });
       retain(active);
@@ -141,6 +177,27 @@ function publicAction(action) {
 
 function terminal(status) {
   return status === "completed" || status === "failed";
+}
+
+function expiryCategory(action, relayLastSeenAtMs) {
+  if (action.status === "pending") {
+    return relayLastSeenAtMs === null || relayLastSeenAtMs < action.createdAtMs
+      ? "relay_page_stale"
+      : "relay_not_delivered";
+  }
+  if (action.status === "delivered") return "extension_not_accepted";
+  if (action.status === "accepted" && action.observedBuildId) return "build_mismatch";
+  return "reload_heartbeat_timeout";
+}
+
+function expiryMessage(category) {
+  return {
+    relay_page_stale: "AkuBrowser relay page did not request the cooperative action before the deadline.",
+    relay_not_delivered: "AkuBrowser relay did not claim reload_self before the deadline.",
+    extension_not_accepted: "AkuBridge did not accept the delivered reload_self action before the deadline.",
+    reload_heartbeat_timeout: "AkuBridge accepted reload_self but no post-reload heartbeat arrived before the deadline.",
+    build_mismatch: "AkuBridge reloaded but did not announce the expected build identity before the deadline.",
+  }[category];
 }
 
 function timestamp(value) {

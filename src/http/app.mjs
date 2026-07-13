@@ -313,7 +313,8 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   }
 
   if (request.method === "GET" && url.pathname === "/api/operations/bridge/actions/next") {
-    sendJson(response, 200, { action: bridgeActions.next() });
+    const waitMs = parseBridgeActionWait(url.searchParams.get("waitMs"));
+    sendJson(response, 200, { action: await bridgeActions.waitForNext(waitMs) });
     return;
   }
 
@@ -734,4 +735,14 @@ function sendJson(response, status, payload) {
   response.setHeader("Content-Length", Buffer.byteLength(body));
   response.writeHead(status);
   response.end(body);
+}
+
+function parseBridgeActionWait(value) {
+  if (value === null) return 0;
+  if (!/^\d+$/.test(value)) throw new ContractError("waitMs must be an integer between 0 and 30000");
+  const waitMs = Number(value);
+  if (!Number.isSafeInteger(waitMs) || waitMs < 0 || waitMs > 30_000) {
+    throw new ContractError("waitMs must be an integer between 0 and 30000");
+  }
+  return waitMs;
 }
