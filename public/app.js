@@ -96,6 +96,7 @@ const elements = {
   overviewSummary: document.querySelector("#overview-summary"),
   overviewSources: document.querySelector("#overview-sources"),
   timelinePanel: document.querySelector("#timeline-panel"),
+  timelineHeadingRow: document.querySelector(".timeline-heading-row"),
   timelineMeta: document.querySelector("#timeline-meta"),
   timelineRefreshButton: document.querySelector("#timeline-refresh-button"),
   timelineRunnerButton: document.querySelector("#timeline-runner-button"),
@@ -223,6 +224,7 @@ elements.mediaViewerPrevious.addEventListener("click", () => moveMediaViewer(-1)
 elements.mediaViewerNext.addEventListener("click", () => moveMediaViewer(1));
 elements.backToTopButton.addEventListener("click", returnToTop);
 window.addEventListener("scroll", scheduleBackToTopVisibility, { passive: true });
+window.addEventListener("resize", scheduleBackToTopVisibility, { passive: true });
 for (const button of document.querySelectorAll("[data-calibration-issue]")) {
   button.addEventListener("click", () => decideCalibration({ issueCode: button.dataset.calibrationIssue }));
 }
@@ -248,6 +250,30 @@ function syncBackToTopVisibility() {
     "hidden",
     window.scrollY < BACK_TO_TOP_THRESHOLD_PX,
   );
+  syncBackToTopPosition();
+}
+
+function syncBackToTopPosition() {
+  const candidates = state.currentView === "timeline"
+    ? [elements.resultPanel, elements.timelineHeadingRow]
+    : state.currentView === "review"
+      ? [elements.reviewPanel]
+      : [elements.settingsPanel];
+  const anchor = candidates.find((element) => {
+    if (!element || element.classList.contains("hidden")) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+  const anchorRect = anchor?.getBoundingClientRect();
+  const buttonWidth = window.innerWidth <= 700 ? 44 : 48;
+  const gap = 30;
+  if (anchorRect && window.innerWidth - anchorRect.right >= buttonWidth + gap * 2) {
+    elements.backToTopButton.style.left = `${Math.round(anchorRect.right + gap)}px`;
+    elements.backToTopButton.style.right = "auto";
+    return;
+  }
+  elements.backToTopButton.style.removeProperty("left");
+  elements.backToTopButton.style.removeProperty("right");
 }
 
 function returnToTop() {
@@ -1831,6 +1857,7 @@ function showSessionView() {
     });
   }
   syncTimelineChrome();
+  syncBackToTopVisibility();
 }
 
 async function showReviewView() {
@@ -1839,6 +1866,7 @@ async function showReviewView() {
   hide(elements.timelinePanel, elements.settingsPanel, elements.calibrationPanel, elements.onboardingPanel);
   show(elements.reviewPanel);
   await loadPilotReview();
+  syncBackToTopVisibility();
 }
 
 async function showSettingsView() {
@@ -1847,6 +1875,7 @@ async function showSettingsView() {
   hide(elements.timelinePanel, elements.reviewPanel, elements.calibrationPanel, elements.onboardingPanel);
   show(elements.settingsPanel);
   await Promise.all([loadRuntimeSettings(), loadOverview()]);
+  syncBackToTopVisibility();
 }
 
 function selectViewButton(selected) {

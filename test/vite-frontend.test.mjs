@@ -84,6 +84,10 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(html, /id="app-heading" tabindex="-1"/);
   assert.match(appScript, /BACK_TO_TOP_THRESHOLD_PX = 480/);
   assert.match(appScript, /addEventListener\("scroll", scheduleBackToTopVisibility, \{ passive: true \}\)/);
+  assert.match(appScript, /addEventListener\("resize", scheduleBackToTopVisibility, \{ passive: true \}\)/);
+  assert.match(appScript, /Math\.round\(anchorRect\.right \+ gap\)/);
+  assert.match(appScript, /backToTopButton\.style\.right = "auto"/);
+  assert.match(appScript, /showSessionView\(\)[\s\S]*syncTimelineChrome\(\);\s*syncBackToTopVisibility\(\);/);
   assert.match(appScript, /window\.scrollTo\(\{ top: 0, behavior: reducedMotion \? "auto" : "smooth" \}\)/);
   assert.match(appScript, /elements\.appHeading\.focus\(\{ preventScroll: true \}\)/);
   assert.match(styles, /\.back-to-top \{[^}]*position: fixed;[^}]*z-index: 60;/s);
