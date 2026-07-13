@@ -1751,6 +1751,53 @@ textarea:focus {
   display: none !important;
 }
 
+.back-to-top {
+  position: fixed;
+  z-index: 60;
+  right: clamp(16px, 3vw, 36px);
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: grid;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(183, 242, 108, 0.52);
+  border-radius: 999px;
+  background: rgba(17, 22, 20, 0.9);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+  color: var(--accent);
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.back-to-top:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  background: rgba(28, 36, 31, 0.96);
+}
+
+.back-to-top:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.back-to-top svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top {
+    transition: none;
+  }
+}
+
 @media (max-width: 700px) {
   .shell {
     width: min(100% - 24px, 920px);
@@ -1799,5 +1846,12 @@ textarea:focus {
 
   .preflight-copy {
     text-align: left;
+  }
+
+  .back-to-top {
+    right: 14px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
   }
 }

@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">UNIFIED KNOWLEDGE CONTINUITY</p>
-          <h1>AkuBrowser</h1>
+          <h1 id="app-heading" tabindex="-1">AkuBrowser</h1>
           <p class="subtitle">A bounded, source-backed finish line—not another feed.</p>
         </div>
         <div class="topbar-actions">
@@ -422,6 +422,18 @@
       </section>
       </section>
     </main>
+
+    <button
+      id="back-to-top"
+      class="back-to-top hidden"
+      type="button"
+      aria-label="Back to top"
+      title="Back to top"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 19V5m0 0-6 6m6-6 6 6" />
+      </svg>
+    </button>
 
     <dialog id="media-viewer" class="media-viewer" aria-label="Post media viewer">
       <div class="media-viewer-toolbar">

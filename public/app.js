@@ -28,8 +28,11 @@ const state = {
 
 const REVIEW_PAGE_SIZE = 10;
 const REVIEW_MAX_RUNS = 50;
+const BACK_TO_TOP_THRESHOLD_PX = 480;
 
 const elements = {
+  appHeading: document.querySelector("#app-heading"),
+  backToTopButton: document.querySelector("#back-to-top"),
   sidecarStatus: document.querySelector("#sidecar-status"),
   bridgeStatus: document.querySelector("#bridge-status"),
   reasoningStatus: document.querySelector("#reasoning-status"),
@@ -218,15 +221,40 @@ elements.calibrationMore.addEventListener("click", () => decideCalibration({ lab
 elements.mediaViewerClose.addEventListener("click", () => elements.mediaViewer.close());
 elements.mediaViewerPrevious.addEventListener("click", () => moveMediaViewer(-1));
 elements.mediaViewerNext.addEventListener("click", () => moveMediaViewer(1));
+elements.backToTopButton.addEventListener("click", returnToTop);
+window.addEventListener("scroll", scheduleBackToTopVisibility, { passive: true });
 for (const button of document.querySelectorAll("[data-calibration-issue]")) {
   button.addEventListener("click", () => decideCalibration({ issueCode: button.dataset.calibrationIssue }));
 }
 let bootstrapRetryTimer = null;
 let bridgePingStarted = false;
 let bridgeActionLoopStarted = false;
+let backToTopAnimationFrame = null;
 
 await bootstrap();
 observePilotReviewScroll();
+syncBackToTopVisibility();
+
+function scheduleBackToTopVisibility() {
+  if (backToTopAnimationFrame !== null) return;
+  backToTopAnimationFrame = window.requestAnimationFrame(() => {
+    backToTopAnimationFrame = null;
+    syncBackToTopVisibility();
+  });
+}
+
+function syncBackToTopVisibility() {
+  elements.backToTopButton.classList.toggle(
+    "hidden",
+    window.scrollY < BACK_TO_TOP_THRESHOLD_PX,
+  );
+}
+
+function returnToTop() {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+  elements.appHeading.focus({ preventScroll: true });
+}
 
 async function bootstrap() {
   try {

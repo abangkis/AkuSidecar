@@ -79,6 +79,14 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   );
   assert.match(appScript, /AkuBridge could not complete the requested operation/);
   assert.match(html, /Check for updates/);
+  assert.match(html, /id="back-to-top"/);
+  assert.match(html, /aria-label="Back to top"/);
+  assert.match(html, /id="app-heading" tabindex="-1"/);
+  assert.match(appScript, /BACK_TO_TOP_THRESHOLD_PX = 480/);
+  assert.match(appScript, /addEventListener\("scroll", scheduleBackToTopVisibility, \{ passive: true \}\)/);
+  assert.match(appScript, /window\.scrollTo\(\{ top: 0, behavior: reducedMotion \? "auto" : "smooth" \}\)/);
+  assert.match(appScript, /elements\.appHeading\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(styles, /\.back-to-top \{[^}]*position: fixed;[^}]*z-index: 60;/s);
   assert.match(html, /class="processing-panel update-progress hidden"/);
   assert.match(html, /id="processing-detail">1\/12 steps/);
   assert.doesNotMatch(html, /class="run-contract"/);
