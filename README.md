@@ -103,6 +103,13 @@ The review API is `GET /api/pilot/review`. Optional query parameters are `source
 
 Existing `/api/runs` and bridge-command endpoints remain source-specific. The bridge still receives one run ID at a time.
 
+`GET /api/operations/bridge/health` combines the latest successful adapter
+observation with a rolling five-run terminal window per source. A successful
+observation cannot hide newer failures: one recent failure below 90% completion
+degrades the source, while two failures below 70% completion or a two-run
+failure streak marks it unhealthy. The response exposes bounded counts and
+timestamps, never captured post content or raw failure messages.
+
 ## Verification
 
 ```powershell

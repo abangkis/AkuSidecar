@@ -78,19 +78,29 @@ export function buildBridgeHealth({ heartbeat, runs = [], now = Date.now() }) {
 }
 
 function latestSourceHealth(source, runs) {
-  const run = runs.find((entry) => (entry?.source ?? entry?.request?.source) === source && entry.observations?.length);
-  if (!run) return { status: "unobserved", lastObservedAt: null };
+  const sourceRuns = runs
+    .filter((entry) => (entry?.source ?? entry?.request?.source) === source)
+    .sort((left, right) => runTimestamp(right) - runTimestamp(left));
+  const rolling = summarizeRecentRuns(sourceRuns);
+  const run = sourceRuns.find((entry) => entry.observations?.length);
+  if (!run) {
+    return {
+      status: rolling.totalRuns > 0 ? rollingStatus("unobserved", rolling) : "unobserved",
+      lastObservedAt: null,
+      rolling,
+    };
+  }
   const storedObservation = run.observations.at(-1);
   const observation = storedObservation?.payload ?? storedObservation;
   const coverage = observation?.coverage ?? {};
   const adapter = coverage.adapterHealth ?? {};
-  const status = adapter.state === "healthy" && coverage.restored !== false
+  const observationStatus = adapter.state === "healthy" && coverage.restored !== false
     ? "healthy"
     : adapter.state || coverage.restored === false
       ? "degraded"
       : "unknown";
   return {
-    status,
+    status: rollingStatus(observationStatus, rolling),
     lastObservedAt: clean(observation.capturedAt ?? coverage.checkedThrough, 50),
     adapterVersion: clean(coverage.adapterVersion, 100),
     adapterHealth: {
@@ -116,7 +126,44 @@ function latestSourceHealth(source, runs) {
       recoveryCount: integer(coverage.sourceTabRecoveryCount),
       readinessState: clean(coverage.sourceReadinessState, 50),
     },
+    rolling,
   };
+}
+
+function summarizeRecentRuns(runs, windowSize = 5) {
+  const recent = runs
+    .filter((run) => ["completed", "failed"].includes(run?.status))
+    .slice(0, windowSize);
+  const completedRuns = recent.filter((run) => run.status === "completed").length;
+  const failedRuns = recent.length - completedRuns;
+  const consecutiveFailures = recent.findIndex((run) => run.status !== "failed");
+  return {
+    windowSize,
+    totalRuns: recent.length,
+    completedRuns,
+    failedRuns,
+    completionRate: recent.length > 0 ? completedRuns / recent.length : null,
+    consecutiveFailures: consecutiveFailures === -1 ? recent.length : consecutiveFailures,
+    latestRunStatus: clean(recent[0]?.status, 20),
+    latestRunAt: clean(recent[0]?.completedAt ?? recent[0]?.createdAt, 50),
+  };
+}
+
+function rollingStatus(observationStatus, rolling) {
+  if (
+    rolling.consecutiveFailures >= 2 ||
+    (rolling.failedRuns >= 2 && rolling.completionRate < 0.7)
+  ) return "unhealthy";
+  if (
+    rolling.consecutiveFailures === 1 ||
+    (rolling.failedRuns > 0 && rolling.completionRate < 0.9)
+  ) return "degraded";
+  return observationStatus;
+}
+
+function runTimestamp(run) {
+  const value = Date.parse(run?.completedAt ?? run?.createdAt ?? "");
+  return Number.isFinite(value) ? value : 0;
 }
 
 function clean(value, max) {

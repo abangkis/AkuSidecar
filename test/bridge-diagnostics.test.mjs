@@ -94,6 +94,84 @@ test("source health exposes diagnostics but no captured evidence", () => {
   assert.equal(JSON.stringify(report).includes("private author"), false);
 });
 
+test("recent failures override a stale successful LinkedIn observation", () => {
+  const successful = {
+    source: "linkedin",
+    status: "completed",
+    createdAt: "2026-07-14T01:00:00.000Z",
+    completedAt: "2026-07-14T01:00:10.000Z",
+    observations: [{
+      payload: {
+        capturedAt: "2026-07-14T01:00:05.000Z",
+        coverage: {
+          adapterVersion: "linkedin-dom-v6",
+          adapterHealth: { state: "healthy" },
+          restored: true,
+        },
+      },
+    }],
+  };
+  const failures = [1, 2].map((minute) => ({
+    source: "linkedin",
+    status: "failed",
+    createdAt: `2026-07-14T01:0${minute}:00.000Z`,
+    completedAt: `2026-07-14T01:0${minute}:10.000Z`,
+    observations: [],
+    error: { stage: "browser_capture", message: "LinkedIn readiness failed" },
+  }));
+  const report = buildBridgeHealth({
+    heartbeat: sanitizeHeartbeat(compatibleHeartbeat(), "2026-07-14T01:03:00.000Z"),
+    runs: [...failures, successful],
+    now: Date.parse("2026-07-14T01:03:01.000Z"),
+  });
+
+  assert.equal(report.status, "degraded");
+  assert.equal(report.sources.linkedin.status, "unhealthy");
+  assert.equal(report.sources.linkedin.lastObservedAt, "2026-07-14T01:00:05.000Z");
+  assert.deepEqual(report.sources.linkedin.rolling, {
+    windowSize: 5,
+    totalRuns: 3,
+    completedRuns: 1,
+    failedRuns: 2,
+    completionRate: 1 / 3,
+    consecutiveFailures: 2,
+    latestRunStatus: "failed",
+    latestRunAt: "2026-07-14T01:02:10.000Z",
+  });
+});
+
+test("a recovery success does not erase two failures from rolling health", () => {
+  const runs = [
+    {
+      source: "linkedin",
+      status: "completed",
+      createdAt: "2026-07-14T01:03:00.000Z",
+      completedAt: "2026-07-14T01:03:10.000Z",
+      observations: [{ payload: {
+        capturedAt: "2026-07-14T01:03:05.000Z",
+        coverage: { adapterHealth: { state: "healthy" }, restored: true },
+      } }],
+    },
+    ...[1, 2].map((minute) => ({
+      source: "linkedin",
+      status: "failed",
+      createdAt: `2026-07-14T01:0${minute}:00.000Z`,
+      completedAt: `2026-07-14T01:0${minute}:10.000Z`,
+      observations: [],
+    })),
+  ];
+  const report = buildBridgeHealth({
+    heartbeat: sanitizeHeartbeat(compatibleHeartbeat(), "2026-07-14T01:04:00.000Z"),
+    runs,
+    now: Date.parse("2026-07-14T01:04:01.000Z"),
+  });
+
+  assert.equal(report.sources.linkedin.rolling.consecutiveFailures, 0);
+  assert.equal(report.sources.linkedin.rolling.completionRate, 1 / 3);
+  assert.equal(report.sources.linkedin.status, "unhealthy");
+  assert.equal(report.status, "degraded");
+});
+
 function compatibleHeartbeat() {
   return {
     extensionVersion: "0.5.19",
