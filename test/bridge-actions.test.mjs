@@ -17,7 +17,11 @@ test("reload_self is bounded, idempotent, and completes only on the expected hea
   const request = { requestId: "reload-1", actor: "codex", reason: "load build v16" };
   const created = actions.requestReload(request, { buildId: "aku-bridge-0.5.13-source-fidelity-v15" });
   assert.equal(created.status, "pending");
-  assert.equal(actions.requestReload(request).id, created.id);
+  assert.deepEqual(created.actor, { actorType: "agent", actorId: "codex" });
+  assert.equal(actions.requestReload({
+    ...request,
+    actor: { actorType: "agent", actorId: "codex" },
+  }).id, created.id);
   assert.throws(
     () => actions.requestReload({ ...request, reason: "different" }),
     BridgeActionConflict,

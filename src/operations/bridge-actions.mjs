@@ -51,11 +51,11 @@ export function createBridgeActions({
     requestReload(input, currentHeartbeat = null) {
       expire();
       const requestId = cleanRequired(input?.requestId, "requestId", 128);
-      const actor = cleanRequired(input?.actor, "actor", 30);
+      const actor = cleanActor(input?.actor);
       const reason = cleanRequired(input?.reason, "reason", 500);
       const replay = retained.get(requestId);
       if (replay) {
-        if (replay.actor !== actor || replay.reason !== reason) {
+        if (!sameActor(replay.actor, actor) || replay.reason !== reason) {
           throw new BridgeActionConflict("requestId was already used with different reload_self input");
         }
         return publicAction(replay);
@@ -208,6 +208,27 @@ function cleanRequired(value, field, maximum) {
   const cleaned = clean(value, maximum);
   if (!cleaned) throw new TypeError(`${field} is required`);
   return cleaned;
+}
+
+function cleanActor(value) {
+  if (typeof value === "string") {
+    const actorId = cleanRequired(value, "actor", 30);
+    return {
+      actorType: actorId === "codex" ? "agent" : "user",
+      actorId,
+    };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("actor is required");
+  }
+  return {
+    actorType: cleanRequired(value.actorType, "actor.actorType", 30),
+    actorId: cleanRequired(value.actorId, "actor.actorId", 64),
+  };
+}
+
+function sameActor(left, right) {
+  return left.actorType === right.actorType && left.actorId === right.actorId;
 }
 
 function clean(value, maximum) {
