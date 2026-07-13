@@ -14,6 +14,11 @@ export class CalibrationEngine {
   createFromUnifiedSession(unifiedSessionId, options = {}) {
     const existing = this.store.getCalibrationSessionByUnifiedSession(unifiedSessionId);
     if (existing) return existing;
+    const triggerKind = options.triggerKind ?? "first_run";
+    if (triggerKind === "first_run") {
+      const existingFirstRun = this.store.getCalibrationSessionByTriggerKind("first_run");
+      if (existingFirstRun) return existingFirstRun;
+    }
     const unified = this.store.getUnifiedSession(unifiedSessionId);
     if (!unified || !["completed", "partial"].includes(unified.status)) {
       throw new ContractError("Calibration requires a completed or partial unified session.");
@@ -28,7 +33,7 @@ export class CalibrationEngine {
     return this.store.createCalibrationSession({
       id: randomUUID(),
       unifiedSessionId,
-      triggerKind: options.triggerKind ?? "first_run",
+      triggerKind,
       maxItems: Math.min(this.maxItems, options.maxItems ?? this.maxItems),
     }, samples);
   }

@@ -463,6 +463,15 @@ export class SqliteStateStore {
     return row ? this.getCalibrationSession(row.id) : null;
   }
 
+  getCalibrationSessionByTriggerKind(triggerKind) {
+    const row = this.database.prepare(`
+      SELECT id FROM calibration_sessions
+      WHERE trigger_kind = ?
+      ORDER BY created_at ASC LIMIT 1
+    `).get(triggerKind);
+    return row ? this.getCalibrationSession(row.id) : null;
+  }
+
   getActiveCalibrationSession() {
     const row = this.database.prepare(`
       SELECT id FROM calibration_sessions

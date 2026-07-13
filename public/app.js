@@ -548,6 +548,14 @@ async function startPendingFirstCalibration(session) {
       method: "POST",
       body: JSON.stringify({ unifiedSessionId: session.id, triggerKind: "first_run" }),
     });
+    if (calibration.status === "completed") {
+      state.bootstrap.calibration = {
+        ...state.bootstrap.calibration,
+        firstRunStatus: "completed",
+        active: null,
+      };
+      return null;
+    }
     state.bootstrap.calibration.active = calibration;
     return calibration;
   } catch (error) {

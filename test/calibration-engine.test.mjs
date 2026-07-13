@@ -28,6 +28,16 @@ test("calibration lifecycle stores forced labels separately and completes shadow
   assert.equal(engine.createFromUnifiedSession("unified-1").id, session.id);
 });
 
+test("first-run calibration is unique even when another unified session completes", () => {
+  const store = memoryStore([child("x", 2), child("linkedin", 1)]);
+  const engine = new CalibrationEngine({ store, maxItems: 10 });
+  const first = engine.createFromUnifiedSession("unified-1", { triggerKind: "first_run" });
+  const repeated = engine.createFromUnifiedSession("unified-2", { triggerKind: "first_run" });
+  assert.equal(repeated.id, first.id);
+  assert.equal(repeated.unifiedSessionId, "unified-1");
+  assert.equal(store.createdCount, 1);
+});
+
 function child(source, count) {
   return {
     source,
@@ -50,16 +60,21 @@ function child(source, count) {
 
 function memoryStore(children) {
   let calibration = null;
+  let createdCount = 0;
   const settings = new Map();
   return {
     setSetting(key, value) { settings.set(key, value); },
     getUnifiedSession(id) {
-      return id === "unified-1" ? { id, status: "completed", children } : null;
+      return ["unified-1", "unified-2"].includes(id) ? { id, status: "completed", children } : null;
     },
     getCalibrationSessionByUnifiedSession(id) {
       return calibration?.unifiedSessionId === id ? calibration : null;
     },
+    getCalibrationSessionByTriggerKind(triggerKind) {
+      return calibration?.triggerKind === triggerKind ? calibration : null;
+    },
     createCalibrationSession(input, samples) {
+      createdCount += 1;
       calibration = project(input, samples);
       return calibration;
     },
@@ -82,6 +97,7 @@ function memoryStore(children) {
       return calibration;
     },
     settings,
+    get createdCount() { return createdCount; },
   };
 }
 
