@@ -154,6 +154,10 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /mountPilotRunBody/);
   assert.match(appScript, /unmountPilotRunBody/);
   assert.match(appScript, /buildItemPresentation/);
+  assert.doesNotMatch(appScript, /Captured evidence · not a live source copy/);
+  assert.doesNotMatch(appScript, /Captured in this run/);
+  assert.match(appScript, /buildLinkedInAttachment/);
+  assert.match(styles, /\.linkedin-attachment > a/);
   assert.match(appScript, /buildSourceLayoutMedia/);
   assert.match(appScript, /document\.createElement\("video"\)/);
   assert.match(appScript, /Play video in native post/);

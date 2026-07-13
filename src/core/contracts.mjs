@@ -292,6 +292,7 @@ function validateQuotedPost(source, value, limits) {
 
 function validatePresentation(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const attachment = validatePresentationAttachment(value.attachment);
   return {
     socialContext: cleanString(value.socialContext, 300),
     socialContextAvatarUrl: safeHttpUrl(value.socialContextAvatarUrl),
@@ -304,6 +305,25 @@ function validatePresentation(value) {
     permalinkSource: cleanString(value.permalinkSource, 50),
     permalinkReason: cleanString(value.permalinkReason, 500),
     contentExpansion: cleanString(value.contentExpansion, 50),
+    ...(attachment ? { attachment } : {}),
+  };
+}
+
+function validatePresentationAttachment(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const url = safeHttpUrl(value.url);
+  const title = cleanString(value.title, 300);
+  if (!url || !title) return null;
+  return {
+    kind: value.kind === "job" ? "job" : "link",
+    title,
+    subtitle: cleanString(value.subtitle, 300),
+    detail: cleanString(value.detail, 300),
+    actionLabel: cleanString(value.actionLabel, 100),
+    footnote: cleanString(value.footnote, 300),
+    url,
+    imageUrl: safeHttpUrl(value.imageUrl),
+    verified: value.verified === true,
   };
 }
 

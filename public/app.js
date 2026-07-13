@@ -1396,8 +1396,7 @@ function buildItemPresentation({ brief, source, actions, className = "" }) {
   container.className = `presentable-item ${className}`.trim();
   const toolbar = document.createElement("div");
   toolbar.className = "item-presentation-toolbar";
-  const note = document.createElement("span");
-  note.textContent = "Captured evidence · not a live source copy";
+  toolbar.setAttribute("aria-label", "Presentation options");
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "presentation-toggle";
@@ -1413,7 +1412,7 @@ function buildItemPresentation({ brief, source, actions, className = "" }) {
     layout = layout === "source" ? "brief" : "source";
     render();
   });
-  toolbar.append(note, toggle);
+  toolbar.append(toggle);
   container.append(toolbar, brief, source, actions);
   render();
   return container;
@@ -1430,24 +1429,27 @@ function buildSourceLayoutCard(run, item, candidate) {
   const author = document.createElement("strong");
   author.textContent = sourceIdentity(candidate?.author || item.author, source).displayName;
   const context = document.createElement("span");
-  context.textContent = [
-    sourceLabel(source),
-    item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run",
-  ].join(" · ");
   const identityMeta = sourceIdentity(candidate?.author || item.author, source);
-  if (identityMeta.secondary) context.textContent = identityMeta.secondary;
-  identity.append(author, context);
+  identity.append(author);
   if (source === "linkedin") {
-    context.textContent = [presentation.connectionDegree, presentation.timestampText]
+    const timestampText = String(presentation.timestampText ?? "")
+      .replace(/\s*[•·]\s*$/, "");
+    context.textContent = [presentation.connectionDegree, timestampText]
       .filter(Boolean)
-      .join(" · ") || (item.publishedAt ? formatDate(item.publishedAt) : "Captured in this run");
+      .join(" · ") || (item.publishedAt ? formatDate(item.publishedAt) : "");
     if (presentation.headline) {
       const headline = document.createElement("span");
       headline.className = "source-layout-headline";
       headline.textContent = presentation.headline;
-      identity.insertBefore(headline, context);
+      identity.append(headline);
     }
+  } else {
+    context.textContent = identityMeta.secondary || [
+      sourceLabel(source),
+      item.publishedAt ? formatDate(item.publishedAt) : null,
+    ].filter(Boolean).join(" · ");
   }
+  if (context.textContent) identity.append(context);
   const avatar = buildSourceAvatar(candidate?.avatarUrl, source, candidate?.author || item.author);
   header.append(avatar, identity);
 
@@ -1468,6 +1470,9 @@ function buildSourceLayoutCard(run, item, candidate) {
     source,
     candidate?.sourceUrl || item.sourceUrl,
   );
+  const attachment = source === "linkedin"
+    ? buildLinkedInAttachment(presentation.attachment)
+    : null;
   if (source === "linkedin" && presentation.socialContext) {
     const socialContext = document.createElement("div");
     socialContext.className = "linkedin-social-context-row";
@@ -1483,13 +1488,15 @@ function buildSourceLayoutCard(run, item, candidate) {
     socialContext.append(socialText);
     article.append(socialContext);
   }
-  article.append(header, content);
+  article.append(header);
   if (source === "linkedin" && presentation.attributionText) {
     const attribution = document.createElement("div");
     attribution.className = "linkedin-attribution-row";
     attribution.textContent = presentation.attributionText;
-    article.insertBefore(attribution, content);
+    article.append(attribution);
   }
+  article.append(content);
+  if (attachment) article.append(attachment);
   if (media) {
     const legacyQuote = candidate?.quotedPost ? null : content.querySelector(".x-quote-card");
     (legacyQuote ?? article).append(media);
@@ -1513,17 +1520,64 @@ function sourceIdentity(value, source) {
 function buildSourceEngagement(engagement, source) {
   const definitions = source === "x"
     ? [["reply", "○"], ["repost", "↻"], ["like", "♡"], ["view", "▥"], ["bookmark", "◇"]]
-    : [["like", "♡"], ["comment", "○"], ["repost", "↻"]];
+    : [["like", "👍"], ["comment", "💬"], ["repost", "↻"]];
   const available = definitions.filter(([key]) => engagement[key]);
   if (available.length === 0) return null;
   const footer = document.createElement("footer");
   footer.className = "source-layout-engagement";
   for (const [key, icon] of available) {
     const metric = document.createElement("span");
+    metric.className = `engagement-${key}`;
     metric.textContent = `${icon} ${engagement[key]}`;
     footer.append(metric);
   }
   return footer;
+}
+
+function buildLinkedInAttachment(value) {
+  if (!value || typeof value !== "object") return null;
+  const url = safeExternalContentUrl(value.url);
+  if (!url || !value.title) return null;
+  const attachment = document.createElement("section");
+  attachment.className = "linkedin-attachment linkedin-job-attachment";
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  const logoUrl = safePresentationMediaUrl(value.imageUrl, "linkedin");
+  if (logoUrl) {
+    const logo = document.createElement("img");
+    logo.className = "linkedin-attachment-logo";
+    logo.src = logoUrl;
+    logo.alt = "";
+    logo.loading = "lazy";
+    logo.decoding = "async";
+    logo.referrerPolicy = "no-referrer";
+    logo.addEventListener("error", () => logo.remove(), { once: true });
+    link.append(logo);
+  }
+  const copy = document.createElement("span");
+  copy.className = "linkedin-attachment-copy";
+  const title = document.createElement("strong");
+  title.textContent = value.title;
+  if (value.verified) title.setAttribute("aria-label", `${value.title}, verified job`);
+  copy.append(title);
+  for (const detail of [value.subtitle, value.detail].filter(Boolean)) {
+    const line = document.createElement("span");
+    line.textContent = detail;
+    copy.append(line);
+  }
+  if (value.footnote) {
+    const footnote = document.createElement("small");
+    footnote.textContent = value.footnote;
+    copy.append(footnote);
+  }
+  const action = document.createElement("span");
+  action.className = "linkedin-attachment-action";
+  action.textContent = value.actionLabel || "Open";
+  link.append(copy, action);
+  attachment.append(link);
+  return attachment;
 }
 
 function buildLinkedInSourceLayoutContent(candidate) {

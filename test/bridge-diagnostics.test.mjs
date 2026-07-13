@@ -104,7 +104,7 @@ test("recent failures override a stale successful LinkedIn observation", () => {
       payload: {
         capturedAt: "2026-07-14T01:00:05.000Z",
         coverage: {
-          adapterVersion: "linkedin-dom-v6",
+          adapterVersion: "linkedin-dom-v7",
           adapterHealth: { state: "healthy" },
           restored: true,
         },
@@ -174,10 +174,10 @@ test("a recovery success does not erase two failures from rolling health", () =>
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.19",
-    runtimeRevision: "source-fidelity-v21",
-    buildId: "aku-bridge-0.5.19-source-fidelity-v21",
-    adapterVersions: { x: "x-dom-v12", linkedin: "linkedin-dom-v6" },
+    extensionVersion: "0.5.20",
+    runtimeRevision: "source-fidelity-v22",
+    buildId: "aku-bridge-0.5.20-source-fidelity-v22",
+    adapterVersions: { x: "x-dom-v12", linkedin: "linkedin-dom-v7" },
     actions: ["reload_self"],
   };
 }

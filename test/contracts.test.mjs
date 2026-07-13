@@ -249,6 +249,17 @@ test("browser observations accept only bounded http evidence", () => {
                 connectionDegree: "2nd",
                 timestampText: "12h · Edited",
                 edited: true,
+                attachment: {
+                  kind: "job",
+                  title: "Management Intern",
+                  subtitle: "Kargo Technologies",
+                  detail: "Singapore (On-site)",
+                  actionLabel: "View job",
+                  footnote: "10 school alumni work here",
+                  url: "https://www.linkedin.com/jobs/view/4439405587/",
+                  imageUrl: "https://media.licdn.com/dms/image/job-logo",
+                  verified: true,
+                },
               },
               relationshipType: "quote",
               quotedPost: {
@@ -306,6 +317,17 @@ test("browser observations accept only bounded http evidence", () => {
     permalinkSource: "",
     permalinkReason: "",
     contentExpansion: "",
+    attachment: {
+      kind: "job",
+      title: "Management Intern",
+      subtitle: "Kargo Technologies",
+      detail: "Singapore (On-site)",
+      actionLabel: "View job",
+      footnote: "10 school alumni work here",
+      url: "https://www.linkedin.com/jobs/view/4439405587/",
+      imageUrl: "https://media.licdn.com/dms/image/job-logo",
+      verified: true,
+    },
   });
   assert.equal(observation.coverage.status, "partial");
 });
