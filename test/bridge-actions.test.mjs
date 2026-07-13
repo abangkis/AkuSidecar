@@ -5,7 +5,7 @@ import {
   createBridgeActions,
 } from "../src/operations/bridge-actions.mjs";
 
-const EXPECTED_BUILD = "aku-bridge-0.5.15-source-fidelity-v17";
+const EXPECTED_BUILD = "aku-bridge-0.5.16-source-fidelity-v18";
 
 test("reload_self is bounded, idempotent, and completes only on the expected heartbeat", () => {
   const clock = { value: Date.parse("2026-07-14T01:00:00.000Z") };
