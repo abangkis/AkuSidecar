@@ -1492,11 +1492,11 @@ function buildXSourceLayoutContent(candidate) {
   const quotedPost = candidate.quotedPost ?? (parsed.quote
     ? { author: parsed.quote.identity, text: parsed.quote.body, links: [], media: [] }
     : null);
-  if (quotedPost) content.append(buildXQuotedPostCard(quotedPost));
+  if (quotedPost) content.append(buildXQuotedPostCard(quotedPost, candidate.sourceUrl));
   return content;
 }
 
-function buildXQuotedPostCard(quotedPost) {
+function buildXQuotedPostCard(quotedPost, parentSourceUrl) {
   const quote = document.createElement("section");
   quote.className = "x-quote-card";
   const header = document.createElement("header");
@@ -1519,10 +1519,12 @@ function buildXQuotedPostCard(quotedPost) {
   const quoteBody = document.createElement("p");
   appendLinkedText(quoteBody, quotedPost.text, quotedPost.links ?? []);
   quote.append(header, quoteBody);
+  const nativePostUrl = safeNativePostUrl(quotedPost.permalink, "x")
+    || safeNativePostUrl(parentSourceUrl, "x");
   const media = buildSourceLayoutMedia(
     quotedPost.media ?? [],
     "x",
-    quotedPost.permalink,
+    nativePostUrl,
   );
   if (media) quote.append(media);
   if (quotedPost.permalink) {
