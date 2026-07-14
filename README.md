@@ -138,9 +138,13 @@ Feedback integrity is enforced by JobEngine:
 
 The review API is `GET /api/pilot/review`. Optional query parameters are `source`, `verdict`, and `limit`. The response intentionally returns result, coverage, and feedback evidence but not raw browser observations.
 
-`GET /api/preferences/replay` provides deterministic offline calibration readiness over stored candidates, assessments, and preference signals. It reports coverage and descriptive tendencies without invoking a model or influencing live selection. The initial gates require 30 contextual-interest signals, including at least 15 `more_like_this` and 5 `less_like_this` signals, 20 assessment-matched signals, and feedback across 10 runs. Retired development-only preference kinds are deleted rather than carried as compatibility behavior.
+`GET /api/preferences/replay` provides historical dataset-maturity diagnostics. Automatic local fitting does not wait for these manual experiment gates. More, Neutral, and reason-aware Less events share an append-only ledger with calibration/routine origin and context metadata.
 
-`GET /api/preferences/experiment` exposes the hard-gated shadow experiment state. `POST /api/preferences/experiment/fit` persists one versioned SQLite snapshot only after every replay gate passes. The snapshot uses stable run-level holdout evaluation and reports aggregate shadow behavior, but it never changes live ranking. Re-fitting an unchanged assessed dataset is idempotent by dataset fingerprint.
+Selection Engine v1 owns generic materiality admission and the finite display budget. Preference Runtime v2 uses canonical source-neutral features only, keeps an active champion while evaluating a challenger, and applies confidence-scaled zero-to-two-position reranking without changing eligibility. Reset is durable suspension; only explicit manual refit resumes fitting.
+
+`GET /api/preferences/benchmark` runs the local read-only replay benchmark. It reports polarity, source-sliced bias, selection, latency, token, model, and effort metrics without invoking a reasoning model. With Sidecar running, `npm run benchmark:engine` prints the same payload.
+
+`GET /api/preferences/experiment` and `POST /api/preferences/experiment/fit` remain optional legacy-compatible diagnostics; they are not onboarding or production prerequisites.
 
 ## Unified Session API
 

@@ -91,20 +91,26 @@
     "sourceUrl": { "type": "string" },
     "publishedAt": { "type": ["string", "null"] },
     "feedPosition": { "type": ["integer", "null"] },
+    "policyVersion": { "type": "string" },
+    "selectionScore": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "preferenceProfileVersion": { "type": "integer", "minimum": 0 },
     "assessment": {
       "type": ["object", "null"],
       "properties": {
         "topicTags": { "type": "array", "maxItems": 5, "items": { "type": "string" } },
+        "topicFacets": { "type": "array", "maxItems": 3, "items": { "type": "string" } },
         "contentType": { "type": "string" },
         "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
         "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
         "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "materiality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceStrength": { "type": "number", "minimum": 0, "maximum": 1 },
         "rationale": { "type": "string" }
       },
-      "required": ["topicTags", "contentType", "novelty", "urgency", "actionability", "rationale"],
+      "required": ["topicTags", "topicFacets", "contentType", "novelty", "urgency", "actionability", "materiality", "evidenceStrength", "rationale"],
       "additionalProperties": false
     }
   },
-  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "avatarUrl", "relationshipType", "parentPermalink", "quotedPost", "text", "sourceUrl", "links", "media", "engagement", "presentation", "publishedAt", "feedPosition", "assessment"],
+  "required": ["runId", "evidenceKey", "source", "decision", "reasonCode", "itemId", "author", "avatarUrl", "relationshipType", "parentPermalink", "quotedPost", "text", "sourceUrl", "links", "media", "engagement", "presentation", "publishedAt", "feedPosition", "policyVersion", "selectionScore", "preferenceProfileVersion", "assessment"],
   "additionalProperties": false
 }

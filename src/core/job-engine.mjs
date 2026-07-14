@@ -33,6 +33,9 @@ import {
   resetLocalPreferenceRuntime,
 } from "./preference-runtime.mjs";
 import { buildPilotReview } from "./pilot-review.mjs";
+import { buildEngineReplayBenchmark } from "./engine-replay-benchmark.mjs";
+import { normalizePreferenceAssessment } from "./preference-features.mjs";
+import { selectReasoningCandidates } from "./selection-engine.mjs";
 
 export class JobEngine {
   constructor({ store, reasoningProvider, limits, preferencePolicy = {}, logger = console }) {
@@ -65,7 +68,7 @@ export class JobEngine {
 
   startUnifiedSession(input) {
     const request = validateUnifiedSessionRequest(input, this.limits);
-    this.#ensurePreferenceRuntime({ force: true, trigger: "before_session" });
+    this.#ensurePreferenceRuntime({ forceFit: true, trigger: "before_session" });
     this.store.createUnifiedSession(request);
     return this.#reconcileUnifiedSession(request.id);
   }
@@ -365,7 +368,11 @@ export class JobEngine {
       (entry) => entry.evidenceKey === feedback.evidenceKey,
     );
     if (!candidate) throw new ContractError("preference feedback target was not evaluated");
-    const updated = this.store.addPreferenceFeedback(runId, feedback);
+    const updated = this.store.addPreferenceFeedback(runId, {
+      ...feedback,
+      origin: "routine",
+      contextId: run.unifiedSessionId ?? run.id,
+    });
     this.#ensurePreferenceRuntime({ trigger: "feedback_threshold" });
     return updated;
   }
@@ -377,7 +384,11 @@ export class JobEngine {
   }
 
   refitPreferenceRuntime() {
-    return this.#ensurePreferenceRuntime({ force: true, trigger: "manual_diagnostic" });
+    return this.#ensurePreferenceRuntime({
+      forceFit: true,
+      ignoreSuspension: true,
+      trigger: "manual_diagnostic",
+    });
   }
 
   resetPreferenceRuntime() {
@@ -392,6 +403,10 @@ export class JobEngine {
 
   getPreferenceReplay(limit = 500) {
     return buildPreferenceReplay(this.store.listRunsWithFeedback(limit));
+  }
+
+  getEngineReplayBenchmark(limit = 500) {
+    return buildEngineReplayBenchmark(this.store.listRunsWithFeedback(limit));
   }
 
   getPreferenceExperiment(limit = 500) {
@@ -692,15 +707,16 @@ export class JobEngine {
       const invocation = unwrapProviderInvocation(providerResponse);
       if (invocation.telemetry) this.store.saveReasoningInvocation(invocation.telemetry);
       const rawResult = invocation.output;
-      const result = validateReasoningResult(rawResult, run.maxItems);
-      assertObservedSources(result, filtered.observation);
+      const validatedResult = validateReasoningResult(rawResult, run.maxItems);
+      assertObservedSources(validatedResult, filtered.observation);
       assertCandidateAssessments(
-        result,
+        validatedResult,
         boundedObservation,
         invocation.evaluatedEvidenceKeys,
       );
-      assertPlatformOrderItems(result, invocation.evaluatedEvidenceKeys);
-      assertUniqueResultEvidence(result, suppressedEvidenceKeys);
+      assertPlatformOrderItems(validatedResult, invocation.evaluatedEvidenceKeys);
+      assertUniqueResultEvidence(validatedResult, suppressedEvidenceKeys);
+      const result = selectReasoningCandidates(validatedResult, run, this.preferencePolicy.selection);
       if (this.store.getRun(runId)?.status === "cancelled") return;
       const coverage = {
         ...aggregateCoverage(storedObservations, planning),
@@ -857,12 +873,13 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
   }
   return [...unique.values()].map((block) => {
     const item = selectedByEvidence.get(block.evidenceKey) ?? null;
+    const selectionDecision = result.selection?.decisions?.[block.evidenceKey] ?? null;
     const assessment = assessmentByEvidence.get(block.evidenceKey) ?? null;
     return {
       evidenceKey: block.evidenceKey,
       source: run.source,
-      decision: item ? "selected" : "excluded",
-      reasonCode: item ? "selected_by_provider" : "not_promoted_by_provider",
+      decision: selectionDecision?.decision ?? (item ? "selected" : "excluded"),
+      reasonCode: selectionDecision?.reasonCode ?? (item ? "selected_by_provider" : "not_promoted_by_provider"),
       itemId: item?.id ?? null,
       author: block.author ?? "",
       avatarUrl: block.avatarUrl ?? null,
@@ -878,18 +895,10 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       presentation: block.presentation ?? {},
       publishedAt: block.publishedAt ?? null,
       feedPosition: Number.isInteger(block.feedPosition) ? block.feedPosition : null,
-      policyVersion: "learning-loop-v0",
+      policyVersion: result.selection?.policyVersion ?? "learning-loop-v0",
+      selectionScore: selectionDecision?.materialityScore ?? null,
       preferenceProfileVersion: 0,
-      assessment: assessment
-        ? {
-            topicTags: assessment.topicTags,
-            contentType: assessment.contentType,
-            novelty: assessment.novelty,
-            urgency: assessment.urgency,
-            actionability: assessment.actionability,
-            rationale: assessment.rationale,
-          }
-        : null,
+      assessment: assessment ? normalizePreferenceAssessment(assessment) : null,
     };
   });
 }
@@ -1080,10 +1089,10 @@ export function mergeUnifiedItems(
 function summarizePreferenceComposition(items, runtime) {
   const influenced = items.filter((entry) => entry.preference?.liveInfluence);
   return {
-    policyVersion: runtime?.policy?.version ?? "preference-runtime-v1",
+    policyVersion: runtime?.policy?.version ?? "preference-runtime-v2",
     activationState: runtime?.activationState ?? "baseline",
     liveInfluence: influenced.length > 0,
-    snapshotId: runtime?.currentSnapshot?.id ?? null,
+    snapshotId: runtime?.activeSnapshot?.id ?? runtime?.currentSnapshot?.id ?? null,
     scoredItems: items.filter((entry) => Number.isFinite(entry.preference?.probability)).length,
     movedItems: influenced.filter((entry) => entry.preference.displacement !== 0).length,
     maxObservedDisplacement: influenced.reduce(
@@ -1097,16 +1106,11 @@ function summarizePreferenceComposition(items, runtime) {
 function assertPlatformOrderItems(result, evaluatedEvidenceKeys) {
   if (!Array.isArray(evaluatedEvidenceKeys)) return;
   const actual = result.items.map((item) => item.evidenceKey);
-  let previousIndex = -1;
-  const outOfOrder = actual.some((evidenceKey) => {
-    const index = evaluatedEvidenceKeys.indexOf(evidenceKey);
-    if (index < 0 || index <= previousIndex) return true;
-    previousIndex = index;
-    return false;
-  });
-  if (outOfOrder) {
+  const incompleteOrOutOfOrder = actual.length !== evaluatedEvidenceKeys.length ||
+    actual.some((evidenceKey, index) => evidenceKey !== evaluatedEvidenceKeys[index]);
+  if (incompleteOrOutOfOrder) {
     throw new ContractError(
-      "result items must preserve supplied platform order",
+      "result items must cover every supplied candidate exactly once in platform order",
     );
   }
 }

@@ -5,7 +5,7 @@
     "summary": { "type": "string" },
     "items": {
       "type": "array",
-      "maxItems": 5,
+      "maxItems": 20,
       "items": {
         "type": "object",
         "properties": {
@@ -70,6 +70,14 @@
             "maxItems": 5,
             "items": { "type": "string", "minLength": 1, "maxLength": 80 }
           },
+          "topicFacets": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": ["ai_models", "software_engineering", "developer_tools", "security", "data_infrastructure", "geospatial", "science", "space", "business", "finance", "policy", "education", "health", "climate_energy", "culture_entertainment", "sports", "career_hiring", "other"]
+            }
+          },
           "contentType": {
             "type": "string",
             "enum": ["release", "tutorial", "opinion", "benchmark", "announcement", "hiring", "promotion", "news", "research", "other"]
@@ -77,9 +85,11 @@
           "novelty": { "type": "number", "minimum": 0, "maximum": 1 },
           "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
           "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "materiality": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidenceStrength": { "type": "number", "minimum": 0, "maximum": 1 },
           "rationale": { "type": "string", "maxLength": 500 }
         },
-        "required": ["evidenceKey", "topicTags", "contentType", "novelty", "urgency", "actionability", "rationale"],
+        "required": ["evidenceKey", "topicTags", "topicFacets", "contentType", "novelty", "urgency", "actionability", "materiality", "evidenceStrength", "rationale"],
         "additionalProperties": false
       }
     },

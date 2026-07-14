@@ -135,6 +135,7 @@ export class SqliteStateStore {
         published_at TEXT,
         feed_position INTEGER,
         policy_version TEXT NOT NULL,
+        selection_score REAL,
         preference_profile_version INTEGER NOT NULL,
         created_at TEXT NOT NULL,
         PRIMARY KEY(run_id, evidence_key)
@@ -285,6 +286,7 @@ export class SqliteStateStore {
         ON evidence_dispositions(source, mode, intent_key, disposition);
     `);
     this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
+    this.#ensureColumn("candidate_evaluations", "selection_score", "REAL");
     this.#ensureColumn("candidate_evaluations", "media_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "media_recovery_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "avatar_url", "TEXT");
@@ -294,8 +296,10 @@ export class SqliteStateStore {
     this.#ensureColumn("candidate_evaluations", "relationship_type", "TEXT");
     this.#ensureColumn("candidate_evaluations", "parent_permalink", "TEXT");
     this.#ensureColumn("candidate_evaluations", "quoted_post_json", "TEXT");
+    this.#ensureColumn("preference_feedback_events", "origin", "TEXT NOT NULL DEFAULT 'routine'");
+    this.#ensureColumn("preference_feedback_events", "context_id", "TEXT");
     this.database
-      .prepare("DELETE FROM preference_feedback_events WHERE kind NOT IN ('more_like_this', 'less_like_this')")
+      .prepare("DELETE FROM preference_feedback_events WHERE kind NOT IN ('more_like_this', 'neutral', 'less_like_this')")
       .run();
   }
 
@@ -928,15 +932,16 @@ export class SqliteStateStore {
         INSERT INTO candidate_evaluations(
           run_id, evidence_key, source, decision, reason_code, item_id,
           author, avatar_url, text, source_url, published_at, feed_position,
-          policy_version, preference_profile_version, assessment_json, media_json, media_recovery_json,
+          policy_version, selection_score, preference_profile_version, assessment_json, media_json, media_recovery_json,
           engagement_json, presentation_json, links_json, relationship_type,
           parent_permalink, quoted_post_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, evidence_key) DO UPDATE SET
           decision = excluded.decision,
           reason_code = excluded.reason_code,
           item_id = excluded.item_id,
           policy_version = excluded.policy_version,
+          selection_score = excluded.selection_score,
           preference_profile_version = excluded.preference_profile_version,
           assessment_json = excluded.assessment_json,
           media_json = excluded.media_json,
@@ -963,6 +968,7 @@ export class SqliteStateStore {
           candidate.publishedAt,
           candidate.feedPosition,
           candidate.policyVersion,
+          candidate.selectionScore,
           candidate.preferenceProfileVersion,
           candidate.assessment ? JSON.stringify(candidate.assessment) : null,
           JSON.stringify(candidate.media ?? []),
@@ -1273,8 +1279,11 @@ export class SqliteStateStore {
     }
     const now = new Date().toISOString();
     this.database
-      .prepare(`INSERT INTO preference_feedback_events(id, run_id, evidence_key, kind, reason_code, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(randomUUID(), runId, feedback.evidenceKey, feedback.kind, feedback.reasonCode, feedback.note, now);
+      .prepare(`INSERT INTO preference_feedback_events(id, run_id, evidence_key, kind, reason_code, note, origin, context_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        randomUUID(), runId, feedback.evidenceKey, feedback.kind, feedback.reasonCode,
+        feedback.note, feedback.origin ?? "routine", feedback.contextId ?? runId, now,
+      );
     return this.getRun(runId);
   }
 
@@ -1310,7 +1319,10 @@ export class SqliteStateStore {
       )
       SELECT COUNT(*) AS total,
              SUM(CASE WHEN p.kind = 'more_like_this' THEN 1 ELSE 0 END) AS more_like_this,
+             SUM(CASE WHEN p.kind = 'neutral' THEN 1 ELSE 0 END) AS neutral,
              SUM(CASE WHEN p.kind = 'less_like_this' THEN 1 ELSE 0 END) AS less_like_this,
+             SUM(CASE WHEN p.origin = 'calibration' THEN 1 ELSE 0 END) AS calibration,
+             SUM(CASE WHEN p.reason_code IS NOT NULL THEN 1 ELSE 0 END) AS reasoned,
              SUM(CASE WHEN p.kind = 'more_like_this' AND c.decision = 'selected' THEN 1 ELSE 0 END) AS selected_more_like_this,
              SUM(CASE WHEN p.kind = 'more_like_this' AND c.decision = 'excluded' THEN 1 ELSE 0 END) AS excluded_more_like_this,
              MAX(p.created_at) AS updated_at
@@ -1319,11 +1331,14 @@ export class SqliteStateStore {
         ON c.run_id = p.run_id AND c.evidence_key = p.evidence_key
     `).get();
     return {
-      version: 0,
+      version: 1,
       status: "collecting",
       feedbackEventCount: Number(row.total ?? 0),
       moreLikeThisCount: Number(row.more_like_this ?? 0),
+      neutralCount: Number(row.neutral ?? 0),
       lessLikeThisCount: Number(row.less_like_this ?? 0),
+      calibrationCount: Number(row.calibration ?? 0),
+      reasonedFeedbackCount: Number(row.reasoned ?? 0),
       selectedMoreLikeThisCount: Number(row.selected_more_like_this ?? 0),
       excludedMoreLikeThisCount: Number(row.excluded_more_like_this ?? 0),
       updatedAt: row.updated_at ?? null,
@@ -1426,6 +1441,7 @@ function mapCandidateEvaluation(row) {
     publishedAt: row.published_at,
     feedPosition: row.feed_position,
     policyVersion: row.policy_version,
+    selectionScore: row.selection_score,
     preferenceProfileVersion: row.preference_profile_version,
     assessment: parseJson(row.assessment_json),
     createdAt: row.created_at,
@@ -1439,6 +1455,8 @@ function mapPreferenceFeedback(row) {
     kind: row.kind,
     reasonCode: row.reason_code,
     note: row.note,
+    origin: row.origin ?? "routine",
+    contextId: row.context_id ?? row.run_id,
     createdAt: row.created_at,
   };
 }

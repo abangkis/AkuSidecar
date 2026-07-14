@@ -85,7 +85,7 @@ const DEFINITIONS = {
   maxItemsPerSource: integerDefinition(
     "engine.max_items_per_source",
     "maxItems",
-    { minimum: 1, maximum: 10 },
+    { minimum: 1, maximum: 5 },
   ),
   maxScrolls: {
     ...integerDefinition("engine.max_scrolls", "maxScrolls", { minimum: 0, maximum: 5 }),

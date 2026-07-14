@@ -109,6 +109,7 @@ export const FEEDBACK_KINDS = new Set([
 ]);
 export const PREFERENCE_FEEDBACK_KINDS = new Set([
   "more_like_this",
+  "neutral",
   "less_like_this",
 ]);
 export const CANDIDATE_CONTENT_TYPES = new Set([
@@ -821,7 +822,7 @@ function validateSourceEvents(value) {
 
 export function validateReasoningResult(input, maxItems) {
   assertPlainObject(input, "reasoning result");
-  const items = Array.isArray(input.items) ? input.items.slice(0, maxItems) : [];
+  const items = Array.isArray(input.items) ? input.items.slice(0, 20) : [];
   return {
     summary: cleanString(input.summary, 1_000),
     items: items.map((item, index) => validateResultItem(item, index)),
@@ -852,12 +853,17 @@ function validateCandidateAssessment(value, index) {
     topicTags: Array.isArray(value.topicTags)
       ? [...new Set(value.topicTags.map((tag) => cleanString(tag, 80)).filter(Boolean))].slice(0, 5)
       : [],
+    topicFacets: Array.isArray(value.topicFacets)
+      ? [...new Set(value.topicFacets.map((tag) => cleanString(tag, 80)).filter(Boolean))].slice(0, 3)
+      : [],
     contentType: CANDIDATE_CONTENT_TYPES.has(value.contentType)
       ? value.contentType
       : "other",
     novelty: normalizeConfidence(value.novelty),
     urgency: normalizeConfidence(value.urgency),
     actionability: normalizeConfidence(value.actionability),
+    materiality: normalizeConfidence(value.materiality),
+    evidenceStrength: normalizeConfidence(value.evidenceStrength),
     rationale: cleanString(value.rationale, 500),
   };
 }

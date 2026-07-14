@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
 import { buildPreferenceReplay, buildPreferenceSignals } from "./preference-replay.mjs";
+import {
+  normalizePreferenceAssessment,
+  PREFERENCE_CONTINUOUS_FIELDS,
+  preferenceFeedbackWeight,
+} from "./preference-features.mjs";
 
-const SCORE_FIELDS = ["novelty", "urgency", "actionability"];
-const SNAPSHOT_VERSION = 3;
+const SCORE_FIELDS = PREFERENCE_CONTINUOUS_FIELDS;
+const SNAPSHOT_VERSION = 4;
 const PROMOTION_THRESHOLD = 0.6;
 const DEMOTION_THRESHOLD = 0.25;
 
@@ -39,7 +44,13 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
   const runtime = options.runtime === true;
   if (status.status === "blocked" && !runtime) return status;
   const { candidates, signals } = buildPreferenceSignals(runs);
-  const assessedSignals = deduplicateSignals(signals.filter((signal) => signal.assessment));
+  const assessedSignals = deduplicateSignals(signals.filter((signal) =>
+    signal.assessment && preferenceFeedbackWeight(signal) > 0,
+  )).map((signal) => ({
+    ...signal,
+    assessment: normalizePreferenceAssessment(signal.assessment),
+    weight: preferenceFeedbackWeight(signal),
+  }));
   const positiveSignals = assessedSignals.filter((signal) => signal.polarity === "positive").length;
   const negativeSignals = assessedSignals.filter((signal) => signal.polarity === "negative").length;
   if (runtime && (assessedSignals.length < 4 || positiveSignals < 1 || negativeSignals < 1)) {
@@ -62,8 +73,10 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
   const snapshot = {
     id: `${runtime ? "preference-runtime" : "preference-diagnostic"}-v${SNAPSHOT_VERSION}-${status.datasetFingerprint.slice(0, 16)}`,
     version: SNAPSHOT_VERSION,
-    policyVersion: runtime ? "preference-runtime-v1" : "preference-diagnostic-v1",
-    datasetFingerprint: status.datasetFingerprint,
+    policyVersion: runtime ? "preference-runtime-v2" : "preference-diagnostic-v2",
+    datasetFingerprint: runtime
+      ? runtimePreferenceDatasetFingerprint(status.datasetFingerprint)
+      : status.datasetFingerprint,
     createdAt,
     origin: runtime ? "local_runtime" : "manual_diagnostic",
     fitTrigger: options.trigger ?? (runtime ? "automatic" : "manual"),
@@ -74,7 +87,7 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
       negativeSignals,
     },
     split: {
-      strategy: "stable_run_holdout_20_percent",
+      strategy: "temporal_context_holdout_20_percent",
       trainingSignals: training.length,
       holdoutSignals: holdout.length,
       trainingRuns: new Set(training.map((signal) => signal.runId)).size,
@@ -123,24 +136,23 @@ export function scorePreferenceCandidate(snapshot, candidate) {
 export function explainPreferenceCandidate(snapshot, candidate) {
   if (!snapshot?.model || !candidate?.assessment) return null;
   const model = snapshot.model;
-  const assessment = candidate.assessment;
+  const assessment = normalizePreferenceAssessment(candidate.assessment);
   const contributions = [{ feature: "intercept", label: "base", value: model.intercept }];
-  addCategoricalContribution(contributions, "source", candidate.source, model.categorical.source);
   addCategoricalContribution(
     contributions,
     "content_type",
     assessment.contentType,
     model.categorical.contentType,
   );
-  for (const tag of assessment.topicTags ?? []) {
-    addCategoricalContribution(contributions, "topic_tag", tag, model.categorical.topicTag);
+  for (const facet of assessment.topicFacets ?? []) {
+    addCategoricalContribution(contributions, "topic_facet", facet, model.categorical.topicFacet);
   }
   for (const field of SCORE_FIELDS) {
     if (Number.isFinite(assessment[field])) {
       contributions.push({
         feature: field,
         label: String(assessment[field]),
-        value: (assessment[field] - 0.5) * model.continuous[field].weight,
+        value: (assessment[field] - 0.5) * (model.continuous?.[field]?.weight ?? 0),
       });
     }
   }
@@ -250,8 +262,11 @@ export function preferenceDatasetFingerprint(runs) {
       source: signal.source,
       evidenceKey: signal.evidenceKey,
       kind: signal.kind,
+      reasonCode: signal.reasonCode,
+      origin: signal.origin,
+      contextId: signal.contextId,
       decision: signal.decision,
-      assessment: signal.assessment,
+      assessment: normalizePreferenceAssessment(signal.assessment),
     }))
     .sort((left, right) =>
       `${left.runId}:${left.evidenceKey}`.localeCompare(`${right.runId}:${right.evidenceKey}`),
@@ -262,14 +277,28 @@ export function preferenceDatasetFingerprint(runs) {
     .digest("hex");
 }
 
+export function runtimePreferenceDatasetFingerprint(datasetOrRuns) {
+  const dataset = typeof datasetOrRuns === "string"
+    ? datasetOrRuns
+    : preferenceDatasetFingerprint(datasetOrRuns);
+  return `runtime-v2:${dataset}`;
+}
+
 function splitByRun(signals) {
-  const runIds = [...new Set(signals.map((signal) => signal.runId))]
-    .sort((left, right) => stableNumber(left) - stableNumber(right) || left.localeCompare(right));
+  const contexts = new Map();
+  for (const signal of signals) {
+    const id = signal.contextId ?? signal.runId;
+    const createdAt = String(signal.createdAt ?? "");
+    const current = contexts.get(id);
+    if (!current || createdAt < current) contexts.set(id, createdAt);
+  }
+  const runIds = [...contexts.keys()]
+    .sort((left, right) => contexts.get(left).localeCompare(contexts.get(right)) || left.localeCompare(right));
   const holdoutRunCount = Math.max(1, Math.round(runIds.length * 0.2));
-  const holdoutRuns = new Set(runIds.slice(0, holdoutRunCount));
+  const holdoutRuns = new Set(runIds.slice(-holdoutRunCount));
   return {
-    training: signals.filter((signal) => !holdoutRuns.has(signal.runId)),
-    holdout: signals.filter((signal) => holdoutRuns.has(signal.runId)),
+    training: signals.filter((signal) => !holdoutRuns.has(signal.contextId ?? signal.runId)),
+    holdout: signals.filter((signal) => holdoutRuns.has(signal.contextId ?? signal.runId)),
   };
 }
 
@@ -277,21 +306,23 @@ function trainModel(signals) {
   const positive = signals.filter((signal) => signal.polarity === "positive");
   const negative = signals.filter((signal) => signal.polarity === "negative");
   return {
-    type: "regularized_additive_preference_v1_1",
+    type: "regularized_additive_preference_v2",
     classBalance: "equal_polarity",
     intercept: 0,
     categorical: {
-      source: categoricalWeights(signals, (signal) => [signal.source]),
       contentType: categoricalWeights(signals, (signal) => [signal.assessment.contentType]),
-      topicTag: categoricalWeights(signals, (signal) => signal.assessment.topicTags ?? []),
+      topicFacet: categoricalWeights(signals, (signal) => signal.assessment.topicFacets ?? []),
     },
     continuous: Object.fromEntries(SCORE_FIELDS.map((field) => {
-      const positiveMean = average(positive.map((signal) => signal.assessment[field]));
-      const negativeMean = average(negative.map((signal) => signal.assessment[field]));
+      const positiveMean = weightedAverage(positive.map((signal) => [signal.assessment[field], signal.weight]));
+      const negativeMean = weightedAverage(negative.map((signal) => [signal.assessment[field], signal.weight]));
+      const neutralSupport = signals.filter((signal) => signal.polarity === "neutral").reduce((sum, signal) => sum + signal.weight, 0);
+      const directionalSupport = positive.reduce((sum, signal) => sum + signal.weight, 0) + negative.reduce((sum, signal) => sum + signal.weight, 0);
+      const neutralShrinkage = directionalSupport / Math.max(1, directionalSupport + neutralSupport);
       return [field, {
         positiveMean,
         negativeMean,
-        weight: clamp(((positiveMean ?? 0.5) - (negativeMean ?? 0.5)) * 2, -2, 2),
+        weight: clamp(((positiveMean ?? 0.5) - (negativeMean ?? 0.5)) * 2 * neutralShrinkage, -2, 2),
       }];
     })),
   };
@@ -303,22 +334,23 @@ function categoricalWeights(signals, labelsForSignal) {
   const counts = new Map();
   for (const signal of signals) {
     for (const label of labelsForSignal(signal).filter(Boolean)) {
-      const value = counts.get(label) ?? { positive: 0, negative: 0 };
-      value[signal.polarity] += 1;
+      const value = counts.get(label) ?? { positive: 0, negative: 0, neutral: 0 };
+      value[signal.polarity] += signal.weight ?? 1;
       counts.set(label, value);
     }
   }
   return Object.fromEntries([...counts.entries()].map(([label, count]) => {
-    const support = count.positive + count.negative;
+    const support = count.positive + count.negative + count.neutral;
     if (support < 3) return [label, 0];
     const positiveRate = (count.positive + 1) / (positiveTotal + 2);
     const negativeRate = (count.negative + 1) / (negativeTotal + 2);
-    const supportShrinkage = Math.min(1, (support - 2) / 8);
+    const supportShrinkage = Math.min(1, Math.max(0, (support - 2) / 8));
     const polarityShrinkage = count.positive > 0 && count.negative > 0 ? 1 : 0.2;
+    const neutralShrinkage = (count.positive + count.negative) / Math.max(1, support);
     return [
       label,
       clamp(
-        Math.log(positiveRate / negativeRate) * supportShrinkage * polarityShrinkage,
+        Math.log(positiveRate / negativeRate) * supportShrinkage * polarityShrinkage * neutralShrinkage,
         -0.5,
         0.5,
       ),
@@ -360,6 +392,7 @@ function deduplicateCandidateEntries(entries) {
 function evaluateModel(model, signals) {
   const confusion = { truePositive: 0, trueNegative: 0, falsePositive: 0, falseNegative: 0 };
   for (const signal of signals) {
+    if (signal.polarity === "neutral") continue;
     const probability = scorePreferenceCandidate({ model }, {
       source: signal.source,
       decision: signal.decision,
@@ -372,7 +405,7 @@ function evaluateModel(model, signals) {
     else if (predictedPositive) confusion.falsePositive += 1;
     else confusion.falseNegative += 1;
   }
-  const total = signals.length;
+  const total = confusion.truePositive + confusion.trueNegative + confusion.falsePositive + confusion.falseNegative;
   const positiveTotal = confusion.truePositive + confusion.falseNegative;
   const negativeTotal = confusion.trueNegative + confusion.falsePositive;
   const positiveRecall = ratio(confusion.truePositive, positiveTotal);
@@ -453,6 +486,14 @@ function shadowPagination(total, offset, limit, available) {
 function average(values) {
   const finite = values.filter(Number.isFinite);
   return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : null;
+}
+
+function weightedAverage(entries) {
+  const finite = entries.filter(([value, weight]) => Number.isFinite(value) && Number.isFinite(weight) && weight > 0);
+  const totalWeight = finite.reduce((sum, [, weight]) => sum + weight, 0);
+  return totalWeight > 0
+    ? finite.reduce((sum, [value, weight]) => sum + value * weight, 0) / totalWeight
+    : null;
 }
 
 function ratio(numerator, denominator) {

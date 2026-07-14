@@ -183,10 +183,11 @@ TRANSITION POLICY:
 - Notifications are outside this gate and must not be produced.
 
 OUTPUT CONTRACT:
-- Return exactly one item for every supplied block, in the same order. The JobEngine has already applied the finite item budget.
-- Return exactly one candidateAssessment for every supplied block, including candidates not promoted into items.
-- candidateAssessments are descriptive inputs for a future preference engine; they do not determine presentation in this transition.
-- Keep topicTags compact and reusable. Score novelty, urgency, and actionability independently from 0 to 1.
+- Return exactly one item descriptor for every supplied block, in the same order. Selection Engine owns materiality admission and the finite display budget after reasoning.
+- Return exactly one candidateAssessment for every supplied block.
+- candidateAssessments are generic structured evidence for Selection Engine and Preference Runtime; they never encode source preference.
+- Keep topicTags compact. Map each candidate to one to three canonical topicFacets from the schema.
+- Score novelty, urgency, actionability, materiality, and evidenceStrength independently from 0 to 1. Materiality means the magnitude of the actual change; evidenceStrength means how strongly the supplied block supports the claim.
 - rationale must briefly explain the assessment without inventing facts outside the evidence.
 - Prefer material deltas over generic summaries.
 - Collapse repeated blocks observed across multiple viewport snapshots.

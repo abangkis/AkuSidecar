@@ -113,6 +113,7 @@ const elements = {
   preferenceExperimentStatus: document.querySelector("#preference-experiment-status"),
   preferenceExperimentDetail: document.querySelector("#preference-experiment-detail"),
   shadowComparisonDetail: document.querySelector("#shadow-comparison-detail"),
+  engineBenchmarkDetail: document.querySelector("#engine-benchmark-detail"),
   shadowCandidateList: document.querySelector("#shadow-candidate-list"),
   fitPreferenceExperiment: document.querySelector("#fit-preference-experiment"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
@@ -1369,15 +1370,55 @@ function buildPreferenceButton(run, evidenceKey, kind, label, onSaved = () => {}
     button.disabled = true;
   }
   button.addEventListener("click", async () => {
-    const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
-      method: "POST",
-      body: JSON.stringify({ kind, evidenceKey, reasonCode: null, note: "" }),
-    });
-    run.preferenceFeedback = response.run.preferenceFeedback;
-    syncPreferenceButtons(run, evidenceKey);
-    await onSaved();
+    if (kind === "less_like_this") {
+      showPreferenceReasonMenu(button, run, evidenceKey, onSaved);
+      return;
+    }
+    await savePreferenceFeedback(run, evidenceKey, kind, null, onSaved);
   });
   return button;
+}
+
+function showPreferenceReasonMenu(anchor, run, evidenceKey, onSaved) {
+  document.querySelectorAll(".preference-reason-menu").forEach((element) => element.remove());
+  const menu = document.createElement("div");
+  menu.className = "preference-reason-menu";
+  menu.setAttribute("role", "group");
+  menu.setAttribute("aria-label", "Why should AkuBrowser show less of this?");
+  const prompt = document.createElement("span");
+  prompt.textContent = "Why less?";
+  menu.append(prompt);
+  const reasons = [
+    ["wrong_topic", "Wrong topic"],
+    ["wrong_priority", "Wrong priority"],
+    ["already_known", "Already knew"],
+    ["duplicate", "Duplicate"],
+    ["stale_or_superseded", "Stale"],
+    ["low_signal", "Low signal"],
+    [null, "Just less"],
+  ];
+  for (const [reasonCode, label] of reasons) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "feedback-button";
+    button.textContent = label;
+    button.addEventListener("click", async () => {
+      menu.remove();
+      await savePreferenceFeedback(run, evidenceKey, "less_like_this", reasonCode, onSaved);
+    });
+    menu.append(button);
+  }
+  anchor.after(menu);
+}
+
+async function savePreferenceFeedback(run, evidenceKey, kind, reasonCode, onSaved) {
+  const response = await api(`/api/runs/${encodeURIComponent(run.id)}/preference-feedback`, {
+    method: "POST",
+    body: JSON.stringify({ kind, evidenceKey, reasonCode, note: "" }),
+  });
+  run.preferenceFeedback = response.run.preferenceFeedback;
+  syncPreferenceButtons(run, evidenceKey);
+  await onSaved();
 }
 
 function effectivePreferenceKind(run, evidenceKey) {
@@ -2318,6 +2359,7 @@ async function loadPilotReview({ append = false } = {}) {
       { experiment },
       { comparison },
       { runtime },
+      { benchmark },
     ] = await Promise.all([
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
@@ -2325,6 +2367,7 @@ async function loadPilotReview({ append = false } = {}) {
       api("/api/preferences/experiment"),
       api("/api/preferences/shadow-comparison?limit=5&offset=0"),
       api("/api/preferences/runtime"),
+      api("/api/preferences/benchmark"),
     ]);
     if (
       review.runs.length === 0 &&
@@ -2345,6 +2388,7 @@ async function loadPilotReview({ append = false } = {}) {
       renderPreferenceRuntime(runtime);
       renderPreferenceExperiment(experiment);
       renderShadowComparison(comparison);
+      renderEngineBenchmark(benchmark);
     }
     const shown = Math.min(review.pagination.offset + review.runs.length, REVIEW_MAX_RUNS);
     elements.reviewMeta.textContent = [
@@ -2417,10 +2461,28 @@ function renderPreferenceRuntime(runtime) {
       ? "Automatic local model is reordering selected items"
       : "Source and platform order is the active baseline",
     `${runtime?.signalCounts?.total ?? 0} assessed preference signal(s)`,
-    active ? `snapshot ${runtime.currentSnapshot?.id ?? "active"}` : null,
-    "maximum movement: two positions",
+    active ? `champion ${runtime.activeSnapshot?.id ?? "active"}` : null,
+    runtime.challengerSnapshot ? `challenger ${runtime.challengerSnapshot.id}` : null,
+    "confidence-scaled movement: zero to two positions",
     "eligibility unchanged",
   ].filter(Boolean).join(" · ");
+}
+
+function renderEngineBenchmark(benchmark) {
+  if (!elements.engineBenchmarkDetail) return;
+  if (!benchmark) {
+    elements.engineBenchmarkDetail.textContent = "Benchmark unavailable.";
+    return;
+  }
+  const metrics = benchmark.preference?.metrics ?? {};
+  elements.engineBenchmarkDetail.textContent = [
+    `${benchmark.dataset?.assessedSignals ?? 0} assessed signals`,
+    `balanced ${formatPercent(metrics.balancedAccuracy)}`,
+    `negative recall ${formatPercent(metrics.negativeRecall)}`,
+    `selection rate ${formatPercent(benchmark.selection?.selectionRate)}`,
+    `${benchmark.reasoningProfiles?.length ?? 0} model/effort profile(s)`,
+    benchmark.preference?.sourceFeatureUsed ? "source leakage detected" : "source-neutral preference features",
+  ].join(" · ");
 }
 
 function renderPreferenceExperiment(experiment) {

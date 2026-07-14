@@ -48,7 +48,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
       streamWidth: "comfortable",
       telemetryBehavior: "sticky",
       activeSources: ["x"],
-      maxItemsPerSource: 7,
+      maxItemsPerSource: 5,
       maxScrolls: 3,
       maxAcquisitionRounds: 1,
       maxKnowledgeContextEvents: 30,
@@ -68,7 +68,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.equal(response.configuration.telemetryBehavior.restartRequired, false);
   assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x"]);
-  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 7);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 5);
   assert.equal(response.configuration.maxScrolls.effectiveValue, 3);
   assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 1);
   assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 30);
@@ -101,7 +101,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x"]);
-  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 7);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 5);
   assert.equal(response.configuration.maxScrolls.effectiveValue, 3);
   assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 1);
   assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 30);

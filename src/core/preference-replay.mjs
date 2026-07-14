@@ -1,5 +1,6 @@
 const POSITIVE_KINDS = new Set(["more_like_this"]);
 const NEGATIVE_KINDS = new Set(["less_like_this"]);
+const NEUTRAL_KINDS = new Set(["neutral"]);
 const SCORE_FIELDS = ["novelty", "urgency", "actionability"];
 
 export const PREFERENCE_REPLAY_THRESHOLDS = Object.freeze({
@@ -14,6 +15,7 @@ export function buildPreferenceReplay(runs) {
   const { candidates, signals } = buildPreferenceSignals(runs);
   const positive = signals.filter((signal) => signal.polarity === "positive");
   const negative = signals.filter((signal) => signal.polarity === "negative");
+  const neutral = signals.filter((signal) => signal.polarity === "neutral");
   const assessed = signals.filter((signal) => signal.assessment);
   const feedbackRuns = new Set(signals.map((signal) => signal.runId)).size;
   const gates = [
@@ -46,6 +48,7 @@ export function buildPreferenceReplay(runs) {
       assessedFeedback: assessed.length,
       moreLikeThis: positive.length,
       lessLikeThis: negative.length,
+      neutral: neutral.length,
       selectedSignals: signals.filter((signal) => signal.decision === "selected").length,
       excludedSignals: signals.filter((signal) => signal.decision === "excluded").length,
       sources: [...new Set(signals.map((signal) => signal.source))].sort(),
@@ -91,7 +94,7 @@ export function buildPreferenceSignals(runs) {
         ? "positive"
         : NEGATIVE_KINDS.has(feedback.kind)
           ? "negative"
-          : null;
+          : NEUTRAL_KINDS.has(feedback.kind) ? "neutral" : null;
       if (!polarity) continue;
       const matched = candidateByRunEvidence.get(key(run.id, feedback.evidenceKey));
       signals.push({
@@ -103,6 +106,9 @@ export function buildPreferenceSignals(runs) {
         decision: matched?.candidate.decision ?? null,
         assessment: matched?.candidate.assessment ?? null,
         matchedCandidate: Boolean(matched),
+        reasonCode: feedback.reasonCode ?? null,
+        origin: feedback.origin ?? "routine",
+        contextId: feedback.contextId ?? run.unifiedSessionId ?? run.id,
         createdAt: feedback.createdAt ?? run.updatedAt ?? run.createdAt ?? null,
       });
   }

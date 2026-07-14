@@ -214,6 +214,8 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   const selected = run.candidateEvaluations.find((entry) => entry.decision === "selected");
   const excluded = run.candidateEvaluations.find((entry) => entry.decision === "excluded");
   assert.equal(selected.itemId, "selected-item");
+  assert.ok(Number.isFinite(selected.selectionScore));
+  assert.equal(excluded.selectionScore, null);
   assert.equal(excluded.reasonCode, "not_promoted_by_provider");
   assert.equal(selected.assessment.contentType, "announcement");
   assert.deepEqual(selected.media, [{
@@ -259,11 +261,14 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   });
   assert.equal(engine.getRun(run.id).preferenceFeedback.length, 3);
   assert.deepEqual(engine.getPreferenceProfile(), {
-    version: 0,
+    version: 1,
     status: "collecting",
     feedbackEventCount: 2,
     moreLikeThisCount: 1,
+    neutralCount: 0,
     lessLikeThisCount: 1,
+    calibrationCount: 0,
+    reasonedFeedbackCount: 1,
     selectedMoreLikeThisCount: 1,
     excludedMoreLikeThisCount: 0,
     updatedAt: engine.getPreferenceProfile().updatedAt,

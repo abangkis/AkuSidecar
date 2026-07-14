@@ -20,6 +20,7 @@ test("local preference runtime fits automatically without waiting for the diagno
     force: true,
     trigger: "test",
   });
+  assert.equal(after.version, 2);
   assert.equal(after.activationState, "active");
   assert.equal(after.liveInfluence, true);
   assert.equal(after.currentSnapshot.origin, "local_runtime");
@@ -47,7 +48,7 @@ test("bounded composition reorders only existing selected items by at most two p
     liveInfluence: true,
     activationState: "active",
     policy: {
-      version: "preference-runtime-v1",
+      version: "preference-runtime-v2",
       baseline: "source_platform_order",
       maxRankDisplacement: 2,
       minimumScoreDelta: 0.01,
@@ -106,6 +107,23 @@ test("reset returns to baseline without deleting the audit ledger", () => {
   assert.equal(reset.suspended, true);
   assert.equal(reset.signalCounts.total, 4);
   assert.equal(ensureLocalPreferenceRuntime(store).activationState, "baseline");
+  assert.equal(
+    ensureLocalPreferenceRuntime(store, {}, { forceFit: true, trigger: "before_session" }).activationState,
+    "baseline",
+  );
+});
+
+test("an active champion remains live while newer feedback waits for a challenger decision", () => {
+  const complete = syntheticPreferenceReadyRuns();
+  const runs = [complete[0], complete[1], complete[6], complete[7]];
+  const store = memoryStore(runs);
+  const active = ensureLocalPreferenceRuntime(store, {}, { forceFit: true });
+  const championId = active.activeSnapshot.id;
+  runs.push(complete[8]);
+  const stale = preferenceRuntimeStatus(store);
+  assert.equal(stale.liveInfluence, true);
+  assert.equal(stale.activeSnapshot.id, championId);
+  assert.equal(stale.currentSnapshot, null);
 });
 
 function memoryStore(runs) {

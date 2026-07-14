@@ -11,8 +11,7 @@ export class DeterministicReasoningProvider {
   }
 
   async analyze({ run, observation }) {
-    const candidates = uniqueBlocks(observation)
-      .slice(0, run.maxItems);
+    const candidates = uniqueBlocks(observation);
 
     const items = candidates.map((block) => {
       const sourceUrlKind = block.permalink ? "native_post" : "source_page";
@@ -43,10 +42,13 @@ export class DeterministicReasoningProvider {
       candidateAssessments: uniqueBlocks(observation).map((block) => ({
         evidenceKey: block.evidenceKey,
         topicTags: [],
+        topicFacets: ["other"],
         contentType: "other",
         novelty: 0.5,
         urgency: 0.2,
         actionability: 0.2,
+        materiality: 0.5,
+        evidenceStrength: 0.5,
         rationale: "Deterministic development fallback assessment.",
       })),
       repeatedClaimsCollapsed: countBlocks(observation) - uniqueBlocks(observation).length,

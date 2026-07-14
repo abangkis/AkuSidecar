@@ -28,6 +28,7 @@ test("calibration lifecycle feeds directional labels into local fitting", () => 
   assert.equal(session.snapshot.activationState, "feeds_local_fit");
   assert.deepEqual(store.preferenceFeedback.map((entry) => entry.kind), [
     "more_like_this",
+    "neutral",
     "less_like_this",
   ]);
   assert.equal(engine.createFromUnifiedSession("unified-1").id, session.id);

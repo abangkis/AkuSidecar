@@ -55,12 +55,14 @@ export class CalibrationEngine {
     const sample = session.samples.find((entry) => entry.ordinal === ordinal);
     let updated = this.store.recordCalibrationDecision(id, ordinal, decision);
     if (!updated) throw new ContractError("Calibration sample does not exist.");
-    if (sample && ["more_like_this", "less_like_this"].includes(decision.label)) {
+    if (sample && ["more_like_this", "neutral", "less_like_this"].includes(decision.label)) {
       this.store.addPreferenceFeedback(sample.runId, {
         evidenceKey: sample.evidenceKey,
         kind: decision.label,
         reasonCode: null,
         note: "",
+        origin: "calibration",
+        contextId: id,
       });
     }
     if (updated.resolvedCount === updated.sampleCount) {

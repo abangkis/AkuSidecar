@@ -1,6 +1,6 @@
 {
   "name": "@aku-browser/sidecar",
-  "version": "0.5.21",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "AkuSidecar local runtime, state store, AkuBrowser UI, and reasoning adapters",
@@ -19,7 +19,8 @@
     "db:retention-preview": "node scripts/sqlite-ops.mjs retention-preview",
     "db:reset-onboarding": "node scripts/sqlite-ops.mjs reset-onboarding",
     "smoke:http": "node scripts/smoke-http.mjs",
-    "smoke:codex": "node scripts/smoke-codex.mjs"
+    "smoke:codex": "node scripts/smoke-codex.mjs",
+    "benchmark:engine": "node scripts/benchmark-engine.mjs"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.144.1"

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "kind": { "type": "string", "enum": ["more_like_this", "less_like_this"] },
+    "kind": { "type": "string", "enum": ["more_like_this", "neutral", "less_like_this"] },
     "evidenceKey": { "type": "string", "pattern": "^(x|linkedin):[a-f0-9]{24}$" },
     "reasonCode": { "type": ["string", "null"], "enum": [null, "wrong_topic", "already_known", "duplicate", "stale_or_superseded", "low_signal", "wrong_priority", "other"] },
     "note": { "type": "string", "maxLength": 500 }

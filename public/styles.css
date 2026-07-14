@@ -1026,6 +1026,25 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   margin: 10px 0 12px;
 }
 
+.preference-reason-menu {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.preference-reason-menu > span {
+  margin-right: 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .candidate-review-list h4 {
   margin: 0 0 4px;
 }
