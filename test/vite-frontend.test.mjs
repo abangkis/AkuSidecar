@@ -143,6 +143,12 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /body: JSON\.stringify\(\{\}\)/);
   assert.match(appScript, /if \(firstCompletion\) await startRun\(\)/);
   assert.match(html, /Choose where AkuBrowser should look/);
+  assert.match(html, /class="onboarding-source-icon onboarding-source-icon-x"/);
+  assert.match(html, /class="onboarding-source-icon onboarding-source-icon-linkedin"/);
+  assert.match(html, /Your home timeline/);
+  assert.match(html, /Your professional feed/);
+  assert.match(styles, /\.onboarding-source-option > input:checked \+ \.onboarding-source-card/);
+  assert.match(styles, /\.onboarding-source-icon-linkedin \{[^}]*#0a66c2;/s);
   assert.match(html, /id="calibration-panel"/);
   assert.match(html, /id="calibration-enabled"/);
   assert.match(html, /id="calibration-batch-size"/);

@@ -66,8 +66,30 @@
               <strong>Select active sources</strong>
               <p class="onboarding-explanation">AkuBrowser begins with each website's existing order, then learns from your entry-level More/Less calibration. Your first bounded update starts automatically.</p>
               <div id="onboarding-sources" class="onboarding-options">
-                <label><input type="checkbox" value="x" /> X</label>
-                <label><input type="checkbox" value="linkedin" /> LinkedIn</label>
+                <label class="onboarding-source-option">
+                  <input type="checkbox" value="x" />
+                  <span class="onboarding-source-card">
+                    <span class="onboarding-source-icon onboarding-source-icon-x" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.451-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+                      </svg>
+                    </span>
+                    <span class="onboarding-source-copy"><strong>X</strong><small>Your home timeline</small></span>
+                    <span class="onboarding-source-check" aria-hidden="true">✓</span>
+                  </span>
+                </label>
+                <label class="onboarding-source-option">
+                  <input type="checkbox" value="linkedin" />
+                  <span class="onboarding-source-card">
+                    <span class="onboarding-source-icon onboarding-source-icon-linkedin" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286ZM5.337 7.433a2.062 2.062 0 1 1 0-4.124 2.062 2.062 0 0 1 0 4.124ZM3.56 9h3.554v11.452H3.56V9Z" />
+                      </svg>
+                    </span>
+                    <span class="onboarding-source-copy"><strong>LinkedIn</strong><small>Your professional feed</small></span>
+                    <span class="onboarding-source-check" aria-hidden="true">✓</span>
+                  </span>
+                </label>
               </div>
               <div id="onboarding-summary" class="onboarding-summary"></div>
             </div>

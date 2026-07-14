@@ -206,7 +206,21 @@ h3 {
 .onboarding-step { display: grid; gap: 0.85rem; margin: 1.5rem 0; }
 .onboarding-step textarea, .onboarding-step input[type="text"] { width: 100%; box-sizing: border-box; }
 .onboarding-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-.onboarding-options label { padding: 0.8rem; border: 1px solid var(--border); border-radius: 10px; }
+.onboarding-source-option { position: relative; display: block; cursor: pointer; }
+.onboarding-source-option > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.onboarding-source-card { display: grid; grid-template-columns: 46px minmax(0, 1fr) 24px; align-items: center; gap: 12px; min-height: 76px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255, 255, 255, 0.018); transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease; }
+.onboarding-source-option:hover .onboarding-source-card { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.035); }
+.onboarding-source-option > input:focus-visible + .onboarding-source-card { outline: 2px solid var(--accent); outline-offset: 3px; }
+.onboarding-source-option > input:checked + .onboarding-source-card { border-color: var(--accent); background: rgba(174, 255, 90, 0.08); box-shadow: 0 0 0 1px rgba(174, 255, 90, 0.06) inset; }
+.onboarding-source-icon { display: grid; width: 42px; height: 42px; place-items: center; overflow: hidden; border-radius: 10px; }
+.onboarding-source-icon svg { width: 24px; height: 24px; fill: currentColor; }
+.onboarding-source-icon-x { background: #f4f7f5; color: #050505; }
+.onboarding-source-icon-linkedin { background: #0a66c2; color: #fff; }
+.onboarding-source-copy { display: grid; gap: 3px; }
+.onboarding-source-copy strong { font-size: 0.95rem; }
+.onboarding-source-copy small { color: var(--muted); font-size: 0.74rem; }
+.onboarding-source-check { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: transparent; font-size: 0.75rem; font-weight: 800; }
+.onboarding-source-option > input:checked + .onboarding-source-card .onboarding-source-check { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 .onboarding-summary { padding: 1rem; border-radius: 10px; background: var(--panel-strong); }
 .onboarding-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem; }
 .onboarding-explanation { margin: 0; color: var(--muted); line-height: 1.55; }
@@ -1963,6 +1977,10 @@ textarea:focus {
 
   .source-link {
     white-space: normal;
+  }
+
+  .onboarding-options {
+    grid-template-columns: 1fr;
   }
 
   .system-status,
