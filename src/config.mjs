@@ -67,6 +67,10 @@ export function loadConfig(env = process.env) {
         defaultValue: "open_missing_tab",
         environmentOverride: missingSourceTabOverride,
       },
+      captureVisibilityPolicy: {
+        defaultValue: "quiet",
+        environmentOverride: null,
+      },
       defaultPresentation: {
         defaultValue: "source",
         environmentOverride: null,
@@ -206,6 +210,7 @@ export function loadConfig(env = process.env) {
       missingSourceTabPolicy: parseMissingSourceTabPolicy(
         missingSourceTabOverride,
       ),
+      captureVisibilityPolicy: "quiet",
       acquisitionPlanningPolicy:
         env.AKU_CODEX_PLANNING_POLICY ||
         reasoningDefaults.acquisitionPlanning?.policy ||

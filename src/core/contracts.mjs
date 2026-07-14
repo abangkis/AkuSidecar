@@ -566,6 +566,14 @@ function validateCoverage(value, limits) {
     sourceTabOpenedDisposition: ["preserve", "close_after_capture"].includes(
       value.sourceTabOpenedDisposition,
     ) ? value.sourceTabOpenedDisposition : "preserve",
+    captureVisibilityPolicy: ["quiet", "adaptive_fidelity"].includes(
+      value.captureVisibilityPolicy,
+    ) ? value.captureVisibilityPolicy : null,
+    captureVisibilityMode: ["managed_window", "same_window_recovery", "same_window"].includes(
+      value.captureVisibilityMode,
+    ) ? value.captureVisibilityMode : null,
+    workingTabPreserved: value.workingTabPreserved === true,
+    workingFocusRestored: value.workingFocusRestored === true,
     sourceTabClosedAfterCapture: value.sourceTabClosedAfterCapture === true,
     sourceReadinessRetryCount: Math.min(
       1,

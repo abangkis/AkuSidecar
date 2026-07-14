@@ -38,6 +38,7 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     pendingContentTimeoutMs: 5_000,
     pendingContentSettleMs: 700,
     sourceFreshnessPolicy: "wake_and_reveal",
+    captureVisibilityPolicy: "quiet",
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
     qualityReportRequired: false,
@@ -72,6 +73,19 @@ test("missing source tab policy is configurable and follow-up never opens a repl
     },
   );
   assert.equal(followUp.openIfMissing, false);
+});
+
+test("capture visibility is a command authority boundary", () => {
+  const quiet = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "x", scrolls: 0 },
+    limits,
+  );
+  const adaptive = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "x", scrolls: 0 },
+    { ...limits, captureVisibilityPolicy: "adaptive_fidelity" },
+  );
+  assert.equal(quiet.captureVisibilityPolicy, "quiet");
+  assert.equal(adaptive.captureVisibilityPolicy, "adaptive_fidelity");
 });
 
 test("LinkedIn initial capture authorizes adapter-driven freshness reveal", () => {
@@ -298,6 +312,9 @@ function gate0bObservation() {
       pendingContentActivationEvidence: "feed_fingerprint_changed",
       pendingContentPolicy: "reveal_if_present",
       sourceFreshness: freshnessFixture("linkedin", "pending_content_revealed"),
+      captureVisibilityPolicy: "quiet",
+      captureVisibilityMode: "managed_window",
+      workingTabPreserved: true,
       feedMutation: true,
       sameTabMutation: true,
       restorationScope: "post_reveal_start",

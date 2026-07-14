@@ -43,6 +43,7 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     sourceFreshnessPolicy: acquisitionRound === 1
       ? "wake_and_reveal"
       : "preserve_frontier",
+    captureVisibilityPolicy: limits.captureVisibilityPolicy ?? "quiet",
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
     maxBlockCharacters: limits.maxBlockCharacters,
     qualityReportRequired: limits.qualityReportRequired === true,
@@ -91,6 +92,23 @@ export function buildObservationContinuation(observation, limits) {
 
 export function assertNativeCaptureOutcome(commandPayload, observation) {
   const coverage = observation.coverage;
+  if (
+    coverage.captureVisibilityPolicy &&
+    coverage.captureVisibilityPolicy !== commandPayload.captureVisibilityPolicy
+  ) {
+    throw new ContractError("capture-visibility policy does not match its command");
+  }
+  if (
+    commandPayload.mode === "catch_up" &&
+    commandPayload.captureVisibilityPolicy === "quiet" &&
+    coverage.captureVisibilityMode &&
+    (
+      coverage.captureVisibilityMode !== "managed_window" ||
+      coverage.workingTabPreserved !== true
+    )
+  ) {
+    throw new ContractError("Quiet catch-up capture must preserve the working tab through a managed window");
+  }
   if (commandPayload.qualityReportRequired === true) {
     if (!coverage.captureQuality) {
       throw new ContractError("AkuBridge observation requires a capture-quality summary");

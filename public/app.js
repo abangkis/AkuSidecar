@@ -75,6 +75,7 @@ const elements = {
   timelineCapacity: document.querySelector("#timeline-capacity"),
   runtimeSettingsForm: document.querySelector("#runtime-settings-form"),
   missingSourceTabPolicy: document.querySelector("#missing-source-tab-policy"),
+  captureVisibilityPolicy: document.querySelector("#capture-visibility-policy"),
   defaultPresentation: document.querySelector("#default-presentation"),
   streamWidth: document.querySelector("#stream-width"),
   telemetryBehavior: document.querySelector("#telemetry-behavior"),
@@ -1312,6 +1313,12 @@ function buildCoverageList(coverage) {
     `Snapshots: ${coverage.snapshotCount ?? 0}`,
     `Visible candidates observed: ${coverage.candidateCount ?? 0}`,
     coverage.browserAdapter ? `Browser adapter: ${coverage.browserAdapter}` : null,
+    coverage.captureVisibilityMode
+      ? `Capture visibility: ${humanize(coverage.captureVisibilityPolicy)} · ${humanize(coverage.captureVisibilityMode)}`
+      : null,
+    coverage.captureVisibilityMode
+      ? `Working tab preserved: ${coverage.workingTabPreserved ? "yes" : "no"}${coverage.workingFocusRestored ? " · focus restored after capture" : ""}`
+      : null,
     coverage.scrollContainer ? `Scroll container: ${coverage.scrollContainer}` : null,
     Number.isInteger(coverage.requestedScrolls)
       ? `Native scrolls: ${coverage.performedScrolls ?? 0} of ${coverage.requestedScrolls}`
@@ -2378,6 +2385,10 @@ function renderRuntimeSettings(configuration) {
   elements.missingSourceTabDetail.textContent = overridden
     ? `Effective: ${humanize(setting.effectiveValue)} · environment override; dashboard editing is disabled.`
     : `Effective: ${humanize(setting.effectiveValue)} · source: ${setting.source} · applies to the next run.`;
+  const captureVisibility = configuration.captureVisibilityPolicy;
+  elements.captureVisibilityPolicy.value =
+    captureVisibility.persistedValue ?? captureVisibility.effectiveValue;
+  elements.captureVisibilityPolicy.disabled = captureVisibility.source === "environment";
   const controls = {
     reasoningProvider: elements.reasoningProvider,
     planningPolicy: elements.planningPolicy,
@@ -2426,6 +2437,7 @@ async function saveRuntimeSettings(event) {
       calibrationBatchSize: Number(elements.calibrationBatchSize.value),
       preferenceLiveInfluence: elements.preferenceLiveInfluence.checked,
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
+      captureVisibilityPolicy: elements.captureVisibilityPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
       planningPolicy: elements.planningPolicy.value,
       evaluationModel: elements.evaluationModel.value,
@@ -2447,6 +2459,8 @@ async function saveRuntimeSettings(event) {
     });
     state.bootstrap.limits.missingSourceTabPolicy =
       configuration.missingSourceTabPolicy.effectiveValue;
+    state.bootstrap.limits.captureVisibilityPolicy =
+      configuration.captureVisibilityPolicy.effectiveValue;
     state.bootstrap.presentation.defaultLayout =
       configuration.defaultPresentation.effectiveValue;
     state.bootstrap.sourceRegistry = state.bootstrap.sourceRegistry.map((source) => ({

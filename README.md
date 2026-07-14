@@ -55,7 +55,7 @@ effective value, persisted value, source, and apply mode.
 
 Settings that apply live or to the next run include source activation,
 presentation, Timeline capacity, stream width, telemetry behavior, calibration,
-missing-source-tab policy, per-source item budget, native scrolls, acquisition
+missing-source-tab policy, capture visibility, per-source item budget, native scrolls, acquisition
 rounds, and knowledge-context size. Reasoning provider, planning/evaluation
 model, effort, planning policy, and timeout are startup settings: saving them
 marks a visible restart as required. Restart AkuSidecar through AkuSupervisor;
@@ -104,7 +104,20 @@ If recovery is exhausted, trustworthy text remains `usable_degraded`; Source
 layout shows a media-unavailable notice with the native-post link. Recovery
 metadata is presentation/diagnostic context and is not sent to text reasoning.
 
-When the initial acquisition cannot find the requested source, `open_missing_tab` lets AkuBridge create one inactive canonical feed tab (`https://x.com/home` or `https://www.linkedin.com/feed/`) and wait for it to load before capture. `fail_fast` preserves the earlier behavior. A follow-up round never opens a replacement tab because it must remain anchored to the original observation frontier.
+Capture visibility is a next-run Settings boundary. `quiet` is the default: a
+Catch Up command requires AkuBridge to use its dedicated non-focused managed
+window and report that the user's working tab stayed preserved. If that cannot
+be proven, the run fails explicitly with `visible_recovery_required`.
+`adaptive_fidelity` tries Quiet first and additionally authorizes the existing
+bounded same-window activate/capture/restore recovery. The engine may choose a
+less intrusive path but cannot escalate beyond the saved setting.
+
+When the initial acquisition cannot find the requested source,
+`open_missing_tab` lets AkuBridge create one canonical feed tab
+(`https://x.com/home` or `https://www.linkedin.com/feed/`) inside the managed
+capture window and wait for it to load. `fail_fast` forbids that creation. A
+follow-up round never opens a replacement tab because it must remain anchored
+to the original observation frontier.
 
 Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.
 

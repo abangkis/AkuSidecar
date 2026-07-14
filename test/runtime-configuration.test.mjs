@@ -23,6 +23,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   let origin = `http://127.0.0.1:${address.port}`;
   let response = await jsonFetch(`${origin}/api/configuration/runtime`);
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "open_missing_tab");
+  assert.equal(response.configuration.captureVisibilityPolicy.effectiveValue, "quiet");
   assert.equal(response.configuration.missingSourceTabPolicy.source, "default");
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "source");
   assert.equal(response.configuration.homePresentation.effectiveValue, "timeline");
@@ -39,6 +40,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
     method: "PUT",
     body: JSON.stringify({
       missingSourceTabPolicy: "fail_fast",
+      captureVisibilityPolicy: "adaptive_fidelity",
       evaluationModel: "gpt-test-evaluation",
       evaluationEffort: "xhigh",
       planningPolicy: "always",
@@ -55,6 +57,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
     }),
   });
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "fail_fast");
+  assert.equal(response.configuration.captureVisibilityPolicy.effectiveValue, "adaptive_fidelity");
   assert.equal(response.configuration.missingSourceTabPolicy.source, "dashboard");
   assert.equal(response.configuration.evaluationModel.effectiveValue, "gpt-5.6-terra");
   assert.equal(response.configuration.evaluationModel.persistedValue, "gpt-test-evaluation");
@@ -91,6 +94,7 @@ test("dashboard runtime configuration applies to the next run and survives resta
   origin = `http://127.0.0.1:${address.port}`;
   response = await jsonFetch(`${origin}/api/configuration/runtime`);
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "fail_fast");
+  assert.equal(response.configuration.captureVisibilityPolicy.effectiveValue, "adaptive_fidelity");
   assert.equal(response.configuration.missingSourceTabPolicy.source, "dashboard");
   assert.equal(response.configuration.evaluationModel.effectiveValue, "gpt-test-evaluation");
   assert.equal(response.configuration.evaluationEffort.effectiveValue, "xhigh");

@@ -1,6 +1,6 @@
 {
   "name": "@aku-browser/sidecar",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "type": "module",
   "description": "AkuSidecar local runtime, state store, AkuBrowser UI, and reasoning adapters",

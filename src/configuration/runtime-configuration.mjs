@@ -1,6 +1,13 @@
 import { ContractError } from "../core/contracts.mjs";
 
 const DEFINITIONS = {
+  captureVisibilityPolicy: {
+    key: "runtime.capture_visibility_policy",
+    applyMode: "next_run",
+    values: new Set(["quiet", "adaptive_fidelity"]),
+    read: (config) => config.limits.captureVisibilityPolicy,
+    apply: (config, value) => { config.limits.captureVisibilityPolicy = value; },
+  },
   missingSourceTabPolicy: {
     key: "runtime.missing_source_tab_policy",
     applyMode: "next_run",

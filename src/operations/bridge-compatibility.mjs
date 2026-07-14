@@ -1,6 +1,6 @@
 export const BRIDGE_REQUIREMENTS = Object.freeze({
-  minimumExtensionVersion: "0.5.37",
-  runtimeRevision: "source-fidelity-v39",
+  minimumExtensionVersion: "0.5.38",
+  runtimeRevision: "source-fidelity-v40",
   adapterVersions: Object.freeze({ x: "x-dom-v15", linkedin: "linkedin-dom-v13" }),
   requiredActions: Object.freeze([
     "reload_self",
@@ -8,6 +8,8 @@ export const BRIDGE_REQUIREMENTS = Object.freeze({
     "probe_freshness",
     "recover_source_freshness",
     "recover_missing_media",
+    "manage_capture_window",
+    "preserve_working_tab",
   ]),
 });
 
