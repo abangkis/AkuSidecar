@@ -24,6 +24,7 @@ const state = {
   calibrationOrdinal: 0,
   mediaViewerEntries: [],
   mediaViewerIndex: 0,
+  preferenceReasonTarget: null,
 };
 
 const REVIEW_PAGE_SIZE = 10;
@@ -1365,28 +1366,62 @@ function buildPreferenceButton(run, evidenceKey, kind, label, onSaved = () => {}
   button.textContent = label;
   button.dataset.preferenceEvidence = evidenceKey;
   button.dataset.preferenceKind = kind;
-  if (effectivePreferenceKind(run, evidenceKey) === kind) {
+  const selected = effectivePreferenceKind(run, evidenceKey) === kind;
+  if (selected) {
     button.classList.add("selected");
-    button.disabled = true;
+    button.disabled = kind !== "less_like_this";
+    button.title = kind === "less_like_this"
+      ? "Saved. Optionally click again to add or change a reason."
+      : "Saved";
   }
+  button.setAttribute("aria-pressed", selected ? "true" : "false");
   button.addEventListener("click", async () => {
     if (kind === "less_like_this") {
-      showPreferenceReasonMenu(button, run, evidenceKey, onSaved);
+      const target = preferenceReasonTarget(run, evidenceKey);
+      const existing = findPreferenceReasonMenu(target);
+      if (existing && state.preferenceReasonTarget === target) {
+        state.preferenceReasonTarget = null;
+        existing.remove();
+        return;
+      }
+      state.preferenceReasonTarget = target;
+      if (effectivePreferenceKind(run, evidenceKey) !== kind) {
+        await savePreferenceFeedback(run, evidenceKey, kind, null, onSaved);
+      }
+      const currentAnchor = findPreferenceButton(evidenceKey, kind) ?? button;
+      if (currentAnchor.isConnected && !findPreferenceReasonMenu(target)) {
+        showPreferenceReasonMenu(currentAnchor, run, evidenceKey, onSaved);
+      }
       return;
     }
+    state.preferenceReasonTarget = null;
+    document.querySelectorAll(".preference-reason-menu").forEach((element) => element.remove());
     await savePreferenceFeedback(run, evidenceKey, kind, null, onSaved);
   });
+  if (
+    kind === "less_like_this" &&
+    selected &&
+    state.preferenceReasonTarget === preferenceReasonTarget(run, evidenceKey)
+  ) {
+    queueMicrotask(() => {
+      if (button.isConnected && !findPreferenceReasonMenu(state.preferenceReasonTarget)) {
+        showPreferenceReasonMenu(button, run, evidenceKey, onSaved);
+      }
+    });
+  }
   return button;
 }
 
 function showPreferenceReasonMenu(anchor, run, evidenceKey, onSaved) {
   document.querySelectorAll(".preference-reason-menu").forEach((element) => element.remove());
+  const target = preferenceReasonTarget(run, evidenceKey);
   const menu = document.createElement("div");
   menu.className = "preference-reason-menu";
+  menu.dataset.preferenceReasonTarget = target;
   menu.setAttribute("role", "group");
-  menu.setAttribute("aria-label", "Why should AkuBrowser show less of this?");
+  menu.setAttribute("aria-label", "Optional reason for showing less of this");
   const prompt = document.createElement("span");
-  prompt.textContent = "Why less?";
+  prompt.textContent = "Optional: why less?";
   menu.append(prompt);
   const reasons = [
     ["wrong_topic", "Wrong topic"],
@@ -1395,7 +1430,6 @@ function showPreferenceReasonMenu(anchor, run, evidenceKey, onSaved) {
     ["duplicate", "Duplicate"],
     ["stale_or_superseded", "Stale"],
     ["low_signal", "Low signal"],
-    [null, "Just less"],
   ];
   for (const [reasonCode, label] of reasons) {
     const button = document.createElement("button");
@@ -1403,12 +1437,23 @@ function showPreferenceReasonMenu(anchor, run, evidenceKey, onSaved) {
     button.className = "feedback-button";
     button.textContent = label;
     button.addEventListener("click", async () => {
+      state.preferenceReasonTarget = null;
       menu.remove();
       await savePreferenceFeedback(run, evidenceKey, "less_like_this", reasonCode, onSaved);
     });
     menu.append(button);
   }
-  anchor.after(menu);
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "feedback-reason-dismiss";
+  dismiss.textContent = "Skip";
+  dismiss.setAttribute("aria-label", "Skip optional reason");
+  dismiss.addEventListener("click", () => {
+    state.preferenceReasonTarget = null;
+    menu.remove();
+  });
+  menu.append(dismiss);
+  (anchor.closest(".result-actions") ?? anchor.parentElement).append(menu);
 }
 
 async function savePreferenceFeedback(run, evidenceKey, kind, reasonCode, onSaved) {
@@ -1434,8 +1479,30 @@ function syncPreferenceButtons(run, evidenceKey) {
     if (button.dataset.preferenceEvidence !== evidenceKey) continue;
     const selected = button.dataset.preferenceKind === effective;
     button.classList.toggle("selected", selected);
-    button.disabled = selected;
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+    button.disabled = selected && button.dataset.preferenceKind !== "less_like_this";
+    button.title = selected
+      ? button.dataset.preferenceKind === "less_like_this"
+        ? "Saved. Optionally click again to add or change a reason."
+        : "Saved"
+      : "";
   }
+}
+
+function preferenceReasonTarget(run, evidenceKey) {
+  return `${run.id}:${evidenceKey}`;
+}
+
+function findPreferenceReasonMenu(target) {
+  if (!target) return null;
+  return [...document.querySelectorAll(".preference-reason-menu")]
+    .find((menu) => menu.dataset.preferenceReasonTarget === target) ?? null;
+}
+
+function findPreferenceButton(evidenceKey, kind) {
+  return [...document.querySelectorAll("[data-preference-evidence]")].find((button) =>
+    button.dataset.preferenceEvidence === evidenceKey && button.dataset.preferenceKind === kind
+  ) ?? null;
 }
 
 function buildItemPresentation({ brief, source, actions, className = "" }) {

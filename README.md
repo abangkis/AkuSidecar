@@ -138,7 +138,7 @@ Feedback integrity is enforced by JobEngine:
 
 The review API is `GET /api/pilot/review`. Optional query parameters are `source`, `verdict`, and `limit`. The response intentionally returns result, coverage, and feedback evidence but not raw browser observations.
 
-`GET /api/preferences/replay` provides historical dataset-maturity diagnostics. Automatic local fitting does not wait for these manual experiment gates. More, Neutral, and reason-aware Less events share an append-only ledger with calibration/routine origin and context metadata.
+`GET /api/preferences/replay` provides historical dataset-maturity diagnostics. Automatic local fitting does not wait for these manual experiment gates. More, Neutral, and Less events share an append-only ledger with calibration/routine origin and context metadata. Clicking Less saves immediately as reduced-weight ambiguous preference evidence; choosing an optional reason refines the effective signal without making explanation a user requirement.
 
 Selection Engine v1 owns generic materiality admission and the finite display budget. Preference Runtime v2 uses canonical source-neutral features only, keeps an active champion while evaluating a challenger, and applies confidence-scaled zero-to-two-position reranking without changing eligibility. Reset is durable suspension; only explicit manual refit resumes fitting.
 

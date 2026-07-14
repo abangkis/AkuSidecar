@@ -1028,11 +1028,10 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
 
 .preference-reason-menu {
   display: flex;
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
-  margin-top: 0.45rem;
   padding: 0.55rem;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -1043,6 +1042,16 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   margin-right: 0.2rem;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.feedback-reason-dismiss {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--quiet);
+  cursor: pointer;
+  font-size: 0.72rem;
 }
 
 .candidate-review-list h4 {
@@ -1773,12 +1782,16 @@ textarea:focus {
 }
 
 .result-actions {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
   align-items: center;
+  gap: 12px 16px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
 .source-link {
+  white-space: nowrap;
   color: var(--accent);
   font-size: 0.84rem;
   font-weight: 700;
@@ -1803,7 +1816,9 @@ textarea:focus {
 
 .feedback-button.selected {
   border-color: var(--accent);
+  background: rgba(174, 255, 90, 0.12);
   color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(174, 255, 90, 0.08) inset;
 }
 
 .empty-result-feedback {
@@ -1940,6 +1955,14 @@ textarea:focus {
   .result-actions,
   .timeline-heading-row {
     flex-direction: column;
+  }
+
+  .result-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .source-link {
+    white-space: normal;
   }
 
   .system-status,

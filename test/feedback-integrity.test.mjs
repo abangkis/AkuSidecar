@@ -114,6 +114,24 @@ test("feedback boundaries are contextual, exclusive, and idempotent", async (con
   engine.addFeedback(promoted.id, { kind: "useful", itemId: "promoted-item" });
   assert.equal(engine.getRun(promoted.id).feedback.length, 1);
 
+  engine.addPreferenceFeedback(promoted.id, {
+    kind: "less_like_this",
+    evidenceKey: promoted.candidateEvaluations[0].evidenceKey,
+  });
+  engine.addPreferenceFeedback(promoted.id, {
+    kind: "less_like_this",
+    evidenceKey: promoted.candidateEvaluations[0].evidenceKey,
+  });
+  assert.equal(engine.getRun(promoted.id).preferenceFeedback.length, 1);
+  engine.addPreferenceFeedback(promoted.id, {
+    kind: "less_like_this",
+    evidenceKey: promoted.candidateEvaluations[0].evidenceKey,
+    reasonCode: "wrong_topic",
+  });
+  const refinedPreference = engine.getRun(promoted.id).preferenceFeedback;
+  assert.equal(refinedPreference.length, 2);
+  assert.equal(refinedPreference.at(-1).reasonCode, "wrong_topic");
+
   const unavailable = engine.startRun({ source: "x", maxItems: 1, scrolls: 0 });
   store.completeRun(
     unavailable.id,

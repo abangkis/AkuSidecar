@@ -149,6 +149,13 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /startPendingFirstCalibration/);
   assert.match(appScript, /more_like_this/);
   assert.match(appScript, /less_like_this/);
+  assert.match(appScript, /Optional: why less\?/);
+  assert.match(appScript, /await savePreferenceFeedback\(run, evidenceKey, kind, null, onSaved\)/);
+  assert.match(appScript, /button\.disabled = kind !== "less_like_this"/);
+  assert.doesNotMatch(appScript, /\[null, "Just less"\]/);
+  assert.match(styles, /\.result-actions \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(8rem, 1fr\) auto;/s);
+  assert.match(styles, /\.preference-reason-menu \{[^}]*grid-column: 1 \/ -1;/s);
+  assert.match(styles, /\.feedback-button\.selected \{[^}]*background: rgba\(174, 255, 90, 0\.12\);/s);
   assert.doesNotMatch(html, /onboarding-refinement|onboarding-content-types/);
   assert.match(appScript, /showTimelineDuringProcessing/);
   assert.match(appScript, /Reading \$\{label\} source/);
