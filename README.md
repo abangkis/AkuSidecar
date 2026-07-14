@@ -83,6 +83,15 @@ reasoning timeout is `120000` ms.
 
 Gate 0B uses a fixed native-capture budget: at most two 75%-viewport scrolls, three snapshots, and 45 seconds. AkuBridge restores the applicable capture baseline and reports the actual movement in coverage. Computer Use is not an implicit fallback.
 
+Every current capture also requires the generic `social-post-v1` quality
+report. Sidecar pre-authorizes one same-candidate Bridge retry with a 300 ms
+settle time, validates candidate/snapshot/coverage report consistency, and
+rejects a final `retryable` result. `complete` and `usable_degraded` blocks are
+admitted; `invalid` blocks are removed. If none remain, the source fails before
+acquisition planning or final reasoning. `coverage.qualityAdmission` records
+admitted, degraded, and rejected counts plus bounded issue/retry totals. The
+ReasoningProvider never receives rejected parser output.
+
 When the initial acquisition cannot find the requested source, `open_missing_tab` lets AkuBridge create one inactive canonical feed tab (`https://x.com/home` or `https://www.linkedin.com/feed/`) and wait for it to load before capture. `fail_fast` preserves the earlier behavior. A follow-up round never opens a replacement tab because it must remain anchored to the original observation frontier.
 
 Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.

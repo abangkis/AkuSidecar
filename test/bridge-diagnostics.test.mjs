@@ -54,7 +54,8 @@ test("bridge compatibility rejects stale versions, revisions, and adapters", () 
   });
   const compatibility = diagnostics.compatibility();
   assert.equal(compatibility.compatible, false);
-  assert.equal(compatibility.reasons.length, 6);
+  assert.equal(compatibility.reasons.length, 7);
+  assert.ok(compatibility.reasons.some((reason) => reason.includes("report_capture_quality")));
 });
 
 test("source health exposes diagnostics but no captured evidence", () => {
@@ -104,7 +105,7 @@ test("recent failures override a stale successful LinkedIn observation", () => {
       payload: {
         capturedAt: "2026-07-14T01:00:05.000Z",
         coverage: {
-          adapterVersion: "linkedin-dom-v8",
+          adapterVersion: "linkedin-dom-v10",
           adapterHealth: { state: "healthy" },
           restored: true,
         },
@@ -174,10 +175,10 @@ test("a recovery success does not erase two failures from rolling health", () =>
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.30",
-    runtimeRevision: "source-fidelity-v32",
-    buildId: "aku-bridge-0.5.30-source-fidelity-v32",
-    adapterVersions: { x: "x-dom-v12", linkedin: "linkedin-dom-v8" },
-    actions: ["reload_self"],
+    extensionVersion: "0.5.33",
+    runtimeRevision: "source-fidelity-v35",
+    buildId: "aku-bridge-0.5.33-source-fidelity-v35",
+    adapterVersions: { x: "x-dom-v13", linkedin: "linkedin-dom-v10" },
+    actions: ["reload_self", "report_capture_quality"],
   };
 }

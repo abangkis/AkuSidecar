@@ -220,6 +220,9 @@ export function loadConfig(env = process.env) {
       maxBlocksPerSnapshot: 20,
       maxBlockCharacters: 4_000,
       maxMediaPerBlock: 4,
+      qualityReportRequired: true,
+      qualityRetryBudget: 1,
+      qualityRetrySettleMs: 300,
     },
   };
 }

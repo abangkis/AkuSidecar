@@ -42,6 +42,9 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     pendingContentSettleMs: limits.pendingContentSettleMs,
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
     maxBlockCharacters: limits.maxBlockCharacters,
+    qualityReportRequired: limits.qualityReportRequired === true,
+    qualityRetryBudget: Math.min(1, Math.max(0, limits.qualityRetryBudget ?? 0)),
+    qualityRetrySettleMs: Math.min(1_000, Math.max(100, limits.qualityRetrySettleMs ?? 300)),
     openIfMissing:
       acquisitionRound === 1 && limits.missingSourceTabPolicy !== "fail_fast",
     tabLifecycle: {
@@ -87,9 +90,16 @@ export function buildObservationContinuation(observation, limits) {
 }
 
 export function assertNativeCaptureOutcome(commandPayload, observation) {
-  if (commandPayload.scrolls === 0) return;
-
   const coverage = observation.coverage;
+  if (commandPayload.qualityReportRequired === true) {
+    if (!coverage.captureQuality) {
+      throw new ContractError("AkuBridge observation requires a capture-quality summary");
+    }
+    if (coverage.captureQuality.retryBudget !== commandPayload.qualityRetryBudget) {
+      throw new ContractError("capture-quality retry budget does not match its command");
+    }
+  }
+  if (commandPayload.scrolls === 0) return;
   if (coverage.browserAdapter !== NATIVE_BROWSER_ADAPTER) {
     throw new ContractError("Gate 0B observation did not identify AkuBridge as its browser adapter");
   }

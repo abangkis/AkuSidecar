@@ -39,6 +39,9 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     pendingContentSettleMs: 700,
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
+    qualityReportRequired: false,
+    qualityRetryBudget: 0,
+    qualityRetrySettleMs: 300,
     openIfMissing: true,
     tabLifecycle: { ownership: "shared", openedTabDisposition: "preserve" },
     restoreScroll: true,
@@ -77,6 +80,21 @@ test("LinkedIn initial capture detects pending content without activating it", (
   );
   assert.equal(command.pendingContentPolicy, "detect_only");
   assert.equal(command.sameTabMutationAllowed, false);
+});
+
+test("capture commands pre-authorize only one local quality retry", () => {
+  const command = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "x", scrolls: 0 },
+    {
+      ...limits,
+      qualityReportRequired: true,
+      qualityRetryBudget: 5,
+      qualityRetrySettleMs: 5_000,
+    },
+  );
+  assert.equal(command.qualityReportRequired, true);
+  assert.equal(command.qualityRetryBudget, 1);
+  assert.equal(command.qualityRetrySettleMs, 1_000);
 });
 
 test("Gate 0B accepts an auditable native scroll-and-restore outcome", () => {

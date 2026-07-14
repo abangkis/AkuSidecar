@@ -107,6 +107,22 @@ export const PREFERENCE_REASON_CODES = new Set([
   "other",
 ]);
 export const UNIFIED_SESSION_SOURCES = Object.freeze(["x", "linkedin"]);
+export const CAPTURE_QUALITY_VERDICTS = new Set([
+  "complete",
+  "usable_degraded",
+  "retryable",
+  "invalid",
+]);
+export const CAPTURE_QUALITY_STATES = new Set([
+  "present",
+  "detected_empty",
+  "missing",
+  "invalid",
+  "not_exposed",
+  "not_applicable",
+  "pending_hydration",
+]);
+export const CAPTURE_QUALITY_SEVERITIES = new Set(["low", "high", "critical"]);
 
 export class ContractError extends Error {
   constructor(message, details = undefined) {
@@ -243,6 +259,15 @@ export function validateBridgeObservation(input, limits) {
         capturedAt: validDateString(snapshot.capturedAt) ?? new Date().toISOString(),
         scrollY: finiteNumber(snapshot.scrollY, 0),
         viewportHeight: finiteNumber(snapshot.viewportHeight, 0),
+        qualityReports: Array.isArray(snapshot.qualityReports)
+          ? snapshot.qualityReports
+              .slice(0, limits.maxBlocksPerSnapshot)
+              .map((report, reportIndex) => validateCaptureQualityReport(
+                report,
+                `snapshot ${snapshotIndex} quality report ${reportIndex}`,
+              ))
+              .filter(Boolean)
+          : [],
         blocks: blocks
           .map((block, blockIndex) => validateBlock(input.source, block, blockIndex, limits))
           .filter((block) => block.text.length > 0),
@@ -281,6 +306,7 @@ function validateBlock(source, block, index, limits) {
     engagement: validateEngagement(block.engagement),
     presentation: validatePresentation(block.presentation),
     media: validateBlockMedia(source, block.media, limits),
+    captureQuality: validateCaptureQualityReport(block.captureQuality, `block ${index} quality`),
     links,
   };
   return {
@@ -451,11 +477,15 @@ function validateCoverage(value, limits) {
               ? [...new Set(entry.actions.map((action) => cleanString(action, 100)).filter(Boolean))]
                   .slice(0, 20)
               : [],
+            ...(cleanString(entry?.qualityProfile, 100)
+              ? { qualityProfile: cleanString(entry?.qualityProfile, 100) }
+              : {}),
           }))
           .filter((entry) => entry.source && entry.version)
           .slice(0, 20)
       : [],
     adapterHealth: validateAdapterHealth(value.adapterHealth),
+    captureQuality: validateCaptureQualitySummary(value.captureQuality),
     frontier: validateFrontier(value.frontier),
     sourceEvents: validateSourceEvents(value.sourceEvents),
     fallbackUsed: value.fallbackUsed === true,
@@ -540,6 +570,72 @@ function validateCoverage(value, limits) {
     notes: Array.isArray(value.notes)
       ? value.notes.slice(0, 10).map((note) => cleanString(note, 500)).filter(Boolean)
       : [],
+  };
+}
+
+function validateCaptureQualityReport(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const verdict = CAPTURE_QUALITY_VERDICTS.has(value.verdict) ? value.verdict : null;
+  const profile = cleanString(value.profile, 100);
+  if (!verdict || !profile) return null;
+  const issues = Array.isArray(value.issues)
+    ? value.issues.slice(0, 20).map((entry, issueIndex) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+        const field = cleanString(entry.field, 100);
+        const code = cleanString(entry.code, 100);
+        const observedState = CAPTURE_QUALITY_STATES.has(entry.observedState)
+          ? entry.observedState
+          : null;
+        const severity = CAPTURE_QUALITY_SEVERITIES.has(entry.severity)
+          ? entry.severity
+          : null;
+        if (!field || !code || !observedState || !severity) {
+          throw new ContractError(`${label} issue ${issueIndex} is incomplete`);
+        }
+        return {
+          field,
+          code,
+          observedState,
+          severity,
+          recoverable: entry.recoverable === true,
+          attempt: Math.min(1, nonNegativeInteger(entry.attempt, 0)),
+        };
+      }).filter(Boolean)
+    : [];
+  return {
+    profile,
+    verdict,
+    score: Math.max(0, Math.min(1, finiteNumber(value.score, 0))),
+    attempt: Math.min(1, nonNegativeInteger(value.attempt, 0)),
+    issues,
+  };
+}
+
+function validateCaptureQualitySummary(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const verdict = CAPTURE_QUALITY_VERDICTS.has(value.verdict) ? value.verdict : null;
+  const profile = cleanString(value.profile, 100);
+  if (!verdict || !profile) return null;
+  const verdictCounts = Object.fromEntries(
+    [...CAPTURE_QUALITY_VERDICTS].map((entry) => [
+      entry,
+      nonNegativeInteger(value.verdictCounts?.[entry], 0),
+    ]),
+  );
+  const issueCounts = value.issueCounts && typeof value.issueCounts === "object"
+    ? Object.fromEntries(Object.entries(value.issueCounts).slice(0, 50).map(([key, count]) => [
+        cleanString(key, 200),
+        nonNegativeInteger(count, 0),
+      ]).filter(([key]) => key))
+    : {};
+  return {
+    profile,
+    verdict,
+    candidateReportCount: nonNegativeInteger(value.candidateReportCount, 0),
+    verdictCounts,
+    issueCounts,
+    retryBudget: Math.min(1, nonNegativeInteger(value.retryBudget, 0)),
+    retryAttempts: nonNegativeInteger(value.retryAttempts, 0),
   };
 }
 

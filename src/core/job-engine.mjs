@@ -15,6 +15,7 @@ import {
   buildObservationContinuation,
   buildNativeCaptureCommand,
 } from "../browser/browser-adapter-contract.mjs";
+import { admitObservationQuality } from "../browser/observation-quality-policy.mjs";
 import {
   filterKnownEvidence,
   uniqueEvidenceKeys,
@@ -261,7 +262,7 @@ export class JobEngine {
       throw new ContractError(`run is already ${run.status}`);
     }
 
-    const observation = validateBridgeObservation(rawObservation, this.limits);
+    let observation = validateBridgeObservation(rawObservation, this.limits);
     if (command.payload.pendingContentRecovery) {
       observation.coverage.pendingContentRecovery = command.payload.pendingContentRecovery;
       observation.coverage.notes.push(
@@ -272,6 +273,9 @@ export class JobEngine {
       throw new ContractError("observation source does not match run source");
     }
     assertNativeCaptureOutcome(command.payload, observation);
+    observation = admitObservationQuality(observation, {
+      required: command.payload.qualityReportRequired === true,
+    });
 
     this.store.saveObservation(runId, observation);
     this.store.completeBridgeCommand(commandId);
@@ -1213,6 +1217,8 @@ function aggregateCoverage(observations, planning) {
   }
   return {
     ...first,
+    captureQuality: aggregateCaptureQuality(observations),
+    qualityAdmission: aggregateQualityAdmission(observations),
     checkedThrough: last.checkedThrough,
     candidateCount: uniqueCandidates.size,
     observedBlockCount: observations.reduce(
@@ -1256,4 +1262,71 @@ function aggregateCoverage(observations, planning) {
       observation.coverage.notes.map((note) => `Round ${index + 1}: ${note}`),
     ),
   };
+}
+
+export function aggregateCaptureQuality(observations) {
+  const summaries = observations
+    .map((observation) => observation.coverage.captureQuality)
+    .filter(Boolean);
+  if (summaries.length === 0) return undefined;
+  const verdictCounts = sumCountMaps(summaries.map((summary) => summary.verdictCounts));
+  return {
+    profile: summaries[0].profile,
+    verdict: worstQualityVerdict(summaries.map((summary) => summary.verdict)),
+    candidateReportCount: summaries.reduce(
+      (sum, summary) => sum + summary.candidateReportCount,
+      0,
+    ),
+    verdictCounts,
+    issueCounts: sumCountMaps(summaries.map((summary) => summary.issueCounts)),
+    retryBudget: Math.max(...summaries.map((summary) => summary.retryBudget)),
+    retryAttempts: summaries.reduce((sum, summary) => sum + summary.retryAttempts, 0),
+  };
+}
+
+export function aggregateQualityAdmission(observations) {
+  const admissions = observations
+    .map((observation) => observation.coverage.qualityAdmission)
+    .filter(Boolean);
+  if (admissions.length === 0) return undefined;
+  return {
+    verdict: worstQualityVerdict(admissions.map((admission) => admission.verdict)),
+    profile: admissions[0].profile,
+    admittedBlockCount: admissions.reduce(
+      (sum, admission) => sum + admission.admittedBlockCount,
+      0,
+    ),
+    degradedBlockCount: admissions.reduce(
+      (sum, admission) => sum + admission.degradedBlockCount,
+      0,
+    ),
+    rejectedCandidateCount: admissions.reduce(
+      (sum, admission) => sum + admission.rejectedCandidateCount,
+      0,
+    ),
+    retryAttempts: admissions.reduce((sum, admission) => sum + admission.retryAttempts, 0),
+    issueCounts: sumCountMaps(admissions.map((admission) => admission.issueCounts)),
+  };
+}
+
+function sumCountMaps(maps) {
+  const result = {};
+  for (const counts of maps) {
+    for (const [key, count] of Object.entries(counts ?? {})) {
+      result[key] = (result[key] ?? 0) + count;
+    }
+  }
+  return result;
+}
+
+function worstQualityVerdict(verdicts) {
+  const rank = new Map([
+    ["complete", 0],
+    ["usable_degraded", 1],
+    ["retryable", 2],
+    ["invalid", 3],
+  ]);
+  return verdicts.reduce((worst, verdict) =>
+    (rank.get(verdict) ?? 3) > (rank.get(worst) ?? 3) ? verdict : worst,
+  "complete");
 }
