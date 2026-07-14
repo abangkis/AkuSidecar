@@ -1,12 +1,13 @@
 export const BRIDGE_REQUIREMENTS = Object.freeze({
-  minimumExtensionVersion: "0.5.36",
-  runtimeRevision: "source-fidelity-v38",
-  adapterVersions: Object.freeze({ x: "x-dom-v14", linkedin: "linkedin-dom-v12" }),
+  minimumExtensionVersion: "0.5.37",
+  runtimeRevision: "source-fidelity-v39",
+  adapterVersions: Object.freeze({ x: "x-dom-v15", linkedin: "linkedin-dom-v13" }),
   requiredActions: Object.freeze([
     "reload_self",
     "report_capture_quality",
     "probe_freshness",
     "recover_source_freshness",
+    "recover_missing_media",
   ]),
 });
 

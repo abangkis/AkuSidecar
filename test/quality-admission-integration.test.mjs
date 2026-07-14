@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sourceFreshnessFixture } from "./source-freshness-fixture.mjs";
+import { mediaRecoveryFixture, mediaRecoverySummaryFixture } from "./media-recovery-fixture.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -47,6 +48,7 @@ test("JobEngine admits degraded evidence and excludes invalid parser output", as
   );
   assert.equal(completed.result.items.length, 1);
   assert.match(completed.result.items[0].whatChanged, /usable captured post/i);
+  assert.equal(completed.candidateEvaluations[0].mediaRecovery.outcome, "unavailable");
 });
 
 function observationFixture() {
@@ -68,6 +70,10 @@ function observationFixture() {
   };
   const degraded = qualityReport("usable_degraded", completeIssue);
   const invalid = qualityReport("invalid", invalidIssue);
+  const mediaRecoveries = [
+    mediaRecoveryFixture("x", "unavailable"),
+    mediaRecoveryFixture("x", "not_applicable"),
+  ];
   return {
     source: "x",
     pageUrl: "https://x.com/home",
@@ -90,6 +96,7 @@ function observationFixture() {
           permalink: "https://x.com/example/status/1",
           platformId: "x:status:1",
           media: [],
+          mediaRecovery: mediaRecoveries[0],
           links: [],
           captureQuality: degraded,
         },
@@ -99,6 +106,7 @@ function observationFixture() {
           permalink: "https://x.com/example/status/2",
           platformId: "x:status:2",
           media: [],
+          mediaRecovery: mediaRecoveries[1],
           links: [],
           captureQuality: invalid,
         },
@@ -135,6 +143,8 @@ function observationFixture() {
         retryBudget: 1,
         retryAttempts: 2,
       },
+      mediaRecovery: mediaRecoverySummaryFixture(mediaRecoveries),
+      fallbackUsed: false,
       notes: [],
     },
   };

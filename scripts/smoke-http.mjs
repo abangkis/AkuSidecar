@@ -32,7 +32,7 @@ try {
   assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
   assert.match(html, /<title>AkuBrowser<\/title>/);
   assert.match(html, /UNIFIED KNOWLEDGE CONTINUITY/);
-  assert.match(html, /Run unified brief/);
+  assert.match(html, /Check for updates/);
   assert.match(html, /Review Inbox/);
   assert.match(html, /Reasoning config/);
   assert.equal(bootstrap.reasoning.planningModel, "gpt-5.6-luna");

@@ -13,6 +13,8 @@ test("untrusted source instructions remain delimited evidence and media stays pr
   const compact = compactObservation(observation, 40_000);
   assert.equal(compact.blocks[0].text, injection);
   assert.equal("media" in compact.blocks[0], false);
+  assert.equal("mediaRecovery" in compact.blocks[0], false);
+  assert.equal("mediaRecovery" in compact.coverage, false);
   assert.equal("avatarUrl" in compact.blocks[0].quotedPost, false);
   assert.equal("media" in compact.blocks[0].quotedPost, false);
   assert.equal(compact.blocks[0].quotedPost.text, "Quoted context remains available to reasoning.");
@@ -72,7 +74,14 @@ function fixtureObservation() {
     pageUrl: "https://x.com/home",
     pageTitle: "Home / X",
     capturedAt: "2026-07-12T00:00:00.000Z",
-    coverage: { status: "partial" },
+    coverage: {
+      status: "partial",
+      mediaRecovery: {
+        policyVersion: "media-recovery-v1",
+        candidateCount: 1,
+        outcomes: { unavailable: 1 },
+      },
+    },
     snapshots: [{
       index: 0,
       blocks: [{
@@ -81,6 +90,16 @@ function fixtureObservation() {
         author: "Untrusted source",
         permalink: "https://x.com/untrusted/status/1",
         media: [{ url: "https://pbs.twimg.com/media/private.jpg", kind: "image" }],
+        mediaRecovery: {
+          policyVersion: "media-recovery-v1",
+          strategyVersion: "x-media-recovery-v1",
+          source: "x",
+          outcome: "unavailable",
+          attempts: 1,
+          recoveredCount: 0,
+          method: "none",
+          limitation: "presentation-only recovery diagnostic",
+        },
         quotedPost: {
           author: "Quoted source",
           avatarUrl: "https://pbs.twimg.com/profile_images/private.jpg",

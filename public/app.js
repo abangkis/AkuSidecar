@@ -1235,6 +1235,9 @@ function buildCoverageList(coverage) {
     coverage.sourceFreshness
       ? `Source freshness: ${humanize(coverage.sourceFreshness.outcome)} (${humanize(coverage.sourceFreshness.verification)})`
       : null,
+    coverage.mediaRecovery
+      ? `Media recovery: ${coverage.mediaRecovery.outcomes?.recovered ?? 0} recovered, ${coverage.mediaRecovery.outcomes?.unavailable ?? 0} unavailable`
+      : null,
     coverage.pendingContentActivationEvidence
       ? `Fresh-content activation evidence: ${humanize(coverage.pendingContentActivationEvidence)}`
       : null,
@@ -1499,6 +1502,13 @@ function buildSourceLayoutCard(run, item, candidate) {
     article.append(attribution);
   }
   article.append(content);
+  const mediaAvailability = buildMediaAvailabilityNotice(
+    candidate?.mediaRecovery,
+    item.sourceUrlKind === "native_post"
+      ? candidate?.sourceUrl || item.sourceUrl
+      : null,
+  );
+  if (mediaAvailability) article.append(mediaAvailability);
   if (attachment) article.append(attachment);
   if (media) {
     const legacyQuote = candidate?.quotedPost ? null : content.querySelector(".x-quote-card");
@@ -1507,6 +1517,24 @@ function buildSourceLayoutCard(run, item, candidate) {
   const engagement = buildSourceEngagement(candidate?.engagement ?? {}, source);
   if (engagement) article.append(engagement);
   return article;
+}
+
+function buildMediaAvailabilityNotice(mediaRecovery, sourceUrl) {
+  if (mediaRecovery?.outcome !== "unavailable") return null;
+  const notice = document.createElement("div");
+  notice.className = "source-layout-media-unavailable";
+  const text = document.createElement("span");
+  text.textContent = "Media was present at the source but unavailable in this captured view.";
+  notice.append(text);
+  if (sourceUrl) {
+    const link = document.createElement("a");
+    link.href = sourceUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open native post";
+    notice.append(link);
+  }
+  return notice;
 }
 
 function sourceIdentity(value, source) {

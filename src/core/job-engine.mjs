@@ -872,6 +872,7 @@ function buildCandidateEvaluations(run, observation, result, evaluatedEvidenceKe
       parentPermalink: block.parentPermalink ?? null,
       quotedPost: block.quotedPost ?? null,
       media: block.media ?? [],
+      mediaRecovery: block.mediaRecovery ?? null,
       links: block.links ?? [],
       engagement: block.engagement ?? {},
       presentation: block.presentation ?? {},
@@ -898,6 +899,11 @@ export function mergeCapturedBlock(previous, current) {
   const previousMedia = previous.media ?? [];
   const currentMedia = current.media ?? [];
   const media = currentMedia.length > previousMedia.length ? currentMedia : previousMedia;
+  const mediaRecovery = currentMedia.length > previousMedia.length
+    ? current.mediaRecovery
+    : previousMedia.length > currentMedia.length
+      ? previous.mediaRecovery
+      : current.mediaRecovery ?? previous.mediaRecovery;
   const quotedPost = mergeQuotedPost(previous.quotedPost, current.quotedPost);
   return {
     ...previous,
@@ -915,6 +921,7 @@ export function mergeCapturedBlock(previous, current) {
     presentation: { ...(previous.presentation ?? {}), ...(current.presentation ?? {}) },
     quotedPost,
     media,
+    mediaRecovery,
     links: [...new Map(
       [...(previous.links ?? []), ...(current.links ?? [])].map((link) => [link.href, link]),
     ).values()].slice(0, 10),

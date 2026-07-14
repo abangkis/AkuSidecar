@@ -71,6 +71,21 @@
         "additionalProperties": false
       }
     },
+    "mediaRecovery": {
+      "type": ["object", "null"],
+      "properties": {
+        "policyVersion": { "type": "string" },
+        "strategyVersion": { "type": "string" },
+        "source": { "type": "string", "enum": ["x", "linkedin"] },
+        "outcome": { "type": "string", "enum": ["not_applicable", "primary_complete", "recovered", "unavailable"] },
+        "attempts": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "recoveredCount": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "method": { "type": "string", "enum": ["none", "primary_hydration", "alternate_dom"] },
+        "limitation": { "type": "string" }
+      },
+      "required": ["policyVersion", "strategyVersion", "source", "outcome", "attempts", "recoveredCount", "method", "limitation"],
+      "additionalProperties": false
+    },
     "presentation": { "type": "object" },
     "text": { "type": "string" },
     "sourceUrl": { "type": "string" },

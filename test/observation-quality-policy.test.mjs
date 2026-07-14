@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { admitObservationQuality } from "../src/browser/observation-quality-policy.mjs";
+import { mediaRecoveryFixture, mediaRecoverySummaryFixture } from "./media-recovery-fixture.mjs";
 
 test("complete capture quality is admitted without degradation", () => {
   const observation = fixture([report("complete")]);
@@ -21,6 +22,35 @@ test("degraded candidates remain admitted with explicit limitations", () => {
   const admitted = admitObservationQuality(observation, { required: true });
   assert.equal(admitted.coverage.qualityAdmission.verdict, "usable_degraded");
   assert.equal(admitted.coverage.qualityAdmission.degradedBlockCount, 1);
+});
+
+test("recovered media requires matching block, aggregate, and fallback evidence", () => {
+  const observation = fixture([report("complete")]);
+  observation.snapshots[0].blocks[0].media = [{
+    kind: "image",
+    url: "https://pbs.twimg.com/media/recovered.jpg",
+  }];
+  observation.snapshots[0].blocks[0].mediaRecovery = mediaRecoveryFixture("x", "recovered");
+  observation.coverage.mediaRecovery = mediaRecoverySummaryFixture([
+    observation.snapshots[0].blocks[0].mediaRecovery,
+  ]);
+  observation.coverage.fallbackUsed = true;
+  assert.doesNotThrow(() => admitObservationQuality(observation, { required: true }));
+
+  observation.coverage.fallbackUsed = false;
+  assert.throws(
+    () => admitObservationQuality(observation, { required: true }),
+    /fallbackUsed must match/i,
+  );
+});
+
+test("media recovery rejects contradictory aggregate accounting", () => {
+  const observation = fixture([report("complete")]);
+  observation.coverage.mediaRecovery.attempts = 1;
+  assert.throws(
+    () => admitObservationQuality(observation, { required: true }),
+    /aggregate accounting is inconsistent/i,
+  );
 });
 
 test("invalid candidates are removed while usable candidates continue", () => {
@@ -123,6 +153,10 @@ function fixture(reports) {
     author: `Author ${index + 1}`,
     evidenceKey: `x:${String(index + 1).padStart(24, "0")}`,
     media: [],
+    mediaRecovery: mediaRecoveryFixture(
+      "x",
+      entry.issues.some((issue) => issue.field === "media") ? "unavailable" : "not_applicable",
+    ),
     captureQuality: entry,
   }));
   const verdictCounts = Object.fromEntries(
@@ -146,12 +180,15 @@ function fixture(reports) {
       : verdictCounts.usable_degraded
         ? "usable_degraded"
         : "complete";
+  const mediaRecoveries = blocks.map((block) => block.mediaRecovery);
   return {
     source: "x",
     pageUrl: "https://x.com/home",
     snapshots: [{ blocks, qualityReports: reports }],
     coverage: {
       notes: [],
+      fallbackUsed: false,
+      mediaRecovery: mediaRecoverySummaryFixture(mediaRecoveries),
       captureQuality: {
         profile: "social-post-v1",
         verdict,

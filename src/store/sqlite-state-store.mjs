@@ -286,6 +286,7 @@ export class SqliteStateStore {
     `);
     this.#ensureColumn("candidate_evaluations", "assessment_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "media_json", "TEXT");
+    this.#ensureColumn("candidate_evaluations", "media_recovery_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "avatar_url", "TEXT");
     this.#ensureColumn("candidate_evaluations", "engagement_json", "TEXT");
     this.#ensureColumn("candidate_evaluations", "presentation_json", "TEXT");
@@ -927,10 +928,10 @@ export class SqliteStateStore {
         INSERT INTO candidate_evaluations(
           run_id, evidence_key, source, decision, reason_code, item_id,
           author, avatar_url, text, source_url, published_at, feed_position,
-          policy_version, preference_profile_version, assessment_json, media_json,
+          policy_version, preference_profile_version, assessment_json, media_json, media_recovery_json,
           engagement_json, presentation_json, links_json, relationship_type,
           parent_permalink, quoted_post_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, evidence_key) DO UPDATE SET
           decision = excluded.decision,
           reason_code = excluded.reason_code,
@@ -939,6 +940,7 @@ export class SqliteStateStore {
           preference_profile_version = excluded.preference_profile_version,
           assessment_json = excluded.assessment_json,
           media_json = excluded.media_json,
+          media_recovery_json = excluded.media_recovery_json,
           engagement_json = excluded.engagement_json
           ,presentation_json = excluded.presentation_json
           ,links_json = excluded.links_json
@@ -964,6 +966,7 @@ export class SqliteStateStore {
           candidate.preferenceProfileVersion,
           candidate.assessment ? JSON.stringify(candidate.assessment) : null,
           JSON.stringify(candidate.media ?? []),
+          candidate.mediaRecovery ? JSON.stringify(candidate.mediaRecovery) : null,
           JSON.stringify(candidate.engagement ?? {}),
           JSON.stringify(candidate.presentation ?? {}),
           JSON.stringify(candidate.links ?? []),
@@ -1416,6 +1419,7 @@ function mapCandidateEvaluation(row) {
     parentPermalink: row.parent_permalink ?? null,
     quotedPost: parseJson(row.quoted_post_json),
     media: parseJson(row.media_json) ?? [],
+    mediaRecovery: parseJson(row.media_recovery_json),
     engagement: parseJson(row.engagement_json) ?? {},
     presentation: parseJson(row.presentation_json) ?? {},
     links: parseJson(row.links_json) ?? [],

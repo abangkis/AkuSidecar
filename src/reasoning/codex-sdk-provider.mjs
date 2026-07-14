@@ -222,19 +222,28 @@ function compactKnowledgeContext(value) {
 }
 
 export function compactObservation(observation, maxCharacters) {
+  const {
+    mediaRecovery: _presentationOnlyMediaRecoverySummary,
+    ...reasoningCoverage
+  } = observation.coverage ?? {};
   const compact = {
     source: observation.source,
     pageUrl: observation.pageUrl,
     pageTitle: observation.pageTitle,
     capturedAt: observation.capturedAt,
-    coverage: observation.coverage,
+    coverage: reasoningCoverage,
     blocks: [],
   };
   let characters = 0;
   const seen = new Set();
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
     if (!block.evidenceKey || seen.has(block.evidenceKey)) continue;
-    const { media: _presentationOnlyMedia, quotedPost, ...reasoningBlock } = block;
+    const {
+      media: _presentationOnlyMedia,
+      mediaRecovery: _presentationOnlyMediaRecovery,
+      quotedPost,
+      ...reasoningBlock
+    } = block;
     if (quotedPost) {
       const {
         media: _quotedPresentationOnlyMedia,

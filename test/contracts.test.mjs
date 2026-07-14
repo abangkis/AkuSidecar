@@ -262,6 +262,16 @@ test("browser observations accept only bounded http evidence", () => {
                 { kind: "image", url: "https://pbs.twimg.com/media/example.jpg#fragment", alt: "Architecture diagram", width: 640, height: 360 },
                 { kind: "image", url: "https://evil.example/tracker.png", width: 640, height: 360 },
               ],
+              mediaRecovery: {
+                policyVersion: "media-recovery-v1",
+                strategyVersion: "x-media-recovery-v1",
+                source: "x",
+                outcome: "primary_complete",
+                attempts: 0,
+                recoveredCount: 0,
+                method: "none",
+                limitation: "",
+              },
               presentation: {
                 socialContext: "Reza Lesmana likes this",
                 socialContextAvatarUrl: "https://media.licdn.com/dms/image/context-avatar",
@@ -304,7 +314,24 @@ test("browser observations accept only bounded http evidence", () => {
           ],
         },
       ],
-      coverage: { status: "partial", candidateCount: 1 },
+      coverage: {
+        status: "partial",
+        candidateCount: 1,
+        fallbackUsed: false,
+        mediaRecovery: {
+          policyVersion: "media-recovery-v1",
+          candidateCount: 1,
+          outcomes: {
+            not_applicable: 0,
+            primary_complete: 1,
+            recovered: 0,
+            unavailable: 0,
+          },
+          attempts: 0,
+          recoveredMediaCount: 0,
+          methods: [],
+        },
+      },
     },
     limits,
   );
@@ -330,6 +357,8 @@ test("browser observations accept only bounded http evidence", () => {
     width: 640,
     height: 360,
   }]);
+  assert.equal(observation.snapshots[0].blocks[0].mediaRecovery.outcome, "primary_complete");
+  assert.equal(observation.coverage.mediaRecovery.outcomes.primary_complete, 1);
   assert.deepEqual(observation.snapshots[0].blocks[0].presentation, {
     socialContext: "Reza Lesmana likes this",
     socialContextAvatarUrl: "https://media.licdn.com/dms/image/context-avatar",

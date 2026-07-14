@@ -21,6 +21,7 @@ export function admitObservationQuality(observation, { required = false } = {}) 
   if (required && reports.length === 0) {
     throw new ContractError("capture-quality candidate reports are required");
   }
+  if (required) assertMediaRecoveryConsistency(observation);
 
   for (const report of reports) assertReportConsistency(report);
   for (const snapshot of observation.snapshots) {
@@ -119,6 +120,66 @@ export function admitObservationQuality(observation, { required = false } = {}) 
       notes: [...(observation.coverage.notes ?? []), note].slice(-10),
     },
   };
+}
+
+function assertMediaRecoveryConsistency(observation) {
+  const blocks = observation.snapshots.flatMap((snapshot) => snapshot.blocks ?? []);
+  const recoveries = blocks.map((block) => block.mediaRecovery);
+  if (recoveries.some((entry) => !entry)) {
+    throw new ContractError("every admitted bridge block requires a media-recovery outcome");
+  }
+  const summary = observation.coverage?.mediaRecovery;
+  if (!summary || summary.policyVersion !== "media-recovery-v1") {
+    throw new ContractError("media-recovery summary is required");
+  }
+  if (summary.candidateCount !== recoveries.length) {
+    throw new ContractError("media-recovery summary count does not match observed blocks");
+  }
+  for (const outcome of ["not_applicable", "primary_complete", "recovered", "unavailable"]) {
+    const count = recoveries.filter((entry) => entry.outcome === outcome).length;
+    if (summary.outcomes?.[outcome] !== count) {
+      throw new ContractError(`media-recovery ${outcome} count is inconsistent`);
+    }
+  }
+  for (const [index, block] of blocks.entries()) {
+    const recovery = block.mediaRecovery;
+    const hasMedia = (block.media?.length ?? 0) > 0;
+    if (recovery.policyVersion !== "media-recovery-v1" || recovery.source !== observation.source) {
+      throw new ContractError(`block ${index} media-recovery identity is inconsistent`);
+    }
+    if (["primary_complete", "recovered"].includes(recovery.outcome) && !hasMedia) {
+      throw new ContractError(`block ${index} media-recovery outcome contradicts empty media`);
+    }
+    if (["not_applicable", "unavailable"].includes(recovery.outcome) && hasMedia) {
+      throw new ContractError(`block ${index} media-recovery outcome contradicts media value`);
+    }
+    if (
+      recovery.outcome === "unavailable" &&
+      !block.captureQuality?.issues?.some((issue) => issue.field === "media")
+    ) {
+      throw new ContractError(`block ${index} unavailable media requires a quality limitation`);
+    }
+  }
+  const expectedAttempts = recoveries.reduce((sum, entry) => sum + entry.attempts, 0);
+  const expectedRecoveredCount = recoveries.reduce(
+    (sum, entry) => sum + entry.recoveredCount,
+    0,
+  );
+  const expectedMethods = [...new Set(
+    recoveries.map((entry) => entry.method).filter((method) => method !== "none"),
+  )].sort();
+  const observedMethods = [...(summary.methods ?? [])].sort();
+  if (
+    summary.attempts !== expectedAttempts ||
+    summary.recoveredMediaCount !== expectedRecoveredCount ||
+    JSON.stringify(observedMethods) !== JSON.stringify(expectedMethods)
+  ) {
+    throw new ContractError("media-recovery aggregate accounting is inconsistent");
+  }
+  const recovered = recoveries.some((entry) => entry.outcome === "recovered");
+  if (observation.coverage.fallbackUsed !== recovered) {
+    throw new ContractError("fallbackUsed must match recovered media evidence");
+  }
 }
 
 function assertReportConsistency(report, block = null) {

@@ -92,6 +92,13 @@ acquisition planning or final reasoning. `coverage.qualityAdmission` records
 admitted, degraded, and rejected counts plus bounded issue/retry totals. The
 ReasoningProvider never receives rejected parser output.
 
+Media uses `media-recovery-v1` inside that same one-retry budget. Sidecar
+requires a per-block outcome and aggregate coverage, verifies recovered media
+against the allowlisted values, and rejects mismatched outcome/fallback counts.
+If recovery is exhausted, trustworthy text remains `usable_degraded`; Source
+layout shows a media-unavailable notice with the native-post link. Recovery
+metadata is presentation/diagnostic context and is not sent to text reasoning.
+
 When the initial acquisition cannot find the requested source, `open_missing_tab` lets AkuBridge create one inactive canonical feed tab (`https://x.com/home` or `https://www.linkedin.com/feed/`) and wait for it to load before capture. `fail_fast` preserves the earlier behavior. A follow-up round never opens a replacement tab because it must remain anchored to the original observation frontier.
 
 Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.

@@ -41,6 +41,17 @@ export const SOURCE_FRESHNESS_VERIFICATIONS = new Set([
   "adapter_wake_contract",
   "frontier_contract",
 ]);
+export const MEDIA_RECOVERY_OUTCOMES = new Set([
+  "not_applicable",
+  "primary_complete",
+  "recovered",
+  "unavailable",
+]);
+export const MEDIA_RECOVERY_METHODS = new Set([
+  "none",
+  "primary_hydration",
+  "alternate_dom",
+]);
 export const SOURCE_READINESS_STATES = new Set([
   "feed_ready",
   "loading",
@@ -321,6 +332,7 @@ function validateBlock(source, block, index, limits) {
     engagement: validateEngagement(block.engagement),
     presentation: validatePresentation(block.presentation),
     media: validateBlockMedia(source, block.media, limits),
+    mediaRecovery: validateMediaRecovery(block.mediaRecovery, source),
     captureQuality: validateCaptureQualityReport(block.captureQuality, `block ${index} quality`),
     links,
   };
@@ -498,12 +510,16 @@ function validateCoverage(value, limits) {
             ...(cleanString(entry?.freshnessVersion, 100)
               ? { freshnessVersion: cleanString(entry?.freshnessVersion, 100) }
               : {}),
+            ...(cleanString(entry?.mediaRecoveryVersion, 100)
+              ? { mediaRecoveryVersion: cleanString(entry?.mediaRecoveryVersion, 100) }
+              : {}),
           }))
           .filter((entry) => entry.source && entry.version)
           .slice(0, 20)
       : [],
     adapterHealth: validateAdapterHealth(value.adapterHealth),
     captureQuality: validateCaptureQualitySummary(value.captureQuality),
+    mediaRecovery: validateMediaRecoverySummary(value.mediaRecovery),
     frontier: validateFrontier(value.frontier),
     sourceEvents: validateSourceEvents(value.sourceEvents),
     sourceFreshness: validateSourceFreshness(value.sourceFreshness),
@@ -626,6 +642,64 @@ function validateSourceFreshness(value) {
     feedMutation: value.feedMutation === true,
     waitMs: nonNegativeInteger(value.waitMs, 0),
     preActionScrollY: Math.trunc(finiteNumber(value.preActionScrollY, 0)),
+  };
+}
+
+function validateMediaRecovery(value, source) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const outcome = MEDIA_RECOVERY_OUTCOMES.has(value.outcome) ? value.outcome : null;
+  const method = MEDIA_RECOVERY_METHODS.has(value.method) ? value.method : null;
+  const policyVersion = cleanString(value.policyVersion, 100);
+  const strategyVersion = cleanString(value.strategyVersion, 100);
+  if (!outcome || !method || !policyVersion || !strategyVersion) return null;
+  const recoveredCount = Math.min(4, nonNegativeInteger(value.recoveredCount, 0));
+  const attempts = Math.min(1, nonNegativeInteger(value.attempts, 0));
+  const recoverySource = SOURCES.has(value.source) ? value.source : source;
+  if (recoverySource !== source) {
+    throw new ContractError("media-recovery source must match its observation source");
+  }
+  if (
+    outcome === "recovered" &&
+    (recoveredCount < 1 || attempts !== 1 || method === "none")
+  ) {
+    throw new ContractError("recovered media requires one attempt, a method, and a positive count");
+  }
+  if (outcome !== "recovered" && (recoveredCount !== 0 || method !== "none")) {
+    throw new ContractError("non-recovered media cannot report a recovery method or count");
+  }
+  if (["not_applicable", "primary_complete"].includes(outcome) && attempts !== 0) {
+    throw new ContractError(`${outcome} media cannot report a recovery attempt`);
+  }
+  return {
+    policyVersion,
+    strategyVersion,
+    source: recoverySource,
+    outcome,
+    attempts,
+    recoveredCount,
+    method,
+    limitation: cleanString(value.limitation, 500),
+  };
+}
+
+function validateMediaRecoverySummary(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const policyVersion = cleanString(value.policyVersion, 100);
+  if (!policyVersion) return null;
+  return {
+    policyVersion,
+    candidateCount: nonNegativeInteger(value.candidateCount, 0),
+    outcomes: Object.fromEntries([...MEDIA_RECOVERY_OUTCOMES].map((outcome) => [
+      outcome,
+      nonNegativeInteger(value.outcomes?.[outcome], 0),
+    ])),
+    attempts: nonNegativeInteger(value.attempts, 0),
+    recoveredMediaCount: nonNegativeInteger(value.recoveredMediaCount, 0),
+    methods: Array.isArray(value.methods)
+      ? [...new Set(value.methods.filter((method) => MEDIA_RECOVERY_METHODS.has(method)))]
+          .filter((method) => method !== "none")
+          .slice(0, 3)
+      : [],
   };
 }
 
