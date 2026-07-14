@@ -1966,7 +1966,6 @@ async function refreshTimeline() {
 }
 
 function syncTimelineChrome() {
-  elements.timelineRunnerButton.textContent = "Check for updates";
   if (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) {
     elements.timelineMeta.textContent = "Checking active sources within the bounded acquisition policy.";
   } else if (state.timelineFeed) {

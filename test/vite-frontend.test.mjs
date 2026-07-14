@@ -88,6 +88,15 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   );
   assert.match(appScript, /AkuBridge could not complete the requested operation/);
   assert.match(html, /Check for updates/);
+  assert.match(
+    styles,
+    /#timeline-runner-button \{[^}]*flex: 0 0 170px;[^}]*width: 170px;[^}]*height: 44px;[^}]*white-space: nowrap;/s,
+  );
+  assert.doesNotMatch(
+    appScript,
+    /timelineRunnerButton\.textContent = "Check for updates"/,
+    "timeline polling must not rewrite the unchanged button label",
+  );
   assert.match(html, /id="back-to-top"/);
   assert.match(html, /aria-label="Back to top"/);
   assert.match(html, /id="app-heading" tabindex="-1"/);
