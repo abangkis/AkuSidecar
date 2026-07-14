@@ -70,12 +70,21 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
-  assert.match(html, /\/app\.js\?runtime=bridge-long-poll-v1/);
+  assert.match(html, /\/app\.js\?runtime=bridge-relay-handshake-v2/);
   assert.match(appScript, /bootstrapRetryTimer = setTimeout/);
   assert.match(appScript, /if \(!bridgePingStarted\)/);
   assert.ok(
     appScript.indexOf("let bridgeActionLoopStarted = false") < appScript.indexOf("await bootstrap()"),
     "the bridge action loop state must be initialized before bootstrap starts",
+  );
+  assert.equal(
+    appScript.match(/startBridgeActionLoop\(\);/g)?.length,
+    1,
+    "only a compatible AkuBridge handshake may start the cooperative action relay",
+  );
+  assert.match(
+    appScript,
+    /state\.bridgeReady = compatibility\?\.compatible === true;\s*if \(state\.bridgeReady\) startBridgeActionLoop\(\);/,
   );
   assert.match(appScript, /AkuBridge could not complete the requested operation/);
   assert.match(html, /Check for updates/);

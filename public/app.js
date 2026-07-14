@@ -147,6 +147,7 @@ window.addEventListener("message", (event) => {
       body: JSON.stringify({ capabilities: event.data.capabilities ?? {} }),
     }).then(({ heartbeat, compatibility }) => {
       state.bridgeReady = compatibility?.compatible === true;
+      if (state.bridgeReady) startBridgeActionLoop();
       const label = state.bridgeReady
         ? `AkuBridge ${heartbeat.extensionVersion} ready`
         : "AkuBridge update required";
@@ -309,7 +310,6 @@ async function bootstrap() {
       bridgePingStarted = true;
       setInterval(pingBridge, 30_000);
     }
-    startBridgeActionLoop();
     if (state.bootstrap.onboarding?.status !== "completed") {
       showOnboarding(false);
       return;
