@@ -38,6 +38,29 @@ export const SOURCE_READINESS_STATES = new Set([
 export const ACQUISITION_DECISIONS = new Set(["finish", "request_follow_up"]);
 export const CONTENT_KINDS = new Set(["post", "article", "document", "video", "announcement"]);
 export const RELATIONSHIP_TYPES = new Set(["original", "repost", "quote", "reply"]);
+export const TIMESTAMP_AVAILABILITY = new Set([
+  "native_datetime",
+  "relative_text",
+  "not_exposed_promoted",
+  "unavailable",
+]);
+export const TIMESTAMP_SOURCES = new Set([
+  "native_datetime",
+  "relative_text_estimate",
+  "not_exposed_promoted",
+  "unavailable",
+]);
+export const TIMESTAMP_PRECISIONS = new Set([
+  "exact",
+  "second",
+  "minute",
+  "hour",
+  "day",
+  "week",
+  "month",
+  "year",
+  "unknown",
+]);
 export const SOURCE_EVENT_TYPES = new Set([
   "source_new_content_available",
   "source_session_expired",
@@ -300,6 +323,16 @@ function validatePresentation(value) {
     attributionText: cleanString(value.attributionText, 500),
     connectionDegree: cleanString(value.connectionDegree, 30),
     timestampText: cleanString(value.timestampText, 100),
+    timestampAvailability: TIMESTAMP_AVAILABILITY.has(value.timestampAvailability)
+      ? value.timestampAvailability
+      : "unavailable",
+    timestampSource: TIMESTAMP_SOURCES.has(value.timestampSource)
+      ? value.timestampSource
+      : "unavailable",
+    timestampEstimated: value.timestampEstimated === true,
+    timestampPrecision: TIMESTAMP_PRECISIONS.has(value.timestampPrecision)
+      ? value.timestampPrecision
+      : "unknown",
     edited: value.edited === true,
     promoted: value.promoted === true,
     permalinkSource: cleanString(value.permalinkSource, 50),
