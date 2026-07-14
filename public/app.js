@@ -6,6 +6,8 @@ const state = {
   currentRun: null,
   currentSession: null,
   pollTimer: null,
+  statusPollFailures: 0,
+  failureRecoveryMode: "timeline",
   externalSessionDiscoveryTimer: null,
   externalSessionDiscoveryInFlight: false,
   dispatchedRounds: new Set(),
@@ -30,6 +32,7 @@ const state = {
 const REVIEW_PAGE_SIZE = 10;
 const REVIEW_MAX_RUNS = 50;
 const BACK_TO_TOP_THRESHOLD_PX = 480;
+const STATUS_POLL_RETRY_DELAYS_MS = [700, 1_200, 2_000, 3_500, 5_000];
 
 const elements = {
   appHeading: document.querySelector("#app-heading"),
@@ -204,7 +207,7 @@ window.addEventListener("message", (event) => {
 
 elements.cancelButton.addEventListener("click", cancelCurrentRun);
 elements.doneButton.addEventListener("click", startRun);
-elements.retryButton.addEventListener("click", startRun);
+elements.retryButton.addEventListener("click", recoverFromFailure);
 elements.sessionViewButton.addEventListener("click", showSessionView);
 elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.settingsViewButton.addEventListener("click", showSettingsView);
@@ -487,6 +490,7 @@ async function startRun() {
   hide(elements.reviewPanel, elements.settingsPanel);
   show(elements.timelinePanel);
   clearPoll();
+  resetStatusPollRecovery();
   state.dispatchedRounds.clear();
   hide(elements.failurePanel);
   setUpdateButtonsDisabled(true);
@@ -537,9 +541,9 @@ function dispatchToBridge(run) {
   );
 }
 
-function schedulePoll() {
+function schedulePoll(delayMs = 700) {
   clearPoll();
-  state.pollTimer = setTimeout(pollCurrent, 700);
+  state.pollTimer = setTimeout(pollCurrent, delayMs);
 }
 
 function startExternalSessionDiscovery() {
@@ -576,6 +580,7 @@ async function pollRun() {
   if (!state.currentRun) return;
   try {
     const { run } = await api(`/api/runs/${encodeURIComponent(state.currentRun.id)}`);
+    resetStatusPollRecovery();
     state.currentRun = run;
     if (run.status === "waiting_for_bridge") dispatchToBridge(run);
     if (run.status === "completed") {
@@ -600,8 +605,7 @@ async function pollRun() {
     if (state.currentView === "timeline") showProcessing(run);
     schedulePoll();
   } catch (error) {
-    clearPoll();
-    reportRunFailure({ stage: "status", message: error.message });
+    handleStatusPollFailure(error, "run_status");
   }
 }
 
@@ -611,6 +615,7 @@ async function pollUnifiedSession() {
     const { session } = await api(
       `/api/sessions/${encodeURIComponent(state.currentSession.id)}`,
     );
+    resetStatusPollRecovery();
     state.currentSession = session;
     dispatchUnifiedSession(session);
     if (isUnifiedTerminal(session.status)) {
@@ -642,8 +647,114 @@ async function pollUnifiedSession() {
     if (state.currentView === "timeline") showUnifiedProcessing(session);
     schedulePoll();
   } catch (error) {
-    clearPoll();
-    reportRunFailure({ stage: "session_status", message: error.message });
+    handleStatusPollFailure(error, "session_status");
+  }
+}
+
+function handleStatusPollFailure(error, stage) {
+  if (scheduleStatusPollRecovery(error)) return;
+  clearPoll();
+  reportRunFailure({
+    stage: isTransientTransportError(error) ? "sidecar_connection" : stage,
+    message: isTransientTransportError(error)
+      ? "AkuSidecar could not be reached after bounded reconnect attempts. The server-side session remains persisted."
+      : error.message,
+  });
+}
+
+function scheduleStatusPollRecovery(error) {
+  if (!isTransientTransportError(error)) return false;
+  const delayMs = STATUS_POLL_RETRY_DELAYS_MS[state.statusPollFailures];
+  if (delayMs === undefined) return false;
+  state.statusPollFailures += 1;
+  setStatus(elements.sidecarStatus, "AkuSidecar reconnecting", "warning");
+  hide(elements.failurePanel, elements.resultPanel);
+  show(elements.processingPanel);
+  elements.processingTitle.textContent = "Reconnecting to AkuSidecar";
+  elements.processingDetail.textContent =
+    `The local connection was interrupted. Resuming the persisted session ` +
+    `(${state.statusPollFailures}/${STATUS_POLL_RETRY_DELAYS_MS.length})\u2026`;
+  setUpdateButtonsDisabled(true);
+  schedulePoll(delayMs);
+  return true;
+}
+
+function resetStatusPollRecovery() {
+  const wasRecovering = state.statusPollFailures > 0;
+  state.statusPollFailures = 0;
+  if (wasRecovering && state.bootstrap) {
+    setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
+  }
+}
+
+function isTransientTransportError(error) {
+  return error?.name === "TypeError" && /fetch|network/i.test(error.message ?? "");
+}
+
+async function recoverFromFailure() {
+  if (state.failureRecoveryMode === "timeline") {
+    await returnToTimeline();
+    return;
+  }
+  elements.retryButton.disabled = true;
+  hide(elements.failurePanel);
+  resetStatusPollRecovery();
+  setStatus(elements.sidecarStatus, "AkuSidecar reconnecting", "warning");
+  try {
+    let session = null;
+    if (state.currentSession?.id) {
+      ({ session } = await api(
+        `/api/sessions/${encodeURIComponent(state.currentSession.id)}`,
+      ));
+    } else {
+      ({ session } = await api("/api/sessions/active"));
+    }
+    setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
+    if (!session) {
+      await loadTimelineFeed();
+      showSessionView();
+      setUpdateButtonsDisabled(false);
+      return;
+    }
+    state.currentSession = session;
+    if (isUnifiedTerminal(session.status)) {
+      if (["completed", "partial"].includes(session.status)) {
+        await loadTimelineFeed();
+        showSessionView();
+      } else {
+        showFailure({
+          stage: session.status,
+          message: unifiedFailureMessage(session),
+        });
+      }
+      return;
+    }
+    showUnifiedProcessing(session);
+    dispatchUnifiedSession(session);
+    schedulePoll(0);
+  } catch (error) {
+    showFailure({
+      stage: "sidecar_connection",
+      message: "AkuSidecar is still unavailable. The persisted session has not been replaced.",
+    });
+  } finally {
+    elements.retryButton.disabled = false;
+  }
+}
+
+async function returnToTimeline() {
+  elements.retryButton.disabled = true;
+  try {
+    await loadTimelineFeed();
+    showSessionView();
+    setUpdateButtonsDisabled(false);
+  } catch (error) {
+    showFailure({
+      stage: "sidecar_connection",
+      message: "AkuSidecar is unavailable. Reconnect to restore the persisted session.",
+    });
+  } finally {
+    elements.retryButton.disabled = false;
   }
 }
 
@@ -3178,6 +3289,10 @@ function showFailure(error) {
   setUpdateButtonsDisabled(false);
   elements.failureTitle.textContent = `Stopped at ${humanize(error.stage || "unknown stage")}`;
   elements.failureMessage.textContent = error.message || "The run did not complete.";
+  state.failureRecoveryMode = error.stage === "sidecar_connection" ? "reconnect" : "timeline";
+  elements.retryButton.textContent = state.failureRecoveryMode === "reconnect"
+    ? "Reconnect to session"
+    : "Return to timeline";
   syncTimelineChrome();
 }
 

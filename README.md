@@ -16,7 +16,7 @@ npm install
 ```
 
 For normal AkuWorkspace development, let the user-visible AkuSupervisor own the
-Sidecar watcher and its complete process tree:
+Sidecar service and its complete process tree:
 
 ```powershell
 cd ..\AkuSupervisor
@@ -30,13 +30,18 @@ AkuBrowser Settings select `codex-sdk`.
 
 Open `http://127.0.0.1:47821` in the same Chrome profile where AkuBridge is loaded.
 
-Development uses one visible process and one port. Vite runs as middleware inside the Sidecar HTTP server and hot-reloads `public/` assets. Node's watcher automatically restarts that same process when backend modules change, so neither path requires a manual restart.
+Development uses one visible process and one port. Vite runs as middleware
+inside the Sidecar HTTP server and hot-reloads `public/` assets. Backend modules
+are intentionally not file-watched: Codex SDK execution can generate filesystem
+activity while a persisted run is in reasoning, and an in-process watcher must
+not interrupt that run. After backend changes, restart the registered service
+through AkuSupervisor. Frontend-only changes continue to use Vite HMR.
 
 The default daily-use action creates one persisted Unified Session. AkuSidecar runs an X child followed by a LinkedIn child, keeps their checkpoints and feedback independent, and deterministically merges up to five validated items per source into one finite brief. Advanced/Pilot mode preserves the original single-source flow. Browser movement budgets remain unchanged.
 
 Source layout reconstructs each item from persisted candidate text, provenance, and at most four validated source images or video posters. Images are presentation-only, lazy-loaded without a referrer, and omitted from reasoning prompts. A cache miss may request the original allowlisted source CDN; AkuBrowser does not reopen or recapture the source page.
 
-For the production-style static server without file watching:
+For the production-style static server without Vite middleware:
 
 ```powershell
 npm start

@@ -28,7 +28,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
-export const APP_VERSION = "0.6.2";
+export const APP_VERSION = "0.6.3";
 
 export function createAkuBrowserApp({
   config,

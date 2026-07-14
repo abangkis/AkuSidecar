@@ -61,6 +61,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   const html = await htmlResponse.text();
   const appScript = await (await fetch(`${origin}/app.js`)).text();
   const styles = await (await fetch(`${origin}/styles.css`)).text();
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
   const bootstrap = await (await fetch(`${origin}/api/bootstrap`)).json();
   const shadowComparison = await (
     await fetch(`${origin}/api/preferences/shadow-comparison?limit=10&offset=20`)
@@ -142,6 +143,12 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(styles, /\.result-item\.timeline-new-item/);
   assert.match(appScript, /body: JSON\.stringify\(\{\}\)/);
   assert.match(appScript, /if \(firstCompletion\) await startRun\(\)/);
+  assert.match(appScript, /retryButton\.addEventListener\("click", recoverFromFailure\)/);
+  assert.match(appScript, /const STATUS_POLL_RETRY_DELAYS_MS = \[700, 1_200, 2_000, 3_500, 5_000\]/);
+  assert.match(appScript, /The server-side session remains persisted/);
+  assert.match(appScript, /\? "Reconnect to session"\s*: "Return to timeline"/s);
+  assert.doesNotMatch(appScript, /retryButton\.addEventListener\("click", startRun\)/);
+  assert.equal(packageJson.scripts.dev, "node src/server.mjs --vite");
   assert.match(html, /Choose where AkuBrowser should look/);
   assert.match(html, /class="onboarding-source-icon onboarding-source-icon-x"/);
   assert.match(html, /class="onboarding-source-icon onboarding-source-icon-linkedin"/);
