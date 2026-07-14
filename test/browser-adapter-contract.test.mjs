@@ -37,6 +37,7 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     sameTabMutationAllowed: true,
     pendingContentTimeoutMs: 5_000,
     pendingContentSettleMs: 700,
+    sourceFreshnessPolicy: "wake_and_reveal",
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
     qualityReportRequired: false,
@@ -73,13 +74,28 @@ test("missing source tab policy is configurable and follow-up never opens a repl
   assert.equal(followUp.openIfMissing, false);
 });
 
-test("LinkedIn initial capture detects pending content without activating it", () => {
+test("LinkedIn initial capture authorizes adapter-driven freshness reveal", () => {
   const command = buildNativeCaptureCommand(
     { mode: "catch_up", source: "linkedin", scrolls: 2 },
     limits,
   );
-  assert.equal(command.pendingContentPolicy, "detect_only");
-  assert.equal(command.sameTabMutationAllowed, false);
+  assert.equal(command.pendingContentPolicy, "reveal_if_present");
+  assert.equal(command.sameTabMutationAllowed, true);
+});
+
+test("zero-scroll background capture still requires bounded freshness wake", () => {
+  const command = buildNativeCaptureCommand(
+    { mode: "catch_up", source: "linkedin", scrolls: 0 },
+    limits,
+  );
+  const observation = gate0bObservation();
+  observation.coverage.sourceTabBackgroundAtDispatch = true;
+  observation.coverage.sourceFreshness = freshnessFixture("linkedin", "active_feed_ready");
+
+  assert.throws(
+    () => assertNativeCaptureOutcome(command, observation),
+    /bounded source wake recovery/i,
+  );
 });
 
 test("capture commands pre-authorize only one local quality retry", () => {
@@ -222,6 +238,7 @@ test("Gate 0B.3 follow-up is anchored to the prior observation frontier", () => 
   const observation = gate0bObservation();
   observation.snapshots = [{}, {}];
   Object.assign(observation.coverage, {
+    sourceFreshness: freshnessFixture("linkedin", "follow_up_preserved"),
     pendingNewContent: false,
     pendingNewContentLabel: "",
     pendingNewContentAction: "not_detected",
@@ -280,6 +297,7 @@ function gate0bObservation() {
       pendingNewContentAction: "activated",
       pendingContentActivationEvidence: "feed_fingerprint_changed",
       pendingContentPolicy: "reveal_if_present",
+      sourceFreshness: freshnessFixture("linkedin", "pending_content_revealed"),
       feedMutation: true,
       sameTabMutation: true,
       restorationScope: "post_reveal_start",
@@ -298,5 +316,35 @@ function gate0bObservation() {
       restoreAttempted: true,
       restored: true,
     },
+  };
+}
+
+function freshnessFixture(source, outcome) {
+  const revealed = outcome === "pending_content_revealed";
+  const followUp = outcome === "follow_up_preserved";
+  return {
+    policyVersion: "source-freshness-recovery-v1",
+    adapterFreshnessVersion: `${source}-freshness-v1`,
+    source,
+    status: "ready",
+    outcome,
+    verification: revealed ? "feed_change" : followUp ? "frontier_contract" : "active_dispatch",
+    evidence: revealed
+      ? "feed_fingerprint_changed"
+      : followUp
+        ? "follow_up_no_freshness_mutation"
+        : "active_at_dispatch",
+    backgroundAtDispatch: false,
+    opened: false,
+    wakeAttempted: false,
+    activated: false,
+    probeCount: 1,
+    pendingContentDetected: revealed,
+    pendingContentLabel: revealed ? "New posts" : "",
+    pendingContentAction: revealed ? "activated" : "not_detected",
+    feedChanged: revealed,
+    feedMutation: revealed,
+    waitMs: 10,
+    preActionScrollY: revealed ? 1_024 : 0,
   };
 }

@@ -28,7 +28,7 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     throw new ContractError("Gate 0B.3 continuation is required only for a follow-up round");
   }
   const revealPendingContent = options.revealPendingContent
-    ?? (acquisitionRound === 1 && run.source !== "linkedin");
+    ?? acquisitionRound === 1;
   return {
     mode: run.mode,
     source: run.source,
@@ -40,6 +40,9 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     sameTabMutationAllowed: revealPendingContent,
     pendingContentTimeoutMs: limits.pendingContentTimeoutMs,
     pendingContentSettleMs: limits.pendingContentSettleMs,
+    sourceFreshnessPolicy: acquisitionRound === 1
+      ? "wake_and_reveal"
+      : "preserve_frontier",
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
     maxBlockCharacters: limits.maxBlockCharacters,
     qualityReportRequired: limits.qualityReportRequired === true,
@@ -57,9 +60,6 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     maxAcquisitionRounds,
     continuation,
     followUpReason: options.followUpReason ?? "",
-    ...(options.pendingContentRecovery
-      ? { pendingContentRecovery: options.pendingContentRecovery }
-      : {}),
   };
 }
 
@@ -98,6 +98,25 @@ export function assertNativeCaptureOutcome(commandPayload, observation) {
     if (coverage.captureQuality.retryBudget !== commandPayload.qualityRetryBudget) {
       throw new ContractError("capture-quality retry budget does not match its command");
     }
+  }
+  if (!coverage.sourceFreshness || coverage.sourceFreshness.status !== "ready") {
+    throw new ContractError("Gate 0B observation requires a ready source-freshness outcome");
+  }
+  if (coverage.sourceFreshness.policyVersion !== "source-freshness-recovery-v1") {
+    throw new ContractError("Gate 0B observation source-freshness policy version is unsupported");
+  }
+  if (
+    commandPayload.sourceFreshnessPolicy === "wake_and_reveal" &&
+    coverage.sourceTabBackgroundAtDispatch === true &&
+    coverage.sourceFreshness.wakeAttempted !== true
+  ) {
+    throw new ContractError("Gate 0B background capture must perform bounded source wake recovery");
+  }
+  if (
+    commandPayload.sourceFreshnessPolicy === "preserve_frontier" &&
+    coverage.sourceFreshness.outcome !== "follow_up_preserved"
+  ) {
+    throw new ContractError("Gate 0B follow-up must preserve its freshness frontier");
   }
   if (commandPayload.scrolls === 0) return;
   if (coverage.browserAdapter !== NATIVE_BROWSER_ADAPTER) {

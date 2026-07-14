@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { sourceFreshnessFixture } from "./source-freshness-fixture.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -104,6 +105,7 @@ function observationFixture() {
       ],
     }],
     coverage: {
+      sourceFreshness: sourceFreshnessFixture("x"),
       status: "partial",
       checkedThrough: "2026-07-14T00:00:00.000Z",
       candidateCount: 2,

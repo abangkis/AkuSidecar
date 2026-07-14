@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { sourceFreshnessFixture } from "./source-freshness-fixture.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -120,8 +121,8 @@ test("Gate 0B carries a native multi-viewport capture through reasoning and cove
     assert.equal(command.payload.browserAdapter, "aku-bridge");
     assert.equal(command.payload.scrollFraction, 0.75);
     assert.equal(command.payload.captureTimeoutMs, 45_000);
-    assert.equal(command.payload.pendingContentPolicy, "detect_only");
-    assert.equal(command.payload.sameTabMutationAllowed, false);
+    assert.equal(command.payload.pendingContentPolicy, "reveal_if_present");
+    assert.equal(command.payload.sameTabMutationAllowed, true);
 
     engine.acceptBridgeObservation(command.id, run.id, multiViewportObservation());
     const completed = await engine.waitForRun(run.id);
@@ -462,6 +463,7 @@ function sampleObservation() {
     ],
     coverage: {
       status: "partial",
+      sourceFreshness: sourceFreshnessFixture("x"),
       checkedThrough: "2026-07-10T10:00:00Z",
       candidateCount: 1,
       notes: ["One visible viewport; no scrolling."],
@@ -508,7 +510,8 @@ function multiViewportObservation() {
       pendingNewContentLabel: "",
       pendingNewContentAction: "not_detected",
       pendingContentActivationEvidence: null,
-      pendingContentPolicy: "detect_only",
+      pendingContentPolicy: "reveal_if_present",
+      sourceFreshness: sourceFreshness("linkedin"),
       feedMutation: false,
       sameTabMutation: false,
       restorationScope: "pre_run_position",
@@ -574,6 +577,7 @@ function followUpObservation(continuation) {
       pendingNewContentAction: "not_detected",
       pendingContentActivationEvidence: null,
       pendingContentPolicy: "detect_only",
+      sourceFreshness: sourceFreshness("linkedin", "follow_up_preserved"),
       feedMutation: false,
       sameTabMutation: false,
       restorationScope: "pre_run_position",
@@ -594,5 +598,30 @@ function followUpObservation(continuation) {
       elapsedMs: 1_200,
       notes: ["Bounded follow-up fixture."],
     },
+  };
+}
+
+function sourceFreshness(source, outcome = "active_feed_ready") {
+  const followUp = outcome === "follow_up_preserved";
+  return {
+    policyVersion: "source-freshness-recovery-v1",
+    adapterFreshnessVersion: `${source}-freshness-v1`,
+    source,
+    status: "ready",
+    outcome,
+    verification: followUp ? "frontier_contract" : "active_dispatch",
+    evidence: followUp ? "follow_up_no_freshness_mutation" : "active_at_dispatch",
+    backgroundAtDispatch: false,
+    opened: false,
+    wakeAttempted: false,
+    activated: false,
+    probeCount: 1,
+    pendingContentDetected: false,
+    pendingContentLabel: "",
+    pendingContentAction: "not_detected",
+    feedChanged: false,
+    feedMutation: false,
+    waitMs: 5,
+    preActionScrollY: 0,
   };
 }

@@ -273,12 +273,6 @@ export class JobEngine {
     }
 
     let observation = validateBridgeObservation(rawObservation, this.limits);
-    if (command.payload.pendingContentRecovery) {
-      observation.coverage.pendingContentRecovery = command.payload.pendingContentRecovery;
-      observation.coverage.notes.push(
-        "Pending-content reveal timed out; capture continued once with native detect-only policy.",
-      );
-    }
     if (observation.source !== run.source) {
       throw new ContractError("observation source does not match run source");
     }
@@ -310,21 +304,11 @@ export class JobEngine {
       typeof rawError?.message === "string" ? rawError.message : "AkuBridge failed",
     );
     this.store.failBridgeCommand(commandId, error);
-    if (canRetryPendingContentDetectOnly(command, error)) {
-      const run = this.store.getRun(runId);
-      this.store.enqueueBridgeCommand(
-        runId,
-        "collect_visible",
-        buildNativeCaptureCommand(run, this.limits, {
-          acquisitionRound: command.payload.acquisitionRound ?? 1,
-          scrolls: command.payload.scrolls,
-          revealPendingContent: false,
-          pendingContentRecovery: "detect_only_after_reveal_timeout",
-        }),
-      );
-      return this.store.setRunStatus(runId, "waiting_for_bridge");
-    }
-    const failed = this.store.failRun(runId, "browser_capture", error);
+    const failed = this.store.failRun(
+      runId,
+      rawError?.code === "freshness_unavailable" ? "source_freshness" : "browser_capture",
+      error,
+    );
     this.#advanceParentSessionForRun(runId);
     return failed;
   }
@@ -1118,17 +1102,6 @@ function assertPlatformOrderItems(result, evaluatedEvidenceKeys) {
       "result items must preserve supplied platform order",
     );
   }
-}
-
-function canRetryPendingContentDetectOnly(command, error) {
-  return (
-    command.payload.pendingContentPolicy === "reveal_if_present" &&
-    command.payload.acquisitionRound === 1 &&
-    !command.payload.pendingContentRecovery &&
-    /pending-content control did not reveal a changed, visible feed within the bounded deadline/i.test(
-      error.message,
-    )
-  );
 }
 
 function runHasObservedEvidence(run) {

@@ -1232,8 +1232,8 @@ function buildCoverageList(coverage) {
     Number.isInteger(coverage.sourceReadinessRetryCount)
       ? `Source readiness retries: ${coverage.sourceReadinessRetryCount}`
       : null,
-    coverage.pendingContentRecovery
-      ? `Pending-content recovery: ${humanize(coverage.pendingContentRecovery)}`
+    coverage.sourceFreshness
+      ? `Source freshness: ${humanize(coverage.sourceFreshness.outcome)} (${humanize(coverage.sourceFreshness.verification)})`
       : null,
     coverage.pendingContentActivationEvidence
       ? `Fresh-content activation evidence: ${humanize(coverage.pendingContentActivationEvidence)}`

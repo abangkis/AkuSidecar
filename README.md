@@ -96,6 +96,13 @@ When the initial acquisition cannot find the requested source, `open_missing_tab
 
 Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.
 
+Source freshness precedes Gate 0B.2 capture. AkuBridge applies one generic
+`wake -> observe -> reveal/prove -> capture` state machine to both X and
+LinkedIn, while each source adapter supplies only its versioned wake and
+pending-control knowledge. Sidecar requires a ready `coverage.sourceFreshness`
+outcome. A failed reveal stops at `source_freshness`; Sidecar does not retry a
+stale feed under detect-only policy or present that failure as zero additions.
+
 Gate 0B.3 asks the configured ReasoningProvider only whether to finish or request one adjacent observation. A follow-up is capped at one scroll, locked to the same source, anchored to the last round-one viewport, and cannot activate fresh-content controls. Both rounds are stored and merged before the final result.
 
 ## Knowledge continuity

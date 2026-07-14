@@ -26,6 +26,21 @@ export const RESTORATION_SCOPES = new Set(["pre_run_position", "post_reveal_star
 export const PENDING_ACTIVATION_EVIDENCE = new Set([
   "feed_fingerprint_changed",
 ]);
+export const SOURCE_FRESHNESS_OUTCOMES = new Set([
+  "active_feed_ready",
+  "new_tab_ready",
+  "feed_changed_after_wake",
+  "pending_content_revealed",
+  "adapter_wake_settled",
+  "follow_up_preserved",
+]);
+export const SOURCE_FRESHNESS_VERIFICATIONS = new Set([
+  "active_dispatch",
+  "new_tab_load",
+  "feed_change",
+  "adapter_wake_contract",
+  "frontier_contract",
+]);
 export const SOURCE_READINESS_STATES = new Set([
   "feed_ready",
   "loading",
@@ -480,6 +495,9 @@ function validateCoverage(value, limits) {
             ...(cleanString(entry?.qualityProfile, 100)
               ? { qualityProfile: cleanString(entry?.qualityProfile, 100) }
               : {}),
+            ...(cleanString(entry?.freshnessVersion, 100)
+              ? { freshnessVersion: cleanString(entry?.freshnessVersion, 100) }
+              : {}),
           }))
           .filter((entry) => entry.source && entry.version)
           .slice(0, 20)
@@ -488,6 +506,7 @@ function validateCoverage(value, limits) {
     captureQuality: validateCaptureQualitySummary(value.captureQuality),
     frontier: validateFrontier(value.frontier),
     sourceEvents: validateSourceEvents(value.sourceEvents),
+    sourceFreshness: validateSourceFreshness(value.sourceFreshness),
     fallbackUsed: value.fallbackUsed === true,
     scrollContainer: cleanString(value.scrollContainer, 200),
     pendingNewContent: value.pendingNewContent === true,
@@ -570,6 +589,43 @@ function validateCoverage(value, limits) {
     notes: Array.isArray(value.notes)
       ? value.notes.slice(0, 10).map((note) => cleanString(note, 500)).filter(Boolean)
       : [],
+  };
+}
+
+function validateSourceFreshness(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const outcome = SOURCE_FRESHNESS_OUTCOMES.has(value.outcome) ? value.outcome : null;
+  const verification = SOURCE_FRESHNESS_VERIFICATIONS.has(value.verification)
+    ? value.verification
+    : null;
+  const policyVersion = cleanString(value.policyVersion, 100);
+  const adapterFreshnessVersion = cleanString(value.adapterFreshnessVersion, 100);
+  if (value.status !== "ready" || !outcome || !verification || !policyVersion || !adapterFreshnessVersion) {
+    return null;
+  }
+  return {
+    policyVersion,
+    adapterFreshnessVersion,
+    source: SOURCES.has(value.source) ? value.source : null,
+    status: "ready",
+    outcome,
+    verification,
+    evidence: cleanString(value.evidence, 100),
+    backgroundAtDispatch: value.backgroundAtDispatch === true,
+    opened: value.opened === true,
+    wakeAttempted: value.wakeAttempted === true,
+    activated: value.activated === true,
+    documentVisibleObserved: value.documentVisibleObserved === true,
+    probeCount: nonNegativeInteger(value.probeCount, 0),
+    pendingContentDetected: value.pendingContentDetected === true,
+    pendingContentLabel: cleanString(value.pendingContentLabel, 200),
+    pendingContentAction: PENDING_NEW_CONTENT_ACTIONS.has(value.pendingContentAction)
+      ? value.pendingContentAction
+      : null,
+    feedChanged: value.feedChanged === true,
+    feedMutation: value.feedMutation === true,
+    waitMs: nonNegativeInteger(value.waitMs, 0),
+    preActionScrollY: Math.trunc(finiteNumber(value.preActionScrollY, 0)),
   };
 }
 

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { sourceFreshnessFixture } from "./source-freshness-fixture.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -237,6 +238,7 @@ function observationFor(statusId, text) {
     ],
     coverage: {
       status: "partial",
+      sourceFreshness: sourceFreshnessFixture("x"),
       checkedThrough: "2026-07-11T04:00:00Z",
       candidateCount: 1,
     },
@@ -263,6 +265,27 @@ function nativeObservationFor(statusId, text) {
     pendingNewContentAction: "not_detected",
     pendingContentActivationEvidence: null,
     pendingContentPolicy: "reveal_if_present",
+    sourceFreshness: {
+      policyVersion: "source-freshness-recovery-v1",
+      adapterFreshnessVersion: "x-freshness-v1",
+      source: "x",
+      status: "ready",
+      outcome: "active_feed_ready",
+      verification: "active_dispatch",
+      evidence: "active_at_dispatch",
+      backgroundAtDispatch: false,
+      opened: false,
+      wakeAttempted: false,
+      activated: false,
+      probeCount: 1,
+      pendingContentDetected: false,
+      pendingContentLabel: "",
+      pendingContentAction: "not_detected",
+      feedChanged: false,
+      feedMutation: false,
+      waitMs: 5,
+      preActionScrollY: 0,
+    },
     feedMutation: false,
     sameTabMutation: false,
     restorationScope: "pre_run_position",

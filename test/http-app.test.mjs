@@ -6,6 +6,7 @@ import path from "node:path";
 import { projectRoot } from "../src/config.mjs";
 import { BRIDGE_CONTRACT_VERSION, createAkuBrowserApp } from "../src/http/app.mjs";
 import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
+import { sourceFreshnessFixture } from "./source-freshness-fixture.mjs";
 
 test("HTTP API enforces the bridge token and completes a finite run", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-http-"));
@@ -110,11 +111,16 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
     method: "POST",
     body: JSON.stringify({
       capabilities: {
-        extensionVersion: "0.5.33",
-        runtimeRevision: "source-fidelity-v35",
-        buildId: "aku-bridge-0.5.33-source-fidelity-v35",
-        adapterVersions: { x: "x-dom-v13", linkedin: "linkedin-dom-v10" },
-        actions: ["reload_self", "report_capture_quality"],
+        extensionVersion: "0.5.36",
+        runtimeRevision: "source-fidelity-v38",
+        buildId: "aku-bridge-0.5.36-source-fidelity-v38",
+        adapterVersions: { x: "x-dom-v14", linkedin: "linkedin-dom-v12" },
+        actions: [
+          "reload_self",
+          "report_capture_quality",
+          "probe_freshness",
+          "recover_source_freshness",
+        ],
       },
     }),
   });
@@ -228,6 +234,10 @@ function sampleObservation() {
         ],
       },
     ],
-    coverage: { status: "partial", candidateCount: 1 },
+    coverage: {
+      status: "partial",
+      candidateCount: 1,
+      sourceFreshness: sourceFreshnessFixture("x"),
+    },
   };
 }

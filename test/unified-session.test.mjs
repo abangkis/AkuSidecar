@@ -121,7 +121,7 @@ test("unified session resumes persisted reasoning after a Sidecar restart", asyn
   store.close();
 });
 
-test("pending-content reveal timeout retries once with bounded native detect-only capture", async (context) => {
+test("pending-content reveal failure stops explicitly at source freshness", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-unified-reveal-recovery-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const store = new SqliteStateStore(path.join(directory, "state.db"));
@@ -129,23 +129,16 @@ test("pending-content reveal timeout retries once with bounded native detect-onl
   const session = engine.startUnifiedSession({ intent: "Material engineering changes." });
   const xRun = session.children[0].run;
   const revealCommand = engine.claimBridgeCommand(xRun.id, "unified-recovery-bridge");
-  const recovering = engine.failBridgeCommand(revealCommand.id, xRun.id, {
+  const failed = engine.failBridgeCommand(revealCommand.id, xRun.id, {
+    code: "freshness_unavailable",
+    stage: "source_freshness",
     message:
-      "The x pending-content control did not reveal a changed, visible feed within the bounded deadline.",
+      "x freshness unavailable: the pending-content reveal did not produce a changed feed.",
   });
-  assert.equal(recovering.status, "waiting_for_bridge");
-  const retry = engine.claimBridgeCommand(xRun.id, "unified-recovery-bridge");
-  assert.equal(retry.payload.pendingContentPolicy, "detect_only");
-  assert.equal(retry.payload.sameTabMutationAllowed, false);
-  assert.equal(retry.payload.pendingContentRecovery, "detect_only_after_reveal_timeout");
-  engine.acceptBridgeObservation(retry.id, xRun.id, observation("x", 2));
-  await engine.waitForRun(xRun.id);
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.error.stage, "source_freshness");
   const advanced = engine.getUnifiedSession(session.id);
-  assert.equal(advanced.children[0].status, "completed");
-  assert.equal(
-    advanced.children[0].run.coverage.pendingContentRecovery,
-    "detect_only_after_reveal_timeout",
-  );
+  assert.equal(advanced.children[0].status, "failed");
   assert.equal(advanced.activeSource, "linkedin");
   store.close();
 });
@@ -278,7 +271,8 @@ function observation(source, scrolls = 0) {
       pendingNewContentLabel: "",
       pendingNewContentAction: "not_detected",
       pendingContentActivationEvidence: null,
-      pendingContentPolicy: "detect_only",
+      pendingContentPolicy: "reveal_if_present",
+      sourceFreshness: sourceFreshness(source),
       feedMutation: false,
       sameTabMutation: false,
       restorationScope: "pre_run_position",
@@ -299,6 +293,30 @@ function observation(source, scrolls = 0) {
       elapsedMs: 100,
       notes: [],
     },
+  };
+}
+
+function sourceFreshness(source) {
+  return {
+    policyVersion: "source-freshness-recovery-v1",
+    adapterFreshnessVersion: `${source}-freshness-v1`,
+    source,
+    status: "ready",
+    outcome: "active_feed_ready",
+    verification: "active_dispatch",
+    evidence: "active_at_dispatch",
+    backgroundAtDispatch: false,
+    opened: false,
+    wakeAttempted: false,
+    activated: false,
+    probeCount: 1,
+    pendingContentDetected: false,
+    pendingContentLabel: "",
+    pendingContentAction: "not_detected",
+    feedChanged: false,
+    feedMutation: false,
+    waitMs: 5,
+    preActionScrollY: 0,
   };
 }
 

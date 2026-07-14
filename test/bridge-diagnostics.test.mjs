@@ -54,7 +54,7 @@ test("bridge compatibility rejects stale versions, revisions, and adapters", () 
   });
   const compatibility = diagnostics.compatibility();
   assert.equal(compatibility.compatible, false);
-  assert.equal(compatibility.reasons.length, 7);
+  assert.equal(compatibility.reasons.length, 9);
   assert.ok(compatibility.reasons.some((reason) => reason.includes("report_capture_quality")));
 });
 
@@ -175,10 +175,15 @@ test("a recovery success does not erase two failures from rolling health", () =>
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.33",
-    runtimeRevision: "source-fidelity-v35",
-    buildId: "aku-bridge-0.5.33-source-fidelity-v35",
-    adapterVersions: { x: "x-dom-v13", linkedin: "linkedin-dom-v10" },
-    actions: ["reload_self", "report_capture_quality"],
+    extensionVersion: "0.5.36",
+    runtimeRevision: "source-fidelity-v38",
+    buildId: "aku-bridge-0.5.36-source-fidelity-v38",
+    adapterVersions: { x: "x-dom-v14", linkedin: "linkedin-dom-v12" },
+    actions: [
+      "reload_self",
+      "report_capture_quality",
+      "probe_freshness",
+      "recover_source_freshness",
+    ],
   };
 }
