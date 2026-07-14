@@ -174,9 +174,9 @@ test("a recovery success does not erase two failures from rolling health", () =>
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.20",
-    runtimeRevision: "source-fidelity-v22",
-    buildId: "aku-bridge-0.5.20-source-fidelity-v22",
+    extensionVersion: "0.5.21",
+    runtimeRevision: "source-fidelity-v23",
+    buildId: "aku-bridge-0.5.21-source-fidelity-v23",
     adapterVersions: { x: "x-dom-v12", linkedin: "linkedin-dom-v7" },
     actions: ["reload_self"],
   };

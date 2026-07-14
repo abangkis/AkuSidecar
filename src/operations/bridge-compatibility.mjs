@@ -1,6 +1,6 @@
 export const BRIDGE_REQUIREMENTS = Object.freeze({
-  minimumExtensionVersion: "0.5.20",
-  runtimeRevision: "source-fidelity-v22",
+  minimumExtensionVersion: "0.5.21",
+  runtimeRevision: "source-fidelity-v23",
   adapterVersions: Object.freeze({ x: "x-dom-v12", linkedin: "linkedin-dom-v7" }),
   requiredActions: Object.freeze(["reload_self"]),
 });
