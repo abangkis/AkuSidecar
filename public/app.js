@@ -80,6 +80,8 @@ const elements = {
   maxKnowledgeContextEvents: document.querySelector("#max-knowledge-context-events"),
   calibrationEnabled: document.querySelector("#calibration-enabled"),
   calibrationBatchSize: document.querySelector("#calibration-batch-size"),
+  preferenceLiveInfluence: document.querySelector("#preference-live-influence"),
+  resetPreferenceRuntime: document.querySelector("#reset-preference-runtime"),
   fixedEngineConstraints: document.querySelector("#fixed-engine-constraints"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
@@ -207,6 +209,7 @@ elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
+elements.resetPreferenceRuntime.addEventListener("click", resetPreferenceRuntime);
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
 elements.timelineRunnerButton.addEventListener("click", startRun);
@@ -2106,6 +2109,10 @@ function renderRuntimeSettings(configuration) {
   const calibrationBatchSize = configuration.calibrationBatchSize;
   elements.calibrationBatchSize.value = calibrationBatchSize.persistedValue ?? calibrationBatchSize.effectiveValue;
   elements.calibrationBatchSize.disabled = calibrationBatchSize.source === "environment";
+  const preferenceLiveInfluence = configuration.preferenceLiveInfluence;
+  elements.preferenceLiveInfluence.checked =
+    preferenceLiveInfluence.persistedValue ?? preferenceLiveInfluence.effectiveValue;
+  elements.preferenceLiveInfluence.disabled = preferenceLiveInfluence.source === "environment";
   for (const [name, control] of Object.entries({
     maxItemsPerSource: elements.maxItemsPerSource,
     maxScrolls: elements.maxScrolls,
@@ -2170,6 +2177,7 @@ async function saveRuntimeSettings(event) {
       telemetryBehavior: elements.telemetryBehavior.value,
       calibrationEnabled: elements.calibrationEnabled.checked,
       calibrationBatchSize: Number(elements.calibrationBatchSize.value),
+      preferenceLiveInfluence: elements.preferenceLiveInfluence.checked,
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
       planningPolicy: elements.planningPolicy.value,
@@ -2213,6 +2221,8 @@ async function saveRuntimeSettings(event) {
       configuration.telemetryBehavior.effectiveValue;
     state.bootstrap.calibration.enabled = configuration.calibrationEnabled.effectiveValue;
     state.bootstrap.calibration.batchSize = configuration.calibrationBatchSize.effectiveValue;
+    state.bootstrap.preferenceRuntime.enabled =
+      configuration.preferenceLiveInfluence.effectiveValue;
     renderRuntimeSettings(configuration);
     await loadTimelineFeed();
     await loadOverview();
@@ -2273,12 +2283,20 @@ async function loadPilotReview({ append = false } = {}) {
       source: elements.reviewSourceFilter.value,
       verdict: elements.reviewVerdictFilter.value,
     });
-    const [{ review }, { profile }, { replay }, { experiment }, { comparison }] = await Promise.all([
+    const [
+      { review },
+      { profile },
+      { replay },
+      { experiment },
+      { comparison },
+      { runtime },
+    ] = await Promise.all([
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
       api("/api/preferences/experiment"),
       api("/api/preferences/shadow-comparison?limit=5&offset=0"),
+      api("/api/preferences/runtime"),
     ]);
     if (
       review.runs.length === 0 &&
@@ -2296,6 +2314,7 @@ async function loadPilotReview({ append = false } = {}) {
       renderSourceHealth(review.summary.sourceHealth);
       renderReasoningEconomics(review.summary.tokenUsage, review.runs);
       renderPreferenceReadiness(replay);
+      renderPreferenceRuntime(runtime);
       renderPreferenceExperiment(experiment);
       renderShadowComparison(comparison);
     }
@@ -2331,20 +2350,56 @@ async function loadPilotReview({ append = false } = {}) {
 
 async function fitPreferenceExperiment() {
   elements.fitPreferenceExperiment.disabled = true;
-  elements.preferenceExperimentDetail.textContent = "Fitting shadow-only snapshot…";
+  elements.preferenceExperimentDetail.textContent = "Refitting the local snapshot…";
   try {
-    const { experiment } = await api("/api/preferences/experiment/fit", { method: "POST" });
-    renderPreferenceExperiment(experiment);
+    await api("/api/preferences/runtime/refit", { method: "POST" });
+    await loadPilotReview();
   } catch (error) {
     elements.preferenceExperimentDetail.textContent = error.message;
+  } finally {
+    elements.fitPreferenceExperiment.disabled = false;
   }
+}
+
+async function resetPreferenceRuntime() {
+  elements.resetPreferenceRuntime.disabled = true;
+  elements.runtimeSettingsStatus.textContent = "Resetting to source order…";
+  try {
+    const { runtime } = await api("/api/preferences/runtime/reset", { method: "POST" });
+    state.bootstrap.preferenceRuntime = runtime;
+    elements.runtimeSettingsStatus.textContent =
+      "Local model reset. Source and platform order will be used until new feedback is fitted.";
+  } catch (error) {
+    elements.runtimeSettingsStatus.textContent = error.message;
+  } finally {
+    elements.resetPreferenceRuntime.disabled = false;
+  }
+}
+
+function renderPreferenceRuntime(runtime) {
+  const active = runtime?.activationState === "active";
+  const disabled = runtime?.enabled === false;
+  setStatus(
+    elements.preferenceReadinessStatus,
+    disabled ? "Disabled" : active ? "Active" : "Baseline",
+    active ? "ok" : disabled ? "warning" : "neutral",
+  );
+  elements.preferenceReadinessDetail.textContent = [
+    active
+      ? "Automatic local model is reordering selected items"
+      : "Source and platform order is the active baseline",
+    `${runtime?.signalCounts?.total ?? 0} assessed preference signal(s)`,
+    active ? `snapshot ${runtime.currentSnapshot?.id ?? "active"}` : null,
+    "maximum movement: two positions",
+    "eligibility unchanged",
+  ].filter(Boolean).join(" · ");
 }
 
 function renderPreferenceExperiment(experiment) {
   const labels = {
     blocked: "Blocked",
     ready_to_fit: "Ready to fit",
-    fitted: "Shadow fitted",
+    fitted: experiment.liveInfluence ? "Runtime fitted" : "Diagnostic fitted",
   };
   const fitted = experiment.status === "fitted";
   const ready = experiment.status === "ready_to_fit";
@@ -2353,7 +2408,7 @@ function renderPreferenceExperiment(experiment) {
     labels[experiment.status] ?? humanize(experiment.status),
     fitted ? "ok" : ready ? "warning" : "neutral",
   );
-  elements.fitPreferenceExperiment.disabled = !ready;
+  elements.fitPreferenceExperiment.disabled = false;
   const snapshot = experiment.currentSnapshot;
   elements.preferenceExperimentDetail.textContent = snapshot
     ? [
@@ -2362,19 +2417,19 @@ function renderPreferenceExperiment(experiment) {
         `agreement ${formatPercent(snapshot.evaluation.agreement)}`,
         `balanced ${formatPercent(snapshot.evaluation.balancedAccuracy)}`,
         `${snapshot.shadow.scoredCandidates} shadow-scored candidates`,
-        "live influence off",
+        snapshot.liveInfluence ? "bounded live influence on" : "diagnostic snapshot only",
       ].join(" · ")
     : [
         `${experiment.readiness.passedGates}/${experiment.readiness.totalGates} readiness gates passed`,
         experiment.latestSnapshot ? "latest snapshot is stale" : "no snapshot persisted",
-        "live influence off",
+        "manual diagnostics are optional",
       ].join(" · ");
 }
 
 function renderShadowComparison(comparison) {
   if (!comparison?.available) {
     elements.shadowComparisonDetail.textContent =
-      "Waiting for a current fitted snapshot · live influence off.";
+      "Waiting for a current fitted snapshot.";
     elements.shadowCandidateList.replaceChildren();
     return;
   }
@@ -2388,7 +2443,7 @@ function renderShadowComparison(comparison) {
     summary.duplicateCandidatesCollapsed
       ? `${summary.duplicateCandidatesCollapsed} repeat appearances collapsed`
       : null,
-    "live influence off",
+    "comparison does not alter eligibility",
   ].filter(Boolean).join(" · ");
   renderShadowCandidates(comparison.candidates ?? [], summary.wouldMoveUp);
 }
@@ -2491,7 +2546,7 @@ function renderPreferenceReadiness(replay) {
     `${replay.dataset.evaluatedCandidates} evaluated candidates`,
     `${replay.dataset.assessedCandidates} assessed`,
     `${replay.dataset.assessedFeedback} feedback signals have structured assessment`,
-    "Live ranking influence remains disabled",
+    "These gates are diagnostics; automatic local fitting does not wait for all of them",
   ].join(" · ");
 }
 

@@ -71,6 +71,17 @@ const DEFINITIONS = {
     read: (config) => config.calibration.batchSize,
     apply: (config, value) => { config.calibration.batchSize = value; },
   },
+  preferenceLiveInfluence: {
+    key: "preference.live_influence",
+    applyMode: "next_run",
+    parse: (value) => value === true || value === "true",
+    valid: (value) => typeof value === "boolean",
+    read: (config) => config.preference?.enabled !== false,
+    apply: (config, value) => {
+      config.preference ??= {};
+      config.preference.enabled = value;
+    },
+  },
   maxItemsPerSource: integerDefinition(
     "engine.max_items_per_source",
     "maxItems",

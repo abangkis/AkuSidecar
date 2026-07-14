@@ -79,7 +79,7 @@ test("HTTP API drives one sequential unified session without changing the bridge
   ));
   assert.equal(calibration.status, "completed");
   assert.equal(calibration.snapshot.liveInfluence, false);
-  assert.equal(calibration.snapshot.activationState, "shadow_only");
+  assert.equal(calibration.snapshot.activationState, "feeds_local_fit");
   const activeCalibration = await jsonFetch(`${origin}/api/calibration/active`);
   assert.equal(activeCalibration.calibration, null);
 

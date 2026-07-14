@@ -28,7 +28,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
-export const APP_VERSION = "0.5.18";
+export const APP_VERSION = "0.5.19";
 
 export function createAkuBrowserApp({
   config,
@@ -44,11 +44,18 @@ export function createAkuBrowserApp({
     maxItemsPerSource: 5,
     liveInfluence: false,
   };
+  config.preference ??= {
+    enabled: true,
+    maxRankDisplacement: 2,
+    minimumScoreDelta: 0.03,
+    automaticFitFeedbackDelta: 5,
+  };
   applyPersistedConfiguration(config, store);
   const engine = new JobEngine({
     store,
     reasoningProvider,
     limits: config.limits,
+    preferencePolicy: config.preference,
     logger,
   });
   const bridgeToken = store.getOrCreateBridgeToken();
@@ -374,8 +381,9 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
         enabled: config.calibration.enabled,
         triggerPolicy: config.calibration.triggerPolicy,
         batchSize: config.calibration.batchSize,
-        liveInfluence: false,
+        liveInfluence: engine.getPreferenceRuntime().liveInfluence,
       },
+      preferenceRuntime: engine.getPreferenceRuntime(),
       presentation: config.presentation,
       sourceRegistry: buildSourceRegistry(config.sources?.active ?? ["x", "linkedin"]),
       limits: config.limits,
@@ -423,6 +431,21 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
 
   if (request.method === "GET" && url.pathname === "/api/preferences/profile") {
     sendJson(response, 200, { profile: engine.getPreferenceProfile() });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/preferences/runtime") {
+    sendJson(response, 200, { runtime: engine.getPreferenceRuntime() });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/preferences/runtime/refit") {
+    sendJson(response, 200, { runtime: engine.refitPreferenceRuntime() });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/preferences/runtime/reset") {
+    sendJson(response, 200, { runtime: engine.resetPreferenceRuntime() });
     return;
   }
 

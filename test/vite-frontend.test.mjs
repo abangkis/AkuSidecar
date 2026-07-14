@@ -188,8 +188,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(styles, /\.source-layout-content a/);
   assert.match(appScript, /referrerPolicy = "no-referrer"/);
   assert.match(appScript, /fitPreferenceExperiment/);
-  assert.match(html, /Offline preference experiment/);
-  assert.match(html, /Shadow comparison/);
+  assert.match(html, /Local personalization/);
+  assert.match(html, /Advanced preference diagnostics/);
+  assert.match(html, /Eligibility-boundary comparison/);
   assert.match(html, /shadow-candidate-list/);
   assert.match(appScript, /renderShadowCandidates/);
   assert.match(html, /default-presentation/);

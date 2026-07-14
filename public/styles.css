@@ -930,6 +930,22 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   background: rgba(255, 255, 255, 0.018);
 }
 
+.preference-diagnostics {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.preference-diagnostics > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.preference-diagnostics[open] > summary {
+  margin-bottom: 0.8rem;
+}
+
 .shadow-comparison {
   margin-top: 12px;
   padding: 14px;

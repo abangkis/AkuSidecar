@@ -131,6 +131,14 @@
           <fieldset class="settings-group">
             <legend>Personalization</legend>
             <div class="settings-card">
+              <label class="settings-row" for="preference-live-influence">
+                <span class="settings-copy"><strong>Local personalization</strong><small>Use an automatically fitted local model for bounded reordering. It never adds or removes selected items.</small></span>
+                <input id="preference-live-influence" name="preferenceLiveInfluence" type="checkbox" />
+              </label>
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Reset learned order</strong><small>Return to the source/platform baseline. Existing audit history is retained; new feedback can start a fresh local snapshot.</small></span>
+                <button id="reset-preference-runtime" class="secondary-button" type="button">Reset to baseline</button>
+              </div>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit your lightweight interest hints and active sources.</small></span>
                 <button id="edit-onboarding-profile" class="secondary-button" type="button">Edit profile</button>
@@ -208,7 +216,7 @@
           </fieldset>
           <fieldset class="settings-group">
             <legend>Calibration</legend>
-            <p class="settings-group-note">A separate forced-label experiment. It remains shadow-only and never changes the live timeline.</p>
+            <p class="settings-group-note">A short first-run labeling session. More/Less labels feed the automatic local preference model; Neutral leaves the baseline unchanged.</p>
             <div class="settings-card">
               <label class="settings-row" for="calibration-enabled">
                 <span class="settings-copy"><strong>First-run calibration</strong><small>Start calibration automatically after the first successful update.</small></span>
@@ -219,7 +227,7 @@
                 <input id="calibration-batch-size" name="calibrationBatchSize" type="number" min="2" max="10" step="1" />
               </label>
               <div class="settings-row">
-                <span class="settings-copy"><strong>Activation boundary</strong><small>Trigger: first run only · ranking influence: disabled · snapshots: shadow analysis only.</small></span>
+                <span class="settings-copy"><strong>Influence boundary</strong><small>Selected items only · maximum two-position movement · no eligibility or attention-budget changes.</small></span>
               </div>
             </div>
           </fieldset>
@@ -328,28 +336,31 @@
             <section class="preference-readiness" aria-labelledby="preference-readiness-heading">
               <div class="section-heading compact-heading">
                 <div>
-                  <p class="step-label">OFFLINE REPLAY</p>
-                  <h3 id="preference-readiness-heading">Preference readiness</h3>
+                  <p class="step-label">LOCAL PERSONALIZATION</p>
+                  <h3 id="preference-readiness-heading">Preference runtime</h3>
                 </div>
                 <span id="preference-readiness-status" class="status-pill status-neutral">Collecting</span>
               </div>
-              <div id="preference-readiness-gates" class="readiness-gates"></div>
               <p id="preference-readiness-detail" class="review-guidance"></p>
-              <div class="preference-experiment">
-                <div>
-                  <strong>Offline preference experiment</strong>
-                  <span id="preference-experiment-status" class="status-pill status-neutral">Blocked</span>
+              <details class="preference-diagnostics">
+                <summary>Advanced preference diagnostics</summary>
+                <div id="preference-readiness-gates" class="readiness-gates"></div>
+                <div class="preference-experiment">
+                  <div>
+                    <strong>Model diagnostics</strong>
+                    <span id="preference-experiment-status" class="status-pill status-neutral">Checking</span>
+                  </div>
+                  <p id="preference-experiment-detail" class="review-guidance"></p>
+                  <button id="fit-preference-experiment" class="secondary-button" type="button">
+                    Refit local snapshot
+                  </button>
                 </div>
-                <p id="preference-experiment-detail" class="review-guidance"></p>
-                <button id="fit-preference-experiment" class="secondary-button" type="button" disabled>
-                  Fit shadow snapshot
-                </button>
-              </div>
-              <div class="shadow-comparison" aria-live="polite">
-                <strong>Shadow comparison</strong>
-                <p id="shadow-comparison-detail" class="review-guidance">No current snapshot.</p>
-                <div id="shadow-candidate-list" class="shadow-candidate-list"></div>
-              </div>
+                <div class="shadow-comparison" aria-live="polite">
+                  <strong>Eligibility-boundary comparison</strong>
+                  <p id="shadow-comparison-detail" class="review-guidance">No current snapshot.</p>
+                  <div id="shadow-candidate-list" class="shadow-candidate-list"></div>
+                </div>
+              </details>
             </section>
 
             <section class="reasoning-economics" aria-labelledby="reasoning-economics-heading">

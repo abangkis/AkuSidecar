@@ -10,7 +10,7 @@ test("calibration sampler round-robins raw candidates while preserving source or
   ]);
 });
 
-test("calibration lifecycle stores forced labels separately and completes shadow-only", () => {
+test("calibration lifecycle feeds directional labels into local fitting", () => {
   const store = memoryStore([child("x", 2), child("linkedin", 1)]);
   const engine = new CalibrationEngine({ store, maxItems: 10 });
   let session = engine.createFromUnifiedSession("unified-1");
@@ -25,6 +25,11 @@ test("calibration lifecycle stores forced labels separately and completes shadow
   assert.equal(session.snapshot.labels.lessLikeThis, 1);
   assert.equal(session.snapshot.labels.captureIssues, 0);
   assert.equal(session.snapshot.liveInfluence, false);
+  assert.equal(session.snapshot.activationState, "feeds_local_fit");
+  assert.deepEqual(store.preferenceFeedback.map((entry) => entry.kind), [
+    "more_like_this",
+    "less_like_this",
+  ]);
   assert.equal(engine.createFromUnifiedSession("unified-1").id, session.id);
 });
 
@@ -62,6 +67,7 @@ function memoryStore(children) {
   let calibration = null;
   let createdCount = 0;
   const settings = new Map();
+  const preferenceFeedback = [];
   return {
     setSetting(key, value) { settings.set(key, value); },
     getUnifiedSession(id) {
@@ -84,6 +90,9 @@ function memoryStore(children) {
     getActiveCalibrationSession() {
       return calibration?.status === "reviewing" ? calibration : null;
     },
+    addPreferenceFeedback(runId, feedback) {
+      preferenceFeedback.push({ runId, ...feedback });
+    },
     recordCalibrationDecision(id, ordinal, decision) {
       if (calibration?.id !== id || !calibration.samples[ordinal]) return null;
       Object.assign(calibration.samples[ordinal], decision);
@@ -97,6 +106,7 @@ function memoryStore(children) {
       return calibration;
     },
     settings,
+    preferenceFeedback,
     get createdCount() { return createdCount; },
   };
 }

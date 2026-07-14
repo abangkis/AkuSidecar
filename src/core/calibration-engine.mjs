@@ -52,8 +52,17 @@ export class CalibrationEngine {
       throw new ContractError("Calibration session is unavailable or already completed.");
     }
     const decision = normalizeDecision(input);
+    const sample = session.samples.find((entry) => entry.ordinal === ordinal);
     let updated = this.store.recordCalibrationDecision(id, ordinal, decision);
     if (!updated) throw new ContractError("Calibration sample does not exist.");
+    if (sample && ["more_like_this", "less_like_this"].includes(decision.label)) {
+      this.store.addPreferenceFeedback(sample.runId, {
+        evidenceKey: sample.evidenceKey,
+        kind: decision.label,
+        reasonCode: null,
+        note: "",
+      });
+    }
     if (updated.resolvedCount === updated.sampleCount) {
       updated = this.store.completeCalibrationSession(id, buildSnapshot(updated));
       if (updated.triggerKind === "first_run") {
@@ -113,6 +122,6 @@ function buildSnapshot(session) {
     },
     sources: [...new Set(labeled.map((sample) => sample.source))],
     liveInfluence: false,
-    activationState: "shadow_only",
+    activationState: "feeds_local_fit",
   };
 }

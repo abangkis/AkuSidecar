@@ -161,6 +161,12 @@ export function loadConfig(env = process.env) {
       maxItemsPerSource: 5,
       liveInfluence: false,
     },
+    preference: {
+      enabled: true,
+      maxRankDisplacement: 2,
+      minimumScoreDelta: 0.03,
+      automaticFitFeedbackDelta: 5,
+    },
     reasoning: {
       provider,
       model: sharedModel || reasoningDefaults.candidateEvaluation?.model || null,

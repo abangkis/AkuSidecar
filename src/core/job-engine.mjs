@@ -26,13 +26,20 @@ import {
   fitOfflinePreferenceExperiment,
   preferenceExperimentStatus,
 } from "./offline-preference-experiment.mjs";
+import {
+  composePreferenceOrder,
+  ensureLocalPreferenceRuntime,
+  preferenceRuntimeStatus,
+  resetLocalPreferenceRuntime,
+} from "./preference-runtime.mjs";
 import { buildPilotReview } from "./pilot-review.mjs";
 
 export class JobEngine {
-  constructor({ store, reasoningProvider, limits, logger = console }) {
+  constructor({ store, reasoningProvider, limits, preferencePolicy = {}, logger = console }) {
     this.store = store;
     this.reasoningProvider = reasoningProvider;
     this.limits = limits;
+    this.preferencePolicy = preferencePolicy;
     this.logger = logger;
     this.activeReasoning = new Map();
   }
@@ -58,6 +65,7 @@ export class JobEngine {
 
   startUnifiedSession(input) {
     const request = validateUnifiedSessionRequest(input, this.limits);
+    this.#ensurePreferenceRuntime({ force: true, trigger: "before_session" });
     this.store.createUnifiedSession(request);
     return this.#reconcileUnifiedSession(request.id);
   }
@@ -180,7 +188,9 @@ export class JobEngine {
       (child) => child.run?.status === "completed",
     ).length;
     const status = completedCount > 0 ? "partial" : "cancelled";
-    const outcome = buildUnifiedSessionOutcome(session, status);
+    const outcome = buildUnifiedSessionOutcome(session, status, {
+      preferenceRuntime: this.getPreferenceRuntime(),
+    });
     return this.store.cancelUnifiedSession(id, status, outcome.result, outcome.coverage);
   }
 
@@ -371,7 +381,25 @@ export class JobEngine {
       (entry) => entry.evidenceKey === feedback.evidenceKey,
     );
     if (!candidate) throw new ContractError("preference feedback target was not evaluated");
-    return this.store.addPreferenceFeedback(runId, feedback);
+    const updated = this.store.addPreferenceFeedback(runId, feedback);
+    this.#ensurePreferenceRuntime({ trigger: "feedback_threshold" });
+    return updated;
+  }
+
+  getPreferenceRuntime() {
+    return preferenceRuntimeStatus(this.store, this.preferencePolicy, {
+      enabled: this.preferencePolicy.enabled !== false,
+    });
+  }
+
+  refitPreferenceRuntime() {
+    return this.#ensurePreferenceRuntime({ force: true, trigger: "manual_diagnostic" });
+  }
+
+  resetPreferenceRuntime() {
+    return resetLocalPreferenceRuntime(this.store, this.preferencePolicy, {
+      enabled: this.preferencePolicy.enabled !== false,
+    });
   }
 
   getPreferenceProfile() {
@@ -396,6 +424,13 @@ export class JobEngine {
     if (experiment.status !== "fitted") return experiment;
     const snapshot = this.store.savePreferenceModelSnapshot(experiment.snapshot);
     return preferenceExperimentStatus(runs, snapshot);
+  }
+
+  #ensurePreferenceRuntime(options = {}) {
+    return ensureLocalPreferenceRuntime(this.store, this.preferencePolicy, {
+      ...options,
+      enabled: this.preferencePolicy.enabled !== false,
+    });
   }
 
   getPreferenceShadowComparison({ limit = 50, offset = 0, runLimit = 500 } = {}) {
@@ -469,7 +504,9 @@ export class JobEngine {
         : completedCount > 0
           ? "partial"
           : "failed";
-    const outcome = buildUnifiedSessionOutcome(session, status);
+    const outcome = buildUnifiedSessionOutcome(session, status, {
+      preferenceRuntime: this.getPreferenceRuntime(),
+    });
     return this.store.completeUnifiedSession(sessionId, status, outcome.result, outcome.coverage);
   }
 
@@ -948,11 +985,16 @@ function assertCandidateAssessments(result, observation, evaluatedEvidenceKeys) 
   }
 }
 
-export function buildUnifiedSessionOutcome(session, status = session.status) {
+export function buildUnifiedSessionOutcome(session, status = session.status, options = {}) {
   const completedChildren = session.children.filter(
     (child) => child.run?.status === "completed",
   );
-  const mergedItems = mergeUnifiedItems(session.id, completedChildren, session.maxItemsTotal);
+  const mergedItems = mergeUnifiedItems(
+    session.id,
+    completedChildren,
+    session.maxItemsTotal,
+    options.preferenceRuntime,
+  );
   const completedSources = completedChildren.map((child) => child.source);
   const failedSources = session.children
     .filter((child) => child.status === "failed")
@@ -991,6 +1033,7 @@ export function buildUnifiedSessionOutcome(session, status = session.status) {
     resultCountBySource: Object.fromEntries(
       session.children.map((child) => [child.source, child.run?.result?.items?.length ?? 0]),
     ),
+    preferenceRuntime: summarizePreferenceComposition(mergedItems, options.preferenceRuntime),
     children: session.children.map((child) => ({
       source: child.source,
       runId: child.runId,
@@ -1003,7 +1046,12 @@ export function buildUnifiedSessionOutcome(session, status = session.status) {
   return { result, coverage };
 }
 
-export function mergeUnifiedItems(sessionId, completedChildren, maxItemsTotal = 10) {
+export function mergeUnifiedItems(
+  sessionId,
+  completedChildren,
+  maxItemsTotal = 10,
+  preferenceRuntime = null,
+) {
   const merged = [];
   const queues = completedChildren.map((child) => ({
     child,
@@ -1014,12 +1062,45 @@ export function mergeUnifiedItems(sessionId, completedChildren, maxItemsTotal = 
     for (const queue of queues) {
       const item = queue.items[queue.index];
       if (!item) continue;
-      merged.push({ sessionId, runId: queue.child.run.id, item });
+      const preferenceCandidate = queue.child.run.candidateEvaluations?.find(
+        (candidate) => candidate.evidenceKey === item.evidenceKey,
+      );
+      merged.push({
+        sessionId,
+        runId: queue.child.run.id,
+        item,
+        preferenceCandidate: preferenceCandidate?.assessment
+          ? {
+              source: queue.child.source,
+              decision: preferenceCandidate.decision,
+              assessment: preferenceCandidate.assessment,
+            }
+          : null,
+      });
       queue.index += 1;
-      if (merged.length >= maxItemsTotal) return merged;
+      if (merged.length >= maxItemsTotal) {
+        return composePreferenceOrder(merged, preferenceRuntime);
+      }
     }
   }
-  return merged;
+  return composePreferenceOrder(merged, preferenceRuntime);
+}
+
+function summarizePreferenceComposition(items, runtime) {
+  const influenced = items.filter((entry) => entry.preference?.liveInfluence);
+  return {
+    policyVersion: runtime?.policy?.version ?? "preference-runtime-v1",
+    activationState: runtime?.activationState ?? "baseline",
+    liveInfluence: influenced.length > 0,
+    snapshotId: runtime?.currentSnapshot?.id ?? null,
+    scoredItems: items.filter((entry) => Number.isFinite(entry.preference?.probability)).length,
+    movedItems: influenced.filter((entry) => entry.preference.displacement !== 0).length,
+    maxObservedDisplacement: influenced.reduce(
+      (maximum, entry) => Math.max(maximum, Math.abs(entry.preference.displacement)),
+      0,
+    ),
+    eligibilityChanged: false,
+  };
 }
 
 function assertPlatformOrderItems(result, evaluatedEvidenceKeys) {

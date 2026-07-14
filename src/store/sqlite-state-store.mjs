@@ -402,6 +402,13 @@ export class SqliteStateStore {
     return row ? JSON.parse(row.snapshot_json) : null;
   }
 
+  getPreferenceModelSnapshotById(id) {
+    const row = this.database
+      .prepare("SELECT snapshot_json FROM preference_model_snapshots WHERE id = ?")
+      .get(id);
+    return row ? JSON.parse(row.snapshot_json) : null;
+  }
+
   getLatestPreferenceModelSnapshot() {
     const row = this.database
       .prepare("SELECT snapshot_json FROM preference_model_snapshots ORDER BY created_at DESC, id DESC LIMIT 1")

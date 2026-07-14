@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { buildPreferenceReplay, buildPreferenceSignals } from "./preference-replay.mjs";
 
 const SCORE_FIELDS = ["novelty", "urgency", "actionability"];
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
 const PROMOTION_THRESHOLD = 0.6;
 const DEMOTION_THRESHOLD = 0.25;
 
@@ -18,14 +18,14 @@ export function preferenceExperimentStatus(runs, latestSnapshot = null) {
     version: SNAPSHOT_VERSION,
     mode: "offline_preference_experiment",
     status: ready ? (currentSnapshot ? "fitted" : "ready_to_fit") : "blocked",
-    liveInfluence: false,
+    liveInfluence: currentSnapshot?.liveInfluence === true,
     datasetFingerprint,
     readiness: replay.readiness,
     dataset: replay.dataset,
     latestSnapshot,
     currentSnapshot,
     limitations: [
-      "No experiment output can alter live candidate eligibility, ranking, or attention budgets.",
+      "Preference snapshots never alter candidate eligibility or attention budgets.",
       ready ? null : "Every replay readiness gate must pass before fitting is allowed.",
       latestSnapshot && !currentSnapshot
         ? "The latest persisted snapshot belongs to an older feedback dataset."
@@ -36,21 +36,43 @@ export function preferenceExperimentStatus(runs, latestSnapshot = null) {
 
 export function fitOfflinePreferenceExperiment(runs, options = {}) {
   const status = preferenceExperimentStatus(runs);
-  if (status.status === "blocked") return status;
+  const runtime = options.runtime === true;
+  if (status.status === "blocked" && !runtime) return status;
   const { candidates, signals } = buildPreferenceSignals(runs);
   const assessedSignals = deduplicateSignals(signals.filter((signal) => signal.assessment));
+  const positiveSignals = assessedSignals.filter((signal) => signal.polarity === "positive").length;
+  const negativeSignals = assessedSignals.filter((signal) => signal.polarity === "negative").length;
+  if (runtime && (assessedSignals.length < 4 || positiveSignals < 1 || negativeSignals < 1)) {
+    return {
+      ...status,
+      status: "baseline",
+      liveInfluence: false,
+      limitations: [
+        ...status.limitations,
+        "Local fitting requires at least four assessed signals with both preference polarities.",
+      ],
+    };
+  }
   const { training, holdout } = splitByRun(assessedSignals);
-  const model = trainModel(training);
-  const evaluation = evaluateModel(model, holdout);
+  const evaluationModel = trainModel(training.length > 0 ? training : assessedSignals);
+  const evaluation = evaluateModel(evaluationModel, holdout);
+  const model = trainModel(runtime ? assessedSignals : training);
   const shadow = evaluateShadow(model, deduplicateCandidateEntries(candidates));
   const createdAt = options.createdAt ?? new Date().toISOString();
   const snapshot = {
-    id: `preference-v${SNAPSHOT_VERSION}-${status.datasetFingerprint.slice(0, 16)}`,
+    id: `${runtime ? "preference-runtime" : "preference-diagnostic"}-v${SNAPSHOT_VERSION}-${status.datasetFingerprint.slice(0, 16)}`,
     version: SNAPSHOT_VERSION,
-    policyVersion: "offline-preference-v1.1",
+    policyVersion: runtime ? "preference-runtime-v1" : "preference-diagnostic-v1",
     datasetFingerprint: status.datasetFingerprint,
     createdAt,
-    liveInfluence: false,
+    origin: runtime ? "local_runtime" : "manual_diagnostic",
+    fitTrigger: options.trigger ?? (runtime ? "automatic" : "manual"),
+    liveInfluence: runtime,
+    dataset: {
+      assessedFeedback: assessedSignals.length,
+      positiveSignals,
+      negativeSignals,
+    },
     split: {
       strategy: "stable_run_holdout_20_percent",
       trainingSignals: training.length,
@@ -62,10 +84,12 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
     evaluation,
     shadow,
     proposedPolicy: {
-      rankingInfluence: false,
+      rankingInfluence: runtime,
+      influence: runtime ? "bounded_selected_rerank" : "diagnostic_only",
+      maxRankDisplacement: runtime ? 2 : 0,
       activationRequiresDecision: true,
       explorationLane: {
-        active: false,
+        active: runtime,
         proposedBudgetFraction: 0.1,
         purpose: "Preserve bounded discovery outside learned preference tendencies.",
       },
@@ -84,7 +108,8 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
   };
   return {
     ...status,
-    status: "fitted",
+    status: runtime ? "active" : "fitted",
+    liveInfluence: runtime,
     snapshot,
     currentSnapshot: snapshot,
     latestSnapshot: snapshot,
@@ -231,7 +256,10 @@ export function preferenceDatasetFingerprint(runs) {
     .sort((left, right) =>
       `${left.runId}:${left.evidenceKey}`.localeCompare(`${right.runId}:${right.evidenceKey}`),
     );
-  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+  return createHash("sha256")
+    .update(`preference-model-v${SNAPSHOT_VERSION}:`)
+    .update(JSON.stringify(stable))
+    .digest("hex");
 }
 
 function splitByRun(signals) {
