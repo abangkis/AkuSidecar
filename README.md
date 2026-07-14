@@ -9,11 +9,24 @@ AkuSidecar is the local AkuBrowser runtime. It owns the pinned local UI, HTTP AP
 
 ## Development
 
+Install dependencies once:
+
 ```powershell
 npm install
-$env:AKU_REASONING_PROVIDER='codex-sdk'
-npm run dev
 ```
+
+For normal AkuWorkspace development, let the user-visible AkuSupervisor own the
+Sidecar watcher and its complete process tree:
+
+```powershell
+cd ..\AkuSupervisor
+.\scripts\dev.ps1 akusidecar
+```
+
+Use `npm run dev` directly only for isolated Sidecar development when
+AkuSupervisor is intentionally not in use. Do not set a reasoning-provider
+environment variable for normal startup; the committed default and persisted
+AkuBrowser Settings select `codex-sdk`.
 
 Open `http://127.0.0.1:47821` in the same Chrome profile where AkuBridge is loaded.
 
@@ -31,34 +44,46 @@ npm start
 
 ## Configuration
 
-Codex reasoning can be tuned without changing source code:
+The normal configuration surface is AkuBrowser **Settings**. Settings are
+allowlisted, persisted in SQLite, survive Sidecar restarts, and report their
+effective value, persisted value, source, and apply mode.
 
-- `AKU_REASONING_PROVIDER=codex-sdk`
-- `AKU_CODEX_MODEL=<model id>`; omit it to inherit the Codex CLI default
-- `AKU_CODEX_PLANNING_MODEL=<model id>`; overrides only acquisition planning
-- `AKU_CODEX_EVALUATION_MODEL=<model id>`; overrides only candidate evaluation
-- `AKU_CODEX_PLANNING_EFFORT=minimal|low|medium|high|xhigh`
-- `AKU_CODEX_EVALUATION_EFFORT=minimal|low|medium|high|xhigh`
-- `AKU_CODEX_TIMEOUT_MS=<milliseconds>`
-- `AKU_MISSING_SOURCE_TAB_POLICY=open_missing_tab|fail_fast`; optional advanced override for the dashboard setting
+Settings that apply live or to the next run include source activation,
+presentation, Timeline capacity, stream width, telemetry behavior, calibration,
+missing-source-tab policy, per-source item budget, native scrolls, acquisition
+rounds, and knowledge-context size. Reasoning provider, planning/evaluation
+model, effort, planning policy, and timeout are startup settings: saving them
+marks a visible restart as required. Restart AkuSidecar through AkuSupervisor;
+the application never hot-swaps a provider or starts a hidden replacement.
 
-Committed defaults live in `config/reasoning.json`: Luna High for the narrow acquisition-planning fallback, Terra High for candidate evaluation, and `deterministic_sparse_gap` so planning tokens are spent only when one or two unseen candidates and an exhausted movement budget make one anchored follow-up plausible. `AKU_CODEX_MODEL` remains a convenient shared override; phase-specific environment variables take precedence.
+Committed reasoning defaults live in `config/reasoning.json`: `codex-sdk`, Luna
+High for acquisition planning, Terra High for candidate evaluation, and
+`deterministic_sparse_gap`. A fresh installation can therefore run without any
+environment setup.
 
 The effective configured model and evaluation effort appear in the AkuBrowser header. Provider-reported input, cached-input, output, and reasoning-output tokens are stored per reasoning invocation for local performance and economic analysis. Token telemetry is not presented as a monetary cost unless a separate pricing contract is configured.
 
-- `AKU_BROWSER_PORT` defaults to `47821`.
-- `AKU_REASONING_PROVIDER` is `deterministic` or `codex-sdk`.
-- `AKU_DATABASE_PATH` overrides the local SQLite path.
-- `AKU_CODEX_PATH` overrides the packaged Codex CLI path.
-- `AKU_CODEX_TIMEOUT_MS` defaults to `120000`.
+### Legacy and recovery environment overrides
+
+Environment variables remain implemented for compatibility, packaging, and
+short-lived recovery diagnostics, but they are not the recommended install or
+daily-run workflow. An active override takes precedence over SQLite and locks
+the corresponding Settings control, which can make the visible configuration
+misleading if it is left behind. Remove the override after the diagnostic run.
+
+The supported compatibility overrides are `AKU_REASONING_PROVIDER`,
+`AKU_CODEX_MODEL`, `AKU_CODEX_PLANNING_MODEL`,
+`AKU_CODEX_EVALUATION_MODEL`, `AKU_CODEX_PLANNING_EFFORT`,
+`AKU_CODEX_EVALUATION_EFFORT`, `AKU_CODEX_PLANNING_POLICY`,
+`AKU_CODEX_TIMEOUT_MS`, and `AKU_MISSING_SOURCE_TAB_POLICY`. Low-level process
+overrides `AKU_BROWSER_PORT`, `AKU_DATABASE_PATH`, and `AKU_CODEX_PATH` are not
+dashboard settings and should be reserved for packaging or explicit recovery.
+The normal port is `47821`, database path is `runtime/aku-browser.db`, and
+reasoning timeout is `120000` ms.
 
 Gate 0B uses a fixed native-capture budget: at most two 75%-viewport scrolls, three snapshots, and 45 seconds. AkuBridge restores the applicable capture baseline and reports the actual movement in coverage. Computer Use is not an implicit fallback.
 
 When the initial acquisition cannot find the requested source, `open_missing_tab` lets AkuBridge create one inactive canonical feed tab (`https://x.com/home` or `https://www.linkedin.com/feed/`) and wait for it to load before capture. `fail_fast` preserves the earlier behavior. A follow-up round never opens a replacement tab because it must remain anchored to the original observation frontier.
-
-The normal configuration surface is the AkuBrowser `Settings` view. Its value is persisted in SQLite, applies to the next run without a restart, and survives Sidecar restarts. A valid environment variable remains available as an advanced recovery override and disables dashboard editing while active.
-
-The same view exposes the existing reasoning provider, evaluation/planning models, evaluation/planning efforts, acquisition-planning policy, and timeout. These are startup settings: saving them does not hot-swap the active provider or start a hidden process. The dashboard shows a pending restart until the user restarts the visible Sidecar process.
 
 Gate 0B.2 explicitly requests one allowlisted same-tab activation when `New posts`/`Show posts` is visible. Coverage distinguishes the pre-action position from the post-reveal baseline and never claims that the old feed view was restored.
 
