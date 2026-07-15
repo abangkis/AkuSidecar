@@ -264,6 +264,7 @@ type TimelineItem struct {
 	Rank        int                 `json:"rank"`
 	Item        ReasonedItem        `json:"item"`
 	Assessment  CandidateAssessment `json:"assessment"`
+	Evidence    *Block              `json:"evidence,omitempty"`
 	Coverage    map[string]any      `json:"coverage"`
 	CreatedAt   string              `json:"createdAt"`
 }

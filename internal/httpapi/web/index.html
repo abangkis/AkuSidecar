@@ -1,94 +1,157 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AkuBrowser</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">AKUBROWSER · GO RUNTIME</p>
-      <h1>Your finite update</h1>
-    </div>
-    <div class="status-row">
-      <span id="sidecar-status" class="pill neutral">Sidecar connecting</span>
-      <span id="bridge-status" class="pill warning">Bridge reconnecting</span>
-      <span id="model-status" class="pill neutral">Reasoning pending</span>
-    </div>
-  </header>
-
-  <main>
-    <section class="control-card">
-      <div>
-        <p class="section-label">Bounded catch-up</p>
-        <h2>Check what changed, then stop.</h2>
-        <p class="muted">AkuBridge reads a finite X and LinkedIn sample. AkuSidecar selects, reranks, and keeps the evidence trail local.</p>
-      </div>
-      <form id="session-form">
-        <label for="intent">What are you checking for?</label>
-        <div class="action-row">
-          <input id="intent" maxlength="500" value="What materially changed since my last check?" required>
-          <button id="start-button" type="submit">Check for updates</button>
-          <button id="cancel-button" class="secondary hidden" type="button">Cancel</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AkuBrowser</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-stream-width="social">
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">UNIFIED KNOWLEDGE CONTINUITY</p>
+          <h1 id="app-heading" tabindex="-1">AkuBrowser</h1>
+          <p class="subtitle">A bounded, source-backed finish line—not another feed.</p>
         </div>
-      </form>
-      <div id="progress" class="progress hidden" aria-live="polite">
-        <div class="progress-track"><span id="progress-bar"></span></div>
-        <p id="progress-text">Preparing bounded capture…</p>
-      </div>
-    </section>
+        <div class="topbar-actions">
+          <div class="system-status" aria-live="polite">
+            <span id="sidecar-status" class="status-pill status-neutral">AkuSidecar checking</span>
+            <span id="bridge-status" class="status-pill status-neutral">AkuBridge checking</span>
+            <span id="reasoning-status" class="status-pill status-neutral">Reasoning config</span>
+          </div>
+          <nav class="view-switch" aria-label="AkuBrowser view">
+            <button id="session-view-button" class="view-button selected" type="button">Timeline</button>
+            <button id="settings-view-button" class="view-button" type="button">Settings</button>
+          </nav>
+        </div>
+      </header>
 
-    <section class="layout">
-      <div>
+      <section id="provider-notice" class="notice hidden" role="status"></section>
+
+      <section id="settings-panel" class="settings-panel hidden" aria-labelledby="settings-heading">
         <div class="section-heading">
-          <div><p class="section-label">Timeline</p><h2>Latest finite sessions</h2></div>
-          <button id="refresh-button" class="secondary" type="button">Refresh</button>
+          <div>
+            <p class="step-label">RUNTIME CONFIGURATION</p>
+            <h2 id="settings-heading">Browser behavior</h2>
+          </div>
+          <div class="settings-heading-actions">
+            <span id="runtime-settings-status" class="settings-detail" role="status"></span>
+            <button id="save-runtime-settings" class="primary-button" type="submit" form="runtime-settings-form">Save settings</button>
+          </div>
         </div>
-        <div id="timeline" class="timeline"><p class="empty">No completed items yet.</p></div>
-      </div>
+        <form id="runtime-settings-form" class="settings-form">
+          <fieldset class="settings-group">
+            <legend>Personalization</legend>
+            <div class="settings-card">
+              <label class="settings-row" for="preference-eligibility-mode">
+                <span class="settings-copy"><strong>Personalized eligibility</strong><small>Control whether preferences only rank or may fill unused capacity.</small></span>
+                <select id="preference-eligibility-mode" name="preferenceEligibilityMode">
+                  <option value="rank_only">Ranking only</option>
+                  <option value="promote_unused_budget">Fill unused capacity — recommended</option>
+                  <option value="guarded_live">Guarded live filtering — experimental</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
 
-      <aside>
-        <div class="settings-card">
-          <p class="section-label">Runtime settings</p>
-          <label for="profile">Bounded load</label>
-          <select id="profile"><option value="standard">Standard 1×</option><option value="expanded">Expanded 2×</option><option value="stress">Stress 3×</option></select>
-          <label for="visibility">Capture visibility</label>
-          <select id="visibility"><option value="quiet">Quiet</option><option value="adaptive_fidelity">Adaptive fidelity</option></select>
-          <label for="preference-mode">Preference authority</label>
-          <select id="preference-mode"><option value="rank_only">Rank only</option><option value="promote_unused_budget">Promote unused budget</option><option value="guarded_live">Guarded live</option></select>
-          <label class="check"><input id="open-missing" type="checkbox"> Open a missing source tab</label>
-          <button id="save-settings" class="secondary" type="button">Save settings</button>
-          <p id="settings-note" class="muted small"></p>
-        </div>
-        <div class="diagnostic-card">
-          <p class="section-label">Contract</p>
-          <dl><div><dt>Runtime</dt><dd id="runtime-version">—</dd></div><div><dt>Bridge</dt><dd id="bridge-contract">—</dd></div><div><dt>Session</dt><dd id="session-status">Idle</dd></div></dl>
-        </div>
-      </aside>
-    </section>
-  </main>
+          <fieldset class="settings-group">
+            <legend>Live settings</legend>
+            <div class="settings-card">
+              <label class="settings-row" for="bounded-load-profile">
+                <span class="settings-copy"><strong>Bounded load profile</strong><small>Coordinates capture depth and selected-item capacity.</small></span>
+                <select id="bounded-load-profile" name="loadProfile">
+                  <option value="standard">Standard 1×</option>
+                  <option value="expanded">Expanded 2×</option>
+                  <option value="stress">Stress 3×</option>
+                </select>
+              </label>
+              <label class="settings-row" for="capture-visibility-policy">
+                <span class="settings-copy"><strong>Capture visibility</strong><small>Quiet uses a dedicated non-focused capture window.</small></span>
+                <select id="capture-visibility-policy" name="captureVisibility">
+                  <option value="quiet">Quiet capture — recommended</option>
+                  <option value="adaptive_fidelity">Adaptive fidelity</option>
+                </select>
+              </label>
+              <label class="settings-row" for="open-missing-source">
+                <span class="settings-copy"><strong>Missing source tab</strong><small>Allow AkuBridge to open a canonical source tab for initial acquisition.</small></span>
+                <input id="open-missing-source" name="openMissingSource" type="checkbox" />
+              </label>
+            </div>
+          </fieldset>
 
-  <template id="item-template">
-    <article class="item-card">
-      <div class="item-meta"><span class="source"></span><span class="confidence"></span></div>
-      <h3 class="what"></h3>
-      <p class="why"></p>
-      <a class="source-link" target="_blank" rel="noreferrer">Open source evidence</a>
-      <div class="feedback-row">
-        <button type="button" data-direction="more" class="secondary">More like this</button>
-        <button type="button" data-direction="less" class="secondary">Less like this</button>
-        <select class="reason hidden" aria-label="Optional reason">
-          <option value="">Optional reason</option>
-          <option value="not_interested">Not interested</option>
-          <option value="already_knew">Already knew</option>
-          <option value="old_info">Old info</option>
-          <option value="duplicate">Duplicate</option>
-        </select>
+          <fieldset class="settings-group">
+            <legend>Fresh runtime boundary</legend>
+            <div class="settings-card runtime-contract-card">
+              <dl>
+                <div><dt>Runtime</dt><dd id="runtime-version">—</dd></div>
+                <div><dt>Bridge contract</dt><dd id="bridge-contract">—</dd></div>
+                <div><dt>Reasoning</dt><dd id="provider-value">—</dd></div>
+                <div><dt>Database</dt><dd id="database-status">—</dd></div>
+              </dl>
+            </div>
+          </fieldset>
+        </form>
+      </section>
+
+      <section id="timeline-panel" class="timeline-panel" aria-labelledby="timeline-heading">
+        <div class="timeline-heading-row">
+          <div>
+            <p class="step-label">FINITE KNOWLEDGE TIMELINE</p>
+            <h2 id="timeline-heading">Latest evaluated updates</h2>
+            <p id="timeline-meta" class="review-guidance">Loading the latest completed session…</p>
+          </div>
+          <div class="timeline-actions">
+            <button id="timeline-refresh-button" class="text-button" type="button">Refresh</button>
+            <button id="timeline-runner-button" class="primary-button" type="button">Check for updates</button>
+          </div>
+        </div>
+
+        <section id="processing-panel" class="processing-panel update-progress hidden" aria-live="polite">
+          <div class="update-progress-heading">
+            <div>
+              <p class="step-label">02 · BOUNDED PROCESS</p>
+              <h3 id="processing-title">Preparing source check</h3>
+              <p id="processing-detail">Starting finite session</p>
+            </div>
+            <button id="cancel-button" class="text-button" type="button">Cancel</button>
+          </div>
+          <div class="progress-track" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-bar"></span></div>
+        </section>
+
+        <section id="result-panel" class="result-panel timeline-feed-mode" aria-live="polite">
+          <div id="result-items" class="result-items"></div>
+          <div id="finish-line" class="finish-line">
+            <p class="finish-kicker">FINISH LINE</p>
+            <h3 id="finish-title">You’re caught up within this timeline</h3>
+            <p id="finish-stats">No retained updates yet.</p>
+            <button id="done-button" class="secondary-button" type="button">Check for updates</button>
+          </div>
+        </section>
+
+        <section id="failure-panel" class="failure-panel hidden" role="alert">
+          <p class="step-label">RUN STOPPED</p>
+          <h2 id="failure-title">The bounded snapshot could not finish</h2>
+          <p id="failure-message"></p>
+          <button id="retry-button" class="secondary-button" type="button">Return to timeline</button>
+        </section>
+      </section>
+    </main>
+
+    <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="Back to top" title="Back to top">↑</button>
+
+    <dialog id="media-viewer" class="media-viewer" aria-label="Post media viewer">
+      <div class="media-viewer-toolbar">
+        <span id="media-viewer-count"></span>
+        <button id="media-viewer-close" type="button" aria-label="Close image viewer">Close</button>
       </div>
-    </article>
-  </template>
-  <script src="/app.js" defer></script>
-</body>
+      <div class="media-viewer-stage">
+        <button id="media-viewer-previous" type="button" aria-label="Previous image">‹</button>
+        <img id="media-viewer-image" alt="" />
+        <button id="media-viewer-next" type="button" aria-label="Next image">›</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="/app.js?runtime=go-ui-restored-v1"></script>
+  </body>
 </html>

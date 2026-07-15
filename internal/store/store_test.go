@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -77,6 +78,62 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	updated, err := state.GetRun(ctx, run.ID)
 	if err != nil || updated.Status != "reasoning" {
 		t.Fatalf("run: %+v %v", updated, err)
+	}
+}
+
+func TestTimelineIncludesCapturedSourceEvidence(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "What changed?", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := state.AdvanceSession(ctx, session.ID)
+	if err != nil || run == nil {
+		t.Fatalf("next run: %+v %v", run, err)
+	}
+	command, err := state.StartRun(ctx, run.ID, map[string]any{"source": run.Source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := state.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || claimed == nil || claimed.ID != command.ID {
+		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	evidenceKey := "x:000000000000000000000123"
+	observation := domain.Observation{
+		Source:     run.Source,
+		PageURL:    "https://x.com/home",
+		CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: evidenceKey,
+			Author:      "AkuBrowser @akubrowser",
+			Text:        "The original source-layout text.",
+			Permalink:   "https://x.com/akubrowser/status/123",
+		}}}},
+		Coverage: map[string]any{"status": "complete"},
+	}
+	if err := state.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	itemRaw, _ := json.Marshal(domain.ReasonedItem{ID: evidenceKey, EvidenceKey: evidenceKey, Source: run.Source, WhatChanged: "Changed"})
+	assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{EvidenceKey: evidenceKey})
+	coverageRaw, _ := json.Marshal(map[string]any{"status": "complete"})
+	_, err = state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, "timeline-test", session.ID, run.ID, run.Source, evidenceKey, 0, string(itemRaw), string(assessmentRaw), string(coverageRaw), domain.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := state.ListTimeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Evidence == nil {
+		t.Fatalf("timeline evidence=%+v", items)
+	}
+	if items[0].Evidence.Text != "The original source-layout text." || items[0].Evidence.Author != "AkuBrowser @akubrowser" {
+		t.Fatalf("evidence=%+v", items[0].Evidence)
 	}
 }
 

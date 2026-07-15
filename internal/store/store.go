@@ -559,7 +559,42 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 		decodeJSON(coverageRaw, &item.Coverage)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	evidenceByRun := map[string]map[string]domain.Block{}
+	for index := range items {
+		item := &items[index]
+		byKey, loaded := evidenceByRun[item.RunID]
+		if !loaded {
+			byKey = map[string]domain.Block{}
+			observations, err := s.Observations(ctx, item.RunID)
+			if err != nil {
+				return nil, err
+			}
+			for _, observation := range observations {
+				for _, snapshot := range observation.Snapshots {
+					for _, block := range snapshot.Blocks {
+						if block.EvidenceKey != "" {
+							if _, exists := byKey[block.EvidenceKey]; !exists {
+								byKey[block.EvidenceKey] = block
+							}
+						}
+					}
+				}
+			}
+			evidenceByRun[item.RunID] = byKey
+		}
+		if block, exists := byKey[item.EvidenceKey]; exists {
+			copy := block
+			item.Evidence = &copy
+		}
+	}
+	return items, nil
 }
 
 func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain.Feedback) (domain.Feedback, error) {
