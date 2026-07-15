@@ -154,8 +154,16 @@
             <legend>Personalization</legend>
             <div class="settings-card">
               <label class="settings-row" for="preference-live-influence">
-                <span class="settings-copy"><strong>Local personalization</strong><small>Use an automatically fitted local model for bounded reordering. It never adds or removes selected items.</small></span>
+                <span class="settings-copy"><strong>Local personalization</strong><small>Use an automatically fitted local model for bounded reordering.</small></span>
                 <input id="preference-live-influence" name="preferenceLiveInfluence" type="checkbox" />
+              </label>
+              <label class="settings-row" for="preference-eligibility-mode">
+                <span class="settings-copy"><strong>Personalized eligibility</strong><small>Control whether preferences only rank, may fill unused capacity, or may also apply guarded filtering.</small></span>
+                <select id="preference-eligibility-mode" name="preferenceEligibilityMode">
+                  <option value="rank_only">Ranking only</option>
+                  <option value="promote_unused_budget">Fill unused capacity — recommended</option>
+                  <option value="guarded_live">Guarded live filtering — experimental</option>
+                </select>
               </label>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit your lightweight interest hints and active sources.</small></span>
@@ -220,13 +228,22 @@
             <legend>Engine constraints</legend>
             <p class="settings-group-note">Editable budgets apply to the next update. Fixed pilot boundaries remain visible for transparency.</p>
             <div class="settings-card">
+              <label class="settings-row" for="bounded-load-profile">
+                <span class="settings-copy"><strong>Bounded load profile</strong><small>One setting coordinates capture depth, selected-item capacity, Timeline capacity, and media settle. Custom keeps the advanced values below.</small></span>
+                <select id="bounded-load-profile" name="boundedLoadProfile">
+                  <option value="standard_1x">Standard 1x</option>
+                  <option value="expanded_2x">Expanded 2x</option>
+                  <option value="stress_3x">Stress 3x</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
               <label class="settings-row" for="max-items-per-source">
-                <span class="settings-copy"><strong>Items per source</strong><small>Maximum promoted candidates from one source. Unified output remains capped at 10.</small></span>
-                <input id="max-items-per-source" name="maxItemsPerSource" type="number" min="1" max="5" step="1" />
+                <span class="settings-copy"><strong>Items per source</strong><small>Advanced override; editing it changes the profile to Custom.</small></span>
+                <input id="max-items-per-source" name="maxItemsPerSource" type="number" min="1" max="15" step="1" />
               </label>
               <label class="settings-row" for="max-scrolls">
-                <span class="settings-copy"><strong>Native scrolls per source</strong><small>Maximum bounded feed movements during the initial capture.</small></span>
-                <input id="max-scrolls" name="maxScrolls" type="number" min="0" max="5" step="1" />
+                <span class="settings-copy"><strong>Native scrolls per source</strong><small>Advanced override; editing it changes the profile to Custom.</small></span>
+                <input id="max-scrolls" name="maxScrolls" type="number" min="0" max="6" step="1" />
               </label>
               <label class="settings-row" for="max-acquisition-rounds">
                 <span class="settings-copy"><strong>Acquisition rounds</strong><small>Initial capture plus at most one anchored follow-up.</small></span>
@@ -252,7 +269,7 @@
                 <input id="calibration-batch-size" name="calibrationBatchSize" type="number" min="2" max="10" step="1" />
               </label>
               <div class="settings-row">
-                <span class="settings-copy"><strong>Influence boundary</strong><small>Selected items only · maximum two-position movement · no eligibility or attention-budget changes.</small></span>
+                <span class="settings-copy"><strong>Influence boundary</strong><small>Live reranking moves at most two positions. Eligibility authority follows the configured mode and its evidence gates.</small></span>
               </div>
             </div>
           </fieldset>
@@ -395,13 +412,19 @@
                   </button>
                 </div>
                 <div class="shadow-comparison" aria-live="polite">
-                  <strong>Eligibility-boundary comparison</strong>
-                  <p id="shadow-comparison-detail" class="review-guidance">No current snapshot.</p>
-                  <div id="shadow-candidate-list" class="shadow-candidate-list"></div>
+                  <strong>Personalized eligibility</strong>
+                  <p id="preference-eligibility-detail" class="review-guidance">No current snapshot.</p>
+                  <div id="preference-eligibility-list" class="eligibility-candidate-list"></div>
                 </div>
                 <div class="shadow-comparison" aria-live="polite">
                   <strong>Engine replay benchmark</strong>
                   <p id="engine-benchmark-detail" class="review-guidance">Loading benchmark…</p>
+                </div>
+                <div class="shadow-comparison" aria-live="polite">
+                  <strong>Paired model replay</strong>
+                  <p id="model-pairing-detail" class="review-guidance">
+                    Not run. This explicit diagnostic never changes the live timeline or preference state.
+                  </p>
                 </div>
               </details>
             </section>

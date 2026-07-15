@@ -4,7 +4,7 @@ import {
   runtimePreferenceDatasetFingerprint,
   scorePreferenceCandidate,
 } from "./offline-preference-experiment.mjs";
-import { preferenceFeedbackWeight } from "./preference-features.mjs";
+import { buildEffectivePreferenceSignals } from "./preference-replay.mjs";
 
 export const PREFERENCE_RUNTIME_POLICY = Object.freeze({
   version: "preference-runtime-v2",
@@ -212,31 +212,9 @@ function entrySource(entry) {
 }
 
 function signalCounts(runs) {
-  const latest = new Map();
-  for (const run of runs) {
-    const candidates = new Map(
-      (run.candidateEvaluations ?? []).map((candidate) => [candidate.evidenceKey, candidate]),
-    );
-    for (const feedback of run.preferenceFeedback ?? []) {
-      if (!candidates.get(feedback.evidenceKey)?.assessment) continue;
-      if (preferenceFeedbackWeight(feedback) <= 0) continue;
-      const key = `${run.source}:${feedback.evidenceKey}`;
-      const value = {
-        kind: feedback.kind,
-        createdAt: String(feedback.createdAt ?? run.createdAt ?? ""),
-        runId: String(run.id ?? ""),
-      };
-      const previous = latest.get(key);
-      if (
-        !previous ||
-        value.createdAt > previous.createdAt ||
-        (value.createdAt === previous.createdAt && value.runId > previous.runId)
-      ) {
-        latest.set(key, value);
-      }
-    }
-  }
-  const kinds = [...latest.values()].map((entry) => entry.kind);
+  const kinds = buildEffectivePreferenceSignals(runs, { weightedOnly: true })
+    .filter((signal) => signal.assessment)
+    .map((signal) => signal.kind);
   return {
     total: kinds.length,
     positive: kinds.filter((kind) => kind === "more_like_this").length,

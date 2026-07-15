@@ -264,6 +264,7 @@ function toReviewRun(run) {
     feedback: validFeedback(run),
     candidateEvaluations: run.candidateEvaluations ?? [],
     preferenceFeedback: run.preferenceFeedback ?? [],
+    preferenceEligibilityDecisions: run.preferenceEligibilityDecisions ?? [],
     reasoningInvocations: run.reasoningInvocations ?? [],
     reviewed: isReviewed(run),
   };

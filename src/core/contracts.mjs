@@ -137,13 +137,10 @@ export const CANDIDATE_CONTENT_TYPES = new Set([
   "other",
 ]);
 export const PREFERENCE_REASON_CODES = new Set([
-  "wrong_topic",
+  "not_interested",
   "already_known",
   "duplicate",
   "stale_or_superseded",
-  "low_signal",
-  "wrong_priority",
-  "other",
 ]);
 export const UNIFIED_SESSION_SOURCES = Object.freeze(["x", "linkedin"]);
 export const CAPTURE_QUALITY_VERDICTS = new Set([
@@ -252,7 +249,10 @@ export function validateUnifiedSessionRequest(input, limits) {
     intent: cleanString(input.intent, 500) || defaultIntent,
     sources: [...sources],
     maxItemsPerSource,
-    maxItemsTotal: Math.min(10, maxItemsPerSource * sources.length),
+    maxItemsTotal: Math.min(
+      limits.maxItemsTotal ?? maxItemsPerSource * sources.length,
+      maxItemsPerSource * sources.length,
+    ),
   };
 }
 
@@ -978,9 +978,6 @@ export function validatePreferenceFeedback(input) {
     throw new ContractError(`unsupported preference reason code: ${reasonCode}`);
   }
   const note = cleanString(input.note, 500);
-  if (reasonCode === "other" && !note) {
-    throw new ContractError("other preference feedback requires a note");
-  }
   return {
     kind: input.kind,
     evidenceKey,

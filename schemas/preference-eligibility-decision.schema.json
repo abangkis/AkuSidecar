@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aku-browser.local/contracts/preference-eligibility-decision.schema.json",
+  "title": "Preference Eligibility Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "runId": { "type": ["string", "null"] },
+    "evidenceKey": { "type": "string", "pattern": "^(x|linkedin):[a-f0-9]{24}$" },
+    "policyVersion": { "const": "preference-eligibility-v2" },
+    "snapshotId": { "type": ["string", "null"] },
+    "authority": { "type": "string", "enum": ["rank_only", "promote_unused_budget", "guarded_live"] },
+    "baselineDecision": { "type": "string", "enum": ["selected", "excluded"] },
+    "proposal": { "type": "string", "enum": ["retain", "promote", "suppress"] },
+    "proposalRank": { "type": ["integer", "null"], "minimum": 1 },
+    "boundedProposal": { "type": "boolean" },
+    "finalDecision": { "type": "string", "enum": ["selected", "excluded"] },
+    "eligibilityChanged": { "type": "boolean" },
+    "reasonCode": {
+      "type": "string",
+      "enum": [
+        "preference_inside_neutral_band",
+        "preference_snapshot_unavailable",
+        "promotion_blocked_by_generic_floor",
+        "promotion_candidate_ready",
+        "promotion_candidate_gate_pending",
+        "promotion_authority_disabled",
+        "promotion_requires_swap_disabled",
+        "promotion_outside_bounded_limit",
+        "promotion_evidence_pending",
+        "live_promotion_unused_budget",
+        "suppression_blocked_mandatory_signal",
+        "suppression_blocked_reliable_floor",
+        "suppression_candidate_ready",
+        "suppression_candidate_gate_pending",
+        "suppression_authority_disabled",
+        "suppression_outside_bounded_limit",
+        "suppression_evidence_pending",
+        "live_suppression_guarded"
+      ]
+    },
+    "probability": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "preferenceConfidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "protectedMandatory": { "type": "boolean" },
+    "protectedReliableFloor": { "type": "boolean" },
+    "genericFloorPassed": { "type": "boolean" },
+    "budgetEffect": {
+      "type": "string",
+      "enum": ["none", "unused_budget", "would_require_swap", "reduce_visible_set"]
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "promotionReady": { "type": "boolean" },
+        "suppressionReady": { "type": "boolean" }
+      },
+      "required": ["promotionReady", "suppressionReady"]
+    }
+  },
+  "required": [
+    "runId",
+    "evidenceKey",
+    "policyVersion",
+    "snapshotId",
+    "authority",
+    "baselineDecision",
+    "proposal",
+    "proposalRank",
+    "boundedProposal",
+    "finalDecision",
+    "eligibilityChanged",
+    "reasonCode",
+    "probability",
+    "preferenceConfidence",
+    "protectedMandatory",
+    "protectedReliableFloor",
+    "genericFloorPassed",
+    "budgetEffect",
+    "readiness"
+  ]
+}

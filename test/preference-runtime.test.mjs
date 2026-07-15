@@ -27,6 +27,51 @@ test("local preference runtime fits automatically without waiting for the diagno
   assert.equal(after.currentSnapshot.proposedPolicy.influence, "bounded_selected_rerank");
 });
 
+test("latest diagnostic reason supersedes the earlier generic Less for readiness", () => {
+  const evidenceKey = "x:0123456789abcdef01234567";
+  const candidate = {
+    evidenceKey,
+    decision: "selected",
+    assessment: {
+      contentType: "news",
+      topicTags: ["fixture"],
+      topicFacets: ["other"],
+      novelty: 0.5,
+      urgency: 0.5,
+      actionability: 0.5,
+      materiality: 0.5,
+      evidenceStrength: 0.8,
+    },
+  };
+  const store = memoryStore([
+    {
+      id: "run-generic",
+      source: "x",
+      candidateEvaluations: [candidate],
+      preferenceFeedback: [{
+        evidenceKey,
+        kind: "less_like_this",
+        reasonCode: null,
+        createdAt: "2026-07-15T00:00:00.000Z",
+      }],
+    },
+    {
+      id: "run-diagnostic",
+      source: "x",
+      candidateEvaluations: [candidate],
+      preferenceFeedback: [{
+        evidenceKey,
+        kind: "less_like_this",
+        reasonCode: "already_known",
+        createdAt: "2026-07-15T00:01:00.000Z",
+      }],
+    },
+  ]);
+  const runtime = preferenceRuntimeStatus(store);
+  assert.deepEqual(runtime.signalCounts, { total: 0, positive: 0, negative: 0 });
+  assert.equal(runtime.eligibleForPersonalFit, false);
+});
+
 test("bounded composition reorders only existing selected items by at most two positions", () => {
   const entries = [0, 1, 2, 3, 4].map((index) => ({
     sessionId: "session",

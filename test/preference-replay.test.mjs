@@ -63,6 +63,33 @@ test("offline replay uses the latest contextual signal while preserving append-o
   assert.equal(replay.dataset.lessLikeThis, 1);
 });
 
+test("offline replay excludes a diagnostic Less refinement from preference readiness", () => {
+  const replay = buildPreferenceReplay([
+    run("run-diagnostic", "x", [
+      candidate("x:known", "selected", assessment("news", ["science"], 0.7)),
+    ], [
+      feedback("x:known", "less_like_this"),
+      { ...feedback("x:known", "less_like_this"), reasonCode: "already_known" },
+    ]),
+  ]);
+
+  assert.equal(replay.dataset.feedbackEvents, 0);
+  assert.equal(replay.dataset.lessLikeThis, 0);
+});
+
+test("offline replay preserves historical wrong_topic as full preference evidence", () => {
+  const replay = buildPreferenceReplay([
+    run("run-legacy-reason", "x", [
+      candidate("x:legacy", "selected", assessment("opinion", ["culture"], 0.4)),
+    ], [
+      { ...feedback("x:legacy", "less_like_this"), reasonCode: "wrong_topic" },
+    ]),
+  ]);
+
+  assert.equal(replay.dataset.feedbackEvents, 1);
+  assert.equal(replay.dataset.lessLikeThis, 1);
+});
+
 function run(id, source, candidateEvaluations, preferenceFeedback) {
   return { id, source, candidateEvaluations, preferenceFeedback };
 }

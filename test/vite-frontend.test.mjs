@@ -20,14 +20,14 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
     presentation: {
       defaultLayout: "source",
       homePresentation: "timeline",
-      timelineCapacity: 12,
+      timelineCapacity: 24,
       streamWidth: "social",
       telemetryBehavior: "flow",
     },
     limits: {
       maxBodyBytes: 1_000_000,
-      maxItems: 5,
-      maxScrolls: 2,
+      maxItems: 10,
+      maxScrolls: 4,
       maxAcquisitionRounds: 2,
       followUpScrolls: 1,
       maxContinuationAnchors: 3,
@@ -126,7 +126,15 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.doesNotMatch(html, /id="overview-view-button"/);
   assert.match(html, /class="overview-sources source-settings"/);
   assert.match(html, /Engine constraints/);
+  assert.match(html, /id="bounded-load-profile"/);
+  assert.match(html, /value="standard_1x"/);
+  assert.match(html, /value="expanded_2x"/);
+  assert.match(html, /value="stress_3x"/);
+  assert.match(html, /value="custom"/);
   assert.match(html, /id="max-items-per-source"/);
+  assert.match(appScript, /BOUNDED_LOAD_UI_PROFILES/);
+  assert.match(appScript, /boundedLoadProfile: elements\.boundedLoadProfile\.value/);
+  assert.match(appScript, /elements\.boundedLoadProfile\.value = "custom"/);
   assert.match(html, /id="fixed-engine-constraints"/);
   assert.doesNotMatch(html, /id="home-presentation"/);
   assert.match(html, /id="timeline-capacity"/);
@@ -170,10 +178,15 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(html, /id="calibration-panel"/);
   assert.match(html, /id="calibration-enabled"/);
   assert.match(html, /id="calibration-batch-size"/);
+  assert.match(html, /id="preference-eligibility-mode"/);
+  assert.match(html, /value="promote_unused_budget"/);
+  assert.match(html, /value="guarded_live"/);
   assert.match(appScript, /startPendingFirstCalibration/);
   assert.match(appScript, /more_like_this/);
   assert.match(appScript, /less_like_this/);
-  assert.match(appScript, /Optional: why less\?/);
+  assert.match(appScript, /prompt\.textContent = "Optional:"/);
+  assert.match(appScript, /\["not_interested", "Not interested"\][\s\S]*\["already_known", "Already knew"\][\s\S]*\["stale_or_superseded", "Old info"\][\s\S]*\["duplicate", "Duplicate"\]/);
+  assert.doesNotMatch(appScript, /Wrong priority|Low signal|Skip optional reason/);
   assert.match(appScript, /await savePreferenceFeedback\(run, evidenceKey, kind, null, onSaved\)/);
   assert.match(appScript, /button\.disabled = kind !== "less_like_this"/);
   assert.doesNotMatch(appScript, /\[null, "Just less"\]/);
@@ -233,9 +246,22 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /fitPreferenceExperiment/);
   assert.match(html, /Local personalization/);
   assert.match(html, /Advanced preference diagnostics/);
-  assert.match(html, /Eligibility-boundary comparison/);
-  assert.match(html, /shadow-candidate-list/);
-  assert.match(appScript, /renderShadowCandidates/);
+  assert.match(html, /Personalized eligibility/);
+  assert.match(html, /id="preference-eligibility-detail"/);
+  assert.match(html, /id="preference-eligibility-list"/);
+  assert.match(html, /Paired model replay/);
+  assert.match(html, /id="model-pairing-detail"/);
+  assert.match(html, /eligibility-candidate-list/);
+  assert.match(appScript, /renderPreferenceEligibilityCandidates/);
+  assert.match(appScript, /\/api\/preferences\/eligibility/);
+  assert.doesNotMatch(appScript, /shadow only: no item is added or hidden/);
+  assert.doesNotMatch(appScript, /shadow would/);
+  assert.match(appScript, /Eligibility live/);
+  assert.match(styles, /\.eligibility-candidate-actions/);
+  assert.match(appScript, /\/api\/reasoning\/model-pairing/);
+  assert.match(appScript, /function renderModelPairingReport\(report\)/);
+  assert.match(appScript, /opening Review never spends model tokens/);
+  assert.match(appScript, /Luna blended rate/);
   assert.match(html, /default-presentation/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /ws:\/\/127\.0\.0\.1/);
   assert.match(htmlResponse.headers.get("content-security-policy"), /https:\/\/pbs\.twimg\.com/);
@@ -243,12 +269,12 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.equal(bootstrap.provider, "vite-test-provider");
   assert.equal(bootstrap.presentation.defaultLayout, "source");
   assert.equal(bootstrap.presentation.homePresentation, "timeline");
-  assert.equal(bootstrap.presentation.timelineCapacity, 12);
+  assert.equal(bootstrap.presentation.timelineCapacity, 24);
   assert.equal(bootstrap.sourceRegistry.length, 2);
   assert.equal(bootstrap.sourceRegistry[0].behavior, "stream");
   assert.equal(bootstrap.presentation.streamWidth, "social");
   assert.equal(bootstrap.presentation.telemetryBehavior, "flow");
-  assert.equal(bootstrap.unifiedSession.maxItemsTotal, 10);
+  assert.equal(bootstrap.unifiedSession.maxItemsTotal, 20);
   assert.equal(shadowComparison.comparison.available, false);
   assert.equal(shadowComparison.comparison.liveInfluence, false);
   assert.deepEqual(shadowComparison.comparison.pagination, {

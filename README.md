@@ -2,6 +2,12 @@
 
 AkuSidecar is the local AkuBrowser runtime. It owns the pinned local UI, HTTP API, SQLite state, bounded job engine, provider-neutral browser-capture policy, and replaceable reasoning-provider adapters.
 
+The runtime evaluates a bounded source sample rather than all feed posts.
+Selection Engine applies generic materiality eligibility; Preference Runtime
+reranks selected items; Preference Eligibility Controller v2 applies the saved
+authority mode. The default may fill one otherwise-unused source slot with a
+qualified candidate, while suppression remains separately gated and disabled.
+
 ## Requirements
 
 - Node.js 24 or newer
@@ -109,11 +115,16 @@ dashboard settings and should be reserved for packaging or explicit recovery.
 The normal port is `47821`, database path is `runtime/aku-browser.db`, and
 reasoning timeout is `120000` ms.
 
-Gate 0B uses a fixed native-capture budget: at most two 75%-viewport scrolls, three snapshots, and 45 seconds. AkuBridge restores the applicable capture baseline and reports the actual movement in coverage. Computer Use is not an implicit fallback.
+Gate 0B uses the selected bounded-load profile. The built-in profiles coordinate
+two, four, or six 75%-viewport scrolls with the corresponding selection and
+Timeline budgets; AkuBridge permits at most six scrolls, seven snapshots, and
+45 seconds. AkuBridge restores the applicable capture baseline and reports the
+actual movement in coverage. Computer Use is not an implicit fallback.
 
 Every current capture also requires the generic `social-post-v1` quality
-report. Sidecar pre-authorizes one same-candidate Bridge retry with a 300 ms
-settle time, validates candidate/snapshot/coverage report consistency, and
+report. Sidecar pre-authorizes one same-candidate Bridge retry with a
+profile-derived 300 or 1,000 ms settle time, validates
+candidate/snapshot/coverage report consistency, and
 rejects a final `retryable` result. `complete` and `usable_degraded` blocks are
 admitted; `invalid` blocks are removed. If none remain, the source fails before
 acquisition planning or final reasoning. `coverage.qualityAdmission` records
@@ -204,9 +215,36 @@ The review API is `GET /api/pilot/review`. Optional query parameters are `source
 
 `GET /api/preferences/replay` provides historical dataset-maturity diagnostics. Automatic local fitting does not wait for these manual experiment gates. More, Neutral, and Less events share an append-only ledger with calibration/routine origin and context metadata. Clicking Less saves immediately as reduced-weight ambiguous preference evidence; choosing an optional reason refines the effective signal without making explanation a user requirement.
 
-Selection Engine v1 owns generic materiality admission and the finite display budget. Preference Runtime v2 uses canonical source-neutral features only, keeps an active champion while evaluating a challenger, and applies confidence-scaled zero-to-two-position reranking without changing eligibility. Reset is durable suspension; only explicit manual refit resumes fitting.
+Selection Engine v1 owns generic materiality admission and the finite display budget. Preference Runtime v2 uses canonical source-neutral features only, keeps an active champion while evaluating a challenger, and applies confidence-scaled zero-to-two-position reranking. Preference Eligibility Controller v2 consumes that same active snapshot after Selection Engine. Its default `promote_unused_budget` mode may add at most one qualified excluded candidate per source only when Selection Engine left configured capacity unused. It never displaces a selected item, and suppression remains disabled. `rank_only` removes eligibility authority; `guarded_live` is an experimental, separately gated mode that can suppress only after sufficient negative support and holdout quality. Every final decision, baseline comparison, protection, and reason remains auditable in Advanced Review. Reset is durable suspension; only explicit manual refit resumes fitting.
+
+`GET /api/preferences/eligibility` returns the configured authority, separate
+promotion/suppression readiness gates, and bounded audit metadata. Completed
+runs retain the baseline and authoritative per-candidate eligibility decision
+plus a content-free coverage summary. The endpoint performs no model call and
+does not modify preference state.
 
 `GET /api/preferences/benchmark` runs the local read-only replay benchmark. It reports polarity, source-sliced bias, selection, latency, token, model, and effort metrics without invoking a reasoning model. With Sidecar running, `npm run benchmark:engine` prints the same payload.
+
+`npm run benchmark:models -- 4` is a separate, explicit paired-model
+diagnostic. It invokes Terra High, Luna High, and Luna XHigh sequentially over
+the exact same stored observations, applies the production reasoning-result and
+Selection Engine contracts, and persists only a content-free summary under
+`diagnostic.paired_model_replay.latest`. It never changes Timeline eligibility,
+preference snapshots, live routing, or acquisition planning. Opening Review or
+calling `GET /api/reasoning/model-pairing` only reads the latest summary and
+never invokes a model.
+
+The report separates observed input, cached-input, output, and reasoning-output
+tokens, latency, feedback agreement, and pairwise selection agreement. Cost is
+reported as a sensitivity analysis against Terra's blended token rate. The
+default Luna scenarios are 0.25x, 0.50x, and 0.75x; they are hypotheses, not a
+price claim. Supply a known blended Luna-to-Terra rate with repeatable
+`node scripts/benchmark-model-pairing.mjs --cases 4 --luna-rate <ratio>`
+arguments. The break-even rate is
+`Terra observed units / candidate observed units`; a Luna profile is cheaper
+when its actual blended rate ratio is below that threshold. A routing result is
+advisory until enough paired routine feedback exists and never rewrites
+production Settings automatically.
 
 `GET /api/preferences/experiment` and `POST /api/preferences/experiment/fit` remain optional legacy-compatible diagnostics; they are not onboarding or production prerequisites.
 

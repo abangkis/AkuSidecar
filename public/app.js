@@ -1,5 +1,11 @@
 import { parseXSourceText } from "./x-source-format.js";
 
+const BOUNDED_LOAD_UI_PROFILES = Object.freeze({
+  standard_1x: { maxItemsPerSource: 5, maxScrolls: 2, timelineCapacity: 12 },
+  expanded_2x: { maxItemsPerSource: 10, maxScrolls: 4, timelineCapacity: 24 },
+  stress_3x: { maxItemsPerSource: 15, maxScrolls: 6, timelineCapacity: 36 },
+});
+
 const state = {
   bootstrap: null,
   sidecarInstanceEpoch: null,
@@ -15,7 +21,7 @@ const state = {
   externalSessionDiscoveryInFlight: false,
   dispatchedRounds: new Set(),
   currentView: "timeline",
-  timelineCapacity: 12,
+  timelineCapacity: 24,
   timelineFeed: null,
   defaultPresentation: "source",
   streamWidth: "social",
@@ -84,6 +90,7 @@ const elements = {
   defaultPresentation: document.querySelector("#default-presentation"),
   streamWidth: document.querySelector("#stream-width"),
   telemetryBehavior: document.querySelector("#telemetry-behavior"),
+  boundedLoadProfile: document.querySelector("#bounded-load-profile"),
   maxItemsPerSource: document.querySelector("#max-items-per-source"),
   maxScrolls: document.querySelector("#max-scrolls"),
   maxAcquisitionRounds: document.querySelector("#max-acquisition-rounds"),
@@ -91,6 +98,7 @@ const elements = {
   calibrationEnabled: document.querySelector("#calibration-enabled"),
   calibrationBatchSize: document.querySelector("#calibration-batch-size"),
   preferenceLiveInfluence: document.querySelector("#preference-live-influence"),
+  preferenceEligibilityMode: document.querySelector("#preference-eligibility-mode"),
   openResetLearning: document.querySelector("#open-reset-learning"),
   openFullReset: document.querySelector("#open-full-reset"),
   resetConfirmationDialog: document.querySelector("#reset-confirmation-dialog"),
@@ -131,9 +139,10 @@ const elements = {
   preferenceReadinessDetail: document.querySelector("#preference-readiness-detail"),
   preferenceExperimentStatus: document.querySelector("#preference-experiment-status"),
   preferenceExperimentDetail: document.querySelector("#preference-experiment-detail"),
-  shadowComparisonDetail: document.querySelector("#shadow-comparison-detail"),
+  preferenceEligibilityDetail: document.querySelector("#preference-eligibility-detail"),
   engineBenchmarkDetail: document.querySelector("#engine-benchmark-detail"),
-  shadowCandidateList: document.querySelector("#shadow-candidate-list"),
+  modelPairingDetail: document.querySelector("#model-pairing-detail"),
+  preferenceEligibilityList: document.querySelector("#preference-eligibility-list"),
   fitPreferenceExperiment: document.querySelector("#fit-preference-experiment"),
   reviewSourceFilter: document.querySelector("#review-source-filter"),
   reviewVerdictFilter: document.querySelector("#review-verdict-filter"),
@@ -242,6 +251,12 @@ elements.sessionViewButton.addEventListener("click", showSessionView);
 elements.reviewViewButton.addEventListener("click", showReviewView);
 elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
+elements.boundedLoadProfile.addEventListener("change", previewBoundedLoadProfile);
+for (const control of [elements.maxItemsPerSource, elements.maxScrolls, elements.timelineCapacity]) {
+  control.addEventListener("input", () => {
+    elements.boundedLoadProfile.value = "custom";
+  });
+}
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
 elements.openResetLearning.addEventListener("click", () => openResetConfirmation("learning"));
@@ -338,7 +353,7 @@ async function bootstrap() {
     if (!state.bridgeReady) markBridgeReconnecting();
     populateOnboarding(state.bootstrap.onboarding?.profile);
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
-    state.timelineCapacity = state.bootstrap.presentation?.timelineCapacity ?? 12;
+    state.timelineCapacity = state.bootstrap.presentation?.timelineCapacity ?? 24;
     applyStreamWidth(state.bootstrap.presentation?.streamWidth ?? "social");
     applyTelemetryBehavior(state.bootstrap.presentation?.telemetryBehavior ?? "flow");
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
@@ -1637,15 +1652,13 @@ function showPreferenceReasonMenu(anchor, run, evidenceKey, onSaved) {
   menu.setAttribute("role", "group");
   menu.setAttribute("aria-label", "Optional reason for showing less of this");
   const prompt = document.createElement("span");
-  prompt.textContent = "Optional: why less?";
+  prompt.textContent = "Optional:";
   menu.append(prompt);
   const reasons = [
-    ["wrong_topic", "Wrong topic"],
-    ["wrong_priority", "Wrong priority"],
+    ["not_interested", "Not interested"],
     ["already_known", "Already knew"],
+    ["stale_or_superseded", "Old info"],
     ["duplicate", "Duplicate"],
-    ["stale_or_superseded", "Stale"],
-    ["low_signal", "Low signal"],
   ];
   for (const [reasonCode, label] of reasons) {
     const button = document.createElement("button");
@@ -1659,16 +1672,6 @@ function showPreferenceReasonMenu(anchor, run, evidenceKey, onSaved) {
     });
     menu.append(button);
   }
-  const dismiss = document.createElement("button");
-  dismiss.type = "button";
-  dismiss.className = "feedback-reason-dismiss";
-  dismiss.textContent = "Skip";
-  dismiss.setAttribute("aria-label", "Skip optional reason");
-  dismiss.addEventListener("click", () => {
-    state.preferenceReasonTarget = null;
-    menu.remove();
-  });
-  menu.append(dismiss);
   (anchor.closest(".result-actions") ?? anchor.parentElement).append(menu);
 }
 
@@ -2453,6 +2456,10 @@ async function loadRuntimeSettings() {
 
 function renderRuntimeSettings(configuration) {
   state.runtimeConfiguration = configuration;
+  const loadProfile = configuration.boundedLoadProfile;
+  elements.boundedLoadProfile.value =
+    loadProfile.persistedValue ?? loadProfile.effectiveValue;
+  elements.boundedLoadProfile.disabled = loadProfile.source === "environment";
   const timelineCapacity = configuration.timelineCapacity;
   state.timelineCapacity = timelineCapacity.effectiveValue;
   elements.timelineCapacity.value =
@@ -2482,6 +2489,10 @@ function renderRuntimeSettings(configuration) {
   elements.preferenceLiveInfluence.checked =
     preferenceLiveInfluence.persistedValue ?? preferenceLiveInfluence.effectiveValue;
   elements.preferenceLiveInfluence.disabled = preferenceLiveInfluence.source === "environment";
+  const preferenceEligibilityMode = configuration.preferenceEligibilityMode;
+  elements.preferenceEligibilityMode.value =
+    preferenceEligibilityMode.persistedValue ?? preferenceEligibilityMode.effectiveValue;
+  elements.preferenceEligibilityMode.disabled = preferenceEligibilityMode.source === "environment";
   for (const [name, control] of Object.entries({
     maxItemsPerSource: elements.maxItemsPerSource,
     maxScrolls: elements.maxScrolls,
@@ -2532,12 +2543,21 @@ function renderRuntimeSettings(configuration) {
   ].filter(Boolean).join(" ");
 }
 
+function previewBoundedLoadProfile() {
+  const profile = BOUNDED_LOAD_UI_PROFILES[elements.boundedLoadProfile.value];
+  if (!profile) return;
+  elements.maxItemsPerSource.value = profile.maxItemsPerSource;
+  elements.maxScrolls.value = profile.maxScrolls;
+  elements.timelineCapacity.value = profile.timelineCapacity;
+}
+
 async function saveRuntimeSettings(event) {
   event.preventDefault();
   elements.saveRuntimeSettings.disabled = true;
   elements.runtimeSettingsStatus.textContent = "Saving…";
   try {
     const values = {
+      boundedLoadProfile: elements.boundedLoadProfile.value,
       activeSources: [...elements.overviewSources.querySelectorAll("[data-source-toggle]:checked")]
         .map((control) => control.value),
       maxItemsPerSource: Number(elements.maxItemsPerSource.value),
@@ -2551,6 +2571,7 @@ async function saveRuntimeSettings(event) {
       calibrationEnabled: elements.calibrationEnabled.checked,
       calibrationBatchSize: Number(elements.calibrationBatchSize.value),
       preferenceLiveInfluence: elements.preferenceLiveInfluence.checked,
+      preferenceEligibilityMode: elements.preferenceEligibilityMode.value,
       missingSourceTabPolicy: elements.missingSourceTabPolicy.value,
       captureVisibilityPolicy: elements.captureVisibilityPolicy.value,
       reasoningProvider: elements.reasoningProvider.value,
@@ -2664,17 +2685,19 @@ async function loadPilotReview({ append = false } = {}) {
       { profile },
       { replay },
       { experiment },
-      { comparison },
+      { eligibility },
       { runtime },
       { benchmark },
+      { report: modelPairing },
     ] = await Promise.all([
       api(`/api/pilot/review?${params}`),
       api("/api/preferences/profile"),
       api("/api/preferences/replay"),
       api("/api/preferences/experiment"),
-      api("/api/preferences/shadow-comparison?limit=5&offset=0"),
+      api("/api/preferences/eligibility?limit=20&offset=0"),
       api("/api/preferences/runtime"),
       api("/api/preferences/benchmark"),
+      api("/api/reasoning/model-pairing"),
     ]);
     if (
       review.runs.length === 0 &&
@@ -2694,8 +2717,9 @@ async function loadPilotReview({ append = false } = {}) {
       renderPreferenceReadiness(replay);
       renderPreferenceRuntime(runtime);
       renderPreferenceExperiment(experiment);
-      renderShadowComparison(comparison);
+      renderPreferenceEligibility(eligibility);
       renderEngineBenchmark(benchmark);
+      renderModelPairingReport(modelPairing);
     }
     const shown = Math.min(review.pagination.offset + review.runs.length, REVIEW_MAX_RUNS);
     elements.reviewMeta.textContent = [
@@ -2854,6 +2878,56 @@ function renderEngineBenchmark(benchmark) {
   ].join(" · ");
 }
 
+function renderModelPairingReport(report) {
+  if (!elements.modelPairingDetail) return;
+  if (!report) {
+    elements.modelPairingDetail.textContent =
+      "Not run. Use the explicit local benchmark command; opening Review never spends model tokens.";
+    return;
+  }
+  const profileSummary = (report.profiles ?? []).map((profile) => [
+    `${humanize(profile.id)} ${formatPercent(profile.feedback?.agreement)} feedback agreement`,
+    `${Math.round(profile.tokens?.observedUnits ?? 0).toLocaleString()} observed token units`,
+    `${formatDuration(profile.latency?.averageMs)} average`,
+  ].join(", ")).join("; ");
+  const breakEven = (report.profiles ?? [])
+    .filter((profile) => profile.id !== report.cost?.referenceProfileId)
+    .map((profile) => {
+      const ratio = report.cost?.breakEven?.[profile.id]?.breakEvenRelativeRate;
+      return Number.isFinite(ratio)
+        ? `${humanize(profile.id)} is cheaper below ${ratio.toFixed(2)}x Terra's blended token rate`
+        : null;
+    })
+    .filter(Boolean)
+    .join("; ");
+  const representativeScenario = (report.cost?.scenarios ?? []).find((scenario) =>
+    scenario.lunaRate === 0.5
+  ) ?? report.cost?.scenarios?.[0];
+  const scenarioSummary = representativeScenario
+    ? (report.profiles ?? [])
+        .filter((profile) => profile.id !== report.cost?.referenceProfileId)
+        .map((profile) => {
+          const savings = representativeScenario.profiles?.[profile.id]?.savingsVsTerra;
+          return Number.isFinite(savings)
+            ? `${humanize(profile.id)} ${formatPercent(savings)} less than Terra`
+            : null;
+        })
+        .filter(Boolean)
+        .join("; ")
+    : null;
+  elements.modelPairingDetail.textContent = [
+    `${report.cases?.length ?? 0} identical stored evidence case(s)`,
+    profileSummary,
+    breakEven,
+    scenarioSummary
+      ? `at ${representativeScenario.lunaRate.toFixed(2)}x Luna blended rate: ${scenarioSummary}`
+      : null,
+    `routing evidence ${report.routing?.confidence ?? "insufficient"}`,
+    "relative sensitivity only, not a currency price claim",
+    "no live mutation",
+  ].filter(Boolean).join(" | ");
+}
+
 function renderPreferenceExperiment(experiment) {
   const labels = {
     blocked: "Blocked",
@@ -2875,7 +2949,7 @@ function renderPreferenceExperiment(experiment) {
         `${snapshot.evaluation.holdoutSignals} holdout signal(s)`,
         `agreement ${formatPercent(snapshot.evaluation.agreement)}`,
         `balanced ${formatPercent(snapshot.evaluation.balancedAccuracy)}`,
-        `${snapshot.shadow.scoredCandidates} shadow-scored candidates`,
+        `${snapshot.shadow.scoredCandidates} replay-scored candidates`,
         snapshot.liveInfluence ? "bounded live influence on" : "diagnostic snapshot only",
       ].join(" · ")
     : [
@@ -2885,73 +2959,90 @@ function renderPreferenceExperiment(experiment) {
       ].join(" · ");
 }
 
-function renderShadowComparison(comparison) {
-  if (!comparison?.available) {
-    elements.shadowComparisonDetail.textContent =
-      "Waiting for a current fitted snapshot.";
-    elements.shadowCandidateList.replaceChildren();
+function renderPreferenceEligibility(eligibility) {
+  if (!eligibility?.snapshotId) {
+    elements.preferenceEligibilityDetail.textContent =
+      "Waiting for an active local preference snapshot. Selection Engine eligibility remains unchanged.";
+    elements.preferenceEligibilityList.replaceChildren();
     return;
   }
-  const summary = comparison.summary;
-  elements.shadowComparisonDetail.textContent = [
-    `${summary.scoredCandidates} scored`,
-    `${summary.wouldMoveUp} would move up`,
-    `${summary.wouldMoveDown} would move down`,
-    `${summary.unchanged} unchanged`,
-    `${summary.insufficientEvidence} insufficient`,
-    summary.duplicateCandidatesCollapsed
-      ? `${summary.duplicateCandidatesCollapsed} repeat appearances collapsed`
-      : null,
-    "comparison does not alter eligibility",
-  ].filter(Boolean).join(" · ");
-  renderShadowCandidates(comparison.candidates ?? [], summary.wouldMoveUp);
+  const summary = eligibility.summary;
+  elements.preferenceEligibilityDetail.textContent = [
+    `${summary.uniqueCandidates} unique candidates inspected`,
+    `${summary.livePromotions ?? 0} added live`,
+    `${summary.liveSuppressions ?? 0} filtered live`,
+    `${summary.promotionProposals} promotion candidate(s)`,
+    `${summary.mandatoryProtected} mandatory protected`,
+    eligibility.readiness.promotionReady ? "promotion evidence ready" : "promotion evidence pending",
+    eligibility.readiness.suppressionReady ? "filter evidence ready" : "filter evidence pending",
+    `authority: ${humanize(eligibility.authority.mode)}`,
+  ].join(" · ");
+  renderPreferenceEligibilityCandidates(eligibility.candidates ?? [], summary.actionableCandidates);
 }
 
-function renderShadowCandidates(candidates, totalPromotions) {
-  const promotions = candidates
-    .filter((candidate) => candidate.movement === "would_move_up")
-    .slice(0, 5);
-  if (promotions.length === 0) {
-    elements.shadowCandidateList.replaceChildren();
+function renderPreferenceEligibilityCandidates(candidates, totalCandidates) {
+  const visible = candidates.slice(0, 8);
+  if (visible.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "review-guidance";
+    empty.textContent = "No candidate currently crosses the conservative promotion or filtering threshold.";
+    elements.preferenceEligibilityList.replaceChildren(empty);
     return;
   }
 
   const heading = document.createElement("p");
-  heading.className = "shadow-candidate-heading";
-  heading.textContent = `Reviewing ${promotions.length} of ${totalPromotions} shadow promotion(s)`;
-  const cards = promotions.map((candidate) => {
+  heading.className = "eligibility-candidate-heading";
+  heading.textContent = `Inspecting ${visible.length} of ${totalCandidates} eligibility decision(s)`;
+  const cards = visible.map((candidate) => {
     const card = document.createElement("article");
-    card.className = "shadow-candidate-card";
+    card.className = "eligibility-candidate-card";
 
     const meta = document.createElement("div");
-    meta.className = "shadow-candidate-meta";
+    meta.className = "eligibility-candidate-meta";
     const identity = document.createElement("strong");
     identity.textContent = `${sourceLabel(candidate.source)} · ${candidate.author || "Unknown author"}`;
     const score = document.createElement("span");
-    score.textContent = `Preference match ${formatPercent(candidate.probability)}`;
+    score.textContent = candidate.eligibilityChanged
+      ? `${candidate.finalDecision === "selected" ? "Added live" : "Filtered live"} · preference match ${formatPercent(candidate.probability)}`
+      : `${candidate.proposal === "suppress" ? "Filter pending" : "Promotion pending"} · preference match ${formatPercent(candidate.probability)}`;
     meta.append(identity, score);
 
     const text = document.createElement("p");
-    text.className = "shadow-candidate-text";
+    text.className = "eligibility-candidate-text";
     text.textContent = candidate.text || "Captured candidate text is unavailable.";
 
     const topics = document.createElement("p");
-    topics.className = "shadow-candidate-topics";
-    topics.textContent = (candidate.topicTags ?? []).slice(0, 4).join(" · ") || candidate.contentType;
+    topics.className = "eligibility-candidate-topics";
+    topics.textContent = [
+      humanize(candidate.reasonCode),
+      candidate.budgetEffect !== "none" ? humanize(candidate.budgetEffect) : null,
+      ...(candidate.topicFacets ?? []).slice(0, 3).map(humanize),
+    ].filter(Boolean).join(" · ");
 
     card.append(meta, text, topics);
     if (candidate.sourceUrl) {
       const link = document.createElement("a");
-      link.className = "shadow-candidate-source";
+      link.className = "eligibility-candidate-source";
       link.href = candidate.sourceUrl;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = "Open source";
       card.append(link);
     }
+    const actions = document.createElement("div");
+    actions.className = "eligibility-candidate-actions feedback-actions";
+    const run = {
+      id: candidate.runId,
+      preferenceFeedback: candidate.preferenceFeedback ?? [],
+    };
+    actions.append(
+      buildPreferenceButton(run, candidate.evidenceKey, "more_like_this", "More like this", loadPilotReview),
+      buildPreferenceButton(run, candidate.evidenceKey, "less_like_this", "Less like this", loadPilotReview),
+    );
+    card.append(actions);
     return card;
   });
-  elements.shadowCandidateList.replaceChildren(heading, ...cards);
+  elements.preferenceEligibilityList.replaceChildren(heading, ...cards);
 }
 
 function resetPilotReviewPage() {
@@ -3259,6 +3350,9 @@ function mountPilotRunBody(card, run) {
     `Delivered suppressed ${run.coverage?.deliveredEvidenceSuppressed ?? 0}`,
     `Confirmed excluded ${run.coverage?.confirmedExcludedSuppressed ?? 0}`,
     `Rounds ${run.coverage?.acquisitionRounds ?? 0}`,
+    run.coverage?.preferenceEligibility
+      ? `Eligibility live ${run.coverage.preferenceEligibility.summary?.livePromotions ?? 0} added / ${run.coverage.preferenceEligibility.summary?.liveSuppressions ?? 0} filtered`
+      : null,
     run.coverage?.providerFollowUpExecuted ? "Follow-up yes" : "Follow-up no",
     run.coverage?.restoreAttempted
       ? `Restored ${run.coverage?.restored ? "yes" : "no"}`
@@ -3351,9 +3445,17 @@ function buildCandidateReview(run, candidate) {
   brief.className = "candidate-review-brief item-layout-view";
   const meta = document.createElement("p");
   meta.className = "pilot-run-stats";
+  const eligibility = (run.preferenceEligibilityDecisions ?? []).find(
+    (entry) => entry.evidenceKey === candidate.evidenceKey,
+  );
   meta.textContent = [
     candidate.decision,
     candidate.reasonCode,
+    eligibility?.eligibilityChanged
+      ? `personalization ${eligibility.finalDecision === "selected" ? "added" : "filtered"}`
+      : eligibility?.proposal && eligibility.proposal !== "retain"
+        ? `${eligibility.proposal} pending`
+        : eligibility ? "eligibility retained" : null,
     candidate.author,
     Number.isInteger(candidate.feedPosition) ? `feed #${candidate.feedPosition}` : null,
   ].filter(Boolean).join(" · ");

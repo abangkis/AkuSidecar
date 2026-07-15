@@ -972,19 +972,19 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   margin-bottom: 0;
 }
 
-.shadow-candidate-list {
+.eligibility-candidate-list {
   display: grid;
   gap: 8px;
   margin-top: 12px;
 }
 
-.shadow-candidate-heading {
+.eligibility-candidate-heading {
   margin: 0;
   color: var(--quiet);
   font-size: 0.76rem;
 }
 
-.shadow-candidate-card {
+.eligibility-candidate-card {
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -993,7 +993,7 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   background: rgba(0, 0, 0, 0.12);
 }
 
-.shadow-candidate-meta {
+.eligibility-candidate-meta {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1001,12 +1001,12 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   font-size: 0.74rem;
 }
 
-.shadow-candidate-meta span,
-.shadow-candidate-topics {
+.eligibility-candidate-meta span,
+.eligibility-candidate-topics {
   color: var(--quiet);
 }
 
-.shadow-candidate-text {
+.eligibility-candidate-text {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
@@ -1016,17 +1016,24 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
   -webkit-line-clamp: 4;
 }
 
-.shadow-candidate-topics {
+.eligibility-candidate-topics {
   margin: 0;
   font-size: 0.7rem;
   line-height: 1.35;
 }
 
-.shadow-candidate-source {
+.eligibility-candidate-source {
   width: fit-content;
   color: var(--accent);
   font-size: 0.74rem;
   font-weight: 700;
+}
+
+.eligibility-candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .preference-experiment > div {
@@ -1053,19 +1060,11 @@ body[data-telemetry-behavior="sticky"] .review-telemetry {
 }
 
 .preference-reason-menu > span {
-  margin-right: 0.2rem;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.feedback-reason-dismiss {
-  margin-left: auto;
-  padding: 5px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--quiet);
-  cursor: pointer;
-  font-size: 0.72rem;
+  margin-right: 0.3rem;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .candidate-review-list h4 {

@@ -1,4 +1,15 @@
 import { ContractError } from "../core/contracts.mjs";
+import {
+  applyBoundedLoadProfile,
+  BOUNDED_LOAD_PROFILES,
+  getBoundedLoadProfile,
+} from "../core/bounded-load-profile.mjs";
+
+const LOAD_OVERRIDE_NAMES = new Set([
+  "timelineCapacity",
+  "maxItemsPerSource",
+  "maxScrolls",
+]);
 
 const DEFINITIONS = {
   captureVisibilityPolicy: {
@@ -89,13 +100,24 @@ const DEFINITIONS = {
       config.preference.enabled = value;
     },
   },
+  preferenceEligibilityMode: {
+    key: "preference.eligibility_mode",
+    applyMode: "next_run",
+    values: new Set(["rank_only", "promote_unused_budget", "guarded_live"]),
+    read: (config) => config.preference?.eligibility?.mode ?? "promote_unused_budget",
+    apply: (config, value) => {
+      config.preference ??= {};
+      config.preference.eligibility ??= {};
+      config.preference.eligibility.mode = value;
+    },
+  },
   maxItemsPerSource: integerDefinition(
     "engine.max_items_per_source",
     "maxItems",
-    { minimum: 1, maximum: 5 },
+    { minimum: 1, maximum: 15 },
   ),
   maxScrolls: {
-    ...integerDefinition("engine.max_scrolls", "maxScrolls", { minimum: 0, maximum: 5 }),
+    ...integerDefinition("engine.max_scrolls", "maxScrolls", { minimum: 0, maximum: 6 }),
     apply(config, value) {
       config.limits.maxScrolls = value;
       config.limits.defaultScrolls = value;
@@ -111,6 +133,13 @@ const DEFINITIONS = {
     "maxKnowledgeContextEvents",
     { minimum: 1, maximum: 100 },
   ),
+  boundedLoadProfile: {
+    key: "engine.bounded_load_profile",
+    applyMode: "next_run",
+    values: new Set([...Object.keys(BOUNDED_LOAD_PROFILES), "custom"]),
+    read: (config) => config.limits.boundedLoadProfile,
+    apply: applyBoundedLoadProfile,
+  },
   reasoningProvider: {
     key: "startup.reasoning_provider",
     applyMode: "restart",
@@ -172,6 +201,7 @@ export function updateDashboardConfiguration(config, store, input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new ContractError("configuration update must be an object");
   }
+  input = expandBoundedLoadUpdate(input);
   const names = Object.keys(input);
   if (names.length === 0 || names.some((name) => !DEFINITIONS[name])) {
     throw new ContractError("configuration update contains an unknown or empty setting");
@@ -190,6 +220,25 @@ export function updateDashboardConfiguration(config, store, input) {
     store.setSetting(definition.key, String(value));
     if (definition.applyMode !== "restart") definition.apply(config, value);
   }
+}
+
+function expandBoundedLoadUpdate(input) {
+  const profileId = input.boundedLoadProfile;
+  if (profileId && profileId !== "custom") {
+    const profile = getBoundedLoadProfile(profileId);
+    if (!profile) return input;
+    return {
+      ...input,
+      timelineCapacity: profile.timelineCapacity,
+      maxItemsPerSource: profile.maxItemsPerSource,
+      maxScrolls: profile.maxScrolls,
+      boundedLoadProfile: profile.id,
+    };
+  }
+  if (!profileId && Object.keys(input).some((name) => LOAD_OVERRIDE_NAMES.has(name))) {
+    return { ...input, boundedLoadProfile: "custom" };
+  }
+  return input;
 }
 
 export function configurationView(config, store) {

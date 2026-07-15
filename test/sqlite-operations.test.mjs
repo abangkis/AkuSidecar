@@ -46,12 +46,19 @@ test("pilot export excludes raw observations and retention stays preview-only", 
     result: { items: [] },
     observations: [{ payload: { secret: "must-not-export" } }],
     candidateEvaluations: [{ evidenceKey: "x:a", text: "Source content" }],
+    preferenceEligibilityDecisions: [{
+      evidenceKey: "x:a",
+      proposal: "suppress",
+      finalDecision: "selected",
+      eligibilityChanged: false,
+    }],
     preferenceFeedback: [],
     reasoningInvocations: [],
   }];
   const exported = buildPilotDatasetExport(runs, { createdAt: "2026-01-01T00:00:00.000Z" });
   assert.equal(exported.containsRawObservations, false);
   assert.equal("observations" in exported.runs[0], false);
+  assert.deepEqual(exported.runs[0].preferenceEligibilityDecisions, runs[0].preferenceEligibilityDecisions);
   assert.doesNotMatch(JSON.stringify(exported), /must-not-export/);
 
   const preview = previewRetention(runs, {
@@ -106,9 +113,14 @@ test("settings resets require typed confirmation, reject active work, and preser
     scrolls: 0,
   }, "fixture");
   assert.throws(() => store.resetLearningData("RESET LEARNING"), /while an update is running/);
-  store.database.prepare(
-    "UPDATE runs SET status = 'completed', completed_at = updated_at WHERE id = ?",
-  ).run("reset-run");
+  store.completeRunWithKnowledge("reset-run", { items: [] }, {}, [], [{
+    evidenceKey: "x:reset",
+    policyVersion: "preference-eligibility-v2",
+    proposal: "retain",
+    baselineDecision: "selected",
+    finalDecision: "selected",
+    eligibilityChanged: false,
+  }]);
   store.setSetting("user.onboarding_profile_v0", JSON.stringify({
     version: 0,
     status: "completed",
@@ -133,8 +145,10 @@ test("settings resets require typed confirmation, reject active work, and preser
   const learning = store.resetLearningData("RESET LEARNING");
   assert.equal(learning.deleted.preferenceFeedbackEvents, 1);
   assert.equal(learning.deleted.preferenceModelSnapshots, 1);
+  assert.equal(learning.deleted.preferenceEligibilityDecisions, 1);
   assert.deepEqual(learning.remaining, {
     preferenceFeedbackEvents: 0,
+    preferenceEligibilityDecisions: 0,
     preferenceModelSnapshots: 0,
     calibrationSessions: 0,
     calibrationSamples: 0,

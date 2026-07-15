@@ -22,19 +22,24 @@ test("dashboard runtime configuration applies to the next run and survives resta
   let address = app.server.address();
   let origin = `http://127.0.0.1:${address.port}`;
   let response = await jsonFetch(`${origin}/api/configuration/runtime`);
+  assert.equal(response.configuration.boundedLoadProfile.effectiveValue, "expanded_2x");
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "open_missing_tab");
   assert.equal(response.configuration.captureVisibilityPolicy.effectiveValue, "quiet");
   assert.equal(response.configuration.missingSourceTabPolicy.source, "default");
   assert.equal(response.configuration.defaultPresentation.effectiveValue, "source");
   assert.equal(response.configuration.homePresentation.effectiveValue, "timeline");
-  assert.equal(response.configuration.timelineCapacity.effectiveValue, 12);
+  assert.equal(response.configuration.timelineCapacity.effectiveValue, 24);
   assert.equal(response.configuration.streamWidth.effectiveValue, "social");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "flow");
   assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x", "linkedin"]);
-  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 5);
-  assert.equal(response.configuration.maxScrolls.effectiveValue, 2);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 10);
+  assert.equal(response.configuration.maxScrolls.effectiveValue, 4);
   assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 2);
   assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 20);
+  assert.equal(
+    response.configuration.preferenceEligibilityMode.effectiveValue,
+    "promote_unused_budget",
+  );
 
   response = await jsonFetch(`${origin}/api/configuration/runtime`, {
     method: "PUT",
@@ -50,10 +55,11 @@ test("dashboard runtime configuration applies to the next run and survives resta
       streamWidth: "comfortable",
       telemetryBehavior: "sticky",
       activeSources: ["x"],
-      maxItemsPerSource: 5,
+      maxItemsPerSource: 10,
       maxScrolls: 3,
       maxAcquisitionRounds: 1,
       maxKnowledgeContextEvents: 30,
+      preferenceEligibilityMode: "rank_only",
     }),
   });
   assert.equal(response.configuration.missingSourceTabPolicy.effectiveValue, "fail_fast");
@@ -71,10 +77,12 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.equal(response.configuration.telemetryBehavior.restartRequired, false);
   assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x"]);
-  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 5);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 10);
   assert.equal(response.configuration.maxScrolls.effectiveValue, 3);
   assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 1);
   assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 30);
+  assert.equal(response.configuration.preferenceEligibilityMode.effectiveValue, "rank_only");
+  assert.equal(response.configuration.boundedLoadProfile.effectiveValue, "custom");
 
   const bootstrap = await jsonFetch(`${origin}/api/bootstrap`);
   assert.deepEqual(
@@ -105,11 +113,22 @@ test("dashboard runtime configuration applies to the next run and survives resta
   assert.equal(response.configuration.streamWidth.effectiveValue, "comfortable");
   assert.equal(response.configuration.telemetryBehavior.effectiveValue, "sticky");
   assert.deepEqual(response.configuration.activeSources.effectiveValue, ["x"]);
-  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 5);
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 10);
   assert.equal(response.configuration.maxScrolls.effectiveValue, 3);
   assert.equal(response.configuration.maxAcquisitionRounds.effectiveValue, 1);
   assert.equal(response.configuration.maxKnowledgeContextEvents.effectiveValue, 30);
+  assert.equal(response.configuration.preferenceEligibilityMode.effectiveValue, "rank_only");
+  assert.equal(response.configuration.boundedLoadProfile.effectiveValue, "custom");
   assert.equal(response.configuration.evaluationModel.restartRequired, false);
+
+  response = await jsonFetch(`${origin}/api/configuration/runtime`, {
+    method: "PUT",
+    body: JSON.stringify({ boundedLoadProfile: "stress_3x" }),
+  });
+  assert.equal(response.configuration.boundedLoadProfile.effectiveValue, "stress_3x");
+  assert.equal(response.configuration.maxItemsPerSource.effectiveValue, 15);
+  assert.equal(response.configuration.maxScrolls.effectiveValue, 6);
+  assert.equal(response.configuration.timelineCapacity.effectiveValue, 36);
 });
 
 test("environment override remains effective over a persisted dashboard value", async (context) => {

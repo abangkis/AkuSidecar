@@ -244,6 +244,13 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   const run = await engine.waitForRun(started.id);
 
   assert.equal(run.candidateEvaluations.length, 2);
+  assert.equal(run.preferenceEligibilityDecisions.length, 2);
+  assert.ok(run.preferenceEligibilityDecisions.every((entry) =>
+    entry.authority === "promote_unused_budget" &&
+    entry.eligibilityChanged === false &&
+    entry.finalDecision === entry.baselineDecision
+  ));
+  assert.equal(run.coverage.preferenceEligibility.liveMutation, false);
   const selected = run.candidateEvaluations.find((entry) => entry.decision === "selected");
   const excluded = run.candidateEvaluations.find((entry) => entry.decision === "excluded");
   assert.equal(selected.itemId, "selected-item");
@@ -283,7 +290,7 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
   engine.addPreferenceFeedback(run.id, {
     kind: "less_like_this",
     evidenceKey: excluded.evidenceKey,
-    reasonCode: "low_signal",
+    reasonCode: "already_known",
     note: "",
   });
   engine.addPreferenceFeedback(run.id, {
@@ -293,6 +300,7 @@ test("learning loop persists evaluated decisions, usage, and append-only correct
     note: "",
   });
   assert.equal(engine.getRun(run.id).preferenceFeedback.length, 3);
+  assert.equal(engine.getRun(run.id).preferenceEligibilityDecisions.length, 2);
   assert.deepEqual(engine.getPreferenceProfile(), {
     version: 1,
     status: "collecting",

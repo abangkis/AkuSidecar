@@ -17,7 +17,7 @@ test("heartbeat keeps operational capabilities and drops arbitrary content", () 
       sources: ["x", "linkedin"],
       actions: ["collect_visible", "collect_visible"],
       authority: "read_only_bounded",
-      captureLimits: { maxScrolls: 2, maxSnapshots: 3, maxBlocksPerSnapshot: 20 },
+      captureLimits: { maxScrolls: 6, maxSnapshots: 7, maxBlocksPerSnapshot: 20 },
       rawPostText: "must not escape",
       token: "secret",
     },
@@ -183,9 +183,9 @@ test("a recovery success does not erase two failures from rolling health", () =>
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.42",
-    runtimeRevision: "source-fidelity-v44",
-    buildId: "aku-bridge-0.5.42-source-fidelity-v44",
+    extensionVersion: "0.5.44",
+    runtimeRevision: "source-fidelity-v46",
+    buildId: "aku-bridge-0.5.44-source-fidelity-v46",
     adapterVersions: { x: "x-dom-v16", linkedin: "linkedin-dom-v13" },
     actions: [
       "reload_self",

@@ -144,6 +144,18 @@ export class SqliteStateStore {
       CREATE INDEX IF NOT EXISTS candidate_evaluations_run_decision
         ON candidate_evaluations(run_id, decision, feed_position);
 
+      CREATE TABLE IF NOT EXISTS preference_eligibility_decisions (
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        evidence_key TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        decision_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(run_id, evidence_key, policy_version)
+      );
+
+      CREATE INDEX IF NOT EXISTS preference_eligibility_run_created
+        ON preference_eligibility_decisions(run_id, created_at);
+
       CREATE TABLE IF NOT EXISTS preference_feedback_events (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -400,6 +412,7 @@ export class SqliteStateStore {
     try {
       this.database.exec(`
         DELETE FROM calibration_sessions;
+        DELETE FROM preference_eligibility_decisions;
         DELETE FROM preference_feedback_events;
         DELETE FROM preference_model_snapshots;
         DELETE FROM settings
@@ -440,6 +453,7 @@ export class SqliteStateStore {
         DELETE FROM calibration_profile_snapshots;
         DELETE FROM calibration_samples;
         DELETE FROM calibration_sessions;
+        DELETE FROM preference_eligibility_decisions;
         DELETE FROM preference_feedback_events;
         DELETE FROM preference_model_snapshots;
         DELETE FROM reasoning_invocations;
@@ -485,6 +499,9 @@ export class SqliteStateStore {
     return {
       preferenceFeedbackEvents: Number(this.database.prepare(
         "SELECT COUNT(*) AS count FROM preference_feedback_events",
+      ).get()?.count ?? 0),
+      preferenceEligibilityDecisions: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM preference_eligibility_decisions",
       ).get()?.count ?? 0),
       preferenceModelSnapshots: Number(this.database.prepare(
         "SELECT COUNT(*) AS count FROM preference_model_snapshots",
@@ -908,6 +925,10 @@ export class SqliteStateStore {
       .prepare(`SELECT * FROM candidate_evaluations WHERE run_id IN (${placeholders}) ORDER BY feed_position ASC, created_at ASC`)
       .all(...runs.map((run) => run.id));
     const candidatesByRun = groupRows(candidateRows, "run_id", mapCandidateEvaluation);
+    const eligibilityRows = this.database
+      .prepare(`SELECT * FROM preference_eligibility_decisions WHERE run_id IN (${placeholders}) ORDER BY created_at ASC`)
+      .all(...runs.map((run) => run.id));
+    const eligibilityByRun = groupRows(eligibilityRows, "run_id", mapPreferenceEligibilityDecision);
     const preferenceRows = this.database
       .prepare(`SELECT * FROM preference_feedback_events WHERE run_id IN (${placeholders}) ORDER BY created_at ASC, id ASC`)
       .all(...runs.map((run) => run.id));
@@ -927,6 +948,7 @@ export class SqliteStateStore {
     const sessionByRun = new Map(sessionRows.map((row) => [row.run_id, row]));
     for (const run of runs) {
       run.candidateEvaluations = candidatesByRun.get(run.id) ?? [];
+      run.preferenceEligibilityDecisions = eligibilityByRun.get(run.id) ?? [];
       run.preferenceFeedback = preferenceByRun.get(run.id) ?? [];
       run.reasoningInvocations = invocationsByRun.get(run.id) ?? [];
       run.unifiedSessionId = sessionByRun.get(run.id)?.session_id ?? null;
@@ -951,6 +973,10 @@ export class SqliteStateStore {
       .prepare("SELECT * FROM candidate_evaluations WHERE run_id = ? ORDER BY feed_position ASC, created_at ASC")
       .all(id)
       .map(mapCandidateEvaluation);
+    run.preferenceEligibilityDecisions = this.database
+      .prepare("SELECT * FROM preference_eligibility_decisions WHERE run_id = ? ORDER BY created_at ASC")
+      .all(id)
+      .map(mapPreferenceEligibilityDecision);
     run.preferenceFeedback = this.database
       .prepare("SELECT * FROM preference_feedback_events WHERE run_id = ? ORDER BY created_at ASC, id ASC")
       .all(id)
@@ -1001,7 +1027,13 @@ export class SqliteStateStore {
     return this.getRun(id);
   }
 
-  completeRunWithKnowledge(id, result, coverage, candidateEvaluations = []) {
+  completeRunWithKnowledge(
+    id,
+    result,
+    coverage,
+    candidateEvaluations = [],
+    preferenceEligibilityDecisions = [],
+  ) {
     const run = this.getRun(id);
     if (!run) throw new Error("run not found");
     const now = new Date().toISOString();
@@ -1114,6 +1146,24 @@ export class SqliteStateStore {
           candidate.relationshipType ?? "original",
           candidate.parentPermalink ?? null,
           candidate.quotedPost ? JSON.stringify(candidate.quotedPost) : null,
+          now,
+        );
+      }
+
+      const insertEligibilityDecision = this.database.prepare(`
+        INSERT INTO preference_eligibility_decisions(
+          run_id, evidence_key, policy_version, decision_json, created_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, evidence_key, policy_version) DO UPDATE SET
+          decision_json = excluded.decision_json,
+          created_at = excluded.created_at
+      `);
+      for (const decision of preferenceEligibilityDecisions) {
+        insertEligibilityDecision.run(
+          id,
+          decision.evidenceKey,
+          decision.policyVersion,
+          JSON.stringify(decision),
           now,
         );
       }
@@ -1599,6 +1649,16 @@ function mapPreferenceFeedback(row) {
     note: row.note,
     origin: row.origin ?? "routine",
     contextId: row.context_id ?? row.run_id,
+    createdAt: row.created_at,
+  };
+}
+
+function mapPreferenceEligibilityDecision(row) {
+  return {
+    ...(parseJson(row.decision_json) ?? {}),
+    runId: row.run_id,
+    evidenceKey: row.evidence_key,
+    policyVersion: row.policy_version,
     createdAt: row.created_at,
   };
 }

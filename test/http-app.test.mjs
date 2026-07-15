@@ -7,6 +7,7 @@ import { projectRoot } from "../src/config.mjs";
 import { BRIDGE_CONTRACT_VERSION, createAkuBrowserApp } from "../src/http/app.mjs";
 import { SqliteStateStore } from "../src/store/sqlite-state-store.mjs";
 import { sourceFreshnessFixture } from "./source-freshness-fixture.mjs";
+import { PAIRED_MODEL_REPORT_SETTING } from "../src/core/paired-model-replay.mjs";
 
 test("HTTP API enforces the bridge token and completes a finite run", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-browser-http-"));
@@ -94,6 +95,16 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   const health = await healthResponse.json();
   assert.equal(health.instanceEpoch, bootstrap.instanceEpoch);
 
+  const emptyPairing = await jsonFetch(`${origin}/api/reasoning/model-pairing`);
+  assert.equal(emptyPairing.report, null);
+  store.setSetting(PAIRED_MODEL_REPORT_SETTING, JSON.stringify({
+    version: 1,
+    mode: "explicit_paired_model_replay",
+    generatedAt: "2026-07-15T00:00:00.000Z",
+  }));
+  const storedPairing = await jsonFetch(`${origin}/api/reasoning/model-pairing`);
+  assert.equal(storedPairing.report.generatedAt, "2026-07-15T00:00:00.000Z");
+
   const reconnectingResponse = await fetch(`${origin}/api/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -155,9 +166,9 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
     method: "POST",
     body: JSON.stringify({
       capabilities: {
-        extensionVersion: "0.5.42",
-        runtimeRevision: "source-fidelity-v44",
-        buildId: "aku-bridge-0.5.42-source-fidelity-v44",
+        extensionVersion: "0.5.44",
+        runtimeRevision: "source-fidelity-v46",
+        buildId: "aku-bridge-0.5.44-source-fidelity-v46",
         adapterVersions: { x: "x-dom-v16", linkedin: "linkedin-dom-v13" },
         actions: [
           "reload_self",
@@ -237,6 +248,13 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   assert.equal(review.review.totalMatching, 1);
   assert.equal(review.review.runs[0].id, completed.id);
   assert.equal(review.review.window.pilotStartedAt, completed.createdAt);
+
+  const eligibility = await jsonFetch(`${origin}/api/preferences/eligibility?limit=10`);
+  assert.equal(eligibility.eligibility.mode, "preference_eligibility_live");
+  assert.equal(eligibility.eligibility.authority.mode, "promote_unused_budget");
+  assert.equal(eligibility.eligibility.authority.liveMutation, true);
+  assert.equal(eligibility.eligibility.summary.eligibilityChanged, false);
+  assert.equal(completed.preferenceEligibilityDecisions.length, 1);
 
   const invalidReview = await fetch(`${origin}/api/pilot/review?verdict=unknown`);
   assert.equal(invalidReview.status, 400);

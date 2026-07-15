@@ -19,6 +19,10 @@ import { createBridgeActions } from "../operations/bridge-actions.mjs";
 import { BRIDGE_REQUIREMENTS } from "../operations/bridge-compatibility.mjs";
 import { getOnboardingProfile, saveOnboardingProfile } from "../core/onboarding-profile.mjs";
 import { CalibrationEngine } from "../core/calibration-engine.mjs";
+import {
+  PAIRED_MODEL_REPORT_SETTING,
+  parsePairedModelReport,
+} from "../core/paired-model-replay.mjs";
 
 const MIME_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -30,7 +34,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
-export const APP_VERSION = "0.6.10";
+export const APP_VERSION = "0.6.16";
 
 export function createAkuBrowserApp({
   config,
@@ -53,6 +57,7 @@ export function createAkuBrowserApp({
     minimumScoreDelta: 0.03,
     automaticFitFeedbackDelta: 5,
   };
+  config.preference.eligibility ??= { mode: "promote_unused_budget" };
   applyPersistedConfiguration(config, store);
   const engine = new JobEngine({
     store,
@@ -401,7 +406,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
         sources: [...(config.sources?.active ?? ["x", "linkedin"])],
         maxItemsPerSource: config.limits.maxItems,
         maxItemsTotal: Math.min(
-          10,
+          config.limits.maxItemsTotal ?? Number.MAX_SAFE_INTEGER,
           config.limits.maxItems * (config.sources?.active?.length ?? 2),
         ),
         execution: "sequential",
@@ -509,6 +514,13 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/reasoning/model-pairing") {
+    sendJson(response, 200, {
+      report: parsePairedModelReport(store.getSetting(PAIRED_MODEL_REPORT_SETTING)),
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/preferences/experiment") {
     sendJson(response, 200, { experiment: engine.getPreferenceExperiment() });
     return;
@@ -528,6 +540,19 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
     });
     sendJson(response, 200, {
       comparison: engine.getPreferenceShadowComparison({ limit, offset }),
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/preferences/eligibility") {
+    const limit = boundedIntegerQuery(url, "limit", { fallback: 20, minimum: 1, maximum: 100 });
+    const offset = boundedIntegerQuery(url, "offset", {
+      fallback: 0,
+      minimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+    sendJson(response, 200, {
+      eligibility: engine.getPreferenceEligibilityReport({ limit, offset }),
     });
     return;
   }

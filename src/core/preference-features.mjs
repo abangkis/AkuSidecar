@@ -93,7 +93,7 @@ export function preferenceFeedbackWeight(signal) {
   if (signal.kind === "neutral") return 0.75;
   if (signal.kind === "more_like_this") return signal.origin === "calibration" ? 1.1 : 1;
   if (signal.kind !== "less_like_this") return 0;
-  if (["wrong_topic", "wrong_priority"].includes(signal.reasonCode)) return 1;
+  if (["not_interested", "wrong_topic"].includes(signal.reasonCode)) return 1;
   if (!signal.reasonCode) return 0.5;
   return 0;
 }
@@ -101,11 +101,10 @@ export function preferenceFeedbackWeight(signal) {
 export function feedbackLaneForReason(kind, reasonCode) {
   if (kind === "more_like_this" || kind === "neutral") return "preference";
   if (kind !== "less_like_this") return "ignored";
-  if (["wrong_topic", "wrong_priority"].includes(reasonCode)) return "preference";
+  if (["not_interested", "wrong_topic"].includes(reasonCode)) return "preference";
   if (reasonCode === "already_known") return "continuity";
   if (reasonCode === "duplicate") return "deduplication";
   if (reasonCode === "stale_or_superseded") return "recency";
-  if (reasonCode === "low_signal") return "materiality";
   return "ambiguous_preference";
 }
 

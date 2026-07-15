@@ -113,6 +113,7 @@ export function buildPilotDatasetExport(runs, options = {}) {
       result: run.result,
       error: run.error,
       candidateEvaluations: run.candidateEvaluations ?? [],
+      preferenceEligibilityDecisions: run.preferenceEligibilityDecisions ?? [],
       preferenceFeedback: run.preferenceFeedback ?? [],
       reasoningInvocations: run.reasoningInvocations ?? [],
     })),

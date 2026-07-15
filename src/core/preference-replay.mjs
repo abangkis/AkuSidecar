@@ -1,3 +1,5 @@
+import { preferenceFeedbackWeight } from "./preference-features.mjs";
+
 const POSITIVE_KINDS = new Set(["more_like_this"]);
 const NEGATIVE_KINDS = new Set(["less_like_this"]);
 const NEUTRAL_KINDS = new Set(["neutral"]);
@@ -12,7 +14,8 @@ export const PREFERENCE_REPLAY_THRESHOLDS = Object.freeze({
 });
 
 export function buildPreferenceReplay(runs) {
-  const { candidates, signals } = buildPreferenceSignals(runs);
+  const { candidates } = buildPreferenceSignals(runs);
+  const signals = buildEffectivePreferenceSignals(runs, { weightedOnly: true });
   const positive = signals.filter((signal) => signal.polarity === "positive");
   const negative = signals.filter((signal) => signal.polarity === "negative");
   const neutral = signals.filter((signal) => signal.polarity === "neutral");
@@ -114,6 +117,23 @@ export function buildPreferenceSignals(runs) {
   }
 
   return { candidates, signals };
+}
+
+export function buildEffectivePreferenceSignals(runs, { weightedOnly = false } = {}) {
+  const { signals } = buildPreferenceSignals(runs);
+  const latest = new Map();
+  for (const signal of [...signals].sort(compareSignalRecency)) {
+    latest.set(`${signal.source}:${signal.evidenceKey}`, signal);
+  }
+  const effective = [...latest.values()];
+  return weightedOnly
+    ? effective.filter((signal) => preferenceFeedbackWeight(signal) > 0)
+    : effective;
+}
+
+function compareSignalRecency(left, right) {
+  return String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")) ||
+    String(left.runId).localeCompare(String(right.runId));
 }
 
 function aggregateLabels(signals, labelsForAssessment) {

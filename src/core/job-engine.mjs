@@ -36,6 +36,11 @@ import { buildPilotReview } from "./pilot-review.mjs";
 import { buildEngineReplayBenchmark } from "./engine-replay-benchmark.mjs";
 import { normalizePreferenceAssessment } from "./preference-features.mjs";
 import { selectReasoningCandidates } from "./selection-engine.mjs";
+import {
+  applyPreferenceEligibilityResult,
+  buildPreferenceEligibilityReport,
+  evaluatePreferenceEligibilityRun,
+} from "./preference-eligibility-controller.mjs";
 
 export class JobEngine {
   constructor({ store, reasoningProvider, limits, preferencePolicy = {}, logger = console }) {
@@ -446,6 +451,15 @@ export class JobEngine {
     return buildShadowComparison(status.currentSnapshot, runs, { limit, offset });
   }
 
+  getPreferenceEligibilityReport({ limit = 20, offset = 0, runLimit = 500 } = {}) {
+    const runs = this.store.listRunsWithFeedback(runLimit);
+    return buildPreferenceEligibilityReport(runs, this.getPreferenceRuntime(), {
+      limit,
+      offset,
+      policy: this.preferencePolicy.eligibility,
+    });
+  }
+
   async waitForRun(runId) {
     await this.activeReasoning.get(runId);
     return this.store.getRun(runId);
@@ -726,8 +740,31 @@ export class JobEngine {
       );
       assertPlatformOrderItems(validatedResult, invocation.evaluatedEvidenceKeys);
       assertUniqueResultEvidence(validatedResult, suppressedEvidenceKeys);
-      const result = selectReasoningCandidates(validatedResult, run, this.preferencePolicy.selection);
+      const baselineResult = selectReasoningCandidates(
+        validatedResult,
+        run,
+        this.preferencePolicy.selection,
+      );
       if (this.store.getRun(runId)?.status === "cancelled") return;
+      const candidateEvaluations = buildCandidateEvaluations(
+        run,
+        boundedObservation,
+        baselineResult,
+        invocation.evaluatedEvidenceKeys,
+      );
+      const preferenceHistory = this.store.listRunsWithFeedback(500);
+      const preferenceEligibility = evaluatePreferenceEligibilityRun({
+        run,
+        candidates: candidateEvaluations,
+        runtime: this.getPreferenceRuntime(),
+        policy: this.preferencePolicy.eligibility,
+        datasetRuns: [...preferenceHistory, { ...run, candidateEvaluations }],
+      });
+      const result = applyPreferenceEligibilityResult(
+        baselineResult,
+        validatedResult.items,
+        preferenceEligibility,
+      );
       const coverage = {
         ...aggregateCoverage(storedObservations, planning),
         source: observation.source,
@@ -742,6 +779,14 @@ export class JobEngine {
         knowledgeContextEvents: knowledgeContext.events.length,
         checkpointAdvanced: true,
         provider: this.reasoningProvider.name,
+        preferenceEligibility: {
+          policyVersion: preferenceEligibility.policyVersion,
+          authority: preferenceEligibility.authority,
+          liveMutation: preferenceEligibility.liveMutation,
+          snapshotId: preferenceEligibility.snapshotId,
+          readiness: preferenceEligibility.readiness,
+          summary: preferenceEligibility.summary,
+        },
         scopeStatement:
           "Bounded native-browser sample only; this is not a claim of complete feed coverage.",
       };
@@ -749,12 +794,8 @@ export class JobEngine {
         runId,
         result,
         coverage,
-        buildCandidateEvaluations(
-          run,
-          boundedObservation,
-          result,
-          invocation.evaluatedEvidenceKeys,
-        ),
+        candidateEvaluations,
+        preferenceEligibility.decisions,
       );
     } catch (error) {
       if (error.reasoningTelemetry) this.store.saveReasoningInvocation(error.reasoningTelemetry);
@@ -811,6 +852,7 @@ function projectRunForPresentation(run) {
     feedback: run.feedback ?? [],
     candidateEvaluations: run.candidateEvaluations ?? [],
     preferenceFeedback: run.preferenceFeedback ?? [],
+    preferenceEligibilityDecisions: run.preferenceEligibilityDecisions ?? [],
     reasoningInvocations: run.reasoningInvocations ?? [],
   };
 }
@@ -982,7 +1024,7 @@ function mergeQuotedPost(previous, current) {
   };
 }
 
-function assertCandidateAssessments(result, observation, evaluatedEvidenceKeys) {
+export function assertCandidateAssessments(result, observation, evaluatedEvidenceKeys) {
   const observed = new Set(uniqueEvidenceKeys(observation));
   const assessed = new Set();
   for (const assessment of result.candidateAssessments ?? []) {
@@ -1127,7 +1169,7 @@ function summarizePreferenceComposition(items, runtime) {
   };
 }
 
-function assertPlatformOrderItems(result, evaluatedEvidenceKeys) {
+export function assertPlatformOrderItems(result, evaluatedEvidenceKeys) {
   if (!Array.isArray(evaluatedEvidenceKeys)) return;
   const actual = result.items.map((item) => item.evidenceKey);
   const incompleteOrOutOfOrder = actual.length !== evaluatedEvidenceKeys.length ||
@@ -1157,7 +1199,7 @@ function sourceLabel(source) {
   return source === "x" ? "X" : "LinkedIn";
 }
 
-function assertObservedSources(result, observation) {
+export function assertObservedSources(result, observation) {
   const blocksByEvidenceKey = new Map();
   for (const block of observation.snapshots.flatMap((snapshot) => snapshot.blocks)) {
     blocksByEvidenceKey.set(block.evidenceKey, block);

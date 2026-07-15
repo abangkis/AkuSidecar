@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { buildPreferenceReplay, buildPreferenceSignals } from "./preference-replay.mjs";
+import {
+  buildEffectivePreferenceSignals,
+  buildPreferenceReplay,
+  buildPreferenceSignals,
+} from "./preference-replay.mjs";
 import {
   normalizePreferenceAssessment,
   PREFERENCE_CONTINUOUS_FIELDS,
@@ -43,10 +47,10 @@ export function fitOfflinePreferenceExperiment(runs, options = {}) {
   const status = preferenceExperimentStatus(runs);
   const runtime = options.runtime === true;
   if (status.status === "blocked" && !runtime) return status;
-  const { candidates, signals } = buildPreferenceSignals(runs);
-  const assessedSignals = deduplicateSignals(signals.filter((signal) =>
-    signal.assessment && preferenceFeedbackWeight(signal) > 0,
-  )).map((signal) => ({
+  const { candidates } = buildPreferenceSignals(runs);
+  const assessedSignals = buildEffectivePreferenceSignals(runs, { weightedOnly: true })
+    .filter((signal) => signal.assessment)
+    .map((signal) => ({
     ...signal,
     assessment: normalizePreferenceAssessment(signal.assessment),
     weight: preferenceFeedbackWeight(signal),
@@ -255,8 +259,8 @@ export function buildShadowComparison(snapshot, runs, options = {}) {
 }
 
 export function preferenceDatasetFingerprint(runs) {
-  const { signals } = buildPreferenceSignals(runs);
-  const stable = deduplicateSignals(signals.filter((signal) => signal.assessment))
+  const stable = buildEffectivePreferenceSignals(runs)
+    .filter((signal) => signal.assessment)
     .map((signal) => ({
       runId: signal.runId,
       source: signal.source,
@@ -356,19 +360,6 @@ function categoricalWeights(signals, labelsForSignal) {
       ),
     ];
   }));
-}
-
-function deduplicateSignals(signals) {
-  const latest = new Map();
-  for (const signal of [...signals].sort(compareSignalRecency)) {
-    latest.set(`${signal.source}:${signal.evidenceKey}`, signal);
-  }
-  return [...latest.values()];
-}
-
-function compareSignalRecency(left, right) {
-  return String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")) ||
-    String(left.runId).localeCompare(String(right.runId));
 }
 
 function deduplicateCandidates(runs) {

@@ -1,6 +1,10 @@
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  DEFAULT_BOUNDED_LOAD_PROFILE,
+  getBoundedLoadProfile,
+} from "./core/bounded-load-profile.mjs";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot = path.resolve(currentDirectory, "..");
@@ -26,6 +30,7 @@ function parseMissingSourceTabPolicy(value, fallback = "open_missing_tab") {
 }
 
 export function loadConfig(env = process.env) {
+  const loadProfile = getBoundedLoadProfile(DEFAULT_BOUNDED_LOAD_PROFILE);
   const port = parseInteger(env.AKU_BROWSER_PORT, 47821);
   const sharedModel = env.AKU_CODEX_MODEL || null;
   const missingSourceTabOverride = MISSING_SOURCE_TAB_POLICIES.has(
@@ -63,6 +68,10 @@ export function loadConfig(env = process.env) {
       ? path.resolve(env.AKU_DATABASE_PATH)
       : path.join(projectRoot, "runtime", "aku-browser.db"),
     runtimeConfiguration: {
+      boundedLoadProfile: {
+        defaultValue: loadProfile.id,
+        environmentOverride: null,
+      },
       missingSourceTabPolicy: {
         defaultValue: "open_missing_tab",
         environmentOverride: missingSourceTabOverride,
@@ -80,7 +89,7 @@ export function loadConfig(env = process.env) {
         environmentOverride: null,
       },
       timelineCapacity: {
-        defaultValue: 12,
+        defaultValue: loadProfile.timelineCapacity,
         environmentOverride: null,
       },
       streamWidth: {
@@ -103,12 +112,20 @@ export function loadConfig(env = process.env) {
         defaultValue: 10,
         environmentOverride: null,
       },
+      preferenceLiveInfluence: {
+        defaultValue: true,
+        environmentOverride: null,
+      },
+      preferenceEligibilityMode: {
+        defaultValue: "promote_unused_budget",
+        environmentOverride: null,
+      },
       maxItemsPerSource: {
-        defaultValue: 5,
+        defaultValue: loadProfile.maxItemsPerSource,
         environmentOverride: null,
       },
       maxScrolls: {
-        defaultValue: 2,
+        defaultValue: loadProfile.maxScrolls,
         environmentOverride: null,
       },
       maxAcquisitionRounds: {
@@ -151,7 +168,7 @@ export function loadConfig(env = process.env) {
     presentation: {
       defaultLayout: "source",
       homePresentation: "timeline",
-      timelineCapacity: 12,
+      timelineCapacity: loadProfile.timelineCapacity,
       streamWidth: "social",
       telemetryBehavior: "flow",
     },
@@ -170,6 +187,9 @@ export function loadConfig(env = process.env) {
       maxRankDisplacement: 2,
       minimumScoreDelta: 0.03,
       automaticFitFeedbackDelta: 5,
+      eligibility: {
+        mode: "promote_unused_budget",
+      },
     },
     reasoning: {
       provider,
@@ -216,13 +236,16 @@ export function loadConfig(env = process.env) {
         reasoningDefaults.acquisitionPlanning?.policy ||
         "always",
       maxBodyBytes: 1_000_000,
-      maxItems: 5,
-      maxScrolls: 2,
+      boundedLoadProfile: loadProfile.id,
+      boundedLoadScale: loadProfile.scale,
+      maxItems: loadProfile.maxItemsPerSource,
+      maxItemsTotal: loadProfile.maxItemsTotal,
+      maxScrolls: loadProfile.maxScrolls,
       maxAcquisitionRounds: 2,
       followUpScrolls: 1,
       maxContinuationAnchors: 3,
       maxKnowledgeContextEvents: 20,
-      defaultScrolls: 2,
+      defaultScrolls: loadProfile.maxScrolls,
       scrollFraction: 0.75,
       scrollSettleMs: 900,
       captureTimeoutMs: 45_000,
@@ -233,7 +256,7 @@ export function loadConfig(env = process.env) {
       maxMediaPerBlock: 4,
       qualityReportRequired: true,
       qualityRetryBudget: 1,
-      qualityRetrySettleMs: 300,
+      qualityRetrySettleMs: loadProfile.qualityRetrySettleMs,
     },
   };
 }
