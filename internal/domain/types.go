@@ -34,6 +34,8 @@ type Settings struct {
 	MaxScrolls                int      `json:"maxScrolls"`
 	QualityRetrySettleMS      int      `json:"qualityRetrySettleMs"`
 	PreferenceEligibilityMode string   `json:"preferenceEligibilityMode"`
+	DefaultPresentation       string   `json:"defaultPresentation"`
+	StreamWidth               string   `json:"streamWidth"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -43,6 +45,8 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		OpenMissingSource:         openMissing,
 		ActiveSources:             []Source{SourceX, SourceLinkedIn},
 		PreferenceEligibilityMode: preferenceMode,
+		DefaultPresentation:       "source",
+		StreamWidth:               "social",
 	}
 	settings.ApplyProfile()
 	return settings
@@ -56,6 +60,8 @@ func (s *Settings) ApplyProfile() {
 	case "stress":
 		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 6, 15, 30
 		s.TimelineCapacity, s.QualityRetrySettleMS = 36, 1000
+	case "custom":
+		// Custom keeps its explicit, policy-bounded values.
 	default:
 		s.LoadProfile = "expanded"
 		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 4, 10, 20
@@ -63,8 +69,18 @@ func (s *Settings) ApplyProfile() {
 	}
 }
 
+func (s *Settings) Normalize() {
+	if s.DefaultPresentation == "" {
+		s.DefaultPresentation = "source"
+	}
+	if s.StreamWidth == "" {
+		s.StreamWidth = "social"
+	}
+	s.ApplyProfile()
+}
+
 func (s Settings) Validate() error {
-	if s.LoadProfile != "standard" && s.LoadProfile != "expanded" && s.LoadProfile != "stress" {
+	if s.LoadProfile != "standard" && s.LoadProfile != "expanded" && s.LoadProfile != "stress" && s.LoadProfile != "custom" {
 		return fmt.Errorf("unsupported load profile %q", s.LoadProfile)
 	}
 	if s.CaptureVisibility != "quiet" && s.CaptureVisibility != "adaptive_fidelity" {
@@ -72,6 +88,27 @@ func (s Settings) Validate() error {
 	}
 	if s.PreferenceEligibilityMode != "rank_only" && s.PreferenceEligibilityMode != "promote_unused_budget" && s.PreferenceEligibilityMode != "guarded_live" {
 		return fmt.Errorf("unsupported preference mode %q", s.PreferenceEligibilityMode)
+	}
+	if s.DefaultPresentation != "source" && s.DefaultPresentation != "brief" {
+		return fmt.Errorf("unsupported default presentation %q", s.DefaultPresentation)
+	}
+	if s.StreamWidth != "compact" && s.StreamWidth != "social" && s.StreamWidth != "comfortable" && s.StreamWidth != "wide" {
+		return fmt.Errorf("unsupported stream width %q", s.StreamWidth)
+	}
+	if s.MaxScrolls < 0 || s.MaxScrolls > 6 {
+		return errors.New("maxScrolls must be between 0 and 6")
+	}
+	if s.MaxItemsPerSource < 1 || s.MaxItemsPerSource > 15 {
+		return errors.New("maxItemsPerSource must be between 1 and 15")
+	}
+	if s.MaxItemsTotal < 1 || s.MaxItemsTotal > 30 {
+		return errors.New("maxItemsTotal must be between 1 and 30")
+	}
+	if s.TimelineCapacity < 1 || s.TimelineCapacity > 50 {
+		return errors.New("timelineCapacity must be between 1 and 50")
+	}
+	if s.QualityRetrySettleMS < 0 || s.QualityRetrySettleMS > 5000 {
+		return errors.New("qualityRetrySettleMs must be between 0 and 5000")
 	}
 	if len(s.ActiveSources) == 0 || len(s.ActiveSources) > 2 {
 		return errors.New("activeSources must contain one or two sources")
@@ -84,6 +121,19 @@ func (s Settings) Validate() error {
 		seen[source] = true
 	}
 	return nil
+}
+
+type OnboardingProfile struct {
+	Version       int      `json:"version"`
+	Status        string   `json:"status"`
+	Origin        string   `json:"origin"`
+	ActiveSources []Source `json:"activeSources"`
+	CompletedAt   string   `json:"completedAt"`
+}
+
+type OnboardingState struct {
+	Status  string             `json:"status"`
+	Profile *OnboardingProfile `json:"profile"`
 }
 
 type Session struct {

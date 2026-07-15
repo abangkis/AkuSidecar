@@ -41,6 +41,7 @@ type Engine struct {
 	config    config.Config
 	epoch     string
 	mu        sync.RWMutex
+	operation sync.Mutex
 	heartbeat *domain.BridgeHeartbeat
 	active    map[string]context.CancelFunc
 	logger    Logger
@@ -58,11 +59,21 @@ func (e *Engine) Settings(ctx context.Context) (domain.Settings, error) {
 	return e.store.GetSettings(ctx)
 }
 func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domain.Settings, error) {
-	value.ApplyProfile()
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	value.Normalize()
 	if err := e.store.SaveSettings(ctx, value); err != nil {
 		return domain.Settings{}, err
 	}
 	return e.store.GetSettings(ctx)
+}
+func (e *Engine) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
+	return e.store.Onboarding(ctx)
+}
+func (e *Engine) CompleteOnboarding(ctx context.Context, sources []domain.Source) (domain.OnboardingState, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.CompleteOnboarding(ctx, sources)
 }
 
 type BridgeStatus struct {
@@ -171,6 +182,15 @@ func sameStringSet(actual, expected []string) bool {
 }
 
 func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Session, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	onboarding, err := e.store.Onboarding(ctx)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if onboarding.Status != "completed" {
+		return domain.Session{}, errors.New("complete onboarding before starting an update")
+	}
 	status := e.BridgeStatus()
 	if !status.Compatible {
 		return domain.Session{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
@@ -538,7 +558,17 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domain.Feedback) (domain.Feedback, error) {
 	return e.store.AddFeedback(ctx, timelineID, value)
 }
-func (e *Engine) Reset(ctx context.Context) error { return e.store.Reset(ctx) }
+func (e *Engine) ResetLearning(ctx context.Context) error {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.ResetLearning(ctx)
+}
+func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	defaults := domain.DefaultSettings(e.config.Capture.Profile, e.config.Capture.Visibility, e.config.Preference.Mode, e.config.Capture.OpenMissingSource)
+	return e.store.FullReset(ctx, defaults)
+}
 
 func (e *Engine) Shutdown() {
 	e.mu.Lock()

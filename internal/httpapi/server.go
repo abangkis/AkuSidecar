@@ -118,7 +118,33 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "settings": settings, "activeSession": active, "timeline": timeline})
+		onboarding, err := s.engine.Onboarding(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy"}, "settings": settings, "onboarding": onboarding, "activeSession": active, "timeline": timeline})
+	case r.Method == http.MethodGet && p == "/api/onboarding":
+		onboarding, err := s.engine.Onboarding(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding})
+	case r.Method == http.MethodPut && p == "/api/onboarding":
+		var body struct {
+			ActiveSources []domain.Source `json:"activeSources"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		onboarding, err := s.engine.CompleteOnboarding(ctx, body.ActiveSources)
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		settings, err := s.engine.Settings(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding, "settings": settings})
 	case r.Method == http.MethodGet && p == "/api/settings":
 		settings, err := s.engine.Settings(ctx)
 		if err != nil {
@@ -332,11 +358,45 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"run": run})
-	case r.Method == http.MethodPost && p == "/api/operations/reset":
-		if err := s.engine.Reset(ctx); err != nil {
+	case r.Method == http.MethodPost && p == "/api/operations/reset-learning":
+		var body struct {
+			Confirmation string `json:"confirmation"`
+		}
+		if err := readJSON(r, &body); err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset"})
+		if body.Confirmation != "RESET LEARNING" {
+			return badRequest("learning reset requires the exact confirmation RESET LEARNING")
+		}
+		if err := s.engine.ResetLearning(ctx); err != nil {
+			if strings.Contains(err.Error(), "update is running") {
+				return conflict(err.Error())
+			}
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "operation": "reset_learning"})
+	case r.Method == http.MethodPost && p == "/api/operations/full-reset":
+		var body struct {
+			Confirmation string `json:"confirmation"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		if body.Confirmation != "RESET AKUBROWSER" {
+			return badRequest("full reset requires the exact confirmation RESET AKUBROWSER")
+		}
+		reset, err := s.engine.FullReset(ctx)
+		if err != nil {
+			if strings.Contains(err.Error(), "update is running") {
+				return conflict(err.Error())
+			}
+			return err
+		}
+		onboarding, err := s.engine.Onboarding(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "operation": "full_reset", "reset": reset, "onboarding": onboarding})
 	default:
 		return notFound("route")
 	}

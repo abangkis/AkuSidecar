@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -134,6 +135,56 @@ func TestTimelineIncludesCapturedSourceEvidence(t *testing.T) {
 	}
 	if items[0].Evidence.Text != "The original source-layout text." || items[0].Evidence.Author != "AkuBrowser @akubrowser" {
 		t.Fatalf("evidence=%+v", items[0].Evidence)
+	}
+}
+
+func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	onboarding, err := state.Onboarding(ctx)
+	if err != nil || onboarding.Status != "not_started" || onboarding.Profile != nil {
+		t.Fatalf("fresh onboarding=%+v err=%v", onboarding, err)
+	}
+	token, err := state.BridgeToken(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onboarding, err = state.CompleteOnboarding(ctx, []domain.Source{domain.SourceLinkedIn})
+	if err != nil || onboarding.Status != "completed" || len(onboarding.Profile.ActiveSources) != 1 {
+		t.Fatalf("completed onboarding=%+v err=%v", onboarding, err)
+	}
+	settings, _ := state.GetSettings(ctx)
+	settings.LoadProfile = "custom"
+	settings.MaxScrolls = 1
+	settings.MaxItemsPerSource = 3
+	settings.MaxItemsTotal = 6
+	settings.TimelineCapacity = 7
+	settings.DefaultPresentation = "brief"
+	settings.StreamWidth = "wide"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+
+	defaults := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	reset, err := state.FullReset(ctx, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupPath := filepath.Join(filepath.Dir(state.Path()), "backups", reset.BackupFile)
+	if info, err := os.Stat(backupPath); err != nil || info.Size() == 0 {
+		t.Fatalf("backup=%q info=%+v err=%v", backupPath, info, err)
+	}
+	onboarding, err = state.Onboarding(ctx)
+	if err != nil || onboarding.Status != "not_started" || onboarding.Profile != nil {
+		t.Fatalf("reset onboarding=%+v err=%v", onboarding, err)
+	}
+	after, err := state.GetSettings(ctx)
+	if err != nil || after.LoadProfile != "expanded" || len(after.ActiveSources) != 2 || after.DefaultPresentation != "source" || after.StreamWidth != "social" {
+		t.Fatalf("reset settings=%+v err=%v", after, err)
+	}
+	afterToken, err := state.BridgeToken(ctx)
+	if err != nil || afterToken != token {
+		t.Fatalf("bridge token changed: before=%q after=%q err=%v", token, afterToken, err)
 	}
 }
 

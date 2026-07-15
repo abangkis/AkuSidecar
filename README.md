@@ -108,6 +108,7 @@ delete or move the development database and start again.
 
 - `GET /api/health`
 - `GET /api/bootstrap`
+- `GET/PUT /api/onboarding`
 - `GET/PUT /api/settings`
 - `POST /api/sessions`
 - `GET /api/sessions/active`
@@ -125,10 +126,19 @@ delete or move the development database and start again.
 - `GET /api/operations/bridge/actions/next`
 - `POST /api/operations/bridge/actions/{id}/accept`
 - `GET /api/operations/bridge/actions/{id}`
-- `POST /api/operations/reset`
+- `POST /api/operations/reset-learning`
+- `POST /api/operations/full-reset`
 
 All Bridge heartbeat, command/result, and cooperative-action routes require both the durable Bridge token and
 `X-Aku-Bridge-Contract: aku-browser.bridge.v2`.
+
+The embedded UI restores the source-first dark shell, first-run source
+onboarding, editable active sources, bounded custom capture controls, persisted
+Source/Brief and stream-width preferences, media inspection, the finite
+Timeline finish line, and the back-to-top control. Reset operations require an
+exact typed phrase and fail while an update is active. A full reset creates and
+verifies a timestamped SQLite backup before clearing the fresh Go state,
+preserves the Bridge identity, and returns directly to onboarding.
 
 ## Removed by design
 

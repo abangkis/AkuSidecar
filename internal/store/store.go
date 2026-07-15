@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -65,10 +66,21 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM settings WHERE key='runtime'`).Scan(&count); err != nil {
 		return err
 	}
-	if count == 0 {
-		return s.SaveSettings(ctx, defaults)
+	fresh := count == 0
+	if fresh {
+		if err := s.SaveSettings(ctx, defaults); err != nil {
+			return err
+		}
+	} else {
+		settings, err := s.GetSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if err := s.SaveSettings(ctx, settings); err != nil {
+			return err
+		}
 	}
-	return nil
+	return s.initializeOnboarding(ctx, fresh)
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -113,11 +125,15 @@ func (s *Store) GetSettings(ctx context.Context) (domain.Settings, error) {
 	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 		return domain.Settings{}, fmt.Errorf("decode settings: %w", err)
 	}
+	settings.Normalize()
+	if err := settings.Validate(); err != nil {
+		return domain.Settings{}, fmt.Errorf("validate settings: %w", err)
+	}
 	return settings, nil
 }
 
 func (s *Store) SaveSettings(ctx context.Context, settings domain.Settings) error {
-	settings.ApplyProfile()
+	settings.Normalize()
 	if err := settings.Validate(); err != nil {
 		return err
 	}
@@ -127,6 +143,88 @@ func (s *Store) SaveSettings(ctx context.Context, settings domain.Settings) erro
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES('runtime',?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`, string(raw), domain.Now())
 	return err
+}
+
+func (s *Store) initializeOnboarding(ctx context.Context, fresh bool) error {
+	var status string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_status'`).Scan(&status)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read onboarding status: %w", err)
+	}
+	status = "completed"
+	if fresh {
+		status = "not_started"
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('onboarding_status',?)`, status); err != nil {
+		return fmt.Errorf("save onboarding status: %w", err)
+	}
+	if status == "completed" {
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('onboarding_completed_at',?)`, domain.Now()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
+	var status string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_status'`).Scan(&status); err != nil {
+		return domain.OnboardingState{}, fmt.Errorf("read onboarding status: %w", err)
+	}
+	if status != "completed" {
+		return domain.OnboardingState{Status: "not_started"}, nil
+	}
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		return domain.OnboardingState{}, err
+	}
+	var completedAt string
+	_ = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_completed_at'`).Scan(&completedAt)
+	return domain.OnboardingState{Status: "completed", Profile: &domain.OnboardingProfile{
+		Version:       1,
+		Status:        "completed",
+		Origin:        "explicit_onboarding",
+		ActiveSources: append([]domain.Source(nil), settings.ActiveSources...),
+		CompletedAt:   completedAt,
+	}}, nil
+}
+
+func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source) (domain.OnboardingState, error) {
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		return domain.OnboardingState{}, err
+	}
+	settings.ActiveSources = append([]domain.Source(nil), sources...)
+	settings.Normalize()
+	if err := settings.Validate(); err != nil {
+		return domain.OnboardingState{}, err
+	}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return domain.OnboardingState{}, err
+	}
+	now := domain.Now()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.OnboardingState{}, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE settings SET value_json=?,updated_at=? WHERE key='runtime'`, string(raw), now); err != nil {
+		return domain.OnboardingState{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('onboarding_status','completed') ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		return domain.OnboardingState{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('onboarding_completed_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
+		return domain.OnboardingState{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return domain.OnboardingState{}, err
+	}
+	return s.Onboarding(ctx)
 }
 
 func (s *Store) CreateSession(ctx context.Context, intent string, settings domain.Settings) (domain.Session, error) {
@@ -666,9 +764,112 @@ func (s *Store) CancelSession(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
-func (s *Store) Reset(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events;`)
+func (s *Store) ResetLearning(ctx context.Context) error {
+	if err := s.requireIdle(ctx); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM feedback_events; DELETE FROM preference_model;`)
 	return err
+}
+
+type FullResetResult struct {
+	CompletedAt string `json:"completedAt"`
+	BackupFile  string `json:"backupFile"`
+}
+
+func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullResetResult, error) {
+	if err := s.requireIdle(ctx); err != nil {
+		return FullResetResult{}, err
+	}
+	defaults.Normalize()
+	if err := defaults.Validate(); err != nil {
+		return FullResetResult{}, err
+	}
+	backupPath, err := s.createVerifiedBackup(ctx)
+	if err != nil {
+		return FullResetResult{}, err
+	}
+	raw, err := json.Marshal(defaults)
+	if err != nil {
+		return FullResetResult{}, err
+	}
+	now := domain.Now()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return FullResetResult{}, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings;`); err != nil {
+		return FullResetResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES('runtime',?,?)`, string(raw), now); err != nil {
+		return FullResetResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('onboarding_status','not_started') ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		return FullResetResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM meta WHERE key='onboarding_completed_at'`); err != nil {
+		return FullResetResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('last_full_reset',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
+		return FullResetResult{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return FullResetResult{}, err
+	}
+	return FullResetResult{CompletedAt: now, BackupFile: filepath.Base(backupPath)}, nil
+}
+
+func (s *Store) requireIdle(ctx context.Context) error {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE status IN ('queued','running')`).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("reset is unavailable while an update is running")
+	}
+	return nil
+}
+
+func (s *Store) createVerifiedBackup(ctx context.Context) (string, error) {
+	directory := filepath.Join(filepath.Dir(s.path), "backups")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return "", fmt.Errorf("create reset backup directory: %w", err)
+	}
+	stamp := time.Now().UTC().Format("20060102-150405.000000000")
+	target := filepath.Join(directory, "pre-full-reset-"+stamp+".db")
+	quoted := strings.ReplaceAll(target, "'", "''")
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO '`+quoted+`'`); err != nil {
+		return "", fmt.Errorf("create reset backup: %w", err)
+	}
+	if err := verifySQLiteBackup(target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+func verifySQLiteBackup(path string) error {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return fmt.Errorf("open reset backup: %w", err)
+	}
+	defer db.Close()
+	var integrity string
+	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&integrity); err != nil {
+		return fmt.Errorf("inspect reset backup: %w", err)
+	}
+	if integrity != "ok" {
+		return fmt.Errorf("reset backup integrity check returned %q", integrity)
+	}
+	rows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return fmt.Errorf("inspect reset backup foreign keys: %w", err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		return errors.New("reset backup contains foreign key violations")
+	}
+	return rows.Err()
 }
 
 func decodeJSON(raw string, target any) {

@@ -58,7 +58,14 @@ behavior is re-expressed as a smaller new contract.
 - Bridge contract is `aku-browser.bridge.v2`.
 - The database schema is a single version-1 transaction. A schema mismatch is
   a startup error; it is never migrated automatically.
-- Settings are served by `GET/PUT /api/settings`.
+- Settings are served by `GET/PUT /api/settings`; the active contract includes
+  source selection, bounded built-in or Custom load values, Timeline capacity,
+  and presentation preferences.
+- First-run source onboarding is stored in fresh schema metadata and served by
+  `GET/PUT /api/onboarding`.
+- Learning reset is scoped to feedback/model state. Full reset is
+  verified-backup-first, preserves the Bridge identity, restores fresh Go
+  defaults, and returns to onboarding.
 - New sessions use `POST /api/sessions`; session/run resources and Timeline are
   read-only except for cancellation and feedback.
 - Bridge routes remain a dedicated token-authenticated namespace because the

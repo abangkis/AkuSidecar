@@ -22,6 +22,9 @@ func testEngine(t *testing.T) (*Engine, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := state.CompleteOnboarding(context.Background(), settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { state.Close() })
 	cfg := config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 2}}
 	runtime := New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))

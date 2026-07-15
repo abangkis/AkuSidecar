@@ -20,6 +20,25 @@ func TestProfilesStayBounded(t *testing.T) {
 	}
 }
 
+func TestCustomProfileKeepsSupportedUIPreferences(t *testing.T) {
+	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	value.LoadProfile = "custom"
+	value.MaxScrolls = 1
+	value.MaxItemsPerSource = 3
+	value.MaxItemsTotal = 6
+	value.TimelineCapacity = 9
+	value.QualityRetrySettleMS = 500
+	value.DefaultPresentation = "brief"
+	value.StreamWidth = "wide"
+	value.Normalize()
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if value.MaxScrolls != 1 || value.MaxItemsPerSource != 3 || value.TimelineCapacity != 9 {
+		t.Fatalf("custom profile was overwritten: %+v", value)
+	}
+}
+
 func TestFeedbackRejectsLegacyReason(t *testing.T) {
 	reason := "wrong_topic"
 	value := Feedback{Direction: "less", Reason: &reason}

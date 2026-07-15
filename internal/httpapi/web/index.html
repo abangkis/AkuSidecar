@@ -29,11 +29,49 @@
 
       <section id="provider-notice" class="notice hidden" role="status"></section>
 
+      <section id="onboarding-panel" class="onboarding-panel hidden" aria-labelledby="onboarding-heading">
+        <div class="onboarding-card">
+          <p class="step-label">SOURCE SETUP</p>
+          <h2 id="onboarding-heading" tabindex="-1">Choose where AkuBrowser should look</h2>
+          <p class="onboarding-explanation">Start from the order already shaped by your source feeds. You can change this profile later in Settings.</p>
+          <form id="onboarding-form">
+            <div class="onboarding-options">
+              <label class="onboarding-source-option">
+                <input id="onboarding-source-x" type="checkbox" value="x" checked />
+                <span class="onboarding-source-card">
+                  <span class="onboarding-source-icon onboarding-source-icon-x" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M18.244 2H21l-6.02 6.88L22.06 22h-5.55l-4.35-5.69L7.18 22H4.42l6.45-7.37L4.08 2h5.69l3.93 5.2L18.24 2Zm-.97 17.69h1.53L8.94 4.19H7.3l9.97 15.5Z"/></svg>
+                  </span>
+                  <span class="onboarding-source-copy"><strong>X</strong><small>Your home timeline</small></span>
+                  <span class="onboarding-source-check" aria-hidden="true">✓</span>
+                </span>
+              </label>
+              <label class="onboarding-source-option">
+                <input id="onboarding-source-linkedin" type="checkbox" value="linkedin" checked />
+                <span class="onboarding-source-card">
+                  <span class="onboarding-source-icon onboarding-source-icon-linkedin" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M6.5 8.3H3V21h3.5V8.3ZM4.75 3A2.04 2.04 0 1 0 4.75 7.08 2.04 2.04 0 0 0 4.75 3ZM21 13.72c0-3.83-2.04-5.61-4.77-5.61-2.2 0-3.18 1.21-3.73 2.06V8.3H9V21h3.5v-6.29c0-1.66.31-3.27 2.37-3.27 2.03 0 2.06 1.9 2.06 3.38V21H21v-7.28Z"/></svg>
+                  </span>
+                  <span class="onboarding-source-copy"><strong>LinkedIn</strong><small>Your professional feed</small></span>
+                  <span class="onboarding-source-check" aria-hidden="true">✓</span>
+                </span>
+              </label>
+            </div>
+            <div id="onboarding-summary" class="onboarding-summary">2 source feeds selected</div>
+            <p id="onboarding-error" class="settings-detail" role="alert"></p>
+            <div class="onboarding-actions">
+              <button id="onboarding-cancel" class="secondary-button hidden" type="button">Cancel</button>
+              <button id="onboarding-finish" class="primary-button" type="submit">Start setup</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
       <section id="settings-panel" class="settings-panel hidden" aria-labelledby="settings-heading">
         <div class="section-heading">
           <div>
             <p class="step-label">RUNTIME CONFIGURATION</p>
-            <h2 id="settings-heading">Browser behavior</h2>
+            <h2 id="settings-heading" tabindex="-1">Browser behavior</h2>
           </div>
           <div class="settings-heading-actions">
             <span id="runtime-settings-status" class="settings-detail" role="status"></span>
@@ -45,13 +83,17 @@
             <legend>Personalization</legend>
             <div class="settings-card">
               <label class="settings-row" for="preference-eligibility-mode">
-                <span class="settings-copy"><strong>Personalized eligibility</strong><small>Control whether preferences only rank or may fill unused capacity.</small></span>
+                <span class="settings-copy"><strong>Personalized eligibility</strong><small>Control whether preferences only rank, may fill unused capacity, or may use guarded filtering.</small></span>
                 <select id="preference-eligibility-mode" name="preferenceEligibilityMode">
                   <option value="rank_only">Ranking only</option>
                   <option value="promote_unused_budget">Fill unused capacity — recommended</option>
                   <option value="guarded_live">Guarded live filtering — experimental</option>
                 </select>
               </label>
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit the source feeds used by the next bounded update.</small></span>
+                <button id="edit-onboarding-profile" class="secondary-button" type="button">Edit profile</button>
+              </div>
             </div>
           </fieldset>
 
@@ -59,11 +101,40 @@
             <legend>Live settings</legend>
             <div class="settings-card">
               <label class="settings-row" for="bounded-load-profile">
-                <span class="settings-copy"><strong>Bounded load profile</strong><small>Coordinates capture depth and selected-item capacity.</small></span>
+                <span class="settings-copy"><strong>Bounded load profile</strong><small>Coordinates capture depth and selected-item capacity. Custom keeps the bounded values below.</small></span>
                 <select id="bounded-load-profile" name="loadProfile">
                   <option value="standard">Standard 1×</option>
                   <option value="expanded">Expanded 2×</option>
                   <option value="stress">Stress 3×</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label class="settings-row" for="timeline-capacity">
+                <span class="settings-copy"><strong>Timeline capacity</strong><small>Maximum retained updates shown in the finite Timeline.</small></span>
+                <input id="timeline-capacity" name="timelineCapacity" type="number" min="1" max="50" step="1" />
+              </label>
+              <label class="settings-row" for="max-items-per-source">
+                <span class="settings-copy"><strong>Items per source</strong><small>Maximum selected results from one source.</small></span>
+                <input id="max-items-per-source" name="maxItemsPerSource" type="number" min="1" max="15" step="1" />
+              </label>
+              <label class="settings-row" for="max-scrolls">
+                <span class="settings-copy"><strong>Native scrolls per source</strong><small>Bounded browser movement, limited by the Bridge contract.</small></span>
+                <input id="max-scrolls" name="maxScrolls" type="number" min="0" max="6" step="1" />
+              </label>
+              <label class="settings-row" for="default-presentation">
+                <span class="settings-copy"><strong>Default item layout</strong><small>Choose Source layout or the evaluated Brief when items first render.</small></span>
+                <select id="default-presentation" name="defaultPresentation">
+                  <option value="source">Source layout</option>
+                  <option value="brief">Brief</option>
+                </select>
+              </label>
+              <label class="settings-row" for="stream-width">
+                <span class="settings-copy"><strong>Stream width</strong><small>Controls the Timeline reading column without narrowing Settings.</small></span>
+                <select id="stream-width" name="streamWidth">
+                  <option value="compact">Compact</option>
+                  <option value="social">Social — recommended</option>
+                  <option value="comfortable">Comfortable</option>
+                  <option value="wide">Wide</option>
                 </select>
               </label>
               <label class="settings-row" for="capture-visibility-policy">
@@ -81,6 +152,21 @@
           </fieldset>
 
           <fieldset class="settings-group">
+            <legend>Active sources</legend>
+            <p class="settings-group-note">At least one installed source must remain active.</p>
+            <div class="settings-card">
+              <label class="settings-row" for="settings-source-x">
+                <span class="settings-copy"><strong>X</strong><small>Use the signed-in home timeline during the next update.</small></span>
+                <input id="settings-source-x" type="checkbox" value="x" />
+              </label>
+              <label class="settings-row" for="settings-source-linkedin">
+                <span class="settings-copy"><strong>LinkedIn</strong><small>Use the signed-in professional feed during the next update.</small></span>
+                <input id="settings-source-linkedin" type="checkbox" value="linkedin" />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-group">
             <legend>Fresh runtime boundary</legend>
             <div class="settings-card runtime-contract-card">
               <dl>
@@ -91,6 +177,21 @@
               </dl>
             </div>
           </fieldset>
+
+          <fieldset class="settings-group reset-recovery-group">
+            <legend>Reset and recovery</legend>
+            <p class="settings-group-note">Destructive operations require the exact typed confirmation and are blocked while an update is running.</p>
+            <div class="settings-card">
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Reset learning</strong><small>Erase More/Less feedback and the fitted preference model. Timeline, sources, and settings remain.</small></span>
+                <button id="open-reset-learning" class="secondary-button" type="button">Reset learning…</button>
+              </div>
+              <div class="settings-row reset-danger-row">
+                <span class="settings-copy"><strong>Full reset and onboard again</strong><small>Create a verified local backup, erase the fresh Go database state and settings, then return to source onboarding.</small></span>
+                <button id="open-full-reset" class="danger-button" type="button">Full reset…</button>
+              </div>
+            </div>
+          </fieldset>
         </form>
       </section>
 
@@ -98,7 +199,7 @@
         <div class="timeline-heading-row">
           <div>
             <p class="step-label">FINITE KNOWLEDGE TIMELINE</p>
-            <h2 id="timeline-heading">Latest evaluated updates</h2>
+            <h2 id="timeline-heading" tabindex="-1">Latest evaluated updates</h2>
             <p id="timeline-meta" class="review-guidance">Loading the latest completed session…</p>
           </div>
           <div class="timeline-actions">
@@ -138,7 +239,9 @@
       </section>
     </main>
 
-    <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="Back to top" title="Back to top">↑</button>
+    <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="Back to top" title="Back to top">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.7 10.7 5.3-5.3 5.3 5.3-1.4 1.4-2.9-2.9V19h-2V9.2l-2.9 2.9-1.4-1.4Z"/></svg>
+    </button>
 
     <dialog id="media-viewer" class="media-viewer" aria-label="Post media viewer">
       <div class="media-viewer-toolbar">
@@ -152,6 +255,21 @@
       </div>
     </dialog>
 
-    <script type="module" src="/app.js?runtime=go-ui-restored-v1"></script>
+    <dialog id="reset-confirmation-dialog" class="reset-confirmation-dialog" aria-labelledby="reset-confirmation-title">
+      <form method="dialog" class="reset-confirmation-card">
+        <p class="step-label">DESTRUCTIVE OPERATION</p>
+        <h2 id="reset-confirmation-title">Confirm reset</h2>
+        <p id="reset-confirmation-impact"></p>
+        <label class="reset-confirmation-label" for="reset-confirmation-input">Type <strong id="reset-confirmation-phrase"></strong> to continue.</label>
+        <input id="reset-confirmation-input" type="text" autocomplete="off" spellcheck="false" />
+        <p id="reset-confirmation-status" class="settings-detail" role="alert"></p>
+        <div class="reset-confirmation-actions">
+          <button id="reset-confirmation-cancel" class="secondary-button" type="button">Cancel</button>
+          <button id="reset-confirmation-submit" class="danger-button" type="button" disabled>Confirm reset</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js?runtime=go-ui-restored-v2"></script>
   </body>
 </html>

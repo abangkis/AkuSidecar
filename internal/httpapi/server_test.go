@@ -26,7 +26,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 2}}
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}, Capture: config.CaptureConfig{Profile: "expanded", Visibility: "quiet", OpenMissingSource: true, MaxAcquisitionRounds: 2}, Preference: config.PreferenceConfig{Mode: "promote_unused_budget"}}
 	logger := log.New(io.Discard, "", 0)
 	runtime := engine.New(state, reasoning.Deterministic{}, cfg, logger)
 	server, err := New(cfg, state, runtime, logger)
@@ -66,8 +66,25 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if bootstrap["bridgeToken"] == "" || bootstrap["provider"] != "deterministic" {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
+	onboarding := bootstrap["onboarding"].(map[string]any)
+	if onboarding["status"] != "not_started" {
+		t.Fatalf("fresh onboarding=%+v", onboarding)
+	}
+	request, err := http.NewRequest(http.MethodPut, "http://"+address.String()+"/api/onboarding", bytes.NewBufferString(`{"activeSources":["x","linkedin"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("onboarding status=%d", response.StatusCode)
+	}
 	heartbeat, _ := json.Marshal(map[string]any{"capabilities": engine.ExpectedHeartbeat()})
-	request, err := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/bridge/heartbeat", bytes.NewReader(heartbeat))
+	request, err = http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/bridge/heartbeat", bytes.NewReader(heartbeat))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +99,34 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusAccepted {
 		t.Fatalf("heartbeat status=%d", response.StatusCode)
+	}
+	response.Body.Close()
+	request, _ = http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/operations/full-reset", bytes.NewBufferString(`{"confirmation":"wrong"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("wrong reset confirmation status=%d", response.StatusCode)
+	}
+	request, _ = http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/operations/full-reset", bytes.NewBufferString(`{"confirmation":"RESET AKUBROWSER"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("full reset status=%d", response.StatusCode)
+	}
+	var reset map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&reset); err != nil {
+		t.Fatal(err)
+	}
+	if reset["operation"] != "full_reset" || reset["onboarding"].(map[string]any)["status"] != "not_started" {
+		t.Fatalf("reset=%+v", reset)
 	}
 }
 

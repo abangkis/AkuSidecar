@@ -9,6 +9,9 @@ const state = {
   currentView: "timeline",
   media: [],
   mediaIndex: 0,
+  onboardingEditing: false,
+  resetOperation: null,
+  backToTopFrame: null,
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -36,13 +39,25 @@ $("#retry-button").addEventListener("click", () => {
 });
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
-$("#back-to-top").addEventListener("click", () => scrollTo({ top: 0, behavior: "smooth" }));
+$("#bounded-load-profile").addEventListener("change", syncCustomSettings);
+$("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
+$("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
+$("#onboarding-form").addEventListener("submit", saveOnboarding);
+$("#onboarding-cancel").addEventListener("click", () => setView("settings"));
+for (const input of document.querySelectorAll("#onboarding-form input[type='checkbox']")) {
+  input.addEventListener("change", updateOnboardingSummary);
+}
+$("#open-reset-learning").addEventListener("click", () => openResetDialog("learning"));
+$("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
+$("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
+$("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
+$("#reset-confirmation-submit").addEventListener("click", submitReset);
+$("#back-to-top").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
 $("#media-viewer-close").addEventListener("click", () => $("#media-viewer").close());
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
-window.addEventListener("scroll", () => {
-  $("#back-to-top").classList.toggle("hidden", scrollY < 600);
-}, { passive: true });
+window.addEventListener("scroll", scheduleBackToTop, { passive: true });
+window.addEventListener("resize", scheduleBackToTop, { passive: true });
 
 async function bootstrap() {
   try {
@@ -59,6 +74,11 @@ async function bootstrap() {
     renderSettings(state.bootstrap.settings);
     renderTimeline(state.bootstrap.timeline ?? []);
     renderSession();
+    if (state.bootstrap.onboarding?.status !== "completed") {
+      showOnboarding(false);
+    } else {
+      setView(state.currentView);
+    }
     pingBridge();
     bridgeActionLoop();
     setInterval(pingBridge, 30_000);
@@ -70,13 +90,20 @@ async function bootstrap() {
 }
 
 function setView(view) {
+  if (state.bootstrap?.onboarding?.status !== "completed") {
+    showOnboarding(false);
+    return;
+  }
   state.currentView = view;
+  state.onboardingEditing = false;
   const settings = view === "settings";
+  $("#onboarding-panel").classList.add("hidden");
   $("#settings-panel").classList.toggle("hidden", !settings);
   $("#timeline-panel").classList.toggle("hidden", settings);
   $("#session-view-button").classList.toggle("selected", !settings);
   $("#settings-view-button").classList.toggle("selected", settings);
   (settings ? $("#settings-heading") : $("#timeline-heading")).focus?.();
+  scheduleBackToTop();
 }
 
 function pingBridge() {
@@ -120,17 +147,43 @@ function renderSettings(settings) {
   $("#capture-visibility-policy").value = settings.captureVisibility;
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
   $("#open-missing-source").checked = settings.openMissingSource;
+  $("#timeline-capacity").value = settings.timelineCapacity;
+  $("#max-items-per-source").value = settings.maxItemsPerSource;
+  $("#max-scrolls").value = settings.maxScrolls;
+  $("#default-presentation").value = settings.defaultPresentation || "source";
+  $("#stream-width").value = settings.streamWidth || "social";
+  $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
+  $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
+  applyStreamWidth(settings.streamWidth || "social");
+  syncCustomSettings();
 }
 
 async function saveSettings(event) {
   event.preventDefault();
   const current = state.bootstrap.settings;
+  const activeSources = [
+    $("#settings-source-x").checked ? "x" : null,
+    $("#settings-source-linkedin").checked ? "linkedin" : null,
+  ].filter(Boolean);
+  if (!activeSources.length) {
+    $("#runtime-settings-status").textContent = "Choose at least one active source.";
+    return;
+  }
+  const loadProfile = $("#bounded-load-profile").value;
+  const perSource = Number.parseInt($("#max-items-per-source").value, 10);
   const settings = {
     ...current,
-    loadProfile: $("#bounded-load-profile").value,
+    loadProfile,
     captureVisibility: $("#capture-visibility-policy").value,
     preferenceEligibilityMode: $("#preference-eligibility-mode").value,
     openMissingSource: $("#open-missing-source").checked,
+    activeSources,
+    timelineCapacity: Number.parseInt($("#timeline-capacity").value, 10),
+    maxItemsPerSource: perSource,
+    maxItemsTotal: loadProfile === "custom" ? Math.min(30, Math.max(1, perSource * 2)) : current.maxItemsTotal,
+    maxScrolls: Number.parseInt($("#max-scrolls").value, 10),
+    defaultPresentation: $("#default-presentation").value,
+    streamWidth: $("#stream-width").value,
   };
   const status = $("#runtime-settings-status");
   status.textContent = "Saving…";
@@ -139,14 +192,141 @@ async function saveSettings(event) {
     state.bootstrap.settings = response.settings;
     renderSettings(response.settings);
     status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
+    await refreshTimeline();
   } catch (error) {
     status.textContent = error.message;
     showError(error);
   }
 }
 
+function syncCustomSettings() {
+  const custom = $("#bounded-load-profile").value === "custom";
+  $("#timeline-capacity").disabled = !custom;
+  $("#max-items-per-source").disabled = !custom;
+  $("#max-scrolls").disabled = !custom;
+}
+
+function applyStreamWidth(value) {
+  document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
+  scheduleBackToTop();
+}
+
+function showOnboarding(editing) {
+  state.onboardingEditing = editing;
+  const sources = state.bootstrap?.settings?.activeSources ?? ["x", "linkedin"];
+  $("#onboarding-source-x").checked = sources.includes("x");
+  $("#onboarding-source-linkedin").checked = sources.includes("linkedin");
+  $("#onboarding-cancel").classList.toggle("hidden", !editing);
+  $("#onboarding-finish").textContent = editing ? "Save profile" : "Start setup";
+  $("#onboarding-error").textContent = "";
+  $("#settings-panel").classList.add("hidden");
+  $("#timeline-panel").classList.add("hidden");
+  $("#onboarding-panel").classList.remove("hidden");
+  updateOnboardingSummary();
+  $("#onboarding-heading").focus();
+  window.scrollTo({ top: 0, behavior: editing ? "smooth" : "auto" });
+  scheduleBackToTop();
+}
+
+function updateOnboardingSummary() {
+  const count = document.querySelectorAll("#onboarding-form input[type='checkbox']:checked").length;
+  $("#onboarding-summary").textContent = count
+    ? `${count} source feed${count === 1 ? "" : "s"} selected`
+    : "Choose at least one source feed.";
+}
+
+async function saveOnboarding(event) {
+  event.preventDefault();
+  const activeSources = [...document.querySelectorAll("#onboarding-form input[type='checkbox']:checked")].map((input) => input.value);
+  if (!activeSources.length) {
+    $("#onboarding-error").textContent = "Choose at least one active source.";
+    return;
+  }
+  const firstCompletion = state.bootstrap?.onboarding?.status !== "completed";
+  const button = $("#onboarding-finish");
+  button.disabled = true;
+  $("#onboarding-error").textContent = "Saving source profile…";
+  try {
+    const response = await api("/api/onboarding", { method: "PUT", body: { activeSources } });
+    state.bootstrap.onboarding = response.onboarding;
+    state.bootstrap.settings = response.settings;
+    renderSettings(response.settings);
+    $("#onboarding-error").textContent = "";
+    setView(firstCompletion ? "timeline" : "settings");
+    if (firstCompletion) await startSession();
+  } catch (error) {
+    $("#onboarding-error").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function openResetDialog(operation) {
+  if (state.session) {
+    $("#runtime-settings-status").textContent = "Reset is unavailable while an update is running.";
+    return;
+  }
+  state.resetOperation = operation;
+  const full = operation === "full";
+  $("#reset-confirmation-title").textContent = full ? "Full reset and onboard again" : "Reset learning";
+  $("#reset-confirmation-impact").textContent = full
+    ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings. The live Bridge identity remains valid."
+    : "AkuBrowser will erase More/Less feedback and the fitted preference model. Timeline, source setup, and runtime settings remain.";
+  $("#reset-confirmation-phrase").textContent = full ? "RESET AKUBROWSER" : "RESET LEARNING";
+  $("#reset-confirmation-input").value = "";
+  $("#reset-confirmation-status").textContent = "";
+  $("#reset-confirmation-submit").disabled = true;
+  $("#reset-confirmation-dialog").showModal();
+  $("#reset-confirmation-input").focus();
+}
+
+function closeResetDialog() {
+  state.resetOperation = null;
+  $("#reset-confirmation-dialog").close();
+}
+
+function syncResetConfirmation() {
+  const phrase = $("#reset-confirmation-phrase").textContent;
+  $("#reset-confirmation-submit").disabled = $("#reset-confirmation-input").value !== phrase;
+}
+
+async function submitReset() {
+  const operation = state.resetOperation;
+  if (!operation) return;
+  const phrase = $("#reset-confirmation-phrase").textContent;
+  const button = $("#reset-confirmation-submit");
+  button.disabled = true;
+  $("#reset-confirmation-status").textContent = operation === "full" ? "Creating and verifying backup…" : "Resetting learning…";
+  try {
+    const path = operation === "full" ? "/api/operations/full-reset" : "/api/operations/reset-learning";
+    const response = await api(path, { method: "POST", body: { confirmation: phrase } });
+    if (operation === "full") {
+      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Returning to onboarding…`;
+      window.setTimeout(() => window.location.reload(), 350);
+      return;
+    }
+    $("#reset-confirmation-status").textContent = "Learning reset complete.";
+    window.setTimeout(() => {
+      closeResetDialog();
+      $("#runtime-settings-status").textContent = "Learning reset complete.";
+    }, 350);
+  } catch (error) {
+    $("#reset-confirmation-status").textContent = error.message;
+    syncResetConfirmation();
+  }
+}
+
+function scheduleBackToTop() {
+  if (state.backToTopFrame) return;
+  state.backToTopFrame = requestAnimationFrame(() => {
+    state.backToTopFrame = null;
+    const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
+    $("#back-to-top").classList.toggle("hidden", top < 320);
+  });
+}
+
 async function startSession() {
-  if (state.session || !state.bootstrap?.bridge?.compatible) return;
+  if (state.session || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible) return;
   hideFailure();
   setView("timeline");
   try {
@@ -246,9 +426,11 @@ function renderSession() {
 }
 
 function syncRunButtons() {
-  const disabled = Boolean(state.session) || !state.bootstrap?.bridge?.compatible;
+  const disabled = Boolean(state.session) || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible;
   $("#timeline-runner-button").disabled = disabled;
   $("#done-button").disabled = disabled;
+  $("#open-reset-learning").disabled = Boolean(state.session);
+  $("#open-full-reset").disabled = Boolean(state.session);
 }
 
 async function refreshTimeline() {
@@ -279,6 +461,7 @@ function renderTimeline(items) {
     detail.textContent = "AkuBrowser will place evaluated, source-backed items here after the next bounded check.";
     empty.append(title, detail);
     container.append(empty);
+    scheduleBackToTop();
     return;
   }
 
@@ -297,6 +480,7 @@ function renderTimeline(items) {
     }
     container.append(buildTimelineItem(entry));
   }
+  scheduleBackToTop();
 }
 
 function buildTimelineItem(entry) {
@@ -311,7 +495,7 @@ function buildTimelineItem(entry) {
   const brief = buildBrief(entry);
   const source = buildSourceCard(entry);
   const actions = buildActions(entry);
-  let layout = entry.evidence ? "source" : "brief";
+  let layout = entry.evidence && state.bootstrap?.settings?.defaultPresentation !== "brief" ? "source" : "brief";
   const render = () => {
     const sourceActive = layout === "source" && Boolean(entry.evidence);
     source.classList.toggle("hidden", !sourceActive);
