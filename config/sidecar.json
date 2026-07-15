@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "server": {
+    "host": "127.0.0.1",
+    "port": 47821
+  },
+  "database": {
+    "path": "runtime/aku-sidecar.db"
+  },
+  "reasoning": {
+    "provider": "codex-app-server",
+    "executable": "runtime/codex-cli/bin/codex.exe",
+    "timeoutMs": 120000,
+    "planning": {
+      "model": "gpt-5.6-luna",
+      "effort": "high"
+    },
+    "evaluation": {
+      "model": "gpt-5.6-terra",
+      "effort": "high"
+    }
+  },
+  "capture": {
+    "profile": "expanded",
+    "visibility": "quiet",
+    "openMissingSource": true,
+    "maxAcquisitionRounds": 2
+  },
+  "preference": {
+    "mode": "promote_unused_budget"
+  }
+}

@@ -1,6 +1,3 @@
-# Dependencies
-node_modules/
-
 # Local runtime state
 runtime/*
 !runtime/.gitkeep
@@ -12,11 +9,11 @@ runtime/*
 *.sqlite3
 *.pid
 
-# Build and test output
-dist/
-build/
+# Go build and test output
+*.exe
+*.test
+*.out
 coverage/
-.nyc_output/
 
 # Local configuration and secrets
 .env
@@ -25,10 +22,6 @@ coverage/
 
 # Logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 
 # Editor and operating-system files
 .vscode/
