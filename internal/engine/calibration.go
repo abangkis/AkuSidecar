@@ -12,6 +12,9 @@ import (
 const calibrationMaxItemsPerSource = 5
 
 func (e *Engine) CalibrationOverview(ctx context.Context) (domain.CalibrationOverview, error) {
+	if _, err := e.ensurePendingFirstCalibration(ctx, ""); err != nil {
+		return domain.CalibrationOverview{}, err
+	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return domain.CalibrationOverview{}, err
@@ -45,6 +48,10 @@ func (e *Engine) Calibration(ctx context.Context, id string) (domain.Calibration
 func (e *Engine) StartCalibration(ctx context.Context, sessionID, triggerKind string) (domain.CalibrationSession, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	return e.startCalibrationLocked(ctx, sessionID, triggerKind)
+}
+
+func (e *Engine) startCalibrationLocked(ctx context.Context, sessionID, triggerKind string) (domain.CalibrationSession, error) {
 	if triggerKind == "" {
 		triggerKind = "first_run"
 	}
@@ -87,6 +94,32 @@ func (e *Engine) StartCalibration(ctx context.Context, sessionID, triggerKind st
 		ID: domain.NewID("calibration"), UnifiedSessionID: sessionID,
 		TriggerKind: triggerKind, MaxItems: settings.CalibrationBatchSize, Samples: samples,
 	})
+}
+
+func (e *Engine) ensurePendingFirstCalibration(ctx context.Context, sessionID string) (*domain.CalibrationSession, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+
+	status, err := e.store.CalibrationFirstRunStatus(ctx)
+	if err != nil || status != "pending" {
+		return nil, err
+	}
+	if existing, err := e.store.CalibrationByTrigger(ctx, "first_run"); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+	if sessionID == "" {
+		sessionID, err = e.store.LatestCalibrationEligibleSessionID(ctx)
+		if err != nil || sessionID == "" {
+			return nil, err
+		}
+	}
+	calibration, err := e.startCalibrationLocked(ctx, sessionID, "first_run")
+	if err != nil {
+		return nil, err
+	}
+	return &calibration, nil
 }
 
 func (e *Engine) DecideCalibration(ctx context.Context, id string, ordinal int, decision domain.CalibrationDecision) (domain.CalibrationSession, error) {

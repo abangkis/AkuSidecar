@@ -199,6 +199,26 @@ func (s *Store) ActiveCalibration(ctx context.Context) (*domain.CalibrationSessi
 	return s.calibrationBy(ctx, `SELECT id FROM calibration_sessions WHERE status='reviewing' ORDER BY created_at LIMIT 1`)
 }
 
+func (s *Store) LatestCalibrationEligibleSessionID(ctx context.Context) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT sessions.id
+		FROM sessions
+		WHERE sessions.status IN ('completed','partial')
+		  AND EXISTS (
+			SELECT 1
+			FROM runs
+			JOIN candidate_assessments ON candidate_assessments.run_id=runs.id
+			WHERE runs.session_id=sessions.id AND runs.status='completed'
+		  )
+		ORDER BY sessions.completed_at DESC, sessions.created_at DESC
+		LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
 func (s *Store) calibrationBy(ctx context.Context, query string, arguments ...any) (*domain.CalibrationSession, error) {
 	var id string
 	err := s.db.QueryRowContext(ctx, query, arguments...).Scan(&id)

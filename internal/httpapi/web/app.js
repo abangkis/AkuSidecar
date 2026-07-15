@@ -353,6 +353,8 @@ function scheduleBackToTop() {
 async function startSession() {
   if (state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible) return;
   hideFailure();
+  clearNotice();
+  setPill("#sidecar-status", "AkuSidecar ready", "ok");
   setView("timeline");
   try {
     const { session } = await api("/api/sessions", {
@@ -482,6 +484,8 @@ async function startPendingFirstCalibration(session) {
 }
 
 function showCalibration(calibration) {
+  clearNotice();
+  setPill("#sidecar-status", "AkuSidecar ready", "ok");
   state.calibration = calibration;
   state.bootstrap.calibration.active = calibration;
   const unresolved = calibration.samples.findIndex((sample) => !sample.label && !sample.issueCode);

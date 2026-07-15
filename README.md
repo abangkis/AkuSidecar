@@ -153,7 +153,9 @@ First-time onboarding starts one bounded update to acquire real source
 candidates, then opens a forced calibration lane before the Timeline. The lane
 round-robins pre-selection X and LinkedIn candidates, accepts More, Neutral,
 Less, or a capture issue for every sample, and fits the local preference model
-when the batch is complete.
+when the batch is complete. AkuSidecar creates this calibration as part of the
+completed/partial session boundary; bootstrap also repairs a persisted pending
+state, so the flow does not depend on one frontend polling callback.
 
 ## Removed by design
 

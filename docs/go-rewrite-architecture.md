@@ -53,7 +53,7 @@ behavior is re-expressed as a smaller new contract.
 
 ## New component contract
 
-- Application version is `1.0.0-dev.2` for the restored Go-native calibration boundary.
+- Application version is `1.0.0-dev.3` for the Sidecar-enforced first-run calibration boundary.
 - Bridge contract is `aku-browser.bridge.v2`.
 - The database schema is a single version-2 transaction. A schema mismatch is
   a startup error; it is never migrated automatically.
@@ -62,9 +62,11 @@ behavior is re-expressed as a smaller new contract.
   and presentation preferences.
 - First-run source onboarding is stored in fresh schema metadata and served by
   `GET/PUT /api/onboarding`.
-- Completing first-run onboarding marks calibration pending, starts one bounded
-  update from the UI, then forces a pre-selection More/Neutral/Less calibration
-  batch before another update may begin.
+- Completing first-run onboarding marks calibration pending and starts one
+  bounded update from the UI. AkuSidecar owns the terminal invariant: a
+  completed or partial first update creates the pre-selection More/Neutral/Less
+  calibration before another update may begin, while bootstrap repairs a
+  persisted pending state from the latest eligible session.
 - Learning reset is scoped to feedback/model state. Full reset is
   verified-backup-first, preserves the Bridge identity, restores fresh Go
   defaults, and returns to onboarding.

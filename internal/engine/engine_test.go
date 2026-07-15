@@ -67,12 +67,8 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 		return len(value.Runs) == 2 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceLinkedIn, "linkedin:000000000000000000000012")
-	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
-
-	calibration, err := runtime.StartCalibration(ctx, completed.ID, "first_run")
-	if err != nil {
-		t.Fatal(err)
-	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	calibration := waitActiveCalibration(t, runtime)
 	if calibration.Status != "reviewing" || calibration.SampleCount != 2 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn {
 		t.Fatalf("calibration=%+v", calibration)
 	}
@@ -130,11 +126,8 @@ func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 	if _, err := runtime.FailCommand(ctx, command.ID, linkedin.ID, domain.Failure{Code: "capture_failed", Stage: "capture", Message: "test failure"}); err != nil {
 		t.Fatal(err)
 	}
-	partial := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "partial" })
-	calibration, err := runtime.StartCalibration(ctx, partial.ID, "first_run")
-	if err != nil {
-		t.Fatal(err)
-	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "partial" })
+	calibration := waitActiveCalibration(t, runtime)
 	if calibration.SampleCount != 1 || calibration.Samples[0].Source != domain.SourceX {
 		t.Fatalf("partial calibration=%+v", calibration)
 	}
@@ -264,4 +257,21 @@ func waitSession(t *testing.T, runtime *Engine, id string, predicate func(domain
 	value, _ := runtime.Session(context.Background(), id)
 	t.Fatalf("session did not reach expected state: %+v", value)
 	return domain.Session{}
+}
+
+func waitActiveCalibration(t *testing.T, runtime *Engine) domain.CalibrationSession {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		overview, err := runtime.CalibrationOverview(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if overview.Active != nil {
+			return *overview.Active
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("first-run calibration did not start automatically")
+	return domain.CalibrationSession{}
 }

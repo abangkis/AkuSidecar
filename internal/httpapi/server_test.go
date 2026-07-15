@@ -198,18 +198,19 @@ func TestFirstRunHTTPFlowEndsInForcedCalibration(t *testing.T) {
 	completeHTTPTestRun(t, runtime, started.Session.ID, domain.SourceLinkedIn, "linkedin-http-1")
 	waitHTTPTestSession(t, runtime, started.Session.ID, "completed")
 
-	var created struct {
-		Calibration domain.CalibrationSession `json:"calibration"`
+	var bootstrapWithCalibration struct {
+		Calibration domain.CalibrationOverview `json:"calibration"`
 	}
-	requestJSON(t, client, http.MethodPost, origin+"/api/calibration/sessions", `{"unifiedSessionId":"`+started.Session.ID+`","triggerKind":"first_run"}`, &created)
-	if created.Calibration.Status != "reviewing" || created.Calibration.SampleCount != 2 {
-		t.Fatalf("created calibration=%+v", created.Calibration)
+	requestJSON(t, client, http.MethodGet, origin+"/api/bootstrap", "", &bootstrapWithCalibration)
+	if bootstrapWithCalibration.Calibration.Active == nil || bootstrapWithCalibration.Calibration.Active.Status != "reviewing" || bootstrapWithCalibration.Calibration.Active.SampleCount != 2 {
+		t.Fatalf("automatic calibration=%+v", bootstrapWithCalibration.Calibration)
 	}
+	created := *bootstrapWithCalibration.Calibration.Active
 	var decided struct {
 		Calibration domain.CalibrationSession `json:"calibration"`
 	}
-	requestJSON(t, client, http.MethodPut, origin+"/api/calibration/sessions/"+created.Calibration.ID+"/samples/0", `{"label":"more_like_this"}`, &decided)
-	requestJSON(t, client, http.MethodPut, origin+"/api/calibration/sessions/"+created.Calibration.ID+"/samples/1", `{"label":"neutral"}`, &decided)
+	requestJSON(t, client, http.MethodPut, origin+"/api/calibration/sessions/"+created.ID+"/samples/0", `{"label":"more_like_this"}`, &decided)
+	requestJSON(t, client, http.MethodPut, origin+"/api/calibration/sessions/"+created.ID+"/samples/1", `{"label":"neutral"}`, &decided)
 	if decided.Calibration.Status != "completed" || decided.Calibration.Snapshot == nil {
 		t.Fatalf("completed calibration=%+v", decided.Calibration)
 	}

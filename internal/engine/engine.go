@@ -217,8 +217,14 @@ func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Sessio
 
 func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, error) {
 	run, err := e.store.AdvanceSession(ctx, sessionID)
-	if err != nil || run == nil {
+	if err != nil {
 		return run, err
+	}
+	if run == nil {
+		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
+			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
+		}
+		return nil, nil
 	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
