@@ -52,6 +52,18 @@ export const MEDIA_RECOVERY_METHODS = new Set([
   "primary_hydration",
   "alternate_dom",
 ]);
+export const MEDIA_RECOVERY_STAGES = new Set([
+  "primary_complete",
+  "primary_missing",
+  "media_root_absent",
+  "media_root_detected",
+  "attempt_unavailable",
+  "primary_hydration_complete",
+  "primary_hydration_empty",
+  "alternate_dom_complete",
+  "alternate_dom_empty",
+  "deadline_exhausted",
+]);
 export const SOURCE_READINESS_STATES = new Set([
   "feed_ready",
   "loading",
@@ -150,6 +162,7 @@ export const CAPTURE_QUALITY_STATES = new Set([
   "pending_hydration",
 ]);
 export const CAPTURE_QUALITY_SEVERITIES = new Set(["low", "high", "critical"]);
+export const CAPTURE_QUALITY_IMPACTS = new Set(["presentation", "evidence", "identity"]);
 
 export class ContractError extends Error {
   constructor(message, details = undefined) {
@@ -688,6 +701,11 @@ function validateMediaRecovery(value, source) {
     recoveredCount,
     method,
     limitation: cleanString(value.limitation, 500),
+    trace: Array.isArray(value.trace)
+      ? value.trace
+          .filter((stage) => MEDIA_RECOVERY_STAGES.has(stage))
+          .slice(0, 8)
+      : [],
   };
 }
 
@@ -709,6 +727,12 @@ function validateMediaRecoverySummary(value) {
           .filter((method) => method !== "none")
           .slice(0, 3)
       : [],
+    stageCounts: value.stageCounts && typeof value.stageCounts === "object"
+      ? Object.fromEntries([...MEDIA_RECOVERY_STAGES].map((stage) => [
+          stage,
+          nonNegativeInteger(value.stageCounts?.[stage], 0),
+        ]).filter(([, count]) => count > 0))
+      : {},
   };
 }
 
@@ -728,6 +752,13 @@ function validateCaptureQualityReport(value, label) {
         const severity = CAPTURE_QUALITY_SEVERITIES.has(entry.severity)
           ? entry.severity
           : null;
+        const impact = CAPTURE_QUALITY_IMPACTS.has(entry.impact)
+          ? entry.impact
+          : entry.field === "avatarUrl"
+            ? "presentation"
+            : entry.severity === "critical"
+              ? "identity"
+              : "evidence";
         if (!field || !code || !observedState || !severity) {
           throw new ContractError(`${label} issue ${issueIndex} is incomplete`);
         }
@@ -737,12 +768,14 @@ function validateCaptureQualityReport(value, label) {
           observedState,
           severity,
           recoverable: entry.recoverable === true,
+          impact,
           attempt: Math.min(1, nonNegativeInteger(entry.attempt, 0)),
         };
       }).filter(Boolean)
     : [];
   return {
     profile,
+    candidateKey: cleanString(value.candidateKey, 500) || null,
     verdict,
     score: Math.max(0, Math.min(1, finiteNumber(value.score, 0))),
     attempt: Math.min(1, nonNegativeInteger(value.attempt, 0)),

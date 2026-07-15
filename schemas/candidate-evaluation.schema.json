@@ -81,9 +81,17 @@
         "attempts": { "type": "integer", "minimum": 0, "maximum": 1 },
         "recoveredCount": { "type": "integer", "minimum": 0, "maximum": 4 },
         "method": { "type": "string", "enum": ["none", "primary_hydration", "alternate_dom"] },
-        "limitation": { "type": "string" }
+        "limitation": { "type": "string" },
+        "trace": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "enum": ["primary_complete", "primary_missing", "media_root_absent", "media_root_detected", "attempt_unavailable", "primary_hydration_complete", "primary_hydration_empty", "alternate_dom_complete", "alternate_dom_empty", "deadline_exhausted"]
+          }
+        }
       },
-      "required": ["policyVersion", "strategyVersion", "source", "outcome", "attempts", "recoveredCount", "method", "limitation"],
+      "required": ["policyVersion", "strategyVersion", "source", "outcome", "attempts", "recoveredCount", "method", "limitation", "trace"],
       "additionalProperties": false
     },
     "presentation": { "type": "object" },

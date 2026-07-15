@@ -68,6 +68,8 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
     store,
     reasoningProvider: provider,
     logger: { error() {} },
+    enforceBridgeCompatibility: true,
+    instanceEpoch: "sidecar-http-test-epoch",
   });
   context.after(async () => {
     await app.stop();
@@ -79,9 +81,51 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
 
   const bootstrap = await jsonFetch(`${origin}/api/bootstrap`);
   assert.equal(bootstrap.provider, "http-test-provider");
+  assert.equal(bootstrap.instanceEpoch, "sidecar-http-test-epoch");
   assert.equal(bootstrap.bridgeContractVersion, BRIDGE_CONTRACT_VERSION);
   assert.equal(bootstrap.limits.defaultScrolls, 2);
   assert.ok(bootstrap.bridgeToken);
+
+  const healthResponse = await fetch(`${origin}/api/health`);
+  assert.equal(
+    healthResponse.headers.get("X-Aku-Sidecar-Instance-Epoch"),
+    bootstrap.instanceEpoch,
+  );
+  const health = await healthResponse.json();
+  assert.equal(health.instanceEpoch, bootstrap.instanceEpoch);
+
+  const reconnectingResponse = await fetch(`${origin}/api/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const reconnecting = await reconnectingResponse.json();
+  assert.equal(reconnectingResponse.status, 400);
+  assert.equal(reconnecting.details.category, "bridge_reconnecting");
+  assert.equal(reconnecting.details.retryable, true);
+  assert.equal(reconnecting.details.instanceEpoch, bootstrap.instanceEpoch);
+
+  await jsonFetch(`${origin}/api/operations/bridge/heartbeat`, {
+    method: "POST",
+    body: JSON.stringify({
+      capabilities: {
+        extensionVersion: "0.1.0",
+        runtimeRevision: "outdated-runtime",
+        buildId: "aku-bridge-0.1.0-outdated-runtime",
+        adapterVersions: { x: "outdated-x", linkedin: "outdated-linkedin" },
+        actions: [],
+      },
+    }),
+  });
+  const incompatibleResponse = await fetch(`${origin}/api/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const incompatible = await incompatibleResponse.json();
+  assert.equal(incompatibleResponse.status, 400);
+  assert.equal(incompatible.details.category, "bridge_incompatible");
+  assert.equal(incompatible.details.retryable, false);
 
   const unauthorizedReload = await fetch(
     `${origin}/api/operations/bridge/actions/reload-self`,
@@ -107,13 +151,13 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
     `${origin}/api/operations/bridge/actions/${requestedReload.action.id}/accept`,
     { method: "POST", headers: bridgeHeaders(bootstrap.bridgeToken) },
   );
-  await jsonFetch(`${origin}/api/operations/bridge/heartbeat`, {
+  const heartbeatResponse = await jsonFetch(`${origin}/api/operations/bridge/heartbeat`, {
     method: "POST",
     body: JSON.stringify({
       capabilities: {
-        extensionVersion: "0.5.40",
-        runtimeRevision: "source-fidelity-v42",
-        buildId: "aku-bridge-0.5.40-source-fidelity-v42",
+        extensionVersion: "0.5.41",
+        runtimeRevision: "source-fidelity-v43",
+        buildId: "aku-bridge-0.5.41-source-fidelity-v43",
         adapterVersions: { x: "x-dom-v16", linkedin: "linkedin-dom-v13" },
         actions: [
           "reload_self",
@@ -128,6 +172,11 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
       },
     }),
   });
+  assert.equal(heartbeatResponse.instanceEpoch, bootstrap.instanceEpoch);
+  assert.equal(
+    heartbeatResponse.heartbeat.sidecarInstanceEpoch,
+    bootstrap.instanceEpoch,
+  );
   const completedReload = await jsonFetch(
     `${origin}/api/operations/bridge/actions/${requestedReload.action.id}`,
     { headers: bridgeHeaders(bootstrap.bridgeToken) },

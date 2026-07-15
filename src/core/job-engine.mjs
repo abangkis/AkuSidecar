@@ -847,6 +847,20 @@ export function decideAcquisitionPlanning({
       reason: `Deterministic planning gate: ${unseenEvidenceCount} unseen candidates are sufficient for bounded evaluation.`,
     };
   }
+  const admittedBlocks = (observation.snapshots ?? [])
+    .flatMap((snapshot) => snapshot.blocks ?? []);
+  const hasSubstantiveQualityGap = admittedBlocks.some((block) =>
+    block.captureQuality?.verdict !== "complete" ||
+    block.captureQuality?.issues?.some((issue) => issue.impact !== "presentation"),
+  );
+  if (admittedBlocks.length > 0 && !hasSubstantiveQualityGap) {
+    return {
+      invokeProvider: false,
+      reason:
+        `Deterministic planning gate: sparse sample (${unseenEvidenceCount}) is complete; ` +
+        "presentation warnings or rejected shells do not justify another viewport.",
+    };
+  }
   const coverage = observation.coverage ?? {};
   if (
     coverage.scrollStopReason !== "budget_exhausted" ||
@@ -1377,6 +1391,10 @@ export function aggregateQualityAdmission(observations) {
     ),
     rejectedCandidateCount: admissions.reduce(
       (sum, admission) => sum + admission.rejectedCandidateCount,
+      0,
+    ),
+    presentationWarningCount: admissions.reduce(
+      (sum, admission) => sum + (admission.presentationWarningCount ?? 0),
       0,
     ),
     retryAttempts: admissions.reduce((sum, admission) => sum + admission.retryAttempts, 0),

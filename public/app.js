@@ -2,10 +2,12 @@ import { parseXSourceText } from "./x-source-format.js";
 
 const state = {
   bootstrap: null,
+  sidecarInstanceEpoch: null,
   bridgeReady: false,
   pendingCaptureReleaseLeaseId: null,
   currentRun: null,
   currentSession: null,
+  sessionStartInFlight: false,
   pollTimer: null,
   statusPollFailures: 0,
   failureRecoveryMode: "timeline",
@@ -35,6 +37,7 @@ const REVIEW_PAGE_SIZE = 10;
 const REVIEW_MAX_RUNS = 50;
 const BACK_TO_TOP_THRESHOLD_PX = 480;
 const STATUS_POLL_RETRY_DELAYS_MS = [700, 1_200, 2_000, 3_500, 5_000];
+const BRIDGE_READINESS_TIMEOUT_MS = 3_000;
 
 const elements = {
   appHeading: document.querySelector("#app-heading"),
@@ -164,7 +167,9 @@ window.addEventListener("message", (event) => {
     api("/api/operations/bridge/heartbeat", {
       method: "POST",
       body: JSON.stringify({ capabilities: event.data.capabilities ?? {} }),
-    }).then(({ heartbeat, compatibility }) => {
+    }).then(({ instanceEpoch, heartbeat, compatibility }) => {
+      state.sidecarInstanceEpoch = instanceEpoch;
+      if (state.bootstrap) state.bootstrap.instanceEpoch = instanceEpoch;
       state.bridgeReady = compatibility?.compatible === true;
       if (state.bridgeReady) {
         startBridgeActionLoop();
@@ -174,8 +179,10 @@ window.addEventListener("message", (event) => {
         ? `AkuBridge ${heartbeat.extensionVersion} ready`
         : "AkuBridge update required";
       setStatus(elements.bridgeStatus, label, state.bridgeReady ? "ok" : "warning");
-      setUpdateButtonsDisabled(!state.bridgeReady);
-      elements.onboardingFinish.disabled = !state.bridgeReady;
+      setUpdateButtonsDisabled(
+        !state.bridgeReady || state.sessionStartInFlight || hasActiveWork(),
+      );
+      elements.onboardingFinish.disabled = !state.bridgeReady || state.sessionStartInFlight;
       if (!state.bridgeReady) {
         elements.providerNotice.textContent = compatibility?.reasons?.join(" ") ||
           "AkuBridge does not match this AkuSidecar build. Reload or update the extension.";
@@ -325,7 +332,10 @@ function returnToTop() {
 
 async function bootstrap() {
   try {
-    state.bootstrap = await api("/api/bootstrap");
+    const nextBootstrap = await api("/api/bootstrap");
+    state.bootstrap = nextBootstrap;
+    state.sidecarInstanceEpoch = nextBootstrap.instanceEpoch;
+    if (!state.bridgeReady) markBridgeReconnecting();
     populateOnboarding(state.bootstrap.onboarding?.profile);
     state.defaultPresentation = state.bootstrap.presentation?.defaultLayout ?? "source";
     state.timelineCapacity = state.bootstrap.presentation?.timelineCapacity ?? 12;
@@ -484,12 +494,54 @@ function pingBridge() {
   );
 }
 
+function observeSidecarEpoch(instanceEpoch) {
+  if (!instanceEpoch) return false;
+  const changed = Boolean(
+    state.sidecarInstanceEpoch && state.sidecarInstanceEpoch !== instanceEpoch,
+  );
+  state.sidecarInstanceEpoch = instanceEpoch;
+  if (state.bootstrap) state.bootstrap.instanceEpoch = instanceEpoch;
+  if (changed) {
+    markBridgeReconnecting();
+    pingBridge();
+  }
+  return changed;
+}
+
+function markBridgeReconnecting() {
+  state.bridgeReady = false;
+  setStatus(elements.bridgeStatus, "AkuBridge reconnecting", "warning");
+  setUpdateButtonsDisabled(true);
+  elements.onboardingFinish.disabled = true;
+}
+
+function hasActiveWork() {
+  return Boolean(
+    (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) ||
+    (state.currentRun && !isTerminal(state.currentRun.status)),
+  );
+}
+
+async function ensureBridgeReady(timeoutMs = BRIDGE_READINESS_TIMEOUT_MS) {
+  markBridgeReconnecting();
+  pingBridge();
+  const deadline = Date.now() + timeoutMs;
+  while (!state.bridgeReady && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return state.bridgeReady;
+}
+
 function startBridgeActionLoop() {
   if (bridgeActionLoopStarted) return;
   bridgeActionLoopStarted = true;
   void (async () => {
     while (bridgeActionLoopStarted) {
       try {
+        if (!state.bridgeReady) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
         const { action } = await api("/api/operations/bridge/actions/next?waitMs=25000");
         if (!action || action.type !== "reload_self") continue;
         state.bridgeReady = false;
@@ -514,9 +566,11 @@ function startBridgeActionLoop() {
 
 async function startRun() {
   if (
+    state.sessionStartInFlight ||
     (state.currentSession && !isUnifiedTerminal(state.currentSession.status)) ||
     (state.currentRun && !isTerminal(state.currentRun.status))
   ) return;
+  state.sessionStartInFlight = true;
   state.currentView = "timeline";
   selectViewButton(elements.sessionViewButton);
   hide(elements.reviewPanel, elements.settingsPanel);
@@ -527,6 +581,11 @@ async function startRun() {
   hide(elements.failurePanel);
   setUpdateButtonsDisabled(true);
   try {
+    if (!await ensureBridgeReady()) {
+      throw new Error(
+        "AkuBridge did not reconnect to the current AkuSidecar instance within the bounded readiness window.",
+      );
+    }
     const { session } = await api("/api/sessions", {
       method: "POST",
       body: JSON.stringify({}),
@@ -537,8 +596,11 @@ async function startRun() {
     dispatchUnifiedSession(session);
     schedulePoll();
   } catch (error) {
-    setUpdateButtonsDisabled(false);
+    setUpdateButtonsDisabled(!state.bridgeReady);
+    elements.retryButton.disabled = false;
     showFailure({ stage: "create_session", message: error.message });
+  } finally {
+    state.sessionStartInFlight = false;
   }
 }
 
@@ -719,6 +781,7 @@ function resetStatusPollRecovery() {
   state.statusPollFailures = 0;
   if (wasRecovering && state.bootstrap) {
     setStatus(elements.sidecarStatus, "AkuSidecar ready", "ok");
+    void ensureBridgeReady();
   }
 }
 
@@ -3453,9 +3516,13 @@ async function api(path, options = {}) {
       ...(options.headers ?? {}),
     },
   });
+  observeSidecarEpoch(response.headers.get("X-Aku-Sidecar-Instance-Epoch"));
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || `Request failed with status ${response.status}`);
+    const error = new Error(payload.message || `Request failed with status ${response.status}`);
+    error.details = payload.details;
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }

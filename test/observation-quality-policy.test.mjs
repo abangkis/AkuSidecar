@@ -10,6 +10,25 @@ test("complete capture quality is admitted without degradation", () => {
   assert.equal(admitted.coverage.qualityAdmission.admittedBlockCount, 1);
 });
 
+test("presentation-only avatar warnings remain observable without degrading admission", () => {
+  const warning = report("complete", {
+    field: "avatarUrl",
+    code: "pending_hydration",
+    observedState: "pending_hydration",
+    severity: "low",
+    recoverable: false,
+    impact: "presentation",
+    attempt: 0,
+  });
+  warning.candidateKey = "x:status:warning";
+  const observation = fixture([warning]);
+  const admitted = admitObservationQuality(observation, { required: true });
+  assert.equal(admitted.coverage.qualityAdmission.verdict, "complete");
+  assert.equal(admitted.coverage.qualityAdmission.degradedBlockCount, 0);
+  assert.equal(admitted.coverage.qualityAdmission.presentationWarningCount, 1);
+  assert.equal(admitted.snapshots[0].qualityReports[0].candidateKey, "x:status:warning");
+});
+
 test("degraded candidates remain admitted with explicit limitations", () => {
   const observation = fixture([report("usable_degraded", {
     field: "media",

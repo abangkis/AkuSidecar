@@ -33,11 +33,19 @@ test("heartbeat keeps operational capabilities and drops arbitrary content", () 
 
 test("bridge report distinguishes unavailable, healthy, stale, and degraded", () => {
   const clock = { value: Date.parse("2026-07-12T01:00:00.000Z") };
-  const diagnostics = createBridgeDiagnostics({ now: () => clock.value });
+  const diagnostics = createBridgeDiagnostics({
+    now: () => clock.value,
+    instanceEpoch: "sidecar-epoch-test",
+  });
   assert.equal(diagnostics.report().status, "unavailable");
+  assert.equal(diagnostics.report().instanceEpoch, "sidecar-epoch-test");
 
   diagnostics.recordHeartbeat(compatibleHeartbeat());
   assert.equal(diagnostics.report().status, "healthy");
+  assert.equal(
+    diagnostics.report().runtime.heartbeat.sidecarInstanceEpoch,
+    "sidecar-epoch-test",
+  );
   assert.equal(diagnostics.compatibility().compatible, true);
 
   clock.value += 90_001;
@@ -175,9 +183,9 @@ test("a recovery success does not erase two failures from rolling health", () =>
 
 function compatibleHeartbeat() {
   return {
-    extensionVersion: "0.5.40",
-    runtimeRevision: "source-fidelity-v42",
-    buildId: "aku-bridge-0.5.40-source-fidelity-v42",
+    extensionVersion: "0.5.41",
+    runtimeRevision: "source-fidelity-v43",
+    buildId: "aku-bridge-0.5.41-source-fidelity-v43",
     adapterVersions: { x: "x-dom-v16", linkedin: "linkedin-dom-v13" },
     actions: [
       "reload_self",

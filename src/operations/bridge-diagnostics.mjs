@@ -3,16 +3,19 @@ import { evaluateBridgeCompatibility } from "./bridge-compatibility.mjs";
 const SOURCES = ["x", "linkedin"];
 const HEARTBEAT_FRESH_MS = 90_000;
 
-export function createBridgeDiagnostics({ now = () => Date.now() } = {}) {
+export function createBridgeDiagnostics({ now = () => Date.now(), instanceEpoch = null } = {}) {
   let heartbeat = null;
 
   return {
     recordHeartbeat(input) {
-      heartbeat = sanitizeHeartbeat(input, new Date(now()).toISOString());
+      heartbeat = {
+        ...sanitizeHeartbeat(input, new Date(now()).toISOString()),
+        sidecarInstanceEpoch: instanceEpoch,
+      };
       return heartbeat;
     },
     report(runs = []) {
-      return buildBridgeHealth({ heartbeat, runs, now: now() });
+      return buildBridgeHealth({ heartbeat, runs, now: now(), instanceEpoch });
     },
     compatibility() {
       return evaluateBridgeCompatibility(heartbeat);
@@ -42,7 +45,7 @@ export function sanitizeHeartbeat(input, receivedAt = new Date().toISOString()) 
   };
 }
 
-export function buildBridgeHealth({ heartbeat, runs = [], now = Date.now() }) {
+export function buildBridgeHealth({ heartbeat, runs = [], now = Date.now(), instanceEpoch = null }) {
   const ageMs = heartbeat ? Math.max(0, now - Date.parse(heartbeat.receivedAt)) : null;
   const runtime = !heartbeat
     ? { status: "unavailable", ageMs: null, heartbeat: null }
@@ -64,6 +67,7 @@ export function buildBridgeHealth({ heartbeat, runs = [], now = Date.now() }) {
       : "healthy";
   return {
     version: 1,
+    instanceEpoch,
     status,
     checkedAt: new Date(now).toISOString(),
     runtime,

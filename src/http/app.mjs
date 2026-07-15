@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import crypto from "node:crypto";
 import { buildSourceRegistry, SOURCE_CATALOG } from "../core/source-registry.mjs";
 import { URL } from "node:url";
 import { ContractError } from "../core/contracts.mjs";
@@ -29,7 +30,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
-export const APP_VERSION = "0.6.7";
+export const APP_VERSION = "0.6.9";
 
 export function createAkuBrowserApp({
   config,
@@ -37,6 +38,7 @@ export function createAkuBrowserApp({
   reasoningProvider,
   logger = console,
   enforceBridgeCompatibility = false,
+  instanceEpoch = crypto.randomUUID(),
 }) {
   config.calibration ??= {
     enabled: true,
@@ -65,7 +67,7 @@ export function createAkuBrowserApp({
     maxItems: config.calibration.batchSize,
     maxItemsPerSource: config.calibration.maxItemsPerSource,
   });
-  const bridgeDiagnostics = createBridgeDiagnostics();
+  const bridgeDiagnostics = createBridgeDiagnostics({ instanceEpoch });
   const bridgeActions = createBridgeActions({
     expectedBuildId: `aku-bridge-${BRIDGE_REQUIREMENTS.minimumExtensionVersion}-${BRIDGE_REQUIREMENTS.runtimeRevision}`,
   });
@@ -88,6 +90,7 @@ export function createAkuBrowserApp({
       const url = new URL(request.url, `http://${config.host}:${config.port}`);
       if (url.pathname.startsWith("/api/")) {
         response.setHeader("Cache-Control", "no-store");
+        response.setHeader("X-Aku-Sidecar-Instance-Epoch", instanceEpoch);
         await handleApi({
           request,
           response,
@@ -100,6 +103,7 @@ export function createAkuBrowserApp({
           config,
           calibrationEngine,
           enforceBridgeCompatibility,
+          instanceEpoch,
         });
         return;
       }
@@ -184,7 +188,7 @@ function serveFrontend(middleware, request, response, logger) {
   });
 }
 
-async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, bridgeActions, config, calibrationEngine, enforceBridgeCompatibility }) {
+async function handleApi({ request, response, url, engine, store, bridgeToken, bridgeDiagnostics, bridgeActions, config, calibrationEngine, enforceBridgeCompatibility, instanceEpoch }) {
   if (request.method === "GET" && url.pathname === "/api/calibration/active") {
     sendJson(response, 200, { calibration: calibrationEngine.getActive() });
     return;
@@ -258,6 +262,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, {
       version: APP_VERSION,
+      instanceEpoch,
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       status: "ok",
       provider: engine.reasoningProvider.name,
@@ -291,6 +296,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
     const heartbeat = bridgeDiagnostics.recordHeartbeat(body);
     const cooperativeAction = bridgeActions.observeHeartbeat(heartbeat);
     sendJson(response, 202, {
+      instanceEpoch,
       heartbeat,
       compatibility: bridgeDiagnostics.compatibility(),
       cooperativeAction,
@@ -363,6 +369,7 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
     sendJson(response, 200, {
       version: APP_VERSION,
+      instanceEpoch,
       bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
       provider: engine.reasoningProvider.name,
       providerCapabilities: providerCapabilities(config.reasoning?.provider),
@@ -552,14 +559,14 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   }
 
   if (request.method === "POST" && url.pathname === "/api/runs") {
-    if (enforceBridgeCompatibility) assertCompatibleBridge(bridgeDiagnostics);
+    if (enforceBridgeCompatibility) assertCompatibleBridge(bridgeDiagnostics, instanceEpoch);
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, { run: engine.startRun(body) });
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/sessions") {
-    if (enforceBridgeCompatibility) assertCompatibleBridge(bridgeDiagnostics);
+    if (enforceBridgeCompatibility) assertCompatibleBridge(bridgeDiagnostics, instanceEpoch);
     const body = await readJson(request, config.limits.maxBodyBytes);
     sendJson(response, 201, {
       session: engine.startUnifiedSession({
@@ -716,12 +723,20 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
   sendJson(response, 404, { error: "NotFound", message: "Route not found" });
 }
 
-function assertCompatibleBridge(bridgeDiagnostics) {
+function assertCompatibleBridge(bridgeDiagnostics, instanceEpoch) {
   const compatibility = bridgeDiagnostics.compatibility();
   if (compatibility.compatible) return;
+  const heartbeatUnavailable = compatibility.actual === null;
   throw new ContractError(
-    `AkuBridge update/reload required: ${compatibility.reasons.join(" ")}`,
-    compatibility,
+    heartbeatUnavailable
+      ? "AkuBridge is reconnecting to the current AkuSidecar instance."
+      : `AkuBridge update/reload required: ${compatibility.reasons.join(" ")}`,
+    {
+      category: heartbeatUnavailable ? "bridge_reconnecting" : "bridge_incompatible",
+      retryable: heartbeatUnavailable,
+      instanceEpoch,
+      compatibility,
+    },
   );
 }
 

@@ -97,6 +97,10 @@ export function admitObservationQuality(observation, { required = false } = {}) 
   }
 
   const rejectedCandidateCount = verdictCounts.invalid;
+  const presentationWarningCount = reports.reduce(
+    (sum, report) => sum + report.issues.filter((issue) => issue.impact === "presentation").length,
+    0,
+  );
   const admissionVerdict = rejectedCandidateCount > 0 || degradedBlockCount > 0
     ? "usable_degraded"
     : "complete";
@@ -114,6 +118,7 @@ export function admitObservationQuality(observation, { required = false } = {}) 
         admittedBlockCount,
         degradedBlockCount,
         rejectedCandidateCount,
+        presentationWarningCount,
         retryAttempts,
         issueCounts: summary.issueCounts,
       },
@@ -169,10 +174,17 @@ function assertMediaRecoveryConsistency(observation) {
     recoveries.map((entry) => entry.method).filter((method) => method !== "none"),
   )].sort();
   const observedMethods = [...(summary.methods ?? [])].sort();
+  const expectedStageCounts = recoveries
+    .flatMap((entry) => entry.trace ?? [])
+    .reduce((counts, stage) => {
+      counts[stage] = (counts[stage] ?? 0) + 1;
+      return counts;
+    }, {});
   if (
     summary.attempts !== expectedAttempts ||
     summary.recoveredMediaCount !== expectedRecoveredCount ||
-    JSON.stringify(observedMethods) !== JSON.stringify(expectedMethods)
+    JSON.stringify(observedMethods) !== JSON.stringify(expectedMethods) ||
+    !sameCountMap(summary.stageCounts, expectedStageCounts)
   ) {
     throw new ContractError("media-recovery aggregate accounting is inconsistent");
   }
@@ -183,8 +195,11 @@ function assertMediaRecoveryConsistency(observation) {
 }
 
 function assertReportConsistency(report, block = null) {
-  if (report.verdict === "complete" && report.issues.length > 0) {
-    throw new ContractError("complete capture-quality reports cannot contain issues");
+  if (
+    report.verdict === "complete" &&
+    report.issues.some((issue) => issue.impact !== "presentation")
+  ) {
+    throw new ContractError("complete capture-quality reports can contain only presentation warnings");
   }
   if (report.verdict === "usable_degraded" && report.issues.length === 0) {
     throw new ContractError("degraded capture-quality reports require an issue");
@@ -240,6 +255,7 @@ function countReportSignatures(reports) {
 function reportSignature(report) {
   return JSON.stringify({
     profile: report.profile,
+    candidateKey: report.candidateKey ?? null,
     verdict: report.verdict,
     score: report.score,
     attempt: report.attempt,

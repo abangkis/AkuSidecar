@@ -71,9 +71,17 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
 
   assert.equal(htmlResponse.status, 200);
   assert.match(html, /\/\@vite\/client/);
-  assert.match(html, /\/app\.js\?runtime=bridge-relay-handshake-v2/);
+  assert.match(html, /\/app\.js\?runtime=sidecar-instance-epoch-v1/);
   assert.match(appScript, /bootstrapRetryTimer = setTimeout/);
   assert.match(appScript, /if \(!bridgePingStarted\)/);
+  assert.match(appScript, /sidecarInstanceEpoch: null/);
+  assert.match(appScript, /X-Aku-Sidecar-Instance-Epoch/);
+  assert.match(appScript, /function observeSidecarEpoch\(instanceEpoch\)/);
+  assert.match(appScript, /BRIDGE_READINESS_TIMEOUT_MS = 3_000/);
+  assert.match(appScript, /if \(!await ensureBridgeReady\(\)\)/);
+  assert.match(appScript, /state\.sessionStartInFlight/);
+  assert.match(appScript, /function hasActiveWork\(\)/);
+  assert.match(appScript, /if \(!state\.bridgeReady\) \{\s*await new Promise/s);
   assert.ok(
     appScript.indexOf("let bridgeActionLoopStarted = false") < appScript.indexOf("await bootstrap()"),
     "the bridge action loop state must be initialized before bootstrap starts",

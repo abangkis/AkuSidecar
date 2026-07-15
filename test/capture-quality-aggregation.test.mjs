@@ -45,6 +45,7 @@ test("multi-round quality coverage aggregates every report and admission", () =>
     profile: "social-post-v1",
     admittedBlockCount: 3,
     degradedBlockCount: 1,
+    presentationWarningCount: 0,
     rejectedCandidateCount: 1,
     retryAttempts: 2,
     issueCounts: { "media:pending_hydration": 1, "author:detected_empty": 1 },

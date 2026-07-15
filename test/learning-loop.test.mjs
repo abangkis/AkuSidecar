@@ -140,6 +140,39 @@ test("deterministic planning gate spends model tokens only on a sparse movable g
     }).invokeProvider,
     false,
   );
+  const completeBlock = {
+    captureQuality: {
+      verdict: "complete",
+      issues: [{ field: "avatarUrl", impact: "presentation" }],
+    },
+  };
+  const completeSparse = decideAcquisitionPlanning({
+    policy: "deterministic_sparse_gap",
+    observation: {
+      coverage,
+      snapshots: [{ blocks: [completeBlock] }],
+    },
+    unseenEvidenceCount: 1,
+  });
+  assert.equal(completeSparse.invokeProvider, false);
+  assert.match(completeSparse.reason, /presentation warnings or rejected shells/i);
+
+  const degradedSparse = decideAcquisitionPlanning({
+    policy: "deterministic_sparse_gap",
+    observation: {
+      coverage,
+      snapshots: [{
+        blocks: [{
+          captureQuality: {
+            verdict: "usable_degraded",
+            issues: [{ field: "media", impact: "evidence" }],
+          },
+        }],
+      }],
+    },
+    unseenEvidenceCount: 1,
+  });
+  assert.equal(degradedSparse.invokeProvider, true);
 });
 
 test("learning loop persists evaluated decisions, usage, and append-only corrections", async (context) => {

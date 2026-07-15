@@ -37,6 +37,29 @@ activity while a persisted run is in reasoning, and an in-process watcher must
 not interrupt that run. After backend changes, restart the registered service
 through AkuSupervisor. Frontend-only changes continue to use Vite HMR.
 
+### Runtime readiness and instance epochs
+
+Every AkuSidecar process creates one non-persisted `instanceEpoch`. The same
+value is returned by `/api/health`, `/api/bootstrap`, the Bridge heartbeat
+response, Bridge diagnostics, and the `X-Aku-Sidecar-Instance-Epoch` response
+header on every API call for that process lifetime. A restart always
+creates a new epoch; SQLite state and the Bridge token remain durable, but an
+old in-memory heartbeat never authorizes capture in the new process.
+
+The AkuBrowser tab treats an epoch change as a bounded readiness transition:
+
+1. mark AkuBridge as `reconnecting` and disable new update controls;
+2. request a fresh capability handshake from the installed extension;
+3. associate the returned heartbeat with the current Sidecar epoch; and
+4. enable a new run only after compatibility passes.
+
+Every new update also requests a fresh handshake and waits for at most three
+seconds. A missing heartbeat returns the retryable category
+`bridge_reconnecting`; an observed but incompatible build returns the terminal
+category `bridge_incompatible`. Both paths remain fail-closed. Sidecar process
+health stays separate from Bridge readiness so a generic Supervisor does not
+gain Chrome-specific lifecycle policy.
+
 The default daily-use action creates one persisted Unified Session. AkuSidecar runs an X child followed by a LinkedIn child, keeps their checkpoints and feedback independent, and deterministically merges up to five validated items per source into one finite brief. Advanced/Pilot mode preserves the original single-source flow. Browser movement budgets remain unchanged.
 
 Source layout reconstructs each item from persisted candidate text, provenance, and at most four validated source images or video posters. Images are presentation-only, lazy-loaded without a referrer, and omitted from reasoning prompts. A cache miss may request the original allowlisted source CDN; AkuBrowser does not reopen or recapture the source page.
@@ -97,12 +120,22 @@ acquisition planning or final reasoning. `coverage.qualityAdmission` records
 admitted, degraded, and rejected counts plus bounded issue/retry totals. The
 ReasoningProvider never receives rejected parser output.
 
+Quality issues distinguish `identity`, `evidence`, and `presentation` impact.
+An unhydrated avatar remains an observable presentation warning and candidate
+diagnostic, but does not consume retry budget or degrade admission. Detected
+missing media remains evidence-impact and follows the bounded recovery path.
+Every candidate report carries a provisional key, including rejected DOM
+shells that never receive an admitted evidence identity.
+
 Media uses `media-recovery-v1` inside that same one-retry budget. Sidecar
 requires a per-block outcome and aggregate coverage, verifies recovered media
 against the allowlisted values, and rejects mismatched outcome/fallback counts.
 If recovery is exhausted, trustworthy text remains `usable_degraded`; Source
 layout shows a media-unavailable notice with the native-post link. Recovery
 metadata is presentation/diagnostic context and is not sent to text reasoning.
+Per-block stage traces and aggregate stage counts identify whether failure
+occurred at primary extraction, hydration, alternate DOM extraction, budget,
+or deadline without disclosing captured content.
 
 Capture visibility is a next-run Settings boundary. `quiet` is the default: a
 Catch Up command requires AkuBridge to use its dedicated non-focused managed
@@ -138,6 +171,10 @@ outcome. A failed reveal stops at `source_freshness`; Sidecar does not retry a
 stale feed under detect-only policy or present that failure as zero additions.
 
 Gate 0B.3 asks the configured ReasoningProvider only whether to finish or request one adjacent observation. A follow-up is capped at one scroll, locked to the same source, anchored to the last round-one viewport, and cannot activate fresh-content controls. Both rounds are stored and merged before the final result.
+
+The deterministic sparse-gap gate skips provider planning when all admitted
+blocks are already complete. Presentation warnings and rejected shells alone
+cannot justify another viewport; an evidence-impact gap may still do so.
 
 ## Knowledge continuity
 
