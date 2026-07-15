@@ -64,6 +64,7 @@ test("Gate 0 survives the browser-to-reasoning-to-SQLite flow and restart", asyn
   const command = engine.claimBridgeCommand(run.id, "test-bridge");
   assert.equal(command.status, "claimed");
   assert.equal(command.payload.mode, "catch_up");
+  assert.equal(command.payload.captureLeaseId, run.id);
 
   engine.acceptBridgeObservation(command.id, run.id, sampleObservation());
   const completed = await engine.waitForRun(run.id);

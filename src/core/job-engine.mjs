@@ -47,13 +47,15 @@ export class JobEngine {
     this.activeReasoning = new Map();
   }
 
-  startRun(input) {
+  startRun(input, options = {}) {
     const request = validateRunRequest(input, this.limits);
     const run = this.store.createRun(request, this.reasoningProvider.name);
     this.store.enqueueBridgeCommand(
       run.id,
       "collect_visible",
-      buildNativeCaptureCommand(run, this.limits),
+      buildNativeCaptureCommand(run, this.limits, {
+        captureLeaseId: options.captureLeaseId ?? run.id,
+      }),
     );
     return this.store.getRun(run.id);
   }
@@ -105,6 +107,8 @@ export class JobEngine {
       .listPresentableUnifiedSessions(50, 0)
       .map(projectUnifiedSessionForPresentation);
     const latestSession = sessions[0] ?? null;
+    const latestTerminalSession =
+      this.store.getLatestTerminalUnifiedSession?.() ?? latestSession;
     const olderEvidence = new Set(
       sessions.slice(1).flatMap((session) =>
         (session.result?.items ?? []).map((resultEntry) =>
@@ -156,6 +160,7 @@ export class JobEngine {
         newestSessionAt: latestSession?.completedAt ?? null,
         latestSessionId: latestSession?.id ?? null,
         latestSessionStatus: latestSession?.status ?? null,
+        latestTerminalSessionId: latestTerminalSession?.id ?? null,
         latestAdditions,
         sources: Object.fromEntries(["x", "linkedin"].map((source) => [
           source,
@@ -480,16 +485,19 @@ export class JobEngine {
 
     const queuedChild = session.children.find((child) => child.status === "queued");
     if (queuedChild) {
-      const run = this.startRun({
-        mode: session.mode,
-        source: queuedChild.source,
-        intent: session.intent,
-        maxItems: session.maxItemsPerSource,
-        scrolls: Math.min(
-          this.limits.defaultScrolls ?? 0,
-          this.limits.maxScrolls,
-        ),
-      });
+      const run = this.startRun(
+        {
+          mode: session.mode,
+          source: queuedChild.source,
+          intent: session.intent,
+          maxItems: session.maxItemsPerSource,
+          scrolls: Math.min(
+            this.limits.defaultScrolls ?? 0,
+            this.limits.maxScrolls,
+          ),
+        },
+        { captureLeaseId: session.id },
+      );
       return this.store.attachUnifiedSessionChild(sessionId, queuedChild.source, run.id);
     }
 
@@ -636,6 +644,8 @@ export class JobEngine {
               scrolls: this.limits.followUpScrolls,
               continuation,
               followUpReason: plan.reason,
+              captureLeaseId:
+                this.store.getUnifiedSessionByRunId(runId)?.id ?? runId,
             }),
           );
           this.store.setRunStatus(runId, "waiting_for_bridge");

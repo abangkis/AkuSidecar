@@ -82,6 +82,7 @@ test("unified session continues after one source failure and reports a partial r
   let session = engine.startUnifiedSession({ intent: "Material engineering changes." });
   const xRun = session.children[0].run;
   const xCommand = engine.claimBridgeCommand(xRun.id, "unified-test-bridge");
+  assert.equal(xCommand.payload.captureLeaseId, session.id);
   engine.failBridgeCommand(xCommand.id, xRun.id, { message: "Fixture X failure" });
 
   session = engine.getUnifiedSession(session.id);

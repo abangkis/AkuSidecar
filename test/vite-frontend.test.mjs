@@ -85,7 +85,7 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   );
   assert.match(
     appScript,
-    /state\.bridgeReady = compatibility\?\.compatible === true;\s*if \(state\.bridgeReady\) startBridgeActionLoop\(\);/,
+    /state\.bridgeReady = compatibility\?\.compatible === true;\s*if \(state\.bridgeReady\) \{\s*startBridgeActionLoop\(\);\s*flushCaptureSurfaceRelease\(\);\s*\}/,
   );
   assert.match(appScript, /AkuBridge could not complete the requested operation/);
   assert.match(html, /Check for updates/);
@@ -127,6 +127,9 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(appScript, /\/api\/sessions\/active/);
   assert.match(appScript, /\/api\/sessions\?limit=1&offset=0/);
   assert.match(appScript, /loadTimelineFeed/);
+  assert.match(appScript, /pendingCaptureReleaseLeaseId/);
+  assert.match(appScript, /AKU_BROWSER_RELEASE_CAPTURE_SURFACE/);
+  assert.match(appScript, /flushCaptureSurfaceRelease/);
   assert.match(appScript, /\/api\/timeline\?limit=/);
   assert.match(appScript, /renderOverviewSources/);
   assert.match(appScript, /buildXQuotedPostCard/);

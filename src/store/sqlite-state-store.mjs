@@ -622,6 +622,18 @@ export class SqliteStateStore {
       .map((row) => this.getUnifiedSession(row.id));
   }
 
+  getLatestTerminalUnifiedSession() {
+    const row = this.database
+      .prepare(`
+        SELECT id FROM unified_sessions
+        WHERE status NOT IN ('queued', 'running')
+        ORDER BY completed_at DESC, created_at DESC
+        LIMIT 1
+      `)
+      .get();
+    return row ? this.getUnifiedSession(row.id) : null;
+  }
+
   listPresentableUnifiedSessions(limit = 10, offset = 0) {
     const boundedLimit = Math.max(1, Math.min(50, Number.isFinite(limit) ? limit : 10));
     const boundedOffset = Math.max(0, Number.isFinite(offset) ? offset : 0);

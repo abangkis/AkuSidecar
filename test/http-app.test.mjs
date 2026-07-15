@@ -111,9 +111,9 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
     method: "POST",
     body: JSON.stringify({
       capabilities: {
-        extensionVersion: "0.5.38",
-        runtimeRevision: "source-fidelity-v40",
-        buildId: "aku-bridge-0.5.38-source-fidelity-v40",
+        extensionVersion: "0.5.39",
+        runtimeRevision: "source-fidelity-v41",
+        buildId: "aku-bridge-0.5.39-source-fidelity-v41",
         adapterVersions: { x: "x-dom-v15", linkedin: "linkedin-dom-v13" },
         actions: [
           "reload_self",
@@ -122,6 +122,7 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
           "recover_source_freshness",
           "recover_missing_media",
           "manage_capture_window",
+          "release_capture_surface",
           "preserve_working_tab",
         ],
       },

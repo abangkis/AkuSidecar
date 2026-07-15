@@ -39,6 +39,7 @@ test("Gate 0B capture commands are provider-neutral and deterministically bounde
     pendingContentSettleMs: 700,
     sourceFreshnessPolicy: "wake_and_reveal",
     captureVisibilityPolicy: "quiet",
+    captureLeaseId: null,
     maxBlocksPerSnapshot: 20,
     maxBlockCharacters: 4_000,
     qualityReportRequired: false,
@@ -86,6 +87,20 @@ test("capture visibility is a command authority boundary", () => {
   );
   assert.equal(quiet.captureVisibilityPolicy, "quiet");
   assert.equal(adaptive.captureVisibilityPolicy, "adaptive_fidelity");
+});
+
+test("capture surfaces carry one explicit bounded lifecycle lease", () => {
+  const standalone = buildNativeCaptureCommand(
+    { id: "run-1", mode: "catch_up", source: "x", scrolls: 0 },
+    limits,
+  );
+  const unified = buildNativeCaptureCommand(
+    { id: "run-2", mode: "catch_up", source: "linkedin", scrolls: 0 },
+    limits,
+    { captureLeaseId: "session-1" },
+  );
+  assert.equal(standalone.captureLeaseId, "run-1");
+  assert.equal(unified.captureLeaseId, "session-1");
 });
 
 test("LinkedIn initial capture authorizes adapter-driven freshness reveal", () => {

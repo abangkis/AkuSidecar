@@ -31,6 +31,7 @@ test("latest completed check reports zero additions without erasing the retained
     .getTimelineFeed({ capacity: 12, limit: 12 });
   assert.equal(timeline.summary.latestAdditions, 0);
   assert.equal(timeline.summary.latestSessionId, "empty-latest");
+  assert.equal(timeline.summary.latestTerminalSessionId, "empty-latest");
   assert.equal(timeline.entries.length, 5);
   assert.equal(timeline.entries.some((entry) => entry.isLatestAddition), false);
 });

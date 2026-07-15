@@ -3,6 +3,7 @@ import { parseXSourceText } from "./x-source-format.js";
 const state = {
   bootstrap: null,
   bridgeReady: false,
+  pendingCaptureReleaseLeaseId: null,
   currentRun: null,
   currentSession: null,
   pollTimer: null,
@@ -155,7 +156,10 @@ window.addEventListener("message", (event) => {
       body: JSON.stringify({ capabilities: event.data.capabilities ?? {} }),
     }).then(({ heartbeat, compatibility }) => {
       state.bridgeReady = compatibility?.compatible === true;
-      if (state.bridgeReady) startBridgeActionLoop();
+      if (state.bridgeReady) {
+        startBridgeActionLoop();
+        flushCaptureSurfaceRelease();
+      }
       const label = state.bridgeReady
         ? `AkuBridge ${heartbeat.extensionVersion} ready`
         : "AkuBridge update required";
@@ -202,6 +206,14 @@ window.addEventListener("message", (event) => {
         stage: "browser_bridge",
         message: event.data.message || "AkuBridge could not dispatch the run.",
       });
+    }
+  }
+  if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASE_FAILED") {
+    setStatus(elements.bridgeStatus, "AkuBridge cleanup pending", "warning");
+  }
+  if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASED") {
+    if (event.data.leaseId === state.pendingCaptureReleaseLeaseId) {
+      state.pendingCaptureReleaseLeaseId = null;
     }
   }
 });
@@ -585,6 +597,7 @@ async function pollRun() {
     state.currentRun = run;
     if (run.status === "waiting_for_bridge") dispatchToBridge(run);
     if (run.status === "completed") {
+      releaseCaptureSurface(run.id);
       clearPoll();
       setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
@@ -592,6 +605,7 @@ async function pollRun() {
       return;
     }
     if (["failed", "cancelled"].includes(run.status)) {
+      releaseCaptureSurface(run.id);
       clearPoll();
       setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
@@ -620,6 +634,7 @@ async function pollUnifiedSession() {
     state.currentSession = session;
     dispatchUnifiedSession(session);
     if (isUnifiedTerminal(session.status)) {
+      releaseCaptureSurface(session.id);
       clearPoll();
       setUpdateButtonsDisabled(false);
       if (state.currentView === "review") await loadPilotReview();
@@ -719,6 +734,7 @@ async function recoverFromFailure() {
     }
     state.currentSession = session;
     if (isUnifiedTerminal(session.status)) {
+      releaseCaptureSurface(session.id);
       if (["completed", "partial"].includes(session.status)) {
         await loadTimelineFeed();
         showSessionView();
@@ -2206,7 +2222,24 @@ async function loadTimelineFeed() {
   state.timelineFeed = timeline;
   state.currentSession = null;
   state.currentRun = null;
+  releaseCaptureSurface(
+    timeline.summary?.latestTerminalSessionId ?? timeline.summary?.latestSessionId,
+  );
   return timeline;
+}
+
+function releaseCaptureSurface(leaseId) {
+  if (typeof leaseId !== "string" || !leaseId) return;
+  state.pendingCaptureReleaseLeaseId = leaseId;
+  flushCaptureSurfaceRelease();
+}
+
+function flushCaptureSurfaceRelease() {
+  if (!state.bridgeReady || !state.pendingCaptureReleaseLeaseId) return;
+  window.postMessage({
+    type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE",
+    leaseId: state.pendingCaptureReleaseLeaseId,
+  }, window.location.origin);
 }
 
 async function refreshTimeline() {

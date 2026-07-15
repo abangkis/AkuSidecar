@@ -44,6 +44,9 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
       ? "wake_and_reveal"
       : "preserve_frontier",
     captureVisibilityPolicy: limits.captureVisibilityPolicy ?? "quiet",
+    captureLeaseId: normalizeCaptureLeaseId(
+      options.captureLeaseId ?? run.unifiedSessionId ?? run.id,
+    ),
     maxBlocksPerSnapshot: limits.maxBlocksPerSnapshot,
     maxBlockCharacters: limits.maxBlockCharacters,
     qualityReportRequired: limits.qualityReportRequired === true,
@@ -62,6 +65,12 @@ export function buildNativeCaptureCommand(run, limits, options = {}) {
     continuation,
     followUpReason: options.followUpReason ?? "",
   };
+}
+
+function normalizeCaptureLeaseId(value) {
+  return typeof value === "string" && value.length >= 1 && value.length <= 200
+    ? value
+    : null;
 }
 
 export function buildObservationContinuation(observation, limits) {

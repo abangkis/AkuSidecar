@@ -112,6 +112,15 @@ be proven, the run fails explicitly with `visible_recovery_required`.
 bounded same-window activate/capture/restore recovery. The engine may choose a
 less intrusive path but cannot escalate beyond the saved setting.
 
+Each native command also carries a `captureLeaseId`. A standalone run uses its
+run ID; every child of a unified session uses the same session ID. AkuBrowser
+releases that lease only after the run or complete unified session reaches a
+terminal status, and replays the latest terminal release on startup for
+idempotent crash/reload recovery. This keeps one managed surface across X,
+LinkedIn, and any bounded follow-up while ensuring that Bridge-created tabs do
+not remain open after the lifecycle ends. The release contract does not grant
+authority over pre-existing user tabs or windows.
+
 When the initial acquisition cannot find the requested source,
 `open_missing_tab` lets AkuBridge create one canonical feed tab
 (`https://x.com/home` or `https://www.linkedin.com/feed/`) inside the managed
