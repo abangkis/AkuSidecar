@@ -5,7 +5,7 @@ import {
   createBridgeActions,
 } from "../src/operations/bridge-actions.mjs";
 
-const EXPECTED_BUILD = "aku-bridge-0.5.41-source-fidelity-v43";
+const EXPECTED_BUILD = "aku-bridge-0.5.42-source-fidelity-v44";
 
 test("reload_self is bounded, idempotent, and completes only on the expected heartbeat", () => {
   const clock = { value: Date.parse("2026-07-14T01:00:00.000Z") };
@@ -69,7 +69,7 @@ test("a pending long poll is woken immediately by a new reload action", async ()
 
 test("an aborted long poll cannot steal a later reload action", async () => {
   const actions = createBridgeActions({
-    expectedBuildId: "aku-bridge-0.5.41-source-fidelity-v43",
+    expectedBuildId: "aku-bridge-0.5.42-source-fidelity-v44",
   });
   const disconnected = new AbortController();
   const staleWait = actions.waitForNext(30_000, { signal: disconnected.signal });
