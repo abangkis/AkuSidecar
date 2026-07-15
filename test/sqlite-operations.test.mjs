@@ -86,3 +86,72 @@ test("onboarding reset is confirmation-gated and backup-first", (context) => {
   assert.equal(fs.existsSync(backupPath), true);
   assert.equal(fs.existsSync(databasePath), false);
 });
+
+test("settings resets require typed confirmation, reject active work, and preserve a verified backup", (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aku-settings-reset-"));
+  const databasePath = path.join(directory, "state.db");
+  const backupPath = path.join(directory, "backups", "before-full-reset.db");
+  const store = new SqliteStateStore(databasePath);
+  context.after(() => {
+    store.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  store.createRun({
+    id: "reset-run",
+    mode: "catch_up",
+    source: "x",
+    intent: "latest",
+    maxItems: 1,
+    scrolls: 0,
+  }, "fixture");
+  assert.throws(() => store.resetLearningData("RESET LEARNING"), /while an update is running/);
+  store.database.prepare(
+    "UPDATE runs SET status = 'completed', completed_at = updated_at WHERE id = ?",
+  ).run("reset-run");
+  store.setSetting("user.onboarding_profile_v0", JSON.stringify({
+    version: 0,
+    status: "completed",
+    activeSources: ["x"],
+  }));
+  store.setSetting("ui.timeline_capacity", "20");
+  store.setSetting("preference.runtime.active_snapshot_id", "snapshot-1");
+  store.addPreferenceFeedback("reset-run", {
+    evidenceKey: "x:reset",
+    kind: "more_like_this",
+    reasonCode: null,
+    note: "",
+  });
+  store.savePreferenceModelSnapshot({
+    id: "snapshot-1",
+    version: 1,
+    datasetFingerprint: "reset-fixture",
+    createdAt: "2026-07-15T00:00:00.000Z",
+  });
+
+  assert.throws(() => store.resetLearningData("DELETE"), /RESET LEARNING/);
+  const learning = store.resetLearningData("RESET LEARNING");
+  assert.equal(learning.deleted.preferenceFeedbackEvents, 1);
+  assert.equal(learning.deleted.preferenceModelSnapshots, 1);
+  assert.deepEqual(learning.remaining, {
+    preferenceFeedbackEvents: 0,
+    preferenceModelSnapshots: 0,
+    calibrationSessions: 0,
+    calibrationSamples: 0,
+    calibrationProfileSnapshots: 0,
+  });
+  assert.ok(store.getRun("reset-run"));
+  assert.equal(store.getSetting("ui.timeline_capacity"), "20");
+  assert.match(store.getSetting("user.onboarding_profile_v0"), /completed/);
+
+  const bridgeToken = store.getOrCreateBridgeToken();
+  const backup = createSqliteBackup(databasePath, backupPath);
+  assert.throws(() => store.resetForOnboarding("DELETE", backup), /RESET AKUBROWSER/);
+  const full = store.resetForOnboarding("RESET AKUBROWSER", backup);
+  assert.equal(full.backup.status, "healthy");
+  assert.equal(store.listRuns().length, 0);
+  assert.equal(store.getSetting("user.onboarding_profile_v0"), null);
+  assert.equal(store.getSetting("ui.timeline_capacity"), null);
+  assert.equal(store.getOrCreateBridgeToken(), bridgeToken);
+  assert.match(store.getSetting("operations.last_full_reset"), /before-full-reset/);
+});

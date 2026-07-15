@@ -159,6 +159,15 @@ export function applyPersistedConfiguration(config, store) {
   }
 }
 
+export function resetDashboardConfiguration(config) {
+  for (const [name, definition] of Object.entries(DEFINITIONS)) {
+    const settingMetadata = metadata(config, name);
+    if (settingMetadata.environmentOverride !== null) continue;
+    const value = normalize(definition, settingMetadata.defaultValue);
+    if (value !== null) definition.apply(config, value);
+  }
+}
+
 export function updateDashboardConfiguration(config, store, input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new ContractError("configuration update must be an object");

@@ -8,10 +8,11 @@ import { JobEngine } from "../core/job-engine.mjs";
 import {
   applyPersistedConfiguration,
   configurationView,
+  resetDashboardConfiguration,
   updateDashboardConfiguration,
 } from "../configuration/runtime-configuration.mjs";
 import { providerCapabilities } from "../reasoning/provider-capabilities.mjs";
-import { inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
+import { createSqliteBackup, inspectSqliteDatabase } from "../store/sqlite-operations.mjs";
 import { createBridgeDiagnostics } from "../operations/bridge-diagnostics.mjs";
 import { createBridgeActions } from "../operations/bridge-actions.mjs";
 import { BRIDGE_REQUIREMENTS } from "../operations/bridge-compatibility.mjs";
@@ -28,7 +29,7 @@ const MIME_TYPES = new Map([
 ]);
 
 export const BRIDGE_CONTRACT_VERSION = "aku-browser.bridge.v1";
-export const APP_VERSION = "0.6.6";
+export const APP_VERSION = "0.6.7";
 
 export function createAkuBrowserApp({
   config,
@@ -449,6 +450,48 @@ async function handleApi({ request, response, url, engine, store, bridgeToken, b
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/operations/reset-learning") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    try {
+      const reset = store.resetLearningData(body.confirmation);
+      sendJson(response, 200, {
+        reset,
+        runtime: engine.getPreferenceRuntime(),
+      });
+    } catch (error) {
+      throw new ContractError(error.message);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/operations/full-reset") {
+    const body = await readJson(request, config.limits.maxBodyBytes);
+    if (body.confirmation !== "RESET AKUBROWSER") {
+      throw new ContractError("full reset requires the exact confirmation RESET AKUBROWSER");
+    }
+    const active = store.activeWorkCounts();
+    if (active.runs > 0 || active.unifiedSessions > 0) {
+      throw new ContractError("reset is unavailable while an update is running");
+    }
+    const databasePath = config.databasePath ?? store.databasePath;
+    const backupTarget = resetBackupTarget(databasePath);
+    const backup = createSqliteBackup(databasePath, backupTarget);
+    let reset;
+    try {
+      reset = store.resetForOnboarding(body.confirmation, backup);
+    } catch (error) {
+      throw new ContractError(error.message);
+    }
+    resetDashboardConfiguration(config);
+    calibrationEngine.maxItems = config.calibration.batchSize;
+    calibrationEngine.maxItemsPerSource = config.calibration.maxItemsPerSource;
+    sendJson(response, 200, {
+      reset,
+      onboarding: getOnboardingProfile(store),
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/preferences/replay") {
     sendJson(response, 200, { replay: engine.getPreferenceReplay() });
     return;
@@ -686,6 +729,11 @@ function boundedIntegerQuery(url, name, { fallback, minimum, maximum }) {
   const parsed = Number.parseInt(url.searchParams.get(name) ?? "", 10);
   const value = Number.isFinite(parsed) ? parsed : fallback;
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+function resetBackupTarget(databasePath, now = new Date()) {
+  const stamp = now.toISOString().replaceAll(":", "-").replaceAll(".", "-");
+  return path.join(path.dirname(databasePath), "backups", `pre-full-reset-${stamp}.db`);
 }
 
 

@@ -200,6 +200,37 @@ test("HTTP API enforces the bridge token and completes a finite run", async (con
   );
   assert.equal(history.versions.length, 1);
   assert.equal(history.versions[0].evidenceKey, completed.result.items[0].evidenceKey);
+
+  const rejectedLearningReset = await fetch(`${origin}/api/operations/reset-learning`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "DELETE" }),
+  });
+  assert.equal(rejectedLearningReset.status, 400);
+  const learningReset = await jsonFetch(`${origin}/api/operations/reset-learning`, {
+    method: "POST",
+    body: JSON.stringify({ confirmation: "RESET LEARNING" }),
+  });
+  assert.equal(learningReset.reset.operation, "reset_learning");
+
+  const rejectedFullReset = await fetch(`${origin}/api/operations/full-reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "DELETE" }),
+  });
+  assert.equal(rejectedFullReset.status, 400);
+  const fullReset = await jsonFetch(`${origin}/api/operations/full-reset`, {
+    method: "POST",
+    body: JSON.stringify({ confirmation: "RESET AKUBROWSER" }),
+  });
+  assert.equal(fullReset.reset.operation, "full_reset");
+  assert.equal(fullReset.reset.backup.status, "healthy");
+  assert.equal(fullReset.onboarding.status, "not_started");
+  assert.equal(store.listRuns().length, 0);
+  assert.equal(fs.existsSync(fullReset.reset.backup.target), true);
+  const afterResetBootstrap = await jsonFetch(`${origin}/api/bootstrap`);
+  assert.equal(afterResetBootstrap.bridgeToken, bootstrap.bridgeToken);
+  assert.equal(afterResetBootstrap.onboarding.status, "not_started");
 });
 
 function bridgeHeaders(token) {

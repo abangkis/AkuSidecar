@@ -190,6 +190,18 @@ test("Vite middleware and the Sidecar API share one HTTP port", async (context) 
   assert.match(styles, /grid-template-columns: minmax\(0, var\(--stream-width\)\) minmax\(340px, 380px\)/);
   assert.match(styles, /data-telemetry-behavior=\\?"sticky\\?"[^}]*\.review-telemetry \{[^}]*overflow-y: auto/s);
   assert.match(html, /form="runtime-settings-form">Save settings/);
+  assert.match(html, /id="open-reset-learning"/);
+  assert.match(html, /id="open-full-reset"/);
+  assert.match(html, /id="reset-confirmation-dialog"/);
+  assert.match(html, /Type <strong id="reset-confirmation-phrase"/);
+  assert.match(appScript, /phrase: "RESET LEARNING"/);
+  assert.match(appScript, /phrase: "RESET AKUBROWSER"/);
+  assert.match(appScript, /value !== state\.resetOperation\?\.phrase/);
+  assert.match(appScript, /\/api\/operations\/reset-learning/);
+  assert.match(appScript, /\/api\/operations\/full-reset/);
+  assert.match(styles, /\.reset-confirmation-dialog::backdrop/);
+  assert.match(styles, /\.danger-button:disabled/);
+  assert.doesNotMatch(html, /reset-preference-runtime/);
   assert.match(html, /telemetry-behavior/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(appScript, /mountPilotRunBody/);

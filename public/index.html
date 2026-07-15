@@ -158,10 +158,6 @@
                 <input id="preference-live-influence" name="preferenceLiveInfluence" type="checkbox" />
               </label>
               <div class="settings-row">
-                <span class="settings-copy"><strong>Reset learned order</strong><small>Return to the source/platform baseline. Existing audit history is retained; new feedback can start a fresh local snapshot.</small></span>
-                <button id="reset-preference-runtime" class="secondary-button" type="button">Reset to baseline</button>
-              </div>
-              <div class="settings-row">
                 <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit your lightweight interest hints and active sources.</small></span>
                 <button id="edit-onboarding-profile" class="secondary-button" type="button">Edit profile</button>
               </div>
@@ -297,6 +293,20 @@
               </label>
             </div>
             <p id="startup-settings-detail" class="settings-group-note"></p>
+          </fieldset>
+          <fieldset class="settings-group reset-recovery-group">
+            <legend>Reset &amp; recovery</legend>
+            <p class="settings-group-note">Destructive operations require a second confirmation by typing the exact operation name.</p>
+            <div class="settings-card">
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Reset learning</strong><small>Erase More/Less signals, calibration, and fitted preference models. Timeline, source setup, and other settings remain.</small></span>
+                <button id="open-reset-learning" class="secondary-button" type="button">Reset learning…</button>
+              </div>
+              <div class="settings-row reset-danger-row">
+                <span class="settings-copy"><strong>Full reset and onboard again</strong><small>Create a verified local backup, then erase timeline, runs, learning data, onboarding, and local settings.</small></span>
+                <button id="open-full-reset" class="danger-button" type="button">Full reset…</button>
+              </div>
+            </div>
           </fieldset>
         </form>
       </section>
@@ -489,6 +499,23 @@
         <img id="media-viewer-image" alt="" />
         <button id="media-viewer-next" type="button" aria-label="Next image">&#8250;</button>
       </div>
+    </dialog>
+
+    <dialog id="reset-confirmation-dialog" class="reset-confirmation-dialog" aria-labelledby="reset-confirmation-title">
+      <form method="dialog" class="reset-confirmation-card">
+        <p class="step-label">DESTRUCTIVE OPERATION</p>
+        <h2 id="reset-confirmation-title">Confirm reset</h2>
+        <p id="reset-confirmation-impact"></p>
+        <label class="reset-confirmation-label" for="reset-confirmation-input">
+          Type <strong id="reset-confirmation-phrase"></strong> to continue.
+        </label>
+        <input id="reset-confirmation-input" type="text" autocomplete="off" spellcheck="false" />
+        <p id="reset-confirmation-status" class="settings-detail" role="alert"></p>
+        <div class="reset-confirmation-actions">
+          <button id="reset-confirmation-cancel" class="secondary-button" type="button">Cancel</button>
+          <button id="reset-confirmation-submit" class="danger-button" type="button" disabled>Confirm reset</button>
+        </div>
+      </form>
     </dialog>
 
     <script type="module" src="/app.js?runtime=bridge-relay-handshake-v2"></script>

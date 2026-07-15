@@ -378,6 +378,129 @@ export class SqliteStateStore {
       .run(key, value, now);
   }
 
+  activeWorkCounts() {
+    return {
+      runs: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM runs WHERE status NOT IN ('completed', 'failed', 'cancelled')",
+      ).get()?.count ?? 0),
+      unifiedSessions: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM unified_sessions WHERE status IN ('queued', 'running')",
+      ).get()?.count ?? 0),
+    };
+  }
+
+  resetLearningData(confirmation) {
+    if (confirmation !== "RESET LEARNING") {
+      throw new Error("learning reset requires the exact confirmation RESET LEARNING");
+    }
+    assertNoActiveWork(this);
+    const before = this.#learningDataCounts();
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.exec(`
+        DELETE FROM calibration_sessions;
+        DELETE FROM preference_feedback_events;
+        DELETE FROM preference_model_snapshots;
+        DELETE FROM settings
+        WHERE key LIKE 'preference.runtime.%'
+           OR key = 'calibration.first_run_status';
+      `);
+      this.database.prepare(`
+        INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run("operations.last_learning_reset", JSON.stringify({ completedAt: now }), now);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return {
+      version: 1,
+      operation: "reset_learning",
+      completedAt: now,
+      deleted: before,
+      remaining: this.#learningDataCounts(),
+    };
+  }
+
+  resetForOnboarding(confirmation, backup) {
+    if (confirmation !== "RESET AKUBROWSER") {
+      throw new Error("full reset requires the exact confirmation RESET AKUBROWSER");
+    }
+    assertNoActiveWork(this);
+    if (!backup || backup.health?.status !== "healthy") {
+      throw new Error("full reset requires a healthy verified backup");
+    }
+    const bridgeToken = this.getOrCreateBridgeToken();
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.exec(`
+        DELETE FROM calibration_profile_snapshots;
+        DELETE FROM calibration_samples;
+        DELETE FROM calibration_sessions;
+        DELETE FROM preference_feedback_events;
+        DELETE FROM preference_model_snapshots;
+        DELETE FROM reasoning_invocations;
+        DELETE FROM candidate_evaluations;
+        DELETE FROM feedback;
+        DELETE FROM observations;
+        DELETE FROM bridge_commands;
+        DELETE FROM unified_session_children;
+        DELETE FROM knowledge_versions;
+        DELETE FROM knowledge_events;
+        DELETE FROM evidence_dispositions;
+        DELETE FROM checkpoints;
+        DELETE FROM unified_sessions;
+        DELETE FROM runs;
+        DELETE FROM settings;
+      `);
+      this.database.prepare(
+        "INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?)",
+      ).run("bridge_token", bridgeToken, now);
+      this.database.prepare(
+        "INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?)",
+      ).run("operations.last_full_reset", JSON.stringify({
+        completedAt: now,
+        backupPath: backup.target,
+      }), now);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return {
+      version: 1,
+      operation: "full_reset",
+      completedAt: now,
+      backup: {
+        target: backup.target,
+        status: backup.health.status,
+      },
+    };
+  }
+
+  #learningDataCounts() {
+    return {
+      preferenceFeedbackEvents: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM preference_feedback_events",
+      ).get()?.count ?? 0),
+      preferenceModelSnapshots: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM preference_model_snapshots",
+      ).get()?.count ?? 0),
+      calibrationSessions: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM calibration_sessions",
+      ).get()?.count ?? 0),
+      calibrationSamples: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM calibration_samples",
+      ).get()?.count ?? 0),
+      calibrationProfileSnapshots: Number(this.database.prepare(
+        "SELECT COUNT(*) AS count FROM calibration_profile_snapshots",
+      ).get()?.count ?? 0),
+    };
+  }
+
   getPilotReviewStartedAt() {
     return this.getSetting("pilot_review_started_at");
   }
@@ -1355,6 +1478,13 @@ export class SqliteStateStore {
       excludedMoreLikeThisCount: Number(row.excluded_more_like_this ?? 0),
       updatedAt: row.updated_at ?? null,
     };
+  }
+}
+
+function assertNoActiveWork(store) {
+  const active = store.activeWorkCounts();
+  if (active.runs > 0 || active.unifiedSessions > 0) {
+    throw new Error("reset is unavailable while an update is running");
   }
 }
 

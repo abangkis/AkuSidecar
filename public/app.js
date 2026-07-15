@@ -28,6 +28,7 @@ const state = {
   mediaViewerEntries: [],
   mediaViewerIndex: 0,
   preferenceReasonTarget: null,
+  resetOperation: null,
 };
 
 const REVIEW_PAGE_SIZE = 10;
@@ -87,7 +88,16 @@ const elements = {
   calibrationEnabled: document.querySelector("#calibration-enabled"),
   calibrationBatchSize: document.querySelector("#calibration-batch-size"),
   preferenceLiveInfluence: document.querySelector("#preference-live-influence"),
-  resetPreferenceRuntime: document.querySelector("#reset-preference-runtime"),
+  openResetLearning: document.querySelector("#open-reset-learning"),
+  openFullReset: document.querySelector("#open-full-reset"),
+  resetConfirmationDialog: document.querySelector("#reset-confirmation-dialog"),
+  resetConfirmationTitle: document.querySelector("#reset-confirmation-title"),
+  resetConfirmationImpact: document.querySelector("#reset-confirmation-impact"),
+  resetConfirmationPhrase: document.querySelector("#reset-confirmation-phrase"),
+  resetConfirmationInput: document.querySelector("#reset-confirmation-input"),
+  resetConfirmationStatus: document.querySelector("#reset-confirmation-status"),
+  resetConfirmationCancel: document.querySelector("#reset-confirmation-cancel"),
+  resetConfirmationSubmit: document.querySelector("#reset-confirmation-submit"),
   fixedEngineConstraints: document.querySelector("#fixed-engine-constraints"),
   missingSourceTabDetail: document.querySelector("#missing-source-tab-detail"),
   reasoningProvider: document.querySelector("#reasoning-provider"),
@@ -227,7 +237,16 @@ elements.settingsViewButton.addEventListener("click", showSettingsView);
 elements.runtimeSettingsForm.addEventListener("submit", saveRuntimeSettings);
 elements.reviewRefreshButton.addEventListener("click", loadPilotReview);
 elements.fitPreferenceExperiment.addEventListener("click", fitPreferenceExperiment);
-elements.resetPreferenceRuntime.addEventListener("click", resetPreferenceRuntime);
+elements.openResetLearning.addEventListener("click", () => openResetConfirmation("learning"));
+elements.openFullReset.addEventListener("click", () => openResetConfirmation("full"));
+elements.resetConfirmationInput.addEventListener("input", updateResetConfirmation);
+elements.resetConfirmationCancel.addEventListener("click", closeResetConfirmation);
+elements.resetConfirmationSubmit.addEventListener("click", executeConfirmedReset);
+elements.resetConfirmationDialog.addEventListener("close", () => {
+  state.resetOperation = null;
+  elements.resetConfirmationInput.value = "";
+  elements.resetConfirmationStatus.textContent = "";
+});
 elements.reviewSourceFilter.addEventListener("change", resetPilotReviewPage);
 elements.reviewVerdictFilter.addEventListener("change", resetPilotReviewPage);
 elements.timelineRunnerButton.addEventListener("click", startRun);
@@ -2658,18 +2677,80 @@ async function fitPreferenceExperiment() {
   }
 }
 
-async function resetPreferenceRuntime() {
-  elements.resetPreferenceRuntime.disabled = true;
-  elements.runtimeSettingsStatus.textContent = "Resetting to source order…";
+function openResetConfirmation(kind) {
+  const operation = kind === "learning"
+    ? {
+        kind,
+        title: "Reset learning data?",
+        phrase: "RESET LEARNING",
+        endpoint: "/api/operations/reset-learning",
+        submitLabel: "Reset learning",
+        impact: "This permanently removes More/Less signals, calibration decisions, and fitted preference models. Timeline and source setup remain.",
+      }
+    : {
+        kind: "full",
+        title: "Reset AkuBrowser and onboard again?",
+        phrase: "RESET AKUBROWSER",
+        endpoint: "/api/operations/full-reset",
+        submitLabel: "Full reset",
+        impact: "AkuBrowser will create a verified local backup, then permanently clear timeline, runs, learning data, onboarding, and local settings.",
+      };
+  state.resetOperation = operation;
+  elements.resetConfirmationTitle.textContent = operation.title;
+  elements.resetConfirmationImpact.textContent = operation.impact;
+  elements.resetConfirmationPhrase.textContent = operation.phrase;
+  elements.resetConfirmationSubmit.textContent = operation.submitLabel;
+  elements.resetConfirmationInput.value = "";
+  elements.resetConfirmationStatus.textContent = "";
+  elements.resetConfirmationSubmit.disabled = true;
+  elements.resetConfirmationDialog.showModal();
+  elements.resetConfirmationInput.focus();
+}
+
+function updateResetConfirmation() {
+  elements.resetConfirmationSubmit.disabled =
+    elements.resetConfirmationInput.value !== state.resetOperation?.phrase;
+}
+
+function closeResetConfirmation() {
+  if (elements.resetConfirmationDialog.open) elements.resetConfirmationDialog.close();
+}
+
+async function executeConfirmedReset() {
+  const operation = state.resetOperation;
+  if (!operation || elements.resetConfirmationInput.value !== operation.phrase) return;
+  elements.resetConfirmationInput.disabled = true;
+  elements.resetConfirmationCancel.disabled = true;
+  elements.resetConfirmationSubmit.disabled = true;
+  elements.resetConfirmationStatus.textContent = operation.kind === "full"
+    ? "Creating a verified backup and resetting local data…"
+    : "Resetting local learning data…";
   try {
-    const { runtime } = await api("/api/preferences/runtime/reset", { method: "POST" });
-    state.bootstrap.preferenceRuntime = runtime;
-    elements.runtimeSettingsStatus.textContent =
-      "Local model reset. Source and platform order will be used until new feedback is fitted.";
+    const result = await api(operation.endpoint, {
+      method: "POST",
+      body: JSON.stringify({ confirmation: operation.phrase }),
+    });
+    closeResetConfirmation();
+    if (operation.kind === "learning") {
+      state.bootstrap.preferenceRuntime = result.runtime;
+      elements.runtimeSettingsStatus.textContent =
+        "Learning data reset. Timeline and source setup were preserved.";
+      await Promise.all([loadRuntimeSettings(), loadOverview()]);
+      return;
+    }
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+    state.currentRun = null;
+    state.currentSession = null;
+    state.timelineFeed = null;
+    state.calibration = null;
+    await bootstrap();
   } catch (error) {
-    elements.runtimeSettingsStatus.textContent = error.message;
+    elements.resetConfirmationStatus.textContent = error.message;
   } finally {
-    elements.resetPreferenceRuntime.disabled = false;
+    elements.resetConfirmationInput.disabled = false;
+    elements.resetConfirmationCancel.disabled = false;
+    updateResetConfirmation();
   }
 }
 
