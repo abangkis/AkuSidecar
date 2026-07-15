@@ -183,6 +183,53 @@ func TestObservationGetsStableGoEvidenceIdentity(t *testing.T) {
 	}
 }
 
+func TestLinkedInPermalinkRecoveryReconcilesDuplicateCaptureBeforeReasoning(t *testing.T) {
+	text := "A sufficiently long LinkedIn post body is repeated across bounded snapshots and later exposes an exact native post permalink for the same author and content."
+	fallback := domain.Observation{
+		Source: domain.SourceLinkedIn,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "linkedin:fallback", Author: "Example Company", Text: text,
+			Presentation: map[string]any{"permalinkSource": "unavailable"}, FeedPosition: 3,
+		}}}},
+		Coverage: map[string]any{"round": 1},
+	}
+	native := domain.Observation{
+		Source: domain.SourceLinkedIn,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "linkedin:native", Author: "Example Company", Text: text,
+			Permalink:    "https://www.linkedin.com/feed/update/urn:li:share:7412345678901234567/",
+			PlatformID:   "linkedin:share:7412345678901234567",
+			Presentation: map[string]any{"permalinkSource": "embed_urn"}, FeedPosition: 5,
+		}}}},
+		Coverage: map[string]any{"round": 2},
+	}
+
+	for _, observations := range [][]domain.Observation{{fallback, native}, {native, fallback}} {
+		merged := mergeObservations(observations)
+		blocks := []domain.Block{merged.Snapshots[0].Blocks[0], merged.Snapshots[1].Blocks[0]}
+		for index, block := range blocks {
+			if block.EvidenceKey != "linkedin:native" || block.PlatformID != "linkedin:share:7412345678901234567" {
+				t.Fatalf("block[%d] identity=%+v", index, block)
+			}
+			if block.Permalink != native.Snapshots[0].Blocks[0].Permalink || block.Presentation["permalinkSource"] != "embed_urn" {
+				t.Fatalf("block[%d] permalink recovery=%+v", index, block)
+			}
+		}
+		if blocks[0].FeedPosition != observations[0].Snapshots[0].Blocks[0].FeedPosition || blocks[1].FeedPosition != observations[1].Snapshots[0].Blocks[0].FeedPosition {
+			t.Fatalf("feed positions changed: %+v", blocks)
+		}
+	}
+}
+
+func TestCapturedContentSignatureDoesNotCollapseShortGenericEntries(t *testing.T) {
+	first := domain.Block{Author: "Example", Text: "Short repeated status", EvidenceKey: "linkedin:first"}
+	second := domain.Block{Author: "Example", Text: "Short repeated status", EvidenceKey: "linkedin:second", PlatformID: "linkedin:share:2"}
+	merged := reconcileCapturedSnapshots(domain.SourceLinkedIn, []domain.Snapshot{{Blocks: []domain.Block{first, second}}})
+	if merged[0].Blocks[0].EvidenceKey == merged[0].Blocks[1].EvidenceKey {
+		t.Fatal("short generic entries must retain distinct identities")
+	}
+}
+
 func TestContinuationPreservesBridgeFrontierIdentity(t *testing.T) {
 	value := domain.Observation{
 		Source: domain.SourceLinkedIn,

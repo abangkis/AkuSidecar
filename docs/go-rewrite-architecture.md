@@ -53,7 +53,7 @@ behavior is re-expressed as a smaller new contract.
 
 ## New component contract
 
-- Application version is `1.0.0-dev.3` for the Sidecar-enforced first-run calibration boundary.
+- Application version is `1.0.0-dev.4` for the restored snapshot-reconciliation boundary.
 - Bridge contract is `aku-browser.bridge.v2`.
 - The database schema is a single version-2 transaction. A schema mismatch is
   a startup error; it is never migrated automatically.

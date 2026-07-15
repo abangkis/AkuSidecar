@@ -157,6 +157,11 @@ when the batch is complete. AkuSidecar creates this calibration as part of the
 completed/partial session boundary; bootstrap also repairs a persisted pending
 state, so the flow does not depend on one frontend polling callback.
 
+Before reasoning, bounded snapshots are reconciled by stable source identity.
+For LinkedIn, a repeated long-form entry that first appears without a permalink
+and later exposes a native ID is enriched into one evidence candidate instead
+of entering calibration and Timeline twice.
+
 ## Removed by design
 
 Offline experiments, shadow comparison, replay benchmarks, paired-model

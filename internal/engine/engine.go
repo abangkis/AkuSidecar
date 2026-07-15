@@ -461,6 +461,7 @@ func mergeObservations(values []domain.Observation) domain.Observation {
 		result.Snapshots = append(result.Snapshots, value.Snapshots...)
 		rounds = append(rounds, value.Coverage)
 	}
+	result.Snapshots = reconcileCapturedSnapshots(result.Source, result.Snapshots)
 	result.Coverage["rounds"] = rounds
 	return result
 }
