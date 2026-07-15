@@ -46,8 +46,7 @@ $env:GOTMPDIR = "C:\WorkspaceCodex\AkuWorkspace\.go-cache\tmp"
 
 go test -p 1 ./...
 go vet ./...
-go build -trimpath -o runtime\dev\aku-sidecar.exe .\cmd\akusidecar
-go build -trimpath -o runtime\dev\aku-watch.exe .\cmd\akuwatch
+.\scripts\build-dev.ps1
 ```
 
 `-p 1` avoids transient Windows executable-cleanup locks observed when multiple
@@ -55,12 +54,18 @@ test binaries finish concurrently.
 
 ## Development
 
-The zero-Node watcher rebuilds and restarts the Go server. A detected change is
-held while a bounded session is active so reasoning is not interrupted:
+AkuSupervisor directly owns `runtime\dev\aku-sidecar.exe`; there is no
+component-level watcher or hidden replacement process. After a source change,
+run the explicit rebuild/restart command:
 
 ```powershell
-.\runtime\dev\aku-watch.exe
+.\scripts\restart-dev.ps1
 ```
+
+The command first builds `aku-sidecar.next.exe`, refuses to interrupt an active
+session, asks AkuSupervisor to stop the registered service, atomically promotes
+the candidate to `aku-sidecar.exe`, and asks AkuSupervisor to start it again.
+Use `build-dev.ps1` alone when only a stopped binary needs to be built.
 
 For an isolated production-style run:
 
@@ -69,8 +74,8 @@ For an isolated production-style run:
 ```
 
 Normal workspace operation is owned by AkuSupervisor. Its canonical service
-profile starts `runtime\dev\aku-watch.exe` directly during development and the
-promoted `aku-sidecar.exe` for stable operation.
+profile starts `runtime\dev\aku-sidecar.exe` directly with the strict Sidecar
+configuration and `--dev` during development.
 
 ## Configuration
 

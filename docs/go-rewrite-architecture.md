@@ -75,7 +75,6 @@ behavior is re-expressed as a smaller new contract.
 
 ```text
 cmd/akusidecar/       production server
-cmd/akuwatch/         zero-Node build/restart development loop
 internal/config/      typed file and flag configuration
 internal/domain/      contract types and validation
 internal/store/       fresh SQLite schema and persistence
@@ -129,3 +128,7 @@ used for lifecycle, ordering, filtering, or integrity remain typed columns.
 6. Timeline, feedback, preference reranking, cancellation, lease cleanup, and
    Bridge cooperative reload pass live validation.
 7. AkuSupervisor starts the Go executable directly and reports it healthy.
+
+Development rebuilds are explicit. `scripts/restart-dev.ps1` stages a new Go
+binary, refuses to interrupt an active session, and uses AkuSupervisor for the
+stop/start boundary before promoting the staged executable.
