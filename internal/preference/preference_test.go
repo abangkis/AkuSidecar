@@ -17,3 +17,11 @@ func TestFitSeparatesPreferenceFromDiagnostics(t *testing.T) {
 		t.Fatal("signal counts alone must never enable suppression")
 	}
 }
+
+func TestCalibrationMoreSignalHasExplicitBoundedWeight(t *testing.T) {
+	routine := Fit([]Signal{{Direction: "more", Facets: []string{"finance"}}})
+	calibration := Fit([]Signal{{Direction: "more", Facets: []string{"finance"}, Origin: "calibration"}})
+	if calibration.Weights["finance"] <= routine.Weights["finance"] || calibration.Weights["finance"] > 1 {
+		t.Fatalf("routine=%v calibration=%v", routine.Weights["finance"], calibration.Weights["finance"])
+	}
+}

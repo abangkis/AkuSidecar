@@ -193,6 +193,11 @@ func (s *Store) Onboarding(ctx context.Context) (domain.OnboardingState, error) 
 }
 
 func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source) (domain.OnboardingState, error) {
+	var previousStatus string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_status'`).Scan(&previousStatus); err != nil {
+		return domain.OnboardingState{}, err
+	}
+	firstCompletion := previousStatus != "completed"
 	settings, err := s.GetSettings(ctx)
 	if err != nil {
 		return domain.OnboardingState{}, err
@@ -220,6 +225,15 @@ func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source)
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('onboarding_completed_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
 		return domain.OnboardingState{}, err
+	}
+	if firstCompletion {
+		calibrationStatus := "disabled"
+		if settings.CalibrationEnabled {
+			calibrationStatus = "pending"
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('calibration_first_run_status',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, calibrationStatus); err != nil {
+			return domain.OnboardingState{}, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return domain.OnboardingState{}, err
@@ -717,11 +731,33 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 type PreferenceSignal struct {
 	Direction  string
 	Reason     *string
+	Origin     string
 	Assessment domain.CandidateAssessment
 }
 
 func (s *Store) PreferenceSignals(ctx context.Context) ([]PreferenceSignal, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT f.direction,f.reason,a.assessment_json FROM feedback_events f JOIN candidate_assessments a ON a.run_id=f.run_id AND a.evidence_key=f.evidence_key ORDER BY f.created_at`)
+	rows, err := s.db.QueryContext(ctx, `
+		WITH signals AS (
+		  SELECT run_id,evidence_key,direction,reason,'routine' AS origin,created_at
+		  FROM feedback_events
+		  UNION ALL
+		  SELECT run_id,evidence_key,
+		    CASE label WHEN 'more_like_this' THEN 'more' WHEN 'less_like_this' THEN 'less' ELSE 'neutral' END,
+		    NULL,'calibration',labeled_at
+		  FROM calibration_samples
+		  WHERE label IS NOT NULL
+		), ranked AS (
+		  SELECT signals.*,ROW_NUMBER() OVER (
+		    PARTITION BY run_id,evidence_key ORDER BY created_at DESC,origin DESC
+		  ) AS signal_rank
+		  FROM signals
+		)
+		SELECT ranked.direction,ranked.reason,ranked.origin,a.assessment_json
+		FROM ranked
+		JOIN candidate_assessments a
+		  ON a.run_id=ranked.run_id AND a.evidence_key=ranked.evidence_key
+		WHERE ranked.signal_rank=1
+		ORDER BY ranked.created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -731,7 +767,7 @@ func (s *Store) PreferenceSignals(ctx context.Context) ([]PreferenceSignal, erro
 		var signal PreferenceSignal
 		var reason sql.NullString
 		var raw string
-		if err := rows.Scan(&signal.Direction, &reason, &raw); err != nil {
+		if err := rows.Scan(&signal.Direction, &reason, &signal.Origin, &raw); err != nil {
 			return nil, err
 		}
 		if reason.Valid {
@@ -768,8 +804,15 @@ func (s *Store) ResetLearning(ctx context.Context) error {
 	if err := s.requireIdle(ctx); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM feedback_events; DELETE FROM preference_model;`)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM calibration_sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM meta WHERE key='calibration_first_run_status';`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type FullResetResult struct {
@@ -799,7 +842,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings;`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key='calibration_first_run_status';`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES('runtime',?,?)`, string(raw), now); err != nil {

@@ -1,6 +1,6 @@
 package store
 
-const schemaVersion = "1"
+const schemaVersion = "2"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -129,6 +129,43 @@ CREATE TABLE IF NOT EXISTS timeline_items (
 
 CREATE INDEX IF NOT EXISTS timeline_session_rank ON timeline_items(session_id, rank);
 CREATE INDEX IF NOT EXISTS timeline_created ON timeline_items(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS calibration_sessions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  trigger_kind TEXT NOT NULL CHECK (trigger_kind IN ('first_run','manual','source_added','drift','random_audit')),
+  status TEXT NOT NULL CHECK (status IN ('reviewing','completed')),
+  max_items INTEGER NOT NULL CHECK (max_items BETWEEN 2 AND 10),
+  sample_count INTEGER NOT NULL CHECK (sample_count BETWEEN 1 AND 10),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS calibration_samples (
+  calibration_session_id TEXT NOT NULL REFERENCES calibration_sessions(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 9),
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  candidate_json TEXT NOT NULL,
+  label TEXT CHECK (label IN ('more_like_this','neutral','less_like_this') OR label IS NULL),
+  issue_code TEXT CHECK (issue_code IN ('capture_incomplete','wrong_source','duplicate','formatting') OR issue_code IS NULL),
+  labeled_at TEXT,
+  PRIMARY KEY(calibration_session_id, ordinal),
+  UNIQUE(calibration_session_id, run_id, evidence_key),
+  CHECK (label IS NULL OR issue_code IS NULL)
+);
+
+CREATE INDEX IF NOT EXISTS calibration_samples_resolution
+  ON calibration_samples(calibration_session_id, label, issue_code, ordinal);
+
+CREATE TABLE IF NOT EXISTS calibration_profile_snapshots (
+  id TEXT PRIMARY KEY,
+  calibration_session_id TEXT NOT NULL UNIQUE REFERENCES calibration_sessions(id) ON DELETE CASCADE,
+  snapshot_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS feedback_events (
   id TEXT PRIMARY KEY,

@@ -94,6 +94,21 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-summary { margin-top: 16px; padding: 13px 15px; border-radius: 10px; background: var(--panel-strong); color: var(--muted); }
 .onboarding-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
+.calibration-panel { width: min(100%, 760px); margin: 38px auto 0; }
+.calibration-shell { display: grid; gap: 18px; padding: clamp(22px, 5vw, 38px); border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }
+.calibration-header { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.calibration-header h2 { margin-bottom: 8px; }
+#calibration-progress { min-width: 64px; padding-top: 4px; color: var(--accent); text-align: right; white-space: nowrap; }
+.calibration-card { min-height: 280px; }
+.calibration-entry { display: grid; gap: 15px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-strong); }
+.calibration-entry-header { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 0.84rem; }
+.calibration-entry-header strong { color: var(--accent); }
+.calibration-entry > a { color: var(--accent); font-weight: 700; }
+.calibration-actions { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: 10px; }
+.calibration-issue { padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); }
+.calibration-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
+.calibration-issue-actions button { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+
 .timeline-panel { padding-top: 38px; }
 .timeline-heading-row { align-items: flex-end; margin-bottom: 18px; }
 .timeline-heading-row h2 { margin-bottom: 7px; }
@@ -219,5 +234,8 @@ h3 { letter-spacing: -0.02em; }
   .result-actions { grid-template-columns: 1fr; }
   .feedback-actions { justify-content: flex-start; }
   .onboarding-options { grid-template-columns: 1fr; }
+  .calibration-header { display: grid; }
+  #calibration-progress { text-align: left; }
+  .calibration-actions { grid-template-columns: 1fr 1fr; }
   .back-to-top { right: 14px; bottom: 14px; }
 }

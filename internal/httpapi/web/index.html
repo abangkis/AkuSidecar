@@ -33,7 +33,7 @@
         <div class="onboarding-card">
           <p class="step-label">SOURCE SETUP</p>
           <h2 id="onboarding-heading" tabindex="-1">Choose where AkuBrowser should look</h2>
-          <p class="onboarding-explanation">Start from the order already shaped by your source feeds. You can change this profile later in Settings.</p>
+          <p class="onboarding-explanation">Start from the order already shaped by your source feeds. AkuBrowser will run one bounded update, then ask you to calibrate real entries before opening the Timeline.</p>
           <form id="onboarding-form">
             <div class="onboarding-options">
               <label class="onboarding-source-option">
@@ -61,9 +61,40 @@
             <p id="onboarding-error" class="settings-detail" role="alert"></p>
             <div class="onboarding-actions">
               <button id="onboarding-cancel" class="secondary-button hidden" type="button">Cancel</button>
-              <button id="onboarding-finish" class="primary-button" type="submit">Start setup</button>
+              <button id="onboarding-finish" class="primary-button" type="submit">Start first update</button>
             </div>
           </form>
+        </div>
+      </section>
+
+      <section id="calibration-panel" class="calibration-panel hidden" aria-labelledby="calibration-heading">
+        <div class="calibration-shell">
+          <div class="calibration-header">
+            <div>
+              <p class="step-label">CALIBRATION</p>
+              <h2 id="calibration-heading" tabindex="-1">Teach AkuBrowser from real entries</h2>
+              <p class="review-guidance">This forced first-run lane is separate from the daily Timeline. Every sample needs More, Neutral, Less, or a capture-issue decision.</p>
+            </div>
+            <strong id="calibration-progress">0 of 0</strong>
+          </div>
+          <div class="progress-track" role="progressbar" aria-label="Calibration progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="calibration-progress-bar"></span></div>
+          <div id="calibration-card" class="calibration-card"></div>
+          <p id="calibration-status" class="settings-detail" role="status"></p>
+          <div class="calibration-actions">
+            <button id="calibration-previous" class="secondary-button" type="button">Previous</button>
+            <button id="calibration-less" class="secondary-button" type="button">Less like this</button>
+            <button id="calibration-neutral" class="secondary-button" type="button">Neutral</button>
+            <button id="calibration-more" class="primary-button" type="button">More like this</button>
+          </div>
+          <details class="calibration-issue">
+            <summary>Report a capture problem instead</summary>
+            <div class="calibration-issue-actions">
+              <button type="button" data-calibration-issue="capture_incomplete">Incomplete capture</button>
+              <button type="button" data-calibration-issue="wrong_source">Wrong source</button>
+              <button type="button" data-calibration-issue="duplicate">Duplicate</button>
+              <button type="button" data-calibration-issue="formatting">Formatting problem</button>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -94,6 +125,20 @@
                 <span class="settings-copy"><strong>Onboarding profile</strong><small>Edit the source feeds used by the next bounded update.</small></span>
                 <button id="edit-onboarding-profile" class="secondary-button" type="button">Edit profile</button>
               </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-group">
+            <legend>Calibration</legend>
+            <div class="settings-card">
+              <label class="settings-row" for="calibration-enabled">
+                <span class="settings-copy"><strong>First-run calibration</strong><small>Start one forced calibration lane after the first successful or partial update.</small></span>
+                <input id="calibration-enabled" name="calibrationEnabled" type="checkbox" />
+              </label>
+              <label class="settings-row" for="calibration-batch-size">
+                <span class="settings-copy"><strong>Calibration batch size</strong><small>Real pre-selection source candidates requiring a decision, from 2 to 10.</small></span>
+                <input id="calibration-batch-size" name="calibrationBatchSize" type="number" min="2" max="10" step="1" />
+              </label>
             </div>
           </fieldset>
 
@@ -183,7 +228,7 @@
             <p class="settings-group-note">Destructive operations require the exact typed confirmation and are blocked while an update is running.</p>
             <div class="settings-card">
               <div class="settings-row">
-                <span class="settings-copy"><strong>Reset learning</strong><small>Erase More/Less feedback and the fitted preference model. Timeline, sources, and settings remain.</small></span>
+                <span class="settings-copy"><strong>Reset learning</strong><small>Erase calibration, More/Less feedback, and the fitted preference model. Timeline, sources, and settings remain.</small></span>
                 <button id="open-reset-learning" class="secondary-button" type="button">Reset learning…</button>
               </div>
               <div class="settings-row reset-danger-row">

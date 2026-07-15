@@ -10,6 +10,8 @@ const state = {
   media: [],
   mediaIndex: 0,
   onboardingEditing: false,
+  calibration: null,
+  calibrationOrdinal: 0,
   resetOperation: null,
   backToTopFrame: null,
 };
@@ -47,6 +49,13 @@ $("#onboarding-cancel").addEventListener("click", () => setView("settings"));
 for (const input of document.querySelectorAll("#onboarding-form input[type='checkbox']")) {
   input.addEventListener("change", updateOnboardingSummary);
 }
+$("#calibration-previous").addEventListener("click", showPreviousCalibrationSample);
+$("#calibration-less").addEventListener("click", () => decideCalibration({ label: "less_like_this" }));
+$("#calibration-neutral").addEventListener("click", () => decideCalibration({ label: "neutral" }));
+$("#calibration-more").addEventListener("click", () => decideCalibration({ label: "more_like_this" }));
+for (const button of document.querySelectorAll("[data-calibration-issue]")) {
+  button.addEventListener("click", () => decideCalibration({ issueCode: button.dataset.calibrationIssue }));
+}
 $("#open-reset-learning").addEventListener("click", () => openResetDialog("learning"));
 $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
@@ -76,6 +85,8 @@ async function bootstrap() {
     renderSession();
     if (state.bootstrap.onboarding?.status !== "completed") {
       showOnboarding(false);
+    } else if (state.bootstrap.calibration?.active) {
+      showCalibration(state.bootstrap.calibration.active);
     } else {
       setView(state.currentView);
     }
@@ -94,10 +105,16 @@ function setView(view) {
     showOnboarding(false);
     return;
   }
+  if (state.bootstrap?.calibration?.active) {
+    showCalibration(state.bootstrap.calibration.active);
+    return;
+  }
   state.currentView = view;
   state.onboardingEditing = false;
   const settings = view === "settings";
   $("#onboarding-panel").classList.add("hidden");
+  $("#calibration-panel").classList.add("hidden");
+  document.querySelector(".view-switch")?.classList.remove("hidden");
   $("#settings-panel").classList.toggle("hidden", !settings);
   $("#timeline-panel").classList.toggle("hidden", settings);
   $("#session-view-button").classList.toggle("selected", !settings);
@@ -146,6 +163,8 @@ function renderSettings(settings) {
   $("#bounded-load-profile").value = settings.loadProfile;
   $("#capture-visibility-policy").value = settings.captureVisibility;
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
+  $("#calibration-enabled").checked = settings.calibrationEnabled;
+  $("#calibration-batch-size").value = settings.calibrationBatchSize;
   $("#open-missing-source").checked = settings.openMissingSource;
   $("#timeline-capacity").value = settings.timelineCapacity;
   $("#max-items-per-source").value = settings.maxItemsPerSource;
@@ -176,6 +195,8 @@ async function saveSettings(event) {
     loadProfile,
     captureVisibility: $("#capture-visibility-policy").value,
     preferenceEligibilityMode: $("#preference-eligibility-mode").value,
+    calibrationEnabled: $("#calibration-enabled").checked,
+    calibrationBatchSize: Number.parseInt($("#calibration-batch-size").value, 10),
     openMissingSource: $("#open-missing-source").checked,
     activeSources,
     timelineCapacity: Number.parseInt($("#timeline-capacity").value, 10),
@@ -217,11 +238,13 @@ function showOnboarding(editing) {
   $("#onboarding-source-x").checked = sources.includes("x");
   $("#onboarding-source-linkedin").checked = sources.includes("linkedin");
   $("#onboarding-cancel").classList.toggle("hidden", !editing);
-  $("#onboarding-finish").textContent = editing ? "Save profile" : "Start setup";
+  $("#onboarding-finish").textContent = editing ? "Save profile" : "Start first update";
   $("#onboarding-error").textContent = "";
   $("#settings-panel").classList.add("hidden");
   $("#timeline-panel").classList.add("hidden");
+  $("#calibration-panel").classList.add("hidden");
   $("#onboarding-panel").classList.remove("hidden");
+  document.querySelector(".view-switch")?.classList.add("hidden");
   updateOnboardingSummary();
   $("#onboarding-heading").focus();
   window.scrollTo({ top: 0, behavior: editing ? "smooth" : "auto" });
@@ -231,7 +254,7 @@ function showOnboarding(editing) {
 function updateOnboardingSummary() {
   const count = document.querySelectorAll("#onboarding-form input[type='checkbox']:checked").length;
   $("#onboarding-summary").textContent = count
-    ? `${count} source feed${count === 1 ? "" : "s"} selected`
+    ? `${count} source feed${count === 1 ? "" : "s"} selected · first update and calibration start automatically`
     : "Choose at least one source feed.";
 }
 
@@ -250,6 +273,7 @@ async function saveOnboarding(event) {
     const response = await api("/api/onboarding", { method: "PUT", body: { activeSources } });
     state.bootstrap.onboarding = response.onboarding;
     state.bootstrap.settings = response.settings;
+    state.bootstrap.calibration = response.calibration;
     renderSettings(response.settings);
     $("#onboarding-error").textContent = "";
     setView(firstCompletion ? "timeline" : "settings");
@@ -271,7 +295,7 @@ function openResetDialog(operation) {
   $("#reset-confirmation-title").textContent = full ? "Full reset and onboard again" : "Reset learning";
   $("#reset-confirmation-impact").textContent = full
     ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings. The live Bridge identity remains valid."
-    : "AkuBrowser will erase More/Less feedback and the fitted preference model. Timeline, source setup, and runtime settings remain.";
+    : "AkuBrowser will erase calibration, More/Less feedback, and the fitted preference model. Timeline, source setup, and runtime settings remain.";
   $("#reset-confirmation-phrase").textContent = full ? "RESET AKUBROWSER" : "RESET LEARNING";
   $("#reset-confirmation-input").value = "";
   $("#reset-confirmation-status").textContent = "";
@@ -305,6 +329,7 @@ async function submitReset() {
       window.setTimeout(() => window.location.reload(), 350);
       return;
     }
+    state.bootstrap.calibration = response.calibration;
     $("#reset-confirmation-status").textContent = "Learning reset complete.";
     window.setTimeout(() => {
       closeResetDialog();
@@ -326,7 +351,7 @@ function scheduleBackToTop() {
 }
 
 async function startSession() {
-  if (state.session || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible) return;
+  if (state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible) return;
   hideFailure();
   setView("timeline");
   try {
@@ -383,6 +408,10 @@ async function pollSession() {
       if (session.status === "failed") showSessionFailure(session);
       state.session = null;
       renderSession();
+      if (["completed", "partial"].includes(session.status)) {
+        const calibration = await startPendingFirstCalibration(session);
+        if (calibration) showCalibration(calibration);
+      }
     }
   } catch (error) {
     if (/not found/i.test(error.message)) {
@@ -426,11 +455,138 @@ function renderSession() {
 }
 
 function syncRunButtons() {
-  const disabled = Boolean(state.session) || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible;
+  const disabled = Boolean(state.session) || Boolean(state.bootstrap?.calibration?.active) || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible;
   $("#timeline-runner-button").disabled = disabled;
   $("#done-button").disabled = disabled;
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
+}
+
+async function startPendingFirstCalibration(session) {
+  if (state.bootstrap?.calibration?.firstRunStatus !== "pending") return null;
+  try {
+    const { calibration } = await api("/api/calibration/sessions", {
+      method: "POST",
+      body: { unifiedSessionId: session.id, triggerKind: "first_run" },
+    });
+    if (calibration.status === "completed") {
+      state.bootstrap.calibration = { ...state.bootstrap.calibration, firstRunStatus: "completed", active: null };
+      return null;
+    }
+    state.bootstrap.calibration.active = calibration;
+    return calibration;
+  } catch (error) {
+    showError(new Error(`Calibration could not start: ${error.message}`));
+    return null;
+  }
+}
+
+function showCalibration(calibration) {
+  state.calibration = calibration;
+  state.bootstrap.calibration.active = calibration;
+  const unresolved = calibration.samples.findIndex((sample) => !sample.label && !sample.issueCode);
+  state.calibrationOrdinal = unresolved >= 0 ? unresolved : Math.max(0, calibration.samples.length - 1);
+  $("#onboarding-panel").classList.add("hidden");
+  $("#settings-panel").classList.add("hidden");
+  $("#timeline-panel").classList.add("hidden");
+  $("#calibration-panel").classList.remove("hidden");
+  document.querySelector(".view-switch")?.classList.add("hidden");
+  $("#calibration-heading").focus();
+  window.scrollTo({ top: 0, behavior: "auto" });
+  renderCalibration();
+}
+
+function renderCalibration() {
+  const calibration = state.calibration;
+  if (!calibration) return;
+  const total = calibration.samples.length;
+  const resolved = calibration.samples.filter((sample) => sample.label || sample.issueCode).length;
+  const sample = calibration.samples[state.calibrationOrdinal];
+  const progress = total ? Math.round((resolved / total) * 100) : 0;
+  $("#calibration-progress").textContent = `${resolved} of ${total}`;
+  $("#calibration-progress-bar").style.width = `${progress}%`;
+  $("#calibration-progress-bar").parentElement?.setAttribute("aria-valuenow", String(progress));
+  $("#calibration-previous").disabled = state.calibrationOrdinal === 0;
+  const labels = { more_like_this: "More like this", neutral: "Neutral", less_like_this: "Less like this" };
+  $("#calibration-status").textContent = sample?.label
+    ? `Current decision: ${labels[sample.label] || humanize(sample.label)}`
+    : sample?.issueCode
+      ? `Reported capture problem: ${humanize(sample.issueCode)}`
+      : "Choose Less, Neutral, or More for this real source entry.";
+  $("#calibration-card").replaceChildren(buildCalibrationCard(sample));
+}
+
+function buildCalibrationCard(sample) {
+  const card = document.createElement("article");
+  card.className = "calibration-entry";
+  if (!sample) {
+    card.textContent = "No calibration entry is available.";
+    return card;
+  }
+  const candidate = sample.candidate ?? {};
+  const header = document.createElement("div");
+  header.className = "calibration-entry-header";
+  const source = document.createElement("strong");
+  source.textContent = sourceLabel(sample.source);
+  const position = document.createElement("span");
+  position.textContent = `Source position ${candidate.feedPosition || state.calibrationOrdinal + 1}`;
+  header.append(source, position);
+  const sourceCard = buildSourceCard({
+    source: sample.source,
+    evidence: { ...candidate, permalink: candidate.sourceUrl },
+    item: {
+      source: sample.source,
+      sourceUrl: candidate.sourceUrl,
+      sourceUrlKind: "native_post",
+      author: candidate.author,
+      publishedAt: candidate.publishedAt,
+      whatChanged: candidate.text || candidate.assessment?.rationale || "No readable text was captured.",
+    },
+  });
+  card.append(header, sourceCard);
+  if (candidate.sourceUrl) {
+    const link = document.createElement("a");
+    link.href = candidate.sourceUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open source entry";
+    card.append(link);
+  }
+  return card;
+}
+
+function showPreviousCalibrationSample() {
+  state.calibrationOrdinal = Math.max(0, state.calibrationOrdinal - 1);
+  renderCalibration();
+}
+
+async function decideCalibration(decision) {
+  if (!state.calibration) return;
+  const buttons = [$("#calibration-less"), $("#calibration-neutral"), $("#calibration-more"), ...document.querySelectorAll("[data-calibration-issue]")];
+  for (const button of buttons) button.disabled = true;
+  try {
+    const { calibration } = await api(
+      `/api/calibration/sessions/${encodeURIComponent(state.calibration.id)}/samples/${state.calibrationOrdinal}`,
+      { method: "PUT", body: decision },
+    );
+    state.calibration = calibration;
+    if (calibration.status === "completed") {
+      state.bootstrap.calibration = { ...state.bootstrap.calibration, firstRunStatus: "completed", active: null, liveInfluence: calibration.snapshot?.liveInfluence ?? false };
+      state.calibration = null;
+      $("#calibration-panel").classList.add("hidden");
+      await refreshTimeline();
+      setView("timeline");
+      return;
+    }
+    state.bootstrap.calibration.active = calibration;
+    const next = calibration.samples.findIndex((sample, index) => index > state.calibrationOrdinal && !sample.label && !sample.issueCode);
+    state.calibrationOrdinal = next >= 0 ? next : Math.min(state.calibrationOrdinal + 1, calibration.samples.length - 1);
+    renderCalibration();
+  } catch (error) {
+    $("#calibration-status").textContent = error.message;
+  } finally {
+    for (const button of buttons) button.disabled = false;
+  }
 }
 
 async function refreshTimeline() {

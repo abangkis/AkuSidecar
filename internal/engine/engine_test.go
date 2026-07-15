@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"path/filepath"
@@ -51,6 +52,115 @@ func TestUnifiedSessionCompletesBothSources(t *testing.T) {
 	timeline, err := runtime.Timeline(ctx, 10, 0)
 	if err != nil || len(timeline) != 2 {
 		t.Fatalf("timeline=%d err=%v", len(timeline), err)
+	}
+}
+
+func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := testEngine(t)
+	session, err := runtime.StartSession(ctx, "What changed?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000011")
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return len(value.Runs) == 2 && value.Runs[1].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceLinkedIn, "linkedin:000000000000000000000012")
+	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+
+	calibration, err := runtime.StartCalibration(ctx, completed.ID, "first_run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calibration.Status != "reviewing" || calibration.SampleCount != 2 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn {
+		t.Fatalf("calibration=%+v", calibration)
+	}
+	if _, err := runtime.StartSession(ctx, "must be blocked"); err == nil {
+		t.Fatal("an active forced calibration must block another update")
+	}
+	more := "more_like_this"
+	calibration, err = runtime.DecideCalibration(ctx, calibration.ID, 0, domain.CalibrationDecision{Label: &more})
+	if err != nil || calibration.Status != "reviewing" || calibration.ResolvedCount != 1 {
+		t.Fatalf("first decision calibration=%+v err=%v", calibration, err)
+	}
+	neutral := "neutral"
+	calibration, err = runtime.DecideCalibration(ctx, calibration.ID, 1, domain.CalibrationDecision{Label: &neutral})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 1 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
+		t.Fatalf("completed calibration=%+v", calibration)
+	}
+	status, err := state.CalibrationFirstRunStatus(ctx)
+	if err != nil || status != "completed" {
+		t.Fatalf("first-run status=%q err=%v", status, err)
+	}
+	if err := runtime.ResetLearning(ctx); err != nil {
+		t.Fatal(err)
+	}
+	status, err = state.CalibrationFirstRunStatus(ctx)
+	if err != nil || status != "not_started" {
+		t.Fatalf("reset first-run status=%q err=%v", status, err)
+	}
+	if active, err := state.ActiveCalibration(ctx); err != nil || active != nil {
+		t.Fatalf("active calibration after reset=%+v err=%v", active, err)
+	}
+	if onboarding, err := state.Onboarding(ctx); err != nil || onboarding.Status != "completed" {
+		t.Fatalf("onboarding after learning reset=%+v err=%v", onboarding, err)
+	}
+}
+
+func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := testEngine(t)
+	session, err := runtime.StartSession(ctx, "What changed?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000021")
+	current := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return len(value.Runs) == 2 && value.Runs[1].Status == "waiting_for_bridge"
+	})
+	linkedin := current.Runs[1]
+	command, err := runtime.ClaimCommand(ctx, linkedin.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim=%+v err=%v", command, err)
+	}
+	if _, err := runtime.FailCommand(ctx, command.ID, linkedin.ID, domain.Failure{Code: "capture_failed", Stage: "capture", Message: "test failure"}); err != nil {
+		t.Fatal(err)
+	}
+	partial := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "partial" })
+	calibration, err := runtime.StartCalibration(ctx, partial.ID, "first_run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calibration.SampleCount != 1 || calibration.Samples[0].Source != domain.SourceX {
+		t.Fatalf("partial calibration=%+v", calibration)
+	}
+}
+
+func TestCalibrationSamplerPreservesSourceOrderAndCapsEachSource(t *testing.T) {
+	var candidates []domain.CalibrationCandidate
+	for index := 0; index < 6; index++ {
+		candidates = append(candidates,
+			domain.CalibrationCandidate{RunID: "run-x", EvidenceKey: fmt.Sprintf("x:%d", index), Source: domain.SourceX, FeedPosition: index},
+			domain.CalibrationCandidate{RunID: "run-li", EvidenceKey: fmt.Sprintf("linkedin:%d", index), Source: domain.SourceLinkedIn, FeedPosition: index},
+		)
+	}
+	runs := []domain.Run{{Source: domain.SourceX, Ordinal: 0}, {Source: domain.SourceLinkedIn, Ordinal: 1}}
+	samples := sampleCalibrationCandidates(candidates, runs, 10)
+	if len(samples) != 10 {
+		t.Fatalf("samples=%d", len(samples))
+	}
+	for index, sample := range samples {
+		expected := domain.SourceX
+		if index%2 == 1 {
+			expected = domain.SourceLinkedIn
+		}
+		if sample.Source != expected || sample.Candidate.FeedPosition != index/2 {
+			t.Fatalf("sample[%d]=%+v", index, sample)
+		}
 	}
 }
 

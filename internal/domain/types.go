@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ApplicationVersion    = "1.0.0-dev.1"
+	ApplicationVersion    = "1.0.0-dev.2"
 	BridgeContractVersion = "aku-browser.bridge.v2"
 )
 
@@ -34,6 +34,8 @@ type Settings struct {
 	MaxScrolls                int      `json:"maxScrolls"`
 	QualityRetrySettleMS      int      `json:"qualityRetrySettleMs"`
 	PreferenceEligibilityMode string   `json:"preferenceEligibilityMode"`
+	CalibrationEnabled        bool     `json:"calibrationEnabled"`
+	CalibrationBatchSize      int      `json:"calibrationBatchSize"`
 	DefaultPresentation       string   `json:"defaultPresentation"`
 	StreamWidth               string   `json:"streamWidth"`
 }
@@ -45,6 +47,8 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		OpenMissingSource:         openMissing,
 		ActiveSources:             []Source{SourceX, SourceLinkedIn},
 		PreferenceEligibilityMode: preferenceMode,
+		CalibrationEnabled:        true,
+		CalibrationBatchSize:      10,
 		DefaultPresentation:       "source",
 		StreamWidth:               "social",
 	}
@@ -109,6 +113,9 @@ func (s Settings) Validate() error {
 	}
 	if s.QualityRetrySettleMS < 0 || s.QualityRetrySettleMS > 5000 {
 		return errors.New("qualityRetrySettleMs must be between 0 and 5000")
+	}
+	if s.CalibrationBatchSize < 2 || s.CalibrationBatchSize > 10 {
+		return errors.New("calibrationBatchSize must be between 2 and 10")
 	}
 	if len(s.ActiveSources) == 0 || len(s.ActiveSources) > 2 {
 		return errors.New("activeSources must contain one or two sources")
@@ -328,6 +335,90 @@ type Feedback struct {
 	Direction   string  `json:"direction"`
 	Reason      *string `json:"reason"`
 	CreatedAt   string  `json:"createdAt"`
+}
+
+type CalibrationCandidate struct {
+	RunID        string              `json:"runId"`
+	EvidenceKey  string              `json:"evidenceKey"`
+	Source       Source              `json:"source"`
+	FeedPosition int                 `json:"feedPosition"`
+	Author       string              `json:"author"`
+	AvatarURL    string              `json:"avatarUrl"`
+	Text         string              `json:"text"`
+	SourceURL    string              `json:"sourceUrl"`
+	PublishedAt  *string             `json:"publishedAt"`
+	ContentKind  string              `json:"contentKind"`
+	QuotedPost   map[string]any      `json:"quotedPost"`
+	Engagement   map[string]any      `json:"engagement"`
+	Presentation map[string]any      `json:"presentation"`
+	Media        []map[string]any    `json:"media"`
+	Links        []map[string]any    `json:"links"`
+	Assessment   CandidateAssessment `json:"assessment"`
+}
+
+type CalibrationSample struct {
+	Ordinal     int                  `json:"ordinal"`
+	RunID       string               `json:"runId"`
+	EvidenceKey string               `json:"evidenceKey"`
+	Source      Source               `json:"source"`
+	Candidate   CalibrationCandidate `json:"candidate"`
+	Label       *string              `json:"label"`
+	IssueCode   *string              `json:"issueCode"`
+	LabeledAt   *string              `json:"labeledAt"`
+}
+
+type CalibrationSnapshot struct {
+	Version              int            `json:"version"`
+	Origin               string         `json:"origin"`
+	CalibrationSessionID string         `json:"calibrationSessionId"`
+	CreatedAt            string         `json:"createdAt"`
+	Labels               map[string]int `json:"labels"`
+	Sources              []Source       `json:"sources"`
+	LiveInfluence        bool           `json:"liveInfluence"`
+	ActivationState      string         `json:"activationState"`
+}
+
+type CalibrationSession struct {
+	ID               string               `json:"id"`
+	UnifiedSessionID string               `json:"unifiedSessionId"`
+	TriggerKind      string               `json:"triggerKind"`
+	Status           string               `json:"status"`
+	MaxItems         int                  `json:"maxItems"`
+	SampleCount      int                  `json:"sampleCount"`
+	ResolvedCount    int                  `json:"resolvedCount"`
+	CurrentOrdinal   *int                 `json:"currentOrdinal"`
+	CreatedAt        string               `json:"createdAt"`
+	UpdatedAt        string               `json:"updatedAt"`
+	CompletedAt      *string              `json:"completedAt"`
+	Samples          []CalibrationSample  `json:"samples"`
+	Snapshot         *CalibrationSnapshot `json:"snapshot"`
+	LiveInfluence    bool                 `json:"liveInfluence"`
+}
+
+type CalibrationDecision struct {
+	Label     *string `json:"label"`
+	IssueCode *string `json:"issueCode"`
+}
+
+func (d CalibrationDecision) Validate() error {
+	labels := map[string]bool{"more_like_this": true, "neutral": true, "less_like_this": true}
+	issues := map[string]bool{"capture_incomplete": true, "wrong_source": true, "duplicate": true, "formatting": true}
+	if d.Label != nil && d.IssueCode == nil && labels[*d.Label] {
+		return nil
+	}
+	if d.IssueCode != nil && d.Label == nil && issues[*d.IssueCode] {
+		return nil
+	}
+	return errors.New("calibration decision requires More, Neutral, Less, or a supported capture issue")
+}
+
+type CalibrationOverview struct {
+	FirstRunStatus string              `json:"firstRunStatus"`
+	Active         *CalibrationSession `json:"active"`
+	Enabled        bool                `json:"enabled"`
+	TriggerPolicy  string              `json:"triggerPolicy"`
+	BatchSize      int                 `json:"batchSize"`
+	LiveInfluence  bool                `json:"liveInfluence"`
 }
 
 func (f Feedback) Validate() error {

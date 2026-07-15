@@ -10,6 +10,7 @@ type Signal struct {
 	Direction string
 	Reason    *string
 	Facets    []string
+	Origin    string
 }
 
 type Profile struct {
@@ -30,6 +31,9 @@ func Fit(signals []Signal) Profile {
 		switch {
 		case signal.Direction == "more":
 			weight = 1
+			if signal.Origin == "calibration" {
+				weight = 1.1
+			}
 			profile.PositiveSignals++
 		case signal.Direction == "less" && signal.Reason != nil && *signal.Reason == "not_interested":
 			weight = -1

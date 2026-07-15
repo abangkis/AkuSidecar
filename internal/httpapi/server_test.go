@@ -79,9 +79,17 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var onboardingResponse map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&onboardingResponse); err != nil {
+		t.Fatal(err)
+	}
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("onboarding status=%d", response.StatusCode)
+	}
+	calibration := onboardingResponse["calibration"].(map[string]any)
+	if calibration["firstRunStatus"] != "pending" || calibration["enabled"] != true || calibration["batchSize"] != float64(10) {
+		t.Fatalf("onboarding calibration=%+v", calibration)
 	}
 	heartbeat, _ := json.Marshal(map[string]any{"capabilities": engine.ExpectedHeartbeat()})
 	request, err = http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/bridge/heartbeat", bytes.NewReader(heartbeat))
@@ -153,4 +161,135 @@ func TestBridgeV47ObservationShapeDecodesStrictly(t *testing.T) {
 	if observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)
 	}
+}
+
+func TestFirstRunHTTPFlowEndsInForcedCalibration(t *testing.T) {
+	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}, Capture: config.CaptureConfig{Profile: "expanded", Visibility: "quiet", OpenMissingSource: true, MaxAcquisitionRounds: 1}, Preference: config.PreferenceConfig{Mode: "promote_unused_budget"}}
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
+	runtime.RecordHeartbeat(engine.ExpectedHeartbeat())
+	server, err := New(cfg, state, runtime, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, err := server.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Stop(context.Background())
+	origin := "http://" + address.String()
+	client := http.Client{Timeout: 2 * time.Second}
+
+	var onboarding map[string]any
+	requestJSON(t, client, http.MethodPut, origin+"/api/onboarding", `{"activeSources":["x","linkedin"]}`, &onboarding)
+	if onboarding["calibration"].(map[string]any)["firstRunStatus"] != "pending" {
+		t.Fatalf("onboarding=%+v", onboarding)
+	}
+	var started struct {
+		Session domain.Session `json:"session"`
+	}
+	requestJSON(t, client, http.MethodPost, origin+"/api/sessions", `{"intent":"What changed?"}`, &started)
+	completeHTTPTestRun(t, runtime, started.Session.ID, domain.SourceX, "x-http-1")
+	completeHTTPTestRun(t, runtime, started.Session.ID, domain.SourceLinkedIn, "linkedin-http-1")
+	waitHTTPTestSession(t, runtime, started.Session.ID, "completed")
+
+	var created struct {
+		Calibration domain.CalibrationSession `json:"calibration"`
+	}
+	requestJSON(t, client, http.MethodPost, origin+"/api/calibration/sessions", `{"unifiedSessionId":"`+started.Session.ID+`","triggerKind":"first_run"}`, &created)
+	if created.Calibration.Status != "reviewing" || created.Calibration.SampleCount != 2 {
+		t.Fatalf("created calibration=%+v", created.Calibration)
+	}
+	var decided struct {
+		Calibration domain.CalibrationSession `json:"calibration"`
+	}
+	requestJSON(t, client, http.MethodPut, origin+"/api/calibration/sessions/"+created.Calibration.ID+"/samples/0", `{"label":"more_like_this"}`, &decided)
+	requestJSON(t, client, http.MethodPut, origin+"/api/calibration/sessions/"+created.Calibration.ID+"/samples/1", `{"label":"neutral"}`, &decided)
+	if decided.Calibration.Status != "completed" || decided.Calibration.Snapshot == nil {
+		t.Fatalf("completed calibration=%+v", decided.Calibration)
+	}
+
+	var bootstrap map[string]any
+	requestJSON(t, client, http.MethodGet, origin+"/api/bootstrap", "", &bootstrap)
+	calibration := bootstrap["calibration"].(map[string]any)
+	if calibration["firstRunStatus"] != "completed" || calibration["active"] != nil {
+		t.Fatalf("bootstrap calibration=%+v", calibration)
+	}
+}
+
+func requestJSON(t *testing.T, client http.Client, method, url, body string, target any) {
+	t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = bytes.NewBufferString(body)
+	}
+	request, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		payload, _ := io.ReadAll(response.Body)
+		t.Fatalf("%s %s status=%d body=%s", method, url, response.StatusCode, payload)
+	}
+	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func completeHTTPTestRun(t *testing.T, runtime *engine.Engine, sessionID string, source domain.Source, platformID string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		session, err := runtime.Session(context.Background(), sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, run := range session.Runs {
+			if run.Source != source || run.Status != "waiting_for_bridge" {
+				continue
+			}
+			command, err := runtime.ClaimCommand(context.Background(), run.ID, "http-flow-test")
+			if err != nil || command == nil {
+				t.Fatalf("claim command=%+v err=%v", command, err)
+			}
+			observation := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{PlatformID: platformID, Text: "Material source update", Author: "author", Permalink: "https://example.test/post", FeedPosition: 1}}}}, Coverage: map[string]any{"quality": "complete"}}
+			if _, err := runtime.AcceptObservation(context.Background(), command.ID, run.ID, observation); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("%s run did not become ready", source)
+}
+
+func waitHTTPTestSession(t *testing.T, runtime *engine.Engine, sessionID, status string) domain.Session {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		session, err := runtime.Session(context.Background(), sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.Status == status {
+			return session
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	session, _ := runtime.Session(context.Background(), sessionID)
+	t.Fatalf("session status=%s, wanted %s", session.Status, status)
+	return domain.Session{}
 }

@@ -122,7 +122,58 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy"}, "settings": settings, "onboarding": onboarding, "activeSession": active, "timeline": timeline})
+		calibration, err := s.engine.CalibrationOverview(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": 2}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline})
+	case r.Method == http.MethodGet && p == "/api/calibration/active":
+		calibration, err := s.engine.CalibrationOverview(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"calibration": calibration.Active})
+	case r.Method == http.MethodPost && p == "/api/calibration/sessions":
+		var body struct {
+			UnifiedSessionID string `json:"unifiedSessionId"`
+			TriggerKind      string `json:"triggerKind"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		calibration, err := s.engine.StartCalibration(ctx, body.UnifiedSessionID, body.TriggerKind)
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusCreated, map[string]any{"calibration": calibration})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/calibration/sessions/") && !strings.Contains(strings.TrimPrefix(p, "/api/calibration/sessions/"), "/samples/"):
+		id := path.Base(p)
+		calibration, err := s.engine.Calibration(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("calibration")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"calibration": calibration})
+	case r.Method == http.MethodPut && strings.HasPrefix(p, "/api/calibration/sessions/"):
+		parts := strings.Split(strings.TrimPrefix(p, "/api/calibration/sessions/"), "/")
+		if len(parts) != 3 || parts[0] == "" || parts[1] != "samples" {
+			return notFound("calibration route")
+		}
+		ordinal, err := strconv.Atoi(parts[2])
+		if err != nil || ordinal < 0 || ordinal > 9 {
+			return badRequest("calibration sample ordinal must be between 0 and 9")
+		}
+		var decision domain.CalibrationDecision
+		if err := readJSON(r, &decision); err != nil {
+			return err
+		}
+		calibration, err := s.engine.DecideCalibration(ctx, parts[0], ordinal, decision)
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"calibration": calibration})
 	case r.Method == http.MethodGet && p == "/api/onboarding":
 		onboarding, err := s.engine.Onboarding(ctx)
 		if err != nil {
@@ -144,7 +195,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding, "settings": settings})
+		calibration, err := s.engine.CalibrationOverview(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding, "settings": settings, "calibration": calibration})
 	case r.Method == http.MethodGet && p == "/api/settings":
 		settings, err := s.engine.Settings(ctx)
 		if err != nil {
@@ -374,7 +429,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			}
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "operation": "reset_learning"})
+		calibration, err := s.engine.CalibrationOverview(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "operation": "reset_learning", "calibration": calibration})
 	case r.Method == http.MethodPost && p == "/api/operations/full-reset":
 		var body struct {
 			Confirmation string `json:"confirmation"`

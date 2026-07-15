@@ -12,7 +12,6 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
-	"github.com/abangkis/AkuSidecar/internal/preference"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/selection"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -190,6 +189,13 @@ func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Sessio
 	}
 	if onboarding.Status != "completed" {
 		return domain.Session{}, errors.New("complete onboarding before starting an update")
+	}
+	calibration, err := e.store.ActiveCalibration(ctx)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if calibration != nil {
+		return domain.Session{}, errors.New("complete the active calibration before starting another update")
 	}
 	status := e.BridgeStatus()
 	if !status.Compatible {
@@ -375,15 +381,10 @@ func (e *Engine) process(ctx context.Context, runID string) error {
 	if err = validateReasoning(merged, result); err != nil {
 		return err
 	}
-	signals, err := e.store.PreferenceSignals(ctx)
+	profile, err := e.preferenceProfile(ctx, true)
 	if err != nil {
 		return err
 	}
-	converted := make([]preference.Signal, 0, len(signals))
-	for _, signal := range signals {
-		converted = append(converted, preference.Signal{Direction: signal.Direction, Reason: signal.Reason, Facets: signal.Assessment.TopicFacets})
-	}
-	profile := preference.Fit(converted)
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return err

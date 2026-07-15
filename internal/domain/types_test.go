@@ -16,7 +16,24 @@ func TestProfilesStayBounded(t *testing.T) {
 			if err := value.Validate(); err != nil {
 				t.Fatal(err)
 			}
+			if !value.CalibrationEnabled || value.CalibrationBatchSize != 10 {
+				t.Fatalf("calibration defaults=%+v", value)
+			}
 		})
+	}
+}
+
+func TestCalibrationDecisionKeepsLabelsSeparateFromCaptureIssues(t *testing.T) {
+	label := "neutral"
+	if err := (CalibrationDecision{Label: &label}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	issue := "capture_incomplete"
+	if err := (CalibrationDecision{IssueCode: &issue}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (CalibrationDecision{Label: &label, IssueCode: &issue}).Validate(); err == nil {
+		t.Fatal("a capture issue must not also become a preference label")
 	}
 }
 

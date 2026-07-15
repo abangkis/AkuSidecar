@@ -37,7 +37,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"bridge_commands", "candidate_assessments", "feedback_events", "knowledge_events", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "sessions", "settings", "timeline_items"}
+	want := []string{"bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "feedback_events", "knowledge_events", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "sessions", "settings", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -153,6 +153,10 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	if err != nil || onboarding.Status != "completed" || len(onboarding.Profile.ActiveSources) != 1 {
 		t.Fatalf("completed onboarding=%+v err=%v", onboarding, err)
 	}
+	calibrationStatus, err := state.CalibrationFirstRunStatus(ctx)
+	if err != nil || calibrationStatus != "pending" {
+		t.Fatalf("calibration status=%q err=%v", calibrationStatus, err)
+	}
 	settings, _ := state.GetSettings(ctx)
 	settings.LoadProfile = "custom"
 	settings.MaxScrolls = 1
@@ -185,6 +189,10 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	afterToken, err := state.BridgeToken(ctx)
 	if err != nil || afterToken != token {
 		t.Fatalf("bridge token changed: before=%q after=%q err=%v", token, afterToken, err)
+	}
+	calibrationStatus, err = state.CalibrationFirstRunStatus(ctx)
+	if err != nil || calibrationStatus != "not_started" {
+		t.Fatalf("reset calibration status=%q err=%v", calibrationStatus, err)
 	}
 }
 

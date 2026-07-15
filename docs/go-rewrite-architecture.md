@@ -45,7 +45,6 @@ behavior is re-expressed as a smaller new contract.
 
 - Node.js, npm, package-lock, Vite, MJS scripts, and Node tests;
 - historical SQLite migrations and all existing runtime rows;
-- calibration sessions and calibration snapshots;
 - offline preference experiments, shadow comparisons, replay benchmarks,
   paired-model benchmarks, and pilot-review endpoints;
 - `wrong_topic` and every other legacy reason alias;
@@ -54,15 +53,18 @@ behavior is re-expressed as a smaller new contract.
 
 ## New component contract
 
-- Application version begins at `1.0.0-dev.1`.
+- Application version is `1.0.0-dev.2` for the restored Go-native calibration boundary.
 - Bridge contract is `aku-browser.bridge.v2`.
-- The database schema is a single version-1 transaction. A schema mismatch is
+- The database schema is a single version-2 transaction. A schema mismatch is
   a startup error; it is never migrated automatically.
 - Settings are served by `GET/PUT /api/settings`; the active contract includes
   source selection, bounded built-in or Custom load values, Timeline capacity,
   and presentation preferences.
 - First-run source onboarding is stored in fresh schema metadata and served by
   `GET/PUT /api/onboarding`.
+- Completing first-run onboarding marks calibration pending, starts one bounded
+  update from the UI, then forces a pre-selection More/Neutral/Less calibration
+  batch before another update may begin.
 - Learning reset is scoped to feedback/model state. Full reset is
   verified-backup-first, preserves the Bridge identity, restores fresh Go
   defaults, and returns to onboarding.
@@ -110,9 +112,12 @@ The new database contains only:
 7. `reasoning_invocations`
 8. `candidate_assessments`
 9. `timeline_items`
-10. `feedback_events`
-11. `preference_model`
-12. `knowledge_events`
+10. `calibration_sessions`
+11. `calibration_samples`
+12. `calibration_profile_snapshots`
+13. `feedback_events`
+14. `preference_model`
+15. `knowledge_events`
 
 Mutable domain payloads are stored as canonical JSON at bounded seams. Fields
 used for lifecycle, ordering, filtering, or integrity remain typed columns.
@@ -128,6 +133,8 @@ used for lifecycle, ordering, filtering, or integrity remain typed columns.
 6. Timeline, feedback, preference reranking, cancellation, lease cleanup, and
    Bridge cooperative reload pass live validation.
 7. AkuSupervisor starts the Go executable directly and reports it healthy.
+8. A fresh onboarding session transitions through bounded acquisition and
+   forced calibration before the Timeline becomes available.
 
 Development rebuilds are explicit. `scripts/restart-dev.ps1` stages a new Go
 binary, refuses to interrupt an active session, and uses AkuSupervisor for the

@@ -102,8 +102,8 @@ Built-in bounded-load profiles remain:
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 1 is created
-as one transaction and contains only the twelve active tables documented in
+The database defaults to `runtime/aku-sidecar.db`. Schema version 2 is created
+as one transaction and contains only the fifteen active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md).
 
 There is no importer for the Node database. A mismatched schema fails closed;
@@ -114,6 +114,10 @@ delete or move the development database and start again.
 - `GET /api/health`
 - `GET /api/bootstrap`
 - `GET/PUT /api/onboarding`
+- `GET /api/calibration/active`
+- `POST /api/calibration/sessions`
+- `GET /api/calibration/sessions/{id}`
+- `PUT /api/calibration/sessions/{id}/samples/{ordinal}`
 - `GET/PUT /api/settings`
 - `POST /api/sessions`
 - `GET /api/sessions/active`
@@ -145,10 +149,16 @@ exact typed phrase and fail while an update is active. A full reset creates and
 verifies a timestamped SQLite backup before clearing the fresh Go state,
 preserves the Bridge identity, and returns directly to onboarding.
 
+First-time onboarding starts one bounded update to acquire real source
+candidates, then opens a forced calibration lane before the Timeline. The lane
+round-robins pre-selection X and LinkedIn candidates, accepts More, Neutral,
+Less, or a capture issue for every sample, and fits the local preference model
+when the batch is complete.
+
 ## Removed by design
 
-Calibration, offline experiments, shadow comparison, replay benchmarks,
-paired-model benchmarking, pilot review, legacy reason aliases, historical
+Offline experiments, shadow comparison, replay benchmarks, paired-model
+benchmarking, pilot review, legacy reason aliases, historical
 schema migrations, and hidden provider fallbacks were not ported. Reintroduce
 any of them only as a new Go-native product decision with a current contract
 and tests.
