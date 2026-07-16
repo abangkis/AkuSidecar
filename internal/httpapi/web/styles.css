@@ -212,6 +212,7 @@ h3 { letter-spacing: -0.02em; }
 .inbox-session-meta { margin: 14px 0; color: var(--quiet); font-size: 0.78rem; }
 .event-resolution-diagnostic { display: grid; gap: 4px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-raised); font-size: 0.75rem; }
 .event-resolution-diagnostic span { color: var(--muted); }
+.event-resolution-diagnostic .event-resolution-trigger { color: var(--quiet); font-size: 0.7rem; }
 .event-resolution-failed { border-color: rgba(246, 200, 107, 0.34); }
 .event-resolution-failed strong { color: var(--amber); }
 .inbox-runs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

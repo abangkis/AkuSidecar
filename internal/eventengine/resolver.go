@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
@@ -58,14 +59,14 @@ func (r *AppServerResolver) Resolve(ctx context.Context, candidates []domain.Sem
 		ReportCount    int      `json:"reportCount"`
 	}
 	type candidateReference struct {
-		Alias       string        `json:"alias"`
-		Source      domain.Source `json:"source"`
-		Author      string        `json:"author"`
-		PublishedAt *string       `json:"publishedAt"`
-		Text        string        `json:"text"`
-		WhatChanged string        `json:"whatChanged"`
-		EventKey    string        `json:"eventKey"`
-		TopicTags   []string      `json:"topicTags"`
+		Alias           string        `json:"alias"`
+		Source          domain.Source `json:"source"`
+		Author          string        `json:"author"`
+		PublishedAt     *string       `json:"publishedAt"`
+		EvidenceExcerpt string        `json:"evidenceExcerpt,omitempty"`
+		WhatChanged     string        `json:"whatChanged"`
+		EventKey        string        `json:"eventKey"`
+		TopicTags       []string      `json:"topicTags"`
 	}
 	refs := make([]eventReference, 0, len(events))
 	for index, event := range events {
@@ -73,7 +74,7 @@ func (r *AppServerResolver) Resolve(ctx context.Context, candidates []domain.Sem
 	}
 	candidateRefs := make([]candidateReference, 0, len(candidates))
 	for _, candidate := range candidates {
-		candidateRefs = append(candidateRefs, candidateReference{Alias: candidate.Alias, Source: candidate.Source, Author: candidate.Author, PublishedAt: candidate.PublishedAt, Text: candidate.Text, WhatChanged: candidate.WhatChanged, EventKey: candidate.EventKey, TopicTags: candidate.TopicTags})
+		candidateRefs = append(candidateRefs, candidateReference{Alias: candidate.Alias, Source: candidate.Source, Author: candidate.Author, PublishedAt: candidate.PublishedAt, EvidenceExcerpt: compactEvidenceExcerpt(candidate), WhatChanged: boundedText(candidate.WhatChanged, 600), EventKey: candidate.EventKey, TopicTags: candidate.TopicTags})
 	}
 	prompt := fmt.Sprintf(`You are AkuBrowser's high-precision semantic event resolver.
 
@@ -100,6 +101,23 @@ Current candidates: %s`, mustJSON(refs), mustJSON(candidateRefs))
 		return domain.SemanticResolution{}, usage, duration, fmt.Errorf("decode semantic event resolution: %w", err)
 	}
 	return result, usage, duration, nil
+}
+
+func compactEvidenceExcerpt(candidate domain.SemanticCandidate) string {
+	value := strings.TrimSpace(urlPattern.ReplaceAllString(candidate.Text, " "))
+	if value == "" || value == strings.TrimSpace(candidate.WhatChanged) {
+		return ""
+	}
+	return boundedText(value, 600)
+}
+
+func boundedText(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return strings.TrimSpace(string(runes[:limit])) + "…"
 }
 
 func mustJSON(value any) string {

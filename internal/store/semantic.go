@@ -143,21 +143,43 @@ func (s *Store) SaveEventResolutionSummary(ctx context.Context, value domain.Eve
 		raw, _ := json.Marshal(value.Error)
 		failure = string(raw)
 	}
-	_, err := s.db.ExecContext(ctx, `
+	triggerTokens, _ := json.Marshal(value.TriggerTokens)
+	resolverInvoked := 0
+	if value.ResolverInvoked {
+		resolverInvoked = 1
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO event_resolution_invocations(session_id,status,provider,model,effort,candidate_count,shortlist_count,unique_items,duplicate_reports,duration_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error_json,created_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(session_id) DO UPDATE SET status=excluded.status,provider=excluded.provider,model=excluded.model,effort=excluded.effort,candidate_count=excluded.candidate_count,shortlist_count=excluded.shortlist_count,unique_items=excluded.unique_items,duplicate_reports=excluded.duplicate_reports,duration_ms=excluded.duration_ms,input_tokens=excluded.input_tokens,cached_input_tokens=excluded.cached_input_tokens,output_tokens=excluded.output_tokens,reasoning_output_tokens=excluded.reasoning_output_tokens,error_json=excluded.error_json,created_at=excluded.created_at`,
-		value.SessionID, value.Status, value.Provider, value.Model, value.Effort, value.CandidateCount, value.ShortlistCount, value.UniqueItems, value.DuplicateReports, value.DurationMS, value.Usage.Input, value.Usage.CachedInput, value.Usage.Output, value.Usage.ReasoningOutput, failure, value.CreatedAt)
-	return err
+		value.SessionID, value.Status, value.Provider, value.Model, value.Effort, value.CandidateCount, value.ShortlistCount, value.UniqueItems, value.DuplicateReports, value.DurationMS, value.Usage.Input, value.Usage.CachedInput, value.Usage.Output, value.Usage.ReasoningOutput, failure, value.CreatedAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO event_resolution_diagnostics(session_id,historical_event_count,resolver_invoked,trigger_reason,strongest_overlap,trigger_tokens_json)
+		VALUES(?,?,?,?,?,?)
+		ON CONFLICT(session_id) DO UPDATE SET historical_event_count=excluded.historical_event_count,resolver_invoked=excluded.resolver_invoked,trigger_reason=excluded.trigger_reason,strongest_overlap=excluded.strongest_overlap,trigger_tokens_json=excluded.trigger_tokens_json`,
+		value.SessionID, value.HistoricalEventCount, resolverInvoked, value.TriggerReason, value.StrongestOverlap, string(triggerTokens)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*domain.EventResolutionSummary, error) {
 	var value domain.EventResolutionSummary
 	var failure sql.NullString
+	var historicalEventCount, resolverInvoked, strongestOverlap sql.NullInt64
+	var triggerReason, triggerTokens sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT session_id,status,provider,model,effort,candidate_count,shortlist_count,unique_items,duplicate_reports,duration_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error_json,created_at
-		FROM event_resolution_invocations WHERE session_id=?`, sessionID).
-		Scan(&value.SessionID, &value.Status, &value.Provider, &value.Model, &value.Effort, &value.CandidateCount, &value.ShortlistCount, &value.UniqueItems, &value.DuplicateReports, &value.DurationMS, &value.Usage.Input, &value.Usage.CachedInput, &value.Usage.Output, &value.Usage.ReasoningOutput, &failure, &value.CreatedAt)
+		SELECT i.session_id,i.status,i.provider,i.model,i.effort,i.candidate_count,i.shortlist_count,i.unique_items,i.duplicate_reports,i.duration_ms,i.input_tokens,i.cached_input_tokens,i.output_tokens,i.reasoning_output_tokens,i.error_json,i.created_at,
+		       d.historical_event_count,d.resolver_invoked,d.trigger_reason,d.strongest_overlap,d.trigger_tokens_json
+		FROM event_resolution_invocations i LEFT JOIN event_resolution_diagnostics d ON d.session_id=i.session_id WHERE i.session_id=?`, sessionID).
+		Scan(&value.SessionID, &value.Status, &value.Provider, &value.Model, &value.Effort, &value.CandidateCount, &value.ShortlistCount, &value.UniqueItems, &value.DuplicateReports, &value.DurationMS, &value.Usage.Input, &value.Usage.CachedInput, &value.Usage.Output, &value.Usage.ReasoningOutput, &failure, &value.CreatedAt, &historicalEventCount, &resolverInvoked, &triggerReason, &strongestOverlap, &triggerTokens)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -168,6 +190,19 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 		var decoded domain.Failure
 		decodeJSON(failure.String, &decoded)
 		value.Error = &decoded
+	}
+	if historicalEventCount.Valid {
+		value.HistoricalEventCount = int(historicalEventCount.Int64)
+	}
+	value.ResolverInvoked = resolverInvoked.Valid && resolverInvoked.Int64 == 1
+	if triggerReason.Valid {
+		value.TriggerReason = triggerReason.String
+	}
+	if strongestOverlap.Valid {
+		value.StrongestOverlap = int(strongestOverlap.Int64)
+	}
+	if triggerTokens.Valid {
+		decodeJSON(triggerTokens.String, &value.TriggerTokens)
 	}
 	return &value, nil
 }

@@ -488,19 +488,24 @@ type ModelUsage struct {
 }
 
 type EventResolutionSummary struct {
-	SessionID        string     `json:"sessionId"`
-	Status           string     `json:"status"`
-	Provider         string     `json:"provider"`
-	Model            string     `json:"model"`
-	Effort           string     `json:"effort"`
-	CandidateCount   int        `json:"candidateCount"`
-	ShortlistCount   int        `json:"shortlistCount"`
-	UniqueItems      int        `json:"uniqueItems"`
-	DuplicateReports int        `json:"duplicateReports"`
-	DurationMS       int64      `json:"durationMs"`
-	Usage            ModelUsage `json:"usage"`
-	Error            *Failure   `json:"error,omitempty"`
-	CreatedAt        string     `json:"createdAt"`
+	SessionID            string     `json:"sessionId"`
+	Status               string     `json:"status"`
+	Provider             string     `json:"provider"`
+	Model                string     `json:"model"`
+	Effort               string     `json:"effort"`
+	CandidateCount       int        `json:"candidateCount"`
+	HistoricalEventCount int        `json:"historicalEventCount"`
+	ShortlistCount       int        `json:"shortlistCount"`
+	UniqueItems          int        `json:"uniqueItems"`
+	DuplicateReports     int        `json:"duplicateReports"`
+	ResolverInvoked      bool       `json:"resolverInvoked"`
+	TriggerReason        string     `json:"triggerReason"`
+	StrongestOverlap     int        `json:"strongestOverlap"`
+	TriggerTokens        []string   `json:"triggerTokens"`
+	DurationMS           int64      `json:"durationMs"`
+	Usage                ModelUsage `json:"usage"`
+	Error                *Failure   `json:"error,omitempty"`
+	CreatedAt            string     `json:"createdAt"`
 }
 
 type EventSuggestion struct {

@@ -3,6 +3,7 @@ package eventengine
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -12,7 +13,12 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-const AutoMergeThreshold = 0.92
+const (
+	AutoMergeThreshold       = 0.92
+	localCatalogLimit        = 2000
+	historicalOverlapMinimum = 2
+	intraCheckOverlapMinimum = 3
+)
 
 type Engine struct {
 	store    *store.Store
@@ -25,20 +31,21 @@ func New(state *store.Store, resolver Resolver) *Engine {
 
 func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings domain.Settings) (domain.EventResolutionSummary, error) {
 	if settings.SemanticEventMode == "show_all" {
-		return domain.EventResolutionSummary{SessionID: sessionID, Status: "bypassed", Provider: "disabled", CreatedAt: domain.Now()}, nil
+		return domain.EventResolutionSummary{SessionID: sessionID, Status: "bypassed", Provider: "disabled", TriggerReason: "engine_disabled", CreatedAt: domain.Now()}, nil
 	}
 	candidates, err := e.store.SemanticCandidates(ctx, sessionID)
 	if err != nil {
 		return domain.EventResolutionSummary{}, err
 	}
-	summary := domain.EventResolutionSummary{SessionID: sessionID, Status: "completed", Provider: "local-index", Model: "none", Effort: "none", CandidateCount: len(candidates), UniqueItems: len(candidates), CreatedAt: domain.Now()}
+	summary := domain.EventResolutionSummary{SessionID: sessionID, Status: "completed", Provider: "local-index", Model: "none", Effort: "none", CandidateCount: len(candidates), UniqueItems: len(candidates), TriggerReason: "local_new_events", CreatedAt: domain.Now()}
 	if len(candidates) == 0 {
+		summary.TriggerReason = "no_candidates"
 		_ = e.store.SaveEventResolutionSummary(ctx, summary)
 		return summary, nil
 	}
 
 	cutoff := time.Now().UTC().AddDate(0, 0, -settings.KnowledgeRetentionDays).Format(time.RFC3339Nano)
-	catalog, err := e.store.ListSemanticEvents(ctx, cutoff, 2000)
+	catalog, err := e.store.ListSemanticEvents(ctx, cutoff, localCatalogLimit)
 	if err != nil {
 		return summary, err
 	}
@@ -46,11 +53,25 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 	if err != nil {
 		return summary, err
 	}
-	shortlist := rankShortlist(candidates, catalog, settings.SemanticEventShortlist, constraints)
+	summary.HistoricalEventCount = len(catalog)
+	shortlist, historicalSignal := rankShortlist(candidates, catalog, settings.SemanticEventShortlist)
 	summary.ShortlistCount = len(shortlist)
+	intraCheckSignal := strongestIntraCheckSignal(candidates)
+	triggerSignal := intraCheckSignal
+	shouldResolve := intraCheckSignal.Strong
+	if len(shortlist) > 0 {
+		triggerSignal = historicalSignal
+		shouldResolve = true
+		summary.TriggerReason = "historical_shortlist"
+	} else if intraCheckSignal.Strong {
+		summary.TriggerReason = intraCheckSignal.Reason
+	}
+	summary.StrongestOverlap = triggerSignal.Overlap
+	summary.TriggerTokens = append([]string(nil), triggerSignal.Tokens...)
 
 	var resolution domain.SemanticResolution
-	if e.resolver != nil && needsResolver(candidates, shortlist) {
+	if e.resolver != nil && shouldResolve {
+		summary.ResolverInvoked = true
 		model := e.resolver.Model()
 		summary.Provider, summary.Model, summary.Effort = e.resolver.Name(), model.Model, model.Effort
 		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, candidates, shortlist)
@@ -94,25 +115,33 @@ func candidateEvidenceKeys(candidates []domain.SemanticCandidate) []string {
 }
 
 type rankedEvent struct {
-	event domain.SemanticEvent
-	score int
+	event  domain.SemanticEvent
+	score  int
+	tokens []string
 }
 
-func rankShortlist(candidates []domain.SemanticCandidate, catalog []domain.SemanticEvent, limit int, constraints map[string]map[string]string) []domain.SemanticEvent {
+type triggerSignal struct {
+	Strong  bool
+	Overlap int
+	Tokens  []string
+	Reason  string
+}
+
+func rankShortlist(candidates []domain.SemanticCandidate, catalog []domain.SemanticEvent, limit int) ([]domain.SemanticEvent, triggerSignal) {
 	ranked := make([]rankedEvent, 0, len(catalog))
 	for _, event := range catalog {
 		best := 0
+		var bestTokens []string
 		for _, candidate := range candidates {
-			score := overlap(tokens(candidateText(candidate)), tokens(eventText(event)))
-			if constraints[candidate.EvidenceKey][event.ID] == "must_merge" {
-				score += 1000
-			}
+			shared := intersection(tokens(candidateText(candidate)), tokens(eventText(event)))
+			score := len(shared)
 			if score > best {
 				best = score
+				bestTokens = shared
 			}
 		}
-		if best > 0 {
-			ranked = append(ranked, rankedEvent{event: event, score: best})
+		if best >= historicalOverlapMinimum {
+			ranked = append(ranked, rankedEvent{event: event, score: best, tokens: bestTokens})
 		}
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
@@ -128,21 +157,39 @@ func rankShortlist(candidates []domain.SemanticCandidate, catalog []domain.Seman
 	for _, value := range ranked[:limit] {
 		result = append(result, value.event)
 	}
-	return result
+	signal := triggerSignal{Reason: "historical_shortlist"}
+	if len(ranked) > 0 {
+		signal.Strong = true
+		signal.Overlap = ranked[0].score
+		signal.Tokens = append([]string(nil), ranked[0].tokens...)
+	}
+	return result, signal
 }
 
-func needsResolver(candidates []domain.SemanticCandidate, shortlist []domain.SemanticEvent) bool {
-	if len(shortlist) > 0 {
-		return true
-	}
+func strongestIntraCheckSignal(candidates []domain.SemanticCandidate) triggerSignal {
+	strongest := triggerSignal{Reason: "weak_intra_check_overlap"}
 	for left := 0; left < len(candidates); left++ {
 		for right := left + 1; right < len(candidates); right++ {
-			if overlap(tokens(candidateText(candidates[left])), tokens(candidateText(candidates[right]))) >= 2 {
-				return true
+			leftCandidate, rightCandidate := candidates[left], candidates[right]
+			leftEventKey := normalizeEventKey(leftCandidate.EventKey)
+			rightEventKey := normalizeEventKey(rightCandidate.EventKey)
+			shared := intersection(tokens(candidateText(leftCandidate)), tokens(candidateText(rightCandidate)))
+			anchors := intersection(tokens(candidateAnchorText(leftCandidate)), tokens(candidateAnchorText(rightCandidate)))
+			strong := leftEventKey != "" && leftEventKey == rightEventKey
+			reason := "matching_event_key"
+			if !strong {
+				strong = len(shared) >= intraCheckOverlapMinimum && len(anchors) > 0
+				reason = "strong_intra_check_overlap"
+			}
+			if (strong && !strongest.Strong) || (strong == strongest.Strong && len(shared) > strongest.Overlap) {
+				strongest = triggerSignal{Strong: strong, Overlap: len(shared), Tokens: shared, Reason: reason}
 			}
 		}
 	}
-	return false
+	if !strongest.Strong {
+		strongest.Reason = "weak_intra_check_overlap"
+	}
+	return strongest
 }
 
 func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []domain.SemanticEvent, resolution domain.SemanticResolution, constraints map[string]map[string]string, retentionDays int) []domain.ResolvedSemanticReport {
@@ -294,16 +341,35 @@ func defaultValue(value, fallback string) string {
 }
 
 func candidateText(value domain.SemanticCandidate) string {
-	return strings.Join(append([]string{value.Author, value.Text, value.WhatChanged, value.EventKey}, value.TopicTags...), " ")
+	return strings.Join(append([]string{value.WhatChanged, value.EventKey}, value.TopicTags...), " ")
+}
+
+func candidateAnchorText(value domain.SemanticCandidate) string {
+	return strings.Join(append([]string{value.EventKey}, value.TopicTags...), " ")
 }
 
 func eventText(value domain.SemanticEvent) string {
 	return strings.Join(append([]string{value.CanonicalClaim, value.Actor, value.Action, value.Object, value.EventKind}, value.Aliases...), " ")
 }
 
-var stopWords = map[string]bool{"about": true, "after": true, "again": true, "also": true, "and": true, "are": true, "dari": true, "dengan": true, "for": true, "from": true, "ini": true, "into": true, "itu": true, "karena": true, "new": true, "post": true, "that": true, "the": true, "their": true, "this": true, "untuk": true, "was": true, "were": true, "with": true}
+var urlPattern = regexp.MustCompile(`(?i)(?:https?://|www\.)\S+`)
+
+var stopWords = map[string]bool{
+	"about": true, "after": true, "again": true, "akan": true, "adalah": true, "also": true, "and": true, "are": true, "atau": true,
+	"bahwa": true, "bisa": true, "but": true, "can": true, "com": true, "could": true, "dari": true, "dengan": true, "did": true,
+	"does": true, "feed": true, "for": true, "from": true, "full": true, "had": true, "has": true, "have": true, "here": true,
+	"how": true, "http": true, "https": true, "ini": true, "instead": true, "into": true, "its": true, "itu": true, "karena": true,
+	"linkedin": true, "lnkd": true, "may": true, "more": true, "most": true, "never": true, "new": true, "news": true, "not": true,
+	"now": true, "one": true, "only": true, "our": true, "pada": true, "post": true, "posts": true, "reported": true, "said": true,
+	"saat": true, "say": true, "says": true, "saya": true, "share": true, "shared": true, "should": true, "status": true, "still": true,
+	"sudah": true, "than": true, "that": true, "the": true, "their": true, "them": true, "then": true, "there": true, "they": true,
+	"think": true, "this": true, "through": true, "tidak": true, "time": true, "toward": true, "twitter": true, "under": true,
+	"untuk": true, "update": true, "very": true, "via": true, "was": true, "were": true, "will": true, "with": true, "would": true,
+	"www": true, "yang": true, "year": true, "you": true, "your": true,
+}
 
 func tokens(value string) map[string]bool {
+	value = urlPattern.ReplaceAllString(value, " ")
 	words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 	result := map[string]bool{}
 	for _, word := range words {
@@ -314,12 +380,17 @@ func tokens(value string) map[string]bool {
 	return result
 }
 
-func overlap(left, right map[string]bool) int {
-	count := 0
+func intersection(left, right map[string]bool) []string {
+	result := make([]string, 0)
 	for value := range left {
 		if right[value] {
-			count++
+			result = append(result, value)
 		}
 	}
-	return count
+	sort.Strings(result)
+	return result
+}
+
+func normalizeEventKey(value string) string {
+	return strings.Join(intersection(tokens(value), tokens(value)), "-")
 }

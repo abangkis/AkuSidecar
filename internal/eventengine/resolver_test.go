@@ -37,3 +37,16 @@ func TestAppServerResolverUsesOpaqueAliasesAndNoTools(t *testing.T) {
 		}
 	}
 }
+
+func TestAppServerResolverBoundsUntrustedEvidenceExcerpt(t *testing.T) {
+	invoker := &fakeStructuredInvoker{}
+	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
+	longText := strings.Repeat("bounded source evidence ", 80) + "TAIL_SENTINEL"
+	_, _, _, err := resolver.Resolve(context.Background(), []domain.SemanticCandidate{{Alias: "candidate_001", Text: longText, WhatChanged: "A bounded event occurred"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(invoker.prompt, "TAIL_SENTINEL") || !strings.Contains(invoker.prompt, "evidenceExcerpt") {
+		t.Fatalf("evidence excerpt was not bounded: %s", invoker.prompt)
+	}
+}

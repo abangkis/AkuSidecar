@@ -183,12 +183,21 @@ order with a diversity guard rather than strict X/LinkedIn round-robin.
 
 A separate Event Engine groups selected cross-author and cross-source reports
 after source runs finish. Go retrieves a global bounded shortlist from the
-local event index; Codex App Server proposes only typed relationships. The
+local event index; Codex App Server proposes only typed relationships. URL,
+platform, and generic-language tokens cannot trigger the resolver. Without a
+historical shortlist or strong intra-check event anchor, Go creates separate
+event threads through a zero-token local fast path. Resolver prompts use
+evaluated summaries and evidence excerpts capped at 600 characters. The
 default collapses true duplicate reports while keeping them inspectable. Show
 all bypasses the engine, and Hide removes duplicate reports from the Timeline.
 Only `duplicate_report` is capacity-free; material updates, contradictions,
 new consequences, and context remain unique. Automatic merging requires 0.92
 confidence, and user corrections create undoable local constraints.
+
+Update Inbox records whether the local fast path or App Server ran, along with
+the trigger reason, strongest overlap, retained-event count, duration, and
+token usage. This makes semantic cost and false-positive retrieval visible
+without exposing raw database identities.
 
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and

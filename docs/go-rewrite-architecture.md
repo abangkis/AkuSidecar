@@ -26,12 +26,13 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - No fallback item is fabricated. Zero additions is valid.
 - X and LinkedIn are composed into one global personalized order with a maximum-two-consecutive-source guard.
 - Only a high-confidence `duplicate_report` is capacity-free; related updates, contradictions, consequences, and context remain unique.
+- Semantic resolution is conditional: noisy lexical overlap cannot trigger the model, and unrelated reports use a deterministic local fast path.
 - `show_all` bypasses event retrieval and resolution. User event corrections are local, persistent, and undoable.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 
 ## State
 
-SQLite schema version 2 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
+SQLite schema version 2 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver/trigger telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
 
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 

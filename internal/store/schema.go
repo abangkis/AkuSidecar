@@ -261,6 +261,15 @@ CREATE TABLE IF NOT EXISTS event_resolution_invocations (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS event_resolution_diagnostics (
+  session_id TEXT PRIMARY KEY REFERENCES event_resolution_invocations(session_id) ON DELETE CASCADE,
+  historical_event_count INTEGER NOT NULL CHECK (historical_event_count >= 0),
+  resolver_invoked INTEGER NOT NULL CHECK (resolver_invoked IN (0,1)),
+  trigger_reason TEXT NOT NULL,
+  strongest_overlap INTEGER NOT NULL CHECK (strongest_overlap >= 0),
+  trigger_tokens_json TEXT NOT NULL DEFAULT '[]'
+);
+
 CREATE TABLE IF NOT EXISTS semantic_event_corrections (
   id TEXT PRIMARY KEY,
   report_id TEXT NOT NULL REFERENCES semantic_event_reports(id) ON DELETE CASCADE,

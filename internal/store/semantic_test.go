@@ -149,3 +149,37 @@ func TestSemanticRetentionRemovesExpiredTerminalHistory(t *testing.T) {
 		t.Fatalf("expired session remains: %d", sessions)
 	}
 }
+
+func TestEventResolutionDiagnosticsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "diagnostic fixture", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := domain.EventResolutionSummary{
+		SessionID:            session.ID,
+		Status:               "completed",
+		Provider:             "local-index",
+		Model:                "none",
+		Effort:               "none",
+		CandidateCount:       3,
+		HistoricalEventCount: 7,
+		UniqueItems:          3,
+		TriggerReason:        "weak_intra_check_overlap",
+		StrongestOverlap:     2,
+		TriggerTokens:        []string{"kimi", "model"},
+		CreatedAt:            domain.Now(),
+	}
+	if err := state.SaveEventResolutionSummary(ctx, value); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := state.EventResolutionSummary(ctx, session.ID)
+	if err != nil || loaded == nil {
+		t.Fatalf("loaded=%+v err=%v", loaded, err)
+	}
+	if loaded.ResolverInvoked || loaded.HistoricalEventCount != 7 || loaded.TriggerReason != value.TriggerReason || loaded.StrongestOverlap != 2 || len(loaded.TriggerTokens) != 2 {
+		t.Fatalf("diagnostics=%+v", loaded)
+	}
+}

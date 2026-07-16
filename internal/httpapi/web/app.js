@@ -822,7 +822,14 @@ function buildEventResolutionDiagnostic(value) {
         value.provider === "local-index" ? "local index only" : `${value.provider}${value.durationMs ? ` \u00b7 ${formatDuration(value.durationMs)}` : ""}`,
         value.usage?.inputTokens != null ? `${value.usage.inputTokens} input / ${value.usage.outputTokens ?? 0} output tokens` : null,
       ].filter(Boolean).join(" \u00b7 ");
-  diagnostic.append(title, detail);
+  const trigger = document.createElement("span");
+  trigger.className = "event-resolution-trigger";
+  const hasTriggerDiagnostics = Boolean(value.triggerReason);
+  const triggerLabel = !hasTriggerDiagnostics ? "Legacy run" : value.resolverInvoked ? "Resolver invoked" : "Local fast path";
+  const triggerTokens = value.triggerTokens?.length ? ` \u00b7 ${value.triggerTokens.join(", ")}` : "";
+  const triggerReason = hasTriggerDiagnostics ? humanize(value.triggerReason) : "trigger diagnostics unavailable";
+  trigger.textContent = `${triggerLabel}: ${triggerReason} \u00b7 ${value.historicalEventCount ?? 0} retained events \u00b7 strongest overlap ${value.strongestOverlap ?? 0}${triggerTokens}`;
+  diagnostic.append(title, detail, trigger);
   return diagnostic;
 }
 
