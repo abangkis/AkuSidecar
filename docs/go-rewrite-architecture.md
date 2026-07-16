@@ -12,7 +12,8 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - `internal/store` owns the fresh SQLite v2 schema.
 - `internal/selection` owns generic trust/materiality admission, high-authority personalization, protected updates, exact-evidence exclusion, and the discovery lane.
 - `internal/preference` fits the rebuildable local profile from canonical direct signals.
-- `internal/reasoning` owns the managed Codex App Server and explicit Codex Exec conformance transport.
+- `internal/reasoning` owns the single managed Codex App Server transport and candidate-evaluation adapter.
+- `internal/eventengine` owns bounded event retrieval, the separate App Server resolver, high-precision merging, and safe degradation.
 - AkuSupervisor starts and stops `runtime/dev/aku-sidecar.exe` directly.
 
 ## Product invariants
@@ -24,11 +25,15 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - One qualified discovery candidate remains available per source when it does not displace a protected update.
 - No fallback item is fabricated. Zero additions is valid.
 - X and LinkedIn are composed into one global personalized order with a maximum-two-consecutive-source guard.
+- Only a high-confidence `duplicate_report` is capacity-free; related updates, contradictions, consequences, and context remain unique.
+- `show_all` bypasses event retrieval and resolution. User event corrections are local, persistent, and undoable.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 
 ## State
 
-SQLite schema version 2 contains only the active fifteen tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, calibration, feedback/model state, and knowledge events. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
+SQLite schema version 2 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
+
+Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 
 There is no importer for the Node database. Schema mismatch fails startup. Full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores strict defaults, and preserves Bridge identity.
 

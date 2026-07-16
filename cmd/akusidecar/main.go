@@ -11,6 +11,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
+	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/httpapi"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -27,7 +28,13 @@ func main() {
 	defer state.Close()
 	provider, err := reasoning.NewProvider(cfg)
 	fatal(logger, err)
-	runtime := engine.New(state, provider, cfg, logger)
+	var eventResolver semanticengine.Resolver
+	if appServer, ok := provider.(*reasoning.CodexAppServer); ok {
+		eventResolver, err = semanticengine.NewAppServerResolver(cfg.Root, appServer, cfg.Reasoning.Evaluation)
+		fatal(logger, err)
+	}
+	eventRuntime := semanticengine.New(state, eventResolver)
+	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
 	server, err := httpapi.New(cfg, state, runtime, logger)
 	fatal(logger, err)
 	address, err := server.Start()

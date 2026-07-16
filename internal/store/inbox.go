@@ -46,19 +46,43 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 			entry.AddedItems += diagnostic.AddedItems
 			entry.Runs = append(entry.Runs, diagnostic)
 		}
+		entry.EventResolution, err = s.EventResolutionSummary(ctx, session.ID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if entry.EventResolution != nil {
+			entry.DuplicateReports = entry.EventResolution.DuplicateReports
+			entry.AddedItems = entry.EventResolution.UniqueItems
+		}
 		sessions = append(sessions, entry)
 	}
 	return sessions, total, nil
 }
 
 func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckSummary, error) {
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var value domain.TimelineCheckSummary
-	err := s.db.QueryRowContext(ctx,
-		"SELECT s.id,s.status,s.completed_at,COUNT(t.id) "+
-			"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
-			"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL "+
-			"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
-		Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems)
+	if settings.SemanticEventMode == "show_all" {
+		err = s.db.QueryRowContext(ctx,
+			"SELECT s.id,s.status,s.completed_at,COUNT(t.id),0 "+
+				"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
+				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL "+
+				"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
+			Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems, &value.DuplicateReports)
+	} else {
+		err = s.db.QueryRowContext(ctx,
+			"SELECT s.id,s.status,s.completed_at,"+
+				"SUM(CASE WHEN t.id IS NULL OR r.relation='duplicate_report' THEN 0 ELSE 1 END),"+
+				"SUM(CASE WHEN t.id IS NOT NULL AND r.relation='duplicate_report' THEN 1 ELSE 0 END) "+
+				"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
+				"LEFT JOIN semantic_event_reports r ON r.timeline_id=t.id "+
+				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL "+
+				"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
+			Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems, &value.DuplicateReports)
+	}
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

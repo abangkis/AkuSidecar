@@ -78,6 +78,26 @@ func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
 	}
 }
 
+func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
+	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	if value.SemanticEventMode != "collapse" || value.SemanticEventShortlist != 10 || value.KnowledgeRetentionDays != 30 || value.KnowledgeStorageLimitMB != 100 {
+		t.Fatalf("semantic defaults=%+v", value)
+	}
+
+	value.SemanticEventMode = "hide"
+	value.SemanticEventShortlist = 15
+	value.KnowledgeRetentionDays = 90
+	value.KnowledgeStorageLimitMB = 1024
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	value.SemanticEventShortlist = 11
+	if err := value.Validate(); err == nil {
+		t.Fatal("free-entry semantic shortlist must be rejected")
+	}
+}
+
 func TestFeedbackRejectsLegacyReason(t *testing.T) {
 	reason := "wrong_topic"
 	value := Feedback{Direction: "less", Reason: &reason}

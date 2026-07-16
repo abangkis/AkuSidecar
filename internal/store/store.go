@@ -83,7 +83,15 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	if err := s.initializeOnboarding(ctx, fresh); err != nil {
 		return err
 	}
-	return s.RecomposeCompletedSessions(ctx)
+	if err := s.RecomposeCompletedSessions(ctx); err != nil {
+		return err
+	}
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = s.EnforceRetention(ctx, settings)
+	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -846,7 +854,44 @@ func (s *Store) ListSessionItems(ctx context.Context, sessionID string) ([]domai
 	return s.listItems(ctx, `WHERE session_id=? ORDER BY rank`, sessionID)
 }
 func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
-	return s.listItems(ctx, `ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT ? OFFSET ?`, limit, offset)
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings.SemanticEventMode == "show_all" {
+		items, err := s.listItems(ctx, `ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT ? OFFSET ?`, limit, offset)
+		for index := range items {
+			items[index].SemanticEvent = nil
+		}
+		return items, err
+	}
+	items, err := s.listItems(ctx, `ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT 1000`)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.TimelineItem, 0, limit)
+	uniqueSeen := 0
+	uniqueIncluded := 0
+	for _, item := range items {
+		duplicate := item.SemanticEvent != nil && item.SemanticEvent.Relation == "duplicate_report"
+		if duplicate {
+			if settings.SemanticEventMode == "collapse" && uniqueSeen >= offset && uniqueIncluded <= limit {
+				result = append(result, item)
+			}
+			continue
+		}
+		if uniqueSeen < offset {
+			uniqueSeen++
+			continue
+		}
+		if uniqueIncluded >= limit {
+			break
+		}
+		result = append(result, item)
+		uniqueSeen++
+		uniqueIncluded++
+	}
+	return result, nil
 }
 
 func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]domain.TimelineItem, error) {
@@ -902,6 +947,9 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 			copy := block
 			item.Evidence = &copy
 		}
+	}
+	if err := s.attachSemanticEvents(ctx, items); err != nil {
+		return nil, err
 	}
 	return items, nil
 }
@@ -1039,7 +1087,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key='calibration_first_run_status';`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key='calibration_first_run_status';`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES('runtime',?,?)`, string(raw), now); err != nil {

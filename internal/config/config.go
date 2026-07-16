@@ -127,7 +127,7 @@ func (c Config) Validate() error {
 	if c.Database.Path == "" {
 		return errors.New("database path is required")
 	}
-	if c.Reasoning.Provider != "codex-exec" && c.Reasoning.Provider != "deterministic" && c.Reasoning.Provider != "codex-app-server" {
+	if c.Reasoning.Provider != "deterministic" && c.Reasoning.Provider != "codex-app-server" {
 		return fmt.Errorf("unsupported reasoning provider %q", c.Reasoning.Provider)
 	}
 	if c.Reasoning.TimeoutMS < int((5*time.Second)/time.Millisecond) {

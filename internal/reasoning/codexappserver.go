@@ -40,6 +40,8 @@ type CodexAppServer struct {
 	stderr        *boundedBuffer
 }
 
+type usage struct{ Input, CachedInput, Output, ReasoningOutput *int64 }
+
 type rpcMessage struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
@@ -101,6 +103,13 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 }
 
 func (c *CodexAppServer) Name() string { return "codex-app-server" }
+
+// InvokeStructured exposes the shared App Server transport to bounded adapters
+// without adding their domain-specific methods to the reasoning Provider.
+func (c *CodexAppServer) InvokeStructured(ctx context.Context, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+	raw, value, duration, err := c.invoke(ctx, prompt, schema, model)
+	return raw, domain.ModelUsage{Input: value.Input, CachedInput: value.CachedInput, Output: value.Output, ReasoningOutput: value.ReasoningOutput}, duration, err
+}
 
 func (c *CodexAppServer) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
 	raw, usage, duration, err := c.invoke(ctx, buildPlanningPrompt(run, observation, knowledge), c.planSchema, c.planning)
@@ -543,4 +552,32 @@ func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, 
 		status = "failed"
 	}
 	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: model.Model, Effort: model.Effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+}
+
+func resolveExecutable(root, value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		value = "codex.exe"
+	}
+	if strings.ContainsAny(value, `\\/`) {
+		if !filepath.IsAbs(value) {
+			value = filepath.Join(root, value)
+		}
+		absolute, err := filepath.Abs(value)
+		if err != nil {
+			return "", err
+		}
+		info, err := os.Stat(absolute)
+		if err != nil {
+			return "", fmt.Errorf("Codex executable: %w", err)
+		}
+		if info.IsDir() {
+			return "", errors.New("Codex executable points to a directory")
+		}
+		return absolute, nil
+	}
+	found, err := exec.LookPath(value)
+	if err != nil {
+		return "", fmt.Errorf("find Codex executable %q: %w", value, err)
+	}
+	return found, nil
 }

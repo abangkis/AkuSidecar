@@ -55,6 +55,7 @@ $("#retry-button").addEventListener("click", () => {
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
+$("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
 $("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
@@ -192,11 +193,16 @@ function renderSettings(settings) {
   $("#default-presentation").value = settings.defaultPresentation || "source";
   $("#stream-width").value = settings.streamWidth || "social";
   $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
+  $("#semantic-event-mode").value = settings.semanticEventMode || "collapse";
+  $("#semantic-event-shortlist").value = String(settings.semanticEventShortlist || 10);
+  $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
+  $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
   $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
   applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
   syncLoadProfileSettings(false);
+  syncSemanticEventSettings();
 }
 
 async function saveSettings(event) {
@@ -229,6 +235,10 @@ async function saveSettings(event) {
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
     timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
+    semanticEventMode: $("#semantic-event-mode").value,
+    semanticEventShortlist: Number.parseInt($("#semantic-event-shortlist").value, 10),
+    knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
+    knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
   };
   const status = $("#runtime-settings-status");
   status.textContent = "Saving…";
@@ -256,6 +266,12 @@ function syncLoadProfileSettings(applyPreset) {
   $("#timeline-capacity").disabled = !custom;
   $("#max-items-per-source").disabled = !custom;
   $("#max-scrolls").disabled = !custom;
+}
+
+function syncSemanticEventSettings() {
+  const disabled = $("#semantic-event-mode").value === "show_all";
+  $("#semantic-event-shortlist").disabled = disabled;
+  $("#semantic-event-shortlist").closest(".settings-row")?.classList.toggle("settings-row-disabled", disabled);
 }
 
 function applyStreamWidth(value) {
@@ -774,7 +790,7 @@ function buildInboxSession(session, expanded) {
   identity.append(title, status);
   const flow = document.createElement("span");
   flow.className = "inbox-flow-summary";
-  flow.textContent = `${session.capturedCandidates} captured \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} added`;
+  flow.textContent = `${session.capturedCandidates} captured \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} unique${session.duplicateReports ? ` + ${session.duplicateReports} duplicate` : ""}`;
   summary.append(identity, flow);
   const body = document.createElement("div");
   body.className = "inbox-session-body";
@@ -784,9 +800,30 @@ function buildInboxSession(session, expanded) {
   const runs = document.createElement("div");
   runs.className = "inbox-runs";
   runs.append(...(session.runs ?? []).map(buildInboxRun));
-  body.append(duration, runs);
+  body.append(duration);
+  if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
+  body.append(runs);
   details.append(summary, body);
   return details;
+}
+
+function buildEventResolutionDiagnostic(value) {
+  const diagnostic = document.createElement("section");
+  diagnostic.className = `event-resolution-diagnostic event-resolution-${value.status}`;
+  const title = document.createElement("strong");
+  title.textContent = value.status === "failed" ? "Semantic event resolution degraded safely" : "Semantic event resolution";
+  const detail = document.createElement("span");
+  detail.textContent = value.status === "failed"
+    ? `${value.error?.message || "Resolver unavailable"}. Reports remained unique.`
+    : [
+        `${value.uniqueItems} unique`,
+        `${value.duplicateReports} duplicate reports`,
+        `${value.shortlistCount} shortlisted threads`,
+        value.provider === "local-index" ? "local index only" : `${value.provider}${value.durationMs ? ` \u00b7 ${formatDuration(value.durationMs)}` : ""}`,
+        value.usage?.inputTokens != null ? `${value.usage.inputTokens} input / ${value.usage.outputTokens ?? 0} output tokens` : null,
+      ].filter(Boolean).join(" \u00b7 ");
+  diagnostic.append(title, detail);
+  return diagnostic;
 }
 
 function buildInboxRun(run) {
@@ -854,11 +891,15 @@ function inboxStatusTone(status) {
 function renderTimeline(items, latestCheck) {
   const container = $("#result-items");
   container.replaceChildren();
-  $("#timeline-meta").textContent = latestCheck
-    ? latestCheck.addedItems
-      ? `${latestCheck.addedItems} new item${latestCheck.addedItems === 1 ? "" : "s"} from the latest check`
-      : "No new items from the latest check"
-    : "No completed check yet.";
+  if (latestCheck) {
+    const unique = latestCheck.addedItems ?? 0;
+    const duplicates = latestCheck.duplicateReports ?? 0;
+    const parts = [unique ? `${unique} new item${unique === 1 ? "" : "s"}` : "No new items"];
+    if (duplicates) parts.push(`${duplicates} duplicate report${duplicates === 1 ? "" : "s"}`);
+    $("#timeline-meta").textContent = `${parts.join(" \u00b7 ")} from the latest check`;
+  } else {
+    $("#timeline-meta").textContent = "No completed check yet.";
+  }
   $("#finish-stats").textContent = items.length
     ? `Shown: ${items.length} · bounded local evidence · personalized across sources`
     : "Check active sources to establish the finite timeline.";
@@ -906,6 +947,43 @@ function renderTimeline(items, latestCheck) {
 }
 
 function buildTimelineItem(entry) {
+  if (entry.semanticEvent?.relation === "duplicate_report") return buildCollapsedDuplicate(entry);
+  return buildExpandedTimelineItem(entry);
+}
+
+function buildCollapsedDuplicate(entry) {
+  const container = document.createElement("article");
+  container.className = "presentable-item semantic-duplicate-item";
+  const summary = document.createElement("div");
+  summary.className = "semantic-duplicate-summary";
+  const copy = document.createElement("div");
+  const label = document.createElement("span");
+  label.className = "semantic-duplicate-label";
+  label.textContent = "Cross-author semantic duplicate";
+  const claim = document.createElement("strong");
+  claim.textContent = entry.semanticEvent.canonicalClaim || entry.item?.whatChanged || "Same reported event";
+  const provenance = document.createElement("small");
+  provenance.textContent = [sourceLabel(entry.source), entry.item?.author, `${entry.semanticEvent.reportCount || 2} reports in this event`].filter(Boolean).join(" \u00b7 ");
+  copy.append(label, claim, provenance);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "secondary-button semantic-duplicate-toggle";
+  toggle.textContent = "Show report";
+  toggle.setAttribute("aria-expanded", "false");
+  const report = buildExpandedTimelineItem(entry);
+  report.classList.add("semantic-duplicate-report", "hidden");
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    toggle.textContent = expanded ? "Show report" : "Hide report";
+    report.classList.toggle("hidden", expanded);
+  });
+  summary.append(copy, toggle);
+  container.append(summary, report);
+  return container;
+}
+
+function buildExpandedTimelineItem(entry) {
   const container = document.createElement("article");
   container.className = "presentable-item";
   const toolbar = document.createElement("div");
@@ -1156,7 +1234,118 @@ function buildActions(entry) {
   });
   feedback.append(more, less, reason);
   actions.append(link, feedback);
+  if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
+}
+
+function buildSemanticCorrectionActions(entry) {
+  const controls = document.createElement("div");
+  controls.className = "semantic-correction-actions";
+  const context = document.createElement("span");
+  context.textContent = entry.semanticEvent.corrected
+    ? "Event relationship corrected by you."
+    : `${humanize(entry.semanticEvent.relation)} · ${Math.round((entry.semanticEvent.confidence || 0) * 100)}% confidence`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "event-correction-button";
+  button.textContent = entry.semanticEvent.corrected
+    ? "Undo correction"
+    : entry.semanticEvent.relation === "duplicate_report" ? "Not the same event" : "Same event…";
+  button.disabled = entry.semanticEvent.corrected && !entry.semanticEvent.correctionId;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      if (entry.semanticEvent.corrected) {
+        await api(`/api/event-corrections/${encodeURIComponent(entry.semanticEvent.correctionId)}/undo`, { method: "POST" });
+        await refreshTimeline();
+        clearNotice();
+      } else if (entry.semanticEvent.relation === "duplicate_report") {
+        await applySemanticCorrection(entry.id, "not_same_event", "");
+      } else {
+        await showEventSuggestions(entry, controls, button);
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  controls.append(context, button);
+  return controls;
+}
+
+async function showEventSuggestions(entry, controls, trigger) {
+  const { suggestions = [] } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/event-suggestions?limit=3`);
+  controls.querySelector(".event-suggestion-editor")?.remove();
+  if (!suggestions.length) {
+    const message = document.createElement("span");
+    message.className = "event-suggestion-editor";
+    message.textContent = "No plausible retained event thread found.";
+    controls.append(message);
+    return;
+  }
+  const editor = document.createElement("span");
+  editor.className = "event-suggestion-editor";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Choose the same semantic event");
+  for (const suggestion of suggestions) {
+    const option = document.createElement("option");
+    option.value = suggestion.eventId;
+    option.textContent = `${suggestion.canonicalClaim} (${suggestion.reportCount} reports)`;
+    select.append(option);
+  }
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.textContent = "Confirm";
+  confirm.addEventListener("click", async () => {
+    confirm.disabled = true;
+    trigger.disabled = true;
+    try {
+      await applySemanticCorrection(entry.id, "same_event", select.value);
+    } catch (error) {
+      showError(error);
+      confirm.disabled = false;
+      trigger.disabled = false;
+    }
+  });
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => editor.remove());
+  editor.append(select, confirm, cancel);
+  controls.append(editor);
+}
+
+async function applySemanticCorrection(timelineId, action, targetEventId) {
+  const { correction } = await api(`/api/timeline/${encodeURIComponent(timelineId)}/event-correction`, {
+    method: "POST",
+    body: { action, targetEventId },
+  });
+  await refreshTimeline();
+  showCorrectionNotice(correction);
+}
+
+function showCorrectionNotice(correction) {
+  const notice = $("#provider-notice");
+  notice.className = "notice notice-complete correction-notice";
+  notice.setAttribute("role", "status");
+  notice.replaceChildren();
+  const message = document.createElement("span");
+  message.textContent = correction.action === "not_same_event" ? "Event split applied." : "Reports merged into the selected event.";
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.textContent = "Undo";
+  undo.addEventListener("click", async () => {
+    undo.disabled = true;
+    try {
+      await api(`/api/event-corrections/${encodeURIComponent(correction.id)}/undo`, { method: "POST" });
+      await refreshTimeline();
+      clearNotice();
+    } catch (error) {
+      showError(error);
+    }
+  });
+  notice.append(message, undo);
 }
 
 function buildSourceLink(entry) {

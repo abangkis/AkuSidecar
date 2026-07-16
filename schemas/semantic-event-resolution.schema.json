@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "candidateAlias": { "type": "string", "pattern": "^candidate_[0-9]{3}$" },
+          "relation": {
+            "type": "string",
+            "enum": ["new_event", "duplicate_report", "material_update", "contradiction", "new_consequence", "context_only"]
+          },
+          "targetAlias": {
+            "type": ["string", "null"],
+            "pattern": "^(candidate|event)_[0-9]{3}$"
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "reason": { "type": "string", "maxLength": 500 },
+          "event": {
+            "type": "object",
+            "properties": {
+              "canonicalClaim": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "actor": { "type": "string", "maxLength": 160 },
+              "action": { "type": "string", "maxLength": 160 },
+              "object": { "type": "string", "maxLength": 200 },
+              "eventKind": { "type": "string", "maxLength": 80 },
+              "eventStart": { "type": ["string", "null"] },
+              "eventEnd": { "type": ["string", "null"] },
+              "aliases": {
+                "type": "array",
+                "maxItems": 8,
+                "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+              }
+            },
+            "required": ["canonicalClaim", "actor", "action", "object", "eventKind", "eventStart", "eventEnd", "aliases"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["candidateAlias", "relation", "targetAlias", "confidence", "reason", "event"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["decisions"],
+  "additionalProperties": false
+}

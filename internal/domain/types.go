@@ -13,6 +13,9 @@ const (
 	ApplicationVersion        = "1.0.0-dev.5"
 	BridgeContractVersion     = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX = 36
+	DefaultSemanticShortlist  = 10
+	DefaultRetentionDays      = 30
+	DefaultStorageLimitMB     = 100
 )
 
 type Source string
@@ -40,6 +43,10 @@ type Settings struct {
 	DefaultPresentation       string   `json:"defaultPresentation"`
 	StreamWidth               string   `json:"streamWidth"`
 	TimelineBatchGapPX        int      `json:"timelineBatchGapPx"`
+	SemanticEventMode         string   `json:"semanticEventMode"`
+	SemanticEventShortlist    int      `json:"semanticEventShortlist"`
+	KnowledgeRetentionDays    int      `json:"knowledgeRetentionDays"`
+	KnowledgeStorageLimitMB   int      `json:"knowledgeStorageLimitMb"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -54,6 +61,10 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		DefaultPresentation:       "source",
 		StreamWidth:               "social",
 		TimelineBatchGapPX:        DefaultTimelineBatchGapPX,
+		SemanticEventMode:         "collapse",
+		SemanticEventShortlist:    DefaultSemanticShortlist,
+		KnowledgeRetentionDays:    DefaultRetentionDays,
+		KnowledgeStorageLimitMB:   DefaultStorageLimitMB,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -86,6 +97,18 @@ func (s *Settings) Normalize() {
 	if s.TimelineBatchGapPX == 0 {
 		s.TimelineBatchGapPX = DefaultTimelineBatchGapPX
 	}
+	if s.SemanticEventMode == "" {
+		s.SemanticEventMode = "collapse"
+	}
+	if s.SemanticEventShortlist == 0 {
+		s.SemanticEventShortlist = DefaultSemanticShortlist
+	}
+	if s.KnowledgeRetentionDays == 0 {
+		s.KnowledgeRetentionDays = DefaultRetentionDays
+	}
+	if s.KnowledgeStorageLimitMB == 0 {
+		s.KnowledgeStorageLimitMB = DefaultStorageLimitMB
+	}
 	s.ApplyProfile()
 }
 
@@ -107,6 +130,18 @@ func (s Settings) Validate() error {
 	}
 	if s.TimelineBatchGapPX < 16 || s.TimelineBatchGapPX > 80 {
 		return errors.New("timelineBatchGapPx must be between 16 and 80")
+	}
+	if s.SemanticEventMode != "collapse" && s.SemanticEventMode != "show_all" && s.SemanticEventMode != "hide" {
+		return fmt.Errorf("unsupported semantic event mode %q", s.SemanticEventMode)
+	}
+	if s.SemanticEventShortlist != 5 && s.SemanticEventShortlist != 10 && s.SemanticEventShortlist != 15 {
+		return errors.New("semanticEventShortlist must be 5, 10, or 15")
+	}
+	if s.KnowledgeRetentionDays != 30 && s.KnowledgeRetentionDays != 60 && s.KnowledgeRetentionDays != 90 {
+		return errors.New("knowledgeRetentionDays must be 30, 60, or 90")
+	}
+	if s.KnowledgeStorageLimitMB != 100 && s.KnowledgeStorageLimitMB != 200 && s.KnowledgeStorageLimitMB != 300 && s.KnowledgeStorageLimitMB != 400 && s.KnowledgeStorageLimitMB != 500 && s.KnowledgeStorageLimitMB != 1024 {
+		return errors.New("knowledgeStorageLimitMb must be 100, 200, 300, 400, 500, or 1024")
 	}
 	if s.MaxScrolls < 0 || s.MaxScrolls > 6 {
 		return errors.New("maxScrolls must be between 0 and 6")
@@ -184,25 +219,28 @@ type Run struct {
 }
 
 type InboxSession struct {
-	ID                  string     `json:"id"`
-	Intent              string     `json:"intent"`
-	Status              string     `json:"status"`
-	CreatedAt           string     `json:"createdAt"`
-	StartedAt           *string    `json:"startedAt"`
-	CompletedAt         *string    `json:"completedAt"`
-	CapturedCandidates  int        `json:"capturedCandidates"`
-	EvaluatedCandidates int        `json:"evaluatedCandidates"`
-	SelectedCandidates  int        `json:"selectedCandidates"`
-	AddedItems          int        `json:"addedItems"`
-	Runs                []InboxRun `json:"runs"`
-	Error               *Failure   `json:"error"`
+	ID                  string                  `json:"id"`
+	Intent              string                  `json:"intent"`
+	Status              string                  `json:"status"`
+	CreatedAt           string                  `json:"createdAt"`
+	StartedAt           *string                 `json:"startedAt"`
+	CompletedAt         *string                 `json:"completedAt"`
+	CapturedCandidates  int                     `json:"capturedCandidates"`
+	EvaluatedCandidates int                     `json:"evaluatedCandidates"`
+	SelectedCandidates  int                     `json:"selectedCandidates"`
+	AddedItems          int                     `json:"addedItems"`
+	DuplicateReports    int                     `json:"duplicateReports"`
+	EventResolution     *EventResolutionSummary `json:"eventResolution,omitempty"`
+	Runs                []InboxRun              `json:"runs"`
+	Error               *Failure                `json:"error"`
 }
 
 type TimelineCheckSummary struct {
-	SessionID   string `json:"sessionId"`
-	Status      string `json:"status"`
-	CompletedAt string `json:"completedAt"`
-	AddedItems  int    `json:"addedItems"`
+	SessionID        string `json:"sessionId"`
+	Status           string `json:"status"`
+	CompletedAt      string `json:"completedAt"`
+	AddedItems       int    `json:"addedItems"`
+	DuplicateReports int    `json:"duplicateReports"`
 }
 
 type InboxRun struct {
@@ -364,17 +402,131 @@ type ReasoningTelemetry struct {
 }
 
 type TimelineItem struct {
-	ID          string              `json:"id"`
-	SessionID   string              `json:"sessionId"`
-	RunID       string              `json:"runId"`
-	Source      Source              `json:"source"`
-	EvidenceKey string              `json:"evidenceKey"`
-	Rank        int                 `json:"rank"`
-	Item        ReasonedItem        `json:"item"`
-	Assessment  CandidateAssessment `json:"assessment"`
-	Evidence    *Block              `json:"evidence,omitempty"`
-	Coverage    map[string]any      `json:"coverage"`
-	CreatedAt   string              `json:"createdAt"`
+	ID            string                 `json:"id"`
+	SessionID     string                 `json:"sessionId"`
+	RunID         string                 `json:"runId"`
+	Source        Source                 `json:"source"`
+	EvidenceKey   string                 `json:"evidenceKey"`
+	Rank          int                    `json:"rank"`
+	Item          ReasonedItem           `json:"item"`
+	Assessment    CandidateAssessment    `json:"assessment"`
+	Evidence      *Block                 `json:"evidence,omitempty"`
+	SemanticEvent *TimelineSemanticEvent `json:"semanticEvent,omitempty"`
+	Coverage      map[string]any         `json:"coverage"`
+	CreatedAt     string                 `json:"createdAt"`
+}
+
+type SemanticEvent struct {
+	ID             string   `json:"id"`
+	CanonicalClaim string   `json:"canonicalClaim"`
+	Actor          string   `json:"actor"`
+	Action         string   `json:"action"`
+	Object         string   `json:"object"`
+	EventKind      string   `json:"eventKind"`
+	EventStart     *string  `json:"eventStart"`
+	EventEnd       *string  `json:"eventEnd"`
+	Aliases        []string `json:"aliases"`
+	ReportCount    int      `json:"reportCount"`
+	FirstSeenAt    string   `json:"firstSeenAt"`
+	LastSeenAt     string   `json:"lastSeenAt"`
+}
+
+type SemanticCandidate struct {
+	Alias       string       `json:"alias"`
+	TimelineID  string       `json:"timelineId"`
+	SessionID   string       `json:"sessionId"`
+	RunID       string       `json:"runId"`
+	EvidenceKey string       `json:"evidenceKey"`
+	Source      Source       `json:"source"`
+	Author      string       `json:"author"`
+	PublishedAt *string      `json:"publishedAt"`
+	Text        string       `json:"text"`
+	WhatChanged string       `json:"whatChanged"`
+	EventKey    string       `json:"eventKey"`
+	TopicTags   []string     `json:"topicTags"`
+	Item        ReasonedItem `json:"-"`
+}
+
+type SemanticDecision struct {
+	CandidateAlias string        `json:"candidateAlias"`
+	Relation       string        `json:"relation"`
+	TargetAlias    *string       `json:"targetAlias"`
+	Confidence     float64       `json:"confidence"`
+	Reason         string        `json:"reason"`
+	Event          SemanticEvent `json:"event"`
+}
+
+type SemanticResolution struct {
+	Decisions []SemanticDecision `json:"decisions"`
+}
+
+type ResolvedSemanticReport struct {
+	Candidate  SemanticCandidate `json:"candidate"`
+	Event      SemanticEvent     `json:"event"`
+	Relation   string            `json:"relation"`
+	Confidence float64           `json:"confidence"`
+	Reason     string            `json:"reason"`
+	Corrected  bool              `json:"corrected"`
+}
+
+type TimelineSemanticEvent struct {
+	EventID        string  `json:"eventId"`
+	CanonicalClaim string  `json:"canonicalClaim"`
+	Relation       string  `json:"relation"`
+	Confidence     float64 `json:"confidence"`
+	Reason         string  `json:"reason"`
+	ReportCount    int     `json:"reportCount"`
+	Corrected      bool    `json:"corrected"`
+	CorrectionID   string  `json:"correctionId,omitempty"`
+}
+
+type ModelUsage struct {
+	Input           *int64 `json:"inputTokens"`
+	CachedInput     *int64 `json:"cachedInputTokens"`
+	Output          *int64 `json:"outputTokens"`
+	ReasoningOutput *int64 `json:"reasoningOutputTokens"`
+}
+
+type EventResolutionSummary struct {
+	SessionID        string     `json:"sessionId"`
+	Status           string     `json:"status"`
+	Provider         string     `json:"provider"`
+	Model            string     `json:"model"`
+	Effort           string     `json:"effort"`
+	CandidateCount   int        `json:"candidateCount"`
+	ShortlistCount   int        `json:"shortlistCount"`
+	UniqueItems      int        `json:"uniqueItems"`
+	DuplicateReports int        `json:"duplicateReports"`
+	DurationMS       int64      `json:"durationMs"`
+	Usage            ModelUsage `json:"usage"`
+	Error            *Failure   `json:"error,omitempty"`
+	CreatedAt        string     `json:"createdAt"`
+}
+
+type EventSuggestion struct {
+	EventID        string `json:"eventId"`
+	CanonicalClaim string `json:"canonicalClaim"`
+	Actor          string `json:"actor"`
+	Object         string `json:"object"`
+	ReportCount    int    `json:"reportCount"`
+	LastSeenAt     string `json:"lastSeenAt"`
+}
+
+type EventCorrection struct {
+	ID          string  `json:"id"`
+	TimelineID  string  `json:"timelineId"`
+	Action      string  `json:"action"`
+	FromEventID string  `json:"fromEventId"`
+	ToEventID   string  `json:"toEventId"`
+	CreatedAt   string  `json:"createdAt"`
+	UndoneAt    *string `json:"undoneAt,omitempty"`
+}
+
+type RetentionResult struct {
+	RemovedSessions int   `json:"removedSessions"`
+	RemovedEvents   int   `json:"removedEvents"`
+	DatabaseBytes   int64 `json:"databaseBytes"`
+	LimitBytes      int64 `json:"limitBytes"`
 }
 
 type Feedback struct {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/selection"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -44,12 +45,17 @@ type Engine struct {
 	active    map[string]context.CancelFunc
 	logger    Logger
 	reloads   *ReloadActions
+	events    *semanticengine.Engine
 }
 
 type Logger interface{ Printf(string, ...any) }
 
-func New(state *store.Store, provider reasoning.Provider, cfg config.Config, logger Logger) *Engine {
-	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second)}
+func New(state *store.Store, provider reasoning.Provider, cfg config.Config, logger Logger, eventEngines ...*semanticengine.Engine) *Engine {
+	var events *semanticengine.Engine
+	if len(eventEngines) > 0 {
+		events = eventEngines[0]
+	}
+	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events}
 }
 func (e *Engine) Epoch() string        { return e.epoch }
 func (e *Engine) ProviderName() string { return e.provider.Name() }
@@ -63,7 +69,14 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	if err := e.store.SaveSettings(ctx, value); err != nil {
 		return domain.Settings{}, err
 	}
-	return e.store.GetSettings(ctx)
+	saved, err := e.store.GetSettings(ctx)
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	if _, err := e.store.EnforceRetention(ctx, saved); err != nil {
+		return domain.Settings{}, fmt.Errorf("apply retention settings: %w", err)
+	}
+	return saved, nil
 }
 func (e *Engine) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
 	return e.store.Onboarding(ctx)
@@ -220,11 +233,23 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		return run, err
 	}
 	if run == nil {
+		settings, settingsErr := e.store.GetSettings(ctx)
+		if settingsErr != nil {
+			return nil, settingsErr
+		}
+		if e.events != nil && settings.SemanticEventMode != "show_all" {
+			if _, eventErr := e.events.ProcessSession(ctx, sessionID, settings); eventErr != nil {
+				e.logger.Printf("semantic event resolution for session %s degraded safely: %v", sessionID, eventErr)
+			}
+		}
 		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
 			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
 		}
 		if finalizeErr := e.store.FinalizeSession(ctx, sessionID); finalizeErr != nil {
 			return nil, fmt.Errorf("finalize unified session: %w", finalizeErr)
+		}
+		if _, retentionErr := e.store.EnforceRetention(ctx, settings); retentionErr != nil {
+			e.logger.Printf("retention after session %s failed: %v", sessionID, retentionErr)
 		}
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
@@ -618,6 +643,19 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 }
 func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domain.Feedback) (domain.Feedback, error) {
 	return e.store.AddFeedback(ctx, timelineID, value)
+}
+func (e *Engine) SemanticEventSuggestions(ctx context.Context, timelineID string, limit int) ([]domain.EventSuggestion, error) {
+	return e.store.SuggestSemanticEvents(ctx, timelineID, limit)
+}
+func (e *Engine) CorrectSemanticEvent(ctx context.Context, timelineID, action, targetEventID string) (domain.EventCorrection, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.CorrectSemanticEvent(ctx, timelineID, action, targetEventID)
+}
+func (e *Engine) UndoSemanticCorrection(ctx context.Context, id string) (domain.EventCorrection, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.UndoSemanticCorrection(ctx, id)
 }
 func (e *Engine) ResetLearning(ctx context.Context) error {
 	e.operation.Lock()

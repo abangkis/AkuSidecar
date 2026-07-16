@@ -31,8 +31,8 @@ runtime/codex-cli/codex-resources/
 `config/sidecar.json` points to that location. The default Go provider owns one
 managed `codex app-server` stdio process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
-structured token telemetry. `codex-exec` remains available only as an explicit
-process-per-request conformance transport.
+structured token telemetry. Candidate evaluation and semantic event resolution
+are separate schema-bound adapters over this one transport.
 
 An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
@@ -109,7 +109,7 @@ Built-in bounded-load profiles remain:
 ## Fresh database
 
 The database defaults to `runtime/aku-sidecar.db`. Schema version 2 is created
-as one transaction and contains only the fifteen active tables documented in
+as one transaction and contains only the active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md).
 
 There is no importer for the Node database. A mismatched schema fails closed;
@@ -133,6 +133,9 @@ delete or move the development database and start again.
 - `GET /api/runs/{id}`
 - `GET /api/timeline`
 - `POST /api/timeline/{id}/feedback`
+- `GET /api/timeline/{id}/event-suggestions`
+- `POST /api/timeline/{id}/event-correction`
+- `POST /api/event-corrections/{id}/undo`
 - `POST /api/bridge/heartbeat`
 - `GET /api/bridge/health`
 - `GET /api/bridge/commands/next`
@@ -177,6 +180,20 @@ protected. Exact delivered evidence is excluded, semantic context without a
 material delta is not re-added, and a valid update may finish with zero
 additions. Completed source runs are composed into one global personalized
 order with a diversity guard rather than strict X/LinkedIn round-robin.
+
+A separate Event Engine groups selected cross-author and cross-source reports
+after source runs finish. Go retrieves a global bounded shortlist from the
+local event index; Codex App Server proposes only typed relationships. The
+default collapses true duplicate reports while keeping them inspectable. Show
+all bypasses the engine, and Hide removes duplicate reports from the Timeline.
+Only `duplicate_report` is capacity-free; material updates, contradictions,
+new consequences, and context remain unique. Automatic merging requires 0.92
+confidence, and user corrections create undoable local constraints.
+
+The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
+uses paired age and storage boundaries: 30/60/90 days and
+100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
+either boundary trims the oldest terminal history and orphaned event threads.
 
 ## Removed by design
 

@@ -199,4 +199,80 @@ CREATE TABLE IF NOT EXISTS knowledge_events (
 );
 
 CREATE INDEX IF NOT EXISTS knowledge_source_last_seen ON knowledge_events(source, last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS semantic_events (
+  id TEXT PRIMARY KEY,
+  canonical_claim TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL DEFAULT '',
+  object TEXT NOT NULL DEFAULT '',
+  event_kind TEXT NOT NULL DEFAULT 'other',
+  event_start TEXT,
+  event_end TEXT,
+  aliases_json TEXT NOT NULL DEFAULT '[]',
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS semantic_events_last_seen ON semantic_events(last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS semantic_event_reports (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
+  timeline_id TEXT NOT NULL UNIQUE REFERENCES timeline_items(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  relation TEXT NOT NULL CHECK (relation IN ('new_event','duplicate_report','material_update','contradiction','new_consequence','context_only')),
+  confidence REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+  reason TEXT NOT NULL DEFAULT '',
+  corrected INTEGER NOT NULL DEFAULT 0 CHECK (corrected IN (0,1)),
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS semantic_reports_event_created ON semantic_event_reports(event_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS semantic_reports_session_relation ON semantic_event_reports(session_id, relation);
+
+CREATE TABLE IF NOT EXISTS semantic_event_constraints (
+  evidence_key TEXT NOT NULL,
+  event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('must_merge','must_not_merge')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(evidence_key, event_id)
+);
+
+CREATE TABLE IF NOT EXISTS event_resolution_invocations (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('completed','failed','bypassed')),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  effort TEXT NOT NULL,
+  candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
+  shortlist_count INTEGER NOT NULL CHECK (shortlist_count >= 0),
+  unique_items INTEGER NOT NULL CHECK (unique_items >= 0),
+  duplicate_reports INTEGER NOT NULL CHECK (duplicate_reports >= 0),
+  duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+  input_tokens INTEGER,
+  cached_input_tokens INTEGER,
+  output_tokens INTEGER,
+  reasoning_output_tokens INTEGER,
+  error_json TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS semantic_event_corrections (
+  id TEXT PRIMARY KEY,
+  report_id TEXT NOT NULL REFERENCES semantic_event_reports(id) ON DELETE CASCADE,
+  timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('not_same_event','same_event')),
+  from_event_id TEXT NOT NULL,
+  from_relation TEXT NOT NULL,
+  to_event_id TEXT NOT NULL,
+  to_relation TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  undone_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
 `
