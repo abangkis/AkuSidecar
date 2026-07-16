@@ -28,6 +28,7 @@ body {
 }
 button, select, input { font: inherit; }
 button, select, input, a { outline-color: var(--accent); outline-offset: 3px; }
+[tabindex="-1"]:focus { outline: none; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
 .hidden { display: none !important; }

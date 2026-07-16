@@ -238,7 +238,7 @@ function showOnboarding(editing) {
   $("#onboarding-source-x").checked = sources.includes("x");
   $("#onboarding-source-linkedin").checked = sources.includes("linkedin");
   $("#onboarding-cancel").classList.toggle("hidden", !editing);
-  $("#onboarding-finish").textContent = editing ? "Save profile" : "Start first update";
+  $("#onboarding-finish").textContent = editing ? "Save profile" : "Start calibrating";
   $("#onboarding-error").textContent = "";
   $("#settings-panel").classList.add("hidden");
   $("#timeline-panel").classList.add("hidden");
@@ -254,7 +254,7 @@ function showOnboarding(editing) {
 function updateOnboardingSummary() {
   const count = document.querySelectorAll("#onboarding-form input[type='checkbox']:checked").length;
   $("#onboarding-summary").textContent = count
-    ? `${count} source feed${count === 1 ? "" : "s"} selected · first update and calibration start automatically`
+    ? `${count} source feed${count === 1 ? "" : "s"} selected · ready to calibrate your Timeline`
     : "Choose at least one source feed.";
 }
 
