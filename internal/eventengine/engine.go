@@ -16,7 +16,7 @@ import (
 const (
 	AutoMergeThreshold       = 0.92
 	localCatalogLimit        = 2000
-	historicalOverlapMinimum = 2
+	historicalOverlapMinimum = 3
 	intraCheckOverlapMinimum = 3
 )
 

@@ -25,6 +25,8 @@ const state = {
   calibrationOrdinal: 0,
   resetOperation: null,
   backToTopFrame: null,
+  backToTopLastScrollY: 0,
+  backToTopBoundary: null,
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -407,11 +409,11 @@ function scheduleBackToTop() {
     state.backToTopFrame = null;
     const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
     $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
-    syncBackToTopPosition();
+    syncBackToTopPosition(top);
   });
 }
 
-function syncBackToTopPosition() {
+function syncBackToTopPosition(top) {
   const candidates = state.currentView === "timeline"
     ? [$("#result-panel"), document.querySelector(".timeline-heading-row")]
     : state.currentView === "inbox"
@@ -425,6 +427,7 @@ function syncBackToTopPosition() {
   const anchorRect = anchor?.getBoundingClientRect();
   const buttonWidth = window.innerWidth <= 700 ? 44 : 48;
   const gap = 30;
+  syncBackToTopBoundaryPosition(top, buttonWidth);
   if (anchorRect && window.innerWidth - anchorRect.right >= buttonWidth + gap * 2) {
     $("#back-to-top").style.left = `${Math.round(anchorRect.right + gap)}px`;
     $("#back-to-top").style.right = "auto";
@@ -432,6 +435,49 @@ function syncBackToTopPosition() {
   }
   $("#back-to-top").style.removeProperty("left");
   $("#back-to-top").style.removeProperty("right");
+}
+
+function syncBackToTopBoundaryPosition(top, buttonHeight) {
+  const button = $("#back-to-top");
+  const delta = top - state.backToTopLastScrollY;
+  state.backToTopLastScrollY = top;
+  if (state.currentView !== "timeline" || delta < -1 || top < BACK_TO_TOP_THRESHOLD_PX) {
+    releaseBackToTopBoundary();
+    return;
+  }
+
+  const restBottom = window.innerWidth <= 700 ? 14 : 20;
+  const safeTop = 16 + buttonHeight / 2;
+  const acquisitionBottom = window.innerHeight;
+  const linePosition = (marker) => marker?.isConnected ? marker.getBoundingClientRect().bottom : Number.NaN;
+  let marker = state.backToTopBoundary;
+  let lineY = linePosition(marker);
+  const markerVisible = Number.isFinite(lineY) && lineY >= safeTop && lineY <= acquisitionBottom;
+
+  if (marker && !markerVisible) {
+    releaseBackToTopBoundary();
+    marker = null;
+  }
+  if (!marker && delta > 1) {
+    marker = [...document.querySelectorAll(".timeline-older-batch-marker")].find((candidate) => {
+      const candidateY = linePosition(candidate);
+      return Number.isFinite(candidateY) && candidateY >= safeTop && candidateY <= acquisitionBottom;
+    }) ?? null;
+    lineY = linePosition(marker);
+  }
+  if (!marker || !Number.isFinite(lineY)) return;
+
+  state.backToTopBoundary = marker;
+  button.classList.add("is-following-boundary");
+  const bottom = Math.max(restBottom, window.innerHeight - lineY - buttonHeight / 2);
+  button.style.setProperty("--back-to-top-bottom", `${Math.round(bottom)}px`);
+}
+
+function releaseBackToTopBoundary() {
+  state.backToTopBoundary = null;
+  const button = $("#back-to-top");
+  button.classList.remove("is-following-boundary");
+  button.style.removeProperty("--back-to-top-bottom");
 }
 
 function returnToTop() {

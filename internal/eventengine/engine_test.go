@@ -21,6 +21,15 @@ func TestShortlistIsGloballyBounded(t *testing.T) {
 	}
 }
 
+func TestHistoricalShortlistRejectsGenericHiringOverlap(t *testing.T) {
+	candidates := []domain.SemanticCandidate{{Alias: "candidate_001", WhatChanged: "PT ALTO Network announced that it is expanding its team and hiring applicants.", EventKey: "alto-network-team-expansion", TopicTags: []string{"hiring", "fintech", "Indonesia"}}}
+	events := []domain.SemanticEvent{{ID: "event-google-hiring", CanonicalClaim: "Logan Kilpatrick announced that Google AI Studio is hiring a TPM lead.", Actor: "Logan Kilpatrick", Object: "Google AI Studio TPM lead", Aliases: []string{"Google AI Studio", "TPM lead", "AI hiring"}}}
+	shortlist, signal := rankShortlist(candidates, events, 5)
+	if len(shortlist) != 0 || signal.Strong {
+		t.Fatalf("generic hiring overlap reached resolver: shortlist=%+v signal=%+v", shortlist, signal)
+	}
+}
+
 func TestObservedGenericAndPlatformTokensDoNotTriggerResolver(t *testing.T) {
 	candidates := []domain.SemanticCandidate{
 		{Alias: "candidate_001", WhatChanged: "Logan shared a LinkedIn post toward a hiring goal https://lnkd.in/example", EventKey: "google-ai-studio-hiring", TopicTags: []string{"hiring", "google-ai-studio"}},

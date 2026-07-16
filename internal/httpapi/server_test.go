@@ -80,7 +80,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "semantic-event-shortlist", "knowledge-retention-days", "knowledge-storage-limit"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
 		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", ".semantic-duplicate-item", ".paired-setting-control"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
