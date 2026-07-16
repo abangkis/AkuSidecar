@@ -299,6 +299,21 @@ type BridgeCommand struct {
 	ClaimedAt *string        `json:"claimedAt"`
 }
 
+type MediaRecapture struct {
+	ID          string         `json:"id"`
+	TimelineID  string         `json:"timelineId"`
+	Source      Source         `json:"source"`
+	TargetURL   string         `json:"targetUrl"`
+	EvidenceKey string         `json:"evidenceKey"`
+	Status      string         `json:"status"`
+	Outcome     string         `json:"outcome,omitempty"`
+	Payload     map[string]any `json:"payload,omitempty"`
+	CreatedAt   string         `json:"createdAt"`
+	ClaimedAt   *string        `json:"claimedAt,omitempty"`
+	CompletedAt *string        `json:"completedAt,omitempty"`
+	Error       *Failure       `json:"error,omitempty"`
+}
+
 type BridgeHeartbeat struct {
 	BridgeID         string              `json:"bridgeId"`
 	ExtensionVersion string              `json:"extensionVersion"`
@@ -651,17 +666,14 @@ func (f Feedback) Validate() error {
 	if f.Direction != "more" && f.Direction != "less" {
 		return errors.New("direction must be more or less")
 	}
-	if f.Reason == nil {
+	if f.Direction == "more" && f.Reason == nil {
 		return nil
 	}
-	allowed := map[string]bool{
-		"not_interested": true,
-		"already_knew":   true,
-		"old_info":       true,
-		"duplicate":      true,
+	if f.Direction == "more" {
+		return errors.New("More like this does not accept a reason")
 	}
-	if !allowed[*f.Reason] {
-		return fmt.Errorf("unsupported feedback reason %q", *f.Reason)
+	if f.Reason == nil || *f.Reason != "not_interested" {
+		return errors.New("Less like this requires the not_interested reason")
 	}
 	return nil
 }

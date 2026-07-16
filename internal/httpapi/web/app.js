@@ -28,6 +28,7 @@ const state = {
   backToTopFrame: null,
   backToTopLastScrollY: 0,
   backToTopBoundary: null,
+  mediaRecaptureActive: false,
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -663,9 +664,10 @@ function renderSession() {
 }
 
 function syncRunButtons() {
-  const disabled = Boolean(state.session) || Boolean(state.bootstrap?.calibration?.active) || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible;
+  const disabled = Boolean(state.session) || state.mediaRecaptureActive || Boolean(state.bootstrap?.calibration?.active) || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible;
   $("#timeline-runner-button").disabled = disabled;
   $("#done-button").disabled = disabled;
+  for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled;
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
 }
@@ -1158,7 +1160,7 @@ function buildSourceCard(entry) {
     unavailable.className = "source-layout-media-unavailable";
     const message = document.createElement("span");
     message.textContent = "Media was present at the source but unavailable in this captured view.";
-    unavailable.append(message, buildSourceLink(entry));
+    unavailable.append(message, buildMediaRecaptureButton(entry));
     card.append(unavailable);
   }
   const engagement = buildEngagement(evidence.engagement, source);
@@ -1283,31 +1285,17 @@ function buildActions(entry) {
   feedback.className = "feedback-actions";
   const more = feedbackButton("More like this");
   const less = feedbackButton("Less like this");
-  const reason = document.createElement("select");
-  reason.className = "feedback-reason hidden";
-  reason.setAttribute("aria-label", "Less-like-this reason");
-  for (const [value, label] of [["", "Optional reason"], ["not_interested", "Not interested"], ["already_knew", "Already knew"], ["old_info", "Old info"], ["duplicate", "Duplicate"]]) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    reason.append(option);
-  }
   more.addEventListener("click", async () => {
     await sendFeedback(entry.id, "more", null);
     more.classList.add("selected");
     less.classList.remove("selected");
-    reason.classList.add("hidden");
   });
   less.addEventListener("click", async () => {
-    await sendFeedback(entry.id, "less", reason.value || null);
+    await sendFeedback(entry.id, "less", "not_interested");
     less.classList.add("selected");
     more.classList.remove("selected");
-    reason.classList.remove("hidden");
   });
-  reason.addEventListener("change", () => {
-    if (reason.value) sendFeedback(entry.id, "less", reason.value);
-  });
-  feedback.append(more, less, reason);
+  feedback.append(more, less);
   actions.append(link, feedback);
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
@@ -1431,6 +1419,72 @@ function buildSourceLink(entry) {
   link.rel = "noopener noreferrer";
   link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
   return link;
+}
+
+function buildMediaRecaptureButton(entry) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "recapture-button";
+  button.textContent = "Recapture";
+  button.disabled = Boolean(state.session) || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible;
+  button.addEventListener("click", () => recaptureMedia(entry, button));
+  return button;
+}
+
+async function recaptureMedia(entry, button) {
+  if (state.session || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible) return;
+  state.mediaRecaptureActive = true;
+  button.disabled = true;
+  button.textContent = "Recapturing…";
+  syncRunButtons();
+  clearNotice();
+  try {
+    const { recapture } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/recapture`, { method: "POST" });
+    const completed = await dispatchMediaRecapture(recapture.id);
+    await refreshTimeline();
+    const notice = $("#provider-notice");
+    notice.className = "notice notice-complete";
+    notice.setAttribute("role", "status");
+    notice.textContent = completed?.outcome === "recovered"
+      ? "Media recaptured from the native post."
+      : "Recapture completed, but the source media is still unavailable.";
+  } catch (error) {
+    showError(error);
+    button.disabled = false;
+    button.textContent = "Recapture";
+  } finally {
+    state.mediaRecaptureActive = false;
+    syncRunButtons();
+  }
+}
+
+function dispatchMediaRecapture(recaptureId) {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("message", onResult);
+      reject(new Error("AkuBridge media recapture timed out."));
+    }, 70_000);
+    function finish(callback, value) {
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onResult);
+      callback(value);
+    }
+    function onResult(event) {
+      if (event.source !== window || event.origin !== endpoint || event.data?.recaptureId !== recaptureId) return;
+      if (event.data.type === "AKU_BROWSER_MEDIA_RECAPTURE_COMPLETED") {
+        finish(resolve, event.data.recapture);
+      } else if (event.data.type === "AKU_BROWSER_MEDIA_RECAPTURE_FAILED") {
+        finish(reject, new Error(event.data.message || "AkuBridge media recapture failed."));
+      }
+    }
+    window.addEventListener("message", onResult);
+    window.postMessage({
+      type: "AKU_BROWSER_MEDIA_RECAPTURE",
+      endpoint,
+      token: state.bootstrap.bridgeToken,
+      recaptureId,
+    }, endpoint);
+  });
 }
 
 function feedbackButton(label) {

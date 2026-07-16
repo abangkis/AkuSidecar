@@ -9,15 +9,13 @@ import (
 
 func TestFitSeparatesPreferenceFromDiagnostics(t *testing.T) {
 	notInterested := "not_interested"
-	alreadyKnew := "already_knew"
 	signals := []Signal{
 		{Direction: "more", Tags: []string{"Codex"}, Facets: []string{"ai_models"}},
 		{Direction: "less", Reason: &notInterested, Tags: []string{"football"}, Facets: []string{"sports"}},
 		{Direction: "less", Reason: &notInterested, Tags: []string{"football"}, Facets: []string{"sports"}},
-		{Direction: "less", Reason: &alreadyKnew, Tags: []string{"Codex"}, Facets: []string{"ai_models"}},
 	}
 	profile := Fit(signals)
-	if profile.EffectiveSignals != 3 || profile.NeutralSignals != 1 {
+	if profile.EffectiveSignals != 3 || profile.NeutralSignals != 0 {
 		t.Fatalf("unexpected counts: %+v", profile)
 	}
 	if profile.Weights["facet:ai_models"] <= 0 || profile.Weights["facet:sports"] >= 0 || profile.Weights["tag:football"] >= 0 {

@@ -84,8 +84,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "semantic-event-shortlist", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
-		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
 		if err != nil {
@@ -101,6 +101,18 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 				t.Fatalf("asset %s missing %q", path, marker)
 			}
 		}
+	}
+	response, err = client.Get("http://" + address.String() + "/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appPayload, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(appPayload), "Optional reason") || strings.Contains(string(appPayload), "already_knew") || strings.Contains(string(appPayload), "old_info") {
+		t.Fatal("retired feedback reasons remain in the active UI")
 	}
 	response, err = client.Get("http://" + address.String() + "/api/inbox?limit=5&offset=0")
 	if err != nil {
@@ -186,7 +198,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 }
 
-func TestBridgeV47ObservationShapeDecodesStrictly(t *testing.T) {
+func TestBridgeV49ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
@@ -204,7 +216,7 @@ func TestBridgeV47ObservationShapeDecodesStrictly(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/bridge/commands/example/observation", bytes.NewBufferString(raw))
 	var observation domain.Observation
 	if err := readJSON(request, &observation); err != nil {
-		t.Fatalf("v47 observation must satisfy the strict Go shape: %v", err)
+		t.Fatalf("v49 observation must satisfy the strict Go shape: %v", err)
 	}
 	if observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)

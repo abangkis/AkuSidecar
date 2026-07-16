@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.0"
-	ExpectedBridgeRevision  = "source-fidelity-v48"
+	ExpectedBridgeVersion   = "0.6.1"
+	ExpectedBridgeRevision  = "source-fidelity-v49"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
 	ExpectedXAdapter        = "x-dom-v16"
 	ExpectedLinkedInAdapter = "linkedin-dom-v13"
@@ -29,7 +29,7 @@ var expectedBridgeSources = []string{"x", "linkedin"}
 var expectedBridgeActions = []string{
 	"probe_readiness", "probe_freshness", "recover_source_freshness",
 	"collect_visible", "detect_pending_content", "report_adapter_health",
-	"report_capture_quality", "recover_missing_media", "extract_source_semantics",
+	"report_capture_quality", "recover_missing_media", "recapture_missing_media", "extract_source_semantics",
 	"report_frontier", "manage_source_tab_lifecycle", "manage_capture_window",
 	"release_capture_surface", "preserve_working_tab", "report_source_events", "reload_self",
 }
@@ -201,6 +201,11 @@ func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Sessio
 	}
 	if onboarding.Status != "completed" {
 		return domain.Session{}, errors.New("complete onboarding before starting an update")
+	}
+	if recapturing, err := e.store.ActiveMediaRecapture(ctx); err != nil {
+		return domain.Session{}, err
+	} else if recapturing {
+		return domain.Session{}, errors.New("finish the active media recapture before starting an update")
 	}
 	calibration, err := e.store.ActiveCalibration(ctx)
 	if err != nil {
@@ -644,6 +649,38 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domain.Feedback) (domain.Feedback, error) {
 	return e.store.AddFeedback(ctx, timelineID, value)
 }
+
+func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string) (domain.MediaRecapture, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	if active, err := e.store.ActiveSession(ctx); err != nil {
+		return domain.MediaRecapture{}, err
+	} else if active != nil {
+		return domain.MediaRecapture{}, errors.New("finish the active update before recapturing media")
+	}
+	status := e.BridgeStatus()
+	if !status.Compatible {
+		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
+	}
+	return e.store.CreateMediaRecapture(ctx, timelineID)
+}
+
+func (e *Engine) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {
+	return e.store.ClaimMediaRecapture(ctx, id, bridgeID)
+}
+
+func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {
+	normalizeObservation(&observation)
+	if err := validateObservation(observation); err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	return e.store.CompleteMediaRecapture(ctx, id, observation)
+}
+
+func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure domain.Failure) (domain.MediaRecapture, error) {
+	return e.store.FailMediaRecapture(ctx, id, failure)
+}
+
 func (e *Engine) SemanticEventSuggestions(ctx context.Context, timelineID string, limit int) ([]domain.EventSuggestion, error) {
 	return e.store.SuggestSemanticEvents(ctx, timelineID, limit)
 }

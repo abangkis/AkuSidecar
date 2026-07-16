@@ -138,4 +138,13 @@ func TestFeedbackRejectsLegacyReason(t *testing.T) {
 	if err := value.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	value.Reason = nil
+	if err := value.Validate(); err == nil {
+		t.Fatal("Less like this without Not interested must be rejected")
+	}
+	value.Direction = "more"
+	value.Reason = &current
+	if err := value.Validate(); err == nil {
+		t.Fatal("More like this must not accept a reason")
+	}
 }

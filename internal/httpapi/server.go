@@ -301,6 +301,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
+		id := path.Base(strings.TrimSuffix(p, "/recapture"))
+		recapture, err := s.engine.QueueMediaRecapture(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("timeline item")
+		}
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusAccepted, map[string]any{"recapture": recapture})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/event-suggestions"):
 		id := path.Base(strings.TrimSuffix(p, "/event-suggestions"))
 		limit := boundedInt(r.URL.Query().Get("limit"), 3, 1, 3)
@@ -467,6 +477,51 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"run": run})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/bridge/media-recaptures/") && strings.HasSuffix(p, "/claim"):
+		if err := s.requireBridge(r); err != nil {
+			return err
+		}
+		id := path.Base(strings.TrimSuffix(p, "/claim"))
+		recapture, err := s.engine.ClaimMediaRecapture(ctx, id, r.Header.Get("X-Aku-Bridge-Id"))
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("media recapture")
+		}
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"recapture": recapture})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/media-recaptures/") && strings.HasSuffix(p, "/observation"):
+		if err := s.requireBridge(r); err != nil {
+			return err
+		}
+		id := path.Base(strings.TrimSuffix(p, "/observation"))
+		var body struct {
+			Observation domain.Observation `json:"observation"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		recapture, err := s.engine.AcceptMediaRecapture(ctx, id, body.Observation)
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"recapture": recapture})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/media-recaptures/") && strings.HasSuffix(p, "/failure"):
+		if err := s.requireBridge(r); err != nil {
+			return err
+		}
+		id := path.Base(strings.TrimSuffix(p, "/failure"))
+		var body struct {
+			Error domain.Failure `json:"error"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		recapture, err := s.engine.FailMediaRecapture(ctx, id, body.Error)
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"recapture": recapture})
 	case r.Method == http.MethodPost && p == "/api/operations/reset-learning":
 		var body struct {
 			Confirmation string `json:"confirmation"`

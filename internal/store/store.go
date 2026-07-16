@@ -947,6 +947,14 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 			copy := block
 			item.Evidence = &copy
 		}
+		var overrideRaw string
+		if err := s.db.QueryRowContext(ctx, `SELECT evidence_json FROM timeline_evidence_overrides WHERE timeline_id=?`, item.ID).Scan(&overrideRaw); err == nil {
+			var override domain.Block
+			decodeJSON(overrideRaw, &override)
+			item.Evidence = &override
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
 	}
 	if err := s.attachSemanticEvents(ctx, items); err != nil {
 		return nil, err

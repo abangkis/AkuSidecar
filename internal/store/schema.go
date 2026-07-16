@@ -130,6 +130,33 @@ CREATE TABLE IF NOT EXISTS timeline_items (
 CREATE INDEX IF NOT EXISTS timeline_session_rank ON timeline_items(session_id, rank);
 CREATE INDEX IF NOT EXISTS timeline_created ON timeline_items(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS media_recaptures (
+  id TEXT PRIMARY KEY,
+  timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
+  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  target_url TEXT NOT NULL,
+  evidence_key TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued','claimed','completed','failed')),
+  outcome TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL,
+  result_json TEXT,
+  claimed_by TEXT,
+  created_at TEXT NOT NULL,
+  claimed_at TEXT,
+  completed_at TEXT,
+  error_json TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS media_recaptures_one_active
+  ON media_recaptures(timeline_id) WHERE status IN ('queued','claimed');
+
+CREATE TABLE IF NOT EXISTS timeline_evidence_overrides (
+  timeline_id TEXT PRIMARY KEY REFERENCES timeline_items(id) ON DELETE CASCADE,
+  recapture_id TEXT NOT NULL REFERENCES media_recaptures(id) ON DELETE CASCADE,
+  evidence_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS calibration_sessions (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
@@ -174,7 +201,7 @@ CREATE TABLE IF NOT EXISTS feedback_events (
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   evidence_key TEXT NOT NULL,
   direction TEXT NOT NULL CHECK (direction IN ('more','less')),
-  reason TEXT CHECK (reason IN ('not_interested','already_knew','old_info','duplicate') OR reason IS NULL),
+  reason TEXT CHECK (reason = 'not_interested' OR reason IS NULL),
   created_at TEXT NOT NULL
 );
 
