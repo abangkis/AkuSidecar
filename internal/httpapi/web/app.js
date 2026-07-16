@@ -1,6 +1,7 @@
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
 const terminalStatuses = new Set(["completed", "partial", "failed", "cancelled"]);
+const BACK_TO_TOP_THRESHOLD_PX = 480;
 const state = {
   bootstrap: null,
   session: null,
@@ -61,7 +62,7 @@ $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
 $("#reset-confirmation-submit").addEventListener("click", submitReset);
-$("#back-to-top").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+$("#back-to-top").addEventListener("click", returnToTop);
 $("#media-viewer-close").addEventListener("click", () => $("#media-viewer").close());
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
@@ -346,8 +347,36 @@ function scheduleBackToTop() {
   state.backToTopFrame = requestAnimationFrame(() => {
     state.backToTopFrame = null;
     const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
-    $("#back-to-top").classList.toggle("hidden", top < 320);
+    $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
+    syncBackToTopPosition();
   });
+}
+
+function syncBackToTopPosition() {
+  const candidates = state.currentView === "timeline"
+    ? [$("#result-panel"), document.querySelector(".timeline-heading-row")]
+    : [$("#settings-panel")];
+  const anchor = candidates.find((element) => {
+    if (!element || element.classList.contains("hidden")) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+  const anchorRect = anchor?.getBoundingClientRect();
+  const buttonWidth = window.innerWidth <= 700 ? 44 : 48;
+  const gap = 30;
+  if (anchorRect && window.innerWidth - anchorRect.right >= buttonWidth + gap * 2) {
+    $("#back-to-top").style.left = `${Math.round(anchorRect.right + gap)}px`;
+    $("#back-to-top").style.right = "auto";
+    return;
+  }
+  $("#back-to-top").style.removeProperty("left");
+  $("#back-to-top").style.removeProperty("right");
+}
+
+function returnToTop() {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+  $("#app-heading").focus({ preventScroll: true });
 }
 
 async function startSession() {
