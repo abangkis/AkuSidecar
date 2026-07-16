@@ -163,6 +163,15 @@ For LinkedIn, a repeated long-form entry that first appears without a permalink
 and later exposes a native ID is enriched into one evidence candidate instead
 of entering calibration and Timeline twice.
 
+The fresh preference mode is `guarded_live`. Direct user labels become the
+highest-authority relevance signal once repeated evidence is sufficient. They
+may promote, replace, demote, and suppress ordinary candidates, while evidence
+quality, contradictions, material updates, and one bounded discovery lane stay
+protected. Exact delivered evidence is excluded, semantic context without a
+material delta is not re-added, and a valid update may finish with zero
+additions. Completed source runs are composed into one global personalized
+order with a diversity guard rather than strict X/LinkedIn round-robin.
+
 ## Removed by design
 
 Offline experiments, shadow comparison, replay benchmarks, paired-model

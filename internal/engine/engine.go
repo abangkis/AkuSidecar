@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -221,6 +220,9 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		return run, err
 	}
 	if run == nil {
+		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
+			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
+		}
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}
@@ -366,7 +368,7 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return errors.New("no accepted observation")
 	}
 	merged := mergeObservations(observations)
-	knowledge, err := e.store.Knowledge(ctx, run.Source, 20)
+	knowledge, err := e.store.Knowledge(ctx, run.Source, 200)
 	if err != nil {
 		return err
 	}
@@ -402,7 +404,41 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	if err != nil {
 		return err
 	}
-	scored := selection.Select(result.CandidateAssessments, profile, settings.MaxItemsPerSource, settings.PreferenceEligibilityMode)
+	evidenceKeys := make([]string, 0, len(result.CandidateAssessments))
+	for _, assessment := range result.CandidateAssessments {
+		evidenceKeys = append(evidenceKeys, assessment.EvidenceKey)
+	}
+	excluded, err := e.store.PreviouslyDeliveredEvidence(ctx, run.Source, evidenceKeys)
+	if err != nil {
+		return err
+	}
+	protected := map[string]bool{}
+	eventKeys := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		if item.EventKey != "" {
+			eventKeys = append(eventKeys, item.EventKey)
+		}
+	}
+	priorEvents, err := e.store.PreviouslyKnownEvents(ctx, run.Source, eventKeys)
+	if err != nil {
+		return err
+	}
+	for _, item := range result.Items {
+		if excluded[item.EvidenceKey] {
+			continue
+		}
+		if item.KnowledgeDelta == "material_update" || item.KnowledgeDelta == "contradiction" {
+			protected[item.EvidenceKey] = true
+			continue
+		}
+		if item.EventKey != "" && priorEvents[item.EventKey] {
+			excluded[item.EvidenceKey] = true
+		}
+	}
+	scored := selection.SelectWithOptions(result.CandidateAssessments, profile, selection.Options{
+		Limit: settings.MaxItemsPerSource, Mode: settings.PreferenceEligibilityMode,
+		ExcludedEvidence: excluded, ProtectedEvidence: protected,
+	})
 	items := selectedItems(run, result, scored, merged.Coverage)
 	if err = e.store.CompleteRun(ctx, run, result, scored, items, merged.Coverage); err != nil {
 		return err
@@ -455,7 +491,6 @@ func selectedItems(run domain.Run, result domain.ReasoningResult, scored []store
 		}
 		items = append(items, domain.TimelineItem{ID: domain.NewID("timeline"), SessionID: run.SessionID, RunID: run.ID, Source: run.Source, EvidenceKey: item.EvidenceKey, Item: item, Assessment: value.Assessment, Coverage: coverage})
 	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Rank < items[j].Rank })
 	return items
 }
 

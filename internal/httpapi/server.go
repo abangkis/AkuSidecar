@@ -100,7 +100,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "bridgeContractVersion": domain.BridgeContractVersion, "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy", "path": s.store.Path()}, "loadProfile": settings.LoadProfile})
+		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "bridgeContractVersion": domain.BridgeContractVersion, "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/bootstrap":
 		settings, err := s.store.GetSettings(ctx)
 		if err != nil {

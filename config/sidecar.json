@@ -27,6 +27,6 @@
     "maxAcquisitionRounds": 2
   },
   "preference": {
-    "mode": "promote_unused_budget"
+    "mode": "guarded_live"
   }
 }

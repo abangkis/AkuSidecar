@@ -80,7 +80,10 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			return err
 		}
 	}
-	return s.initializeOnboarding(ctx, fresh)
+	if err := s.initializeOnboarding(ctx, fresh); err != nil {
+		return err
+	}
+	return s.RecomposeCompletedSessions(ctx)
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -593,11 +596,6 @@ func (s *Store) CompleteRun(ctx context.Context, run domain.Run, result domain.R
 		if _, err = tx.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, item.ID, item.SessionID, item.RunID, item.Source, item.EvidenceKey, item.Rank, string(itemRaw), string(assessmentRaw), string(itemCoverage), now); err != nil {
 			return err
 		}
-		if item.Item.EventKey != "" {
-			if _, err = tx.ExecContext(ctx, `INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source,event_key) DO UPDATE SET evidence_key=excluded.evidence_key,item_json=excluded.item_json,last_seen_at=excluded.last_seen_at`, domain.NewID("knowledge"), item.Source, item.Item.EventKey, item.EvidenceKey, string(itemRaw), now, now); err != nil {
-				return err
-			}
-		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='completed',stage='completed',completed_at=?,summary=?,coverage_json=? WHERE id=?`, now, result.Summary, string(coverageRaw), run.ID); err != nil {
 		return err
@@ -659,11 +657,183 @@ func (s *Store) Knowledge(ctx context.Context, source domain.Source, limit int) 
 	return items, rows.Err()
 }
 
+func (s *Store) PreviouslyDeliveredEvidence(ctx context.Context, source domain.Source, evidenceKeys []string) (map[string]bool, error) {
+	result := map[string]bool{}
+	if len(evidenceKeys) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(evidenceKeys))
+	args := make([]any, 0, len(evidenceKeys)+1)
+	args = append(args, source)
+	for index, key := range evidenceKeys {
+		placeholders[index] = "?"
+		args = append(args, key)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT evidence_key FROM timeline_items WHERE source=? AND evidence_key IN (`+strings.Join(placeholders, ",")+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		result[key] = true
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) PreviouslyKnownEvents(ctx context.Context, source domain.Source, eventKeys []string) (map[string]bool, error) {
+	result := map[string]bool{}
+	if len(eventKeys) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(eventKeys))
+	args := make([]any, 0, len(eventKeys)+1)
+	args = append(args, source)
+	for index, key := range eventKeys {
+		placeholders[index] = "?"
+		args = append(args, key)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT event_key FROM knowledge_events WHERE source=? AND event_key IN (`+strings.Join(placeholders, ",")+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		result[key] = true
+	}
+	return result, rows.Err()
+}
+
+type compositionItem struct {
+	id       string
+	source   domain.Source
+	evidence string
+	score    float64
+	itemRaw  string
+	item     domain.ReasonedItem
+	created  string
+}
+
+// ComposeSession establishes one global personalized order after every source
+// has finished. It prevents more than two consecutive items from one source
+// whenever another source is still available.
+func (s *Store) ComposeSession(ctx context.Context, sessionID string) error {
+	var limit int
+	if err := s.db.QueryRowContext(ctx, `SELECT max_items_total FROM sessions WHERE id=?`, sessionID).Scan(&limit); err != nil {
+		return err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.id,t.source,t.evidence_key,a.final_score,t.item_json,t.created_at
+		FROM timeline_items t
+		JOIN candidate_assessments a ON a.run_id=t.run_id AND a.evidence_key=t.evidence_key
+		WHERE t.session_id=?
+		ORDER BY a.final_score DESC,t.created_at,t.rank`, sessionID)
+	if err != nil {
+		return err
+	}
+	var remaining []compositionItem
+	for rows.Next() {
+		var item compositionItem
+		if err := rows.Scan(&item.id, &item.source, &item.evidence, &item.score, &item.itemRaw, &item.created); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := json.Unmarshal([]byte(item.itemRaw), &item.item); err != nil {
+			rows.Close()
+			return err
+		}
+		remaining = append(remaining, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	ordered := make([]compositionItem, 0, len(remaining))
+	for len(remaining) > 0 {
+		chosen := 0
+		if len(ordered) >= 2 && ordered[len(ordered)-1].source == ordered[len(ordered)-2].source {
+			for index, candidate := range remaining {
+				if candidate.source != ordered[len(ordered)-1].source {
+					chosen = index
+					break
+				}
+			}
+		}
+		ordered = append(ordered, remaining[chosen])
+		remaining = append(remaining[:chosen], remaining[chosen+1:]...)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for rank, item := range ordered {
+		if rank < limit {
+			if _, err := tx.ExecContext(ctx, `UPDATE timeline_items SET rank=? WHERE id=?`, rank, item.id); err != nil {
+				return err
+			}
+			if item.item.EventKey != "" {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source,event_key) DO UPDATE SET evidence_key=excluded.evidence_key,item_json=excluded.item_json,last_seen_at=excluded.last_seen_at WHERE excluded.last_seen_at >= knowledge_events.last_seen_at`, domain.NewID("knowledge"), item.source, item.item.EventKey, item.evidence, item.itemRaw, item.created, item.created); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM timeline_items WHERE id=?`, item.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// RecomposeCompletedSessions reapplies the active ordering invariant to the
+// current Go schema. It is idempotent and does not import or translate any
+// retired Node state.
+func (s *Store) RecomposeCompletedSessions(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM sessions WHERE status IN ('completed','partial') ORDER BY completed_at,id`)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := s.ComposeSession(ctx, id); err != nil {
+			return fmt.Errorf("recompose session %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
 func (s *Store) ListSessionItems(ctx context.Context, sessionID string) ([]domain.TimelineItem, error) {
-	return s.listItems(ctx, `WHERE session_id=? ORDER BY source,rank`, sessionID)
+	return s.listItems(ctx, `WHERE session_id=? ORDER BY rank`, sessionID)
 }
 func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
-	return s.listItems(ctx, `ORDER BY created_at DESC,rank LIMIT ? OFFSET ?`, limit, offset)
+	return s.listItems(ctx, `ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT ? OFFSET ?`, limit, offset)
 }
 
 func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]domain.TimelineItem, error) {
@@ -752,24 +922,24 @@ type PreferenceSignal struct {
 func (s *Store) PreferenceSignals(ctx context.Context) ([]PreferenceSignal, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		WITH signals AS (
-		  SELECT run_id,evidence_key,direction,reason,'routine' AS origin,created_at
-		  FROM feedback_events
+		  SELECT f.run_id,f.evidence_key,a.source,f.direction,f.reason,'routine' AS origin,f.created_at,a.assessment_json
+		  FROM feedback_events f
+		  JOIN candidate_assessments a ON a.run_id=f.run_id AND a.evidence_key=f.evidence_key
 		  UNION ALL
-		  SELECT run_id,evidence_key,
+		  SELECT c.run_id,c.evidence_key,a.source,
 		    CASE label WHEN 'more_like_this' THEN 'more' WHEN 'less_like_this' THEN 'less' ELSE 'neutral' END,
-		    NULL,'calibration',labeled_at
-		  FROM calibration_samples
-		  WHERE label IS NOT NULL
+		    NULL,'calibration',c.labeled_at,a.assessment_json
+		  FROM calibration_samples c
+		  JOIN candidate_assessments a ON a.run_id=c.run_id AND a.evidence_key=c.evidence_key
+		  WHERE c.label IS NOT NULL
 		), ranked AS (
 		  SELECT signals.*,ROW_NUMBER() OVER (
-		    PARTITION BY run_id,evidence_key ORDER BY created_at DESC,origin DESC
+		    PARTITION BY source,evidence_key ORDER BY created_at DESC,origin DESC
 		  ) AS signal_rank
 		  FROM signals
 		)
-		SELECT ranked.direction,ranked.reason,ranked.origin,a.assessment_json
+		SELECT ranked.direction,ranked.reason,ranked.origin,ranked.assessment_json
 		FROM ranked
-		JOIN candidate_assessments a
-		  ON a.run_id=ranked.run_id AND a.evidence_key=ranked.evidence_key
 		WHERE ranked.signal_rank=1
 		ORDER BY ranked.created_at`)
 	if err != nil {

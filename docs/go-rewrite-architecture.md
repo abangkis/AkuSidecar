@@ -1,143 +1,43 @@
-# AkuSidecar Go rewrite
+# AkuSidecar Go boundary
 
-Status: implementation baseline for the `go-rewrite` branch.
+Status: active runtime contract for `1.0.0-dev.5`.
 
-## Decision
+AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
-AkuSidecar is rewritten in place as a Go application. The
-`pre-refactor-2026-07-15` tag is the complete Node-era rollback boundary. A
-separate `AkuSidecarGo` repository would duplicate component identity, paths,
-Supervisor registration, and release ownership without providing additional
-safety.
+## Ownership
 
-This rewrite deliberately has no database, API-alias, configuration, or
-reason-code compatibility with the Node implementation. The current product
-behavior is re-expressed as a smaller new contract.
+- `cmd/akusidecar` starts the loopback server.
+- `internal/httpapi` serves the API and embedded UI.
+- `internal/engine` owns bounded sessions, capture commands, reasoning, calibration, and finalization.
+- `internal/store` owns the fresh SQLite v2 schema.
+- `internal/selection` owns generic trust/materiality admission, high-authority personalization, protected updates, exact-evidence exclusion, and the discovery lane.
+- `internal/preference` fits the rebuildable local profile from canonical direct signals.
+- `internal/reasoning` owns the managed Codex App Server and explicit Codex Exec conformance transport.
+- AkuSupervisor starts and stops `runtime/dev/aku-sidecar.exe` directly.
 
 ## Product invariants
 
-- The service binds only to loopback and owns the local AkuBrowser UI.
-- AkuBridge is read-only and receives bounded, versioned capture commands.
-- X and LinkedIn are collected as one finite session, never an infinite feed.
-- Capture admission remains truthful: trustworthy text may survive as
-  `usable_degraded`, while missing evidence is never fabricated.
-- Selection remains generic; preference may rerank and may fill one unused
-  source slot, but default authority cannot hide or replace an admitted item.
-- Source evidence is untrusted input. Reasoning runs read-only, offline, with
-  approvals disabled and a required structured-output schema.
-- AkuSupervisor owns the visible process lifecycle. AkuSidecar never starts a
-  hidden replacement of itself.
+- AkuBridge capture is read-only, source-specific, and bounded.
+- Model output describes every candidate but cannot navigate, expand budgets, or select the Timeline.
+- Direct user feedback outranks source-platform order once repeated evidence is sufficient.
+- Trust protections outrank preference: an evidence-qualified material update or contradiction cannot be suppressed.
+- One qualified discovery candidate remains available per source when it does not displace a protected update.
+- No fallback item is fabricated. Zero additions is valid.
+- X and LinkedIn are composed into one global personalized order with a maximum-two-consecutive-source guard.
+- AkuSidecar never launches a watcher or hidden replacement of itself.
 
-## Kept surface
+## State
 
-- loopback HTTP health, bootstrap, settings, session, run, timeline, feedback,
-  Bridge heartbeat/command/result, and cooperative Bridge reload operations;
-- bounded-load profiles (`standard`, `expanded`, `stress`, `custom`);
-- X then LinkedIn unified sessions and capture-lease cleanup;
-- source freshness, visibility, quality, media-degradation, and continuation
-  evidence recorded as coverage;
-- Selection Engine, Preference Runtime v2, unused-budget promotion, knowledge
-  continuity, and reasoning telemetry;
-- browser JavaScript/CSS served as embedded static assets. These assets run in
-  Chrome and do not introduce a Node runtime or toolchain.
+SQLite schema version 2 contains only the active fifteen tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, calibration, feedback/model state, and knowledge events. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
 
-## Removed surface
+There is no importer for the Node database. Schema mismatch fails startup. Full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores strict defaults, and preserves Bridge identity.
 
-- Node.js, npm, package-lock, Vite, MJS scripts, and Node tests;
-- historical SQLite migrations and all existing runtime rows;
-- offline preference experiments, shadow comparisons, replay benchmarks,
-  paired-model benchmarks, and pilot-review endpoints;
-- `wrong_topic` and every other legacy reason alias;
-- legacy environment-based settings and compatibility shims;
-- inactive provider aliases and shadow eligibility paths.
+## Verification
 
-## New component contract
-
-- Application version is `1.0.0-dev.4` for the restored snapshot-reconciliation boundary.
-- Bridge contract is `aku-browser.bridge.v2`.
-- The database schema is a single version-2 transaction. A schema mismatch is
-  a startup error; it is never migrated automatically.
-- Settings are served by `GET/PUT /api/settings`; the active contract includes
-  source selection, bounded built-in or Custom load values, Timeline capacity,
-  and presentation preferences.
-- First-run source onboarding is stored in fresh schema metadata and served by
-  `GET/PUT /api/onboarding`.
-- Completing first-run onboarding marks calibration pending and starts one
-  bounded update from the UI. AkuSidecar owns the terminal invariant: a
-  completed or partial first update creates the pre-selection More/Neutral/Less
-  calibration before another update may begin, while bootstrap repairs a
-  persisted pending state from the latest eligible session.
-- Learning reset is scoped to feedback/model state. Full reset is
-  verified-backup-first, preserves the Bridge identity, restores fresh Go
-  defaults, and returns to onboarding.
-- New sessions use `POST /api/sessions`; session/run resources and Timeline are
-  read-only except for cancellation and feedback.
-- Bridge routes remain a dedicated token-authenticated namespace because the
-  extension, not the browser UI, owns them.
-
-## Go layout
-
-```text
-cmd/akusidecar/       production server
-internal/config/      typed file and flag configuration
-internal/domain/      contract types and validation
-internal/store/       fresh SQLite schema and persistence
-internal/engine/      session/run orchestration
-internal/selection/   deterministic materiality selection
-internal/preference/  bounded personalized reranking
-internal/reasoning/   provider interface, Codex Exec, later App Server
-internal/httpapi/     loopback API, security, embedded UI
-schemas/              structured reasoning output contracts
+```powershell
+go test -p 1 ./...
+go vet ./...
+.\scripts\build-dev.ps1
 ```
 
-## Reasoning transition
-
-The provider interface is turn-oriented and transport-neutral. The default
-provider owns one `codex app-server` stdio process, initializes the generated
-JSON-RPC v2 protocol once, creates ephemeral read-only threads, constrains each
-turn with its output schema, and records token notifications. A native live
-smoke passed against Codex CLI 0.144.1.
-
-`codex-exec` retains the former SDK-equivalent process-per-request boundary as
-an explicit conformance transport; it is not the normal runtime provider.
-
-## Fresh SQLite schema
-
-The new database contains only:
-
-1. `meta`
-2. `settings`
-3. `sessions`
-4. `runs`
-5. `bridge_commands`
-6. `observations`
-7. `reasoning_invocations`
-8. `candidate_assessments`
-9. `timeline_items`
-10. `calibration_sessions`
-11. `calibration_samples`
-12. `calibration_profile_snapshots`
-13. `feedback_events`
-14. `preference_model`
-15. `knowledge_events`
-
-Mutable domain payloads are stored as canonical JSON at bounded seams. Fields
-used for lifecycle, ordering, filtering, or integrity remain typed columns.
-
-## Cutover gates
-
-1. `go test ./...`, `go vet ./...`, and a Windows production build pass.
-2. The project contains no package manifest, Node source, Vite dependency, or
-   Node command in its development and production workflows.
-3. A fresh database starts, restarts, and resets deterministically.
-4. AkuBridge v2 completes X and LinkedIn capture with truthful coverage.
-5. One real Codex Exec acquisition/evaluation turn completes under Supervisor.
-6. Timeline, feedback, preference reranking, cancellation, lease cleanup, and
-   Bridge cooperative reload pass live validation.
-7. AkuSupervisor starts the Go executable directly and reports it healthy.
-8. A fresh onboarding session transitions through bounded acquisition and
-   forced calibration before the Timeline becomes available.
-
-Development rebuilds are explicit. `scripts/restart-dev.ps1` stages a new Go
-binary, refuses to interrupt an active session, and uses AkuSupervisor for the
-stop/start boundary before promoting the staged executable.
+The workspace integration gate is `AkuBrowser/scripts/check.ps1`. Runtime replacement is explicit through `scripts/restart-dev.ps1`, which refuses to interrupt an active session and delegates stop/start to AkuSupervisor.

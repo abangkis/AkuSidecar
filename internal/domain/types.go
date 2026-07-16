@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ApplicationVersion    = "1.0.0-dev.4"
+	ApplicationVersion    = "1.0.0-dev.5"
 	BridgeContractVersion = "aku-browser.bridge.v2"
 )
 

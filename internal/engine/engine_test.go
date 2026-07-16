@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,6 +110,108 @@ func TestUnifiedSessionCompletesBothSources(t *testing.T) {
 	if err != nil || len(timeline) != 2 {
 		t.Fatalf("timeline=%d err=%v", len(timeline), err)
 	}
+}
+
+func TestRepeatedExactEvidenceProducesZeroAdditions(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
+	evidence := "x:000000000000000000000401"
+
+	first, err := runtime.StartSession(ctx, "What changed?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, first.ID, domain.SourceX, evidence)
+	first = waitSession(t, runtime, first.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(first.Items) != 1 {
+		t.Fatalf("first items=%d", len(first.Items))
+	}
+
+	second, err := runtime.StartSession(ctx, "What changed now?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, second.ID, domain.SourceX, evidence)
+	second = waitSession(t, runtime, second.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(second.Items) != 0 {
+		t.Fatalf("repeated evidence added again: %+v", second.Items)
+	}
+}
+
+type continuityProvider struct {
+	reasoning.Deterministic
+	mu    sync.Mutex
+	calls int
+}
+
+func (provider *continuityProvider) Analyze(_ context.Context, run domain.Run, observation domain.Observation, _ []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+	provider.mu.Lock()
+	provider.calls++
+	call := provider.calls
+	provider.mu.Unlock()
+	block := observation.Snapshots[0].Blocks[0]
+	delta := []string{"new_event", "context", "material_update"}[call-1]
+	materiality := .6
+	if delta == "material_update" {
+		materiality = .1
+	}
+	result := domain.ReasoningResult{
+		Summary: "continuity fixture",
+		Items: []domain.ReasonedItem{{
+			ID: domain.NewID("item"), WhatChanged: "Changed", WhyItMatters: "Fixture",
+			Source: run.Source, SourceURL: "https://example.test/post", SourceURLKind: "native_post",
+			EvidenceKey: block.EvidenceKey, EventKey: "shared-event", KnowledgeDelta: delta,
+			Author: "author", Confidence: .9, EvidenceState: "primary",
+		}},
+		CandidateAssessments: []domain.CandidateAssessment{{
+			EvidenceKey: block.EvidenceKey, TopicFacets: []string{"other"}, ContentType: "news",
+			Novelty: .5, Urgency: .2, Actionability: .2, Materiality: materiality,
+			EvidenceStrength: .8, Rationale: "continuity fixture",
+		}},
+		Limitations: []string{},
+	}
+	telemetry := domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: "candidate_evaluation", Provider: "continuity", Model: "fixture", Effort: "none", Status: "completed", CreatedAt: domain.Now()}
+	return result, telemetry, nil
+}
+
+func TestKnownEventRequiresMaterialDelta(t *testing.T) {
+	ctx := context.Background()
+	provider := &continuityProvider{}
+	runtime, state := singleSourceEngine(t, provider)
+	wantItems := []int{1, 0, 1}
+	for index, evidence := range []string{
+		"x:000000000000000000000411",
+		"x:000000000000000000000412",
+		"x:000000000000000000000413",
+	} {
+		session, err := runtime.StartSession(ctx, "What changed?")
+		if err != nil {
+			t.Fatal(err)
+		}
+		completeActiveRun(t, runtime, state, session.ID, domain.SourceX, evidence)
+		session = waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+		if len(session.Items) != wantItems[index] {
+			t.Fatalf("session %d delta items=%d want=%d", index, len(session.Items), wantItems[index])
+		}
+	}
+}
+
+func singleSourceEngine(t *testing.T, provider reasoning.Provider) (*Engine, *store.Store) {
+	t.Helper()
+	settings := domain.DefaultSettings("expanded", "quiet", "guarded_live", true)
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	settings.CalibrationEnabled = false
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(context.Background(), settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { state.Close() })
+	runtime := New(state, provider, config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
+	runtime.RecordHeartbeat(ExpectedHeartbeat())
+	return runtime, state
 }
 
 func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {

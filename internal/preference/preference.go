@@ -19,6 +19,7 @@ type Profile struct {
 	PositiveSignals  int                `json:"positiveSignals"`
 	NegativeSignals  int                `json:"negativeSignals"`
 	NeutralSignals   int                `json:"neutralSignals"`
+	AuthorityReady   bool               `json:"authorityReady"`
 	PromotionReady   bool               `json:"promotionReady"`
 	SuppressionReady bool               `json:"suppressionReady"`
 }
@@ -39,7 +40,10 @@ func Fit(signals []Signal) Profile {
 			weight = -1
 			profile.NegativeSignals++
 		case signal.Direction == "less" && signal.Reason == nil:
-			weight = -0.5
+			weight = -0.75
+			if signal.Origin == "calibration" {
+				weight = -1.1
+			}
 			profile.NegativeSignals++
 		default:
 			profile.NeutralSignals++
@@ -57,17 +61,25 @@ func Fit(signals []Signal) Profile {
 		normalized := value / math.Max(3, float64(counts[facet]))
 		profile.Weights[facet] = math.Max(-1, math.Min(1, normalized))
 	}
-	profile.PromotionReady = profile.EffectiveSignals >= 8 && profile.PositiveSignals >= 4
-	// Suppression remains deliberately conservative. Quality/holdout gates are
-	// added with App Server evaluation; signal count alone never enables it.
-	profile.SuppressionReady = false
+	// Direct labels are the highest-authority relevance signal in AkuBrowser.
+	// A small repeated pattern is enough to activate one direction; capture
+	// quality and material-update protections remain independent hard gates.
+	profile.PromotionReady = profile.EffectiveSignals >= 3 && profile.PositiveSignals >= 2
+	profile.SuppressionReady = profile.EffectiveSignals >= 3 && profile.NegativeSignals >= 2
+	profile.AuthorityReady = profile.PromotionReady || profile.SuppressionReady
 	return profile
 }
 
 func Score(profile Profile, assessment domain.CandidateAssessment) float64 {
-	if !profile.PromotionReady {
+	if !profile.AuthorityReady {
 		return 0
 	}
+	return 0.45 * Alignment(profile, assessment)
+}
+
+// Alignment returns the user's learned relevance signal on a stable [-1, 1]
+// scale. It is intentionally separate from generic materiality and evidence.
+func Alignment(profile Profile, assessment domain.CandidateAssessment) float64 {
 	if len(assessment.TopicFacets) == 0 {
 		return 0
 	}
@@ -75,5 +87,5 @@ func Score(profile Profile, assessment domain.CandidateAssessment) float64 {
 	for _, facet := range assessment.TopicFacets {
 		sum += profile.Weights[facet]
 	}
-	return 0.12 * (sum / float64(len(assessment.TopicFacets)))
+	return math.Max(-1, math.Min(1, sum/float64(len(assessment.TopicFacets))))
 }

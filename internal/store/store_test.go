@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -213,6 +214,155 @@ func TestBridgeTokenComparison(t *testing.T) {
 	}
 	if !state.MatchesBridgeToken(ctx, token) || state.MatchesBridgeToken(ctx, token+"x") {
 		t.Fatal("constant-time token boundary failed")
+	}
+}
+
+func TestSessionCompositionUsesGlobalScoreWithSourceDiversity(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "What changed?", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type fixture struct {
+		run      domain.Run
+		evidence string
+		score    float64
+	}
+	fixtures := []fixture{
+		{runs[0], "x:000000000000000000000101", .9},
+		{runs[0], "x:000000000000000000000102", .8},
+		{runs[0], "x:000000000000000000000103", .7},
+		{runs[1], "linkedin:000000000000000000201", .6},
+		{runs[1], "linkedin:000000000000000000202", .5},
+	}
+	for index, fixture := range fixtures {
+		assessment := domain.CandidateAssessment{EvidenceKey: fixture.evidence}
+		assessmentRaw, _ := json.Marshal(assessment)
+		itemRaw, _ := json.Marshal(domain.ReasonedItem{EvidenceKey: fixture.evidence, Source: fixture.run.Source})
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, fixture.run.ID, fixture.evidence, fixture.run.Source, string(assessmentRaw), fixture.score, 0, fixture.score, 1, domain.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, fmt.Sprintf("timeline-%d", index), session.ID, fixture.run.ID, fixture.run.Source, fixture.evidence, index, string(itemRaw), string(assessmentRaw), "{}", domain.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := state.ComposeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListSessionItems(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.Source{domain.SourceX, domain.SourceX, domain.SourceLinkedIn, domain.SourceX, domain.SourceLinkedIn}
+	if len(items) != len(want) {
+		t.Fatalf("items=%d", len(items))
+	}
+	for index, source := range want {
+		if items[index].Source != source || items[index].Rank != index {
+			t.Fatalf("items[%d]=%+v", index, items[index])
+		}
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at=? WHERE id=?; UPDATE timeline_items SET rank=0 WHERE session_id=?`, domain.Now(), session.ID, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.RecomposeCompletedSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	items, err = state.ListSessionItems(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, source := range want {
+		if items[index].Source != source || items[index].Rank != index {
+			t.Fatalf("recomposed items[%d]=%+v", index, items[index])
+		}
+	}
+}
+
+func TestPreviouslyDeliveredEvidenceIsSourceScoped(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "What changed?", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := state.listRuns(ctx, session.ID)
+	evidence := "x:000000000000000000000301"
+	itemRaw, _ := json.Marshal(domain.ReasonedItem{EvidenceKey: evidence, Source: domain.SourceX})
+	assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{EvidenceKey: evidence})
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, "timeline-delivered", session.ID, runs[0].ID, domain.SourceX, evidence, 0, string(itemRaw), string(assessmentRaw), "{}", domain.Now()); err != nil {
+		t.Fatal(err)
+	}
+	known, err := state.PreviouslyDeliveredEvidence(ctx, domain.SourceX, []string{evidence, "x:missing"})
+	if err != nil || !known[evidence] || known["x:missing"] {
+		t.Fatalf("known=%v err=%v", known, err)
+	}
+	other, err := state.PreviouslyDeliveredEvidence(ctx, domain.SourceLinkedIn, []string{evidence})
+	if err != nil || other[evidence] {
+		t.Fatalf("other=%v err=%v", other, err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?)`, "knowledge-test", domain.SourceX, "event-test", evidence, string(itemRaw), domain.Now(), domain.Now()); err != nil {
+		t.Fatal(err)
+	}
+	events, err := state.PreviouslyKnownEvents(ctx, domain.SourceX, []string{"event-test", "event-missing"})
+	if err != nil || !events["event-test"] || events["event-missing"] {
+		t.Fatalf("events=%v err=%v", events, err)
+	}
+	otherEvents, err := state.PreviouslyKnownEvents(ctx, domain.SourceLinkedIn, []string{"event-test"})
+	if err != nil || otherEvents["event-test"] {
+		t.Fatalf("other events=%v err=%v", otherEvents, err)
+	}
+}
+
+func TestPreferenceSignalsUseLatestCanonicalSourceEvidenceLabel(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	evidence := "x:000000000000000000000501"
+	reason := "not_interested"
+	assessment := domain.CandidateAssessment{EvidenceKey: evidence, TopicFacets: []string{"ai_models"}}
+	assessmentRaw, _ := json.Marshal(assessment)
+
+	insertSignal := func(sessionNumber int, direction string, reason *string, created string) {
+		session, err := state.CreateSession(ctx, "What changed?", settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs, err := state.listRuns(ctx, session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run := runs[0]
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, run.ID, evidence, run.Source, string(assessmentRaw), .5, 0, .5, 1, created); err != nil {
+			t.Fatal(err)
+		}
+		timelineID := fmt.Sprintf("timeline-signal-%d", sessionNumber)
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, timelineID, session.ID, run.ID, run.Source, evidence, 0, "{}", string(assessmentRaw), "{}", created); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, fmt.Sprintf("feedback-signal-%d", sessionNumber), timelineID, session.ID, run.ID, evidence, direction, reason, created); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at=? WHERE id=?`, created, session.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	insertSignal(1, "more", nil, "2026-07-16T01:00:00Z")
+	insertSignal(2, "less", &reason, "2026-07-16T02:00:00Z")
+	signals, err := state.PreferenceSignals(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signals) != 1 || signals[0].Direction != "less" || signals[0].Reason == nil || *signals[0].Reason != reason {
+		t.Fatalf("signals=%+v", signals)
 	}
 }
 

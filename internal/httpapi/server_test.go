@@ -51,6 +51,13 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if health["runtime"] != "go" || health["bridgeContractVersion"] != domain.BridgeContractVersion {
 		t.Fatalf("health=%+v", health)
 	}
+	database := health["database"].(map[string]any)
+	if database["status"] != "healthy" {
+		t.Fatalf("database health=%+v", database)
+	}
+	if _, exposed := database["path"]; exposed {
+		t.Fatalf("health must not expose the absolute database path: %+v", database)
+	}
 	if response.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("security headers missing")
 	}

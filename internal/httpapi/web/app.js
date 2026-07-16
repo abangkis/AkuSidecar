@@ -465,7 +465,8 @@ async function pollSession() {
         console.warn("Capture-surface cleanup after session completion failed", error);
       });
       await refreshTimeline();
-      if (session.status === "failed") showSessionFailure(session);
+      showSessionOutcome(session);
+      if (["failed", "partial"].includes(session.status)) showSessionFailure(session);
       state.session = null;
       renderSession();
       if (["completed", "partial"].includes(session.status)) {
@@ -831,10 +832,10 @@ function renderTimeline(items) {
   const container = $("#result-items");
   container.replaceChildren();
   $("#timeline-meta").textContent = items.length
-    ? `${items.length} retained update${items.length === 1 ? "" : "s"} · newest first`
+    ? `${items.length} retained update${items.length === 1 ? "" : "s"} · personalized across sources`
     : "No completed update has been retained yet.";
   $("#finish-stats").textContent = items.length
-    ? `Shown: ${items.length} · bounded local evidence · newest first`
+    ? `Shown: ${items.length} · bounded local evidence · personalized across sources`
     : "Check active sources to establish the finite timeline.";
   if (!items.length) {
     const empty = document.createElement("section");
@@ -857,7 +858,7 @@ function renderTimeline(items) {
       const checked = document.createElement("strong");
       checked.textContent = `Checked ${formatDate(entry.createdAt)}`;
       const detail = document.createElement("span");
-      detail.textContent = "Unified X + LinkedIn";
+      detail.textContent = "Unified personalized order";
       marker.append(checked, detail);
       container.append(marker);
       previousSession = entry.sessionId;
@@ -1137,8 +1138,25 @@ function renderMedia() {
 }
 
 function showSessionFailure(session) {
-  $("#failure-message").textContent = session.error?.message || "The session stopped before both sources could finish.";
+  const failedRuns = (session.runs ?? []).filter((run) => ["failed", "cancelled"].includes(run.status));
+  const failedSources = failedRuns.map((run) => sourceLabel(run.source)).join(" and ");
+  if (session.status === "partial") {
+    $("#failure-message").textContent = `${failedSources || "One source"} could not finish. AkuBrowser retained and ordered the validated result from the source that completed.`;
+  } else {
+    $("#failure-message").textContent = session.error?.message
+      || failedRuns[0]?.error?.message
+      || "The session stopped before an active source could finish.";
+  }
   $("#failure-panel").classList.remove("hidden");
+}
+
+function showSessionOutcome(session) {
+  if (!["completed", "partial"].includes(session.status)) return;
+  const additions = session.items?.length ?? 0;
+  if (additions > 0) return;
+  const notice = $("#provider-notice");
+  notice.textContent = "Update complete: 0 additions. No captured candidate cleared the new, material, and trusted-evidence boundary.";
+  notice.classList.remove("hidden");
 }
 
 function hideFailure() {
