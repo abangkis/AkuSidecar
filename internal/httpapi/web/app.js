@@ -786,7 +786,9 @@ function buildSourceCard(entry) {
   if (evidence.mediaRecovery?.outcome === "unavailable") {
     const unavailable = document.createElement("div");
     unavailable.className = "source-layout-media-unavailable";
-    unavailable.textContent = "Media was present at the source but unavailable in this captured view.";
+    const message = document.createElement("span");
+    message.textContent = "Media was present at the source but unavailable in this captured view.";
+    unavailable.append(message, buildSourceLink(entry));
     card.append(unavailable);
   }
   const engagement = buildEngagement(evidence.engagement, source);
@@ -874,12 +876,7 @@ function buildEngagement(value, source) {
 function buildActions(entry) {
   const actions = document.createElement("div");
   actions.className = "result-actions";
-  const link = document.createElement("a");
-  link.className = "source-link";
-  link.href = entry.item?.sourceUrl || entry.evidence?.permalink || "#";
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
+  const link = buildSourceLink(entry);
   const feedback = document.createElement("div");
   feedback.className = "feedback-actions";
   const more = feedbackButton("More like this");
@@ -911,6 +908,16 @@ function buildActions(entry) {
   feedback.append(more, less, reason);
   actions.append(link, feedback);
   return actions;
+}
+
+function buildSourceLink(entry) {
+  const link = document.createElement("a");
+  link.className = "source-link";
+  link.href = entry.item?.sourceUrl || entry.evidence?.permalink || "#";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
+  return link;
 }
 
 function feedbackButton(label) {
