@@ -80,23 +80,30 @@ func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
 
 func TestTimelineBoundaryCueDefaultsToFollowAndUsesLockedModes(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
-	if value.TimelineBoundaryCueMode != DefaultTimelineBoundaryCueMode {
-		t.Fatalf("default timeline boundary cue=%q", value.TimelineBoundaryCueMode)
+	if value.TimelineBoundaryCueMode != DefaultTimelineBoundaryCueMode || value.TimelineBoundaryReturnMS != DefaultTimelineBoundaryReturnMS {
+		t.Fatalf("default timeline boundary cue=%+v", value)
 	}
 
 	value.TimelineBoundaryCueMode = ""
+	value.TimelineBoundaryReturnMS = 0
 	value.Normalize()
-	if value.TimelineBoundaryCueMode != "follow" {
-		t.Fatalf("normalized timeline boundary cue=%q", value.TimelineBoundaryCueMode)
+	if value.TimelineBoundaryCueMode != "follow" || value.TimelineBoundaryReturnMS != 350 {
+		t.Fatalf("normalized timeline boundary cue=%+v", value)
 	}
 
 	value.TimelineBoundaryCueMode = "static"
+	value.TimelineBoundaryReturnMS = 650
 	if err := value.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	value.TimelineBoundaryCueMode = "float"
 	if err := value.Validate(); err == nil {
 		t.Fatal("unsupported timeline boundary cue mode must be rejected")
+	}
+	value.TimelineBoundaryCueMode = "follow"
+	value.TimelineBoundaryReturnMS = 1050
+	if err := value.Validate(); err == nil {
+		t.Fatal("out-of-range timeline boundary return duration must be rejected")
 	}
 }
 

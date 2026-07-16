@@ -10,13 +10,14 @@ import (
 )
 
 const (
-	ApplicationVersion             = "1.0.0-dev.5"
-	BridgeContractVersion          = "aku-browser.bridge.v2"
-	DefaultTimelineBatchGapPX      = 36
-	DefaultTimelineBoundaryCueMode = "follow"
-	DefaultSemanticShortlist       = 10
-	DefaultRetentionDays           = 30
-	DefaultStorageLimitMB          = 100
+	ApplicationVersion              = "1.0.0-dev.5"
+	BridgeContractVersion           = "aku-browser.bridge.v2"
+	DefaultTimelineBatchGapPX       = 36
+	DefaultTimelineBoundaryCueMode  = "follow"
+	DefaultTimelineBoundaryReturnMS = 350
+	DefaultSemanticShortlist        = 10
+	DefaultRetentionDays            = 30
+	DefaultStorageLimitMB           = 100
 )
 
 type Source string
@@ -45,6 +46,7 @@ type Settings struct {
 	StreamWidth               string   `json:"streamWidth"`
 	TimelineBatchGapPX        int      `json:"timelineBatchGapPx"`
 	TimelineBoundaryCueMode   string   `json:"timelineBoundaryCueMode"`
+	TimelineBoundaryReturnMS  int      `json:"timelineBoundaryReturnMs"`
 	SemanticEventMode         string   `json:"semanticEventMode"`
 	SemanticEventShortlist    int      `json:"semanticEventShortlist"`
 	KnowledgeRetentionDays    int      `json:"knowledgeRetentionDays"`
@@ -64,6 +66,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		StreamWidth:               "social",
 		TimelineBatchGapPX:        DefaultTimelineBatchGapPX,
 		TimelineBoundaryCueMode:   DefaultTimelineBoundaryCueMode,
+		TimelineBoundaryReturnMS:  DefaultTimelineBoundaryReturnMS,
 		SemanticEventMode:         "collapse",
 		SemanticEventShortlist:    DefaultSemanticShortlist,
 		KnowledgeRetentionDays:    DefaultRetentionDays,
@@ -103,6 +106,9 @@ func (s *Settings) Normalize() {
 	if s.TimelineBoundaryCueMode == "" {
 		s.TimelineBoundaryCueMode = DefaultTimelineBoundaryCueMode
 	}
+	if s.TimelineBoundaryReturnMS == 0 {
+		s.TimelineBoundaryReturnMS = DefaultTimelineBoundaryReturnMS
+	}
 	if s.SemanticEventMode == "" {
 		s.SemanticEventMode = "collapse"
 	}
@@ -139,6 +145,9 @@ func (s Settings) Validate() error {
 	}
 	if s.TimelineBoundaryCueMode != "follow" && s.TimelineBoundaryCueMode != "static" {
 		return fmt.Errorf("unsupported timeline boundary cue mode %q", s.TimelineBoundaryCueMode)
+	}
+	if s.TimelineBoundaryReturnMS < 100 || s.TimelineBoundaryReturnMS > 1000 {
+		return errors.New("timelineBoundaryReturnMs must be between 100 and 1000")
 	}
 	if s.SemanticEventMode != "collapse" && s.SemanticEventMode != "show_all" && s.SemanticEventMode != "hide" {
 		return fmt.Errorf("unsupported semantic event mode %q", s.SemanticEventMode)

@@ -190,10 +190,14 @@
                   <button id="reset-timeline-batch-gap" type="button">Reset to default</button>
                 </span>
               </div>
-              <label class="settings-row" for="timeline-boundary-follow">
-                <span class="settings-copy"><strong>Follow earlier-check boundaries</strong><small>Let the back-to-top button briefly follow visible earlier-check lines while scrolling down.</small></span>
-                <input id="timeline-boundary-follow" name="timelineBoundaryFollow" type="checkbox" />
-              </label>
+              <div class="settings-row">
+                <label class="settings-copy" for="timeline-boundary-follow"><strong>Follow earlier-check boundaries</strong><small>Let the back-to-top button follow visible earlier-check lines while scrolling down, then return over the configured milliseconds.</small></label>
+                <span class="boundary-cue-control">
+                  <input id="timeline-boundary-follow" name="timelineBoundaryFollow" type="checkbox" aria-label="Follow earlier-check boundaries" />
+                  <span class="boundary-duration-control"><input id="timeline-boundary-return-ms" name="timelineBoundaryReturnMs" type="number" min="100" max="1000" step="50" aria-label="Boundary cue return duration in milliseconds" /><span>ms</span></span>
+                  <button id="reset-timeline-boundary-return" type="button">Reset to default</button>
+                </span>
+              </div>
               <label class="settings-row" for="capture-visibility-policy">
                 <span class="settings-copy"><strong>Capture visibility</strong><small>Quiet uses a dedicated non-focused capture window.</small></span>
                 <select id="capture-visibility-policy" name="captureVisibility">

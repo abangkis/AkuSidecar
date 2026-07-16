@@ -7,6 +7,7 @@ const SOURCE_TEXT_COLLAPSE_LINES = 6;
 const QUOTE_TEXT_COLLAPSE_CHARACTERS = 280;
 const QUOTE_TEXT_COLLAPSE_LINES = 4;
 const DEFAULT_TIMELINE_BATCH_GAP_PX = 36;
+const DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -61,6 +62,8 @@ $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
 $("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
+$("#timeline-boundary-return-ms").addEventListener("input", () => applyTimelineBoundaryReturnDuration($("#timeline-boundary-return-ms").value));
+$("#reset-timeline-boundary-return").addEventListener("click", resetTimelineBoundaryReturnDuration);
 $("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
 $("#onboarding-cancel").addEventListener("click", () => setView("settings"));
@@ -196,6 +199,7 @@ function renderSettings(settings) {
   $("#stream-width").value = settings.streamWidth || "social";
   $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
   $("#timeline-boundary-follow").checked = settings.timelineBoundaryCueMode !== "static";
+  $("#timeline-boundary-return-ms").value = settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
   $("#semantic-event-mode").value = settings.semanticEventMode || "collapse";
   $("#semantic-event-shortlist").value = String(settings.semanticEventShortlist || 10);
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
@@ -204,6 +208,7 @@ function renderSettings(settings) {
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
   applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
+  applyTimelineBoundaryReturnDuration(settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
   if (settings.timelineBoundaryCueMode === "static") releaseBackToTopBoundary();
   syncLoadProfileSettings(false);
   syncSemanticEventSettings();
@@ -240,6 +245,7 @@ async function saveSettings(event) {
     streamWidth: $("#stream-width").value,
     timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
     timelineBoundaryCueMode: $("#timeline-boundary-follow").checked ? "follow" : "static",
+    timelineBoundaryReturnMs: Number.parseInt($("#timeline-boundary-return-ms").value, 10),
     semanticEventMode: $("#semantic-event-mode").value,
     semanticEventShortlist: Number.parseInt($("#semantic-event-shortlist").value, 10),
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
@@ -293,6 +299,18 @@ function applyTimelineBatchGap(value) {
 function resetTimelineBatchGap() {
   $("#timeline-batch-gap").value = DEFAULT_TIMELINE_BATCH_GAP_PX;
   applyTimelineBatchGap(DEFAULT_TIMELINE_BATCH_GAP_PX);
+  $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
+}
+
+function applyTimelineBoundaryReturnDuration(value) {
+  const parsed = Number.parseInt(value, 10);
+  const bounded = Number.isFinite(parsed) ? Math.min(1000, Math.max(100, parsed)) : DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
+  document.documentElement.style.setProperty("--back-to-top-return-duration", `${bounded}ms`);
+}
+
+function resetTimelineBoundaryReturnDuration() {
+  $("#timeline-boundary-return-ms").value = DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
+  applyTimelineBoundaryReturnDuration(DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
   $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
 }
 

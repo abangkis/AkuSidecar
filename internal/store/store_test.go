@@ -31,6 +31,7 @@ func TestTimelineBoundaryCueModePersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings.TimelineBoundaryCueMode = "static"
+	settings.TimelineBoundaryReturnMS = 650
 	if err := state.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +39,8 @@ func TestTimelineBoundaryCueModePersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.TimelineBoundaryCueMode != "static" {
-		t.Fatalf("timeline boundary cue mode=%q", stored.TimelineBoundaryCueMode)
+	if stored.TimelineBoundaryCueMode != "static" || stored.TimelineBoundaryReturnMS != 650 {
+		t.Fatalf("timeline boundary cue settings=%+v", stored)
 	}
 }
 
