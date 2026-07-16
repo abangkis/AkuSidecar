@@ -30,7 +30,7 @@ func fakeCodex() {
 	if strings.Contains(args, "acquisition-plan.schema.json") {
 		emit(map[string]any{"decision": "finish", "reason": "enough bounded evidence"})
 	} else {
-		emit(domain.ReasoningResult{Summary: "fake", Items: []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, SourceURL: "https://x.com/post", SourceURLKind: "native_post", EvidenceKey: "x:000000000000000000000001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}}, CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "x:000000000000000000000001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture"}}, Limitations: []string{}})
+		emit(domain.ReasoningResult{Summary: "fake", Items: []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, SourceURL: "https://x.com/post", SourceURLKind: "native_post", EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}}, CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture"}}, Limitations: []string{}})
 	}
 	fmt.Println(`{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":5,"reasoning_output_tokens":1}}`)
 }
@@ -57,6 +57,30 @@ func TestCodexExecConsumesSDKCompatibleJSONL(t *testing.T) {
 	result, telemetry, err := provider.Analyze(context.Background(), run, observation, nil)
 	if err != nil || len(result.Items) != 1 || telemetry.OutputTokens == nil {
 		t.Fatalf("result=%+v telemetry=%+v err=%v", result, telemetry, err)
+	}
+	if result.Items[0].EvidenceKey != "x:000000000000000000000001" || result.CandidateAssessments[0].EvidenceKey != "x:000000000000000000000001" {
+		t.Fatalf("candidate aliases were not restored: %+v", result)
+	}
+}
+
+func TestEvaluationRequestUsesAliasesAndExcludesPriorIdentity(t *testing.T) {
+	observation := domain.Observation{Source: domain.SourceX, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:current-opaque-key", Text: "Changed"}}}}, Coverage: map[string]any{}}
+	knowledge := []domain.ReasonedItem{{ID: "prior-id", EvidenceKey: "x:prior-evidence-key", EventKey: "x:prior-event-key", WhatChanged: "Prior change"}}
+	request := buildEvaluationRequest(domain.Run{ID: "run-1", Source: domain.SourceX}, observation, knowledge)
+	for _, forbidden := range []string{"x:current-opaque-key", "x:prior-evidence-key", "x:prior-event-key", "prior-id"} {
+		if strings.Contains(request.prompt, forbidden) {
+			t.Fatalf("prompt leaked identity %q: %s", forbidden, request.prompt)
+		}
+	}
+	if !strings.Contains(request.prompt, "candidate_001") || request.evidenceKeys["candidate_001"] != "x:current-opaque-key" {
+		t.Fatalf("candidate alias missing: %+v", request)
+	}
+}
+
+func TestRestoreEvidenceKeysRejectsUnknownAlias(t *testing.T) {
+	result := domain.ReasoningResult{Items: []domain.ReasonedItem{{EvidenceKey: "candidate_999"}}}
+	if err := restoreEvidenceKeys(&result, map[string]string{"candidate_001": "x:key"}); err == nil {
+		t.Fatal("expected unknown candidate alias to fail")
 	}
 }
 

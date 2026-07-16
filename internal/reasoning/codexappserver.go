@@ -119,7 +119,8 @@ func (c *CodexAppServer) Plan(ctx context.Context, run domain.Run, observation d
 }
 
 func (c *CodexAppServer) Analyze(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
-	raw, usage, duration, err := c.invoke(ctx, buildEvaluationPrompt(run, observation, knowledge), c.resultSchema, c.evaluation)
+	request := buildEvaluationRequest(run, observation, knowledge)
+	raw, usage, duration, err := c.invoke(ctx, request.prompt, c.resultSchema, c.evaluation)
 	telemetry := appServerTelemetry(run, "candidate_evaluation", c.evaluation, duration, usage, err)
 	if err != nil {
 		return domain.ReasoningResult{}, telemetry, err
@@ -127,6 +128,9 @@ func (c *CodexAppServer) Analyze(ctx context.Context, run domain.Run, observatio
 	var result domain.ReasoningResult
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		return domain.ReasoningResult{}, telemetry, fmt.Errorf("decode App Server reasoning result: %w", err)
+	}
+	if err := restoreEvidenceKeys(&result, request.evidenceKeys); err != nil {
+		return domain.ReasoningResult{}, telemetry, err
 	}
 	return result, telemetry, nil
 }
