@@ -123,6 +123,7 @@ delete or move the development database and start again.
 - `GET /api/sessions/active`
 - `GET /api/sessions/{id}`
 - `POST /api/sessions/{id}/cancel`
+- `GET /api/inbox`
 - `GET /api/runs/{id}`
 - `GET /api/timeline`
 - `POST /api/timeline/{id}/feedback`

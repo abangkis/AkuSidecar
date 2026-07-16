@@ -33,6 +33,62 @@ func testEngine(t *testing.T) (*Engine, *store.Store) {
 	return runtime, state
 }
 
+type followUpProvider struct{ reasoning.Deterministic }
+
+func (provider followUpProvider) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (reasoning.AcquisitionPlan, domain.ReasoningTelemetry, error) {
+	plan, telemetry, err := provider.Deterministic.Plan(ctx, run, observation, knowledge)
+	plan.Decision = "request_follow_up"
+	plan.Reason = "test optional frontier"
+	return plan, telemetry, err
+}
+
+func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
+	ctx := context.Background()
+	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { state.Close() })
+	runtime := New(state, followUpProvider{}, config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 2}}, log.New(io.Discard, "", 0))
+	runtime.RecordHeartbeat(ExpectedHeartbeat())
+	session, err := runtime.StartSession(ctx, "What changed?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Runs[0].Status == "waiting_for_bridge" })
+	run := active.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("initial command=%+v err=%v", command, err)
+	}
+	evidenceKey := "x:000000000000000000000099"
+	observation := domain.Observation{Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: evidenceKey, Text: "Valid initial evidence"}}}}, Coverage: map[string]any{"performedScrolls": 4}}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Runs[0].Stage == "follow_up_capture" })
+	time.Sleep(20 * time.Millisecond)
+	followUp, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || followUp == nil {
+		t.Fatalf("follow-up command=%+v err=%v", followUp, err)
+	}
+	if _, err := runtime.FailCommand(ctx, followUp.ID, run.ID, domain.Failure{Code: "frontier_mismatch", Stage: "capture", Message: "frontier changed"}); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Runs[0].Status == "completed" })
+	if len(completed.Items) != 1 || completed.Items[0].EvidenceKey != evidenceKey {
+		t.Fatalf("fallback items=%+v", completed.Items)
+	}
+	inbox, _, err := runtime.Inbox(ctx, 1, 0)
+	if err != nil || len(inbox) != 1 || inbox[0].Runs[0].FollowUpFallback == nil || inbox[0].Runs[0].FollowUpFallback.Code != "frontier_mismatch" {
+		t.Fatalf("fallback inbox=%+v err=%v", inbox, err)
+	}
+}
+
 func TestUnifiedSessionCompletesBothSources(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)

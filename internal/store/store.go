@@ -510,26 +510,40 @@ func (s *Store) Observations(ctx context.Context, runID string) ([]domain.Observ
 	return values, rows.Err()
 }
 
-func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failure domain.Failure) error {
+func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failure domain.Failure) (bool, error) {
 	raw, _ := json.Marshal(failure)
 	now := domain.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback()
+	var runStage string
+	var observationCount int
+	if err = tx.QueryRowContext(ctx, `SELECT r.stage,(SELECT COUNT(*) FROM observations o WHERE o.run_id=r.id) FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.id=? AND c.id=?`, runID, commandID).Scan(&runStage, &observationCount); err != nil {
+		return false, err
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='failed',completed_at=?,error_json=? WHERE id=? AND run_id=? AND status='claimed'`, now, string(raw), commandID, runID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	count, _ := result.RowsAffected()
 	if count != 1 {
-		return errors.New("bridge command is not active")
+		return false, errors.New("bridge command is not active")
+	}
+	if runStage == "follow_up_capture" && observationCount > 0 {
+		if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning' WHERE id=?`, runID); err != nil {
+			return false, err
+		}
+		if err = tx.Commit(); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='failed',stage=?,completed_at=?,error_json=? WHERE id=?`, failure.Stage, now, string(raw), runID); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit()
+	return false, tx.Commit()
 }
 
 func (s *Store) FailRun(ctx context.Context, runID string, failure domain.Failure) error {

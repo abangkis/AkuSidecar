@@ -257,6 +257,9 @@ func (e *Engine) Run(ctx context.Context, id string) (domain.Run, error) {
 func (e *Engine) Timeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
 	return e.store.ListTimeline(ctx, limit, offset)
 }
+func (e *Engine) Inbox(ctx context.Context, limit, offset int) ([]domain.InboxSession, int, error) {
+	return e.store.ListInboxSessions(ctx, limit, offset)
+}
 
 func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string, value domain.Observation) (domain.Run, error) {
 	run, err := e.store.GetRun(ctx, runID)
@@ -326,6 +329,10 @@ func validateObservation(value domain.Observation) error {
 }
 
 func (e *Engine) launch(runID string) {
+	e.launchProcess(runID, true)
+}
+
+func (e *Engine) launchProcess(runID string, allowPlanning bool) {
 	e.mu.Lock()
 	if _, exists := e.active[runID]; exists {
 		e.mu.Unlock()
@@ -336,7 +343,7 @@ func (e *Engine) launch(runID string) {
 	e.mu.Unlock()
 	go func() {
 		defer func() { e.mu.Lock(); delete(e.active, runID); e.mu.Unlock() }()
-		if err := e.process(ctx, runID); err != nil {
+		if err := e.process(ctx, runID, allowPlanning); err != nil {
 			e.logger.Printf("run %s failed: %v", runID, err)
 			failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: err.Error(), Retryable: true}
 			_ = e.store.FailRun(context.Background(), runID, failure)
@@ -346,7 +353,7 @@ func (e *Engine) launch(runID string) {
 	}()
 }
 
-func (e *Engine) process(ctx context.Context, runID string) error {
+func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) error {
 	run, err := e.store.GetRun(ctx, runID)
 	if err != nil {
 		return err
@@ -363,7 +370,7 @@ func (e *Engine) process(ctx context.Context, runID string) error {
 	if err != nil {
 		return err
 	}
-	if len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
+	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
 		plan, telemetry, planErr := e.provider.Plan(ctx, run, merged, knowledge)
 		_ = e.store.SaveTelemetry(context.Background(), telemetry)
 		if planErr != nil {
@@ -542,12 +549,17 @@ func (e *Engine) FailCommand(ctx context.Context, commandID, runID string, failu
 	if failure.Stage == "" {
 		failure.Stage = "capture"
 	}
-	if err := e.store.FailCommand(ctx, commandID, runID, failure); err != nil {
+	fallback, err := e.store.FailCommand(ctx, commandID, runID, failure)
+	if err != nil {
 		return domain.Run{}, err
 	}
 	run, err := e.store.GetRun(ctx, runID)
 	if err == nil {
-		_, _ = e.startNext(ctx, run.SessionID)
+		if fallback {
+			e.launchProcess(runID, false)
+		} else {
+			_, _ = e.startNext(ctx, run.SessionID)
+		}
 	}
 	return run, err
 }

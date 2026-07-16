@@ -37,8 +37,10 @@ window.addEventListener("message", (event) => {
 });
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
+$("#inbox-view-button").addEventListener("click", () => setView("inbox"));
 $("#settings-view-button").addEventListener("click", () => setView("settings"));
 $("#timeline-refresh-button").addEventListener("click", refreshTimeline);
+$("#inbox-refresh-button").addEventListener("click", loadInbox);
 $("#timeline-runner-button").addEventListener("click", startSession);
 $("#done-button").addEventListener("click", startSession);
 $("#retry-button").addEventListener("click", () => {
@@ -117,15 +119,20 @@ function setView(view) {
   }
   state.currentView = view;
   state.onboardingEditing = false;
+  const timeline = view === "timeline";
+  const inbox = view === "inbox";
   const settings = view === "settings";
   $("#onboarding-panel").classList.add("hidden");
   $("#calibration-panel").classList.add("hidden");
   document.querySelector(".view-switch")?.classList.remove("hidden");
   $("#settings-panel").classList.toggle("hidden", !settings);
-  $("#timeline-panel").classList.toggle("hidden", settings);
-  $("#session-view-button").classList.toggle("selected", !settings);
+  $("#inbox-panel").classList.toggle("hidden", !inbox);
+  $("#timeline-panel").classList.toggle("hidden", !timeline);
+  $("#session-view-button").classList.toggle("selected", timeline);
+  $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
-  (settings ? $("#settings-heading") : $("#timeline-heading")).focus?.();
+  ({ timeline: $("#timeline-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
+  if (inbox) loadInbox();
   scheduleBackToTop();
 }
 
@@ -255,6 +262,7 @@ function showOnboarding(editing) {
   $("#onboarding-finish").textContent = editing ? "Save profile" : "Start calibrating";
   $("#onboarding-error").textContent = "";
   $("#settings-panel").classList.add("hidden");
+  $("#inbox-panel").classList.add("hidden");
   $("#timeline-panel").classList.add("hidden");
   $("#calibration-panel").classList.add("hidden");
   $("#onboarding-panel").classList.remove("hidden");
@@ -368,7 +376,9 @@ function scheduleBackToTop() {
 function syncBackToTopPosition() {
   const candidates = state.currentView === "timeline"
     ? [$("#result-panel"), document.querySelector(".timeline-heading-row")]
-    : [$("#settings-panel")];
+    : state.currentView === "inbox"
+      ? [$("#inbox-panel")]
+      : [$("#settings-panel")];
   const anchor = candidates.find((element) => {
     if (!element || element.classList.contains("hidden")) return false;
     const rect = element.getBoundingClientRect();
@@ -581,6 +591,7 @@ function showCalibration(calibration) {
   state.calibrationOrdinal = unresolved >= 0 ? unresolved : Math.max(0, calibration.samples.length - 1);
   $("#onboarding-panel").classList.add("hidden");
   $("#settings-panel").classList.add("hidden");
+  $("#inbox-panel").classList.add("hidden");
   $("#timeline-panel").classList.add("hidden");
   $("#calibration-panel").classList.remove("hidden");
   document.querySelector(".view-switch")?.classList.add("hidden");
@@ -690,6 +701,130 @@ async function refreshTimeline() {
   } catch (error) {
     showError(error);
   }
+}
+
+async function loadInbox() {
+  const meta = $("#inbox-meta");
+  const refresh = $("#inbox-refresh-button");
+  meta.textContent = "Loading recent checks...";
+  refresh.disabled = true;
+  try {
+    const response = await api("/api/inbox?limit=12&offset=0");
+    renderInbox(response.sessions ?? [], response.total ?? 0);
+  } catch (error) {
+    meta.textContent = error.message;
+    $("#inbox-sessions").replaceChildren();
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
+function renderInbox(sessions, total) {
+  const container = $("#inbox-sessions");
+  $("#inbox-meta").textContent = total
+    ? `${Math.min(sessions.length, total)} of ${total} recent checks \u00b7 newest first`
+    : "No update checks have been recorded yet.";
+  if (!sessions.length) {
+    const empty = document.createElement("p");
+    empty.className = "inbox-empty";
+    empty.textContent = "Run Check for updates to create the first diagnostic entry.";
+    container.replaceChildren(empty);
+    return;
+  }
+  container.replaceChildren(...sessions.map((session, index) => buildInboxSession(session, index === 0)));
+  scheduleBackToTop();
+}
+
+function buildInboxSession(session, expanded) {
+  const details = document.createElement("details");
+  details.className = "inbox-session";
+  details.open = expanded;
+  const summary = document.createElement("summary");
+  const identity = document.createElement("div");
+  identity.className = "inbox-session-identity";
+  const title = document.createElement("strong");
+  title.textContent = `Checked ${formatDate(session.createdAt)}`;
+  const status = document.createElement("span");
+  status.className = `status-pill status-${inboxStatusTone(session.status)}`;
+  status.textContent = humanize(session.status);
+  identity.append(title, status);
+  const flow = document.createElement("span");
+  flow.className = "inbox-flow-summary";
+  flow.textContent = `${session.capturedCandidates} captured \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} added`;
+  summary.append(identity, flow);
+  const body = document.createElement("div");
+  body.className = "inbox-session-body";
+  const duration = document.createElement("p");
+  duration.className = "inbox-session-meta";
+  duration.textContent = [formatDurationBetween(session.startedAt, session.completedAt), session.intent].filter(Boolean).join(" \u00b7 ");
+  const runs = document.createElement("div");
+  runs.className = "inbox-runs";
+  runs.append(...(session.runs ?? []).map(buildInboxRun));
+  body.append(duration, runs);
+  details.append(summary, body);
+  return details;
+}
+
+function buildInboxRun(run) {
+  const card = document.createElement("article");
+  card.className = "inbox-run-card";
+  const header = document.createElement("header");
+  const source = document.createElement("strong");
+  source.textContent = sourceLabel(run.source);
+  const stage = document.createElement("span");
+  stage.className = `status-pill status-${inboxStatusTone(run.status)}`;
+  stage.textContent = run.status === "completed" ? "Completed" : `${humanize(run.status)} \u00b7 ${humanize(run.stage)}`;
+  header.append(source, stage);
+  const pipeline = document.createElement("div");
+  pipeline.className = "inbox-pipeline";
+  for (const [label, value] of [
+    ["Captured", run.capturedCandidates],
+    ["Evaluated", run.evaluatedCandidates],
+    ["Selected", run.selectedCandidates],
+    ["Added", run.addedItems],
+  ]) {
+    const metric = document.createElement("div");
+    const number = document.createElement("strong");
+    number.textContent = String(value ?? 0);
+    const name = document.createElement("span");
+    name.textContent = label;
+    metric.append(number, name);
+    pipeline.append(metric);
+  }
+  const mechanics = document.createElement("p");
+  mechanics.className = "inbox-run-mechanics";
+  mechanics.textContent = [
+    `${run.acquisitionRounds ?? 0} capture round${run.acquisitionRounds === 1 ? "" : "s"}`,
+    `${run.snapshotCount ?? 0} snapshots`,
+    `${run.performedScrolls ?? 0} scrolls`,
+    run.reasoningDurationMs ? `${formatDuration(run.reasoningDurationMs)} model time` : null,
+  ].filter(Boolean).join(" \u00b7 ");
+  card.append(header, pipeline, mechanics);
+  if (run.error) {
+    const failure = document.createElement("p");
+    failure.className = "inbox-run-error";
+    failure.textContent = `Stopped at ${humanize(run.error.stage || run.stage)}: ${run.error.message}`;
+    card.append(failure);
+  } else if (run.followUpFallback) {
+    const fallback = document.createElement("p");
+    fallback.className = "inbox-run-warning";
+    fallback.textContent = `Completed from the initial capture after optional follow-up failed: ${run.followUpFallback.message}`;
+    card.append(fallback);
+  }
+  if (!run.error && run.summary) {
+    const summary = document.createElement("p");
+    summary.className = "inbox-run-summary";
+    summary.textContent = run.summary;
+    card.append(summary);
+  }
+  return card;
+}
+
+function inboxStatusTone(status) {
+  if (status === "completed") return "ok";
+  if (["failed", "cancelled"].includes(status)) return "danger";
+  if (status === "partial") return "warning";
+  return "neutral";
 }
 
 function renderTimeline(items) {
@@ -1059,6 +1194,20 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatDurationBetween(startedAt, completedAt) {
+  if (!startedAt || !completedAt) return "";
+  const duration = new Date(completedAt).valueOf() - new Date(startedAt).valueOf();
+  return Number.isFinite(duration) && duration >= 0 ? formatDuration(duration) : "";
+}
+
+function formatDuration(milliseconds) {
+  const seconds = Math.max(0, Math.round(Number(milliseconds) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
 }
 
 function safeMediaUrl(value) {

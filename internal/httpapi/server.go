@@ -236,6 +236,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	case r.Method == http.MethodGet && p == "/api/inbox":
+		limit := boundedInt(r.URL.Query().Get("limit"), 12, 1, 25)
+		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
+		sessions, total, err := s.engine.Inbox(ctx, limit, offset)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "total": total, "limit": limit, "offset": offset})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/sessions/") && !strings.HasSuffix(p, "/cancel"):
 		id := path.Base(p)
 		session, err := s.engine.Session(ctx, id)

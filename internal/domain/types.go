@@ -174,6 +174,41 @@ type Run struct {
 	Error       *Failure       `json:"error"`
 }
 
+type InboxSession struct {
+	ID                  string     `json:"id"`
+	Intent              string     `json:"intent"`
+	Status              string     `json:"status"`
+	CreatedAt           string     `json:"createdAt"`
+	StartedAt           *string    `json:"startedAt"`
+	CompletedAt         *string    `json:"completedAt"`
+	CapturedCandidates  int        `json:"capturedCandidates"`
+	EvaluatedCandidates int        `json:"evaluatedCandidates"`
+	SelectedCandidates  int        `json:"selectedCandidates"`
+	AddedItems          int        `json:"addedItems"`
+	Runs                []InboxRun `json:"runs"`
+	Error               *Failure   `json:"error"`
+}
+
+type InboxRun struct {
+	ID                  string   `json:"id"`
+	Source              Source   `json:"source"`
+	Status              string   `json:"status"`
+	Stage               string   `json:"stage"`
+	StartedAt           *string  `json:"startedAt"`
+	CompletedAt         *string  `json:"completedAt"`
+	Summary             string   `json:"summary"`
+	CapturedCandidates  int      `json:"capturedCandidates"`
+	EvaluatedCandidates int      `json:"evaluatedCandidates"`
+	SelectedCandidates  int      `json:"selectedCandidates"`
+	AddedItems          int      `json:"addedItems"`
+	AcquisitionRounds   int      `json:"acquisitionRounds"`
+	SnapshotCount       int      `json:"snapshotCount"`
+	PerformedScrolls    int      `json:"performedScrolls"`
+	ReasoningDurationMS int64    `json:"reasoningDurationMs"`
+	Error               *Failure `json:"error"`
+	FollowUpFallback    *Failure `json:"followUpFallback,omitempty"`
+}
+
 type Failure struct {
 	Code      string         `json:"code"`
 	Stage     string         `json:"stage"`

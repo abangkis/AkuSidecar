@@ -136,6 +136,14 @@ func TestTimelineIncludesCapturedSourceEvidence(t *testing.T) {
 	if items[0].Evidence.Text != "The original source-layout text." || items[0].Evidence.Author != "AkuBrowser @akubrowser" {
 		t.Fatalf("evidence=%+v", items[0].Evidence)
 	}
+	inbox, total, err := state.ListInboxSessions(ctx, 10, 0)
+	if err != nil || total != 1 || len(inbox) != 1 || len(inbox[0].Runs) != 2 {
+		t.Fatalf("inbox=%+v total=%d err=%v", inbox, total, err)
+	}
+	diagnostic := inbox[0].Runs[0]
+	if diagnostic.CapturedCandidates != 1 || diagnostic.AcquisitionRounds != 1 || diagnostic.SnapshotCount != 1 || diagnostic.AddedItems != 1 {
+		t.Fatalf("inbox diagnostic=%+v", diagnostic)
+	}
 }
 
 func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {

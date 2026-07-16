@@ -22,6 +22,7 @@
           </div>
           <nav class="view-switch" aria-label="AkuBrowser view">
             <button id="session-view-button" class="view-button selected" type="button">Timeline</button>
+            <button id="inbox-view-button" class="view-button" type="button">Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
         </div>
@@ -240,6 +241,18 @@
         </form>
       </section>
 
+      <section id="inbox-panel" class="inbox-panel hidden" aria-labelledby="inbox-heading">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">BOUNDED RUN LEDGER</p>
+            <h2 id="inbox-heading" tabindex="-1">Update Inbox</h2>
+            <p id="inbox-meta" class="review-guidance">Loading recent checks...</p>
+          </div>
+          <button id="inbox-refresh-button" class="text-button" type="button">Refresh</button>
+        </div>
+        <div id="inbox-sessions" class="inbox-sessions"></div>
+      </section>
+
       <section id="timeline-panel" class="timeline-panel" aria-labelledby="timeline-heading">
         <div class="timeline-heading-row">
           <div>
@@ -315,6 +328,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?runtime=go-ui-restored-v2"></script>
+    <script type="module" src="/app.js?runtime=go-ui-inbox-v3"></script>
   </body>
 </html>

@@ -70,6 +70,22 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if onboarding["status"] != "not_started" {
 		t.Fatalf("fresh onboarding=%+v", onboarding)
 	}
+	response, err = client.Get("http://" + address.String() + "/api/inbox?limit=5&offset=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inbox struct {
+		Sessions []domain.InboxSession `json:"sessions"`
+		Total    int                   `json:"total"`
+		Limit    int                   `json:"limit"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&inbox); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || inbox.Total != 0 || inbox.Limit != 5 || len(inbox.Sessions) != 0 {
+		t.Fatalf("inbox=%+v status=%d", inbox, response.StatusCode)
+	}
 	request, err := http.NewRequest(http.MethodPut, "http://"+address.String()+"/api/onboarding", bytes.NewBufferString(`{"activeSources":["x","linkedin"]}`))
 	if err != nil {
 		t.Fatal(err)
