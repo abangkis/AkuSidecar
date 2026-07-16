@@ -19,7 +19,7 @@ import (
 
 const (
 	ExpectedBridgeVersion   = "0.6.0"
-	ExpectedBridgeRevision  = "source-fidelity-v47"
+	ExpectedBridgeRevision  = "source-fidelity-v48"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
 	ExpectedXAdapter        = "x-dom-v16"
 	ExpectedLinkedInAdapter = "linkedin-dom-v13"

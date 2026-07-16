@@ -371,11 +371,15 @@ async function startSession() {
 
 async function cancelSession() {
   if (!state.session) return;
+  const leaseId = state.session.id;
   try {
     const { session } = await api(`/api/sessions/${encodeURIComponent(state.session.id)}/cancel`, { method: "POST" });
     state.session = session;
     renderSession();
     stopPolling();
+    await releaseCaptureSurface(leaseId).catch((error) => {
+      console.warn("Capture-surface cleanup after cancellation failed", error);
+    });
     state.session = null;
     renderSession();
   } catch (error) {
@@ -405,8 +409,10 @@ async function pollSession() {
     if (terminalStatuses.has(session.status)) {
       stopPolling();
       state.dispatchKey = null;
+      await releaseCaptureSurface(session.id).catch((error) => {
+        console.warn("Capture-surface cleanup after session completion failed", error);
+      });
       await refreshTimeline();
-      window.postMessage({ type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE", leaseId: session.id }, endpoint);
       if (session.status === "failed") showSessionFailure(session);
       state.session = null;
       renderSession();
@@ -425,6 +431,47 @@ async function pollSession() {
     }
     showError(error);
   }
+}
+
+async function releaseCaptureSurface(leaseId) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await releaseCaptureSurfaceOnce(leaseId);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+  }
+  throw lastError ?? new Error("AkuBridge did not confirm capture-surface cleanup.");
+}
+
+function releaseCaptureSurfaceOnce(leaseId) {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("message", onReleaseResult);
+      reject(new Error("AkuBridge capture-surface cleanup acknowledgement timed out."));
+    }, 1500);
+    function finish(callback, value) {
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onReleaseResult);
+      callback(value);
+    }
+    function onReleaseResult(event) {
+      if (event.source !== window || event.origin !== endpoint || event.data?.leaseId !== leaseId) return;
+      if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASED") {
+        if (event.data.outcome?.reason === "lease_mismatch") {
+          finish(reject, new Error("AkuBridge rejected cleanup because the capture lease changed."));
+          return;
+        }
+        finish(resolve, event.data.outcome ?? null);
+      } else if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASE_FAILED") {
+        finish(reject, new Error(event.data.message || "AkuBridge capture-surface cleanup failed."));
+      }
+    }
+    window.addEventListener("message", onReleaseResult);
+    window.postMessage({ type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE", leaseId }, endpoint);
+  });
 }
 
 function dispatch(run) {
