@@ -49,6 +49,43 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	}
 }
 
+func TestLatestTimelineCheckUsesLatestTerminalSessionEvenWithZeroAdditions(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	if latest, err := state.LatestTimelineCheck(ctx); err != nil || latest != nil {
+		t.Fatalf("fresh latest=%+v err=%v", latest, err)
+	}
+	settings, _ := state.GetSettings(ctx)
+	first, err := state.CreateSession(ctx, "first check", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRuns, _ := state.listRuns(ctx, first.ID)
+	evidence := "x:000000000000000000000401"
+	itemRaw, _ := json.Marshal(domain.ReasonedItem{EvidenceKey: evidence, Source: domain.SourceX})
+	assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{EvidenceKey: evidence})
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, "timeline-first-check", first.ID, firstRuns[0].ID, domain.SourceX, evidence, 0, string(itemRaw), string(assessmentRaw), "{}", "2026-07-16T10:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at='2026-07-16T10:00:00Z' WHERE id=?`, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := state.CreateSession(ctx, "zero addition check", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='partial',completed_at='2026-07-16T11:00:00Z' WHERE id=?`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := state.LatestTimelineCheck(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest == nil || latest.SessionID != second.ID || latest.Status != "partial" || latest.CompletedAt != "2026-07-16T11:00:00Z" || latest.AddedItems != 0 {
+		t.Fatalf("latest=%+v", latest)
+	}
+}
+
 func TestCalibrationSessionReflectsSnapshotLiveInfluence(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

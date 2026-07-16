@@ -189,6 +189,13 @@ type InboxSession struct {
 	Error               *Failure   `json:"error"`
 }
 
+type TimelineCheckSummary struct {
+	SessionID   string `json:"sessionId"`
+	Status      string `json:"status"`
+	CompletedAt string `json:"completedAt"`
+	AddedItems  int    `json:"addedItems"`
+}
+
 type InboxRun struct {
 	ID                  string   `json:"id"`
 	Source              Source   `json:"source"`

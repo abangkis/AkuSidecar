@@ -51,6 +51,23 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 	return sessions, total, nil
 }
 
+func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckSummary, error) {
+	var value domain.TimelineCheckSummary
+	err := s.db.QueryRowContext(ctx,
+		"SELECT s.id,s.status,s.completed_at,COUNT(t.id) "+
+			"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
+			"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL "+
+			"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
+		Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
+}
+
 func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, error) {
 	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error}
 	observations, err := s.Observations(ctx, run.ID)

@@ -93,7 +93,7 @@ async function bootstrap() {
     setPill("#reasoning-status", state.bootstrap.provider, "neutral");
     renderBridge(state.bootstrap.bridge);
     renderSettings(state.bootstrap.settings);
-    renderTimeline(state.bootstrap.timeline ?? []);
+    renderTimeline(state.bootstrap.timeline ?? [], state.bootstrap.latestCheck ?? null);
     renderSession();
     if (state.bootstrap.onboarding?.status !== "completed") {
       showOnboarding(false);
@@ -701,8 +701,9 @@ async function decideCalibration(decision) {
 async function refreshTimeline() {
   try {
     const limit = state.bootstrap?.settings?.timelineCapacity ?? 24;
-    const { items } = await api(`/api/timeline?limit=${limit}&offset=0`);
-    renderTimeline(items ?? []);
+    const { items, latestCheck } = await api(`/api/timeline?limit=${limit}&offset=0`);
+    state.bootstrap.latestCheck = latestCheck ?? null;
+    renderTimeline(items ?? [], latestCheck ?? null);
   } catch (error) {
     showError(error);
   }
@@ -832,12 +833,14 @@ function inboxStatusTone(status) {
   return "neutral";
 }
 
-function renderTimeline(items) {
+function renderTimeline(items, latestCheck) {
   const container = $("#result-items");
   container.replaceChildren();
-  $("#timeline-meta").textContent = items.length
-    ? `${items.length} retained update${items.length === 1 ? "" : "s"} · personalized across sources`
-    : "No completed update has been retained yet.";
+  $("#timeline-meta").textContent = latestCheck
+    ? latestCheck.addedItems
+      ? `${latestCheck.addedItems} new item${latestCheck.addedItems === 1 ? "" : "s"} from the latest check`
+      : "No new items from the latest check"
+    : "No completed check yet.";
   $("#finish-stats").textContent = items.length
     ? `Shown: ${items.length} · bounded local evidence · personalized across sources`
     : "Check active sources to establish the finite timeline.";
@@ -854,22 +857,22 @@ function renderTimeline(items) {
     return;
   }
 
-  const latestSession = items[0].sessionId;
+  const latestSession = latestCheck?.sessionId ?? items[0].sessionId;
   let previousSession = null;
+  let historyBoundaryMarked = false;
   for (const entry of items) {
-    if (previousSession === latestSession && entry.sessionId !== latestSession) {
-      const boundary = document.createElement("div");
-      boundary.className = "timeline-new-boundary";
-      boundary.setAttribute("role", "separator");
-      boundary.setAttribute("aria-label", "End of additions from the latest check");
-      boundary.title = "Earlier retained updates";
-      container.append(boundary);
-    }
     if (entry.sessionId !== previousSession) {
       const marker = document.createElement("div");
       marker.className = "timeline-batch-marker";
+      if (!historyBoundaryMarked && previousSession === latestSession && entry.sessionId !== latestSession) {
+        marker.classList.add("timeline-history-boundary");
+        marker.setAttribute("role", "separator");
+        marker.setAttribute("aria-label", "Earlier retained updates");
+        historyBoundaryMarked = true;
+      }
       const checked = document.createElement("strong");
-      checked.textContent = `Checked ${formatDate(entry.createdAt)}`;
+      const checkedAt = entry.sessionId === latestCheck?.sessionId ? latestCheck.completedAt : entry.createdAt;
+      checked.textContent = `Checked ${formatDate(checkedAt)}`;
       const detail = document.createElement("span");
       detail.textContent = "Unified personalized order";
       marker.append(checked, detail);

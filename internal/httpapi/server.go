@@ -118,6 +118,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		latestCheck, err := s.engine.LatestTimelineCheck(ctx)
+		if err != nil {
+			return err
+		}
 		onboarding, err := s.engine.Onboarding(ctx)
 		if err != nil {
 			return err
@@ -126,7 +130,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": 2}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": 2}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -281,7 +285,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"items": items})
+		latestCheck, err := s.engine.LatestTimelineCheck(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "latestCheck": latestCheck})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/feedback"):
 		id := path.Base(strings.TrimSuffix(p, "/feedback"))
 		var value domain.Feedback
