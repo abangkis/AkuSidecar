@@ -129,7 +129,7 @@ func (c *CodexAppServer) Analyze(ctx context.Context, run domain.Run, observatio
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		return domain.ReasoningResult{}, telemetry, fmt.Errorf("decode App Server reasoning result: %w", err)
 	}
-	if err := restoreEvidenceKeys(&result, request.evidenceKeys); err != nil {
+	if err := bindEvidenceKeysByPosition(&result, request.evidenceKeys); err != nil {
 		return domain.ReasoningResult{}, telemetry, err
 	}
 	return result, telemetry, nil

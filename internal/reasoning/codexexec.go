@@ -67,7 +67,7 @@ func (c *CodexExec) Analyze(ctx context.Context, run domain.Run, observation dom
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		return domain.ReasoningResult{}, telemetry, fmt.Errorf("decode Codex reasoning result: %w", err)
 	}
-	if err := restoreEvidenceKeys(&result, request.evidenceKeys); err != nil {
+	if err := bindEvidenceKeysByPosition(&result, request.evidenceKeys); err != nil {
 		return domain.ReasoningResult{}, telemetry, err
 	}
 	return result, telemetry, nil
@@ -207,18 +207,18 @@ Prior knowledge: %s
 
 type evaluationRequest struct {
 	prompt       string
-	evidenceKeys map[string]string
+	evidenceKeys []string
 }
 
 func buildEvaluationRequest(run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) evaluationRequest {
 	compact := compactObservation(observation)
-	evidenceKeys := map[string]string{}
+	evidenceKeys := make([]string, 0)
 	allowed := make([]string, 0)
 	for snapshotIndex := range compact.Snapshots {
 		for blockIndex := range compact.Snapshots[snapshotIndex].Blocks {
 			block := &compact.Snapshots[snapshotIndex].Blocks[blockIndex]
 			alias := fmt.Sprintf("candidate_%03d", len(allowed)+1)
-			evidenceKeys[alias] = block.EvidenceKey
+			evidenceKeys = append(evidenceKeys, block.EvidenceKey)
 			allowed = append(allowed, alias)
 			block.EvidenceKey = alias
 		}
@@ -240,27 +240,17 @@ func buildEvaluationPrompt(run domain.Run, observation domain.Observation, knowl
 	return buildEvaluationRequest(run, observation, knowledge).prompt
 }
 
-func restoreEvidenceKeys(result *domain.ReasoningResult, evidenceKeys map[string]string) error {
-	restore := func(alias string) (string, error) {
-		key, ok := evidenceKeys[alias]
-		if !ok {
-			return "", fmt.Errorf("model returned unknown candidate alias %q", alias)
-		}
-		return key, nil
+func bindEvidenceKeysByPosition(result *domain.ReasoningResult, evidenceKeys []string) error {
+	if len(result.Items) != len(evidenceKeys) {
+		return fmt.Errorf("model returned %d items for %d candidates", len(result.Items), len(evidenceKeys))
 	}
-	for index := range result.Items {
-		key, err := restore(result.Items[index].EvidenceKey)
-		if err != nil {
-			return err
-		}
-		result.Items[index].EvidenceKey = key
+	if len(result.CandidateAssessments) != len(evidenceKeys) {
+		return fmt.Errorf("model returned %d assessments for %d candidates", len(result.CandidateAssessments), len(evidenceKeys))
 	}
-	for index := range result.CandidateAssessments {
-		key, err := restore(result.CandidateAssessments[index].EvidenceKey)
-		if err != nil {
-			return err
-		}
-		result.CandidateAssessments[index].EvidenceKey = key
+	for index, evidenceKey := range evidenceKeys {
+		result.Items[index].ID = evidenceKey
+		result.Items[index].EvidenceKey = evidenceKey
+		result.CandidateAssessments[index].EvidenceKey = evidenceKey
 	}
 	return nil
 }

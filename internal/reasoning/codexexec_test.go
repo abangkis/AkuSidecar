@@ -72,15 +72,28 @@ func TestEvaluationRequestUsesAliasesAndExcludesPriorIdentity(t *testing.T) {
 			t.Fatalf("prompt leaked identity %q: %s", forbidden, request.prompt)
 		}
 	}
-	if !strings.Contains(request.prompt, "candidate_001") || request.evidenceKeys["candidate_001"] != "x:current-opaque-key" {
+	if !strings.Contains(request.prompt, "candidate_001") || len(request.evidenceKeys) != 1 || request.evidenceKeys[0] != "x:current-opaque-key" {
 		t.Fatalf("candidate alias missing: %+v", request)
 	}
 }
 
-func TestRestoreEvidenceKeysRejectsUnknownAlias(t *testing.T) {
-	result := domain.ReasoningResult{Items: []domain.ReasonedItem{{EvidenceKey: "candidate_999"}}}
-	if err := restoreEvidenceKeys(&result, map[string]string{"candidate_001": "x:key"}); err == nil {
-		t.Fatal("expected unknown candidate alias to fail")
+func TestBindEvidenceKeysByPositionOverridesModelIdentity(t *testing.T) {
+	result := domain.ReasoningResult{
+		Items:                []domain.ReasonedItem{{ID: "invented", EvidenceKey: "x:invented"}},
+		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "linkedin:invented"}},
+	}
+	if err := bindEvidenceKeysByPosition(&result, []string{"x:real"}); err != nil {
+		t.Fatal(err)
+	}
+	if result.Items[0].ID != "x:real" || result.Items[0].EvidenceKey != "x:real" || result.CandidateAssessments[0].EvidenceKey != "x:real" {
+		t.Fatalf("model identity was not replaced: %+v", result)
+	}
+}
+
+func TestBindEvidenceKeysByPositionRejectsCardinalityMismatch(t *testing.T) {
+	result := domain.ReasoningResult{Items: []domain.ReasonedItem{{}}, CandidateAssessments: nil}
+	if err := bindEvidenceKeysByPosition(&result, []string{"x:key"}); err == nil {
+		t.Fatal("expected assessment cardinality mismatch to fail")
 	}
 }
 
