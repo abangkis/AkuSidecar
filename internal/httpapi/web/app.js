@@ -2,6 +2,11 @@ const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
 const terminalStatuses = new Set(["completed", "partial", "failed", "cancelled"]);
 const BACK_TO_TOP_THRESHOLD_PX = 480;
+const LOAD_PROFILE_PRESETS = {
+  standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
+  expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
+  stress: { timelineCapacity: 36, maxItemsPerSource: 15, maxItemsTotal: 30, maxScrolls: 6 },
+};
 const state = {
   bootstrap: null,
   session: null,
@@ -42,7 +47,7 @@ $("#retry-button").addEventListener("click", () => {
 });
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
-$("#bounded-load-profile").addEventListener("change", syncCustomSettings);
+$("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
@@ -175,7 +180,7 @@ function renderSettings(settings) {
   $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
-  syncCustomSettings();
+  syncLoadProfileSettings(false);
 }
 
 async function saveSettings(event) {
@@ -190,6 +195,7 @@ async function saveSettings(event) {
     return;
   }
   const loadProfile = $("#bounded-load-profile").value;
+  const preset = LOAD_PROFILE_PRESETS[loadProfile];
   const perSource = Number.parseInt($("#max-items-per-source").value, 10);
   const settings = {
     ...current,
@@ -202,7 +208,7 @@ async function saveSettings(event) {
     activeSources,
     timelineCapacity: Number.parseInt($("#timeline-capacity").value, 10),
     maxItemsPerSource: perSource,
-    maxItemsTotal: loadProfile === "custom" ? Math.min(30, Math.max(1, perSource * 2)) : current.maxItemsTotal,
+    maxItemsTotal: preset?.maxItemsTotal ?? Math.min(30, Math.max(1, perSource * 2)),
     maxScrolls: Number.parseInt($("#max-scrolls").value, 10),
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
@@ -221,8 +227,15 @@ async function saveSettings(event) {
   }
 }
 
-function syncCustomSettings() {
-  const custom = $("#bounded-load-profile").value === "custom";
+function syncLoadProfileSettings(applyPreset) {
+  const loadProfile = $("#bounded-load-profile").value;
+  const preset = LOAD_PROFILE_PRESETS[loadProfile];
+  if (applyPreset && preset) {
+    $("#timeline-capacity").value = preset.timelineCapacity;
+    $("#max-items-per-source").value = preset.maxItemsPerSource;
+    $("#max-scrolls").value = preset.maxScrolls;
+  }
+  const custom = loadProfile === "custom";
   $("#timeline-capacity").disabled = !custom;
   $("#max-items-per-source").disabled = !custom;
   $("#max-scrolls").disabled = !custom;
