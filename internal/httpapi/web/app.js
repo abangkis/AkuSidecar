@@ -195,6 +195,7 @@ function renderSettings(settings) {
   $("#default-presentation").value = settings.defaultPresentation || "source";
   $("#stream-width").value = settings.streamWidth || "social";
   $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
+  $("#timeline-boundary-follow").checked = settings.timelineBoundaryCueMode !== "static";
   $("#semantic-event-mode").value = settings.semanticEventMode || "collapse";
   $("#semantic-event-shortlist").value = String(settings.semanticEventShortlist || 10);
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
@@ -203,6 +204,7 @@ function renderSettings(settings) {
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
   applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
+  if (settings.timelineBoundaryCueMode === "static") releaseBackToTopBoundary();
   syncLoadProfileSettings(false);
   syncSemanticEventSettings();
 }
@@ -237,6 +239,7 @@ async function saveSettings(event) {
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
     timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
+    timelineBoundaryCueMode: $("#timeline-boundary-follow").checked ? "follow" : "static",
     semanticEventMode: $("#semantic-event-mode").value,
     semanticEventShortlist: Number.parseInt($("#semantic-event-shortlist").value, 10),
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
@@ -441,7 +444,8 @@ function syncBackToTopBoundaryPosition(top, buttonHeight) {
   const button = $("#back-to-top");
   const delta = top - state.backToTopLastScrollY;
   state.backToTopLastScrollY = top;
-  if (state.currentView !== "timeline" || delta < -1 || top < BACK_TO_TOP_THRESHOLD_PX) {
+  const cueEnabled = state.bootstrap?.settings?.timelineBoundaryCueMode !== "static";
+  if (!cueEnabled || state.currentView !== "timeline" || delta < -1 || top < BACK_TO_TOP_THRESHOLD_PX) {
     releaseBackToTopBoundary();
     return;
   }

@@ -10,12 +10,13 @@ import (
 )
 
 const (
-	ApplicationVersion        = "1.0.0-dev.5"
-	BridgeContractVersion     = "aku-browser.bridge.v2"
-	DefaultTimelineBatchGapPX = 36
-	DefaultSemanticShortlist  = 10
-	DefaultRetentionDays      = 30
-	DefaultStorageLimitMB     = 100
+	ApplicationVersion             = "1.0.0-dev.5"
+	BridgeContractVersion          = "aku-browser.bridge.v2"
+	DefaultTimelineBatchGapPX      = 36
+	DefaultTimelineBoundaryCueMode = "follow"
+	DefaultSemanticShortlist       = 10
+	DefaultRetentionDays           = 30
+	DefaultStorageLimitMB          = 100
 )
 
 type Source string
@@ -43,6 +44,7 @@ type Settings struct {
 	DefaultPresentation       string   `json:"defaultPresentation"`
 	StreamWidth               string   `json:"streamWidth"`
 	TimelineBatchGapPX        int      `json:"timelineBatchGapPx"`
+	TimelineBoundaryCueMode   string   `json:"timelineBoundaryCueMode"`
 	SemanticEventMode         string   `json:"semanticEventMode"`
 	SemanticEventShortlist    int      `json:"semanticEventShortlist"`
 	KnowledgeRetentionDays    int      `json:"knowledgeRetentionDays"`
@@ -61,6 +63,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		DefaultPresentation:       "source",
 		StreamWidth:               "social",
 		TimelineBatchGapPX:        DefaultTimelineBatchGapPX,
+		TimelineBoundaryCueMode:   DefaultTimelineBoundaryCueMode,
 		SemanticEventMode:         "collapse",
 		SemanticEventShortlist:    DefaultSemanticShortlist,
 		KnowledgeRetentionDays:    DefaultRetentionDays,
@@ -97,6 +100,9 @@ func (s *Settings) Normalize() {
 	if s.TimelineBatchGapPX == 0 {
 		s.TimelineBatchGapPX = DefaultTimelineBatchGapPX
 	}
+	if s.TimelineBoundaryCueMode == "" {
+		s.TimelineBoundaryCueMode = DefaultTimelineBoundaryCueMode
+	}
 	if s.SemanticEventMode == "" {
 		s.SemanticEventMode = "collapse"
 	}
@@ -130,6 +136,9 @@ func (s Settings) Validate() error {
 	}
 	if s.TimelineBatchGapPX < 16 || s.TimelineBatchGapPX > 80 {
 		return errors.New("timelineBatchGapPx must be between 16 and 80")
+	}
+	if s.TimelineBoundaryCueMode != "follow" && s.TimelineBoundaryCueMode != "static" {
+		return fmt.Errorf("unsupported timeline boundary cue mode %q", s.TimelineBoundaryCueMode)
 	}
 	if s.SemanticEventMode != "collapse" && s.SemanticEventMode != "show_all" && s.SemanticEventMode != "hide" {
 		return fmt.Errorf("unsupported semantic event mode %q", s.SemanticEventMode)

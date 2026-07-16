@@ -23,6 +23,26 @@ func openTestStore(t *testing.T) *Store {
 	return value
 }
 
+func TestTimelineBoundaryCueModePersists(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.TimelineBoundaryCueMode = "static"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.TimelineBoundaryCueMode != "static" {
+		t.Fatalf("timeline boundary cue mode=%q", stored.TimelineBoundaryCueMode)
+	}
+}
+
 func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	state := openTestStore(t)
 	rows, err := state.db.Query(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)

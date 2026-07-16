@@ -78,6 +78,28 @@ func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
 	}
 }
 
+func TestTimelineBoundaryCueDefaultsToFollowAndUsesLockedModes(t *testing.T) {
+	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	if value.TimelineBoundaryCueMode != DefaultTimelineBoundaryCueMode {
+		t.Fatalf("default timeline boundary cue=%q", value.TimelineBoundaryCueMode)
+	}
+
+	value.TimelineBoundaryCueMode = ""
+	value.Normalize()
+	if value.TimelineBoundaryCueMode != "follow" {
+		t.Fatalf("normalized timeline boundary cue=%q", value.TimelineBoundaryCueMode)
+	}
+
+	value.TimelineBoundaryCueMode = "static"
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.TimelineBoundaryCueMode = "float"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unsupported timeline boundary cue mode must be rejected")
+	}
+}
+
 func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	if value.SemanticEventMode != "collapse" || value.SemanticEventShortlist != 10 || value.KnowledgeRetentionDays != 30 || value.KnowledgeStorageLimitMB != 100 {
