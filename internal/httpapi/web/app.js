@@ -854,8 +854,17 @@ function renderTimeline(items) {
     return;
   }
 
+  const latestSession = items[0].sessionId;
   let previousSession = null;
   for (const entry of items) {
+    if (previousSession === latestSession && entry.sessionId !== latestSession) {
+      const boundary = document.createElement("div");
+      boundary.className = "timeline-new-boundary";
+      boundary.setAttribute("role", "separator");
+      boundary.setAttribute("aria-label", "End of additions from the latest check");
+      boundary.title = "Earlier retained updates";
+      container.append(boundary);
+    }
     if (entry.sessionId !== previousSession) {
       const marker = document.createElement("div");
       marker.className = "timeline-batch-marker";

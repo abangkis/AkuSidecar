@@ -129,8 +129,8 @@ h3 { letter-spacing: -0.02em; }
 .result-items { display: grid; gap: 14px; }
 .timeline-batch-marker { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 24px 0 0; padding: 0 2px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; }
 .timeline-batch-marker strong { color: var(--text); }
+.timeline-new-boundary { height: 1px; margin: 4px 2px; background: var(--line-strong); opacity: 0.62; }
 .presentable-item { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-raised); }
-.presentable-item.timeline-new-item { border-color: rgba(183, 242, 108, 0.34); background: rgba(183, 242, 108, 0.045); }
 .item-presentation-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.018); }
 .item-presentation-toolbar span { color: var(--quiet); font-size: 0.72rem; }
 .presentation-toggle { padding: 6px 9px; border: 1px solid var(--line-strong); background: transparent; color: var(--accent); font-size: 0.74rem; }
