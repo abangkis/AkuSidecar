@@ -34,6 +34,10 @@ sends output schemas at turn start, rejects server callbacks, and stores
 structured token telemetry. `codex-exec` remains available only as an explicit
 process-per-request conformance transport.
 
+An explicit model-capacity failure retries the same model once through a fresh
+App Server process, inside the original invocation deadline. Cancellation,
+timeout, validation errors, and hidden model fallback are not retryable.
+
 ## Build and test
 
 On this Windows workspace, keep Go caches outside the module so antivirus and
@@ -66,6 +70,8 @@ The command first builds `aku-sidecar.next.exe`, refuses to interrupt an active
 session, asks AkuSupervisor to stop the registered service, atomically promotes
 the candidate to `aku-sidecar.exe`, and asks AkuSupervisor to start it again.
 Use `build-dev.ps1` alone when only a stopped binary needs to be built.
+Restarting the service directly through AkuSupervisor never rebuilds embedded
+UI or Go source and must not be used while an update is active.
 
 For an isolated production-style run:
 

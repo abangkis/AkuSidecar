@@ -141,8 +141,27 @@ func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema an
 	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
 	started := time.Now()
+	var totalUsage usage
+	for attempt := 1; attempt <= 2; attempt++ {
+		raw, attemptUsage, err := c.invokeAttemptLocked(ctx, prompt, schema, model)
+		totalUsage = addUsage(totalUsage, attemptUsage)
+		if err == nil {
+			return raw, totalUsage, time.Since(started), nil
+		}
+		retry := attempt < 2 && retryableAppServerError(err) && ctx.Err() == nil
+		c.stopLocked(true)
+		if !retry {
+			return "", totalUsage, time.Since(started), err
+		}
+		// Capacity is process-transient. Retry once through a fresh App Server,
+		// with the same model and the same overall invocation deadline.
+	}
+	panic("unreachable App Server retry loop")
+}
+
+func (c *CodexAppServer) invokeAttemptLocked(ctx context.Context, prompt string, schema any, model config.ModelConfig) (string, usage, error) {
 	if err := c.ensureStartedLocked(ctx); err != nil {
-		return "", usage{}, time.Since(started), err
+		return "", usage{}, err
 	}
 	c.drainNotifications()
 
@@ -156,7 +175,7 @@ func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema an
 		"config":           map[string]any{"web_search": "disabled", "approval_policy": "never", "sandbox_workspace_write": map[string]any{"network_access": false}},
 	})
 	if err != nil {
-		return "", usage{}, time.Since(started), err
+		return "", usage{}, err
 	}
 	var thread struct {
 		Thread struct {
@@ -164,7 +183,7 @@ func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema an
 		} `json:"thread"`
 	}
 	if err := json.Unmarshal(threadResult, &thread); err != nil || thread.Thread.ID == "" {
-		return "", usage{}, time.Since(started), fmt.Errorf("decode App Server thread/start response: %w", err)
+		return "", usage{}, fmt.Errorf("decode App Server thread/start response: %w", err)
 	}
 	turnResult, err := c.callLocked(ctx, "turn/start", map[string]any{
 		"threadId":       thread.Thread.ID,
@@ -175,7 +194,7 @@ func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema an
 		"outputSchema":   schema,
 	})
 	if err != nil {
-		return "", usage{}, time.Since(started), err
+		return "", usage{}, err
 	}
 	var turn struct {
 		Turn struct {
@@ -183,14 +202,44 @@ func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema an
 		} `json:"turn"`
 	}
 	if err := json.Unmarshal(turnResult, &turn); err != nil || turn.Turn.ID == "" {
-		return "", usage{}, time.Since(started), fmt.Errorf("decode App Server turn/start response: %w", err)
+		return "", usage{}, fmt.Errorf("decode App Server turn/start response: %w", err)
 	}
 	final, tokenUsage, err := c.waitTurnLocked(ctx, thread.Thread.ID, turn.Turn.ID)
 	if err != nil {
-		c.stopLocked(true)
-		return "", tokenUsage, time.Since(started), err
+		return "", tokenUsage, err
 	}
-	return final, tokenUsage, time.Since(started), nil
+	return final, tokenUsage, nil
+}
+
+func retryableAppServerError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "model is at capacity")
+}
+
+func addUsage(left, right usage) usage {
+	return usage{
+		Input:           addTokenCount(left.Input, right.Input),
+		CachedInput:     addTokenCount(left.CachedInput, right.CachedInput),
+		Output:          addTokenCount(left.Output, right.Output),
+		ReasoningOutput: addTokenCount(left.ReasoningOutput, right.ReasoningOutput),
+	}
+}
+
+func addTokenCount(left, right *int64) *int64 {
+	if left == nil && right == nil {
+		return nil
+	}
+	var total int64
+	if left != nil {
+		total += *left
+	}
+	if right != nil {
+		total += *right
+	}
+	return &total
 }
 
 func (c *CodexAppServer) ensureStartedLocked(ctx context.Context) error {
@@ -403,20 +452,25 @@ func (c *CodexAppServer) removePending(id string) {
 }
 
 func (c *CodexAppServer) stopLocked(wait bool) {
+	if c.cmd == nil && c.stdin == nil {
+		c.done = nil
+		return
+	}
 	done := c.done
+	alreadyExited := c.cmd != nil && c.cmd.ProcessState != nil && c.cmd.ProcessState.Exited()
 	if c.stdin != nil {
 		_ = c.stdin.Close()
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
 		_ = c.cmd.Process.Kill()
 	}
-	if wait && done != nil {
+	if wait && done != nil && !alreadyExited {
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
 		}
 	}
-	c.cmd, c.stdin = nil, nil
+	c.cmd, c.stdin, c.done = nil, nil, nil
 }
 
 func (c *CodexAppServer) Close() error {

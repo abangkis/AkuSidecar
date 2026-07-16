@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
@@ -40,6 +41,14 @@ func fakeCodexAppServer() {
 			var output any
 			schema, _ := params["outputSchema"].(map[string]any)
 			properties, _ := schema["properties"].(map[string]any)
+			capacityMarker := os.Getenv("AKU_FAKE_CODEX_CAPACITY_ONCE")
+			if _, planning := properties["decision"]; !planning && capacityMarker != "" {
+				if _, err := os.Stat(capacityMarker); os.IsNotExist(err) {
+					_ = os.WriteFile(capacityMarker, []byte("failed once"), 0o600)
+					fakeRPC(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": turnID, "status": "failed", "error": map[string]any{"message": "Selected model is at capacity. Please try a different model."}}}})
+					continue
+				}
+			}
 			if _, planning := properties["decision"]; planning {
 				output = AcquisitionPlan{Decision: "finish", Reason: "enough bounded evidence"}
 			} else {
@@ -54,6 +63,15 @@ func fakeCodexAppServer() {
 	}
 }
 
+func TestAppServerRetryExcludesCancellationAndDeadline(t *testing.T) {
+	if retryableAppServerError(context.Canceled) || retryableAppServerError(context.DeadlineExceeded) {
+		t.Fatal("cancellation and deadline must never retry")
+	}
+	if !retryableAppServerError(fmt.Errorf("Selected model is at capacity. Please try a different model.")) {
+		t.Fatal("explicit capacity failure must retry")
+	}
+}
+
 func fakeRPC(value any) {
 	raw, _ := json.Marshal(value)
 	fmt.Println(string(raw))
@@ -61,6 +79,8 @@ func fakeRPC(value any) {
 
 func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	marker := filepath.Join(t.TempDir(), "capacity-once")
+	t.Setenv("AKU_FAKE_CODEX_CAPACITY_ONCE", marker)
 	root := filepathRoot(t)
 	// Windows endpoint scanning can delay creation of a second copy of the Go
 	// test executable. Keep the protocol fixture bounded without coupling its
@@ -84,7 +104,13 @@ func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	if result.Items[0].EvidenceKey != "x:000000000000000000000001" || result.CandidateAssessments[0].EvidenceKey != "x:000000000000000000000001" {
 		t.Fatalf("candidate aliases were not restored: %+v", result)
 	}
-	if provider.cmd == nil || provider.nextID < 5 {
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("capacity fixture did not execute: %v", err)
+	}
+	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err != nil {
+		t.Fatalf("managed process was not reusable after recovery: %v", err)
+	}
+	if provider.cmd == nil || provider.nextID < 10 {
 		t.Fatalf("managed process was not reused: cmd=%v nextID=%d", provider.cmd, provider.nextID)
 	}
 }
