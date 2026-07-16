@@ -6,6 +6,7 @@ const SOURCE_TEXT_COLLAPSE_CHARACTERS = 420;
 const SOURCE_TEXT_COLLAPSE_LINES = 6;
 const QUOTE_TEXT_COLLAPSE_CHARACTERS = 280;
 const QUOTE_TEXT_COLLAPSE_LINES = 4;
+const DEFAULT_TIMELINE_BATCH_GAP_PX = 36;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -55,6 +56,8 @@ $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
+$("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
+$("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
 $("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
 $("#onboarding-cancel").addEventListener("click", () => setView("settings"));
@@ -188,9 +191,11 @@ function renderSettings(settings) {
   $("#max-scrolls").value = settings.maxScrolls;
   $("#default-presentation").value = settings.defaultPresentation || "source";
   $("#stream-width").value = settings.streamWidth || "social";
+  $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
   $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
+  applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
   syncLoadProfileSettings(false);
 }
 
@@ -223,6 +228,7 @@ async function saveSettings(event) {
     maxScrolls: Number.parseInt($("#max-scrolls").value, 10),
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
+    timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
   };
   const status = $("#runtime-settings-status");
   status.textContent = "Saving…";
@@ -255,6 +261,18 @@ function syncLoadProfileSettings(applyPreset) {
 function applyStreamWidth(value) {
   document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
   scheduleBackToTop();
+}
+
+function applyTimelineBatchGap(value) {
+  const parsed = Number.parseInt(value, 10);
+  const bounded = Number.isFinite(parsed) ? Math.min(80, Math.max(16, parsed)) : DEFAULT_TIMELINE_BATCH_GAP_PX;
+  document.documentElement.style.setProperty("--timeline-batch-gap", `${bounded}px`);
+}
+
+function resetTimelineBatchGap() {
+  $("#timeline-batch-gap").value = DEFAULT_TIMELINE_BATCH_GAP_PX;
+  applyTimelineBatchGap(DEFAULT_TIMELINE_BATCH_GAP_PX);
+  $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
 }
 
 function showOnboarding(editing) {
@@ -864,6 +882,9 @@ function renderTimeline(items, latestCheck) {
     if (entry.sessionId !== previousSession) {
       const marker = document.createElement("div");
       marker.className = "timeline-batch-marker";
+      if (previousSession !== null) {
+        marker.classList.add("timeline-older-batch-marker");
+      }
       if (!historyBoundaryMarked && previousSession === latestSession && entry.sessionId !== latestSession) {
         marker.classList.add("timeline-history-boundary");
         marker.setAttribute("role", "separator");

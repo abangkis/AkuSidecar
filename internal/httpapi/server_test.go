@@ -79,8 +79,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("fresh onboarding=%+v", onboarding)
 	}
 	for path, markers := range map[string][]string{
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "new items from the latest check"},
-		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "new items from the latest check", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
 		if err != nil {

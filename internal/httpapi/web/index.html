@@ -183,6 +183,13 @@
                   <option value="wide">Wide</option>
                 </select>
               </label>
+              <div class="settings-row">
+                <label class="settings-copy" for="timeline-batch-gap"><strong>Earlier-check spacing</strong><small>Controls the quiet visual gap before retained items from an earlier check.</small></label>
+                <span class="settings-inline-control">
+                  <input id="timeline-batch-gap" name="timelineBatchGapPx" type="number" min="16" max="80" step="4" aria-label="Earlier-check spacing in pixels" />
+                  <button id="reset-timeline-batch-gap" type="button">Reset to default</button>
+                </span>
+              </div>
               <label class="settings-row" for="capture-visibility-policy">
                 <span class="settings-copy"><strong>Capture visibility</strong><small>Quiet uses a dedicated non-focused capture window.</small></span>
                 <select id="capture-visibility-policy" name="captureVisibility">

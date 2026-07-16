@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	ApplicationVersion    = "1.0.0-dev.5"
-	BridgeContractVersion = "aku-browser.bridge.v2"
+	ApplicationVersion        = "1.0.0-dev.5"
+	BridgeContractVersion     = "aku-browser.bridge.v2"
+	DefaultTimelineBatchGapPX = 36
 )
 
 type Source string
@@ -38,6 +39,7 @@ type Settings struct {
 	CalibrationBatchSize      int      `json:"calibrationBatchSize"`
 	DefaultPresentation       string   `json:"defaultPresentation"`
 	StreamWidth               string   `json:"streamWidth"`
+	TimelineBatchGapPX        int      `json:"timelineBatchGapPx"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -51,6 +53,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		CalibrationBatchSize:      10,
 		DefaultPresentation:       "source",
 		StreamWidth:               "social",
+		TimelineBatchGapPX:        DefaultTimelineBatchGapPX,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -80,6 +83,9 @@ func (s *Settings) Normalize() {
 	if s.StreamWidth == "" {
 		s.StreamWidth = "social"
 	}
+	if s.TimelineBatchGapPX == 0 {
+		s.TimelineBatchGapPX = DefaultTimelineBatchGapPX
+	}
 	s.ApplyProfile()
 }
 
@@ -98,6 +104,9 @@ func (s Settings) Validate() error {
 	}
 	if s.StreamWidth != "compact" && s.StreamWidth != "social" && s.StreamWidth != "comfortable" && s.StreamWidth != "wide" {
 		return fmt.Errorf("unsupported stream width %q", s.StreamWidth)
+	}
+	if s.TimelineBatchGapPX < 16 || s.TimelineBatchGapPX > 80 {
+		return errors.New("timelineBatchGapPx must be between 16 and 80")
 	}
 	if s.MaxScrolls < 0 || s.MaxScrolls > 6 {
 		return errors.New("maxScrolls must be between 0 and 6")

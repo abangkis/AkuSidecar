@@ -56,6 +56,28 @@ func TestCustomProfileKeepsSupportedUIPreferences(t *testing.T) {
 	}
 }
 
+func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
+	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	if value.TimelineBatchGapPX != DefaultTimelineBatchGapPX {
+		t.Fatalf("default timeline batch gap=%d", value.TimelineBatchGapPX)
+	}
+
+	value.TimelineBatchGapPX = 0
+	value.Normalize()
+	if value.TimelineBatchGapPX != DefaultTimelineBatchGapPX {
+		t.Fatalf("normalized timeline batch gap=%d", value.TimelineBatchGapPX)
+	}
+
+	value.TimelineBatchGapPX = 52
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.TimelineBatchGapPX = 81
+	if err := value.Validate(); err == nil {
+		t.Fatal("out-of-range timeline batch gap must be rejected")
+	}
+}
+
 func TestFeedbackRejectsLegacyReason(t *testing.T) {
 	reason := "wrong_topic"
 	value := Feedback{Direction: "less", Reason: &reason}
