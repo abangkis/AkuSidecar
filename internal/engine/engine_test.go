@@ -13,6 +13,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/preference"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -263,6 +264,16 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	}
 	if onboarding, err := state.Onboarding(ctx); err != nil || onboarding.Status != "completed" {
 		t.Fatalf("onboarding after learning reset=%+v err=%v", onboarding, err)
+	}
+}
+
+func TestCalibrationSnapshotReflectsAnyReadyPreferenceAuthority(t *testing.T) {
+	session := domain.CalibrationSession{ID: "calibration-authority"}
+	profile := preference.Profile{AuthorityReady: true, SuppressionReady: true}
+
+	snapshot := buildCalibrationSnapshot(session, profile)
+	if !snapshot.LiveInfluence {
+		t.Fatal("suppression-only authority must be reported as live influence")
 	}
 }
 

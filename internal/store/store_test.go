@@ -49,6 +49,40 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	}
 }
 
+func TestCalibrationSessionReflectsSnapshotLiveInfluence(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := state.CreateSession(ctx, "calibration authority", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calibration, err := state.CreateCalibration(ctx, domain.CalibrationSession{
+		ID: "calibration-live-influence", UnifiedSessionID: session.ID,
+		TriggerKind: "first_run", MaxItems: 2,
+		Samples: []domain.CalibrationSample{{
+			RunID: session.Runs[0].ID, EvidenceKey: "x:calibration-live", Source: session.Runs[0].Source,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := state.CompleteCalibration(ctx, calibration.ID, domain.CalibrationSnapshot{
+		Version: 0, Origin: "calibration", CalibrationSessionID: calibration.ID,
+		CreatedAt: domain.Now(), Labels: map[string]int{}, LiveInfluence: true,
+		ActivationState: "feeds_local_fit",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed.LiveInfluence || completed.Snapshot == nil || !completed.Snapshot.LiveInfluence {
+		t.Fatalf("completed calibration must expose snapshot influence: %+v", completed)
+	}
+}
+
 func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
@@ -80,6 +114,40 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	updated, err := state.GetRun(ctx, run.ID)
 	if err != nil || updated.Status != "reasoning" {
 		t.Fatalf("run: %+v %v", updated, err)
+	}
+}
+
+func TestSessionRemainsActiveUntilCompositionFinalizes(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "terminal composition boundary", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE runs SET status='completed',stage='completed',completed_at=? WHERE session_id=?`, domain.Now(), session.ID); err != nil {
+		t.Fatal(err)
+	}
+	next, err := state.AdvanceSession(ctx, session.ID)
+	if err != nil || next != nil {
+		t.Fatalf("advance after terminal runs: next=%+v err=%v", next, err)
+	}
+	before, err := state.GetSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Status == "completed" || before.Status == "partial" || before.Status == "failed" {
+		t.Fatalf("session became terminal before composition: %+v", before)
+	}
+	if err := state.ComposeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.FinalizeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := state.GetSession(ctx, session.ID)
+	if err != nil || after.Status != "completed" {
+		t.Fatalf("finalized session=%+v err=%v", after, err)
 	}
 }
 

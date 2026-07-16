@@ -223,6 +223,9 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
 			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
 		}
+		if finalizeErr := e.store.FinalizeSession(ctx, sessionID); finalizeErr != nil {
+			return nil, fmt.Errorf("finalize unified session: %w", finalizeErr)
+		}
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}

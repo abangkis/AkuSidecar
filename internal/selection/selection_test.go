@@ -23,7 +23,7 @@ func TestColdStartPreservesSourceOrderAndFiniteBudget(t *testing.T) {
 
 func TestGuardedLiveCanPromoteReplaceAndSuppressOrdinaryCandidates(t *testing.T) {
 	profile := preference.Profile{
-		Weights:        map[string]float64{"ai_models": 1, "sports": -1},
+		Weights:        map[string]float64{"tag:ai_models": 1, "tag:sports": -1},
 		AuthorityReady: true, PromotionReady: true, SuppressionReady: true,
 	}
 	values := []domain.CandidateAssessment{
@@ -40,7 +40,7 @@ func TestGuardedLiveCanPromoteReplaceAndSuppressOrdinaryCandidates(t *testing.T)
 
 func TestProtectedMaterialUpdateCannotBeSuppressed(t *testing.T) {
 	profile := preference.Profile{
-		Weights:        map[string]float64{"sports": -1},
+		Weights:        map[string]float64{"tag:sports": -1},
 		AuthorityReady: true, SuppressionReady: true,
 	}
 	protected := assessment("x:000000000000000000000010", "sports", .9, .8)
@@ -53,7 +53,7 @@ func TestProtectedMaterialUpdateCannotBeSuppressed(t *testing.T) {
 
 func TestGuardedLiveKeepsOneDiscoveryLane(t *testing.T) {
 	profile := preference.Profile{
-		Weights:        map[string]float64{"ai_models": 1},
+		Weights:        map[string]float64{"tag:ai_models": 1},
 		AuthorityReady: true, PromotionReady: true,
 	}
 	values := []domain.CandidateAssessment{
@@ -69,7 +69,7 @@ func TestGuardedLiveKeepsOneDiscoveryLane(t *testing.T) {
 
 func TestPreviouslyDeliveredEvidenceIsAlwaysExcluded(t *testing.T) {
 	value := assessment("x:000000000000000000000030", "ai_models", .9, .9)
-	profile := preference.Profile{Weights: map[string]float64{"ai_models": 1}, AuthorityReady: true, PromotionReady: true}
+	profile := preference.Profile{Weights: map[string]float64{"tag:ai_models": 1}, AuthorityReady: true, PromotionReady: true}
 	result := SelectWithOptions([]domain.CandidateAssessment{value}, profile, Options{
 		Limit: 1, Mode: "guarded_live", ExcludedEvidence: map[string]bool{value.EvidenceKey: true},
 	})
@@ -87,7 +87,7 @@ func TestZeroAdditionsIsValidWhenNothingClearsAdmission(t *testing.T) {
 
 func assessment(key, facet string, materiality, evidence float64) domain.CandidateAssessment {
 	return domain.CandidateAssessment{
-		EvidenceKey: key, TopicFacets: []string{facet}, Materiality: materiality,
+		EvidenceKey: key, TopicTags: []string{facet}, TopicFacets: []string{facet}, Materiality: materiality,
 		Novelty: .5, Actionability: .4, Urgency: .3, EvidenceStrength: evidence,
 	}
 }

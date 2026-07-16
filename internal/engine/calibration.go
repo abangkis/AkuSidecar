@@ -37,7 +37,7 @@ func (e *Engine) CalibrationOverview(ctx context.Context) (domain.CalibrationOve
 		Enabled:        settings.CalibrationEnabled,
 		TriggerPolicy:  "first_run_after_first_update",
 		BatchSize:      settings.CalibrationBatchSize,
-		LiveInfluence:  profile.PromotionReady,
+		LiveInfluence:  profile.AuthorityReady,
 	}, nil
 }
 
@@ -142,7 +142,11 @@ func (e *Engine) DecideCalibration(ctx context.Context, id string, ordinal int, 
 	if updated.ResolvedCount != updated.SampleCount {
 		return updated, nil
 	}
-	snapshot := buildCalibrationSnapshot(updated)
+	profile, err := e.preferenceProfile(ctx, false)
+	if err != nil {
+		return domain.CalibrationSession{}, fmt.Errorf("fit preference model for calibration snapshot: %w", err)
+	}
+	snapshot := buildCalibrationSnapshot(updated, profile)
 	updated, err = e.store.CompleteCalibration(ctx, id, snapshot)
 	if err != nil {
 		return domain.CalibrationSession{}, err
@@ -188,7 +192,7 @@ func sampleCalibrationCandidates(candidates []domain.CalibrationCandidate, runs 
 	return samples
 }
 
-func buildCalibrationSnapshot(session domain.CalibrationSession) domain.CalibrationSnapshot {
+func buildCalibrationSnapshot(session domain.CalibrationSession, profile preference.Profile) domain.CalibrationSnapshot {
 	labels := map[string]int{"moreLikeThis": 0, "neutral": 0, "lessLikeThis": 0, "captureIssues": 0}
 	seenSources := map[domain.Source]bool{}
 	var sources []domain.Source
@@ -216,7 +220,7 @@ func buildCalibrationSnapshot(session domain.CalibrationSession) domain.Calibrat
 	return domain.CalibrationSnapshot{
 		Version: 0, Origin: "calibration", CalibrationSessionID: session.ID,
 		CreatedAt: domain.Now(), Labels: labels, Sources: sources,
-		LiveInfluence: false, ActivationState: "feeds_local_fit",
+		LiveInfluence: profile.AuthorityReady, ActivationState: "feeds_local_fit",
 	}
 }
 
@@ -229,7 +233,8 @@ func (e *Engine) preferenceProfile(ctx context.Context, persist bool) (preferenc
 	for _, signal := range signals {
 		converted = append(converted, preference.Signal{
 			Direction: signal.Direction, Reason: signal.Reason,
-			Facets: signal.Assessment.TopicFacets, Origin: signal.Origin,
+			Tags: signal.Assessment.TopicTags, Facets: signal.Assessment.TopicFacets,
+			Origin: signal.Origin,
 		})
 	}
 	profile := preference.Fit(converted)

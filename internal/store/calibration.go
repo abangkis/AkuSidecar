@@ -183,7 +183,7 @@ func (s *Store) Calibration(ctx context.Context, id string) (domain.CalibrationS
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return domain.CalibrationSession{}, err
 	}
-	value.LiveInfluence = false
+	value.LiveInfluence = value.Snapshot != nil && value.Snapshot.LiveInfluence
 	return value, nil
 }
 

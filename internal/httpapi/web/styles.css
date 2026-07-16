@@ -61,7 +61,9 @@ h3 { letter-spacing: -0.02em; }
 .status-warning { border-color: rgba(246, 200, 107, 0.45); color: var(--amber); }
 .status-danger { border-color: rgba(255, 141, 131, 0.45); color: var(--danger); }
 .status-neutral { color: var(--muted); }
-.notice { margin-top: 18px; padding: 12px 14px; border: 1px solid rgba(255, 141, 131, 0.4); border-radius: 10px; background: rgba(255, 141, 131, 0.07); color: var(--danger); }
+.notice { margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-raised); color: var(--muted); }
+.notice-complete { border-color: rgba(183, 242, 108, 0.34); background: rgba(183, 242, 108, 0.055); color: var(--muted); }
+.notice-danger { border-color: rgba(255, 141, 131, 0.4); background: rgba(255, 141, 131, 0.07); color: var(--danger); }
 
 .primary-button, .secondary-button, .danger-button, .text-button, .feedback-button, .presentation-toggle {
   border-radius: 8px;
@@ -149,6 +151,10 @@ h3 { letter-spacing: -0.02em; }
 .source-x .source-layout-badge { width: 36px; height: 36px; border-radius: 9px; background: #f4f7f5; color: #050505; }
 .source-layout-content { padding: 4px 18px 18px; }
 .source-layout-content p { margin: 8px 0 0; color: var(--text); line-height: 1.62; white-space: pre-wrap; }
+.expandable-text { min-width: 0; }
+.expandable-text-copy.is-collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: var(--collapse-lines); }
+.content-expander { margin-top: 8px; padding: 0; border: 0; background: transparent; color: var(--accent); font-size: 0.78rem; font-weight: 750; }
+.content-expander:hover { text-decoration: underline; text-underline-offset: 3px; }
 .linkedin-source-content { padding-top: 8px; padding-bottom: 16px; }
 .linkedin-source-content p { margin-top: 0; line-height: 1.58; }
 .x-social-context { margin: 0 0 10px !important; color: var(--quiet) !important; font-size: 0.82rem; font-weight: 650; }
@@ -156,7 +162,9 @@ h3 { letter-spacing: -0.02em; }
 .x-quote-card header { display: flex; align-items: center; gap: 9px; padding: 12px 14px 0; }
 .x-quote-card header div { display: grid; gap: 1px; }
 .x-quote-card header span { color: var(--quiet); font-size: 0.75rem; }
-.x-quote-card > p { margin: 0; padding: 8px 14px 14px; font-size: 0.9rem; line-height: 1.48; }
+.x-quote-card > .expandable-text { padding: 8px 14px 14px; }
+.x-quote-card > .expandable-text > p { margin: 0; font-size: 0.9rem; line-height: 1.48; }
+.x-quote-card .content-expander { margin-top: 7px; }
 
 .source-layout-media { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; margin-top: 4px; background: var(--line); }
 .source-layout-media.media-count-1 { grid-template-columns: 1fr; }

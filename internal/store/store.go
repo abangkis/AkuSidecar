@@ -613,15 +613,28 @@ func (s *Store) AdvanceSession(ctx context.Context, sessionID string) (*domain.R
 			return &run, nil
 		}
 	}
+	return nil, nil
+}
+
+// FinalizeSession publishes a terminal session only after Timeline composition
+// and knowledge continuity have committed. Until this method succeeds, a new
+// update remains blocked by the still-active session.
+func (s *Store) FinalizeSession(ctx context.Context, sessionID string) error {
+	runs, err := s.listRuns(ctx, sessionID)
+	if err != nil {
+		return err
+	}
 	now := domain.Now()
 	completed := 0
 	failed := 0
 	for _, run := range runs {
-		if run.Status == "completed" {
+		switch run.Status {
+		case "completed":
 			completed++
-		}
-		if run.Status == "failed" || run.Status == "cancelled" {
+		case "failed", "cancelled":
 			failed++
+		default:
+			return fmt.Errorf("session %s cannot finalize while run %s is %s", sessionID, run.ID, run.Status)
 		}
 	}
 	status := "failed"
@@ -631,9 +644,9 @@ func (s *Store) AdvanceSession(ctx context.Context, sessionID string) (*domain.R
 		status = "partial"
 	}
 	if _, err = s.db.ExecContext(ctx, `UPDATE sessions SET status=?,active_source=NULL,completed_at=? WHERE id=?`, status, now, sessionID); err != nil {
-		return nil, err
+		return err
 	}
-	return nil, nil
+	return nil
 }
 
 func (s *Store) Knowledge(ctx context.Context, source domain.Source, limit int) ([]domain.ReasonedItem, error) {

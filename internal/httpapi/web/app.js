@@ -2,6 +2,10 @@ const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
 const terminalStatuses = new Set(["completed", "partial", "failed", "cancelled"]);
 const BACK_TO_TOP_THRESHOLD_PX = 480;
+const SOURCE_TEXT_COLLAPSE_CHARACTERS = 420;
+const SOURCE_TEXT_COLLAPSE_LINES = 6;
+const QUOTE_TEXT_COLLAPSE_CHARACTERS = 280;
+const QUOTE_TEXT_COLLAPSE_LINES = 4;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -953,9 +957,11 @@ function buildSourceCard(entry) {
     social.textContent = presentation.socialContext;
     content.append(social);
   }
-  const text = document.createElement("p");
-  text.textContent = evidence.text || item.whatChanged;
-  content.append(text);
+  content.append(buildExpandableText(evidence.text || item.whatChanged, {
+    characterLimit: SOURCE_TEXT_COLLAPSE_CHARACTERS,
+    lineLimit: SOURCE_TEXT_COLLAPSE_LINES,
+    label: "post",
+  }));
   const quote = buildQuotedPost(evidence.quotedPost, source);
   if (quote) content.append(quote);
   card.append(header, content);
@@ -1004,10 +1010,42 @@ function buildQuotedPost(value, source) {
   timestamp.textContent = formatDate(value.publishedAt);
   identity.append(author, timestamp);
   header.append(avatar, identity);
-  const text = document.createElement("p");
-  text.textContent = value.text;
-  quote.append(header, text);
+  quote.append(header, buildExpandableText(value.text, {
+    characterLimit: QUOTE_TEXT_COLLAPSE_CHARACTERS,
+    lineLimit: QUOTE_TEXT_COLLAPSE_LINES,
+    label: "quoted post",
+  }));
   return quote;
+}
+
+function buildExpandableText(value, { characterLimit, lineLimit, label }) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "expandable-text";
+  const text = document.createElement("p");
+  text.className = "expandable-text-copy";
+  text.textContent = value || "";
+  wrapper.append(text);
+
+  const logicalLines = text.textContent.split(/\r?\n/).length;
+  if (text.textContent.length <= characterLimit && logicalLines <= lineLimit) return wrapper;
+
+  text.classList.add("is-collapsed");
+  text.style.setProperty("--collapse-lines", String(lineLimit));
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "content-expander";
+  toggle.textContent = "Show more";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-label", `Show more ${label} text`);
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    text.classList.toggle("is-collapsed", expanded);
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    toggle.setAttribute("aria-label", `${expanded ? "Show more" : "Show less"} ${label} text`);
+    toggle.textContent = expanded ? "Show more" : "Show less";
+  });
+  wrapper.append(toggle);
+  return wrapper;
 }
 
 function buildMedia(values, source) {
@@ -1155,8 +1193,9 @@ function showSessionOutcome(session) {
   const additions = session.items?.length ?? 0;
   if (additions > 0) return;
   const notice = $("#provider-notice");
+  notice.className = "notice notice-complete";
+  notice.setAttribute("role", "status");
   notice.textContent = "Update complete: 0 additions. No captured candidate cleared the new, material, and trusted-evidence boundary.";
-  notice.classList.remove("hidden");
 }
 
 function hideFailure() {
@@ -1172,14 +1211,17 @@ function setPill(selector, text, tone) {
 function showError(error) {
   console.error(error);
   const notice = $("#provider-notice");
+  notice.className = "notice notice-danger";
+  notice.setAttribute("role", "alert");
   notice.textContent = error.message || String(error);
-  notice.classList.remove("hidden");
   setPill("#sidecar-status", "AkuSidecar attention", "danger");
 }
 
 function clearNotice() {
-  $("#provider-notice").classList.add("hidden");
-  $("#provider-notice").textContent = "";
+  const notice = $("#provider-notice");
+  notice.className = "notice hidden";
+  notice.setAttribute("role", "status");
+  notice.textContent = "";
 }
 
 function sourceIdentity(value, source) {

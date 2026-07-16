@@ -2,6 +2,7 @@ package preference
 
 import (
 	"math"
+	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -9,6 +10,7 @@ import (
 type Signal struct {
 	Direction string
 	Reason    *string
+	Tags      []string
 	Facets    []string
 	Origin    string
 }
@@ -52,10 +54,8 @@ func Fit(signals []Signal) Profile {
 			continue
 		}
 		profile.EffectiveSignals++
-		for _, facet := range signal.Facets {
-			profile.Weights[facet] += weight
-			counts[facet]++
-		}
+		addFeatures(profile.Weights, counts, "tag:", signal.Tags, weight)
+		addFeatures(profile.Weights, counts, "facet:", signal.Facets, weight)
 	}
 	for facet, value := range profile.Weights {
 		normalized := value / math.Max(3, float64(counts[facet]))
@@ -80,12 +80,62 @@ func Score(profile Profile, assessment domain.CandidateAssessment) float64 {
 // Alignment returns the user's learned relevance signal on a stable [-1, 1]
 // scale. It is intentionally separate from generic materiality and evidence.
 func Alignment(profile Profile, assessment domain.CandidateAssessment) float64 {
-	if len(assessment.TopicFacets) == 0 {
-		return 0
+	tagAlignment, tagMatches := featureAlignment(profile, "tag:", assessment.TopicTags, true)
+	facetAlignment, _ := featureAlignment(profile, "facet:", assessment.TopicFacets, false)
+	if tagMatches > 0 {
+		return clamp(0.75*tagAlignment + 0.25*facetAlignment)
+	}
+	// Broad facets preserve weak generalization when no precise topic tag
+	// matches. They cannot inherit the full authority of an explicit label.
+	return clamp(0.30 * facetAlignment)
+}
+
+func addFeatures(weights map[string]float64, counts map[string]int, prefix string, values []string, weight float64) {
+	seen := map[string]bool{}
+	for _, value := range values {
+		key := featureKey(prefix, value)
+		if key == prefix || seen[key] {
+			continue
+		}
+		seen[key] = true
+		weights[key] += weight
+		counts[key]++
+	}
+}
+
+func featureAlignment(profile Profile, prefix string, values []string, knownOnly bool) (float64, int) {
+	if len(values) == 0 {
+		return 0, 0
 	}
 	sum := 0.0
-	for _, facet := range assessment.TopicFacets {
-		sum += profile.Weights[facet]
+	matches := 0
+	seen := map[string]bool{}
+	for _, value := range values {
+		key := featureKey(prefix, value)
+		if key == prefix || seen[key] {
+			continue
+		}
+		seen[key] = true
+		weight, known := profile.Weights[key]
+		if known {
+			sum += weight
+			matches++
+		}
 	}
-	return math.Max(-1, math.Min(1, sum/float64(len(assessment.TopicFacets))))
+	denominator := len(seen)
+	if knownOnly {
+		denominator = matches
+	}
+	if denominator == 0 {
+		return 0, matches
+	}
+	return clamp(sum / float64(denominator)), matches
+}
+
+func featureKey(prefix, value string) string {
+	return prefix + strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+}
+
+func clamp(value float64) float64 {
+	return math.Max(-1, math.Min(1, value))
 }

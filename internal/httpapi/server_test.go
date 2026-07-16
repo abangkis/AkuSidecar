@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,25 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	onboarding := bootstrap["onboarding"].(map[string]any)
 	if onboarding["status"] != "not_started" {
 		t.Fatalf("fresh onboarding=%+v", onboarding)
+	}
+	for path, markers := range map[string][]string{
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander"},
+	} {
+		response, err = client.Get("http://" + address.String() + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, readErr := io.ReadAll(response.Body)
+		response.Body.Close()
+		if readErr != nil || response.StatusCode != http.StatusOK {
+			t.Fatalf("asset %s status=%d err=%v", path, response.StatusCode, readErr)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(payload), marker) {
+				t.Fatalf("asset %s missing %q", path, marker)
+			}
+		}
 	}
 	response, err = client.Get("http://" + address.String() + "/api/inbox?limit=5&offset=0")
 	if err != nil {
