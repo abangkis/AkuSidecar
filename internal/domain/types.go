@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "1.0.0-dev.11"
+	ApplicationVersion              = "1.0.0-dev.12"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
@@ -362,6 +362,27 @@ type MediaRecapture struct {
 	ClaimedAt   *string        `json:"claimedAt,omitempty"`
 	CompletedAt *string        `json:"completedAt,omitempty"`
 	Error       *Failure       `json:"error,omitempty"`
+}
+
+// PassiveXMediaEvidence is the bounded, sanitized media-only contract accepted
+// from AkuBridge's X evidence cache. It deliberately carries no post text or
+// source response payload.
+type PassiveXMediaEvidence struct {
+	CandidateID string                   `json:"candidateId"`
+	Media       []PassiveXMediaCandidate `json:"media"`
+	Provenance  string                   `json:"provenance"`
+}
+
+type PassiveXMediaCandidate struct {
+	Kind         string `json:"kind"`
+	URL          string `json:"url"`
+	PosterURL    string `json:"posterUrl,omitempty"`
+	PlaybackURL  string `json:"playbackUrl,omitempty"`
+	PlaybackMode string `json:"playbackMode,omitempty"`
+	Width        int    `json:"width,omitempty"`
+	Height       int    `json:"height,omitempty"`
+	Provenance   string `json:"provenance,omitempty"`
+	ObservedAtMS int64  `json:"observedAtMs,omitempty"`
 }
 
 type BridgeHeartbeat struct {

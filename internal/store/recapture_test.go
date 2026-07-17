@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -29,7 +30,7 @@ func TestMediaRecaptureReplacesEvidenceWithoutCreatingTimelineItems(t *testing.T
 	}
 	observation := domain.Observation{
 		Source:     domain.SourceX,
-		PageURL:    "https://x.com/example/status/123",
+		PageURL:    "https://x.com/example/status/12345",
 		PageTitle:  "Post",
 		CapturedAt: domain.Now(),
 		Snapshots: []domain.Snapshot{{
@@ -39,7 +40,7 @@ func TestMediaRecaptureReplacesEvidenceWithoutCreatingTimelineItems(t *testing.T
 				EvidenceKey:   evidenceKey,
 				Author:        "Example",
 				Text:          "A sufficiently long post body for a deterministic media recapture fixture.",
-				Permalink:     "https://x.com/example/status/123",
+				Permalink:     "https://x.com/example/status/12345",
 				Media:         []map[string]any{{"kind": "image", "url": "https://pbs.twimg.com/media/example.jpg"}},
 				MediaRecovery: map[string]any{"outcome": "recovered", "attempts": 1},
 			}},
@@ -89,7 +90,7 @@ func TestForegroundMediaRecaptureRequiresUnavailableBackgroundAttempt(t *testing
 				EvidenceKey:   evidenceKey,
 				Author:        "Example",
 				Text:          "A sufficiently long post body whose media remains unavailable in the background.",
-				Permalink:     "https://x.com/example/status/123",
+				Permalink:     "https://x.com/example/status/12345",
 				MediaRecovery: map[string]any{"outcome": "unavailable", "attempts": 1},
 			}},
 		}},
@@ -110,6 +111,135 @@ func TestForegroundMediaRecaptureRequiresUnavailableBackgroundAttempt(t *testing
 	}
 }
 
+func TestPassiveXMediaEvidenceEnrichesWithoutQueueingBrowserWork(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, _ := insertUnavailableMediaFixture(t, state)
+	input := domain.PassiveXMediaEvidence{
+		CandidateID: "x:status:12345",
+		Provenance:  "passive_x_cache",
+		Media: []domain.PassiveXMediaCandidate{{
+			Kind:         "image",
+			URL:          "https://pbs.twimg.com/media/passive.jpg?format=jpg&name=large#ignored",
+			Width:        0,
+			Height:       0,
+			Provenance:   "main_structured_state",
+			ObservedAtMS: 123456,
+		}},
+	}
+	job, updated, err := state.ApplyPassiveXMediaEvidence(ctx, timelineID, "bridge-passive-test", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated || job.Status != "completed" || job.Outcome != "recovered" {
+		t.Fatalf("updated=%v job=%+v", updated, job)
+	}
+	if job.Payload["mode"] != "passive_media_enrichment" || job.Payload["browserOperation"] != "none" || job.Payload["foregroundAuthorized"] != false {
+		t.Fatalf("passive payload=%+v", job.Payload)
+	}
+	if active, err := state.ActiveMediaRecapture(ctx); err != nil || active {
+		t.Fatalf("passive enrichment became active: active=%v err=%v", active, err)
+	}
+	items, err := state.ListTimeline(ctx, 24, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Evidence == nil || len(items[0].Evidence.Media) != 1 {
+		t.Fatalf("items=%+v", items)
+	}
+	mediaURL, _ := items[0].Evidence.Media[0]["url"].(string)
+	if mediaURL != "https://pbs.twimg.com/media/passive.jpg?format=jpg&name=large" {
+		t.Fatalf("media URL=%q", mediaURL)
+	}
+	if items[0].Evidence.MediaRecovery["method"] != "passive_cache" || items[0].Evidence.MediaRecovery["foregroundRequired"] != false {
+		t.Fatalf("media recovery=%+v", items[0].Evidence.MediaRecovery)
+	}
+	if _, exists := items[0].Evidence.MediaRecovery["limitation"]; exists {
+		t.Fatalf("stale limitation survived recovery: %+v", items[0].Evidence.MediaRecovery)
+	}
+	if _, exists := items[0].Evidence.MediaRecovery["visibilityRequirement"]; exists {
+		t.Fatalf("stale visibility requirement survived recovery: %+v", items[0].Evidence.MediaRecovery)
+	}
+	var status, claimedBy, payloadRaw string
+	if err := state.db.QueryRowContext(ctx, `SELECT status,claimed_by,payload_json FROM media_recaptures WHERE id=?`, job.ID).Scan(&status, &claimedBy, &payloadRaw); err != nil {
+		t.Fatal(err)
+	}
+	if status != "completed" || claimedBy != "bridge-passive-test" || !strings.Contains(payloadRaw, `"captureVisibilityPolicy":"none"`) {
+		t.Fatalf("stored provenance status=%q claimedBy=%q payload=%s", status, claimedBy, payloadRaw)
+	}
+	if _, repeated, err := state.ApplyPassiveXMediaEvidence(ctx, timelineID, "bridge-passive-test", input); err != nil || repeated {
+		t.Fatalf("idempotent replay repeated=%v err=%v", repeated, err)
+	}
+	var count int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_recaptures`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("recapture count=%d err=%v", count, err)
+	}
+}
+
+func TestPassiveXMediaEvidenceRejectsIdentityAndUntrustedMedia(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate string
+		media     []domain.PassiveXMediaCandidate
+	}{
+		{
+			name:      "wrong platform identity",
+			candidate: "x:status:99999",
+			media:     []domain.PassiveXMediaCandidate{{Kind: "image", URL: "https://pbs.twimg.com/media/valid.jpg"}},
+		},
+		{
+			name:      "lookalike host",
+			candidate: "x:status:12345",
+			media:     []domain.PassiveXMediaCandidate{{Kind: "image", URL: "https://pbs.twimg.com.evil.test/media/no.jpg"}},
+		},
+		{
+			name:      "avatar path",
+			candidate: "x:status:12345",
+			media:     []domain.PassiveXMediaCandidate{{Kind: "image", URL: "https://pbs.twimg.com/profile_images/avatar.jpg"}},
+		},
+		{
+			name:      "more than four candidates",
+			candidate: "x:status:12345",
+			media: []domain.PassiveXMediaCandidate{
+				{Kind: "image", URL: "https://pbs.twimg.com/media/one.jpg"},
+				{Kind: "image", URL: "https://pbs.twimg.com/media/two.jpg"},
+				{Kind: "image", URL: "https://pbs.twimg.com/media/three.jpg"},
+				{Kind: "image", URL: "https://pbs.twimg.com/media/four.jpg"},
+				{Kind: "image", URL: "https://pbs.twimg.com/media/five.jpg"},
+			},
+		},
+		{
+			name:      "video playback on pbs host",
+			candidate: "x:status:12345",
+			media: []domain.PassiveXMediaCandidate{{
+				Kind:        "video",
+				URL:         "https://pbs.twimg.com/ext_tw_video_thumb/example/poster.jpg",
+				PosterURL:   "https://pbs.twimg.com/ext_tw_video_thumb/example/poster.jpg",
+				PlaybackURL: "https://pbs.twimg.com/media/not-playback.mp4",
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			state := openTestStore(t)
+			timelineID, _ := insertUnavailableMediaFixture(t, state)
+			_, updated, err := state.ApplyPassiveXMediaEvidence(ctx, timelineID, "bridge-test", domain.PassiveXMediaEvidence{
+				CandidateID: test.candidate,
+				Provenance:  "passive_x_cache",
+				Media:       test.media,
+			})
+			if err == nil || updated {
+				t.Fatalf("updated=%v err=%v", updated, err)
+			}
+			var count int
+			if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_recaptures`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("recapture count=%d err=%v", count, err)
+			}
+		})
+	}
+}
+
 func insertUnavailableMediaFixture(t *testing.T, state *Store) (string, string) {
 	t.Helper()
 	ctx := context.Background()
@@ -127,13 +257,18 @@ func insertUnavailableMediaFixture(t *testing.T, state *Store) (string, string) 
 		t.Fatal(err)
 	}
 	run := runs[0]
-	evidenceKey := "x:status:123"
+	evidenceKey := "x:status:12345"
 	block := domain.Block{
-		EvidenceKey:   evidenceKey,
-		Author:        "Example",
-		Text:          "A sufficiently long post body for a deterministic unavailable-media fixture.",
-		Permalink:     "https://x.com/example/status/123",
-		MediaRecovery: map[string]any{"outcome": "unavailable", "attempts": 1},
+		EvidenceKey: evidenceKey,
+		Author:      "Example",
+		Text:        "A sufficiently long post body for a deterministic unavailable-media fixture.",
+		Permalink:   "https://x.com/example/status/12345",
+		MediaRecovery: map[string]any{
+			"outcome":               "unavailable",
+			"attempts":              1,
+			"limitation":            "foreground visibility was previously required",
+			"visibilityRequirement": "foreground_window",
+		},
 	}
 	observation := domain.Observation{Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Index: 0, CapturedAt: domain.Now(), Blocks: []domain.Block{block}}}}
 	observationRaw, _ := json.Marshal(observation)

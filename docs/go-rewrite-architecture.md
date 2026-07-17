@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `1.0.0-dev.11`.
+Status: active runtime contract for `1.0.0-dev.12`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
@@ -43,12 +43,13 @@ or repeating acquisition planning.
 - Inline is the default. Drawer never abruptly removes a post already seen inline. Hide requires exact typed confirmation and accepts only direct evidence, Deep-confirmed strong signals, or an explicit user AI verdict—not preliminary inference.
 - Media recapture is item-scoped and quiet-first. A foreground attempt requires an unavailable background result plus explicit one-time user consent; neither path creates candidates or changes Timeline ordering.
 - Media acquisition is one generic Bridge engine shared by every source adapter. Adapters declare media kinds, source-specific extractors, and visibility capability; quiet X recapture exhausts primary, structured-state, hydration, and alternate-DOM paths before requesting foreground permission.
+- A bounded passive X media cache may complete presentation evidence after the Timeline is already usable. Sidecar revalidates the authoritative post identity and media allowlist, records provenance and an evidence override, and never creates a browser job, reasoning call, candidate, or foreground action for this path.
 - Capture telemetry survives reasoning failure or process interruption. A failed model turn cannot erase the already accepted browser coverage.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 
 ## State
 
-SQLite schema version 4 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, append-only object-scoped AI assessment history and asynchronous jobs, item-scoped media recaptures and evidence overrides, calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver/trigger telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
+SQLite schema version 4 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, append-only object-scoped AI assessment history and asynchronous jobs, item-scoped media recaptures and evidence overrides (including passive-enrichment provenance), calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver/trigger telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
 
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 

@@ -14,7 +14,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.6` / `source-fidelity-v56`
+- AkuBridge `0.6.7` / `source-fidelity-v57`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -164,6 +164,7 @@ corrected instead of retaining authority indefinitely.
 - `GET /api/bridge/media-recaptures/{id}/claim`
 - `POST /api/bridge/media-recaptures/{id}/observation`
 - `POST /api/bridge/media-recaptures/{id}/failure`
+- `POST /api/bridge/timeline/{id}/media-evidence`
 - `POST /api/operations/bridge/actions/reload-self`
 - `GET /api/operations/bridge/actions/next`
 - `POST /api/operations/bridge/actions/{id}/accept`
@@ -171,8 +172,8 @@ corrected instead of retaining authority indefinitely.
 - `POST /api/operations/reset-learning`
 - `POST /api/operations/full-reset`
 
-All Bridge heartbeat, capture-command, media-recapture, and cooperative-action
-routes require both the durable Bridge token and
+All Bridge heartbeat, capture-command, media-recapture, passive-media-evidence,
+and cooperative-action routes require both the durable Bridge token and
 `X-Aku-Bridge-Contract: aku-browser.bridge.v2`.
 
 The embedded UI restores the source-first dark shell, first-run source
@@ -261,9 +262,17 @@ uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
 either boundary trims the oldest terminal history and orphaned event threads.
 
-Unavailable captured media exposes an item-scoped Recapture action. The first
-job is always quiet and zero-scroll inside the managed capture window. If that
-attempt completes without media, the UI may offer a separate foreground job;
+Unavailable X media first has a passive completion path. AkuBridge relays only
+a sanitized, short-lived media cache keyed by the authoritative
+`x:status:<id>` identity. Sidecar revalidates that identity, accepts at most
+four allowlisted `pbs.twimg.com`/`video.twimg.com` post-media records, writes a
+completed provenance row plus an evidence override, and performs no browser
+operation. The enrichment consumes no reasoning call or Timeline capacity and
+cannot add, rerank, or semantically regroup an item.
+
+If passive evidence never becomes available, the item keeps its explicit
+Recapture action. The first job is always quiet and zero-scroll inside the
+managed capture window. If that attempt completes without media, the UI may offer a separate foreground job;
 Sidecar permits it only after explicit per-item consent and a completed
 unavailable background attempt. This one-time authorization does not change the
 persisted Quiet setting. A successful job replaces presentation evidence only;

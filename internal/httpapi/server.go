@@ -391,6 +391,27 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"correction": correction})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/timeline/") && strings.HasSuffix(p, "/media-evidence"):
+		if err := s.requireBridge(r); err != nil {
+			return err
+		}
+		id := path.Base(strings.TrimSuffix(p, "/media-evidence"))
+		var body domain.PassiveXMediaEvidence
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		recapture, updated, err := s.engine.ApplyPassiveXMediaEvidence(ctx, id, r.Header.Get("X-Aku-Bridge-Id"), body)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("timeline item")
+		}
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		response := map[string]any{"updated": updated}
+		if updated {
+			response["recapture"] = recapture
+		}
+		return writeJSON(w, http.StatusOK, response)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/event-corrections/") && strings.HasSuffix(p, "/undo"):
 		id := path.Base(strings.TrimSuffix(p, "/undo"))
 		correction, err := s.engine.UndoSemanticCorrection(ctx, id)

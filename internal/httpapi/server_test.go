@@ -84,7 +84,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "AI Detector", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "The latest More or Less decision is authoritative.", "function routeAIDetectedItems", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP", "function enrichPassiveXMedia", "passive_x_cache", "/media-evidence", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "The latest More or Less decision is authoritative.", "function routeAIDetectedItems", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS"},
 		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".inbox-preference-decision", ".ai-origin-badge", ".ai-origin-neutral", ".timeline-side-pane", ".timeline-source-icon-x { background: #050505; color: #fff; }"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
@@ -273,7 +273,7 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
-			"index":0,"adapterVersion":"x-dom-v17","selectorStrategy":"article","selectorCounts":{"article":1},
+			"index":0,"adapterVersion":"x-dom-v18","selectorStrategy":"article","selectorCounts":{"article":1},
 			"selectorCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
 			"scrollY":0,"viewportHeight":900,"newCandidateCount":1,
 			"blocks":[{
@@ -291,6 +291,57 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	}
 	if observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)
+	}
+}
+
+func TestPassiveMediaEvidenceEndpointRequiresBridgeAuthentication(t *testing.T) {
+	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}}
+	logger := log.New(io.Discard, "", 0)
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, logger)
+	server, err := New(cfg, state, runtime, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"candidateId":"x:status:12345","media":[{"kind":"image","url":"https://pbs.twimg.com/media/example.jpg"}],"provenance":"passive_x_cache"}`
+
+	request := httptest.NewRequest(http.MethodPost, "/api/bridge/timeline/missing/media-evidence", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	token, err := state.BridgeToken(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/bridge/timeline/missing/media-evidence", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Aku-Bridge-Token", token)
+	request.Header.Set("X-Aku-Bridge-Contract", domain.BridgeContractVersion)
+	request.Header.Set("X-Aku-Bridge-Id", "http-passive-test")
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("authenticated status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	textBearingBody := `{"candidateId":"x:status:12345","media":[{"kind":"image","url":"https://pbs.twimg.com/media/example.jpg","alt":"post text must not cross this contract"}],"provenance":"passive_x_cache"}`
+	request = httptest.NewRequest(http.MethodPost, "/api/bridge/timeline/missing/media-evidence", strings.NewReader(textBearingBody))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Aku-Bridge-Token", token)
+	request.Header.Set("X-Aku-Bridge-Contract", domain.BridgeContractVersion)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("text-bearing media status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

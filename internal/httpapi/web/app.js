@@ -11,6 +11,8 @@ const DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350;
 const DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92;
 const AI_HIDE_CONFIRMATION_PHRASE = "HIDE STRONG AI SIGNALS";
 const AI_DEEP_POLL_INTERVAL_MS = 5000;
+const PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS = 2500;
+const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -37,6 +39,10 @@ const state = {
   seenTimelineItems: new Set(),
   aiDeepPoller: null,
   sidePaneItems: [],
+  timelineItems: [],
+  passiveMediaEnrichmentTimer: null,
+  passiveMediaEnrichmentActive: false,
+  passiveMediaEvidenceAttempts: new Map(),
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -101,6 +107,9 @@ $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
 window.addEventListener("scroll", scheduleBackToTop, { passive: true });
 window.addEventListener("resize", scheduleBackToTop, { passive: true });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") schedulePassiveMediaEnrichment();
+});
 
 async function bootstrap() {
   try {
@@ -197,6 +206,7 @@ function renderBridge(bridge) {
     setPill("#bridge-status", "AkuBridge reconnecting", "warning");
   }
   syncRunButtons();
+  if (bridge?.compatible) schedulePassiveMediaEnrichment();
 }
 
 function renderSettings(settings) {
@@ -655,6 +665,7 @@ async function pollSession() {
       if (["failed", "partial"].includes(session.status)) showSessionFailure(session);
       state.session = null;
       renderSession();
+      schedulePassiveMediaEnrichment();
       if (["completed", "partial"].includes(session.status)) {
         const calibration = await startPendingFirstCalibration(session);
         if (calibration) showCalibration(calibration);
@@ -1164,6 +1175,13 @@ function routeAIDetectedItems(items) {
 }
 
 function renderTimeline(items, latestCheck) {
+  const allItems = Array.isArray(items) ? items : [];
+  state.timelineItems = allItems;
+  const retainedIDs = new Set(allItems.map((entry) => entry.id));
+  for (const timelineID of state.passiveMediaEvidenceAttempts.keys()) {
+    if (!retainedIDs.has(timelineID)) state.passiveMediaEvidenceAttempts.delete(timelineID);
+  }
+  schedulePassiveMediaEnrichment(allItems);
   const routed = routeAIDetectedItems(items);
   items = routed.inline;
   renderTimelineSidePane(routed.drawer, routed.pending);
@@ -1235,6 +1253,115 @@ function renderTimeline(items, latestCheck) {
     observeTimelineItem(rendered, entry.id);
   }
   scheduleBackToTop();
+}
+
+function schedulePassiveMediaEnrichment(items = state.timelineItems) {
+  if (
+    state.passiveMediaEnrichmentActive ||
+    state.passiveMediaEnrichmentTimer ||
+    state.session ||
+    !state.bootstrap?.bridge?.compatible ||
+    document.visibilityState === "hidden"
+  ) return;
+  if (!passiveMediaCandidates(items).length) return;
+  state.passiveMediaEnrichmentTimer = window.setTimeout(() => {
+    state.passiveMediaEnrichmentTimer = null;
+    void enrichPassiveXMedia(items);
+  }, 0);
+}
+
+function passiveMediaCandidates(items) {
+  const now = Date.now();
+  return (Array.isArray(items) ? items : []).filter((entry) => {
+    if (entry?.source !== "x" || !xMediaCandidateId(entry)) return false;
+    if (Array.isArray(entry.evidence?.media) && entry.evidence.media.length > 0) return false;
+    if (entry.evidence?.mediaRecovery?.outcome !== "unavailable") return false;
+    const attemptedAt = state.passiveMediaEvidenceAttempts.get(entry.id) ?? 0;
+    return now - attemptedAt >= PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS;
+  }).slice(0, 24);
+}
+
+async function enrichPassiveXMedia(items) {
+  const candidates = passiveMediaCandidates(items);
+  if (!candidates.length || state.passiveMediaEnrichmentActive) return;
+  state.passiveMediaEnrichmentActive = true;
+  const attemptedAt = Date.now();
+  for (const entry of candidates) state.passiveMediaEvidenceAttempts.set(entry.id, attemptedAt);
+  try {
+    const candidateIds = [...new Set(candidates.map(xMediaCandidateId).filter(Boolean))];
+    const evidence = await lookupPassiveXMediaEvidence(candidateIds);
+    const byCandidate = new Map((evidence?.candidates ?? []).map((entry) => [entry.candidateId, entry.media]));
+    let updated = false;
+    for (const entry of candidates) {
+      const candidateId = xMediaCandidateId(entry);
+      const media = byCandidate.get(candidateId);
+      if (!Array.isArray(media) || media.length === 0) continue;
+      try {
+        const result = await bridgeApi(
+          `/api/bridge/timeline/${encodeURIComponent(entry.id)}/media-evidence`,
+          {
+            method: "POST",
+            body: { candidateId, media, provenance: "passive_x_cache" },
+          },
+        );
+        updated ||= result?.updated === true;
+      } catch (error) {
+        console.debug("Passive X media enrichment was not applied", error);
+      }
+    }
+    if (updated) await refreshTimeline();
+  } catch (error) {
+    console.debug("Passive X media evidence is not available yet", error);
+  } finally {
+    state.passiveMediaEnrichmentActive = false;
+  }
+}
+
+function lookupPassiveXMediaEvidence(candidateIds) {
+  const requestId = `x_media_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => finish(
+      reject,
+      new Error("AkuBridge X media evidence lookup timed out."),
+    ), PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS);
+    function finish(callback, value) {
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onResult);
+      callback(value);
+    }
+    function onResult(event) {
+      if (event.source !== window || event.origin !== endpoint || event.data?.requestId !== requestId) return;
+      if (event.data.type === "AKU_BROWSER_X_MEDIA_EVIDENCE_RESULT") {
+        finish(resolve, event.data.evidence ?? { candidates: [] });
+      } else if (event.data.type === "AKU_BROWSER_X_MEDIA_EVIDENCE_FAILED") {
+        finish(reject, new Error(event.data.message || "AkuBridge X media evidence lookup failed."));
+      }
+    }
+    window.addEventListener("message", onResult);
+    window.postMessage({
+      type: "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP",
+      requestId,
+      candidateIds,
+    }, endpoint);
+  });
+}
+
+function xMediaCandidateId(entry) {
+  if (entry?.source !== "x") return null;
+  const values = [
+    entry.evidence?.platformId,
+    entry.evidence?.permalink,
+    entry.item?.sourceUrl,
+    entry.evidenceKey,
+  ];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const direct = value.trim().match(/^(?:x:status:)?(\d{5,30})$/i);
+    if (direct) return `x:status:${direct[1]}`;
+    const status = value.match(/\/status\/(\d{5,30})(?:\b|\/|\?|#|$)/i);
+    if (status) return `x:status:${status[1]}`;
+  }
+  return null;
 }
 
 function observeTimelineItem(element, timelineId) {

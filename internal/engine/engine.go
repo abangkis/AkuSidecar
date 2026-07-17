@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.6"
-	ExpectedBridgeRevision  = "source-fidelity-v56"
+	ExpectedBridgeVersion   = "0.6.7"
+	ExpectedBridgeRevision  = "source-fidelity-v57"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
-	ExpectedXAdapter        = "x-dom-v17"
+	ExpectedXAdapter        = "x-dom-v18"
 	ExpectedLinkedInAdapter = "linkedin-dom-v15"
 )
 
@@ -30,7 +30,8 @@ var expectedBridgeSources = []string{"x", "linkedin"}
 var expectedBridgeActions = []string{
 	"probe_readiness", "probe_freshness", "recover_source_freshness",
 	"collect_visible", "detect_pending_content", "report_adapter_health",
-	"report_capture_quality", "acquire_missing_media", "recapture_missing_media", "extract_source_semantics",
+	"report_capture_quality", "acquire_missing_media", "recapture_missing_media",
+	"cache_passive_media_evidence", "lookup_passive_media_evidence", "extract_source_semantics",
 	"report_frontier", "manage_source_tab_lifecycle", "manage_capture_window",
 	"release_capture_surface", "preserve_working_tab", "report_source_events", "reload_self",
 }
@@ -827,6 +828,12 @@ func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observatio
 
 func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure domain.Failure) (domain.MediaRecapture, error) {
 	return e.store.FailMediaRecapture(ctx, id, failure)
+}
+
+func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bridgeID string, value domain.PassiveXMediaEvidence) (domain.MediaRecapture, bool, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.ApplyPassiveXMediaEvidence(ctx, timelineID, bridgeID, value)
 }
 
 func (e *Engine) SemanticEventSuggestions(ctx context.Context, timelineID string, limit int) ([]domain.EventSuggestion, error) {
