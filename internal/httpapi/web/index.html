@@ -214,7 +214,7 @@
 
           <fieldset class="settings-group">
             <legend>Semantic event engine</legend>
-            <p class="settings-group-note">Tune cross-source event merging. Choices are intentionally bounded; free-form values are not accepted.</p>
+            <p class="settings-group-note">Tune cross-source event merging. Every control is intentionally bounded to a safe operating range.</p>
             <div class="settings-card">
               <label class="settings-row" for="semantic-event-mode">
                 <span class="settings-copy"><strong>Cross-author duplicate reports</strong><small>Collapse true duplicates by default, show every report with the engine off, or hide duplicate reports entirely.</small></span>
@@ -232,6 +232,13 @@
                   <option value="15">15 event threads</option>
                 </select>
               </label>
+              <div class="settings-row">
+                <label class="settings-copy" for="semantic-event-merge-threshold"><strong>Automatic merge confidence</strong><small>Minimum confidence required to collapse a true duplicate. Tune in 0.01 increments within the safe 0.85–0.95 range.</small></label>
+                <span class="settings-inline-control">
+                  <input id="semantic-event-merge-threshold" name="semanticEventMergeThreshold" type="number" min="0.85" max="0.95" step="0.01" inputmode="decimal" aria-label="Automatic semantic merge confidence threshold" />
+                  <button id="reset-semantic-event-merge-threshold" type="button">Reset to default</button>
+                </span>
+              </div>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Local event memory</strong><small>Trim when either the age or storage boundary is reached. This includes the SQLite database and its working files.</small></span>
                 <span class="paired-setting-control">

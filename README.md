@@ -191,8 +191,9 @@ evaluated summaries and evidence excerpts capped at 600 characters. The
 default collapses true duplicate reports while keeping them inspectable. Show
 all bypasses the engine, and Hide removes duplicate reports from the Timeline.
 Only `duplicate_report` is capacity-free; material updates, contradictions,
-new consequences, and context remain unique. Automatic merging requires 0.92
-confidence, and user corrections create undoable local constraints.
+new consequences, and context remain unique. Automatic merging uses a bounded
+confidence threshold: `0.92` by default, user-tunable from `0.85` to `0.95` in
+`0.01` steps. User corrections create undoable local constraints.
 
 Update Inbox records whether the local fast path or App Server ran, along with
 the trigger reason, strongest overlap, retained-event count, duration, and

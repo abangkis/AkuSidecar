@@ -426,7 +426,15 @@ func (s *Store) UndoSemanticCorrection(ctx context.Context, id string) (domain.E
 }
 
 func (s *Store) cleanupOrphanSemanticEvents(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM semantic_events WHERE NOT EXISTS (SELECT 1 FROM semantic_event_reports r WHERE r.event_id=semantic_events.id) AND NOT EXISTS (SELECT 1 FROM semantic_event_constraints c WHERE c.event_id=semantic_events.id)`)
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM semantic_events
+		WHERE NOT EXISTS (SELECT 1 FROM semantic_event_reports r WHERE r.event_id=semantic_events.id)
+		  AND NOT EXISTS (SELECT 1 FROM semantic_event_constraints c WHERE c.event_id=semantic_events.id)
+		  AND NOT EXISTS (
+			SELECT 1 FROM semantic_event_corrections c
+			WHERE c.undone_at IS NULL
+			  AND (c.from_event_id=semantic_events.id OR c.to_event_id=semantic_events.id)
+		  )`)
 	return err
 }
 

@@ -25,7 +25,7 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - One qualified discovery candidate remains available per source when it does not displace a protected update.
 - No fallback item is fabricated. Zero additions is valid.
 - X and LinkedIn are composed into one global personalized order with a maximum-two-consecutive-source guard.
-- Only a high-confidence `duplicate_report` is capacity-free; related updates, contradictions, consequences, and context remain unique.
+- Only a `duplicate_report` that reaches the configured confidence gate is capacity-free; related updates, contradictions, consequences, and context remain unique. The gate defaults to `0.92` and is bounded to `0.85–0.95` in `0.01` steps.
 - Semantic resolution is conditional: noisy lexical overlap cannot trigger the model, and unrelated reports use a deterministic local fast path.
 - `show_all` bypasses event retrieval and resolution. User event corrections are local, persistent, and undoable.
 - AkuSidecar never launches a watcher or hidden replacement of itself.

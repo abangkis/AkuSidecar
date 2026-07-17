@@ -109,12 +109,13 @@ func TestTimelineBoundaryCueDefaultsToFollowAndUsesLockedModes(t *testing.T) {
 
 func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
-	if value.SemanticEventMode != "collapse" || value.SemanticEventShortlist != 10 || value.KnowledgeRetentionDays != 30 || value.KnowledgeStorageLimitMB != 100 {
+	if value.SemanticEventMode != "collapse" || value.SemanticEventShortlist != 10 || value.SemanticEventMergeThreshold != .92 || value.KnowledgeRetentionDays != 30 || value.KnowledgeStorageLimitMB != 100 {
 		t.Fatalf("semantic defaults=%+v", value)
 	}
 
 	value.SemanticEventMode = "hide"
 	value.SemanticEventShortlist = 15
+	value.SemanticEventMergeThreshold = .90
 	value.KnowledgeRetentionDays = 90
 	value.KnowledgeStorageLimitMB = 1024
 	if err := value.Validate(); err != nil {
@@ -124,6 +125,17 @@ func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
 	value.SemanticEventShortlist = 11
 	if err := value.Validate(); err == nil {
 		t.Fatal("free-entry semantic shortlist must be rejected")
+	}
+	value.SemanticEventShortlist = 10
+	for _, threshold := range []float64{.84, .96, 1, .905} {
+		value.SemanticEventMergeThreshold = threshold
+		if err := value.Validate(); err == nil {
+			t.Fatalf("unsafe semantic merge threshold %.3f must be rejected", threshold)
+		}
+	}
+	value.SemanticEventMergeThreshold = .95
+	if err := value.Validate(); err != nil {
+		t.Fatalf("upper bounded threshold rejected: %v", err)
 	}
 }
 

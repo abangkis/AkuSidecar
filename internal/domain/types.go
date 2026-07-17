@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -16,6 +17,9 @@ const (
 	DefaultTimelineBoundaryCueMode  = "follow"
 	DefaultTimelineBoundaryReturnMS = 350
 	DefaultSemanticShortlist        = 10
+	DefaultSemanticMergeThreshold   = 0.92
+	MinSemanticMergeThreshold       = 0.85
+	MaxSemanticMergeThreshold       = 0.95
 	DefaultRetentionDays            = 30
 	DefaultStorageLimitMB           = 100
 )
@@ -30,47 +34,49 @@ const (
 func (s Source) Valid() bool { return s == SourceX || s == SourceLinkedIn }
 
 type Settings struct {
-	LoadProfile               string   `json:"loadProfile"`
-	CaptureVisibility         string   `json:"captureVisibility"`
-	OpenMissingSource         bool     `json:"openMissingSource"`
-	ActiveSources             []Source `json:"activeSources"`
-	TimelineCapacity          int      `json:"timelineCapacity"`
-	MaxItemsPerSource         int      `json:"maxItemsPerSource"`
-	MaxItemsTotal             int      `json:"maxItemsTotal"`
-	MaxScrolls                int      `json:"maxScrolls"`
-	QualityRetrySettleMS      int      `json:"qualityRetrySettleMs"`
-	PreferenceEligibilityMode string   `json:"preferenceEligibilityMode"`
-	CalibrationEnabled        bool     `json:"calibrationEnabled"`
-	CalibrationBatchSize      int      `json:"calibrationBatchSize"`
-	DefaultPresentation       string   `json:"defaultPresentation"`
-	StreamWidth               string   `json:"streamWidth"`
-	TimelineBatchGapPX        int      `json:"timelineBatchGapPx"`
-	TimelineBoundaryCueMode   string   `json:"timelineBoundaryCueMode"`
-	TimelineBoundaryReturnMS  int      `json:"timelineBoundaryReturnMs"`
-	SemanticEventMode         string   `json:"semanticEventMode"`
-	SemanticEventShortlist    int      `json:"semanticEventShortlist"`
-	KnowledgeRetentionDays    int      `json:"knowledgeRetentionDays"`
-	KnowledgeStorageLimitMB   int      `json:"knowledgeStorageLimitMb"`
+	LoadProfile                 string   `json:"loadProfile"`
+	CaptureVisibility           string   `json:"captureVisibility"`
+	OpenMissingSource           bool     `json:"openMissingSource"`
+	ActiveSources               []Source `json:"activeSources"`
+	TimelineCapacity            int      `json:"timelineCapacity"`
+	MaxItemsPerSource           int      `json:"maxItemsPerSource"`
+	MaxItemsTotal               int      `json:"maxItemsTotal"`
+	MaxScrolls                  int      `json:"maxScrolls"`
+	QualityRetrySettleMS        int      `json:"qualityRetrySettleMs"`
+	PreferenceEligibilityMode   string   `json:"preferenceEligibilityMode"`
+	CalibrationEnabled          bool     `json:"calibrationEnabled"`
+	CalibrationBatchSize        int      `json:"calibrationBatchSize"`
+	DefaultPresentation         string   `json:"defaultPresentation"`
+	StreamWidth                 string   `json:"streamWidth"`
+	TimelineBatchGapPX          int      `json:"timelineBatchGapPx"`
+	TimelineBoundaryCueMode     string   `json:"timelineBoundaryCueMode"`
+	TimelineBoundaryReturnMS    int      `json:"timelineBoundaryReturnMs"`
+	SemanticEventMode           string   `json:"semanticEventMode"`
+	SemanticEventShortlist      int      `json:"semanticEventShortlist"`
+	SemanticEventMergeThreshold float64  `json:"semanticEventMergeThreshold"`
+	KnowledgeRetentionDays      int      `json:"knowledgeRetentionDays"`
+	KnowledgeStorageLimitMB     int      `json:"knowledgeStorageLimitMb"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
 	settings := Settings{
-		LoadProfile:               profile,
-		CaptureVisibility:         visibility,
-		OpenMissingSource:         openMissing,
-		ActiveSources:             []Source{SourceX, SourceLinkedIn},
-		PreferenceEligibilityMode: preferenceMode,
-		CalibrationEnabled:        true,
-		CalibrationBatchSize:      10,
-		DefaultPresentation:       "source",
-		StreamWidth:               "social",
-		TimelineBatchGapPX:        DefaultTimelineBatchGapPX,
-		TimelineBoundaryCueMode:   DefaultTimelineBoundaryCueMode,
-		TimelineBoundaryReturnMS:  DefaultTimelineBoundaryReturnMS,
-		SemanticEventMode:         "collapse",
-		SemanticEventShortlist:    DefaultSemanticShortlist,
-		KnowledgeRetentionDays:    DefaultRetentionDays,
-		KnowledgeStorageLimitMB:   DefaultStorageLimitMB,
+		LoadProfile:                 profile,
+		CaptureVisibility:           visibility,
+		OpenMissingSource:           openMissing,
+		ActiveSources:               []Source{SourceX, SourceLinkedIn},
+		PreferenceEligibilityMode:   preferenceMode,
+		CalibrationEnabled:          true,
+		CalibrationBatchSize:        10,
+		DefaultPresentation:         "source",
+		StreamWidth:                 "social",
+		TimelineBatchGapPX:          DefaultTimelineBatchGapPX,
+		TimelineBoundaryCueMode:     DefaultTimelineBoundaryCueMode,
+		TimelineBoundaryReturnMS:    DefaultTimelineBoundaryReturnMS,
+		SemanticEventMode:           "collapse",
+		SemanticEventShortlist:      DefaultSemanticShortlist,
+		SemanticEventMergeThreshold: DefaultSemanticMergeThreshold,
+		KnowledgeRetentionDays:      DefaultRetentionDays,
+		KnowledgeStorageLimitMB:     DefaultStorageLimitMB,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -115,6 +121,9 @@ func (s *Settings) Normalize() {
 	if s.SemanticEventShortlist == 0 {
 		s.SemanticEventShortlist = DefaultSemanticShortlist
 	}
+	if s.SemanticEventMergeThreshold == 0 {
+		s.SemanticEventMergeThreshold = DefaultSemanticMergeThreshold
+	}
 	if s.KnowledgeRetentionDays == 0 {
 		s.KnowledgeRetentionDays = DefaultRetentionDays
 	}
@@ -154,6 +163,12 @@ func (s Settings) Validate() error {
 	}
 	if s.SemanticEventShortlist != 5 && s.SemanticEventShortlist != 10 && s.SemanticEventShortlist != 15 {
 		return errors.New("semanticEventShortlist must be 5, 10, or 15")
+	}
+	if s.SemanticEventMergeThreshold < MinSemanticMergeThreshold || s.SemanticEventMergeThreshold > MaxSemanticMergeThreshold {
+		return fmt.Errorf("semanticEventMergeThreshold must be between %.2f and %.2f", MinSemanticMergeThreshold, MaxSemanticMergeThreshold)
+	}
+	if scaled := s.SemanticEventMergeThreshold * 100; math.Abs(scaled-math.Round(scaled)) > 1e-9 {
+		return errors.New("semanticEventMergeThreshold must use increments of 0.01")
 	}
 	if s.KnowledgeRetentionDays != 30 && s.KnowledgeRetentionDays != 60 && s.KnowledgeRetentionDays != 90 {
 		return errors.New("knowledgeRetentionDays must be 30, 60, or 90")

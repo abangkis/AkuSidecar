@@ -8,6 +8,7 @@ const QUOTE_TEXT_COLLAPSE_CHARACTERS = 280;
 const QUOTE_TEXT_COLLAPSE_LINES = 4;
 const DEFAULT_TIMELINE_BATCH_GAP_PX = 36;
 const DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350;
+const DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -60,6 +61,7 @@ $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
+$("#reset-semantic-event-merge-threshold").addEventListener("click", resetSemanticEventMergeThreshold);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
 $("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
@@ -203,6 +205,7 @@ function renderSettings(settings) {
   $("#timeline-boundary-return-ms").value = settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
   $("#semantic-event-mode").value = settings.semanticEventMode || "collapse";
   $("#semantic-event-shortlist").value = String(settings.semanticEventShortlist || 10);
+  $("#semantic-event-merge-threshold").value = Number(settings.semanticEventMergeThreshold || DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD).toFixed(2);
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
   $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
@@ -249,6 +252,7 @@ async function saveSettings(event) {
     timelineBoundaryReturnMs: Number.parseInt($("#timeline-boundary-return-ms").value, 10),
     semanticEventMode: $("#semantic-event-mode").value,
     semanticEventShortlist: Number.parseInt($("#semantic-event-shortlist").value, 10),
+    semanticEventMergeThreshold: Number.parseFloat($("#semantic-event-merge-threshold").value),
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
     knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
   };
@@ -284,6 +288,14 @@ function syncSemanticEventSettings() {
   const disabled = $("#semantic-event-mode").value === "show_all";
   $("#semantic-event-shortlist").disabled = disabled;
   $("#semantic-event-shortlist").closest(".settings-row")?.classList.toggle("settings-row-disabled", disabled);
+  $("#semantic-event-merge-threshold").disabled = disabled;
+  $("#reset-semantic-event-merge-threshold").disabled = disabled;
+  $("#semantic-event-merge-threshold").closest(".settings-row")?.classList.toggle("settings-row-disabled", disabled);
+}
+
+function resetSemanticEventMergeThreshold() {
+  $("#semantic-event-merge-threshold").value = DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD.toFixed(2);
+  $("#runtime-settings-status").textContent = "Default restored Â· save settings to keep it.";
 }
 
 function applyStreamWidth(value) {

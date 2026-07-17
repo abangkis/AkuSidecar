@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	AutoMergeThreshold       = 0.92
 	localCatalogLimit        = 2000
 	historicalOverlapMinimum = 3
 	intraCheckOverlapMinimum = 3
@@ -83,7 +82,7 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 		}
 	}
 
-	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, settings.KnowledgeRetentionDays)
+	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, settings.KnowledgeRetentionDays, settings.SemanticEventMergeThreshold)
 	duplicates := 0
 	for _, report := range reports {
 		if report.Relation == "duplicate_report" {
@@ -192,7 +191,7 @@ func strongestIntraCheckSignal(candidates []domain.SemanticCandidate) triggerSig
 	return strongest
 }
 
-func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []domain.SemanticEvent, resolution domain.SemanticResolution, constraints map[string]map[string]string, retentionDays int) []domain.ResolvedSemanticReport {
+func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []domain.SemanticEvent, resolution domain.SemanticResolution, constraints map[string]map[string]string, retentionDays int, mergeThreshold float64) []domain.ResolvedSemanticReport {
 	decisions := map[string]domain.SemanticDecision{}
 	for _, decision := range resolution.Decisions {
 		if _, exists := decisions[decision.CandidateAlias]; !exists {
@@ -234,7 +233,10 @@ func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []
 			if targetFound && constraints[candidate.EvidenceKey][target.ID] == "must_not_merge" {
 				targetFound = false
 			}
-			if targetFound && (!compatibleEventTime(candidate.PublishedAt, target, retentionDays) || decision.Confidence < AutoMergeThreshold) {
+			if targetFound && !compatibleEventTime(candidate.PublishedAt, target, retentionDays) {
+				targetFound = false
+			}
+			if targetFound && decision.Relation == "duplicate_report" && decision.Confidence < mergeThreshold {
 				targetFound = false
 			}
 			if targetFound {
