@@ -149,9 +149,8 @@ h3 { letter-spacing: -0.02em; }
 .ai-assessment-detail { display: grid; gap: 7px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.014); }
 .ai-assessment-detail p { margin: 0; color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
 .ai-assessment-detail small { color: var(--quiet); font-size: 0.68rem; }
-.ai-assessment-actions, .ai-correction-shortcut, .ai-correction-shortcut > span { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-.ai-assessment-actions button, .ai-correction-shortcut button { padding: 4px 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.7rem; }
-.ai-correction-shortcut { grid-column: 1 / -1; color: var(--quiet); }
+.ai-assessment-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.ai-assessment-actions button { padding: 4px 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.7rem; }
 .presentation-toggle { padding: 6px 9px; border: 1px solid var(--line-strong); background: transparent; color: var(--accent); font-size: 0.74rem; }
 .item-layout-view { padding: 20px; }
 .item-layout-view h3 { margin: 15px 0 10px; font-size: 1.16rem; line-height: 1.35; }
@@ -205,6 +204,12 @@ h3 { letter-spacing: -0.02em; }
 .feedback-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .feedback-button { padding: 5px 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.72rem; }
 .feedback-button.selected { border-color: var(--accent); background: rgba(183, 242, 108, 0.12); color: var(--accent); }
+.item-actions-menu { position: relative; display: flex; }
+.item-actions-trigger { min-width: 2rem; padding-inline: 7px; font-size: 1rem; line-height: 0.9; }
+.item-actions-popover { position: absolute; right: 0; bottom: calc(100% + 7px); z-index: 8; display: grid; min-width: 13.5rem; padding: 6px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel-raised); box-shadow: 0 12px 30px rgba(0,0,0,0.34); }
+.item-actions-label { padding: 5px 7px 6px; color: var(--quiet); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.item-actions-popover button { padding: 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 0.72rem; text-align: left; }
+.item-actions-popover button:hover, .item-actions-popover button:focus-visible { background: rgba(255,255,255,0.055); color: var(--text); }
 .semantic-correction-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; color: var(--quiet); font-size: 0.7rem; }
 .event-correction-button, .event-suggestion-editor button { padding: 4px 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.7rem; }
 .event-suggestion-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
@@ -227,8 +232,8 @@ h3 { letter-spacing: -0.02em; }
 .inbox-flow-summary { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .inbox-session-body { padding: 0 18px 18px; border-top: 1px solid var(--line); }
 .inbox-session-meta { margin: 14px 0; color: var(--quiet); font-size: 0.78rem; }
-.event-resolution-diagnostic { display: grid; gap: 4px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-raised); font-size: 0.75rem; }
-.event-resolution-diagnostic span { color: var(--muted); }
+.event-resolution-diagnostic, .ai-detection-diagnostic { display: grid; gap: 4px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-raised); font-size: 0.75rem; }
+.event-resolution-diagnostic span, .ai-detection-diagnostic span { color: var(--muted); }
 .event-resolution-diagnostic .event-resolution-trigger { color: var(--quiet); font-size: 0.7rem; }
 .event-resolution-failed { border-color: rgba(246, 200, 107, 0.34); }
 .event-resolution-failed strong { color: var(--amber); }

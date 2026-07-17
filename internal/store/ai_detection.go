@@ -142,6 +142,40 @@ func (s *Store) FinishAIDetectionJob(ctx context.Context, id, status string, dur
 	return err
 }
 
+func (s *Store) AIDetectionJob(ctx context.Context, sessionID string) (*domain.AIDetectionJob, error) {
+	var value domain.AIDetectionJob
+	var input, cachedInput, output, reasoningOutput sql.NullInt64
+	var startedAt, completedAt sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id,session_id,status,provider,model,effort,candidate_count,duration_ms,
+		       input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error,created_at,started_at,completed_at
+		FROM ai_detection_jobs WHERE session_id=?`, sessionID).
+		Scan(&value.ID, &value.SessionID, &value.Status, &value.Provider, &value.Model, &value.Effort,
+			&value.CandidateCount, &value.DurationMS, &input, &cachedInput, &output, &reasoningOutput,
+			&value.Error, &value.CreatedAt, &startedAt, &completedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if input.Valid {
+		value.InputTokens = &input.Int64
+	}
+	if cachedInput.Valid {
+		value.CachedInputTokens = &cachedInput.Int64
+	}
+	if output.Valid {
+		value.OutputTokens = &output.Int64
+	}
+	if reasoningOutput.Valid {
+		value.ReasoningOutputTokens = &reasoningOutput.Int64
+	}
+	value.StartedAt = startedAt.String
+	value.CompletedAt = completedAt.String
+	return &value, nil
+}
+
 func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineItem) error {
 	if len(items) == 0 {
 		return nil

@@ -84,7 +84,10 @@ func TestSemanticDisplayModesAndLatestUniqueCount(t *testing.T) {
 func TestSemanticCorrectionUndoRemovesConstraint(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
-	_, timelineID := insertSemanticTimelineFixture(t, state, "duplicate_report")
+	session, timelineID := insertSemanticTimelineFixture(t, state, "duplicate_report")
+	if err := state.SaveEventResolutionSummary(ctx, domain.EventResolutionSummary{SessionID: session.ID, Status: "completed", Provider: "test", Model: "test", Effort: "none", CandidateCount: 1, UniqueItems: 0, DuplicateReports: 1, CreatedAt: domain.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	correction, err := state.CorrectSemanticEvent(ctx, timelineID, "not_same_event", "")
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +100,10 @@ func TestSemanticCorrectionUndoRemovesConstraint(t *testing.T) {
 	_ = state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_constraints`).Scan(&constraints)
 	if constraints != 1 {
 		t.Fatalf("constraints=%d want=1", constraints)
+	}
+	summary, err := state.EventResolutionSummary(ctx, session.ID)
+	if err != nil || summary == nil || summary.UserSplitCorrections != 1 || summary.UserMergeCorrections != 0 {
+		t.Fatalf("post-hoc correction diagnostics=%+v err=%v", summary, err)
 	}
 	items, err := state.ListTimeline(ctx, 10, 0)
 	if err != nil || len(items) != 1 || items[0].SemanticEvent == nil || items[0].SemanticEvent.CorrectionID != correction.ID {
@@ -112,9 +119,34 @@ func TestSemanticCorrectionUndoRemovesConstraint(t *testing.T) {
 	if constraints != 0 {
 		t.Fatalf("constraints after undo=%d", constraints)
 	}
+	summary, err = state.EventResolutionSummary(ctx, session.ID)
+	if err != nil || summary == nil || summary.UserSplitCorrections != 0 || summary.UserMergeCorrections != 0 {
+		t.Fatalf("undone correction diagnostics=%+v err=%v", summary, err)
+	}
 	items, err = state.ListTimeline(ctx, 10, 0)
 	if err != nil || len(items) != 1 || items[0].SemanticEvent.CorrectionID != "" {
 		t.Fatalf("undone correction remains active: items=%+v err=%v", items, err)
+	}
+}
+
+func TestSemanticCorrectionSummaryCountsUserMerge(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	session, timelineID := insertSemanticTimelineFixture(t, state, "new_event")
+	now := domain.Now()
+	targetEventID := "event-user-merge-target"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO semantic_events(id,canonical_claim,actor,event_kind,aliases_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?)`, targetEventID, "Existing matching event", "Another author", "other", "[]", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveEventResolutionSummary(ctx, domain.EventResolutionSummary{SessionID: session.ID, Status: "completed", Provider: "test", Model: "test", Effort: "none", CandidateCount: 1, UniqueItems: 1, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CorrectSemanticEvent(ctx, timelineID, "same_event", targetEventID); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := state.EventResolutionSummary(ctx, session.ID)
+	if err != nil || summary == nil || summary.UserSplitCorrections != 0 || summary.UserMergeCorrections != 1 {
+		t.Fatalf("user merge diagnostics=%+v err=%v", summary, err)
 	}
 }
 

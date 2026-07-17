@@ -204,6 +204,15 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 	if triggerTokens.Valid {
 		decodeJSON(triggerTokens.String, &value.TriggerTokens)
 	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN c.action='not_same_event' THEN 1 ELSE 0 END),0),
+		       COALESCE(SUM(CASE WHEN c.action='same_event' THEN 1 ELSE 0 END),0)
+		FROM semantic_event_corrections c
+		JOIN timeline_items t ON t.id=c.timeline_id
+		WHERE t.session_id=? AND c.undone_at IS NULL`, sessionID).
+		Scan(&value.UserSplitCorrections, &value.UserMergeCorrections); err != nil {
+		return nil, err
+	}
 	return &value, nil
 }
 

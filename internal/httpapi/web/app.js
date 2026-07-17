@@ -951,9 +951,29 @@ function buildInboxSession(session, expanded) {
   runs.append(...(session.runs ?? []).map(buildInboxRun));
   body.append(duration);
   if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
+  if (session.aiDetection) body.append(buildAIDetectionDiagnostic(session.aiDetection));
   body.append(runs);
   details.append(summary, body);
   return details;
+}
+
+function buildAIDetectionDiagnostic(value) {
+  const diagnostic = document.createElement("section");
+  diagnostic.className = `ai-detection-diagnostic ai-detection-${value.status}`;
+  const title = document.createElement("strong");
+  title.textContent = value.status === "failed" ? "AI Deep Detection degraded safely" : "AI Deep Detection";
+  const detail = document.createElement("span");
+  detail.textContent = value.status === "failed"
+    ? `${value.error || "Deep Detection unavailable"}. Timeline kept the local Fast Detection result.`
+    : [
+        humanize(value.status),
+        `${value.candidateCount ?? 0} reviewed posts`,
+        value.durationMs ? formatDuration(value.durationMs) : null,
+        value.inputTokens != null ? `${value.inputTokens} input / ${value.outputTokens ?? 0} output tokens` : null,
+        value.cachedInputTokens ? `${value.cachedInputTokens} cached input` : null,
+      ].filter(Boolean).join(" \u00b7 ");
+  diagnostic.append(title, detail);
+  return diagnostic;
 }
 
 function buildEventResolutionDiagnostic(value) {
@@ -968,6 +988,8 @@ function buildEventResolutionDiagnostic(value) {
         `${value.uniqueItems} unique`,
         `${value.duplicateReports} duplicate reports`,
         `${value.shortlistCount} shortlisted threads`,
+        value.userSplitCorrections ? `${value.userSplitCorrections} user split${value.userSplitCorrections === 1 ? "" : "s"}` : null,
+        value.userMergeCorrections ? `${value.userMergeCorrections} user merge${value.userMergeCorrections === 1 ? "" : "s"}` : null,
         value.provider === "local-index" ? "local index only" : `${value.provider}${value.durationMs ? ` \u00b7 ${formatDuration(value.durationMs)}` : ""}`,
         value.usage?.inputTokens != null ? `${value.usage.inputTokens} input / ${value.usage.outputTokens ?? 0} output tokens` : null,
       ].filter(Boolean).join(" \u00b7 ");
@@ -1543,30 +1565,52 @@ function buildActions(entry) {
     more.classList.remove("selected");
   });
   feedback.append(more, less);
+  if (!entry.aiDetection?.badgeLabel) feedback.append(buildItemActionsMenu(entry));
   actions.append(link, feedback);
-  if (!entry.aiDetection?.badgeLabel) actions.append(buildAICorrectionShortcut(entry));
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
 }
 
-function buildAICorrectionShortcut(entry) {
+function buildItemActionsMenu(entry) {
   const controls = document.createElement("div");
-  controls.className = "ai-correction-shortcut";
+  controls.className = "item-actions-menu";
   const trigger = document.createElement("button");
   trigger.type = "button";
-  trigger.textContent = "AI origin…";
-  const choices = document.createElement("span");
-  choices.className = "hidden";
+  trigger.className = "feedback-button item-actions-trigger";
+  trigger.textContent = "⋯";
+  trigger.title = "More actions";
+  trigger.setAttribute("aria-label", "More actions");
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+  const choices = document.createElement("div");
+  choices.className = "item-actions-popover hidden";
+  choices.setAttribute("role", "menu");
+  const label = document.createElement("span");
+  label.className = "item-actions-label";
+  label.textContent = "AI origin correction";
   const notAI = document.createElement("button");
   notAI.type = "button";
-  notAI.textContent = "Not AI";
+  notAI.setAttribute("role", "menuitem");
+  notAI.textContent = "Mark as not AI-generated";
   notAI.addEventListener("click", () => applyAICorrection(entry.id, "not_ai", notAI));
   const isAI = document.createElement("button");
   isAI.type = "button";
-  isAI.textContent = "AI";
+  isAI.setAttribute("role", "menuitem");
+  isAI.textContent = "Mark as AI-generated";
   isAI.addEventListener("click", () => applyAICorrection(entry.id, "ai", isAI));
-  choices.append(notAI, isAI);
-  trigger.addEventListener("click", () => choices.classList.toggle("hidden"));
+  choices.append(label, notAI, isAI);
+  const close = () => {
+    choices.classList.add("hidden");
+    trigger.setAttribute("aria-expanded", "false");
+  };
+  trigger.addEventListener("click", () => {
+    const opening = choices.classList.contains("hidden");
+    choices.classList.toggle("hidden", !opening);
+    trigger.setAttribute("aria-expanded", String(opening));
+  });
+  controls.addEventListener("focusout", () => requestAnimationFrame(() => {
+    if (!controls.contains(document.activeElement)) close();
+  }));
   controls.append(trigger, choices);
   return controls;
 }

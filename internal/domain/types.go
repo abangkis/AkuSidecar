@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "1.0.0-dev.6"
+	ApplicationVersion              = "1.0.0-dev.7"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
@@ -277,6 +277,7 @@ type InboxSession struct {
 	AddedItems          int                     `json:"addedItems"`
 	DuplicateReports    int                     `json:"duplicateReports"`
 	EventResolution     *EventResolutionSummary `json:"eventResolution,omitempty"`
+	AIDetection         *AIDetectionJob         `json:"aiDetection,omitempty"`
 	Runs                []InboxRun              `json:"runs"`
 	Error               *Failure                `json:"error"`
 }
@@ -665,6 +666,8 @@ type EventResolutionSummary struct {
 	ShortlistCount       int        `json:"shortlistCount"`
 	UniqueItems          int        `json:"uniqueItems"`
 	DuplicateReports     int        `json:"duplicateReports"`
+	UserSplitCorrections int        `json:"userSplitCorrections"`
+	UserMergeCorrections int        `json:"userMergeCorrections"`
 	ResolverInvoked      bool       `json:"resolverInvoked"`
 	TriggerReason        string     `json:"triggerReason"`
 	StrongestOverlap     int        `json:"strongestOverlap"`

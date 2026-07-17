@@ -213,9 +213,11 @@ confidence threshold: `0.92` by default, user-tunable from `0.85` to `0.95` in
 `0.01` steps. User corrections create undoable local constraints.
 
 Update Inbox records whether the local fast path or App Server ran, along with
-the trigger reason, strongest overlap, retained-event count, duration, and
-token usage. This makes semantic cost and false-positive retrieval visible
-without exposing raw database identities.
+the trigger reason, strongest overlap, retained-event count, duration, token
+usage, and post-hoc user split/merge counts. It also exposes the asynchronous
+Deep Detection job status, reviewed-post count, duration, token usage, and
+non-fatal failure. This makes semantic and AI Detector cost and correction
+signals visible without exposing raw database identities.
 
 AI Detector is a separate presentation-only domain. Its text-first Fast
 Detector runs locally after global composition and recognizes only explicit
@@ -233,7 +235,9 @@ saw. Hide requires the exact phrase `HIDE STRONG AI SIGNALS` and applies only to
 direct platform/provenance evidence, Deep-confirmed strong signals, or a user
 `This is AI` correction. Preliminary inferred signals are not Hide-eligible.
 `This is AI` and `This is not AI` are durable, undoable personal corrections
-and resolve above Fast or Deep output.
+and resolve above Fast or Deep output. Posts without a detector badge keep
+these manual corrections inside the neutral `⋯` actions menu, so the presence
+of AI wording on a card always denotes an actual assessment.
 
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and

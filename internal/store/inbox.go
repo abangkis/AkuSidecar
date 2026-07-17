@@ -50,6 +50,10 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 		if err != nil {
 			return nil, 0, err
 		}
+		entry.AIDetection, err = s.AIDetectionJob(ctx, session.ID)
+		if err != nil {
+			return nil, 0, err
+		}
 		if entry.EventResolution != nil {
 			entry.DuplicateReports = entry.EventResolution.DuplicateReports
 			entry.AddedItems = entry.EventResolution.UniqueItems

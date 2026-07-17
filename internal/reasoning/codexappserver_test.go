@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -53,6 +54,14 @@ func fakeCodexAppServer() {
 			params, _ := request["params"].(map[string]any)
 			threadID, _ := params["threadId"].(string)
 			fakeRPC(map[string]any{"id": id, "result": map[string]any{"turn": map[string]any{"id": turnID}}})
+			if os.Getenv("AKU_FAKE_CODEX_HANG_TURN") == fmt.Sprint(turn) {
+				if marker := os.Getenv("AKU_FAKE_CODEX_HANG_MARKER"); marker != "" {
+					_ = os.WriteFile(marker, []byte("hung"), 0o600)
+				}
+				for {
+					time.Sleep(time.Hour)
+				}
+			}
 			var output any
 			schema, _ := params["outputSchema"].(map[string]any)
 			properties, _ := schema["properties"].(map[string]any)
@@ -74,6 +83,12 @@ func fakeCodexAppServer() {
 				output = domain.ReasoningResult{Summary: "fake app server", Items: []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, SourceURL: "https://x.com/post", SourceURLKind: "native_post", EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}}, CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture"}}, Limitations: []string{}}
 			}
 			raw, _ := json.Marshal(output)
+			if marker := os.Getenv("AKU_FAKE_CODEX_MALFORMED_ONCE"); marker != "" {
+				if _, err := os.Stat(marker); os.IsNotExist(err) {
+					_ = os.WriteFile(marker, []byte("malformed once"), 0o600)
+					raw = []byte(`{"incomplete"`)
+				}
+			}
 			item := map[string]any{"id": "message-1", "type": "agentMessage", "text": string(raw), "phase": "finalAnswer"}
 			fakeRPC(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{"threadId": threadID, "turnId": turnID, "tokenUsage": map[string]any{"last": map[string]any{"inputTokens": 11, "cachedInputTokens": 3, "outputTokens": 7, "reasoningOutputTokens": 2, "totalTokens": 18}, "total": map[string]any{"inputTokens": 11, "cachedInputTokens": 3, "outputTokens": 7, "reasoningOutputTokens": 2, "totalTokens": 18}}}})
 			fakeRPC(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": threadID, "turnId": turnID, "completedAtMs": 1, "item": item}})
@@ -131,6 +146,84 @@ func TestCodexAppServerRejectsCompletedTurnWithoutFinalResponse(t *testing.T) {
 	}
 	if provider.cmd != nil {
 		t.Fatal("invalid App Server process must be discarded after a protocol failure")
+	}
+}
+
+func TestCodexAppServerDeadlineDiscardsProcessAndRecovers(t *testing.T) {
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	t.Setenv("AKU_FAKE_CODEX_HANG_TURN", "2")
+	marker := filepath.Join(t.TempDir(), "hung-turn")
+	t.Setenv("AKU_FAKE_CODEX_HANG_MARKER", marker)
+	provider := newFakeCodexAppServer(t)
+	defer provider.Close()
+	run, observation := fakeAppServerInput()
+	if _, _, err := provider.Plan(context.Background(), run, observation, nil); err != nil {
+		t.Fatalf("warm invocation failed: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	if _, telemetry, err := provider.Plan(ctx, run, observation, nil); err == nil || !strings.Contains(err.Error(), "deadline exceeded") || telemetry.Status != "failed" {
+		t.Fatalf("deadline result telemetry=%+v err=%v", telemetry, err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("fake App Server never reached the hanging turn: %v", err)
+	}
+	if provider.cmd != nil {
+		t.Fatal("timed-out App Server process must be discarded")
+	}
+	plan, _, err := provider.Plan(context.Background(), run, observation, nil)
+	if err != nil || plan.Decision != "finish" {
+		t.Fatalf("fresh process did not recover after deadline: plan=%+v err=%v", plan, err)
+	}
+}
+
+func TestCodexAppServerMalformedStructuredResultDoesNotPoisonTransport(t *testing.T) {
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	marker := filepath.Join(t.TempDir(), "malformed-once")
+	t.Setenv("AKU_FAKE_CODEX_MALFORMED_ONCE", marker)
+	provider := newFakeCodexAppServer(t)
+	defer provider.Close()
+	run, observation := fakeAppServerInput()
+	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !strings.Contains(err.Error(), "decode App Server reasoning result") {
+		t.Fatalf("malformed structured result error=%v", err)
+	}
+	if provider.cmd == nil {
+		t.Fatal("a model validation failure must not restart the healthy transport implicitly")
+	}
+	result, _, err := provider.Analyze(context.Background(), run, observation, nil)
+	if err != nil || len(result.Items) != 1 {
+		t.Fatalf("transport did not remain reusable after malformed result: result=%+v err=%v", result, err)
+	}
+}
+
+func TestCodexAppServerSerializesConcurrentAdaptersOnOneTransport(t *testing.T) {
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	provider := newFakeCodexAppServer(t)
+	defer provider.Close()
+	run, observation := fakeAppServerInput()
+	const workers = 6
+	errorsFound := make(chan error, workers)
+	var group sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			plan, _, err := provider.Plan(context.Background(), run, observation, nil)
+			if err == nil && plan.Decision != "finish" {
+				err = fmt.Errorf("unexpected plan: %+v", plan)
+			}
+			errorsFound <- err
+		}()
+	}
+	group.Wait()
+	close(errorsFound)
+	for err := range errorsFound {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if provider.cmd == nil || provider.nextID != 1+workers*2 {
+		t.Fatalf("concurrent adapters did not share one serialized transport: cmd=%v nextID=%d", provider.cmd, provider.nextID)
 	}
 }
 
