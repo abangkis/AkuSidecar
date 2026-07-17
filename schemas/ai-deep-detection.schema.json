@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akubrowser.local/contracts/ai-deep-detection.schema.json",
+  "title": "AkuBrowser AI Deep Detection Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assessments"],
+  "properties": {
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "confidenceBand", "evidenceCodes", "rationale"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["strong_signals", "insufficient_evidence", "no_signal_detected", "conflicting_evidence"]
+          },
+          "confidenceBand": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "evidenceCodes": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": [
+                "platform_ai_label",
+                "author_declared_ai",
+                "verified_ai_provenance",
+                "prompt_instruction_residue",
+                "templated_cross_account_repetition",
+                "agent_identity_context",
+                "stylometric_pattern",
+                "insufficient_content",
+                "conflicting_evidence"
+              ]
+            }
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      }
+    }
+  }
+}

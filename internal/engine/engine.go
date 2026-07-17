@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
@@ -46,6 +47,8 @@ type Engine struct {
 	logger    Logger
 	reloads   *ReloadActions
 	events    *semanticengine.Engine
+	aiFast    aidetector.FastDetector
+	aiDeep    aidetector.Resolver
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -57,8 +60,9 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	}
 	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events}
 }
-func (e *Engine) Epoch() string        { return e.epoch }
-func (e *Engine) ProviderName() string { return e.provider.Name() }
+func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
+func (e *Engine) Epoch() string                               { return e.epoch }
+func (e *Engine) ProviderName() string                        { return e.provider.Name() }
 func (e *Engine) Settings(ctx context.Context) (domain.Settings, error) {
 	return e.store.GetSettings(ctx)
 }
@@ -222,6 +226,7 @@ func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Sessio
 	if err != nil {
 		return domain.Session{}, err
 	}
+	e.cancelDeepDetections()
 	session, err := e.store.CreateSession(ctx, intent, settings)
 	if err != nil {
 		return domain.Session{}, err
@@ -250,6 +255,9 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
 			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
 		}
+		if detectionErr := e.runFastDetection(ctx, sessionID); detectionErr != nil {
+			e.logger.Printf("AI Fast Detection for session %s degraded safely: %v", sessionID, detectionErr)
+		}
 		if finalizeErr := e.store.FinalizeSession(ctx, sessionID); finalizeErr != nil {
 			return nil, fmt.Errorf("finalize unified session: %w", finalizeErr)
 		}
@@ -259,6 +267,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}
+		e.launchDeepDetection(sessionID)
 		return nil, nil
 	}
 	settings, err := e.store.GetSettings(ctx)
@@ -271,6 +280,102 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 	}
 	started, err := e.store.GetRun(ctx, run.ID)
 	return &started, err
+}
+
+func (e *Engine) runFastDetection(ctx context.Context, sessionID string) error {
+	items, err := e.store.ListSessionItems(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	return e.store.SaveAIAssessments(ctx, e.aiFast.Detect(items))
+}
+
+func (e *Engine) launchDeepDetection(sessionID string) {
+	resolver := e.aiDeep
+	if resolver == nil {
+		return
+	}
+	items, err := e.store.ListSessionItems(context.Background(), sessionID)
+	if err != nil || len(items) == 0 {
+		if err != nil {
+			e.logger.Printf("AI Deep Detection could not load session %s: %v", sessionID, err)
+		}
+		return
+	}
+	model := resolver.Model()
+	job, err := e.store.CreateAIDetectionJob(context.Background(), domain.AIDetectionJob{
+		SessionID: sessionID, Status: "queued", Provider: resolver.Name(), Model: model.Model,
+		Effort: model.Effort, CandidateCount: len(items),
+	})
+	if err != nil {
+		e.logger.Printf("AI Deep Detection could not queue session %s: %v", sessionID, err)
+		return
+	}
+	key := "ai:" + sessionID
+	ctx, cancel := context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.active[key] = cancel
+	e.mu.Unlock()
+	go func() {
+		defer func() {
+			e.mu.Lock()
+			delete(e.active, key)
+			e.mu.Unlock()
+		}()
+		if err := e.store.StartAIDetectionJob(ctx, job.ID); err != nil {
+			status := "failed"
+			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+				status = "cancelled"
+			}
+			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, status, 0, domain.ModelUsage{}, err)
+			if status != "cancelled" {
+				e.logger.Printf("AI Deep Detection could not start session %s: %v", sessionID, err)
+			}
+			return
+		}
+		result, usage, duration, resolveErr := resolver.Resolve(ctx, items)
+		if resolveErr != nil {
+			status := "failed"
+			if errors.Is(resolveErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+				status = "cancelled"
+			}
+			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, status, duration.Milliseconds(), usage, resolveErr)
+			if status != "cancelled" {
+				e.logger.Printf("AI Deep Detection for session %s degraded safely: %v", sessionID, resolveErr)
+			}
+			return
+		}
+		assessedAt := domain.Now()
+		assessments := make([]domain.AIAssessment, 0, len(items))
+		for index, value := range result.Assessments {
+			supersedes := ""
+			if items[index].AIDetection != nil {
+				supersedes = items[index].AIDetection.AssessmentID
+			}
+			assessments = append(assessments, domain.AIAssessment{
+				ID: domain.NewID("ai_assessment"), TimelineID: items[index].ID, SessionID: sessionID,
+				Stage: "deep", Status: value.Status, ConfidenceBand: value.ConfidenceBand,
+				EvidenceCodes: value.EvidenceCodes, Provider: resolver.Name(), DetectorVersion: "codex-deep-v1",
+				Rationale: value.Rationale, SupersedesID: supersedes, CreatedAt: assessedAt,
+			})
+		}
+		if err := e.store.SaveAIAssessments(context.Background(), assessments); err != nil {
+			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, "failed", duration.Milliseconds(), usage, err)
+			e.logger.Printf("AI Deep Detection could not persist session %s: %v", sessionID, err)
+			return
+		}
+		_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, "completed", duration.Milliseconds(), usage, nil)
+	}()
+}
+
+func (e *Engine) cancelDeepDetections() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for id, cancel := range e.active {
+		if strings.HasPrefix(id, "ai:") {
+			cancel()
+		}
+	}
 }
 
 func capturePayload(run domain.Run, leaseID string, settings domain.Settings, round int, continuation map[string]any, reason string) map[string]any {
@@ -694,6 +799,16 @@ func (e *Engine) UndoSemanticCorrection(ctx context.Context, id string) (domain.
 	defer e.operation.Unlock()
 	return e.store.UndoSemanticCorrection(ctx, id)
 }
+func (e *Engine) CorrectAIDetection(ctx context.Context, timelineID, verdict string) (domain.AIAssessment, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.AddAICorrection(ctx, timelineID, verdict)
+}
+func (e *Engine) UndoAICorrection(ctx context.Context, id string) (domain.AIAssessment, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.UndoAICorrection(ctx, id)
+}
 func (e *Engine) ResetLearning(ctx context.Context) error {
 	e.operation.Lock()
 	defer e.operation.Unlock()
@@ -702,6 +817,7 @@ func (e *Engine) ResetLearning(ctx context.Context) error {
 func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	e.cancelDeepDetections()
 	defaults := domain.DefaultSettings(e.config.Capture.Profile, e.config.Capture.Visibility, e.config.Preference.Mode, e.config.Capture.OpenMissingSource)
 	return e.store.FullReset(ctx, defaults)
 }

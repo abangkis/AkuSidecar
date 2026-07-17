@@ -75,7 +75,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
 	bootstrapSettings := bootstrap["settings"].(map[string]any)
-	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["semanticEventMergeThreshold"] != .92 {
+	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "inline" {
 		t.Fatalf("timeline boundary cue settings=%+v", bootstrapSettings)
 	}
 	onboarding := bootstrap["onboarding"].(map[string]any)
@@ -83,9 +83,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("fresh onboarding=%+v", onboarding)
 	}
 	for path, markers := range map[string][]string{
-		"/":           {"Semantic event engine", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
-		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer"},
+		"/":           {"Semantic event engine", "AI Detector", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function routeAIDetectedItems", "function buildAIDetectionControls", "HIDE STRONG AI SIGNALS"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".ai-origin-badge", ".timeline-side-pane"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
 		if err != nil {
@@ -169,6 +169,30 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("heartbeat status=%d", response.StatusCode)
 	}
 	response.Body.Close()
+	hideSettings := settings
+	hideSettings.AIDetectionPresentation = "hide"
+	badHidePayload, _ := json.Marshal(map[string]any{"settings": hideSettings, "confirmationPhrase": "wrong"})
+	request, _ = http.NewRequest(http.MethodPut, "http://"+address.String()+"/api/settings", bytes.NewReader(badHidePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("wrong AI Hide confirmation status=%d", response.StatusCode)
+	}
+	goodHidePayload, _ := json.Marshal(map[string]any{"settings": hideSettings, "confirmationPhrase": domain.AIHideConfirmationPhrase})
+	request, _ = http.NewRequest(http.MethodPut, "http://"+address.String()+"/api/settings", bytes.NewReader(goodHidePayload))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("confirmed AI Hide status=%d", response.StatusCode)
+	}
 	request, _ = http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/operations/full-reset", bytes.NewBufferString(`{"confirmation":"wrong"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response, err = client.Do(request)

@@ -1,6 +1,6 @@
 package store
 
-const schemaVersion = "2"
+const schemaVersion = "3"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -129,6 +129,48 @@ CREATE TABLE IF NOT EXISTS timeline_items (
 
 CREATE INDEX IF NOT EXISTS timeline_session_rank ON timeline_items(session_id, rank);
 CREATE INDEX IF NOT EXISTS timeline_created ON timeline_items(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_assessments (
+  id TEXT PRIMARY KEY,
+  timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL CHECK (stage IN ('fast','deep','user')),
+  status TEXT NOT NULL CHECK (status IN ('strong_signals','insufficient_evidence','no_signal_detected','conflicting_evidence','user_marked_ai','user_marked_not_ai')),
+  confidence_band TEXT NOT NULL CHECK (confidence_band IN ('low','medium','high')),
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  provider TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  content_fingerprint TEXT NOT NULL DEFAULT '',
+  rationale TEXT NOT NULL DEFAULT '',
+  supersedes_id TEXT REFERENCES ai_assessments(id),
+  created_at TEXT NOT NULL,
+  undone_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ai_assessments_timeline_created ON ai_assessments(timeline_id, created_at, id);
+CREATE INDEX IF NOT EXISTS ai_assessments_session_stage ON ai_assessments(session_id, stage, created_at);
+CREATE INDEX IF NOT EXISTS ai_assessments_fingerprint ON ai_assessments(content_fingerprint, stage, created_at);
+
+CREATE TABLE IF NOT EXISTS ai_detection_jobs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  effort TEXT NOT NULL,
+  candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  input_tokens INTEGER,
+  cached_input_tokens INTEGER,
+  output_tokens INTEGER,
+  reasoning_output_tokens INTEGER,
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ai_detection_jobs_status_created ON ai_detection_jobs(status, created_at);
 
 CREATE TABLE IF NOT EXISTS media_recaptures (
   id TEXT PRIMARY KEY,

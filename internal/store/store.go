@@ -56,6 +56,10 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		}
 	case err != nil:
 		return fmt.Errorf("read schema version: %w", err)
+	case version == "2":
+		if _, err := s.db.ExecContext(ctx, `UPDATE meta SET value=? WHERE key='schema_version'`, schemaVersion); err != nil {
+			return fmt.Errorf("migrate schema 2 to %s: %w", schemaVersion, err)
+		}
 	case version != schemaVersion:
 		return fmt.Errorf("database schema %s is incompatible with required schema %s; start with a fresh database", version, schemaVersion)
 	}
@@ -957,6 +961,9 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 		}
 	}
 	if err := s.attachSemanticEvents(ctx, items); err != nil {
+		return nil, err
+	}
+	if err := s.attachAIDetections(ctx, items); err != nil {
 		return nil, err
 	}
 	return items, nil

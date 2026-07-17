@@ -59,7 +59,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -67,6 +67,36 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		if names[i] != want[i] {
 			t.Fatalf("tables=%v", names)
 		}
+	}
+}
+
+func TestCurrentGoSchemaTwoMigratesToThree(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sidecar-v2.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO meta(key,value) VALUES('schema_version','2')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version string
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	var tables int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('ai_assessments','ai_detection_jobs')`).Scan(&tables); err != nil {
+		t.Fatal(err)
+	}
+	if version != "3" || tables != 2 {
+		t.Fatalf("version=%s AI tables=%d", version, tables)
 	}
 }
 

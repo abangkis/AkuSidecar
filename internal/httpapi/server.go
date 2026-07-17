@@ -130,7 +130,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": 2}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": 3}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -212,10 +212,18 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
 	case r.Method == http.MethodPut && p == "/api/settings":
 		var body struct {
-			Settings domain.Settings `json:"settings"`
+			Settings           domain.Settings `json:"settings"`
+			ConfirmationPhrase string          `json:"confirmationPhrase"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			return err
+		}
+		current, err := s.engine.Settings(ctx)
+		if err != nil {
+			return err
+		}
+		if body.Settings.AIDetectionPresentation == "hide" && current.AIDetectionPresentation != "hide" && body.ConfirmationPhrase != domain.AIHideConfirmationPhrase {
+			return badRequest("activating Hide requires the exact confirmation phrase")
 		}
 		settings, err := s.engine.SaveSettings(ctx, body.Settings)
 		if err != nil {
@@ -301,6 +309,32 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-correction"):
+		id := path.Base(strings.TrimSuffix(p, "/ai-correction"))
+		var body struct {
+			Verdict string `json:"verdict"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		assessment, err := s.engine.CorrectAIDetection(ctx, id, body.Verdict)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("timeline item")
+		}
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusCreated, map[string]any{"assessment": assessment})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/ai-corrections/") && strings.HasSuffix(p, "/undo"):
+		id := path.Base(strings.TrimSuffix(p, "/undo"))
+		assessment, err := s.engine.UndoAICorrection(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("AI correction")
+		}
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"assessment": assessment})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
 		id := path.Base(strings.TrimSuffix(p, "/recapture"))
 		var body struct {

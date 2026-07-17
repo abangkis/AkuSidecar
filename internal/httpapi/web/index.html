@@ -261,6 +261,25 @@
           </fieldset>
 
           <fieldset class="settings-group">
+            <legend>AI Detector</legend>
+            <p class="settings-group-note">AI origin signals never influence selection or ranking. Fast Detection is local and deterministic; Deep Detection reviews retained posts asynchronously.</p>
+            <div class="settings-card">
+              <label class="settings-row" for="ai-detection-presentation">
+                <span class="settings-copy"><strong>Strong AI-origin signals</strong><small>Keep signaled posts inline by default, route them into the generic side pane, or hide only direct and Deep-confirmed results.</small></span>
+                <select id="ai-detection-presentation" name="aiDetectionPresentation">
+                  <option value="inline">Show inline — recommended</option>
+                  <option value="drawer">Move to AI Signals pane</option>
+                  <option value="hide">Hide confirmed signals — high risk</option>
+                </select>
+              </label>
+              <div id="ai-hide-warning" class="settings-row ai-hide-warning hidden">
+                <span class="settings-copy"><strong>High-risk presentation policy</strong><small>AI detection can be wrong. Activating Hide requires an exact typed phrase. Hidden posts remain local and recoverable.</small></span>
+                <span id="ai-hide-status" class="settings-detail">Hide is not active.</span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-group">
             <legend>Active sources</legend>
             <p class="settings-group-note">At least one installed source must remain active.</p>
             <div class="settings-card">
@@ -360,6 +379,18 @@
       </section>
     </main>
 
+    <button id="timeline-side-pane-toggle" class="timeline-side-pane-toggle hidden" type="button" aria-controls="timeline-side-pane" aria-expanded="false">
+      <span>AI Signals</span><strong id="timeline-side-pane-count">0</strong>
+    </button>
+    <aside id="timeline-side-pane" class="timeline-side-pane hidden" aria-labelledby="timeline-side-pane-title">
+      <header>
+        <div><p class="step-label">ALTERNATE VIEW</p><h2 id="timeline-side-pane-title">AI Signals</h2></div>
+        <button id="timeline-side-pane-close" class="text-button" type="button" aria-label="Close side pane">Close</button>
+      </header>
+      <p id="timeline-side-pane-detail" class="review-guidance">Strong AI-origin signals routed from the current finite Timeline.</p>
+      <div id="timeline-side-pane-items" class="timeline-side-pane-items"></div>
+    </aside>
+
     <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="Back to top" title="Back to top">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.7 10.7 5.3-5.3 5.3 5.3-1.4 1.4-2.9-2.9V19h-2V9.2l-2.9 2.9-1.4-1.4Z"/></svg>
     </button>
@@ -378,7 +409,7 @@
 
     <dialog id="reset-confirmation-dialog" class="reset-confirmation-dialog" aria-labelledby="reset-confirmation-title">
       <form method="dialog" class="reset-confirmation-card">
-        <p class="step-label">DESTRUCTIVE OPERATION</p>
+        <p id="confirmation-operation-label" class="step-label">DESTRUCTIVE OPERATION</p>
         <h2 id="reset-confirmation-title">Confirm reset</h2>
         <p id="reset-confirmation-impact"></p>
         <label class="reset-confirmation-label" for="reset-confirmation-input">Type <strong id="reset-confirmation-phrase"></strong> to continue.</label>
@@ -386,11 +417,11 @@
         <p id="reset-confirmation-status" class="settings-detail" role="alert"></p>
         <div class="reset-confirmation-actions">
           <button id="reset-confirmation-cancel" class="secondary-button" type="button">Cancel</button>
-          <button id="reset-confirmation-submit" class="danger-button" type="button" disabled>Confirm reset</button>
+          <button id="reset-confirmation-submit" class="danger-button" type="button" disabled>Confirm</button>
         </div>
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?runtime=go-ui-inbox-v3"></script>
+    <script type="module" src="/app.js?runtime=go-ui-ai-detector-v1"></script>
   </body>
 </html>

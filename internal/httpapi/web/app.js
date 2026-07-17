@@ -9,6 +9,8 @@ const QUOTE_TEXT_COLLAPSE_LINES = 4;
 const DEFAULT_TIMELINE_BATCH_GAP_PX = 36;
 const DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350;
 const DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92;
+const AI_HIDE_CONFIRMATION_PHRASE = "HIDE STRONG AI SIGNALS";
+const AI_DEEP_POLL_INTERVAL_MS = 5000;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -31,6 +33,10 @@ const state = {
   backToTopBoundary: null,
   mediaRecaptureActive: false,
   foregroundRecaptureOffers: new Set(),
+  pendingSettings: null,
+  seenTimelineItems: new Set(),
+  aiDeepPoller: null,
+  sidePaneItems: [],
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -62,6 +68,7 @@ $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
+$("#ai-detection-presentation").addEventListener("change", syncAIDetectionSettings);
 $("#reset-semantic-event-merge-threshold").addEventListener("click", resetSemanticEventMergeThreshold);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
@@ -86,6 +93,8 @@ $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
 $("#reset-confirmation-submit").addEventListener("click", submitReset);
+$("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
+$("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
 $("#back-to-top").addEventListener("click", returnToTop);
 $("#media-viewer-close").addEventListener("click", () => $("#media-viewer").close());
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
@@ -145,6 +154,8 @@ function setView(view) {
   $("#settings-panel").classList.toggle("hidden", !settings);
   $("#inbox-panel").classList.toggle("hidden", !inbox);
   $("#timeline-panel").classList.toggle("hidden", !timeline);
+  if (!timeline) closeTimelineSidePane();
+  $("#timeline-side-pane-toggle").classList.toggle("view-hidden", !timeline);
   $("#session-view-button").classList.toggle("selected", timeline);
   $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
@@ -209,6 +220,7 @@ function renderSettings(settings) {
   $("#semantic-event-merge-threshold").value = Number(settings.semanticEventMergeThreshold || DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD).toFixed(2);
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
+  $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "inline";
   $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
@@ -217,6 +229,7 @@ function renderSettings(settings) {
   if (settings.timelineBoundaryCueMode === "static") releaseBackToTopBoundary();
   syncLoadProfileSettings(false);
   syncSemanticEventSettings();
+  syncAIDetectionSettings();
 }
 
 async function saveSettings(event) {
@@ -256,18 +269,30 @@ async function saveSettings(event) {
     semanticEventMergeThreshold: Number.parseFloat($("#semantic-event-merge-threshold").value),
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
     knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
+    aiDetectionPresentation: $("#ai-detection-presentation").value,
   };
+  if (settings.aiDetectionPresentation === "hide" && current.aiDetectionPresentation !== "hide") {
+    state.pendingSettings = settings;
+    openResetDialog("ai-hide");
+    return;
+  }
+  await persistSettings(settings);
+}
+
+async function persistSettings(settings, confirmationPhrase = "") {
   const status = $("#runtime-settings-status");
   status.textContent = "Saving…";
   try {
-    const response = await api("/api/settings", { method: "PUT", body: { settings } });
+    const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
     state.bootstrap.settings = response.settings;
     renderSettings(response.settings);
     status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
     await refreshTimeline();
+    return response.settings;
   } catch (error) {
     status.textContent = error.message;
     showError(error);
+    return null;
   }
 }
 
@@ -294,9 +319,18 @@ function syncSemanticEventSettings() {
   $("#semantic-event-merge-threshold").closest(".settings-row")?.classList.toggle("settings-row-disabled", disabled);
 }
 
+function syncAIDetectionSettings() {
+  const hide = $("#ai-detection-presentation").value === "hide";
+  $("#ai-hide-warning").classList.toggle("hidden", !hide);
+  const active = state.bootstrap?.settings?.aiDetectionPresentation === "hide";
+  $("#ai-hide-status").textContent = active
+    ? "Hide is active. Reviewable posts remain stored locally."
+    : "Hide requires typed confirmation when saved.";
+}
+
 function resetSemanticEventMergeThreshold() {
   $("#semantic-event-merge-threshold").value = DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD.toFixed(2);
-  $("#runtime-settings-status").textContent = "Default restored Â· save settings to keep it.";
+  $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
 }
 
 function applyStreamWidth(value) {
@@ -384,16 +418,28 @@ async function saveOnboarding(event) {
 
 function openResetDialog(operation) {
   if (state.session) {
-    $("#runtime-settings-status").textContent = "Reset is unavailable while an update is running.";
+    $("#runtime-settings-status").textContent = operation === "ai-hide"
+      ? "Hide cannot be activated while an update is running."
+      : "Reset is unavailable while an update is running.";
+    if (operation === "ai-hide" && state.bootstrap?.settings) {
+      state.pendingSettings = null;
+      $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "inline";
+      syncAIDetectionSettings();
+    }
     return;
   }
   state.resetOperation = operation;
   const full = operation === "full";
-  $("#reset-confirmation-title").textContent = full ? "Full reset and onboard again" : "Reset learning";
-  $("#reset-confirmation-impact").textContent = full
-    ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings. The live Bridge identity remains valid."
-    : "AkuBrowser will erase calibration, More/Less feedback, and the fitted preference model. Timeline, source setup, and runtime settings remain.";
-  $("#reset-confirmation-phrase").textContent = full ? "RESET AKUBROWSER" : "RESET LEARNING";
+  const aiHide = operation === "ai-hide";
+  $("#confirmation-operation-label").textContent = aiHide ? "HIGH-RISK PRESENTATION POLICY" : "DESTRUCTIVE OPERATION";
+  $("#reset-confirmation-title").textContent = aiHide ? "Hide strong AI-origin signals" : full ? "Full reset and onboard again" : "Reset learning";
+  $("#reset-confirmation-impact").textContent = aiHide
+    ? "AI detection can be wrong. Only direct evidence and Deep-confirmed strong signals will be hidden. Posts remain stored locally and can be restored by disabling Hide."
+    : full
+      ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings. The live Bridge identity remains valid."
+      : "AkuBrowser will erase calibration, More/Less feedback, and the fitted preference model. Timeline, source setup, and runtime settings remain.";
+  $("#reset-confirmation-phrase").textContent = aiHide ? AI_HIDE_CONFIRMATION_PHRASE : full ? "RESET AKUBROWSER" : "RESET LEARNING";
+  $("#reset-confirmation-submit").textContent = aiHide ? "Activate Hide" : full ? "Confirm full reset" : "Confirm reset";
   $("#reset-confirmation-input").value = "";
   $("#reset-confirmation-status").textContent = "";
   $("#reset-confirmation-submit").disabled = true;
@@ -402,7 +448,12 @@ function openResetDialog(operation) {
 }
 
 function closeResetDialog() {
+  if (state.resetOperation === "ai-hide" && state.bootstrap?.settings) {
+    $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "inline";
+    syncAIDetectionSettings();
+  }
   state.resetOperation = null;
+  state.pendingSettings = null;
   $("#reset-confirmation-dialog").close();
 }
 
@@ -419,6 +470,21 @@ async function submitReset() {
   button.disabled = true;
   $("#reset-confirmation-status").textContent = operation === "full" ? "Creating and verifying backup…" : "Resetting learning…";
   try {
+    if (operation === "ai-hide") {
+      $("#reset-confirmation-status").textContent = "Activating Hide…";
+      const pending = state.pendingSettings;
+      if (!pending) throw new Error("Pending AI Detector settings are unavailable.");
+      const saved = await persistSettings(pending, phrase);
+      if (!saved) {
+        syncResetConfirmation();
+        return;
+      }
+      state.resetOperation = null;
+      state.pendingSettings = null;
+      $("#reset-confirmation-dialog").close();
+      $("#runtime-settings-status").textContent = "Hide activated · direct and Deep-confirmed signals only.";
+      return;
+    }
     const path = operation === "full" ? "/api/operations/full-reset" : "/api/operations/reset-learning";
     const response = await api(path, { method: "POST", body: { confirmation: phrase } });
     if (operation === "full") {
@@ -978,7 +1044,25 @@ function inboxStatusTone(status) {
   return "neutral";
 }
 
+function routeAIDetectedItems(items) {
+  const mode = state.bootstrap?.settings?.aiDetectionPresentation || "inline";
+  const result = { inline: [], drawer: [], hidden: [], pending: false };
+  for (const entry of items) {
+    const detection = entry.aiDetection;
+    result.pending ||= Boolean(detection?.pendingDeep);
+    const seen = state.seenTimelineItems.has(entry.id);
+    if (mode === "drawer" && detection?.routeToSignals && !seen) result.drawer.push(entry);
+    else if (mode === "hide" && detection?.hideEligible && !seen) result.hidden.push(entry);
+    else result.inline.push(entry);
+  }
+  return result;
+}
+
 function renderTimeline(items, latestCheck) {
+  const routed = routeAIDetectedItems(items);
+  items = routed.inline;
+  renderTimelineSidePane(routed.drawer, routed.pending);
+  scheduleAIDeepRefresh(routed.pending);
   const container = $("#result-items");
   container.replaceChildren();
   if (latestCheck) {
@@ -986,6 +1070,8 @@ function renderTimeline(items, latestCheck) {
     const duplicates = latestCheck.duplicateReports ?? 0;
     const parts = [unique ? `${unique} new item${unique === 1 ? "" : "s"}` : "No new items"];
     if (duplicates) parts.push(`${duplicates} duplicate report${duplicates === 1 ? "" : "s"}`);
+    if (routed.drawer.length) parts.push(`${routed.drawer.length} in AI Signals`);
+    if (routed.hidden.length) parts.push(`${routed.hidden.length} AI-signal post${routed.hidden.length === 1 ? "" : "s"} hidden`);
     $("#timeline-meta").textContent = `${parts.join(" \u00b7 ")} from the latest check`;
   } else {
     $("#timeline-meta").textContent = "No completed check yet.";
@@ -993,13 +1079,20 @@ function renderTimeline(items, latestCheck) {
   $("#finish-stats").textContent = items.length
     ? `Shown: ${items.length} · bounded local evidence · personalized across sources`
     : "Check active sources to establish the finite timeline.";
+  if (items.length || routed.drawer.length || routed.hidden.length) {
+    $("#finish-stats").textContent = `Shown: ${items.length} · ${routed.drawer.length} in side pane · ${routed.hidden.length} hidden · bounded local evidence`;
+  }
   if (!items.length) {
     const empty = document.createElement("section");
     empty.className = "finish-line";
     const title = document.createElement("h3");
-    title.textContent = "No retained updates yet";
+    title.textContent = routed.drawer.length || routed.hidden.length ? "No inline updates in this view" : "No retained updates yet";
     const detail = document.createElement("p");
-    detail.textContent = "AkuBrowser will place evaluated, source-backed items here after the next bounded check.";
+    detail.textContent = routed.drawer.length
+      ? "Strong AI-origin signals are available in the AI Signals side pane."
+      : routed.hidden.length
+        ? "The active high-risk Hide policy removed Deep-confirmed or directly labeled posts from this view."
+        : "AkuBrowser will place evaluated, source-backed items here after the next bounded check.";
     empty.append(title, detail);
     container.append(empty);
     scheduleBackToTop();
@@ -1031,9 +1124,78 @@ function renderTimeline(items, latestCheck) {
       container.append(marker);
       previousSession = entry.sessionId;
     }
-    container.append(buildTimelineItem(entry));
+    const rendered = buildTimelineItem(entry);
+    rendered.dataset.timelineId = entry.id;
+    container.append(rendered);
+    observeTimelineItem(rendered, entry.id);
   }
   scheduleBackToTop();
+}
+
+function observeTimelineItem(element, timelineId) {
+  if (!("IntersectionObserver" in window)) return;
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) {
+      state.seenTimelineItems.add(timelineId);
+      observer.disconnect();
+    }
+  }, { threshold: 0.35 });
+  observer.observe(element);
+}
+
+function scheduleAIDeepRefresh(pending) {
+  if (!pending) {
+    if (state.aiDeepPoller) clearTimeout(state.aiDeepPoller);
+    state.aiDeepPoller = null;
+    return;
+  }
+  if (state.aiDeepPoller) return;
+  state.aiDeepPoller = window.setTimeout(async () => {
+    state.aiDeepPoller = null;
+    await refreshTimeline();
+  }, AI_DEEP_POLL_INTERVAL_MS);
+}
+
+function renderTimelineSidePane(items, pending) {
+  state.sidePaneItems = items;
+  const drawerMode = state.bootstrap?.settings?.aiDetectionPresentation === "drawer";
+  const toggle = $("#timeline-side-pane-toggle");
+  toggle.classList.toggle("hidden", !drawerMode);
+  toggle.classList.toggle("view-hidden", state.currentView !== "timeline");
+  $("#timeline-side-pane-count").textContent = String(items.length);
+  $("#timeline-side-pane-detail").textContent = pending
+    ? `${items.length} routed post${items.length === 1 ? "" : "s"} · Deep Detection is still reviewing this Timeline.`
+    : `${items.length} strong-signal post${items.length === 1 ? "" : "s"} routed from the current finite Timeline.`;
+  if (!drawerMode) closeTimelineSidePane();
+  if (!$("#timeline-side-pane").classList.contains("hidden")) populateTimelineSidePane();
+}
+
+function openTimelineSidePane() {
+  $("#timeline-side-pane").classList.remove("hidden");
+  $("#timeline-side-pane-toggle").setAttribute("aria-expanded", "true");
+  populateTimelineSidePane();
+}
+
+function closeTimelineSidePane() {
+  $("#timeline-side-pane").classList.add("hidden");
+  $("#timeline-side-pane-toggle").setAttribute("aria-expanded", "false");
+}
+
+function populateTimelineSidePane() {
+  const container = $("#timeline-side-pane-items");
+  container.replaceChildren();
+  if (!state.sidePaneItems.length) {
+    const empty = document.createElement("p");
+    empty.className = "timeline-side-pane-empty";
+    empty.textContent = "No strong AI-origin signals are routed here yet.";
+    container.append(empty);
+    return;
+  }
+  for (const entry of state.sidePaneItems) {
+    const item = buildTimelineItem(entry);
+    item.classList.add("timeline-side-pane-card");
+    container.append(item);
+  }
 }
 
 function buildTimelineItem(entry) {
@@ -1078,6 +1240,10 @@ function buildExpandedTimelineItem(entry) {
   container.className = "presentable-item";
   const toolbar = document.createElement("div");
   toolbar.className = "item-presentation-toolbar";
+  const signalSlot = document.createElement("span");
+  signalSlot.className = "item-signal-slot";
+  const ai = buildAIDetectionControls(entry);
+  if (ai) signalSlot.append(ai.badge);
   const label = document.createElement("span");
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -1098,10 +1264,75 @@ function buildExpandedTimelineItem(entry) {
     layout = layout === "source" ? "brief" : "source";
     render();
   });
-  toolbar.append(label, toggle);
-  container.append(toolbar, brief, source, actions);
+  toolbar.append(signalSlot, label, toggle);
+  container.append(toolbar);
+  if (ai) container.append(ai.details);
+  container.append(brief, source, actions);
   render();
   return container;
+}
+
+function buildAIDetectionControls(entry) {
+  const detection = entry.aiDetection;
+  if (!detection?.badgeLabel) return null;
+  const badge = document.createElement("button");
+  badge.type = "button";
+  badge.className = `ai-origin-badge ai-origin-${detection.corrected || detection.status === "conflicting_evidence" ? "corrected" : detection.userOverride ? "user" : detection.stage || "fast"}`;
+  badge.textContent = detection.badgeLabel;
+  badge.setAttribute("aria-expanded", "false");
+  const details = document.createElement("div");
+  details.className = "ai-assessment-detail hidden";
+  const summary = document.createElement("p");
+  summary.textContent = detection.detail || "AkuBrowser recorded an AI-origin assessment for this post.";
+  const meta = document.createElement("small");
+  const evidence = (detection.evidenceCodes || []).map(humanize).join(", ");
+  meta.textContent = [humanize(detection.stage), humanize(detection.confidenceBand), evidence, `${detection.historyCount || 1} assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
+  const actions = document.createElement("div");
+  actions.className = "ai-assessment-actions";
+  if (detection.userOverride && detection.correctionId) {
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.textContent = "Clear my correction";
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      try {
+        await api(`/api/ai-corrections/${encodeURIComponent(detection.correctionId)}/undo`, { method: "POST" });
+        await refreshTimeline();
+      } catch (error) {
+        showError(error);
+        undo.disabled = false;
+      }
+    });
+    actions.append(undo);
+  } else {
+    const notAI = document.createElement("button");
+    notAI.type = "button";
+    notAI.textContent = "This is not AI";
+    notAI.addEventListener("click", () => applyAICorrection(entry.id, "not_ai", notAI));
+    const isAI = document.createElement("button");
+    isAI.type = "button";
+    isAI.textContent = "This is AI";
+    isAI.addEventListener("click", () => applyAICorrection(entry.id, "ai", isAI));
+    actions.append(notAI, isAI);
+  }
+  details.append(summary, meta, actions);
+  badge.addEventListener("click", () => {
+    const expanded = badge.getAttribute("aria-expanded") === "true";
+    badge.setAttribute("aria-expanded", String(!expanded));
+    details.classList.toggle("hidden", expanded);
+  });
+  return { badge, details };
+}
+
+async function applyAICorrection(timelineId, verdict, trigger) {
+  trigger.disabled = true;
+  try {
+    await api(`/api/timeline/${encodeURIComponent(timelineId)}/ai-correction`, { method: "POST", body: { verdict } });
+    await refreshTimeline();
+  } catch (error) {
+    showError(error);
+    trigger.disabled = false;
+  }
 }
 
 function buildBrief(entry) {
@@ -1313,8 +1544,31 @@ function buildActions(entry) {
   });
   feedback.append(more, less);
   actions.append(link, feedback);
+  if (!entry.aiDetection?.badgeLabel) actions.append(buildAICorrectionShortcut(entry));
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
+}
+
+function buildAICorrectionShortcut(entry) {
+  const controls = document.createElement("div");
+  controls.className = "ai-correction-shortcut";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.textContent = "AI origin…";
+  const choices = document.createElement("span");
+  choices.className = "hidden";
+  const notAI = document.createElement("button");
+  notAI.type = "button";
+  notAI.textContent = "Not AI";
+  notAI.addEventListener("click", () => applyAICorrection(entry.id, "not_ai", notAI));
+  const isAI = document.createElement("button");
+  isAI.type = "button";
+  isAI.textContent = "AI";
+  isAI.addEventListener("click", () => applyAICorrection(entry.id, "ai", isAI));
+  choices.append(notAI, isAI);
+  trigger.addEventListener("click", () => choices.classList.toggle("hidden"));
+  controls.append(trigger, choices);
+  return controls;
 }
 
 function buildSemanticCorrectionActions(entry) {

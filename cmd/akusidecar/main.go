@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
@@ -35,6 +36,11 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	if appServer, ok := provider.(*reasoning.CodexAppServer); ok {
+		aiResolver, err := aidetector.NewAppServerResolver(cfg.Root, appServer, cfg.Reasoning.Evaluation)
+		fatal(logger, err)
+		runtime.SetAIDeepResolver(aiResolver)
+	}
 	server, err := httpapi.New(cfg, state, runtime, logger)
 	fatal(logger, err)
 	address, err := server.Start()

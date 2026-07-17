@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "1.0.0-dev.5"
+	ApplicationVersion              = "1.0.0-dev.6"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
@@ -22,6 +22,8 @@ const (
 	MaxSemanticMergeThreshold       = 0.95
 	DefaultRetentionDays            = 30
 	DefaultStorageLimitMB           = 100
+	DefaultAIDetectionPresentation  = "inline"
+	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
 )
 
 type Source string
@@ -56,6 +58,7 @@ type Settings struct {
 	SemanticEventMergeThreshold float64  `json:"semanticEventMergeThreshold"`
 	KnowledgeRetentionDays      int      `json:"knowledgeRetentionDays"`
 	KnowledgeStorageLimitMB     int      `json:"knowledgeStorageLimitMb"`
+	AIDetectionPresentation     string   `json:"aiDetectionPresentation"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -77,6 +80,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		SemanticEventMergeThreshold: DefaultSemanticMergeThreshold,
 		KnowledgeRetentionDays:      DefaultRetentionDays,
 		KnowledgeStorageLimitMB:     DefaultStorageLimitMB,
+		AIDetectionPresentation:     DefaultAIDetectionPresentation,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -133,6 +137,9 @@ func (s *Settings) Normalize() {
 	if s.KnowledgeStorageLimitMB == 0 {
 		s.KnowledgeStorageLimitMB = DefaultStorageLimitMB
 	}
+	if s.AIDetectionPresentation == "" {
+		s.AIDetectionPresentation = DefaultAIDetectionPresentation
+	}
 	s.ApplyProfile()
 }
 
@@ -178,6 +185,9 @@ func (s Settings) Validate() error {
 	}
 	if s.KnowledgeStorageLimitMB != 100 && s.KnowledgeStorageLimitMB != 200 && s.KnowledgeStorageLimitMB != 300 && s.KnowledgeStorageLimitMB != 400 && s.KnowledgeStorageLimitMB != 500 && s.KnowledgeStorageLimitMB != 1024 {
 		return errors.New("knowledgeStorageLimitMb must be 100, 200, 300, 400, 500, or 1024")
+	}
+	if s.AIDetectionPresentation != "inline" && s.AIDetectionPresentation != "drawer" && s.AIDetectionPresentation != "hide" {
+		return fmt.Errorf("unsupported AI detection presentation %q", s.AIDetectionPresentation)
 	}
 	if s.MaxScrolls < 0 || s.MaxScrolls > 6 {
 		return errors.New("maxScrolls must be between 0 and 6")
@@ -470,8 +480,107 @@ type TimelineItem struct {
 	Assessment    CandidateAssessment    `json:"assessment"`
 	Evidence      *Block                 `json:"evidence,omitempty"`
 	SemanticEvent *TimelineSemanticEvent `json:"semanticEvent,omitempty"`
+	AIDetection   *TimelineAIDetection   `json:"aiDetection,omitempty"`
 	Coverage      map[string]any         `json:"coverage"`
 	CreatedAt     string                 `json:"createdAt"`
+}
+
+type AIAssessment struct {
+	ID                 string   `json:"id"`
+	TimelineID         string   `json:"timelineId"`
+	SessionID          string   `json:"sessionId"`
+	Stage              string   `json:"stage"`
+	Status             string   `json:"status"`
+	ConfidenceBand     string   `json:"confidenceBand"`
+	EvidenceCodes      []string `json:"evidenceCodes"`
+	Provider           string   `json:"provider"`
+	DetectorVersion    string   `json:"detectorVersion"`
+	ContentFingerprint string   `json:"contentFingerprint"`
+	Rationale          string   `json:"rationale"`
+	SupersedesID       string   `json:"supersedesId,omitempty"`
+	CreatedAt          string   `json:"createdAt"`
+	UndoneAt           *string  `json:"undoneAt,omitempty"`
+}
+
+func (a AIAssessment) Validate() error {
+	if a.TimelineID == "" || a.SessionID == "" {
+		return errors.New("AI assessment requires timelineId and sessionId")
+	}
+	if a.Stage != "fast" && a.Stage != "deep" && a.Stage != "user" {
+		return fmt.Errorf("unsupported AI assessment stage %q", a.Stage)
+	}
+	validStatus := map[string]bool{
+		"strong_signals":        true,
+		"insufficient_evidence": true,
+		"no_signal_detected":    true,
+		"conflicting_evidence":  true,
+		"user_marked_ai":        true,
+		"user_marked_not_ai":    true,
+	}
+	if !validStatus[a.Status] {
+		return fmt.Errorf("unsupported AI assessment status %q", a.Status)
+	}
+	userStatus := a.Status == "user_marked_ai" || a.Status == "user_marked_not_ai"
+	if (a.Stage == "user") != userStatus {
+		return errors.New("AI assessment stage and status authority do not match")
+	}
+	if a.ConfidenceBand != "low" && a.ConfidenceBand != "medium" && a.ConfidenceBand != "high" {
+		return fmt.Errorf("unsupported AI confidence band %q", a.ConfidenceBand)
+	}
+	if len(a.EvidenceCodes) > 3 {
+		return errors.New("AI assessment evidenceCodes cannot exceed three entries")
+	}
+	return nil
+}
+
+type TimelineAIDetection struct {
+	AssessmentID     string   `json:"assessmentId"`
+	Stage            string   `json:"stage"`
+	Status           string   `json:"status"`
+	ConfidenceBand   string   `json:"confidenceBand"`
+	EvidenceCodes    []string `json:"evidenceCodes"`
+	BadgeLabel       string   `json:"badgeLabel,omitempty"`
+	Detail           string   `json:"detail,omitempty"`
+	RouteToSignals   bool     `json:"routeToSignals"`
+	HideEligible     bool     `json:"hideEligible"`
+	PendingDeep      bool     `json:"pendingDeep"`
+	DeepStatus       string   `json:"deepStatus,omitempty"`
+	HistoryCount     int      `json:"historyCount"`
+	Corrected        bool     `json:"corrected"`
+	UserOverride     bool     `json:"userOverride"`
+	CorrectionID     string   `json:"correctionId,omitempty"`
+	DetectorVersion  string   `json:"detectorVersion,omitempty"`
+	LatestAssessedAt string   `json:"latestAssessedAt,omitempty"`
+}
+
+type AIDetectionJob struct {
+	ID                    string `json:"id"`
+	SessionID             string `json:"sessionId"`
+	Status                string `json:"status"`
+	Provider              string `json:"provider"`
+	Model                 string `json:"model"`
+	Effort                string `json:"effort"`
+	CandidateCount        int    `json:"candidateCount"`
+	DurationMS            int64  `json:"durationMs"`
+	InputTokens           *int64 `json:"inputTokens,omitempty"`
+	CachedInputTokens     *int64 `json:"cachedInputTokens,omitempty"`
+	OutputTokens          *int64 `json:"outputTokens,omitempty"`
+	ReasoningOutputTokens *int64 `json:"reasoningOutputTokens,omitempty"`
+	Error                 string `json:"error,omitempty"`
+	CreatedAt             string `json:"createdAt"`
+	StartedAt             string `json:"startedAt,omitempty"`
+	CompletedAt           string `json:"completedAt,omitempty"`
+}
+
+type DeepAIAssessment struct {
+	Status         string   `json:"status"`
+	ConfidenceBand string   `json:"confidenceBand"`
+	EvidenceCodes  []string `json:"evidenceCodes"`
+	Rationale      string   `json:"rationale"`
+}
+
+type DeepAIResult struct {
+	Assessments []DeepAIAssessment `json:"assessments"`
 }
 
 type SemanticEvent struct {

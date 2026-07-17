@@ -151,6 +151,42 @@ func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
 	}
 }
 
+func TestAIDetectorPresentationDefaultsToInlineAndUsesLockedModes(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.AIDetectionPresentation != "inline" {
+		t.Fatalf("AI Detector default=%+v", value)
+	}
+	for _, mode := range []string{"inline", "drawer", "hide"} {
+		value.AIDetectionPresentation = mode
+		if err := value.Validate(); err != nil {
+			t.Fatalf("mode %q rejected: %v", mode, err)
+		}
+	}
+	value.AIDetectionPresentation = "remove"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unrecoverable presentation mode must be rejected")
+	}
+}
+
+func TestAIAssessmentRejectsInvalidStageStatusPair(t *testing.T) {
+	value := AIAssessment{TimelineID: "timeline", SessionID: "session", Stage: "fast", Status: "strong_signals", ConfidenceBand: "medium"}
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.Stage = "user"
+	if err := value.Validate(); err == nil {
+		t.Fatal("user assessment must use an explicit user verdict")
+	}
+	value.Status = "user_marked_not_ai"
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.Stage = "deep"
+	if err := value.Validate(); err == nil {
+		t.Fatal("model assessment must not impersonate user authority")
+	}
+}
+
 func TestFeedbackRejectsLegacyReason(t *testing.T) {
 	reason := "wrong_topic"
 	value := Feedback{Direction: "less", Reason: &reason}

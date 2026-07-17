@@ -32,7 +32,9 @@ runtime/codex-cli/codex-resources/
 managed `codex app-server` stdio process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
 structured token telemetry. Candidate evaluation and semantic event resolution
-are separate schema-bound adapters over this one transport.
+are separate schema-bound adapters over this one transport. AI Deep Detection
+is a third adapter and runs only after Timeline delivery; local deterministic
+AI Fast Detection does not consume Codex.
 
 An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
@@ -112,9 +114,11 @@ an ordinary rebuild or restart.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 2 is created
-as one transaction and contains only the active tables documented in
-[`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md).
+The database defaults to `runtime/aku-sidecar.db`. Schema version 3 contains
+only the active tables documented in
+[`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). A narrow
+v2-to-v3 migration adds AI Detector history and job state for the immediately
+preceding Go development database; this is not a Node compatibility path.
 
 There is no importer for the Node database. A mismatched schema fails closed;
 delete or move the development database and start again.
@@ -137,6 +141,8 @@ delete or move the development database and start again.
 - `GET /api/runs/{id}`
 - `GET /api/timeline`
 - `POST /api/timeline/{id}/feedback`
+- `POST /api/timeline/{id}/ai-correction`
+- `POST /api/ai-corrections/{id}/undo`
 - `POST /api/timeline/{id}/recapture`
 - `GET /api/timeline/{id}/event-suggestions`
 - `POST /api/timeline/{id}/event-correction`
@@ -210,6 +216,24 @@ Update Inbox records whether the local fast path or App Server ran, along with
 the trigger reason, strongest overlap, retained-event count, duration, and
 token usage. This makes semantic cost and false-positive retrieval visible
 without exposing raw database identities.
+
+AI Detector is a separate presentation-only domain. Its text-first Fast
+Detector runs locally after global composition and recognizes only explicit
+evidence: platform labels, author declarations, and prompt/instruction residue.
+It does not use stylistic regularity as proof and cannot change selection,
+ranking, semantic grouping, or capacity. After session finalization, the
+schema-bound Deep Detector reviews bounded untrusted text asynchronously over
+the shared App Server transport. Failure leaves the Fast result intact. If Deep
+Detection overturns an earlier strong result, the UI keeps a corrected badge;
+it never erases the assessment without explanation.
+
+Inline is the default presentation. Drawer routes unseen strong-signal posts
+into the generic Timeline side-pane host without moving posts the user already
+saw. Hide requires the exact phrase `HIDE STRONG AI SIGNALS` and applies only to
+direct platform/provenance evidence, Deep-confirmed strong signals, or a user
+`This is AI` correction. Preliminary inferred signals are not Hide-eligible.
+`This is AI` and `This is not AI` are durable, undoable personal corrections
+and resolve above Fast or Deep output.
 
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and
