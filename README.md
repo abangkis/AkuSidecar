@@ -106,6 +106,10 @@ Built-in bounded-load profiles remain:
 | Expanded | 4 | 10 | 20 | 24 |
 | Stress | 6 | 15 | 30 | 36 |
 
+Standard 1x is the checked-in fresh-database and full-reset default. A user's
+persisted choice, including Expanded 2x or Custom, remains authoritative across
+an ordinary rebuild or restart.
+
 ## Fresh database
 
 The database defaults to `runtime/aku-sidecar.db`. Schema version 2 is created
@@ -133,6 +137,7 @@ delete or move the development database and start again.
 - `GET /api/runs/{id}`
 - `GET /api/timeline`
 - `POST /api/timeline/{id}/feedback`
+- `POST /api/timeline/{id}/recapture`
 - `GET /api/timeline/{id}/event-suggestions`
 - `POST /api/timeline/{id}/event-correction`
 - `POST /api/event-corrections/{id}/undo`
@@ -141,6 +146,9 @@ delete or move the development database and start again.
 - `GET /api/bridge/commands/next`
 - `POST /api/bridge/commands/{id}/observation`
 - `POST /api/bridge/commands/{id}/failure`
+- `GET /api/bridge/media-recaptures/{id}/claim`
+- `POST /api/bridge/media-recaptures/{id}/observation`
+- `POST /api/bridge/media-recaptures/{id}/failure`
 - `POST /api/operations/bridge/actions/reload-self`
 - `GET /api/operations/bridge/actions/next`
 - `POST /api/operations/bridge/actions/{id}/accept`
@@ -148,16 +156,19 @@ delete or move the development database and start again.
 - `POST /api/operations/reset-learning`
 - `POST /api/operations/full-reset`
 
-All Bridge heartbeat, command/result, and cooperative-action routes require both the durable Bridge token and
+All Bridge heartbeat, capture-command, media-recapture, and cooperative-action
+routes require both the durable Bridge token and
 `X-Aku-Bridge-Contract: aku-browser.bridge.v2`.
 
 The embedded UI restores the source-first dark shell, first-run source
 onboarding, editable active sources, bounded custom capture controls, persisted
-Source/Brief and stream-width preferences, media inspection, the finite
-Timeline finish line, and the back-to-top control. Reset operations require an
-exact typed phrase and fail while an update is active. A full reset creates and
-verifies a timestamped SQLite backup before clearing the fresh Go state,
-preserves the Bridge identity, and returns directly to onboarding.
+Source/Brief and stream-width preferences, collapsed long text with Show more,
+media inspection, unique/duplicate latest-check counts, quiet history
+boundaries, the finite Timeline finish line, and the boundary-aware back-to-top
+control. Reset operations require an exact typed phrase and fail while an
+update is active. A full reset creates and verifies a timestamped SQLite backup
+before clearing the fresh Go state, preserves the Bridge identity, restores
+Standard 1x, and returns directly to onboarding.
 
 First-time onboarding starts one bounded update to acquire real source
 candidates, then opens a forced calibration lane before the Timeline. The lane
@@ -204,6 +215,14 @@ The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
 either boundary trims the oldest terminal history and orphaned event threads.
+
+Unavailable captured media exposes an item-scoped Recapture action. The first
+job is always quiet and zero-scroll inside the managed capture window. If that
+attempt completes without media, the UI may offer a separate foreground job;
+Sidecar permits it only after explicit per-item consent and a completed
+unavailable background attempt. This one-time authorization does not change the
+persisted Quiet setting. A successful job replaces presentation evidence only;
+it never adds, reranks, or semantically regroups a Timeline item.
 
 ## Removed by design
 

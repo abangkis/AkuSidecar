@@ -19,7 +19,7 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 ## Product invariants
 
 - AkuBridge capture is read-only, source-specific, and bounded.
-- Model output describes every candidate but cannot navigate, expand budgets, or select the Timeline.
+- Model output describes every quality-admitted evidence candidate but cannot navigate, expand budgets, or select the Timeline.
 - Direct user feedback outranks source-platform order once repeated evidence is sufficient.
 - Trust protections outrank preference: an evidence-qualified material update or contradiction cannot be suppressed.
 - One qualified discovery candidate remains available per source when it does not displace a protected update.
@@ -28,11 +28,12 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - Only a `duplicate_report` that reaches the configured confidence gate is capacity-free; related updates, contradictions, consequences, and context remain unique. The gate defaults to `0.92` and is bounded to `0.85–0.95` in `0.01` steps.
 - Semantic resolution is conditional: noisy lexical overlap cannot trigger the model, and unrelated reports use a deterministic local fast path.
 - `show_all` bypasses event retrieval and resolution. User event corrections are local, persistent, and undoable.
+- Media recapture is item-scoped and quiet-first. A foreground attempt requires an unavailable background result plus explicit one-time user consent; neither path creates candidates or changes Timeline ordering.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 
 ## State
 
-SQLite schema version 2 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver/trigger telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
+SQLite schema version 2 contains only active tables for metadata, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, assessments/Timeline, item-scoped media recaptures and evidence overrides, calibration, feedback/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver/trigger telemetry. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
 
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 
