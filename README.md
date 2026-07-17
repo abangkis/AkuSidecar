@@ -14,7 +14,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.6` / `source-fidelity-v54`
+- AkuBridge `0.6.6` / `source-fidelity-v55`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
