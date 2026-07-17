@@ -19,11 +19,11 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.4"
-	ExpectedBridgeRevision  = "source-fidelity-v52"
+	ExpectedBridgeVersion   = "0.6.5"
+	ExpectedBridgeRevision  = "source-fidelity-v53"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
 	ExpectedXAdapter        = "x-dom-v17"
-	ExpectedLinkedInAdapter = "linkedin-dom-v14"
+	ExpectedLinkedInAdapter = "linkedin-dom-v15"
 )
 
 var expectedBridgeSources = []string{"x", "linkedin"}

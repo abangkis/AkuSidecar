@@ -14,9 +14,11 @@ const FastDetectorVersion = "fast-text-v1"
 
 var (
 	authorDeclarationPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)\b(?:this|the)\s+(?:post|image|video|thread)\s+(?:was|is)\s+(?:generated|created|written|made)\s+(?:by|with|using)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot)\b`),
-		regexp.MustCompile(`(?i)\b(?:this|the)\s+(?:post|image|video|thread)\s+(?:was|is)\s+ai[- ]generated\b`),
-		regexp.MustCompile(`(?i)\b(?:I|we)\s+(?:generated|created|wrote|made)\s+(?:this|the)\s+(?:post|image|video|thread)\s+(?:with|using)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot)\b`),
+		regexp.MustCompile(`(?i)\b(?:this|the|my)\s+(?:post|thread|caption|message|copy|text)\s+(?:was|is)\s+(?:generated|created|written|made|drafted)\s+(?:by|with|using)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot)\b`),
+		regexp.MustCompile(`(?i)\b(?:this|the|my)\s+(?:post|thread|caption|message|copy|text)\s+(?:was|is)\s+ai[- ]generated\b`),
+		regexp.MustCompile(`(?i)\b(?:I|we)\s+(?:generated|created|wrote|made|drafted)\s+(?:this|the|my)\s+(?:post|thread|caption|message|copy|text)\s+(?:with|using)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot)\b`),
+		regexp.MustCompile(`(?i)\b(?:I|we)\s+(?:used|asked)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot)\s+to\s+(?:write|draft|generate|create)\s+(?:this|the|my)\s+(?:post|thread|caption|message|copy|text)\b`),
+		regexp.MustCompile(`(?i)\b(?:ai|chatgpt|claude|gemini|copilot)\s+(?:wrote|drafted|generated|created)\s+(?:this|the|my)\s+(?:post|thread|caption|message|copy|text)\b`),
 		regexp.MustCompile(`(?i)\bI\s+am\s+an?\s+AI\s+(?:agent|assistant|bot)\b`),
 	}
 	promptResiduePatterns = []*regexp.Regexp{

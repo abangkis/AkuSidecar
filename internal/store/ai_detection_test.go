@@ -141,3 +141,23 @@ func TestDirectPlatformOriginEvidenceRemainsHideEligible(t *testing.T) {
 		t.Fatalf("direct evidence presentation=%+v", value)
 	}
 }
+
+func TestOutdatedDeepStrongSignalLosesPresentationAuthority(t *testing.T) {
+	value := resolveAIDetection([]domain.AIAssessment{
+		{ID: "fast", Stage: "fast", Status: "no_signal_detected", ConfidenceBand: "low", AssessedObject: "social_post", SignalScope: "none", DetectorVersion: "fast-text-v1", CreatedAt: "2026-07-17T01:00:00Z"},
+		{ID: "deep", Stage: "deep", Status: "strong_signals", ConfidenceBand: "high", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post", SignalScope: "social_post", DetectorVersion: "codex-deep-v3", CreatedAt: "2026-07-17T01:01:00Z"},
+	}, "completed")
+	if value.Status != "no_signal_detected" || value.BadgeLabel != "AI assessment corrected" || !value.Corrected || value.RouteToSignals || value.HideEligible {
+		t.Fatalf("resolved detection=%+v", value)
+	}
+}
+
+func TestCurrentDeepStrongSignalKeepsPresentationAuthority(t *testing.T) {
+	value := resolveAIDetection([]domain.AIAssessment{
+		{ID: "fast", Stage: "fast", Status: "strong_signals", ConfidenceBand: "medium", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post", SignalScope: "social_post", DetectorVersion: "fast-text-v1", CreatedAt: "2026-07-17T01:00:00Z"},
+		{ID: "deep", Stage: "deep", Status: "strong_signals", ConfidenceBand: "high", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post", SignalScope: "social_post", DetectorVersion: domain.CurrentAIDeepDetectorVersion, CreatedAt: "2026-07-17T01:01:00Z"},
+	}, "completed")
+	if value.BadgeLabel != "AI signals confirmed" || !value.RouteToSignals || !value.HideEligible {
+		t.Fatalf("resolved detection=%+v", value)
+	}
+}

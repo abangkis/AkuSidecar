@@ -98,3 +98,30 @@ func TestDeepResolverRejectsStrongSignalBoundToExternalArtifact(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestDeepResolverDowngradesArtifactWhenProviderMisstatesScope(t *testing.T) {
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"social_post","rationale":"Kimi created the website and its content."}]}`}
+	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	item := domain.TimelineItem{ID: "timeline", SessionID: "session", Evidence: &domain.Block{Text: "I just created this interactive website and its entire scientific content with Kimi. I wrote this post to describe what I observed."}}
+	result, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assessment := result.Assessments[0]
+	if assessment.Status != "no_signal_detected" || assessment.SignalScope != "external_artifact" || len(assessment.EvidenceCodes) != 0 {
+		t.Fatalf("assessment=%+v", assessment)
+	}
+}
+
+func TestDeepResolverKeepsVerifiablePostAuthorshipDisclosure(t *testing.T) {
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"social_post","rationale":"The author directly disclosed AI authorship of the post."}]}`}
+	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	item := domain.TimelineItem{ID: "timeline", SessionID: "session", Evidence: &domain.Block{Text: "I used ChatGPT to write this post, then reviewed every sentence before publishing it."}}
+	result, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Assessments[0].Status != "strong_signals" || result.Assessments[0].SignalScope != "social_post" {
+		t.Fatalf("assessment=%+v", result.Assessments[0])
+	}
+}

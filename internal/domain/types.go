@@ -25,6 +25,7 @@ const (
 	DefaultStorageLimitMB           = 100
 	DefaultAIDetectionPresentation  = "inline"
 	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
+	CurrentAIDeepDetectorVersion    = "codex-deep-v4"
 )
 
 type Source string

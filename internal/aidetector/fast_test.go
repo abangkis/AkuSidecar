@@ -51,6 +51,20 @@ func TestFastDetectorUsesOnlyDeterministicOriginSignals(t *testing.T) {
 			status: "no_signal_detected", confidence: "low",
 		},
 		{
+			name: "external artifact disclosure is not post authorship",
+			item: domain.TimelineItem{Evidence: &domain.Block{
+				Text: "I just created this interactive website and its entire scientific content with Kimi. I wrote this post to share what I observed.",
+			}},
+			status: "no_signal_detected", confidence: "low",
+		},
+		{
+			name: "attached media disclosure is not text authorship",
+			item: domain.TimelineItem{Evidence: &domain.Block{
+				Text: "This image was generated with AI, while I wrote the accompanying post myself to explain the experiment.",
+			}},
+			status: "no_signal_detected", confidence: "low",
+		},
+		{
 			name:   "short text remains unknown",
 			item:   domain.TimelineItem{Evidence: &domain.Block{Text: "Interesting."}},
 			status: "insufficient_evidence", confidence: "low",

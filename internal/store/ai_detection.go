@@ -333,6 +333,18 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string) *domai
 	}
 
 	if deep != nil {
+		if deep.Status == "strong_signals" && deep.DetectorVersion != domain.CurrentAIDeepDetectorVersion {
+			value.Status = "no_signal_detected"
+			value.ConfidenceBand = "low"
+			value.EvidenceCodes = nil
+			value.SignalScope = "none"
+			value.BadgeLabel = "AI assessment corrected"
+			value.Detail = "An earlier strong assessment did not pass the current social-post object-scope contract."
+			value.Corrected = true
+			value.RouteToSignals = false
+			value.HideEligible = false
+			return value
+		}
 		switch deep.Status {
 		case "strong_signals":
 			value.BadgeLabel = "AI signals confirmed"

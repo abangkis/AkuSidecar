@@ -165,6 +165,9 @@ h3 { letter-spacing: -0.02em; }
 .source-layout-card > header { display: flex; align-items: center; gap: 11px; padding: 16px 18px 12px; }
 .source-layout-card > header > div { display: grid; min-width: 0; gap: 2px; }
 .source-layout-card > header span:not(.source-layout-badge) { color: var(--quiet); font-size: 0.75rem; }
+.linkedin-social-context { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 10px 18px 0; color: var(--quiet); font-size: 0.78rem; font-weight: 650; }
+.linkedin-social-context img { width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; background: var(--panel-strong); }
+.linkedin-social-context + header { padding-top: 10px; }
 .source-layout-headline { display: block; max-width: 100%; overflow: hidden; color: var(--muted) !important; font-size: 0.86rem !important; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .source-layout-avatar { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; background: var(--panel-strong); }
 .source-layout-badge { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #26302b; color: var(--accent); font-weight: 800; }

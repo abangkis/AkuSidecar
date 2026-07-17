@@ -1503,9 +1503,28 @@ function buildSourceCard(entry) {
   if (context.textContent) identity.append(context);
   header.append(avatar, identity);
 
+  if (source === "linkedin" && presentation.socialContext) {
+    const social = document.createElement("div");
+    social.className = "linkedin-social-context";
+    const socialAvatarUrl = safeMediaUrl(presentation.socialContextAvatarUrl);
+    if (socialAvatarUrl) {
+      const socialAvatar = document.createElement("img");
+      socialAvatar.src = socialAvatarUrl;
+      socialAvatar.alt = "";
+      socialAvatar.loading = "lazy";
+      socialAvatar.referrerPolicy = "no-referrer";
+      social.append(socialAvatar);
+    }
+    const socialCopy = document.createElement("span");
+    socialCopy.textContent = presentation.socialContext;
+    social.append(socialCopy);
+    card.append(social);
+  }
+  card.append(header);
+
   const content = document.createElement("div");
   content.className = `source-layout-content ${source === "linkedin" ? "linkedin-source-content" : "x-source-content"}`;
-  if (presentation.socialContext) {
+  if (source !== "linkedin" && presentation.socialContext) {
     const social = document.createElement("p");
     social.className = "x-social-context";
     social.textContent = presentation.socialContext;
@@ -1518,7 +1537,7 @@ function buildSourceCard(entry) {
   }));
   const quote = buildQuotedPost(evidence.quotedPost, source);
   if (quote) content.append(quote);
-  card.append(header, content);
+  card.append(content);
   const attachments = buildAttachments(evidence.attachments, source);
   if (attachments) card.append(attachments);
   const media = buildMedia(evidence.media, source);

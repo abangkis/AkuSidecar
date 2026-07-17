@@ -14,7 +14,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.4` / `source-fidelity-v52`
+- AkuBridge `0.6.5` / `source-fidelity-v53`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -124,6 +124,13 @@ Node compatibility path.
 
 There is no importer for the Node database. A mismatched schema fails closed;
 delete or move the development database and start again.
+
+AI Detector strong results are version-bound to the current object-scope
+contract. The App Server response is schema-validated and then independently
+checked against captured source evidence before it can route or hide a post.
+An AI-created external artifact or attached medium does not establish that AI
+authored the social post text, and stale strong results are presented as
+corrected instead of retaining authority indefinitely.
 
 ## Active API
 

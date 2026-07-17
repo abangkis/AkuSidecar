@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,9 +31,15 @@ type AppServerResolver struct {
 }
 
 const (
-	DeepDetectorVersion = "codex-deep-v3"
+	DeepDetectorVersion = domain.CurrentAIDeepDetectorVersion
 	deepTextLimit       = 1600
 	deepQuotedTextLimit = 600
+)
+
+var (
+	aiIdentityPattern       = regexp.MustCompile(`(?i)\b(?:ai|chatgpt|claude|gemini|copilot|kimi)\b`)
+	externalArtifactPattern = regexp.MustCompile(`(?i)\b(?:website|webpage|site|app|application|codebase|code|paper|report|document|design|model|tool|product|game|scientific content|external content|artifact)\b`)
+	attachedMediaPattern    = regexp.MustCompile(`(?i)\b(?:image|photo|illustration|video|audio|music|voice)\b`)
 )
 
 // DeepCandidates returns only posts for which asynchronous model review can
@@ -153,6 +160,8 @@ Object-scope contract:
 - AI creating a website, code, paper, model output, design, image, video, or other artifact discussed by a post is not evidence that AI authored the social post.
 - Evidence inside quoted content belongs to quoted_post unless the post author explicitly adopts it as a disclosure about this social post.
 - strong_signals is valid only when signalScope is social_post. Never transfer provenance from another object to the post.
+- A direct author declaration must explicitly say that AI wrote, drafted, generated, or created the social post, thread, caption, message, copy, or text itself. The grammatical object matters.
+- If the rationale names only a website, code, paper, model output, design, image, video, or other artifact, signalScope cannot be social_post and status cannot be strong_signals.
 
 Rules:
 - strong_signals requires direct evidence or multiple independent evidence families.
@@ -187,8 +196,96 @@ Candidates: %s`, mustJSON(values))
 		if err := probe.Validate(); err != nil {
 			return domain.DeepAIResult{}, usage, duration, fmt.Errorf("invalid AI assessment %d: %w", index, err)
 		}
+		result.Assessments[index] = enforceDeepEvidenceContract(items[index], assessment)
+		normalized := result.Assessments[index]
+		probe.Status = normalized.Status
+		probe.ConfidenceBand = normalized.ConfidenceBand
+		probe.EvidenceCodes = normalized.EvidenceCodes
+		probe.AssessedObject = normalized.AssessedObject
+		probe.SignalScope = normalized.SignalScope
+		if err := probe.Validate(); err != nil {
+			return domain.DeepAIResult{}, usage, duration, fmt.Errorf("invalid normalized AI assessment %d: %w", index, err)
+		}
 	}
 	return result, usage, duration, nil
+}
+
+func enforceDeepEvidenceContract(item domain.TimelineItem, value domain.DeepAIAssessment) domain.DeepAIAssessment {
+	if value.Status != "strong_signals" || deepStrongSignalSupported(item, value.EvidenceCodes) {
+		return value
+	}
+	value.Status = "no_signal_detected"
+	value.ConfidenceBand = "low"
+	value.EvidenceCodes = nil
+	value.AssessedObject = "social_post"
+	value.SignalScope = rejectedSignalScope(item)
+	if value.SignalScope == "external_artifact" {
+		value.Rationale = "AI-related evidence applies to an external artifact discussed by the author, not to authorship of the social post."
+	} else if value.SignalScope == "attached_media" {
+		value.Rationale = "AI-related evidence applies to attached media, not to authorship of the social post text."
+	} else {
+		value.Rationale = "The proposed strong signal lacks locally verifiable evidence that AI authored the social post."
+	}
+	return value
+}
+
+func deepStrongSignalSupported(item domain.TimelineItem, codes []string) bool {
+	text := authoredText(item)
+	for _, code := range codes {
+		switch code {
+		case "platform_ai_label":
+			if item.Evidence != nil && hasPlatformAILabel(item.Evidence.Presentation) {
+				return true
+			}
+		case "verified_ai_provenance":
+			if item.Evidence != nil && hasVerifiedAIProvenance(item.Evidence.Presentation) {
+				return true
+			}
+		case "author_declared_ai", "agent_identity_context":
+			if matchesAny(text, authorDeclarationPatterns) {
+				return true
+			}
+		case "prompt_instruction_residue":
+			if matchesAny(text, promptResiduePatterns) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func authoredText(item domain.TimelineItem) string {
+	if item.Evidence != nil && strings.TrimSpace(item.Evidence.Text) != "" {
+		return strings.TrimSpace(item.Evidence.Text)
+	}
+	return strings.TrimSpace(item.Item.WhatChanged)
+}
+
+func rejectedSignalScope(item domain.TimelineItem) string {
+	text := authoredText(item)
+	if !aiIdentityPattern.MatchString(text) {
+		return "none"
+	}
+	if externalArtifactPattern.MatchString(text) {
+		return "external_artifact"
+	}
+	if attachedMediaPattern.MatchString(text) {
+		return "attached_media"
+	}
+	return "none"
+}
+
+func hasVerifiedAIProvenance(value map[string]any) bool {
+	for key, raw := range value {
+		normalizedKey := strings.ToLower(strings.NewReplacer("_", " ", "-", " ").Replace(key))
+		if !strings.Contains(normalizedKey, "provenance") || (!strings.Contains(normalizedKey, "ai") && !strings.Contains(normalizedKey, "synthetic")) {
+			continue
+		}
+		if typed, ok := raw.(bool); ok && typed {
+			return true
+		}
+	}
+	return false
 }
 
 func boundedText(value string, limit int) string {
