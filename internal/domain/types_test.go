@@ -23,6 +23,18 @@ func TestProfilesStayBounded(t *testing.T) {
 	}
 }
 
+func TestMissingOrUnknownProfileDefaultsToStandard(t *testing.T) {
+	for _, profile := range []string{"", "unknown"} {
+		value := DefaultSettings(profile, "quiet", "promote_unused_budget", true)
+		if value.LoadProfile != "standard" || value.MaxScrolls != 2 || value.MaxItemsPerSource != 5 || value.MaxItemsTotal != 10 || value.TimelineCapacity != 12 {
+			t.Fatalf("profile %q did not default to standard: %+v", profile, value)
+		}
+		if err := value.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestCalibrationDecisionKeepsLabelsSeparateFromCaptureIssues(t *testing.T) {
 	label := "neutral"
 	if err := (CalibrationDecision{Label: &label}).Validate(); err != nil {

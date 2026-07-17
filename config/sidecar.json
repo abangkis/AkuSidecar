@@ -21,7 +21,7 @@
     }
   },
   "capture": {
-    "profile": "expanded",
+    "profile": "standard",
     "visibility": "quiet",
     "openMissingSource": true,
     "maxAcquisitionRounds": 2

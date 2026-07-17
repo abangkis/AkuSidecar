@@ -87,15 +87,18 @@ func (s *Settings) ApplyProfile() {
 	case "standard":
 		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 2, 5, 10
 		s.TimelineCapacity, s.QualityRetrySettleMS = 12, 300
+	case "expanded":
+		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 4, 10, 20
+		s.TimelineCapacity, s.QualityRetrySettleMS = 24, 1000
 	case "stress":
 		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 6, 15, 30
 		s.TimelineCapacity, s.QualityRetrySettleMS = 36, 1000
 	case "custom":
 		// Custom keeps its explicit, policy-bounded values.
 	default:
-		s.LoadProfile = "expanded"
-		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 4, 10, 20
-		s.TimelineCapacity, s.QualityRetrySettleMS = 24, 1000
+		s.LoadProfile = "standard"
+		s.MaxScrolls, s.MaxItemsPerSource, s.MaxItemsTotal = 2, 5, 10
+		s.TimelineCapacity, s.QualityRetrySettleMS = 12, 300
 	}
 }
 
