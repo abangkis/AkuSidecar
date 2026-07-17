@@ -427,6 +427,18 @@ func TestBridgeV2RequiresExactCapabilities(t *testing.T) {
 	if status.Compatible || status.State != "incompatible" {
 		t.Fatalf("missing reload_self action must fail closed: %+v", status)
 	}
+	value = ExpectedHeartbeat()
+	delete(value.MediaEvidenceAdapterVersions, "x")
+	status = runtime.RecordHeartbeat(value)
+	if status.Compatible || status.State != "incompatible" {
+		t.Fatalf("missing X media evidence adapter version must fail closed: %+v", status)
+	}
+	value = ExpectedHeartbeat()
+	value.MediaEvidenceAdapterVersions["x"] = "x-response-evidence-v0"
+	status = runtime.RecordHeartbeat(value)
+	if status.Compatible || status.State != "incompatible" {
+		t.Fatalf("stale X media evidence adapter version must fail closed: %+v", status)
+	}
 }
 
 func TestObservationGetsStableGoEvidenceIdentity(t *testing.T) {

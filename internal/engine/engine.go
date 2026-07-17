@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.7"
-	ExpectedBridgeRevision  = "source-fidelity-v57"
-	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
-	ExpectedXAdapter        = "x-dom-v18"
-	ExpectedLinkedInAdapter = "linkedin-dom-v15"
+	ExpectedBridgeVersion         = "0.6.8"
+	ExpectedBridgeRevision        = "source-fidelity-v58"
+	ExpectedBridgeID              = "aku-bridge-chrome-mv3-v0"
+	ExpectedXAdapter              = "x-dom-v18"
+	ExpectedLinkedInAdapter       = "linkedin-dom-v15"
+	ExpectedXMediaEvidenceAdapter = "x-response-evidence-v1"
 )
 
 var expectedBridgeSources = []string{"x", "linkedin"}
@@ -31,7 +32,7 @@ var expectedBridgeActions = []string{
 	"probe_readiness", "probe_freshness", "recover_source_freshness",
 	"collect_visible", "detect_pending_content", "report_adapter_health",
 	"report_capture_quality", "acquire_missing_media", "recapture_missing_media",
-	"cache_passive_media_evidence", "lookup_passive_media_evidence", "extract_source_semantics",
+	"cache_passive_media_evidence", "lookup_passive_media_evidence", "observe_response_media_evidence", "extract_source_semantics",
 	"report_frontier", "manage_source_tab_lifecycle", "manage_capture_window",
 	"release_capture_surface", "preserve_working_tab", "report_source_events", "reload_self",
 }
@@ -128,7 +129,7 @@ func (e *Engine) BridgeAction(id string) (ReloadAction, error)       { return e.
 func (e *Engine) BridgeStatus() BridgeStatus {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "adapterVersions": map[string]string{"x": ExpectedXAdapter, "linkedin": ExpectedLinkedInAdapter}, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedBridgeSources, "actions": expectedBridgeActions, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
+	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "adapterVersions": map[string]string{"x": ExpectedXAdapter, "linkedin": ExpectedLinkedInAdapter}, "mediaEvidenceAdapterVersions": map[string]string{"x": ExpectedXMediaEvidenceAdapter}, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedBridgeSources, "actions": expectedBridgeActions, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
 	if e.heartbeat == nil {
 		return status
 	}
@@ -153,6 +154,9 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	if copy.AdapterVersions["x"] != ExpectedXAdapter || copy.AdapterVersions["linkedin"] != ExpectedLinkedInAdapter || len(copy.AdapterVersions) != 2 {
 		status.Reasons = append(status.Reasons, "adapter version mismatch")
 	}
+	if copy.MediaEvidenceAdapterVersions["x"] != ExpectedXMediaEvidenceAdapter || len(copy.MediaEvidenceAdapterVersions) != 1 {
+		status.Reasons = append(status.Reasons, "media evidence adapter version mismatch")
+	}
 	if copy.ManifestVersion != 3 {
 		status.Reasons = append(status.Reasons, "manifest version mismatch")
 	}
@@ -176,7 +180,7 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 }
 
 func ExpectedHeartbeat() domain.BridgeHeartbeat {
-	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: map[string]string{"x": ExpectedXAdapter, "linkedin": ExpectedLinkedInAdapter}, ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: append([]string(nil), expectedBridgeSources...), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}
+	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: map[string]string{"x": ExpectedXAdapter, "linkedin": ExpectedLinkedInAdapter}, MediaEvidenceAdapterVersions: map[string]string{"x": ExpectedXMediaEvidenceAdapter}, ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: append([]string(nil), expectedBridgeSources...), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}
 }
 
 func sameStringSet(actual, expected []string) bool {

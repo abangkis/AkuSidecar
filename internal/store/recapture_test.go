@@ -123,7 +123,7 @@ func TestPassiveXMediaEvidenceEnrichesWithoutQueueingBrowserWork(t *testing.T) {
 			URL:          "https://pbs.twimg.com/media/passive.jpg?format=jpg&name=large#ignored",
 			Width:        0,
 			Height:       0,
-			Provenance:   "main_structured_state",
+			Provenance:   "x_response_graphql",
 			ObservedAtMS: 123456,
 		}},
 	}
@@ -151,8 +151,14 @@ func TestPassiveXMediaEvidenceEnrichesWithoutQueueingBrowserWork(t *testing.T) {
 	if mediaURL != "https://pbs.twimg.com/media/passive.jpg?format=jpg&name=large" {
 		t.Fatalf("media URL=%q", mediaURL)
 	}
+	if items[0].Evidence.Media[0]["provenance"] != "x_response_graphql" {
+		t.Fatalf("media provenance=%v", items[0].Evidence.Media[0]["provenance"])
+	}
 	if items[0].Evidence.MediaRecovery["method"] != "passive_cache" || items[0].Evidence.MediaRecovery["foregroundRequired"] != false {
 		t.Fatalf("media recovery=%+v", items[0].Evidence.MediaRecovery)
+	}
+	if items[0].Evidence.MediaRecovery["engineVersion"] != "passive-x-media-enrichment-v2" {
+		t.Fatalf("media recovery engine=%+v", items[0].Evidence.MediaRecovery)
 	}
 	if _, exists := items[0].Evidence.MediaRecovery["limitation"]; exists {
 		t.Fatalf("stale limitation survived recovery: %+v", items[0].Evidence.MediaRecovery)
@@ -196,6 +202,15 @@ func TestPassiveXMediaEvidenceRejectsIdentityAndUntrustedMedia(t *testing.T) {
 			name:      "avatar path",
 			candidate: "x:status:12345",
 			media:     []domain.PassiveXMediaCandidate{{Kind: "image", URL: "https://pbs.twimg.com/profile_images/avatar.jpg"}},
+		},
+		{
+			name:      "unsupported evidence provenance",
+			candidate: "x:status:12345",
+			media: []domain.PassiveXMediaCandidate{{
+				Kind:       "image",
+				URL:        "https://pbs.twimg.com/media/valid.jpg",
+				Provenance: "raw_graphql_response",
+			}},
 		},
 		{
 			name:      "more than four candidates",

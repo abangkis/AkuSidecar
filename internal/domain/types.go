@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "1.0.0-dev.12"
+	ApplicationVersion              = "1.0.0-dev.13"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
@@ -386,18 +386,19 @@ type PassiveXMediaCandidate struct {
 }
 
 type BridgeHeartbeat struct {
-	BridgeID         string              `json:"bridgeId"`
-	ExtensionVersion string              `json:"extensionVersion"`
-	RuntimeRevision  string              `json:"runtimeRevision"`
-	BuildID          string              `json:"buildId"`
-	AdapterVersions  map[string]string   `json:"adapterVersions"`
-	ContractVersion  string              `json:"contractVersion"`
-	ManifestVersion  int                 `json:"manifestVersion"`
-	Sources          []string            `json:"sources"`
-	Actions          []string            `json:"actions"`
-	Authority        string              `json:"authority"`
-	CaptureLimits    BridgeCaptureLimits `json:"captureLimits"`
-	ReceivedAt       string              `json:"receivedAt,omitempty"`
+	BridgeID                     string              `json:"bridgeId"`
+	ExtensionVersion             string              `json:"extensionVersion"`
+	RuntimeRevision              string              `json:"runtimeRevision"`
+	BuildID                      string              `json:"buildId"`
+	AdapterVersions              map[string]string   `json:"adapterVersions"`
+	MediaEvidenceAdapterVersions map[string]string   `json:"mediaEvidenceAdapterVersions"`
+	ContractVersion              string              `json:"contractVersion"`
+	ManifestVersion              int                 `json:"manifestVersion"`
+	Sources                      []string            `json:"sources"`
+	Actions                      []string            `json:"actions"`
+	Authority                    string              `json:"authority"`
+	CaptureLimits                BridgeCaptureLimits `json:"captureLimits"`
+	ReceivedAt                   string              `json:"receivedAt,omitempty"`
 }
 
 type BridgeCaptureLimits struct {

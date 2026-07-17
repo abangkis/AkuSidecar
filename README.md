@@ -14,7 +14,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.7` / `source-fidelity-v57`
+- AkuBridge `0.6.8` / `source-fidelity-v58`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -112,6 +112,11 @@ Built-in bounded-load profiles remain:
 Standard 1x is the checked-in fresh-database and full-reset default. A user's
 persisted choice, including Expanded 2x or Custom, remains authoritative across
 an ordinary rebuild or restart.
+
+Capture visibility is independent of bounded-load depth. Quiet uses the
+dedicated non-focused managed window. Adaptive fidelity directly uses the
+newest eligible canonical source tab in an ordinary Chrome window; it does not
+first create or try the Quiet managed window.
 
 ## Fresh database
 
@@ -262,11 +267,16 @@ uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
 either boundary trims the oldest terminal history and orphaned event threads.
 
-Unavailable X media first has a passive completion path. AkuBridge relays only
-a sanitized, short-lived media cache keyed by the authoritative
+Unavailable X media first has a passive completion path. AkuBridge v58 can
+relay evidence from its DOM observers or from the bounded
+`x-response-evidence-v1` adapter, which inspects only X's already-requested
+`HomeTimeline`, `HomeLatestTimeline`, and `TweetDetail` responses. Raw response
+payloads and post text never reach Sidecar. The relay contains only a
+sanitized, short-lived cache entry keyed by the authoritative
 `x:status:<id>` identity. Sidecar revalidates that identity, accepts at most
-four allowlisted `pbs.twimg.com`/`video.twimg.com` post-media records, writes a
-completed provenance row plus an evidence override, and performs no browser
+four allowlisted `pbs.twimg.com`/`video.twimg.com` post-media records, preserves
+`x_response_graphql` provenance when applicable, and writes a completed
+`passive-x-media-enrichment-v2` row plus an evidence override without a browser
 operation. The enrichment consumes no reasoning call or Timeline capacity and
 cannot add, rerank, or semantically regroup an item.
 

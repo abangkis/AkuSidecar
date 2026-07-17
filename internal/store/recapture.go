@@ -19,7 +19,7 @@ var (
 	xStatusPath        = regexp.MustCompile(`/status/([0-9]{5,30})(?:\b|/|$)`)
 )
 
-const passiveXMediaEngineVersion = "passive-x-media-enrichment-v1"
+const passiveXMediaEngineVersion = "passive-x-media-enrichment-v2"
 
 func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode) (domain.MediaRecapture, error) {
 	if mode != domain.MediaRecaptureBackground && mode != domain.MediaRecaptureForeground {
@@ -514,7 +514,7 @@ func normalizePassiveXMedia(values []domain.PassiveXMediaCandidate) ([]map[strin
 		if value.PlaybackMode != "" && value.PlaybackMode != "inline" && value.PlaybackMode != "native" {
 			return nil, errors.New("media playbackMode must be inline or native")
 		}
-		if value.Provenance != "" && value.Provenance != "observed_dom" && value.Provenance != "main_structured_state" && value.Provenance != "passive_x_cache" {
+		if value.Provenance != "" && value.Provenance != "observed_dom" && value.Provenance != "main_structured_state" && value.Provenance != "x_response_graphql" && value.Provenance != "passive_x_cache" {
 			return nil, errors.New("media provenance is unsupported")
 		}
 		primary, primaryHost, err := normalizePassiveXMediaURL(value.URL)
