@@ -14,7 +14,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.8` / `source-fidelity-v58`
+- AkuBridge `0.6.9` / `source-fidelity-v59`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -267,9 +267,9 @@ uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
 either boundary trims the oldest terminal history and orphaned event threads.
 
-Unavailable X media first has a passive completion path. AkuBridge v58 can
+Unavailable X media first has a passive completion path. AkuBridge v59 can
 relay evidence from its DOM observers or from the bounded
-`x-response-evidence-v1` adapter, which inspects only X's already-requested
+`x-response-evidence-v2` adapter, which inspects only X's already-requested
 `HomeTimeline`, `HomeLatestTimeline`, and `TweetDetail` responses. Raw response
 payloads and post text never reach Sidecar. The relay contains only a
 sanitized, short-lived cache entry keyed by the authoritative
@@ -279,6 +279,12 @@ four allowlisted `pbs.twimg.com`/`video.twimg.com` post-media records, preserves
 `passive-x-media-enrichment-v2` row plus an evidence override without a browser
 operation. The enrichment consumes no reasoning call or Timeline capacity and
 cannot add, rerank, or semantically regroup an item.
+
+The same response adapter may expose the owning Tweet author's allowlisted X
+avatar URL to AkuBridge's isolated runtime. Avatar evidence is held only in a
+separate bounded in-memory cache and fills presentation when Quiet DOM
+hydration omits the image. It is never relayed to this Sidecar endpoint,
+persisted as post media, or used by reasoning and selection.
 
 If passive evidence never becomes available, the item keeps its explicit
 Recapture action. The first job is always quiet and zero-scroll inside the

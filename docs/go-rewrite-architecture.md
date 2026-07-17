@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `1.0.0-dev.13`.
+Status: active runtime contract for `1.0.0-dev.14`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
@@ -43,7 +43,7 @@ or repeating acquisition planning.
 - Inline is the default. Drawer never abruptly removes a post already seen inline. Hide requires exact typed confirmation and accepts only direct evidence, Deep-confirmed strong signals, or an explicit user AI verdict—not preliminary inference.
 - Media recapture is item-scoped and quiet-first. A foreground attempt requires an unavailable background result plus explicit one-time user consent; neither path creates candidates or changes Timeline ordering.
 - Media acquisition is one generic Bridge engine shared by every source adapter. Adapters declare media kinds, source-specific extractors, and visibility capability; quiet X recapture exhausts primary, structured-state, hydration, and alternate-DOM paths before requesting foreground permission.
-- A bounded passive X media cache may complete presentation evidence after the Timeline is already usable. Its inputs include `x-response-evidence-v1`, which transiently inspects only already-requested X timeline/detail responses and exports no raw response or text. Sidecar revalidates the authoritative post identity and media allowlist, preserves `x_response_graphql` provenance in `passive-x-media-enrichment-v2`, records an evidence override, and never creates a browser job, reasoning call, candidate, or foreground action for this path.
+- A bounded passive X media cache may complete presentation evidence after the Timeline is already usable. Its inputs include `x-response-evidence-v2`, which transiently inspects only already-requested X timeline/detail responses and exports no raw response or text. Sidecar revalidates the authoritative post identity and media allowlist, preserves `x_response_graphql` provenance in `passive-x-media-enrichment-v2`, records an evidence override, and never creates a browser job, reasoning call, candidate, or foreground action for this path. The same adapter can fill an unhydrated author avatar through a separate Bridge-only ephemeral cache; avatar evidence never reaches Sidecar as post media.
 - Capture telemetry survives reasoning failure or process interruption. A failed model turn cannot erase the already accepted browser coverage.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 

@@ -19,12 +19,12 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion         = "0.6.8"
-	ExpectedBridgeRevision        = "source-fidelity-v58"
+	ExpectedBridgeVersion         = "0.6.9"
+	ExpectedBridgeRevision        = "source-fidelity-v59"
 	ExpectedBridgeID              = "aku-bridge-chrome-mv3-v0"
-	ExpectedXAdapter              = "x-dom-v18"
+	ExpectedXAdapter              = "x-dom-v19"
 	ExpectedLinkedInAdapter       = "linkedin-dom-v15"
-	ExpectedXMediaEvidenceAdapter = "x-response-evidence-v1"
+	ExpectedXMediaEvidenceAdapter = "x-response-evidence-v2"
 )
 
 var expectedBridgeSources = []string{"x", "linkedin"}

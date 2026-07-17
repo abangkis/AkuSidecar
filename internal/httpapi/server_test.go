@@ -273,7 +273,7 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
-			"index":0,"adapterVersion":"x-dom-v18","selectorStrategy":"article","selectorCounts":{"article":1},
+			"index":0,"adapterVersion":"x-dom-v19","selectorStrategy":"article","selectorCounts":{"article":1},
 			"selectorCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
 			"scrollY":0,"viewportHeight":900,"newCandidateCount":1,
 			"blocks":[{

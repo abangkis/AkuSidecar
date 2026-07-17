@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "1.0.0-dev.13"
+	ApplicationVersion              = "1.0.0-dev.14"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
