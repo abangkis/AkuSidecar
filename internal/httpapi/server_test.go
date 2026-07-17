@@ -198,7 +198,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 }
 
-func TestBridgeV49ObservationShapeDecodesStrictly(t *testing.T) {
+func TestBridgeV50ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
@@ -216,7 +216,7 @@ func TestBridgeV49ObservationShapeDecodesStrictly(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/bridge/commands/example/observation", bytes.NewBufferString(raw))
 	var observation domain.Observation
 	if err := readJSON(request, &observation); err != nil {
-		t.Fatalf("v49 observation must satisfy the strict Go shape: %v", err)
+		t.Fatalf("v50 observation must satisfy the strict Go shape: %v", err)
 	}
 	if observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)
