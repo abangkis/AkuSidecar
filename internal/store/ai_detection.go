@@ -46,10 +46,11 @@ func (s *Store) SaveAIAssessments(ctx context.Context, values []domain.AIAssessm
 			supersedes = value.SupersedesID
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO ai_assessments(id,timeline_id,session_id,stage,status,confidence_band,evidence_json,provider,detector_version,content_fingerprint,rationale,supersedes_id,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			INSERT INTO ai_assessments(id,timeline_id,session_id,stage,status,confidence_band,evidence_json,assessed_object,signal_scope,provider,detector_version,content_fingerprint,rationale,supersedes_id,created_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			value.ID, value.TimelineID, value.SessionID, value.Stage, value.Status, value.ConfidenceBand,
-			string(evidence), value.Provider, value.DetectorVersion, value.ContentFingerprint, value.Rationale, supersedes, value.CreatedAt); err != nil {
+			string(evidence), value.AssessedObject, value.SignalScope, value.Provider, value.DetectorVersion,
+			value.ContentFingerprint, value.Rationale, supersedes, value.CreatedAt); err != nil {
 			return err
 		}
 	}
@@ -70,7 +71,11 @@ func (s *Store) AddAICorrection(ctx context.Context, timelineID, verdict string)
 	value := domain.AIAssessment{
 		ID: domain.NewID("ai_assessment"), TimelineID: timelineID, SessionID: sessionID,
 		Stage: "user", Status: status, ConfidenceBand: "high", Provider: "user",
+		AssessedObject: "social_post", SignalScope: "social_post",
 		DetectorVersion: "personal-override-v1", Rationale: "Personal presentation override recorded by the user.", CreatedAt: domain.Now(),
+	}
+	if status == "user_marked_not_ai" {
+		value.SignalScope = "none"
 	}
 	if err := s.SaveAIAssessments(ctx, []domain.AIAssessment{value}); err != nil {
 		return domain.AIAssessment{}, err
@@ -83,9 +88,11 @@ func (s *Store) UndoAICorrection(ctx context.Context, id string) (domain.AIAsses
 	var evidenceRaw string
 	var supersedes sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id,timeline_id,session_id,stage,status,confidence_band,evidence_json,provider,detector_version,content_fingerprint,rationale,supersedes_id,created_at
+		SELECT id,timeline_id,session_id,stage,status,confidence_band,evidence_json,assessed_object,signal_scope,provider,detector_version,content_fingerprint,rationale,supersedes_id,created_at
 		FROM ai_assessments WHERE id=? AND stage='user' AND undone_at IS NULL`, id).
-		Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Stage, &value.Status, &value.ConfidenceBand, &evidenceRaw, &value.Provider, &value.DetectorVersion, &value.ContentFingerprint, &value.Rationale, &supersedes, &value.CreatedAt)
+		Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Stage, &value.Status, &value.ConfidenceBand,
+			&evidenceRaw, &value.AssessedObject, &value.SignalScope, &value.Provider, &value.DetectorVersion,
+			&value.ContentFingerprint, &value.Rationale, &supersedes, &value.CreatedAt)
 	if err != nil {
 		return domain.AIAssessment{}, err
 	}
@@ -192,7 +199,7 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 		args = append(args, items[index].ID)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id,timeline_id,session_id,stage,status,confidence_band,evidence_json,provider,detector_version,content_fingerprint,rationale,COALESCE(supersedes_id,''),created_at
+		SELECT id,timeline_id,session_id,stage,status,confidence_band,evidence_json,assessed_object,signal_scope,provider,detector_version,content_fingerprint,rationale,COALESCE(supersedes_id,''),created_at
 		FROM ai_assessments WHERE undone_at IS NULL AND timeline_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY created_at,id`, args...)
 	if err != nil {
 		return err
@@ -200,7 +207,9 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 	for rows.Next() {
 		var value domain.AIAssessment
 		var evidenceRaw string
-		if err := rows.Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Stage, &value.Status, &value.ConfidenceBand, &evidenceRaw, &value.Provider, &value.DetectorVersion, &value.ContentFingerprint, &value.Rationale, &value.SupersedesID, &value.CreatedAt); err != nil {
+		if err := rows.Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Stage, &value.Status, &value.ConfidenceBand,
+			&evidenceRaw, &value.AssessedObject, &value.SignalScope, &value.Provider, &value.DetectorVersion,
+			&value.ContentFingerprint, &value.Rationale, &value.SupersedesID, &value.CreatedAt); err != nil {
 			rows.Close()
 			return err
 		}
@@ -280,6 +289,8 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string) *domai
 	value.Status = current.Status
 	value.ConfidenceBand = current.ConfidenceBand
 	value.EvidenceCodes = current.EvidenceCodes
+	value.AssessedObject = current.AssessedObject
+	value.SignalScope = current.SignalScope
 	value.DetectorVersion = current.DetectorVersion
 	value.LatestAssessedAt = current.CreatedAt
 	value.Detail = current.Rationale
@@ -305,6 +316,8 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string) *domai
 		value.Status = fast.Status
 		value.ConfidenceBand = fast.ConfidenceBand
 		value.EvidenceCodes = fast.EvidenceCodes
+		value.AssessedObject = fast.AssessedObject
+		value.SignalScope = fast.SignalScope
 		value.AssessmentID = fast.ID
 		value.DetectorVersion = fast.DetectorVersion
 		value.BadgeLabel = "Platform AI label"

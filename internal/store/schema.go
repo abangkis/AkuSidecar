@@ -1,6 +1,6 @@
 package store
 
-const schemaVersion = "3"
+const schemaVersion = "4"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -138,6 +138,8 @@ CREATE TABLE IF NOT EXISTS ai_assessments (
   status TEXT NOT NULL CHECK (status IN ('strong_signals','insufficient_evidence','no_signal_detected','conflicting_evidence','user_marked_ai','user_marked_not_ai')),
   confidence_band TEXT NOT NULL CHECK (confidence_band IN ('low','medium','high')),
   evidence_json TEXT NOT NULL DEFAULT '[]',
+  assessed_object TEXT NOT NULL CHECK (assessed_object IN ('social_post')),
+  signal_scope TEXT NOT NULL CHECK (signal_scope IN ('social_post','quoted_post','external_artifact','attached_media','none','mixed')),
   provider TEXT NOT NULL,
   detector_version TEXT NOT NULL,
   content_fingerprint TEXT NOT NULL DEFAULT '',

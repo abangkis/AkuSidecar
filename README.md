@@ -14,7 +14,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.3` / `source-fidelity-v51`
+- AkuBridge `0.6.4` / `source-fidelity-v52`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -115,11 +115,12 @@ an ordinary rebuild or restart.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 3 contains
+The database defaults to `runtime/aku-sidecar.db`. Schema version 4 contains
 only the active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). A narrow
-v2-to-v3 migration adds AI Detector history and job state for the immediately
-preceding Go development database; this is not a Node compatibility path.
+The narrow current-Go migration chain accepts v2 for the original detector
+tables and v3 for typed AI assessed-object/signal-scope columns; this is not a
+Node compatibility path.
 
 There is no importer for the Node database. A mismatched schema fails closed;
 delete or move the development database and start again.
@@ -170,7 +171,8 @@ routes require both the durable Bridge token and
 The embedded UI restores the source-first dark shell, first-run source
 onboarding, editable active sources, bounded custom capture controls, persisted
 Source/Brief and stream-width preferences, collapsed long text with Show more,
-media inspection, unique/duplicate latest-check counts, quiet history
+media inspection, generic source attachments and external LinkedIn link cards,
+unique/duplicate latest-check counts, quiet history
 boundaries, the finite Timeline finish line, and the boundary-aware back-to-top
 control. Reset operations require an exact typed phrase and fail while an
 update is active. A full reset creates and verifies a timestamped SQLite backup
@@ -217,8 +219,11 @@ Update Inbox records whether the local fast path or App Server ran, along with
 the trigger reason, strongest overlap, retained-event count, duration, token
 usage, and post-hoc user split/merge counts. It also exposes the asynchronous
 Deep Detection job status, reviewed-post count, duration, token usage, and
-non-fatal failure. This makes semantic and AI Detector cost and correction
-signals visible without exposing raw database identities.
+non-fatal failure. Retained Timeline decisions appear with only More and Less
+controls; a new choice supersedes the earlier source/evidence label during
+fitting while preserving the append-only feedback audit trail. This makes
+semantic, preference, and AI Detector cost and correction signals visible
+without exposing raw database identities.
 
 AI Detector is a separate presentation-only domain. Its text-first Fast
 Detector runs locally after global composition and recognizes only explicit
@@ -237,11 +242,12 @@ Inline is the default presentation. Drawer routes unseen strong-signal posts
 into the generic Timeline side-pane host without moving posts the user already
 saw. Hide requires the exact phrase `HIDE STRONG AI SIGNALS` and applies only to
 direct platform/provenance evidence, Deep-confirmed strong signals, or a user
-`This is AI` correction. Preliminary inferred signals are not Hide-eligible.
-`This is AI` and `This is not AI` are durable, undoable personal corrections
-and resolve above Fast or Deep output. Posts without a detector badge keep
-these manual corrections inside the neutral `⋯` actions menu, so the presence
-of AI wording on a card always denotes an actual assessment.
+`Mark as AI-generated` correction. Preliminary inferred signals are not
+Hide-eligible. `Mark as AI-generated` and `Mark as not AI-generated` are
+durable, undoable personal corrections and resolve above Fast or Deep output.
+Every card keeps AI status, assessment detail, and corrections in one compact
+expandable badge slot. A subtle `AI signal · Neutral` state exposes the same
+controls without claiming that absence of a strong signal proves human origin.
 
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and

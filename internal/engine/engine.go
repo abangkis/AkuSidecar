@@ -19,18 +19,18 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.3"
-	ExpectedBridgeRevision  = "source-fidelity-v51"
+	ExpectedBridgeVersion   = "0.6.4"
+	ExpectedBridgeRevision  = "source-fidelity-v52"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
-	ExpectedXAdapter        = "x-dom-v16"
-	ExpectedLinkedInAdapter = "linkedin-dom-v13"
+	ExpectedXAdapter        = "x-dom-v17"
+	ExpectedLinkedInAdapter = "linkedin-dom-v14"
 )
 
 var expectedBridgeSources = []string{"x", "linkedin"}
 var expectedBridgeActions = []string{
 	"probe_readiness", "probe_freshness", "recover_source_freshness",
 	"collect_visible", "detect_pending_content", "report_adapter_health",
-	"report_capture_quality", "recover_missing_media", "recapture_missing_media", "extract_source_semantics",
+	"report_capture_quality", "acquire_missing_media", "recapture_missing_media", "extract_source_semantics",
 	"report_frontier", "manage_source_tab_lifecycle", "manage_capture_window",
 	"release_capture_surface", "preserve_working_tab", "report_source_events", "reload_self",
 }
@@ -359,7 +359,8 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 			assessments = append(assessments, domain.AIAssessment{
 				ID: domain.NewID("ai_assessment"), TimelineID: items[index].ID, SessionID: sessionID,
 				Stage: "deep", Status: value.Status, ConfidenceBand: value.ConfidenceBand,
-				EvidenceCodes: value.EvidenceCodes, Provider: resolver.Name(), DetectorVersion: aidetector.DeepDetectorVersion,
+				EvidenceCodes: value.EvidenceCodes, AssessedObject: value.AssessedObject, SignalScope: value.SignalScope,
+				Provider: resolver.Name(), DetectorVersion: aidetector.DeepDetectorVersion,
 				Rationale: value.Rationale, SupersedesID: supersedes, CreatedAt: assessedAt,
 			})
 		}
@@ -464,6 +465,14 @@ func validateObservation(value domain.Observation) error {
 				return errors.New("captured block is missing evidenceKey")
 			}
 			seen[block.EvidenceKey] = true
+			if len(block.Attachments) > 3 {
+				return errors.New("captured block exceeds the attachment limit")
+			}
+			for _, attachment := range block.Attachments {
+				if err := attachment.Validate(); err != nil {
+					return fmt.Errorf("captured block attachment is invalid: %w", err)
+				}
+			}
 		}
 	}
 	if len(seen) == 0 {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -265,21 +266,33 @@ type Run struct {
 }
 
 type InboxSession struct {
-	ID                  string                  `json:"id"`
-	Intent              string                  `json:"intent"`
-	Status              string                  `json:"status"`
-	CreatedAt           string                  `json:"createdAt"`
-	StartedAt           *string                 `json:"startedAt"`
-	CompletedAt         *string                 `json:"completedAt"`
-	CapturedCandidates  int                     `json:"capturedCandidates"`
-	EvaluatedCandidates int                     `json:"evaluatedCandidates"`
-	SelectedCandidates  int                     `json:"selectedCandidates"`
-	AddedItems          int                     `json:"addedItems"`
-	DuplicateReports    int                     `json:"duplicateReports"`
-	EventResolution     *EventResolutionSummary `json:"eventResolution,omitempty"`
-	AIDetection         *AIDetectionJob         `json:"aiDetection,omitempty"`
-	Runs                []InboxRun              `json:"runs"`
-	Error               *Failure                `json:"error"`
+	ID                  string                    `json:"id"`
+	Intent              string                    `json:"intent"`
+	Status              string                    `json:"status"`
+	CreatedAt           string                    `json:"createdAt"`
+	StartedAt           *string                   `json:"startedAt"`
+	CompletedAt         *string                   `json:"completedAt"`
+	CapturedCandidates  int                       `json:"capturedCandidates"`
+	EvaluatedCandidates int                       `json:"evaluatedCandidates"`
+	SelectedCandidates  int                       `json:"selectedCandidates"`
+	AddedItems          int                       `json:"addedItems"`
+	DuplicateReports    int                       `json:"duplicateReports"`
+	EventResolution     *EventResolutionSummary   `json:"eventResolution,omitempty"`
+	AIDetection         *AIDetectionJob           `json:"aiDetection,omitempty"`
+	PreferenceDecisions []InboxPreferenceDecision `json:"preferenceDecisions"`
+	Runs                []InboxRun                `json:"runs"`
+	Error               *Failure                  `json:"error"`
+}
+
+type InboxPreferenceDecision struct {
+	TimelineID  string `json:"timelineId"`
+	EvidenceKey string `json:"evidenceKey"`
+	Source      Source `json:"source"`
+	Author      string `json:"author"`
+	Summary     string `json:"summary"`
+	SourceURL   string `json:"sourceUrl"`
+	Direction   string `json:"direction"`
+	UpdatedAt   string `json:"updatedAt"`
 }
 
 type TimelineCheckSummary struct {
@@ -395,6 +408,52 @@ type Snapshot struct {
 	QualityReports         []map[string]any `json:"qualityReports"`
 }
 
+type Attachment struct {
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Subtitle    string `json:"subtitle,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	ActionLabel string `json:"actionLabel,omitempty"`
+	Footnote    string `json:"footnote,omitempty"`
+	URL         string `json:"url"`
+	Domain      string `json:"domain,omitempty"`
+	ImageURL    string `json:"imageUrl,omitempty"`
+	Verified    bool   `json:"verified,omitempty"`
+}
+
+func (a Attachment) Validate() error {
+	if a.Kind != "job" && a.Kind != "link_preview" && a.Kind != "document" {
+		return fmt.Errorf("unsupported attachment kind %q", a.Kind)
+	}
+	if strings.TrimSpace(a.Title) == "" || len([]rune(a.Title)) > 300 {
+		return errors.New("attachment title must contain 1-300 characters")
+	}
+	for label, value := range map[string]string{
+		"subtitle": a.Subtitle,
+		"detail":   a.Detail,
+		"footnote": a.Footnote,
+		"domain":   a.Domain,
+	} {
+		if len([]rune(value)) > 300 {
+			return fmt.Errorf("attachment %s cannot exceed 300 characters", label)
+		}
+	}
+	if len([]rune(a.ActionLabel)) > 80 {
+		return errors.New("attachment action label cannot exceed 80 characters")
+	}
+	target, err := url.Parse(a.URL)
+	if err != nil || target.Scheme != "https" || target.Host == "" {
+		return errors.New("attachment URL must use HTTPS")
+	}
+	if a.ImageURL != "" {
+		image, err := url.Parse(a.ImageURL)
+		if err != nil || image.Scheme != "https" || image.Host == "" {
+			return errors.New("attachment image URL must use HTTPS")
+		}
+	}
+	return nil
+}
+
 type Block struct {
 	EvidenceKey      string           `json:"evidenceKey,omitempty"`
 	Author           string           `json:"author"`
@@ -409,6 +468,7 @@ type Block struct {
 	QuotedPost       map[string]any   `json:"quotedPost"`
 	Engagement       map[string]any   `json:"engagement"`
 	Presentation     map[string]any   `json:"presentation"`
+	Attachments      []Attachment     `json:"attachments"`
 	Media            []map[string]any `json:"media"`
 	Links            []map[string]any `json:"links"`
 	MediaRecovery    map[string]any   `json:"mediaRecovery"`
@@ -494,6 +554,8 @@ type AIAssessment struct {
 	Status             string   `json:"status"`
 	ConfidenceBand     string   `json:"confidenceBand"`
 	EvidenceCodes      []string `json:"evidenceCodes"`
+	AssessedObject     string   `json:"assessedObject"`
+	SignalScope        string   `json:"signalScope"`
 	Provider           string   `json:"provider"`
 	DetectorVersion    string   `json:"detectorVersion"`
 	ContentFingerprint string   `json:"contentFingerprint"`
@@ -531,6 +593,19 @@ func (a AIAssessment) Validate() error {
 	if len(a.EvidenceCodes) > 3 {
 		return errors.New("AI assessment evidenceCodes cannot exceed three entries")
 	}
+	if a.AssessedObject != "social_post" {
+		return fmt.Errorf("unsupported AI assessed object %q", a.AssessedObject)
+	}
+	validScope := map[string]bool{
+		"social_post": true, "quoted_post": true, "external_artifact": true,
+		"attached_media": true, "none": true, "mixed": true,
+	}
+	if !validScope[a.SignalScope] {
+		return fmt.Errorf("unsupported AI signal scope %q", a.SignalScope)
+	}
+	if (a.Status == "strong_signals" || a.Status == "user_marked_ai") && a.SignalScope != "social_post" {
+		return errors.New("a strong social-post assessment requires social_post signal scope")
+	}
 	return nil
 }
 
@@ -540,6 +615,8 @@ type TimelineAIDetection struct {
 	Status           string   `json:"status"`
 	ConfidenceBand   string   `json:"confidenceBand"`
 	EvidenceCodes    []string `json:"evidenceCodes"`
+	AssessedObject   string   `json:"assessedObject,omitempty"`
+	SignalScope      string   `json:"signalScope,omitempty"`
 	BadgeLabel       string   `json:"badgeLabel,omitempty"`
 	Detail           string   `json:"detail,omitempty"`
 	RouteToSignals   bool     `json:"routeToSignals"`
@@ -577,6 +654,8 @@ type DeepAIAssessment struct {
 	Status         string   `json:"status"`
 	ConfidenceBand string   `json:"confidenceBand"`
 	EvidenceCodes  []string `json:"evidenceCodes"`
+	AssessedObject string   `json:"assessedObject"`
+	SignalScope    string   `json:"signalScope"`
 	Rationale      string   `json:"rationale"`
 }
 
@@ -729,6 +808,7 @@ type CalibrationCandidate struct {
 	QuotedPost   map[string]any      `json:"quotedPost"`
 	Engagement   map[string]any      `json:"engagement"`
 	Presentation map[string]any      `json:"presentation"`
+	Attachments  []Attachment        `json:"attachments"`
 	Media        []map[string]any    `json:"media"`
 	Links        []map[string]any    `json:"links"`
 	Assessment   CandidateAssessment `json:"assessment"`

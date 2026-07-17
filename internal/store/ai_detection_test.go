@@ -43,6 +43,7 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 	fast := domain.AIAssessment{
 		ID: "fast-assessment", TimelineID: item.ID, SessionID: session.ID, Stage: "fast", Status: "strong_signals",
 		ConfidenceBand: "medium", EvidenceCodes: []string{"author_declared_ai"}, Provider: "local-deterministic",
+		AssessedObject: "social_post", SignalScope: "social_post",
 		DetectorVersion: "fast-text-v1", Rationale: "Explicit author declaration.", CreatedAt: "2026-07-17T01:00:00Z",
 	}
 	if err := state.SaveAIAssessments(ctx, []domain.AIAssessment{fast}); err != nil {
@@ -72,6 +73,7 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 	deep := domain.AIAssessment{
 		ID: "deep-assessment", TimelineID: item.ID, SessionID: session.ID, Stage: "deep", Status: "no_signal_detected",
 		ConfidenceBand: "low", Provider: "test", DetectorVersion: "deep-v1", Rationale: "The declaration was quoted context.",
+		AssessedObject: "social_post", SignalScope: "quoted_post",
 		SupersedesID: fast.ID, CreatedAt: "2026-07-17T01:01:00Z",
 	}
 	if err := state.SaveAIAssessments(ctx, []domain.AIAssessment{deep}); err != nil {
@@ -124,8 +126,8 @@ func TestDirectPlatformOriginEvidenceRemainsHideEligible(t *testing.T) {
 	state := openTestStore(t)
 	session, item := insertAIDetectionTimelineItem(t, state)
 	values := []domain.AIAssessment{
-		{ID: "platform-fast", TimelineID: item.ID, SessionID: session.ID, Stage: "fast", Status: "strong_signals", ConfidenceBand: "high", EvidenceCodes: []string{"platform_ai_label"}, Provider: "local", DetectorVersion: "fast-v1", CreatedAt: "2026-07-17T01:00:00Z"},
-		{ID: "platform-deep", TimelineID: item.ID, SessionID: session.ID, Stage: "deep", Status: "insufficient_evidence", ConfidenceBand: "low", Provider: "deep", DetectorVersion: "deep-v1", SupersedesID: "platform-fast", CreatedAt: "2026-07-17T01:01:00Z"},
+		{ID: "platform-fast", TimelineID: item.ID, SessionID: session.ID, Stage: "fast", Status: "strong_signals", ConfidenceBand: "high", EvidenceCodes: []string{"platform_ai_label"}, AssessedObject: "social_post", SignalScope: "social_post", Provider: "local", DetectorVersion: "fast-v1", CreatedAt: "2026-07-17T01:00:00Z"},
+		{ID: "platform-deep", TimelineID: item.ID, SessionID: session.ID, Stage: "deep", Status: "insufficient_evidence", ConfidenceBand: "low", AssessedObject: "social_post", SignalScope: "none", Provider: "deep", DetectorVersion: "deep-v1", SupersedesID: "platform-fast", CreatedAt: "2026-07-17T01:01:00Z"},
 	}
 	if err := state.SaveAIAssessments(ctx, values); err != nil {
 		t.Fatal(err)

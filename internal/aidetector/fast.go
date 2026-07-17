@@ -72,12 +72,21 @@ func detectItem(item domain.TimelineItem) domain.AIAssessment {
 		Status:             status,
 		ConfidenceBand:     confidence,
 		EvidenceCodes:      codes,
+		AssessedObject:     "social_post",
+		SignalScope:        fastSignalScope(status),
 		Provider:           "local-deterministic",
 		DetectorVersion:    FastDetectorVersion,
 		ContentFingerprint: fingerprint(text),
 		Rationale:          rationale,
 		CreatedAt:          domain.Now(),
 	}
+}
+
+func fastSignalScope(status string) string {
+	if status == "strong_signals" {
+		return "social_post"
+	}
+	return "none"
 }
 
 func hasPlatformAILabel(value map[string]any) bool {

@@ -70,7 +70,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	}
 }
 
-func TestCurrentGoSchemaTwoMigratesToThree(t *testing.T) {
+func TestCurrentGoSchemaTwoMigratesToFour(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sidecar-v2.db")
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -95,8 +95,50 @@ func TestCurrentGoSchemaTwoMigratesToThree(t *testing.T) {
 	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('ai_assessments','ai_detection_jobs')`).Scan(&tables); err != nil {
 		t.Fatal(err)
 	}
-	if version != "3" || tables != 2 {
+	if version != "4" || tables != 2 {
 		t.Fatalf("version=%s AI tables=%d", version, tables)
+	}
+}
+
+func TestCurrentGoSchemaThreeAddsAIObjectScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sidecar-v3.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+		INSERT INTO meta(key,value) VALUES('schema_version','3');
+		CREATE TABLE ai_assessments (
+			id TEXT PRIMARY KEY,timeline_id TEXT NOT NULL,session_id TEXT NOT NULL,
+			stage TEXT NOT NULL,status TEXT NOT NULL,confidence_band TEXT NOT NULL,
+			evidence_json TEXT NOT NULL DEFAULT '[]',provider TEXT NOT NULL,
+			detector_version TEXT NOT NULL,content_fingerprint TEXT NOT NULL DEFAULT '',
+			rationale TEXT NOT NULL DEFAULT '',supersedes_id TEXT,created_at TEXT NOT NULL,undone_at TEXT
+		);
+		INSERT INTO ai_assessments(id,timeline_id,session_id,stage,status,confidence_band,provider,detector_version,created_at)
+		VALUES('old-strong','timeline','session','deep','strong_signals','high','test','v2','2026-07-17T00:00:00Z');
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version, assessedObject, signalScope string
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT assessed_object,signal_scope FROM ai_assessments WHERE id='old-strong'`).Scan(&assessedObject, &signalScope); err != nil {
+		t.Fatal(err)
+	}
+	if version != "4" || assessedObject != "social_post" || signalScope != "social_post" {
+		t.Fatalf("version=%s assessed=%s scope=%s", version, assessedObject, signalScope)
 	}
 }
 
@@ -518,6 +560,72 @@ func TestPreferenceSignalsUseLatestCanonicalSourceEvidenceLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(signals) != 1 || signals[0].Direction != "less" || signals[0].Reason == nil || *signals[0].Reason != reason {
+		t.Fatalf("signals=%+v", signals)
+	}
+}
+
+func TestInboxLetsLatestMoreOrLessDecisionReplaceAnEarlierChoice(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "What changed?", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runs[0]
+	evidence := "x:000000000000000000000601"
+	item := domain.ReasonedItem{
+		EvidenceKey: evidence,
+		Source:      run.Source,
+		Author:      "Example Author",
+		WhatChanged: "A useful update that was rated by mistake.",
+		SourceURL:   "https://x.com/example/status/601",
+	}
+	assessment := domain.CandidateAssessment{EvidenceKey: evidence, TopicFacets: []string{"useful_update"}}
+	itemRaw, _ := json.Marshal(item)
+	assessmentRaw, _ := json.Marshal(assessment)
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, run.ID, evidence, run.Source, string(assessmentRaw), .5, 0, .5, 1, "2026-07-17T01:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, "timeline-inbox-feedback", session.ID, run.ID, run.Source, evidence, 0, string(itemRaw), string(assessmentRaw), "{}", "2026-07-17T01:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	reason := "not_interested"
+	less, err := state.AddFeedback(ctx, "timeline-inbox-feedback", domain.Feedback{Direction: "less", Reason: &reason})
+	if err != nil {
+		t.Fatal(err)
+	}
+	more, err := state.AddFeedback(ctx, "timeline-inbox-feedback", domain.Feedback{Direction: "more"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE feedback_events SET created_at=CASE id WHEN ? THEN '2026-07-17T01:01:00Z' WHEN ? THEN '2026-07-17T01:02:00Z' END WHERE id IN (?,?)`, less.ID, more.ID, less.ID, more.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at='2026-07-17T01:03:00Z' WHERE id=?`, session.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	inbox, total, err := state.ListInboxSessions(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(inbox) != 1 || len(inbox[0].PreferenceDecisions) != 1 {
+		t.Fatalf("inbox=%+v total=%d", inbox, total)
+	}
+	decision := inbox[0].PreferenceDecisions[0]
+	if decision.TimelineID != "timeline-inbox-feedback" || decision.Direction != "more" || decision.Author != item.Author || decision.Summary != item.WhatChanged || decision.SourceURL != item.SourceURL {
+		t.Fatalf("decision=%+v", decision)
+	}
+	signals, err := state.PreferenceSignals(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signals) != 1 || signals[0].Direction != "more" {
 		t.Fatalf("signals=%+v", signals)
 	}
 }

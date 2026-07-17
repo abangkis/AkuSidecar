@@ -79,7 +79,7 @@ func (s *Store) CalibrationCandidates(ctx context.Context, sessionID string) ([]
 			Text: block.Text, SourceURL: block.Permalink, PublishedAt: block.PublishedAt,
 			ContentKind: block.ContentKind, QuotedPost: block.QuotedPost,
 			Engagement: block.Engagement, Presentation: block.Presentation,
-			Media: block.Media, Links: block.Links, Assessment: assessment,
+			Attachments: block.Attachments, Media: block.Media, Links: block.Links, Assessment: assessment,
 		})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {

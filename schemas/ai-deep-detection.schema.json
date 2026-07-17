@@ -11,7 +11,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "confidenceBand", "evidenceCodes", "rationale"],
+        "required": ["status", "confidenceBand", "evidenceCodes", "assessedObject", "signalScope", "rationale"],
         "properties": {
           "status": {
             "type": "string",
@@ -38,6 +38,14 @@
                 "conflicting_evidence"
               ]
             }
+          },
+          "assessedObject": {
+            "type": "string",
+            "enum": ["social_post"]
+          },
+          "signalScope": {
+            "type": "string",
+            "enum": ["social_post", "quoted_post", "external_artifact", "attached_media", "none", "mixed"]
           },
           "rationale": {
             "type": "string",

@@ -109,6 +109,7 @@ func mergeCapturedBlock(previous, current domain.Block) domain.Block {
 	result.Presentation = mergeAnyMaps(previous.Presentation, current.Presentation)
 	result.QuotedPost = mergeAnyMaps(previous.QuotedPost, current.QuotedPost)
 	result.CaptureQuality = mergeAnyMaps(previous.CaptureQuality, current.CaptureQuality)
+	result.Attachments = mergeCapturedAttachments(previous.Attachments, current.Attachments)
 	if len(previous.Media) > len(current.Media) {
 		result.Media = previous.Media
 		result.MediaRecovery = previous.MediaRecovery
@@ -161,6 +162,25 @@ func mergeCapturedLinks(previous, current []map[string]any) []map[string]any {
 			}
 			result = append(result, link)
 			if len(result) == 10 {
+				return result
+			}
+		}
+	}
+	return result
+}
+
+func mergeCapturedAttachments(previous, current []domain.Attachment) []domain.Attachment {
+	result := make([]domain.Attachment, 0, len(previous)+len(current))
+	seen := map[string]bool{}
+	for _, values := range [][]domain.Attachment{previous, current} {
+		for _, attachment := range values {
+			key := strings.TrimSpace(attachment.URL)
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			result = append(result, attachment)
+			if len(result) >= 3 {
 				return result
 			}
 		}

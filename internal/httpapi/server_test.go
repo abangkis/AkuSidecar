@@ -84,8 +84,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "AI Detector", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function routeAIDetectedItems", "function buildAIDetectionControls", "HIDE STRONG AI SIGNALS"},
-		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".ai-origin-badge", ".timeline-side-pane"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "The latest More or Less decision is authoritative.", "function routeAIDetectedItems", "function buildAIDetectionControls", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".inbox-preference-decision", ".ai-origin-badge", ".ai-origin-neutral", ".timeline-side-pane"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
 		if err != nil {
@@ -113,6 +113,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	if strings.Contains(string(appPayload), "Optional reason") || strings.Contains(string(appPayload), "already_knew") || strings.Contains(string(appPayload), "old_info") {
 		t.Fatal("retired feedback reasons remain in the active UI")
+	}
+	if strings.Contains(string(appPayload), "function buildItemActionsMenu") || strings.Contains(string(appPayload), "AI origin correction") {
+		t.Fatal("AI correction must stay with the toolbar badge instead of the footer actions menu")
 	}
 	response, err = client.Get("http://" + address.String() + "/api/inbox?limit=5&offset=0")
 	if err != nil {
@@ -270,7 +273,7 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
-			"index":0,"adapterVersion":"x-dom-v16","selectorStrategy":"article","selectorCounts":{"article":1},
+			"index":0,"adapterVersion":"x-dom-v17","selectorStrategy":"article","selectorCounts":{"article":1},
 			"selectorCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
 			"scrollY":0,"viewportHeight":900,"newCandidateCount":1,
 			"blocks":[{

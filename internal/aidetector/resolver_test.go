@@ -22,7 +22,7 @@ func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt strin
 }
 
 func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
-	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],"rationale":"The available authored content is inadequate."}]}`}
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],"assessedObject":"social_post","signalScope":"none","rationale":"The available authored content is inadequate."}]}`}
 	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
 	item := domain.TimelineItem{
 		ID: "private-timeline-id", SessionID: "private-session-id", Source: domain.SourceX,
@@ -51,7 +51,7 @@ func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
 	if len(invoker.prompt) > 10000 {
 		t.Fatalf("bounded AI Detector prompt unexpectedly grew to %d bytes", len(invoker.prompt))
 	}
-	for _, required := range []string{"untrusted social-media evidence", "Do not browse", "AI origin signals", "post_001"} {
+	for _, required := range []string{"untrusted social-media evidence", "Do not browse", "AI origin signals", "post_001", "external_artifact", "Never transfer provenance"} {
 		if !strings.Contains(invoker.prompt, required) {
 			t.Fatalf("prompt missing %q", required)
 		}
@@ -82,10 +82,19 @@ func TestDeepResolverRejectsIncompleteAssessmentBatch(t *testing.T) {
 }
 
 func TestDeepResolverRejectsUserAuthorityStatus(t *testing.T) {
-	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"user_marked_ai","confidenceBand":"high","evidenceCodes":[],"rationale":"invalid authority"}]}`}
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"user_marked_ai","confidenceBand":"high","evidenceCodes":[],"assessedObject":"social_post","signalScope":"social_post","rationale":"invalid authority"}]}`}
 	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	_, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}})
 	if err == nil || !strings.Contains(err.Error(), "authority do not match") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestDeepResolverRejectsStrongSignalBoundToExternalArtifact(t *testing.T) {
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"external_artifact","rationale":"AI created the website discussed by the author."}]}`}
+	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	_, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}})
+	if err == nil || !strings.Contains(err.Error(), "requires social_post signal scope") {
 		t.Fatalf("err=%v", err)
 	}
 }

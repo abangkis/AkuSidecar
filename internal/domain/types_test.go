@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestProfilesStayBounded(t *testing.T) {
 	tests := []struct {
@@ -169,7 +172,7 @@ func TestAIDetectorPresentationDefaultsToInlineAndUsesLockedModes(t *testing.T) 
 }
 
 func TestAIAssessmentRejectsInvalidStageStatusPair(t *testing.T) {
-	value := AIAssessment{TimelineID: "timeline", SessionID: "session", Stage: "fast", Status: "strong_signals", ConfidenceBand: "medium"}
+	value := AIAssessment{TimelineID: "timeline", SessionID: "session", Stage: "fast", Status: "strong_signals", ConfidenceBand: "medium", AssessedObject: "social_post", SignalScope: "social_post"}
 	if err := value.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -178,12 +181,34 @@ func TestAIAssessmentRejectsInvalidStageStatusPair(t *testing.T) {
 		t.Fatal("user assessment must use an explicit user verdict")
 	}
 	value.Status = "user_marked_not_ai"
+	value.SignalScope = "none"
 	if err := value.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	value.Stage = "deep"
 	if err := value.Validate(); err == nil {
 		t.Fatal("model assessment must not impersonate user authority")
+	}
+}
+
+func TestAttachmentContractRejectsUnsafeOrUnknownEvidence(t *testing.T) {
+	value := Attachment{Kind: "link_preview", Title: "Head of IT", URL: "https://example.com/job"}
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.URL = "javascript:alert(1)"
+	if err := value.Validate(); err == nil {
+		t.Fatal("attachment URL must fail closed outside HTTPS")
+	}
+	value.URL = "https://example.com/job"
+	value.Kind = "social_post"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unknown attachment kinds must be rejected")
+	}
+	value.Kind = "link_preview"
+	value.ActionLabel = strings.Repeat("x", 81)
+	if err := value.Validate(); err == nil {
+		t.Fatal("unbounded attachment copy must be rejected")
 	}
 }
 

@@ -60,6 +60,14 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		if _, err := s.db.ExecContext(ctx, `UPDATE meta SET value=? WHERE key='schema_version'`, schemaVersion); err != nil {
 			return fmt.Errorf("migrate schema 2 to %s: %w", schemaVersion, err)
 		}
+	case version == "3":
+		if _, err := s.db.ExecContext(ctx, `
+			ALTER TABLE ai_assessments ADD COLUMN assessed_object TEXT NOT NULL DEFAULT 'social_post' CHECK (assessed_object IN ('social_post'));
+			ALTER TABLE ai_assessments ADD COLUMN signal_scope TEXT NOT NULL DEFAULT 'none' CHECK (signal_scope IN ('social_post','quoted_post','external_artifact','attached_media','none','mixed'));
+			UPDATE ai_assessments SET signal_scope='social_post' WHERE status IN ('strong_signals','user_marked_ai');
+			UPDATE meta SET value=? WHERE key='schema_version';`, schemaVersion); err != nil {
+			return fmt.Errorf("migrate schema 3 to %s: %w", schemaVersion, err)
+		}
 	case version != schemaVersion:
 		return fmt.Errorf("database schema %s is incompatible with required schema %s; start with a fresh database", version, schemaVersion)
 	}

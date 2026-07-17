@@ -379,6 +379,7 @@ func TestLinkedInPermalinkRecoveryReconcilesDuplicateCaptureBeforeReasoning(t *t
 		Source: domain.SourceLinkedIn,
 		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
 			EvidenceKey: "linkedin:fallback", Author: "Example Company", Text: text,
+			Attachments:  []domain.Attachment{{Kind: "link_preview", URL: "https://example.com/job", Title: "Head of IT"}},
 			Presentation: map[string]any{"permalinkSource": "unavailable"}, FeedPosition: 3,
 		}}}},
 		Coverage: map[string]any{"round": 1},
@@ -403,6 +404,9 @@ func TestLinkedInPermalinkRecoveryReconcilesDuplicateCaptureBeforeReasoning(t *t
 			}
 			if block.Permalink != native.Snapshots[0].Blocks[0].Permalink || block.Presentation["permalinkSource"] != "embed_urn" {
 				t.Fatalf("block[%d] permalink recovery=%+v", index, block)
+			}
+			if len(block.Attachments) != 1 || block.Attachments[0].URL != "https://example.com/job" {
+				t.Fatalf("block[%d] attachments=%+v", index, block.Attachments)
 			}
 		}
 		if blocks[0].FeedPosition != observations[0].Snapshots[0].Blocks[0].FeedPosition || blocks[1].FeedPosition != observations[1].Snapshots[0].Blocks[0].FeedPosition {

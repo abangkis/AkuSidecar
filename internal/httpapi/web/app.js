@@ -952,9 +952,92 @@ function buildInboxSession(session, expanded) {
   body.append(duration);
   if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
   if (session.aiDetection) body.append(buildAIDetectionDiagnostic(session.aiDetection));
+  if (session.preferenceDecisions?.length) {
+    body.append(buildInboxPreferenceDecisions(session.preferenceDecisions));
+  }
   body.append(runs);
   details.append(summary, body);
   return details;
+}
+
+function buildInboxPreferenceDecisions(decisions) {
+  const section = document.createElement("section");
+  section.className = "inbox-preference-decisions";
+  const header = document.createElement("header");
+  const title = document.createElement("strong");
+  title.textContent = "Personalization decisions";
+  const guidance = document.createElement("span");
+  guidance.textContent = "Change an earlier choice. The latest More or Less decision is authoritative.";
+  header.append(title, guidance);
+  const list = document.createElement("div");
+  list.className = "inbox-preference-list";
+  list.append(...decisions.map(buildInboxPreferenceDecision));
+  section.append(header, list);
+  return section;
+}
+
+function buildInboxPreferenceDecision(decision) {
+  const row = document.createElement("article");
+  row.className = "inbox-preference-decision";
+  const copy = document.createElement("div");
+  copy.className = "inbox-preference-copy";
+  const summary = document.createElement("strong");
+  summary.textContent = decision.summary || "Previously rated update";
+  const context = document.createElement("span");
+  context.textContent = [sourceLabel(decision.source), decision.author, `updated ${formatDate(decision.updatedAt)}`]
+    .filter(Boolean)
+    .join(" \u00b7 ");
+  copy.append(summary, context);
+  const sourceUrl = safeMediaUrl(decision.sourceUrl);
+  if (sourceUrl) {
+    const link = document.createElement("a");
+    link.href = sourceUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open source";
+    copy.append(link);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "inbox-preference-actions";
+  const more = feedbackButton("More");
+  const less = feedbackButton("Less");
+  const buttons = { more, less };
+  const renderDirection = () => {
+    for (const [direction, button] of Object.entries(buttons)) {
+      const selected = decision.direction === direction;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    }
+  };
+  for (const [direction, button] of Object.entries(buttons)) {
+    button.addEventListener("click", async () => {
+      if (decision.direction === direction) return;
+      more.disabled = true;
+      less.disabled = true;
+      try {
+        await api(`/api/timeline/${encodeURIComponent(decision.timelineId)}/feedback`, {
+          method: "POST",
+          body: { direction, reason: direction === "less" ? "not_interested" : null },
+        });
+        decision.direction = direction;
+        decision.updatedAt = new Date().toISOString();
+        context.textContent = [sourceLabel(decision.source), decision.author, `updated ${formatDate(decision.updatedAt)}`]
+          .filter(Boolean)
+          .join(" \u00b7 ");
+        renderDirection();
+      } catch (error) {
+        showError(error);
+      } finally {
+        more.disabled = false;
+        less.disabled = false;
+      }
+    });
+  }
+  renderDirection();
+  actions.append(more, less);
+  row.append(copy, actions);
+  return row;
 }
 
 function buildAIDetectionDiagnostic(value) {
@@ -1265,7 +1348,7 @@ function buildExpandedTimelineItem(entry) {
   const signalSlot = document.createElement("span");
   signalSlot.className = "item-signal-slot";
   const ai = buildAIDetectionControls(entry);
-  if (ai) signalSlot.append(ai.badge);
+  signalSlot.append(ai.badge);
   const label = document.createElement("span");
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -1288,30 +1371,47 @@ function buildExpandedTimelineItem(entry) {
   });
   toolbar.append(signalSlot, label, toggle);
   container.append(toolbar);
-  if (ai) container.append(ai.details);
+  container.append(ai.details);
   container.append(brief, source, actions);
   render();
   return container;
 }
 
 function buildAIDetectionControls(entry) {
-  const detection = entry.aiDetection;
-  if (!detection?.badgeLabel) return null;
+  const detection = entry.aiDetection ?? null;
+  const hasAssessmentLabel = Boolean(detection?.badgeLabel);
+  const badgeLabel = detection?.badgeLabel || (detection?.pendingDeep
+    ? "AI signal · Checking"
+    : "AI signal · Neutral");
+  const badgeTone = hasAssessmentLabel
+    ? detection.corrected || detection.status === "conflicting_evidence"
+      ? "corrected"
+      : detection.userOverride
+        ? "user"
+        : detection.stage || "fast"
+    : detection?.pendingDeep
+      ? "pending"
+      : "neutral";
   const badge = document.createElement("button");
   badge.type = "button";
-  badge.className = `ai-origin-badge ai-origin-${detection.corrected || detection.status === "conflicting_evidence" ? "corrected" : detection.userOverride ? "user" : detection.stage || "fast"}`;
-  badge.textContent = detection.badgeLabel;
+  badge.className = `ai-origin-badge ai-origin-${badgeTone}`;
+  badge.textContent = badgeLabel;
+  badge.title = "Review AI signal status and corrections";
   badge.setAttribute("aria-expanded", "false");
   const details = document.createElement("div");
   details.className = "ai-assessment-detail hidden";
   const summary = document.createElement("p");
-  summary.textContent = detection.detail || "AkuBrowser recorded an AI-origin assessment for this post.";
+  summary.textContent = detection?.detail || (detection?.pendingDeep
+    ? "Deep Detection is still reviewing this post. You remain in control of its personal classification."
+    : "No strong AI-origin signal is currently recorded for this post.");
   const meta = document.createElement("small");
-  const evidence = (detection.evidenceCodes || []).map(humanize).join(", ");
-  meta.textContent = [humanize(detection.stage), humanize(detection.confidenceBand), evidence, `${detection.historyCount || 1} assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
+  const evidence = (detection?.evidenceCodes || []).map(humanize).join(", ");
+  meta.textContent = detection
+    ? [humanize(detection.stage), humanize(detection.confidenceBand), evidence, `${detection.historyCount || 0} assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
+    : "No detector assessment yet";
   const actions = document.createElement("div");
   actions.className = "ai-assessment-actions";
-  if (detection.userOverride && detection.correctionId) {
+  if (detection?.userOverride && detection.correctionId) {
     const undo = document.createElement("button");
     undo.type = "button";
     undo.textContent = "Clear my correction";
@@ -1329,11 +1429,11 @@ function buildAIDetectionControls(entry) {
   } else {
     const notAI = document.createElement("button");
     notAI.type = "button";
-    notAI.textContent = "This is not AI";
+    notAI.textContent = "Mark as not AI-generated";
     notAI.addEventListener("click", () => applyAICorrection(entry.id, "not_ai", notAI));
     const isAI = document.createElement("button");
     isAI.type = "button";
-    isAI.textContent = "This is AI";
+    isAI.textContent = "Mark as AI-generated";
     isAI.addEventListener("click", () => applyAICorrection(entry.id, "ai", isAI));
     actions.append(notAI, isAI);
   }
@@ -1419,6 +1519,8 @@ function buildSourceCard(entry) {
   const quote = buildQuotedPost(evidence.quotedPost, source);
   if (quote) content.append(quote);
   card.append(header, content);
+  const attachments = buildAttachments(evidence.attachments, source);
+  if (attachments) card.append(attachments);
   const media = buildMedia(evidence.media, source);
   if (media) card.append(media);
   if (evidence.mediaRecovery?.outcome === "unavailable") {
@@ -1529,6 +1631,54 @@ function buildMedia(values, source) {
   return gallery;
 }
 
+function buildAttachments(values, source) {
+  const attachments = (Array.isArray(values) ? values : [])
+    .map((value) => ({ ...value, safeUrl: safeMediaUrl(value.url) }))
+    .filter((value) => value.safeUrl && value.title)
+    .slice(0, 3);
+  if (!attachments.length) return null;
+  const list = document.createElement("div");
+  list.className = "source-layout-attachments";
+  for (const value of attachments) {
+    const link = document.createElement("a");
+    link.className = "source-layout-attachment";
+    link.href = value.safeUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    const imageUrl = safeMediaUrl(value.imageUrl);
+    if (imageUrl) {
+      const image = document.createElement("img");
+      image.src = imageUrl;
+      image.alt = "";
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+      link.append(image);
+    } else {
+      const fallback = document.createElement("span");
+      fallback.className = "source-layout-attachment-fallback";
+      fallback.textContent = source === "linkedin" ? "in" : sourceLabel(source).slice(0, 1);
+      link.append(fallback);
+    }
+    const copy = document.createElement("span");
+    copy.className = "source-layout-attachment-copy";
+    const title = document.createElement("strong");
+    title.textContent = value.title;
+    copy.append(title);
+    const subtitle = [value.subtitle, value.detail].filter(Boolean).join(" · ");
+    if (subtitle) {
+      const detail = document.createElement("span");
+      detail.textContent = subtitle;
+      copy.append(detail);
+    }
+    const domain = document.createElement("small");
+    domain.textContent = value.domain || value.actionLabel || "Open attachment";
+    copy.append(domain);
+    link.append(copy);
+    list.append(link);
+  }
+  return list;
+}
+
 function buildEngagement(value, source) {
   if (!value || typeof value !== "object") return null;
   const definitions = source === "x"
@@ -1565,54 +1715,9 @@ function buildActions(entry) {
     more.classList.remove("selected");
   });
   feedback.append(more, less);
-  if (!entry.aiDetection?.badgeLabel) feedback.append(buildItemActionsMenu(entry));
   actions.append(link, feedback);
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
-}
-
-function buildItemActionsMenu(entry) {
-  const controls = document.createElement("div");
-  controls.className = "item-actions-menu";
-  const trigger = document.createElement("button");
-  trigger.type = "button";
-  trigger.className = "feedback-button item-actions-trigger";
-  trigger.textContent = "⋯";
-  trigger.title = "More actions";
-  trigger.setAttribute("aria-label", "More actions");
-  trigger.setAttribute("aria-haspopup", "menu");
-  trigger.setAttribute("aria-expanded", "false");
-  const choices = document.createElement("div");
-  choices.className = "item-actions-popover hidden";
-  choices.setAttribute("role", "menu");
-  const label = document.createElement("span");
-  label.className = "item-actions-label";
-  label.textContent = "AI origin correction";
-  const notAI = document.createElement("button");
-  notAI.type = "button";
-  notAI.setAttribute("role", "menuitem");
-  notAI.textContent = "Mark as not AI-generated";
-  notAI.addEventListener("click", () => applyAICorrection(entry.id, "not_ai", notAI));
-  const isAI = document.createElement("button");
-  isAI.type = "button";
-  isAI.setAttribute("role", "menuitem");
-  isAI.textContent = "Mark as AI-generated";
-  isAI.addEventListener("click", () => applyAICorrection(entry.id, "ai", isAI));
-  choices.append(label, notAI, isAI);
-  const close = () => {
-    choices.classList.add("hidden");
-    trigger.setAttribute("aria-expanded", "false");
-  };
-  trigger.addEventListener("click", () => {
-    const opening = choices.classList.contains("hidden");
-    choices.classList.toggle("hidden", !opening);
-    trigger.setAttribute("aria-expanded", String(opening));
-  });
-  controls.addEventListener("focusout", () => requestAnimationFrame(() => {
-    if (!controls.contains(document.activeElement)) close();
-  }));
-  controls.append(trigger, choices);
-  return controls;
 }
 
 function buildSemanticCorrectionActions(entry) {

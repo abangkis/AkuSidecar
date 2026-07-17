@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -34,7 +35,7 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 		if err != nil {
 			return nil, 0, err
 		}
-		entry := domain.InboxSession{ID: session.ID, Intent: session.Intent, Status: session.Status, CreatedAt: session.CreatedAt, StartedAt: session.StartedAt, CompletedAt: session.CompletedAt, Error: session.Error, Runs: make([]domain.InboxRun, 0, len(session.Runs))}
+		entry := domain.InboxSession{ID: session.ID, Intent: session.Intent, Status: session.Status, CreatedAt: session.CreatedAt, StartedAt: session.StartedAt, CompletedAt: session.CompletedAt, Error: session.Error, PreferenceDecisions: []domain.InboxPreferenceDecision{}, Runs: make([]domain.InboxRun, 0, len(session.Runs))}
 		for _, run := range session.Runs {
 			diagnostic, err := s.inboxRun(ctx, run)
 			if err != nil {
@@ -54,6 +55,10 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 		if err != nil {
 			return nil, 0, err
 		}
+		entry.PreferenceDecisions, err = s.inboxPreferenceDecisions(ctx, session.ID)
+		if err != nil {
+			return nil, 0, err
+		}
 		if entry.EventResolution != nil {
 			entry.DuplicateReports = entry.EventResolution.DuplicateReports
 			entry.AddedItems = entry.EventResolution.UniqueItems
@@ -61,6 +66,53 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 		sessions = append(sessions, entry)
 	}
 	return sessions, total, nil
+}
+
+func (s *Store) inboxPreferenceDecisions(ctx context.Context, sessionID string) ([]domain.InboxPreferenceDecision, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH ranked AS (
+		  SELECT f.timeline_id,f.evidence_key,t.source,f.direction,f.created_at,
+		    ROW_NUMBER() OVER (
+		      PARTITION BY t.source,f.evidence_key
+		      ORDER BY f.created_at DESC,f.id DESC
+		    ) AS signal_rank
+		  FROM feedback_events f
+		  JOIN timeline_items t ON t.id=f.timeline_id
+		)
+		SELECT t.id,t.evidence_key,t.source,t.item_json,r.direction,r.created_at
+		FROM timeline_items t
+		JOIN ranked r ON r.timeline_id=t.id AND r.signal_rank=1
+		WHERE t.session_id=?
+		ORDER BY t.rank,t.created_at`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	decisions := []domain.InboxPreferenceDecision{}
+	for rows.Next() {
+		var decision domain.InboxPreferenceDecision
+		var itemRaw string
+		if err := rows.Scan(
+			&decision.TimelineID,
+			&decision.EvidenceKey,
+			&decision.Source,
+			&itemRaw,
+			&decision.Direction,
+			&decision.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		var item domain.ReasonedItem
+		if err := json.Unmarshal([]byte(itemRaw), &item); err != nil {
+			return nil, err
+		}
+		decision.Author = item.Author
+		decision.Summary = item.WhatChanged
+		decision.SourceURL = item.SourceURL
+		decisions = append(decisions, decision)
+	}
+	return decisions, rows.Err()
 }
 
 func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckSummary, error) {
