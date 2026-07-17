@@ -87,8 +87,8 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-source-option > input:focus-visible + .onboarding-source-card { outline: 2px solid var(--accent); outline-offset: 3px; }
 .onboarding-source-option > input:checked + .onboarding-source-card { border-color: var(--accent); background: rgba(183,242,108,0.08); }
 .onboarding-source-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; }
-.onboarding-source-icon svg { width: 24px; height: 24px; fill: currentColor; }
-.onboarding-source-icon-x { background: #f4f7f5; color: #050505; }
+.onboarding-source-icon svg { display: block; width: 24px; height: 24px; fill: currentColor; shape-rendering: geometricPrecision; }
+.onboarding-source-icon-x { background: #050505; color: #fff; }
 .onboarding-source-icon-linkedin { background: #0a66c2; color: #fff; }
 .onboarding-source-copy { display: grid; gap: 3px; }
 .onboarding-source-copy small { color: var(--muted); font-size: 0.74rem; }
@@ -140,11 +140,11 @@ h3 { letter-spacing: -0.02em; }
 .semantic-duplicate-toggle { padding: 6px 9px; font-size: 0.72rem; }
 .semantic-duplicate-report { margin: 0 10px 10px; border-color: var(--line); background: var(--panel-raised); }
 .item-presentation-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.018); }
-.item-presentation-toolbar span { color: var(--quiet); font-size: 0.72rem; }
+.item-presentation-toolbar > span:not(.item-signal-slot) { color: var(--quiet); font-size: 0.72rem; }
 .item-signal-slot { display: flex; min-width: 0; align-items: center; justify-self: start; gap: 7px; }
-.timeline-source-icon { display: grid; flex: 0 0 auto; width: 24px; height: 24px; place-items: center; border-radius: 6px; }
-.timeline-source-icon svg { width: 14px; height: 14px; fill: currentColor; }
-.timeline-source-icon-x { background: #f4f7f5; color: #050505; }
+.timeline-source-icon { display: grid; flex: 0 0 auto; width: 24px; height: 24px; place-items: center; border-radius: 5px; }
+.timeline-source-icon svg { display: block; width: 16px; height: 16px; fill: currentColor; shape-rendering: geometricPrecision; }
+.timeline-source-icon-x { background: #050505; color: #fff; }
 .timeline-source-icon-linkedin { background: #0a66c2; color: #fff; }
 .ai-origin-badge { max-width: 100%; overflow: hidden; padding: 5px 9px; border: 1px solid rgba(246, 200, 107, 0.42); border-radius: 999px; background: rgba(246, 200, 107, 0.07); color: var(--amber); font-size: 0.7rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .ai-origin-deep { border-color: rgba(154, 180, 255, 0.48); background: rgba(154, 180, 255, 0.08); color: #b9c9ff; }
