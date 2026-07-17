@@ -1348,7 +1348,7 @@ function buildExpandedTimelineItem(entry) {
   const signalSlot = document.createElement("span");
   signalSlot.className = "item-signal-slot";
   const ai = buildAIDetectionControls(entry);
-  signalSlot.append(ai.badge);
+  signalSlot.append(buildSourceIcon(entry.source), ai.badge);
   const label = document.createElement("span");
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -2067,6 +2067,24 @@ function initials(value) {
 
 function sourceLabel(source) {
   return source === "linkedin" ? "LinkedIn" : "X";
+}
+
+function buildSourceIcon(source) {
+  const normalized = source === "linkedin" ? "linkedin" : "x";
+  const icon = document.createElement("span");
+  icon.className = `timeline-source-icon timeline-source-icon-${normalized}`;
+  icon.title = sourceLabel(normalized);
+  icon.setAttribute("aria-label", `Source: ${sourceLabel(normalized)}`);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", normalized === "linkedin"
+    ? "M6.5 8.3H3V21h3.5V8.3ZM4.75 3A2.04 2.04 0 1 0 4.75 7.08 2.04 2.04 0 0 0 4.75 3ZM21 13.72c0-3.83-2.04-5.61-4.77-5.61-2.2 0-3.18 1.21-3.73 2.06V8.3H9V21h3.5v-6.29c0-1.66.31-3.27 2.37-3.27 2.03 0 2.06 1.9 2.06 3.38V21H21v-7.28Z"
+    : "M18.244 2H21l-6.02 6.88L22.06 22h-5.55l-4.35-5.69L7.18 22H4.42l6.45-7.37L4.08 2h5.69l3.93 5.2L18.24 2Zm-.97 17.69h1.53L8.94 4.19H7.3l9.97 15.5Z");
+  svg.append(path);
+  icon.append(svg);
+  return icon;
 }
 
 function humanize(value) {

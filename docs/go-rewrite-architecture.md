@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `1.0.0-dev.8`.
+Status: active runtime contract for `1.0.0-dev.9`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
@@ -16,6 +16,13 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - `internal/eventengine` owns bounded event retrieval, the separate App Server resolver, high-precision merging, and safe degradation.
 - `internal/aidetector` owns deterministic text-first Fast Detection and the separate asynchronous App Server resolver. It does not own selection or the generic side-pane UI primitive.
 - AkuSupervisor starts and stops `runtime/dev/aku-sidecar.exe` directly.
+
+Accepted observations are the durable boundary between browser acquisition and
+Codex reasoning. AkuSidecar writes the bounded capture coverage to the run in
+the same SQLite transaction that accepts an observation. A graceful restart
+pauses an in-flight reasoning run without converting it to failure; the next
+process resumes evaluation from the accepted observation without recapturing
+or repeating acquisition planning.
 
 ## Product invariants
 
@@ -36,6 +43,7 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - Inline is the default. Drawer never abruptly removes a post already seen inline. Hide requires exact typed confirmation and accepts only direct evidence, Deep-confirmed strong signals, or an explicit user AI verdict—not preliminary inference.
 - Media recapture is item-scoped and quiet-first. A foreground attempt requires an unavailable background result plus explicit one-time user consent; neither path creates candidates or changes Timeline ordering.
 - Media acquisition is one generic Bridge engine shared by every source adapter. Adapters declare media kinds, source-specific extractors, and visibility capability; quiet X recapture exhausts primary, structured-state, hydration, and alternate-DOM paths before requesting foreground permission.
+- Capture telemetry survives reasoning failure or process interruption. A failed model turn cannot erase the already accepted browser coverage.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 
 ## State

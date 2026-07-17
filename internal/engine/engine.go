@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.5"
-	ExpectedBridgeRevision  = "source-fidelity-v53"
+	ExpectedBridgeVersion   = "0.6.6"
+	ExpectedBridgeRevision  = "source-fidelity-v54"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
 	ExpectedXAdapter        = "x-dom-v17"
 	ExpectedLinkedInAdapter = "linkedin-dom-v15"
@@ -36,19 +36,20 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
-	store     *store.Store
-	provider  reasoning.Provider
-	config    config.Config
-	epoch     string
-	mu        sync.RWMutex
-	operation sync.Mutex
-	heartbeat *domain.BridgeHeartbeat
-	active    map[string]context.CancelFunc
-	logger    Logger
-	reloads   *ReloadActions
-	events    *semanticengine.Engine
-	aiFast    aidetector.FastDetector
-	aiDeep    aidetector.Resolver
+	store        *store.Store
+	provider     reasoning.Provider
+	config       config.Config
+	epoch        string
+	mu           sync.RWMutex
+	operation    sync.Mutex
+	heartbeat    *domain.BridgeHeartbeat
+	active       map[string]context.CancelFunc
+	shuttingDown bool
+	logger       Logger
+	reloads      *ReloadActions
+	events       *semanticengine.Engine
+	aiFast       aidetector.FastDetector
+	aiDeep       aidetector.Resolver
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -490,6 +491,10 @@ func (e *Engine) launch(runID string) {
 
 func (e *Engine) launchProcess(runID string, allowPlanning bool) {
 	e.mu.Lock()
+	if e.shuttingDown {
+		e.mu.Unlock()
+		return
+	}
 	if _, exists := e.active[runID]; exists {
 		e.mu.Unlock()
 		return
@@ -500,6 +505,10 @@ func (e *Engine) launchProcess(runID string, allowPlanning bool) {
 	go func() {
 		defer func() { e.mu.Lock(); delete(e.active, runID); e.mu.Unlock() }()
 		if err := e.process(ctx, runID, allowPlanning); err != nil {
+			if e.shouldPauseForShutdown(ctx, err) {
+				e.logger.Printf("run %s paused during shutdown and will resume from accepted capture", runID)
+				return
+			}
 			e.logger.Printf("run %s failed: %v", runID, err)
 			failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: err.Error(), Retryable: true}
 			_ = e.store.FailRun(context.Background(), runID, failure)
@@ -507,6 +516,27 @@ func (e *Engine) launchProcess(runID string, allowPlanning bool) {
 			_, _ = e.startNext(context.Background(), run.SessionID)
 		}
 	}()
+}
+
+func (e *Engine) shouldPauseForShutdown(ctx context.Context, err error) bool {
+	e.mu.RLock()
+	shuttingDown := e.shuttingDown
+	e.mu.RUnlock()
+	return shuttingDown && (errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled))
+}
+
+// ResumePendingReasoning continues only from already accepted observations.
+// Planning is not repeated because a restart must not request another browser
+// acquisition for evidence that is already durable in SQLite.
+func (e *Engine) ResumePendingReasoning(ctx context.Context) (int, error) {
+	ids, err := e.store.ResumableReasoningRunIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		e.launchProcess(id, false)
+	}
+	return len(ids), nil
 }
 
 func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) error {
@@ -838,6 +868,7 @@ func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 func (e *Engine) Shutdown() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.shuttingDown = true
 	for _, cancel := range e.active {
 		cancel()
 	}

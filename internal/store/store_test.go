@@ -245,6 +245,13 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	if err != nil || updated.Status != "reasoning" {
 		t.Fatalf("run: %+v %v", updated, err)
 	}
+	if updated.Coverage["acquisitionRounds"] != float64(1) {
+		t.Fatalf("durable acquisition rounds=%v coverage=%+v", updated.Coverage["acquisitionRounds"], updated.Coverage)
+	}
+	rounds, ok := updated.Coverage["rounds"].([]any)
+	if !ok || len(rounds) != 1 {
+		t.Fatalf("durable coverage rounds=%+v", updated.Coverage["rounds"])
+	}
 }
 
 func TestSessionRemainsActiveUntilCompositionFinalizes(t *testing.T) {

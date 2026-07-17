@@ -55,6 +55,75 @@ func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
 	}
 }
 
+type shutdownBlockingProvider struct {
+	reasoning.Deterministic
+	started chan struct{}
+	once    sync.Once
+}
+
+func (provider *shutdownBlockingProvider) Analyze(ctx context.Context, run domain.Run, _ domain.Observation, _ []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+	provider.once.Do(func() { close(provider.started) })
+	<-ctx.Done()
+	telemetry := domain.ReasoningTelemetry{
+		ID: domain.NewID("reasoning"), RunID: run.ID, Phase: "candidate_evaluation",
+		Provider: "shutdown-fixture", Model: "fixture", Effort: "none",
+		Status: "failed", CreatedAt: domain.Now(),
+	}
+	return domain.ReasoningResult{}, telemetry, ctx.Err()
+}
+
+func TestShutdownPreservesAcceptedCaptureAndRestartResumesReasoning(t *testing.T) {
+	ctx := context.Background()
+	provider := &shutdownBlockingProvider{started: make(chan struct{})}
+	runtime, state := singleSourceEngine(t, provider)
+	session, err := runtime.StartSession(ctx, "What changed?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[0].Status == "waiting_for_bridge"
+	})
+	run := active.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim command=%+v err=%v", command, err)
+	}
+	observation := domain.Observation{
+		Source: domain.SourceX, CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:durable-restart", Text: "Durable captured evidence"}}}},
+		Coverage:  map[string]any{"status": "partial", "observedBlockCount": 1},
+	}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		t.Fatal("reasoning did not start")
+	}
+	runtime.Shutdown()
+	if !runtime.WaitForIdle(time.Second) {
+		t.Fatal("interrupted reasoning did not stop")
+	}
+	paused, err := state.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paused.Status != "reasoning" || paused.Coverage["acquisitionRounds"] != float64(1) {
+		t.Fatalf("paused run lost durable capture: %+v", paused)
+	}
+
+	restarted := New(state, reasoning.Deterministic{}, config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
+	resumed, err := restarted.ResumePendingReasoning(ctx)
+	if err != nil || resumed != 1 {
+		t.Fatalf("resume count=%d err=%v", resumed, err)
+	}
+	completed := waitSession(t, restarted, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(completed.Items) != 1 || completed.Items[0].EvidenceKey != "x:durable-restart" {
+		t.Fatalf("resumed items=%+v", completed.Items)
+	}
+}
+
 type followUpProvider struct{ reasoning.Deterministic }
 
 func (provider followUpProvider) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (reasoning.AcquisitionPlan, domain.ReasoningTelemetry, error) {

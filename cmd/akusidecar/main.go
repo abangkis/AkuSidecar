@@ -43,9 +43,14 @@ func main() {
 	}
 	server, err := httpapi.New(cfg, state, runtime, logger)
 	fatal(logger, err)
+	resumed, err := runtime.ResumePendingReasoning(context.Background())
+	fatal(logger, err)
 	address, err := server.Start()
 	fatal(logger, err)
 	logger.Printf("version=%s runtime=go address=http://%s provider=%s database=%s", domain.ApplicationVersion, address, provider.Name(), state.Path())
+	if resumed > 0 {
+		logger.Printf("resumed_reasoning_runs=%d from_durable_capture=true", resumed)
+	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	<-signals

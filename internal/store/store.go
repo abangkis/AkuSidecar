@@ -503,13 +503,33 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 	if _, err = tx.ExecContext(ctx, `INSERT INTO observations(id,run_id,command_id,source,observation_json,captured_at,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("observation"), runID, commandID, observation.Source, string(raw), observation.CapturedAt, now); err != nil {
 		return err
 	}
+	var coverageRaw string
+	if err = tx.QueryRowContext(ctx, `SELECT coverage_json FROM runs WHERE id=?`, runID).Scan(&coverageRaw); err != nil {
+		return err
+	}
+	coverage := durableCaptureCoverage(coverageRaw, observation.Coverage)
+	durableCoverageRaw, err := json.Marshal(coverage)
+	if err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE bridge_commands SET status='completed',completed_at=? WHERE id=?`, now, commandID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning' WHERE id=?`, runID); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning',coverage_json=? WHERE id=?`, string(durableCoverageRaw), runID); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func durableCaptureCoverage(raw string, next map[string]any) map[string]any {
+	var current map[string]any
+	decodeJSON(raw, &current)
+	rounds := make([]any, 0, 2)
+	if values, ok := current["rounds"].([]any); ok {
+		rounds = append(rounds, values...)
+	}
+	rounds = append(rounds, next)
+	return map[string]any{"acquisitionRounds": len(rounds), "rounds": rounds}
 }
 
 func (s *Store) Observations(ctx context.Context, runID string) ([]domain.Observation, error) {
@@ -531,6 +551,28 @@ func (s *Store) Observations(ctx context.Context, runID string) ([]domain.Observ
 		values = append(values, value)
 	}
 	return values, rows.Err()
+}
+
+func (s *Store) ResumableReasoningRunIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.id
+		FROM runs r
+		WHERE r.status='reasoning'
+		  AND EXISTS (SELECT 1 FROM observations o WHERE o.run_id=r.id)
+		ORDER BY r.created_at,r.ordinal`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failure domain.Failure) (bool, error) {
