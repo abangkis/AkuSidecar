@@ -29,6 +29,35 @@ type AppServerResolver struct {
 	schema  any
 }
 
+const (
+	DeepDetectorVersion = "codex-deep-v2"
+	deepTextLimit       = 1600
+	deepQuotedTextLimit = 600
+)
+
+// DeepCandidates returns only posts for which asynchronous model review can
+// responsibly change the presentation assessment. Direct platform evidence
+// and user corrections already have higher authority, while inadequate text
+// cannot be repaired by spending more model effort on the same capture.
+func DeepCandidates(items []domain.TimelineItem) []domain.TimelineItem {
+	result := make([]domain.TimelineItem, 0, len(items))
+	for _, item := range items {
+		assessment := item.AIDetection
+		if assessment == nil {
+			result = append(result, item)
+			continue
+		}
+		if assessment.UserOverride || assessment.Status == "insufficient_evidence" {
+			continue
+		}
+		if containsCode(assessment.EvidenceCodes, "platform_ai_label") || containsCode(assessment.EvidenceCodes, "verified_ai_provenance") {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
 func NewAppServerResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*AppServerResolver, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "schemas", "ai-deep-detection.schema.json"))
 	if err != nil {
@@ -54,11 +83,9 @@ func (r *AppServerResolver) Resolve(ctx context.Context, items []domain.Timeline
 		UserOverride   bool     `json:"userOverride"`
 	}
 	type eventContext struct {
-		CanonicalClaim string  `json:"canonicalClaim"`
-		Relation       string  `json:"relation"`
-		Confidence     float64 `json:"confidence"`
-		ReportCount    int     `json:"reportCount"`
-		Corrected      bool    `json:"corrected"`
+		Relation    string `json:"relation"`
+		ReportCount int    `json:"reportCount"`
+		Corrected   bool   `json:"corrected"`
 	}
 	type quotedContext struct {
 		Author      string `json:"author,omitempty"`
@@ -87,7 +114,7 @@ func (r *AppServerResolver) Resolve(ctx context.Context, items []domain.Timeline
 			}
 			if quotedText, _ := item.Evidence.QuotedPost["text"].(string); strings.TrimSpace(quotedText) != "" {
 				quoted = &quotedContext{
-					Author: stringValue(item.Evidence.QuotedPost["author"]), Text: boundedText(quotedText, 1200),
+					Author: stringValue(item.Evidence.QuotedPost["author"]), Text: boundedText(quotedText, deepQuotedTextLimit),
 					ContentKind: stringValue(item.Evidence.QuotedPost["contentKind"]),
 				}
 			}
@@ -104,13 +131,12 @@ func (r *AppServerResolver) Resolve(ctx context.Context, items []domain.Timeline
 		var event *eventContext
 		if item.SemanticEvent != nil {
 			event = &eventContext{
-				CanonicalClaim: boundedText(item.SemanticEvent.CanonicalClaim, 600), Relation: item.SemanticEvent.Relation,
-				Confidence: item.SemanticEvent.Confidence, ReportCount: item.SemanticEvent.ReportCount, Corrected: item.SemanticEvent.Corrected,
+				Relation: item.SemanticEvent.Relation, ReportCount: item.SemanticEvent.ReportCount, Corrected: item.SemanticEvent.Corrected,
 			}
 		}
 		values = append(values, candidate{
 			Alias: fmt.Sprintf("post_%03d", index+1), Source: item.Source, Author: item.Item.Author,
-			Text: boundedText(text, 2400), QuotedPost: quoted, ContentKind: contentKind,
+			Text: boundedText(text, deepTextLimit), QuotedPost: quoted, ContentKind: contentKind,
 			Relationship: relationship, FastAssessment: fast, SemanticEvent: event,
 		})
 	}

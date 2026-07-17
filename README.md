@@ -33,8 +33,9 @@ managed `codex app-server` stdio process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
 structured token telemetry. Candidate evaluation and semantic event resolution
 are separate schema-bound adapters over this one transport. AI Deep Detection
-is a third adapter and runs only after Timeline delivery; local deterministic
-AI Fast Detection does not consume Codex.
+is a third adapter with its own Terra `medium` profile and runs only after
+Timeline delivery; local deterministic AI Fast Detection does not consume
+Codex.
 
 An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
@@ -224,8 +225,11 @@ Detector runs locally after global composition and recognizes only explicit
 evidence: platform labels, author declarations, and prompt/instruction residue.
 It does not use stylistic regularity as proof and cannot change selection,
 ranking, semantic grouping, or capacity. After session finalization, the
-schema-bound Deep Detector reviews bounded untrusted text asynchronously over
-the shared App Server transport. Failure leaves the Fast result intact. If Deep
+schema-bound Deep Detector reviews eligible bounded untrusted text
+asynchronously over the shared App Server transport. It skips inadequate text,
+direct platform/provenance evidence, and active user corrections because model
+review cannot responsibly improve those higher-authority results. Failure
+leaves the Fast result intact. If Deep
 Detection overturns an earlier strong result, the UI keeps a corrected badge;
 it never erases the assessment without explanation.
 

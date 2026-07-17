@@ -40,6 +40,8 @@ type CodexAppServer struct {
 	stderr        *boundedBuffer
 }
 
+const appServerStopWait = 750 * time.Millisecond
+
 type usage struct{ Input, CachedInput, Output, ReasoningOutput *int64 }
 
 type rpcMessage struct {
@@ -476,7 +478,7 @@ func (c *CodexAppServer) stopLocked(wait bool) {
 	if wait && done != nil && !alreadyExited {
 		select {
 		case <-done:
-		case <-time.After(5 * time.Second):
+		case <-time.After(appServerStopWait):
 		}
 	}
 	c.cmd, c.stdin, c.done = nil, nil, nil

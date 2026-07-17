@@ -45,10 +45,30 @@ func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
 			t.Fatalf("prompt leaked %q", forbidden)
 		}
 	}
+	if strings.Contains(invoker.prompt, "A bounded prior event") {
+		t.Fatal("AI Detector does not need the semantic canonical claim in its prompt")
+	}
+	if len(invoker.prompt) > 10000 {
+		t.Fatalf("bounded AI Detector prompt unexpectedly grew to %d bytes", len(invoker.prompt))
+	}
 	for _, required := range []string{"untrusted social-media evidence", "Do not browse", "AI origin signals", "post_001"} {
 		if !strings.Contains(invoker.prompt, required) {
 			t.Fatalf("prompt missing %q", required)
 		}
+	}
+}
+
+func TestDeepCandidatesSpendModelEffortOnlyWhereReviewCanHelp(t *testing.T) {
+	items := []domain.TimelineItem{
+		{ID: "ordinary", AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
+		{ID: "preliminary", AIDetection: &domain.TimelineAIDetection{Status: "strong_signals", EvidenceCodes: []string{"author_declared_ai"}}},
+		{ID: "short", AIDetection: &domain.TimelineAIDetection{Status: "insufficient_evidence"}},
+		{ID: "platform", AIDetection: &domain.TimelineAIDetection{Status: "strong_signals", EvidenceCodes: []string{"platform_ai_label"}}},
+		{ID: "corrected", AIDetection: &domain.TimelineAIDetection{Status: "user_marked_not_ai", UserOverride: true}},
+	}
+	result := DeepCandidates(items)
+	if len(result) != 2 || result[0].ID != "ordinary" || result[1].ID != "preliminary" {
+		t.Fatalf("deep candidates=%+v", result)
 	}
 }
 

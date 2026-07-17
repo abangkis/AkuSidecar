@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `1.0.0-dev.7`.
+Status: active runtime contract for `1.0.0-dev.8`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
@@ -30,6 +30,7 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - Semantic resolution is conditional: noisy lexical overlap cannot trigger the model, and unrelated reports use a deterministic local fast path.
 - `show_all` bypasses event retrieval and resolution. User event corrections are local, persistent, and undoable.
 - AI origin signals are presentation metadata only. Fast Detection runs after final composition, Deep Detection runs after Timeline delivery, and neither may change admission, order, event membership, or capacity.
+- Deep Detection spends Codex only on retained posts whose assessment can still change. It skips inadequate text, direct platform/provenance evidence, and active user corrections, and uses a separate Terra `medium` model profile from high-effort selection evaluation.
 - A Deep correction never silently removes an earlier strong badge. Direct platform/provenance evidence remains explicit, and the latest active user correction has the highest personal presentation authority.
 - Inline is the default. Drawer never abruptly removes a post already seen inline. Hide requires exact typed confirmation and accepts only direct evidence, Deep-confirmed strong signals, or an explicit user AI verdict—not preliminary inference.
 - Media recapture is item-scoped and quiet-first. A foreground attempt requires an unavailable background result plus explicit one-time user consent; neither path creates candidates or changes Timeline ordering.
@@ -49,6 +50,13 @@ There is no importer for the Node database. Only the immediately preceding Go v2
 go test -p 1 ./...
 go vet ./...
 .\scripts\build-dev.ps1
+```
+
+The authenticated AI Detector acceptance canary is opt-in so ordinary tests never consume Codex:
+
+```powershell
+$env:AKU_CODEX_LIVE = "1"
+go test -v -run TestLiveCodexAppServerAIDetectionAcceptanceCanary -count=1 ./internal/aidetector
 ```
 
 The workspace integration gate is `AkuBrowser/scripts/check.ps1`. Runtime replacement is explicit through `scripts/restart-dev.ps1`, which refuses to interrupt an active session and delegates stop/start to AkuSupervisor.

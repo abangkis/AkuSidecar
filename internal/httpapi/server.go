@@ -63,7 +63,16 @@ func (s *Server) Stop(ctx context.Context) error {
 	if s.listener == nil {
 		return nil
 	}
-	return s.http.Shutdown(ctx)
+	if err := s.http.Shutdown(ctx); err != nil {
+		// Browser polling can keep a request active beyond the bounded drain
+		// window. Closing only the remaining HTTP connections is safe after the
+		// engine has cancelled all product work and keeps Supervisor shutdown
+		// within its five-second grace contract.
+		if closeErr := s.http.Close(); closeErr != nil {
+			return fmt.Errorf("drain HTTP server: %v; close active connections: %w", err, closeErr)
+		}
+	}
+	return nil
 }
 
 func (s *Server) api() http.Handler {

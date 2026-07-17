@@ -37,7 +37,7 @@ func main() {
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
 	if appServer, ok := provider.(*reasoning.CodexAppServer); ok {
-		aiResolver, err := aidetector.NewAppServerResolver(cfg.Root, appServer, cfg.Reasoning.Evaluation)
+		aiResolver, err := aidetector.NewAppServerResolver(cfg.Root, appServer, cfg.Reasoning.AIDetection)
 		fatal(logger, err)
 		runtime.SetAIDeepResolver(aiResolver)
 	}
@@ -49,17 +49,21 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	<-signals
+	shutdownStarted := time.Now()
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()
-	runtime.WaitForIdle(3 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	if err := server.Stop(ctx); err != nil {
+		logger.Printf("HTTP shutdown degraded: %v", err)
+	}
+	cancel()
+	if !runtime.WaitForIdle(2 * time.Second) {
+		logger.Printf("background work did not become idle before provider shutdown")
+	}
 	if err := runtime.CloseProvider(); err != nil {
 		logger.Printf("reasoning provider shutdown failed: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.Stop(ctx); err != nil {
-		logger.Printf("shutdown failed: %v", err)
-	}
+	logger.Printf("shutdown completed duration_ms=%d", time.Since(shutdownStarted).Milliseconds())
 }
 
 func fatal(logger *log.Logger, err error) {

@@ -18,6 +18,10 @@
     "evaluation": {
       "model": "gpt-5.6-terra",
       "effort": "high"
+    },
+    "aiDetection": {
+      "model": "gpt-5.6-terra",
+      "effort": "medium"
     }
   },
   "capture": {

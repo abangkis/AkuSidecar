@@ -35,6 +35,26 @@ func testEngine(t *testing.T) (*Engine, *store.Store) {
 	return runtime, state
 }
 
+func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runtime := &Engine{active: map[string]context.CancelFunc{"work": cancel}}
+	runtime.Shutdown()
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("shutdown did not cancel active work")
+	}
+	if runtime.WaitForIdle(50 * time.Millisecond) {
+		t.Fatal("work must remain registered until its worker exits")
+	}
+	runtime.mu.Lock()
+	delete(runtime.active, "work")
+	runtime.mu.Unlock()
+	if !runtime.WaitForIdle(50 * time.Millisecond) {
+		t.Fatal("runtime did not become idle after worker exit")
+	}
+}
+
 type followUpProvider struct{ reasoning.Deterministic }
 
 func (provider followUpProvider) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (reasoning.AcquisitionPlan, domain.ReasoningTelemetry, error) {

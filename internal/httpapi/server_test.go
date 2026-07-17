@@ -222,6 +222,50 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 }
 
+func TestStopClosesActiveHTTPConnectionsAfterDrainDeadline(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	fixture := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(entered)
+		<-release
+	}))
+	fixture.Start()
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		fixture.Close()
+	})
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		_, _ = fixture.Client().Get(fixture.URL)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("fixture request did not become active")
+	}
+	server := &Server{http: fixture.Config, listener: fixture.Listener}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if err := server.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("HTTP stop exceeded bounded fallback: %s", elapsed)
+	}
+	close(release)
+	select {
+	case <-requestDone:
+	case <-time.After(time.Second):
+		t.Fatal("active request did not leave after connection close")
+	}
+}
+
 func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",

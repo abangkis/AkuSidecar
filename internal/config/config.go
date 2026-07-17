@@ -32,11 +32,12 @@ type DatabaseConfig struct {
 }
 
 type ReasoningConfig struct {
-	Provider   string      `json:"provider"`
-	Executable string      `json:"executable"`
-	TimeoutMS  int         `json:"timeoutMs"`
-	Planning   ModelConfig `json:"planning"`
-	Evaluation ModelConfig `json:"evaluation"`
+	Provider    string      `json:"provider"`
+	Executable  string      `json:"executable"`
+	TimeoutMS   int         `json:"timeoutMs"`
+	Planning    ModelConfig `json:"planning"`
+	Evaluation  ModelConfig `json:"evaluation"`
+	AIDetection ModelConfig `json:"aiDetection"`
 }
 
 type ModelConfig struct {
@@ -132,6 +133,16 @@ func (c Config) Validate() error {
 	}
 	if c.Reasoning.TimeoutMS < int((5*time.Second)/time.Millisecond) {
 		return errors.New("reasoning timeout must be at least 5000 ms")
+	}
+	if c.Reasoning.Provider == "codex-app-server" {
+		models := map[string]ModelConfig{
+			"planning": c.Reasoning.Planning, "evaluation": c.Reasoning.Evaluation, "AI detection": c.Reasoning.AIDetection,
+		}
+		for name, model := range models {
+			if model.Model == "" || model.Effort == "" {
+				return fmt.Errorf("%s model and effort are required", name)
+			}
+		}
 	}
 	if c.Capture.MaxAcquisitionRounds < 1 || c.Capture.MaxAcquisitionRounds > 2 {
 		return errors.New("max acquisition rounds must be one or two")

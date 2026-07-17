@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -233,6 +234,17 @@ func TestAppServerRetryExcludesCancellationAndDeadline(t *testing.T) {
 	}
 	if !retryableAppServerError(fmt.Errorf("Selected model is at capacity. Please try a different model.")) {
 		t.Fatal("explicit capacity failure must retry")
+	}
+}
+
+func TestCodexAppServerCloseHasBoundedProcessWait(t *testing.T) {
+	provider := &CodexAppServer{cmd: &exec.Cmd{}, done: make(chan error)}
+	started := time.Now()
+	if err := provider.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 1500*time.Millisecond {
+		t.Fatalf("App Server close exceeded shutdown budget: %s", elapsed)
 	}
 }
 

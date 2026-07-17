@@ -302,6 +302,10 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 		}
 		return
 	}
+	items = aidetector.DeepCandidates(items)
+	if len(items) == 0 {
+		return
+	}
 	model := resolver.Model()
 	job, err := e.store.CreateAIDetectionJob(context.Background(), domain.AIDetectionJob{
 		SessionID: sessionID, Status: "queued", Provider: resolver.Name(), Model: model.Model,
@@ -355,7 +359,7 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 			assessments = append(assessments, domain.AIAssessment{
 				ID: domain.NewID("ai_assessment"), TimelineID: items[index].ID, SessionID: sessionID,
 				Stage: "deep", Status: value.Status, ConfidenceBand: value.ConfidenceBand,
-				EvidenceCodes: value.EvidenceCodes, Provider: resolver.Name(), DetectorVersion: "codex-deep-v1",
+				EvidenceCodes: value.EvidenceCodes, Provider: resolver.Name(), DetectorVersion: aidetector.DeepDetectorVersion,
 				Rationale: value.Rationale, SupersedesID: supersedes, CreatedAt: assessedAt,
 			})
 		}
@@ -825,9 +829,8 @@ func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 func (e *Engine) Shutdown() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for id, cancel := range e.active {
+	for _, cancel := range e.active {
 		cancel()
-		delete(e.active, id)
 	}
 }
 func (e *Engine) CloseProvider() error {
