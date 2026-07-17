@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion   = "0.6.2"
-	ExpectedBridgeRevision  = "source-fidelity-v50"
+	ExpectedBridgeVersion   = "0.6.3"
+	ExpectedBridgeRevision  = "source-fidelity-v51"
 	ExpectedBridgeID        = "aku-bridge-chrome-mv3-v0"
 	ExpectedXAdapter        = "x-dom-v16"
 	ExpectedLinkedInAdapter = "linkedin-dom-v13"
@@ -650,7 +650,7 @@ func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domai
 	return e.store.AddFeedback(ctx, timelineID, value)
 }
 
-func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string) (domain.MediaRecapture, error) {
+func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode) (domain.MediaRecapture, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	if active, err := e.store.ActiveSession(ctx); err != nil {
@@ -662,7 +662,7 @@ func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string) (do
 	if !status.Compatible {
 		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
 	}
-	return e.store.CreateMediaRecapture(ctx, timelineID)
+	return e.store.CreateMediaRecapture(ctx, timelineID, mode)
 }
 
 func (e *Engine) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {

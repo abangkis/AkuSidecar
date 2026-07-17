@@ -303,7 +303,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
 		id := path.Base(strings.TrimSuffix(p, "/recapture"))
-		recapture, err := s.engine.QueueMediaRecapture(ctx, id)
+		var body struct {
+			CaptureMode domain.MediaRecaptureMode `json:"captureMode"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		if body.CaptureMode != domain.MediaRecaptureBackground && body.CaptureMode != domain.MediaRecaptureForeground {
+			return badRequest("captureMode must be background or foreground")
+		}
+		recapture, err := s.engine.QueueMediaRecapture(ctx, id, body.CaptureMode)
 		if errors.Is(err, sql.ErrNoRows) {
 			return notFound("timeline item")
 		}

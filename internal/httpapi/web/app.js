@@ -30,6 +30,7 @@ const state = {
   backToTopLastScrollY: 0,
   backToTopBoundary: null,
   mediaRecaptureActive: false,
+  foregroundRecaptureOffers: new Set(),
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -1172,7 +1173,10 @@ function buildSourceCard(entry) {
     unavailable.className = "source-layout-media-unavailable";
     const message = document.createElement("span");
     message.textContent = "Media was present at the source but unavailable in this captured view.";
-    unavailable.append(message, buildMediaRecaptureButton(entry));
+    unavailable.append(message);
+    unavailable.append(state.foregroundRecaptureOffers.has(entry.id)
+      ? buildForegroundRecaptureOffer(entry)
+      : buildMediaRecaptureButton(entry));
     card.append(unavailable);
   }
   const engagement = buildEngagement(evidence.engagement, source);
@@ -1439,31 +1443,67 @@ function buildMediaRecaptureButton(entry) {
   button.className = "recapture-button";
   button.textContent = "Recapture";
   button.disabled = Boolean(state.session) || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible;
-  button.addEventListener("click", () => recaptureMedia(entry, button));
+  button.addEventListener("click", () => recaptureMedia(entry, button, "background"));
   return button;
 }
 
-async function recaptureMedia(entry, button) {
+function buildForegroundRecaptureOffer(entry) {
+  const offer = document.createElement("div");
+  offer.className = "foreground-recapture-offer";
+  offer.setAttribute("aria-label", "Foreground media capture option");
+  const copy = document.createElement("span");
+  copy.textContent = "Still unavailable after a quiet recapture. Try a brief foreground capture? AkuBrowser will return here when it finishes.";
+  const actions = document.createElement("span");
+  actions.className = "foreground-recapture-actions";
+  const accept = document.createElement("button");
+  accept.type = "button";
+  accept.className = "recapture-button foreground-recapture-button";
+  accept.textContent = "Try in foreground";
+  accept.disabled = Boolean(state.session) || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible;
+  accept.addEventListener("click", () => recaptureMedia(entry, accept, "foreground"));
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "foreground-recapture-dismiss";
+  dismiss.textContent = "Not now";
+  dismiss.addEventListener("click", () => {
+    state.foregroundRecaptureOffers.delete(entry.id);
+    offer.replaceWith(buildMediaRecaptureButton(entry));
+  });
+  actions.append(accept, dismiss);
+  offer.append(copy, actions);
+  return offer;
+}
+
+async function recaptureMedia(entry, button, captureMode) {
   if (state.session || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible) return;
   state.mediaRecaptureActive = true;
   button.disabled = true;
-  button.textContent = "Recapturing…";
+  button.textContent = captureMode === "foreground" ? "Capturing in foreground..." : "Recapturing...";
   syncRunButtons();
   clearNotice();
   try {
-    const { recapture } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/recapture`, { method: "POST" });
+    const { recapture } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/recapture`, {
+      method: "POST",
+      body: { captureMode },
+    });
     const completed = await dispatchMediaRecapture(recapture.id);
+    if (captureMode === "background" && completed?.outcome !== "recovered") {
+      state.foregroundRecaptureOffers.add(entry.id);
+      await refreshTimeline();
+      return;
+    }
+    state.foregroundRecaptureOffers.delete(entry.id);
     await refreshTimeline();
     const notice = $("#provider-notice");
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
     notice.textContent = completed?.outcome === "recovered"
       ? "Media recaptured from the native post."
-      : "Recapture completed, but the source media is still unavailable.";
+      : "Media is still unavailable after the foreground capture.";
   } catch (error) {
     showError(error);
     button.disabled = false;
-    button.textContent = "Recapture";
+    button.textContent = captureMode === "foreground" ? "Try in foreground" : "Recapture";
   } finally {
     state.mediaRecaptureActive = false;
     syncRunButtons();

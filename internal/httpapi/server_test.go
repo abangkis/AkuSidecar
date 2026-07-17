@@ -84,8 +84,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
-		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
 		if err != nil {
@@ -198,7 +198,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 }
 
-func TestBridgeV50ObservationShapeDecodesStrictly(t *testing.T) {
+func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
@@ -216,7 +216,7 @@ func TestBridgeV50ObservationShapeDecodesStrictly(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/bridge/commands/example/observation", bytes.NewBufferString(raw))
 	var observation domain.Observation
 	if err := readJSON(request, &observation); err != nil {
-		t.Fatalf("v50 observation must satisfy the strict Go shape: %v", err)
+		t.Fatalf("v51 observation must satisfy the strict Go shape: %v", err)
 	}
 	if observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)

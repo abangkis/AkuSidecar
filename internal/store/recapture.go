@@ -12,7 +12,10 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
-func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string) (domain.MediaRecapture, error) {
+func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode) (domain.MediaRecapture, error) {
+	if mode != domain.MediaRecaptureBackground && mode != domain.MediaRecaptureForeground {
+		return domain.MediaRecapture{}, errors.New("media recapture mode must be background or foreground")
+	}
 	var source domain.Source
 	var evidenceKey, itemRaw string
 	if err := s.db.QueryRowContext(ctx, `SELECT source,evidence_key,item_json FROM timeline_items WHERE id=?`, timelineID).Scan(&source, &evidenceKey, &itemRaw); err != nil {
@@ -33,6 +36,12 @@ func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string) (do
 	}
 	if len(block.Media) > 0 || stringValue(block.MediaRecovery, "outcome") != "unavailable" {
 		return domain.MediaRecapture{}, errors.New("this item does not have unavailable captured media")
+	}
+	foregroundAuthorized := mode == domain.MediaRecaptureForeground
+	if foregroundAuthorized {
+		if err := s.requireUnavailableBackgroundRecapture(ctx, timelineID); err != nil {
+			return domain.MediaRecapture{}, err
+		}
 	}
 	settings, err := s.GetSettings(ctx)
 	if err != nil {
@@ -62,6 +71,7 @@ func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string) (do
 		"pendingContentSettleMs":  100,
 		"sourceFreshnessPolicy":   "preserve_target",
 		"captureVisibilityPolicy": settings.CaptureVisibility,
+		"foregroundAuthorized":    foregroundAuthorized,
 		"captureLeaseId":          job.ID,
 		"maxBlocksPerSnapshot":    5,
 		"maxBlockCharacters":      4000,
@@ -87,6 +97,24 @@ func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string) (do
 		return domain.MediaRecapture{}, err
 	}
 	return job, nil
+}
+
+func (s *Store) requireUnavailableBackgroundRecapture(ctx context.Context, timelineID string) error {
+	var outcome, payloadRaw string
+	err := s.db.QueryRowContext(ctx, `SELECT outcome,payload_json FROM media_recaptures WHERE timeline_id=? AND status='completed' ORDER BY completed_at DESC LIMIT 1`, timelineID).Scan(&outcome, &payloadRaw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("foreground recapture requires a completed unavailable background attempt")
+		}
+		return err
+	}
+	var payload map[string]any
+	decodeJSON(payloadRaw, &payload)
+	priorForeground, _ := payload["foregroundAuthorized"].(bool)
+	if outcome != "unavailable" || priorForeground {
+		return errors.New("foreground recapture requires the latest completed attempt to be unavailable in the background")
+	}
+	return nil
 }
 
 func (s *Store) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {

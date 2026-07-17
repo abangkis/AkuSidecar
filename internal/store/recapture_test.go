@@ -13,14 +13,14 @@ func TestMediaRecaptureReplacesEvidenceWithoutCreatingTimelineItems(t *testing.T
 	state := openTestStore(t)
 	timelineID, evidenceKey := insertUnavailableMediaFixture(t, state)
 
-	job, err := state.CreateMediaRecapture(ctx, timelineID)
+	job, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Status != "queued" || job.Payload["mode"] != "recapture_media" {
 		t.Fatalf("job=%+v", job)
 	}
-	if _, err := state.CreateMediaRecapture(ctx, timelineID); err == nil {
+	if _, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground); err == nil {
 		t.Fatal("a second active recapture must be rejected")
 	}
 	job, err = state.ClaimMediaRecapture(ctx, job.ID, "bridge-test")
@@ -62,6 +62,51 @@ func TestMediaRecaptureReplacesEvidenceWithoutCreatingTimelineItems(t *testing.T
 	var count int
 	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM timeline_items`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("timeline count=%d err=%v", count, err)
+	}
+}
+
+func TestForegroundMediaRecaptureRequiresUnavailableBackgroundAttempt(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, evidenceKey := insertUnavailableMediaFixture(t, state)
+
+	if _, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureForeground); err == nil {
+		t.Fatal("foreground recapture must require a completed unavailable background attempt")
+	}
+	background, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground)
+	if err != nil {
+		t.Fatal(err)
+	}
+	background, err = state.ClaimMediaRecapture(ctx, background.ID, "bridge-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := domain.Observation{
+		Source: domain.SourceX,
+		Snapshots: []domain.Snapshot{{
+			Index: 0,
+			Blocks: []domain.Block{{
+				EvidenceKey:   evidenceKey,
+				Author:        "Example",
+				Text:          "A sufficiently long post body whose media remains unavailable in the background.",
+				Permalink:     "https://x.com/example/status/123",
+				MediaRecovery: map[string]any{"outcome": "unavailable", "attempts": 1},
+			}},
+		}},
+	}
+	background, err = state.CompleteMediaRecapture(ctx, background.ID, observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if background.Outcome != "unavailable" {
+		t.Fatalf("background=%+v", background)
+	}
+	foreground, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureForeground)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foreground.Payload["foregroundAuthorized"] != true || foreground.Payload["captureVisibilityPolicy"] != "quiet" {
+		t.Fatalf("foreground payload=%+v", foreground.Payload)
 	}
 }
 

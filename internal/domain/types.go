@@ -314,6 +314,13 @@ type BridgeCommand struct {
 	ClaimedAt *string        `json:"claimedAt"`
 }
 
+type MediaRecaptureMode string
+
+const (
+	MediaRecaptureBackground MediaRecaptureMode = "background"
+	MediaRecaptureForeground MediaRecaptureMode = "foreground"
+)
+
 type MediaRecapture struct {
 	ID          string         `json:"id"`
 	TimelineID  string         `json:"timelineId"`
