@@ -457,19 +457,23 @@ function syncTimelineSidePanePosition() {
   const rect = stream.getBoundingClientRect();
   const firstTimelineItem = document.querySelector("#result-items > [data-timeline-id]");
   const verticalAnchor = firstTimelineItem?.getBoundingClientRect() ?? rect;
+  const attachmentInset = firstTimelineItem
+    ? Number.parseFloat(window.getComputedStyle(firstTimelineItem).borderTopLeftRadius) || 0
+    : 0;
+  const attachmentTop = verticalAnchor.top + attachmentInset;
   const viewportPadding = 16;
   const minimumTop = 18;
   const availableWidth = Math.max(0, rect.left - viewportPadding);
   const paneWidth = Math.min(420, Math.max(280, availableWidth));
   const paneLeft = Math.max(viewportPadding, rect.left - paneWidth);
-  const paneTop = Math.max(minimumTop, verticalAnchor.top);
+  const paneTop = Math.max(minimumTop, attachmentTop);
   const toggleLeft = Math.max(12, rect.left - 56);
   const toggle = $("#timeline-side-pane-toggle");
   const toggleHeight = toggle?.getBoundingClientRect().height || 72;
   const toggleHalfHeight = toggleHeight / 2;
   const toggleTop = Math.min(
     window.innerHeight - minimumTop - toggleHalfHeight,
-    Math.max(minimumTop + toggleHalfHeight, verticalAnchor.top + toggleHalfHeight),
+    Math.max(minimumTop + toggleHalfHeight, attachmentTop + toggleHalfHeight),
   );
   document.documentElement.style.setProperty("--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
   document.documentElement.style.setProperty("--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
