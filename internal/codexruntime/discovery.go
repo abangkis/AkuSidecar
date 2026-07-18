@@ -16,8 +16,9 @@ import (
 const probeTimeout = 5 * time.Second
 
 type Candidate struct {
-	Path   string `json:"path"`
-	Source string `json:"source"`
+	Path           string `json:"path"`
+	Source         string `json:"source"`
+	SelectionGroup string `json:"-"`
 }
 
 type Attempt struct {
@@ -63,13 +64,26 @@ func discoveryCandidates(explicit string) ([]Candidate, bool) {
 func discover(ctx context.Context, candidates []Candidate, strict bool, validate validator) (Result, error) {
 	unique := deduplicate(candidates)
 	result := Result{Status: "not_found", Message: notFoundMessage()}
-	for _, candidate := range unique {
+	for index := 0; index < len(unique); {
+		candidate := unique[index]
+		if candidate.SelectionGroup != "" {
+			end := index + 1
+			for end < len(unique) && unique[end].SelectionGroup == candidate.SelectionGroup {
+				end++
+			}
+			if selected, version, ok := selectHighestVersion(ctx, unique[index:end], validate, &result); ok {
+				return successfulResult(result, selected, version), nil
+			}
+			index = end
+			continue
+		}
 		resolved, err := resolveCandidate(candidate)
 		if err != nil {
 			result.Attempts = append(result.Attempts, Attempt{Path: candidate.Path, Source: candidate.Source, Reason: boundedReason(err)})
 			if strict {
 				return result, errors.New(result.Message)
 			}
+			index++
 			continue
 		}
 		version, err := validate(ctx, resolved)
@@ -78,19 +92,60 @@ func discover(ctx context.Context, candidates []Candidate, strict bool, validate
 			if strict {
 				return result, errors.New(result.Message)
 			}
+			index++
 			continue
 		}
-		result.Status = "ok"
-		result.Executable = resolved.Path
-		result.Source = resolved.Source
-		result.Version = version
-		result.Message = "Codex App Server runtime is available."
-		return result, nil
+		return successfulResult(result, resolved, version), nil
 	}
 	if len(result.Attempts) == 0 {
 		result.Attempts = []Attempt{{Source: "discovery", Reason: "no candidate executable was exposed by PATH or known platform locations"}}
 	}
 	return result, errors.New(result.Message)
+}
+
+func selectHighestVersion(ctx context.Context, candidates []Candidate, validate validator, result *Result) (Candidate, string, bool) {
+	var selected Candidate
+	selectedVersion := ""
+	selectedTime := time.Time{}
+	found := false
+	for _, candidate := range candidates {
+		resolved, err := resolveCandidate(candidate)
+		if err != nil {
+			result.Attempts = append(result.Attempts, Attempt{Path: candidate.Path, Source: candidate.Source, Reason: boundedReason(err)})
+			continue
+		}
+		version, err := validate(ctx, resolved)
+		if err != nil {
+			result.Attempts = append(result.Attempts, Attempt{Path: resolved.Path, Source: resolved.Source, Reason: boundedReason(err)})
+			continue
+		}
+		modified := fileModified(resolved.Path)
+		comparison := compareCodexVersions(version, selectedVersion)
+		if !found || comparison > 0 || (comparison == 0 && modified.After(selectedTime)) {
+			selected = resolved
+			selectedVersion = version
+			selectedTime = modified
+			found = true
+		}
+	}
+	return selected, selectedVersion, found
+}
+
+func successfulResult(result Result, candidate Candidate, version string) Result {
+	result.Status = "ok"
+	result.Executable = candidate.Path
+	result.Source = candidate.Source
+	result.Version = version
+	result.Message = "Codex App Server runtime is available."
+	return result
+}
+
+func fileModified(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }
 
 func resolveCandidate(candidate Candidate) (Candidate, error) {

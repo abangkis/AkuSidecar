@@ -35,7 +35,10 @@ runtime leaves the executable unset and discovers an explicit `--codex-path`,
 `AKU_CODEX_PATH`, `PATH`, managed Codex App runtimes, and common platform CLI
 locations in that order. `AkuSidecar --discover-codex` exposes the same JSON
 probe to launchers and installers, and accepts a candidate only after its
-`app-server` capability succeeds. The `0.7.0-preview.1` package still assumes
+`app-server` capability succeeds. When a Codex App exposes multiple managed
+runtimes, discovery selects the highest semantic version and uses file time
+only as a tie-breaker; the stable app `bin/codex` entry remains a fallback. The
+`0.7.0-preview.1` package still assumes
 the discovered installation is locally signed in; login assistance is
 deferred. The default Go provider owns one managed `codex app-server` stdio
 process, creates ephemeral read-only threads,

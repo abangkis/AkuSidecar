@@ -50,6 +50,47 @@ func TestExtractVersionIgnoresRuntimeWarnings(t *testing.T) {
 	}
 }
 
+func TestManagedCandidatesSelectHighestSemanticVersion(t *testing.T) {
+	older := filepath.Join(t.TempDir(), "older")
+	newer := filepath.Join(t.TempDir(), "newer")
+	for _, path := range []string{older, newer} {
+		if err := osWriteTestFile(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := discover(context.Background(), []Candidate{
+		{Path: newer, Source: "managed-newer-date", SelectionGroup: "codex-app"},
+		{Path: older, Source: "managed-root", SelectionGroup: "codex-app"},
+	}, false, func(_ context.Context, candidate Candidate) (string, error) {
+		if candidate.Source == "managed-root" {
+			return "codex-cli 0.145.0-alpha.18", nil
+		}
+		return "codex-cli 0.130.0-alpha.5", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Source != "managed-root" || result.Version != "codex-cli 0.145.0-alpha.18" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestCompareCodexVersionsUsesSemverPrereleaseRules(t *testing.T) {
+	for _, test := range []struct {
+		left  string
+		right string
+		want  int
+	}{
+		{"codex-cli 0.145.0-alpha.18", "codex-cli 0.130.0-alpha.5", 1},
+		{"codex-cli 0.145.0", "codex-cli 0.145.0-alpha.18", 1},
+		{"codex-cli 0.145.0-alpha.5", "codex-cli 0.145.0-alpha.18", -1},
+	} {
+		if got := compareCodexVersions(test.left, test.right); got != test.want {
+			t.Fatalf("compare(%q, %q)=%d want=%d", test.left, test.right, got, test.want)
+		}
+	}
+}
+
 func osWriteTestFile(path string) error {
 	return os.WriteFile(path, []byte("test"), 0o700)
 }
