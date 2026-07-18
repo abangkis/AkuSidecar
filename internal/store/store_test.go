@@ -378,7 +378,7 @@ func TestTimelineIncludesCapturedSourceEvidence(t *testing.T) {
 		t.Fatalf("evidence=%+v", items[0].Evidence)
 	}
 	inbox, total, err := state.ListInboxSessions(ctx, 10, 0)
-	if err != nil || total != 1 || len(inbox) != 1 || len(inbox[0].Runs) != 2 {
+	if err != nil || total != 1 || len(inbox) != 1 || len(inbox[0].Runs) != 3 {
 		t.Fatalf("inbox=%+v total=%d err=%v", inbox, total, err)
 	}
 	diagnostic := inbox[0].Runs[0]
@@ -432,7 +432,7 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 		t.Fatalf("reset onboarding=%+v err=%v", onboarding, err)
 	}
 	after, err := state.GetSettings(ctx)
-	if err != nil || after.LoadProfile != "expanded" || len(after.ActiveSources) != 2 || after.DefaultPresentation != "source" || after.StreamWidth != "social" {
+	if err != nil || after.LoadProfile != "expanded" || len(after.ActiveSources) != 3 || after.ActiveSources[2] != domain.SourceFacebook || after.DefaultPresentation != "source" || after.StreamWidth != "social" {
 		t.Fatalf("reset settings=%+v err=%v", after, err)
 	}
 	afterToken, err := state.BridgeToken(ctx)

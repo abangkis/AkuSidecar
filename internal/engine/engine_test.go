@@ -199,7 +199,7 @@ func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
 	}
 }
 
-func TestUnifiedSessionCompletesBothSources(t *testing.T) {
+func TestUnifiedSessionCompletesAllDefaultSources(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)
 	session, err := runtime.StartSession(ctx, "What changed?")
@@ -208,15 +208,19 @@ func TestUnifiedSessionCompletesBothSources(t *testing.T) {
 	}
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000001")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
-		return len(value.Runs) == 2 && value.Runs[1].Status == "waiting_for_bridge"
+		return len(value.Runs) == 3 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceLinkedIn, "linkedin:000000000000000000000002")
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[2].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000003")
 	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
-	if len(completed.Items) != 2 {
+	if len(completed.Items) != 3 {
 		t.Fatalf("items=%d session=%+v", len(completed.Items), completed)
 	}
 	timeline, err := runtime.Timeline(ctx, 10, 0)
-	if err != nil || len(timeline) != 2 {
+	if err != nil || len(timeline) != 3 {
 		t.Fatalf("timeline=%d err=%v", len(timeline), err)
 	}
 }
@@ -486,12 +490,16 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	}
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000011")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
-		return len(value.Runs) == 2 && value.Runs[1].Status == "waiting_for_bridge"
+		return len(value.Runs) == 3 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceLinkedIn, "linkedin:000000000000000000000012")
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[2].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000013")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
 	calibration := waitActiveCalibration(t, runtime)
-	if calibration.Status != "reviewing" || calibration.SampleCount != 2 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn {
+	if calibration.Status != "reviewing" || calibration.SampleCount != 3 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn || calibration.Samples[2].Source != domain.SourceFacebook {
 		t.Fatalf("calibration=%+v", calibration)
 	}
 	if _, err := runtime.StartSession(ctx, "must be blocked"); err == nil {
@@ -507,7 +515,11 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 1 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
+	calibration, err = runtime.DecideCalibration(ctx, calibration.ID, 2, domain.CalibrationDecision{Label: &neutral})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 2 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
 		t.Fatalf("completed calibration=%+v", calibration)
 	}
 	status, err := state.CalibrationFirstRunStatus(ctx)
@@ -548,7 +560,7 @@ func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 	}
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000021")
 	current := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
-		return len(value.Runs) == 2 && value.Runs[1].Status == "waiting_for_bridge"
+		return len(value.Runs) == 3 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	linkedin := current.Runs[1]
 	command, err := runtime.ClaimCommand(ctx, linkedin.ID, "bridge-test")
@@ -558,9 +570,13 @@ func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 	if _, err := runtime.FailCommand(ctx, command.ID, linkedin.ID, domain.Failure{Code: "capture_failed", Stage: "capture", Message: "test failure"}); err != nil {
 		t.Fatal(err)
 	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[2].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000022")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "partial" })
 	calibration := waitActiveCalibration(t, runtime)
-	if calibration.SampleCount != 1 || calibration.Samples[0].Source != domain.SourceX {
+	if calibration.SampleCount != 2 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceFacebook {
 		t.Fatalf("partial calibration=%+v", calibration)
 	}
 }
@@ -759,6 +775,8 @@ func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessio
 	permalink := "https://x.com/example/status/" + strings.TrimPrefix(evidenceKey, "x:")
 	if source == domain.SourceLinkedIn {
 		permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + strings.TrimPrefix(evidenceKey, "linkedin:")
+	} else if source == domain.SourceFacebook {
+		permalink = "https://www.facebook.com/example/posts/" + strings.TrimPrefix(evidenceKey, "facebook:post:")
 	}
 	value := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: evidenceKey, Text: "Material source update", Author: "author", Permalink: permalink}}}}, Coverage: map[string]any{"quality": "complete"}}
 	if _, err := runtime.AcceptObservation(context.Background(), command.ID, run.ID, value); err != nil {
