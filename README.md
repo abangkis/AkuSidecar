@@ -238,6 +238,15 @@ fitting while preserving the append-only feedback audit trail. This makes
 semantic, preference, and AI Detector cost and correction signals visible
 without exposing raw database identities.
 
+Each source-run card also offers a lazy `Inspect flow` drill-down. It derives
+one row per captured evidence identity from existing observations,
+assessments, Timeline items, and semantic reports, then filters that bounded
+view by Captured, Evaluated, Selected, or Added. The compact rows expose only
+author, excerpt, source link, final outcome, and one-line rationale. Duplicate
+snapshots are folded together, semantic duplicate reports are named rather
+than counted as unique additions, and the main Inbox response remains light.
+No raw observation JSON, prompts, media, or heavy telemetry enters this path.
+
 AI Detector is a separate presentation-only domain. Its text-first Fast
 Detector runs locally after global composition and recognizes only explicit
 evidence: platform labels, author declarations, and prompt/instruction residue.

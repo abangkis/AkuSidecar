@@ -171,7 +171,11 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(selected),0) FROM candidate_assessments WHERE run_id=?`, run.ID).Scan(&entry.EvaluatedCandidates, &entry.SelectedCandidates); err != nil {
 		return domain.InboxRun{}, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM timeline_items WHERE run_id=?`, run.ID).Scan(&entry.AddedItems); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM timeline_items t
+		LEFT JOIN semantic_event_reports r ON r.timeline_id=t.id
+		WHERE t.run_id=? AND COALESCE(r.relation,'') != 'duplicate_report'`, run.ID).Scan(&entry.AddedItems); err != nil {
 		return domain.InboxRun{}, err
 	}
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(duration_ms),0) FROM reasoning_invocations WHERE run_id=?`, run.ID).Scan(&entry.ReasoningDurationMS); err != nil && err != sql.ErrNoRows {

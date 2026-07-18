@@ -1150,7 +1150,148 @@ function buildInboxRun(run) {
     summary.textContent = run.summary;
     card.append(summary);
   }
+  card.append(buildInboxFlowInspector(run));
   return card;
+}
+
+function buildInboxFlowInspector(run) {
+  const inspector = document.createElement("section");
+  inspector.className = "inbox-flow-inspector";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "inbox-flow-toggle";
+  toggle.textContent = "Inspect flow";
+  toggle.setAttribute("aria-expanded", "false");
+  const panel = document.createElement("div");
+  panel.className = "inbox-flow-panel";
+  panel.hidden = true;
+  const filters = document.createElement("div");
+  filters.className = "inbox-flow-filters";
+  const list = document.createElement("div");
+  list.className = "inbox-flow-list";
+  const footer = document.createElement("div");
+  footer.className = "inbox-flow-footer";
+  const meta = document.createElement("span");
+  const more = document.createElement("button");
+  more.type = "button";
+  more.textContent = "Show more";
+  more.hidden = true;
+  footer.append(meta, more);
+  panel.append(filters, list, footer);
+  inspector.append(toggle, panel);
+
+  let activeStage = "captured";
+  let offset = 0;
+  let total = 0;
+  let loading = false;
+  const stageButtons = {};
+  for (const stage of ["captured", "evaluated", "selected", "added"]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.stage = stage;
+    button.textContent = humanize(stage);
+    button.addEventListener("click", () => {
+      if (activeStage === stage || loading) return;
+      activeStage = stage;
+      loadTrace(true);
+    });
+    stageButtons[stage] = button;
+    filters.append(button);
+  }
+
+  const renderFilterState = (counts = {}) => {
+    for (const [stage, button] of Object.entries(stageButtons)) {
+      const count = counts[stage] ?? run[`${stage}Candidates`] ?? (stage === "added" ? run.addedItems : 0);
+      button.textContent = `${humanize(stage)} ${count ?? 0}`;
+      button.classList.toggle("selected", stage === activeStage);
+      button.setAttribute("aria-pressed", String(stage === activeStage));
+    }
+  };
+
+  const loadTrace = async (reset) => {
+    if (loading) return;
+    loading = true;
+    if (reset) {
+      offset = 0;
+      list.replaceChildren();
+    }
+    meta.textContent = "Loading…";
+    more.disabled = true;
+    for (const button of Object.values(stageButtons)) button.disabled = true;
+    try {
+      const response = await api(`/api/inbox/runs/${encodeURIComponent(run.id)}/trace?stage=${activeStage}&limit=10&offset=${offset}`);
+      const trace = response.trace;
+      total = trace.total ?? 0;
+      const rows = (trace.items ?? []).map(buildInboxFlowItem);
+      if (reset) list.replaceChildren(...rows);
+      else list.append(...rows);
+      offset += rows.length;
+      renderFilterState(trace.counts);
+      if (!list.children.length) {
+        const empty = document.createElement("p");
+        empty.className = "inbox-flow-empty";
+        empty.textContent = `No ${humanize(activeStage).toLowerCase()} candidates in this source run.`;
+        list.append(empty);
+      }
+      meta.textContent = total ? `${Math.min(offset, total)} of ${total}` : "No matching candidates";
+      more.hidden = offset >= total;
+    } catch (error) {
+      meta.textContent = error.message;
+      more.hidden = true;
+    } finally {
+      loading = false;
+      more.disabled = false;
+      for (const button of Object.values(stageButtons)) button.disabled = false;
+    }
+  };
+
+  toggle.addEventListener("click", () => {
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    toggle.textContent = opening ? "Hide flow" : "Inspect flow";
+    toggle.setAttribute("aria-expanded", String(opening));
+    if (opening && !list.children.length) loadTrace(true);
+  });
+  more.addEventListener("click", () => loadTrace(false));
+  renderFilterState();
+  return inspector;
+}
+
+function buildInboxFlowItem(item) {
+  const row = document.createElement("article");
+  row.className = "inbox-flow-item";
+  const heading = document.createElement("div");
+  heading.className = "inbox-flow-item-heading";
+  const author = document.createElement("strong");
+  author.textContent = item.author || "Captured source item";
+  const outcome = document.createElement("span");
+  outcome.className = `inbox-flow-outcome inbox-flow-outcome-${item.outcome}`;
+  outcome.textContent = inboxFlowOutcomeLabel(item.outcome);
+  heading.append(author, outcome);
+  const excerpt = document.createElement("p");
+  excerpt.className = "inbox-flow-excerpt";
+  excerpt.textContent = item.excerpt || "No textual excerpt was captured.";
+  const reason = document.createElement("p");
+  reason.className = "inbox-flow-reason";
+  reason.textContent = item.reason || "No additional rationale recorded.";
+  row.append(heading, excerpt, reason);
+  const sourceUrl = safeMediaUrl(item.sourceUrl);
+  if (sourceUrl) {
+    const link = document.createElement("a");
+    link.href = sourceUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open source";
+    row.append(link);
+  }
+  return row;
+}
+
+function inboxFlowOutcomeLabel(outcome) {
+  if (outcome === "captured_only") return "Captured only";
+  if (outcome === "not_selected") return "Not selected";
+  if (outcome === "collapsed_duplicate") return "Semantic duplicate";
+  return humanize(outcome || "captured");
 }
 
 function inboxStatusTone(status) {

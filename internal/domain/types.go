@@ -324,6 +324,37 @@ type InboxRun struct {
 	FollowUpFallback    *Failure `json:"followUpFallback,omitempty"`
 }
 
+type InboxFlowCounts struct {
+	Captured  int `json:"captured"`
+	Evaluated int `json:"evaluated"`
+	Selected  int `json:"selected"`
+	Added     int `json:"added"`
+}
+
+type InboxFlowTrace struct {
+	RunID  string          `json:"runId"`
+	Source Source          `json:"source"`
+	Stage  string          `json:"stage"`
+	Counts InboxFlowCounts `json:"counts"`
+	Items  []InboxFlowItem `json:"items"`
+	Total  int             `json:"total"`
+	Limit  int             `json:"limit"`
+	Offset int             `json:"offset"`
+}
+
+type InboxFlowItem struct {
+	EvidenceKey string `json:"-"`
+	Author      string `json:"author,omitempty"`
+	Excerpt     string `json:"excerpt"`
+	SourceURL   string `json:"sourceUrl,omitempty"`
+	Outcome     string `json:"outcome"`
+	Reason      string `json:"reason,omitempty"`
+	Captured    bool   `json:"captured"`
+	Evaluated   bool   `json:"evaluated"`
+	Selected    bool   `json:"selected"`
+	Added       bool   `json:"added"`
+}
+
 type Failure struct {
 	Code      string         `json:"code"`
 	Stage     string         `json:"stage"`
