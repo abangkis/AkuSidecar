@@ -125,6 +125,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if !strings.Contains(string(appPayload), "entry.feedback?.direction") {
 		t.Fatal("timeline feedback state is not restored after rendering")
 	}
+	if !strings.Contains(string(appPayload), "state.expandedTimelineText.has(expansionKey)") {
+		t.Fatal("expanded Timeline text state is not restored after rendering")
+	}
 	if strings.Contains(string(appPayload), "Optional reason") || strings.Contains(string(appPayload), "already_knew") || strings.Contains(string(appPayload), "old_info") {
 		t.Fatal("retired feedback reasons remain in the active UI")
 	}

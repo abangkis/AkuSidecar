@@ -50,6 +50,7 @@ const state = {
   passiveMediaEnrichmentTimer: null,
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
+  expandedTimelineText: new Set(),
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -1568,6 +1569,9 @@ function renderTimeline(items, latestCheck) {
   for (const timelineID of state.passiveMediaEvidenceAttempts.keys()) {
     if (!retainedIDs.has(timelineID)) state.passiveMediaEvidenceAttempts.delete(timelineID);
   }
+  for (const key of state.expandedTimelineText) {
+    if (!retainedIDs.has(key.split("|")[0])) state.expandedTimelineText.delete(key);
+  }
   schedulePassiveMediaEnrichment(allItems);
   const routed = routeAIDetectedItems(items);
   items = routed.inline;
@@ -2066,8 +2070,9 @@ function buildSourceCard(entry) {
     characterLimit: SOURCE_TEXT_COLLAPSE_CHARACTERS,
     lineLimit: SOURCE_TEXT_COLLAPSE_LINES,
     label: "post",
+    expansionKey: entry.id ? `${entry.id}|post` : null,
   }));
-  const quote = buildQuotedPost(evidence.quotedPost, source);
+  const quote = buildQuotedPost(evidence.quotedPost, source, entry.id ? `${entry.id}|quote` : null);
   if (quote) content.append(quote);
   card.append(content);
   const attachments = buildAttachments(evidence.attachments, source);
@@ -2107,7 +2112,7 @@ function buildAvatar(url, source, author) {
   return fallback;
 }
 
-function buildQuotedPost(value, source) {
+function buildQuotedPost(value, source, expansionKey = null) {
   if (!value?.text) return null;
   const quote = document.createElement("section");
   quote.className = "x-quote-card";
@@ -2124,11 +2129,12 @@ function buildQuotedPost(value, source) {
     characterLimit: QUOTE_TEXT_COLLAPSE_CHARACTERS,
     lineLimit: QUOTE_TEXT_COLLAPSE_LINES,
     label: "quoted post",
+    expansionKey,
   }));
   return quote;
 }
 
-function buildExpandableText(value, { characterLimit, lineLimit, label }) {
+function buildExpandableText(value, { characterLimit, lineLimit, label, expansionKey = null }) {
   const wrapper = document.createElement("div");
   wrapper.className = "expandable-text";
   const text = document.createElement("p");
@@ -2139,20 +2145,25 @@ function buildExpandableText(value, { characterLimit, lineLimit, label }) {
   const logicalLines = text.textContent.split(/\r?\n/).length;
   if (text.textContent.length <= characterLimit && logicalLines <= lineLimit) return wrapper;
 
-  text.classList.add("is-collapsed");
+  const initiallyExpanded = expansionKey && state.expandedTimelineText.has(expansionKey);
+  text.classList.toggle("is-collapsed", !initiallyExpanded);
   text.style.setProperty("--collapse-lines", String(lineLimit));
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "content-expander";
-  toggle.textContent = "Show more";
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-label", `Show more ${label} text`);
+  toggle.textContent = initiallyExpanded ? "Show less" : "Show more";
+  toggle.setAttribute("aria-expanded", String(Boolean(initiallyExpanded)));
+  toggle.setAttribute("aria-label", `${initiallyExpanded ? "Show less" : "Show more"} ${label} text`);
   toggle.addEventListener("click", () => {
     const expanded = toggle.getAttribute("aria-expanded") === "true";
     text.classList.toggle("is-collapsed", expanded);
     toggle.setAttribute("aria-expanded", String(!expanded));
     toggle.setAttribute("aria-label", `${expanded ? "Show more" : "Show less"} ${label} text`);
     toggle.textContent = expanded ? "Show more" : "Show less";
+    if (expansionKey) {
+      if (expanded) state.expandedTimelineText.delete(expansionKey);
+      else state.expandedTimelineText.add(expansionKey);
+    }
   });
   wrapper.append(toggle);
   return wrapper;
