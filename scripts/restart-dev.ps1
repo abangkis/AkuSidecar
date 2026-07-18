@@ -18,7 +18,7 @@ if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
 $activeResponse = $null
 try {
     $activeResponse = Invoke-RestMethod `
-        -Uri 'http://127.0.0.1:47821/api/sessions/active' `
+        -Uri 'http://127.0.0.1:11122/api/sessions/active' `
         -Method Get `
         -TimeoutSec 2
 }

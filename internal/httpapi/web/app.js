@@ -85,6 +85,7 @@ $("#retry-button").addEventListener("click", () => {
 });
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
+$("#detect-reasoning-executable").addEventListener("click", detectReasoningExecutable);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
 $("#ai-detection-presentation").addEventListener("change", syncAIDetectionSettings);
@@ -235,6 +236,11 @@ function renderBridge(bridge) {
 function renderSettings(settings) {
   if (!settings) return;
   renderReasoningProcesses(state.bootstrap?.reasoningProcesses ?? []);
+  const reasoningRuntime = state.bootstrap?.reasoningRuntime;
+  $("#reasoning-executable-label").textContent = reasoningRuntime?.label || "Inference executable";
+  $("#reasoning-executable-path").value = settings.reasoningExecutablePath || reasoningRuntime?.executablePath || "";
+  $("#reasoning-executable-path").disabled = reasoningRuntime?.editable === false;
+  $("#detect-reasoning-executable").disabled = reasoningRuntime?.editable === false;
   $("#bounded-load-profile").value = settings.loadProfile;
   $("#capture-visibility-policy").value = settings.captureVisibility;
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
@@ -371,6 +377,7 @@ async function saveSettings(event) {
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
     knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
     aiDetectionPresentation: $("#ai-detection-presentation").value,
+    reasoningExecutablePath: $("#reasoning-executable-path").value.trim(),
     reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
     reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
     reasoningSemanticProfile: reasoningProfileValue("semantic_event_resolution", current.reasoningSemanticProfile),
@@ -397,6 +404,7 @@ async function persistSettings(settings, confirmationPhrase = "") {
   try {
     const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
     state.bootstrap.settings = response.settings;
+    state.bootstrap.reasoningRuntime = response.reasoningRuntime ?? state.bootstrap.reasoningRuntime;
     state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
     renderSettings(response.settings);
     status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
@@ -406,6 +414,22 @@ async function persistSettings(settings, confirmationPhrase = "") {
     status.textContent = error.message;
     showError(error);
     return null;
+  }
+}
+
+async function detectReasoningExecutable() {
+  const status = $("#runtime-settings-status");
+  status.textContent = "Detecting reasoning runtime…";
+  try {
+    const response = await api("/api/reasoning/runtime/discover", { method: "POST" });
+    const runtime = response.reasoningRuntime;
+    state.bootstrap.reasoningRuntime = runtime;
+    $("#reasoning-executable-label").textContent = runtime.label || "Inference executable";
+    $("#reasoning-executable-path").value = runtime.executablePath || "";
+    status.textContent = "Detected · save settings to use this executable";
+  } catch (error) {
+    status.textContent = error.message;
+    showError(error);
   }
 }
 
@@ -2549,7 +2573,11 @@ function showError(error) {
   notice.className = "notice notice-danger";
   notice.setAttribute("role", "alert");
   notice.textContent = error.message || String(error);
-  setPill("#sidecar-status", "AkuSidecar attention", "danger");
+  setPill(
+    "#sidecar-status",
+    error.code === "sidecar_unavailable" ? "AkuSidecar offline" : "AkuSidecar attention",
+    "danger",
+  );
 }
 
 function clearNotice() {
@@ -2639,7 +2667,7 @@ async function api(path, options = {}) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.body);
   }
-  const response = await fetch(path, init);
+  const response = await fetchFromSidecar(path, init);
   const payload = response.status === 204 ? null : await response.json();
   if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
   return payload;
@@ -2659,11 +2687,28 @@ async function bridgeApi(path, options = {}) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.body);
   }
-  const response = await fetch(path, init);
+  const response = await fetchFromSidecar(path, init);
   if (response.status === 204) return null;
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
   return payload;
+}
+
+async function fetchFromSidecar(path, init) {
+  try {
+    return await fetch(path, init);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      const unavailable = new Error(
+        "AkuSidecar is offline or unreachable. Start it through AkuSupervisor; AkuBrowser will reconnect automatically.",
+      );
+      unavailable.name = "SidecarUnavailableError";
+      unavailable.code = "sidecar_unavailable";
+      unavailable.cause = error;
+      throw unavailable;
+    }
+    throw error;
+  }
 }
 
 bootstrap();

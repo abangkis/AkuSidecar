@@ -282,7 +282,17 @@
           <fieldset class="settings-group">
             <legend>Reasoning processes</legend>
             <p class="settings-group-note">The active inference backend is replaceable behind schema-bound process contracts. AI Fast Detection stays local and deterministic.</p>
-            <div id="reasoning-processes" class="settings-card reasoning-processes-card" aria-live="polite"></div>
+            <div class="settings-card reasoning-processes-card">
+              <label class="settings-row reasoning-executable-row" for="reasoning-executable-path">
+                <span class="settings-copy"><strong id="reasoning-executable-label">Codex executable</strong><small>The validated local runtime used by every Codex-backed reasoning process. Changes apply immediately when no reasoning work is active.</small></span>
+                <span class="reasoning-executable-control">
+                  <input id="reasoning-executable-path" name="reasoningExecutablePath" type="text" spellcheck="false" autocomplete="off" aria-describedby="reasoning-executable-detail" />
+                  <button id="detect-reasoning-executable" class="secondary-button" type="button">Use detected</button>
+                  <small id="reasoning-executable-detail">Full local path</small>
+                </span>
+              </label>
+              <div id="reasoning-processes" aria-live="polite"></div>
+            </div>
           </fieldset>
 
           <fieldset class="settings-group">

@@ -65,6 +65,7 @@ type Settings struct {
 	KnowledgeRetentionDays      int      `json:"knowledgeRetentionDays"`
 	KnowledgeStorageLimitMB     int      `json:"knowledgeStorageLimitMb"`
 	AIDetectionPresentation     string   `json:"aiDetectionPresentation"`
+	ReasoningExecutablePath     string   `json:"reasoningExecutablePath"`
 	ReasoningAcquisitionProfile string   `json:"reasoningAcquisitionProfile"`
 	ReasoningEvaluationProfile  string   `json:"reasoningEvaluationProfile"`
 	ReasoningSemanticProfile    string   `json:"reasoningSemanticProfile"`
@@ -214,6 +215,9 @@ func (s Settings) Validate() error {
 	}
 	if s.AIDetectionPresentation != "inline" && s.AIDetectionPresentation != "drawer" && s.AIDetectionPresentation != "hide" {
 		return fmt.Errorf("unsupported AI detection presentation %q", s.AIDetectionPresentation)
+	}
+	if len(s.ReasoningExecutablePath) > 4096 || strings.ContainsRune(s.ReasoningExecutablePath, '\x00') {
+		return errors.New("reasoningExecutablePath is invalid")
 	}
 	for name, profile := range map[string]string{
 		"reasoningAcquisitionProfile": s.ReasoningAcquisitionProfile,

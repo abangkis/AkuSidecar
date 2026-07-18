@@ -7,7 +7,7 @@ import (
 
 func TestCodexAppServerRequiresSeparateAIDetectionProfile(t *testing.T) {
 	cfg := Config{
-		Server: ServerConfig{Host: "127.0.0.1", Port: 47821}, Database: DatabaseConfig{Path: "test.db"},
+		Server: ServerConfig{Host: "127.0.0.1", Port: 11122}, Database: DatabaseConfig{Path: "test.db"},
 		Reasoning: ReasoningConfig{
 			Provider: "codex-app-server", TimeoutMS: 5000,
 			Planning: ModelConfig{Model: "planner", Effort: "high"}, Evaluation: ModelConfig{Model: "evaluator", Effort: "high"},

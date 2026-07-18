@@ -107,6 +107,31 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 
 func (c *CodexAppServer) Name() string { return "codex-app-server" }
 
+func (c *CodexAppServer) ExecutablePath() string {
+	c.invokeMu.Lock()
+	defer c.invokeMu.Unlock()
+	return c.executable
+}
+
+func (c *CodexAppServer) DiscoverExecutable(ctx context.Context, requested string) (string, error) {
+	result, err := codexruntime.Discover(ctx, requested)
+	if err != nil {
+		return "", err
+	}
+	return result.Executable, nil
+}
+
+func (c *CodexAppServer) UseExecutable(executable string) {
+	c.invokeMu.Lock()
+	defer c.invokeMu.Unlock()
+	if filepath.Clean(executable) == filepath.Clean(c.executable) {
+		return
+	}
+	c.stopLocked(true)
+	c.executable = executable
+	c.pathDirs = codexPathDirs(executable)
+}
+
 func (c *CodexAppServer) ProfileOptions() []ProfileOption {
 	return []ProfileOption{
 		{ID: "luna_high", Label: "Luna High", Model: "gpt-5.6-luna", Effort: "high"},

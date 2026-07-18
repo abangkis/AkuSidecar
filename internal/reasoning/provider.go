@@ -46,3 +46,12 @@ type RoutedProvider interface {
 	PlanWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error)
 	AnalyzeWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error)
 }
+
+// ExecutableRuntime is an optional provider capability for inference backends
+// that launch a local executable. Domain settings retain only the selected
+// path; discovery and activation remain owned by the provider adapter.
+type ExecutableRuntime interface {
+	ExecutablePath() string
+	DiscoverExecutable(context.Context, string) (string, error)
+	UseExecutable(string)
+}

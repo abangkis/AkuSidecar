@@ -32,8 +32,20 @@ func main() {
 	state, err := store.Open(cfg.Database.Path, settings)
 	fatal(logger, err)
 	defer state.Close()
+	persistedSettings, err := state.GetSettings(context.Background())
+	fatal(logger, err)
+	if options.CodexPath == "" && persistedSettings.ReasoningExecutablePath != "" {
+		cfg.Reasoning.Executable = persistedSettings.ReasoningExecutablePath
+	}
 	provider, err := reasoning.NewProvider(cfg)
 	fatal(logger, err)
+	if executableRuntime, ok := provider.(reasoning.ExecutableRuntime); ok {
+		resolved := executableRuntime.ExecutablePath()
+		if persistedSettings.ReasoningExecutablePath != resolved {
+			persistedSettings.ReasoningExecutablePath = resolved
+			fatal(logger, state.SaveSettings(context.Background(), persistedSettings))
+		}
+	}
 	var eventResolver semanticengine.Resolver
 	if structured, ok := provider.(reasoning.StructuredInvoker); ok {
 		eventResolver, err = semanticengine.NewStructuredResolver(cfg.Root, structured, cfg.Reasoning.SemanticEvent)

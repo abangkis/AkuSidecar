@@ -72,12 +72,43 @@ func (e *Engine) Settings(ctx context.Context) (domain.Settings, error) {
 func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domain.Settings, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	current, err := e.store.GetSettings(ctx)
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	var executableRuntime reasoning.ExecutableRuntime
+	var resolvedExecutable string
+	if strings.TrimSpace(value.ReasoningExecutablePath) != strings.TrimSpace(current.ReasoningExecutablePath) {
+		var ok bool
+		executableRuntime, ok = e.provider.(reasoning.ExecutableRuntime)
+		if !ok {
+			return domain.Settings{}, fmt.Errorf("%s does not expose an editable executable", e.ProviderName())
+		}
+		active, activeErr := e.store.ActiveSession(ctx)
+		if activeErr != nil {
+			return domain.Settings{}, activeErr
+		}
+		e.mu.RLock()
+		activeWork := len(e.active) > 0
+		e.mu.RUnlock()
+		if active != nil || activeWork {
+			return domain.Settings{}, errors.New("finish the active update or AI Deep Detection before changing the reasoning executable")
+		}
+		resolvedExecutable, err = executableRuntime.DiscoverExecutable(ctx, strings.TrimSpace(value.ReasoningExecutablePath))
+		if err != nil {
+			return domain.Settings{}, fmt.Errorf("validate reasoning executable: %w", err)
+		}
+		value.ReasoningExecutablePath = resolvedExecutable
+	}
 	value.Normalize()
 	if err := e.validateReasoningProfiles(value); err != nil {
 		return domain.Settings{}, err
 	}
 	if err := e.store.SaveSettings(ctx, value); err != nil {
 		return domain.Settings{}, err
+	}
+	if executableRuntime != nil {
+		executableRuntime.UseExecutable(resolvedExecutable)
 	}
 	saved, err := e.store.GetSettings(ctx)
 	if err != nil {
@@ -1021,6 +1052,7 @@ func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 	defer e.operation.Unlock()
 	e.cancelDeepDetections()
 	defaults := domain.DefaultSettings(e.config.Capture.Profile, e.config.Capture.Visibility, e.config.Preference.Mode, e.config.Capture.OpenMissingSource)
+	defaults.ReasoningExecutablePath = e.ReasoningRuntime().ExecutablePath
 	return e.store.FullReset(ctx, defaults)
 }
 

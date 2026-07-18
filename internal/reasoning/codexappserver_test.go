@@ -33,6 +33,16 @@ func TestCodexProfileCatalogIsBounded(t *testing.T) {
 	}
 }
 
+func TestCodexAppServerCanSwitchValidatedExecutableWithoutReplacingProvider(t *testing.T) {
+	initial := filepath.Join(t.TempDir(), "initial-codex.exe")
+	replacement := filepath.Join(t.TempDir(), "replacement-codex.exe")
+	provider := &CodexAppServer{executable: initial, pathDirs: []string{"old"}}
+	provider.UseExecutable(replacement)
+	if provider.ExecutablePath() != replacement {
+		t.Fatalf("executable=%q", provider.ExecutablePath())
+	}
+}
+
 func fakeCodexAppServer() {
 	scanner := bufio.NewScanner(os.Stdin)
 	thread := 0

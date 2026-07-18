@@ -23,6 +23,39 @@ type ReasoningProcessProfile struct {
 	Options     []reasoning.ProfileOption `json:"options"`
 }
 
+type ReasoningRuntimeProfile struct {
+	Provider       string `json:"provider"`
+	Label          string `json:"label"`
+	ExecutablePath string `json:"executablePath"`
+	Editable       bool   `json:"editable"`
+}
+
+func (e *Engine) ReasoningRuntime() ReasoningRuntimeProfile {
+	result := ReasoningRuntimeProfile{Provider: e.ProviderName(), Label: "Inference executable"}
+	if e.ProviderName() == "codex-app-server" {
+		result.Label = "Codex executable"
+	}
+	if runtime, ok := e.provider.(reasoning.ExecutableRuntime); ok {
+		result.ExecutablePath = runtime.ExecutablePath()
+		result.Editable = true
+	}
+	return result
+}
+
+func (e *Engine) DiscoverReasoningExecutable(ctx context.Context) (ReasoningRuntimeProfile, error) {
+	runtime, ok := e.provider.(reasoning.ExecutableRuntime)
+	if !ok {
+		return e.ReasoningRuntime(), fmt.Errorf("%s does not expose an editable executable", e.ProviderName())
+	}
+	path, err := runtime.DiscoverExecutable(ctx, "")
+	if err != nil {
+		return e.ReasoningRuntime(), err
+	}
+	result := e.ReasoningRuntime()
+	result.ExecutablePath = path
+	return result, nil
+}
+
 func (e *Engine) ReasoningProcesses(settings domain.Settings) []ReasoningProcessProfile {
 	provider := e.ProviderName()
 	options := []reasoning.ProfileOption{}

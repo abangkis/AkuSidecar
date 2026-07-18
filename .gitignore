@@ -1,6 +1,5 @@
-# Local runtime state
-runtime/*
-!runtime/.gitkeep
+# Local runtime state and downloaded/generated binaries
+runtime/
 *.db
 *.db-shm
 *.db-wal

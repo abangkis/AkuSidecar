@@ -21,8 +21,8 @@ backward-compatibility layer.
 
 ## Local Codex runtime
 
-The Codex executable is deliberately not committed. Development currently
-places the official native Codex distribution at:
+The Codex executable and every generated runtime artifact are deliberately not
+committed. A developer may keep a temporary native Codex distribution under:
 
 ```text
 runtime/codex-cli/bin/codex.exe
@@ -30,8 +30,9 @@ runtime/codex-cli/codex-path/
 runtime/codex-cli/codex-resources/
 ```
 
-`config/sidecar.json` points to that location for development. A packaged
-runtime leaves the executable unset and discovers an explicit `--codex-path`,
+That directory is ignored as a whole and is never a source dependency.
+`config/sidecar.json` leaves the executable unset, so development and packaged
+runtimes discover an explicit `--codex-path`,
 `AKU_CODEX_PATH`, `PATH`, managed Codex App runtimes, and common platform CLI
 locations in that order. `AkuSidecar --discover-codex` exposes the same JSON
 probe to launchers and installers, and accepts a candidate only after its
@@ -40,7 +41,11 @@ runtimes, discovery selects the highest semantic version and uses file time
 only as a tie-breaker; the stable app `bin/codex` entry remains a fallback. The
 `0.7.0-preview.1` package still assumes
 the discovered installation is locally signed in; login assistance is
-deferred. The default Go provider owns one managed `codex app-server` stdio
+deferred. Settings shows the resolved full executable path beside the
+Reasoning processes. A replacement path is provider-validated before it is
+stored and hot-swapped into the shared runtime only while reasoning is idle;
+**Use detected** reruns the same bounded platform discovery without saving the
+result automatically. The default Go provider owns one managed `codex app-server` stdio
 process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
 structured token telemetry. Acquisition planning, semantic event resolution,
@@ -79,8 +84,18 @@ test binaries finish concurrently.
 ## Development
 
 AkuSupervisor directly owns `runtime\dev\aku-sidecar.exe`; there is no
-component-level watcher or hidden replacement process. After a source change,
-run the explicit rebuild/restart command:
+component-level watcher or hidden replacement process. From a stopped
+AkuWorkspace—including after deleting the generated `runtime` directory—start
+the development stack through the workspace bootstrap:
+
+```powershell
+cd ..\AkuSupervisor
+.\scripts\dev-akuworkspace.ps1 akusidecar
+```
+
+The bootstrap performs the incremental Go build before the generic Supervisor
+validates its service configuration. After a source change while the stack is
+already running, use the explicit rebuild/restart command from AkuSidecar:
 
 ```powershell
 .\scripts\restart-dev.ps1

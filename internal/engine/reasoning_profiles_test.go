@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"path/filepath"
@@ -12,6 +13,23 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
+
+type executableTestProvider struct {
+	reasoning.Deterministic
+	path       string
+	discovered string
+}
+
+func (p *executableTestProvider) Name() string           { return "test-executable" }
+func (p *executableTestProvider) ExecutablePath() string { return p.path }
+func (p *executableTestProvider) DiscoverExecutable(_ context.Context, requested string) (string, error) {
+	if requested == "invalid" {
+		return "", errors.New("invalid executable")
+	}
+	p.discovered = requested
+	return filepath.Join("C:\\", "resolved", "codex.exe"), nil
+}
+func (p *executableTestProvider) UseExecutable(path string) { p.path = path }
 
 type routedProfileProvider struct {
 	reasoning.Deterministic
@@ -76,5 +94,40 @@ func TestReasoningProfilesUseBackendCatalogPerInvocation(t *testing.T) {
 	settings.ReasoningAIDeepProfile = "unknown"
 	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil {
 		t.Fatal("provider must reject a profile outside its catalog")
+	}
+}
+
+func TestReasoningExecutableIsValidatedPersistedAndActivated(t *testing.T) {
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.ReasoningExecutablePath = filepath.Join("C:\\", "initial", "codex.exe")
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	provider := &executableTestProvider{path: settings.ReasoningExecutablePath}
+	runtime := New(state, provider, config.Config{}, log.New(io.Discard, "", 0))
+
+	settings.ReasoningExecutablePath = "requested-codex"
+	saved, err := runtime.SaveSettings(context.Background(), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.discovered != "requested-codex" || provider.path != saved.ReasoningExecutablePath {
+		t.Fatalf("provider=%+v saved=%+v", provider, saved)
+	}
+	stored, err := state.GetSettings(context.Background())
+	if err != nil || stored.ReasoningExecutablePath != provider.path {
+		t.Fatalf("stored=%+v err=%v", stored, err)
+	}
+
+	settings = stored
+	settings.ReasoningExecutablePath = "invalid"
+	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil {
+		t.Fatal("invalid executable must fail before persistence")
+	}
+	stored, _ = state.GetSettings(context.Background())
+	if stored.ReasoningExecutablePath != provider.path {
+		t.Fatalf("invalid executable changed durable settings: %+v", stored)
 	}
 }
