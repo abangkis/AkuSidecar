@@ -38,6 +38,9 @@ func TestEvaluationRequestUsesAliasesAndExcludesPriorIdentity(t *testing.T) {
 	if !strings.Contains(request.prompt, "candidate_001") || len(request.evidenceKeys) != 1 || request.evidenceKeys[0] != "x:current-opaque-key" {
 		t.Fatalf("candidate alias missing: %+v", request)
 	}
+	if !strings.Contains(request.prompt, "Do not emit or infer source URLs") {
+		t.Fatalf("source URL ownership contract missing: %s", request.prompt)
+	}
 }
 
 func TestBindEvidenceKeysByPositionOverridesModelIdentity(t *testing.T) {

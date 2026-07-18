@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -297,9 +298,13 @@ func runSemanticAcceptanceSession(t *testing.T, runtime *Engine, fixtures []sema
 			t.Fatalf("claim source=%s command=%+v err=%v", fixture.source, command, err)
 		}
 		published := "2026-07-17T00:00:00Z"
+		permalink := "https://x.com/example/status/" + strings.TrimPrefix(fixture.evidenceKey, "x:")
+		if fixture.source == domain.SourceLinkedIn {
+			permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + strings.TrimPrefix(fixture.evidenceKey, "linkedin:")
+		}
 		observation := domain.Observation{
 			Source: fixture.source, PageURL: "https://example.test/feed", CapturedAt: domain.Now(),
-			Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: fixture.evidenceKey, Author: fixture.author, Text: fixture.text, PublishedAt: &published, Permalink: "https://example.test/post/" + fixture.evidenceKey}}}},
+			Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: fixture.evidenceKey, Author: fixture.author, Text: fixture.text, PublishedAt: &published, Permalink: permalink}}}},
 			Coverage:  map[string]any{"quality": "complete", "acceptanceFixture": true},
 		}
 		if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, observation); err != nil {

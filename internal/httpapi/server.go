@@ -12,6 +12,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -748,12 +749,51 @@ func security(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://pbs.twimg.com https://video.twimg.com https://licdn.com https://*.licdn.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		if !trustedLoopbackHost(r.Host) {
+			http.Error(w, "loopback host required", http.StatusForbidden)
+			return
+		}
+		if !trustedBrowserOrigin(r) {
+			http.Error(w, "origin is not allowed", http.StatusForbidden)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
+
+func trustedLoopbackHost(raw string) bool {
+	host := raw
+	if parsed, _, err := net.SplitHostPort(raw); err == nil {
+		host = parsed
+	} else if strings.Contains(raw, ":") {
+		return false
+	}
+	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	return host == "127.0.0.1" || host == "localhost"
+}
+
+func trustedBrowserOrigin(r *http.Request) bool {
+	raw := strings.TrimSpace(r.Header.Get("Origin"))
+	if raw == "" {
+		return true
+	}
+	origin, err := url.Parse(raw)
+	if err != nil || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || (origin.Path != "" && origin.Path != "/") {
+		return false
+	}
+	if origin.Scheme == "http" && strings.EqualFold(origin.Host, r.Host) {
+		return true
+	}
+	return origin.Scheme == "chrome-extension" && origin.Host != "" && bridgePath(r.URL.Path)
+}
+
+func bridgePath(value string) bool {
+	return strings.HasPrefix(value, "/api/bridge/") || strings.HasPrefix(value, "/api/operations/bridge/")
+}
+
 func applyCORS(r *http.Request, w http.ResponseWriter) {
 	origin := r.Header.Get("Origin")
-	if strings.HasPrefix(origin, "chrome-extension://") {
+	if strings.HasPrefix(origin, "chrome-extension://") && bridgePath(r.URL.Path) && trustedBrowserOrigin(r) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
@@ -763,6 +803,10 @@ func applyCORS(r *http.Request, w http.ResponseWriter) {
 
 func readJSON(r *http.Request, target any) error {
 	defer r.Body.Close()
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return apiError{Status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Content-Type must be application/json"}
+	}
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 1_000_001))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

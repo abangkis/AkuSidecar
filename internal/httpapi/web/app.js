@@ -1016,9 +1016,10 @@ function buildCalibrationCard(sample) {
     },
   });
   card.append(header, sourceCard);
-  if (candidate.sourceUrl) {
+  const calibrationSourceUrl = safeSourceUrl(candidate.sourceUrl, sample.source);
+  if (calibrationSourceUrl) {
     const link = document.createElement("a");
-    link.href = candidate.sourceUrl;
+    link.href = calibrationSourceUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.textContent = "Open source entry";
@@ -1168,7 +1169,7 @@ function buildInboxPreferenceDecision(decision) {
     .filter(Boolean)
     .join(" \u00b7 ");
   copy.append(summary, context);
-  const sourceUrl = safeMediaUrl(decision.sourceUrl);
+  const sourceUrl = safeSourceUrl(decision.sourceUrl, decision.source);
   if (sourceUrl) {
     const link = document.createElement("a");
     link.href = sourceUrl;
@@ -1417,7 +1418,7 @@ function buildInboxFlowInspector(run, onCounts) {
       const response = await api(`/api/inbox/runs/${encodeURIComponent(run.id)}/trace?stage=${activeStage}&limit=10&offset=${offset}`);
       const trace = response.trace;
       total = trace.total ?? 0;
-      const rows = (trace.items ?? []).map((item) => buildInboxFlowItem(item, run.id, async () => {
+      const rows = (trace.items ?? []).map((item) => buildInboxFlowItem(item, trace.source, run.id, async () => {
         await loadTrace(true);
         await refreshTimeline();
       }));
@@ -1456,7 +1457,7 @@ function buildInboxFlowInspector(run, onCounts) {
   return inspector;
 }
 
-function buildInboxFlowItem(item, runId, onChanged) {
+function buildInboxFlowItem(item, source, runId, onChanged) {
   const row = document.createElement("article");
   row.className = "inbox-flow-item";
   const heading = document.createElement("div");
@@ -1476,7 +1477,7 @@ function buildInboxFlowItem(item, runId, onChanged) {
   row.append(heading, excerpt, reason);
   const actions = document.createElement("div");
   actions.className = "inbox-flow-item-actions";
-  const sourceUrl = safeMediaUrl(item.sourceUrl);
+  const sourceUrl = safeSourceUrl(item.sourceUrl, source);
   if (sourceUrl) {
     const link = document.createElement("a");
     link.href = sourceUrl;
@@ -2265,7 +2266,8 @@ function buildActions(entry) {
     more.classList.remove("selected");
   });
   feedback.append(more, less);
-  actions.append(link, feedback);
+  if (link) actions.append(link);
+  actions.append(feedback);
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
 }
@@ -2381,13 +2383,26 @@ function showCorrectionNotice(correction) {
 }
 
 function buildSourceLink(entry) {
+  const href = safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, entry.source || entry.item?.source);
+  if (!href) return null;
   const link = document.createElement("a");
   link.className = "source-link";
-  link.href = entry.item?.sourceUrl || entry.evidence?.permalink || "#";
+  link.href = href;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
   return link;
+}
+
+function safeSourceUrl(value, source) {
+  const href = safeMediaUrl(value);
+  if (!href) return null;
+  const url = new URL(href);
+  if (source === "x") return url.hostname === "x.com" && url.pathname.includes("/status/") ? url.href : null;
+  if (source === "linkedin") {
+    return url.hostname === "www.linkedin.com" && (url.pathname.includes("/posts/") || url.pathname.includes("/feed/update/")) ? url.href : null;
+  }
+  return null;
 }
 
 function buildMediaRecaptureButton(entry) {

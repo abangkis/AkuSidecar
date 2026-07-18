@@ -279,6 +279,61 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 }
 
+func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
+	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}}
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
+	server, err := New(cfg, state, runtime, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		host        string
+		origin      string
+		contentType string
+		want        int
+	}{
+		{name: "foreign host", method: http.MethodGet, path: "/api/health", host: "attacker.example", want: http.StatusForbidden},
+		{name: "foreign browser origin", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "https://attacker.example", contentType: "application/json", want: http.StatusForbidden},
+		{name: "extension cannot call UI mutation", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "chrome-extension://abcdefghijklmnop", contentType: "application/json", want: http.StatusForbidden},
+		{name: "same origin UI reaches route", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "application/json", want: http.StatusOK},
+		{name: "extension reaches bridge authentication", method: http.MethodPost, path: "/api/bridge/heartbeat", host: "localhost:11122", origin: "chrome-extension://abcdefghijklmnop", contentType: "application/json", want: http.StatusUnauthorized},
+		{name: "JSON mutation rejects text content", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "text/plain", want: http.StatusUnsupportedMediaType},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := ""
+			if test.method == http.MethodPut {
+				body = `{"activeSources":["x","linkedin"]}`
+			} else if test.method == http.MethodPost {
+				body = `{}`
+			}
+			request := httptest.NewRequest(test.method, "http://"+test.host+test.path, strings.NewReader(body))
+			request.Host = test.host
+			if test.origin != "" {
+				request.Header.Set("Origin", test.origin)
+			}
+			if test.contentType != "" {
+				request.Header.Set("Content-Type", test.contentType)
+			}
+			response := httptest.NewRecorder()
+			server.http.Handler.ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestStopClosesActiveHTTPConnectionsAfterDrainDeadline(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -339,6 +394,7 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 		}],"coverage":{"browserAdapter":"aku-bridge"}
 	}`
 	request := httptest.NewRequest(http.MethodPost, "/api/bridge/commands/example/observation", bytes.NewBufferString(raw))
+	request.Header.Set("Content-Type", "application/json")
 	var observation domain.Observation
 	if err := readJSON(request, &observation); err != nil {
 		t.Fatalf("v51 observation must satisfy the strict Go shape: %v", err)
@@ -502,7 +558,11 @@ func completeHTTPTestRun(t *testing.T, runtime *engine.Engine, sessionID string,
 			if err != nil || command == nil {
 				t.Fatalf("claim command=%+v err=%v", command, err)
 			}
-			observation := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{PlatformID: platformID, Text: "Material source update", Author: "author", Permalink: "https://example.test/post", FeedPosition: 1}}}}, Coverage: map[string]any{"quality": "complete"}}
+			permalink := "https://x.com/example/status/" + platformID
+			if source == domain.SourceLinkedIn {
+				permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + platformID
+			}
+			observation := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{PlatformID: platformID, Text: "Material source update", Author: "author", Permalink: permalink, FeedPosition: 1}}}}, Coverage: map[string]any{"quality": "complete"}}
 			if _, err := runtime.AcceptObservation(context.Background(), command.ID, run.ID, observation); err != nil {
 				t.Fatal(err)
 			}

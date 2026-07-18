@@ -611,8 +611,8 @@ type ReasonedItem struct {
 	WhatChanged    string  `json:"whatChanged"`
 	WhyItMatters   string  `json:"whyItMatters"`
 	Source         Source  `json:"source"`
-	SourceURL      string  `json:"sourceUrl"`
-	SourceURLKind  string  `json:"sourceUrlKind"`
+	SourceURL      string  `json:"sourceUrl,omitempty"`
+	SourceURLKind  string  `json:"sourceUrlKind,omitempty"`
 	EvidenceKey    string  `json:"evidenceKey"`
 	EventKey       string  `json:"eventKey"`
 	KnowledgeDelta string  `json:"knowledgeDelta"`

@@ -430,13 +430,8 @@ func recapturedBlock(observation domain.Observation, job domain.MediaRecapture) 
 }
 
 func nativeSourceURL(source domain.Source, raw string) bool {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "https" {
-		return false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	return source == domain.SourceX && host == "x.com" && strings.Contains(parsed.Path, "/status/") ||
-		source == domain.SourceLinkedIn && host == "www.linkedin.com" && (strings.Contains(parsed.Path, "/posts/") || strings.Contains(parsed.Path, "/feed/update/"))
+	_, ok := domain.CanonicalSourceURL(source, raw)
+	return ok
 }
 
 func sameNativeURL(left, right string) bool {

@@ -8,6 +8,7 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -250,6 +251,36 @@ type continuityProvider struct {
 	reasoning.Deterministic
 	mu    sync.Mutex
 	calls int
+}
+
+func TestBindReasoningSourceURLsUsesOnlyCapturedCanonicalEvidence(t *testing.T) {
+	observation := domain.Observation{Source: domain.SourceX, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{
+		{EvidenceKey: "x:000000000000000000000901", Permalink: "https://x.com/author/status/901"},
+		{EvidenceKey: "x:000000000000000000000902", Permalink: "https://attacker.example/redirect"},
+	}}}}
+	result := domain.ReasoningResult{Items: []domain.ReasonedItem{
+		{EvidenceKey: "x:000000000000000000000901", Source: domain.SourceLinkedIn, SourceURL: "https://attacker.example/model-controlled", SourceURLKind: "external_reference"},
+		{EvidenceKey: "x:000000000000000000000902", Source: domain.SourceX, SourceURL: "https://attacker.example/model-controlled", SourceURLKind: "native_post"},
+	}}
+
+	bindReasoningSourceURLs(observation, &result)
+	if result.Items[0].Source != domain.SourceX || result.Items[0].SourceURL != "https://x.com/author/status/901" || result.Items[0].SourceURLKind != "native_post" {
+		t.Fatalf("canonical item=%+v", result.Items[0])
+	}
+	if result.Items[1].Source != domain.SourceX || result.Items[1].SourceURL != "" || result.Items[1].SourceURLKind != "" {
+		t.Fatalf("invalid captured URL must not survive: %+v", result.Items[1])
+	}
+}
+
+func TestValidateObservationRejectsNonCanonicalPermalink(t *testing.T) {
+	observation := domain.Observation{
+		Source:    domain.SourceX,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000903", Permalink: "https://attacker.example/post"}}}},
+		Coverage:  map[string]any{"browserAdapter": "test"},
+	}
+	if err := validateObservation(observation); err == nil || !strings.Contains(err.Error(), "permalink") {
+		t.Fatalf("validateObservation error=%v", err)
+	}
 }
 
 func (provider *continuityProvider) Analyze(_ context.Context, run domain.Run, observation domain.Observation, _ []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
@@ -725,7 +756,11 @@ func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessio
 	if err != nil || command == nil {
 		t.Fatalf("claim: %+v %v", command, err)
 	}
-	value := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: evidenceKey, Text: "Material source update", Author: "author", Permalink: "https://example.test/post"}}}}, Coverage: map[string]any{"quality": "complete"}}
+	permalink := "https://x.com/example/status/" + strings.TrimPrefix(evidenceKey, "x:")
+	if source == domain.SourceLinkedIn {
+		permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + strings.TrimPrefix(evidenceKey, "linkedin:")
+	}
+	value := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: evidenceKey, Text: "Material source update", Author: "author", Permalink: permalink}}}}, Coverage: map[string]any{"quality": "complete"}}
 	if _, err := runtime.AcceptObservation(context.Background(), command.ID, run.ID, value); err != nil {
 		t.Fatal(err)
 	}

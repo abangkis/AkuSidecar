@@ -535,6 +535,11 @@ func validateObservation(value domain.Observation) error {
 				return errors.New("captured block is missing evidenceKey")
 			}
 			seen[block.EvidenceKey] = true
+			if strings.TrimSpace(block.Permalink) != "" {
+				if _, ok := domain.CanonicalSourceURL(value.Source, block.Permalink); !ok {
+					return errors.New("captured block permalink is not a canonical native source URL")
+				}
+			}
 			if len(block.Attachments) > 3 {
 				return errors.New("captured block exceeds the attachment limit")
 			}
@@ -649,6 +654,7 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	if err != nil {
 		return err
 	}
+	bindReasoningSourceURLs(merged, &result)
 	if err = validateReasoning(merged, result); err != nil {
 		return err
 	}
@@ -697,6 +703,27 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	}
 	_, err = e.startNext(ctx, run.SessionID)
 	return err
+}
+
+func bindReasoningSourceURLs(observation domain.Observation, result *domain.ReasoningResult) {
+	permalinks := map[string]string{}
+	for _, snapshot := range observation.Snapshots {
+		for _, block := range snapshot.Blocks {
+			if canonical, ok := domain.CanonicalSourceURL(observation.Source, block.Permalink); ok {
+				permalinks[block.EvidenceKey] = canonical
+			}
+		}
+	}
+	for index := range result.Items {
+		item := &result.Items[index]
+		item.Source = observation.Source
+		item.SourceURL = permalinks[item.EvidenceKey]
+		if item.SourceURL == "" {
+			item.SourceURLKind = ""
+		} else {
+			item.SourceURLKind = "native_post"
+		}
+	}
 }
 
 func validateReasoning(observation domain.Observation, result domain.ReasoningResult) error {
