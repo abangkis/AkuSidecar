@@ -75,7 +75,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
 	sources := bootstrap["sources"].([]any)
-	if len(sources) != 3 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != false {
+	if len(sources) != 3 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != true {
 		t.Fatalf("source descriptors=%+v", sources)
 	}
 	reasoningProcesses := bootstrap["reasoningProcesses"].([]any)

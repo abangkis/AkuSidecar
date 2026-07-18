@@ -540,7 +540,10 @@ function resetTimelineBoundaryReturnDuration() {
 
 function showOnboarding(editing) {
   state.onboardingEditing = editing;
-  const sources = state.bootstrap?.settings?.activeSources ?? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id);
+  const completingFirstOnboarding = state.bootstrap?.onboarding?.status !== "completed";
+  const sources = completingFirstOnboarding
+    ? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id)
+    : (state.bootstrap?.settings?.activeSources ?? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id));
   for (const input of document.querySelectorAll("#onboarding-source-options input[type='checkbox']")) {
     input.checked = sources.includes(input.value);
   }

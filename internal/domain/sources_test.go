@@ -20,11 +20,11 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 		}
 	}
 	defaults := DefaultSources()
-	if len(defaults) != 2 || defaults[0] != SourceX || defaults[1] != SourceLinkedIn {
+	if len(defaults) != 3 || defaults[0] != SourceX || defaults[1] != SourceLinkedIn || defaults[2] != SourceFacebook {
 		t.Fatalf("default sources=%v", defaults)
 	}
-	if descriptor, ok := SourceByID(SourceFacebook); !ok || descriptor.DefaultActive {
-		t.Fatalf("Facebook must be available but not preselected: %+v ok=%v", descriptor, ok)
+	if descriptor, ok := SourceByID(SourceFacebook); !ok || !descriptor.DefaultActive {
+		t.Fatalf("Facebook must be available and preselected: %+v ok=%v", descriptor, ok)
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
