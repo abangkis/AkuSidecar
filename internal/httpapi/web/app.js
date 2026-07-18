@@ -2255,15 +2255,25 @@ function buildActions(entry) {
   feedback.className = "feedback-actions";
   const more = feedbackButton("More like this");
   const less = feedbackButton("Less like this");
+  const renderDirection = () => {
+    const direction = entry.feedback?.direction;
+    more.classList.toggle("selected", direction === "more");
+    less.classList.toggle("selected", direction === "less");
+    more.setAttribute("aria-pressed", String(direction === "more"));
+    less.setAttribute("aria-pressed", String(direction === "less"));
+  };
+  renderDirection();
   more.addEventListener("click", async () => {
-    await sendFeedback(entry.id, "more", null);
-    more.classList.add("selected");
-    less.classList.remove("selected");
+    const feedback = await sendFeedback(entry.id, "more", null);
+    if (!feedback) return;
+    entry.feedback = feedback;
+    renderDirection();
   });
   less.addEventListener("click", async () => {
-    await sendFeedback(entry.id, "less", "not_interested");
-    less.classList.add("selected");
-    more.classList.remove("selected");
+    const feedback = await sendFeedback(entry.id, "less", "not_interested");
+    if (!feedback) return;
+    entry.feedback = feedback;
+    renderDirection();
   });
   feedback.append(more, less);
   if (link) actions.append(link);
@@ -2517,12 +2527,14 @@ function feedbackButton(label) {
 
 async function sendFeedback(id, direction, reason) {
   try {
-    await api(`/api/timeline/${encodeURIComponent(id)}/feedback`, {
+    const response = await api(`/api/timeline/${encodeURIComponent(id)}/feedback`, {
       method: "POST",
       body: { direction, reason },
     });
+    return response.feedback;
   } catch (error) {
     showError(error);
+    return null;
   }
 }
 

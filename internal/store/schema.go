@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS feedback_events (
 );
 
 CREATE INDEX IF NOT EXISTS feedback_evidence_created ON feedback_events(evidence_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS feedback_timeline_created ON feedback_events(timeline_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS selection_corrections (
   id TEXT PRIMARY KEY,

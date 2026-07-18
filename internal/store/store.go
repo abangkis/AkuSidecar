@@ -990,7 +990,57 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 	if err := s.attachAIDetections(ctx, items); err != nil {
 		return nil, err
 	}
+	if err := s.attachLatestFeedback(ctx, items); err != nil {
+		return nil, err
+	}
 	return items, nil
+}
+
+func (s *Store) attachLatestFeedback(ctx context.Context, items []domain.TimelineItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(items))
+	args := make([]any, len(items))
+	itemsByID := make(map[string]*domain.TimelineItem, len(items))
+	for index := range items {
+		placeholders[index] = "?"
+		args[index] = items[index].ID
+		itemsByID[items[index].ID] = &items[index]
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		WITH ranked AS (
+		  SELECT id,timeline_id,direction,reason,created_at,
+		    ROW_NUMBER() OVER (PARTITION BY timeline_id ORDER BY created_at DESC,id DESC) AS signal_rank
+		  FROM feedback_events
+		  WHERE timeline_id IN (`+strings.Join(placeholders, ",")+`)
+		)
+		SELECT id,timeline_id,direction,reason,created_at
+		FROM ranked WHERE signal_rank=1`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, timelineID, direction, createdAt string
+		var reason sql.NullString
+		if err := rows.Scan(&id, &timelineID, &direction, &reason, &createdAt); err != nil {
+			return err
+		}
+		item := itemsByID[timelineID]
+		if item == nil {
+			continue
+		}
+		feedback := domain.Feedback{
+			ID: id, TimelineID: timelineID, SessionID: item.SessionID, RunID: item.RunID,
+			EvidenceKey: item.EvidenceKey, Direction: direction, CreatedAt: createdAt,
+		}
+		if reason.Valid {
+			feedback.Reason = &reason.String
+		}
+		item.Feedback = &feedback
+	}
+	return rows.Err()
 }
 
 func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain.Feedback) (domain.Feedback, error) {

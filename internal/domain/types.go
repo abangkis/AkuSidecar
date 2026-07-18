@@ -659,6 +659,7 @@ type TimelineItem struct {
 	Evidence      *Block                 `json:"evidence,omitempty"`
 	SemanticEvent *TimelineSemanticEvent `json:"semanticEvent,omitempty"`
 	AIDetection   *TimelineAIDetection   `json:"aiDetection,omitempty"`
+	Feedback      *Feedback              `json:"feedback,omitempty"`
 	Coverage      map[string]any         `json:"coverage"`
 	CreatedAt     string                 `json:"createdAt"`
 }

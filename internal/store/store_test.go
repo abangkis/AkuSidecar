@@ -581,6 +581,13 @@ func TestInboxLetsLatestMoreOrLessDecisionReplaceAnEarlierChoice(t *testing.T) {
 	if len(signals) != 1 || signals[0].Direction != "more" {
 		t.Fatalf("signals=%+v", signals)
 	}
+	timeline, err := state.ListTimeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(timeline) != 1 || timeline[0].Feedback == nil || timeline[0].Feedback.Direction != "more" || timeline[0].Feedback.ID != more.ID {
+		t.Fatalf("timeline feedback=%+v", timeline)
+	}
 }
 
 func TestSchemaMismatchFailsClosed(t *testing.T) {
