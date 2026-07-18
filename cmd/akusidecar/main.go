@@ -30,14 +30,14 @@ func main() {
 	provider, err := reasoning.NewProvider(cfg)
 	fatal(logger, err)
 	var eventResolver semanticengine.Resolver
-	if appServer, ok := provider.(*reasoning.CodexAppServer); ok {
-		eventResolver, err = semanticengine.NewAppServerResolver(cfg.Root, appServer, cfg.Reasoning.Evaluation)
+	if structured, ok := provider.(reasoning.StructuredInvoker); ok {
+		eventResolver, err = semanticengine.NewStructuredResolver(cfg.Root, structured, cfg.Reasoning.SemanticEvent)
 		fatal(logger, err)
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
-	if appServer, ok := provider.(*reasoning.CodexAppServer); ok {
-		aiResolver, err := aidetector.NewAppServerResolver(cfg.Root, appServer, cfg.Reasoning.AIDetection)
+	if structured, ok := provider.(reasoning.StructuredInvoker); ok {
+		aiResolver, err := aidetector.NewStructuredResolver(cfg.Root, structured, cfg.Reasoning.AIDetection)
 		fatal(logger, err)
 		runtime.SetAIDeepResolver(aiResolver)
 	}

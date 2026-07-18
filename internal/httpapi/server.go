@@ -139,7 +139,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningProcesses": s.engine.ReasoningProcesses(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -218,7 +218,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "reasoningProcesses": s.engine.ReasoningProcesses()})
 	case r.Method == http.MethodPut && p == "/api/settings":
 		var body struct {
 			Settings           domain.Settings `json:"settings"`
@@ -238,7 +238,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return badRequest(err.Error())
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "reasoningProcesses": s.engine.ReasoningProcesses()})
 	case r.Method == http.MethodPost && p == "/api/sessions":
 		var body struct {
 			Intent string `json:"intent"`

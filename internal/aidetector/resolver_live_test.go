@@ -31,7 +31,7 @@ func TestLiveCodexAppServerAIDetectionAcceptanceCanary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer provider.Close()
-	resolver, err := aidetector.NewAppServerResolver(root, provider, cfg.Reasoning.AIDetection)
+	resolver, err := aidetector.NewStructuredResolver(root, provider, cfg.Reasoning.AIDetection)
 	if err != nil {
 		t.Fatal(err)
 	}

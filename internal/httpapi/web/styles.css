@@ -330,6 +330,10 @@ h3 { letter-spacing: -0.02em; }
 .reset-danger-row { background: rgba(255, 141, 131, 0.035); }
 .ai-hide-warning { background: rgba(246, 200, 107, 0.045); }
 .ai-hide-warning .settings-detail { color: var(--amber); text-align: right; }
+.reasoning-process-route { display: grid; justify-items: end; gap: 3px; text-align: right; }
+.reasoning-process-route > strong { color: var(--text); }
+.reasoning-process-route > small { color: var(--muted); }
+.reasoning-process-provider { color: var(--quiet) !important; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .runtime-contract-card { padding: 8px 18px; }
 .runtime-contract-card dl { margin: 0; }
 .runtime-contract-card dl div { display: flex; justify-content: space-between; gap: 24px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -388,6 +392,7 @@ h3 { letter-spacing: -0.02em; }
   .timeline-actions, .settings-heading-actions { width: 100%; justify-content: space-between; }
   .settings-row { grid-template-columns: 1fr; gap: 10px; }
   .settings-row input[type="checkbox"] { justify-self: start; }
+  .reasoning-process-route { justify-items: start; text-align: left; }
   .boundary-cue-control { grid-template-columns: 20px minmax(76px, 92px) minmax(0, 1fr); }
   .paired-setting-control { grid-template-columns: 1fr; }
   .semantic-duplicate-summary { grid-template-columns: 1fr; }

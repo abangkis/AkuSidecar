@@ -24,7 +24,7 @@ type StructuredInvoker interface {
 	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
-type AppServerResolver struct {
+type StructuredResolver struct {
 	invoker StructuredInvoker
 	model   config.ModelConfig
 	schema  any
@@ -65,7 +65,7 @@ func DeepCandidates(items []domain.TimelineItem) []domain.TimelineItem {
 	return result
 }
 
-func NewAppServerResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*AppServerResolver, error) {
+func NewStructuredResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*StructuredResolver, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "schemas", "ai-deep-detection.schema.json"))
 	if err != nil {
 		return nil, fmt.Errorf("read AI deep-detection schema: %w", err)
@@ -74,13 +74,13 @@ func NewAppServerResolver(root string, invoker StructuredInvoker, model config.M
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		return nil, fmt.Errorf("decode AI deep-detection schema: %w", err)
 	}
-	return &AppServerResolver{invoker: invoker, model: model, schema: schema}, nil
+	return &StructuredResolver{invoker: invoker, model: model, schema: schema}, nil
 }
 
-func (r *AppServerResolver) Name() string              { return "codex-app-server" }
-func (r *AppServerResolver) Model() config.ModelConfig { return r.model }
+func (r *StructuredResolver) Name() string              { return "structured-inference" }
+func (r *StructuredResolver) Model() config.ModelConfig { return r.model }
 
-func (r *AppServerResolver) Resolve(ctx context.Context, items []domain.TimelineItem) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error) {
+func (r *StructuredResolver) Resolve(ctx context.Context, items []domain.TimelineItem) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error) {
 	type fastContext struct {
 		Stage          string   `json:"stage"`
 		Status         string   `json:"status"`

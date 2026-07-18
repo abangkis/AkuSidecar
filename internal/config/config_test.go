@@ -11,6 +11,7 @@ func TestCodexAppServerRequiresSeparateAIDetectionProfile(t *testing.T) {
 		Reasoning: ReasoningConfig{
 			Provider: "codex-app-server", TimeoutMS: 5000,
 			Planning: ModelConfig{Model: "planner", Effort: "high"}, Evaluation: ModelConfig{Model: "evaluator", Effort: "high"},
+			SemanticEvent: ModelConfig{Model: "event", Effort: "high"},
 		},
 		Capture: CaptureConfig{MaxAcquisitionRounds: 1},
 	}

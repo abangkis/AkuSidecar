@@ -217,6 +217,7 @@ function renderBridge(bridge) {
 
 function renderSettings(settings) {
   if (!settings) return;
+  renderReasoningProcesses(state.bootstrap?.reasoningProcesses ?? []);
   $("#bounded-load-profile").value = settings.loadProfile;
   $("#capture-visibility-policy").value = settings.captureVisibility;
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
@@ -246,6 +247,55 @@ function renderSettings(settings) {
   syncLoadProfileSettings(false);
   syncSemanticEventSettings();
   syncAIDetectionSettings();
+}
+
+function renderReasoningProcesses(processes) {
+  const host = $("#reasoning-processes");
+  if (!host) return;
+  host.replaceChildren();
+  for (const process of processes) {
+    const row = document.createElement("div");
+    row.className = "settings-row reasoning-process-profile";
+    const copy = document.createElement("span");
+    copy.className = "settings-copy";
+    const label = document.createElement("strong");
+    label.textContent = process.label;
+    const description = document.createElement("small");
+    description.textContent = process.description;
+    copy.append(label, description);
+
+    const route = document.createElement("span");
+    route.className = "reasoning-process-route";
+    const provider = document.createElement("small");
+    provider.className = "reasoning-process-provider";
+    provider.textContent = formatReasoningProvider(process.provider);
+    const model = document.createElement("strong");
+    model.textContent = formatReasoningModel(process.model);
+    const effort = document.createElement("small");
+    effort.textContent = `${process.execution === "async" ? "Async" : "In run"} · ${formatReasoningEffort(process.effort)} thinking`;
+    route.append(provider, model, effort);
+    row.append(copy, route);
+    host.append(row);
+  }
+}
+
+function formatReasoningProvider(value) {
+  if (value === "codex-app-server") return "Codex App Server";
+  if (value === "deterministic") return "Local deterministic";
+  return String(value || "Custom backend").replaceAll("-", " ");
+}
+
+function formatReasoningModel(value) {
+  if (value === "gpt-5.6-luna") return "GPT-5.6 Luna";
+  if (value === "local-deterministic") return "No model";
+  return value || "Backend default";
+}
+
+function formatReasoningEffort(value) {
+  if (value === "xhigh") return "XHigh";
+  if (value === "none") return "No";
+  const text = String(value || "default");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 async function saveSettings(event) {
@@ -301,6 +351,7 @@ async function persistSettings(settings, confirmationPhrase = "") {
   try {
     const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
     state.bootstrap.settings = response.settings;
+    state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
     renderSettings(response.settings);
     status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
     await refreshTimeline();

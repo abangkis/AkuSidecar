@@ -31,7 +31,7 @@ func TestLiveCodexAppServerSemanticAcceptanceCanary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer provider.Close()
-	resolver, err := eventengine.NewAppServerResolver(root, provider, cfg.Reasoning.Evaluation)
+	resolver, err := eventengine.NewStructuredResolver(root, provider, cfg.Reasoning.SemanticEvent)
 	if err != nil {
 		t.Fatal(err)
 	}

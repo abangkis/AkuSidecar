@@ -23,7 +23,7 @@ func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt strin
 
 func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],"assessedObject":"social_post","signalScope":"none","rationale":"The available authored content is inadequate."}]}`}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
 	item := domain.TimelineItem{
 		ID: "private-timeline-id", SessionID: "private-session-id", Source: domain.SourceX,
 		Item: domain.ReasonedItem{Author: "Author", WhatChanged: "Fallback text"},
@@ -74,7 +74,7 @@ func TestDeepCandidatesSpendModelEffortOnlyWhereReviewCanHelp(t *testing.T) {
 
 func TestDeepResolverRejectsIncompleteAssessmentBatch(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[]}`}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	_, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}})
 	if err == nil || !strings.Contains(err.Error(), "returned 0 assessments for 1 candidates") {
 		t.Fatalf("err=%v", err)
@@ -83,7 +83,7 @@ func TestDeepResolverRejectsIncompleteAssessmentBatch(t *testing.T) {
 
 func TestDeepResolverRejectsUserAuthorityStatus(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"user_marked_ai","confidenceBand":"high","evidenceCodes":[],"assessedObject":"social_post","signalScope":"social_post","rationale":"invalid authority"}]}`}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	_, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}})
 	if err == nil || !strings.Contains(err.Error(), "authority do not match") {
 		t.Fatalf("err=%v", err)
@@ -92,7 +92,7 @@ func TestDeepResolverRejectsUserAuthorityStatus(t *testing.T) {
 
 func TestDeepResolverRejectsStrongSignalBoundToExternalArtifact(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"external_artifact","rationale":"AI created the website discussed by the author."}]}`}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	_, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}})
 	if err == nil || !strings.Contains(err.Error(), "requires social_post signal scope") {
 		t.Fatalf("err=%v", err)
@@ -101,7 +101,7 @@ func TestDeepResolverRejectsStrongSignalBoundToExternalArtifact(t *testing.T) {
 
 func TestDeepResolverDowngradesArtifactWhenProviderMisstatesScope(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"social_post","rationale":"Kimi created the website and its content."}]}`}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	item := domain.TimelineItem{ID: "timeline", SessionID: "session", Evidence: &domain.Block{Text: "I just created this interactive website and its entire scientific content with Kimi. I wrote this post to describe what I observed."}}
 	result, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{item})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestDeepResolverDowngradesArtifactWhenProviderMisstatesScope(t *testing.T) 
 
 func TestDeepResolverKeepsVerifiablePostAuthorshipDisclosure(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"social_post","rationale":"The author directly disclosed AI authorship of the post."}]}`}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	item := domain.TimelineItem{ID: "timeline", SessionID: "session", Evidence: &domain.Block{Text: "I used ChatGPT to write this post, then reviewed every sentence before publishing it."}}
 	result, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{item})
 	if err != nil {

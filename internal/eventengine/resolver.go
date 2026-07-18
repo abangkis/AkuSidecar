@@ -23,13 +23,13 @@ type StructuredInvoker interface {
 	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
-type AppServerResolver struct {
+type StructuredResolver struct {
 	invoker StructuredInvoker
 	model   config.ModelConfig
 	schema  any
 }
 
-func NewAppServerResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*AppServerResolver, error) {
+func NewStructuredResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*StructuredResolver, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "schemas", "semantic-event-resolution.schema.json"))
 	if err != nil {
 		return nil, fmt.Errorf("read semantic event schema: %w", err)
@@ -38,13 +38,13 @@ func NewAppServerResolver(root string, invoker StructuredInvoker, model config.M
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		return nil, fmt.Errorf("decode semantic event schema: %w", err)
 	}
-	return &AppServerResolver{invoker: invoker, model: model, schema: schema}, nil
+	return &StructuredResolver{invoker: invoker, model: model, schema: schema}, nil
 }
 
-func (r *AppServerResolver) Name() string              { return "codex-app-server" }
-func (r *AppServerResolver) Model() config.ModelConfig { return r.model }
+func (r *StructuredResolver) Name() string              { return "structured-inference" }
+func (r *StructuredResolver) Model() config.ModelConfig { return r.model }
 
-func (r *AppServerResolver) Resolve(ctx context.Context, candidates []domain.SemanticCandidate, events []domain.SemanticEvent) (domain.SemanticResolution, domain.ModelUsage, time.Duration, error) {
+func (r *StructuredResolver) Resolve(ctx context.Context, candidates []domain.SemanticCandidate, events []domain.SemanticEvent) (domain.SemanticResolution, domain.ModelUsage, time.Duration, error) {
 	type eventReference struct {
 		Alias          string   `json:"alias"`
 		CanonicalClaim string   `json:"canonicalClaim"`

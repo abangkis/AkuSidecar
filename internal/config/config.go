@@ -32,12 +32,13 @@ type DatabaseConfig struct {
 }
 
 type ReasoningConfig struct {
-	Provider    string      `json:"provider"`
-	Executable  string      `json:"executable"`
-	TimeoutMS   int         `json:"timeoutMs"`
-	Planning    ModelConfig `json:"planning"`
-	Evaluation  ModelConfig `json:"evaluation"`
-	AIDetection ModelConfig `json:"aiDetection"`
+	Provider      string      `json:"provider"`
+	Executable    string      `json:"executable"`
+	TimeoutMS     int         `json:"timeoutMs"`
+	Planning      ModelConfig `json:"planning"`
+	Evaluation    ModelConfig `json:"evaluation"`
+	SemanticEvent ModelConfig `json:"semanticEvent"`
+	AIDetection   ModelConfig `json:"aiDetection"`
 }
 
 type ModelConfig struct {
@@ -136,7 +137,10 @@ func (c Config) Validate() error {
 	}
 	if c.Reasoning.Provider == "codex-app-server" {
 		models := map[string]ModelConfig{
-			"planning": c.Reasoning.Planning, "evaluation": c.Reasoning.Evaluation, "AI detection": c.Reasoning.AIDetection,
+			"planning":       c.Reasoning.Planning,
+			"evaluation":     c.Reasoning.Evaluation,
+			"semantic event": c.Reasoning.SemanticEvent,
+			"AI detection":   c.Reasoning.AIDetection,
 		}
 		for name, model := range models {
 			if model.Model == "" || model.Effort == "" {

@@ -19,9 +19,9 @@ func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt strin
 	return `{"decisions":[{"candidateAlias":"candidate_001","relation":"new_event","targetAlias":null,"confidence":0.95,"reason":"Distinct occurrence","event":{"canonicalClaim":"A release happened","actor":"OpenAI","action":"released","object":"Codex","eventKind":"release","aliases":[]}}]}`, domain.ModelUsage{}, time.Millisecond, nil
 }
 
-func TestAppServerResolverUsesOpaqueAliasesAndNoTools(t *testing.T) {
+func TestStructuredResolverUsesOpaqueAliasesAndNoTools(t *testing.T) {
 	invoker := &fakeStructuredInvoker{}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
 	candidates := []domain.SemanticCandidate{{Alias: "candidate_001", EvidenceKey: "secret-evidence-key", Text: "OpenAI released Codex"}}
 	events := []domain.SemanticEvent{{ID: "secret-event-id", CanonicalClaim: "A prior event"}}
 	result, _, _, err := resolver.Resolve(context.Background(), candidates, events)
@@ -38,9 +38,9 @@ func TestAppServerResolverUsesOpaqueAliasesAndNoTools(t *testing.T) {
 	}
 }
 
-func TestAppServerResolverBoundsUntrustedEvidenceExcerpt(t *testing.T) {
+func TestStructuredResolverBoundsUntrustedEvidenceExcerpt(t *testing.T) {
 	invoker := &fakeStructuredInvoker{}
-	resolver := &AppServerResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
 	longText := strings.Repeat("bounded source evidence ", 80) + "TAIL_SENTINEL"
 	_, _, _, err := resolver.Resolve(context.Background(), []domain.SemanticCandidate{{Alias: "candidate_001", Text: longText, WhatChanged: "A bounded event occurred"}}, nil)
 	if err != nil {
