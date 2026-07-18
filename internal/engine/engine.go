@@ -299,15 +299,27 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 			return nil, settingsErr
 		}
 		if e.events != nil && settings.SemanticEventMode != "show_all" {
+			if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "semantic_event_resolution"); stageErr != nil {
+				return nil, stageErr
+			}
 			if _, eventErr := e.events.ProcessSession(ctx, sessionID, settings); eventErr != nil {
 				e.logger.Printf("semantic event resolution for session %s degraded safely: %v", sessionID, eventErr)
 			}
 		}
+		if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "timeline_composition"); stageErr != nil {
+			return nil, stageErr
+		}
 		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
 			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
 		}
+		if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "ai_fast_detection"); stageErr != nil {
+			return nil, stageErr
+		}
 		if detectionErr := e.runFastDetection(ctx, sessionID); detectionErr != nil {
 			e.logger.Printf("AI Fast Detection for session %s degraded safely: %v", sessionID, detectionErr)
+		}
+		if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "finalizing"); stageErr != nil {
+			return nil, stageErr
 		}
 		if finalizeErr := e.store.FinalizeSession(ctx, sessionID); finalizeErr != nil {
 			return nil, fmt.Errorf("finalize unified session: %w", finalizeErr)
@@ -646,6 +658,9 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return err
 	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
+		if err := e.store.SetRunPipelineStage(ctx, runID, "acquisition_planning"); err != nil {
+			return err
+		}
 		plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, knowledge, settings.ReasoningAcquisitionProfile)
 		_ = e.store.SaveTelemetry(context.Background(), telemetry)
 		if planErr != nil {
@@ -659,6 +674,9 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 				return err
 			}
 		}
+	}
+	if err := e.store.SetRunPipelineStage(ctx, runID, "candidate_evaluation"); err != nil {
+		return err
 	}
 	result, telemetry, err := e.analyzeWithProfile(ctx, run, merged, knowledge, settings.ReasoningEvaluationProfile)
 	_ = e.store.SaveTelemetry(context.Background(), telemetry)

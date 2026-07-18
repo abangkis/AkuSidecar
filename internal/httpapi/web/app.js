@@ -29,6 +29,8 @@ const state = {
   session: null,
   dispatchKey: null,
   poller: null,
+  pollInFlight: false,
+  sessionProgress: { sessionId: null, value: 0 },
   currentView: "timeline",
   media: [],
   mediaIndex: 0,
@@ -776,6 +778,7 @@ async function startSession() {
       body: { intent: defaultIntent },
     });
     state.session = session;
+    state.sessionProgress = { sessionId: session.id, value: 0 };
     renderSession();
     startPolling();
   } catch (error) {
@@ -813,9 +816,12 @@ function stopPolling() {
 }
 
 async function pollSession() {
-  if (!state.session) return;
+  if (!state.session || state.pollInFlight) return;
+  const sessionId = state.session.id;
+  state.pollInFlight = true;
   try {
-    const { session } = await api(`/api/sessions/${encodeURIComponent(state.session.id)}`);
+    const { session } = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
+    if (!state.session || state.session.id !== sessionId) return;
     state.session = session;
     renderSession();
     const activeRun = session.runs?.find((run) => ["waiting_for_bridge", "reasoning"].includes(run.status));
@@ -846,6 +852,8 @@ async function pollSession() {
       return;
     }
     showError(error);
+  } finally {
+    state.pollInFlight = false;
   }
 }
 
@@ -907,17 +915,54 @@ function renderSession() {
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
   syncRunButtons();
   if (!session || terminalStatuses.has(session.status)) return;
+  const progress = describeSessionProgress(session);
+  if (state.sessionProgress.sessionId !== session.id) {
+    state.sessionProgress = { sessionId: session.id, value: 0 };
+  }
+  state.sessionProgress.value = Math.max(state.sessionProgress.value, progress.value);
+  const value = Math.min(97, state.sessionProgress.value);
+  $("#progress-bar").style.width = `${value}%`;
+  $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.round(value)));
+  $("#processing-title").textContent = progress.title;
+  $("#processing-detail").textContent = progress.detail;
+}
+
+function describeSessionProgress(session) {
+  const pipelineStage = session.coverage?.pipelineStage;
+  const pipelineStages = {
+    semantic_event_resolution: { value: 76, title: "Resolving repeated events", detail: "Cross-source semantic event resolution" },
+    timeline_composition: { value: 84, title: "Composing your Timeline", detail: "Applying global personalized order and finite capacity" },
+    ai_fast_detection: { value: 91, title: "Checking AI-origin signals", detail: "AI Fast Detection · local and deterministic" },
+    finalizing: { value: 97, title: "Finishing this update", detail: "Publishing Timeline · AI Deep Detection continues asynchronously" },
+  };
+  if (pipelineStages[pipelineStage]) return pipelineStages[pipelineStage];
+
   const run = session.runs?.find((candidate) => !["queued", "completed", "failed", "cancelled"].includes(candidate.status))
     ?? session.runs?.find((candidate) => candidate.status === "queued");
   const ordinal = run?.ordinal ?? 0;
-  const reasoning = run?.status === "reasoning";
   const runCount = Math.max(1, session.runs?.length ?? 1);
-  const width = ((ordinal + (reasoning ? 0.72 : 0.28)) / runCount) * 96;
   const source = sourceLabel(run?.source);
-  $("#progress-bar").style.width = `${Math.min(96, width)}%`;
-  $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.min(96, width)));
-  $("#processing-title").textContent = reasoning ? `Evaluating ${source} evidence` : `Reading ${source}`;
-  $("#processing-detail").textContent = `${ordinal + 1} of ${runCount} sources · ${humanize(run?.stage ?? session.status)}`;
+  const stage = run?.stage ?? session.status;
+  const stageProgress = {
+    queued: 0.05,
+    capture: 0.18,
+    acquisition_planning: 0.38,
+    follow_up_capture: 0.52,
+    candidate_evaluation: 0.78,
+    reasoning: 0.7,
+    completed: 1,
+  }[stage] ?? (run?.status === "reasoning" ? 0.7 : 0.18);
+  const descriptions = {
+    acquisition_planning: [`Planning ${source} follow-up`, "Deciding whether another bounded observation is useful"],
+    follow_up_capture: [`Reading more ${source} evidence`, "Collecting the requested bounded follow-up"],
+    candidate_evaluation: [`Evaluating ${source} evidence`, "Applying evidence and your personal preference profile"],
+  };
+  const [title, stageDetail] = descriptions[stage] ?? [`Reading ${source}`, humanize(stage)];
+  return {
+    value: 4 + ((ordinal + stageProgress) / runCount) * 68,
+    title,
+    detail: `${ordinal + 1} of ${runCount} sources · ${stageDetail}`,
+  };
 }
 
 function syncRunButtons() {

@@ -248,6 +248,47 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	}
 }
 
+func TestPipelineStagesAreDurableAndValidated(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "observable pipeline", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SetSessionPipelineStage(ctx, session.ID, "ai_fast_detection"); err != nil {
+		t.Fatal(err)
+	}
+	storedSession, err := state.GetSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedSession.Coverage["pipelineStage"] != "ai_fast_detection" || storedSession.Coverage["pipelineStageUpdatedAt"] == nil {
+		t.Fatalf("session pipeline coverage=%+v", storedSession.Coverage)
+	}
+	if err := state.SetSessionPipelineStage(ctx, session.ID, "unknown"); err == nil {
+		t.Fatal("expected invalid session pipeline stage to fail")
+	}
+
+	run, err := state.AdvanceSession(ctx, session.ID)
+	if err != nil || run == nil {
+		t.Fatalf("next run: %+v %v", run, err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning' WHERE id=?`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SetRunPipelineStage(ctx, run.ID, "candidate_evaluation"); err != nil {
+		t.Fatal(err)
+	}
+	storedRun, err := state.GetRun(ctx, run.ID)
+	if err != nil || storedRun.Stage != "candidate_evaluation" {
+		t.Fatalf("run pipeline stage=%+v err=%v", storedRun, err)
+	}
+	if err := state.SetRunPipelineStage(ctx, run.ID, "unknown"); err == nil {
+		t.Fatal("expected invalid run pipeline stage to fail")
+	}
+}
+
 func TestSessionRemainsActiveUntilCompositionFinalizes(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

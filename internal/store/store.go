@@ -362,6 +362,38 @@ func (s *Store) GetSession(ctx context.Context, id string) (domain.Session, erro
 	return session, nil
 }
 
+func (s *Store) SetSessionPipelineStage(ctx context.Context, sessionID, stage string) error {
+	switch stage {
+	case "semantic_event_resolution", "timeline_composition", "ai_fast_detection", "finalizing":
+	default:
+		return fmt.Errorf("invalid session pipeline stage %q", stage)
+	}
+	coverage := map[string]any{}
+	var raw string
+	if err := s.db.QueryRowContext(ctx, `SELECT coverage_json FROM sessions WHERE id=? AND status IN ('queued','running')`, sessionID).Scan(&raw); err != nil {
+		return err
+	}
+	decodeJSON(raw, &coverage)
+	coverage["pipelineStage"] = stage
+	coverage["pipelineStageUpdatedAt"] = domain.Now()
+	encoded, err := json.Marshal(coverage)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE sessions SET coverage_json=? WHERE id=? AND status IN ('queued','running')`, string(encoded), sessionID)
+	return err
+}
+
+func (s *Store) SetRunPipelineStage(ctx context.Context, runID, stage string) error {
+	switch stage {
+	case "acquisition_planning", "candidate_evaluation":
+	default:
+		return fmt.Errorf("invalid run pipeline stage %q", stage)
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE runs SET stage=? WHERE id=? AND status='reasoning'`, stage, runID)
+	return err
+}
+
 func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,source,ordinal,status,stage,created_at,started_at,completed_at,summary,coverage_json,error_json FROM runs WHERE session_id=? ORDER BY ordinal`, sessionID)
 	if err != nil {
