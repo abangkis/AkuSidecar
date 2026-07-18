@@ -1,5 +1,7 @@
 # AkuSidecar
 
+Current preview release: **`0.7.0-preview.1`**.
+
 AkuSidecar is the Go local runtime for AkuBrowser. It owns the loopback HTTP
 API, embedded browser UI, fresh SQLite state, bounded X and LinkedIn session
 engine, deterministic selection and preference policies, AkuBridge v2
@@ -14,13 +16,13 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.6.9` / `source-fidelity-v59`
+- AkuBridge `0.7.0-preview.1` / `source-fidelity-v60`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
 
-The Codex executable is deliberately not committed. Place the official native
-Codex distribution at:
+The Codex executable is deliberately not committed. Development currently
+places the official native Codex distribution at:
 
 ```text
 runtime/codex-cli/bin/codex.exe
@@ -28,12 +30,14 @@ runtime/codex-cli/codex-path/
 runtime/codex-cli/codex-resources/
 ```
 
-`config/sidecar.json` points to that location. The default Go provider owns one
+`config/sidecar.json` points to that location. The `0.7.0-preview.1` package
+assumes Codex App with App Server is already installed and locally signed in;
+automatic discovery and login assistance are deferred. The default Go provider owns one
 managed `codex app-server` stdio process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
-structured token telemetry. Acquisition planning defaults to Luna `xhigh`; candidate
-evaluation, semantic event resolution, and AI Deep Detection use independent
-Luna `xhigh` profiles. Deep Detection runs only after Timeline delivery, while
+structured token telemetry. Acquisition planning, semantic event resolution,
+and AI Deep Detection default to Luna `high`; candidate evaluation alone uses
+Luna `xhigh`. Deep Detection runs only after Timeline delivery, while
 local deterministic AI Fast Detection does not consume a model. The domain
 adapters depend on a generic structured-inference contract rather than the
 Codex transport, so another backend can replace App Server without changing
@@ -275,9 +279,9 @@ leaves the Fast result intact. If Deep
 Detection overturns an earlier strong result, the UI keeps a corrected badge;
 it never erases the assessment without explanation.
 
-Inline is the default presentation. Drawer routes unseen strong-signal posts
-into the generic Timeline side-pane host without moving posts the user already
-saw. Hide requires the exact phrase `HIDE STRONG AI SIGNALS` and applies only to
+Drawer is the preview default and routes unseen strong-signal posts into the
+generic Timeline side-pane host without moving posts the user already saw.
+Inline remains available. Hide requires the exact phrase `HIDE STRONG AI SIGNALS` and applies only to
 direct platform/provenance evidence, Deep-confirmed strong signals, or a user
 `Mark as AI-generated` correction. Preliminary inferred signals are not
 Hide-eligible. `Mark as AI-generated` and `Mark as not AI-generated` are
@@ -291,7 +295,7 @@ uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
 either boundary trims the oldest terminal history and orphaned event threads.
 
-Unavailable X media first has a passive completion path. AkuBridge v59 can
+Unavailable X media first has a passive completion path. AkuBridge v60 can
 relay evidence from its DOM observers or from the bounded
 `x-response-evidence-v2` adapter, which inspects only X's already-requested
 `HomeTimeline`, `HomeLatestTimeline`, and `TweetDetail` responses. Raw response

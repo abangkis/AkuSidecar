@@ -79,8 +79,11 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("reasoning processes=%+v", reasoningProcesses)
 	}
 	bootstrapSettings := bootstrap["settings"].(map[string]any)
-	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "inline" {
+	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "drawer" {
 		t.Fatalf("timeline boundary cue settings=%+v", bootstrapSettings)
+	}
+	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_xhigh" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
+		t.Fatalf("reasoning defaults=%+v", bootstrapSettings)
 	}
 	onboarding := bootstrap["onboarding"].(map[string]any)
 	if onboarding["status"] != "not_started" {

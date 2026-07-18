@@ -18,6 +18,12 @@ const LOAD_PROFILE_PRESETS = {
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
   stress: { timelineCapacity: 36, maxItemsPerSource: 15, maxItemsTotal: 30, maxScrolls: 6 },
 };
+const RELEASE_REASONING_DEFAULTS = Object.freeze({
+  acquisition_planning: "luna_high",
+  candidate_evaluation: "luna_xhigh",
+  semantic_event_resolution: "luna_high",
+  ai_deep_detection: "luna_high",
+});
 const state = {
   bootstrap: null,
   session: null,
@@ -248,7 +254,7 @@ function renderSettings(settings) {
   $("#semantic-event-merge-threshold").value = Number(settings.semanticEventMergeThreshold || DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD).toFixed(2);
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
-  $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "inline";
+  $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
   $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
   $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
   applyStreamWidth(settings.streamWidth || "social");
@@ -379,7 +385,10 @@ async function saveSettings(event) {
 }
 
 function reasoningProfileValue(processId, fallback) {
-  return document.querySelector(`[data-process-id="${processId}"]`)?.value || fallback || "luna_xhigh";
+  return document.querySelector(`[data-process-id="${processId}"]`)?.value
+    || fallback
+    || RELEASE_REASONING_DEFAULTS[processId]
+    || "luna_high";
 }
 
 async function persistSettings(settings, confirmationPhrase = "") {
@@ -567,7 +576,7 @@ function openResetDialog(operation) {
       : "Reset is unavailable while an update is running.";
     if (operation === "ai-hide" && state.bootstrap?.settings) {
       state.pendingSettings = null;
-      $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "inline";
+      $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
       syncAIDetectionSettings();
     }
     return;
@@ -593,7 +602,7 @@ function openResetDialog(operation) {
 
 function closeResetDialog() {
   if (state.resetOperation === "ai-hide" && state.bootstrap?.settings) {
-    $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "inline";
+    $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
     syncAIDetectionSettings();
   }
   state.resetOperation = null;
@@ -1513,7 +1522,7 @@ function inboxStatusTone(status) {
 }
 
 function routeAIDetectedItems(items) {
-  const mode = state.bootstrap?.settings?.aiDetectionPresentation || "inline";
+  const mode = state.bootstrap?.settings?.aiDetectionPresentation || "drawer";
   const result = { inline: [], drawer: [], hidden: [], pending: false };
   for (const entry of items) {
     const detection = entry.aiDetection;

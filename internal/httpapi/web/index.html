@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AkuBrowser</title>
-    <link rel="stylesheet" href="/styles.css?runtime=go-ui-reasoning-drawer-v6" />
+    <link rel="stylesheet" href="/styles.css?runtime=release-0.7.0-preview.1" />
   </head>
   <body data-stream-width="social">
     <main class="shell">
@@ -265,10 +265,10 @@
             <p class="settings-group-note">AI origin signals never influence selection or ranking. Fast Detection is local and deterministic; Deep Detection reviews retained posts asynchronously.</p>
             <div class="settings-card">
               <label class="settings-row" for="ai-detection-presentation">
-                <span class="settings-copy"><strong>Strong AI-origin signals</strong><small>Keep signaled posts inline by default, route them into the generic side pane, or hide only direct and Deep-confirmed results.</small></span>
+                <span class="settings-copy"><strong>Strong AI-origin signals</strong><small>Route unseen strong signals into the generic side pane by default, keep them inline, or hide only direct and Deep-confirmed results.</small></span>
                 <select id="ai-detection-presentation" name="aiDetectionPresentation">
-                  <option value="inline">Show inline — recommended</option>
-                  <option value="drawer">Move to AI Signals pane</option>
+                  <option value="inline">Show inline</option>
+                  <option value="drawer">Move to AI Signals pane — recommended</option>
                   <option value="hide">Hide confirmed signals — high risk</option>
                 </select>
               </label>
@@ -428,6 +428,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?runtime=go-ui-reasoning-drawer-v6"></script>
+    <script type="module" src="/app.js?runtime=release-0.7.0-preview.1"></script>
   </body>
 </html>

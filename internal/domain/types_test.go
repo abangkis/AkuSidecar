@@ -154,9 +154,9 @@ func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
 	}
 }
 
-func TestAIDetectorPresentationDefaultsToInlineAndUsesLockedModes(t *testing.T) {
+func TestAIDetectorPresentationDefaultsToDrawerAndUsesLockedModes(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
-	if value.AIDetectionPresentation != "inline" {
+	if value.AIDetectionPresentation != "drawer" {
 		t.Fatalf("AI Detector default=%+v", value)
 	}
 	for _, mode := range []string{"inline", "drawer", "hide"} {
@@ -171,9 +171,9 @@ func TestAIDetectorPresentationDefaultsToInlineAndUsesLockedModes(t *testing.T) 
 	}
 }
 
-func TestReasoningProfilesDefaultToLunaXHighAndRejectUnsafeIDs(t *testing.T) {
+func TestReasoningProfilesUseReleaseDefaultsAndRejectUnsafeIDs(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
-	if value.ReasoningAcquisitionProfile != "luna_xhigh" || value.ReasoningEvaluationProfile != "luna_xhigh" || value.ReasoningSemanticProfile != "luna_xhigh" || value.ReasoningAIDeepProfile != "luna_xhigh" {
+	if value.ReasoningAcquisitionProfile != "luna_high" || value.ReasoningEvaluationProfile != "luna_xhigh" || value.ReasoningSemanticProfile != "luna_high" || value.ReasoningAIDeepProfile != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", value)
 	}
 	value.ReasoningAcquisitionProfile = "Sol Medium"

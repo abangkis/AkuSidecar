@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "1.0.0-dev.14"
+	ApplicationVersion              = "0.7.0-preview.1"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
@@ -23,8 +23,11 @@ const (
 	MaxSemanticMergeThreshold       = 0.95
 	DefaultRetentionDays            = 30
 	DefaultStorageLimitMB           = 100
-	DefaultAIDetectionPresentation  = "inline"
-	DefaultReasoningProfile         = "luna_xhigh"
+	DefaultAIDetectionPresentation  = "drawer"
+	DefaultReasoningAcquisition     = "luna_high"
+	DefaultReasoningEvaluation      = "luna_xhigh"
+	DefaultReasoningSemantic        = "luna_high"
+	DefaultReasoningAIDeep          = "luna_high"
 	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
 	CurrentAIDeepDetectorVersion    = "codex-deep-v4"
 )
@@ -88,10 +91,10 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		KnowledgeRetentionDays:      DefaultRetentionDays,
 		KnowledgeStorageLimitMB:     DefaultStorageLimitMB,
 		AIDetectionPresentation:     DefaultAIDetectionPresentation,
-		ReasoningAcquisitionProfile: DefaultReasoningProfile,
-		ReasoningEvaluationProfile:  DefaultReasoningProfile,
-		ReasoningSemanticProfile:    DefaultReasoningProfile,
-		ReasoningAIDeepProfile:      DefaultReasoningProfile,
+		ReasoningAcquisitionProfile: DefaultReasoningAcquisition,
+		ReasoningEvaluationProfile:  DefaultReasoningEvaluation,
+		ReasoningSemanticProfile:    DefaultReasoningSemantic,
+		ReasoningAIDeepProfile:      DefaultReasoningAIDeep,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -152,16 +155,16 @@ func (s *Settings) Normalize() {
 		s.AIDetectionPresentation = DefaultAIDetectionPresentation
 	}
 	if s.ReasoningAcquisitionProfile == "" {
-		s.ReasoningAcquisitionProfile = DefaultReasoningProfile
+		s.ReasoningAcquisitionProfile = DefaultReasoningAcquisition
 	}
 	if s.ReasoningEvaluationProfile == "" {
-		s.ReasoningEvaluationProfile = DefaultReasoningProfile
+		s.ReasoningEvaluationProfile = DefaultReasoningEvaluation
 	}
 	if s.ReasoningSemanticProfile == "" {
-		s.ReasoningSemanticProfile = DefaultReasoningProfile
+		s.ReasoningSemanticProfile = DefaultReasoningSemantic
 	}
 	if s.ReasoningAIDeepProfile == "" {
-		s.ReasoningAIDeepProfile = DefaultReasoningProfile
+		s.ReasoningAIDeepProfile = DefaultReasoningAIDeep
 	}
 	s.ApplyProfile()
 }
