@@ -343,16 +343,29 @@ type InboxFlowTrace struct {
 }
 
 type InboxFlowItem struct {
-	EvidenceKey string `json:"-"`
-	Author      string `json:"author,omitempty"`
-	Excerpt     string `json:"excerpt"`
-	SourceURL   string `json:"sourceUrl,omitempty"`
-	Outcome     string `json:"outcome"`
-	Reason      string `json:"reason,omitempty"`
-	Captured    bool   `json:"captured"`
-	Evaluated   bool   `json:"evaluated"`
-	Selected    bool   `json:"selected"`
-	Added       bool   `json:"added"`
+	EvidenceKey  string               `json:"-"`
+	CandidateRef string               `json:"candidateRef,omitempty"`
+	Author       string               `json:"author,omitempty"`
+	Excerpt      string               `json:"excerpt"`
+	SourceURL    string               `json:"sourceUrl,omitempty"`
+	Outcome      string               `json:"outcome"`
+	Reason       string               `json:"reason,omitempty"`
+	Captured     bool                 `json:"captured"`
+	Evaluated    bool                 `json:"evaluated"`
+	Selected     bool                 `json:"selected"`
+	Added        bool                 `json:"added"`
+	Correction   *SelectionCorrection `json:"correction,omitempty"`
+}
+
+type SelectionCorrection struct {
+	ID          string  `json:"id"`
+	SessionID   string  `json:"sessionId"`
+	RunID       string  `json:"runId"`
+	EvidenceKey string  `json:"-"`
+	TimelineID  string  `json:"timelineId,omitempty"`
+	Action      string  `json:"action"`
+	CreatedAt   string  `json:"createdAt"`
+	UndoneAt    *string `json:"undoneAt,omitempty"`
 }
 
 type Failure struct {

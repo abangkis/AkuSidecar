@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -131,6 +132,23 @@ func (provider followUpProvider) Plan(ctx context.Context, run domain.Run, obser
 	plan.Decision = "request_follow_up"
 	plan.Reason = "test optional frontier"
 	return plan, telemetry, err
+}
+
+type failOnceAnalysisProvider struct {
+	reasoning.Deterministic
+	mu     sync.Mutex
+	failed bool
+}
+
+func (provider *failOnceAnalysisProvider) Analyze(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+	provider.mu.Lock()
+	if !provider.failed {
+		provider.failed = true
+		provider.mu.Unlock()
+		return domain.ReasoningResult{}, domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: "candidate_evaluation", Provider: "fail-once", Model: "fixture", Effort: "none", Status: "failed", CreatedAt: domain.Now()}, errors.New("temporary reasoning failure")
+	}
+	provider.mu.Unlock()
+	return provider.Deterministic.Analyze(ctx, run, observation, knowledge)
 }
 
 func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
@@ -302,6 +320,130 @@ func singleSourceEngine(t *testing.T, provider reasoning.Provider) (*Engine, *st
 	runtime := New(state, provider, config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
 	runtime.RecordHeartbeat(ExpectedHeartbeat())
 	return runtime, state
+}
+
+func TestSelectionCorrectionPromotesAndUndoesAnEvaluatedCandidate(t *testing.T) {
+	ctx := context.Background()
+	runtime, _ := singleSourceEngine(t, reasoning.Deterministic{})
+	session, err := runtime.StartSession(ctx, "Correction integration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Runs[0].Status == "waiting_for_bridge" })
+	run := active.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim=%+v err=%v", command, err)
+	}
+	blocks := make([]domain.Block, 0, 11)
+	for index := 0; index < 11; index++ {
+		blocks = append(blocks, domain.Block{
+			EvidenceKey: fmt.Sprintf("x:%024d", index+1), Author: fmt.Sprintf("Author %d", index+1),
+			Text:      fmt.Sprintf("Material source update number %d with sufficient durable evidence for deterministic correction testing.", index+1),
+			Permalink: fmt.Sprintf("https://x.com/example/status/%d", index+1),
+		})
+	}
+	observation := domain.Observation{Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: blocks}}, Coverage: map[string]any{"quality": "complete"}}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(completed.Items) != 10 {
+		t.Fatalf("initial items=%d", len(completed.Items))
+	}
+	trace, err := runtime.InboxRunTrace(ctx, run.ID, "evaluated", 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missed domain.InboxFlowItem
+	for _, item := range trace.Items {
+		if item.Outcome == "not_selected" {
+			missed = item
+			break
+		}
+	}
+	if missed.CandidateRef == "" {
+		t.Fatalf("missing correction candidate in trace: %+v", trace)
+	}
+	correction, restored, err := runtime.CorrectSelection(ctx, run.ID, missed.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if correction.TimelineID != restored.ID {
+		t.Fatalf("correction=%+v restored=%+v", correction, restored)
+	}
+	items, err := runtime.Timeline(ctx, 24, 0)
+	if err != nil || len(items) != 11 {
+		t.Fatalf("restored timeline=%d err=%v", len(items), err)
+	}
+	if _, err := runtime.UndoSelectionCorrection(ctx, correction.ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = runtime.Timeline(ctx, 24, 0)
+	if err != nil || len(items) != 10 {
+		t.Fatalf("timeline after undo=%d err=%v", len(items), err)
+	}
+}
+
+func TestReevaluateFailedRunReusesDurableCapture(t *testing.T) {
+	ctx := context.Background()
+	provider := &failOnceAnalysisProvider{}
+	runtime, _ := singleSourceEngine(t, provider)
+	session, err := runtime.StartSession(ctx, "Retry durable evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return len(value.Runs) == 1 && value.Runs[0].Status == "waiting_for_bridge"
+	})
+	run := active.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim=%+v err=%v", command, err)
+	}
+	observation := domain.Observation{
+		Source: domain.SourceX, CapturedAt: domain.Now(), Coverage: map[string]any{"quality": "complete"},
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "x:000000000000000000000701",
+			Author:      "Durable Author",
+			Text:        "A material source update with enough evidence to evaluate after a temporary reasoning failure.",
+			Permalink:   "https://x.com/example/status/701",
+		}}}},
+	}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "failed" })
+	trace, err := runtime.InboxRunTrace(ctx, run.ID, "all", 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.Counts.Captured != 1 || trace.Counts.Evaluated != 0 {
+		t.Fatalf("failed trace counts=%+v", trace.Counts)
+	}
+	if _, err := runtime.ReevaluateFailedRun(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	inbox, _, err := runtime.Inbox(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox) != 1 || len(inbox[0].Runs) != 1 || inbox[0].Runs[0].AcquisitionRounds != 1 {
+		t.Fatalf("re-evaluated run requested another capture: %+v", inbox)
+	}
+	trace, err = runtime.InboxRunTrace(ctx, run.ID, "all", 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.Counts.Captured != 1 || trace.Counts.Evaluated != 1 {
+		t.Fatalf("re-evaluated trace counts=%+v", trace.Counts)
+	}
+	for _, item := range trace.Items {
+		if item.Outcome == "captured_only" {
+			t.Fatalf("durable capture remained unevaluated: %+v", item)
+		}
+	}
 }
 
 func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {

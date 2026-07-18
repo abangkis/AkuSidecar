@@ -36,6 +36,8 @@ func Fit(signals []Signal) Profile {
 			weight = 1
 			if signal.Origin == "calibration" {
 				weight = 1.1
+			} else if signal.Origin == "selection_correction" {
+				weight = 1.25
 			}
 			profile.PositiveSignals++
 		case signal.Direction == "less" && signal.Reason != nil && *signal.Reason == "not_interested":

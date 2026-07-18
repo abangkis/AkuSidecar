@@ -2,6 +2,7 @@ package eventengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -98,6 +99,49 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 		return summary, err
 	}
 	return summary, nil
+}
+
+// ProcessTimelineItem resolves one user-restored report against the retained
+// global event catalog without reprocessing or spending tokens on the rest of
+// its already-terminal session.
+func (e *Engine) ProcessTimelineItem(ctx context.Context, timelineID string, settings domain.Settings) (domain.ResolvedSemanticReport, error) {
+	candidate, err := e.store.SemanticCandidate(ctx, timelineID)
+	if err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
+	if settings.SemanticEventMode == "show_all" {
+		_ = e.store.RefreshEventResolutionCounts(ctx, candidate.SessionID)
+		return domain.ResolvedSemanticReport{Candidate: candidate, Relation: "new_event", Confidence: 1, Reason: "Semantic event engine is disabled."}, nil
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -settings.KnowledgeRetentionDays).Format(time.RFC3339Nano)
+	catalog, err := e.store.ListSemanticEvents(ctx, cutoff, localCatalogLimit)
+	if err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
+	candidates := []domain.SemanticCandidate{candidate}
+	constraints, err := e.store.SemanticConstraints(ctx, []string{candidate.EvidenceKey})
+	if err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
+	shortlist, _ := rankShortlist(candidates, catalog, settings.SemanticEventShortlist)
+	var resolution domain.SemanticResolution
+	if e.resolver != nil && len(shortlist) > 0 {
+		resolution, _, _, err = e.resolve(ctx, candidates, shortlist)
+		if err != nil {
+			return domain.ResolvedSemanticReport{}, err
+		}
+	}
+	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, settings.KnowledgeRetentionDays, settings.SemanticEventMergeThreshold)
+	if len(reports) != 1 {
+		return domain.ResolvedSemanticReport{}, errors.New("selection correction produced no semantic report")
+	}
+	if err := e.store.SaveSemanticReports(ctx, reports); err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
+	if err := e.store.RefreshEventResolutionCounts(ctx, candidate.SessionID); err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
+	return reports[0], nil
 }
 
 func (e *Engine) resolve(ctx context.Context, candidates []domain.SemanticCandidate, shortlist []domain.SemanticEvent) (domain.SemanticResolution, domain.ModelUsage, int64, error) {

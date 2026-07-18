@@ -84,8 +84,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "AI Detector", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP", "function enrichPassiveXMedia", "passive_x_cache", "/media-evidence", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "The latest More or Less decision is authoritative.", "function buildInboxFlowInspector", "/api/inbox/runs/", "function buildInboxFlowItem", "Semantic duplicate", "function routeAIDetectedItems", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS"},
-		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".inbox-preference-decision", ".inbox-flow-inspector", ".inbox-flow-filters", ".inbox-flow-outcome-collapsed_duplicate", ".ai-origin-badge", ".ai-origin-neutral", ".timeline-side-pane", ".timeline-source-icon-x { background: #050505; color: #fff; }"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP", "function enrichPassiveXMedia", "passive_x_cache", "/media-evidence", "\"not_interested\"", "Local fast path", "Legacy run", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "The latest More or Less decision is authoritative.", "function buildInboxFlowInspector", "/api/inbox/runs/", "function buildInboxFlowItem", "Should have selected", "/selection-corrections", "Re-evaluate run", "Selected by you", "Semantic duplicate", "function routeAIDetectedItems", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS"},
+		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".inbox-preference-decision", ".inbox-flow-inspector", ".inbox-flow-filters", ".inbox-flow-item-actions", ".inbox-selection-correction-button", ".inbox-flow-outcome-user_selected", ".inbox-flow-outcome-collapsed_duplicate", ".ai-origin-badge", ".ai-origin-neutral", ".timeline-side-pane", ".timeline-source-icon-x { background: #050505; color: #fff; }"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
 		if err != nil {
@@ -148,6 +148,25 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid run trace stage status=%d", response.StatusCode)
+	}
+	correctionRequest, _ := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/inbox/runs/missing/selection-corrections", bytes.NewBufferString(`{"candidateRef":"candidate_missing"}`))
+	correctionRequest.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(correctionRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing selection correction candidate status=%d", response.StatusCode)
+	}
+	retryRequest, _ := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/inbox/runs/missing/re-evaluate", nil)
+	response, err = client.Do(retryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing re-evaluation run status=%d", response.StatusCode)
 	}
 	request, err := http.NewRequest(http.MethodPut, "http://"+address.String()+"/api/onboarding", bytes.NewBufferString(`{"activeSources":["x","linkedin"]}`))
 	if err != nil {

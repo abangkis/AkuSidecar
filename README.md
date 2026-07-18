@@ -120,12 +120,13 @@ first create or try the Quiet managed window.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 4 contains
+The database defaults to `runtime/aku-sidecar.db`. Schema version 5 contains
 only the active tables documented in
-[`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). A narrow
-The narrow current-Go migration chain accepts v2 for the original detector
-tables and v3 for typed AI assessed-object/signal-scope columns; this is not a
-Node compatibility path.
+[`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). The
+narrow current-Go migration chain accepts v2 for the original detector tables,
+v3 for typed AI assessed-object/signal-scope columns, and v4 for durable
+evaluated-candidate and selection-correction state; this is not a Node
+compatibility path.
 
 There is no importer for the Node database. A mismatched schema fails closed;
 delete or move the development database and start again.
@@ -245,6 +246,15 @@ view by Captured, Evaluated, Selected, or Added. The compact rows expose only
 author, excerpt, source link, final outcome, and one-line rationale. Duplicate
 snapshots are folded together, semantic duplicate reports are named rather
 than counted as unique additions, and the main Inbox response remains light.
+An evaluated candidate below the automatic selection line exposes `Should have
+selected`. That explicit, undoable correction restores the item to the current
+Timeline, resolves its semantic-event relation, runs AI Fast Detection, queues
+item-scoped AI Deep Detection, and becomes the strongest positive taste signal.
+A later More or Less decision for the same canonical evidence becomes the
+newest learning authority without rewriting historical Timeline membership.
+Captured-only evidence cannot be selected directly; a failed reasoning run can
+instead reuse its durable capture through `Re-evaluate run` without another
+browser acquisition.
 No raw observation JSON, prompts, media, or heavy telemetry enters this path.
 
 AI Detector is a separate presentation-only domain. Its text-first Fast

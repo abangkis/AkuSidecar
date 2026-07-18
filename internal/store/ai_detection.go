@@ -118,8 +118,7 @@ func (s *Store) CreateAIDetectionJob(ctx context.Context, value domain.AIDetecti
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ai_detection_jobs(id,session_id,status,provider,model,effort,candidate_count,created_at)
-		VALUES(?,?,?,?,?,?,?,?)
-		ON CONFLICT(session_id) DO UPDATE SET id=excluded.id,status=excluded.status,provider=excluded.provider,model=excluded.model,effort=excluded.effort,candidate_count=excluded.candidate_count,duration_ms=0,input_tokens=NULL,cached_input_tokens=NULL,output_tokens=NULL,reasoning_output_tokens=NULL,error='',created_at=excluded.created_at,started_at=NULL,completed_at=NULL`,
+		VALUES(?,?,?,?,?,?,?,?)`,
 		value.ID, value.SessionID, value.Status, value.Provider, value.Model, value.Effort, value.CandidateCount, value.CreatedAt)
 	return value, err
 }
@@ -156,7 +155,7 @@ func (s *Store) AIDetectionJob(ctx context.Context, sessionID string) (*domain.A
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id,session_id,status,provider,model,effort,candidate_count,duration_ms,
 		       input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error,created_at,started_at,completed_at
-		FROM ai_detection_jobs WHERE session_id=?`, sessionID).
+		FROM ai_detection_jobs WHERE session_id=? ORDER BY created_at DESC,id DESC LIMIT 1`, sessionID).
 		Scan(&value.ID, &value.SessionID, &value.Status, &value.Provider, &value.Model, &value.Effort,
 			&value.CandidateCount, &value.DurationMS, &input, &cachedInput, &output, &reasoningOutput,
 			&value.Error, &value.CreatedAt, &startedAt, &completedAt)
@@ -231,7 +230,12 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 			sessionPlaceholders = append(sessionPlaceholders, "?")
 			sessionArgs = append(sessionArgs, sessionID)
 		}
-		jobRows, err := s.db.QueryContext(ctx, `SELECT session_id,status FROM ai_detection_jobs WHERE session_id IN (`+strings.Join(sessionPlaceholders, ",")+`)`, sessionArgs...)
+		jobRows, err := s.db.QueryContext(ctx, `
+			WITH ranked AS (
+			  SELECT session_id,status,ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC,id DESC) AS job_rank
+			  FROM ai_detection_jobs WHERE session_id IN (`+strings.Join(sessionPlaceholders, ",")+`)
+			)
+			SELECT session_id,status FROM ranked WHERE job_rank=1`, sessionArgs...)
 		if err != nil {
 			return err
 		}

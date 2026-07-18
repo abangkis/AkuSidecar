@@ -139,7 +139,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": 3}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -287,6 +287,51 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"trace": trace})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/selection-corrections"):
+		runID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/runs/"), "/selection-corrections")
+		if runID == "" || strings.Contains(runID, "/") {
+			return notFound("run")
+		}
+		var body struct {
+			CandidateRef string `json:"candidateRef"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		if strings.TrimSpace(body.CandidateRef) == "" {
+			return badRequest("candidateRef is required")
+		}
+		correction, item, err := s.engine.CorrectSelection(ctx, runID, body.CandidateRef)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("candidate")
+		}
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusCreated, map[string]any{"correction": correction, "item": item})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/re-evaluate"):
+		runID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/runs/"), "/re-evaluate")
+		if runID == "" || strings.Contains(runID, "/") {
+			return notFound("run")
+		}
+		run, err := s.engine.ReevaluateFailedRun(ctx, runID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("run")
+		}
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusAccepted, map[string]any{"run": run})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/selection-corrections/") && strings.HasSuffix(p, "/undo"):
+		id := path.Base(strings.TrimSuffix(p, "/undo"))
+		correction, err := s.engine.UndoSelectionCorrection(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("selection correction")
+		}
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"correction": correction})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/sessions/") && !strings.HasSuffix(p, "/cancel"):
 		id := path.Base(p)
 		session, err := s.engine.Session(ctx, id)

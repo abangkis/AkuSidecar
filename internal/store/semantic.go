@@ -22,27 +22,42 @@ func (s *Store) SemanticCandidates(ctx context.Context, sessionID string) ([]dom
 	}
 	result := make([]domain.SemanticCandidate, 0, len(items))
 	for index, item := range items {
-		text := item.Item.WhatChanged
-		if item.Evidence != nil && strings.TrimSpace(item.Evidence.Text) != "" {
-			text = item.Evidence.Text
-		}
-		result = append(result, domain.SemanticCandidate{
-			Alias:       fmt.Sprintf("candidate_%03d", index+1),
-			TimelineID:  item.ID,
-			SessionID:   item.SessionID,
-			RunID:       item.RunID,
-			EvidenceKey: item.EvidenceKey,
-			Source:      item.Source,
-			Author:      item.Item.Author,
-			PublishedAt: item.Item.PublishedAt,
-			Text:        text,
-			WhatChanged: item.Item.WhatChanged,
-			EventKey:    item.Item.EventKey,
-			TopicTags:   append([]string(nil), item.Assessment.TopicTags...),
-			Item:        item.Item,
-		})
+		result = append(result, semanticCandidate(item, index))
 	}
 	return result, nil
+}
+
+func (s *Store) SemanticCandidate(ctx context.Context, timelineID string) (domain.SemanticCandidate, error) {
+	items, err := s.listItems(ctx, `WHERE id=?`, timelineID)
+	if err != nil {
+		return domain.SemanticCandidate{}, err
+	}
+	if len(items) != 1 {
+		return domain.SemanticCandidate{}, sql.ErrNoRows
+	}
+	return semanticCandidate(items[0], 0), nil
+}
+
+func semanticCandidate(item domain.TimelineItem, index int) domain.SemanticCandidate {
+	text := item.Item.WhatChanged
+	if item.Evidence != nil && strings.TrimSpace(item.Evidence.Text) != "" {
+		text = item.Evidence.Text
+	}
+	return domain.SemanticCandidate{
+		Alias:       fmt.Sprintf("candidate_%03d", index+1),
+		TimelineID:  item.ID,
+		SessionID:   item.SessionID,
+		RunID:       item.RunID,
+		EvidenceKey: item.EvidenceKey,
+		Source:      item.Source,
+		Author:      item.Item.Author,
+		PublishedAt: item.Item.PublishedAt,
+		Text:        text,
+		WhatChanged: item.Item.WhatChanged,
+		EventKey:    item.Item.EventKey,
+		TopicTags:   append([]string(nil), item.Assessment.TopicTags...),
+		Item:        item.Item,
+	}
 }
 
 func (s *Store) ListSemanticEvents(ctx context.Context, cutoff string, limit int) ([]domain.SemanticEvent, error) {
@@ -168,6 +183,18 @@ func (s *Store) SaveEventResolutionSummary(ctx context.Context, value domain.Eve
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) RefreshEventResolutionCounts(ctx context.Context, sessionID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE event_resolution_invocations
+		SET candidate_count=(SELECT COUNT(*) FROM timeline_items WHERE session_id=?),
+		    duplicate_reports=(SELECT COUNT(*) FROM semantic_event_reports WHERE session_id=? AND relation='duplicate_report'),
+		    unique_items=(SELECT COUNT(*) FROM timeline_items t
+		      LEFT JOIN semantic_event_reports r ON r.timeline_id=t.id
+		      WHERE t.session_id=? AND COALESCE(r.relation,'')!='duplicate_report')
+		WHERE session_id=?`, sessionID, sessionID, sessionID, sessionID)
+	return err
 }
 
 func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*domain.EventResolutionSummary, error) {

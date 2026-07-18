@@ -1,6 +1,8 @@
 package store
 
-const schemaVersion = "4"
+const SchemaVersion = 5
+
+const schemaVersion = "5"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -105,6 +107,7 @@ CREATE TABLE IF NOT EXISTS candidate_assessments (
   evidence_key TEXT NOT NULL,
   source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
   assessment_json TEXT NOT NULL,
+  item_json TEXT NOT NULL DEFAULT '{}',
   base_score REAL NOT NULL,
   preference_score REAL NOT NULL,
   final_score REAL NOT NULL,
@@ -155,7 +158,7 @@ CREATE INDEX IF NOT EXISTS ai_assessments_fingerprint ON ai_assessments(content_
 
 CREATE TABLE IF NOT EXISTS ai_detection_jobs (
   id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
@@ -240,7 +243,7 @@ CREATE TABLE IF NOT EXISTS calibration_profile_snapshots (
 
 CREATE TABLE IF NOT EXISTS feedback_events (
   id TEXT PRIMARY KEY,
-  timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
+  timeline_id TEXT REFERENCES timeline_items(id) ON DELETE SET NULL,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   evidence_key TEXT NOT NULL,
@@ -250,6 +253,22 @@ CREATE TABLE IF NOT EXISTS feedback_events (
 );
 
 CREATE INDEX IF NOT EXISTS feedback_evidence_created ON feedback_events(evidence_key, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS selection_corrections (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  timeline_id TEXT REFERENCES timeline_items(id) ON DELETE SET NULL,
+  action TEXT NOT NULL CHECK (action = 'should_select'),
+  created_at TEXT NOT NULL,
+  undone_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS selection_corrections_evidence_created
+  ON selection_corrections(run_id,evidence_key,created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS selection_corrections_one_active
+  ON selection_corrections(run_id,evidence_key) WHERE undone_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS preference_model (
   id INTEGER PRIMARY KEY CHECK (id = 1),

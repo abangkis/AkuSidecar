@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/abangkis/AkuSidecar/internal/capture"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -31,20 +32,23 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		return domain.InboxFlowTrace{}, err
 	}
 
+	allSnapshots := make([]domain.Snapshot, 0)
+	for _, observation := range observations {
+		allSnapshots = append(allSnapshots, observation.Snapshots...)
+	}
+	canonicalSnapshots := capture.ReconcileSnapshots(run.Source, allSnapshots)
 	blocks := map[string]domain.Block{}
 	order := make([]string, 0)
-	for _, observation := range observations {
-		for _, snapshot := range observation.Snapshots {
-			for _, block := range snapshot.Blocks {
-				key := strings.TrimSpace(block.EvidenceKey)
-				if key == "" {
-					continue
-				}
-				if _, exists := blocks[key]; !exists {
-					order = append(order, key)
-				}
-				blocks[key] = mergeInboxTraceBlock(blocks[key], block)
+	for _, snapshot := range canonicalSnapshots {
+		for _, block := range snapshot.Blocks {
+			key := strings.TrimSpace(block.EvidenceKey)
+			if key == "" {
+				continue
 			}
+			if _, exists := blocks[key]; !exists {
+				order = append(order, key)
+			}
+			blocks[key] = mergeInboxTraceBlock(blocks[key], block)
 		}
 	}
 
@@ -53,6 +57,10 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		return domain.InboxFlowTrace{}, err
 	}
 	timeline, err := s.inboxTraceTimeline(ctx, runID)
+	if err != nil {
+		return domain.InboxFlowTrace{}, err
+	}
+	corrections, err := s.inboxTraceCorrections(ctx, runID)
 	if err != nil {
 		return domain.InboxFlowTrace{}, err
 	}
@@ -71,7 +79,8 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		block := blocks[key]
 		assessment, evaluated := assessments[key]
 		timelineValue, hasTimeline := timeline[key]
-		selected := evaluated && assessment.selected
+		correction, corrected := corrections[key]
+		selected := evaluated && (assessment.selected || corrected)
 		added := hasTimeline && timelineValue.relation != "duplicate_report"
 		if evaluated {
 			trace.Counts.Evaluated++
@@ -93,6 +102,13 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 			Selected:    selected,
 			Added:       added,
 		}
+		if evaluated && !assessment.selected {
+			item.CandidateRef = candidateRef(runID, key)
+		}
+		if corrected {
+			copy := correction
+			item.Correction = &copy
+		}
 		if item.Author == "" {
 			item.Author = strings.TrimSpace(timelineValue.item.Author)
 		}
@@ -110,6 +126,9 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 			if item.Reason == "" {
 				item.Reason = "Matched an already retained semantic event."
 			}
+		case corrected && added:
+			item.Outcome = "user_selected"
+			item.Reason = "Restored to the Timeline by the user and recorded as high-authority preference evidence."
 		case added:
 			item.Outcome = "added"
 			item.Reason = strings.TrimSpace(assessment.value.Rationale)
@@ -142,6 +161,25 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 	}
 	trace.Items = append(trace.Items, filtered[offset:end]...)
 	return trace, nil
+}
+
+func (s *Store) inboxTraceCorrections(ctx context.Context, runID string) (map[string]domain.SelectionCorrection, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id,session_id,run_id,evidence_key,COALESCE(timeline_id,''),action,created_at
+		FROM selection_corrections WHERE run_id=? AND undone_at IS NULL`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := map[string]domain.SelectionCorrection{}
+	for rows.Next() {
+		var value domain.SelectionCorrection
+		if err := rows.Scan(&value.ID, &value.SessionID, &value.RunID, &value.EvidenceKey, &value.TimelineID, &value.Action, &value.CreatedAt); err != nil {
+			return nil, err
+		}
+		values[value.EvidenceKey] = value
+	}
+	return values, rows.Err()
 }
 
 func (s *Store) inboxTraceAssessments(ctx context.Context, runID string) (map[string]inboxTraceAssessment, error) {

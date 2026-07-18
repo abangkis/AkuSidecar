@@ -59,7 +59,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -70,7 +70,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	}
 }
 
-func TestCurrentGoSchemaTwoMigratesToFour(t *testing.T) {
+func TestCurrentGoSchemaTwoMigratesToFive(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sidecar-v2.db")
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestCurrentGoSchemaTwoMigratesToFour(t *testing.T) {
 	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('ai_assessments','ai_detection_jobs')`).Scan(&tables); err != nil {
 		t.Fatal(err)
 	}
-	if version != "4" || tables != 2 {
+	if version != "5" || tables != 2 {
 		t.Fatalf("version=%s AI tables=%d", version, tables)
 	}
 }
@@ -137,8 +137,130 @@ func TestCurrentGoSchemaThreeAddsAIObjectScope(t *testing.T) {
 	if err := state.db.QueryRow(`SELECT assessed_object,signal_scope FROM ai_assessments WHERE id='old-strong'`).Scan(&assessedObject, &signalScope); err != nil {
 		t.Fatal(err)
 	}
-	if version != "4" || assessedObject != "social_post" || signalScope != "social_post" {
+	if version != "5" || assessedObject != "social_post" || signalScope != "social_post" {
 		t.Fatalf("version=%s assessed=%s scope=%s", version, assessedObject, signalScope)
+	}
+}
+
+func TestCurrentGoSchemaFourAddsDurableSelectionCorrections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sidecar-v4.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+		INSERT INTO meta(key,value) VALUES('schema_version','4');
+		CREATE TABLE candidate_assessments (
+		  run_id TEXT NOT NULL,evidence_key TEXT NOT NULL,source TEXT NOT NULL,
+		  assessment_json TEXT NOT NULL,base_score REAL NOT NULL,preference_score REAL NOT NULL,
+		  final_score REAL NOT NULL,selected INTEGER NOT NULL,created_at TEXT NOT NULL,
+		  PRIMARY KEY(run_id,evidence_key)
+		);
+		CREATE TABLE ai_detection_jobs (
+		  id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE,status TEXT NOT NULL,provider TEXT NOT NULL,
+		  model TEXT NOT NULL,effort TEXT NOT NULL,candidate_count INTEGER NOT NULL,duration_ms INTEGER NOT NULL DEFAULT 0,
+		  input_tokens INTEGER,cached_input_tokens INTEGER,output_tokens INTEGER,reasoning_output_tokens INTEGER,
+		  error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,started_at TEXT,completed_at TEXT
+		);
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version string
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	var itemColumn, corrections int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('candidate_assessments') WHERE name='item_json'`).Scan(&itemColumn); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='selection_corrections'`).Scan(&corrections); err != nil {
+		t.Fatal(err)
+	}
+	if version != "5" || itemColumn != 1 || corrections != 1 {
+		t.Fatalf("version=%s item_json=%d corrections=%d", version, itemColumn, corrections)
+	}
+}
+
+func TestSchemaFourMigrationRecoversPartialFeedbackRebuildAndTrimsLegacyReasons(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "migration fixture", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runs[0]
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at)
+		VALUES('timeline-migration',?,?,?,?,0,'{}','{}','{}','2026-07-18T00:00:00Z')`, session.ID, run.ID, domain.SourceX, "x:migration"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `CREATE TABLE feedback_events_v4 (
+		  id TEXT PRIMARY KEY,timeline_id TEXT NOT NULL,session_id TEXT NOT NULL,run_id TEXT NOT NULL,
+		  evidence_key TEXT NOT NULL,direction TEXT NOT NULL,reason TEXT,created_at TEXT NOT NULL
+		)`); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []struct{ id, direction, reason string }{
+		{id: "more", direction: "more"},
+		{id: "not-interested", direction: "less", reason: "not_interested"},
+		{id: "wrong-topic", direction: "less", reason: "wrong_topic"},
+		{id: "no-reason", direction: "less"},
+		{id: "duplicate", direction: "less", reason: "duplicate"},
+		{id: "old-info", direction: "less", reason: "old_info"},
+		{id: "already-known", direction: "less", reason: "already_know"},
+	}
+	for index, value := range legacy {
+		var reason any
+		if value.reason != "" {
+			reason = value.reason
+		}
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO feedback_events_v4 VALUES(?,?,?,?,?,?,?,?)`, value.id, "timeline-migration", session.ID, run.ID, "x:migration", value.direction, reason, fmt.Sprintf("2026-07-18T00:%02d:00Z", index+1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE meta SET value='4' WHERE key='schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	var validReferences int
+	if err := state.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM feedback_events_v4 f
+		JOIN timeline_items t ON t.id=f.timeline_id
+		JOIN sessions s ON s.id=f.session_id
+		JOIN runs r ON r.id=f.run_id`).Scan(&validReferences); err != nil {
+		t.Fatal(err)
+	}
+	if validReferences != 7 {
+		t.Fatalf("legacy feedback references=%d", validReferences)
+	}
+	if err := state.migrateSchemaFourToFive(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var total, lessWithCanonicalReason, legacyCount int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM feedback_events`).Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM feedback_events WHERE direction='less' AND reason='not_interested'`).Scan(&lessWithCanonicalReason); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM feedback_events WHERE reason IN ('duplicate','old_info','already_know','wrong_topic')`).Scan(&legacyCount); err != nil {
+		t.Fatal(err)
+	}
+	if total != 4 || lessWithCanonicalReason != 3 || legacyCount != 0 {
+		t.Fatalf("total=%d canonical_less=%d legacy=%d", total, lessWithCanonicalReason, legacyCount)
 	}
 }
 

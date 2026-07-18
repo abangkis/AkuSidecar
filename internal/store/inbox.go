@@ -168,7 +168,12 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		}
 	}
 	entry.CapturedCandidates = len(evidence)
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(selected),0) FROM candidate_assessments WHERE run_id=?`, run.ID).Scan(&entry.EvaluatedCandidates, &entry.SelectedCandidates); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),COALESCE(SUM(CASE WHEN a.selected=1 OR EXISTS (
+		  SELECT 1 FROM selection_corrections c
+		  WHERE c.run_id=a.run_id AND c.evidence_key=a.evidence_key AND c.undone_at IS NULL
+		) THEN 1 ELSE 0 END),0)
+		FROM candidate_assessments a WHERE a.run_id=?`, run.ID).Scan(&entry.EvaluatedCandidates, &entry.SelectedCandidates); err != nil {
 		return domain.InboxRun{}, err
 	}
 	if err := s.db.QueryRowContext(ctx, `

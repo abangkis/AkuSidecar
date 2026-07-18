@@ -126,3 +126,45 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 		t.Fatalf("run additions must exclude semantic duplicate reports: %+v", inbox[0].Runs[0])
 	}
 }
+
+func TestInboxRunTraceUsesTheSameCanonicalIdentityAsReasoning(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := state.CreateSession(ctx, "Canonical trace", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, _ := state.AdvanceSession(ctx, session.ID)
+	command, err := state.StartRun(ctx, run.ID, map[string]any{"source": run.Source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.ClaimCommand(ctx, run.ID, "canonical-trace-test"); err != nil {
+		t.Fatal(err)
+	}
+	text := "This sufficiently long LinkedIn-style post appears first without a stable permalink and later with its canonical native activity identity."
+	stable := "x:000000000000000000000901"
+	observation := domain.Observation{
+		Source: run.Source, CapturedAt: domain.Now(), Coverage: map[string]any{"status": "complete"},
+		Snapshots: []domain.Snapshot{
+			{Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000900", Author: "Canonical Author", Text: text}}},
+			{Blocks: []domain.Block{{EvidenceKey: stable, PlatformID: "901", Permalink: "https://x.com/example/status/901", Author: "Canonical Author", Text: text}}},
+		},
+	}
+	if err := state.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	assessment := domain.CandidateAssessment{EvidenceKey: stable, Rationale: "Canonical candidate was evaluated."}
+	assessmentRaw, _ := json.Marshal(assessment)
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, run.ID, stable, run.Source, string(assessmentRaw), .4, 0, .4, 0, domain.Now()); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := state.InboxRunTrace(ctx, run.ID, "captured", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.Counts.Captured != 1 || trace.Counts.Evaluated != 1 || trace.Total != 1 || trace.Items[0].Outcome != "not_selected" {
+		t.Fatalf("canonical trace=%+v", trace)
+	}
+}

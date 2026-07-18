@@ -1110,6 +1110,7 @@ function buildInboxRun(run) {
   header.append(source, stage);
   const pipeline = document.createElement("div");
   pipeline.className = "inbox-pipeline";
+  const metricNumbers = {};
   for (const [label, value] of [
     ["Captured", run.capturedCandidates],
     ["Evaluated", run.evaluatedCandidates],
@@ -1119,6 +1120,7 @@ function buildInboxRun(run) {
     const metric = document.createElement("div");
     const number = document.createElement("strong");
     number.textContent = String(value ?? 0);
+    metricNumbers[label.toLowerCase()] = number;
     const name = document.createElement("span");
     name.textContent = label;
     metric.append(number, name);
@@ -1150,11 +1152,15 @@ function buildInboxRun(run) {
     summary.textContent = run.summary;
     card.append(summary);
   }
-  card.append(buildInboxFlowInspector(run));
+  card.append(buildInboxFlowInspector(run, (counts) => {
+    for (const [stage, number] of Object.entries(metricNumbers)) {
+      number.textContent = String(counts?.[stage] ?? 0);
+    }
+  }));
   return card;
 }
 
-function buildInboxFlowInspector(run) {
+function buildInboxFlowInspector(run, onCounts) {
   const inspector = document.createElement("section");
   inspector.className = "inbox-flow-inspector";
   const toggle = document.createElement("button");
@@ -1176,7 +1182,28 @@ function buildInboxFlowInspector(run) {
   more.type = "button";
   more.textContent = "Show more";
   more.hidden = true;
-  footer.append(meta, more);
+  footer.append(meta);
+  if (run.error && (run.capturedCandidates ?? 0) > 0) {
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "inbox-flow-retry";
+    retry.textContent = "Re-evaluate run";
+    retry.title = "Retry reasoning from the already captured canonical evidence. No new browser capture is performed.";
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.textContent = "Starting…";
+      try {
+        await api(`/api/inbox/runs/${encodeURIComponent(run.id)}/re-evaluate`, { method: "POST" });
+        await loadInbox();
+      } catch (error) {
+        showError(error);
+        retry.disabled = false;
+        retry.textContent = "Re-evaluate run";
+      }
+    });
+    footer.append(retry);
+  }
+  footer.append(more);
   panel.append(filters, list, footer);
   inspector.append(toggle, panel);
 
@@ -1222,11 +1249,15 @@ function buildInboxFlowInspector(run) {
       const response = await api(`/api/inbox/runs/${encodeURIComponent(run.id)}/trace?stage=${activeStage}&limit=10&offset=${offset}`);
       const trace = response.trace;
       total = trace.total ?? 0;
-      const rows = (trace.items ?? []).map(buildInboxFlowItem);
+      const rows = (trace.items ?? []).map((item) => buildInboxFlowItem(item, run.id, async () => {
+        await loadTrace(true);
+        await refreshTimeline();
+      }));
       if (reset) list.replaceChildren(...rows);
       else list.append(...rows);
       offset += rows.length;
       renderFilterState(trace.counts);
+      onCounts?.(trace.counts);
       if (!list.children.length) {
         const empty = document.createElement("p");
         empty.className = "inbox-flow-empty";
@@ -1257,7 +1288,7 @@ function buildInboxFlowInspector(run) {
   return inspector;
 }
 
-function buildInboxFlowItem(item) {
+function buildInboxFlowItem(item, runId, onChanged) {
   const row = document.createElement("article");
   row.className = "inbox-flow-item";
   const heading = document.createElement("div");
@@ -1275,6 +1306,8 @@ function buildInboxFlowItem(item) {
   reason.className = "inbox-flow-reason";
   reason.textContent = item.reason || "No additional rationale recorded.";
   row.append(heading, excerpt, reason);
+  const actions = document.createElement("div");
+  actions.className = "inbox-flow-item-actions";
   const sourceUrl = safeMediaUrl(item.sourceUrl);
   if (sourceUrl) {
     const link = document.createElement("a");
@@ -1282,8 +1315,51 @@ function buildInboxFlowItem(item) {
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.textContent = "Open source";
-    row.append(link);
+    actions.append(link);
   }
+  if (item.correction) {
+    const state = document.createElement("span");
+    state.textContent = "Selected by you";
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.textContent = "Undo";
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      undo.textContent = "Undoing…";
+      try {
+        await api(`/api/selection-corrections/${encodeURIComponent(item.correction.id)}/undo`, { method: "POST" });
+        await onChanged();
+      } catch (error) {
+        showError(error);
+        undo.disabled = false;
+        undo.textContent = "Undo";
+      }
+    });
+    actions.append(state, undo);
+  } else if (item.outcome === "not_selected" && item.candidateRef) {
+    const select = document.createElement("button");
+    select.type = "button";
+    select.className = "inbox-selection-correction-button";
+    select.textContent = "Should have selected";
+    select.title = "Add this update to the Timeline and teach AkuBrowser that this kind of item matters.";
+    select.addEventListener("click", async () => {
+      select.disabled = true;
+      select.textContent = "Selecting…";
+      try {
+        await api(`/api/inbox/runs/${encodeURIComponent(runId)}/selection-corrections`, {
+          method: "POST",
+          body: { candidateRef: item.candidateRef },
+        });
+        await onChanged();
+      } catch (error) {
+        showError(error);
+        select.disabled = false;
+        select.textContent = "Should have selected";
+      }
+    });
+    actions.append(select);
+  }
+  if (actions.children.length) row.append(actions);
   return row;
 }
 
@@ -1291,6 +1367,7 @@ function inboxFlowOutcomeLabel(outcome) {
   if (outcome === "captured_only") return "Captured only";
   if (outcome === "not_selected") return "Not selected";
   if (outcome === "collapsed_duplicate") return "Semantic duplicate";
+  if (outcome === "user_selected") return "Selected by you";
   return humanize(outcome || "captured");
 }
 

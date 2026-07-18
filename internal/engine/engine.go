@@ -297,10 +297,6 @@ func (e *Engine) runFastDetection(ctx context.Context, sessionID string) error {
 }
 
 func (e *Engine) launchDeepDetection(sessionID string) {
-	resolver := e.aiDeep
-	if resolver == nil {
-		return
-	}
 	items, err := e.store.ListSessionItems(context.Background(), sessionID)
 	if err != nil || len(items) == 0 {
 		if err != nil {
@@ -308,10 +304,25 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 		}
 		return
 	}
+	e.launchDeepDetectionItems(sessionID, items)
+}
+
+func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.TimelineItem) {
+	resolver := e.aiDeep
+	if resolver == nil {
+		return
+	}
 	items = aidetector.DeepCandidates(items)
 	if len(items) == 0 {
 		return
 	}
+	e.mu.Lock()
+	for id, cancel := range e.active {
+		if strings.HasPrefix(id, "ai:"+sessionID+":") {
+			cancel()
+		}
+	}
+	e.mu.Unlock()
 	model := resolver.Model()
 	job, err := e.store.CreateAIDetectionJob(context.Background(), domain.AIDetectionJob{
 		SessionID: sessionID, Status: "queued", Provider: resolver.Name(), Model: model.Model,
@@ -321,7 +332,7 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 		e.logger.Printf("AI Deep Detection could not queue session %s: %v", sessionID, err)
 		return
 	}
-	key := "ai:" + sessionID
+	key := "ai:" + sessionID + ":" + job.ID
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
 	e.active[key] = cancel
@@ -804,6 +815,84 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 }
 func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domain.Feedback) (domain.Feedback, error) {
 	return e.store.AddFeedback(ctx, timelineID, value)
+}
+
+func (e *Engine) CorrectSelection(ctx context.Context, runID, candidateRef string) (domain.SelectionCorrection, domain.TimelineItem, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	if active, err := e.store.ActiveSession(ctx); err != nil {
+		return domain.SelectionCorrection{}, domain.TimelineItem{}, err
+	} else if active != nil {
+		return domain.SelectionCorrection{}, domain.TimelineItem{}, errors.New("finish the active update before correcting an earlier selection")
+	}
+	correction, item, err := e.store.CreateSelectionCorrection(ctx, runID, candidateRef)
+	if err != nil {
+		return domain.SelectionCorrection{}, domain.TimelineItem{}, err
+	}
+	settings, err := e.store.GetSettings(ctx)
+	if err != nil {
+		return correction, item, err
+	}
+	if e.events != nil && settings.SemanticEventMode != "show_all" {
+		if _, eventErr := e.events.ProcessTimelineItem(ctx, item.ID, settings); eventErr != nil {
+			e.logger.Printf("semantic event resolution for selection correction %s degraded safely: %v", correction.ID, eventErr)
+		}
+	}
+	if err := e.store.SaveSelectionCorrectionKnowledge(ctx, correction.ID); err != nil {
+		e.logger.Printf("knowledge continuity for selection correction %s degraded safely: %v", correction.ID, err)
+	}
+	item, err = e.store.TimelineItem(ctx, item.ID)
+	if err != nil {
+		return correction, domain.TimelineItem{}, err
+	}
+	if err := e.store.SaveAIAssessments(ctx, e.aiFast.Detect([]domain.TimelineItem{item})); err != nil {
+		e.logger.Printf("AI Fast Detection for selection correction %s degraded safely: %v", correction.ID, err)
+	}
+	item, err = e.store.TimelineItem(ctx, item.ID)
+	if err != nil {
+		return correction, domain.TimelineItem{}, err
+	}
+	e.launchDeepDetectionItems(item.SessionID, []domain.TimelineItem{item})
+	return correction, item, nil
+}
+
+func (e *Engine) ReevaluateFailedRun(ctx context.Context, runID string) (domain.Run, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	if active, err := e.store.ActiveSession(ctx); err != nil {
+		return domain.Run{}, err
+	} else if active != nil {
+		return domain.Run{}, errors.New("finish the active update before re-evaluating an earlier run")
+	}
+	run, err := e.store.RetryFailedRun(ctx, runID)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	e.launchProcess(runID, false)
+	return run, nil
+}
+
+func (e *Engine) UndoSelectionCorrection(ctx context.Context, id string) (domain.SelectionCorrection, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	if active, err := e.store.ActiveSession(ctx); err != nil {
+		return domain.SelectionCorrection{}, err
+	} else if active != nil {
+		return domain.SelectionCorrection{}, errors.New("finish the active update before undoing a selection correction")
+	}
+	value, err := e.store.UndoSelectionCorrection(ctx, id)
+	if err != nil {
+		return domain.SelectionCorrection{}, err
+	}
+	e.mu.Lock()
+	for key, cancel := range e.active {
+		if strings.HasPrefix(key, "ai:"+value.SessionID+":") {
+			cancel()
+		}
+	}
+	e.mu.Unlock()
+	_ = e.store.RefreshEventResolutionCounts(ctx, value.SessionID)
+	return value, nil
 }
 
 func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode) (domain.MediaRecapture, error) {

@@ -68,6 +68,10 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			UPDATE meta SET value=? WHERE key='schema_version';`, schemaVersion); err != nil {
 			return fmt.Errorf("migrate schema 3 to %s: %w", schemaVersion, err)
 		}
+	case version == "4":
+		if err := s.migrateSchemaFourToFive(ctx); err != nil {
+			return fmt.Errorf("migrate schema 4 to %s: %w", schemaVersion, err)
+		}
 	case version != schemaVersion:
 		return fmt.Errorf("database schema %s is incompatible with required schema %s; start with a fresh database", version, schemaVersion)
 	}
@@ -190,6 +194,120 @@ func (s *Store) initializeOnboarding(ctx context.Context, fresh bool) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) migrateSchemaFourToFive(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var itemColumn int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('candidate_assessments') WHERE name='item_json'`).Scan(&itemColumn); err != nil {
+		return err
+	}
+	if itemColumn == 0 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE candidate_assessments ADD COLUMN item_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return err
+		}
+	}
+	if err := rebuildFeedbackEventsForSchemaFive(ctx, tx); err != nil {
+		return fmt.Errorf("rebuild feedback events: %w", err)
+	}
+	if err := rebuildAIDetectionJobsForSchemaFive(ctx, tx); err != nil {
+		return fmt.Errorf("rebuild AI detection jobs: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value=? WHERE key='schema_version'`, schemaVersion); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func rebuildFeedbackEventsForSchemaFive(ctx context.Context, tx *sql.Tx) error {
+	backup, err := sqliteTableExists(ctx, tx, "feedback_events_v4")
+	if err != nil {
+		return err
+	}
+	if backup {
+		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS feedback_events`); err != nil {
+			return err
+		}
+	} else if _, err := tx.ExecContext(ctx, `ALTER TABLE feedback_events RENAME TO feedback_events_v4`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE feedback_events (
+		  id TEXT PRIMARY KEY,
+		  timeline_id TEXT REFERENCES timeline_items(id) ON DELETE SET NULL,
+		  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+		  evidence_key TEXT NOT NULL,
+		  direction TEXT NOT NULL CHECK (direction IN ('more','less')),
+		  reason TEXT CHECK (reason = 'not_interested' OR reason IS NULL),
+		  created_at TEXT NOT NULL
+		)`); err != nil {
+		return fmt.Errorf("create replacement table: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at)
+		SELECT id,timeline_id,session_id,run_id,evidence_key,direction,
+		       CASE WHEN direction='more' THEN NULL ELSE 'not_interested' END,created_at
+		FROM feedback_events_v4
+		WHERE direction='more' OR reason IS NULL OR reason IN ('not_interested','wrong_topic')`); err != nil {
+		return fmt.Errorf("copy canonical feedback: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE feedback_events_v4`); err != nil {
+		return fmt.Errorf("drop old feedback table: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE INDEX feedback_evidence_created ON feedback_events(evidence_key, created_at DESC)`); err != nil {
+		return fmt.Errorf("create feedback index: %w", err)
+	}
+	return nil
+}
+
+func rebuildAIDetectionJobsForSchemaFive(ctx context.Context, tx *sql.Tx) error {
+	backup, err := sqliteTableExists(ctx, tx, "ai_detection_jobs_v4")
+	if err != nil {
+		return err
+	}
+	if backup {
+		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS ai_detection_jobs`); err != nil {
+			return err
+		}
+	} else if _, err := tx.ExecContext(ctx, `ALTER TABLE ai_detection_jobs RENAME TO ai_detection_jobs_v4`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		CREATE TABLE ai_detection_jobs (
+		  id TEXT PRIMARY KEY,
+		  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		  status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
+		  provider TEXT NOT NULL,
+		  model TEXT NOT NULL,
+		  effort TEXT NOT NULL,
+		  candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
+		  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+		  input_tokens INTEGER,
+		  cached_input_tokens INTEGER,
+		  output_tokens INTEGER,
+		  reasoning_output_tokens INTEGER,
+		  error TEXT NOT NULL DEFAULT '',
+		  created_at TEXT NOT NULL,
+		  started_at TEXT,
+		  completed_at TEXT
+		);
+		INSERT INTO ai_detection_jobs SELECT * FROM ai_detection_jobs_v4;
+		DROP TABLE ai_detection_jobs_v4;
+		CREATE INDEX ai_detection_jobs_status_created ON ai_detection_jobs(status, created_at);`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func sqliteTableExists(ctx context.Context, tx *sql.Tx, name string) (bool, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&count); err != nil {
+		return false, err
+	}
+	return count != 0, nil
 }
 
 func (s *Store) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
@@ -637,14 +755,19 @@ func (s *Store) CompleteRun(ctx context.Context, run domain.Run, result domain.R
 	}
 	defer tx.Rollback()
 	byKey := map[string]ScoredAssessment{}
+	itemsByKey := map[string]domain.ReasonedItem{}
+	for _, item := range result.Items {
+		itemsByKey[item.EvidenceKey] = item
+	}
 	for _, value := range scored {
 		byKey[value.Assessment.EvidenceKey] = value
 		raw, _ := json.Marshal(value.Assessment)
+		itemRaw, _ := json.Marshal(itemsByKey[value.Assessment.EvidenceKey])
 		selected := 0
 		if value.Selected {
 			selected = 1
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, run.ID, value.Assessment.EvidenceKey, run.Source, string(raw), value.BaseScore, value.PreferenceScore, value.FinalScore, selected, now); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,item_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, run.ID, value.Assessment.EvidenceKey, run.Source, string(raw), string(itemRaw), value.BaseScore, value.PreferenceScore, value.FinalScore, selected, now); err != nil {
 			return err
 		}
 	}
@@ -907,6 +1030,16 @@ func (s *Store) RecomposeCompletedSessions(ctx context.Context) error {
 func (s *Store) ListSessionItems(ctx context.Context, sessionID string) ([]domain.TimelineItem, error) {
 	return s.listItems(ctx, `WHERE session_id=? ORDER BY rank`, sessionID)
 }
+func (s *Store) TimelineItem(ctx context.Context, timelineID string) (domain.TimelineItem, error) {
+	items, err := s.listItems(ctx, `WHERE id=?`, timelineID)
+	if err != nil {
+		return domain.TimelineItem{}, err
+	}
+	if len(items) != 1 {
+		return domain.TimelineItem{}, sql.ErrNoRows
+	}
+	return items[0], nil
+}
 func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
 	settings, err := s.GetSettings(ctx)
 	if err != nil {
@@ -1058,9 +1191,16 @@ func (s *Store) PreferenceSignals(ctx context.Context) ([]PreferenceSignal, erro
 		  FROM calibration_samples c
 		  JOIN candidate_assessments a ON a.run_id=c.run_id AND a.evidence_key=c.evidence_key
 		  WHERE c.label IS NOT NULL
+		  UNION ALL
+		  SELECT c.run_id,c.evidence_key,a.source,'more',NULL,'selection_correction',c.created_at,a.assessment_json
+		  FROM selection_corrections c
+		  JOIN candidate_assessments a ON a.run_id=c.run_id AND a.evidence_key=c.evidence_key
+		  WHERE c.undone_at IS NULL
+		    AND c.created_at > COALESCE((SELECT value FROM meta WHERE key='preference_signal_reset_at'),'')
 		), ranked AS (
 		  SELECT signals.*,ROW_NUMBER() OVER (
-		    PARTITION BY source,evidence_key ORDER BY created_at DESC,origin DESC
+		    PARTITION BY source,evidence_key ORDER BY created_at DESC,
+		      CASE origin WHEN 'routine' THEN 3 WHEN 'selection_correction' THEN 2 ELSE 1 END DESC
 		  ) AS signal_rank
 		  FROM signals
 		)
@@ -1110,6 +1250,47 @@ func (s *Store) CancelSession(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+func (s *Store) RetryFailedRun(ctx context.Context, runID string) (domain.Run, error) {
+	run, err := s.GetRun(ctx, runID)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if run.Status != "failed" {
+		return domain.Run{}, errors.New("only a failed run can be re-evaluated")
+	}
+	var observations, evaluations, timeline int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM observations WHERE run_id=?`, runID).Scan(&observations); err != nil {
+		return domain.Run{}, err
+	}
+	if observations == 0 {
+		return domain.Run{}, errors.New("failed run has no durable captured evidence to re-evaluate")
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM candidate_assessments WHERE run_id=?`, runID).Scan(&evaluations); err != nil {
+		return domain.Run{}, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM timeline_items WHERE run_id=?`, runID).Scan(&timeline); err != nil {
+		return domain.Run{}, err
+	}
+	if evaluations != 0 || timeline != 0 {
+		return domain.Run{}, errors.New("failed run already contains evaluated state and cannot be replayed safely")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE sessions SET status='running',active_source=?,completed_at=NULL,error_json=NULL WHERE id=?`, run.Source, run.SessionID); err != nil {
+		return domain.Run{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning',completed_at=NULL,summary='',error_json=NULL WHERE id=?`, runID); err != nil {
+		return domain.Run{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Run{}, err
+	}
+	return s.GetRun(ctx, runID)
+}
+
 func (s *Store) ResetLearning(ctx context.Context) error {
 	if err := s.requireIdle(ctx); err != nil {
 		return err
@@ -1119,7 +1300,13 @@ func (s *Store) ResetLearning(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM calibration_sessions; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM meta WHERE key='calibration_first_run_status';`); err != nil {
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM calibration_sessions;
+		DELETE FROM feedback_events;
+		DELETE FROM preference_model;
+		DELETE FROM meta WHERE key='calibration_first_run_status';
+		INSERT INTO meta(key,value) VALUES('preference_signal_reset_at',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value;`, domain.Now()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -1152,7 +1339,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key='calibration_first_run_status';`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at');`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES('runtime',?,?)`, string(raw), now); err != nil {
