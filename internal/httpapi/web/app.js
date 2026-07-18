@@ -57,6 +57,12 @@ window.addEventListener("message", (event) => {
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
     showError(new Error(event.data.message));
   }
+  if (event.data.type === "AKU_BROWSER_DISPATCH_FAILED") {
+    console.warn("AkuBridge dispatch stopped; waiting for the authoritative Sidecar run outcome.", {
+      runId: event.data.runId,
+      message: event.data.message,
+    });
+  }
 });
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
@@ -2361,7 +2367,10 @@ function showSessionFailure(session) {
 function showSessionOutcome(session) {
   if (!["completed", "partial"].includes(session.status)) return;
   const additions = session.items?.length ?? 0;
-  if (additions > 0) return;
+  if (additions > 0) {
+    clearNotice();
+    return;
+  }
   const notice = $("#provider-notice");
   notice.className = "notice notice-complete";
   notice.setAttribute("role", "status");

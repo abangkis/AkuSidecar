@@ -678,6 +678,32 @@ func TestContinuationPreservesBridgeFrontierIdentity(t *testing.T) {
 	}
 }
 
+func TestLinkedInContinuationUsesPriorObservedOverlapCheckpoint(t *testing.T) {
+	value := domain.Observation{
+		Source: domain.SourceLinkedIn,
+		Snapshots: []domain.Snapshot{
+			{ScrollY: 0, Blocks: []domain.Block{{Text: "First LinkedIn post with enough stable content to identify the captured block."}}},
+			{ScrollY: 560, Blocks: []domain.Block{{PlatformID: "linkedin:activity:7411111111111111111"}}},
+			{ScrollY: 1120, Blocks: []domain.Block{{Text: "Final text-only frontier that can move after LinkedIn remeasures its virtualized feed."}}},
+		},
+		Coverage: map[string]any{
+			"frontier": map[string]any{
+				"scrollY":    float64(1120),
+				"anchorKeys": []any{"final text-only frontier that can move"},
+			},
+		},
+	}
+
+	continuation := continuationFrom(value)
+	anchors, ok := continuation["anchorKeys"].([]string)
+	if !ok || len(anchors) != 1 || anchors[0] != "linkedin:activity:7411111111111111111" {
+		t.Fatalf("continuation anchors=%#v", continuation["anchorKeys"])
+	}
+	if continuation["startScrollY"] != 560 {
+		t.Fatalf("startScrollY=%#v", continuation["startScrollY"])
+	}
+}
+
 func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessionID string, source domain.Source, evidenceKey string) {
 	t.Helper()
 	session := waitSession(t, runtime, sessionID, func(value domain.Session) bool {

@@ -721,6 +721,21 @@ func continuationFrom(value domain.Observation) map[string]any {
 	if len(value.Snapshots) == 0 {
 		return nil
 	}
+	// LinkedIn virtualizes and remeasures its feed after the initial capture is
+	// restored. Resume from the preceding observed snapshot so the follow-up
+	// proves continuity against a bounded overlap before collecting new blocks.
+	if value.Source == domain.SourceLinkedIn && len(value.Snapshots) > 1 {
+		for index := len(value.Snapshots) - 2; index >= 0; index-- {
+			checkpoint := value.Snapshots[index]
+			checkpointAnchors := snapshotContinuationAnchors(checkpoint)
+			if len(checkpointAnchors) == 0 {
+				continue
+			}
+			startScrollY = float64(checkpoint.ScrollY)
+			anchors = checkpointAnchors
+			break
+		}
+	}
 	last := value.Snapshots[len(value.Snapshots)-1]
 	if startScrollY == 0 && last.ScrollY > 0 {
 		startScrollY = float64(last.ScrollY)
@@ -749,6 +764,29 @@ func continuationFrom(value domain.Observation) map[string]any {
 		return nil
 	}
 	return map[string]any{"startScrollY": int(startScrollY), "anchorKeys": anchors, "settleMs": 900}
+}
+
+func snapshotContinuationAnchors(snapshot domain.Snapshot) []string {
+	anchors := make([]string, 0, 3)
+	for _, block := range snapshot.Blocks {
+		identity := strings.TrimSpace(block.PlatformID)
+		if identity == "" {
+			identity = strings.TrimSpace(block.Permalink)
+		}
+		if identity == "" {
+			identity = strings.ToLower(strings.Join(strings.Fields(block.Text), " "))
+			if len(identity) > 300 {
+				identity = identity[:300]
+			}
+		}
+		if identity != "" {
+			anchors = append(anchors, identity)
+		}
+		if len(anchors) == 3 {
+			break
+		}
+	}
+	return anchors
 }
 
 func continuationAnchors(coverage map[string]any) []string {
