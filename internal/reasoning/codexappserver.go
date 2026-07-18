@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -584,29 +585,13 @@ func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, 
 }
 
 func resolveExecutable(root, value string) (string, error) {
-	if strings.TrimSpace(value) == "" {
-		value = "codex.exe"
+	requested := strings.TrimSpace(value)
+	if requested != "" && strings.ContainsAny(requested, `\\/`) && !filepath.IsAbs(requested) {
+		requested = filepath.Join(root, requested)
 	}
-	if strings.ContainsAny(value, `\\/`) {
-		if !filepath.IsAbs(value) {
-			value = filepath.Join(root, value)
-		}
-		absolute, err := filepath.Abs(value)
-		if err != nil {
-			return "", err
-		}
-		info, err := os.Stat(absolute)
-		if err != nil {
-			return "", fmt.Errorf("Codex executable: %w", err)
-		}
-		if info.IsDir() {
-			return "", errors.New("Codex executable points to a directory")
-		}
-		return absolute, nil
-	}
-	found, err := exec.LookPath(value)
+	result, err := codexruntime.Discover(context.Background(), requested)
 	if err != nil {
-		return "", fmt.Errorf("find Codex executable %q: %w", value, err)
+		return "", fmt.Errorf("discover Codex App Server runtime: %w", err)
 	}
-	return found, nil
+	return result.Executable, nil
 }

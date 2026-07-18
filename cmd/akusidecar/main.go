@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"os/signal"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
+	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
@@ -21,6 +23,9 @@ import (
 func main() {
 	logger := log.New(os.Stdout, "AkuSidecar ", log.LstdFlags|log.LUTC|log.Lmsgprefix)
 	options := config.ParseFlags()
+	if options.DiscoverCodex {
+		os.Exit(discoverCodex(options))
+	}
 	cfg, err := config.Load(options)
 	fatal(logger, err)
 	settings := domain.DefaultSettings(cfg.Capture.Profile, cfg.Capture.Visibility, cfg.Preference.Mode, cfg.Capture.OpenMissingSource)
@@ -69,6 +74,17 @@ func main() {
 		logger.Printf("reasoning provider shutdown failed: %v", err)
 	}
 	logger.Printf("shutdown completed duration_ms=%d", time.Since(shutdownStarted).Milliseconds())
+}
+
+func discoverCodex(options config.Options) int {
+	result, err := codexruntime.Discover(context.Background(), options.CodexPath)
+	if encodeErr := json.NewEncoder(os.Stdout).Encode(result); encodeErr != nil {
+		return 3
+	}
+	if err != nil {
+		return 2
+	}
+	return 0
 }
 
 func fatal(logger *log.Logger, err error) {

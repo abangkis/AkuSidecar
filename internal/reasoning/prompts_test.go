@@ -11,6 +11,15 @@ import (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("AKU_FAKE_CODEX_APP_SERVER") == "1" {
+		if len(os.Args) >= 3 && os.Args[1] == "app-server" && os.Args[2] == "--help" {
+			println("Usage: codex app-server [OPTIONS]")
+			println("      --listen <LISTEN>")
+			return
+		}
+		if len(os.Args) >= 2 && os.Args[1] == "--version" {
+			println("codex-cli fake-test")
+			return
+		}
 		fakeCodexAppServer()
 		return
 	}

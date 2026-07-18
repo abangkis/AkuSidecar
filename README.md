@@ -30,10 +30,15 @@ runtime/codex-cli/codex-path/
 runtime/codex-cli/codex-resources/
 ```
 
-`config/sidecar.json` points to that location. The `0.7.0-preview.1` package
-assumes Codex App with App Server is already installed and locally signed in;
-automatic discovery and login assistance are deferred. The default Go provider owns one
-managed `codex app-server` stdio process, creates ephemeral read-only threads,
+`config/sidecar.json` points to that location for development. A packaged
+runtime leaves the executable unset and discovers an explicit `--codex-path`,
+`AKU_CODEX_PATH`, `PATH`, managed Codex App runtimes, and common platform CLI
+locations in that order. `AkuSidecar --discover-codex` exposes the same JSON
+probe to launchers and installers, and accepts a candidate only after its
+`app-server` capability succeeds. The `0.7.0-preview.1` package still assumes
+the discovered installation is locally signed in; login assistance is
+deferred. The default Go provider owns one managed `codex app-server` stdio
+process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
 structured token telemetry. Acquisition planning, semantic event resolution,
 and AI Deep Detection default to Luna `high`; candidate evaluation alone uses

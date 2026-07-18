@@ -58,12 +58,13 @@ type PreferenceConfig struct {
 }
 
 type Options struct {
-	ConfigPath   string
-	CodexPath    string
-	DatabasePath string
-	Provider     string
-	Port         int
-	Dev          bool
+	ConfigPath    string
+	CodexPath     string
+	DatabasePath  string
+	Provider      string
+	Port          int
+	Dev           bool
+	DiscoverCodex bool
 }
 
 func ParseFlags() Options {
@@ -74,6 +75,7 @@ func ParseFlags() Options {
 	flag.StringVar(&options.Provider, "provider", "", "override reasoning provider for this process")
 	flag.IntVar(&options.Port, "port", 0, "override loopback HTTP port for this process")
 	flag.BoolVar(&options.Dev, "dev", false, "enable development asset and reload behavior")
+	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
 	flag.Parse()
 	return options
 }
