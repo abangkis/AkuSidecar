@@ -9,7 +9,7 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - `cmd/akusidecar` starts the loopback server.
 - `internal/httpapi` serves the API and embedded UI.
 - `internal/engine` owns bounded sessions, capture commands, reasoning, calibration, and finalization.
-- `internal/store` owns the active SQLite v4 schema and the narrow current-Go v2/v3-to-v4 migration.
+- `internal/store` owns the active SQLite v5 schema and rejects every other existing schema before mutating application tables.
 - `internal/selection` owns generic trust/materiality admission, high-authority personalization, protected updates, exact-evidence exclusion, and the discovery lane.
 - `internal/preference` fits the rebuildable local profile from canonical direct signals.
 - `internal/reasoning` owns the single managed Codex App Server transport and candidate-evaluation adapter.
@@ -53,7 +53,7 @@ SQLite schema version 5 contains only active tables for metadata, settings, sess
 
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 
-There is no importer for the Node database. Only current-Go v2, v3, and v4 receive the narrow migrations into v5; every other schema mismatch fails startup. The v4 migration preserves More and canonical Not interested feedback (including the retired `wrong_topic` spelling), but deliberately drops retired `already_know`, `old_info`, and `duplicate` preference reasons because freshness and semantic resolution now own those meanings. It is transactional and can resume safely after an interrupted development migration. The v5 boundary keeps evaluated-but-unselected reasoned items, allows more than one item-scoped Deep Detection job per session, and records undoable selection corrections. Reset learning preserves the historical Timeline/audit decision but places a new authority boundary before old selection corrections; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.0-preview.1` defaults including Standard 1x, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh for candidate evaluation, and preserves Bridge identity.
+There is no importer or migration path for an earlier Node or Go database. Schema v5 is the only accepted runtime contract; an existing database with any other schema version fails before AkuSidecar creates or alters application tables. The v5 boundary keeps evaluated-but-unselected reasoned items, allows more than one item-scoped Deep Detection job per session, and records undoable selection corrections. Reset learning preserves the historical Timeline/audit decision but places a new authority boundary before old selection corrections; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.0-preview.1` defaults including Standard 1x, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh for candidate evaluation, and preserves Bridge identity.
 
 ## Verification
 

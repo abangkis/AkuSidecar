@@ -44,36 +44,26 @@ func Open(path string, defaults domain.Settings) (*Store, error) {
 
 func (s *Store) initialize(defaults domain.Settings) error {
 	ctx := context.Background()
+	var metaTable int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'`).Scan(&metaTable); err != nil {
+		return fmt.Errorf("inspect database schema: %w", err)
+	}
+	if metaTable != 0 {
+		var version string
+		if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
+			return fmt.Errorf("read schema version: %w", err)
+		}
+		if version != schemaVersion {
+			return fmt.Errorf("database schema %s is incompatible with required schema %s; start with a fresh database", version, schemaVersion)
+		}
+	}
 	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("initialize schema: %w", err)
 	}
-	var version string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
+	if metaTable == 0 {
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('schema_version',?)`, schemaVersion); err != nil {
 			return fmt.Errorf("save schema version: %w", err)
 		}
-	case err != nil:
-		return fmt.Errorf("read schema version: %w", err)
-	case version == "2":
-		if _, err := s.db.ExecContext(ctx, `UPDATE meta SET value=? WHERE key='schema_version'`, schemaVersion); err != nil {
-			return fmt.Errorf("migrate schema 2 to %s: %w", schemaVersion, err)
-		}
-	case version == "3":
-		if _, err := s.db.ExecContext(ctx, `
-			ALTER TABLE ai_assessments ADD COLUMN assessed_object TEXT NOT NULL DEFAULT 'social_post' CHECK (assessed_object IN ('social_post'));
-			ALTER TABLE ai_assessments ADD COLUMN signal_scope TEXT NOT NULL DEFAULT 'none' CHECK (signal_scope IN ('social_post','quoted_post','external_artifact','attached_media','none','mixed'));
-			UPDATE ai_assessments SET signal_scope='social_post' WHERE status IN ('strong_signals','user_marked_ai');
-			UPDATE meta SET value=? WHERE key='schema_version';`, schemaVersion); err != nil {
-			return fmt.Errorf("migrate schema 3 to %s: %w", schemaVersion, err)
-		}
-	case version == "4":
-		if err := s.migrateSchemaFourToFive(ctx); err != nil {
-			return fmt.Errorf("migrate schema 4 to %s: %w", schemaVersion, err)
-		}
-	case version != schemaVersion:
-		return fmt.Errorf("database schema %s is incompatible with required schema %s; start with a fresh database", version, schemaVersion)
 	}
 	if _, err := s.bridgeToken(ctx); err != nil {
 		return err
@@ -97,9 +87,6 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		}
 	}
 	if err := s.initializeOnboarding(ctx, fresh); err != nil {
-		return err
-	}
-	if err := s.RecomposeCompletedSessions(ctx); err != nil {
 		return err
 	}
 	settings, err := s.GetSettings(ctx)
@@ -194,120 +181,6 @@ func (s *Store) initializeOnboarding(ctx context.Context, fresh bool) error {
 		}
 	}
 	return nil
-}
-
-func (s *Store) migrateSchemaFourToFive(ctx context.Context) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var itemColumn int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('candidate_assessments') WHERE name='item_json'`).Scan(&itemColumn); err != nil {
-		return err
-	}
-	if itemColumn == 0 {
-		if _, err := tx.ExecContext(ctx, `ALTER TABLE candidate_assessments ADD COLUMN item_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
-			return err
-		}
-	}
-	if err := rebuildFeedbackEventsForSchemaFive(ctx, tx); err != nil {
-		return fmt.Errorf("rebuild feedback events: %w", err)
-	}
-	if err := rebuildAIDetectionJobsForSchemaFive(ctx, tx); err != nil {
-		return fmt.Errorf("rebuild AI detection jobs: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value=? WHERE key='schema_version'`, schemaVersion); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func rebuildFeedbackEventsForSchemaFive(ctx context.Context, tx *sql.Tx) error {
-	backup, err := sqliteTableExists(ctx, tx, "feedback_events_v4")
-	if err != nil {
-		return err
-	}
-	if backup {
-		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS feedback_events`); err != nil {
-			return err
-		}
-	} else if _, err := tx.ExecContext(ctx, `ALTER TABLE feedback_events RENAME TO feedback_events_v4`); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `CREATE TABLE feedback_events (
-		  id TEXT PRIMARY KEY,
-		  timeline_id TEXT REFERENCES timeline_items(id) ON DELETE SET NULL,
-		  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-		  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-		  evidence_key TEXT NOT NULL,
-		  direction TEXT NOT NULL CHECK (direction IN ('more','less')),
-		  reason TEXT CHECK (reason = 'not_interested' OR reason IS NULL),
-		  created_at TEXT NOT NULL
-		)`); err != nil {
-		return fmt.Errorf("create replacement table: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at)
-		SELECT id,timeline_id,session_id,run_id,evidence_key,direction,
-		       CASE WHEN direction='more' THEN NULL ELSE 'not_interested' END,created_at
-		FROM feedback_events_v4
-		WHERE direction='more' OR reason IS NULL OR reason IN ('not_interested','wrong_topic')`); err != nil {
-		return fmt.Errorf("copy canonical feedback: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DROP TABLE feedback_events_v4`); err != nil {
-		return fmt.Errorf("drop old feedback table: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `CREATE INDEX feedback_evidence_created ON feedback_events(evidence_key, created_at DESC)`); err != nil {
-		return fmt.Errorf("create feedback index: %w", err)
-	}
-	return nil
-}
-
-func rebuildAIDetectionJobsForSchemaFive(ctx context.Context, tx *sql.Tx) error {
-	backup, err := sqliteTableExists(ctx, tx, "ai_detection_jobs_v4")
-	if err != nil {
-		return err
-	}
-	if backup {
-		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS ai_detection_jobs`); err != nil {
-			return err
-		}
-	} else if _, err := tx.ExecContext(ctx, `ALTER TABLE ai_detection_jobs RENAME TO ai_detection_jobs_v4`); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		CREATE TABLE ai_detection_jobs (
-		  id TEXT PRIMARY KEY,
-		  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-		  status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
-		  provider TEXT NOT NULL,
-		  model TEXT NOT NULL,
-		  effort TEXT NOT NULL,
-		  candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
-		  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
-		  input_tokens INTEGER,
-		  cached_input_tokens INTEGER,
-		  output_tokens INTEGER,
-		  reasoning_output_tokens INTEGER,
-		  error TEXT NOT NULL DEFAULT '',
-		  created_at TEXT NOT NULL,
-		  started_at TEXT,
-		  completed_at TEXT
-		);
-		INSERT INTO ai_detection_jobs SELECT * FROM ai_detection_jobs_v4;
-		DROP TABLE ai_detection_jobs_v4;
-		CREATE INDEX ai_detection_jobs_status_created ON ai_detection_jobs(status, created_at);`); err != nil {
-		return err
-	}
-	return nil
-}
-
-func sqliteTableExists(ctx context.Context, tx *sql.Tx, name string) (bool, error) {
-	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&count); err != nil {
-		return false, err
-	}
-	return count != 0, nil
 }
 
 func (s *Store) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
@@ -993,38 +866,6 @@ func (s *Store) ComposeSession(ctx context.Context, sessionID string) error {
 		}
 	}
 	return tx.Commit()
-}
-
-// RecomposeCompletedSessions reapplies the active ordering invariant to the
-// current Go schema. It is idempotent and does not import or translate any
-// retired Node state.
-func (s *Store) RecomposeCompletedSessions(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM sessions WHERE status IN ('completed','partial') ORDER BY completed_at,id`)
-	if err != nil {
-		return err
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	for _, id := range ids {
-		if err := s.ComposeSession(ctx, id); err != nil {
-			return fmt.Errorf("recompose session %s: %w", id, err)
-		}
-	}
-	return nil
 }
 
 func (s *Store) ListSessionItems(ctx context.Context, sessionID string) ([]domain.TimelineItem, error) {
