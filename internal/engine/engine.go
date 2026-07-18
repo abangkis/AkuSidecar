@@ -73,6 +73,9 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	value.Normalize()
+	if err := e.validateReasoningProfiles(value); err != nil {
+		return domain.Settings{}, err
+	}
 	if err := e.store.SaveSettings(ctx, value); err != nil {
 		return domain.Settings{}, err
 	}
@@ -323,7 +326,15 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 		}
 	}
 	e.mu.Unlock()
+	settings, settingsErr := e.store.GetSettings(context.Background())
+	if settingsErr != nil {
+		e.logger.Printf("AI Deep Detection could not load reasoning profile for session %s: %v", sessionID, settingsErr)
+		return
+	}
 	model := resolver.Model()
+	if profiled, ok := resolver.(aidetector.ProfiledResolver); ok {
+		model = profiled.ModelForProfile(settings.ReasoningAIDeepProfile)
+	}
 	job, err := e.store.CreateAIDetectionJob(context.Background(), domain.AIDetectionJob{
 		SessionID: sessionID, Status: "queued", Provider: resolver.Name(), Model: model.Model,
 		Effort: model.Effort, CandidateCount: len(items),
@@ -354,7 +365,15 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 			}
 			return
 		}
-		result, usage, duration, resolveErr := resolver.Resolve(ctx, items)
+		var result domain.DeepAIResult
+		var usage domain.ModelUsage
+		var duration time.Duration
+		var resolveErr error
+		if profiled, ok := resolver.(aidetector.ProfiledResolver); ok {
+			result, usage, duration, resolveErr = profiled.ResolveWithProfile(ctx, items, settings.ReasoningAIDeepProfile)
+		} else {
+			result, usage, duration, resolveErr = resolver.Resolve(ctx, items)
+		}
 		if resolveErr != nil {
 			status := "failed"
 			if errors.Is(resolveErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
@@ -575,8 +594,12 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	if err != nil {
 		return err
 	}
+	settings, err := e.store.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
-		plan, telemetry, planErr := e.provider.Plan(ctx, run, merged, knowledge)
+		plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, knowledge, settings.ReasoningAcquisitionProfile)
 		_ = e.store.SaveTelemetry(context.Background(), telemetry)
 		if planErr != nil {
 			return planErr
@@ -584,14 +607,13 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		if plan.Decision == "request_follow_up" {
 			continuation := continuationFrom(merged)
 			if continuation != nil {
-				settings, _ := e.store.GetSettings(ctx)
 				payload := capturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
 				_, err = e.store.QueueFollowUp(ctx, runID, payload)
 				return err
 			}
 		}
 	}
-	result, telemetry, err := e.provider.Analyze(ctx, run, merged, knowledge)
+	result, telemetry, err := e.analyzeWithProfile(ctx, run, merged, knowledge, settings.ReasoningEvaluationProfile)
 	_ = e.store.SaveTelemetry(context.Background(), telemetry)
 	if err != nil {
 		return err
@@ -600,10 +622,6 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return err
 	}
 	profile, err := e.preferenceProfile(ctx, true)
-	if err != nil {
-		return err
-	}
-	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return err
 	}

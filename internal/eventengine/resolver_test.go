@@ -12,11 +12,29 @@ import (
 
 type fakeStructuredInvoker struct {
 	prompt string
+	model  config.ModelConfig
 }
 
-func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, _ any, _ config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, _ any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
 	f.prompt = prompt
+	f.model = model
 	return `{"decisions":[{"candidateAlias":"candidate_001","relation":"new_event","targetAlias":null,"confidence":0.95,"reason":"Distinct occurrence","event":{"canonicalClaim":"A release happened","actor":"OpenAI","action":"released","object":"Codex","eventKind":"release","aliases":[]}}]}`, domain.ModelUsage{}, time.Millisecond, nil
+}
+
+func (f *fakeStructuredInvoker) ResolveProfile(id string) (config.ModelConfig, bool) {
+	if id == "terra_xhigh" {
+		return config.ModelConfig{Model: "gpt-5.6-terra", Effort: "xhigh"}, true
+	}
+	return config.ModelConfig{}, false
+}
+
+func TestStructuredResolverUsesSelectedBackendProfile(t *testing.T) {
+	invoker := &fakeStructuredInvoker{}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "fallback", Effort: "high"}, schema: map[string]any{}}
+	_, _, _, err := resolver.ResolveWithProfile(context.Background(), []domain.SemanticCandidate{{Alias: "candidate_001", Text: "OpenAI released Codex"}}, nil, "terra_xhigh")
+	if err != nil || invoker.model.Model != "gpt-5.6-terra" || invoker.model.Effort != "xhigh" {
+		t.Fatalf("model=%+v err=%v", invoker.model, err)
+	}
 }
 
 func TestStructuredResolverUsesOpaqueAliasesAndNoTools(t *testing.T) {

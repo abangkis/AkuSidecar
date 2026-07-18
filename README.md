@@ -31,14 +31,16 @@ runtime/codex-cli/codex-resources/
 `config/sidecar.json` points to that location. The default Go provider owns one
 managed `codex app-server` stdio process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
-structured token telemetry. Acquisition planning uses Luna `high`; candidate
+structured token telemetry. Acquisition planning defaults to Luna `xhigh`; candidate
 evaluation, semantic event resolution, and AI Deep Detection use independent
 Luna `xhigh` profiles. Deep Detection runs only after Timeline delivery, while
 local deterministic AI Fast Detection does not consume a model. The domain
 adapters depend on a generic structured-inference contract rather than the
 Codex transport, so another backend can replace App Server without changing
 their schemas or authority rules. Settings exposes the active provider, model,
-effort, and execution phase for each process.
+effort, and execution phase for each process. Each process can be tuned for the
+next invocation through a backend-owned bounded catalog: Luna High, Luna XHigh,
+Terra High, Terra XHigh, or Sol Medium. Free-form model IDs are never accepted.
 
 An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,

@@ -171,6 +171,17 @@ func TestAIDetectorPresentationDefaultsToInlineAndUsesLockedModes(t *testing.T) 
 	}
 }
 
+func TestReasoningProfilesDefaultToLunaXHighAndRejectUnsafeIDs(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.ReasoningAcquisitionProfile != "luna_xhigh" || value.ReasoningEvaluationProfile != "luna_xhigh" || value.ReasoningSemanticProfile != "luna_xhigh" || value.ReasoningAIDeepProfile != "luna_xhigh" {
+		t.Fatalf("reasoning defaults=%+v", value)
+	}
+	value.ReasoningAcquisitionProfile = "Sol Medium"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unsafe free-form profile id must be rejected")
+	}
+}
+
 func TestAIAssessmentRejectsInvalidStageStatusPair(t *testing.T) {
 	value := AIAssessment{TimelineID: "timeline", SessionID: "session", Stage: "fast", Status: "strong_signals", ConfidenceBand: "medium", AssessedObject: "social_post", SignalScope: "social_post"}
 	if err := value.Validate(); err != nil {

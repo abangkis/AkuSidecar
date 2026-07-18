@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -72,9 +73,9 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 	var resolution domain.SemanticResolution
 	if e.resolver != nil && shouldResolve {
 		summary.ResolverInvoked = true
-		model := e.resolver.Model()
+		model := e.modelForProfile(settings.ReasoningSemanticProfile)
 		summary.Provider, summary.Model, summary.Effort = e.resolver.Name(), model.Model, model.Effort
-		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, candidates, shortlist)
+		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, candidates, shortlist, settings.ReasoningSemanticProfile)
 		if err != nil {
 			summary.Status = "failed"
 			summary.Error = &domain.Failure{Code: "semantic_resolution_failed", Stage: "semantic_event_resolution", Message: err.Error(), Retryable: true}
@@ -126,7 +127,7 @@ func (e *Engine) ProcessTimelineItem(ctx context.Context, timelineID string, set
 	shortlist, _ := rankShortlist(candidates, catalog, settings.SemanticEventShortlist)
 	var resolution domain.SemanticResolution
 	if e.resolver != nil && len(shortlist) > 0 {
-		resolution, _, _, err = e.resolve(ctx, candidates, shortlist)
+		resolution, _, _, err = e.resolve(ctx, candidates, shortlist, settings.ReasoningSemanticProfile)
 		if err != nil {
 			return domain.ResolvedSemanticReport{}, err
 		}
@@ -144,9 +145,24 @@ func (e *Engine) ProcessTimelineItem(ctx context.Context, timelineID string, set
 	return reports[0], nil
 }
 
-func (e *Engine) resolve(ctx context.Context, candidates []domain.SemanticCandidate, shortlist []domain.SemanticEvent) (domain.SemanticResolution, domain.ModelUsage, int64, error) {
-	result, usage, duration, err := e.resolver.Resolve(ctx, candidates, shortlist)
+func (e *Engine) resolve(ctx context.Context, candidates []domain.SemanticCandidate, shortlist []domain.SemanticEvent, profileID string) (domain.SemanticResolution, domain.ModelUsage, int64, error) {
+	var result domain.SemanticResolution
+	var usage domain.ModelUsage
+	var duration time.Duration
+	var err error
+	if profiled, ok := e.resolver.(ProfiledResolver); ok {
+		result, usage, duration, err = profiled.ResolveWithProfile(ctx, candidates, shortlist, profileID)
+	} else {
+		result, usage, duration, err = e.resolver.Resolve(ctx, candidates, shortlist)
+	}
 	return result, usage, duration.Milliseconds(), err
+}
+
+func (e *Engine) modelForProfile(profileID string) config.ModelConfig {
+	if profiled, ok := e.resolver.(ProfiledResolver); ok {
+		return profiled.ModelForProfile(profileID)
+	}
+	return e.resolver.Model()
 }
 
 func candidateEvidenceKeys(candidates []domain.SemanticCandidate) []string {

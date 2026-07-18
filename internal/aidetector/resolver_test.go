@@ -13,12 +13,30 @@ import (
 type fakeStructuredInvoker struct {
 	prompt string
 	raw    string
+	model  config.ModelConfig
 }
 
-func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, _ any, _ config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, _ any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
 	f.prompt = prompt
+	f.model = model
 	input, output := int64(100), int64(20)
 	return f.raw, domain.ModelUsage{Input: &input, Output: &output}, 15 * time.Millisecond, nil
+}
+
+func (f *fakeStructuredInvoker) ResolveProfile(id string) (config.ModelConfig, bool) {
+	if id == "sol_medium" {
+		return config.ModelConfig{Model: "gpt-5.6-sol", Effort: "medium"}, true
+	}
+	return config.ModelConfig{}, false
+}
+
+func TestDeepResolverUsesSelectedBackendProfile(t *testing.T) {
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],"assessedObject":"social_post","signalScope":"none","rationale":"Not enough evidence."}]}`}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "fallback", Effort: "high"}, schema: map[string]any{}}
+	_, _, _, err := resolver.ResolveWithProfile(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}}, "sol_medium")
+	if err != nil || invoker.model.Model != "gpt-5.6-sol" || invoker.model.Effort != "medium" {
+		t.Fatalf("model=%+v err=%v", invoker.model, err)
+	}
 }
 
 func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {

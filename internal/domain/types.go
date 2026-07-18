@@ -24,6 +24,7 @@ const (
 	DefaultRetentionDays            = 30
 	DefaultStorageLimitMB           = 100
 	DefaultAIDetectionPresentation  = "inline"
+	DefaultReasoningProfile         = "luna_xhigh"
 	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
 	CurrentAIDeepDetectorVersion    = "codex-deep-v4"
 )
@@ -61,6 +62,10 @@ type Settings struct {
 	KnowledgeRetentionDays      int      `json:"knowledgeRetentionDays"`
 	KnowledgeStorageLimitMB     int      `json:"knowledgeStorageLimitMb"`
 	AIDetectionPresentation     string   `json:"aiDetectionPresentation"`
+	ReasoningAcquisitionProfile string   `json:"reasoningAcquisitionProfile"`
+	ReasoningEvaluationProfile  string   `json:"reasoningEvaluationProfile"`
+	ReasoningSemanticProfile    string   `json:"reasoningSemanticProfile"`
+	ReasoningAIDeepProfile      string   `json:"reasoningAiDeepProfile"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -83,6 +88,10 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		KnowledgeRetentionDays:      DefaultRetentionDays,
 		KnowledgeStorageLimitMB:     DefaultStorageLimitMB,
 		AIDetectionPresentation:     DefaultAIDetectionPresentation,
+		ReasoningAcquisitionProfile: DefaultReasoningProfile,
+		ReasoningEvaluationProfile:  DefaultReasoningProfile,
+		ReasoningSemanticProfile:    DefaultReasoningProfile,
+		ReasoningAIDeepProfile:      DefaultReasoningProfile,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -142,6 +151,18 @@ func (s *Settings) Normalize() {
 	if s.AIDetectionPresentation == "" {
 		s.AIDetectionPresentation = DefaultAIDetectionPresentation
 	}
+	if s.ReasoningAcquisitionProfile == "" {
+		s.ReasoningAcquisitionProfile = DefaultReasoningProfile
+	}
+	if s.ReasoningEvaluationProfile == "" {
+		s.ReasoningEvaluationProfile = DefaultReasoningProfile
+	}
+	if s.ReasoningSemanticProfile == "" {
+		s.ReasoningSemanticProfile = DefaultReasoningProfile
+	}
+	if s.ReasoningAIDeepProfile == "" {
+		s.ReasoningAIDeepProfile = DefaultReasoningProfile
+	}
 	s.ApplyProfile()
 }
 
@@ -191,6 +212,16 @@ func (s Settings) Validate() error {
 	if s.AIDetectionPresentation != "inline" && s.AIDetectionPresentation != "drawer" && s.AIDetectionPresentation != "hide" {
 		return fmt.Errorf("unsupported AI detection presentation %q", s.AIDetectionPresentation)
 	}
+	for name, profile := range map[string]string{
+		"reasoningAcquisitionProfile": s.ReasoningAcquisitionProfile,
+		"reasoningEvaluationProfile":  s.ReasoningEvaluationProfile,
+		"reasoningSemanticProfile":    s.ReasoningSemanticProfile,
+		"reasoningAiDeepProfile":      s.ReasoningAIDeepProfile,
+	} {
+		if !validReasoningProfileID(profile) {
+			return fmt.Errorf("%s contains an invalid profile id", name)
+		}
+	}
 	if s.MaxScrolls < 0 || s.MaxScrolls > 6 {
 		return errors.New("maxScrolls must be between 0 and 6")
 	}
@@ -220,6 +251,18 @@ func (s Settings) Validate() error {
 		seen[source] = true
 	}
 	return nil
+}
+
+func validReasoningProfileID(value string) bool {
+	if len(value) == 0 || len(value) > 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '_' && char != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 type OnboardingProfile struct {

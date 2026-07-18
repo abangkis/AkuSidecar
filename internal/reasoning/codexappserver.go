@@ -106,6 +106,25 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 
 func (c *CodexAppServer) Name() string { return "codex-app-server" }
 
+func (c *CodexAppServer) ProfileOptions() []ProfileOption {
+	return []ProfileOption{
+		{ID: "luna_high", Label: "Luna High", Model: "gpt-5.6-luna", Effort: "high"},
+		{ID: "luna_xhigh", Label: "Luna XHigh", Model: "gpt-5.6-luna", Effort: "xhigh"},
+		{ID: "terra_high", Label: "Terra High", Model: "gpt-5.6-terra", Effort: "high"},
+		{ID: "terra_xhigh", Label: "Terra XHigh", Model: "gpt-5.6-terra", Effort: "xhigh"},
+		{ID: "sol_medium", Label: "Sol Medium", Model: "gpt-5.6-sol", Effort: "medium"},
+	}
+}
+
+func (c *CodexAppServer) ResolveProfile(id string) (config.ModelConfig, bool) {
+	for _, option := range c.ProfileOptions() {
+		if option.ID == id {
+			return config.ModelConfig{Model: option.Model, Effort: option.Effort}, true
+		}
+	}
+	return config.ModelConfig{}, false
+}
+
 // InvokeStructured exposes the shared App Server transport to bounded adapters
 // without adding their domain-specific methods to the reasoning Provider.
 func (c *CodexAppServer) InvokeStructured(ctx context.Context, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
@@ -114,8 +133,12 @@ func (c *CodexAppServer) InvokeStructured(ctx context.Context, prompt string, sc
 }
 
 func (c *CodexAppServer) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
-	raw, usage, duration, err := c.invoke(ctx, buildPlanningPrompt(run, observation, knowledge), c.planSchema, c.planning)
-	telemetry := appServerTelemetry(run, "acquisition_planning", c.planning, duration, usage, err)
+	return c.PlanWithModel(ctx, run, observation, knowledge, c.planning)
+}
+
+func (c *CodexAppServer) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
+	raw, usage, duration, err := c.invoke(ctx, buildPlanningPrompt(run, observation, knowledge), c.planSchema, model)
+	telemetry := appServerTelemetry(run, "acquisition_planning", model, duration, usage, err)
 	if err != nil {
 		return AcquisitionPlan{}, telemetry, err
 	}
@@ -130,9 +153,13 @@ func (c *CodexAppServer) Plan(ctx context.Context, run domain.Run, observation d
 }
 
 func (c *CodexAppServer) Analyze(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+	return c.AnalyzeWithModel(ctx, run, observation, knowledge, c.evaluation)
+}
+
+func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	request := buildEvaluationRequest(run, observation, knowledge)
-	raw, usage, duration, err := c.invoke(ctx, request.prompt, c.resultSchema, c.evaluation)
-	telemetry := appServerTelemetry(run, "candidate_evaluation", c.evaluation, duration, usage, err)
+	raw, usage, duration, err := c.invoke(ctx, request.prompt, c.resultSchema, model)
+	telemetry := appServerTelemetry(run, "candidate_evaluation", model, duration, usage, err)
 	if err != nil {
 		return domain.ReasoningResult{}, telemetry, err
 	}

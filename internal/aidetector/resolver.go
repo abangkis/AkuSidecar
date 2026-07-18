@@ -24,6 +24,16 @@ type StructuredInvoker interface {
 	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
+type ProfileInvoker interface {
+	ResolveProfile(string) (config.ModelConfig, bool)
+}
+
+type ProfiledResolver interface {
+	Resolver
+	ModelForProfile(string) config.ModelConfig
+	ResolveWithProfile(context.Context, []domain.TimelineItem, string) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error)
+}
+
 type StructuredResolver struct {
 	invoker StructuredInvoker
 	model   config.ModelConfig
@@ -80,7 +90,24 @@ func NewStructuredResolver(root string, invoker StructuredInvoker, model config.
 func (r *StructuredResolver) Name() string              { return "structured-inference" }
 func (r *StructuredResolver) Model() config.ModelConfig { return r.model }
 
+func (r *StructuredResolver) ModelForProfile(profileID string) config.ModelConfig {
+	if catalog, ok := r.invoker.(ProfileInvoker); ok {
+		if model, found := catalog.ResolveProfile(profileID); found {
+			return model
+		}
+	}
+	return r.model
+}
+
 func (r *StructuredResolver) Resolve(ctx context.Context, items []domain.TimelineItem) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error) {
+	return r.resolve(ctx, items, r.model)
+}
+
+func (r *StructuredResolver) ResolveWithProfile(ctx context.Context, items []domain.TimelineItem, profileID string) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error) {
+	return r.resolve(ctx, items, r.ModelForProfile(profileID))
+}
+
+func (r *StructuredResolver) resolve(ctx context.Context, items []domain.TimelineItem, model config.ModelConfig) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error) {
 	type fastContext struct {
 		Stage          string   `json:"stage"`
 		Status         string   `json:"status"`
@@ -175,7 +202,7 @@ Rules:
 - Evidence codes must describe only evidence actually present. Keep rationale concise and source-grounded.
 
 Candidates: %s`, mustJSON(values))
-	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, prompt, r.schema, r.model)
+	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, prompt, r.schema, model)
 	if err != nil {
 		return domain.DeepAIResult{}, usage, duration, err
 	}

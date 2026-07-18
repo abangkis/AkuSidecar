@@ -26,3 +26,23 @@ type Provider interface {
 type StructuredInvoker interface {
 	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
+
+type ProfileOption struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
+}
+
+// ProfileProvider lets a backend publish and resolve its own bounded model
+// choices. Settings stores only opaque profile IDs, so an alternate backend can
+// replace this catalog without changing domain settings or web rendering.
+type ProfileProvider interface {
+	ProfileOptions() []ProfileOption
+	ResolveProfile(string) (config.ModelConfig, bool)
+}
+
+type RoutedProvider interface {
+	PlanWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error)
+	AnalyzeWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error)
+}

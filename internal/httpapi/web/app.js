@@ -39,6 +39,7 @@ const state = {
   seenTimelineItems: new Set(),
   aiDeepPoller: null,
   sidePaneItems: [],
+  sidePaneFrame: null,
   timelineItems: [],
   passiveMediaEnrichmentTimer: null,
   passiveMediaEnrichmentActive: false,
@@ -111,8 +112,14 @@ $("#back-to-top").addEventListener("click", returnToTop);
 $("#media-viewer-close").addEventListener("click", () => $("#media-viewer").close());
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
-window.addEventListener("scroll", scheduleBackToTop, { passive: true });
-window.addEventListener("resize", scheduleBackToTop, { passive: true });
+window.addEventListener("scroll", () => {
+  scheduleBackToTop();
+  scheduleTimelineSidePanePosition();
+}, { passive: true });
+window.addEventListener("resize", () => {
+  scheduleBackToTop();
+  scheduleTimelineSidePanePosition();
+}, { passive: true });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") schedulePassiveMediaEnrichment();
 });
@@ -269,11 +276,29 @@ function renderReasoningProcesses(processes) {
     const provider = document.createElement("small");
     provider.className = "reasoning-process-provider";
     provider.textContent = formatReasoningProvider(process.provider);
-    const model = document.createElement("strong");
-    model.textContent = formatReasoningModel(process.model);
-    const effort = document.createElement("small");
-    effort.textContent = `${process.execution === "async" ? "Async" : "In run"} · ${formatReasoningEffort(process.effort)} thinking`;
-    route.append(provider, model, effort);
+    route.append(provider);
+    if (process.options?.length) {
+      const select = document.createElement("select");
+      select.id = `reasoning-profile-${process.id.replaceAll("_", "-")}`;
+      select.className = "reasoning-profile-select";
+      select.dataset.processId = process.id;
+      select.setAttribute("aria-label", `${process.label} model profile`);
+      for (const available of process.options) {
+        const option = document.createElement("option");
+        option.value = available.id;
+        option.textContent = available.label;
+        select.append(option);
+      }
+      select.value = process.profileId;
+      route.append(select);
+    } else {
+      const model = document.createElement("strong");
+      model.textContent = formatReasoningModel(process.model);
+      route.append(model);
+    }
+    const detail = document.createElement("small");
+    detail.textContent = `${process.execution === "async" ? "Async" : "In run"} · ${formatReasoningModel(process.model)} · ${formatReasoningEffort(process.effort)} thinking`;
+    route.append(detail);
     row.append(copy, route);
     host.append(row);
   }
@@ -336,6 +361,10 @@ async function saveSettings(event) {
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
     knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
     aiDetectionPresentation: $("#ai-detection-presentation").value,
+    reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
+    reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
+    reasoningSemanticProfile: reasoningProfileValue("semantic_event_resolution", current.reasoningSemanticProfile),
+    reasoningAiDeepProfile: reasoningProfileValue("ai_deep_detection", current.reasoningAiDeepProfile),
   };
   if (settings.aiDetectionPresentation === "hide" && current.aiDetectionPresentation !== "hide") {
     state.pendingSettings = settings;
@@ -343,6 +372,10 @@ async function saveSettings(event) {
     return;
   }
   await persistSettings(settings);
+}
+
+function reasoningProfileValue(processId, fallback) {
+  return document.querySelector(`[data-process-id="${processId}"]`)?.value || fallback || "luna_xhigh";
 }
 
 async function persistSettings(settings, confirmationPhrase = "") {
@@ -403,6 +436,32 @@ function resetSemanticEventMergeThreshold() {
 function applyStreamWidth(value) {
   document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
   scheduleBackToTop();
+  scheduleTimelineSidePanePosition();
+}
+
+function scheduleTimelineSidePanePosition() {
+  if (state.sidePaneFrame !== null) return;
+  state.sidePaneFrame = window.requestAnimationFrame(() => {
+    state.sidePaneFrame = null;
+    syncTimelineSidePanePosition();
+  });
+}
+
+function syncTimelineSidePanePosition() {
+  const stream = document.querySelector(".timeline-heading-row");
+  if (!stream) return;
+  const rect = stream.getBoundingClientRect();
+  const viewportPadding = 16;
+  const minimumTop = 18;
+  const availableWidth = Math.max(0, rect.left - viewportPadding);
+  const paneWidth = Math.min(420, Math.max(280, availableWidth));
+  const paneLeft = Math.max(viewportPadding, rect.left - paneWidth);
+  const paneTop = Math.max(minimumTop, rect.top);
+  const toggleLeft = Math.max(12, rect.left - 56);
+  document.documentElement.style.setProperty("--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
+  document.documentElement.style.setProperty("--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
+  document.documentElement.style.setProperty("--timeline-side-pane-top", `${Math.round(paneTop)}px`);
+  document.documentElement.style.setProperty("--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
 }
 
 function applyTimelineBatchGap(value) {
@@ -1664,6 +1723,7 @@ function scheduleAIDeepRefresh(pending) {
 }
 
 function renderTimelineSidePane(items, pending) {
+  scheduleTimelineSidePanePosition();
   state.sidePaneItems = items;
   const drawerMode = state.bootstrap?.settings?.aiDetectionPresentation === "drawer";
   const toggle = $("#timeline-side-pane-toggle");

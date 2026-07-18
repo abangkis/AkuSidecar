@@ -23,6 +23,16 @@ type StructuredInvoker interface {
 	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
+type ProfileInvoker interface {
+	ResolveProfile(string) (config.ModelConfig, bool)
+}
+
+type ProfiledResolver interface {
+	Resolver
+	ModelForProfile(string) config.ModelConfig
+	ResolveWithProfile(context.Context, []domain.SemanticCandidate, []domain.SemanticEvent, string) (domain.SemanticResolution, domain.ModelUsage, time.Duration, error)
+}
+
 type StructuredResolver struct {
 	invoker StructuredInvoker
 	model   config.ModelConfig
@@ -44,7 +54,24 @@ func NewStructuredResolver(root string, invoker StructuredInvoker, model config.
 func (r *StructuredResolver) Name() string              { return "structured-inference" }
 func (r *StructuredResolver) Model() config.ModelConfig { return r.model }
 
+func (r *StructuredResolver) ModelForProfile(profileID string) config.ModelConfig {
+	if catalog, ok := r.invoker.(ProfileInvoker); ok {
+		if model, found := catalog.ResolveProfile(profileID); found {
+			return model
+		}
+	}
+	return r.model
+}
+
 func (r *StructuredResolver) Resolve(ctx context.Context, candidates []domain.SemanticCandidate, events []domain.SemanticEvent) (domain.SemanticResolution, domain.ModelUsage, time.Duration, error) {
+	return r.resolve(ctx, candidates, events, r.model)
+}
+
+func (r *StructuredResolver) ResolveWithProfile(ctx context.Context, candidates []domain.SemanticCandidate, events []domain.SemanticEvent, profileID string) (domain.SemanticResolution, domain.ModelUsage, time.Duration, error) {
+	return r.resolve(ctx, candidates, events, r.ModelForProfile(profileID))
+}
+
+func (r *StructuredResolver) resolve(ctx context.Context, candidates []domain.SemanticCandidate, events []domain.SemanticEvent, model config.ModelConfig) (domain.SemanticResolution, domain.ModelUsage, time.Duration, error) {
 	type eventReference struct {
 		Alias          string   `json:"alias"`
 		CanonicalClaim string   `json:"canonicalClaim"`
@@ -92,7 +119,7 @@ Use targetAlias only for a supplied historical event alias or an earlier candida
 
 Historical event shortlist: %s
 Current candidates: %s`, mustJSON(refs), mustJSON(candidateRefs))
-	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, prompt, r.schema, r.model)
+	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, prompt, r.schema, model)
 	if err != nil {
 		return domain.SemanticResolution{}, usage, duration, err
 	}

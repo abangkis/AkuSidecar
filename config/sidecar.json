@@ -13,7 +13,7 @@
     "timeoutMs": 120000,
     "planning": {
       "model": "gpt-5.6-luna",
-      "effort": "high"
+      "effort": "xhigh"
     },
     "evaluation": {
       "model": "gpt-5.6-luna",

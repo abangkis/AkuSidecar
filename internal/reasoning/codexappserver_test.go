@@ -17,6 +17,22 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
+func TestCodexProfileCatalogIsBounded(t *testing.T) {
+	provider := &CodexAppServer{}
+	options := provider.ProfileOptions()
+	if len(options) != 5 {
+		t.Fatalf("options=%+v", options)
+	}
+	for _, id := range []string{"luna_high", "luna_xhigh", "terra_high", "terra_xhigh", "sol_medium"} {
+		if model, ok := provider.ResolveProfile(id); !ok || model.Model == "" || model.Effort == "" {
+			t.Fatalf("profile %q model=%+v ok=%v", id, model, ok)
+		}
+	}
+	if _, ok := provider.ResolveProfile("sol_xhigh"); ok {
+		t.Fatal("unlisted profile must fail closed")
+	}
+}
+
 func fakeCodexAppServer() {
 	scanner := bufio.NewScanner(os.Stdin)
 	thread := 0
