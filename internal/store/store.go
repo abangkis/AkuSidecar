@@ -60,6 +60,9 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("initialize schema: %w", err)
 	}
+	if err := s.syncSourceDefinitions(ctx); err != nil {
+		return err
+	}
 	if metaTable == 0 {
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('schema_version',?)`, schemaVersion); err != nil {
 			return fmt.Errorf("save schema version: %w", err)
@@ -95,6 +98,29 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	}
 	_, err = s.EnforceRetention(ctx, settings)
 	return err
+}
+
+func (s *Store) syncSourceDefinitions(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin source registry sync: %w", err)
+	}
+	defer tx.Rollback()
+	for ordinal, descriptor := range domain.Sources() {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO source_definitions(id,display_name,ordinal,enabled)
+			VALUES(?,?,?,1)
+			ON CONFLICT(id) DO UPDATE SET
+				display_name=excluded.display_name,
+				ordinal=excluded.ordinal,
+				enabled=excluded.enabled`, descriptor.ID, descriptor.DisplayName, ordinal); err != nil {
+			return fmt.Errorf("sync source definition %s: %w", descriptor.ID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit source registry sync: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

@@ -99,9 +99,6 @@ $("#reset-timeline-boundary-return").addEventListener("click", resetTimelineBoun
 $("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
 $("#onboarding-cancel").addEventListener("click", () => setView("settings"));
-for (const input of document.querySelectorAll("#onboarding-form input[type='checkbox']")) {
-  input.addEventListener("change", updateOnboardingSummary);
-}
 $("#calibration-previous").addEventListener("click", showPreviousCalibrationSample);
 $("#calibration-less").addEventListener("click", () => decideCalibration({ label: "less_like_this" }));
 $("#calibration-neutral").addEventListener("click", () => decideCalibration({ label: "neutral" }));
@@ -141,6 +138,7 @@ async function bootstrap() {
     clearNotice();
     state.bootstrap = await api("/api/bootstrap");
     state.session = state.bootstrap.activeSession;
+    renderSourceControls();
     $("#runtime-version").textContent = `${state.bootstrap.version} · ${state.bootstrap.runtime}`;
     $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
     $("#provider-value").textContent = state.bootstrap.provider;
@@ -262,8 +260,9 @@ function renderSettings(settings) {
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
   $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
-  $("#settings-source-x").checked = settings.activeSources?.includes("x") ?? false;
-  $("#settings-source-linkedin").checked = settings.activeSources?.includes("linkedin") ?? false;
+  for (const input of document.querySelectorAll("#settings-source-options input[type='checkbox']")) {
+    input.checked = settings.activeSources?.includes(input.value) ?? false;
+  }
   applyStreamWidth(settings.streamWidth || "social");
   applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
   applyTimelineBoundaryReturnDuration(settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
@@ -343,10 +342,7 @@ function formatReasoningEffort(value) {
 async function saveSettings(event) {
   event.preventDefault();
   const current = state.bootstrap.settings;
-  const activeSources = [
-    $("#settings-source-x").checked ? "x" : null,
-    $("#settings-source-linkedin").checked ? "linkedin" : null,
-  ].filter(Boolean);
+  const activeSources = [...document.querySelectorAll("#settings-source-options input[type='checkbox']:checked")].map((input) => input.value);
   if (!activeSources.length) {
     $("#runtime-settings-status").textContent = "Choose at least one active source.";
     return;
@@ -365,7 +361,7 @@ async function saveSettings(event) {
     activeSources,
     timelineCapacity: Number.parseInt($("#timeline-capacity").value, 10),
     maxItemsPerSource: perSource,
-    maxItemsTotal: preset?.maxItemsTotal ?? Math.min(30, Math.max(1, perSource * 2)),
+    maxItemsTotal: preset?.maxItemsTotal ?? Math.min(30, Math.max(1, perSource * activeSources.length)),
     maxScrolls: Number.parseInt($("#max-scrolls").value, 10),
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
@@ -542,9 +538,10 @@ function resetTimelineBoundaryReturnDuration() {
 
 function showOnboarding(editing) {
   state.onboardingEditing = editing;
-  const sources = state.bootstrap?.settings?.activeSources ?? ["x", "linkedin"];
-  $("#onboarding-source-x").checked = sources.includes("x");
-  $("#onboarding-source-linkedin").checked = sources.includes("linkedin");
+  const sources = state.bootstrap?.settings?.activeSources ?? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id);
+  for (const input of document.querySelectorAll("#onboarding-source-options input[type='checkbox']")) {
+    input.checked = sources.includes(input.value);
+  }
   $("#onboarding-cancel").classList.toggle("hidden", !editing);
   $("#onboarding-finish").textContent = editing ? "Save profile" : "Start calibrating";
   $("#onboarding-error").textContent = "";
@@ -914,12 +911,13 @@ function renderSession() {
     ?? session.runs?.find((candidate) => candidate.status === "queued");
   const ordinal = run?.ordinal ?? 0;
   const reasoning = run?.status === "reasoning";
-  const width = reasoning ? 42 + ordinal * 45 : 14 + ordinal * 45;
-  const source = run?.source === "linkedin" ? "LinkedIn" : "X";
+  const runCount = Math.max(1, session.runs?.length ?? 1);
+  const width = ((ordinal + (reasoning ? 0.72 : 0.28)) / runCount) * 96;
+  const source = sourceLabel(run?.source);
   $("#progress-bar").style.width = `${Math.min(96, width)}%`;
   $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.min(96, width)));
   $("#processing-title").textContent = reasoning ? `Evaluating ${source} evidence` : `Reading ${source}`;
-  $("#processing-detail").textContent = `${ordinal + 1} of ${session.runs?.length ?? 2} sources · ${humanize(run?.stage ?? session.status)}`;
+  $("#processing-detail").textContent = `${ordinal + 1} of ${runCount} sources · ${humanize(run?.stage ?? session.status)}`;
 }
 
 function syncRunButtons() {
@@ -1664,7 +1662,7 @@ function schedulePassiveMediaEnrichment(items = state.timelineItems) {
 function passiveMediaCandidates(items) {
   const now = Date.now();
   return (Array.isArray(items) ? items : []).filter((entry) => {
-    if (entry?.source !== "x" || !xMediaCandidateId(entry)) return false;
+    if (sourceDescriptor(entry?.source)?.passiveMediaCapability !== "x_response" || !xMediaCandidateId(entry)) return false;
     if (Array.isArray(entry.evidence?.media) && entry.evidence.media.length > 0) return false;
     if (entry.evidence?.mediaRecovery?.outcome !== "unavailable") return false;
     const attemptedAt = state.passiveMediaEvidenceAttempts.get(entry.id) ?? 0;
@@ -1738,7 +1736,7 @@ function lookupPassiveXMediaEvidence(candidateIds) {
 }
 
 function xMediaCandidateId(entry) {
-  if (entry?.source !== "x") return null;
+  if (sourceDescriptor(entry?.source)?.passiveMediaCapability !== "x_response") return null;
   const values = [
     entry.evidence?.platformId,
     entry.evidence?.permalink,
@@ -2016,6 +2014,7 @@ function buildSourceCard(entry) {
   const evidence = entry.evidence ?? {};
   const item = entry.item ?? {};
   const source = entry.source;
+  const descriptor = sourceDescriptor(source) || {};
   const card = document.createElement("div");
   card.className = `source-layout-card source-${source}`;
   const header = document.createElement("header");
@@ -2026,9 +2025,9 @@ function buildSourceCard(entry) {
   author.textContent = parsed.displayName;
   const context = document.createElement("span");
   const presentation = evidence.presentation ?? {};
-  context.textContent = source === "linkedin"
-    ? [presentation.connectionDegree, presentation.timestampText].filter(Boolean).join(" · ") || formatDate(evidence.publishedAt || item.publishedAt)
-    : parsed.secondary || formatDate(evidence.publishedAt || item.publishedAt);
+  context.textContent = [presentation.connectionDegree, presentation.timestampText].filter(Boolean).join(" · ")
+    || parsed.secondary
+    || formatDate(evidence.publishedAt || item.publishedAt);
   identity.append(author);
   if (presentation.headline) {
     const headline = document.createElement("span");
@@ -2039,9 +2038,9 @@ function buildSourceCard(entry) {
   if (context.textContent) identity.append(context);
   header.append(avatar, identity);
 
-  if (source === "linkedin" && presentation.socialContext) {
+  if (descriptor.socialContextPlacement === "above" && presentation.socialContext) {
     const social = document.createElement("div");
-    social.className = "linkedin-social-context";
+    social.className = "source-social-context-above";
     const socialAvatarUrl = safeMediaUrl(presentation.socialContextAvatarUrl);
     if (socialAvatarUrl) {
       const socialAvatar = document.createElement("img");
@@ -2059,10 +2058,10 @@ function buildSourceCard(entry) {
   card.append(header);
 
   const content = document.createElement("div");
-  content.className = `source-layout-content ${source === "linkedin" ? "linkedin-source-content" : "x-source-content"}`;
-  if (source !== "linkedin" && presentation.socialContext) {
+  content.className = `source-layout-content source-${descriptor.presentationStyle || "social"}-content`;
+  if (descriptor.socialContextPlacement !== "above" && presentation.socialContext) {
     const social = document.createElement("p");
-    social.className = "x-social-context";
+    social.className = "source-social-context-content";
     social.textContent = presentation.socialContext;
     content.append(social);
   }
@@ -2108,14 +2107,17 @@ function buildAvatar(url, source, author) {
   }
   const fallback = document.createElement("span");
   fallback.className = "source-layout-badge";
-  fallback.textContent = source === "x" ? "X" : initials(author);
+  const descriptor = sourceDescriptor(source);
+  fallback.textContent = descriptor?.avatarFallback === "source_icon"
+    ? (descriptor.iconText || sourceLabel(source).slice(0, 1))
+    : initials(author);
   return fallback;
 }
 
 function buildQuotedPost(value, source, expansionKey = null) {
   if (!value?.text) return null;
   const quote = document.createElement("section");
-  quote.className = "x-quote-card";
+  quote.className = "source-quote-card";
   const header = document.createElement("header");
   const avatar = buildAvatar(value.avatarUrl, source, value.author);
   const identity = document.createElement("div");
@@ -2218,7 +2220,7 @@ function buildAttachments(values, source) {
     } else {
       const fallback = document.createElement("span");
       fallback.className = "source-layout-attachment-fallback";
-      fallback.textContent = source === "linkedin" ? "in" : sourceLabel(source).slice(0, 1);
+      fallback.textContent = sourceDescriptor(source)?.iconText || sourceLabel(source).slice(0, 1);
       link.append(fallback);
     }
     const copy = document.createElement("span");
@@ -2243,9 +2245,8 @@ function buildAttachments(values, source) {
 
 function buildEngagement(value, source) {
   if (!value || typeof value !== "object") return null;
-  const definitions = source === "x"
-    ? [["reply", "○"], ["repost", "↻"], ["like", "♡"], ["view", "▥"]]
-    : [["like", "👍"], ["comment", "💬"], ["repost", "↻"]];
+  const definitions = (sourceDescriptor(source)?.engagementMetrics ?? [])
+    .map((metric) => [metric.key, metric.icon]);
   const available = definitions.filter(([key]) => value[key]);
   if (!available.length) return null;
   const footer = document.createElement("footer");
@@ -2419,11 +2420,11 @@ function safeSourceUrl(value, source) {
   const href = safeMediaUrl(value);
   if (!href) return null;
   const url = new URL(href);
-  if (source === "x") return url.hostname === "x.com" && url.pathname.includes("/status/") ? url.href : null;
-  if (source === "linkedin") {
-    return url.hostname === "www.linkedin.com" && (url.pathname.includes("/posts/") || url.pathname.includes("/feed/update/")) ? url.href : null;
-  }
-  return null;
+  const descriptor = sourceDescriptor(source);
+  if (!descriptor) return null;
+  const trustedHost = (descriptor.nativeHosts ?? []).includes(url.hostname);
+  const nativePath = (descriptor.nativePathTokens ?? []).some((token) => url.pathname.includes(token));
+  return trustedHost && nativePath ? url.href : null;
 }
 
 function buildMediaRecaptureButton(entry) {
@@ -2628,7 +2629,7 @@ function clearNotice() {
 function sourceIdentity(value, source) {
   const text = String(value ?? "").trim();
   if (!text) return { displayName: sourceLabel(source), secondary: "" };
-  if (source !== "x") return { displayName: text, secondary: "" };
+  if (sourceDescriptor(source)?.identityFormat !== "display_handle") return { displayName: text, secondary: "" };
   const match = text.match(/^(.+?)\s+(@[A-Za-z0-9_]+)(?:\s+[·•]\s+(.+))?$/);
   return {
     displayName: match?.[1]?.trim() || text,
@@ -2642,25 +2643,80 @@ function initials(value) {
 }
 
 function sourceLabel(source) {
-  return source === "linkedin" ? "LinkedIn" : "X";
+  return sourceDescriptor(source)?.displayName || String(source || "Unknown source");
 }
 
 function buildSourceIcon(source) {
-  const normalized = source === "linkedin" ? "linkedin" : "x";
+  const descriptor = sourceDescriptor(source);
   const icon = document.createElement("span");
-  icon.className = `timeline-source-icon timeline-source-icon-${normalized}`;
-  icon.title = sourceLabel(normalized);
-  icon.setAttribute("aria-label", `Source: ${sourceLabel(normalized)}`);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", normalized === "linkedin"
-    ? "M6.5 8.3H3V21h3.5V8.3ZM4.75 3A2.04 2.04 0 1 0 4.75 7.08 2.04 2.04 0 0 0 4.75 3ZM21 13.72c0-3.83-2.04-5.61-4.77-5.61-2.2 0-3.18 1.21-3.73 2.06V8.3H9V21h3.5v-6.29c0-1.66.31-3.27 2.37-3.27 2.03 0 2.06 1.9 2.06 3.38V21H21v-7.28Z"
-    : "M18.244 2H21l-6.02 6.88L22.06 22h-5.55l-4.35-5.69L7.18 22H4.42l6.45-7.37L4.08 2h5.69l3.93 5.2L18.24 2Zm-.97 17.69h1.53L8.94 4.19H7.3l9.97 15.5Z");
-  svg.append(path);
-  icon.append(svg);
+  icon.className = `timeline-source-icon timeline-source-icon-${source}`;
+  icon.title = sourceLabel(source);
+  icon.setAttribute("aria-label", `Source: ${sourceLabel(source)}`);
+  icon.style.background = descriptor?.iconBackground || "var(--panel-strong)";
+  icon.style.color = descriptor?.iconForeground || "var(--text)";
+  icon.textContent = descriptor?.iconText || sourceLabel(source).slice(0, 1);
   return icon;
+}
+
+function sourceDescriptors() {
+  return Array.isArray(state.bootstrap?.sources) ? state.bootstrap.sources : [];
+}
+
+function sourceDescriptor(source) {
+  return sourceDescriptors().find((descriptor) => descriptor.id === source);
+}
+
+function renderSourceControls() {
+  const onboarding = $("#onboarding-source-options");
+  const settings = $("#settings-source-options");
+  onboarding.replaceChildren();
+  settings.replaceChildren();
+  for (const descriptor of sourceDescriptors()) {
+    const label = document.createElement("label");
+    label.className = "onboarding-source-option";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = descriptor.id;
+    input.checked = Boolean(descriptor.defaultActive);
+    input.addEventListener("change", updateOnboardingSummary);
+    const card = document.createElement("span");
+    card.className = "onboarding-source-card";
+    const icon = document.createElement("span");
+    icon.className = "onboarding-source-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.style.background = descriptor.iconBackground;
+    icon.style.color = descriptor.iconForeground;
+    icon.textContent = descriptor.iconText;
+    const copy = document.createElement("span");
+    copy.className = "onboarding-source-copy";
+    const strong = document.createElement("strong");
+    strong.textContent = descriptor.displayName;
+    const small = document.createElement("small");
+    small.textContent = descriptor.onboardingDescription;
+    copy.append(strong, small);
+    const check = document.createElement("span");
+    check.className = "onboarding-source-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
+    card.append(icon, copy, check);
+    label.append(input, card);
+    onboarding.append(label);
+
+    const settingsLabel = document.createElement("label");
+    settingsLabel.className = "settings-row";
+    const settingsCopy = document.createElement("span");
+    settingsCopy.className = "settings-copy";
+    const settingsStrong = document.createElement("strong");
+    settingsStrong.textContent = descriptor.displayName;
+    const settingsSmall = document.createElement("small");
+    settingsSmall.textContent = `Use the signed-in ${descriptor.onboardingDescription.toLowerCase()} during the next update.`;
+    settingsCopy.append(settingsStrong, settingsSmall);
+    const settingsInput = document.createElement("input");
+    settingsInput.type = "checkbox";
+    settingsInput.value = descriptor.id;
+    settingsLabel.append(settingsCopy, settingsInput);
+    settings.append(settingsLabel);
+  }
 }
 
 function humanize(value) {

@@ -3,7 +3,7 @@
 Current preview release: **`0.7.0-preview.1`**.
 
 AkuSidecar is the Go local runtime for AkuBrowser. It owns the loopback HTTP
-API, embedded browser UI, fresh SQLite state, bounded X and LinkedIn session
+API, embedded browser UI, fresh SQLite state, bounded X, LinkedIn, and Facebook session
 engine, deterministic selection and preference policies, AkuBridge v2
 contract, and replaceable Codex reasoning transport.
 
@@ -16,7 +16,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.7.0-preview.1` / `source-fidelity-v60`
+- AkuBridge `0.7.0-preview.1` / `source-adapters-v61`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -227,7 +227,7 @@ Standard 1x, and returns directly to onboarding.
 
 First-time onboarding starts one bounded update to acquire real source
 candidates, then opens a forced calibration lane before the Timeline. The lane
-round-robins pre-selection X and LinkedIn candidates, accepts More, Neutral,
+round-robins pre-selection candidates across every active source, accepts More, Neutral,
 Less, or a capture issue for every sample, and fits the local preference model
 when the batch is complete. AkuSidecar creates this calibration as part of the
 completed/partial session boundary; bootstrap also repairs a persisted pending

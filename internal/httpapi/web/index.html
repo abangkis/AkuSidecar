@@ -36,29 +36,8 @@
           <h2 id="onboarding-heading" tabindex="-1">Build your personal intelligence feed</h2>
           <p class="onboarding-explanation">Choose the sources you trust. AkuBrowser will learn from real entries, tune itself to your priorities, and build your first focused Timeline.</p>
           <form id="onboarding-form">
-            <div class="onboarding-options">
-              <label class="onboarding-source-option">
-                <input id="onboarding-source-x" type="checkbox" value="x" checked />
-                <span class="onboarding-source-card">
-                  <span class="onboarding-source-icon onboarding-source-icon-x" aria-hidden="true">
-                    <svg viewBox="0 0 24 24"><path d="M18.244 2H21l-6.02 6.88L22.06 22h-5.55l-4.35-5.69L7.18 22H4.42l6.45-7.37L4.08 2h5.69l3.93 5.2L18.24 2Zm-.97 17.69h1.53L8.94 4.19H7.3l9.97 15.5Z"/></svg>
-                  </span>
-                  <span class="onboarding-source-copy"><strong>X</strong><small>Your home timeline</small></span>
-                  <span class="onboarding-source-check" aria-hidden="true">✓</span>
-                </span>
-              </label>
-              <label class="onboarding-source-option">
-                <input id="onboarding-source-linkedin" type="checkbox" value="linkedin" checked />
-                <span class="onboarding-source-card">
-                  <span class="onboarding-source-icon onboarding-source-icon-linkedin" aria-hidden="true">
-                    <svg viewBox="0 0 24 24"><path d="M6.5 8.3H3V21h3.5V8.3ZM4.75 3A2.04 2.04 0 1 0 4.75 7.08 2.04 2.04 0 0 0 4.75 3ZM21 13.72c0-3.83-2.04-5.61-4.77-5.61-2.2 0-3.18 1.21-3.73 2.06V8.3H9V21h3.5v-6.29c0-1.66.31-3.27 2.37-3.27 2.03 0 2.06 1.9 2.06 3.38V21H21v-7.28Z"/></svg>
-                  </span>
-                  <span class="onboarding-source-copy"><strong>LinkedIn</strong><small>Your professional feed</small></span>
-                  <span class="onboarding-source-check" aria-hidden="true">✓</span>
-                </span>
-              </label>
-            </div>
-            <div id="onboarding-summary" class="onboarding-summary">2 source feeds selected</div>
+            <div id="onboarding-source-options" class="onboarding-options"></div>
+            <div id="onboarding-summary" class="onboarding-summary">Choose at least one source feed.</div>
             <p id="onboarding-error" class="settings-detail" role="alert"></p>
             <div class="onboarding-actions">
               <button id="onboarding-cancel" class="secondary-button hidden" type="button">Cancel</button>
@@ -298,16 +277,7 @@
           <fieldset class="settings-group">
             <legend>Active sources</legend>
             <p class="settings-group-note">At least one installed source must remain active.</p>
-            <div class="settings-card">
-              <label class="settings-row" for="settings-source-x">
-                <span class="settings-copy"><strong>X</strong><small>Use the signed-in home timeline during the next update.</small></span>
-                <input id="settings-source-x" type="checkbox" value="x" />
-              </label>
-              <label class="settings-row" for="settings-source-linkedin">
-                <span class="settings-copy"><strong>LinkedIn</strong><small>Use the signed-in professional feed during the next update.</small></span>
-                <input id="settings-source-linkedin" type="checkbox" value="linkedin" />
-              </label>
-            </div>
+            <div id="settings-source-options" class="settings-card"></div>
           </fieldset>
 
           <fieldset class="settings-group">

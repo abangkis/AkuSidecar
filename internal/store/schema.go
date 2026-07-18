@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 5
+const SchemaVersion = 6
 
-const schemaVersion = "5"
+const schemaVersion = "6"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -21,11 +21,18 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS source_definitions (
+  id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  ordinal INTEGER NOT NULL UNIQUE CHECK (ordinal >= 0),
+  enabled INTEGER NOT NULL CHECK (enabled IN (0,1))
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   intent TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('queued','running','completed','partial','failed','cancelled')),
-  active_source TEXT CHECK (active_source IN ('x','linkedin') OR active_source IS NULL),
+  active_source TEXT REFERENCES source_definitions(id),
   max_items_per_source INTEGER NOT NULL CHECK (max_items_per_source BETWEEN 1 AND 15),
   max_items_total INTEGER NOT NULL CHECK (max_items_total BETWEEN 1 AND 30),
   created_at TEXT NOT NULL,
@@ -40,8 +47,8 @@ CREATE INDEX IF NOT EXISTS sessions_status_created ON sessions(status, created_a
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
-  ordinal INTEGER NOT NULL CHECK (ordinal IN (0,1)),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
   status TEXT NOT NULL CHECK (status IN ('queued','waiting_for_bridge','reasoning','completed','failed','cancelled')),
   stage TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -76,7 +83,7 @@ CREATE TABLE IF NOT EXISTS observations (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   command_id TEXT NOT NULL UNIQUE REFERENCES bridge_commands(id) ON DELETE CASCADE,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   observation_json TEXT NOT NULL,
   captured_at TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -105,7 +112,7 @@ CREATE INDEX IF NOT EXISTS reasoning_run_created ON reasoning_invocations(run_id
 CREATE TABLE IF NOT EXISTS candidate_assessments (
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   evidence_key TEXT NOT NULL,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   assessment_json TEXT NOT NULL,
   item_json TEXT NOT NULL DEFAULT '{}',
   base_score REAL NOT NULL,
@@ -120,7 +127,7 @@ CREATE TABLE IF NOT EXISTS timeline_items (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   evidence_key TEXT NOT NULL,
   rank INTEGER NOT NULL CHECK (rank >= 0),
   item_json TEXT NOT NULL,
@@ -180,7 +187,7 @@ CREATE INDEX IF NOT EXISTS ai_detection_jobs_status_created ON ai_detection_jobs
 CREATE TABLE IF NOT EXISTS media_recaptures (
   id TEXT PRIMARY KEY,
   timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   target_url TEXT NOT NULL,
   evidence_key TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('queued','claimed','completed','failed')),
@@ -221,7 +228,7 @@ CREATE TABLE IF NOT EXISTS calibration_samples (
   ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 9),
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   evidence_key TEXT NOT NULL,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   candidate_json TEXT NOT NULL,
   label TEXT CHECK (label IN ('more_like_this','neutral','less_like_this') OR label IS NULL),
   issue_code TEXT CHECK (issue_code IN ('capture_incomplete','wrong_source','duplicate','formatting') OR issue_code IS NULL),
@@ -280,7 +287,7 @@ CREATE TABLE IF NOT EXISTS preference_model (
 
 CREATE TABLE IF NOT EXISTS knowledge_events (
   id TEXT PRIMARY KEY,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   event_key TEXT NOT NULL,
   evidence_key TEXT NOT NULL,
   item_json TEXT NOT NULL,
@@ -314,7 +321,7 @@ CREATE TABLE IF NOT EXISTS semantic_event_reports (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   evidence_key TEXT NOT NULL,
-  source TEXT NOT NULL CHECK (source IN ('x','linkedin')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
   relation TEXT NOT NULL CHECK (relation IN ('new_event','duplicate_report','material_update','contradiction','new_consequence','context_only')),
   confidence REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
   reason TEXT NOT NULL DEFAULT '',

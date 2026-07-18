@@ -12,10 +12,9 @@
           "id": { "type": "string" },
           "whatChanged": { "type": "string" },
           "whyItMatters": { "type": "string" },
-          "source": { "type": "string", "enum": ["x", "linkedin"] },
           "evidenceKey": {
             "type": "string",
-            "pattern": "^(x|linkedin):[a-f0-9]{24}$"
+            "pattern": "^candidate_[0-9]{3}$"
           },
           "eventKey": {
             "type": "string",
@@ -39,7 +38,6 @@
           "id",
           "whatChanged",
           "whyItMatters",
-          "source",
           "evidenceKey",
           "eventKey",
           "knowledgeDelta",
@@ -57,7 +55,7 @@
       "items": {
         "type": "object",
         "properties": {
-          "evidenceKey": { "type": "string", "pattern": "^(x|linkedin):[a-f0-9]{24}$" },
+          "evidenceKey": { "type": "string", "pattern": "^candidate_[0-9]{3}$" },
           "topicTags": {
             "type": "array",
             "maxItems": 5,

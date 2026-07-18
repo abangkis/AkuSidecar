@@ -37,9 +37,13 @@ type Source string
 const (
 	SourceX        Source = "x"
 	SourceLinkedIn Source = "linkedin"
+	SourceFacebook Source = "facebook"
 )
 
-func (s Source) Valid() bool { return s == SourceX || s == SourceLinkedIn }
+func (s Source) Valid() bool {
+	_, ok := SourceByID(s)
+	return ok
+}
 
 type Settings struct {
 	LoadProfile                 string   `json:"loadProfile"`
@@ -77,7 +81,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		LoadProfile:                 profile,
 		CaptureVisibility:           visibility,
 		OpenMissingSource:           openMissing,
-		ActiveSources:               []Source{SourceX, SourceLinkedIn},
+		ActiveSources:               DefaultSources(),
 		PreferenceEligibilityMode:   preferenceMode,
 		CalibrationEnabled:          true,
 		CalibrationBatchSize:        10,
@@ -247,8 +251,8 @@ func (s Settings) Validate() error {
 	if s.CalibrationBatchSize < 2 || s.CalibrationBatchSize > 10 {
 		return errors.New("calibrationBatchSize must be between 2 and 10")
 	}
-	if len(s.ActiveSources) == 0 || len(s.ActiveSources) > 2 {
-		return errors.New("activeSources must contain one or two sources")
+	if len(s.ActiveSources) == 0 || len(s.ActiveSources) > len(Sources()) {
+		return fmt.Errorf("activeSources must contain between one and %d sources", len(Sources()))
 	}
 	seen := map[Source]bool{}
 	for _, source := range s.ActiveSources {

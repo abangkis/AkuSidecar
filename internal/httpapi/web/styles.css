@@ -87,9 +87,7 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-source-option > input:focus-visible + .onboarding-source-card { outline: 2px solid var(--accent); outline-offset: 3px; }
 .onboarding-source-option > input:checked + .onboarding-source-card { border-color: var(--accent); background: rgba(183,242,108,0.08); }
 .onboarding-source-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; }
-.onboarding-source-icon svg { display: block; width: 24px; height: 24px; fill: currentColor; shape-rendering: geometricPrecision; }
-.onboarding-source-icon-x { background: #050505; color: #fff; }
-.onboarding-source-icon-linkedin { background: #0a66c2; color: #fff; }
+.onboarding-source-icon { font-size: 1rem; font-weight: 800; line-height: 1; }
 .onboarding-source-copy { display: grid; gap: 3px; }
 .onboarding-source-copy small { color: var(--muted); font-size: 0.74rem; }
 .onboarding-source-check { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: transparent; font-size: 0.75rem; font-weight: 800; }
@@ -145,7 +143,7 @@ h3 { letter-spacing: -0.02em; }
 .timeline-source-icon { display: grid; flex: 0 0 auto; width: 24px; height: 24px; place-items: center; border-radius: 5px; }
 .timeline-source-icon svg { display: block; width: 16px; height: 16px; fill: currentColor; shape-rendering: geometricPrecision; }
 .timeline-source-icon-x { background: #050505; color: #fff; }
-.timeline-source-icon-linkedin { background: #0a66c2; color: #fff; }
+.timeline-source-icon { font-weight: 800; }
 .ai-origin-badge { max-width: 100%; overflow: hidden; padding: 5px 9px; border: 1px solid rgba(246, 200, 107, 0.42); border-radius: 999px; background: rgba(246, 200, 107, 0.07); color: var(--amber); font-size: 0.7rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .ai-origin-deep { border-color: rgba(154, 180, 255, 0.48); background: rgba(154, 180, 255, 0.08); color: #b9c9ff; }
 .ai-origin-corrected { border-color: rgba(144, 164, 153, 0.42); background: rgba(144, 164, 153, 0.07); color: var(--muted); }
@@ -165,13 +163,13 @@ h3 { letter-spacing: -0.02em; }
 
 .source-layout-card { overflow: hidden; background: transparent; }
 .source-x { border: 1px solid var(--line-strong); border-radius: 16px; background: #080b09; }
-.source-linkedin { background: #171d1a; }
+.source-linkedin, .source-facebook { background: #171d1a; }
 .source-layout-card > header { display: flex; align-items: center; gap: 11px; padding: 16px 18px 12px; }
 .source-layout-card > header > div { display: grid; min-width: 0; gap: 2px; }
 .source-layout-card > header span:not(.source-layout-badge) { color: var(--quiet); font-size: 0.75rem; }
-.linkedin-social-context { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 10px 18px 0; color: var(--quiet); font-size: 0.78rem; font-weight: 650; }
-.linkedin-social-context img { width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; background: var(--panel-strong); }
-.linkedin-social-context + header { padding-top: 10px; }
+.source-social-context-above { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 10px 18px 0; color: var(--quiet); font-size: 0.78rem; font-weight: 650; }
+.source-social-context-above img { width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; background: var(--panel-strong); }
+.source-social-context-above + header { padding-top: 10px; }
 .source-layout-headline { display: block; max-width: 100%; overflow: hidden; color: var(--muted) !important; font-size: 0.86rem !important; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .source-layout-avatar { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; background: var(--panel-strong); }
 .source-layout-badge { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #26302b; color: var(--accent); font-weight: 800; }
@@ -182,16 +180,16 @@ h3 { letter-spacing: -0.02em; }
 .expandable-text-copy.is-collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: var(--collapse-lines); }
 .content-expander { margin-top: 8px; padding: 0; border: 0; background: transparent; color: var(--accent); font-size: 0.78rem; font-weight: 750; }
 .content-expander:hover { text-decoration: underline; text-underline-offset: 3px; }
-.linkedin-source-content { padding-top: 8px; padding-bottom: 16px; }
-.linkedin-source-content p { margin-top: 0; line-height: 1.58; }
-.x-social-context { margin: 0 0 10px !important; color: var(--quiet) !important; font-size: 0.82rem; font-weight: 650; }
-.x-quote-card { overflow: hidden; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 14px; background: rgba(255,255,255,0.018); }
-.x-quote-card header { display: flex; align-items: center; gap: 9px; padding: 12px 14px 0; }
-.x-quote-card header div { display: grid; gap: 1px; }
-.x-quote-card header span { color: var(--quiet); font-size: 0.75rem; }
-.x-quote-card > .expandable-text { padding: 8px 14px 14px; }
-.x-quote-card > .expandable-text > p { margin: 0; font-size: 0.9rem; line-height: 1.48; }
-.x-quote-card .content-expander { margin-top: 7px; }
+.source-professional-content, .source-social-content { padding-top: 8px; padding-bottom: 16px; }
+.source-professional-content p, .source-social-content p { margin-top: 0; line-height: 1.58; }
+.source-social-context-content { margin: 0 0 10px !important; color: var(--quiet) !important; font-size: 0.82rem; font-weight: 650; }
+.source-quote-card { overflow: hidden; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 14px; background: rgba(255,255,255,0.018); }
+.source-quote-card header { display: flex; align-items: center; gap: 9px; padding: 12px 14px 0; }
+.source-quote-card header div { display: grid; gap: 1px; }
+.source-quote-card header span { color: var(--quiet); font-size: 0.75rem; }
+.source-quote-card > .expandable-text { padding: 8px 14px 14px; }
+.source-quote-card > .expandable-text > p { margin: 0; font-size: 0.9rem; line-height: 1.48; }
+.source-quote-card .content-expander { margin-top: 7px; }
 
 .source-layout-media { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; margin-top: 4px; background: var(--line); }
 .source-layout-attachments { display: grid; gap: 8px; margin: 0 18px 16px; }

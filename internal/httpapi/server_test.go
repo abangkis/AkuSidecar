@@ -74,6 +74,10 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if bootstrap["bridgeToken"] == "" || bootstrap["provider"] != "deterministic" {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
+	sources := bootstrap["sources"].([]any)
+	if len(sources) != 3 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != false {
+		t.Fatalf("source descriptors=%+v", sources)
+	}
 	reasoningProcesses := bootstrap["reasoningProcesses"].([]any)
 	if len(reasoningProcesses) != 4 || reasoningProcesses[3].(map[string]any)["id"] != "ai_deep_detection" || reasoningProcesses[3].(map[string]any)["model"] != "local-deterministic" {
 		t.Fatalf("reasoning processes=%+v", reasoningProcesses)

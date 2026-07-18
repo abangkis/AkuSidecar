@@ -59,7 +59,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -70,8 +70,41 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	}
 }
 
+func TestFreshSchemaSourcesMatchDomainRegistry(t *testing.T) {
+	state := openTestStore(t)
+	rows, err := state.db.Query(`SELECT id,display_name,ordinal,enabled FROM source_definitions ORDER BY ordinal`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	descriptors := domain.Sources()
+	index := 0
+	for rows.Next() {
+		if index >= len(descriptors) {
+			t.Fatal("database contains a source outside the domain registry")
+		}
+		var id domain.Source
+		var name string
+		var ordinal, enabled int
+		if err := rows.Scan(&id, &name, &ordinal, &enabled); err != nil {
+			t.Fatal(err)
+		}
+		want := descriptors[index]
+		if id != want.ID || name != want.DisplayName || ordinal != index || enabled != 1 {
+			t.Fatalf("source[%d]=%s %q %d %d; want %+v", index, id, name, ordinal, enabled, want)
+		}
+		index++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if index != len(descriptors) {
+		t.Fatalf("database source count=%d want=%d", index, len(descriptors))
+	}
+}
+
 func TestRetiredSchemasFailWithoutMutation(t *testing.T) {
-	for _, version := range []string{"2", "3", "4", "99"} {
+	for _, version := range []string{"2", "3", "4", "5", "99"} {
 		t.Run("schema_"+version, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "retired.db")
 			db, err := sql.Open("sqlite", path)

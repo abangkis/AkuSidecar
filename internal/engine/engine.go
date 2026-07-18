@@ -19,15 +19,11 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion         = "0.7.0-preview.1"
-	ExpectedBridgeRevision        = "source-fidelity-v60"
-	ExpectedBridgeID              = "aku-bridge-chrome-mv3-v0"
-	ExpectedXAdapter              = "x-dom-v19"
-	ExpectedLinkedInAdapter       = "linkedin-dom-v15"
-	ExpectedXMediaEvidenceAdapter = "x-response-evidence-v2"
+	ExpectedBridgeVersion  = "0.7.0-preview.1"
+	ExpectedBridgeRevision = "source-adapters-v61"
+	ExpectedBridgeID       = "aku-bridge-chrome-mv3-v0"
 )
 
-var expectedBridgeSources = []string{"x", "linkedin"}
 var expectedBridgeActions = []string{
 	"probe_readiness", "probe_freshness", "recover_source_freshness",
 	"collect_visible", "detect_pending_content", "report_adapter_health",
@@ -163,7 +159,10 @@ func (e *Engine) BridgeAction(id string) (ReloadAction, error)       { return e.
 func (e *Engine) BridgeStatus() BridgeStatus {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "adapterVersions": map[string]string{"x": ExpectedXAdapter, "linkedin": ExpectedLinkedInAdapter}, "mediaEvidenceAdapterVersions": map[string]string{"x": ExpectedXMediaEvidenceAdapter}, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedBridgeSources, "actions": expectedBridgeActions, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
+	expectedSources := domain.SourceIDs()
+	expectedAdapters := domain.ExpectedAdapterVersions()
+	expectedMediaAdapters := domain.ExpectedMediaEvidenceAdapterVersions()
+	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "adapterVersions": expectedAdapters, "mediaEvidenceAdapterVersions": expectedMediaAdapters, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedSources, "actions": expectedBridgeActions, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
 	if e.heartbeat == nil {
 		return status
 	}
@@ -185,16 +184,16 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	if copy.BuildID != ExpectedBridgeBuildID {
 		status.Reasons = append(status.Reasons, "bridge build mismatch")
 	}
-	if copy.AdapterVersions["x"] != ExpectedXAdapter || copy.AdapterVersions["linkedin"] != ExpectedLinkedInAdapter || len(copy.AdapterVersions) != 2 {
+	if !sameStringMap(copy.AdapterVersions, expectedAdapters) {
 		status.Reasons = append(status.Reasons, "adapter version mismatch")
 	}
-	if copy.MediaEvidenceAdapterVersions["x"] != ExpectedXMediaEvidenceAdapter || len(copy.MediaEvidenceAdapterVersions) != 1 {
+	if !sameStringMap(copy.MediaEvidenceAdapterVersions, expectedMediaAdapters) {
 		status.Reasons = append(status.Reasons, "media evidence adapter version mismatch")
 	}
 	if copy.ManifestVersion != 3 {
 		status.Reasons = append(status.Reasons, "manifest version mismatch")
 	}
-	if !sameStringSet(copy.Sources, expectedBridgeSources) {
+	if !sameStringSet(copy.Sources, expectedSources) {
 		status.Reasons = append(status.Reasons, "bridge sources mismatch")
 	}
 	if !sameStringSet(copy.Actions, expectedBridgeActions) {
@@ -214,7 +213,19 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 }
 
 func ExpectedHeartbeat() domain.BridgeHeartbeat {
-	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: map[string]string{"x": ExpectedXAdapter, "linkedin": ExpectedLinkedInAdapter}, MediaEvidenceAdapterVersions: map[string]string{"x": ExpectedXMediaEvidenceAdapter}, ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: append([]string(nil), expectedBridgeSources...), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}
+	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}
+}
+
+func sameStringMap(actual, expected map[string]string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	for key, value := range expected {
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func sameStringSet(actual, expected []string) bool {
@@ -797,10 +808,11 @@ func continuationFrom(value domain.Observation) map[string]any {
 	if len(value.Snapshots) == 0 {
 		return nil
 	}
-	// LinkedIn virtualizes and remeasures its feed after the initial capture is
-	// restored. Resume from the preceding observed snapshot so the follow-up
-	// proves continuity against a bounded overlap before collecting new blocks.
-	if value.Source == domain.SourceLinkedIn && len(value.Snapshots) > 1 {
+	// Sources that virtualize and remeasure their feed after restoration resume
+	// from the preceding observed snapshot. This proves continuity against a
+	// bounded overlap without placing source-specific behavior in orchestration.
+	descriptor, _ := domain.SourceByID(value.Source)
+	if descriptor.ContinuationOverlapRequired && len(value.Snapshots) > 1 {
 		for index := len(value.Snapshots) - 2; index >= 0; index-- {
 			checkpoint := value.Snapshots[index]
 			checkpointAnchors := snapshotContinuationAnchors(checkpoint)
