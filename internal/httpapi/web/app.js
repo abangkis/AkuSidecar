@@ -120,6 +120,10 @@ window.addEventListener("resize", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
 }, { passive: true });
+const timelineSidePaneLayoutObserver = new ResizeObserver(scheduleTimelineSidePanePosition);
+for (const element of [$(".timeline-heading-row"), $("#processing-panel"), $("#result-items")]) {
+  if (element) timelineSidePaneLayoutObserver.observe(element);
+}
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") schedulePassiveMediaEnrichment();
 });
@@ -460,10 +464,18 @@ function syncTimelineSidePanePosition() {
   const paneLeft = Math.max(viewportPadding, rect.left - paneWidth);
   const paneTop = Math.max(minimumTop, verticalAnchor.top);
   const toggleLeft = Math.max(12, rect.left - 56);
+  const toggle = $("#timeline-side-pane-toggle");
+  const toggleHeight = toggle?.getBoundingClientRect().height || 72;
+  const toggleHalfHeight = toggleHeight / 2;
+  const toggleTop = Math.min(
+    window.innerHeight - minimumTop - toggleHalfHeight,
+    Math.max(minimumTop + toggleHalfHeight, verticalAnchor.top + toggleHalfHeight),
+  );
   document.documentElement.style.setProperty("--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
   document.documentElement.style.setProperty("--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
   document.documentElement.style.setProperty("--timeline-side-pane-top", `${Math.round(paneTop)}px`);
   document.documentElement.style.setProperty("--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
+  document.documentElement.style.setProperty("--timeline-side-pane-toggle-top", `${Math.round(toggleTop)}px`);
 }
 
 function applyTimelineBatchGap(value) {
