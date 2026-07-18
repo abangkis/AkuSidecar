@@ -187,7 +187,7 @@ function setView(view) {
   $("#inbox-panel").classList.toggle("hidden", !inbox);
   $("#timeline-panel").classList.toggle("hidden", !timeline);
   if (!timeline) closeTimelineSidePane();
-  $("#timeline-side-pane-toggle").classList.toggle("view-hidden", !timeline);
+  syncTimelineSidePaneVisibility();
   $("#session-view-button").classList.toggle("selected", timeline);
   $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
@@ -529,6 +529,7 @@ function showOnboarding(editing) {
   $("#calibration-panel").classList.add("hidden");
   $("#onboarding-panel").classList.remove("hidden");
   document.querySelector(".view-switch")?.classList.add("hidden");
+  syncTimelineSidePaneVisibility();
   updateOnboardingSummary();
   $("#onboarding-heading").focus();
   window.scrollTo({ top: 0, behavior: editing ? "smooth" : "auto" });
@@ -937,6 +938,7 @@ function showCalibration(calibration) {
   $("#timeline-panel").classList.add("hidden");
   $("#calibration-panel").classList.remove("hidden");
   document.querySelector(".view-switch")?.classList.add("hidden");
+  syncTimelineSidePaneVisibility();
   $("#calibration-heading").focus();
   window.scrollTo({ top: 0, behavior: "auto" });
   renderCalibration();
@@ -1752,19 +1754,36 @@ function scheduleAIDeepRefresh(pending) {
 function renderTimelineSidePane(items, pending) {
   scheduleTimelineSidePanePosition();
   state.sidePaneItems = items;
-  const drawerMode = state.bootstrap?.settings?.aiDetectionPresentation === "drawer";
-  const toggle = $("#timeline-side-pane-toggle");
-  toggle.classList.toggle("hidden", !drawerMode);
-  toggle.classList.toggle("view-hidden", state.currentView !== "timeline");
+  const available = syncTimelineSidePaneVisibility();
   $("#timeline-side-pane-count").textContent = String(items.length);
   $("#timeline-side-pane-detail").textContent = pending
     ? `${items.length} routed post${items.length === 1 ? "" : "s"} · Deep Detection is still reviewing this Timeline.`
     : `${items.length} strong-signal post${items.length === 1 ? "" : "s"} routed from the current finite Timeline.`;
-  if (!drawerMode) closeTimelineSidePane();
+  if (!available) closeTimelineSidePane();
   if (!$("#timeline-side-pane").classList.contains("hidden")) populateTimelineSidePane();
 }
 
+function timelineSidePaneAvailable() {
+  return state.bootstrap?.settings?.aiDetectionPresentation === "drawer"
+    && state.currentView === "timeline"
+    && state.bootstrap?.onboarding?.status === "completed"
+    && !state.onboardingEditing
+    && !state.bootstrap?.calibration?.active
+    && Boolean(state.bootstrap?.latestCheck)
+    && state.timelineItems.length > 0;
+}
+
+function syncTimelineSidePaneVisibility() {
+  const available = timelineSidePaneAvailable();
+  const toggle = $("#timeline-side-pane-toggle");
+  toggle.classList.toggle("hidden", !available);
+  toggle.classList.toggle("view-hidden", !available);
+  if (!available) closeTimelineSidePane();
+  return available;
+}
+
 function openTimelineSidePane() {
+  if (!timelineSidePaneAvailable()) return;
   $("#timeline-side-pane").classList.remove("hidden");
   $("#timeline-side-pane-toggle").setAttribute("aria-expanded", "true");
   populateTimelineSidePane();
