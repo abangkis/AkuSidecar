@@ -451,12 +451,14 @@ function syncTimelineSidePanePosition() {
   const stream = document.querySelector(".timeline-heading-row");
   if (!stream) return;
   const rect = stream.getBoundingClientRect();
+  const firstTimelineItem = document.querySelector("#result-items > [data-timeline-id]");
+  const verticalAnchor = firstTimelineItem?.getBoundingClientRect() ?? rect;
   const viewportPadding = 16;
   const minimumTop = 18;
   const availableWidth = Math.max(0, rect.left - viewportPadding);
   const paneWidth = Math.min(420, Math.max(280, availableWidth));
   const paneLeft = Math.max(viewportPadding, rect.left - paneWidth);
-  const paneTop = Math.max(minimumTop, rect.top);
+  const paneTop = Math.max(minimumTop, verticalAnchor.top);
   const toggleLeft = Math.max(12, rect.left - 56);
   document.documentElement.style.setProperty("--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
   document.documentElement.style.setProperty("--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
