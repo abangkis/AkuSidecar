@@ -1185,12 +1185,28 @@ function describeSessionProgress(session) {
 }
 
 function syncRunButtons() {
-  const disabled = Boolean(state.session) || state.mediaRecaptureActive || Boolean(state.bootstrap?.calibration?.active) || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible;
+  const reason = runDisabledReason();
+  const disabled = Boolean(reason);
   $("#timeline-runner-button").disabled = disabled;
   $("#done-button").disabled = disabled;
+  $("#timeline-runner-button").title = reason;
+  $("#done-button").title = reason;
+  $("#timeline-runner-status").textContent = reason;
+  $("#timeline-runner-status").classList.toggle("hidden", !reason || Boolean(state.session && !terminalStatuses.has(state.session.status)));
   for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled;
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
+}
+
+function runDisabledReason() {
+  if (state.session) {
+    return terminalStatuses.has(state.session.status) ? "Finishing capture cleanup…" : "A check for updates is already running.";
+  }
+  if (state.mediaRecaptureActive) return "Finishing media recapture…";
+  if (state.bootstrap?.calibration?.active) return "Finish calibration before starting another check.";
+  if (state.bootstrap?.onboarding?.status !== "completed") return "Complete source setup before checking for updates.";
+  if (!state.bootstrap?.bridge?.compatible) return "Waiting for AkuBridge to reconnect…";
+  return "";
 }
 
 async function startPendingFirstCalibration(session) {

@@ -115,6 +115,8 @@ h3 { letter-spacing: -0.02em; }
 .timeline-heading-row h2 { margin-bottom: 7px; }
 .timeline-heading-row p { margin-bottom: 0; }
 .timeline-actions { display: flex; align-items: center; gap: 8px; }
+.timeline-action-cluster { display: grid; justify-items: end; gap: 7px; }
+.timeline-runner-status { max-width: 15rem; color: var(--muted); font-size: 0.72rem; line-height: 1.35; text-align: right; }
 
 .processing-panel, .failure-panel { border: 1px solid var(--line); background: rgba(17, 22, 20, 0.94); }
 .update-progress { position: sticky; z-index: 20; top: 12px; margin-top: 14px; padding: 16px 18px; border-radius: 12px; border-color: rgba(183, 242, 108, 0.42); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32); backdrop-filter: blur(16px); }
@@ -423,6 +425,8 @@ h3 { letter-spacing: -0.02em; }
 @media (max-width: 760px) {
   .shell { width: min(100% - 24px, 680px); padding-top: 28px; }
   .topbar, .timeline-heading-row, .section-heading { align-items: stretch; flex-direction: column; }
+  .timeline-action-cluster { justify-items: start; }
+  .timeline-runner-status { text-align: left; }
   .topbar-actions { justify-items: start; }
   .inbox-session > summary { grid-template-columns: 1fr; gap: 8px; }
   .inbox-flow-summary { white-space: normal; }
