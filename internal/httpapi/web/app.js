@@ -133,6 +133,8 @@ $("#retry-button").addEventListener("click", () => {
   if (action === "retry-update") startSession();
 });
 $("#cancel-button").addEventListener("click", cancelSession);
+$("#processing-inbox-button").addEventListener("click", () => setView("inbox"));
+$("#processing-settings-button").addEventListener("click", () => setView("settings"));
 $("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
 $("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
 $("#onboarding-learning-toggle").addEventListener("click", toggleOnboardingLearningPlayback);

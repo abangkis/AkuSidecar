@@ -125,6 +125,10 @@ h3 { letter-spacing: -0.02em; }
 .update-progress-heading #processing-detail { margin: 0; color: var(--muted); font-size: 0.76rem; }
 .progress-track { height: 6px; margin: 12px 0 0; overflow: hidden; border-radius: 999px; background: var(--line); }
 .progress-track span { display: block; width: 12%; height: 100%; border-radius: inherit; background: var(--accent); transition: width 260ms ease; }
+.update-progress-navigation { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.update-progress-navigation p { margin: 0; color: var(--muted); font-size: 0.74rem; line-height: 1.4; }
+.update-progress-navigation > div { display: flex; flex: 0 0 auto; gap: 10px; }
+.update-progress-navigation button { padding: 3px 0; font-size: 0.74rem; }
 .onboarding-learning-panel { margin-top: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .onboarding-learning-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 18px 12px; border-bottom: 1px solid var(--line); }
 .onboarding-learning-panel > header h3 { margin: 3px 0 0; font-size: 1rem; }
@@ -427,6 +431,7 @@ h3 { letter-spacing: -0.02em; }
   .topbar, .timeline-heading-row, .section-heading { align-items: stretch; flex-direction: column; }
   .timeline-action-cluster { justify-items: start; }
   .timeline-runner-status { text-align: left; }
+  .update-progress-navigation { align-items: flex-start; flex-direction: column; }
   .topbar-actions { justify-items: start; }
   .inbox-session > summary { grid-template-columns: 1fr; gap: 8px; }
   .inbox-flow-summary { white-space: normal; }
