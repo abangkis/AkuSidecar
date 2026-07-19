@@ -11,6 +11,7 @@ const DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350;
 const DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92;
 const AI_HIDE_CONFIRMATION_PHRASE = "HIDE STRONG AI SIGNALS";
 const AI_DEEP_POLL_INTERVAL_MS = 5000;
+const ONBOARDING_LEARNING_INTERVAL_MS = 7000;
 const PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS = 2500;
 const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
 const BRIDGE_CONTEXT_RECOVERY_KEY = "akuBridgeContextRecoveryAt";
@@ -40,6 +41,10 @@ const state = {
   onboardingEditing: false,
   calibration: null,
   calibrationOrdinal: 0,
+  onboardingLearningIndex: 0,
+  onboardingLearningTimer: null,
+  onboardingLearningPaused: false,
+  onboardingLearningUserPaused: false,
   resetOperation: null,
   backToTopFrame: null,
   backToTopLastScrollY: 0,
@@ -116,6 +121,18 @@ $("#retry-button").addEventListener("click", () => {
   if (action === "retry-update") startSession();
 });
 $("#cancel-button").addEventListener("click", cancelSession);
+$("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
+$("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
+$("#onboarding-learning-toggle").addEventListener("click", toggleOnboardingLearningPlayback);
+for (const button of document.querySelectorAll("[data-onboarding-slide]")) {
+  button.addEventListener("click", () => showOnboardingLearningSlide(Number(button.dataset.onboardingSlide), true));
+}
+$("#onboarding-learning-panel").addEventListener("pointerenter", () => pauseOnboardingLearning(true));
+$("#onboarding-learning-panel").addEventListener("pointerleave", () => pauseOnboardingLearning(false));
+$("#onboarding-learning-panel").addEventListener("focusin", () => pauseOnboardingLearning(true));
+$("#onboarding-learning-panel").addEventListener("focusout", () => {
+  setTimeout(() => pauseOnboardingLearning($("#onboarding-learning-panel").contains(document.activeElement)), 0);
+});
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
 $("#detect-reasoning-executable").addEventListener("click", detectReasoningExecutable);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
@@ -162,6 +179,7 @@ for (const element of [$(".timeline-heading-row"), $("#processing-panel"), $("#r
   if (element) timelineSidePaneLayoutObserver.observe(element);
 }
 document.addEventListener("visibilitychange", () => {
+  syncOnboardingLearningTimer();
   if (document.visibilityState === "visible") schedulePassiveMediaEnrichment();
 });
 
@@ -986,7 +1004,7 @@ function dispatch(run) {
 function renderSession() {
   const session = state.session;
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
-  $("#onboarding-wait-guide").classList.toggle("hidden", !session || terminalStatuses.has(session.status) || !firstRunCalibrationPending());
+  syncOnboardingLearning(Boolean(session && !terminalStatuses.has(session.status) && firstRunCalibrationPending()));
   syncRunButtons();
   if (!session || terminalStatuses.has(session.status)) return;
   const progress = describeSessionProgress(session);
@@ -999,6 +1017,78 @@ function renderSession() {
   $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.round(value)));
   $("#processing-title").textContent = progress.title;
   $("#processing-detail").textContent = progress.detail;
+}
+
+function syncOnboardingLearning(visible) {
+  const panel = $("#onboarding-learning-panel");
+  panel.classList.toggle("hidden", !visible);
+  if (!visible) {
+    stopOnboardingLearningTimer();
+    return;
+  }
+  renderOnboardingLearningSlide();
+  syncOnboardingLearningTimer();
+}
+
+function moveOnboardingLearning(delta, manual = false) {
+  const slides = document.querySelectorAll(".onboarding-learning-slide");
+  if (!slides.length) return;
+  showOnboardingLearningSlide((state.onboardingLearningIndex + delta + slides.length) % slides.length, manual);
+}
+
+function showOnboardingLearningSlide(index, manual = false) {
+  const slides = document.querySelectorAll(".onboarding-learning-slide");
+  if (!slides.length) return;
+  state.onboardingLearningIndex = Math.max(0, Math.min(index, slides.length - 1));
+  renderOnboardingLearningSlide();
+  if (manual) restartOnboardingLearningTimer();
+}
+
+function renderOnboardingLearningSlide() {
+  const slides = document.querySelectorAll(".onboarding-learning-slide");
+  if (!slides.length) return;
+  $("#onboarding-learning-track").style.transform = `translateX(-${state.onboardingLearningIndex * 100}%)`;
+  $("#onboarding-learning-count").textContent = `${state.onboardingLearningIndex + 1} of ${slides.length}`;
+  for (const [index, slide] of [...slides].entries()) slide.setAttribute("aria-hidden", String(index !== state.onboardingLearningIndex));
+  for (const dot of document.querySelectorAll("[data-onboarding-slide]")) {
+    const active = Number(dot.dataset.onboardingSlide) === state.onboardingLearningIndex;
+    if (active) dot.setAttribute("aria-current", "true");
+    else dot.removeAttribute("aria-current");
+  }
+}
+
+function pauseOnboardingLearning(paused) {
+  state.onboardingLearningPaused = paused;
+  syncOnboardingLearningTimer();
+}
+
+function toggleOnboardingLearningPlayback() {
+  state.onboardingLearningUserPaused = !state.onboardingLearningUserPaused;
+  const button = $("#onboarding-learning-toggle");
+  button.textContent = state.onboardingLearningUserPaused ? "Play" : "Pause";
+  button.setAttribute("aria-pressed", String(state.onboardingLearningUserPaused));
+  syncOnboardingLearningTimer();
+}
+
+function syncOnboardingLearningTimer() {
+  const panelVisible = !$("#onboarding-learning-panel").classList.contains("hidden");
+  if (!panelVisible || state.onboardingLearningPaused || state.onboardingLearningUserPaused || document.visibilityState !== "visible") {
+    stopOnboardingLearningTimer();
+    return;
+  }
+  if (state.onboardingLearningTimer) return;
+  state.onboardingLearningTimer = setInterval(() => moveOnboardingLearning(1), ONBOARDING_LEARNING_INTERVAL_MS);
+}
+
+function restartOnboardingLearningTimer() {
+  stopOnboardingLearningTimer();
+  syncOnboardingLearningTimer();
+}
+
+function stopOnboardingLearningTimer() {
+  if (!state.onboardingLearningTimer) return;
+  clearInterval(state.onboardingLearningTimer);
+  state.onboardingLearningTimer = null;
 }
 
 function describeSessionProgress(session) {

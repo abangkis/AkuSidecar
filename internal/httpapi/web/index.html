@@ -381,18 +381,53 @@
             <button id="cancel-button" class="text-button" type="button">Cancel</button>
           </div>
           <div class="progress-track" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-bar"></span></div>
-          <div id="onboarding-wait-guide" class="onboarding-wait-guide hidden">
+        </section>
+
+        <section id="onboarding-learning-panel" class="onboarding-learning-panel hidden" aria-labelledby="onboarding-learning-title">
+          <header>
             <div>
-              <p class="step-label">WHILE AKUBROWSER LEARNS</p>
-              <h4>Your first Timeline is finite by design</h4>
-              <p>AkuBrowser reads a bounded sample, checks its evidence, and asks you to calibrate the result instead of opening another endless feed.</p>
+              <p class="step-label">MEET AKUBROWSER</p>
+              <h3 id="onboarding-learning-title">A calmer way to catch up</h3>
             </div>
-            <div class="onboarding-wait-points">
-              <article><strong>Your choices outrank the feed</strong><span>Calibration and later More or Less feedback carry higher authority than inferred social signals.</span></article>
-              <article><strong>What this build adds</strong><span>Facebook joins X and LinkedIn, sources progress independently, and unchanged resurfaced posts can stop before reasoning.</span></article>
-              <article><strong>Local and inspectable</strong><span>Captured, evaluated, selected, and added entries remain reviewable from Update Inbox.</span></article>
+            <div class="onboarding-learning-meta">
+              <span id="onboarding-learning-count" class="onboarding-learning-count">1 of 4</span>
+              <button id="onboarding-learning-toggle" class="text-button" type="button" aria-pressed="false">Pause</button>
+            </div>
+          </header>
+          <div class="onboarding-learning-viewport">
+            <div id="onboarding-learning-track" class="onboarding-learning-track">
+              <article class="onboarding-learning-slide">
+                <p class="step-label">FINITE BY DESIGN</p>
+                <h4>Your first Timeline has a finish line</h4>
+                <p>AkuBrowser reads a bounded sample, checks its evidence, and asks you to calibrate the result instead of opening another endless feed.</p>
+              </article>
+              <article class="onboarding-learning-slide">
+                <p class="step-label">YOU HAVE AUTHORITY</p>
+                <h4>Your choices outrank the feed</h4>
+                <p>Calibration and later More or Less feedback carry higher authority than indirect signals inferred by social platforms.</p>
+              </article>
+              <article class="onboarding-learning-slide">
+                <p class="step-label">WHAT THIS BUILD ADDS</p>
+                <h4>Three sources, one focused stream</h4>
+                <p>Facebook joins X and LinkedIn, sources progress independently, and unchanged resurfaced posts can stop before reasoning.</p>
+              </article>
+              <article class="onboarding-learning-slide">
+                <p class="step-label">LOCAL AND INSPECTABLE</p>
+                <h4>You can inspect every decision stage</h4>
+                <p>Captured, evaluated, selected, and added entries remain reviewable from Update Inbox whenever you want the technical trace.</p>
+              </article>
             </div>
           </div>
+          <footer class="onboarding-learning-controls">
+            <button id="onboarding-learning-previous" class="text-button" type="button" aria-label="Previous introduction slide">Previous</button>
+            <div class="onboarding-learning-dots" role="group" aria-label="Introduction slides">
+              <button type="button" data-onboarding-slide="0" aria-label="Show slide 1" aria-current="true"></button>
+              <button type="button" data-onboarding-slide="1" aria-label="Show slide 2"></button>
+              <button type="button" data-onboarding-slide="2" aria-label="Show slide 3"></button>
+              <button type="button" data-onboarding-slide="3" aria-label="Show slide 4"></button>
+            </div>
+            <button id="onboarding-learning-next" class="text-button" type="button" aria-label="Next introduction slide">Next</button>
+          </footer>
         </section>
 
         <section id="result-panel" class="result-panel timeline-feed-mode" aria-live="polite">
