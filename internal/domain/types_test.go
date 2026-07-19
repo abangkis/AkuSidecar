@@ -93,6 +93,28 @@ func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
 	}
 }
 
+func TestSourceHydrationSettingsUseOneSecondStepsWithinFiveSeconds(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if got := value.SourceHydrationTimeout(SourceLinkedIn); got != 18000 {
+		t.Fatalf("LinkedIn hydration default=%d", got)
+	}
+	value.SourceHydrationTimeoutMS[SourceX] = 7000
+	value.SourceHydrationTimeoutMS[SourceLinkedIn] = 23000
+	value.SourceHydrationTimeoutMS[SourceFacebook] = 26000
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.SourceHydrationTimeoutMS[SourceX] = 6500
+	if err := value.Validate(); err == nil {
+		t.Fatal("sub-second or out-of-range hydration timeout must be rejected")
+	}
+	delete(value.SourceHydrationTimeoutMS, SourceFacebook)
+	value.Normalize()
+	if value.SourceHydrationTimeoutMS[SourceFacebook] != 25000 {
+		t.Fatalf("missing hydration default was not restored: %v", value.SourceHydrationTimeoutMS)
+	}
+}
+
 func TestTimelineBoundaryCueDefaultsToFollowAndUsesLockedModes(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	if value.TimelineBoundaryCueMode != DefaultTimelineBoundaryCueMode || value.TimelineBoundaryReturnMS != DefaultTimelineBoundaryReturnMS {

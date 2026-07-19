@@ -18,6 +18,9 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 		if len(descriptor.NativeHosts) == 0 || len(descriptor.NativePathTokens) == 0 || len(descriptor.EngagementMetrics) == 0 {
 			t.Fatalf("source presentation policy is incomplete: %+v", descriptor)
 		}
+		if descriptor.HydrationTimeoutDefaultMS <= 0 || descriptor.HydrationTimeoutMinMS != descriptor.HydrationTimeoutDefaultMS-5000 || descriptor.HydrationTimeoutMaxMS != descriptor.HydrationTimeoutDefaultMS+5000 {
+			t.Fatalf("source hydration policy is incomplete: %+v", descriptor)
+		}
 	}
 	defaults := DefaultSources()
 	if len(defaults) != 3 || defaults[0] != SourceX || defaults[1] != SourceLinkedIn || defaults[2] != SourceFacebook {
@@ -28,6 +31,13 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
+	}
+}
+
+func TestDefaultSourceHydrationTimeoutsFollowRegistry(t *testing.T) {
+	defaults := DefaultSourceHydrationTimeouts()
+	if defaults[SourceX] != 12000 || defaults[SourceLinkedIn] != 18000 || defaults[SourceFacebook] != 25000 {
+		t.Fatalf("hydration defaults=%v", defaults)
 	}
 }
 

@@ -21,6 +21,9 @@ func TestMediaRecaptureReplacesEvidenceWithoutCreatingTimelineItems(t *testing.T
 	if job.Status != "queued" || job.Payload["mode"] != "recapture_media" {
 		t.Fatalf("job=%+v", job)
 	}
+	if job.Payload["sourceHydrationTimeoutMs"] != 12000 {
+		t.Fatalf("recapture hydration timeout=%v", job.Payload["sourceHydrationTimeoutMs"])
+	}
 	if _, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground); err == nil {
 		t.Fatal("a second active recapture must be rejected")
 	}

@@ -46,34 +46,35 @@ func (s Source) Valid() bool {
 }
 
 type Settings struct {
-	LoadProfile                 string   `json:"loadProfile"`
-	CaptureVisibility           string   `json:"captureVisibility"`
-	OpenMissingSource           bool     `json:"openMissingSource"`
-	ActiveSources               []Source `json:"activeSources"`
-	TimelineCapacity            int      `json:"timelineCapacity"`
-	MaxItemsPerSource           int      `json:"maxItemsPerSource"`
-	MaxItemsTotal               int      `json:"maxItemsTotal"`
-	MaxScrolls                  int      `json:"maxScrolls"`
-	QualityRetrySettleMS        int      `json:"qualityRetrySettleMs"`
-	PreferenceEligibilityMode   string   `json:"preferenceEligibilityMode"`
-	CalibrationEnabled          bool     `json:"calibrationEnabled"`
-	CalibrationBatchSize        int      `json:"calibrationBatchSize"`
-	DefaultPresentation         string   `json:"defaultPresentation"`
-	StreamWidth                 string   `json:"streamWidth"`
-	TimelineBatchGapPX          int      `json:"timelineBatchGapPx"`
-	TimelineBoundaryCueMode     string   `json:"timelineBoundaryCueMode"`
-	TimelineBoundaryReturnMS    int      `json:"timelineBoundaryReturnMs"`
-	SemanticEventMode           string   `json:"semanticEventMode"`
-	SemanticEventShortlist      int      `json:"semanticEventShortlist"`
-	SemanticEventMergeThreshold float64  `json:"semanticEventMergeThreshold"`
-	KnowledgeRetentionDays      int      `json:"knowledgeRetentionDays"`
-	KnowledgeStorageLimitMB     int      `json:"knowledgeStorageLimitMb"`
-	AIDetectionPresentation     string   `json:"aiDetectionPresentation"`
-	ReasoningExecutablePath     string   `json:"reasoningExecutablePath"`
-	ReasoningAcquisitionProfile string   `json:"reasoningAcquisitionProfile"`
-	ReasoningEvaluationProfile  string   `json:"reasoningEvaluationProfile"`
-	ReasoningSemanticProfile    string   `json:"reasoningSemanticProfile"`
-	ReasoningAIDeepProfile      string   `json:"reasoningAiDeepProfile"`
+	LoadProfile                 string         `json:"loadProfile"`
+	CaptureVisibility           string         `json:"captureVisibility"`
+	OpenMissingSource           bool           `json:"openMissingSource"`
+	ActiveSources               []Source       `json:"activeSources"`
+	SourceHydrationTimeoutMS    map[Source]int `json:"sourceHydrationTimeoutMs"`
+	TimelineCapacity            int            `json:"timelineCapacity"`
+	MaxItemsPerSource           int            `json:"maxItemsPerSource"`
+	MaxItemsTotal               int            `json:"maxItemsTotal"`
+	MaxScrolls                  int            `json:"maxScrolls"`
+	QualityRetrySettleMS        int            `json:"qualityRetrySettleMs"`
+	PreferenceEligibilityMode   string         `json:"preferenceEligibilityMode"`
+	CalibrationEnabled          bool           `json:"calibrationEnabled"`
+	CalibrationBatchSize        int            `json:"calibrationBatchSize"`
+	DefaultPresentation         string         `json:"defaultPresentation"`
+	StreamWidth                 string         `json:"streamWidth"`
+	TimelineBatchGapPX          int            `json:"timelineBatchGapPx"`
+	TimelineBoundaryCueMode     string         `json:"timelineBoundaryCueMode"`
+	TimelineBoundaryReturnMS    int            `json:"timelineBoundaryReturnMs"`
+	SemanticEventMode           string         `json:"semanticEventMode"`
+	SemanticEventShortlist      int            `json:"semanticEventShortlist"`
+	SemanticEventMergeThreshold float64        `json:"semanticEventMergeThreshold"`
+	KnowledgeRetentionDays      int            `json:"knowledgeRetentionDays"`
+	KnowledgeStorageLimitMB     int            `json:"knowledgeStorageLimitMb"`
+	AIDetectionPresentation     string         `json:"aiDetectionPresentation"`
+	ReasoningExecutablePath     string         `json:"reasoningExecutablePath"`
+	ReasoningAcquisitionProfile string         `json:"reasoningAcquisitionProfile"`
+	ReasoningEvaluationProfile  string         `json:"reasoningEvaluationProfile"`
+	ReasoningSemanticProfile    string         `json:"reasoningSemanticProfile"`
+	ReasoningAIDeepProfile      string         `json:"reasoningAiDeepProfile"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -82,6 +83,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		CaptureVisibility:           visibility,
 		OpenMissingSource:           openMissing,
 		ActiveSources:               DefaultSources(),
+		SourceHydrationTimeoutMS:    DefaultSourceHydrationTimeouts(),
 		PreferenceEligibilityMode:   preferenceMode,
 		CalibrationEnabled:          true,
 		CalibrationBatchSize:        10,
@@ -126,6 +128,15 @@ func (s *Settings) ApplyProfile() {
 }
 
 func (s *Settings) Normalize() {
+	if s.SourceHydrationTimeoutMS == nil {
+		s.SourceHydrationTimeoutMS = DefaultSourceHydrationTimeouts()
+	} else {
+		for _, descriptor := range Sources() {
+			if s.SourceHydrationTimeoutMS[descriptor.ID] == 0 {
+				s.SourceHydrationTimeoutMS[descriptor.ID] = descriptor.HydrationTimeoutDefaultMS
+			}
+		}
+	}
 	if s.DefaultPresentation == "" {
 		s.DefaultPresentation = "source"
 	}
@@ -261,7 +272,32 @@ func (s Settings) Validate() error {
 		}
 		seen[source] = true
 	}
+	if len(s.SourceHydrationTimeoutMS) != len(Sources()) {
+		return fmt.Errorf("sourceHydrationTimeoutMs must contain exactly %d registered sources", len(Sources()))
+	}
+	for source, timeoutMS := range s.SourceHydrationTimeoutMS {
+		descriptor, ok := SourceByID(source)
+		if !ok {
+			return fmt.Errorf("sourceHydrationTimeoutMs contains unknown source %q", source)
+		}
+		if timeoutMS < descriptor.HydrationTimeoutMinMS || timeoutMS > descriptor.HydrationTimeoutMaxMS {
+			return fmt.Errorf("sourceHydrationTimeoutMs.%s must be between %d and %d", source, descriptor.HydrationTimeoutMinMS, descriptor.HydrationTimeoutMaxMS)
+		}
+		if timeoutMS%1000 != 0 {
+			return fmt.Errorf("sourceHydrationTimeoutMs.%s must use 1000 ms increments", source)
+		}
+	}
 	return nil
+}
+
+func (s Settings) SourceHydrationTimeout(source Source) int {
+	if value := s.SourceHydrationTimeoutMS[source]; value > 0 {
+		return value
+	}
+	if descriptor, ok := SourceByID(source); ok {
+		return descriptor.HydrationTimeoutDefaultMS
+	}
+	return 12000
 }
 
 func validReasoningProfileID(value string) bool {

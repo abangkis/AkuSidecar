@@ -262,6 +262,7 @@ function renderSettings(settings) {
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
   $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
+  renderSourceSettingsValues(settings);
   for (const input of document.querySelectorAll("#settings-source-options input[type='checkbox']")) {
     input.checked = settings.activeSources?.includes(input.value) ?? false;
   }
@@ -272,6 +273,16 @@ function renderSettings(settings) {
   syncLoadProfileSettings(false);
   syncSemanticEventSettings();
   syncAIDetectionSettings();
+}
+
+function renderSourceSettingsValues(settings) {
+  for (const source of sourceDescriptors()) {
+    const defaultMS = source.hydrationTimeoutDefaultMs;
+    const input = document.querySelector(`[data-source-hydration="${source.id}"]`);
+    if (input && defaultMS) {
+      input.value = String((settings.sourceHydrationTimeoutMs?.[source.id] || defaultMS) / 1000);
+    }
+  }
 }
 
 function renderReasoningProcesses(processes) {
@@ -352,6 +363,12 @@ async function saveSettings(event) {
   const loadProfile = $("#bounded-load-profile").value;
   const preset = LOAD_PROFILE_PRESETS[loadProfile];
   const perSource = Number.parseInt($("#max-items-per-source").value, 10);
+  const sourceHydrationTimeoutMs = Object.fromEntries(
+    [...document.querySelectorAll("[data-source-hydration]")].map((input) => [
+      input.dataset.sourceHydration,
+      Number.parseInt(input.value, 10) * 1000,
+    ]),
+  );
   const settings = {
     ...current,
     loadProfile,
@@ -361,6 +378,7 @@ async function saveSettings(event) {
     calibrationBatchSize: Number.parseInt($("#calibration-batch-size").value, 10),
     openMissingSource: $("#open-missing-source").checked,
     activeSources,
+    sourceHydrationTimeoutMs,
     timelineCapacity: Number.parseInt($("#timeline-capacity").value, 10),
     maxItemsPerSource: perSource,
     maxItemsTotal: preset?.maxItemsTotal ?? Math.min(30, Math.max(1, perSource * activeSources.length)),
@@ -2750,19 +2768,52 @@ function renderSourceControls() {
     label.append(input, card);
     onboarding.append(label);
 
-    const settingsLabel = document.createElement("label");
-    settingsLabel.className = "settings-row";
+    const settingsLabel = document.createElement("div");
+    settingsLabel.className = "settings-row source-settings-row";
     const settingsCopy = document.createElement("span");
     settingsCopy.className = "settings-copy";
     const settingsStrong = document.createElement("strong");
     settingsStrong.textContent = descriptor.displayName;
     const settingsSmall = document.createElement("small");
-    settingsSmall.textContent = `Use the signed-in ${descriptor.onboardingDescription.toLowerCase()} during the next update.`;
+    settingsSmall.textContent = `Use the signed-in ${descriptor.displayName} feed during the next update.`;
     settingsCopy.append(settingsStrong, settingsSmall);
+    const controls = document.createElement("span");
+    controls.className = "source-settings-control";
+    const activeLabel = document.createElement("label");
+    activeLabel.className = "source-active-control";
+    const activeText = document.createElement("span");
+    activeText.textContent = "Active";
     const settingsInput = document.createElement("input");
     settingsInput.type = "checkbox";
     settingsInput.value = descriptor.id;
-    settingsLabel.append(settingsCopy, settingsInput);
+    settingsInput.setAttribute("aria-label", `Use ${descriptor.displayName} during updates`);
+    activeLabel.append(settingsInput, activeText);
+
+    const hydrationLabel = document.createElement("label");
+    hydrationLabel.className = "source-hydration-input";
+    const hydrationText = document.createElement("span");
+    hydrationText.textContent = "Hydration";
+    const hydrationField = document.createElement("span");
+    const hydrationInput = document.createElement("input");
+    hydrationInput.type = "number";
+    hydrationInput.min = String(descriptor.hydrationTimeoutMinMs / 1000);
+    hydrationInput.max = String(descriptor.hydrationTimeoutMaxMs / 1000);
+    hydrationInput.step = "1";
+    hydrationInput.dataset.sourceHydration = descriptor.id;
+    hydrationInput.setAttribute("aria-label", `${descriptor.displayName} hydration wait in seconds`);
+    const hydrationUnit = document.createElement("span");
+    hydrationUnit.textContent = "s";
+    hydrationField.append(hydrationInput, hydrationUnit);
+    hydrationLabel.append(hydrationText, hydrationField);
+
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.textContent = "Reset to default";
+    reset.addEventListener("click", () => {
+      hydrationInput.value = String(descriptor.hydrationTimeoutDefaultMs / 1000);
+    });
+    controls.append(activeLabel, hydrationLabel, reset);
+    settingsLabel.append(settingsCopy, controls);
     settings.append(settingsLabel);
   }
 }

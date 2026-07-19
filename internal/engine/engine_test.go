@@ -818,3 +818,12 @@ func waitActiveCalibration(t *testing.T, runtime *Engine) domain.CalibrationSess
 	t.Fatal("first-run calibration did not start automatically")
 	return domain.CalibrationSession{}
 }
+
+func TestCapturePayloadCarriesPerSourceHydrationTimeout(t *testing.T) {
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.SourceHydrationTimeoutMS[domain.SourceFacebook] = 29000
+	payload := capturePayload(domain.Run{Source: domain.SourceFacebook}, "lease", settings, 1, nil, "")
+	if payload["sourceHydrationTimeoutMs"] != 29000 {
+		t.Fatalf("source hydration timeout=%v", payload["sourceHydrationTimeoutMs"])
+	}
+}

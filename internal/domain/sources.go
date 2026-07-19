@@ -24,6 +24,9 @@ type SourceDescriptor struct {
 	IdentityFormat              string                   `json:"identityFormat,omitempty"`
 	AvatarFallback              string                   `json:"avatarFallback"`
 	PassiveMediaCapability      string                   `json:"passiveMediaCapability,omitempty"`
+	HydrationTimeoutDefaultMS   int                      `json:"hydrationTimeoutDefaultMs"`
+	HydrationTimeoutMinMS       int                      `json:"hydrationTimeoutMinMs"`
+	HydrationTimeoutMaxMS       int                      `json:"hydrationTimeoutMaxMs"`
 	EngagementMetrics           []SourceEngagementMetric `json:"engagementMetrics"`
 }
 
@@ -33,9 +36,9 @@ type SourceEngagementMetric struct {
 }
 
 var sourceRegistry = []SourceDescriptor{
-	{ID: SourceX, DisplayName: "X", ShortLabel: "X", IconText: "X", IconBackground: "#e7e9ea", IconForeground: "#0f1419", OnboardingDescription: "Your home timeline", PresentationStyle: "compact", SocialContextPlacement: "content", DefaultActive: true, AdapterVersion: "x-dom-v19", MediaEvidenceAdapterVersion: "x-response-evidence-v2", NativeHosts: []string{"x.com"}, NativePathTokens: []string{"/status/"}, IdentityFormat: "display_handle", AvatarFallback: "source_icon", PassiveMediaCapability: "x_response", EngagementMetrics: []SourceEngagementMetric{{Key: "reply", Icon: "○"}, {Key: "repost", Icon: "↻"}, {Key: "like", Icon: "♡"}, {Key: "view", Icon: "▥"}}},
-	{ID: SourceLinkedIn, DisplayName: "LinkedIn", ShortLabel: "in", IconText: "in", IconBackground: "#0a66c2", IconForeground: "#ffffff", OnboardingDescription: "Your professional feed", PresentationStyle: "professional", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "linkedin-dom-v15", ContinuationOverlapRequired: true, NativeHosts: []string{"www.linkedin.com"}, NativePathTokens: []string{"/posts/", "/feed/update/"}, AvatarFallback: "initials", EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "👍"}, {Key: "comment", Icon: "💬"}, {Key: "repost", Icon: "↻"}}},
-	{ID: SourceFacebook, DisplayName: "Facebook", ShortLabel: "f", IconText: "f", IconBackground: "#0866ff", IconForeground: "#ffffff", OnboardingDescription: "Your Home Feed", PresentationStyle: "social", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "facebook-dom-v2", NativeHosts: []string{"facebook.com", "www.facebook.com", "m.facebook.com"}, NativePathTokens: []string{"/posts/", "/permalink/", "/story.php", "/photo", "/videos/", "/reel/"}, AvatarFallback: "initials", EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "👍"}, {Key: "comment", Icon: "💬"}, {Key: "repost", Icon: "↻"}}},
+	{ID: SourceX, DisplayName: "X", ShortLabel: "X", IconText: "X", IconBackground: "#e7e9ea", IconForeground: "#0f1419", OnboardingDescription: "Your home timeline", PresentationStyle: "compact", SocialContextPlacement: "content", DefaultActive: true, AdapterVersion: "x-dom-v19", MediaEvidenceAdapterVersion: "x-response-evidence-v2", NativeHosts: []string{"x.com"}, NativePathTokens: []string{"/status/"}, IdentityFormat: "display_handle", AvatarFallback: "source_icon", PassiveMediaCapability: "x_response", HydrationTimeoutDefaultMS: 12000, HydrationTimeoutMinMS: 7000, HydrationTimeoutMaxMS: 17000, EngagementMetrics: []SourceEngagementMetric{{Key: "reply", Icon: "\u25cb"}, {Key: "repost", Icon: "\u21bb"}, {Key: "like", Icon: "\u2661"}, {Key: "view", Icon: "\u25a5"}}},
+	{ID: SourceLinkedIn, DisplayName: "LinkedIn", ShortLabel: "in", IconText: "in", IconBackground: "#0a66c2", IconForeground: "#ffffff", OnboardingDescription: "Your professional feed", PresentationStyle: "professional", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "linkedin-dom-v15", ContinuationOverlapRequired: true, NativeHosts: []string{"www.linkedin.com"}, NativePathTokens: []string{"/posts/", "/feed/update/"}, AvatarFallback: "initials", HydrationTimeoutDefaultMS: 18000, HydrationTimeoutMinMS: 13000, HydrationTimeoutMaxMS: 23000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
+	{ID: SourceFacebook, DisplayName: "Facebook", ShortLabel: "f", IconText: "f", IconBackground: "#0866ff", IconForeground: "#ffffff", OnboardingDescription: "Your Home Feed", PresentationStyle: "social", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "facebook-dom-v4", NativeHosts: []string{"facebook.com", "www.facebook.com", "m.facebook.com"}, NativePathTokens: []string{"/posts/", "/permalink/", "/story.php", "/photo", "/watch/", "/video.php", "/videos/", "/reel/"}, AvatarFallback: "initials", HydrationTimeoutDefaultMS: 25000, HydrationTimeoutMinMS: 20000, HydrationTimeoutMaxMS: 30000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
 }
 
 func Sources() []SourceDescriptor {
@@ -59,6 +62,14 @@ func DefaultSources() []Source {
 		if descriptor.DefaultActive {
 			result = append(result, descriptor.ID)
 		}
+	}
+	return result
+}
+
+func DefaultSourceHydrationTimeouts() map[Source]int {
+	result := make(map[Source]int, len(sourceRegistry))
+	for _, descriptor := range sourceRegistry {
+		result[descriptor.ID] = descriptor.HydrationTimeoutDefaultMS
 	}
 	return result
 }
