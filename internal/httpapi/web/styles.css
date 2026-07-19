@@ -133,11 +133,12 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-learning-track { display: flex; transition: transform 420ms ease; }
 .onboarding-learning-slide { flex: 0 0 100%; min-width: 0; padding: 22px 24px 20px; }
 .onboarding-learning-slide h4 { margin: 4px 0 8px; font-size: 1.08rem; }
-.onboarding-learning-slide > p:last-child { max-width: 62ch; margin: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.55; }
-.onboarding-check-stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 15px 0 0; padding: 0; list-style: none; counter-reset: onboarding-stage; }
-.onboarding-check-stages li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 9px; color: var(--muted); font-size: 0.72rem; line-height: 1.45; counter-increment: onboarding-stage; }
-.onboarding-check-stages li::before { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--accent); font-size: 0.64rem; font-weight: 800; content: counter(onboarding-stage); }
-.onboarding-check-stages strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 0.73rem; }
+.onboarding-learning-slide > p:last-child { max-width: 62ch; margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.58; }
+.onboarding-check-stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; counter-reset: onboarding-stage; }
+.onboarding-check-stages-continued { counter-reset: onboarding-stage 2; }
+.onboarding-check-stages li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 11px; color: var(--muted); font-size: 0.84rem; line-height: 1.55; counter-increment: onboarding-stage; }
+.onboarding-check-stages li::before { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--accent); font-size: 0.7rem; font-weight: 800; content: counter(onboarding-stage); }
+.onboarding-check-stages strong { display: block; margin-bottom: 3px; color: var(--text); font-size: 0.86rem; }
 .onboarding-learning-controls { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px; padding: 9px 14px; border-top: 1px solid var(--line); }
 .onboarding-learning-dots { display: flex; justify-content: center; gap: 7px; }
 .onboarding-learning-dots button { width: 7px; height: 7px; padding: 0; border: 0; border-radius: 999px; background: var(--line-strong); cursor: pointer; transition: width 180ms ease, background 180ms ease; }
