@@ -469,6 +469,9 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	if err := state.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO content_continuity(source,evidence_key,content_fingerprint,context_fingerprint,engagement_score,first_seen_at,last_seen_at,last_run_id,seen_count) VALUES(?,?,?,?,?,?,?,?,?)`, domain.SourceLinkedIn, "linkedin:pre-reset", "content-before-reset", "", 0, domain.Now(), domain.Now(), "run-before-reset", 2); err != nil {
+		t.Fatal(err)
+	}
 
 	defaults := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	reset, err := state.FullReset(ctx, defaults)
@@ -494,6 +497,10 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	calibrationStatus, err = state.CalibrationFirstRunStatus(ctx)
 	if err != nil || calibrationStatus != "not_started" {
 		t.Fatalf("reset calibration status=%q err=%v", calibrationStatus, err)
+	}
+	var continuityCount int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_continuity`).Scan(&continuityCount); err != nil || continuityCount != 0 {
+		t.Fatalf("full reset retained native content continuity: count=%d err=%v", continuityCount, err)
 	}
 }
 

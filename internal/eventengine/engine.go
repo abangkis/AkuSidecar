@@ -31,6 +31,17 @@ func New(state *store.Store, resolver Resolver) *Engine {
 }
 
 func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings domain.Settings) (domain.EventResolutionSummary, error) {
+	return e.processSession(ctx, sessionID, settings, false)
+}
+
+// ProcessOnboardingSession establishes the local event index needed by later
+// checks without spending a model turn comparing a brand-new calibration
+// sample against itself. Exact native replay constraints still apply.
+func (e *Engine) ProcessOnboardingSession(ctx context.Context, sessionID string, settings domain.Settings) (domain.EventResolutionSummary, error) {
+	return e.processSession(ctx, sessionID, settings, true)
+}
+
+func (e *Engine) processSession(ctx context.Context, sessionID string, settings domain.Settings, onboardingFastPath bool) (domain.EventResolutionSummary, error) {
 	if settings.SemanticEventMode == "show_all" {
 		return domain.EventResolutionSummary{SessionID: sessionID, Status: "bypassed", Provider: "disabled", TriggerReason: "engine_disabled", CreatedAt: domain.Now()}, nil
 	}
@@ -82,6 +93,14 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 	}
 	summary.StrongestOverlap = triggerSignal.Overlap
 	summary.TriggerTokens = append([]string(nil), triggerSignal.Tokens...)
+	if onboardingFastPath {
+		shortlist = nil
+		shouldResolve = false
+		summary.ShortlistCount = 0
+		summary.TriggerReason = "onboarding_local_index"
+		summary.StrongestOverlap = 0
+		summary.TriggerTokens = nil
+	}
 
 	var resolution domain.SemanticResolution
 	if len(resolverCandidates) == 0 {

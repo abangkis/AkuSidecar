@@ -11,6 +11,8 @@ import (
 
 const calibrationMaxItemsPerSource = 5
 
+var ErrCalibrationRequiresValidatedCandidate = errors.New("calibration requires at least one validated candidate")
+
 func (e *Engine) CalibrationOverview(ctx context.Context) (domain.CalibrationOverview, error) {
 	if _, err := e.ensurePendingFirstCalibration(ctx, ""); err != nil {
 		return domain.CalibrationOverview{}, err
@@ -88,7 +90,7 @@ func (e *Engine) startCalibrationLocked(ctx context.Context, sessionID, triggerK
 	}
 	samples := sampleCalibrationCandidates(candidates, session.Runs, settings.CalibrationBatchSize)
 	if len(samples) == 0 {
-		return domain.CalibrationSession{}, errors.New("calibration requires at least one validated candidate")
+		return domain.CalibrationSession{}, ErrCalibrationRequiresValidatedCandidate
 	}
 	return e.store.CreateCalibration(ctx, domain.CalibrationSession{
 		ID: domain.NewID("calibration"), UnifiedSessionID: sessionID,

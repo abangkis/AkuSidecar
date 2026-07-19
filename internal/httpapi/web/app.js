@@ -110,8 +110,10 @@ $("#inbox-refresh-button").addEventListener("click", loadInbox);
 $("#timeline-runner-button").addEventListener("click", startSession);
 $("#done-button").addEventListener("click", startSession);
 $("#retry-button").addEventListener("click", () => {
+  const action = $("#retry-button").dataset.action;
   hideFailure();
   setView("timeline");
+  if (action === "retry-update") startSession();
 });
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#runtime-settings-form").addEventListener("submit", saveSettings);
@@ -984,6 +986,7 @@ function dispatch(run) {
 function renderSession() {
   const session = state.session;
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
+  $("#onboarding-wait-guide").classList.toggle("hidden", !session || terminalStatuses.has(session.status) || !firstRunCalibrationPending());
   syncRunButtons();
   if (!session || terminalStatuses.has(session.status)) return;
   const progress = describeSessionProgress(session);
@@ -1000,6 +1003,9 @@ function renderSession() {
 
 function describeSessionProgress(session) {
   const pipelineStage = session.coverage?.pipelineStage;
+  if (pipelineStage === "semantic_event_resolution" && firstRunCalibrationPending()) {
+    return { value: 76, title: "Preparing calibration examples", detail: "Indexing the first clean sample locally - no semantic model turn" };
+  }
   const pipelineStages = {
     semantic_event_resolution: { value: 76, title: "Resolving repeated events", detail: "Cross-source semantic event resolution" },
     timeline_composition: { value: 84, title: "Composing your Timeline", detail: "Applying global personalized order and finite capacity" },
@@ -1086,6 +1092,10 @@ async function startPendingFirstCalibration(session) {
     state.bootstrap.calibration.active = calibration;
     return calibration;
   } catch (error) {
+    if (error.code === "calibration_sample_unavailable" || /no validated calibration entry|requires at least one validated candidate/i.test(error.message)) {
+      showCalibrationRetry(session);
+      return null;
+    }
     showError(new Error(`Calibration could not start: ${error.message}`));
     return null;
   }
@@ -1093,6 +1103,7 @@ async function startPendingFirstCalibration(session) {
 
 function showCalibration(calibration) {
   clearNotice();
+  hideFailure();
   setPill("#sidecar-status", "AkuSidecar ready", "ok");
   state.calibration = calibration;
   state.bootstrap.calibration.active = calibration;
@@ -2813,6 +2824,8 @@ function showSessionFailure(session) {
   const failedSources = failedRuns.map((run) => sourceLabel(run.source)).join(" and ");
   const sourcesUnavailable = failedRuns.length > 0 && failedRuns.every((run) => run.error?.code === "source_unavailable");
   const panel = $("#failure-panel");
+  $("#retry-button").dataset.action = "return";
+  $("#retry-button").textContent = "Return to timeline";
   panel.classList.toggle("failure-panel-warning", sourcesUnavailable);
   panel.setAttribute("role", sourcesUnavailable ? "status" : "alert");
   $("#failure-label").textContent = sourcesUnavailable ? "SOURCE UNAVAILABLE" : "RUN STOPPED";
@@ -2831,6 +2844,29 @@ function showSessionFailure(session) {
   panel.classList.remove("hidden");
 }
 
+function firstRunCalibrationPending() {
+  return state.bootstrap?.calibration?.firstRunStatus === "pending";
+}
+
+function showCalibrationRetry(session) {
+  clearNotice();
+  setPill("#sidecar-status", "AkuSidecar ready", "ok");
+  const failedSources = (session?.runs ?? [])
+    .filter((run) => run.status === "failed")
+    .map((run) => sourceLabel(run.source));
+  const panel = $("#failure-panel");
+  panel.classList.add("failure-panel-warning");
+  panel.setAttribute("role", "status");
+  $("#failure-label").textContent = "CALIBRATION WAITING";
+  $("#failure-title").textContent = "Check once more to start calibration";
+  $("#failure-message").textContent = failedSources.length
+    ? `${failedSources.join(" and ")} did not produce a validated entry in this check. Choose Check for updates again; captured evidence remains available in Update Inbox.`
+    : "This check did not produce a validated entry for calibration. Choose Check for updates again to collect another bounded sample.";
+  $("#retry-button").dataset.action = "retry-update";
+  $("#retry-button").textContent = "Check for updates again";
+  panel.classList.remove("hidden");
+}
+
 function showSessionOutcome(session) {
   if (!["completed", "partial"].includes(session.status)) return;
   const additions = session.items?.length ?? 0;
@@ -2846,6 +2882,8 @@ function showSessionOutcome(session) {
 
 function hideFailure() {
   $("#failure-panel").classList.add("hidden");
+  $("#retry-button").dataset.action = "return";
+  $("#retry-button").textContent = "Return to timeline";
 }
 
 function setPill(selector, text, tone) {
@@ -3044,7 +3082,12 @@ async function api(path, options = {}) {
   }
   const response = await fetchFromSidecar(path, init);
   const payload = response.status === 204 ? null : await response.json();
-  if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload?.message || `HTTP ${response.status}`);
+    error.code = payload?.error || `http_${response.status}`;
+    error.details = payload?.details;
+    throw error;
+  }
   return payload;
 }
 

@@ -318,11 +318,22 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if settingsErr != nil {
 			return nil, settingsErr
 		}
+		calibrationFirstRunStatus, calibrationStatusErr := e.store.CalibrationFirstRunStatus(ctx)
+		if calibrationStatusErr != nil {
+			return nil, calibrationStatusErr
+		}
+		onboardingFastPath := calibrationFirstRunStatus == "pending"
 		if e.events != nil && settings.SemanticEventMode != "show_all" {
 			if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "semantic_event_resolution"); stageErr != nil {
 				return nil, stageErr
 			}
-			if _, eventErr := e.events.ProcessSession(ctx, sessionID, settings); eventErr != nil {
+			var eventErr error
+			if onboardingFastPath {
+				_, eventErr = e.events.ProcessOnboardingSession(ctx, sessionID, settings)
+			} else {
+				_, eventErr = e.events.ProcessSession(ctx, sessionID, settings)
+			}
+			if eventErr != nil {
 				e.logger.Printf("semantic event resolution for session %s degraded safely: %v", sessionID, eventErr)
 			}
 		}

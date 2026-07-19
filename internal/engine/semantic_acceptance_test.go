@@ -75,6 +75,26 @@ type semanticAcceptanceResolver struct {
 	resolve func([]domain.SemanticCandidate, []domain.SemanticEvent) domain.SemanticResolution
 }
 
+func TestPendingFirstRunCalibrationUsesLocalSemanticIndex(t *testing.T) {
+	fixtures := sameLaunchFixtures()
+	resolver := acceptanceResolverFor("duplicate_report", .99)
+	runtime, state := semanticAcceptanceRuntime(t, fixtures, resolver, func(settings *domain.Settings) {
+		settings.CalibrationEnabled = true
+	})
+	runSemanticAcceptanceSession(t, runtime, fixtures)
+	if resolver.callCount() != 0 {
+		t.Fatalf("onboarding calibration spent a semantic resolver turn: calls=%d", resolver.callCount())
+	}
+	inbox, total, err := state.ListInboxSessions(context.Background(), 1, 0)
+	if err != nil || total != 1 || len(inbox) != 1 || inbox[0].EventResolution == nil {
+		t.Fatalf("onboarding inbox=%+v total=%d err=%v", inbox, total, err)
+	}
+	summary := inbox[0].EventResolution
+	if summary.TriggerReason != "onboarding_local_index" || summary.ResolverInvoked || summary.UniqueItems != len(fixtures) || summary.DuplicateReports != 0 {
+		t.Fatalf("onboarding semantic summary=%+v", summary)
+	}
+}
+
 func (r *semanticAcceptanceResolver) Name() string { return "semantic-acceptance" }
 func (r *semanticAcceptanceResolver) Model() config.ModelConfig {
 	return config.ModelConfig{Model: "fixture", Effort: "none"}

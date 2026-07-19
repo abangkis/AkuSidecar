@@ -157,6 +157,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		calibration, err := s.engine.StartCalibration(ctx, body.UnifiedSessionID, body.TriggerKind)
 		if err != nil {
+			if errors.Is(err, engine.ErrCalibrationRequiresValidatedCandidate) {
+				return apiError{Status: http.StatusConflict, Code: "calibration_sample_unavailable", Message: "The latest check produced no validated calibration entry. Check for updates again."}
+			}
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"calibration": calibration})
