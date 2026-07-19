@@ -1,6 +1,6 @@
 # AkuSidecar
 
-Current preview release: **`0.7.0-preview.1`**.
+Current preview release: **`0.7.0-preview.2`**.
 
 AkuSidecar is the Go local runtime for AkuBrowser. It owns the loopback HTTP
 API, embedded browser UI, fresh SQLite state, bounded X, LinkedIn, and Facebook session
@@ -16,7 +16,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.7.0-preview.1` / `source-adapters-v71`
+- AkuBridge `0.7.0-preview.2` / `source-adapters-v72`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -39,7 +39,7 @@ probe to launchers and installers, and accepts a candidate only after its
 `app-server` capability succeeds. When a Codex App exposes multiple managed
 runtimes, discovery selects the highest semantic version and uses file time
 only as a tie-breaker; the stable app `bin/codex` entry remains a fallback. The
-`0.7.0-preview.1` package still assumes
+`0.7.0-preview.2` package still assumes
 the discovered installation is locally signed in; login assistance is
 deferred. Settings shows the resolved full executable path beside the
 Reasoning processes. A replacement path is provider-validated before it is
