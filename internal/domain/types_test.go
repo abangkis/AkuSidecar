@@ -215,14 +215,14 @@ func TestAIDetectorPresentationDefaultsToDrawerAndUsesLockedModes(t *testing.T) 
 	}
 }
 
-func TestLearningPanelAfterOnboardingIsOptIn(t *testing.T) {
+func TestLearningPanelStartsOnForOnboarding(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
-	if value.ShowLearningPanel {
-		t.Fatal("the learning panel must remain onboarding-only unless the user opts in")
+	if !value.ShowLearningPanel {
+		t.Fatal("the learning panel must start enabled for onboarding")
 	}
-	value.ShowLearningPanel = true
+	value.ShowLearningPanel = false
 	if err := value.Validate(); err != nil {
-		t.Fatalf("the learning panel opt-in was rejected: %v", err)
+		t.Fatalf("disabling the learning panel was rejected: %v", err)
 	}
 }
 

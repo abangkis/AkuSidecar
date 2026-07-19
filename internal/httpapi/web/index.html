@@ -111,6 +111,10 @@
           <fieldset class="settings-group">
             <legend>Calibration</legend>
             <div class="settings-card">
+              <label class="settings-row" for="show-learning-panel">
+                <span class="settings-copy"><strong>Learning panel</strong><small>Keep the learning carousel visible above the Timeline. It starts on for onboarding, turns off after calibration, and can be changed anytime.</small></span>
+                <input id="show-learning-panel" name="showLearningPanel" type="checkbox" />
+              </label>
               <label class="settings-row" for="calibration-enabled">
                 <span class="settings-copy"><strong>First-run calibration</strong><small>Start one forced calibration lane after the first successful or partial update.</small></span>
                 <input id="calibration-enabled" name="calibrationEnabled" type="checkbox" />
@@ -118,10 +122,6 @@
               <label class="settings-row" for="calibration-batch-size">
                 <span class="settings-copy"><strong>Calibration batch size</strong><small>Real pre-selection source candidates requiring a decision, from 2 to 10.</small></span>
                 <input id="calibration-batch-size" name="calibrationBatchSize" type="number" min="2" max="10" step="1" />
-              </label>
-              <label class="settings-row" for="show-learning-panel">
-                <span class="settings-copy"><strong>Learning panel after onboarding</strong><small>Show the optional learning carousel during later Check for updates. First-run onboarding always shows it.</small></span>
-                <input id="show-learning-panel" name="showLearningPanel" type="checkbox" />
               </label>
             </div>
           </fieldset>

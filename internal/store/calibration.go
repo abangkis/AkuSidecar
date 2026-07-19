@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -278,6 +279,36 @@ func (s *Store) CompleteCalibration(ctx context.Context, id string, snapshot dom
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) SELECT 'calibration_first_run_status','completed' FROM calibration_sessions WHERE id=? AND trigger_kind='first_run' ON CONFLICT(key) DO UPDATE SET value=excluded.value`, id); err != nil {
 		return domain.CalibrationSession{}, err
+	}
+	var triggerKind string
+	if err = tx.QueryRowContext(ctx, `SELECT trigger_kind FROM calibration_sessions WHERE id=?`, id).Scan(&triggerKind); err != nil {
+		return domain.CalibrationSession{}, err
+	}
+	if triggerKind == "first_run" {
+		var settingsRaw string
+		if err = tx.QueryRowContext(ctx, `SELECT value_json FROM settings WHERE key='runtime'`).Scan(&settingsRaw); err != nil {
+			return domain.CalibrationSession{}, err
+		}
+		settings := domain.Settings{
+			AIDetectionEnabled:    domain.DefaultAIDetectionEnabled,
+			ResurfaceMode:         domain.DefaultResurfaceMode,
+			ResurfaceCooldownDays: domain.DefaultResurfaceCooldownDays,
+		}
+		if err = json.Unmarshal([]byte(settingsRaw), &settings); err != nil {
+			return domain.CalibrationSession{}, fmt.Errorf("decode settings while completing first-run calibration: %w", err)
+		}
+		settings.ShowLearningPanel = false
+		settings.Normalize()
+		if err = settings.Validate(); err != nil {
+			return domain.CalibrationSession{}, fmt.Errorf("validate settings while completing first-run calibration: %w", err)
+		}
+		settingsJSON, marshalErr := json.Marshal(settings)
+		if marshalErr != nil {
+			return domain.CalibrationSession{}, marshalErr
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE settings SET value_json=?,updated_at=? WHERE key='runtime'`, string(settingsJSON), now); err != nil {
+			return domain.CalibrationSession{}, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return domain.CalibrationSession{}, err

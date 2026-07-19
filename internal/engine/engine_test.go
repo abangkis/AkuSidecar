@@ -730,6 +730,13 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 1 || calibration.Snapshot.Labels["lessLikeThis"] != 1 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
 		t.Fatalf("completed calibration=%+v", calibration)
 	}
+	settingsAfterCalibration, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settingsAfterCalibration.ShowLearningPanel {
+		t.Fatal("first-run calibration completion must turn the learning panel off")
+	}
 	timeline, err := state.ListTimeline(ctx, 10, 0)
 	if err != nil {
 		t.Fatal(err)

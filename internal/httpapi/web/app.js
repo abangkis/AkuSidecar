@@ -1023,8 +1023,10 @@ function renderSession() {
 }
 
 function shouldShowOnboardingLearning(session) {
-  if (!session || terminalStatuses.has(session.status)) return false;
-  return firstRunCalibrationPending() || state.bootstrap?.settings?.showLearningPanel === true;
+  if (firstRunCalibrationPending()) {
+    return Boolean(session && !terminalStatuses.has(session.status));
+  }
+  return state.bootstrap?.settings?.showLearningPanel === true;
 }
 
 function syncOnboardingLearning(visible) {
@@ -1299,6 +1301,7 @@ async function decideCalibration(decision) {
     state.calibration = calibration;
     if (calibration.status === "completed") {
       state.bootstrap.calibration = { ...state.bootstrap.calibration, firstRunStatus: "completed", active: null, liveInfluence: calibration.snapshot?.liveInfluence ?? false };
+      if (calibration.triggerKind === "first_run") state.bootstrap.settings.showLearningPanel = false;
       state.calibration = null;
       $("#calibration-panel").classList.add("hidden");
       await refreshTimeline();

@@ -51,7 +51,7 @@ func TestLearningPanelPreferencePersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings.ShowLearningPanel = true
+	settings.ShowLearningPanel = false
 	if err := state.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -59,8 +59,8 @@ func TestLearningPanelPreferencePersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !stored.ShowLearningPanel {
-		t.Fatal("learning panel preference was not persisted")
+	if stored.ShowLearningPanel {
+		t.Fatal("disabled learning panel preference was not persisted")
 	}
 }
 

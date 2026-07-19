@@ -102,6 +102,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		TimelineBatchGapPX:          DefaultTimelineBatchGapPX,
 		TimelineBoundaryCueMode:     DefaultTimelineBoundaryCueMode,
 		TimelineBoundaryReturnMS:    DefaultTimelineBoundaryReturnMS,
+		ShowLearningPanel:           true,
 		SemanticEventMode:           "collapse",
 		SemanticEventShortlist:      DefaultSemanticShortlist,
 		SemanticEventMergeThreshold: DefaultSemanticMergeThreshold,
