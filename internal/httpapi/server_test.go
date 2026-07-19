@@ -145,7 +145,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if strings.Contains(string(appPayload), "function buildItemActionsMenu") || strings.Contains(string(appPayload), "AI origin correction") {
 		t.Fatal("AI correction must stay with the toolbar badge instead of the footer actions menu")
 	}
-	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile"} {
+	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token"} {
 		if !strings.Contains(string(appPayload), marker) {
 			t.Fatalf("app.js missing runtime reasoning or drawer contract %q", marker)
 		}

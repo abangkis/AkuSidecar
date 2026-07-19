@@ -15,6 +15,7 @@ const ONBOARDING_LEARNING_INTERVAL_MS = 7000;
 const PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS = 2500;
 const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
 const BRIDGE_CONTEXT_RECOVERY_KEY = "akuBridgeContextRecoveryAt";
+const BRIDGE_TOKEN_RECOVERY_KEY = "akuBridgeTokenRecoveryAt";
 const BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
@@ -72,6 +73,7 @@ window.addEventListener("message", (event) => {
       body: { capabilities: event.data.capabilities ?? {} },
     }).then(({ bridge }) => {
       sessionStorage.removeItem(BRIDGE_CONTEXT_RECOVERY_KEY);
+      sessionStorage.removeItem(BRIDGE_TOKEN_RECOVERY_KEY);
       renderBridge(bridge);
     }).catch(showError);
   }
@@ -103,6 +105,16 @@ function recoverInvalidatedBridgeContext(message) {
     return true;
   }
   sessionStorage.setItem(BRIDGE_CONTEXT_RECOVERY_KEY, String(now));
+  location.reload();
+  return true;
+}
+
+function recoverInvalidBridgeToken(code) {
+  if (code !== "invalid_bridge_token") return false;
+  const now = Date.now();
+  const lastAttempt = Number(sessionStorage.getItem(BRIDGE_TOKEN_RECOVERY_KEY) || 0);
+  if (Number.isFinite(lastAttempt) && now - lastAttempt < BRIDGE_CONTEXT_RECOVERY_WINDOW_MS) return false;
+  sessionStorage.setItem(BRIDGE_TOKEN_RECOVERY_KEY, String(now));
   location.reload();
   return true;
 }
@@ -3003,6 +3015,7 @@ function setPill(selector, text, tone) {
 }
 
 function showError(error) {
+  if (error?.recoveryInitiated) return;
   console.error(error);
   const notice = $("#provider-notice");
   notice.className = "notice notice-danger";
@@ -3218,7 +3231,18 @@ async function bridgeApi(path, options = {}) {
   const response = await fetchFromSidecar(path, init);
   if (response.status === 204) return null;
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload?.message || `HTTP ${response.status}`);
+    error.code = payload?.error || `http_${response.status}`;
+    if (recoverInvalidBridgeToken(error.code)) {
+      error.recoveryInitiated = true;
+      throw error;
+    }
+    if (error.code === "invalid_bridge_token") {
+      error.message = "AkuSidecar keeps changing its Bridge token. Check whether another AkuSidecar instance or security software is restarting the runtime, then refresh AkuBrowser once.";
+    }
+    throw error;
+  }
   return payload;
 }
 
