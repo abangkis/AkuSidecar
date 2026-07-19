@@ -59,6 +59,7 @@ func TestCanonicalSourceURLSupportsEveryRegisteredSource(t *testing.T) {
 	for _, raw := range []string{
 		"https://attacker.example/example/posts/12345",
 		"https://www.facebook.com/story.php?id=1",
+		"https://www.facebook.com/reel/12345/",
 		"http://x.com/example/status/12345",
 	} {
 		if got, ok := CanonicalSourceURL(SourceFacebook, raw); ok || got != "" {

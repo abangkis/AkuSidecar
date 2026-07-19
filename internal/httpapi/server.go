@@ -748,7 +748,7 @@ func security(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://pbs.twimg.com https://video.twimg.com https://licdn.com https://*.licdn.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://pbs.twimg.com https://video.twimg.com https://licdn.com https://*.licdn.com https://fbcdn.net https://*.fbcdn.net https://fbsbx.com https://*.fbsbx.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		if !trustedLoopbackHost(r.Host) {
 			http.Error(w, "loopback host required", http.StatusForbidden)
 			return

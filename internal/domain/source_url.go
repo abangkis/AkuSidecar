@@ -34,5 +34,5 @@ func facebookNativePostPath(path string, query url.Values) bool {
 	return strings.Contains(path, "/posts/") || strings.Contains(path, "/permalink/") ||
 		strings.Contains(path, "/story.php") && query.Get("story_fbid") != "" ||
 		strings.Contains(path, "/photo") && (query.Get("fbid") != "" || query.Get("photo_id") != "") ||
-		strings.Contains(path, "/videos/") || strings.Contains(path, "/reel/")
+		strings.Contains(path, "/videos/")
 }
