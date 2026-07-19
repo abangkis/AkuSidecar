@@ -343,7 +343,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
 			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
 		}
-		if settings.AIDetectionEnabled {
+		if settings.AIDetectionEnabled && !onboardingFastPath {
 			if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "ai_fast_detection"); stageErr != nil {
 				return nil, stageErr
 			}
@@ -363,7 +363,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}
-		if settings.AIDetectionEnabled {
+		if settings.AIDetectionEnabled && !onboardingFastPath {
 			e.launchDeepDetection(sessionID)
 		}
 		return nil, nil

@@ -174,4 +174,21 @@ func TestInboxRunTraceUsesTheSameCanonicalIdentityAsReasoning(t *testing.T) {
 	if trace.Counts.Captured != 1 || trace.Counts.Evaluated != 1 || trace.Total != 1 || trace.Items[0].Outcome != "not_selected" {
 		t.Fatalf("canonical trace=%+v", trace)
 	}
+	inbox, _, err := state.ListInboxSessions(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox) != 1 {
+		t.Fatalf("Inbox headline and canonical trace disagree: inbox=%+v trace=%+v", inbox, trace)
+	}
+	var inboxRun *domain.InboxRun
+	for index := range inbox[0].Runs {
+		if inbox[0].Runs[index].ID == run.ID {
+			inboxRun = &inbox[0].Runs[index]
+			break
+		}
+	}
+	if inboxRun == nil || inboxRun.CapturedCandidates != trace.Counts.Captured {
+		t.Fatalf("Inbox headline and canonical trace disagree: inbox=%+v trace=%+v", inbox, trace)
+	}
 }

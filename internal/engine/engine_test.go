@@ -680,6 +680,18 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000013")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	onboardingItems, err := state.ListSessionItems(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range onboardingItems {
+		if item.AIDetection != nil {
+			t.Fatalf("onboarding must not run AI Fast Detection: %+v", item.AIDetection)
+		}
+	}
+	if job, jobErr := state.AIDetectionJob(ctx, session.ID); jobErr != nil || job != nil {
+		t.Fatalf("onboarding must not queue AI Deep Detection: job=%+v err=%v", job, jobErr)
+	}
 	calibration := waitActiveCalibration(t, runtime)
 	if calibration.Status != "reviewing" || calibration.SampleCount != 3 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn || calibration.Samples[2].Source != domain.SourceFacebook {
 		t.Fatalf("calibration=%+v", calibration)
@@ -734,6 +746,30 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 		if item.Source == domain.SourceX && (item.Feedback == nil || item.Feedback.Direction != "less" || item.Feedback.Origin != "routine") {
 			t.Fatalf("later routine feedback did not replace calibration choice: %+v", item.Feedback)
 		}
+	}
+	inbox, _, err := state.ListInboxSessions(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decisions []domain.InboxPreferenceDecision
+	for _, entry := range inbox {
+		if entry.ID == session.ID {
+			decisions = entry.PreferenceDecisions
+			break
+		}
+	}
+	byDecisionSource := map[domain.Source]domain.InboxPreferenceDecision{}
+	for _, decision := range decisions {
+		byDecisionSource[decision.Source] = decision
+	}
+	if len(decisions) != 2 || byDecisionSource[domain.SourceX].Direction != "less" || byDecisionSource[domain.SourceX].Origin != "routine" {
+		t.Fatalf("Inbox did not project the latest X preference decision: %+v", decisions)
+	}
+	if byDecisionSource[domain.SourceFacebook].Direction != "less" || byDecisionSource[domain.SourceFacebook].Origin != "calibration" {
+		t.Fatalf("Inbox did not project the Facebook calibration decision: %+v", decisions)
+	}
+	if _, exists := byDecisionSource[domain.SourceLinkedIn]; exists {
+		t.Fatalf("neutral calibration choice must not appear as an Inbox preference decision: %+v", decisions)
 	}
 	status, err := state.CalibrationFirstRunStatus(ctx)
 	if err != nil || status != "completed" {

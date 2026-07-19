@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/capture"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -71,16 +73,28 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 
 func (s *Store) inboxPreferenceDecisions(ctx context.Context, sessionID string) ([]domain.InboxPreferenceDecision, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		WITH ranked AS (
-		  SELECT f.timeline_id,f.evidence_key,t.source,f.direction,f.created_at,
-		    ROW_NUMBER() OVER (
-		      PARTITION BY t.source,f.evidence_key
-		      ORDER BY f.created_at DESC,f.id DESC
-		    ) AS signal_rank
+		WITH decisions AS (
+		  SELECT f.id,f.timeline_id,f.evidence_key,t.source,f.direction,f.created_at,
+		    'routine' AS origin,2 AS authority
 		  FROM feedback_events f
 		  JOIN timeline_items t ON t.id=f.timeline_id
+		  UNION ALL
+		  SELECT 'calibration:' || c.calibration_session_id || ':' || c.ordinal,
+		    t.id,c.evidence_key,t.source,
+		    CASE c.label WHEN 'more_like_this' THEN 'more' ELSE 'less' END,
+		    c.labeled_at,'calibration',1
+		  FROM timeline_items t
+		  JOIN calibration_samples c ON c.run_id=t.run_id AND c.evidence_key=t.evidence_key
+		  WHERE c.label IN ('more_like_this','less_like_this')
+		), ranked AS (
+		  SELECT decisions.*,
+		    ROW_NUMBER() OVER (
+		      PARTITION BY source,evidence_key
+		      ORDER BY created_at DESC,authority DESC,id DESC
+		    ) AS signal_rank
+		  FROM decisions
 		)
-		SELECT t.id,t.evidence_key,t.source,t.item_json,r.direction,r.created_at
+		SELECT t.id,t.evidence_key,t.source,t.item_json,r.direction,r.origin,r.created_at
 		FROM timeline_items t
 		JOIN ranked r ON r.timeline_id=t.id AND r.signal_rank=1
 		WHERE t.session_id=?
@@ -100,6 +114,7 @@ func (s *Store) inboxPreferenceDecisions(ctx context.Context, sessionID string) 
 			&decision.Source,
 			&itemRaw,
 			&decision.Direction,
+			&decision.Origin,
 			&decision.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -155,16 +170,18 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 	if err != nil {
 		return domain.InboxRun{}, err
 	}
-	evidence := map[string]bool{}
+	allSnapshots := make([]domain.Snapshot, 0)
 	entry.AcquisitionRounds = len(observations)
 	for _, observation := range observations {
 		entry.SnapshotCount += len(observation.Snapshots)
 		entry.PerformedScrolls += integerValue(observation.Coverage["performedScrolls"])
-		for _, snapshot := range observation.Snapshots {
-			for _, block := range snapshot.Blocks {
-				if block.EvidenceKey != "" {
-					evidence[block.EvidenceKey] = true
-				}
+		allSnapshots = append(allSnapshots, observation.Snapshots...)
+	}
+	evidence := map[string]bool{}
+	for _, snapshot := range capture.ReconcileSnapshots(run.Source, allSnapshots) {
+		for _, block := range snapshot.Blocks {
+			if key := strings.TrimSpace(block.EvidenceKey); key != "" {
+				evidence[key] = true
 			}
 		}
 	}

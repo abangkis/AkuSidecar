@@ -414,6 +414,7 @@ type InboxPreferenceDecision struct {
 	Summary     string `json:"summary"`
 	SourceURL   string `json:"sourceUrl"`
 	Direction   string `json:"direction"`
+	Origin      string `json:"origin"`
 	UpdatedAt   string `json:"updatedAt"`
 }
 

@@ -1408,9 +1408,13 @@ function buildInboxPreferenceDecision(decision) {
   const summary = document.createElement("strong");
   summary.textContent = decision.summary || "Previously rated update";
   const context = document.createElement("span");
-  context.textContent = [sourceLabel(decision.source), decision.author, `updated ${formatDate(decision.updatedAt)}`]
-    .filter(Boolean)
-    .join(" \u00b7 ");
+  const renderContext = () => {
+    const origin = decision.origin === "calibration" ? "from calibration" : null;
+    context.textContent = [sourceLabel(decision.source), decision.author, origin, `updated ${formatDate(decision.updatedAt)}`]
+      .filter(Boolean)
+      .join(" \u00b7 ");
+  };
+  renderContext();
   copy.append(summary, context);
   const sourceUrl = safeSourceUrl(decision.sourceUrl, decision.source);
   if (sourceUrl) {
@@ -1445,10 +1449,9 @@ function buildInboxPreferenceDecision(decision) {
           body: { direction, reason: direction === "less" ? "not_interested" : null },
         });
         decision.direction = direction;
+        decision.origin = "routine";
         decision.updatedAt = new Date().toISOString();
-        context.textContent = [sourceLabel(decision.source), decision.author, `updated ${formatDate(decision.updatedAt)}`]
-          .filter(Boolean)
-          .join(" \u00b7 ");
+        renderContext();
         renderDirection();
       } catch (error) {
         showError(error);
@@ -2231,7 +2234,7 @@ function buildExpandedTimelineItem(entry) {
 }
 
 function buildAIDetectionControls(entry) {
-  if (state.bootstrap?.settings?.aiDetectionEnabled === false) {
+  if (state.bootstrap?.settings?.aiDetectionEnabled === false || !entry.aiDetection) {
     const badge = document.createElement("span");
     badge.className = "hidden";
     const details = document.createElement("div");
