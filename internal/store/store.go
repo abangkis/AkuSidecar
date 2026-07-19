@@ -1092,13 +1092,13 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 	if err := s.attachAIDetections(ctx, items); err != nil {
 		return nil, err
 	}
-	if err := s.attachLatestFeedback(ctx, items); err != nil {
+	if err := s.attachEffectivePreferenceDecision(ctx, items); err != nil {
 		return nil, err
 	}
 	return items, nil
 }
 
-func (s *Store) attachLatestFeedback(ctx context.Context, items []domain.TimelineItem) error {
+func (s *Store) attachEffectivePreferenceDecision(ctx context.Context, items []domain.TimelineItem) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -1106,27 +1106,40 @@ func (s *Store) attachLatestFeedback(ctx context.Context, items []domain.Timelin
 	args := make([]any, len(items))
 	itemsByID := make(map[string]*domain.TimelineItem, len(items))
 	for index := range items {
-		placeholders[index] = "?"
+		placeholders[index] = "(?)"
 		args[index] = items[index].ID
 		itemsByID[items[index].ID] = &items[index]
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		WITH ranked AS (
-		  SELECT id,timeline_id,direction,reason,created_at,
-		    ROW_NUMBER() OVER (PARTITION BY timeline_id ORDER BY created_at DESC,id DESC) AS signal_rank
-		  FROM feedback_events
-		  WHERE timeline_id IN (`+strings.Join(placeholders, ",")+`)
+		WITH requested(timeline_id) AS (VALUES `+strings.Join(placeholders, ",")+`),
+		decisions AS (
+		  SELECT f.id,f.timeline_id,f.direction,f.reason,f.created_at,'routine' AS origin,2 AS authority
+		  FROM feedback_events f
+		  JOIN requested q ON q.timeline_id=f.timeline_id
+		  UNION ALL
+		  SELECT 'calibration:' || c.calibration_session_id || ':' || c.ordinal,t.id,
+		    CASE c.label WHEN 'more_like_this' THEN 'more' ELSE 'less' END,
+		    CASE c.label WHEN 'less_like_this' THEN 'not_interested' ELSE NULL END,
+		    c.labeled_at,'calibration',1
+		  FROM timeline_items t
+		  JOIN requested q ON q.timeline_id=t.id
+		  JOIN calibration_samples c ON c.run_id=t.run_id AND c.evidence_key=t.evidence_key
+		  WHERE c.label IN ('more_like_this','less_like_this')
+		), ranked AS (
+		  SELECT decisions.*,
+		    ROW_NUMBER() OVER (PARTITION BY timeline_id ORDER BY created_at DESC,authority DESC,id DESC) AS signal_rank
+		  FROM decisions
 		)
-		SELECT id,timeline_id,direction,reason,created_at
+		SELECT id,timeline_id,direction,reason,origin,created_at
 		FROM ranked WHERE signal_rank=1`, args...)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, timelineID, direction, createdAt string
+		var id, timelineID, direction, origin, createdAt string
 		var reason sql.NullString
-		if err := rows.Scan(&id, &timelineID, &direction, &reason, &createdAt); err != nil {
+		if err := rows.Scan(&id, &timelineID, &direction, &reason, &origin, &createdAt); err != nil {
 			return err
 		}
 		item := itemsByID[timelineID]
@@ -1135,7 +1148,7 @@ func (s *Store) attachLatestFeedback(ctx context.Context, items []domain.Timelin
 		}
 		feedback := domain.Feedback{
 			ID: id, TimelineID: timelineID, SessionID: item.SessionID, RunID: item.RunID,
-			EvidenceKey: item.EvidenceKey, Direction: direction, CreatedAt: createdAt,
+			EvidenceKey: item.EvidenceKey, Direction: direction, Origin: origin, CreatedAt: createdAt,
 		}
 		if reason.Valid {
 			feedback.Reason = &reason.String
@@ -1156,6 +1169,7 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 	input.SessionID = sessionID
 	input.RunID = runID
 	input.EvidenceKey = evidenceKey
+	input.Origin = "routine"
 	input.CreatedAt = domain.Now()
 	if err = input.Validate(); err != nil {
 		return domain.Feedback{}, err

@@ -996,6 +996,7 @@ type Feedback struct {
 	EvidenceKey string  `json:"evidenceKey"`
 	Direction   string  `json:"direction"`
 	Reason      *string `json:"reason"`
+	Origin      string  `json:"origin,omitempty"`
 	CreatedAt   string  `json:"createdAt"`
 }
 

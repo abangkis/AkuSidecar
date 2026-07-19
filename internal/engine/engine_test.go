@@ -697,12 +697,43 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	calibration, err = runtime.DecideCalibration(ctx, calibration.ID, 2, domain.CalibrationDecision{Label: &neutral})
+	less := "less_like_this"
+	calibration, err = runtime.DecideCalibration(ctx, calibration.ID, 2, domain.CalibrationDecision{Label: &less})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 2 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
+	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 1 || calibration.Snapshot.Labels["lessLikeThis"] != 1 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
 		t.Fatalf("completed calibration=%+v", calibration)
+	}
+	timeline, err := state.ListTimeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bySource := map[domain.Source]domain.TimelineItem{}
+	for _, item := range timeline {
+		bySource[item.Source] = item
+	}
+	if bySource[domain.SourceX].Feedback == nil || bySource[domain.SourceX].Feedback.Direction != "more" || bySource[domain.SourceX].Feedback.Origin != "calibration" {
+		t.Fatalf("X calibration choice was not projected onto Timeline: %+v", bySource[domain.SourceX].Feedback)
+	}
+	if bySource[domain.SourceLinkedIn].Feedback != nil {
+		t.Fatalf("neutral LinkedIn calibration choice must remain visually neutral: %+v", bySource[domain.SourceLinkedIn].Feedback)
+	}
+	if bySource[domain.SourceFacebook].Feedback == nil || bySource[domain.SourceFacebook].Feedback.Direction != "less" || bySource[domain.SourceFacebook].Feedback.Origin != "calibration" {
+		t.Fatalf("Facebook calibration choice was not projected onto Timeline: %+v", bySource[domain.SourceFacebook].Feedback)
+	}
+	reason := "not_interested"
+	if _, err := state.AddFeedback(ctx, bySource[domain.SourceX].ID, domain.Feedback{Direction: "less", Reason: &reason}); err != nil {
+		t.Fatal(err)
+	}
+	timeline, err = state.ListTimeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range timeline {
+		if item.Source == domain.SourceX && (item.Feedback == nil || item.Feedback.Direction != "less" || item.Feedback.Origin != "routine") {
+			t.Fatalf("later routine feedback did not replace calibration choice: %+v", item.Feedback)
+		}
 	}
 	status, err := state.CalibrationFirstRunStatus(ctx)
 	if err != nil || status != "completed" {

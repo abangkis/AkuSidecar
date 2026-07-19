@@ -2518,10 +2518,13 @@ function buildActions(entry) {
   const less = feedbackButton("Less like this");
   const renderDirection = () => {
     const direction = entry.feedback?.direction;
+    const calibrationChoice = entry.feedback?.origin === "calibration" ? "Chosen during onboarding calibration" : "";
     more.classList.toggle("selected", direction === "more");
     less.classList.toggle("selected", direction === "less");
     more.setAttribute("aria-pressed", String(direction === "more"));
     less.setAttribute("aria-pressed", String(direction === "less"));
+    more.title = direction === "more" ? calibrationChoice : "";
+    less.title = direction === "less" ? calibrationChoice : "";
   };
   renderDirection();
   more.addEventListener("click", async () => {
