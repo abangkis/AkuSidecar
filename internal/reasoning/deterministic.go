@@ -42,7 +42,7 @@ func (Deterministic) Analyze(_ context.Context, run domain.Run, observation doma
 				kind = "source_page"
 			}
 			result.Items = append(result.Items, domain.ReasonedItem{ID: domain.NewID("item"), WhatChanged: title, WhyItMatters: "Visible source evidence was captured inside the configured bounded session.", Source: run.Source, SourceURL: url, SourceURLKind: kind, EvidenceKey: block.EvidenceKey, EventKey: eventKey(block.EvidenceKey), KnowledgeDelta: "new_event", Author: block.Author, PublishedAt: block.PublishedAt, Confidence: 0.55, EvidenceState: "primary"})
-			result.CandidateAssessments = append(result.CandidateAssessments, domain.CandidateAssessment{EvidenceKey: block.EvidenceKey, TopicTags: []string{"unclassified"}, TopicFacets: []string{"other"}, ContentType: "other", Novelty: 0.5, Urgency: 0.2, Actionability: 0.2, Materiality: 0.4, EvidenceStrength: 0.6, Rationale: "Deterministic baseline assessment for provider conformance."})
+			result.CandidateAssessments = append(result.CandidateAssessments, domain.CandidateAssessment{EvidenceKey: block.EvidenceKey, TopicTags: []string{"unclassified"}, TopicFacets: []string{"other"}, ContentType: "other", Novelty: 0.5, Urgency: 0.2, Actionability: 0.2, Materiality: 0.4, EvidenceStrength: 0.6, KnowledgeRelation: "unknown", Rationale: "Deterministic baseline assessment for provider conformance."})
 		}
 	}
 	return result, telemetry(run, "candidate_evaluation", "deterministic", "deterministic", "none", time.Since(started), "completed"), nil

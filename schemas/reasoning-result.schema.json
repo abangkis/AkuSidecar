@@ -78,9 +78,13 @@
           "actionability": { "type": "number", "minimum": 0, "maximum": 1 },
           "materiality": { "type": "number", "minimum": 0, "maximum": 1 },
           "evidenceStrength": { "type": "number", "minimum": 0, "maximum": 1 },
+          "knowledgeRelation": {
+            "type": "string",
+            "enum": ["new_information", "prior_knowledge_overlap", "material_update", "unknown"]
+          },
           "rationale": { "type": "string", "maxLength": 500 }
         },
-        "required": ["evidenceKey", "topicTags", "topicFacets", "contentType", "novelty", "urgency", "actionability", "materiality", "evidenceStrength", "rationale"],
+        "required": ["evidenceKey", "topicTags", "topicFacets", "contentType", "novelty", "urgency", "actionability", "materiality", "evidenceStrength", "knowledgeRelation", "rationale"],
         "additionalProperties": false
       }
     },

@@ -118,6 +118,7 @@ $("#runtime-settings-form").addEventListener("submit", saveSettings);
 $("#detect-reasoning-executable").addEventListener("click", detectReasoningExecutable);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
+$("#ai-detection-enabled").addEventListener("change", syncAIDetectionSettings);
 $("#ai-detection-presentation").addEventListener("change", syncAIDetectionSettings);
 $("#reset-semantic-event-merge-threshold").addEventListener("click", resetSemanticEventMergeThreshold);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
@@ -289,7 +290,10 @@ function renderSettings(settings) {
   $("#semantic-event-merge-threshold").value = Number(settings.semanticEventMergeThreshold || DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD).toFixed(2);
   $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
+  $("#ai-detection-enabled").checked = settings.aiDetectionEnabled !== false;
   $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
+  $("#resurface-mode").value = settings.resurfaceMode || "smart";
+  $("#resurface-cooldown-days").value = String(settings.resurfaceCooldownDays || 7);
   renderSourceSettingsValues(settings);
   for (const input of document.querySelectorAll("#settings-source-options input[type='checkbox']")) {
     input.checked = settings.activeSources?.includes(input.value) ?? false;
@@ -422,14 +426,17 @@ async function saveSettings(event) {
     semanticEventMergeThreshold: Number.parseFloat($("#semantic-event-merge-threshold").value),
     knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
     knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
+    aiDetectionEnabled: $("#ai-detection-enabled").checked,
     aiDetectionPresentation: $("#ai-detection-presentation").value,
+    resurfaceMode: $("#resurface-mode").value,
+    resurfaceCooldownDays: Number.parseInt($("#resurface-cooldown-days").value, 10),
     reasoningExecutablePath: $("#reasoning-executable-path").value.trim(),
     reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
     reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
     reasoningSemanticProfile: reasoningProfileValue("semantic_event_resolution", current.reasoningSemanticProfile),
     reasoningAiDeepProfile: reasoningProfileValue("ai_deep_detection", current.reasoningAiDeepProfile),
   };
-  if (settings.aiDetectionPresentation === "hide" && current.aiDetectionPresentation !== "hide") {
+  if (settings.aiDetectionEnabled && settings.aiDetectionPresentation === "hide" && current.aiDetectionPresentation !== "hide") {
     state.pendingSettings = settings;
     openResetDialog("ai-hide");
     return;
@@ -503,7 +510,12 @@ function syncSemanticEventSettings() {
 }
 
 function syncAIDetectionSettings() {
-  const hide = $("#ai-detection-presentation").value === "hide";
+  const enabled = $("#ai-detection-enabled").checked;
+  $("#ai-detection-presentation").disabled = !enabled;
+  $("#ai-detection-presentation").closest(".settings-row")?.classList.toggle("settings-row-disabled", !enabled);
+  const deepProfile = document.querySelector('[data-process-id="ai_deep_detection"]');
+  if (deepProfile) deepProfile.disabled = !enabled;
+  const hide = enabled && $("#ai-detection-presentation").value === "hide";
   $("#ai-hide-warning").classList.toggle("hidden", !hide);
   const active = state.bootstrap?.settings?.aiDetectionPresentation === "hide";
   $("#ai-hide-status").textContent = active
@@ -1427,7 +1439,11 @@ function buildInboxRun(run, sessionStatus = "") {
     metricNumbers[label.toLowerCase()] = number;
     const name = document.createElement("span");
     name.textContent = label;
-    metric.append(number, name);
+    const stageDuration = run.stageDurationsMs?.[label.toLowerCase()];
+    const timing = document.createElement("small");
+    timing.className = "inbox-pipeline-duration";
+    timing.textContent = Number.isFinite(stageDuration) ? formatDuration(stageDuration) : "";
+    metric.append(number, name, timing);
     pipeline.append(metric);
   }
   const mechanics = document.createElement("p");
@@ -1436,7 +1452,9 @@ function buildInboxRun(run, sessionStatus = "") {
     `${run.acquisitionRounds ?? 0} capture round${run.acquisitionRounds === 1 ? "" : "s"}`,
     `${run.snapshotCount ?? 0} snapshots`,
     `${run.performedScrolls ?? 0} scrolls`,
+    run.totalDurationMs ? `Total ${formatDuration(run.totalDurationMs)}` : null,
     run.reasoningDurationMs ? `${formatDuration(run.reasoningDurationMs)} model time` : null,
+    run.resurfacedItems ? `${run.resurfacedItems} resurfaced${run.skippedResurfaces ? ` · ${run.skippedResurfaces} skipped` : ""}` : null,
   ].filter(Boolean).join(" \u00b7 ");
   card.append(header, pipeline, mechanics);
   if (run.error) {
@@ -1638,7 +1656,15 @@ function buildInboxFlowItem(item, source, runId, onChanged) {
   const outcome = document.createElement("span");
   outcome.className = `inbox-flow-outcome inbox-flow-outcome-${item.outcome}`;
   outcome.textContent = inboxFlowOutcomeLabel(item.outcome);
-  heading.append(author, outcome);
+  heading.append(author);
+  if (item.continuityStatus) {
+    const continuity = document.createElement("span");
+    continuity.className = `inbox-flow-outcome inbox-flow-continuity-${item.continuityStatus}`;
+    continuity.textContent = inboxContinuityLabel(item.continuityStatus);
+    continuity.title = item.continuityDetail || "";
+    heading.append(continuity);
+  }
+  heading.append(outcome);
   const excerpt = document.createElement("p");
   excerpt.className = "inbox-flow-excerpt";
   excerpt.textContent = item.excerpt || "No textual excerpt was captured.";
@@ -1680,8 +1706,14 @@ function buildInboxFlowItem(item, source, runId, onChanged) {
     const select = document.createElement("button");
     select.type = "button";
     select.className = "inbox-selection-correction-button";
-    select.textContent = "Should have selected";
-    select.title = "Add this update to the Timeline and teach AkuBrowser that this kind of item matters.";
+    const overlap = item.continuityStatus === "prior_knowledge_overlap";
+    const resurfaced = item.continuityStatus?.startsWith("resurfaced_");
+    select.textContent = overlap ? "Select despite overlap" : resurfaced ? "Show this resurface" : "Should have selected";
+    select.title = overlap
+      ? "Add this update despite its overlap with retained knowledge and record the explicit user correction."
+      : resurfaced
+        ? "Add this resurfaced update to the Timeline as an explicit user decision."
+        : "Add this update to the Timeline and teach AkuBrowser that this kind of item matters.";
     select.addEventListener("click", async () => {
       select.disabled = true;
       select.textContent = "Selecting…";
@@ -1694,7 +1726,7 @@ function buildInboxFlowItem(item, source, runId, onChanged) {
       } catch (error) {
         showError(error);
         select.disabled = false;
-        select.textContent = "Should have selected";
+        select.textContent = overlap ? "Select despite overlap" : resurfaced ? "Show this resurface" : "Should have selected";
       }
     });
     actions.append(select);
@@ -1707,9 +1739,18 @@ function inboxFlowOutcomeLabel(outcome) {
   if (outcome === "captured_only") return "Captured only";
   if (outcome === "not_selected") return "Not selected";
   if (outcome === "exact_replay") return "Already captured";
+  if (outcome === "resurfaced_unchanged") return "Skipped before reasoning";
   if (outcome === "collapsed_duplicate") return "Semantic duplicate";
   if (outcome === "user_selected") return "Selected by you";
   return humanize(outcome || "captured");
+}
+
+function inboxContinuityLabel(status) {
+  if (status === "resurfaced_unchanged") return "Resurfaced · unchanged";
+  if (status === "resurfaced_changed") return "Resurfaced · new signal";
+  if (status === "resurfaced_after_cooldown") return "Resurfaced · cooldown passed";
+  if (status === "prior_knowledge_overlap") return "Prior knowledge overlap";
+  return humanize(status);
 }
 
 function inboxStatusTone(status) {
@@ -1720,6 +1761,9 @@ function inboxStatusTone(status) {
 }
 
 function routeAIDetectedItems(items) {
+  if (state.bootstrap?.settings?.aiDetectionEnabled === false) {
+    return { inline: [...items], drawer: [], hidden: [], pending: false };
+  }
   const mode = state.bootstrap?.settings?.aiDetectionPresentation || "drawer";
   const result = { inline: [], drawer: [], hidden: [], pending: false };
   for (const entry of items) {
@@ -1963,7 +2007,8 @@ function renderTimelineSidePane(items, pending) {
 }
 
 function timelineSidePaneAvailable() {
-  return state.bootstrap?.settings?.aiDetectionPresentation === "drawer"
+  return state.bootstrap?.settings?.aiDetectionEnabled !== false
+    && state.bootstrap?.settings?.aiDetectionPresentation === "drawer"
     && state.currentView === "timeline"
     && state.bootstrap?.onboarding?.status === "completed"
     && !state.onboardingEditing
@@ -2085,6 +2130,13 @@ function buildExpandedTimelineItem(entry) {
 }
 
 function buildAIDetectionControls(entry) {
+  if (state.bootstrap?.settings?.aiDetectionEnabled === false) {
+    const badge = document.createElement("span");
+    badge.className = "hidden";
+    const details = document.createElement("div");
+    details.className = "hidden";
+    return { badge, details };
+  }
   const detection = entry.aiDetection ?? null;
   const hasAssessmentLabel = Boolean(detection?.badgeLabel);
   const badgeLabel = detection?.badgeLabel || (detection?.pendingDeep
@@ -2249,7 +2301,7 @@ function buildSourceCard(entry) {
   card.append(content);
   const attachments = buildAttachments(evidence.attachments, source);
   if (attachments) card.append(attachments);
-  const media = buildMedia(evidence.media, source);
+  const media = buildMedia(evidence.media, source, evidence.contentKind);
   if (media) card.append(media);
   if (evidence.mediaRecovery?.outcome === "unavailable") {
     const unavailable = document.createElement("div");
@@ -2344,7 +2396,7 @@ function buildExpandableText(value, { characterLimit, lineLimit, label, expansio
   return wrapper;
 }
 
-function buildMedia(values, source) {
+function buildMedia(values, source, contentKind = "") {
   const media = (Array.isArray(values) ? values : [])
     .map((value) => ({ ...value, displayUrl: safeMediaUrl(value.posterUrl || value.url) }))
     .filter((value) => value.displayUrl)
@@ -2353,6 +2405,7 @@ function buildMedia(values, source) {
   const gallery = document.createElement("div");
   gallery.className = `source-layout-media media-count-${media.length}`;
   for (const value of media) {
+    const isVideo = value.kind === "video" || (contentKind === "video" && media.length === 1);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "source-layout-media-item";
@@ -2362,6 +2415,18 @@ function buildMedia(values, source) {
     image.loading = "lazy";
     image.referrerPolicy = "no-referrer";
     button.append(image);
+    if (isVideo) {
+      button.classList.add("is-video-poster");
+      const cue = document.createElement("span");
+      cue.className = "source-layout-video-cue";
+      cue.setAttribute("aria-hidden", "true");
+      cue.textContent = "▶";
+      const label = document.createElement("span");
+      label.className = "source-layout-video-label";
+      label.textContent = "Video preview";
+      button.append(cue, label);
+      button.setAttribute("aria-label", `Open ${sourceLabel(source)} video preview`);
+    }
     button.addEventListener("click", () => openMedia(media.map((entry) => entry.displayUrl), media.indexOf(value)));
     gallery.append(button);
   }

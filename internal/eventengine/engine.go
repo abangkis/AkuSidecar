@@ -58,6 +58,13 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 	if err != nil {
 		return summary, err
 	}
+	resurfaceReevaluation, err := e.store.ResurfaceSemanticReevaluationKeys(ctx, sessionID)
+	if err != nil {
+		return summary, err
+	}
+	for evidenceKey := range resurfaceReevaluation {
+		delete(exactEventIDs, evidenceKey)
+	}
 	applyExactReplayConstraints(constraints, exactEventIDs, catalog)
 	resolverCandidates := candidatesRequiringResolution(candidates, constraints)
 	summary.HistoricalEventCount = len(catalog)

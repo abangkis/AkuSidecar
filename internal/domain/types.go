@@ -24,6 +24,9 @@ const (
 	DefaultRetentionDays            = 30
 	DefaultStorageLimitMB           = 100
 	DefaultAIDetectionPresentation  = "drawer"
+	DefaultAIDetectionEnabled       = true
+	DefaultResurfaceMode            = "smart"
+	DefaultResurfaceCooldownDays    = 7
 	DefaultReasoningAcquisition     = "luna_high"
 	DefaultReasoningEvaluation      = "luna_xhigh"
 	DefaultReasoningSemantic        = "luna_high"
@@ -72,6 +75,9 @@ type Settings struct {
 	KnowledgeRetentionDays      int            `json:"knowledgeRetentionDays"`
 	KnowledgeStorageLimitMB     int            `json:"knowledgeStorageLimitMb"`
 	AIDetectionPresentation     string         `json:"aiDetectionPresentation"`
+	AIDetectionEnabled          bool           `json:"aiDetectionEnabled"`
+	ResurfaceMode               string         `json:"resurfaceMode"`
+	ResurfaceCooldownDays       int            `json:"resurfaceCooldownDays"`
 	ReasoningExecutablePath     string         `json:"reasoningExecutablePath"`
 	ReasoningAcquisitionProfile string         `json:"reasoningAcquisitionProfile"`
 	ReasoningEvaluationProfile  string         `json:"reasoningEvaluationProfile"`
@@ -101,6 +107,9 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		KnowledgeRetentionDays:      DefaultRetentionDays,
 		KnowledgeStorageLimitMB:     DefaultStorageLimitMB,
 		AIDetectionPresentation:     DefaultAIDetectionPresentation,
+		AIDetectionEnabled:          DefaultAIDetectionEnabled,
+		ResurfaceMode:               DefaultResurfaceMode,
+		ResurfaceCooldownDays:       DefaultResurfaceCooldownDays,
 		ReasoningAcquisitionProfile: DefaultReasoningAcquisition,
 		ReasoningEvaluationProfile:  DefaultReasoningEvaluation,
 		ReasoningSemanticProfile:    DefaultReasoningSemantic,
@@ -176,6 +185,12 @@ func (s *Settings) Normalize() {
 	if s.AIDetectionPresentation == "" {
 		s.AIDetectionPresentation = DefaultAIDetectionPresentation
 	}
+	if s.ResurfaceMode == "" {
+		s.ResurfaceMode = DefaultResurfaceMode
+	}
+	if s.ResurfaceCooldownDays == 0 {
+		s.ResurfaceCooldownDays = DefaultResurfaceCooldownDays
+	}
 	if s.ReasoningAcquisitionProfile == "" {
 		s.ReasoningAcquisitionProfile = DefaultReasoningAcquisition
 	}
@@ -239,6 +254,12 @@ func (s Settings) Validate() error {
 	}
 	if s.AIDetectionPresentation != "inline" && s.AIDetectionPresentation != "drawer" && s.AIDetectionPresentation != "hide" {
 		return fmt.Errorf("unsupported AI detection presentation %q", s.AIDetectionPresentation)
+	}
+	if s.ResurfaceMode != "smart" && s.ResurfaceMode != "evaluate_all" {
+		return fmt.Errorf("unsupported resurface mode %q", s.ResurfaceMode)
+	}
+	if s.ResurfaceCooldownDays != 1 && s.ResurfaceCooldownDays != 2 && s.ResurfaceCooldownDays != 7 && s.ResurfaceCooldownDays != 14 && s.ResurfaceCooldownDays != 30 {
+		return errors.New("resurfaceCooldownDays must be 1, 2, 7, 14, or 30")
 	}
 	if len(s.ReasoningExecutablePath) > 4096 || strings.ContainsRune(s.ReasoningExecutablePath, '\x00') {
 		return errors.New("reasoningExecutablePath is invalid")
@@ -405,23 +426,27 @@ type TimelineCheckSummary struct {
 }
 
 type InboxRun struct {
-	ID                  string   `json:"id"`
-	Source              Source   `json:"source"`
-	Status              string   `json:"status"`
-	Stage               string   `json:"stage"`
-	StartedAt           *string  `json:"startedAt"`
-	CompletedAt         *string  `json:"completedAt"`
-	Summary             string   `json:"summary"`
-	CapturedCandidates  int      `json:"capturedCandidates"`
-	EvaluatedCandidates int      `json:"evaluatedCandidates"`
-	SelectedCandidates  int      `json:"selectedCandidates"`
-	AddedItems          int      `json:"addedItems"`
-	AcquisitionRounds   int      `json:"acquisitionRounds"`
-	SnapshotCount       int      `json:"snapshotCount"`
-	PerformedScrolls    int      `json:"performedScrolls"`
-	ReasoningDurationMS int64    `json:"reasoningDurationMs"`
-	Error               *Failure `json:"error"`
-	FollowUpFallback    *Failure `json:"followUpFallback,omitempty"`
+	ID                  string           `json:"id"`
+	Source              Source           `json:"source"`
+	Status              string           `json:"status"`
+	Stage               string           `json:"stage"`
+	StartedAt           *string          `json:"startedAt"`
+	CompletedAt         *string          `json:"completedAt"`
+	Summary             string           `json:"summary"`
+	CapturedCandidates  int              `json:"capturedCandidates"`
+	EvaluatedCandidates int              `json:"evaluatedCandidates"`
+	SelectedCandidates  int              `json:"selectedCandidates"`
+	AddedItems          int              `json:"addedItems"`
+	AcquisitionRounds   int              `json:"acquisitionRounds"`
+	SnapshotCount       int              `json:"snapshotCount"`
+	PerformedScrolls    int              `json:"performedScrolls"`
+	ReasoningDurationMS int64            `json:"reasoningDurationMs"`
+	TotalDurationMS     int64            `json:"totalDurationMs"`
+	StageDurationsMS    map[string]int64 `json:"stageDurationsMs"`
+	ResurfacedItems     int              `json:"resurfacedItems"`
+	SkippedResurfaces   int              `json:"skippedResurfaces"`
+	Error               *Failure         `json:"error"`
+	FollowUpFallback    *Failure         `json:"followUpFallback,omitempty"`
 }
 
 type InboxFlowCounts struct {
@@ -443,18 +468,20 @@ type InboxFlowTrace struct {
 }
 
 type InboxFlowItem struct {
-	EvidenceKey  string               `json:"-"`
-	CandidateRef string               `json:"candidateRef,omitempty"`
-	Author       string               `json:"author,omitempty"`
-	Excerpt      string               `json:"excerpt"`
-	SourceURL    string               `json:"sourceUrl,omitempty"`
-	Outcome      string               `json:"outcome"`
-	Reason       string               `json:"reason,omitempty"`
-	Captured     bool                 `json:"captured"`
-	Evaluated    bool                 `json:"evaluated"`
-	Selected     bool                 `json:"selected"`
-	Added        bool                 `json:"added"`
-	Correction   *SelectionCorrection `json:"correction,omitempty"`
+	EvidenceKey      string               `json:"-"`
+	CandidateRef     string               `json:"candidateRef,omitempty"`
+	Author           string               `json:"author,omitempty"`
+	Excerpt          string               `json:"excerpt"`
+	SourceURL        string               `json:"sourceUrl,omitempty"`
+	Outcome          string               `json:"outcome"`
+	ContinuityStatus string               `json:"continuityStatus,omitempty"`
+	ContinuityDetail string               `json:"continuityDetail,omitempty"`
+	Reason           string               `json:"reason,omitempty"`
+	Captured         bool                 `json:"captured"`
+	Evaluated        bool                 `json:"evaluated"`
+	Selected         bool                 `json:"selected"`
+	Added            bool                 `json:"added"`
+	Correction       *SelectionCorrection `json:"correction,omitempty"`
 }
 
 type SelectionCorrection struct {
@@ -644,16 +671,26 @@ type Block struct {
 }
 
 type CandidateAssessment struct {
-	EvidenceKey      string   `json:"evidenceKey"`
-	TopicTags        []string `json:"topicTags"`
-	TopicFacets      []string `json:"topicFacets"`
-	ContentType      string   `json:"contentType"`
-	Novelty          float64  `json:"novelty"`
-	Urgency          float64  `json:"urgency"`
-	Actionability    float64  `json:"actionability"`
-	Materiality      float64  `json:"materiality"`
-	EvidenceStrength float64  `json:"evidenceStrength"`
-	Rationale        string   `json:"rationale"`
+	EvidenceKey       string   `json:"evidenceKey"`
+	TopicTags         []string `json:"topicTags"`
+	TopicFacets       []string `json:"topicFacets"`
+	ContentType       string   `json:"contentType"`
+	Novelty           float64  `json:"novelty"`
+	Urgency           float64  `json:"urgency"`
+	Actionability     float64  `json:"actionability"`
+	Materiality       float64  `json:"materiality"`
+	EvidenceStrength  float64  `json:"evidenceStrength"`
+	KnowledgeRelation string   `json:"knowledgeRelation"`
+	Rationale         string   `json:"rationale"`
+}
+
+type ContentContinuityDecision struct {
+	EvidenceKey    string `json:"evidenceKey"`
+	Status         string `json:"status"`
+	Action         string `json:"action"`
+	PreviousSeenAt string `json:"previousSeenAt,omitempty"`
+	ObservedAt     string `json:"observedAt"`
+	Reason         string `json:"reason"`
 }
 
 type ReasonedItem struct {

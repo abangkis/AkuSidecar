@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -149,7 +150,7 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 }
 
 func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, error) {
-	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error}
+	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}}
 	observations, err := s.Observations(ctx, run.ID)
 	if err != nil {
 		return domain.InboxRun{}, err
@@ -184,6 +185,35 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		return domain.InboxRun{}, err
 	}
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(duration_ms),0) FROM reasoning_invocations WHERE run_id=?`, run.ID).Scan(&entry.ReasoningDurationMS); err != nil && err != sql.ErrNoRows {
+		return domain.InboxRun{}, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT stage,duration_ms FROM run_stage_timings WHERE run_id=?`, run.ID)
+	if err != nil {
+		return domain.InboxRun{}, err
+	}
+	for rows.Next() {
+		var stage string
+		var duration int64
+		if err := rows.Scan(&stage, &duration); err != nil {
+			rows.Close()
+			return domain.InboxRun{}, err
+		}
+		entry.StageDurationsMS[stage] = duration
+	}
+	if err := rows.Close(); err != nil {
+		return domain.InboxRun{}, err
+	}
+	if run.StartedAt != nil && run.CompletedAt != nil {
+		started, startedErr := time.Parse(time.RFC3339Nano, *run.StartedAt)
+		completed, completedErr := time.Parse(time.RFC3339Nano, *run.CompletedAt)
+		if startedErr == nil && completedErr == nil && !completed.Before(started) {
+			entry.TotalDurationMS = completed.Sub(started).Milliseconds()
+		}
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),COALESCE(SUM(CASE WHEN action='fail_fast' THEN 1 ELSE 0 END),0)
+		FROM content_continuity_occurrences WHERE run_id=? AND status!='fresh'`, run.ID).
+		Scan(&entry.ResurfacedItems, &entry.SkippedResurfaces); err != nil {
 		return domain.InboxRun{}, err
 	}
 	var fallbackRaw sql.NullString

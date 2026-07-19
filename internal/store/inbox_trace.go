@@ -64,6 +64,10 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 	if err != nil {
 		return domain.InboxFlowTrace{}, err
 	}
+	continuity, err := s.ContentContinuityDecisions(ctx, runID)
+	if err != nil {
+		return domain.InboxFlowTrace{}, err
+	}
 
 	trace := domain.InboxFlowTrace{
 		RunID:  run.ID,
@@ -102,6 +106,14 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 			Selected:    selected,
 			Added:       added,
 		}
+		if decision, ok := continuity[key]; ok && decision.Status != "fresh" {
+			item.ContinuityStatus = decision.Status
+			item.ContinuityDetail = decision.Reason
+		}
+		if evaluated && assessment.value.KnowledgeRelation == "prior_knowledge_overlap" && item.ContinuityStatus == "" {
+			item.ContinuityStatus = "prior_knowledge_overlap"
+			item.ContinuityDetail = "Candidate Evaluation found substantial overlap with retained prior knowledge."
+		}
 		if evaluated && !assessment.selected {
 			item.CandidateRef = candidateRef(runID, key)
 		}
@@ -120,6 +132,9 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		}
 
 		switch {
+		case item.ContinuityStatus == "resurfaced_unchanged" && !evaluated:
+			item.Outcome = "resurfaced_unchanged"
+			item.Reason = item.ContinuityDetail
 		case hasTimeline && timelineValue.relation == "duplicate_report":
 			if timelineValue.reason == "Exact native source post was already captured." {
 				item.Outcome = "exact_replay"

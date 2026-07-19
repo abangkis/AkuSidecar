@@ -59,7 +59,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}

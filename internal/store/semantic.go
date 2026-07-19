@@ -522,6 +522,9 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
 		return result, err
 	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM content_continuity WHERE last_seen_at<?`, cutoff); err != nil {
+		return result, err
+	}
 	deleted, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL AND completed_at<?`, cutoff)
 	if err != nil {
 		return result, err

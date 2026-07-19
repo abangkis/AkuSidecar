@@ -104,6 +104,9 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	if err := e.store.SaveSettings(ctx, value); err != nil {
 		return domain.Settings{}, err
 	}
+	if current.AIDetectionEnabled && !value.AIDetectionEnabled {
+		e.cancelDeepDetections()
+	}
 	if executableRuntime != nil {
 		executableRuntime.UseExecutable(resolvedExecutable)
 	}
@@ -329,11 +332,13 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if composeErr := e.store.ComposeSession(ctx, sessionID); composeErr != nil {
 			return nil, fmt.Errorf("compose unified Timeline: %w", composeErr)
 		}
-		if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "ai_fast_detection"); stageErr != nil {
-			return nil, stageErr
-		}
-		if detectionErr := e.runFastDetection(ctx, sessionID); detectionErr != nil {
-			e.logger.Printf("AI Fast Detection for session %s degraded safely: %v", sessionID, detectionErr)
+		if settings.AIDetectionEnabled {
+			if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "ai_fast_detection"); stageErr != nil {
+				return nil, stageErr
+			}
+			if detectionErr := e.runFastDetection(ctx, sessionID); detectionErr != nil {
+				e.logger.Printf("AI Fast Detection for session %s degraded safely: %v", sessionID, detectionErr)
+			}
 		}
 		if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "finalizing"); stageErr != nil {
 			return nil, stageErr
@@ -347,7 +352,9 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}
-		e.launchDeepDetection(sessionID)
+		if settings.AIDetectionEnabled {
+			e.launchDeepDetection(sessionID)
+		}
 		return nil, nil
 	}
 	settings, err := e.store.GetSettings(ctx)
@@ -400,6 +407,9 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 	settings, settingsErr := e.store.GetSettings(context.Background())
 	if settingsErr != nil {
 		e.logger.Printf("AI Deep Detection could not load reasoning profile for session %s: %v", sessionID, settingsErr)
+		return
+	}
+	if !settings.AIDetectionEnabled {
 		return
 	}
 	model := resolver.Model()
@@ -732,11 +742,30 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return errors.New("no accepted observation")
 	}
 	merged := mergeObservations(observations)
-	knowledge, err := e.store.Knowledge(ctx, run.Source, 200)
+	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return err
 	}
-	settings, err := e.store.GetSettings(ctx)
+	continuity, err := e.store.ClassifyContentContinuity(ctx, run, merged, settings)
+	if err != nil {
+		return fmt.Errorf("classify resurfaced content: %w", err)
+	}
+	merged = filterResurfacedObservation(merged, continuity)
+	if observationCandidateCount(merged) == 0 {
+		skipped := skippedResurfaceCount(continuity)
+		result := domain.ReasoningResult{
+			Summary: fmt.Sprintf("%d unchanged resurfaced item%s skipped before reasoning inside the configured cooldown.", skipped, map[bool]string{true: "", false: "s"}[skipped == 1]),
+			Items:   []domain.ReasonedItem{}, CandidateAssessments: []domain.CandidateAssessment{}, Limitations: []string{},
+		}
+		addedStarted := time.Now()
+		if err = e.store.CompleteRun(ctx, run, result, nil, nil, merged.Coverage); err != nil {
+			return err
+		}
+		_ = e.store.SaveRunStageTiming(context.Background(), runID, "added", time.Since(addedStarted))
+		_, err = e.startNext(ctx, run.SessionID)
+		return err
+	}
+	knowledge, err := e.store.Knowledge(ctx, run.Source, 200)
 	if err != nil {
 		return err
 	}
@@ -763,6 +792,7 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	}
 	result, telemetry, err := e.analyzeWithProfile(ctx, run, merged, knowledge, settings.ReasoningEvaluationProfile)
 	_ = e.store.SaveTelemetry(context.Background(), telemetry)
+	_ = e.store.SaveRunStageTiming(context.Background(), runID, "evaluated", time.Duration(telemetry.DurationMS)*time.Millisecond)
 	if err != nil {
 		return err
 	}
@@ -781,6 +811,11 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	excluded, err := e.store.PreviouslyDeliveredEvidence(ctx, run.Source, evidenceKeys)
 	if err != nil {
 		return err
+	}
+	for evidenceKey, decision := range continuity {
+		if decision.Action == "evaluate" && (decision.Status == "resurfaced_changed" || decision.Status == "resurfaced_after_cooldown") {
+			delete(excluded, evidenceKey)
+		}
 	}
 	protected := map[string]bool{}
 	eventKeys := make([]string, 0, len(result.Items))
@@ -805,14 +840,18 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 			excluded[item.EvidenceKey] = true
 		}
 	}
+	selectionStarted := time.Now()
 	scored := selection.SelectWithOptions(result.CandidateAssessments, profile, selection.Options{
 		Limit: settings.MaxItemsPerSource, Mode: settings.PreferenceEligibilityMode,
 		ExcludedEvidence: excluded, ProtectedEvidence: protected,
 	})
+	_ = e.store.SaveRunStageTiming(context.Background(), runID, "selected", time.Since(selectionStarted))
 	items := selectedItems(run, result, scored, merged.Coverage)
+	addedStarted := time.Now()
 	if err = e.store.CompleteRun(ctx, run, result, scored, items, merged.Coverage); err != nil {
 		return err
 	}
+	_ = e.store.SaveRunStageTiming(context.Background(), runID, "added", time.Since(addedStarted))
 	_, err = e.startNext(ctx, run.SessionID)
 	return err
 }
@@ -1072,14 +1111,18 @@ func (e *Engine) CorrectSelection(ctx context.Context, runID, candidateRef strin
 	if err != nil {
 		return correction, domain.TimelineItem{}, err
 	}
-	if err := e.store.SaveAIAssessments(ctx, e.aiFast.Detect([]domain.TimelineItem{item})); err != nil {
-		e.logger.Printf("AI Fast Detection for selection correction %s degraded safely: %v", correction.ID, err)
+	if settings.AIDetectionEnabled {
+		if err := e.store.SaveAIAssessments(ctx, e.aiFast.Detect([]domain.TimelineItem{item})); err != nil {
+			e.logger.Printf("AI Fast Detection for selection correction %s degraded safely: %v", correction.ID, err)
+		}
 	}
 	item, err = e.store.TimelineItem(ctx, item.ID)
 	if err != nil {
 		return correction, domain.TimelineItem{}, err
 	}
-	e.launchDeepDetectionItems(item.SessionID, []domain.TimelineItem{item})
+	if settings.AIDetectionEnabled {
+		e.launchDeepDetectionItems(item.SessionID, []domain.TimelineItem{item})
+	}
 	return correction, item, nil
 }
 

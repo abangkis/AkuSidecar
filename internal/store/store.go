@@ -63,6 +63,9 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	if err := s.syncSourceDefinitions(ctx); err != nil {
 		return err
 	}
+	if err := s.backfillContentContinuity(ctx); err != nil {
+		return fmt.Errorf("backfill content continuity: %w", err)
+	}
 	if metaTable == 0 {
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('schema_version',?)`, schemaVersion); err != nil {
 			return fmt.Errorf("save schema version: %w", err)
@@ -161,7 +164,11 @@ func (s *Store) GetSettings(ctx context.Context) (domain.Settings, error) {
 	if err := s.db.QueryRowContext(ctx, `SELECT value_json FROM settings WHERE key='runtime'`).Scan(&raw); err != nil {
 		return domain.Settings{}, fmt.Errorf("read settings: %w", err)
 	}
-	var settings domain.Settings
+	settings := domain.Settings{
+		AIDetectionEnabled:    domain.DefaultAIDetectionEnabled,
+		ResurfaceMode:         domain.DefaultResurfaceMode,
+		ResurfaceCooldownDays: domain.DefaultResurfaceCooldownDays,
+	}
 	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 		return domain.Settings{}, fmt.Errorf("decode settings: %w", err)
 	}
@@ -566,7 +573,8 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 	defer tx.Rollback()
 	var expectedRun string
 	var status string
-	if err = tx.QueryRowContext(ctx, `SELECT run_id,status FROM bridge_commands WHERE id=?`, commandID).Scan(&expectedRun, &status); err != nil {
+	var commandClaimedAt sql.NullString
+	if err = tx.QueryRowContext(ctx, `SELECT run_id,status,claimed_at FROM bridge_commands WHERE id=?`, commandID).Scan(&expectedRun, &status, &commandClaimedAt); err != nil {
 		return err
 	}
 	if expectedRun != runID || status != "claimed" {
@@ -588,6 +596,19 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning',coverage_json=? WHERE id=?`, string(durableCoverageRaw), runID); err != nil {
+		return err
+	}
+	captureDurationMS := int64(0)
+	if claimedAt, parseErr := time.Parse(time.RFC3339Nano, commandClaimedAt.String); commandClaimedAt.Valid && parseErr == nil {
+		captureDurationMS = time.Since(claimedAt).Milliseconds()
+		if captureDurationMS < 0 {
+			captureDurationMS = 0
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO run_stage_timings(run_id,stage,duration_ms,completed_at) VALUES(?,'captured',?,?)
+		ON CONFLICT(run_id,stage) DO UPDATE SET duration_ms=run_stage_timings.duration_ms+excluded.duration_ms,completed_at=excluded.completed_at`,
+		runID, captureDurationMS, now); err != nil {
 		return err
 	}
 	return tx.Commit()

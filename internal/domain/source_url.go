@@ -34,5 +34,18 @@ func facebookNativePostPath(path string, query url.Values) bool {
 	return strings.Contains(path, "/posts/") || strings.Contains(path, "/permalink/") ||
 		strings.Contains(path, "/story.php") && query.Get("story_fbid") != "" ||
 		strings.Contains(path, "/photo") && (query.Get("fbid") != "" || query.Get("photo_id") != "") ||
-		strings.Contains(path, "/videos/")
+		strings.Contains(path, "/videos/") || facebookNumericReelPath(path)
+}
+
+func facebookNumericReelPath(path string) bool {
+	value := strings.Trim(strings.TrimPrefix(path, "/reel/"), "/")
+	if value == "" || strings.Contains(value, "/") {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }

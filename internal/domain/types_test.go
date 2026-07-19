@@ -200,7 +200,7 @@ func TestSemanticEventSettingsUseLockedChoices(t *testing.T) {
 
 func TestAIDetectorPresentationDefaultsToDrawerAndUsesLockedModes(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
-	if value.AIDetectionPresentation != "drawer" {
+	if value.AIDetectionPresentation != "drawer" || !value.AIDetectionEnabled {
 		t.Fatalf("AI Detector default=%+v", value)
 	}
 	for _, mode := range []string{"inline", "drawer", "hide"} {
@@ -212,6 +212,27 @@ func TestAIDetectorPresentationDefaultsToDrawerAndUsesLockedModes(t *testing.T) 
 	value.AIDetectionPresentation = "remove"
 	if err := value.Validate(); err == nil {
 		t.Fatal("unrecoverable presentation mode must be rejected")
+	}
+}
+
+func TestResurfaceSettingsUseSmartSevenDayDefaultAndLockedCooldowns(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.ResurfaceMode != "smart" || value.ResurfaceCooldownDays != 7 {
+		t.Fatalf("resurface defaults=%+v", value)
+	}
+	for _, days := range []int{1, 2, 7, 14, 30} {
+		value.ResurfaceCooldownDays = days
+		if err := value.Validate(); err != nil {
+			t.Fatalf("cooldown %d rejected: %v", days, err)
+		}
+	}
+	value.ResurfaceMode = "evaluate_all"
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.ResurfaceCooldownDays = 3
+	if err := value.Validate(); err == nil {
+		t.Fatal("free-entry resurface cooldown must be rejected")
 	}
 }
 

@@ -475,6 +475,70 @@ func singleSourceEngine(t *testing.T, provider reasoning.Provider) (*Engine, *st
 	return runtime, state
 }
 
+func TestAIDetectionSettingDisablesFastAndDeepPaths(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.AIDetectionEnabled = false
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	session, err := runtime.StartSession(ctx, "AI detection disabled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:ai-disabled")
+	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(completed.Items) != 1 || completed.Items[0].AIDetection != nil {
+		t.Fatalf("disabled AI detection still produced an assessment: %+v", completed.Items)
+	}
+	job, err := state.AIDetectionJob(ctx, session.ID)
+	if err != nil || job != nil {
+		t.Fatalf("disabled AI detection job=%+v err=%v", job, err)
+	}
+}
+
+func TestUnchangedResurfaceFailsFastBeforeReasoning(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
+	first, err := runtime.StartSession(ctx, "First observation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, first.ID, domain.SourceX, "x:resurface")
+	waitSession(t, runtime, first.ID, func(value domain.Session) bool { return value.Status == "completed" })
+
+	second, err := runtime.StartSession(ctx, "Repeated observation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, second.ID, domain.SourceX, "x:resurface")
+	completed := waitSession(t, runtime, second.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	run := completed.Runs[0]
+	trace, err := runtime.InboxRunTrace(ctx, run.ID, "captured", 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trace.Items) != 1 || trace.Items[0].Outcome != "resurfaced_unchanged" || trace.Items[0].Evaluated {
+		t.Fatalf("unexpected resurface trace: %+v", trace)
+	}
+	inbox, _, err := state.ListInboxSessions(ctx, 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox) != 2 || inbox[0].Runs[0].CapturedCandidates != 1 || inbox[0].Runs[0].EvaluatedCandidates != 0 || inbox[0].Runs[0].SkippedResurfaces != 1 {
+		t.Fatalf("unexpected resurface inbox: %+v", inbox)
+	}
+	for _, stage := range []string{"captured", "evaluated", "selected", "added"} {
+		if _, ok := inbox[1].Runs[0].StageDurationsMS[stage]; !ok {
+			t.Fatalf("first run missing %s timing: %+v", stage, inbox[1].Runs[0].StageDurationsMS)
+		}
+	}
+}
+
 func TestSelectionCorrectionPromotesAndUndoesAnEvaluatedCandidate(t *testing.T) {
 	ctx := context.Background()
 	runtime, _ := singleSourceEngine(t, reasoning.Deterministic{})

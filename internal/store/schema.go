@@ -91,6 +91,44 @@ CREATE TABLE IF NOT EXISTS observations (
 
 CREATE INDEX IF NOT EXISTS observations_run_created ON observations(run_id, created_at);
 
+CREATE TABLE IF NOT EXISTS content_continuity (
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  evidence_key TEXT NOT NULL,
+  content_fingerprint TEXT NOT NULL,
+  context_fingerprint TEXT NOT NULL DEFAULT '',
+  engagement_score INTEGER NOT NULL DEFAULT 0 CHECK (engagement_score >= 0),
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  last_run_id TEXT NOT NULL,
+  seen_count INTEGER NOT NULL CHECK (seen_count >= 1),
+  PRIMARY KEY(source,evidence_key)
+);
+
+CREATE INDEX IF NOT EXISTS content_continuity_last_seen
+  ON content_continuity(last_seen_at);
+
+CREATE TABLE IF NOT EXISTS content_continuity_occurrences (
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('fresh','resurfaced_unchanged','resurfaced_changed','resurfaced_after_cooldown')),
+  action TEXT NOT NULL CHECK (action IN ('evaluate','fail_fast')),
+  previous_seen_at TEXT,
+  observed_at TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY(run_id,evidence_key)
+);
+
+CREATE INDEX IF NOT EXISTS content_continuity_occurrences_status
+  ON content_continuity_occurrences(run_id,status,action);
+
+CREATE TABLE IF NOT EXISTS run_stage_timings (
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL CHECK (stage IN ('captured','evaluated','selected','added')),
+  duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+  completed_at TEXT NOT NULL,
+  PRIMARY KEY(run_id,stage)
+);
+
 CREATE TABLE IF NOT EXISTS reasoning_invocations (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,

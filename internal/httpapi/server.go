@@ -238,7 +238,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if body.Settings.AIDetectionPresentation == "hide" && current.AIDetectionPresentation != "hide" && body.ConfirmationPhrase != domain.AIHideConfirmationPhrase {
+		if body.Settings.AIDetectionEnabled && body.Settings.AIDetectionPresentation == "hide" && current.AIDetectionPresentation != "hide" && body.ConfirmationPhrase != domain.AIHideConfirmationPhrase {
 			return badRequest("activating Hide requires the exact confirmation phrase")
 		}
 		settings, err := s.engine.SaveSettings(ctx, body.Settings)
