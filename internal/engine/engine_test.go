@@ -63,6 +63,93 @@ type shutdownBlockingProvider struct {
 	once    sync.Once
 }
 
+func TestProgressiveWaitStartsNextCaptureWhileReasoningContinues(t *testing.T) {
+	ctx := context.Background()
+	runtime, _ := testEngine(t)
+	provider := &shutdownBlockingProvider{started: make(chan struct{})}
+	runtime.provider = provider
+	session, err := runtime.StartSession(ctx, "progressive sources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, first.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim=%+v err=%v", command, err)
+	}
+	observation := domain.Observation{Source: first.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:progressive", Text: "First source"}}}}, Coverage: map[string]any{"status": "complete"}}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, first.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	progressive := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[0].Status == "reasoning" && value.Runs[1].Status == "waiting_for_bridge"
+	})
+	if progressive.Coverage["sourceWaitMode"] != "progressive_wait" {
+		t.Fatalf("session did not preserve scheduling mode: %+v", progressive.Coverage)
+	}
+	if _, err := runtime.startNext(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.startNext(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	barrier, err := runtime.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if barrier.Status != "running" || barrier.Coverage["pipelineStage"] != nil {
+		t.Fatalf("global pipeline crossed nonterminal source barrier: %+v", barrier)
+	}
+	runtime.Shutdown()
+	if !runtime.WaitForIdle(time.Second) {
+		t.Fatal("progressive reasoning did not stop")
+	}
+}
+
+func TestFullWaitKeepsNextSourceQueuedUntilReasoningCompletes(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := testEngine(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SourceWaitMode = "full_wait"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	provider := &shutdownBlockingProvider{started: make(chan struct{})}
+	runtime.provider = provider
+	session, err := runtime.StartSession(ctx, "full wait sources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, first.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim=%+v err=%v", command, err)
+	}
+	observation := domain.Observation{Source: first.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:full-wait", Text: "First source"}}}}, Coverage: map[string]any{"status": "complete"}}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, first.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		t.Fatal("reasoning did not start")
+	}
+	current, err := runtime.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Runs[1].Status != "queued" || current.Coverage["sourceWaitMode"] != "full_wait" {
+		t.Fatalf("full wait advanced early: %+v", current)
+	}
+	runtime.Shutdown()
+	if !runtime.WaitForIdle(time.Second) {
+		t.Fatal("full-wait reasoning did not stop")
+	}
+}
+
 func (provider *shutdownBlockingProvider) Analyze(ctx context.Context, run domain.Run, _ domain.Observation, _ []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	provider.once.Do(func() { close(provider.started) })
 	<-ctx.Done()

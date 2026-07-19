@@ -306,6 +306,7 @@ h3 { letter-spacing: -0.02em; }
 .settings-group { min-width: 0; margin: 0; padding: 0; border: 0; }
 .settings-group legend { margin-bottom: 10px; color: var(--accent); font-size: 0.72rem; font-weight: 750; letter-spacing: 0.12em; text-transform: uppercase; }
 .settings-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.source-settings-group .settings-card + .settings-card { margin-top: 10px; }
 .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 260px); align-items: center; gap: 24px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .settings-row:last-child { border-bottom: 0; }
 .settings-copy { display: grid; gap: 4px; }

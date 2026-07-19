@@ -274,9 +274,18 @@
             </div>
           </fieldset>
 
-          <fieldset class="settings-group">
+          <fieldset class="settings-group source-settings-group">
             <legend>Sources</legend>
             <p class="settings-group-note">Activate the signed-in feeds you want AkuBrowser to check and tune each source's bounded hydration wait. At least one source must remain active.</p>
+            <div class="settings-card">
+              <label class="settings-row" for="source-wait-mode">
+                <span class="settings-copy"><strong>Source update scheduling</strong><small>Progressive wait starts the next source capture while earlier evidence is evaluated. Global composition still waits for every source.</small></span>
+                <select id="source-wait-mode" name="sourceWaitMode">
+                  <option value="progressive_wait">Progressive wait — recommended</option>
+                  <option value="full_wait">Full wait</option>
+                </select>
+              </label>
+            </div>
             <div id="settings-source-options" class="settings-card"></div>
           </fieldset>
 

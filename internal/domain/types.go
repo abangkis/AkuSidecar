@@ -28,6 +28,7 @@ const (
 	DefaultReasoningEvaluation      = "luna_xhigh"
 	DefaultReasoningSemantic        = "luna_high"
 	DefaultReasoningAIDeep          = "luna_high"
+	DefaultSourceWaitMode           = "progressive_wait"
 	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
 	CurrentAIDeepDetectorVersion    = "codex-deep-v4"
 )
@@ -51,6 +52,7 @@ type Settings struct {
 	OpenMissingSource           bool           `json:"openMissingSource"`
 	ActiveSources               []Source       `json:"activeSources"`
 	SourceHydrationTimeoutMS    map[Source]int `json:"sourceHydrationTimeoutMs"`
+	SourceWaitMode              string         `json:"sourceWaitMode"`
 	TimelineCapacity            int            `json:"timelineCapacity"`
 	MaxItemsPerSource           int            `json:"maxItemsPerSource"`
 	MaxItemsTotal               int            `json:"maxItemsTotal"`
@@ -84,6 +86,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		OpenMissingSource:           openMissing,
 		ActiveSources:               DefaultSources(),
 		SourceHydrationTimeoutMS:    DefaultSourceHydrationTimeouts(),
+		SourceWaitMode:              DefaultSourceWaitMode,
 		PreferenceEligibilityMode:   preferenceMode,
 		CalibrationEnabled:          true,
 		CalibrationBatchSize:        10,
@@ -128,6 +131,9 @@ func (s *Settings) ApplyProfile() {
 }
 
 func (s *Settings) Normalize() {
+	if s.SourceWaitMode == "" {
+		s.SourceWaitMode = DefaultSourceWaitMode
+	}
 	if s.SourceHydrationTimeoutMS == nil {
 		s.SourceHydrationTimeoutMS = DefaultSourceHydrationTimeouts()
 	} else {
@@ -191,6 +197,9 @@ func (s Settings) Validate() error {
 	}
 	if s.CaptureVisibility != "quiet" && s.CaptureVisibility != "adaptive_fidelity" {
 		return fmt.Errorf("unsupported capture visibility %q", s.CaptureVisibility)
+	}
+	if s.SourceWaitMode != "full_wait" && s.SourceWaitMode != "progressive_wait" {
+		return fmt.Errorf("unsupported source wait mode %q", s.SourceWaitMode)
 	}
 	if s.PreferenceEligibilityMode != "rank_only" && s.PreferenceEligibilityMode != "promote_unused_budget" && s.PreferenceEligibilityMode != "guarded_live" {
 		return fmt.Errorf("unsupported preference mode %q", s.PreferenceEligibilityMode)
@@ -342,18 +351,19 @@ type Session struct {
 }
 
 type Run struct {
-	ID          string         `json:"id"`
-	SessionID   string         `json:"sessionId"`
-	Source      Source         `json:"source"`
-	Ordinal     int            `json:"ordinal"`
-	Status      string         `json:"status"`
-	Stage       string         `json:"stage"`
-	CreatedAt   string         `json:"createdAt"`
-	StartedAt   *string        `json:"startedAt"`
-	CompletedAt *string        `json:"completedAt"`
-	Summary     string         `json:"summary"`
-	Coverage    map[string]any `json:"coverage"`
-	Error       *Failure       `json:"error"`
+	ID                  string         `json:"id"`
+	SessionID           string         `json:"sessionId"`
+	Source              Source         `json:"source"`
+	Ordinal             int            `json:"ordinal"`
+	Status              string         `json:"status"`
+	Stage               string         `json:"stage"`
+	BridgeCommandStatus string         `json:"bridgeCommandStatus,omitempty"`
+	CreatedAt           string         `json:"createdAt"`
+	StartedAt           *string        `json:"startedAt"`
+	CompletedAt         *string        `json:"completedAt"`
+	Summary             string         `json:"summary"`
+	Coverage            map[string]any `json:"coverage"`
+	Error               *Failure       `json:"error"`
 }
 
 type InboxSession struct {

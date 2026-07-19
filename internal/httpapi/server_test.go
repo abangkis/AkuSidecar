@@ -289,6 +289,18 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 }
 
+func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
+	payload, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"dispatchRetryAfter", "expectedLaneWait", "No queued browser command was available"} {
+		if !strings.Contains(string(payload), marker) {
+			t.Fatalf("embedded relay is missing %q", marker)
+		}
+	}
+}
+
 func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)

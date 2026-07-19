@@ -28,6 +28,7 @@ const state = {
   bootstrap: null,
   session: null,
   dispatchKey: null,
+  dispatchRetryAfter: new Map(),
   poller: null,
   pollInFlight: false,
   sessionProgress: { sessionId: null, value: 0 },
@@ -68,10 +69,16 @@ window.addEventListener("message", (event) => {
     showError(new Error(event.data.message));
   }
   if (event.data.type === "AKU_BROWSER_DISPATCH_FAILED") {
-    console.warn("AkuBridge dispatch stopped; waiting for the authoritative Sidecar run outcome.", {
-      runId: event.data.runId,
-      message: event.data.message,
-    });
+    const runId = String(event.data.runId || "");
+    const expectedLaneWait = /No queued browser command was available/i.test(event.data.message || "");
+    if (state.dispatchKey?.startsWith(`${runId}:`)) state.dispatchKey = null;
+    state.dispatchRetryAfter.set(runId, Date.now() + (expectedLaneWait ? 1500 : 500));
+    if (!expectedLaneWait) {
+      console.warn("AkuBridge dispatch stopped; waiting for the authoritative Sidecar run outcome.", {
+        runId,
+        message: event.data.message,
+      });
+    }
   }
 });
 
@@ -244,6 +251,7 @@ function renderSettings(settings) {
   $("#detect-reasoning-executable").disabled = reasoningRuntime?.editable === false;
   $("#bounded-load-profile").value = settings.loadProfile;
   $("#capture-visibility-policy").value = settings.captureVisibility;
+  $("#source-wait-mode").value = settings.sourceWaitMode || "progressive_wait";
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
   $("#calibration-enabled").checked = settings.calibrationEnabled;
   $("#calibration-batch-size").value = settings.calibrationBatchSize;
@@ -373,6 +381,7 @@ async function saveSettings(event) {
     ...current,
     loadProfile,
     captureVisibility: $("#capture-visibility-policy").value,
+    sourceWaitMode: $("#source-wait-mode").value,
     preferenceEligibilityMode: $("#preference-eligibility-mode").value,
     calibrationEnabled: $("#calibration-enabled").checked,
     calibrationBatchSize: Number.parseInt($("#calibration-batch-size").value, 10),
@@ -800,6 +809,7 @@ async function startSession() {
     });
     state.session = session;
     state.sessionProgress = { sessionId: session.id, value: 0 };
+    state.dispatchRetryAfter.clear();
     renderSession();
     startPolling();
   } catch (error) {
@@ -815,6 +825,8 @@ async function cancelSession() {
     state.session = session;
     renderSession();
     stopPolling();
+    state.dispatchKey = null;
+    state.dispatchRetryAfter.clear();
     await releaseCaptureSurface(leaseId).catch((error) => {
       console.warn("Capture-surface cleanup after cancellation failed", error);
     });
@@ -845,11 +857,13 @@ async function pollSession() {
     if (!state.session || state.session.id !== sessionId) return;
     state.session = session;
     renderSession();
-    const activeRun = session.runs?.find((run) => ["waiting_for_bridge", "reasoning"].includes(run.status));
-    if (activeRun?.status === "waiting_for_bridge") dispatch(activeRun);
+    const captureActive = session.runs?.some((run) => run.status === "waiting_for_bridge" && run.bridgeCommandStatus === "claimed");
+    const captureRun = session.runs?.find((run) => run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
+    if (!captureActive && captureRun) dispatch(captureRun);
     if (terminalStatuses.has(session.status)) {
       stopPolling();
       state.dispatchKey = null;
+      state.dispatchRetryAfter.clear();
       await releaseCaptureSurface(session.id).catch((error) => {
         console.warn("Capture-surface cleanup after session completion failed", error);
       });
@@ -867,6 +881,8 @@ async function pollSession() {
   } catch (error) {
     if (/not found/i.test(error.message)) {
       stopPolling();
+      state.dispatchKey = null;
+      state.dispatchRetryAfter.clear();
       state.session = null;
       renderSession();
       await refreshTimeline();
@@ -922,6 +938,8 @@ function releaseCaptureSurfaceOnce(leaseId) {
 function dispatch(run) {
   const key = `${run.id}:${run.stage}`;
   if (state.dispatchKey === key) return;
+  if ((state.dispatchRetryAfter.get(run.id) || 0) > Date.now()) return;
+  state.dispatchRetryAfter.delete(run.id);
   state.dispatchKey = key;
   window.postMessage({
     type: "AKU_BROWSER_DISPATCH",
@@ -958,13 +976,15 @@ function describeSessionProgress(session) {
   };
   if (pipelineStages[pipelineStage]) return pipelineStages[pipelineStage];
 
-  const run = session.runs?.find((candidate) => !["queued", "completed", "failed", "cancelled"].includes(candidate.status))
-    ?? session.runs?.find((candidate) => candidate.status === "queued");
-  const ordinal = run?.ordinal ?? 0;
+  const runs = session.runs ?? [];
+  const run = runs.find((candidate) => candidate.status === "waiting_for_bridge" && candidate.bridgeCommandStatus === "claimed")
+    ?? runs.find((candidate) => candidate.status === "waiting_for_bridge")
+    ?? runs.find((candidate) => candidate.status === "reasoning")
+    ?? runs.find((candidate) => candidate.status === "queued");
   const runCount = Math.max(1, session.runs?.length ?? 1);
   const source = sourceLabel(run?.source);
   const stage = run?.stage ?? session.status;
-  const stageProgress = {
+  const stageProgressByName = {
     queued: 0.05,
     capture: 0.18,
     acquisition_planning: 0.38,
@@ -972,17 +992,42 @@ function describeSessionProgress(session) {
     candidate_evaluation: 0.78,
     reasoning: 0.7,
     completed: 1,
-  }[stage] ?? (run?.status === "reasoning" ? 0.7 : 0.18);
+    failed: 1,
+    cancelled: 1,
+  };
+  const sourceProgress = runs.reduce((total, candidate) => {
+    const candidateStage = candidate.stage ?? candidate.status;
+    const progress = stageProgressByName[candidateStage] ?? (candidate.status === "reasoning" ? 0.7 : 0.18);
+    return total + (candidate.status === "waiting_for_bridge" && candidate.bridgeCommandStatus === "queued" ? Math.min(progress, 0.12) : progress);
+  }, 0) / runCount;
   const descriptions = {
     acquisition_planning: [`Planning ${source} follow-up`, "Deciding whether another bounded observation is useful"],
     follow_up_capture: [`Reading more ${source} evidence`, "Collecting the requested bounded follow-up"],
     candidate_evaluation: [`Evaluating ${source} evidence`, "Applying evidence and your personal preference profile"],
   };
-  const [title, stageDetail] = descriptions[stage] ?? [`Reading ${source}`, humanize(stage)];
+  const queuedForCapture = run?.status === "waiting_for_bridge" && run.bridgeCommandStatus === "queued";
+  const [title, stageDetail] = queuedForCapture
+    ? [`Waiting for ${source} capture lane`, "Queued behind the active bounded browser capture"]
+    : (descriptions[stage] ?? [`Reading ${source}`, humanize(stage)]);
+  const activeStageDetails = runs
+    .filter((candidate) => ["waiting_for_bridge", "reasoning"].includes(candidate.status))
+    .slice(0, 3)
+    .map((candidate) => {
+      const labels = {
+        capture: "capture",
+        acquisition_planning: "planning",
+        follow_up_capture: "follow-up capture",
+        candidate_evaluation: "evaluation",
+        reasoning: "reasoning",
+      };
+      const captureState = candidate.status === "waiting_for_bridge" && candidate.bridgeCommandStatus === "queued" ? "capture queued" : null;
+      return `${sourceLabel(candidate.source)} ${captureState || labels[candidate.stage] || humanize(candidate.stage)}`;
+    });
+  const finished = runs.filter((candidate) => ["completed", "failed", "cancelled"].includes(candidate.status)).length;
   return {
-    value: 4 + ((ordinal + stageProgress) / runCount) * 68,
+    value: 4 + sourceProgress * 68,
     title,
-    detail: `${ordinal + 1} of ${runCount} sources · ${stageDetail}`,
+    detail: `${activeStageDetails.join(" · ") || stageDetail} · ${finished} of ${runCount} sources finished`,
   };
 }
 
@@ -1131,7 +1176,7 @@ async function refreshTimeline() {
   try {
     const limit = state.bootstrap?.settings?.timelineCapacity ?? 24;
     const { items, latestCheck } = await api(`/api/timeline?limit=${limit}&offset=0`);
-    state.bootstrap.latestCheck = latestCheck ?? null;
+    if (state.bootstrap) state.bootstrap.latestCheck = latestCheck ?? null;
     renderTimeline(items ?? [], latestCheck ?? null);
   } catch (error) {
     showError(error);
@@ -2904,4 +2949,5 @@ async function fetchFromSidecar(path, init) {
   }
 }
 
+syncRunButtons();
 bootstrap();

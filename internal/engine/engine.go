@@ -40,6 +40,7 @@ type Engine struct {
 	epoch        string
 	mu           sync.RWMutex
 	operation    sync.Mutex
+	schedule     sync.Mutex
 	heartbeat    *domain.BridgeHeartbeat
 	active       map[string]context.CancelFunc
 	shuttingDown bool
@@ -289,11 +290,27 @@ func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Sessio
 }
 
 func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, error) {
+	e.schedule.Lock()
+	defer e.schedule.Unlock()
+	session, err := e.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session.Status != "queued" && session.Status != "running" {
+		return nil, nil
+	}
 	run, err := e.store.AdvanceSession(ctx, sessionID)
 	if err != nil {
 		return run, err
 	}
 	if run == nil {
+		for _, candidate := range session.Runs {
+			switch candidate.Status {
+			case "completed", "failed", "cancelled":
+			default:
+				return nil, nil
+			}
+		}
 		settings, settingsErr := e.store.GetSettings(ctx)
 		if settingsErr != nil {
 			return nil, settingsErr
@@ -517,8 +534,24 @@ func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string,
 	if err := e.store.SaveObservation(ctx, commandID, runID, value); err != nil {
 		return domain.Run{}, err
 	}
+	session, err := e.store.GetSession(ctx, run.SessionID)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if sessionSourceWaitMode(session) == "progressive_wait" {
+		if _, err := e.startNext(ctx, run.SessionID); err != nil {
+			return domain.Run{}, err
+		}
+	}
 	e.launch(runID)
 	return e.store.GetRun(ctx, runID)
+}
+
+func sessionSourceWaitMode(session domain.Session) string {
+	if value, ok := session.Coverage["sourceWaitMode"].(string); ok && value != "" {
+		return value
+	}
+	return "full_wait"
 }
 
 func normalizeObservation(value *domain.Observation) {
@@ -630,7 +663,24 @@ func (e *Engine) ResumePendingReasoning(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	progressiveSessions := map[string]bool{}
 	for _, id := range ids {
+		run, runErr := e.store.GetRun(ctx, id)
+		if runErr != nil {
+			return 0, runErr
+		}
+		if !progressiveSessions[run.SessionID] {
+			session, sessionErr := e.store.GetSession(ctx, run.SessionID)
+			if sessionErr != nil {
+				return 0, sessionErr
+			}
+			if sessionSourceWaitMode(session) == "progressive_wait" {
+				if _, scheduleErr := e.startNext(ctx, run.SessionID); scheduleErr != nil {
+					return 0, scheduleErr
+				}
+			}
+			progressiveSessions[run.SessionID] = true
+		}
 		e.launchProcess(id, false)
 	}
 	return len(ids), nil

@@ -294,12 +294,16 @@ func (s *Store) CreateSession(ctx context.Context, intent string, settings domai
 	}
 	now := domain.Now()
 	sessionID := domain.NewID("session")
+	coverage, err := json.Marshal(map[string]any{"sourceWaitMode": settings.SourceWaitMode})
+	if err != nil {
+		return domain.Session{}, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Session{}, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,intent,status,max_items_per_source,max_items_total,created_at) VALUES(?,?,'queued',?,?,?)`, sessionID, strings.TrimSpace(intent), settings.MaxItemsPerSource, settings.MaxItemsTotal, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,intent,status,max_items_per_source,max_items_total,coverage_json,created_at) VALUES(?,?,'queued',?,?,?,?)`, sessionID, strings.TrimSpace(intent), settings.MaxItemsPerSource, settings.MaxItemsTotal, string(coverage), now); err != nil {
 		return domain.Session{}, err
 	}
 	for ordinal, source := range settings.ActiveSources {
@@ -395,7 +399,7 @@ func (s *Store) SetRunPipelineStage(ctx context.Context, runID, stage string) er
 }
 
 func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,source,ordinal,status,stage,created_at,started_at,completed_at,summary,coverage_json,error_json FROM runs WHERE session_id=? ORDER BY ordinal`, sessionID)
+	rows, err := s.db.QueryContext(ctx, `SELECT runs.id,runs.session_id,runs.source,runs.ordinal,runs.status,runs.stage,runs.created_at,runs.started_at,runs.completed_at,runs.summary,runs.coverage_json,runs.error_json,(SELECT bridge_commands.status FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY bridge_commands.created_at DESC LIMIT 1) FROM runs WHERE runs.session_id=? ORDER BY runs.ordinal`, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -403,8 +407,8 @@ func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, e
 	var runs []domain.Run
 	for rows.Next() {
 		var run domain.Run
-		var started, completed, coverageRaw, errorRaw sql.NullString
-		if err := rows.Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw); err != nil {
+		var started, completed, coverageRaw, errorRaw, commandStatus sql.NullString
+		if err := rows.Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw, &commandStatus); err != nil {
 			return nil, err
 		}
 		if started.Valid {
@@ -412,6 +416,9 @@ func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, e
 		}
 		if completed.Valid {
 			run.CompletedAt = &completed.String
+		}
+		if commandStatus.Valid {
+			run.BridgeCommandStatus = commandStatus.String
 		}
 		decodeJSON(coverageRaw.String, &run.Coverage)
 		if errorRaw.Valid {
@@ -426,8 +433,8 @@ func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, e
 
 func (s *Store) GetRun(ctx context.Context, id string) (domain.Run, error) {
 	var run domain.Run
-	var started, completed, coverageRaw, errorRaw sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT id,session_id,source,ordinal,status,stage,created_at,started_at,completed_at,summary,coverage_json,error_json FROM runs WHERE id=?`, id).Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw)
+	var started, completed, coverageRaw, errorRaw, commandStatus sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT runs.id,runs.session_id,runs.source,runs.ordinal,runs.status,runs.stage,runs.created_at,runs.started_at,runs.completed_at,runs.summary,runs.coverage_json,runs.error_json,(SELECT bridge_commands.status FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY bridge_commands.created_at DESC LIMIT 1) FROM runs WHERE runs.id=?`, id).Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw, &commandStatus)
 	if err != nil {
 		return domain.Run{}, err
 	}
@@ -436,6 +443,9 @@ func (s *Store) GetRun(ctx context.Context, id string) (domain.Run, error) {
 	}
 	if completed.Valid {
 		run.CompletedAt = &completed.String
+	}
+	if commandStatus.Valid {
+		run.BridgeCommandStatus = commandStatus.String
 	}
 	decodeJSON(coverageRaw.String, &run.Coverage)
 	if errorRaw.Valid {
@@ -500,6 +510,19 @@ func (s *Store) ClaimCommand(ctx context.Context, runID, bridgeID string) (*doma
 		return nil, err
 	}
 	defer tx.Rollback()
+	var claimed int
+	if err = tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM bridge_commands claimed
+		JOIN runs claimed_run ON claimed_run.id=claimed.run_id
+		JOIN runs requested_run ON requested_run.id=?
+		WHERE claimed.status='claimed' AND claimed_run.session_id=requested_run.session_id
+	`, runID).Scan(&claimed); err != nil {
+		return nil, err
+	}
+	if claimed > 0 {
+		return nil, nil
+	}
 	var command domain.BridgeCommand
 	var raw string
 	err = tx.QueryRowContext(ctx, `SELECT id,run_id,type,status,payload_json,created_at FROM bridge_commands WHERE run_id=? AND status='queued' ORDER BY created_at LIMIT 1`, runID).Scan(&command.ID, &command.RunID, &command.Type, &command.Status, &raw, &command.CreatedAt)

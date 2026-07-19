@@ -223,9 +223,17 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	queuedRun, err := state.GetRun(ctx, run.ID)
+	if err != nil || queuedRun.BridgeCommandStatus != "queued" {
+		t.Fatalf("queued bridge status=%q err=%v", queuedRun.BridgeCommandStatus, err)
+	}
 	claimed, err := state.ClaimCommand(ctx, run.ID, "bridge-test")
 	if err != nil || claimed == nil || claimed.ID != command.ID {
 		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	claimedRun, err := state.GetRun(ctx, run.ID)
+	if err != nil || claimedRun.BridgeCommandStatus != "claimed" {
+		t.Fatalf("claimed bridge status=%q err=%v", claimedRun.BridgeCommandStatus, err)
 	}
 	observation := domain.Observation{Source: run.Source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000001", Text: "Material update"}}}}, Coverage: map[string]any{"status": "complete"}}
 	if err := state.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
@@ -239,12 +247,56 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	if err != nil || updated.Status != "reasoning" {
 		t.Fatalf("run: %+v %v", updated, err)
 	}
+	if updated.BridgeCommandStatus != "completed" {
+		t.Fatalf("completed bridge status=%q", updated.BridgeCommandStatus)
+	}
 	if updated.Coverage["acquisitionRounds"] != float64(1) {
 		t.Fatalf("durable acquisition rounds=%v coverage=%+v", updated.Coverage["acquisitionRounds"], updated.Coverage)
 	}
 	rounds, ok := updated.Coverage["rounds"].([]any)
 	if !ok || len(rounds) != 1 {
 		t.Fatalf("durable coverage rounds=%+v", updated.Coverage["rounds"])
+	}
+}
+
+func TestSessionSnapshotsSourceWaitModeAndSerializesBrowserClaims(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	settings.SourceWaitMode = "progressive_wait"
+	session, err := state.CreateSession(ctx, "progressive capture lane", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Coverage["sourceWaitMode"] != "progressive_wait" {
+		t.Fatalf("session coverage=%+v", session.Coverage)
+	}
+	if len(session.Runs) < 2 {
+		t.Fatal("test requires at least two sources")
+	}
+	first, second := session.Runs[0], session.Runs[1]
+	firstCommand, err := state.StartRun(ctx, first.ID, map[string]any{"source": first.Source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.StartRun(ctx, second.ID, map[string]any{"source": second.Source}); err != nil {
+		t.Fatal(err)
+	}
+	claimedFirst, err := state.ClaimCommand(ctx, first.ID, "bridge-one")
+	if err != nil || claimedFirst == nil || claimedFirst.ID != firstCommand.ID {
+		t.Fatalf("first claim=%+v err=%v", claimedFirst, err)
+	}
+	claimedSecond, err := state.ClaimCommand(ctx, second.ID, "bridge-two")
+	if err != nil || claimedSecond != nil {
+		t.Fatalf("second capture lane must wait: claim=%+v err=%v", claimedSecond, err)
+	}
+	observation := domain.Observation{Source: first.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:progressive-lane", Text: "Captured first"}}}}, Coverage: map[string]any{"status": "complete"}}
+	if err := state.SaveObservation(ctx, firstCommand.ID, first.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	claimedSecond, err = state.ClaimCommand(ctx, second.ID, "bridge-two")
+	if err != nil || claimedSecond == nil {
+		t.Fatalf("second capture did not enter released lane: claim=%+v err=%v", claimedSecond, err)
 	}
 }
 

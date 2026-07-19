@@ -115,6 +115,28 @@ func TestSourceHydrationSettingsUseOneSecondStepsWithinFiveSeconds(t *testing.T)
 	}
 }
 
+func TestSourceWaitModeDefaultsToProgressiveAndRejectsUnknownModes(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.SourceWaitMode != "progressive_wait" {
+		t.Fatalf("source wait default=%q", value.SourceWaitMode)
+	}
+	for _, mode := range []string{"progressive_wait", "full_wait"} {
+		value.SourceWaitMode = mode
+		if err := value.Validate(); err != nil {
+			t.Fatalf("source wait mode %q rejected: %v", mode, err)
+		}
+	}
+	value.SourceWaitMode = "parallel"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unknown source wait mode must be rejected")
+	}
+	value.SourceWaitMode = ""
+	value.Normalize()
+	if value.SourceWaitMode != "progressive_wait" {
+		t.Fatalf("normalized source wait mode=%q", value.SourceWaitMode)
+	}
+}
+
 func TestTimelineBoundaryCueDefaultsToFollowAndUsesLockedModes(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	if value.TimelineBoundaryCueMode != DefaultTimelineBoundaryCueMode || value.TimelineBoundaryReturnMS != DefaultTimelineBoundaryReturnMS {

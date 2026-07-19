@@ -279,6 +279,15 @@ of requiring the UI to infer it from source status. AI Deep Detection begins
 after the Timeline is usable, so it is disclosed during finalization and in the
 Inbox but never holds the blocking update bar open.
 
+Source scheduling is a typed Setting. The default `progressive_wait` mode keeps
+one browser capture lane but starts the next source capture as soon as the
+previous source enters reasoning. `full_wait` keeps the original serial
+behavior and does not start another source until the current source run is
+terminal. Both modes preserve the same global barrier: semantic-event
+resolution, Timeline composition, AI Fast Detection, and publication begin
+only after every source run is terminal. The selected mode is snapshotted into
+the session so changing Settings cannot alter a check already in progress.
+
 Each source-run card also offers a lazy `Inspect flow` drill-down. It derives
 one row per captured evidence identity from existing observations,
 assessments, Timeline items, and semantic reports, then filters that bounded
