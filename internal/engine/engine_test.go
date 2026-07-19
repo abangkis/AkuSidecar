@@ -366,10 +366,41 @@ func TestBindReasoningSourceURLsUsesOnlyCapturedCanonicalEvidence(t *testing.T) 
 func TestValidateObservationRejectsNonCanonicalPermalink(t *testing.T) {
 	observation := domain.Observation{
 		Source:    domain.SourceX,
-		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000903", Permalink: "https://attacker.example/post"}}}},
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000903", Text: "Untrusted permalink fixture", Permalink: "https://attacker.example/post"}}}},
 		Coverage:  map[string]any{"browserAdapter": "test"},
 	}
 	if err := validateObservation(observation); err == nil || !strings.Contains(err.Error(), "permalink") {
+		t.Fatalf("validateObservation error=%v", err)
+	}
+}
+
+func TestValidateObservationAcceptsNativeMediaOnlyEvidence(t *testing.T) {
+	observation := domain.Observation{
+		Source: domain.SourceFacebook,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "facebook:000000000000000000000904",
+			PlatformID:  "facebook:post:904",
+			Author:      "Example",
+			Media:       []map[string]any{{"kind": "image", "url": "https://scontent.example.fbcdn.net/example.jpg"}},
+		}}}},
+		Coverage: map[string]any{"browserAdapter": "test"},
+	}
+	if err := validateObservation(observation); err != nil {
+		t.Fatalf("validateObservation error=%v", err)
+	}
+}
+
+func TestValidateObservationRejectsIdentityOnlyBlock(t *testing.T) {
+	observation := domain.Observation{
+		Source: domain.SourceFacebook,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "facebook:000000000000000000000905",
+			PlatformID:  "facebook:post:905",
+			Author:      "Example",
+		}}}},
+		Coverage: map[string]any{"browserAdapter": "test"},
+	}
+	if err := validateObservation(observation); err == nil || !strings.Contains(err.Error(), "no admissible") {
 		t.Fatalf("validateObservation error=%v", err)
 	}
 }

@@ -29,7 +29,7 @@ func (Deterministic) Analyze(_ context.Context, run domain.Run, observation doma
 			seen[block.EvidenceKey] = true
 			text := strings.TrimSpace(block.Text)
 			if text == "" {
-				continue
+				text = fallbackEvidenceSummary(block)
 			}
 			title := text
 			if len(title) > 180 {
@@ -46,6 +46,19 @@ func (Deterministic) Analyze(_ context.Context, run domain.Run, observation doma
 		}
 	}
 	return result, telemetry(run, "candidate_evaluation", "deterministic", "deterministic", "none", time.Since(started), "completed"), nil
+}
+
+func fallbackEvidenceSummary(block domain.Block) string {
+	switch {
+	case len(block.Media) > 0:
+		return fmt.Sprintf("Visual post with %d captured media item(s); content requires visual-capable evaluation.", len(block.Media))
+	case len(block.Attachments) > 0:
+		return fmt.Sprintf("Post with %d captured attachment(s).", len(block.Attachments))
+	case len(block.QuotedPost) > 0:
+		return "Post containing captured quoted-post evidence."
+	default:
+		return "Captured source post with limited textual evidence."
+	}
 }
 
 func eventKey(evidenceKey string) string {

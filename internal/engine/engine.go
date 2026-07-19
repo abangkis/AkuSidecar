@@ -20,7 +20,7 @@ import (
 
 const (
 	ExpectedBridgeVersion  = "0.7.0-preview.1"
-	ExpectedBridgeRevision = "source-adapters-v70"
+	ExpectedBridgeRevision = "source-adapters-v71"
 	ExpectedBridgeID       = "aku-bridge-chrome-mv3-v0"
 )
 
@@ -590,6 +590,9 @@ func validateObservation(value domain.Observation) error {
 			if block.EvidenceKey == "" {
 				return errors.New("captured block is missing evidenceKey")
 			}
+			if !blockHasEvidence(block) {
+				return errors.New("captured block has no admissible text, media, attachment, or quoted-post evidence")
+			}
 			seen[block.EvidenceKey] = true
 			if strings.TrimSpace(block.Permalink) != "" {
 				if _, ok := domain.CanonicalSourceURL(value.Source, block.Permalink); !ok {
@@ -613,6 +616,36 @@ func validateObservation(value domain.Observation) error {
 		return errors.New("observation coverage is required")
 	}
 	return nil
+}
+
+func blockHasEvidence(block domain.Block) bool {
+	if strings.TrimSpace(block.Text) != "" || len(block.Media) > 0 || len(block.Attachments) > 0 {
+		return true
+	}
+	if len(block.QuotedPost) == 0 {
+		return false
+	}
+	for _, key := range []string{"text", "media", "links"} {
+		value, ok := block.QuotedPost[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				return true
+			}
+		case []any:
+			if len(typed) > 0 {
+				return true
+			}
+		case []map[string]any:
+			if len(typed) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e *Engine) launch(runID string) {

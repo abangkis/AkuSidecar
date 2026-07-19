@@ -27,6 +27,7 @@ or repeating acquisition planning.
 ## Product invariants
 
 - AkuBridge capture is read-only, source-specific, and bounded.
+- Source adapters declare their content family and supported evidence modalities. Generic Bridge admission, not an adapter-specific text-length rule, requires an author, stable identity, and at least one text, image, video, attachment, or quoted-post modality. AkuSidecar independently rejects identity-only evidence and resource or native-URL violations.
 - Model output describes every quality-admitted evidence candidate but cannot navigate, expand budgets, or select the Timeline.
 - Direct user feedback outranks source-platform order once repeated evidence is sufficient.
 - Trust protections outrank preference: an evidence-qualified material update or contradiction cannot be suppressed.
@@ -45,6 +46,7 @@ or repeating acquisition planning.
 - Media acquisition is one generic Bridge engine shared by every source adapter. Adapters declare media kinds, source-specific extractors, and visibility capability; quiet X recapture exhausts primary, structured-state, hydration, and alternate-DOM paths before requesting foreground permission.
 - A bounded passive X media cache may complete presentation evidence after the Timeline is already usable. Its inputs include `x-response-evidence-v2`, which transiently inspects only already-requested X timeline/detail responses and exports no raw response or text. Sidecar revalidates the authoritative post identity and media allowlist, preserves `x_response_graphql` provenance in `passive-x-media-enrichment-v2`, records an evidence override, and never creates a browser job, reasoning call, candidate, or foreground action for this path. The same adapter can fill an unhydrated author avatar through a separate Bridge-only ephemeral cache; avatar evidence never reaches Sidecar as post media.
 - Capture telemetry survives reasoning failure or process interruption. A failed model turn cannot erase the already accepted browser coverage.
+- Candidate reasoning receives bounded media metadata (kind, alt text, dimensions, and provenance) without media URLs. A text-empty media post remains a candidate, but the evaluator must report visual limitations and may not invent details it was not given.
 - AkuSidecar never launches a watcher or hidden replacement of itself.
 
 ## State

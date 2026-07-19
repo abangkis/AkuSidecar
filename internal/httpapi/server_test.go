@@ -305,6 +305,18 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 	}
 }
 
+func TestEmbeddedInboxDistinguishesActiveEvaluationFromFinalZero(t *testing.T) {
+	payload, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"function inboxSessionFlowText", "function inboxRunMetricText", `Evaluating\u2026`, "composition pending"} {
+		if !strings.Contains(string(payload), marker) {
+			t.Fatalf("embedded Inbox progress is missing %q", marker)
+		}
+	}
+}
+
 func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
@@ -408,7 +420,7 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
-			"index":0,"adapterVersion":"x-dom-v19","selectorStrategy":"article","selectorCounts":{"article":1},
+			"index":0,"adapterVersion":"x-dom-v20","selectorStrategy":"article","selectorCounts":{"article":1},
 			"selectorCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
 			"scrollY":0,"viewportHeight":900,"newCandidateCount":1,
 			"blocks":[{

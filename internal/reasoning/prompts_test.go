@@ -43,6 +43,27 @@ func TestEvaluationRequestUsesAliasesAndExcludesPriorIdentity(t *testing.T) {
 	}
 }
 
+func TestEvaluationRequestKeepsBoundedMediaMetadataWithoutMediaURLs(t *testing.T) {
+	observation := domain.Observation{Source: domain.SourceFacebook, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+		EvidenceKey: "facebook:media-only",
+		Author:      "Example",
+		Media: []map[string]any{{
+			"kind": "image", "alt": "A bounded source description", "width": 640.0, "height": 480.0,
+			"url": "https://scontent.example.fbcdn.net/private.jpg", "posterUrl": "https://scontent.example.fbcdn.net/poster.jpg",
+		}},
+	}}}}, Coverage: map[string]any{}}
+	request := buildEvaluationRequest(domain.Run{ID: "run-media", Source: domain.SourceFacebook}, observation, nil)
+	if !strings.Contains(request.prompt, `"kind":"image"`) || !strings.Contains(request.prompt, "A bounded source description") {
+		t.Fatalf("media metadata missing: %s", request.prompt)
+	}
+	if strings.Contains(request.prompt, "private.jpg") || strings.Contains(request.prompt, "poster.jpg") {
+		t.Fatalf("media URL leaked into reasoning prompt: %s", request.prompt)
+	}
+	if !strings.Contains(request.prompt, "never claim to have seen visual details") {
+		t.Fatalf("visual limitation contract missing: %s", request.prompt)
+	}
+}
+
 func TestBindEvidenceKeysByPositionOverridesModelIdentity(t *testing.T) {
 	result := domain.ReasoningResult{
 		Items:                []domain.ReasonedItem{{ID: "invented", EvidenceKey: "x:invented"}},

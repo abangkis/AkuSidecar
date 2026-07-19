@@ -1250,7 +1250,7 @@ function buildInboxSession(session, expanded) {
   identity.append(title, status);
   const flow = document.createElement("span");
   flow.className = "inbox-flow-summary";
-  flow.textContent = `${session.capturedCandidates} captured \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} unique${session.duplicateReports ? ` + ${session.duplicateReports} duplicate` : ""}`;
+  flow.textContent = inboxSessionFlowText(session);
   summary.append(identity, flow);
   const body = document.createElement("div");
   body.className = "inbox-session-body";
@@ -1259,7 +1259,7 @@ function buildInboxSession(session, expanded) {
   duration.textContent = [formatDurationBetween(session.startedAt, session.completedAt), session.intent].filter(Boolean).join(" \u00b7 ");
   const runs = document.createElement("div");
   runs.className = "inbox-runs";
-  runs.append(...(session.runs ?? []).map(buildInboxRun));
+  runs.append(...(session.runs ?? []).map((run) => buildInboxRun(run, session.status)));
   body.append(duration);
   if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
   if (session.aiDetection) body.append(buildAIDetectionDiagnostic(session.aiDetection));
@@ -1397,7 +1397,7 @@ function buildEventResolutionDiagnostic(value) {
   return diagnostic;
 }
 
-function buildInboxRun(run) {
+function buildInboxRun(run, sessionStatus = "") {
   const card = document.createElement("article");
   card.className = "inbox-run-card";
   const header = document.createElement("header");
@@ -1423,7 +1423,7 @@ function buildInboxRun(run) {
   ]) {
     const metric = document.createElement("div");
     const number = document.createElement("strong");
-    number.textContent = String(value ?? 0);
+    number.textContent = inboxRunMetricText(run, sessionStatus, label.toLowerCase(), value);
     metricNumbers[label.toLowerCase()] = number;
     const name = document.createElement("span");
     name.textContent = label;
@@ -1460,10 +1460,44 @@ function buildInboxRun(run) {
   }
   card.append(buildInboxFlowInspector(run, (counts) => {
     for (const [stage, number] of Object.entries(metricNumbers)) {
-      number.textContent = String(counts?.[stage] ?? 0);
+      number.textContent = inboxRunMetricText(run, sessionStatus, stage, counts?.[stage]);
     }
   }));
   return card;
+}
+
+function inboxSessionFlowText(session) {
+  const terminal = ["completed", "partial", "failed", "cancelled"].includes(session.status);
+  if (!terminal) {
+    const evaluation = (session.capturedCandidates ?? 0) > 0 && (session.evaluatedCandidates ?? 0) === 0
+      ? "evaluating candidates"
+      : `${session.evaluatedCandidates ?? 0} evaluated`;
+    return `${session.capturedCandidates ?? 0} captured \u2192 ${evaluation} \u2192 composition pending`;
+  }
+  return `${session.capturedCandidates} captured \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} unique${session.duplicateReports ? ` + ${session.duplicateReports} duplicate` : ""}`;
+}
+
+function inboxRunMetricText(run, sessionStatus, stage, value) {
+  const runTerminal = ["completed", "failed", "cancelled"].includes(run.status);
+  const sessionTerminal = ["completed", "partial", "failed", "cancelled"].includes(sessionStatus);
+  if (runTerminal && sessionTerminal) return String(value ?? 0);
+  if (stage === "captured") return String(value ?? 0);
+  if (stage === "evaluated") {
+    if (runTerminal) return String(value ?? 0);
+    if ((value ?? 0) > 0) return String(value);
+    return run.status === "reasoning" ? "Evaluating\u2026" : "Waiting";
+  }
+  if (stage === "selected") {
+    if (runTerminal) return String(value ?? 0);
+    if ((value ?? 0) > 0) return String(value);
+    return run.status === "reasoning" ? "Pending" : "Waiting";
+  }
+  if (stage === "added") {
+    if (["failed", "cancelled"].includes(run.status)) return String(value ?? 0);
+    if ((value ?? 0) > 0) return String(value);
+    return sessionTerminal ? String(value ?? 0) : "Pending";
+  }
+  return String(value ?? 0);
 }
 
 function buildInboxFlowInspector(run, onCounts) {
