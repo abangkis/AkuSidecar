@@ -69,6 +69,7 @@ type Settings struct {
 	TimelineBatchGapPX          int            `json:"timelineBatchGapPx"`
 	TimelineBoundaryCueMode     string         `json:"timelineBoundaryCueMode"`
 	TimelineBoundaryReturnMS    int            `json:"timelineBoundaryReturnMs"`
+	ShowLearningPanel           bool           `json:"showLearningPanel"`
 	SemanticEventMode           string         `json:"semanticEventMode"`
 	SemanticEventShortlist      int            `json:"semanticEventShortlist"`
 	SemanticEventMergeThreshold float64        `json:"semanticEventMergeThreshold"`

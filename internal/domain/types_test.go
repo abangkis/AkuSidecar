@@ -215,6 +215,17 @@ func TestAIDetectorPresentationDefaultsToDrawerAndUsesLockedModes(t *testing.T) 
 	}
 }
 
+func TestLearningPanelAfterOnboardingIsOptIn(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.ShowLearningPanel {
+		t.Fatal("the learning panel must remain onboarding-only unless the user opts in")
+	}
+	value.ShowLearningPanel = true
+	if err := value.Validate(); err != nil {
+		t.Fatalf("the learning panel opt-in was rejected: %v", err)
+	}
+}
+
 func TestResurfaceSettingsUseSmartSevenDayDefaultAndLockedCooldowns(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
 	if value.ResurfaceMode != "smart" || value.ResurfaceCooldownDays != 7 {

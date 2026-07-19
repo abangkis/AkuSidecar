@@ -44,6 +44,26 @@ func TestTimelineBoundaryCueModePersists(t *testing.T) {
 	}
 }
 
+func TestLearningPanelPreferencePersists(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ShowLearningPanel = true
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.ShowLearningPanel {
+		t.Fatal("learning panel preference was not persisted")
+	}
+}
+
 func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 	state := openTestStore(t)
 	rows, err := state.db.Query(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)

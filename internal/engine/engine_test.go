@@ -242,6 +242,7 @@ func (provider *failOnceAnalysisProvider) Analyze(ctx context.Context, run domai
 func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
 	ctx := context.Background()
 	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	settings.CalibrationEnabled = false
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
 	if err != nil {
 		t.Fatal(err)
@@ -666,6 +667,9 @@ func TestReevaluateFailedRunReusesDurableCapture(t *testing.T) {
 func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)
+	// The provider always requests another observation when planning runs. The
+	// first-run path must bypass that model stage and remain one round/source.
+	runtime.provider = followUpProvider{}
 	session, err := runtime.StartSession(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
@@ -679,7 +683,16 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 		return value.Runs[2].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000013")
-	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	completedSession := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	for _, run := range completedSession.Runs {
+		observations, observationErr := state.Observations(ctx, run.ID)
+		if observationErr != nil {
+			t.Fatal(observationErr)
+		}
+		if len(observations) != 1 {
+			t.Fatalf("onboarding run %s used %d capture rounds; expected one without acquisition planning", run.ID, len(observations))
+		}
+	}
 	onboardingItems, err := state.ListSessionItems(ctx, session.ID)
 	if err != nil {
 		t.Fatal(err)

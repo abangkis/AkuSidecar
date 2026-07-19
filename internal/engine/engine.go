@@ -564,7 +564,13 @@ func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string,
 			return domain.Run{}, err
 		}
 	}
-	e.launch(runID)
+	allowPlanning := true
+	if firstRunStatus, statusErr := e.store.CalibrationFirstRunStatus(ctx); statusErr != nil {
+		return domain.Run{}, statusErr
+	} else if firstRunStatus == "pending" {
+		allowPlanning = false
+	}
+	e.launchProcess(runID, allowPlanning)
 	return e.store.GetRun(ctx, runID)
 }
 

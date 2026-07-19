@@ -296,6 +296,7 @@ function renderSettings(settings) {
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
   $("#calibration-enabled").checked = settings.calibrationEnabled;
   $("#calibration-batch-size").value = settings.calibrationBatchSize;
+  $("#show-learning-panel").checked = settings.showLearningPanel === true;
   $("#open-missing-source").checked = settings.openMissingSource;
   $("#timeline-capacity").value = settings.timelineCapacity;
   $("#max-items-per-source").value = settings.maxItemsPerSource;
@@ -429,6 +430,7 @@ async function saveSettings(event) {
     preferenceEligibilityMode: $("#preference-eligibility-mode").value,
     calibrationEnabled: $("#calibration-enabled").checked,
     calibrationBatchSize: Number.parseInt($("#calibration-batch-size").value, 10),
+    showLearningPanel: $("#show-learning-panel").checked,
     openMissingSource: $("#open-missing-source").checked,
     activeSources,
     sourceHydrationTimeoutMs,
@@ -480,6 +482,7 @@ async function persistSettings(settings, confirmationPhrase = "") {
     state.bootstrap.reasoningRuntime = response.reasoningRuntime ?? state.bootstrap.reasoningRuntime;
     state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
     renderSettings(response.settings);
+    syncOnboardingLearning(shouldShowOnboardingLearning(state.session));
     status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
     await refreshTimeline();
     return response.settings;
@@ -1004,7 +1007,7 @@ function dispatch(run) {
 function renderSession() {
   const session = state.session;
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
-  syncOnboardingLearning(Boolean(session && !terminalStatuses.has(session.status) && firstRunCalibrationPending()));
+  syncOnboardingLearning(shouldShowOnboardingLearning(session));
   syncRunButtons();
   if (!session || terminalStatuses.has(session.status)) return;
   const progress = describeSessionProgress(session);
@@ -1017,6 +1020,11 @@ function renderSession() {
   $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.round(value)));
   $("#processing-title").textContent = progress.title;
   $("#processing-detail").textContent = progress.detail;
+}
+
+function shouldShowOnboardingLearning(session) {
+  if (!session || terminalStatuses.has(session.status)) return false;
+  return firstRunCalibrationPending() || state.bootstrap?.settings?.showLearningPanel === true;
 }
 
 function syncOnboardingLearning(visible) {
@@ -1095,6 +1103,9 @@ function describeSessionProgress(session) {
   const pipelineStage = session.coverage?.pipelineStage;
   if (pipelineStage === "semantic_event_resolution" && firstRunCalibrationPending()) {
     return { value: 76, title: "Preparing calibration examples", detail: "Indexing the first clean sample locally - no semantic model turn" };
+  }
+  if (pipelineStage === "finalizing" && firstRunCalibrationPending()) {
+    return { value: 97, title: "Finishing your first Timeline", detail: "Publishing calibration examples - AI Detection is skipped during onboarding" };
   }
   const pipelineStages = {
     semantic_event_resolution: { value: 76, title: "Resolving repeated events", detail: "Cross-source semantic event resolution" },
