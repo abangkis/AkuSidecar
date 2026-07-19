@@ -118,6 +118,43 @@ func (s *Store) SemanticConstraints(ctx context.Context, evidenceKeys []string) 
 	return result, rows.Err()
 }
 
+// ExactSemanticEventIDs returns the newest retained event previously assigned
+// to each opaque source evidence identity. This is an identity lookup, not a
+// semantic similarity decision: the same evidence key denotes the same native
+// source post observed again in a later bounded check.
+func (s *Store) ExactSemanticEventIDs(ctx context.Context, evidenceKeys []string) (map[string]string, error) {
+	result := map[string]string{}
+	if len(evidenceKeys) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(evidenceKeys))
+	args := make([]any, len(evidenceKeys))
+	for index, value := range evidenceKeys {
+		placeholders[index] = "?"
+		args[index] = value
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.evidence_key,r.event_id
+		FROM semantic_event_reports r
+		JOIN semantic_events e ON e.id=r.event_id
+		WHERE r.evidence_key IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY r.created_at DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var evidenceKey, eventID string
+		if err := rows.Scan(&evidenceKey, &eventID); err != nil {
+			return nil, err
+		}
+		if _, exists := result[evidenceKey]; !exists {
+			result[evidenceKey] = eventID
+		}
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) SaveSemanticReports(ctx context.Context, reports []domain.ResolvedSemanticReport) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

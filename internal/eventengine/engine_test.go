@@ -85,6 +85,33 @@ func TestOnlyHighConfidenceTrueDuplicateConsumesNoUniqueCapacity(t *testing.T) {
 	}
 }
 
+func TestExactSourceReplayIsDeterministicAndSkipsSemanticInference(t *testing.T) {
+	event := domain.SemanticEvent{ID: "event-existing", CanonicalClaim: "The native source post was already captured", LastSeenAt: "2026-07-18T10:00:00Z"}
+	candidate := domain.SemanticCandidate{Alias: "candidate_001", TimelineID: "timeline-1", EvidenceKey: "x:stable-native-post", WhatChanged: "The same post appeared again"}
+	constraints := map[string]map[string]string{
+		candidate.EvidenceKey: {event.ID: "exact_source_replay"},
+	}
+	if pending := candidatesRequiringResolution([]domain.SemanticCandidate{candidate}, constraints); len(pending) != 0 {
+		t.Fatalf("exact replay reached semantic inference: %+v", pending)
+	}
+	reports := resolveReports([]domain.SemanticCandidate{candidate}, nil, []domain.SemanticEvent{event}, domain.SemanticResolution{}, constraints, 30, domain.DefaultSemanticMergeThreshold)
+	if len(reports) != 1 || reports[0].Relation != "duplicate_report" || reports[0].Confidence != 1 || reports[0].Event.ID != event.ID {
+		t.Fatalf("exact replay report=%+v", reports)
+	}
+	if reports[0].Reason != "Exact native source post was already captured." {
+		t.Fatalf("exact replay reason=%q", reports[0].Reason)
+	}
+}
+
+func TestUserSplitConstraintStillOverridesExactSourceReplay(t *testing.T) {
+	event := domain.SemanticEvent{ID: "event-existing"}
+	constraints := map[string]map[string]string{"x:1": {event.ID: "must_not_merge"}}
+	applyExactReplayConstraints(constraints, map[string]string{"x:1": event.ID}, []domain.SemanticEvent{event})
+	if constraints["x:1"][event.ID] != "must_not_merge" {
+		t.Fatalf("user correction lost authority: %+v", constraints)
+	}
+}
+
 func TestMaterialUpdateRemainsUniqueEvenWhenAttachedToEvent(t *testing.T) {
 	event := domain.SemanticEvent{ID: "event-existing", CanonicalClaim: "OpenAI launches Codex App Server", EventKind: "release", FirstSeenAt: "2026-07-15T10:00:00Z", LastSeenAt: "2026-07-15T10:00:00Z"}
 	candidate := domain.SemanticCandidate{Alias: "candidate_001", TimelineID: "timeline-1", EvidenceKey: "x:1", WhatChanged: "App Server adds a new capability"}

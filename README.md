@@ -16,7 +16,7 @@ backward-compatibility layer.
 - Go 1.21 or newer
 - Windows x64 for the current local Codex bundle
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.7.0-preview.1` / `source-adapters-v66`
+- AkuBridge `0.7.0-preview.1` / `source-adapters-v68`
 - AkuSupervisor for normal development and daily lifecycle ownership
 
 ## Local Codex runtime
@@ -261,6 +261,14 @@ new consequences, and context remain unique. Automatic merging uses a bounded
 confidence threshold: `0.92` by default, user-tunable from `0.85` to `0.95` in
 `0.01` steps. User corrections create undoable local constraints.
 
+An exact native-source replay is resolved before semantic inference. When the
+same opaque evidence identity already belongs to a retained event, Go emits a
+deterministic duplicate report at confidence `1.0`, excludes it from the Codex
+shortlist, and labels it `Already captured` in Inbox diagnostics. This is an
+identity lookup, not a semantic similarity decision. A user's explicit
+`must_not_merge` correction remains higher authority and forces a new event,
+including when the native source identity is repeated.
+
 Update Inbox records whether the local fast path or App Server ran, along with
 the trigger reason, strongest overlap, retained-event count, duration, token
 usage, and post-hoc user split/merge counts. It also exposes the asynchronous
@@ -287,6 +295,13 @@ terminal. Both modes preserve the same global barrier: semantic-event
 resolution, Timeline composition, AI Fast Detection, and publication begin
 only after every source run is terminal. The selected mode is snapshotted into
 the session so changing Settings cannot alter a check already in progress.
+
+Source availability is also typed. A source adapter may report a temporary
+site outage before feed discovery; AkuBridge preserves `source_unavailable`
+instead of misclassifying the page as a selector, visibility, or reasoning
+failure. The remaining sources continue, the completed evidence stays
+durable, and the final session is presented as a retryable warning rather than
+an AkuSidecar failure.
 
 Each source-run card also offers a lazy `Inspect flow` drill-down. It derives
 one row per captured evidence identity from existing observations,

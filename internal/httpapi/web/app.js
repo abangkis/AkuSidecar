@@ -13,6 +13,8 @@ const AI_HIDE_CONFIRMATION_PHRASE = "HIDE STRONG AI SIGNALS";
 const AI_DEEP_POLL_INTERVAL_MS = 5000;
 const PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS = 2500;
 const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
+const BRIDGE_CONTEXT_RECOVERY_KEY = "akuBridgeContextRecoveryAt";
+const BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -63,13 +65,18 @@ window.addEventListener("message", (event) => {
     bridgeApi("/api/bridge/heartbeat", {
       method: "POST",
       body: { capabilities: event.data.capabilities ?? {} },
-    }).then(({ bridge }) => renderBridge(bridge)).catch(showError);
+    }).then(({ bridge }) => {
+      sessionStorage.removeItem(BRIDGE_CONTEXT_RECOVERY_KEY);
+      renderBridge(bridge);
+    }).catch(showError);
   }
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
+    if (recoverInvalidatedBridgeContext(event.data.message)) return;
     showError(new Error(event.data.message));
   }
   if (event.data.type === "AKU_BROWSER_DISPATCH_FAILED") {
     const runId = String(event.data.runId || "");
+    if (recoverInvalidatedBridgeContext(event.data.message)) return;
     const expectedLaneWait = /No queued browser command was available/i.test(event.data.message || "");
     if (state.dispatchKey?.startsWith(`${runId}:`)) state.dispatchKey = null;
     state.dispatchRetryAfter.set(runId, Date.now() + (expectedLaneWait ? 1500 : 500));
@@ -81,6 +88,19 @@ window.addEventListener("message", (event) => {
     }
   }
 });
+
+function recoverInvalidatedBridgeContext(message) {
+  if (!/Extension context invalidated/i.test(String(message ?? ""))) return false;
+  const now = Date.now();
+  const lastAttempt = Number(sessionStorage.getItem(BRIDGE_CONTEXT_RECOVERY_KEY) || 0);
+  if (Number.isFinite(lastAttempt) && now - lastAttempt < BRIDGE_CONTEXT_RECOVERY_WINDOW_MS) {
+    showError(new Error("AkuBridge reloaded, but this page could not reconnect automatically. Refresh AkuBrowser once to continue the queued update."));
+    return true;
+  }
+  sessionStorage.setItem(BRIDGE_CONTEXT_RECOVERY_KEY, String(now));
+  location.reload();
+  return true;
+}
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
@@ -1384,8 +1404,13 @@ function buildInboxRun(run) {
   const source = document.createElement("strong");
   source.textContent = sourceLabel(run.source);
   const stage = document.createElement("span");
-  stage.className = `status-pill status-${inboxStatusTone(run.status)}`;
-  stage.textContent = run.status === "completed" ? "Completed" : `${humanize(run.status)} \u00b7 ${humanize(run.stage)}`;
+  const sourceUnavailable = run.error?.code === "source_unavailable";
+  stage.className = `status-pill status-${sourceUnavailable ? "warning" : inboxStatusTone(run.status)}`;
+  stage.textContent = run.status === "completed"
+    ? "Completed"
+    : sourceUnavailable
+      ? "Unavailable \u00b7 Source"
+      : `${humanize(run.status)} \u00b7 ${humanize(run.stage)}`;
   header.append(source, stage);
   const pipeline = document.createElement("div");
   pipeline.className = "inbox-pipeline";
@@ -1416,8 +1441,10 @@ function buildInboxRun(run) {
   card.append(header, pipeline, mechanics);
   if (run.error) {
     const failure = document.createElement("p");
-    failure.className = "inbox-run-error";
-    failure.textContent = `Stopped at ${humanize(run.error.stage || run.stage)}: ${run.error.message}`;
+    failure.className = sourceUnavailable ? "inbox-run-warning" : "inbox-run-error";
+    failure.textContent = sourceUnavailable
+      ? run.error.message
+      : `Stopped at ${humanize(run.error.stage || run.stage)}: ${run.error.message}`;
     card.append(failure);
   } else if (run.followUpFallback) {
     const fallback = document.createElement("p");
@@ -1645,6 +1672,7 @@ function buildInboxFlowItem(item, source, runId, onChanged) {
 function inboxFlowOutcomeLabel(outcome) {
   if (outcome === "captured_only") return "Captured only";
   if (outcome === "not_selected") return "Not selected";
+  if (outcome === "exact_replay") return "Already captured";
   if (outcome === "collapsed_duplicate") return "Semantic duplicate";
   if (outcome === "user_selected") return "Selected by you";
   return humanize(outcome || "captured");
@@ -2684,14 +2712,24 @@ function renderMedia() {
 function showSessionFailure(session) {
   const failedRuns = (session.runs ?? []).filter((run) => ["failed", "cancelled"].includes(run.status));
   const failedSources = failedRuns.map((run) => sourceLabel(run.source)).join(" and ");
-  if (session.status === "partial") {
+  const sourcesUnavailable = failedRuns.length > 0 && failedRuns.every((run) => run.error?.code === "source_unavailable");
+  const panel = $("#failure-panel");
+  panel.classList.toggle("failure-panel-warning", sourcesUnavailable);
+  panel.setAttribute("role", sourcesUnavailable ? "status" : "alert");
+  $("#failure-label").textContent = sourcesUnavailable ? "SOURCE UNAVAILABLE" : "RUN STOPPED";
+  $("#failure-title").textContent = sourcesUnavailable
+    ? `${failedSources || "One source"} is temporarily unavailable`
+    : "The bounded snapshot could not finish";
+  if (sourcesUnavailable) {
+    $("#failure-message").textContent = `${failedSources} reported a temporary service issue. AkuBrowser kept the validated results from every source that completed; retry after the source recovers.`;
+  } else if (session.status === "partial") {
     $("#failure-message").textContent = `${failedSources || "One source"} could not finish. AkuBrowser retained and ordered the validated result from the source that completed.`;
   } else {
     $("#failure-message").textContent = session.error?.message
       || failedRuns[0]?.error?.message
       || "The session stopped before an active source could finish.";
   }
-  $("#failure-panel").classList.remove("hidden");
+  panel.classList.remove("hidden");
 }
 
 function showSessionOutcome(session) {

@@ -54,10 +54,16 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 	if err != nil {
 		return summary, err
 	}
+	exactEventIDs, err := e.store.ExactSemanticEventIDs(ctx, candidateEvidenceKeys(candidates))
+	if err != nil {
+		return summary, err
+	}
+	applyExactReplayConstraints(constraints, exactEventIDs, catalog)
+	resolverCandidates := candidatesRequiringResolution(candidates, constraints)
 	summary.HistoricalEventCount = len(catalog)
-	shortlist, historicalSignal := rankShortlist(candidates, catalog, settings.SemanticEventShortlist)
+	shortlist, historicalSignal := rankShortlist(resolverCandidates, catalog, settings.SemanticEventShortlist)
 	summary.ShortlistCount = len(shortlist)
-	intraCheckSignal := strongestIntraCheckSignal(candidates)
+	intraCheckSignal := strongestIntraCheckSignal(resolverCandidates)
 	triggerSignal := intraCheckSignal
 	shouldResolve := intraCheckSignal.Strong
 	if len(shortlist) > 0 {
@@ -71,11 +77,14 @@ func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings 
 	summary.TriggerTokens = append([]string(nil), triggerSignal.Tokens...)
 
 	var resolution domain.SemanticResolution
-	if e.resolver != nil && shouldResolve {
+	if len(resolverCandidates) == 0 {
+		summary.TriggerReason = "exact_source_replays"
+	}
+	if e.resolver != nil && shouldResolve && len(resolverCandidates) > 0 {
 		summary.ResolverInvoked = true
 		model := e.modelForProfile(settings.ReasoningSemanticProfile)
 		summary.Provider, summary.Model, summary.Effort = e.resolver.Name(), model.Model, model.Effort
-		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, candidates, shortlist, settings.ReasoningSemanticProfile)
+		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, resolverCandidates, shortlist, settings.ReasoningSemanticProfile)
 		if err != nil {
 			summary.Status = "failed"
 			summary.Error = &domain.Failure{Code: "semantic_resolution_failed", Stage: "semantic_event_resolution", Message: err.Error(), Retryable: true}
@@ -124,10 +133,16 @@ func (e *Engine) ProcessTimelineItem(ctx context.Context, timelineID string, set
 	if err != nil {
 		return domain.ResolvedSemanticReport{}, err
 	}
-	shortlist, _ := rankShortlist(candidates, catalog, settings.SemanticEventShortlist)
+	exactEventIDs, err := e.store.ExactSemanticEventIDs(ctx, []string{candidate.EvidenceKey})
+	if err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
+	applyExactReplayConstraints(constraints, exactEventIDs, catalog)
+	resolverCandidates := candidatesRequiringResolution(candidates, constraints)
+	shortlist, _ := rankShortlist(resolverCandidates, catalog, settings.SemanticEventShortlist)
 	var resolution domain.SemanticResolution
-	if e.resolver != nil && len(shortlist) > 0 {
-		resolution, _, _, err = e.resolve(ctx, candidates, shortlist, settings.ReasoningSemanticProfile)
+	if e.resolver != nil && len(shortlist) > 0 && len(resolverCandidates) > 0 {
+		resolution, _, _, err = e.resolve(ctx, resolverCandidates, shortlist, settings.ReasoningSemanticProfile)
 		if err != nil {
 			return domain.ResolvedSemanticReport{}, err
 		}
@@ -169,6 +184,42 @@ func candidateEvidenceKeys(candidates []domain.SemanticCandidate) []string {
 	result := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		result = append(result, candidate.EvidenceKey)
+	}
+	return result
+}
+
+func applyExactReplayConstraints(constraints map[string]map[string]string, exactEventIDs map[string]string, catalog []domain.SemanticEvent) {
+	retained := make(map[string]bool, len(catalog))
+	for _, event := range catalog {
+		retained[event.ID] = true
+	}
+	for evidenceKey, eventID := range exactEventIDs {
+		if !retained[eventID] {
+			continue
+		}
+		if constraints[evidenceKey] == nil {
+			constraints[evidenceKey] = map[string]string{}
+		}
+		if constraints[evidenceKey][eventID] == "must_not_merge" {
+			continue
+		}
+		constraints[evidenceKey][eventID] = "exact_source_replay"
+	}
+}
+
+func candidatesRequiringResolution(candidates []domain.SemanticCandidate, constraints map[string]map[string]string) []domain.SemanticCandidate {
+	result := make([]domain.SemanticCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		deterministic := false
+		for _, kind := range constraints[candidate.EvidenceKey] {
+			if kind == "must_merge" || kind == "exact_source_replay" {
+				deterministic = true
+				break
+			}
+		}
+		if !deterministic {
+			result = append(result, candidate)
+		}
 	}
 	return result
 }
@@ -280,6 +331,17 @@ func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []
 			if kind == "must_merge" {
 				if value, exists := allEvents[eventID]; exists {
 					target, targetFound, relation, confidence, reason = value, true, "duplicate_report", 1, "User-confirmed semantic event."
+				}
+				break
+			}
+		}
+		if !targetFound {
+			for eventID, kind := range constraints[candidate.EvidenceKey] {
+				if kind != "exact_source_replay" {
+					continue
+				}
+				if value, exists := allEvents[eventID]; exists {
+					target, targetFound, relation, confidence, reason = value, true, "duplicate_report", 1, "Exact native source post was already captured."
 				}
 				break
 			}

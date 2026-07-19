@@ -110,6 +110,13 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 	if selected.Total != 2 || selected.Items[0].Outcome != "added" || selected.Items[1].Outcome != "collapsed_duplicate" || selected.Items[1].Reason != "Same specific event as an earlier report." {
 		t.Fatalf("selected trace=%+v", selected)
 	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE semantic_event_reports SET reason='Exact native source post was already captured.' WHERE timeline_id='timeline-trace-1'`); err != nil {
+		t.Fatal(err)
+	}
+	selected, err = state.InboxRunTrace(ctx, run.ID, "selected", 10, 0)
+	if err != nil || selected.Items[1].Outcome != "exact_replay" {
+		t.Fatalf("exact replay trace=%+v err=%v", selected, err)
+	}
 	added, err := state.InboxRunTrace(ctx, run.ID, "added", 10, 0)
 	if err != nil {
 		t.Fatal(err)

@@ -81,6 +81,23 @@ func TestSemanticDisplayModesAndLatestUniqueCount(t *testing.T) {
 	}
 }
 
+func TestExactSemanticEventIDsReturnsNewestNativeEvidenceAssignment(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	_, _ = insertSemanticTimelineFixture(t, state, "new_event")
+
+	matches, err := state.ExactSemanticEventIDs(ctx, []string{"x:semantic-fixture", "x:missing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matches["x:semantic-fixture"] != "event-existing" {
+		t.Fatalf("exact matches=%+v", matches)
+	}
+	if _, exists := matches["x:missing"]; exists {
+		t.Fatalf("missing evidence received a match: %+v", matches)
+	}
+}
+
 func TestSemanticCorrectionUndoRemovesConstraint(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

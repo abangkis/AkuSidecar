@@ -121,7 +121,11 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 
 		switch {
 		case hasTimeline && timelineValue.relation == "duplicate_report":
-			item.Outcome = "collapsed_duplicate"
+			if timelineValue.reason == "Exact native source post was already captured." {
+				item.Outcome = "exact_replay"
+			} else {
+				item.Outcome = "collapsed_duplicate"
+			}
 			item.Reason = strings.TrimSpace(timelineValue.reason)
 			if item.Reason == "" {
 				item.Reason = "Matched an already retained semantic event."
