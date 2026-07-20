@@ -30,6 +30,7 @@ const RELEASE_REASONING_DEFAULTS = Object.freeze({
 });
 const state = {
   bootstrap: null,
+  bootstrapLoading: true,
   session: null,
   dispatchKey: null,
   dispatchRetryAfter: new Map(),
@@ -207,6 +208,7 @@ async function bootstrap() {
     clearNotice();
     state.bootstrap = await api("/api/bootstrap");
     state.session = state.bootstrap.activeSession;
+    state.bootstrapLoading = false;
     renderSourceControls();
     $("#runtime-version").textContent = `${state.bootstrap.version} · ${state.bootstrap.runtime}`;
     $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
@@ -1229,6 +1231,7 @@ function syncRunButtons() {
 }
 
 function runDisabledReason() {
+  if (state.bootstrapLoading) return "Restoring your Timeline and active check…";
   if (state.session) {
     return terminalStatuses.has(state.session.status) ? "Finishing capture cleanup…" : "A check for updates is already running.";
   }
@@ -1587,7 +1590,10 @@ function buildModelUsageCategory(category) {
   const label = document.createElement("strong");
   label.textContent = category.label;
   const execution = document.createElement("small");
-  execution.textContent = category.execution === "async" ? "Async" : "In run";
+  execution.textContent = [
+    category.execution === "async" ? "Async" : "In run",
+    modelUsageCategoryProfile(category),
+  ].filter(Boolean).join(" · ");
   identity.append(label, execution);
   const rollup = document.createElement("span");
   rollup.textContent = category.invocationCount
@@ -1605,6 +1611,26 @@ function buildModelUsageCategory(category) {
   }
   details.append(summary, body);
   return details;
+}
+
+function modelUsageCategoryProfile(category) {
+  const process = (state.bootstrap?.reasoningProcesses ?? []).find((candidate) => candidate.id === category.id);
+  const actual = new Map();
+  for (const entry of category.entries ?? []) {
+    if (!(entry.invocationCount > 0) || !entry.model) continue;
+    actual.set(`${entry.model}\u0000${entry.effort || ""}`, { model: entry.model, effort: entry.effort || "" });
+  }
+  if (actual.size > 1) return "Mixed models";
+  if (actual.size === 1) {
+    const used = [...actual.values()][0];
+    return process?.options?.find((option) => option.model === used.model && option.effort === used.effort)?.label
+      || `${formatReasoningModel(used.model)} ${formatReasoningEffort(used.effort)}`;
+  }
+  if (category.status === "pending" || category.status === "running") {
+    const configured = process?.options?.find((option) => option.id === process.profileId)?.label;
+    return configured ? `${configured} configured` : "Configured model pending";
+  }
+  return "No model used";
 }
 
 function buildModelUsageEntry(entry) {
@@ -2168,6 +2194,7 @@ function routeAIDetectedItems(items) {
 }
 
 function renderTimeline(items, latestCheck) {
+  $("#finish-line").classList.remove("hidden");
   const allItems = Array.isArray(items) ? items : [];
   state.timelineItems = allItems;
   const retainedIDs = new Set(allItems.map((entry) => entry.id));
