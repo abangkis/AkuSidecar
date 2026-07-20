@@ -206,7 +206,11 @@ document.addEventListener("visibilitychange", () => {
 async function bootstrap() {
   try {
     clearNotice();
-    state.bootstrap = await api("/api/bootstrap");
+    const restored = await api("/api/bootstrap");
+    if (!["not_started", "completed"].includes(restored?.onboarding?.status)) {
+      throw new Error("AkuBrowser could not restore the authoritative onboarding state. Waiting for AkuSidecar to recover.");
+    }
+    state.bootstrap = restored;
     state.session = state.bootstrap.activeSession;
     state.bootstrapLoading = false;
     renderSourceControls();
@@ -220,7 +224,7 @@ async function bootstrap() {
     renderSettings(state.bootstrap.settings);
     renderTimeline(state.bootstrap.timeline ?? [], state.bootstrap.latestCheck ?? null);
     renderSession();
-    if (state.bootstrap.onboarding?.status !== "completed") {
+    if (onboardingRequiresSetup()) {
       showOnboarding(false);
     } else if (state.bootstrap.calibration?.active) {
       showCalibration(state.bootstrap.calibration.active);
@@ -238,7 +242,17 @@ async function bootstrap() {
 }
 
 function setView(view) {
-  if (state.bootstrap?.onboarding?.status !== "completed") {
+  if (state.bootstrapLoading || !state.bootstrap) {
+    state.currentView = view;
+    $("#onboarding-panel").classList.add("hidden");
+    $("#calibration-panel").classList.add("hidden");
+    $("#settings-panel").classList.add("hidden");
+    $("#inbox-panel").classList.add("hidden");
+    $("#timeline-panel").classList.remove("hidden");
+    document.querySelector(".view-switch")?.classList.add("hidden");
+    return;
+  }
+  if (onboardingRequiresSetup()) {
     showOnboarding(false);
     return;
   }
@@ -269,6 +283,10 @@ function setView(view) {
     else loadInbox();
   }
   scheduleBackToTop();
+}
+
+function onboardingRequiresSetup() {
+  return state.bootstrap?.onboarding?.status === "not_started";
 }
 
 function syncInboxSubView() {
@@ -666,7 +684,7 @@ function resetTimelineBoundaryReturnDuration() {
 
 function showOnboarding(editing) {
   state.onboardingEditing = editing;
-  const completingFirstOnboarding = state.bootstrap?.onboarding?.status !== "completed";
+  const completingFirstOnboarding = onboardingRequiresSetup();
   const sources = completingFirstOnboarding
     ? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id)
     : (state.bootstrap?.settings?.activeSources ?? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id));
@@ -703,7 +721,7 @@ async function saveOnboarding(event) {
     $("#onboarding-error").textContent = "Choose at least one active source.";
     return;
   }
-  const firstCompletion = state.bootstrap?.onboarding?.status !== "completed";
+  const firstCompletion = onboardingRequiresSetup();
   const button = $("#onboarding-finish");
   button.disabled = true;
   $("#onboarding-error").textContent = "Saving source profile…";

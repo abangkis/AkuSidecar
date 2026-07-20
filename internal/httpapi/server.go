@@ -846,6 +846,8 @@ func writeJSON(w http.ResponseWriter, status int, value any) error {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
 	w.WriteHeader(status)
 	_, err = w.Write(raw)
 	return err

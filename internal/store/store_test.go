@@ -743,6 +743,44 @@ func TestInboxLetsLatestMoreOrLessDecisionReplaceAnEarlierChoice(t *testing.T) {
 	}
 }
 
+func TestCompletedOnboardingSurvivesStoreRestart(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "sidecar.db")
+	defaults := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+
+	state, err := Open(path, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := state.CompleteOnboarding(ctx, []domain.Source{domain.SourceX, domain.SourceLinkedIn})
+	if err != nil || completed.Status != "completed" || completed.Profile == nil {
+		t.Fatalf("completed onboarding=%+v err=%v", completed, err)
+	}
+	completedAt := completed.Profile.CompletedAt
+	if completedAt == "" {
+		t.Fatal("completed onboarding must persist a completion timestamp")
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := Open(path, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	restored, err := restarted.Onboarding(ctx)
+	if err != nil || restored.Status != "completed" || restored.Profile == nil {
+		t.Fatalf("restored onboarding=%+v err=%v", restored, err)
+	}
+	if restored.Profile.CompletedAt != completedAt {
+		t.Fatalf("completion timestamp changed across restart: before=%q after=%q", completedAt, restored.Profile.CompletedAt)
+	}
+	if len(restored.Profile.ActiveSources) != 2 || restored.Profile.ActiveSources[0] != domain.SourceX || restored.Profile.ActiveSources[1] != domain.SourceLinkedIn {
+		t.Fatalf("restored active sources=%+v", restored.Profile.ActiveSources)
+	}
+}
+
 func TestSchemaMismatchFailsClosed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sidecar.db")
 	db, err := sql.Open("sqlite", path)

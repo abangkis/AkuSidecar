@@ -196,6 +196,9 @@ func (s *Store) initializeOnboarding(ctx context.Context, fresh bool) error {
 	var status string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_status'`).Scan(&status)
 	if err == nil {
+		if status != "not_started" && status != "completed" {
+			return fmt.Errorf("invalid onboarding status %q", status)
+		}
 		return nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -221,8 +224,11 @@ func (s *Store) Onboarding(ctx context.Context) (domain.OnboardingState, error) 
 	if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_status'`).Scan(&status); err != nil {
 		return domain.OnboardingState{}, fmt.Errorf("read onboarding status: %w", err)
 	}
-	if status != "completed" {
+	if status == "not_started" {
 		return domain.OnboardingState{Status: "not_started"}, nil
+	}
+	if status != "completed" {
+		return domain.OnboardingState{}, fmt.Errorf("invalid onboarding status %q", status)
 	}
 	settings, err := s.GetSettings(ctx)
 	if err != nil {
@@ -243,6 +249,9 @@ func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source)
 	var previousStatus string
 	if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='onboarding_status'`).Scan(&previousStatus); err != nil {
 		return domain.OnboardingState{}, err
+	}
+	if previousStatus != "not_started" && previousStatus != "completed" {
+		return domain.OnboardingState{}, fmt.Errorf("invalid onboarding status %q", previousStatus)
 	}
 	firstCompletion := previousStatus != "completed"
 	settings, err := s.GetSettings(ctx)
