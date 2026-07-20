@@ -103,7 +103,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for path, markers := range map[string][]string{
 		"/":           {"Semantic event engine", "AI Detector", "AI Detection", "ai-detection-enabled", "Resurfaced content", "resurface-mode", "resurface-cooldown-days", "Reasoning processes", "reasoning-processes", "reasoning-executable-path", "detect-reasoning-executable", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms", "show-learning-panel", "Learning panel", "timeline-runner-status", "onboarding-learning-panel", "MEET AKUBROWSER", "WHAT THIS BUILD ADDS", "INSIDE CHECK FOR UPDATES", "First, each source is read and evaluated", "Then, one finite Timeline is composed", "data-onboarding-slide=\"5\"", "onboarding-check-stages"},
-		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "function buildMedia(values, source, contentKind", "source-layout-video-cue", "Video preview", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP", "AKU_BROWSER_DISPATCH_FAILED", "recoverInvalidatedBridgeContext", "BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000", "authoritative Sidecar run outcome", "function enrichPassiveXMedia", "passive_x_cache", "/media-evidence", "\"not_interested\"", "Local fast path", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "The latest More or Less decision is authoritative.", "function buildInboxFlowInspector", "/api/inbox/runs/", "function buildInboxFlowItem", "Open source", "Should have selected", "/selection-corrections", "Re-evaluate run", "Selected by you", "Already captured", "Semantic duplicate", "source_unavailable", "SOURCE UNAVAILABLE", "function routeAIDetectedItems", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS", "function timelineSidePaneAvailable", "function syncTimelineSidePaneVisibility", "state.timelineItems.length > 0", "function scheduleTimelineSidePanePosition", "--timeline-side-pane-top", "--timeline-side-pane-toggle-top", "ResizeObserver", "borderTopLeftRadius", "#result-items > [data-timeline-id]", "function detectReasoningExecutable", "/api/reasoning/runtime/discover", "reasoningExecutablePath", "function fetchFromSidecar", "AkuSidecar is offline or unreachable", "AkuSidecar offline", "sidecar_unavailable", "pollInFlight", "function describeSessionProgress", "AI Fast Detection", "AI Deep Detection continues asynchronously", "ONBOARDING_LEARNING_INTERVAL_MS = 7000", "function shouldShowOnboardingLearning", "function toggleOnboardingLearningPlayback"},
+		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "function buildMedia(values, source, contentKind", "source-layout-video-cue", "Video preview", "notice notice-complete", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP", "AKU_BROWSER_DISPATCH_FAILED", "recoverInvalidatedBridgeContext", "BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000", "authoritative Sidecar run outcome", "function enrichPassiveXMedia", "passive_x_cache", "/media-evidence", "\"not_interested\"", "Local fast path", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "section = document.createElement(\"details\")", "The latest More or Less decision is authoritative.", "function buildInboxFlowInspector", "/api/inbox/runs/", "function buildInboxFlowItem", "Open source", "Should have selected", "/selection-corrections", "Re-evaluate run", "Selected by you", "Already captured", "Semantic duplicate", "source_unavailable", "SOURCE UNAVAILABLE", "function routeAIDetectedItems", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "HIDE STRONG AI SIGNALS", "function timelineSidePaneAvailable", "function syncTimelineSidePaneVisibility", "state.timelineItems.length > 0", "function scheduleTimelineSidePanePosition", "--timeline-side-pane-top", "--timeline-side-pane-toggle-top", "ResizeObserver", "borderTopLeftRadius", "#result-items > [data-timeline-id]", "function detectReasoningExecutable", "/api/reasoning/runtime/discover", "reasoningExecutablePath", "function fetchFromSidecar", "AkuSidecar is offline or unreachable", "AkuSidecar offline", "sidecar_unavailable", "pollInFlight", "function describeSessionProgress", "AI Fast Detection", "AI Deep Detection continues asynchronously", "ONBOARDING_LEARNING_INTERVAL_MS = 7000", "function shouldShowOnboardingLearning", "function toggleOnboardingLearningPlayback"},
 		"/styles.css": {".notice-complete", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".inbox-preference-decision", ".inbox-flow-inspector", ".inbox-flow-filters", ".inbox-flow-item-actions", ".inbox-selection-correction-button", ".inbox-flow-outcome-user_selected", ".inbox-flow-outcome-collapsed_duplicate", ".ai-origin-badge", ".ai-origin-neutral", ".timeline-side-pane", ".timeline-source-icon-x { background: #050505; color: #fff; }", ".onboarding-learning-panel", ".onboarding-learning-track", ".onboarding-learning-dots", ".onboarding-check-stages"},
 	} {
 		response, err = client.Get("http://" + address.String() + path)
@@ -295,6 +295,76 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	if reset["operation"] != "full_reset" || reset["onboarding"].(map[string]any)["status"] != "not_started" {
 		t.Fatalf("reset=%+v", reset)
+	}
+}
+
+func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {
+	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}}
+	logger := log.New(io.Discard, "", 0)
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, logger)
+	server, err := New(cfg, state, runtime, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, err := server.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Stop(context.Background())
+	client := http.Client{Timeout: 2 * time.Second}
+
+	response, err := client.Get("http://" + address.String() + "/api/model-usage?windowDays=30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Usage domain.ModelUsageReport `json:"usage"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || payload.Usage.Scope != "aggregate" || payload.Usage.WindowDays != 30 || payload.Usage.SessionCount != 0 || len(payload.Usage.Categories) != 4 {
+		t.Fatalf("usage=%+v status=%d", payload.Usage, response.StatusCode)
+	}
+
+	response, err = client.Get("http://" + address.String() + "/api/model-usage?windowDays=8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid window status=%d", response.StatusCode)
+	}
+	response, err = client.Get("http://" + address.String() + "/api/inbox/sessions/missing/model-usage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing session usage status=%d", response.StatusCode)
+	}
+
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"model-usage-view", "model-usage-window", "model-usage-back"},
+		"web/app.js":     {"function buildSessionModelUsage", "function buildModelUsageHelp", "function loadAggregateModelUsage", "Input already includes cached input", "/api/model-usage?windowDays="},
+		"web/styles.css": {".model-usage-help-button", ".model-usage-totals", ".model-usage-category"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing %q", asset, marker)
+			}
+		}
 	}
 }
 

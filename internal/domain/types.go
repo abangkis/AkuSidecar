@@ -452,6 +452,59 @@ type InboxRun struct {
 	FollowUpFallback    *Failure         `json:"followUpFallback,omitempty"`
 }
 
+// ModelUsage records provider-reported token counters. Cached input and
+// reasoning output are breakouts of the corresponding primary counters and
+// must not be added to them when presenting a total.
+type ModelUsage struct {
+	Input           *int64 `json:"inputTokens"`
+	CachedInput     *int64 `json:"cachedInputTokens"`
+	Output          *int64 `json:"outputTokens"`
+	ReasoningOutput *int64 `json:"reasoningOutputTokens"`
+}
+
+type ModelUsageEntry struct {
+	ID              string     `json:"id"`
+	CategoryID      string     `json:"categoryId"`
+	Source          Source     `json:"source,omitempty"`
+	Status          string     `json:"status"`
+	Provider        string     `json:"provider"`
+	Model           string     `json:"model"`
+	Effort          string     `json:"effort"`
+	InvocationCount int        `json:"invocationCount"`
+	DurationMS      int64      `json:"durationMs"`
+	Usage           ModelUsage `json:"usage"`
+	UsageCoverage   string     `json:"usageCoverage"`
+	CreatedAt       string     `json:"createdAt,omitempty"`
+}
+
+type ModelUsageCategory struct {
+	ID              string            `json:"id"`
+	Label           string            `json:"label"`
+	Execution       string            `json:"execution"`
+	Status          string            `json:"status"`
+	InvocationCount int               `json:"invocationCount"`
+	DurationMS      int64             `json:"durationMs"`
+	Usage           ModelUsage        `json:"usage"`
+	UsageCoverage   string            `json:"usageCoverage"`
+	Note            string            `json:"note,omitempty"`
+	Entries         []ModelUsageEntry `json:"entries"`
+}
+
+type ModelUsageReport struct {
+	Scope         string               `json:"scope"`
+	SessionID     string               `json:"sessionId,omitempty"`
+	WindowDays    int                  `json:"windowDays,omitempty"`
+	SessionCount  int                  `json:"sessionCount"`
+	From          string               `json:"from,omitempty"`
+	To            string               `json:"to"`
+	GeneratedAt   string               `json:"generatedAt"`
+	Status        string               `json:"status"`
+	Usage         ModelUsage           `json:"usage"`
+	UsageCoverage string               `json:"usageCoverage"`
+	DurationMS    int64                `json:"durationMs"`
+	Categories    []ModelUsageCategory `json:"categories"`
+}
+
 type InboxFlowCounts struct {
 	Captured  int `json:"captured"`
 	Evaluated int `json:"evaluated"`
@@ -933,13 +986,6 @@ type TimelineSemanticEvent struct {
 	ReportCount    int     `json:"reportCount"`
 	Corrected      bool    `json:"corrected"`
 	CorrectionID   string  `json:"correctionId,omitempty"`
-}
-
-type ModelUsage struct {
-	Input           *int64 `json:"inputTokens"`
-	CachedInput     *int64 `json:"cachedInputTokens"`
-	Output          *int64 `json:"outputTokens"`
-	ReasoningOutput *int64 `json:"reasoningOutputTokens"`
 }
 
 type EventResolutionSummary struct {

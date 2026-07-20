@@ -275,6 +275,29 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "total": total, "limit": limit, "offset": offset})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/sessions/") && strings.HasSuffix(p, "/model-usage"):
+		sessionID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/sessions/"), "/model-usage")
+		if sessionID == "" || strings.Contains(sessionID, "/") {
+			return notFound("session")
+		}
+		usage, err := s.engine.SessionModelUsage(ctx, sessionID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("session")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"usage": usage})
+	case r.Method == http.MethodGet && p == "/api/model-usage":
+		windowDays := boundedInt(r.URL.Query().Get("windowDays"), 30, 7, 90)
+		if windowDays != 7 && windowDays != 30 && windowDays != 90 {
+			return badRequest("windowDays must be 7, 30, or 90")
+		}
+		usage, err := s.engine.AggregateModelUsage(ctx, windowDays)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"usage": usage})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/trace"):
 		runID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/runs/"), "/trace")
 		if runID == "" || strings.Contains(runID, "/") {

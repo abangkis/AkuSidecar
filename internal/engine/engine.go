@@ -536,6 +536,12 @@ func (e *Engine) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheck
 func (e *Engine) Inbox(ctx context.Context, limit, offset int) ([]domain.InboxSession, int, error) {
 	return e.store.ListInboxSessions(ctx, limit, offset)
 }
+func (e *Engine) SessionModelUsage(ctx context.Context, sessionID string) (domain.ModelUsageReport, error) {
+	return e.store.SessionModelUsage(ctx, sessionID)
+}
+func (e *Engine) AggregateModelUsage(ctx context.Context, windowDays int) (domain.ModelUsageReport, error) {
+	return e.store.AggregateModelUsage(ctx, windowDays)
+}
 func (e *Engine) InboxRunTrace(ctx context.Context, runID, stage string, limit, offset int) (domain.InboxFlowTrace, error) {
 	return e.store.InboxRunTrace(ctx, runID, stage, limit, offset)
 }

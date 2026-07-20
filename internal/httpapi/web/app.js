@@ -37,6 +37,8 @@ const state = {
   pollInFlight: false,
   sessionProgress: { sessionId: null, value: 0 },
   currentView: "timeline",
+  inboxSubView: "checks",
+  modelUsageHelpSequence: 0,
   media: [],
   mediaIndex: 0,
   onboardingEditing: false,
@@ -124,6 +126,9 @@ $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
 $("#settings-view-button").addEventListener("click", () => setView("settings"));
 $("#timeline-refresh-button").addEventListener("click", refreshTimeline);
 $("#inbox-refresh-button").addEventListener("click", loadInbox);
+$("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
+$("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
+$("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", startSession);
 $("#done-button").addEventListener("click", startSession);
 $("#retry-button").addEventListener("click", () => {
@@ -256,7 +261,30 @@ function setView(view) {
   $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
   ({ timeline: $("#timeline-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
-  if (inbox) loadInbox();
+  if (inbox) {
+    syncInboxSubView();
+    if (state.inboxSubView === "usage") loadAggregateModelUsage();
+    else loadInbox();
+  }
+  scheduleBackToTop();
+}
+
+function syncInboxSubView() {
+  const usage = state.inboxSubView === "usage";
+  $("#inbox-ledger-view").classList.toggle("hidden", usage);
+  $("#model-usage-view").classList.toggle("hidden", !usage);
+}
+
+function setInboxSubView(view) {
+  state.inboxSubView = view === "usage" ? "usage" : "checks";
+  syncInboxSubView();
+  if (state.inboxSubView === "usage") {
+    loadAggregateModelUsage();
+    $("#model-usage-heading")?.focus();
+  } else {
+    loadInbox();
+    $("#inbox-heading")?.focus();
+  }
   scheduleBackToTop();
 }
 
@@ -1417,7 +1445,7 @@ function buildInboxSession(session, expanded) {
   const runs = document.createElement("div");
   runs.className = "inbox-runs";
   runs.append(...(session.runs ?? []).map((run) => buildInboxRun(run, session.status)));
-  body.append(duration);
+  body.append(duration, buildSessionModelUsage(session));
   if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
   if (session.aiDetection) body.append(buildAIDetectionDiagnostic(session.aiDetection));
   if (session.preferenceDecisions?.length) {
@@ -1428,19 +1456,236 @@ function buildInboxSession(session, expanded) {
   return details;
 }
 
-function buildInboxPreferenceDecisions(decisions) {
-  const section = document.createElement("section");
-  section.className = "inbox-preference-decisions";
+function buildSessionModelUsage(session) {
+  const details = document.createElement("details");
+  details.className = "model-usage-section";
+  const summary = document.createElement("summary");
+  const label = document.createElement("strong");
+  label.textContent = "Model usage";
+  const value = document.createElement("span");
+  value.textContent = "Open to inspect this check";
+  summary.append(label, value);
+  const body = document.createElement("div");
+  body.className = "model-usage-body";
+  details.append(summary, body);
+  let loaded = false;
+  let loading = false;
+  details.addEventListener("toggle", async () => {
+    if (!details.open || loaded || loading) return;
+    loading = true;
+    body.replaceChildren(modelUsageMessage("Loading model usage..."));
+    try {
+      const response = await api(`/api/inbox/sessions/${encodeURIComponent(session.id)}/model-usage`);
+      renderModelUsageReport(body, response.usage, true);
+      value.textContent = modelUsageSummary(response.usage);
+      loaded = true;
+    } catch (error) {
+      body.replaceChildren(modelUsageMessage(error.message, "error"));
+    } finally {
+      loading = false;
+    }
+  });
+  return details;
+}
+
+function modelUsageMessage(message, tone = "") {
+  const element = document.createElement("p");
+  element.className = `model-usage-message${tone ? ` model-usage-message-${tone}` : ""}`;
+  element.textContent = message;
+  return element;
+}
+
+function buildModelUsageHelp() {
+  const wrapper = document.createElement("span");
+  wrapper.className = "model-usage-help";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "model-usage-help-button";
+  button.textContent = "?";
+  button.title = "How model usage is counted";
+  button.setAttribute("aria-label", "How model usage is counted");
+  button.setAttribute("aria-expanded", "false");
+  const popover = document.createElement("span");
+  popover.className = "model-usage-help-popover";
+  popover.id = `model-usage-help-${++state.modelUsageHelpSequence}`;
+  popover.setAttribute("role", "tooltip");
+  popover.textContent = "Input already includes cached input, so cached input is shown as a breakout and is not added again. Reasoning output is also a breakout. Failed invocations may still use tokens. Unavailable means the provider did not report usage, not zero. AI Deep Detection may update after the Timeline is published.";
+  button.setAttribute("aria-controls", popover.id);
+  button.setAttribute("aria-describedby", popover.id);
+  button.addEventListener("click", () => {
+    const open = !wrapper.classList.contains("is-open");
+    wrapper.classList.toggle("is-open", open);
+    button.setAttribute("aria-expanded", String(open));
+  });
+  wrapper.append(button, popover);
+  return wrapper;
+}
+
+function renderModelUsageReport(container, report, showTotalLink) {
   const header = document.createElement("header");
+  header.className = "model-usage-heading";
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = report.scope === "aggregate" ? "Locally recorded usage" : "Usage for this check";
+  const detail = document.createElement("span");
+  detail.textContent = modelUsageSummary(report);
+  copy.append(title, detail);
+  header.append(copy, buildModelUsageHelp());
+
+  const totals = document.createElement("div");
+  totals.className = "model-usage-totals";
+  for (const [label, value, note] of [
+    ["Input", report.usage?.inputTokens, "Cached input is included"],
+    ["Cached input", report.usage?.cachedInputTokens, "Breakout only"],
+    ["Output", report.usage?.outputTokens, "Primary output counter"],
+    ["Reasoning output", report.usage?.reasoningOutputTokens, "Breakout only"],
+    ["Model time", report.durationMs, `${modelUsageInvocationCount(report)} invocation${modelUsageInvocationCount(report) === 1 ? "" : "s"}`],
+  ]) {
+    const metric = document.createElement("div");
+    const number = document.createElement("strong");
+    number.textContent = label === "Model time" ? formatDuration(value ?? 0) : formatTokenCount(value);
+    const name = document.createElement("span");
+    name.textContent = label;
+    const context = document.createElement("small");
+    context.textContent = note;
+    metric.append(number, name, context);
+    totals.append(metric);
+  }
+
+  const categories = document.createElement("div");
+  categories.className = "model-usage-categories";
+  categories.append(...(report.categories ?? []).map(buildModelUsageCategory));
+  container.replaceChildren(header, totals, categories);
+
+  if (report.usageCoverage === "partial" || report.usageCoverage === "unavailable") {
+    const coverage = modelUsageMessage(report.usageCoverage === "partial"
+      ? "Some invocations did not report every token counter. Displayed totals include only reported values."
+      : "The provider did not report token counters for the recorded invocations.");
+    coverage.classList.add("model-usage-coverage-note");
+    container.append(coverage);
+  }
+  if (report.scope === "aggregate") {
+    const retention = modelUsageMessage("This is local AkuBrowser history, not account-wide Codex usage. Database reset and retention or storage trimming can reduce the available history.");
+    retention.classList.add("model-usage-retention-note");
+    container.append(retention);
+  }
+  if (showTotalLink) {
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "text-button model-usage-total-link";
+    link.textContent = "View total model usage →";
+    link.addEventListener("click", () => setInboxSubView("usage"));
+    container.append(link);
+  }
+}
+
+function buildModelUsageCategory(category) {
+  const details = document.createElement("details");
+  details.className = "model-usage-category";
+  const summary = document.createElement("summary");
+  const identity = document.createElement("span");
+  const label = document.createElement("strong");
+  label.textContent = category.label;
+  const execution = document.createElement("small");
+  execution.textContent = category.execution === "async" ? "Async" : "In run";
+  identity.append(label, execution);
+  const rollup = document.createElement("span");
+  rollup.textContent = category.invocationCount
+    ? `${formatTokenCount(category.usage?.inputTokens)} input · ${formatTokenCount(category.usage?.outputTokens)} output · ${formatDuration(category.durationMs)}`
+    : humanize(category.status);
+  summary.append(identity, rollup);
+  const body = document.createElement("div");
+  body.className = "model-usage-category-body";
+  if (category.note) body.append(modelUsageMessage(category.note));
+  if (category.entries?.length) {
+    const entries = document.createElement("div");
+    entries.className = "model-usage-entries";
+    entries.append(...category.entries.map(buildModelUsageEntry));
+    body.append(entries);
+  }
+  details.append(summary, body);
+  return details;
+}
+
+function buildModelUsageEntry(entry) {
+  const row = document.createElement("article");
+  row.className = "model-usage-entry";
+  const identity = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = entry.source ? sourceLabel(entry.source) : "All sources";
+  const runtime = document.createElement("span");
+  runtime.textContent = [formatReasoningProvider(entry.provider), formatReasoningModel(entry.model), formatReasoningEffort(entry.effort), `${entry.invocationCount} invocation${entry.invocationCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
+  identity.append(title, runtime);
+  const metrics = document.createElement("div");
+  metrics.className = "model-usage-entry-metrics";
+  for (const text of [
+    `${formatTokenCount(entry.usage?.inputTokens)} in`,
+    `${formatTokenCount(entry.usage?.cachedInputTokens)} cached`,
+    `${formatTokenCount(entry.usage?.outputTokens)} out`,
+    `${formatTokenCount(entry.usage?.reasoningOutputTokens)} reasoning`,
+    formatDuration(entry.durationMs),
+  ]) {
+    const metric = document.createElement("span");
+    metric.textContent = text;
+    metrics.append(metric);
+  }
+  const status = document.createElement("span");
+  status.className = `model-usage-entry-status status-${inboxStatusTone(entry.status)}`;
+  status.textContent = entry.usageCoverage === "unavailable" ? `${humanize(entry.status)} · usage unavailable` : humanize(entry.status);
+  row.append(identity, metrics, status);
+  return row;
+}
+
+function modelUsageInvocationCount(report) {
+  return (report.categories ?? []).reduce((total, category) => total + Number(category.invocationCount || 0), 0);
+}
+
+function modelUsageSummary(report) {
+  const invocations = modelUsageInvocationCount(report);
+  if (!invocations) return "No model invocation required";
+  const summary = `${formatTokenCount(report.usage?.inputTokens)} input · ${formatTokenCount(report.usage?.outputTokens)} output · ${formatDuration(report.durationMs)} model time`;
+  return report.usageCoverage === "complete" ? summary : `${summary} · ${humanize(report.usageCoverage)} telemetry`;
+}
+
+function formatTokenCount(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "Unavailable";
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(Number(value));
+}
+
+async function loadAggregateModelUsage() {
+  const meta = $("#model-usage-meta");
+  const container = $("#model-usage-total");
+  const refresh = $("#model-usage-refresh");
+  const windowDays = Number($("#model-usage-window").value || 30);
+  meta.textContent = `Loading ${windowDays} days of locally recorded usage...`;
+  refresh.disabled = true;
+  container.replaceChildren(modelUsageMessage("Loading model usage..."));
+  try {
+    const response = await api(`/api/model-usage?windowDays=${windowDays}`);
+    const report = response.usage;
+    meta.textContent = `${report.sessionCount} check${report.sessionCount === 1 ? "" : "s"} recorded in the last ${windowDays} days · generated ${formatDate(report.generatedAt)}`;
+    renderModelUsageReport(container, report, false);
+  } catch (error) {
+    meta.textContent = error.message;
+    container.replaceChildren(modelUsageMessage(error.message, "error"));
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
+function buildInboxPreferenceDecisions(decisions) {
+  const section = document.createElement("details");
+  section.className = "inbox-preference-decisions";
+  const summary = document.createElement("summary");
   const title = document.createElement("strong");
   title.textContent = "Personalization decisions";
   const guidance = document.createElement("span");
   guidance.textContent = "Change an earlier choice. The latest More or Less decision is authoritative.";
-  header.append(title, guidance);
+  summary.append(title, guidance);
   const list = document.createElement("div");
   list.className = "inbox-preference-list";
   list.append(...decisions.map(buildInboxPreferenceDecision));
-  section.append(header, list);
+  section.append(summary, list);
   return section;
 }
 
@@ -1523,8 +1768,6 @@ function buildAIDetectionDiagnostic(value) {
         humanize(value.status),
         `${value.candidateCount ?? 0} reviewed posts`,
         value.durationMs ? formatDuration(value.durationMs) : null,
-        value.inputTokens != null ? `${value.inputTokens} input / ${value.outputTokens ?? 0} output tokens` : null,
-        value.cachedInputTokens ? `${value.cachedInputTokens} cached input` : null,
       ].filter(Boolean).join(" \u00b7 ");
   diagnostic.append(title, detail);
   return diagnostic;
@@ -1545,7 +1788,6 @@ function buildEventResolutionDiagnostic(value) {
         value.userSplitCorrections ? `${value.userSplitCorrections} user split${value.userSplitCorrections === 1 ? "" : "s"}` : null,
         value.userMergeCorrections ? `${value.userMergeCorrections} user merge${value.userMergeCorrections === 1 ? "" : "s"}` : null,
         value.provider === "local-index" ? "local index only" : `${value.provider}${value.durationMs ? ` \u00b7 ${formatDuration(value.durationMs)}` : ""}`,
-        value.usage?.inputTokens != null ? `${value.usage.inputTokens} input / ${value.usage.outputTokens ?? 0} output tokens` : null,
       ].filter(Boolean).join(" \u00b7 ");
   const trigger = document.createElement("span");
   trigger.className = "event-resolution-trigger";

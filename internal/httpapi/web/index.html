@@ -351,15 +351,37 @@
       </section>
 
       <section id="inbox-panel" class="inbox-panel hidden" aria-labelledby="inbox-heading">
-        <div class="section-heading">
-          <div>
-            <p class="step-label">BOUNDED RUN LEDGER</p>
-            <h2 id="inbox-heading" tabindex="-1">Update Inbox</h2>
-            <p id="inbox-meta" class="review-guidance">Loading recent checks...</p>
+        <div id="inbox-ledger-view">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">BOUNDED RUN LEDGER</p>
+              <h2 id="inbox-heading" tabindex="-1">Update Inbox</h2>
+              <p id="inbox-meta" class="review-guidance">Loading recent checks...</p>
+            </div>
+            <button id="inbox-refresh-button" class="text-button" type="button">Refresh</button>
           </div>
-          <button id="inbox-refresh-button" class="text-button" type="button">Refresh</button>
+          <div id="inbox-sessions" class="inbox-sessions"></div>
         </div>
-        <div id="inbox-sessions" class="inbox-sessions"></div>
+        <div id="model-usage-view" class="hidden">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">LOCAL REASONING LEDGER</p>
+              <h2 id="model-usage-heading" tabindex="-1">Model usage</h2>
+              <p id="model-usage-meta" class="review-guidance">Loading locally recorded usage...</p>
+            </div>
+            <div class="model-usage-view-actions">
+              <label for="model-usage-window">Window</label>
+              <select id="model-usage-window">
+                <option value="7">7 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="90">90 days</option>
+              </select>
+              <button id="model-usage-refresh" class="text-button" type="button">Refresh</button>
+              <button id="model-usage-back" class="secondary-button" type="button">Back to checks</button>
+            </div>
+          </div>
+          <div id="model-usage-total"></div>
+        </div>
       </section>
 
       <section id="timeline-panel" class="timeline-panel" aria-labelledby="timeline-heading">
