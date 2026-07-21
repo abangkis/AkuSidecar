@@ -11,6 +11,22 @@ The Node implementation ended at tag `pre-refactor-2026-07-15`. This line has
 no Node runtime, npm/Vite toolchain, historical database migration, or
 backward-compatibility layer.
 
+## OpenAI Build Week role
+
+During OpenAI Build Week, AkuSidecar was rewritten from Node.js to Go and moved
+from the Codex SDK to one managed Codex App Server process. GPT-5.6 now serves
+four schema-bound roles: Acquisition Planning, Candidate Evaluation,
+cross-source Semantic Event Resolution, and asynchronous AI Deep Detection.
+Codex also accelerated the rewrite, preference and semantic engines, recovery
+work, tests, documentation, and release preparation.
+
+AkuSidecar remains the application authority. It owns browser budgets,
+untrusted-evidence separation, response validation, preference eligibility,
+SQLite state, continuity, correction rules, and final Timeline composition.
+See the
+[final project story](https://github.com/abangkis/AkuBrowser/blob/main/docs/openai-build-week-submission.md)
+and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD_WEEK.md).
+
 ## Requirements
 
 - Go 1.21 or newer
