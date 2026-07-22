@@ -30,10 +30,12 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 ## Requirements
 
 - Go 1.21 or newer
-- Windows x64 for the current local Codex bundle
+- Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
 - AkuBridge `0.7.0-preview.3` / `source-adapters-v72`
-- AkuSupervisor for normal development and daily lifecycle ownership
+- AkuSupervisor is recommended for normal Windows development and daily
+  lifecycle ownership; it is not part of the portable runtime or a macOS
+  prerequisite
 
 ## Local Codex runtime
 
