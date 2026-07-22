@@ -9,11 +9,22 @@ import (
 
 func platformCandidates() []Candidate {
 	home, _ := os.UserHomeDir()
-	result := []Candidate{
-		{Path: "/Applications/Codex.app/Contents/Resources/codex", Source: "codex-app-bundle", SelectionGroup: "codex-app"},
+	result := make([]Candidate, 0, 16)
+	for _, appName := range []string{"Codex.app", "ChatGPT.app"} {
+		result = append(result, Candidate{
+			Path:           filepath.Join("/Applications", appName, "Contents", "Resources", "codex"),
+			Source:         "codex-app-bundle",
+			SelectionGroup: "codex-app",
+		})
 	}
 	if home != "" {
-		result = append(result, Candidate{Path: filepath.Join(home, "Applications", "Codex.app", "Contents", "Resources", "codex"), Source: "codex-app-bundle", SelectionGroup: "codex-app"})
+		for _, appName := range []string{"Codex.app", "ChatGPT.app"} {
+			result = append(result, Candidate{
+				Path:           filepath.Join(home, "Applications", appName, "Contents", "Resources", "codex"),
+				Source:         "codex-app-bundle",
+				SelectionGroup: "codex-app",
+			})
+		}
 		managed, _ := filepath.Glob(filepath.Join(home, "Library", "Application Support", "OpenAI", "Codex", "bin", "*", "codex"))
 		for _, path := range newestFirst(managed) {
 			result = append(result, Candidate{Path: path, Source: "codex-app-managed", SelectionGroup: "codex-app"})
