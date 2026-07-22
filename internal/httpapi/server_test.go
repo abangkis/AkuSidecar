@@ -422,6 +422,7 @@ func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 		{name: "foreign browser origin", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "https://attacker.example", contentType: "application/json", want: http.StatusForbidden},
 		{name: "extension cannot call UI mutation", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "chrome-extension://abcdefghijklmnop", contentType: "application/json", want: http.StatusForbidden},
 		{name: "same origin UI reaches route", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "application/json", want: http.StatusOK},
+		{name: "localhost alias reaches route", method: http.MethodPut, path: "/api/onboarding", host: "localhost:11122", origin: "http://localhost:11122", contentType: "application/json", want: http.StatusOK},
 		{name: "extension reaches bridge authentication", method: http.MethodPost, path: "/api/bridge/heartbeat", host: "localhost:11122", origin: "chrome-extension://abcdefghijklmnop", contentType: "application/json", want: http.StatusUnauthorized},
 		{name: "JSON mutation rejects text content", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "text/plain", want: http.StatusUnsupportedMediaType},
 	}
