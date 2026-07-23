@@ -401,7 +401,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"run": run})
 	case r.Method == http.MethodGet && p == "/api/timeline":
-		s.engine.RecordUIAccess(ctx)
 		limit := boundedInt(r.URL.Query().Get("limit"), 24, 1, 50)
 		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
 		items, err := s.engine.Timeline(ctx, limit, offset)
@@ -436,8 +435,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return conflict(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"session": session})
-	case r.Method == http.MethodGet && p == "/api/auto-update/status":
+	case r.Method == http.MethodPost && p == "/api/ui/activity":
 		s.engine.RecordUIAccess(ctx)
+		return writeJSON(w, http.StatusOK, map[string]any{"recorded": true})
+	case r.Method == http.MethodGet && p == "/api/auto-update/status":
 		status, err := s.engine.AutoUpdateStatus(ctx)
 		if err != nil {
 			return err

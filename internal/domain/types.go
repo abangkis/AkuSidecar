@@ -33,7 +33,7 @@ const (
 	DefaultReasoningAIDeep          = "luna_high"
 	DefaultSourceWaitMode           = "progressive_wait"
 	DefaultAutoUpdateMode           = "adaptive"
-	DefaultAutoUpdateIntervalHours  = 4
+	DefaultAutoUpdateRefillMin      = 5
 	DefaultPreparedBatchLimit       = 2
 	DefaultAutoUpdateDailyTokens    = 1000000
 	DefaultAutoUpdateManualReserve  = 25
@@ -93,7 +93,7 @@ type Settings struct {
 	ReasoningAIDeepProfile      string         `json:"reasoningAiDeepProfile"`
 	AutoUpdateEnabled           bool           `json:"autoUpdateEnabled"`
 	AutoUpdateMode              string         `json:"autoUpdateMode"`
-	AutoUpdateIntervalHours     int            `json:"autoUpdateIntervalHours"`
+	AutoUpdateRefillMinutes     int            `json:"autoUpdateRefillMinutes"`
 	PreparedBatchLimit          int            `json:"preparedBatchLimit"`
 	AutoUpdateDailyTokenBudget  int            `json:"autoUpdateDailyTokenBudget"`
 	AutoUpdateManualReservePct  int            `json:"autoUpdateManualReservePct"`
@@ -133,7 +133,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		ReasoningAIDeepProfile:      DefaultReasoningAIDeep,
 		AutoUpdateEnabled:           true,
 		AutoUpdateMode:              DefaultAutoUpdateMode,
-		AutoUpdateIntervalHours:     DefaultAutoUpdateIntervalHours,
+		AutoUpdateRefillMinutes:     DefaultAutoUpdateRefillMin,
 		PreparedBatchLimit:          DefaultPreparedBatchLimit,
 		AutoUpdateDailyTokenBudget:  DefaultAutoUpdateDailyTokens,
 		AutoUpdateManualReservePct:  DefaultAutoUpdateManualReserve,
@@ -233,11 +233,11 @@ func (s *Settings) Normalize() {
 		// A missing mode identifies settings written before Auto Update existed.
 		s.AutoUpdateEnabled = true
 	}
-	if s.AutoUpdateIntervalHours == 0 {
-		s.AutoUpdateIntervalHours = DefaultAutoUpdateIntervalHours
-	}
 	if s.PreparedBatchLimit == 0 {
 		s.PreparedBatchLimit = DefaultPreparedBatchLimit
+	}
+	if s.AutoUpdateRefillMinutes == 0 {
+		s.AutoUpdateRefillMinutes = DefaultAutoUpdateRefillMin
 	}
 	if s.AutoUpdateDailyTokenBudget < 1000000 {
 		s.AutoUpdateDailyTokenBudget = DefaultAutoUpdateDailyTokens
@@ -312,8 +312,8 @@ func (s Settings) Validate() error {
 	if s.AutoUpdateMode != "adaptive" && s.AutoUpdateMode != "fixed" {
 		return fmt.Errorf("unsupported auto update mode %q", s.AutoUpdateMode)
 	}
-	if s.AutoUpdateIntervalHours != 1 && s.AutoUpdateIntervalHours != 2 && s.AutoUpdateIntervalHours != 4 && s.AutoUpdateIntervalHours != 6 && s.AutoUpdateIntervalHours != 12 {
-		return errors.New("autoUpdateIntervalHours must be 1, 2, 4, 6, or 12")
+	if s.AutoUpdateRefillMinutes != 3 && s.AutoUpdateRefillMinutes != 5 && s.AutoUpdateRefillMinutes != 10 {
+		return errors.New("autoUpdateRefillMinutes must be 3, 5, or 10")
 	}
 	if s.PreparedBatchLimit < 1 || s.PreparedBatchLimit > 3 {
 		return errors.New("preparedBatchLimit must be between 1 and 3")
@@ -468,6 +468,9 @@ type AutoUpdateStatus struct {
 	ManualReserveTokens      int64           `json:"manualReserveTokens"`
 	EstimatedNextRunTokens   int64           `json:"estimatedNextRunTokens"`
 	AutomaticTokenLimit      int64           `json:"automaticTokenLimit"`
+	PreparedBatchLimit       int             `json:"preparedBatchLimit"`
+	AvailablePreparedSlots   int             `json:"availablePreparedSlots"`
+	RefillIntervalMinutes    int             `json:"refillIntervalMinutes"`
 	PreparedBatches          []PreparedBatch `json:"preparedBatches"`
 }
 

@@ -68,6 +68,8 @@ const state = {
   preparedBatchSnapshot: [],
   revealingPreparedBatch: false,
   autoLoadLastScrollY: window.scrollY,
+  uiActivityTrackingInstalled: false,
+  lastUIActivitySentAt: 0,
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -215,8 +217,29 @@ for (const element of [$(".timeline-heading-row"), $("#processing-panel"), $("#r
 }
 document.addEventListener("visibilitychange", () => {
   syncOnboardingLearningTimer();
-  if (document.visibilityState === "visible") schedulePassiveMediaEnrichment();
+  if (document.visibilityState === "visible") {
+    schedulePassiveMediaEnrichment();
+    recordUIActivity(true);
+  }
 });
+
+function installUIActivityTracking() {
+  if (state.uiActivityTrackingInstalled) return;
+  state.uiActivityTrackingInstalled = true;
+  for (const eventName of ["pointerdown", "keydown", "touchstart", "wheel"]) {
+    window.addEventListener(eventName, () => recordUIActivity(false), { passive: true });
+  }
+}
+
+function recordUIActivity(force) {
+  if (!state.bootstrap || document.visibilityState !== "visible") return;
+  const now = Date.now();
+  if (!force && now - state.lastUIActivitySentAt < 60_000) return;
+  state.lastUIActivitySentAt = now;
+  api("/api/ui/activity", { method: "POST" }).catch((error) => {
+    console.warn("Recent user activity could not be recorded.", error);
+  });
+}
 
 async function bootstrap() {
   try {
@@ -226,6 +249,8 @@ async function bootstrap() {
       throw new Error("AkuBrowser could not restore the authoritative onboarding state. Waiting for AkuSidecar to recover.");
     }
     state.bootstrap = restored;
+    state.lastUIActivitySentAt = Date.now();
+    installUIActivityTracking();
     state.preparedBatchSnapshot = [...(restored.autoUpdate?.preparedBatches ?? []).map((batch) => batch.sessionId)];
     state.session = state.bootstrap.activeSession;
     state.bootstrapLoading = false;
@@ -426,7 +451,7 @@ function renderSettings(settings) {
   $("#resurface-cooldown-days").value = String(settings.resurfaceCooldownDays || 7);
   $("#auto-update-enabled").checked = settings.autoUpdateEnabled !== false;
   $("#auto-update-mode").value = settings.autoUpdateMode || "adaptive";
-  $("#auto-update-interval").value = String(settings.autoUpdateIntervalHours || 4);
+  $("#auto-update-refill").value = String(settings.autoUpdateRefillMinutes || 5);
   $("#prepared-batch-limit").value = String(settings.preparedBatchLimit || 2);
   $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 1000000);
   $("#auto-update-manual-reserve").value = String(settings.autoUpdateManualReservePct || 25);
@@ -472,7 +497,10 @@ function renderAutoUpdateStatus(status) {
   const estimate = status.estimatedNextRunTokens || 0;
   const nextCheck = status.state === "idle" && status.nextCheckAt ? ` · next automatic check ${formatDate(status.nextCheckAt)}` : "";
   detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
-  queue.textContent = `${status.preparedBatches?.length || 0} prepared`;
+  const prepared = status.preparedBatches?.length || 0;
+  const limit = status.preparedBatchLimit || prepared;
+  const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
+  queue.textContent = `${prepared} of ${limit} prepared · ${available} slot${available === 1 ? "" : "s"} open`;
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
@@ -662,7 +690,7 @@ async function saveSettings(event) {
     resurfaceCooldownDays: Number.parseInt($("#resurface-cooldown-days").value, 10),
     autoUpdateEnabled: $("#auto-update-enabled").checked,
     autoUpdateMode: $("#auto-update-mode").value,
-    autoUpdateIntervalHours: Number.parseInt($("#auto-update-interval").value, 10),
+    autoUpdateRefillMinutes: Number.parseInt($("#auto-update-refill").value, 10),
     preparedBatchLimit: Number.parseInt($("#prepared-batch-limit").value, 10),
     autoUpdateDailyTokenBudget: Number.parseInt($("#auto-update-token-budget").value, 10),
     autoUpdateManualReservePct: Number.parseInt($("#auto-update-manual-reserve").value, 10),

@@ -130,6 +130,10 @@
             <legend>Auto Update</legend>
             <p class="settings-group-note">Prepare bounded local batches while AkuSidecar is running. Automatic work stops at the queue and token boundaries below.</p>
             <div class="settings-card">
+              <label class="settings-row" for="auto-update-enabled">
+                <span class="settings-copy"><strong>Automatic checks</strong><small>Prepare updates in the background and catch up after AkuBrowser is opened.</small></span>
+                <input id="auto-update-enabled" name="autoUpdateEnabled" type="checkbox" />
+              </label>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Scheduler status</strong><small id="auto-update-status">Loading local queue and token telemetry…</small></span>
                 <span class="settings-inline-control auto-update-scheduler-control">
@@ -144,17 +148,13 @@
                   <button id="reset-auto-update-budget" type="button">Reset today’s quota</button>
                 </span>
               </div>
-              <label class="settings-row" for="auto-update-enabled">
-                <span class="settings-copy"><strong>Automatic checks</strong><small>Prepare updates in the background and catch up after AkuBrowser is opened.</small></span>
-                <input id="auto-update-enabled" name="autoUpdateEnabled" type="checkbox" />
-              </label>
               <label class="settings-row" for="auto-update-mode">
-                <span class="settings-copy"><strong>Schedule</strong><small>Adaptive runs near recent use; Fixed runs at the configured interval while Sidecar is alive.</small></span>
-                <select id="auto-update-mode" name="autoUpdateMode"><option value="adaptive">Adaptive — recommended</option><option value="fixed">Fixed periodic</option></select>
+                <span class="settings-copy"><strong>Schedule</strong><small>Adaptive refills only around real user activity. Fixed may refill while you are away.</small></span>
+                <select id="auto-update-mode" name="autoUpdateMode"><option value="adaptive">Adaptive activity — recommended</option><option value="fixed">Fixed background</option></select>
               </label>
-              <label class="settings-row" for="auto-update-interval">
-                <span class="settings-copy"><strong>Minimum interval</strong><small>Automatic checks never run more often than this boundary.</small></span>
-                <select id="auto-update-interval" name="autoUpdateIntervalHours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4">4 hours — recommended</option><option value="6">6 hours</option><option value="12">12 hours</option></select>
+              <label class="settings-row" for="auto-update-refill">
+                <span class="settings-copy"><strong>Prepared-slot refill</strong><small>When queue capacity opens, the scheduler may prepare another finite batch after this delay.</small></span>
+                <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="3">3 minutes</option><option value="5">5 minutes — recommended</option><option value="10">10 minutes</option></select>
               </label>
               <label class="settings-row" for="prepared-batch-limit">
                 <span class="settings-copy"><strong>Prepared batch queue</strong><small>Pause automatic checks when this many unread finite batches are ready.</small></span>

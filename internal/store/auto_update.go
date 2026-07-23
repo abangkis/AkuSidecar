@@ -11,9 +11,10 @@ import (
 )
 
 type AutoUpdateScheduleState struct {
-	LastUIAccessAt string
-	LastAttemptAt  string
-	LastSuccessAt  string
+	LastUIAccessAt     string
+	LastAttemptAt      string
+	LastSuccessAt      string
+	LastQueueVacancyAt string
 }
 
 type AutoUpdateBudgetUsage struct {
@@ -41,18 +42,30 @@ func (s *Store) RecordAutoUpdateSuccess(ctx context.Context) error {
 
 func (s *Store) AutoUpdateScheduleState(ctx context.Context) (AutoUpdateScheduleState, error) {
 	var value AutoUpdateScheduleState
-	var access, attempt, success sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT last_ui_access_at,last_attempt_at,last_success_at FROM auto_update_state WHERE id=1`).Scan(&access, &attempt, &success); err != nil {
+	var access, attempt, success, vacancy sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT last_ui_access_at,last_attempt_at,last_success_at,
+		  (SELECT value FROM meta WHERE key='auto_update_queue_vacancy_at')
+		FROM auto_update_state WHERE id=1`).Scan(&access, &attempt, &success, &vacancy); err != nil {
 		return value, err
 	}
 	value.LastUIAccessAt, value.LastAttemptAt, value.LastSuccessAt = access.String, attempt.String, success.String
+	value.LastQueueVacancyAt = vacancy.String
 	return value, nil
 }
 
 func (s *Store) PreparedBatches(ctx context.Context, _ int) ([]domain.PreparedBatch, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='expired' WHERE state='prepared' AND expires_at IS NOT NULL AND expires_at<=?`, now); err != nil {
+	expired, err := s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='expired' WHERE state='prepared' AND expires_at IS NOT NULL AND expires_at<=?`, now)
+	if err != nil {
 		return nil, err
+	}
+	if changed, changedErr := expired.RowsAffected(); changedErr != nil {
+		return nil, changedErr
+	} else if changed > 0 {
+		if err := s.recordAutoUpdateQueueVacancy(ctx, now); err != nil {
+			return nil, err
+		}
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.session_id,b.state,b.prepared_at,b.expires_at,COUNT(t.id),COALESCE(MAX(CAST(json_extract(t.assessment_json,'$.urgency') AS REAL)),0) AS urgency
@@ -88,11 +101,21 @@ func (s *Store) RevealPreparedBatch(ctx context.Context, sessionID string) (doma
 	if changed != 1 {
 		return domain.PreparedBatch{}, errors.New("prepared batch is no longer available")
 	}
+	if err := s.recordAutoUpdateQueueVacancy(ctx, now); err != nil {
+		return domain.PreparedBatch{}, err
+	}
 	var batch domain.PreparedBatch
 	if err := s.db.QueryRowContext(ctx, `SELECT b.session_id,b.state,COALESCE(b.prepared_at,''),COALESCE(b.expires_at,''),COUNT(t.id),COALESCE(MAX(CAST(json_extract(t.assessment_json,'$.urgency') AS REAL)),0) FROM auto_update_batches b LEFT JOIN timeline_items t ON t.session_id=b.session_id WHERE b.session_id=? GROUP BY b.session_id,b.state,b.prepared_at,b.expires_at`, sessionID).Scan(&batch.SessionID, &batch.Status, &batch.PreparedAt, &batch.ExpiresAt, &batch.ItemCount, &batch.Urgency); err != nil {
 		return domain.PreparedBatch{}, err
 	}
 	return batch, nil
+}
+
+func (s *Store) recordAutoUpdateQueueVacancy(ctx context.Context, at string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO meta(key,value) VALUES('auto_update_queue_vacancy_at',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, at)
+	return err
 }
 
 func (s *Store) DailyTokenUsage(ctx context.Context) (total, automatic int64, err error) {

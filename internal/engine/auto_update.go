@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 const defaultAutoUpdateEstimatedTokens int64 = 100000
 const autoDeepDetectionEstimatedTokens int64 = 20000
+const autoUpdateRecentActivityWindow = 15 * time.Minute
 
 func (e *Engine) autoDeepDetectionAllowed(ctx context.Context, settings domain.Settings) bool {
 	usage, err := e.store.AutoUpdateBudgetUsage(ctx)
@@ -80,7 +82,10 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		QuotaTokensUsed: usage.QuotaTotal, DailyTokensRemaining: maxNonNegative(dailyBudget - usage.QuotaTotal),
 		AutomaticTokensUsed: usage.QuotaAutomatic, AutomaticTokensRemaining: maxNonNegative(automaticLimit - usage.QuotaAutomatic),
 		ManualReserveTokens: manualReserve, AutomaticTokenLimit: automaticLimit,
-		PreparedBatches: batches,
+		PreparedBatchLimit:     settings.PreparedBatchLimit,
+		AvailablePreparedSlots: max(0, settings.PreparedBatchLimit-len(batches)),
+		RefillIntervalMinutes:  settings.AutoUpdateRefillMinutes,
+		PreparedBatches:        batches,
 	}
 	estimatedTokens := e.estimatedAutoUpdateTokens(ctx)
 	status.EstimatedNextRunTokens = estimatedTokens
@@ -106,9 +111,20 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		status.State, status.Reason = "budget_paused", "Automatic token allowance reached"
 		return status, nil
 	}
-	last, _ := e.store.LastTerminalSessionAt(ctx)
-	if parsed, parseErr := time.Parse(time.RFC3339Nano, last); parseErr == nil {
-		status.NextCheckAt = parsed.Add(time.Duration(settings.AutoUpdateIntervalHours) * time.Hour).Format(time.RFC3339Nano)
+	schedule, err := e.store.AutoUpdateScheduleState(ctx)
+	if err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
+	if settings.AutoUpdateMode == "adaptive" && !hasRecentAutoUpdateActivity(schedule, time.Now()) {
+		status.State, status.Reason = "paused", "Waiting for recent user activity"
+		return status, nil
+	}
+	if boundary, ok := latestAutoUpdateBoundary(schedule); ok {
+		next := boundary.Add(autoUpdateRefillDuration(settings))
+		if time.Now().Before(next) {
+			status.Reason = "Waiting to refill an open prepared-batch slot"
+			status.NextCheckAt = next.Format(time.RFC3339Nano)
+		}
 	}
 	return status, nil
 }
@@ -236,20 +252,10 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 		return domain.Session{}, err
 	}
 	if !force {
-		if attempted, parseErr := time.Parse(time.RFC3339Nano, schedule.LastAttemptAt); parseErr == nil && time.Since(attempted) < 15*time.Minute {
+		if boundary, ok := latestAutoUpdateBoundary(schedule); ok && time.Since(boundary) < autoUpdateRefillDuration(settings) {
 			return domain.Session{}, nil
 		}
-		if settings.AutoUpdateMode == "adaptive" {
-			access, parseErr := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
-			if parseErr != nil || time.Since(access) > 15*time.Minute {
-				return domain.Session{}, nil
-			}
-		}
-		last, err := e.store.LastTerminalSessionAt(ctx)
-		if err != nil {
-			return domain.Session{}, err
-		}
-		if completed, parseErr := time.Parse(time.RFC3339Nano, last); parseErr == nil && time.Since(completed) < time.Duration(settings.AutoUpdateIntervalHours)*time.Hour {
+		if settings.AutoUpdateMode == "adaptive" && !hasRecentAutoUpdateActivity(schedule, time.Now()) {
 			return domain.Session{}, nil
 		}
 	}
@@ -262,4 +268,24 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 		return domain.Session{}, fmt.Errorf("start: %w", err)
 	}
 	return session, nil
+}
+
+func autoUpdateRefillDuration(settings domain.Settings) time.Duration {
+	return time.Duration(settings.AutoUpdateRefillMinutes) * time.Minute
+}
+
+func latestAutoUpdateBoundary(schedule store.AutoUpdateScheduleState) (time.Time, bool) {
+	var latest time.Time
+	for _, raw := range []string{schedule.LastAttemptAt, schedule.LastQueueVacancyAt} {
+		value, err := time.Parse(time.RFC3339Nano, raw)
+		if err == nil && value.After(latest) {
+			latest = value
+		}
+	}
+	return latest, !latest.IsZero()
+}
+
+func hasRecentAutoUpdateActivity(schedule store.AutoUpdateScheduleState, now time.Time) bool {
+	access, err := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
+	return err == nil && now.Sub(access) <= autoUpdateRecentActivityWindow
 }

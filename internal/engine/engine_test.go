@@ -1096,3 +1096,32 @@ func TestCapturePayloadCarriesPerSourceHydrationTimeout(t *testing.T) {
 		t.Fatalf("source hydration timeout=%v", payload["sourceHydrationTimeoutMs"])
 	}
 }
+
+func TestAutoUpdateBoundaryUsesLatestAttemptOrQueueVacancy(t *testing.T) {
+	attempt := time.Now().Add(-10 * time.Minute).UTC()
+	vacancy := time.Now().Add(-2 * time.Minute).UTC()
+	boundary, ok := latestAutoUpdateBoundary(store.AutoUpdateScheduleState{
+		LastAttemptAt:      attempt.Format(time.RFC3339Nano),
+		LastQueueVacancyAt: vacancy.Format(time.RFC3339Nano),
+	})
+	if !ok || !boundary.Equal(vacancy) {
+		t.Fatalf("boundary=%v ok=%v, want latest queue vacancy %v", boundary, ok, vacancy)
+	}
+}
+
+func TestAutoUpdateRecentActivityIgnoresMissingOrOldAccess(t *testing.T) {
+	now := time.Now().UTC()
+	if hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{}, now) {
+		t.Fatal("missing UI activity must not be treated as recent")
+	}
+	if hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{
+		LastUIAccessAt: now.Add(-autoUpdateRecentActivityWindow - time.Second).Format(time.RFC3339Nano),
+	}, now) {
+		t.Fatal("old UI activity must not be treated as recent")
+	}
+	if !hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{
+		LastUIAccessAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
+	}, now) {
+		t.Fatal("recent human activity was not recognized")
+	}
+}

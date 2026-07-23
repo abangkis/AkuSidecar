@@ -137,6 +137,13 @@ func TestAutomaticSessionRemainsHiddenUntilPreparedBatchIsRevealed(t *testing.T)
 	if _, err := state.RevealPreparedBatch(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
+	schedule, err := state.AutoUpdateScheduleState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if schedule.LastQueueVacancyAt == "" {
+		t.Fatal("revealing a prepared batch did not record its queue vacancy")
+	}
 	items, err = state.ListTimeline(ctx, 10, 0)
 	if err != nil {
 		t.Fatal(err)

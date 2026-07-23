@@ -100,15 +100,51 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_xhigh" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", bootstrapSettings)
 	}
-	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateIntervalHours"] != float64(4) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(1000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
+	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateRefillMinutes"] != float64(5) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(1000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
 		t.Fatalf("auto update defaults=%+v", bootstrapSettings)
 	}
 	autoUpdate := bootstrap["autoUpdate"].(map[string]any)
 	if autoUpdate["enabled"] != true || autoUpdate["mode"] != "adaptive" || autoUpdate["state"] != "idle" {
 		t.Fatalf("auto update status=%+v", autoUpdate)
 	}
+	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(5) {
+		t.Fatalf("auto update queue telemetry=%+v", autoUpdate)
+	}
 	if autoUpdate["dailyTokenBudget"] != float64(1000000) || autoUpdate["dailyTokensUsed"] != float64(0) || autoUpdate["quotaTokensUsed"] != float64(0) || autoUpdate["dailyTokensRemaining"] != float64(1000000) || autoUpdate["manualReserveTokens"] != float64(250000) || autoUpdate["automaticTokenLimit"] != float64(750000) || autoUpdate["automaticTokensRemaining"] != float64(750000) || autoUpdate["budgetResetAt"] == "" {
 		t.Fatalf("auto update budget telemetry=%+v", autoUpdate)
+	}
+	activityBeforeStatus, err := state.AutoUpdateScheduleState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusResponse, err := client.Get("http://" + address.String() + "/api/auto-update/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusResponse.Body.Close()
+	activityAfterStatus, err := state.AutoUpdateScheduleState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activityAfterStatus.LastUIAccessAt != activityBeforeStatus.LastUIAccessAt {
+		t.Fatal("background status polling must not renew human activity")
+	}
+	time.Sleep(time.Millisecond)
+	activityRequest, err := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/ui/activity", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activityResponse, err := client.Do(activityRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activityResponse.Body.Close()
+	activityAfterEvent, err := state.AutoUpdateScheduleState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activityAfterEvent.LastUIAccessAt == activityAfterStatus.LastUIAccessAt {
+		t.Fatal("explicit UI activity did not renew adaptive scheduling")
 	}
 	resetRequest, err := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/auto-update/budget/reset", nil)
 	if err != nil {
