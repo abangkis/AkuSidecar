@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -35,7 +36,13 @@ func main() {
 	persistedSettings, err := state.GetSettings(context.Background())
 	fatal(logger, err)
 	if options.CodexPath == "" && persistedSettings.ReasoningExecutablePath != "" {
-		cfg.Reasoning.Executable = persistedSettings.ReasoningExecutablePath
+		persistedPath := persistedSettings.ReasoningExecutablePath
+		if _, statErr := os.Stat(persistedPath); statErr == nil {
+			cfg.Reasoning.Executable = persistedPath
+		} else {
+			logger.Printf("persisted Codex executable is unavailable; rediscovering path=%q error=%v", persistedPath, statErr)
+			persistedSettings.ReasoningExecutablePath = ""
+		}
 	}
 	provider, err := reasoning.NewProvider(cfg)
 	fatal(logger, err)
@@ -101,6 +108,12 @@ func discoverCodex(options config.Options) int {
 
 func fatal(logger *log.Logger, err error) {
 	if err != nil {
+		var discoveryErr *codexruntime.DiscoveryError
+		if errors.As(err, &discoveryErr) {
+			for index, attempt := range discoveryErr.Result.Attempts {
+				logger.Printf("Codex discovery attempt=%d source=%s path=%q reason=%s", index+1, attempt.Source, attempt.Path, attempt.Reason)
+			}
+		}
 		logger.Fatalf("startup failed: %v", err)
 	}
 }

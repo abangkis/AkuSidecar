@@ -36,6 +36,20 @@ type Result struct {
 	Message    string    `json:"message"`
 }
 
+// DiscoveryError keeps the candidate-level diagnostics that explain why no
+// Codex App Server runtime was accepted. Callers can use errors.As to expose
+// these details without changing the stable error message.
+type DiscoveryError struct {
+	Result Result
+}
+
+func (e *DiscoveryError) Error() string {
+	if e == nil || e.Result.Message == "" {
+		return notFoundMessage()
+	}
+	return e.Result.Message
+}
+
 type validator func(context.Context, Candidate) (string, error)
 
 func Discover(ctx context.Context, explicit string) (Result, error) {
@@ -81,7 +95,7 @@ func discover(ctx context.Context, candidates []Candidate, strict bool, validate
 		if err != nil {
 			result.Attempts = append(result.Attempts, Attempt{Path: candidate.Path, Source: candidate.Source, Reason: boundedReason(err)})
 			if strict {
-				return result, errors.New(result.Message)
+				return result, &DiscoveryError{Result: result}
 			}
 			index++
 			continue
@@ -90,7 +104,7 @@ func discover(ctx context.Context, candidates []Candidate, strict bool, validate
 		if err != nil {
 			result.Attempts = append(result.Attempts, Attempt{Path: resolved.Path, Source: resolved.Source, Reason: boundedReason(err)})
 			if strict {
-				return result, errors.New(result.Message)
+				return result, &DiscoveryError{Result: result}
 			}
 			index++
 			continue
@@ -100,7 +114,7 @@ func discover(ctx context.Context, candidates []Candidate, strict bool, validate
 	if len(result.Attempts) == 0 {
 		result.Attempts = []Attempt{{Source: "discovery", Reason: "no candidate executable was exposed by PATH or known platform locations"}}
 	}
-	return result, errors.New(result.Message)
+	return result, &DiscoveryError{Result: result}
 }
 
 func selectHighestVersion(ctx context.Context, candidates []Candidate, validate validator, result *Result) (Candidate, string, bool) {
