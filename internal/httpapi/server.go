@@ -133,6 +133,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		timelineBatches, err := s.engine.TimelineBatchSummaries(ctx)
+		if err != nil {
+			return err
+		}
 		onboarding, err := s.engine.Onboarding(ctx)
 		if err != nil {
 			return err
@@ -145,7 +149,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -411,11 +415,15 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		timelineBatches, err := s.engine.TimelineBatchSummaries(ctx)
+		if err != nil {
+			return err
+		}
 		autoUpdate, err := s.engine.AutoUpdateStatus(ctx)
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/auto-update/batches/") && strings.HasSuffix(p, "/reveal"):
 		id := path.Base(strings.TrimSuffix(p, "/reveal"))
 		batch, err := s.engine.RevealPreparedBatch(ctx, id)

@@ -655,6 +655,10 @@ func (e *Engine) Timeline(ctx context.Context, limit, offset int) ([]domain.Time
 func (e *Engine) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckSummary, error) {
 	return e.store.LatestTimelineCheck(ctx)
 }
+
+func (e *Engine) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBatchSummary, error) {
+	return e.store.TimelineBatchSummaries(ctx)
+}
 func (e *Engine) Inbox(ctx context.Context, limit, offset int) ([]domain.InboxSession, int, error) {
 	return e.store.ListInboxSessions(ctx, limit, offset)
 }

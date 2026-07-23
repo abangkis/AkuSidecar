@@ -169,6 +169,39 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 	return &value, nil
 }
 
+// TimelineBatchSummaries returns the durable check metadata for sessions that
+// currently contribute visible Timeline items. It intentionally excludes
+// prepared/expired batches until their reveal transition makes them visible.
+func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBatchSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT s.id,s.completed_at,
+		       COALESCE(b.prepared_at,''),COALESCE(b.revealed_at,''),
+		       COALESCE(json_extract(s.coverage_json,'$.trigger'),'user'),
+		       COALESCE(json_extract(s.coverage_json,'$.delivery'),'visible'),
+		       COUNT(t.id)
+		FROM sessions s
+		JOIN timeline_items t ON t.session_id=s.id
+		LEFT JOIN auto_update_batches b ON b.session_id=s.id
+		WHERE s.status IN ('completed','partial')
+		  AND s.completed_at IS NOT NULL
+		  AND (b.state IS NULL OR b.state='visible')
+		GROUP BY s.id,s.completed_at,b.prepared_at,b.revealed_at,s.coverage_json
+		ORDER BY s.completed_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []domain.TimelineBatchSummary{}
+	for rows.Next() {
+		var value domain.TimelineBatchSummary
+		if err := rows.Scan(&value.SessionID, &value.CompletedAt, &value.PreparedAt, &value.RevealedAt, &value.Trigger, &value.Delivery, &value.ItemCount); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, error) {
 	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}}
 	observations, err := s.Observations(ctx, run.ID)

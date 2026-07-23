@@ -67,6 +67,7 @@ const state = {
   sidePaneItems: [],
   sidePaneFrame: null,
   timelineItems: [],
+  timelineBatches: [],
   passiveMediaEnrichmentTimer: null,
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
@@ -282,7 +283,8 @@ async function bootstrap(options = {}) {
     setPill("#reasoning-status", state.bootstrap.provider, "neutral");
     renderBridge(state.bootstrap.bridge);
     renderSettings(state.bootstrap.settings);
-    renderTimeline(state.bootstrap.timeline ?? [], state.bootstrap.latestCheck ?? null);
+    state.timelineBatches = state.bootstrap.timelineBatches ?? [];
+    renderTimeline(state.bootstrap.timeline ?? [], state.bootstrap.latestCheck ?? null, state.timelineBatches);
     renderSession();
     if (onboardingRequiresSetup()) {
       showOnboarding(false);
@@ -325,7 +327,7 @@ async function pollAutoUpdate() {
       renderSession();
       startPolling();
     }
-    if (!state.session && state.currentView === "timeline") renderTimeline(state.timelineItems, state.bootstrap.latestCheck ?? null);
+    if (!state.session && state.currentView === "timeline") renderTimeline(state.timelineItems, state.bootstrap.latestCheck ?? null, state.timelineBatches);
   } catch (error) {
     console.warn("Auto Update status refresh deferred.", error);
   }
@@ -1680,14 +1682,16 @@ async function refreshTimeline(options = {}) {
   try {
     const configuredLimit = state.bootstrap?.settings?.timelineCapacity ?? 24;
     const limit = Math.min(50, configuredLimit + Math.max(0, options.extraItems || 0));
-    const { items, latestCheck, autoUpdate } = await api(`/api/timeline?limit=${limit}&offset=0`);
+    const { items, timelineBatches, latestCheck, autoUpdate } = await api(`/api/timeline?limit=${limit}&offset=0`);
     if (state.bootstrap) state.bootstrap.latestCheck = latestCheck ?? null;
+    if (state.bootstrap) state.bootstrap.timelineBatches = timelineBatches ?? state.bootstrap.timelineBatches ?? [];
     if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate ?? state.bootstrap.autoUpdate;
+    state.timelineBatches = timelineBatches ?? state.timelineBatches;
     renderAutoUpdateStatus(autoUpdate);
     const timelineItems = options.revealedSessionID
       ? orderTimelineForRevealedBatch(items ?? [], options.previousItems ?? [], options.revealedSessionID)
       : items ?? [];
-    renderTimeline(timelineItems, latestCheck ?? null);
+    renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
     if (Number.isFinite(options.restoreScrollY)) {
       requestAnimationFrame(() => window.scrollTo({ top: options.restoreScrollY, behavior: "auto" }));
     }
@@ -1700,9 +1704,7 @@ function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID) 
   const byID = new Map(items.map((entry) => [entry.id, entry]));
   const previousIDs = new Set(previousItems.map((entry) => entry.id));
   const previous = previousItems.map((entry) => byID.get(entry.id)).filter(Boolean);
-  const revealed = items
-    .filter((entry) => entry.sessionId === revealedSessionID && !previousIDs.has(entry.id))
-    .map((entry) => ({ ...entry, readingBatchRevealed: true }));
+  const revealed = items.filter((entry) => entry.sessionId === revealedSessionID && !previousIDs.has(entry.id));
   const included = new Set([...previous, ...revealed].map((entry) => entry.id));
   const remaining = items.filter((entry) => !included.has(entry.id));
   return [...previous, ...revealed, ...remaining];
@@ -1729,7 +1731,7 @@ async function revealPreparedBatch(presentation) {
     const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, { method: "POST" });
     if (presentation === "latest") {
       await refreshTimeline({ extraItems: batch?.itemCount || 0 });
-      showNotice(`Loaded ${batch?.itemCount || 0} latest item${batch?.itemCount === 1 ? "" : "s"} from the prepared batch.`);
+      showNotice(`Loaded ${batch?.itemCount || 0} item${batch?.itemCount === 1 ? "" : "s"} from the next prepared batch.`);
       requestAnimationFrame(() => {
         $("#timeline-heading")?.scrollIntoView({ block: "start", behavior: "smooth" });
         $("#timeline-heading")?.focus({ preventScroll: true });
@@ -1740,6 +1742,7 @@ async function revealPreparedBatch(presentation) {
         previousItems,
         extraItems: batch?.itemCount || 0,
         restoreScrollY,
+        highlightSessionID: sessionID,
       });
     }
     return true;
@@ -2573,9 +2576,13 @@ function routeAIDetectedItems(items) {
   return result;
 }
 
-function renderTimeline(items, latestCheck) {
+function renderTimeline(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
   $("#finish-line").classList.remove("hidden");
   const allItems = Array.isArray(items) ? items : [];
+  const batchMetadata = Array.isArray(timelineBatches)
+    ? timelineBatches
+    : (state.bootstrap?.timelineBatches ?? state.timelineBatches ?? []);
+  state.timelineBatches = batchMetadata;
   state.timelineItems = allItems;
   const retainedIDs = new Set(allItems.map((entry) => entry.id));
   for (const timelineID of state.passiveMediaEvidenceAttempts.keys()) {
@@ -2631,6 +2638,7 @@ function renderTimeline(items, latestCheck) {
   }
 
   const latestSession = latestCheck?.sessionId ?? items[0].sessionId;
+  const batchBySession = new Map(batchMetadata.map((batch) => [batch.sessionId, batch]));
   let previousSession = null;
   let historyBoundaryMarked = false;
   for (const entry of items) {
@@ -2647,16 +2655,21 @@ function renderTimeline(items, latestCheck) {
         historyBoundaryMarked = true;
       }
       const checked = document.createElement("strong");
-      const checkedAt = entry.sessionId === latestCheck?.sessionId ? latestCheck.completedAt : entry.createdAt;
+      const metadata = batchBySession.get(entry.sessionId);
+      const checkedAt = metadata?.completedAt || (entry.sessionId === latestCheck?.sessionId ? latestCheck.completedAt : entry.createdAt);
       const detail = document.createElement("span");
-      if (entry.readingBatchRevealed) {
+      const isPrepared = metadata?.delivery === "prepared" || metadata?.trigger === "scheduler";
+      if (isPrepared) marker.classList.add("timeline-auto-batch-marker");
+      if (entry.sessionId === highlightSessionID) {
         marker.classList.add("timeline-revealed-batch-marker");
         marker.setAttribute("aria-label", "New prepared batch");
         checked.textContent = "New prepared batch";
         detail.textContent = `Checked ${formatDate(checkedAt)} · continue scrolling`;
       } else {
-        checked.textContent = `Checked ${formatDate(checkedAt)}`;
-        detail.textContent = "Unified personalized order";
+        checked.textContent = isPrepared ? "Auto check" : `Checked ${formatDate(checkedAt)}`;
+        detail.textContent = isPrepared
+          ? `Checked ${formatDate(checkedAt)} · ${metadata?.itemCount ?? 0} item${metadata?.itemCount === 1 ? "" : "s"} in this batch`
+          : "Unified personalized order";
       }
       marker.append(checked, detail);
       container.append(marker);
@@ -2678,7 +2691,7 @@ function renderTimelineActions() {
   primary.textContent = "Update now";
   primary.classList.remove("hidden");
   if (prepared > 0) {
-    preparedButton.textContent = `Load latest batch (${prepared})`;
+    preparedButton.textContent = `Load next batch (${prepared})`;
     preparedButton.classList.remove("hidden");
     finish.textContent = `Continue with next batch (${prepared})`;
     finish.classList.remove("hidden");

@@ -72,7 +72,7 @@ func (s *Store) PreparedBatches(ctx context.Context, _ int) ([]domain.PreparedBa
 		FROM auto_update_batches b LEFT JOIN timeline_items t ON t.session_id=b.session_id
 		WHERE b.state='prepared'
 		GROUP BY b.session_id,b.state,b.prepared_at,b.expires_at
-		ORDER BY urgency DESC,b.prepared_at`)
+		ORDER BY b.prepared_at,b.created_at`)
 	if err != nil {
 		return nil, err
 	}

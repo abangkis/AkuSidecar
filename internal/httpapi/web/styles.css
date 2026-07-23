@@ -165,6 +165,8 @@ h3 { letter-spacing: -0.02em; }
 .timeline-batch-marker.timeline-older-batch-marker { margin-top: var(--timeline-batch-gap, 36px); }
 .timeline-batch-marker.timeline-revealed-batch-marker { border-bottom-color: rgba(183, 242, 108, 0.48); }
 .timeline-batch-marker.timeline-revealed-batch-marker strong { color: var(--accent); }
+.timeline-batch-marker.timeline-auto-batch-marker { border-bottom-color: rgba(183, 242, 108, 0.28); }
+.timeline-batch-marker.timeline-auto-batch-marker strong { color: var(--accent); }
 .presentable-item { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-raised); }
 .semantic-duplicate-item { border-color: rgba(144, 164, 153, 0.32); background: rgba(31, 38, 34, 0.72); }
 .semantic-duplicate-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 15px 18px; }

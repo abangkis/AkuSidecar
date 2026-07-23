@@ -166,6 +166,13 @@ func TestAutomaticSessionRemainsHiddenUntilPreparedBatchIsRevealed(t *testing.T)
 	if len(items) != 1 || items[0].ID != "timeline-auto" {
 		t.Fatalf("revealed items=%+v", items)
 	}
+	batchSummaries, err := state.TimelineBatchSummaries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batchSummaries) != 1 || batchSummaries[0].SessionID != session.ID || batchSummaries[0].Trigger != domain.UpdateTriggerScheduler || batchSummaries[0].Delivery != domain.UpdateDeliveryPrepared || batchSummaries[0].RevealedAt == "" {
+		t.Fatalf("timeline batch summaries=%+v", batchSummaries)
+	}
 }
 
 func TestAutoUpdateDailyQuotaResetPreservesUsageHistory(t *testing.T) {
