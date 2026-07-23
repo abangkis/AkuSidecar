@@ -127,6 +127,56 @@
           </fieldset>
 
           <fieldset class="settings-group">
+            <legend>Auto Update</legend>
+            <p class="settings-group-note">Prepare bounded local batches while AkuSidecar is running. Automatic work stops at the queue and token boundaries below.</p>
+            <div class="settings-card">
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Scheduler status</strong><small id="auto-update-status">Loading local queue and token telemetry…</small></span>
+                <span id="auto-update-queue-status" class="settings-detail">—</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-copy"><strong>Budget today</strong><small id="auto-update-budget-status">Loading daily budget telemetry…</small></span>
+                <span class="settings-inline-control auto-update-budget-control">
+                  <span id="auto-update-budget-detail" class="settings-detail">—</span>
+                  <button id="reset-auto-update-budget" type="button">Reset today’s quota</button>
+                </span>
+              </div>
+              <label class="settings-row" for="auto-update-enabled">
+                <span class="settings-copy"><strong>Automatic checks</strong><small>Prepare updates in the background and catch up after AkuBrowser is opened.</small></span>
+                <input id="auto-update-enabled" name="autoUpdateEnabled" type="checkbox" />
+              </label>
+              <label class="settings-row" for="auto-update-mode">
+                <span class="settings-copy"><strong>Schedule</strong><small>Adaptive runs near recent use; Fixed runs at the configured interval while Sidecar is alive.</small></span>
+                <select id="auto-update-mode" name="autoUpdateMode"><option value="adaptive">Adaptive — recommended</option><option value="fixed">Fixed periodic</option></select>
+              </label>
+              <label class="settings-row" for="auto-update-interval">
+                <span class="settings-copy"><strong>Minimum interval</strong><small>Automatic checks never run more often than this boundary.</small></span>
+                <select id="auto-update-interval" name="autoUpdateIntervalHours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4">4 hours — recommended</option><option value="6">6 hours</option><option value="12">12 hours</option></select>
+              </label>
+              <label class="settings-row" for="prepared-batch-limit">
+                <span class="settings-copy"><strong>Prepared batch queue</strong><small>Pause automatic checks when this many unread finite batches are ready.</small></span>
+                <select id="prepared-batch-limit" name="preparedBatchLimit"><option value="1">1 batch</option><option value="2">2 batches — recommended</option><option value="3">3 batches</option></select>
+              </label>
+              <label class="settings-row" for="next-batch-behavior">
+                <span class="settings-copy"><strong>Next batch behavior</strong><small>Require an action by default, or reveal only batches present when this reading session began as you reach the finish line.</small></span>
+                <select id="next-batch-behavior" name="nextBatchBehavior"><option value="require_action">Require action — recommended</option><option value="auto_at_finish">Auto-load at finish line</option></select>
+              </label>
+              <label class="settings-row" for="prepared-batch-max-age">
+                <span class="settings-copy"><strong>Prepared batch freshness</strong><small>Discard an unread prepared batch after this age.</small></span>
+                <select id="prepared-batch-max-age" name="preparedBatchMaxAgeHours"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">24 hours — recommended</option><option value="48">48 hours</option></select>
+              </label>
+              <label class="settings-row" for="auto-update-token-budget">
+                <span class="settings-copy"><strong>Daily model budget</strong><small>Local token telemetry gates automatic work; manual checks retain a protected reserve.</small></span>
+                <select id="auto-update-token-budget" name="autoUpdateDailyTokenBudget"><option value="1000000">1M tokens — recommended</option><option value="2000000">2M tokens</option><option value="3000000">3M tokens</option><option value="5000000">5M tokens</option></select>
+              </label>
+              <label class="settings-row" for="auto-update-manual-reserve">
+                <span class="settings-copy"><strong>Manual reserve</strong><small>Keep this share unavailable to automatic checks so Check for updates remains usable.</small></span>
+                <select id="auto-update-manual-reserve" name="autoUpdateManualReservePct"><option value="10">10%</option><option value="25">25% — recommended</option><option value="40">40%</option></select>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-group">
             <legend>Live settings</legend>
             <div class="settings-card">
               <label class="settings-row" for="bounded-load-profile">
@@ -399,6 +449,14 @@
             <small id="timeline-runner-status" class="timeline-runner-status hidden" role="status"></small>
           </div>
         </div>
+
+        <section id="auto-update-timeline-status" class="auto-update-timeline-status hidden" aria-live="polite">
+          <div>
+            <strong id="auto-update-timeline-title">Auto Update paused</strong>
+            <span id="auto-update-timeline-detail"></span>
+          </div>
+          <button id="auto-update-timeline-settings" class="text-button" type="button">Review Auto Update</button>
+        </section>
 
         <section id="processing-panel" class="processing-panel update-progress hidden" aria-live="polite">
           <div class="update-progress-heading">

@@ -79,7 +79,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -87,6 +87,108 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		if names[i] != want[i] {
 			t.Fatalf("tables=%v", names)
 		}
+	}
+}
+
+func TestAutomaticSessionRemainsHiddenUntilPreparedBatchIsRevealed(t *testing.T) {
+	state := openTestStore(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	session, err := state.CreateAutoSession(ctx, "automatic catch up", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := domain.Now()
+	for _, run := range runs {
+		if _, err := state.db.ExecContext(ctx, `UPDATE runs SET status='completed',stage='completed',started_at=?,completed_at=? WHERE id=?`, now, now, run.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,created_at) VALUES(?,?,?,?,?,0,'{}','{"urgency":0.5}',?)`, "timeline-auto", session.ID, runs[0].ID, runs[0].Source, "auto-evidence", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.FinalizeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListTimeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("prepared automatic items leaked into Timeline: %d", len(items))
+	}
+	batches, err := state.PreparedBatches(ctx, settings.PreparedBatchMaxAgeHours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batches) != 1 || batches[0].ItemCount != 1 {
+		t.Fatalf("prepared batches=%+v", batches)
+	}
+	if _, err := state.RevealPreparedBatch(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = state.ListTimeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != "timeline-auto" {
+		t.Fatalf("revealed items=%+v", items)
+	}
+}
+
+func TestAutoUpdateDailyQuotaResetPreservesUsageHistory(t *testing.T) {
+	state := openTestStore(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	session, err := state.CreateAutoSession(ctx, "automatic quota fixture", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil || len(runs) == 0 {
+		t.Fatalf("runs=%+v err=%v", runs, err)
+	}
+	now := domain.Now()
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',started_at=?,completed_at=? WHERE id=?`, now, now, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO reasoning_invocations(id,run_id,phase,provider,model,effort,duration_ms,status,input_tokens,output_tokens,reasoning_output_tokens,created_at) VALUES('quota-before',?,'candidate_evaluation','fixture','fixture','high',1,'completed',100,50,25,?)`, runs[0].ID, now); err != nil {
+		t.Fatal(err)
+	}
+	before, err := state.AutoUpdateBudgetUsage(ctx)
+	if err != nil || before.ActualTotal != 175 || before.QuotaTotal != 175 || before.QuotaAutomatic != 175 {
+		t.Fatalf("before reset=%+v err=%v", before, err)
+	}
+	reset, err := state.ResetAutoUpdateDailyQuota(ctx)
+	if err != nil || reset.ActualTotal != 175 || reset.QuotaTotal != 0 || reset.LastManualResetAt == "" {
+		t.Fatalf("reset=%+v err=%v", reset, err)
+	}
+	after, err := state.AutoUpdateBudgetUsage(ctx)
+	if err != nil || after.ActualTotal != 175 || after.QuotaTotal != 0 || after.QuotaAutomatic != 0 {
+		t.Fatalf("after reset=%+v err=%v", after, err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO reasoning_invocations(id,run_id,phase,provider,model,effort,duration_ms,status,input_tokens,output_tokens,reasoning_output_tokens,created_at) VALUES('quota-after',?,'candidate_evaluation','fixture','fixture','high',1,'completed',20,5,0,?)`, runs[0].ID, now); err != nil {
+		t.Fatal(err)
+	}
+	afterNewUsage, err := state.AutoUpdateBudgetUsage(ctx)
+	if err != nil || afterNewUsage.ActualTotal != 200 || afterNewUsage.QuotaTotal != 25 || afterNewUsage.QuotaAutomatic != 25 {
+		t.Fatalf("new usage=%+v err=%v", afterNewUsage, err)
 	}
 }
 
@@ -243,6 +345,10 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pendingRunID, err := state.PendingBridgeRunID(ctx)
+	if err != nil || pendingRunID != run.ID {
+		t.Fatalf("pending bridge run=%q err=%v", pendingRunID, err)
+	}
 	queuedRun, err := state.GetRun(ctx, run.ID)
 	if err != nil || queuedRun.BridgeCommandStatus != "queued" {
 		t.Fatalf("queued bridge status=%q err=%v", queuedRun.BridgeCommandStatus, err)
@@ -250,6 +356,10 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	claimed, err := state.ClaimCommand(ctx, run.ID, "bridge-test")
 	if err != nil || claimed == nil || claimed.ID != command.ID {
 		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	pendingRunID, err = state.PendingBridgeRunID(ctx)
+	if err != nil || pendingRunID != "" {
+		t.Fatalf("claimed command remained pending: run=%q err=%v", pendingRunID, err)
 	}
 	claimedRun, err := state.GetRun(ctx, run.ID)
 	if err != nil || claimedRun.BridgeCommandStatus != "claimed" {

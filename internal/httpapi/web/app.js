@@ -65,6 +65,9 @@ const state = {
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
   expandedTimelineText: new Set(),
+  preparedBatchSnapshot: [],
+  revealingPreparedBatch: false,
+  autoLoadLastScrollY: window.scrollY,
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -131,7 +134,7 @@ $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks")
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", startSession);
-$("#done-button").addEventListener("click", startSession);
+$("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
   const action = $("#retry-button").dataset.action;
   hideFailure();
@@ -141,6 +144,8 @@ $("#retry-button").addEventListener("click", () => {
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#processing-inbox-button").addEventListener("click", () => setView("inbox"));
 $("#processing-settings-button").addEventListener("click", () => setView("settings"));
+$("#auto-update-timeline-settings").addEventListener("click", openAutoUpdateSettings);
+$("#reset-auto-update-budget").addEventListener("click", resetAutoUpdateBudget);
 $("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
 $("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
 $("#onboarding-learning-toggle").addEventListener("click", toggleOnboardingLearningPlayback);
@@ -194,6 +199,15 @@ window.addEventListener("resize", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
 }, { passive: true });
+window.addEventListener("scroll", () => {
+  const movingDown = window.scrollY > state.autoLoadLastScrollY;
+  state.autoLoadLastScrollY = window.scrollY;
+  if (!movingDown || state.bootstrap?.settings?.nextBatchBehavior !== "auto_at_finish") return;
+  const finish = $("#finish-line");
+  if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) {
+    revealNextPreparedBatch(true);
+  }
+}, { passive: true });
 const timelineSidePaneLayoutObserver = new ResizeObserver(scheduleTimelineSidePanePosition);
 for (const element of [$(".timeline-heading-row"), $("#processing-panel"), $("#result-items")]) {
   if (element) timelineSidePaneLayoutObserver.observe(element);
@@ -211,6 +225,7 @@ async function bootstrap() {
       throw new Error("AkuBrowser could not restore the authoritative onboarding state. Waiting for AkuSidecar to recover.");
     }
     state.bootstrap = restored;
+    state.preparedBatchSnapshot = [...(restored.autoUpdate?.preparedBatches ?? []).map((batch) => batch.sessionId)];
     state.session = state.bootstrap.activeSession;
     state.bootstrapLoading = false;
     renderSourceControls();
@@ -234,10 +249,31 @@ async function bootstrap() {
     pingBridge();
     bridgeActionLoop();
     setInterval(pingBridge, 30_000);
+    setInterval(pollAutoUpdate, 15_000);
     if (state.session) startPolling();
   } catch (error) {
     showError(error);
     setTimeout(bootstrap, 1500);
+  }
+}
+
+async function pollAutoUpdate() {
+  if (!state.bootstrap || state.pollInFlight) return;
+  try {
+    const [{ autoUpdate }, { session }] = await Promise.all([
+      api("/api/auto-update/status"),
+      api("/api/sessions/active"),
+    ]);
+    state.bootstrap.autoUpdate = autoUpdate;
+    renderAutoUpdateStatus(autoUpdate);
+    if (!state.session && session) {
+      state.session = session;
+      renderSession();
+      startPolling();
+    }
+    if (!state.session && state.currentView === "timeline") renderTimeline(state.timelineItems, state.bootstrap.latestCheck ?? null);
+  } catch (error) {
+    console.warn("Auto Update status refresh deferred.", error);
   }
 }
 
@@ -335,6 +371,7 @@ function renderBridge(bridge) {
   if (state.bootstrap) state.bootstrap.bridge = bridge;
   if (bridge?.compatible) {
     setPill("#bridge-status", `AkuBridge ${bridge.actual?.extensionVersion} ready`, "ok");
+    configureBackgroundBridge();
   } else if (bridge?.state === "incompatible") {
     setPill("#bridge-status", bridge.reasons?.join(", ") || "Bridge incompatible", "danger");
   } else {
@@ -342,6 +379,15 @@ function renderBridge(bridge) {
   }
   syncRunButtons();
   if (bridge?.compatible) schedulePassiveMediaEnrichment();
+}
+
+function configureBackgroundBridge() {
+  if (!state.bootstrap?.bridgeToken) return;
+  window.postMessage({
+    type: "AKU_BROWSER_CONFIGURE_BACKGROUND_DISPATCH",
+    endpoint,
+    token: state.bootstrap.bridgeToken,
+  }, endpoint);
 }
 
 function renderSettings(settings) {
@@ -377,6 +423,14 @@ function renderSettings(settings) {
   $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
   $("#resurface-mode").value = settings.resurfaceMode || "smart";
   $("#resurface-cooldown-days").value = String(settings.resurfaceCooldownDays || 7);
+  $("#auto-update-enabled").checked = settings.autoUpdateEnabled !== false;
+  $("#auto-update-mode").value = settings.autoUpdateMode || "adaptive";
+  $("#auto-update-interval").value = String(settings.autoUpdateIntervalHours || 4);
+  $("#prepared-batch-limit").value = String(settings.preparedBatchLimit || 2);
+  $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 1000000);
+  $("#auto-update-manual-reserve").value = String(settings.autoUpdateManualReservePct || 25);
+  $("#prepared-batch-max-age").value = String(settings.preparedBatchMaxAgeHours || 24);
+  $("#next-batch-behavior").value = settings.nextBatchBehavior || "require_action";
   renderSourceSettingsValues(settings);
   for (const input of document.querySelectorAll("#settings-source-options input[type='checkbox']")) {
     input.checked = settings.activeSources?.includes(input.value) ?? false;
@@ -388,6 +442,75 @@ function renderSettings(settings) {
   syncLoadProfileSettings(false);
   syncSemanticEventSettings();
   syncAIDetectionSettings();
+  renderAutoUpdateStatus(state.bootstrap?.autoUpdate);
+}
+
+function renderAutoUpdateStatus(status) {
+  const detail = $("#auto-update-status");
+  const queue = $("#auto-update-queue-status");
+  const budget = $("#auto-update-budget-status");
+  const budgetDetail = $("#auto-update-budget-detail");
+  const reset = $("#reset-auto-update-budget");
+  const timeline = $("#auto-update-timeline-status");
+  if (!detail || !queue || !budget || !budgetDetail || !timeline) return;
+  if (!status) {
+    detail.textContent = "Local scheduler telemetry is not available yet.";
+    queue.textContent = "—";
+    budget.textContent = "Daily token telemetry is not available yet.";
+    budgetDetail.textContent = "—";
+    timeline.classList.add("hidden");
+    return;
+  }
+  const used = status.dailyTokensUsed || 0;
+  const quotaUsed = status.quotaTokensUsed ?? used;
+  const dailyBudget = status.dailyTokenBudget || 0;
+  const dailyRemaining = status.dailyTokensRemaining || 0;
+  const automaticRemaining = status.automaticTokensRemaining || 0;
+  const reserve = status.manualReserveTokens || 0;
+  const estimate = status.estimatedNextRunTokens || 0;
+  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}`;
+  queue.textContent = `${status.preparedBatches?.length || 0} prepared`;
+  const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
+  const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
+  budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
+  budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} manual reserve`;
+  if (reset) reset.disabled = Boolean(state.session);
+  const paused = status.enabled && ["paused", "budget_paused"].includes(status.state);
+  timeline.classList.toggle("hidden", !paused);
+  if (paused) {
+    $("#auto-update-timeline-title").textContent = status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
+    $("#auto-update-timeline-detail").textContent = status.state === "budget_paused"
+      ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
+      : status.reason || "Automatic work is waiting for an available boundary.";
+  }
+}
+
+function openAutoUpdateSettings() {
+  setView("settings");
+  requestAnimationFrame(() => document.querySelector("#auto-update-enabled")?.closest("fieldset")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+}
+
+async function resetAutoUpdateBudget() {
+  if (state.session) {
+    showError(new Error("Finish or cancel the active check before resetting today’s Auto Update quota."));
+    return;
+  }
+  if (!window.confirm("Reset today’s local Auto Update quota? Usage history remains intact, but automatic work may start again and spend more model tokens today.")) return;
+  const button = $("#reset-auto-update-budget");
+  button.disabled = true;
+  try {
+    const { autoUpdate } = await api("/api/auto-update/budget/reset", { method: "POST" });
+    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
+    renderAutoUpdateStatus(autoUpdate);
+    const notice = $("#provider-notice");
+    notice.className = "notice notice-complete";
+    notice.setAttribute("role", "status");
+    notice.textContent = "Today’s local Auto Update quota was reset. Recorded model usage was preserved.";
+  } catch (error) {
+    showError(error);
+  } finally {
+    button.disabled = Boolean(state.session);
+  }
 }
 
 function renderSourceSettingsValues(settings) {
@@ -514,6 +637,14 @@ async function saveSettings(event) {
     aiDetectionPresentation: $("#ai-detection-presentation").value,
     resurfaceMode: $("#resurface-mode").value,
     resurfaceCooldownDays: Number.parseInt($("#resurface-cooldown-days").value, 10),
+    autoUpdateEnabled: $("#auto-update-enabled").checked,
+    autoUpdateMode: $("#auto-update-mode").value,
+    autoUpdateIntervalHours: Number.parseInt($("#auto-update-interval").value, 10),
+    preparedBatchLimit: Number.parseInt($("#prepared-batch-limit").value, 10),
+    autoUpdateDailyTokenBudget: Number.parseInt($("#auto-update-token-budget").value, 10),
+    autoUpdateManualReservePct: Number.parseInt($("#auto-update-manual-reserve").value, 10),
+    preparedBatchMaxAgeHours: Number.parseInt($("#prepared-batch-max-age").value, 10),
+    nextBatchBehavior: $("#next-batch-behavior").value,
     reasoningExecutablePath: $("#reasoning-executable-path").value.trim(),
     reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
     reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
@@ -1076,6 +1207,10 @@ function renderSession() {
   if (state.sessionProgress.sessionId !== session.id) {
     state.sessionProgress = { sessionId: session.id, value: 0 };
   }
+  if (session.automatic) {
+    progress.title = `Auto Update · ${progress.title}`;
+    progress.detail = `Preparing a background batch · ${progress.detail}`;
+  }
   state.sessionProgress.value = Math.max(state.sessionProgress.value, progress.value);
   const value = Math.min(97, state.sessionProgress.value);
   $("#progress-bar").style.width = `${value}%`;
@@ -1398,14 +1533,75 @@ async function decideCalibration(decision) {
   }
 }
 
-async function refreshTimeline() {
+async function refreshTimeline(options = {}) {
   try {
-    const limit = state.bootstrap?.settings?.timelineCapacity ?? 24;
-    const { items, latestCheck } = await api(`/api/timeline?limit=${limit}&offset=0`);
+    const configuredLimit = state.bootstrap?.settings?.timelineCapacity ?? 24;
+    const limit = Math.min(50, configuredLimit + Math.max(0, options.extraItems || 0));
+    const { items, latestCheck, autoUpdate } = await api(`/api/timeline?limit=${limit}&offset=0`);
     if (state.bootstrap) state.bootstrap.latestCheck = latestCheck ?? null;
-    renderTimeline(items ?? [], latestCheck ?? null);
+    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate ?? state.bootstrap.autoUpdate;
+    renderAutoUpdateStatus(autoUpdate);
+    const timelineItems = options.revealedSessionID
+      ? orderTimelineForRevealedBatch(items ?? [], options.previousItems ?? [], options.revealedSessionID)
+      : items ?? [];
+    renderTimeline(timelineItems, latestCheck ?? null);
+    if (Number.isFinite(options.restoreScrollY)) {
+      requestAnimationFrame(() => window.scrollTo({ top: options.restoreScrollY, behavior: "auto" }));
+    }
   } catch (error) {
     showError(error);
+  }
+}
+
+function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID) {
+  const byID = new Map(items.map((entry) => [entry.id, entry]));
+  const previousIDs = new Set(previousItems.map((entry) => entry.id));
+  const previous = previousItems.map((entry) => byID.get(entry.id)).filter(Boolean);
+  const revealed = items
+    .filter((entry) => entry.sessionId === revealedSessionID && !previousIDs.has(entry.id))
+    .map((entry) => ({ ...entry, readingBatchRevealed: true }));
+  const included = new Set([...previous, ...revealed].map((entry) => entry.id));
+  const remaining = items.filter((entry) => !included.has(entry.id));
+  return [...previous, ...revealed, ...remaining];
+}
+
+async function handleFinishLineAction() {
+  const revealed = await revealNextPreparedBatch(false);
+  if (!revealed) await startSession();
+}
+
+async function revealNextPreparedBatch(fromSnapshot) {
+  if (state.revealingPreparedBatch || state.session) return false;
+  let sessionID = "";
+  if (fromSnapshot) {
+    sessionID = state.preparedBatchSnapshot.shift() || "";
+  } else {
+    try {
+      const { autoUpdate } = await api("/api/auto-update/status");
+      if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
+      renderAutoUpdateStatus(autoUpdate);
+      sessionID = autoUpdate?.preparedBatches?.[0]?.sessionId || "";
+    } catch (error) { showError(error); return false; }
+  }
+  if (!sessionID) return false;
+  state.revealingPreparedBatch = true;
+  try {
+    const previousItems = [...state.timelineItems];
+    const restoreScrollY = window.scrollY;
+    const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, { method: "POST" });
+    await refreshTimeline({
+      revealedSessionID: sessionID,
+      previousItems,
+      extraItems: batch?.itemCount || 0,
+      restoreScrollY,
+    });
+    return true;
+  } catch (error) {
+    if (fromSnapshot) state.preparedBatchSnapshot.unshift(sessionID);
+    showError(error);
+    return false;
+  } finally {
+    state.revealingPreparedBatch = false;
   }
 }
 
@@ -1449,11 +1645,17 @@ function buildInboxSession(session, expanded) {
   const identity = document.createElement("div");
   identity.className = "inbox-session-identity";
   const title = document.createElement("strong");
-  title.textContent = `Checked ${formatDate(session.createdAt)}`;
+  title.textContent = `${session.automatic ? "Auto · " : ""}Checked ${formatDate(session.createdAt)}`;
   const status = document.createElement("span");
   status.className = `status-pill status-${inboxStatusTone(session.status)}`;
   status.textContent = humanize(session.status);
   identity.append(title, status);
+  if (session.automatic && session.deliveryState) {
+    const delivery = document.createElement("span");
+    delivery.className = "status-pill status-neutral";
+    delivery.textContent = humanize(session.deliveryState);
+    identity.append(delivery);
+  }
   const flow = document.createElement("span");
   flow.className = "inbox-flow-summary";
   flow.textContent = inboxSessionFlowText(session);
@@ -2246,6 +2448,13 @@ function renderTimeline(items, latestCheck) {
   if (items.length || routed.drawer.length || routed.hidden.length) {
     $("#finish-stats").textContent = `Shown: ${items.length} · ${routed.drawer.length} in side pane · ${routed.hidden.length} hidden · bounded local evidence`;
   }
+  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
+  if (prepared > 0) {
+    $("#done-button").textContent = `Open next prepared batch (${prepared})`;
+    $("#finish-stats").textContent += ` · ${prepared} prepared`;
+  } else {
+    $("#done-button").textContent = "Check for updates";
+  }
   if (!items.length) {
     const empty = document.createElement("section");
     empty.className = "finish-line";
@@ -2281,9 +2490,16 @@ function renderTimeline(items, latestCheck) {
       }
       const checked = document.createElement("strong");
       const checkedAt = entry.sessionId === latestCheck?.sessionId ? latestCheck.completedAt : entry.createdAt;
-      checked.textContent = `Checked ${formatDate(checkedAt)}`;
       const detail = document.createElement("span");
-      detail.textContent = "Unified personalized order";
+      if (entry.readingBatchRevealed) {
+        marker.classList.add("timeline-revealed-batch-marker");
+        marker.setAttribute("aria-label", "New prepared batch");
+        checked.textContent = "New prepared batch";
+        detail.textContent = `Checked ${formatDate(checkedAt)} · continue scrolling`;
+      } else {
+        checked.textContent = `Checked ${formatDate(checkedAt)}`;
+        detail.textContent = "Unified personalized order";
+      }
       marker.append(checked, detail);
       container.append(marker);
       previousSession = entry.sessionId;
@@ -3297,6 +3513,15 @@ function showCalibrationRetry(session) {
 function showSessionOutcome(session) {
   if (!["completed", "partial"].includes(session.status)) return;
   const additions = session.items?.length ?? 0;
+  if (session.automatic) {
+    const notice = $("#provider-notice");
+    notice.className = "notice notice-complete";
+    notice.setAttribute("role", "status");
+    notice.textContent = additions > 0
+      ? `Auto Update prepared ${additions} item${additions === 1 ? "" : "s"}. Open the next prepared batch at the Timeline finish line when you are ready.`
+      : "Auto Update completed without a new prepared batch. The diagnostic trace remains in Update Inbox.";
+    return;
+  }
   if (additions > 0) {
     clearNotice();
     return;

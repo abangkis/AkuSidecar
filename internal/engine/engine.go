@@ -20,13 +20,14 @@ import (
 
 const (
 	ExpectedBridgeVersion  = "0.7.0-preview.3"
-	ExpectedBridgeRevision = "source-adapters-v72"
+	ExpectedBridgeRevision = "source-adapters-v73"
 	ExpectedBridgeID       = "aku-bridge-chrome-mv3-v0"
 )
 
 var expectedBridgeActions = []string{
 	"probe_readiness", "probe_freshness", "recover_source_freshness",
 	"collect_visible", "detect_pending_content", "report_adapter_health",
+	"dispatch_background_commands",
 	"report_capture_quality", "acquire_missing_media", "recapture_missing_media",
 	"cache_passive_media_evidence", "lookup_passive_media_evidence", "observe_response_media_evidence", "extract_source_semantics",
 	"report_frontier", "manage_source_tab_lifecycle", "manage_capture_window",
@@ -49,6 +50,8 @@ type Engine struct {
 	events       *semanticengine.Engine
 	aiFast       aidetector.FastDetector
 	aiDeep       aidetector.Resolver
+	autoCancel   context.CancelFunc
+	autoWake     chan struct{}
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -58,7 +61,7 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	if len(eventEngines) > 0 {
 		events = eventEngines[0]
 	}
-	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events}
+	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
 }
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
 func (e *Engine) Epoch() string                               { return e.epoch }
@@ -142,6 +145,10 @@ func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
 	e.heartbeat = &value
 	e.mu.Unlock()
 	e.reloads.Observe(value)
+	select {
+	case e.autoWake <- struct{}{}:
+	default:
+	}
 	return e.BridgeStatus()
 }
 
@@ -252,6 +259,10 @@ func sameStringSet(actual, expected []string) bool {
 }
 
 func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Session, error) {
+	return e.startSession(ctx, intent, false)
+}
+
+func (e *Engine) startSession(ctx context.Context, intent string, automatic bool) (domain.Session, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	onboarding, err := e.store.Onboarding(ctx)
@@ -282,7 +293,12 @@ func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Sessio
 		return domain.Session{}, err
 	}
 	e.cancelDeepDetections()
-	session, err := e.store.CreateSession(ctx, intent, settings)
+	var session domain.Session
+	if automatic {
+		session, err = e.store.CreateAutoSession(ctx, intent, settings)
+	} else {
+		session, err = e.store.CreateSession(ctx, intent, settings)
+	}
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -357,13 +373,22 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if finalizeErr := e.store.FinalizeSession(ctx, sessionID); finalizeErr != nil {
 			return nil, fmt.Errorf("finalize unified session: %w", finalizeErr)
 		}
+		automatic, autoErr := e.store.IsAutoSession(ctx, sessionID)
+		if autoErr != nil {
+			return nil, autoErr
+		}
+		if automatic {
+			if recordErr := e.store.RecordAutoUpdateSuccess(ctx); recordErr != nil {
+				e.logger.Printf("record auto update success for session %s failed: %v", sessionID, recordErr)
+			}
+		}
 		if _, retentionErr := e.store.EnforceRetention(ctx, settings); retentionErr != nil {
 			e.logger.Printf("retention after session %s failed: %v", sessionID, retentionErr)
 		}
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}
-		if settings.AIDetectionEnabled && !onboardingFastPath {
+		if settings.AIDetectionEnabled && !onboardingFastPath && (!automatic || e.autoDeepDetectionAllowed(ctx, settings)) {
 			e.launchDeepDetection(sessionID)
 		}
 		return nil, nil
@@ -517,6 +542,9 @@ func capturePayload(run domain.Run, leaseID string, settings domain.Settings, ro
 
 func (e *Engine) ClaimCommand(ctx context.Context, runID, bridgeID string) (*domain.BridgeCommand, error) {
 	return e.store.ClaimCommand(ctx, runID, bridgeID)
+}
+func (e *Engine) PendingBridgeRunID(ctx context.Context) (string, error) {
+	return e.store.PendingBridgeRunID(ctx)
 }
 func (e *Engine) Session(ctx context.Context, id string) (domain.Session, error) {
 	return e.store.GetSession(ctx, id)
@@ -1266,6 +1294,9 @@ func (e *Engine) Shutdown() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.shuttingDown = true
+	if e.autoCancel != nil {
+		e.autoCancel()
+	}
 	for _, cancel := range e.active {
 		cancel()
 	}

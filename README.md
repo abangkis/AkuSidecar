@@ -32,7 +32,7 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.7.0-preview.3` / `source-adapters-v72`
+- AkuBridge `0.7.0-preview.3` / `source-adapters-v73`
 - AkuSupervisor is recommended for normal Windows development and daily
   lifecycle ownership; it is not part of the portable runtime or a macOS
   prerequisite
@@ -151,6 +151,14 @@ Runtime flags may override only process-local concerns:
 There are no environment-based compatibility settings. Product settings are
 typed, stored in SQLite, and changed through `GET/PUT /api/settings`.
 
+Auto Update is also a typed product setting. One Sidecar-owned scheduler can
+prepare hidden finite batches while the process is alive. Adaptive scheduling
+is the default, the queue defaults to two, and local invocation telemetry gates
+automatic work. The fresh daily boundary is 1M tokens with 25% unavailable to
+automatic work for manual checks. A user-authorized daily quota reset preserves
+invocation history while establishing a new local allowance baseline. Prepared
+batches do not enter the Timeline until revealed.
+
 Built-in bounded-load profiles remain:
 
 | Profile | Native scrolls | Items/source | Session items | Timeline |
@@ -170,12 +178,11 @@ first create or try the Quiet managed window.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 5 contains
+The database defaults to `runtime/aku-sidecar.db`. Schema version 6 contains
 only the active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). The
-narrow current-Go migration chain accepts v2 for the original detector tables,
-v3 for typed AI assessed-object/signal-scope columns, and v4 for durable
-evaluated-candidate and selection-correction state; this is not a Node
+current preview accepts only that schema version. Additive tables within the
+same preview line are created idempotently at startup; this is not a Node
 compatibility path.
 
 There is no importer for the Node database. A mismatched schema fails closed;
@@ -205,6 +212,9 @@ corrected instead of retaining authority indefinitely.
 - `GET /api/inbox`
 - `GET /api/runs/{id}`
 - `GET /api/timeline`
+- `GET /api/auto-update/status`
+- `POST /api/auto-update/budget/reset`
+- `POST /api/auto-update/batches/{sessionId}/reveal`
 - `POST /api/timeline/{id}/feedback`
 - `POST /api/timeline/{id}/ai-correction`
 - `POST /api/ai-corrections/{id}/undo`

@@ -298,6 +298,14 @@ func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source)
 }
 
 func (s *Store) CreateSession(ctx context.Context, intent string, settings domain.Settings) (domain.Session, error) {
+	return s.createSession(ctx, intent, settings, false)
+}
+
+func (s *Store) CreateAutoSession(ctx context.Context, intent string, settings domain.Settings) (domain.Session, error) {
+	return s.createSession(ctx, intent, settings, true)
+}
+
+func (s *Store) createSession(ctx context.Context, intent string, settings domain.Settings, automatic bool) (domain.Session, error) {
 	if err := domain.ValidateIntent(intent); err != nil {
 		return domain.Session{}, err
 	}
@@ -321,6 +329,11 @@ func (s *Store) CreateSession(ctx context.Context, intent string, settings domai
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,intent,status,max_items_per_source,max_items_total,coverage_json,created_at) VALUES(?,?,'queued',?,?,?,?)`, sessionID, strings.TrimSpace(intent), settings.MaxItemsPerSource, settings.MaxItemsTotal, string(coverage), now); err != nil {
 		return domain.Session{}, err
+	}
+	if automatic {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO auto_update_batches(session_id,state,created_at) VALUES(?,'preparing',?)`, sessionID, now); err != nil {
+			return domain.Session{}, err
+		}
 	}
 	for ordinal, source := range settings.ActiveSources {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,source,ordinal,status,stage,created_at) VALUES(?,?,?,?,'queued','queued',?)`, domain.NewID("run"), sessionID, source, ordinal, now); err != nil {
@@ -368,6 +381,10 @@ func (s *Store) GetSession(ctx context.Context, id string) (domain.Session, erro
 		var failure domain.Failure
 		decodeJSON(errorRaw.String, &failure)
 		session.Error = &failure
+	}
+	session.Automatic, session.DeliveryState, err = s.AutoSessionDelivery(ctx, id)
+	if err != nil {
+		return domain.Session{}, err
 	}
 	runs, err := s.listRuns(ctx, id)
 	if err != nil {
@@ -564,6 +581,19 @@ func (s *Store) ClaimCommand(ctx context.Context, runID, bridgeID string) (*doma
 	command.ClaimedAt = &now
 	decodeJSON(raw, &command.Payload)
 	return &command, nil
+}
+
+func (s *Store) PendingBridgeRunID(ctx context.Context) (string, error) {
+	var runID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT r.id FROM runs r
+		JOIN bridge_commands c ON c.run_id=r.id
+		WHERE r.status='waiting_for_bridge' AND c.status='queued'
+		ORDER BY c.created_at LIMIT 1`).Scan(&runID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return runID, err
 }
 
 func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, observation domain.Observation) error {
@@ -815,6 +845,27 @@ func (s *Store) FinalizeSession(ctx context.Context, sessionID string) error {
 	if _, err = s.db.ExecContext(ctx, `UPDATE sessions SET status=?,active_source=NULL,completed_at=? WHERE id=?`, status, now, sessionID); err != nil {
 		return err
 	}
+	settings, settingsErr := s.GetSettings(ctx)
+	if settingsErr != nil {
+		return settingsErr
+	}
+	freshHours := settings.PreparedBatchMaxAgeHours
+	var highestUrgency float64
+	if urgencyErr := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(CAST(json_extract(assessment_json,'$.urgency') AS REAL)),0) FROM timeline_items WHERE session_id=?`, sessionID).Scan(&highestUrgency); urgencyErr != nil {
+		return urgencyErr
+	}
+	switch {
+	case highestUrgency >= 0.85:
+		freshHours = 2
+	case highestUrgency >= 0.75 && freshHours > 4:
+		freshHours = 4
+	case highestUrgency >= 0.50 && freshHours > 12:
+		freshHours = 12
+	}
+	expiresAt := time.Now().UTC().Add(time.Duration(freshHours) * time.Hour).Format(time.RFC3339Nano)
+	if _, err = s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state=CASE WHEN EXISTS (SELECT 1 FROM timeline_items t WHERE t.session_id=?) THEN 'prepared' ELSE 'expired' END,prepared_at=?,expires_at=? WHERE session_id=? AND state='preparing'`, sessionID, now, expiresAt, sessionID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -998,13 +1049,13 @@ func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.T
 		return nil, err
 	}
 	if settings.SemanticEventMode == "show_all" {
-		items, err := s.listItems(ctx, `ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT ? OFFSET ?`, limit, offset)
+		items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible') ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT ? OFFSET ?`, limit, offset)
 		for index := range items {
 			items[index].SemanticEvent = nil
 		}
 		return items, err
 	}
-	items, err := s.listItems(ctx, `ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT 1000`)
+	items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible') ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}
@@ -1355,7 +1406,10 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at');`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at');`); err != nil {
+		return FullResetResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=NULL,last_attempt_at=NULL,last_success_at=NULL,last_error='' WHERE id=1`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES('runtime',?,?)`, string(raw), now); err != nil {

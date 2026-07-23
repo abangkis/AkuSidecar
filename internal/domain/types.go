@@ -32,6 +32,13 @@ const (
 	DefaultReasoningSemantic        = "luna_high"
 	DefaultReasoningAIDeep          = "luna_high"
 	DefaultSourceWaitMode           = "progressive_wait"
+	DefaultAutoUpdateMode           = "adaptive"
+	DefaultAutoUpdateIntervalHours  = 4
+	DefaultPreparedBatchLimit       = 2
+	DefaultAutoUpdateDailyTokens    = 1000000
+	DefaultAutoUpdateManualReserve  = 25
+	DefaultPreparedBatchMaxAgeHours = 24
+	DefaultNextBatchBehavior        = "require_action"
 	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
 	CurrentAIDeepDetectorVersion    = "codex-deep-v4"
 )
@@ -84,6 +91,14 @@ type Settings struct {
 	ReasoningEvaluationProfile  string         `json:"reasoningEvaluationProfile"`
 	ReasoningSemanticProfile    string         `json:"reasoningSemanticProfile"`
 	ReasoningAIDeepProfile      string         `json:"reasoningAiDeepProfile"`
+	AutoUpdateEnabled           bool           `json:"autoUpdateEnabled"`
+	AutoUpdateMode              string         `json:"autoUpdateMode"`
+	AutoUpdateIntervalHours     int            `json:"autoUpdateIntervalHours"`
+	PreparedBatchLimit          int            `json:"preparedBatchLimit"`
+	AutoUpdateDailyTokenBudget  int            `json:"autoUpdateDailyTokenBudget"`
+	AutoUpdateManualReservePct  int            `json:"autoUpdateManualReservePct"`
+	PreparedBatchMaxAgeHours    int            `json:"preparedBatchMaxAgeHours"`
+	NextBatchBehavior           string         `json:"nextBatchBehavior"`
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -116,6 +131,14 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		ReasoningEvaluationProfile:  DefaultReasoningEvaluation,
 		ReasoningSemanticProfile:    DefaultReasoningSemantic,
 		ReasoningAIDeepProfile:      DefaultReasoningAIDeep,
+		AutoUpdateEnabled:           true,
+		AutoUpdateMode:              DefaultAutoUpdateMode,
+		AutoUpdateIntervalHours:     DefaultAutoUpdateIntervalHours,
+		PreparedBatchLimit:          DefaultPreparedBatchLimit,
+		AutoUpdateDailyTokenBudget:  DefaultAutoUpdateDailyTokens,
+		AutoUpdateManualReservePct:  DefaultAutoUpdateManualReserve,
+		PreparedBatchMaxAgeHours:    DefaultPreparedBatchMaxAgeHours,
+		NextBatchBehavior:           DefaultNextBatchBehavior,
 	}
 	settings.ApplyProfile()
 	return settings
@@ -205,6 +228,29 @@ func (s *Settings) Normalize() {
 	if s.ReasoningAIDeepProfile == "" {
 		s.ReasoningAIDeepProfile = DefaultReasoningAIDeep
 	}
+	if s.AutoUpdateMode == "" {
+		s.AutoUpdateMode = DefaultAutoUpdateMode
+		// A missing mode identifies settings written before Auto Update existed.
+		s.AutoUpdateEnabled = true
+	}
+	if s.AutoUpdateIntervalHours == 0 {
+		s.AutoUpdateIntervalHours = DefaultAutoUpdateIntervalHours
+	}
+	if s.PreparedBatchLimit == 0 {
+		s.PreparedBatchLimit = DefaultPreparedBatchLimit
+	}
+	if s.AutoUpdateDailyTokenBudget < 1000000 {
+		s.AutoUpdateDailyTokenBudget = DefaultAutoUpdateDailyTokens
+	}
+	if s.AutoUpdateManualReservePct == 0 {
+		s.AutoUpdateManualReservePct = DefaultAutoUpdateManualReserve
+	}
+	if s.PreparedBatchMaxAgeHours == 0 {
+		s.PreparedBatchMaxAgeHours = DefaultPreparedBatchMaxAgeHours
+	}
+	if s.NextBatchBehavior == "" {
+		s.NextBatchBehavior = DefaultNextBatchBehavior
+	}
 	s.ApplyProfile()
 }
 
@@ -262,6 +308,27 @@ func (s Settings) Validate() error {
 	}
 	if s.ResurfaceCooldownDays != 1 && s.ResurfaceCooldownDays != 2 && s.ResurfaceCooldownDays != 7 && s.ResurfaceCooldownDays != 14 && s.ResurfaceCooldownDays != 30 {
 		return errors.New("resurfaceCooldownDays must be 1, 2, 7, 14, or 30")
+	}
+	if s.AutoUpdateMode != "adaptive" && s.AutoUpdateMode != "fixed" {
+		return fmt.Errorf("unsupported auto update mode %q", s.AutoUpdateMode)
+	}
+	if s.AutoUpdateIntervalHours != 1 && s.AutoUpdateIntervalHours != 2 && s.AutoUpdateIntervalHours != 4 && s.AutoUpdateIntervalHours != 6 && s.AutoUpdateIntervalHours != 12 {
+		return errors.New("autoUpdateIntervalHours must be 1, 2, 4, 6, or 12")
+	}
+	if s.PreparedBatchLimit < 1 || s.PreparedBatchLimit > 3 {
+		return errors.New("preparedBatchLimit must be between 1 and 3")
+	}
+	if s.AutoUpdateDailyTokenBudget != 1000000 && s.AutoUpdateDailyTokenBudget != 2000000 && s.AutoUpdateDailyTokenBudget != 3000000 && s.AutoUpdateDailyTokenBudget != 5000000 {
+		return errors.New("autoUpdateDailyTokenBudget must be 1000000, 2000000, 3000000, or 5000000")
+	}
+	if s.AutoUpdateManualReservePct != 10 && s.AutoUpdateManualReservePct != 25 && s.AutoUpdateManualReservePct != 40 {
+		return errors.New("autoUpdateManualReservePct must be 10, 25, or 40")
+	}
+	if s.PreparedBatchMaxAgeHours != 6 && s.PreparedBatchMaxAgeHours != 12 && s.PreparedBatchMaxAgeHours != 24 && s.PreparedBatchMaxAgeHours != 48 {
+		return errors.New("preparedBatchMaxAgeHours must be 6, 12, 24, or 48")
+	}
+	if s.NextBatchBehavior != "require_action" && s.NextBatchBehavior != "auto_at_finish" {
+		return fmt.Errorf("unsupported next batch behavior %q", s.NextBatchBehavior)
 	}
 	if len(s.ReasoningExecutablePath) > 4096 || strings.ContainsRune(s.ReasoningExecutablePath, '\x00') {
 		return errors.New("reasoningExecutablePath is invalid")
@@ -371,6 +438,37 @@ type Session struct {
 	Items             []TimelineItem `json:"items"`
 	Coverage          map[string]any `json:"coverage"`
 	Error             *Failure       `json:"error"`
+	Automatic         bool           `json:"automatic"`
+	DeliveryState     string         `json:"deliveryState,omitempty"`
+}
+
+type PreparedBatch struct {
+	SessionID  string  `json:"sessionId"`
+	Status     string  `json:"status"`
+	PreparedAt string  `json:"preparedAt"`
+	ExpiresAt  string  `json:"expiresAt"`
+	ItemCount  int     `json:"itemCount"`
+	Urgency    float64 `json:"highestUrgency"`
+}
+
+type AutoUpdateStatus struct {
+	Enabled                  bool            `json:"enabled"`
+	Mode                     string          `json:"mode"`
+	State                    string          `json:"state"`
+	Reason                   string          `json:"reason,omitempty"`
+	NextCheckAt              string          `json:"nextCheckAt,omitempty"`
+	BudgetResetAt            string          `json:"budgetResetAt"`
+	LastManualBudgetResetAt  string          `json:"lastManualBudgetResetAt,omitempty"`
+	DailyTokenBudget         int64           `json:"dailyTokenBudget"`
+	DailyTokensUsed          int64           `json:"dailyTokensUsed"`
+	QuotaTokensUsed          int64           `json:"quotaTokensUsed"`
+	DailyTokensRemaining     int64           `json:"dailyTokensRemaining"`
+	AutomaticTokensUsed      int64           `json:"automaticTokensUsed"`
+	AutomaticTokensRemaining int64           `json:"automaticTokensRemaining"`
+	ManualReserveTokens      int64           `json:"manualReserveTokens"`
+	EstimatedNextRunTokens   int64           `json:"estimatedNextRunTokens"`
+	AutomaticTokenLimit      int64           `json:"automaticTokenLimit"`
+	PreparedBatches          []PreparedBatch `json:"preparedBatches"`
 }
 
 type Run struct {
@@ -406,6 +504,8 @@ type InboxSession struct {
 	PreferenceDecisions []InboxPreferenceDecision `json:"preferenceDecisions"`
 	Runs                []InboxRun                `json:"runs"`
 	Error               *Failure                  `json:"error"`
+	Automatic           bool                      `json:"automatic"`
+	DeliveryState       string                    `json:"deliveryState,omitempty"`
 }
 
 type InboxPreferenceDecision struct {

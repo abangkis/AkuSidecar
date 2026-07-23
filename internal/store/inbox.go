@@ -39,6 +39,10 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 			return nil, 0, err
 		}
 		entry := domain.InboxSession{ID: session.ID, Intent: session.Intent, Status: session.Status, CreatedAt: session.CreatedAt, StartedAt: session.StartedAt, CompletedAt: session.CompletedAt, Error: session.Error, PreferenceDecisions: []domain.InboxPreferenceDecision{}, Runs: make([]domain.InboxRun, 0, len(session.Runs))}
+		entry.Automatic, entry.DeliveryState, err = s.AutoSessionDelivery(ctx, session.ID)
+		if err != nil {
+			return nil, 0, err
+		}
 		for _, run := range session.Runs {
 			diagnostic, err := s.inboxRun(ctx, run)
 			if err != nil {
@@ -141,7 +145,7 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 		err = s.db.QueryRowContext(ctx,
 			"SELECT s.id,s.status,s.completed_at,COUNT(t.id),0 "+
 				"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
-				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL "+
+				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=s.id AND b.state<>'visible') "+
 				"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
 			Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems, &value.DuplicateReports)
 	} else {
@@ -151,7 +155,7 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 				"SUM(CASE WHEN t.id IS NOT NULL AND r.relation='duplicate_report' THEN 1 ELSE 0 END) "+
 				"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
 				"LEFT JOIN semantic_event_reports r ON r.timeline_id=t.id "+
-				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL "+
+				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=s.id AND b.state<>'visible') "+
 				"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
 			Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems, &value.DuplicateReports)
 	}

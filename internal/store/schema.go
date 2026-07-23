@@ -44,6 +44,28 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_status_created ON sessions(status, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS auto_update_batches (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  state TEXT NOT NULL CHECK (state IN ('preparing','prepared','visible','expired')),
+  created_at TEXT NOT NULL,
+  prepared_at TEXT,
+  revealed_at TEXT,
+  expires_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_update_batches_state_prepared
+  ON auto_update_batches(state, prepared_at);
+
+CREATE TABLE IF NOT EXISTS auto_update_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_ui_access_at TEXT,
+  last_attempt_at TEXT,
+  last_success_at TEXT,
+  last_error TEXT NOT NULL DEFAULT ''
+);
+
+INSERT OR IGNORE INTO auto_update_state(id) VALUES(1);
+
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

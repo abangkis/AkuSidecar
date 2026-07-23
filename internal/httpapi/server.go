@@ -112,6 +112,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "bridgeContractVersion": domain.BridgeContractVersion, "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/bootstrap":
+		s.engine.RecordUIAccess(ctx)
 		settings, err := s.store.GetSettings(ctx)
 		if err != nil {
 			return err
@@ -140,7 +141,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck})
+		autoUpdate, err := s.engine.AutoUpdateStatus(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -396,6 +401,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"run": run})
 	case r.Method == http.MethodGet && p == "/api/timeline":
+		s.engine.RecordUIAccess(ctx)
 		limit := boundedInt(r.URL.Query().Get("limit"), 24, 1, 50)
 		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
 		items, err := s.engine.Timeline(ctx, limit, offset)
@@ -406,7 +412,31 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "latestCheck": latestCheck})
+		autoUpdate, err := s.engine.AutoUpdateStatus(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/auto-update/batches/") && strings.HasSuffix(p, "/reveal"):
+		id := path.Base(strings.TrimSuffix(p, "/reveal"))
+		batch, err := s.engine.RevealPreparedBatch(ctx, id)
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"batch": batch})
+	case r.Method == http.MethodPost && p == "/api/auto-update/budget/reset":
+		status, err := s.engine.ResetAutoUpdateDailyQuota(ctx)
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+	case r.Method == http.MethodGet && p == "/api/auto-update/status":
+		s.engine.RecordUIAccess(ctx)
+		status, err := s.engine.AutoUpdateStatus(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/feedback"):
 		id := path.Base(strings.TrimSuffix(p, "/feedback"))
 		var value domain.Feedback
@@ -616,6 +646,19 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"command": command})
+	case r.Method == http.MethodGet && p == "/api/bridge/commands/pending":
+		if err := s.requireBridge(r); err != nil {
+			return err
+		}
+		runID, err := s.engine.PendingBridgeRunID(ctx)
+		if err != nil {
+			return err
+		}
+		if runID == "" {
+			w.WriteHeader(http.StatusNoContent)
+			return nil
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"runId": runID})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/commands/") && strings.HasSuffix(p, "/observation"):
 		if err := s.requireBridge(r); err != nil {
 			return err

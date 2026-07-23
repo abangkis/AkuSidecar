@@ -71,6 +71,7 @@ func main() {
 	fatal(logger, err)
 	address, err := server.Start()
 	fatal(logger, err)
+	runtime.StartAutoUpdateScheduler()
 	logger.Printf("version=%s runtime=go address=http://%s provider=%s database=%s", domain.ApplicationVersion, address, provider.Name(), state.Path())
 	if resumed > 0 {
 		logger.Printf("resumed_reasoning_runs=%d from_durable_capture=true", resumed)
