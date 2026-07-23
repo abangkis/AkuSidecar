@@ -244,6 +244,37 @@ CREATE TABLE IF NOT EXISTS ai_detection_jobs (
 
 CREATE INDEX IF NOT EXISTS ai_detection_jobs_status_created ON ai_detection_jobs(status, created_at);
 
+CREATE TABLE IF NOT EXISTS media_provenance_assessments (
+  id TEXT PRIMARY KEY,
+  timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  media_index INTEGER NOT NULL CHECK (media_index >= 0),
+  media_kind TEXT NOT NULL CHECK (media_kind IN ('image')),
+  target_url TEXT NOT NULL,
+  target_url_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
+  manifest_state TEXT NOT NULL CHECK (manifest_state IN ('pending','no_manifest','valid','invalid','unsupported','unavailable')),
+  trust_state TEXT NOT NULL CHECK (trust_state IN ('pending','not_applicable','not_evaluated','trusted','untrusted')),
+  ai_origin TEXT NOT NULL CHECK (ai_origin IN ('unknown','none','generated','edited')),
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  asset_sha256 TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL,
+  verifier_version TEXT NOT NULL,
+  rationale TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(timeline_id,target_url_hash,verifier_version)
+);
+
+CREATE INDEX IF NOT EXISTS media_provenance_status_created
+  ON media_provenance_assessments(status, created_at);
+CREATE INDEX IF NOT EXISTS media_provenance_timeline_completed
+  ON media_provenance_assessments(timeline_id, completed_at);
+
 CREATE TABLE IF NOT EXISTS media_recaptures (
   id TEXT PRIMARY KEY,
   timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,

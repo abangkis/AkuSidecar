@@ -17,6 +17,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/httpapi"
+	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -60,6 +61,13 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	mediaInspector := mediaprovenance.NewC2PAToolInspector()
+	runtime.SetMediaProvenanceInspector(mediaInspector)
+	if mediaInspector.Available() {
+		logger.Printf("C2PA image provenance ready executable=%s", mediaInspector.Executable())
+	} else {
+		logger.Printf("C2PA image provenance unavailable; set AKU_C2PATOOL_PATH or place c2patool beside AkuSidecar")
+	}
 	if structured, ok := provider.(reasoning.StructuredInvoker); ok {
 		aiResolver, err := aidetector.NewStructuredResolver(cfg.Root, structured, cfg.Reasoning.AIDetection)
 		fatal(logger, err)
@@ -69,6 +77,7 @@ func main() {
 	fatal(logger, err)
 	resumed, err := runtime.ResumePendingReasoning(context.Background())
 	fatal(logger, err)
+	fatal(logger, runtime.ResumeMediaProvenance(context.Background()))
 	address, err := server.Start()
 	fatal(logger, err)
 	runtime.StartAutoUpdateScheduler()

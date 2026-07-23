@@ -13,6 +13,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
+	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/selection"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -50,6 +51,7 @@ type Engine struct {
 	events       *semanticengine.Engine
 	aiFast       aidetector.FastDetector
 	aiDeep       aidetector.Resolver
+	mediaOrigin  mediaprovenance.Inspector
 	autoCancel   context.CancelFunc
 	autoWake     chan struct{}
 }
@@ -64,8 +66,21 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
 }
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
-func (e *Engine) Epoch() string                               { return e.epoch }
-func (e *Engine) ProviderName() string                        { return e.provider.Name() }
+func (e *Engine) SetMediaProvenanceInspector(value mediaprovenance.Inspector) {
+	e.mediaOrigin = value
+}
+func (e *Engine) ResumeMediaProvenance(ctx context.Context) error {
+	if e.mediaOrigin == nil || !e.mediaOrigin.Available() {
+		return nil
+	}
+	if err := e.store.CancelRunningMediaProvenance(ctx); err != nil {
+		return err
+	}
+	e.launchMediaProvenanceItems(nil)
+	return nil
+}
+func (e *Engine) Epoch() string        { return e.epoch }
+func (e *Engine) ProviderName() string { return e.provider.Name() }
 func (e *Engine) Settings(ctx context.Context) (domain.Settings, error) {
 	return e.store.GetSettings(ctx)
 }
@@ -399,6 +414,9 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if settings.AIDetectionEnabled && !onboardingFastPath && (completedSession.BudgetAuthority != domain.BudgetAuthorityAutomatic || e.autoDeepDetectionAllowed(ctx, settings)) {
 			e.launchDeepDetection(sessionID)
 		}
+		if settings.AIDetectionEnabled && !onboardingFastPath {
+			e.launchMediaProvenance(sessionID)
+		}
 		return nil, nil
 	}
 	settings, err := e.store.GetSettings(ctx)
@@ -430,6 +448,74 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 		return
 	}
 	e.launchDeepDetectionItems(sessionID, items)
+}
+
+func (e *Engine) launchMediaProvenance(sessionID string) {
+	inspector := e.mediaOrigin
+	if inspector == nil || !inspector.Available() {
+		return
+	}
+	items, err := e.store.ListSessionItems(context.Background(), sessionID)
+	if err != nil {
+		e.logger.Printf("C2PA image provenance could not load session %s: %v", sessionID, err)
+		return
+	}
+	e.launchMediaProvenanceItems(items)
+}
+
+func (e *Engine) launchMediaProvenanceItems(items []domain.TimelineItem) {
+	inspector := e.mediaOrigin
+	if inspector == nil || !inspector.Available() {
+		return
+	}
+	if len(items) > 0 {
+		if _, err := e.store.QueueMediaProvenance(context.Background(), items, inspector.Name(), inspector.Version()); err != nil {
+			e.logger.Printf("C2PA image provenance queue degraded safely: %v", err)
+			return
+		}
+	}
+	const key = "media-provenance"
+	e.mu.Lock()
+	if _, active := e.active[key]; active {
+		e.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	e.active[key] = cancel
+	e.mu.Unlock()
+	go func() {
+		defer func() {
+			e.mu.Lock()
+			delete(e.active, key)
+			e.mu.Unlock()
+		}()
+		for {
+			assessment, err := e.store.ClaimMediaProvenance(ctx, inspector.Version())
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					e.logger.Printf("C2PA image provenance claim degraded safely: %v", err)
+				}
+				return
+			}
+			if assessment == nil {
+				return
+			}
+			descriptor, ok := domain.SourceByID(assessment.Source)
+			if !ok {
+				_ = e.store.FinishMediaProvenance(context.Background(), assessment.ID, mediaprovenance.Result{
+					ManifestState: "unsupported", TrustState: "not_applicable", AIOrigin: "unknown",
+				}, fmt.Errorf("source %q has no media provenance contract", assessment.Source))
+				continue
+			}
+			result, inspectErr := inspector.Inspect(ctx, *assessment, descriptor.TrustedMediaHostSuffixes)
+			if finishErr := e.store.FinishMediaProvenance(context.Background(), assessment.ID, result, inspectErr); finishErr != nil {
+				e.logger.Printf("C2PA image provenance result %s could not persist: %v", assessment.ID, finishErr)
+			}
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return
+			}
+		}
+	}()
 }
 
 func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.TimelineItem) {
@@ -538,7 +624,7 @@ func (e *Engine) cancelDeepDetections() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for id, cancel := range e.active {
-		if strings.HasPrefix(id, "ai:") {
+		if strings.HasPrefix(id, "ai:") || id == "media-provenance" {
 			cancel()
 		}
 	}
@@ -1181,6 +1267,7 @@ func (e *Engine) CorrectSelection(ctx context.Context, runID, candidateRef strin
 	}
 	if settings.AIDetectionEnabled {
 		e.launchDeepDetectionItems(item.SessionID, []domain.TimelineItem{item})
+		e.launchMediaProvenanceItems([]domain.TimelineItem{item})
 	}
 	return correction, item, nil
 }
@@ -1248,7 +1335,13 @@ func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observatio
 	if err := validateObservation(observation); err != nil {
 		return domain.MediaRecapture{}, err
 	}
-	return e.store.CompleteMediaRecapture(ctx, id, observation)
+	value, err := e.store.CompleteMediaRecapture(ctx, id, observation)
+	if err == nil {
+		if item, loadErr := e.store.TimelineItem(ctx, value.TimelineID); loadErr == nil {
+			e.launchMediaProvenanceItems([]domain.TimelineItem{item})
+		}
+	}
+	return value, err
 }
 
 func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure domain.Failure) (domain.MediaRecapture, error) {
@@ -1258,7 +1351,13 @@ func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure doma
 func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bridgeID string, value domain.PassiveXMediaEvidence) (domain.MediaRecapture, bool, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
-	return e.store.ApplyPassiveXMediaEvidence(ctx, timelineID, bridgeID, value)
+	recapture, updated, err := e.store.ApplyPassiveXMediaEvidence(ctx, timelineID, bridgeID, value)
+	if err == nil && updated {
+		if item, loadErr := e.store.TimelineItem(ctx, timelineID); loadErr == nil {
+			e.launchMediaProvenanceItems([]domain.TimelineItem{item})
+		}
+	}
+	return recapture, updated, err
 }
 
 func (e *Engine) SemanticEventSuggestions(ctx context.Context, timelineID string, limit int) ([]domain.EventSuggestion, error) {

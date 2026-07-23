@@ -2563,10 +2563,11 @@ function routeAIDetectedItems(items) {
   const result = { inline: [], drawer: [], hidden: [], pending: false };
   for (const entry of items) {
     const detection = entry.aiDetection;
-    result.pending ||= Boolean(detection?.pendingDeep);
+    result.pending ||= Boolean(detection?.pendingDeep || detection?.pendingMedia);
     const seen = state.seenTimelineItems.has(entry.id);
-    if (mode === "drawer" && detection?.routeToSignals && !seen) result.drawer.push(entry);
-    else if (mode === "hide" && detection?.hideEligible && !seen) result.hidden.push(entry);
+    const keepPreviouslySeenInline = seen && !detection?.directMediaProvenance;
+    if (mode === "drawer" && detection?.routeToSignals && !keepPreviouslySeenInline) result.drawer.push(entry);
+    else if (mode === "hide" && detection?.hideEligible && !keepPreviouslySeenInline) result.hidden.push(entry);
     else result.inline.push(entry);
   }
   return result;
@@ -2966,7 +2967,7 @@ function buildAIDetectionControls(entry) {
   }
   const detection = entry.aiDetection ?? null;
   const hasAssessmentLabel = Boolean(detection?.badgeLabel);
-  const badgeLabel = detection?.badgeLabel || (detection?.pendingDeep
+  const badgeLabel = detection?.badgeLabel || (detection?.pendingDeep || detection?.pendingMedia
     ? "AI signal · Checking"
     : "AI signal · Neutral");
   const badgeTone = hasAssessmentLabel
@@ -2975,7 +2976,7 @@ function buildAIDetectionControls(entry) {
       : detection.userOverride
         ? "user"
         : detection.stage || "fast"
-    : detection?.pendingDeep
+    : detection?.pendingDeep || detection?.pendingMedia
       ? "pending"
       : "neutral";
   const badge = document.createElement("button");
@@ -2987,13 +2988,19 @@ function buildAIDetectionControls(entry) {
   const details = document.createElement("div");
   details.className = "ai-assessment-detail hidden";
   const summary = document.createElement("p");
-  summary.textContent = detection?.detail || (detection?.pendingDeep
-    ? "Deep Detection is still reviewing this post. You remain in control of its personal classification."
+  summary.textContent = detection?.detail || (detection?.pendingDeep || detection?.pendingMedia
+    ? detection?.pendingMedia
+      ? "Local C2PA inspection is checking attached image provenance. This does not assess authorship of the post text."
+      : "Deep Detection is still reviewing this post. You remain in control of its personal classification."
     : "No strong AI-origin signal is currently recorded for this post.");
   const meta = document.createElement("small");
   const evidence = (detection?.evidenceCodes || []).map(humanize).join(", ");
+  const mediaSignals = (detection?.mediaSignals || []).map((signal) =>
+    [signal.label, humanize(signal.origin), humanize(signal.trustState)].filter(Boolean).join(" / ")
+  ).join("; ");
+  const combinedEvidence = [evidence, mediaSignals].filter(Boolean).join("; ");
   meta.textContent = detection
-    ? [humanize(detection.stage), humanize(detection.confidenceBand), evidence, `${detection.historyCount || 0} assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
+    ? [humanize(detection.stage), humanize(detection.confidenceBand), combinedEvidence, `${detection.historyCount || 0} post assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
     : "No detector assessment yet";
   const actions = document.createElement("div");
   actions.className = "ai-assessment-actions";

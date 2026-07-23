@@ -146,7 +146,7 @@ func TestOutdatedDeepStrongSignalLosesPresentationAuthority(t *testing.T) {
 	value := resolveAIDetection([]domain.AIAssessment{
 		{ID: "fast", Stage: "fast", Status: "no_signal_detected", ConfidenceBand: "low", AssessedObject: "social_post", SignalScope: "none", DetectorVersion: "fast-text-v1", CreatedAt: "2026-07-17T01:00:00Z"},
 		{ID: "deep", Stage: "deep", Status: "strong_signals", ConfidenceBand: "high", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post", SignalScope: "social_post", DetectorVersion: "codex-deep-v3", CreatedAt: "2026-07-17T01:01:00Z"},
-	}, "completed")
+	}, "completed", nil)
 	if value.Status != "no_signal_detected" || value.BadgeLabel != "AI assessment corrected" || !value.Corrected || value.RouteToSignals || value.HideEligible {
 		t.Fatalf("resolved detection=%+v", value)
 	}
@@ -156,8 +156,40 @@ func TestCurrentDeepStrongSignalKeepsPresentationAuthority(t *testing.T) {
 	value := resolveAIDetection([]domain.AIAssessment{
 		{ID: "fast", Stage: "fast", Status: "strong_signals", ConfidenceBand: "medium", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post", SignalScope: "social_post", DetectorVersion: "fast-text-v1", CreatedAt: "2026-07-17T01:00:00Z"},
 		{ID: "deep", Stage: "deep", Status: "strong_signals", ConfidenceBand: "high", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post", SignalScope: "social_post", DetectorVersion: domain.CurrentAIDeepDetectorVersion, CreatedAt: "2026-07-17T01:01:00Z"},
-	}, "completed")
+	}, "completed", nil)
 	if value.BadgeLabel != "AI signals confirmed" || !value.RouteToSignals || !value.HideEligible {
 		t.Fatalf("resolved detection=%+v", value)
+	}
+}
+
+func TestDirectMediaProvenanceRoutesToDrawer(t *testing.T) {
+	value := resolveAIDetection(nil, "", []domain.MediaProvenanceAssessment{{
+		Status: "completed", ManifestState: "valid", TrustState: "trusted", AIOrigin: "generated",
+		MediaIndex: 0, EvidenceCodes: []string{"c2pa_trained_algorithmic_media"},
+		VerifierVersion: "c2pa-image-v1", Rationale: "C2PA declares trained-algorithmic media.",
+	}})
+	if value == nil || !value.RouteToSignals || !value.DirectMediaProvenance {
+		t.Fatalf("expected direct media provenance to route to signals: %+v", value)
+	}
+	if value.AssessedObject != "attached_media" || value.BadgeLabel != "Verified AI media" {
+		t.Fatalf("expected object-scoped trusted media label: %+v", value)
+	}
+}
+
+func TestUserCorrectionOverridesMediaRouting(t *testing.T) {
+	value := resolveAIDetection([]domain.AIAssessment{{
+		ID: "user-1", Stage: "user", Status: "user_marked_not_ai", ConfidenceBand: "high",
+		AssessedObject: "social_post", SignalScope: "none", Provider: "user",
+		DetectorVersion: "personal-override-v1", CreatedAt: domain.Now(),
+	}}, "", []domain.MediaProvenanceAssessment{{
+		Status: "completed", ManifestState: "valid", TrustState: "trusted", AIOrigin: "generated",
+		MediaIndex: 0, EvidenceCodes: []string{"c2pa_trained_algorithmic_media"},
+		VerifierVersion: "c2pa-image-v1",
+	}})
+	if value == nil || value.RouteToSignals || !value.UserOverride {
+		t.Fatalf("expected personal not-AI correction to restore inline routing: %+v", value)
+	}
+	if len(value.MediaSignals) != 1 {
+		t.Fatalf("expected provenance history to remain inspectable: %+v", value)
 	}
 }

@@ -23,6 +23,15 @@ work, tests, documentation, and release preparation.
 AkuSidecar remains the application authority. It owns browser budgets,
 untrusted-evidence separation, response validation, preference eligibility,
 SQLite state, continuity, correction rules, and final Timeline composition.
+
+## Optional C2PA image provenance
+
+AI Detector can inspect captured images asynchronously with the official
+`c2patool` executable. Discovery checks `AKU_C2PATOOL_PATH`, the directory
+beside AkuSidecar, and then `PATH`. AkuSidecar remains operational when the
+tool is unavailable; only C2PA image provenance is skipped. The adapter is
+image-only, uses embedded manifests without remote-manifest or OCSP fetching,
+and never treats a missing manifest as proof that media is human-created.
 See the
 [final project story](https://github.com/abangkis/AkuBrowser/blob/main/docs/openai-build-week-submission.md)
 and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD_WEEK.md).

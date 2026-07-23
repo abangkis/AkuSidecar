@@ -1036,25 +1036,94 @@ func (a AIAssessment) Validate() error {
 }
 
 type TimelineAIDetection struct {
-	AssessmentID     string   `json:"assessmentId"`
-	Stage            string   `json:"stage"`
-	Status           string   `json:"status"`
-	ConfidenceBand   string   `json:"confidenceBand"`
-	EvidenceCodes    []string `json:"evidenceCodes"`
-	AssessedObject   string   `json:"assessedObject,omitempty"`
-	SignalScope      string   `json:"signalScope,omitempty"`
-	BadgeLabel       string   `json:"badgeLabel,omitempty"`
-	Detail           string   `json:"detail,omitempty"`
-	RouteToSignals   bool     `json:"routeToSignals"`
-	HideEligible     bool     `json:"hideEligible"`
-	PendingDeep      bool     `json:"pendingDeep"`
-	DeepStatus       string   `json:"deepStatus,omitempty"`
-	HistoryCount     int      `json:"historyCount"`
-	Corrected        bool     `json:"corrected"`
-	UserOverride     bool     `json:"userOverride"`
-	CorrectionID     string   `json:"correctionId,omitempty"`
-	DetectorVersion  string   `json:"detectorVersion,omitempty"`
-	LatestAssessedAt string   `json:"latestAssessedAt,omitempty"`
+	AssessmentID          string          `json:"assessmentId"`
+	Stage                 string          `json:"stage"`
+	Status                string          `json:"status"`
+	ConfidenceBand        string          `json:"confidenceBand"`
+	EvidenceCodes         []string        `json:"evidenceCodes"`
+	AssessedObject        string          `json:"assessedObject,omitempty"`
+	SignalScope           string          `json:"signalScope,omitempty"`
+	BadgeLabel            string          `json:"badgeLabel,omitempty"`
+	Detail                string          `json:"detail,omitempty"`
+	RouteToSignals        bool            `json:"routeToSignals"`
+	HideEligible          bool            `json:"hideEligible"`
+	PendingDeep           bool            `json:"pendingDeep"`
+	DeepStatus            string          `json:"deepStatus,omitempty"`
+	HistoryCount          int             `json:"historyCount"`
+	Corrected             bool            `json:"corrected"`
+	UserOverride          bool            `json:"userOverride"`
+	CorrectionID          string          `json:"correctionId,omitempty"`
+	DetectorVersion       string          `json:"detectorVersion,omitempty"`
+	LatestAssessedAt      string          `json:"latestAssessedAt,omitempty"`
+	MediaSignals          []MediaAISignal `json:"mediaSignals,omitempty"`
+	PendingMedia          bool            `json:"pendingMedia"`
+	DirectMediaProvenance bool            `json:"directMediaProvenance"`
+}
+
+type MediaAISignal struct {
+	MediaIndex      int      `json:"mediaIndex"`
+	Origin          string   `json:"origin"`
+	ManifestState   string   `json:"manifestState"`
+	TrustState      string   `json:"trustState"`
+	EvidenceCodes   []string `json:"evidenceCodes,omitempty"`
+	Label           string   `json:"label"`
+	Detail          string   `json:"detail"`
+	VerifierVersion string   `json:"verifierVersion"`
+	AssessedAt      string   `json:"assessedAt,omitempty"`
+}
+
+type MediaProvenanceAssessment struct {
+	ID              string   `json:"id"`
+	TimelineID      string   `json:"timelineId"`
+	SessionID       string   `json:"sessionId"`
+	Source          Source   `json:"source"`
+	MediaIndex      int      `json:"mediaIndex"`
+	MediaKind       string   `json:"mediaKind"`
+	TargetURL       string   `json:"-"`
+	TargetURLHash   string   `json:"targetUrlHash"`
+	Status          string   `json:"status"`
+	ManifestState   string   `json:"manifestState"`
+	TrustState      string   `json:"trustState"`
+	AIOrigin        string   `json:"aiOrigin"`
+	EvidenceCodes   []string `json:"evidenceCodes"`
+	AssetSHA256     string   `json:"assetSha256,omitempty"`
+	Provider        string   `json:"provider"`
+	VerifierVersion string   `json:"verifierVersion"`
+	Rationale       string   `json:"rationale"`
+	DurationMS      int64    `json:"durationMs"`
+	Error           string   `json:"error,omitempty"`
+	CreatedAt       string   `json:"createdAt"`
+	StartedAt       string   `json:"startedAt,omitempty"`
+	CompletedAt     string   `json:"completedAt,omitempty"`
+}
+
+func (a MediaProvenanceAssessment) Validate() error {
+	if a.TimelineID == "" || a.SessionID == "" || a.Source == "" {
+		return errors.New("media provenance assessment requires timeline, session, and source")
+	}
+	if a.MediaIndex < 0 || a.MediaKind != "image" || a.TargetURLHash == "" {
+		return errors.New("media provenance assessment requires a bounded image identity")
+	}
+	validStatus := map[string]bool{"queued": true, "running": true, "completed": true, "failed": true, "cancelled": true}
+	if !validStatus[a.Status] {
+		return fmt.Errorf("unsupported media provenance status %q", a.Status)
+	}
+	validManifest := map[string]bool{"pending": true, "no_manifest": true, "valid": true, "invalid": true, "unsupported": true, "unavailable": true}
+	if !validManifest[a.ManifestState] {
+		return fmt.Errorf("unsupported media provenance manifest state %q", a.ManifestState)
+	}
+	validTrust := map[string]bool{"pending": true, "not_applicable": true, "not_evaluated": true, "trusted": true, "untrusted": true}
+	if !validTrust[a.TrustState] {
+		return fmt.Errorf("unsupported media provenance trust state %q", a.TrustState)
+	}
+	validOrigin := map[string]bool{"unknown": true, "none": true, "generated": true, "edited": true}
+	if !validOrigin[a.AIOrigin] {
+		return fmt.Errorf("unsupported media AI origin %q", a.AIOrigin)
+	}
+	if len(a.EvidenceCodes) > 8 {
+		return errors.New("media provenance evidence cannot exceed eight entries")
+	}
+	return nil
 }
 
 type AIDetectionJob struct {

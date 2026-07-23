@@ -197,6 +197,14 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 		placeholders = append(placeholders, "?")
 		args = append(args, items[index].ID)
 	}
+	timelineIDs := make([]string, 0, len(items))
+	for index := range items {
+		timelineIDs = append(timelineIDs, items[index].ID)
+	}
+	mediaByTimeline, err := s.mediaProvenanceByTimeline(ctx, timelineIDs)
+	if err != nil {
+		return err
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,timeline_id,session_id,stage,status,confidence_band,evidence_json,assessed_object,signal_scope,provider,detector_version,content_fingerprint,rationale,COALESCE(supersedes_id,''),created_at
 		FROM ai_assessments WHERE undone_at IS NULL AND timeline_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY created_at,id`, args...)
@@ -256,13 +264,13 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 		}
 	}
 	for timelineID, item := range itemByID {
-		item.AIDetection = resolveAIDetection(byTimeline[timelineID], jobs[item.SessionID])
+		item.AIDetection = resolveAIDetection(byTimeline[timelineID], jobs[item.SessionID], mediaByTimeline[timelineID])
 	}
 	return nil
 }
 
-func resolveAIDetection(history []domain.AIAssessment, deepStatus string) *domain.TimelineAIDetection {
-	if len(history) == 0 && deepStatus == "" {
+func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaHistory []domain.MediaProvenanceAssessment) *domain.TimelineAIDetection {
+	if len(history) == 0 && deepStatus == "" && len(mediaHistory) == 0 {
 		return nil
 	}
 	value := &domain.TimelineAIDetection{HistoryCount: len(history), DeepStatus: deepStatus, PendingDeep: deepStatus == "queued" || deepStatus == "running"}
@@ -285,19 +293,26 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string) *domai
 	if user != nil {
 		current = user
 	}
-	if current == nil {
-		return value
+	for _, media := range mediaHistory {
+		if media.Status == "queued" || media.Status == "running" {
+			value.PendingMedia = true
+		}
+		if media.Status == "completed" && media.ManifestState == "valid" && (media.AIOrigin == "generated" || media.AIOrigin == "edited") {
+			value.MediaSignals = append(value.MediaSignals, mediaSignal(media))
+		}
 	}
-	value.AssessmentID = current.ID
-	value.Stage = current.Stage
-	value.Status = current.Status
-	value.ConfidenceBand = current.ConfidenceBand
-	value.EvidenceCodes = current.EvidenceCodes
-	value.AssessedObject = current.AssessedObject
-	value.SignalScope = current.SignalScope
-	value.DetectorVersion = current.DetectorVersion
-	value.LatestAssessedAt = current.CreatedAt
-	value.Detail = current.Rationale
+	if current != nil {
+		value.AssessmentID = current.ID
+		value.Stage = current.Stage
+		value.Status = current.Status
+		value.ConfidenceBand = current.ConfidenceBand
+		value.EvidenceCodes = current.EvidenceCodes
+		value.AssessedObject = current.AssessedObject
+		value.SignalScope = current.SignalScope
+		value.DetectorVersion = current.DetectorVersion
+		value.LatestAssessedAt = current.CreatedAt
+		value.Detail = current.Rationale
+	}
 
 	if user != nil {
 		value.UserOverride = true
@@ -310,6 +325,28 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string) *domai
 			value.BadgeLabel = "Marked not AI by you"
 			value.Corrected = (fast != nil && fast.Status == "strong_signals") || (deep != nil && deep.Status == "strong_signals")
 		}
+		return value
+	}
+
+	if len(value.MediaSignals) > 0 {
+		signal := value.MediaSignals[len(value.MediaSignals)-1]
+		value.Stage = "media_provenance"
+		value.Status = "strong_signals"
+		value.ConfidenceBand = "high"
+		value.EvidenceCodes = signal.EvidenceCodes
+		value.AssessedObject = "attached_media"
+		value.SignalScope = "attached_media"
+		value.DetectorVersion = signal.VerifierVersion
+		value.LatestAssessedAt = signal.AssessedAt
+		value.BadgeLabel = signal.Label
+		value.Detail = signal.Detail + " This describes the attached image, not authorship of the social-post text."
+		value.RouteToSignals = true
+		value.HideEligible = true
+		value.DirectMediaProvenance = true
+		return value
+	}
+
+	if current == nil {
 		return value
 	}
 
