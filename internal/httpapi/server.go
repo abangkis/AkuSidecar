@@ -163,7 +163,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		calibration, err := s.engine.StartCalibration(ctx, body.UnifiedSessionID, body.TriggerKind)
 		if err != nil {
 			if errors.Is(err, engine.ErrCalibrationRequiresValidatedCandidate) {
-				return apiError{Status: http.StatusConflict, Code: "calibration_sample_unavailable", Message: "The latest check produced no validated calibration entry. Check for updates again."}
+				return apiError{Status: http.StatusConflict, Code: "calibration_sample_unavailable", Message: "The latest check produced no validated calibration entry. Choose Update now again."}
 			}
 			return badRequest(err.Error())
 		}
@@ -254,14 +254,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings)})
-	case r.Method == http.MethodPost && p == "/api/sessions":
+	case r.Method == http.MethodPost && p == "/api/updates":
 		var body struct {
 			Intent string `json:"intent"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			return err
 		}
-		session, err := s.engine.StartSession(ctx, body.Intent)
+		session, err := s.engine.StartVisibleUpdate(ctx, body.Intent)
 		if err != nil {
 			return conflict(err.Error())
 		}
@@ -429,8 +429,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return conflict(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
-	case r.Method == http.MethodPost && p == "/api/auto-update/run-now":
-		session, err := s.engine.StartAutoUpdateNow(ctx)
+	case r.Method == http.MethodPost && p == "/api/auto-update/prepare":
+		session, err := s.engine.StartPreparedUpdateNow(ctx)
 		if err != nil {
 			return conflict(err.Error())
 		}

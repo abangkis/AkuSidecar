@@ -16,7 +16,7 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := state.CreateSession(ctx, "usage projection", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "usage projection", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestModelUsageExplainsCategoriesThatDidNotInvokeAModel(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "local path", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "local path", settings)
 	if err != nil {
 		t.Fatal(err)
 	}

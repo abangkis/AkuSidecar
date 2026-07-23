@@ -424,22 +424,81 @@ type OnboardingState struct {
 	Profile *OnboardingProfile `json:"profile"`
 }
 
+type UpdateTrigger string
+
+const (
+	UpdateTriggerOnboarding UpdateTrigger = "onboarding"
+	UpdateTriggerScheduler  UpdateTrigger = "scheduler"
+	UpdateTriggerUser       UpdateTrigger = "user"
+)
+
+type UpdateDelivery string
+
+const (
+	UpdateDeliveryPrepared UpdateDelivery = "prepared"
+	UpdateDeliveryVisible  UpdateDelivery = "visible"
+)
+
+type BudgetAuthority string
+
+const (
+	BudgetAuthorityAutomatic BudgetAuthority = "automatic"
+	BudgetAuthorityUser      BudgetAuthority = "user"
+)
+
+type UpdatePolicy struct {
+	Trigger         UpdateTrigger   `json:"trigger"`
+	Delivery        UpdateDelivery  `json:"delivery"`
+	BudgetAuthority BudgetAuthority `json:"budgetAuthority"`
+}
+
+func (policy UpdatePolicy) Validate() error {
+	if policy.Trigger != UpdateTriggerOnboarding && policy.Trigger != UpdateTriggerScheduler && policy.Trigger != UpdateTriggerUser {
+		return fmt.Errorf("unsupported update trigger %q", policy.Trigger)
+	}
+	if policy.Delivery != UpdateDeliveryPrepared && policy.Delivery != UpdateDeliveryVisible {
+		return fmt.Errorf("unsupported update delivery %q", policy.Delivery)
+	}
+	if policy.BudgetAuthority != BudgetAuthorityAutomatic && policy.BudgetAuthority != BudgetAuthorityUser {
+		return fmt.Errorf("unsupported budget authority %q", policy.BudgetAuthority)
+	}
+	switch policy.Trigger {
+	case UpdateTriggerOnboarding:
+		if policy.Delivery != UpdateDeliveryVisible || policy.BudgetAuthority != BudgetAuthorityUser {
+			return errors.New("onboarding updates must be visible and user-authorized")
+		}
+	case UpdateTriggerScheduler:
+		if policy.Delivery != UpdateDeliveryPrepared || policy.BudgetAuthority != BudgetAuthorityAutomatic {
+			return errors.New("scheduler updates must be prepared and use automatic budget")
+		}
+	case UpdateTriggerUser:
+		validVisible := policy.Delivery == UpdateDeliveryVisible && policy.BudgetAuthority == BudgetAuthorityUser
+		validPrepared := policy.Delivery == UpdateDeliveryPrepared && policy.BudgetAuthority == BudgetAuthorityAutomatic
+		if !validVisible && !validPrepared {
+			return errors.New("user updates must either publish with user budget or prepare with automatic budget")
+		}
+	}
+	return nil
+}
+
 type Session struct {
-	ID                string         `json:"id"`
-	Intent            string         `json:"intent"`
-	Status            string         `json:"status"`
-	ActiveSource      *Source        `json:"activeSource"`
-	MaxItemsPerSource int            `json:"maxItemsPerSource"`
-	MaxItemsTotal     int            `json:"maxItemsTotal"`
-	CreatedAt         string         `json:"createdAt"`
-	StartedAt         *string        `json:"startedAt"`
-	CompletedAt       *string        `json:"completedAt"`
-	Runs              []Run          `json:"runs"`
-	Items             []TimelineItem `json:"items"`
-	Coverage          map[string]any `json:"coverage"`
-	Error             *Failure       `json:"error"`
-	Automatic         bool           `json:"automatic"`
-	DeliveryState     string         `json:"deliveryState,omitempty"`
+	ID                string          `json:"id"`
+	Intent            string          `json:"intent"`
+	Status            string          `json:"status"`
+	ActiveSource      *Source         `json:"activeSource"`
+	MaxItemsPerSource int             `json:"maxItemsPerSource"`
+	MaxItemsTotal     int             `json:"maxItemsTotal"`
+	CreatedAt         string          `json:"createdAt"`
+	StartedAt         *string         `json:"startedAt"`
+	CompletedAt       *string         `json:"completedAt"`
+	Runs              []Run           `json:"runs"`
+	Items             []TimelineItem  `json:"items"`
+	Coverage          map[string]any  `json:"coverage"`
+	Error             *Failure        `json:"error"`
+	Trigger           UpdateTrigger   `json:"trigger"`
+	Delivery          UpdateDelivery  `json:"delivery"`
+	BudgetAuthority   BudgetAuthority `json:"budgetAuthority"`
+	DeliveryState     string          `json:"deliveryState,omitempty"`
 }
 
 type PreparedBatch struct {
@@ -507,7 +566,9 @@ type InboxSession struct {
 	PreferenceDecisions []InboxPreferenceDecision `json:"preferenceDecisions"`
 	Runs                []InboxRun                `json:"runs"`
 	Error               *Failure                  `json:"error"`
-	Automatic           bool                      `json:"automatic"`
+	Trigger             UpdateTrigger             `json:"trigger"`
+	Delivery            UpdateDelivery            `json:"delivery"`
+	BudgetAuthority     BudgetAuthority           `json:"budgetAuthority"`
 	DeliveryState       string                    `json:"deliveryState,omitempty"`
 }
 

@@ -14,7 +14,7 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "Inspect this flow", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "Inspect this flow", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestInboxRunTraceUsesTheSameCanonicalIdentityAsReasoning(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "Canonical trace", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "Canonical trace", settings)
 	if err != nil {
 		t.Fatal(err)
 	}

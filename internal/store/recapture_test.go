@@ -266,7 +266,7 @@ func insertUnavailableMediaFixture(t *testing.T, state *Store) (string, string) 
 		t.Fatal(err)
 	}
 	settings.ActiveSources = []domain.Source{domain.SourceX}
-	session, err := state.CreateSession(ctx, "fixture", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "fixture", settings)
 	if err != nil {
 		t.Fatal(err)
 	}

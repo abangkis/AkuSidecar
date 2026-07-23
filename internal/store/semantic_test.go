@@ -15,7 +15,7 @@ func insertSemanticTimelineFixture(t *testing.T, state *Store, relation string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := state.CreateSession(ctx, "semantic fixture", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "semantic fixture", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestEventResolutionDiagnosticsRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "diagnostic fixture", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "diagnostic fixture", settings)
 	if err != nil {
 		t.Fatal(err)
 	}

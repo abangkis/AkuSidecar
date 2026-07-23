@@ -23,6 +23,18 @@ func openTestStore(t *testing.T) *Store {
 	return value
 }
 
+func visibleUpdatePolicy() domain.UpdatePolicy {
+	return domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+	}
+}
+
+func preparedUpdatePolicy() domain.UpdatePolicy {
+	return domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerScheduler, Delivery: domain.UpdateDeliveryPrepared, BudgetAuthority: domain.BudgetAuthorityAutomatic,
+	}
+}
+
 func TestTimelineBoundaryCueModePersists(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
@@ -100,9 +112,12 @@ func TestAutomaticSessionRemainsHiddenUntilPreparedBatchIsRevealed(t *testing.T)
 	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
 		t.Fatal(err)
 	}
-	session, err := state.CreateAutoSession(ctx, "automatic catch up", settings)
+	session, err := createPreparedUpdateSession(state, ctx, "automatic catch up", settings)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if session.Trigger != domain.UpdateTriggerScheduler || session.Delivery != domain.UpdateDeliveryPrepared || session.BudgetAuthority != domain.BudgetAuthorityAutomatic || session.DeliveryState != "preparing" {
+		t.Fatalf("prepared update policy=%+v", session)
 	}
 	runs, err := state.listRuns(ctx, session.ID)
 	if err != nil {
@@ -163,7 +178,7 @@ func TestAutoUpdateDailyQuotaResetPreservesUsageHistory(t *testing.T) {
 	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
 		t.Fatal(err)
 	}
-	session, err := state.CreateAutoSession(ctx, "automatic quota fixture", settings)
+	session, err := createPreparedUpdateSession(state, ctx, "automatic quota fixture", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +287,7 @@ func TestLatestTimelineCheckUsesLatestTerminalSessionEvenWithZeroAdditions(t *te
 		t.Fatalf("fresh latest=%+v err=%v", latest, err)
 	}
 	settings, _ := state.GetSettings(ctx)
-	first, err := state.CreateSession(ctx, "first check", settings)
+	first, err := createVisibleUpdateSession(state, ctx, "first check", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +301,7 @@ func TestLatestTimelineCheckUsesLatestTerminalSessionEvenWithZeroAdditions(t *te
 	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at='2026-07-16T10:00:00Z' WHERE id=?`, first.ID); err != nil {
 		t.Fatal(err)
 	}
-	second, err := state.CreateSession(ctx, "zero addition check", settings)
+	second, err := createVisibleUpdateSession(state, ctx, "zero addition check", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +324,7 @@ func TestCalibrationSessionReflectsSnapshotLiveInfluence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := state.CreateSession(ctx, "calibration authority", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "calibration authority", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +355,7 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "What changed?", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +416,7 @@ func TestSessionSnapshotsSourceWaitModeAndSerializesBrowserClaims(t *testing.T) 
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
 	settings.SourceWaitMode = "progressive_wait"
-	session, err := state.CreateSession(ctx, "progressive capture lane", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "progressive capture lane", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +456,7 @@ func TestPipelineStagesAreDurableAndValidated(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "observable pipeline", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "observable pipeline", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +497,7 @@ func TestSessionRemainsActiveUntilCompositionFinalizes(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "terminal composition boundary", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "terminal composition boundary", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +531,7 @@ func TestTimelineIncludesCapturedSourceEvidence(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "What changed?", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +672,7 @@ func TestSessionCompositionUsesGlobalScoreWithSourceDiversity(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "What changed?", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,7 +725,7 @@ func TestPreviouslyDeliveredEvidenceIsSourceScoped(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "What changed?", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -752,7 +767,7 @@ func TestPreferenceSignalsUseLatestCanonicalSourceEvidenceLabel(t *testing.T) {
 	assessmentRaw, _ := json.Marshal(assessment)
 
 	insertSignal := func(sessionNumber int, direction string, reason *string, created string) {
-		session, err := state.CreateSession(ctx, "What changed?", settings)
+		session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -791,7 +806,7 @@ func TestInboxLetsLatestMoreOrLessDecisionReplaceAnEarlierChoice(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "What changed?", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
 	if err != nil {
 		t.Fatal(err)
 	}

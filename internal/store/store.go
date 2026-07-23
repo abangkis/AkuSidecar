@@ -297,16 +297,11 @@ func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source)
 	return s.Onboarding(ctx)
 }
 
-func (s *Store) CreateSession(ctx context.Context, intent string, settings domain.Settings) (domain.Session, error) {
-	return s.createSession(ctx, intent, settings, false)
-}
-
-func (s *Store) CreateAutoSession(ctx context.Context, intent string, settings domain.Settings) (domain.Session, error) {
-	return s.createSession(ctx, intent, settings, true)
-}
-
-func (s *Store) createSession(ctx context.Context, intent string, settings domain.Settings, automatic bool) (domain.Session, error) {
+func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy) (domain.Session, error) {
 	if err := domain.ValidateIntent(intent); err != nil {
+		return domain.Session{}, err
+	}
+	if err := policy.Validate(); err != nil {
 		return domain.Session{}, err
 	}
 	open, err := s.ActiveSession(ctx)
@@ -318,7 +313,12 @@ func (s *Store) createSession(ctx context.Context, intent string, settings domai
 	}
 	now := domain.Now()
 	sessionID := domain.NewID("session")
-	coverage, err := json.Marshal(map[string]any{"sourceWaitMode": settings.SourceWaitMode})
+	coverage, err := json.Marshal(map[string]any{
+		"sourceWaitMode":  settings.SourceWaitMode,
+		"trigger":         policy.Trigger,
+		"delivery":        policy.Delivery,
+		"budgetAuthority": policy.BudgetAuthority,
+	})
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -330,7 +330,7 @@ func (s *Store) createSession(ctx context.Context, intent string, settings domai
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,intent,status,max_items_per_source,max_items_total,coverage_json,created_at) VALUES(?,?,'queued',?,?,?,?)`, sessionID, strings.TrimSpace(intent), settings.MaxItemsPerSource, settings.MaxItemsTotal, string(coverage), now); err != nil {
 		return domain.Session{}, err
 	}
-	if automatic {
+	if policy.Delivery == domain.UpdateDeliveryPrepared {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO auto_update_batches(session_id,state,created_at) VALUES(?,'preparing',?)`, sessionID, now); err != nil {
 			return domain.Session{}, err
 		}
@@ -382,10 +382,14 @@ func (s *Store) GetSession(ctx context.Context, id string) (domain.Session, erro
 		decodeJSON(errorRaw.String, &failure)
 		session.Error = &failure
 	}
-	session.Automatic, session.DeliveryState, err = s.AutoSessionDelivery(ctx, id)
+	policy, deliveryState, err := s.SessionPolicy(ctx, id, session.Coverage)
 	if err != nil {
 		return domain.Session{}, err
 	}
+	session.Trigger = policy.Trigger
+	session.Delivery = policy.Delivery
+	session.BudgetAuthority = policy.BudgetAuthority
+	session.DeliveryState = deliveryState
 	runs, err := s.listRuns(ctx, id)
 	if err != nil {
 		return domain.Session{}, err

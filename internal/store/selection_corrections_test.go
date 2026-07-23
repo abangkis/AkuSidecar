@@ -12,7 +12,7 @@ func TestSelectionCorrectionRestoresEvaluatedCandidateAndIsUndoable(t *testing.T
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
-	session, err := state.CreateSession(ctx, "Correction fixture", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "Correction fixture", settings)
 	if err != nil {
 		t.Fatal(err)
 	}

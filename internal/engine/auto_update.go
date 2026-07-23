@@ -92,10 +92,10 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	if active, activeErr := e.store.ActiveSession(ctx); activeErr != nil {
 		return domain.AutoUpdateStatus{}, activeErr
 	} else if active != nil {
-		if automaticSession, _ := e.store.IsAutoSession(ctx, active.ID); automaticSession {
+		if active.Delivery == domain.UpdateDeliveryPrepared {
 			status.State, status.Reason = "running", "Preparing a bounded batch"
 		} else {
-			status.State, status.Reason = "paused", "Manual check is running"
+			status.State, status.Reason = "paused", "A visible update is running"
 		}
 		return status, nil
 	}
@@ -188,10 +188,10 @@ func (e *Engine) maybeStartAutoUpdate(ctx context.Context) error {
 	return err
 }
 
-// StartAutoUpdateNow starts an automatic session on explicit user request.
+// StartPreparedUpdateNow prepares a finite batch on explicit user request.
 // It keeps all safety and budget gates, but intentionally bypasses the
 // scheduler's cadence and adaptive recent-use gates.
-func (e *Engine) StartAutoUpdateNow(ctx context.Context) (domain.Session, error) {
+func (e *Engine) StartPreparedUpdateNow(ctx context.Context) (domain.Session, error) {
 	return e.startAutoUpdate(ctx, true)
 }
 
@@ -262,7 +262,13 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 	if err := e.store.RecordAutoUpdateAttempt(ctx, ""); err != nil {
 		return domain.Session{}, err
 	}
-	session, err := e.startSession(context.Background(), "What materially changed since my last automatic check?", true)
+	trigger := domain.UpdateTriggerScheduler
+	if force {
+		trigger = domain.UpdateTriggerUser
+	}
+	session, err := e.startSession(context.Background(), "What materially changed since my last prepared batch?", domain.UpdatePolicy{
+		Trigger: trigger, Delivery: domain.UpdateDeliveryPrepared, BudgetAuthority: domain.BudgetAuthorityAutomatic,
+	})
 	if err != nil {
 		_ = e.store.RecordAutoUpdateAttempt(context.Background(), err.Error())
 		return domain.Session{}, fmt.Errorf("start: %w", err)

@@ -65,7 +65,6 @@ const state = {
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
   expandedTimelineText: new Set(),
-  preparedBatchSnapshot: [],
   revealingPreparedBatch: false,
   autoLoadLastScrollY: window.scrollY,
   uiActivityTrackingInstalled: false,
@@ -130,25 +129,24 @@ function recoverInvalidBridgeToken(code) {
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
 $("#settings-view-button").addEventListener("click", () => setView("settings"));
-$("#timeline-refresh-button").addEventListener("click", refreshTimeline);
 $("#inbox-refresh-button").addEventListener("click", loadInbox);
 $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
-$("#timeline-runner-button").addEventListener("click", startSession);
+$("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
 $("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
   const action = $("#retry-button").dataset.action;
   hideFailure();
   setView("timeline");
-  if (action === "retry-update") startSession();
+  if (action === "retry-update") startVisibleUpdate();
 });
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#processing-inbox-button").addEventListener("click", () => setView("inbox"));
 $("#processing-settings-button").addEventListener("click", () => setView("settings"));
 $("#auto-update-timeline-settings").addEventListener("click", openAutoUpdateSettings);
 $("#reset-auto-update-budget").addEventListener("click", resetAutoUpdateBudget);
-$("#run-auto-update-now").addEventListener("click", runAutoUpdateNow);
+$("#prepare-batch-now").addEventListener("click", prepareBatchNow);
 $("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
 $("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
 $("#onboarding-learning-toggle").addEventListener("click", toggleOnboardingLearningPlayback);
@@ -208,7 +206,7 @@ window.addEventListener("scroll", () => {
   if (!movingDown || state.bootstrap?.settings?.nextBatchBehavior !== "auto_at_finish") return;
   const finish = $("#finish-line");
   if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) {
-    revealNextPreparedBatch(true);
+    revealPreparedBatch("continue");
   }
 }, { passive: true });
 const timelineSidePaneLayoutObserver = new ResizeObserver(scheduleTimelineSidePanePosition);
@@ -251,7 +249,6 @@ async function bootstrap() {
     state.bootstrap = restored;
     state.lastUIActivitySentAt = Date.now();
     installUIActivityTracking();
-    state.preparedBatchSnapshot = [...(restored.autoUpdate?.preparedBatches ?? []).map((batch) => batch.sessionId)];
     state.session = state.bootstrap.activeSession;
     state.bootstrapLoading = false;
     renderSourceControls();
@@ -477,15 +474,17 @@ function renderAutoUpdateStatus(status) {
   const budget = $("#auto-update-budget-status");
   const budgetDetail = $("#auto-update-budget-detail");
   const reset = $("#reset-auto-update-budget");
-  const runNow = $("#run-auto-update-now");
+  const runNow = $("#prepare-batch-now");
   const timeline = $("#auto-update-timeline-status");
   if (!detail || !queue || !budget || !budgetDetail || !timeline) return;
+  if (state.bootstrap && status) state.bootstrap.autoUpdate = status;
   if (!status) {
     detail.textContent = "Local scheduler telemetry is not available yet.";
     queue.textContent = "—";
     budget.textContent = "Daily token telemetry is not available yet.";
     budgetDetail.textContent = "—";
     timeline.classList.add("hidden");
+    renderTimelineActions();
     return;
   }
   const used = status.dailyTokensUsed || 0;
@@ -495,7 +494,7 @@ function renderAutoUpdateStatus(status) {
   const automaticRemaining = status.automaticTokensRemaining || 0;
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
-  const nextCheck = status.state === "idle" && status.nextCheckAt ? ` · next automatic check ${formatDate(status.nextCheckAt)}` : "";
+  const nextCheck = status.state === "idle" && status.nextCheckAt ? ` · next prepared check ${formatDate(status.nextCheckAt)}` : "";
   detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
@@ -504,9 +503,10 @@ function renderAutoUpdateStatus(status) {
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
-  budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} manual reserve`;
+  budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} user reserve`;
   if (reset) reset.disabled = Boolean(state.session);
   if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running";
+  renderTimelineActions();
   const paused = status.enabled && ["paused", "budget_paused"].includes(status.state);
   timeline.classList.toggle("hidden", !paused);
   if (paused) {
@@ -517,15 +517,15 @@ function renderAutoUpdateStatus(status) {
   }
 }
 
-async function runAutoUpdateNow() {
+async function prepareBatchNow() {
   if (state.session) {
     showError(new Error("Finish or cancel the active check before starting another update."));
     return;
   }
-  const button = $("#run-auto-update-now");
+  const button = $("#prepare-batch-now");
   button.disabled = true;
   try {
-    const { session } = await api("/api/auto-update/run-now", { method: "POST" });
+    const { session } = await api("/api/auto-update/prepare", { method: "POST" });
     state.session = session;
     setView("timeline");
     renderSession();
@@ -915,7 +915,7 @@ async function saveOnboarding(event) {
     renderSettings(response.settings);
     $("#onboarding-error").textContent = "";
     setView(firstCompletion ? "timeline" : "settings");
-    if (firstCompletion) await startSession();
+    if (firstCompletion) await startVisibleUpdate();
   } catch (error) {
     $("#onboarding-error").textContent = error.message;
   } finally {
@@ -1095,14 +1095,23 @@ function returnToTop() {
   $("#app-heading").focus({ preventScroll: true });
 }
 
-async function startSession() {
+async function handleTimelinePrimaryAction() {
+  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
+  if (prepared > 0) {
+    await revealPreparedBatch("latest");
+    return;
+  }
+  await startVisibleUpdate();
+}
+
+async function startVisibleUpdate() {
   if (state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible) return;
   hideFailure();
   clearNotice();
   setPill("#sidecar-status", "AkuSidecar ready", "ok");
   setView("timeline");
   try {
-    const { session } = await api("/api/sessions", {
+    const { session } = await api("/api/updates", {
       method: "POST",
       body: { intent: defaultIntent },
     });
@@ -1166,7 +1175,15 @@ async function pollSession() {
       await releaseCaptureSurface(session.id).catch((error) => {
         console.warn("Capture-surface cleanup after session completion failed", error);
       });
-      await refreshTimeline();
+      if (session.delivery === "prepared") {
+        const { autoUpdate } = await api("/api/auto-update/status");
+        renderAutoUpdateStatus(autoUpdate);
+      } else {
+        await refreshTimeline();
+        if (session.trigger === "user") {
+          requestAnimationFrame(() => $("#timeline-heading")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+        }
+      }
       showSessionOutcome(session);
       if (["failed", "partial"].includes(session.status)) showSessionFailure(session);
       state.session = null;
@@ -1252,7 +1269,10 @@ function renderSession() {
   const session = state.session;
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
   const modeBadge = $("#processing-mode-badge");
-  modeBadge.classList.toggle("hidden", !session?.automatic);
+  const badge = updatePolicyBadge(session);
+  modeBadge.classList.toggle("hidden", !badge);
+  modeBadge.textContent = badge?.text || "";
+  modeBadge.setAttribute("aria-label", badge?.label || "");
   syncOnboardingLearning(shouldShowOnboardingLearning(session));
   syncRunButtons();
   if (!session || terminalStatuses.has(session.status)) return;
@@ -1260,7 +1280,7 @@ function renderSession() {
   if (state.sessionProgress.sessionId !== session.id) {
     state.sessionProgress = { sessionId: session.id, value: 0 };
   }
-  if (session.automatic) {
+  if (session.delivery === "prepared") {
     progress.detail = `Preparing a background batch · ${progress.detail}`;
   }
   state.sessionProgress.value = Math.max(state.sessionProgress.value, progress.value);
@@ -1269,6 +1289,14 @@ function renderSession() {
   $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.round(value)));
   $("#processing-title").textContent = progress.title;
   $("#processing-detail").textContent = progress.detail;
+}
+
+function updatePolicyBadge(session) {
+  if (!session) return null;
+  if (session.trigger === "scheduler") return { text: "↻ AUTO", label: "Scheduled prepared update", className: "status-auto-update" };
+  if (session.trigger === "onboarding") return { text: "FIRST RUN", label: "Onboarding update", className: "status-neutral" };
+  if (session.delivery === "prepared") return { text: "PREPARE", label: "User-requested prepared batch", className: "status-neutral" };
+  return { text: "UPDATE", label: "User-visible update", className: "status-neutral" };
 }
 
 function shouldShowOnboardingLearning(session) {
@@ -1618,38 +1646,42 @@ function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID) 
 }
 
 async function handleFinishLineAction() {
-  const revealed = await revealNextPreparedBatch(false);
-  if (!revealed) await startSession();
+  const revealed = await revealPreparedBatch("continue");
+  if (!revealed && state.bootstrap?.settings?.autoUpdateEnabled === false) await startVisibleUpdate();
 }
 
-async function revealNextPreparedBatch(fromSnapshot) {
+async function revealPreparedBatch(presentation) {
   if (state.revealingPreparedBatch || state.session) return false;
   let sessionID = "";
-  if (fromSnapshot) {
-    sessionID = state.preparedBatchSnapshot.shift() || "";
-  } else {
-    try {
-      const { autoUpdate } = await api("/api/auto-update/status");
-      if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
-      renderAutoUpdateStatus(autoUpdate);
-      sessionID = autoUpdate?.preparedBatches?.[0]?.sessionId || "";
-    } catch (error) { showError(error); return false; }
-  }
+  try {
+    const { autoUpdate } = await api("/api/auto-update/status");
+    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
+    renderAutoUpdateStatus(autoUpdate);
+    sessionID = autoUpdate?.preparedBatches?.[0]?.sessionId || "";
+  } catch (error) { showError(error); return false; }
   if (!sessionID) return false;
   state.revealingPreparedBatch = true;
   try {
     const previousItems = [...state.timelineItems];
     const restoreScrollY = window.scrollY;
     const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, { method: "POST" });
-    await refreshTimeline({
-      revealedSessionID: sessionID,
-      previousItems,
-      extraItems: batch?.itemCount || 0,
-      restoreScrollY,
-    });
+    if (presentation === "latest") {
+      await refreshTimeline({ extraItems: batch?.itemCount || 0 });
+      showNotice(`Loaded ${batch?.itemCount || 0} latest item${batch?.itemCount === 1 ? "" : "s"} from the prepared batch.`);
+      requestAnimationFrame(() => {
+        $("#timeline-heading")?.scrollIntoView({ block: "start", behavior: "smooth" });
+        $("#timeline-heading")?.focus({ preventScroll: true });
+      });
+    } else {
+      await refreshTimeline({
+        revealedSessionID: sessionID,
+        previousItems,
+        extraItems: batch?.itemCount || 0,
+        restoreScrollY,
+      });
+    }
     return true;
   } catch (error) {
-    if (fromSnapshot) state.preparedBatchSnapshot.unshift(sessionID);
     showError(error);
     return false;
   } finally {
@@ -1681,7 +1713,7 @@ function renderInbox(sessions, total) {
   if (!sessions.length) {
     const empty = document.createElement("p");
     empty.className = "inbox-empty";
-    empty.textContent = "Run Check for updates to create the first diagnostic entry.";
+    empty.textContent = "Run Update now, or let Auto Update prepare a batch, to create the first diagnostic entry.";
     container.replaceChildren(empty);
     return;
   }
@@ -1697,19 +1729,24 @@ function buildInboxSession(session, expanded) {
   const identity = document.createElement("div");
   identity.className = "inbox-session-identity";
   const title = document.createElement("strong");
-  title.textContent = `${session.automatic ? "Checked" : "Manual check"} ${formatDate(session.createdAt)}`;
-  if (session.automatic) {
-    const automaticBadge = document.createElement("span");
-    automaticBadge.className = "status-pill status-auto-update";
-    automaticBadge.textContent = "↻ AUTO";
-    automaticBadge.setAttribute("aria-label", "Automatic update");
-    identity.append(automaticBadge);
+  const labels = {
+    onboarding: "Onboarding check",
+    scheduler: "Checked",
+  };
+  title.textContent = `${labels[session.trigger] || (session.delivery === "prepared" ? "Prepared check" : "User update")} ${formatDate(session.createdAt)}`;
+  const policyBadge = updatePolicyBadge(session);
+  if (policyBadge) {
+    const badge = document.createElement("span");
+    badge.className = `status-pill ${policyBadge.className}`;
+    badge.textContent = policyBadge.text;
+    badge.setAttribute("aria-label", policyBadge.label);
+    identity.append(badge);
   }
   const status = document.createElement("span");
   status.className = `status-pill status-${inboxStatusTone(session.status)}`;
   status.textContent = humanize(session.status);
   identity.append(title, status);
-  if (session.automatic && session.deliveryState) {
+  if (session.delivery === "prepared" && session.deliveryState) {
     const delivery = document.createElement("span");
     delivery.className = "status-pill status-neutral";
     delivery.textContent = humanize(session.deliveryState);
@@ -2508,11 +2545,9 @@ function renderTimeline(items, latestCheck) {
     $("#finish-stats").textContent = `Shown: ${items.length} · ${routed.drawer.length} in side pane · ${routed.hidden.length} hidden · bounded local evidence`;
   }
   const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
+  renderTimelineActions();
   if (prepared > 0) {
-    $("#done-button").textContent = `Open next prepared batch (${prepared})`;
     $("#finish-stats").textContent += ` · ${prepared} prepared`;
-  } else {
-    $("#done-button").textContent = "Check for updates";
   }
   if (!items.length) {
     const empty = document.createElement("section");
@@ -2569,6 +2604,29 @@ function renderTimeline(items, latestCheck) {
     observeTimelineItem(rendered, entry.id);
   }
   scheduleBackToTop();
+}
+
+function renderTimelineActions() {
+  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
+  const autoUpdateEnabled = state.bootstrap?.settings?.autoUpdateEnabled !== false;
+  const primary = $("#timeline-runner-button");
+  const finish = $("#done-button");
+  if (prepared > 0) {
+    primary.textContent = `Load latest batch (${prepared})`;
+    primary.classList.remove("hidden");
+    finish.textContent = `Continue with next batch (${prepared})`;
+    finish.classList.remove("hidden");
+    return;
+  }
+  if (autoUpdateEnabled) {
+    primary.classList.add("hidden");
+    finish.classList.add("hidden");
+    return;
+  }
+  primary.textContent = "Update now";
+  primary.classList.remove("hidden");
+  finish.textContent = "Update now";
+  finish.classList.remove("hidden");
 }
 
 function schedulePassiveMediaEnrichment(items = state.timelineItems) {
@@ -3578,23 +3636,23 @@ function showCalibrationRetry(session) {
   $("#failure-label").textContent = "CALIBRATION WAITING";
   $("#failure-title").textContent = "Check once more to start calibration";
   $("#failure-message").textContent = failedSources.length
-    ? `${failedSources.join(" and ")} did not produce a validated entry in this check. Choose Check for updates again; captured evidence remains available in Update Inbox.`
-    : "This check did not produce a validated entry for calibration. Choose Check for updates again to collect another bounded sample.";
+    ? `${failedSources.join(" and ")} did not produce a validated entry in this check. Choose Update now again; captured evidence remains available in Update Inbox.`
+    : "This check did not produce a validated entry for calibration. Choose Update now again to collect another bounded sample.";
   $("#retry-button").dataset.action = "retry-update";
-  $("#retry-button").textContent = "Check for updates again";
+  $("#retry-button").textContent = "Update now again";
   panel.classList.remove("hidden");
 }
 
 function showSessionOutcome(session) {
   if (!["completed", "partial"].includes(session.status)) return;
   const additions = session.items?.length ?? 0;
-  if (session.automatic) {
+  if (session.delivery === "prepared") {
     const notice = $("#provider-notice");
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
     notice.textContent = additions > 0
-      ? `Auto Update prepared ${additions} item${additions === 1 ? "" : "s"}. Open the next prepared batch at the Timeline finish line when you are ready.`
-      : "Auto Update completed without a new prepared batch. The diagnostic trace remains in Update Inbox.";
+      ? `${session.trigger === "scheduler" ? "Auto Update" : "AkuBrowser"} prepared ${additions} item${additions === 1 ? "" : "s"}. Load it from the Timeline header or continue from the finish line when you are ready.`
+      : "Batch preparation completed without a new prepared batch. The diagnostic trace remains in Update Inbox.";
     return;
   }
   if (additions > 0) {
@@ -3638,6 +3696,13 @@ function clearNotice() {
   notice.className = "notice hidden";
   notice.setAttribute("role", "status");
   notice.textContent = "";
+}
+
+function showNotice(message) {
+  const notice = $("#provider-notice");
+  notice.className = "notice notice-complete";
+  notice.setAttribute("role", "status");
+  notice.textContent = message;
 }
 
 function sourceIdentity(value, source) {

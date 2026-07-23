@@ -38,10 +38,11 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 		if err != nil {
 			return nil, 0, err
 		}
-		entry := domain.InboxSession{ID: session.ID, Intent: session.Intent, Status: session.Status, CreatedAt: session.CreatedAt, StartedAt: session.StartedAt, CompletedAt: session.CompletedAt, Error: session.Error, PreferenceDecisions: []domain.InboxPreferenceDecision{}, Runs: make([]domain.InboxRun, 0, len(session.Runs))}
-		entry.Automatic, entry.DeliveryState, err = s.AutoSessionDelivery(ctx, session.ID)
-		if err != nil {
-			return nil, 0, err
+		entry := domain.InboxSession{
+			ID: session.ID, Intent: session.Intent, Status: session.Status,
+			CreatedAt: session.CreatedAt, StartedAt: session.StartedAt, CompletedAt: session.CompletedAt,
+			Error: session.Error, PreferenceDecisions: []domain.InboxPreferenceDecision{}, Runs: make([]domain.InboxRun, 0, len(session.Runs)),
+			Trigger: session.Trigger, Delivery: session.Delivery, BudgetAuthority: session.BudgetAuthority, DeliveryState: session.DeliveryState,
 		}
 		for _, run := range session.Runs {
 			diagnostic, err := s.inboxRun(ctx, run)

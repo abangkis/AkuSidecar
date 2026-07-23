@@ -293,7 +293,7 @@ func semanticAcceptanceRuntime(t *testing.T, fixtures []semanticAcceptanceFixtur
 func runSemanticAcceptanceSession(t *testing.T, runtime *Engine, fixtures []semanticAcceptanceFixture) domain.Session {
 	t.Helper()
 	ctx := context.Background()
-	session, err := runtime.StartSession(ctx, "Semantic acceptance matrix")
+	session, err := runtime.StartVisibleUpdate(ctx, "Semantic acceptance matrix")
 	if err != nil {
 		t.Fatal(err)
 	}

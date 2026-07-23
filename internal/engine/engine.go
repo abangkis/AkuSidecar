@@ -258,13 +258,26 @@ func sameStringSet(actual, expected []string) bool {
 	return true
 }
 
-func (e *Engine) StartSession(ctx context.Context, intent string) (domain.Session, error) {
-	return e.startSession(ctx, intent, false)
+func (e *Engine) StartVisibleUpdate(ctx context.Context, intent string) (domain.Session, error) {
+	trigger := domain.UpdateTriggerUser
+	firstRunStatus, err := e.store.CalibrationFirstRunStatus(ctx)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if firstRunStatus == "pending" {
+		trigger = domain.UpdateTriggerOnboarding
+	}
+	return e.startSession(ctx, intent, domain.UpdatePolicy{
+		Trigger: trigger, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+	})
 }
 
-func (e *Engine) startSession(ctx context.Context, intent string, automatic bool) (domain.Session, error) {
+func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	if err := policy.Validate(); err != nil {
+		return domain.Session{}, err
+	}
 	onboarding, err := e.store.Onboarding(ctx)
 	if err != nil {
 		return domain.Session{}, err
@@ -293,12 +306,7 @@ func (e *Engine) startSession(ctx context.Context, intent string, automatic bool
 		return domain.Session{}, err
 	}
 	e.cancelDeepDetections()
-	var session domain.Session
-	if automatic {
-		session, err = e.store.CreateAutoSession(ctx, intent, settings)
-	} else {
-		session, err = e.store.CreateSession(ctx, intent, settings)
-	}
+	session, err := e.store.CreateUpdateSession(ctx, intent, settings, policy)
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -373,11 +381,11 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if finalizeErr := e.store.FinalizeSession(ctx, sessionID); finalizeErr != nil {
 			return nil, fmt.Errorf("finalize unified session: %w", finalizeErr)
 		}
-		automatic, autoErr := e.store.IsAutoSession(ctx, sessionID)
-		if autoErr != nil {
-			return nil, autoErr
+		completedSession, policyErr := e.store.GetSession(ctx, sessionID)
+		if policyErr != nil {
+			return nil, policyErr
 		}
-		if automatic {
+		if completedSession.Delivery == domain.UpdateDeliveryPrepared {
 			if recordErr := e.store.RecordAutoUpdateSuccess(ctx); recordErr != nil {
 				e.logger.Printf("record auto update success for session %s failed: %v", sessionID, recordErr)
 			}
@@ -388,7 +396,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
 			e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
 		}
-		if settings.AIDetectionEnabled && !onboardingFastPath && (!automatic || e.autoDeepDetectionAllowed(ctx, settings)) {
+		if settings.AIDetectionEnabled && !onboardingFastPath && (completedSession.BudgetAuthority != domain.BudgetAuthorityAutomatic || e.autoDeepDetectionAllowed(ctx, settings)) {
 			e.launchDeepDetection(sessionID)
 		}
 		return nil, nil

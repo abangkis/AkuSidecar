@@ -130,7 +130,12 @@ func (s *Store) DailyTokenUsage(ctx context.Context) (total, automatic int64, er
 		  UNION ALL
 		  SELECT session_id,COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(reasoning_output_tokens,0),created_at FROM ai_detection_jobs
 		)
-		SELECT COALESCE(SUM(tokens),0),COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=usage.session_id) THEN tokens ELSE 0 END),0)
+		SELECT COALESCE(SUM(tokens),0),COALESCE(SUM(CASE WHEN
+		  COALESCE(
+		    (SELECT json_extract(s.coverage_json,'$.budgetAuthority') FROM sessions s WHERE s.id=usage.session_id),
+		    CASE WHEN EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=usage.session_id) THEN 'automatic' ELSE 'user' END
+		  )='automatic'
+		  THEN tokens ELSE 0 END),0)
 		FROM usage WHERE created_at>=?`
 	err = s.db.QueryRowContext(ctx, query, dayStart).Scan(&total, &automatic)
 	return
@@ -232,17 +237,34 @@ func (s *Store) LastTerminalSessionAt(ctx context.Context) (string, error) {
 	return value.String, err
 }
 
-func (s *Store) IsAutoSession(ctx context.Context, sessionID string) (bool, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auto_update_batches WHERE session_id=?`, sessionID).Scan(&count)
-	return count == 1, err
-}
-
-func (s *Store) AutoSessionDelivery(ctx context.Context, sessionID string) (bool, string, error) {
+func (s *Store) SessionPolicy(ctx context.Context, sessionID string, coverage map[string]any) (domain.UpdatePolicy, string, error) {
 	var state string
 	err := s.db.QueryRowContext(ctx, `SELECT state FROM auto_update_batches WHERE session_id=?`, sessionID).Scan(&state)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, "", nil
+	hasPreparedDelivery := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.UpdatePolicy{}, "", err
 	}
-	return err == nil, state, err
+	policy := domain.UpdatePolicy{
+		Trigger:         domain.UpdateTriggerUser,
+		Delivery:        domain.UpdateDeliveryVisible,
+		BudgetAuthority: domain.BudgetAuthorityUser,
+	}
+	if hasPreparedDelivery {
+		policy.Trigger = domain.UpdateTriggerScheduler
+		policy.Delivery = domain.UpdateDeliveryPrepared
+		policy.BudgetAuthority = domain.BudgetAuthorityAutomatic
+	}
+	if value, ok := coverage["trigger"].(string); ok && value != "" {
+		policy.Trigger = domain.UpdateTrigger(value)
+	}
+	if value, ok := coverage["delivery"].(string); ok && value != "" {
+		policy.Delivery = domain.UpdateDelivery(value)
+	}
+	if value, ok := coverage["budgetAuthority"].(string); ok && value != "" {
+		policy.BudgetAuthority = domain.BudgetAuthority(value)
+	}
+	if err := policy.Validate(); err != nil {
+		return domain.UpdatePolicy{}, "", err
+	}
+	return policy, state, nil
 }

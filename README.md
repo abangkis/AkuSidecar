@@ -155,7 +155,7 @@ Auto Update is also a typed product setting. One Sidecar-owned scheduler can
 prepare hidden finite batches while the process is alive. Adaptive scheduling
 is the default, the queue defaults to two, and local invocation telemetry gates
 automatic work. The fresh daily boundary is 1M tokens with 25% unavailable to
-automatic work for manual checks. A user-authorized daily quota reset preserves
+automatic work for user-visible updates. A user-authorized daily quota reset preserves
 invocation history while establishing a new local allowance baseline. Prepared
 batches do not enter the Timeline until revealed.
 

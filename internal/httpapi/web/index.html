@@ -138,7 +138,7 @@
                 <span class="settings-copy"><strong>Scheduler status</strong><small id="auto-update-status">Loading local queue and token telemetry…</small></span>
                 <span class="settings-inline-control auto-update-scheduler-control">
                   <span id="auto-update-queue-status" class="settings-detail">—</span>
-                  <button id="run-auto-update-now" type="button">Run automatic check now</button>
+                  <button id="prepare-batch-now" type="button">Prepare batch now</button>
                 </span>
               </div>
               <div class="settings-row">
@@ -157,7 +157,7 @@
                 <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="3">3 minutes</option><option value="5">5 minutes — recommended</option><option value="10">10 minutes</option></select>
               </label>
               <label class="settings-row" for="prepared-batch-limit">
-                <span class="settings-copy"><strong>Prepared batch queue</strong><small>Pause automatic checks when this many unread finite batches are ready.</small></span>
+                <span class="settings-copy"><strong>Prepared batch queue</strong><small>Pause background preparation when this many unread finite batches are ready.</small></span>
                 <select id="prepared-batch-limit" name="preparedBatchLimit"><option value="1">1 batch</option><option value="2">2 batches — recommended</option><option value="3">3 batches</option></select>
               </label>
               <label class="settings-row" for="next-batch-behavior">
@@ -169,11 +169,11 @@
                 <select id="prepared-batch-max-age" name="preparedBatchMaxAgeHours"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">24 hours — recommended</option><option value="48">48 hours</option></select>
               </label>
               <label class="settings-row" for="auto-update-token-budget">
-                <span class="settings-copy"><strong>Daily model budget</strong><small>Local token telemetry gates automatic work; manual checks retain a protected reserve.</small></span>
+                <span class="settings-copy"><strong>Daily model budget</strong><small>Local token telemetry gates prepared work; user-visible updates retain a protected reserve.</small></span>
                 <select id="auto-update-token-budget" name="autoUpdateDailyTokenBudget"><option value="1000000">1M tokens — recommended</option><option value="2000000">2M tokens</option><option value="3000000">3M tokens</option><option value="5000000">5M tokens</option></select>
               </label>
               <label class="settings-row" for="auto-update-manual-reserve">
-                <span class="settings-copy"><strong>Manual reserve</strong><small>Keep this share unavailable to automatic checks so Check for updates remains usable.</small></span>
+                <span class="settings-copy"><strong>User reserve</strong><small>Keep this share unavailable to background preparation so Update now remains usable.</small></span>
                 <select id="auto-update-manual-reserve" name="autoUpdateManualReservePct"><option value="10">10%</option><option value="25">25% — recommended</option><option value="40">40%</option></select>
               </label>
             </div>
@@ -446,8 +446,7 @@
           </div>
           <div class="timeline-action-cluster">
             <div class="timeline-actions">
-              <button id="timeline-refresh-button" class="text-button" type="button">Refresh</button>
-              <button id="timeline-runner-button" class="primary-button" type="button">Check for updates</button>
+              <button id="timeline-runner-button" class="primary-button" type="button">Update now</button>
             </div>
             <small id="timeline-runner-status" class="timeline-runner-status hidden" role="status"></small>
           </div>
@@ -517,7 +516,7 @@
                 <p>Captured, evaluated, selected, and added entries remain reviewable from Update Inbox whenever you want the technical trace.</p>
               </article>
               <article class="onboarding-learning-slide">
-                <p class="step-label">INSIDE CHECK FOR UPDATES</p>
+                <p class="step-label">INSIDE AN UPDATE</p>
                 <h4>First, each source is read and evaluated</h4>
                 <ol class="onboarding-check-stages">
                   <li><span><strong>Capture</strong>AkuBridge reads bounded snapshots from each signed-in source.</span></li>
@@ -525,7 +524,7 @@
                 </ol>
               </article>
               <article class="onboarding-learning-slide">
-                <p class="step-label">INSIDE CHECK FOR UPDATES</p>
+                <p class="step-label">INSIDE AN UPDATE</p>
                 <h4>Then, one finite Timeline is composed</h4>
                 <ol class="onboarding-check-stages onboarding-check-stages-continued">
                   <li><span><strong>Compose</strong>Sources reunite after they finish; repeats, newness, and finite capacity are resolved.</span></li>
@@ -554,7 +553,7 @@
             <p class="finish-kicker">FINISH LINE</p>
             <h3 id="finish-title">You’re caught up within this timeline</h3>
             <p id="finish-stats">No retained updates yet.</p>
-            <button id="done-button" class="secondary-button" type="button">Check for updates</button>
+            <button id="done-button" class="secondary-button" type="button">Update now</button>
           </div>
         </section>
 

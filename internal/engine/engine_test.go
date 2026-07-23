@@ -68,7 +68,7 @@ func TestProgressiveWaitStartsNextCaptureWhileReasoningContinues(t *testing.T) {
 	runtime, _ := testEngine(t)
 	provider := &shutdownBlockingProvider{started: make(chan struct{})}
 	runtime.provider = provider
-	session, err := runtime.StartSession(ctx, "progressive sources")
+	session, err := runtime.StartVisibleUpdate(ctx, "progressive sources")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestFullWaitKeepsNextSourceQueuedUntilReasoningCompletes(t *testing.T) {
 	}
 	provider := &shutdownBlockingProvider{started: make(chan struct{})}
 	runtime.provider = provider
-	session, err := runtime.StartSession(ctx, "full wait sources")
+	session, err := runtime.StartVisibleUpdate(ctx, "full wait sources")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestShutdownPreservesAcceptedCaptureAndRestartResumesReasoning(t *testing.T
 	ctx := context.Background()
 	provider := &shutdownBlockingProvider{started: make(chan struct{})}
 	runtime, state := singleSourceEngine(t, provider)
-	session, err := runtime.StartSession(ctx, "What changed?")
+	session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
 	t.Cleanup(func() { state.Close() })
 	runtime := New(state, followUpProvider{}, config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 2}}, log.New(io.Discard, "", 0))
 	runtime.RecordHeartbeat(ExpectedHeartbeat())
-	session, err := runtime.StartSession(ctx, "What changed?")
+	session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
 func TestUnifiedSessionCompletesAllDefaultSources(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)
-	session, err := runtime.StartSession(ctx, "What changed?")
+	session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestRepeatedExactEvidenceProducesZeroAdditions(t *testing.T) {
 	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
 	evidence := "x:000000000000000000000401"
 
-	first, err := runtime.StartSession(ctx, "What changed?")
+	first, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestRepeatedExactEvidenceProducesZeroAdditions(t *testing.T) {
 		t.Fatalf("first items=%d", len(first.Items))
 	}
 
-	second, err := runtime.StartSession(ctx, "What changed now?")
+	second, err := runtime.StartVisibleUpdate(ctx, "What changed now?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestKnownEventRequiresMaterialDelta(t *testing.T) {
 		"x:000000000000000000000412",
 		"x:000000000000000000000413",
 	} {
-		session, err := runtime.StartSession(ctx, "What changed?")
+		session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -487,7 +487,7 @@ func TestAIDetectionSettingDisablesFastAndDeepPaths(t *testing.T) {
 	if err := state.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
-	session, err := runtime.StartSession(ctx, "AI detection disabled")
+	session, err := runtime.StartVisibleUpdate(ctx, "AI detection disabled")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,14 +505,14 @@ func TestAIDetectionSettingDisablesFastAndDeepPaths(t *testing.T) {
 func TestUnchangedResurfaceFailsFastBeforeReasoning(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
-	first, err := runtime.StartSession(ctx, "First observation")
+	first, err := runtime.StartVisibleUpdate(ctx, "First observation")
 	if err != nil {
 		t.Fatal(err)
 	}
 	completeActiveRun(t, runtime, state, first.ID, domain.SourceX, "x:resurface")
 	waitSession(t, runtime, first.ID, func(value domain.Session) bool { return value.Status == "completed" })
 
-	second, err := runtime.StartSession(ctx, "Repeated observation")
+	second, err := runtime.StartVisibleUpdate(ctx, "Repeated observation")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ func TestUnchangedResurfaceFailsFastBeforeReasoning(t *testing.T) {
 func TestSelectionCorrectionPromotesAndUndoesAnEvaluatedCandidate(t *testing.T) {
 	ctx := context.Background()
 	runtime, _ := singleSourceEngine(t, reasoning.Deterministic{})
-	session, err := runtime.StartSession(ctx, "Correction integration")
+	session, err := runtime.StartVisibleUpdate(ctx, "Correction integration")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +607,7 @@ func TestReevaluateFailedRunReusesDurableCapture(t *testing.T) {
 	ctx := context.Background()
 	provider := &failOnceAnalysisProvider{}
 	runtime, _ := singleSourceEngine(t, provider)
-	session, err := runtime.StartSession(ctx, "Retry durable evidence")
+	session, err := runtime.StartVisibleUpdate(ctx, "Retry durable evidence")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,7 +670,7 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	// The provider always requests another observation when planning runs. The
 	// first-run path must bypass that model stage and remain one round/source.
 	runtime.provider = followUpProvider{}
-	session, err := runtime.StartSession(ctx, "What changed?")
+	session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -709,7 +709,7 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	if calibration.Status != "reviewing" || calibration.SampleCount != 3 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn || calibration.Samples[2].Source != domain.SourceFacebook {
 		t.Fatalf("calibration=%+v", calibration)
 	}
-	if _, err := runtime.StartSession(ctx, "must be blocked"); err == nil {
+	if _, err := runtime.StartVisibleUpdate(ctx, "must be blocked"); err == nil {
 		t.Fatal("an active forced calibration must block another update")
 	}
 	more := "more_like_this"
@@ -823,7 +823,7 @@ func TestCalibrationSnapshotReflectsAnyReadyPreferenceAuthority(t *testing.T) {
 func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)
-	session, err := runtime.StartSession(ctx, "What changed?")
+	session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 	if err != nil {
 		t.Fatal(err)
 	}

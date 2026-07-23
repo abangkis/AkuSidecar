@@ -15,7 +15,7 @@ func insertAIDetectionTimelineItem(t *testing.T, state *Store) (domain.Session, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := state.CreateSession(ctx, "AI Detector acceptance", settings)
+	session, err := createVisibleUpdateSession(state, ctx, "AI Detector acceptance", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
