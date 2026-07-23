@@ -1502,18 +1502,27 @@ function syncRunButtons() {
   const reason = runDisabledReason();
   const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError);
   const disabled = Boolean(reason);
+  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
+  const preparedReason = preparedBatchDisabledReason(prepared);
   $("#timeline-runner-button").disabled = disabled && !canRetryBootstrap;
-  $("#timeline-prepared-button").disabled = disabled;
-  $("#done-button").disabled = disabled;
+  $("#timeline-prepared-button").disabled = Boolean(preparedReason);
+  $("#done-button").disabled = prepared > 0 ? Boolean(preparedReason) : disabled;
   $("#timeline-runner-button").textContent = canRetryBootstrap ? "Retry connection" : "Update now";
   $("#timeline-runner-button").title = canRetryBootstrap ? "Retry restoring the Timeline and active check." : reason;
-  $("#timeline-prepared-button").title = reason;
-  $("#done-button").title = reason;
+  $("#timeline-prepared-button").title = preparedReason;
+  $("#done-button").title = prepared > 0 ? preparedReason : reason;
   $("#timeline-runner-status").textContent = reason;
   $("#timeline-runner-status").classList.toggle("hidden", !reason || Boolean(state.session && !terminalStatuses.has(state.session.status)));
   for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled;
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
+}
+
+function preparedBatchDisabledReason(prepared) {
+  if (prepared < 1) return "No prepared batch is available.";
+  if (state.bootstrapLoading || !state.bootstrap) return "Restoring prepared batches…";
+  if (state.revealingPreparedBatch) return "Loading the prepared batch…";
+  return "";
 }
 
 function runDisabledReason() {
@@ -1705,17 +1714,16 @@ async function handleFinishLineAction() {
 }
 
 async function revealPreparedBatch(presentation) {
-  if (state.revealingPreparedBatch || state.session) return false;
+  if (state.revealingPreparedBatch) return false;
+  state.revealingPreparedBatch = true;
+  syncRunButtons();
   let sessionID = "";
   try {
     const { autoUpdate } = await api("/api/auto-update/status");
     if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
     renderAutoUpdateStatus(autoUpdate);
     sessionID = autoUpdate?.preparedBatches?.[0]?.sessionId || "";
-  } catch (error) { showError(error); return false; }
-  if (!sessionID) return false;
-  state.revealingPreparedBatch = true;
-  try {
+    if (!sessionID) return false;
     const previousItems = [...state.timelineItems];
     const restoreScrollY = window.scrollY;
     const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, { method: "POST" });
@@ -1740,6 +1748,7 @@ async function revealPreparedBatch(presentation) {
     return false;
   } finally {
     state.revealingPreparedBatch = false;
+    syncRunButtons();
   }
 }
 
