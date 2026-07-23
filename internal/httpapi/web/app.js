@@ -2983,7 +2983,8 @@ function buildSourceCard(entry) {
   card.append(content);
   const attachments = buildAttachments(evidence.attachments, source);
   if (attachments) card.append(attachments);
-  const media = buildMedia(evidence.media, source, evidence.contentKind);
+  const nativePostUrl = safeSourceUrl(item.sourceUrl || evidence.permalink, source);
+  const media = buildMedia(evidence.media, source, evidence.contentKind, nativePostUrl);
   if (media) card.append(media);
   if (evidence.mediaRecovery?.outcome === "unavailable") {
     const unavailable = document.createElement("div");
@@ -3078,39 +3079,54 @@ function buildExpandableText(value, { characterLimit, lineLimit, label, expansio
   return wrapper;
 }
 
-function buildMedia(values, source, contentKind = "") {
+function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
   const media = (Array.isArray(values) ? values : [])
     .map((value) => ({ ...value, displayUrl: safeMediaUrl(value.posterUrl || value.url) }))
     .filter((value) => value.displayUrl)
     .slice(0, 4);
   if (!media.length) return null;
+  const isVideoMedia = (value) => value.kind === "video" || (contentKind === "video" && media.length === 1);
+  const imageMedia = media.filter((value) => !isVideoMedia(value));
   const gallery = document.createElement("div");
   gallery.className = `source-layout-media media-count-${media.length}`;
   for (const value of media) {
-    const isVideo = value.kind === "video" || (contentKind === "video" && media.length === 1);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "source-layout-media-item";
+    const isVideo = isVideoMedia(value);
+    const control = document.createElement(isVideo && nativePostUrl ? "a" : "button");
+    if (control.tagName === "BUTTON") control.type = "button";
+    control.className = "source-layout-media-item";
     const image = document.createElement("img");
     image.src = value.displayUrl;
     image.alt = value.alt || `${sourceLabel(source)} post media`;
     image.loading = "lazy";
     image.referrerPolicy = "no-referrer";
-    button.append(image);
+    control.append(image);
     if (isVideo) {
-      button.classList.add("is-video-poster");
+      control.classList.add("is-video-poster");
       const cue = document.createElement("span");
       cue.className = "source-layout-video-cue";
       cue.setAttribute("aria-hidden", "true");
       cue.textContent = "▶";
       const label = document.createElement("span");
       label.className = "source-layout-video-label";
-      label.textContent = "Video preview";
-      button.append(cue, label);
-      button.setAttribute("aria-label", `Open ${sourceLabel(source)} video preview`);
+      label.textContent = nativePostUrl ? "Play on native post" : "Video preview";
+      control.append(cue, label);
+      control.setAttribute("aria-label", nativePostUrl
+        ? `Open ${sourceLabel(source)} native post to play video`
+        : `${sourceLabel(source)} video preview; native post unavailable`);
+      if (nativePostUrl) {
+        control.href = nativePostUrl;
+        control.target = "_blank";
+        control.rel = "noopener noreferrer";
+      } else {
+        control.disabled = true;
+      }
+    } else {
+      control.addEventListener("click", () => openMedia(
+        imageMedia.map((entry) => entry.displayUrl),
+        imageMedia.indexOf(value),
+      ));
     }
-    button.addEventListener("click", () => openMedia(media.map((entry) => entry.displayUrl), media.indexOf(value)));
-    gallery.append(button);
+    gallery.append(control);
   }
   return gallery;
 }

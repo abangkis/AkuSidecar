@@ -238,7 +238,7 @@ h3 { letter-spacing: -0.02em; }
 .source-layout-attachment-copy span { color: var(--muted); font-size: 0.75rem; }
 .source-layout-attachment-copy small { color: var(--quiet); font-size: 0.68rem; }
 .source-layout-media.media-count-1 { grid-template-columns: 1fr; }
-.source-layout-media-item { position: relative; min-width: 0; margin: 0; padding: 0; border: 0; background: #080b09; }
+.source-layout-media-item { position: relative; display: block; min-width: 0; margin: 0; padding: 0; overflow: hidden; border: 0; background: #080b09; color: inherit; text-decoration: none; cursor: pointer; }
 .source-layout-media-item img { display: block; width: 100%; max-height: 480px; object-fit: cover; }
 .source-layout-media-item.is-video-poster::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 58%, rgba(5, 8, 6, 0.58)); pointer-events: none; }
 .source-layout-video-cue { position: absolute; z-index: 1; left: 50%; top: 50%; display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid rgba(255, 255, 255, 0.72); border-radius: 50%; color: #fff; background: rgba(8, 11, 9, 0.68); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.32); transform: translate(-50%, -50%); font-size: 1rem; line-height: 1; pointer-events: none; }
