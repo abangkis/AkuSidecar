@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -167,65 +168,98 @@ func (e *Engine) autoUpdateLoop(ctx context.Context) {
 }
 
 func (e *Engine) maybeStartAutoUpdate(ctx context.Context) error {
+	_, err := e.startAutoUpdate(ctx, false)
+	return err
+}
+
+// StartAutoUpdateNow starts an automatic session on explicit user request.
+// It keeps all safety and budget gates, but intentionally bypasses the
+// scheduler's cadence and adaptive recent-use gates.
+func (e *Engine) StartAutoUpdateNow(ctx context.Context) (domain.Session, error) {
+	return e.startAutoUpdate(ctx, true)
+}
+
+func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Session, error) {
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil || !settings.AutoUpdateEnabled {
-		return err
+		if err == nil {
+			err = fmt.Errorf("Auto Update is disabled")
+		}
+		return domain.Session{}, err
 	}
 	onboarding, err := e.store.Onboarding(ctx)
 	if err != nil || onboarding.Status != "completed" {
-		return err
+		if err == nil {
+			err = errors.New("complete onboarding before starting Auto Update")
+		}
+		return domain.Session{}, err
 	}
 	if e.BridgeStatus().Compatible == false {
-		return nil
+		return domain.Session{}, fmt.Errorf("AkuBridge is not ready")
 	}
 	if active, activeErr := e.store.ActiveSession(ctx); activeErr != nil || active != nil {
-		return activeErr
+		if activeErr != nil {
+			return domain.Session{}, activeErr
+		}
+		return domain.Session{}, errors.New("another check is already running")
 	}
 	if calibration, calibrationErr := e.store.ActiveCalibration(ctx); calibrationErr != nil || calibration != nil {
-		return calibrationErr
+		if calibrationErr != nil {
+			return domain.Session{}, calibrationErr
+		}
+		return domain.Session{}, errors.New("complete the active calibration before starting Auto Update")
 	}
 	if firstRun, firstRunErr := e.store.CalibrationFirstRunStatus(ctx); firstRunErr != nil || firstRun == "pending" {
-		return firstRunErr
+		if firstRunErr != nil {
+			return domain.Session{}, firstRunErr
+		}
+		return domain.Session{}, errors.New("complete first-run calibration before starting Auto Update")
 	}
 	batches, err := e.store.PreparedBatches(ctx, settings.PreparedBatchMaxAgeHours)
 	if err != nil || len(batches) >= settings.PreparedBatchLimit {
-		return err
+		if err == nil {
+			err = errors.New("prepared batch limit reached")
+		}
+		return domain.Session{}, err
 	}
 	usage, err := e.store.AutoUpdateBudgetUsage(ctx)
 	if err != nil {
-		return err
+		return domain.Session{}, err
 	}
 	autoLimit := int64(settings.AutoUpdateDailyTokenBudget * (100 - settings.AutoUpdateManualReservePct) / 100)
 	estimatedTokens := e.estimatedAutoUpdateTokens(ctx)
 	if usage.QuotaTotal+estimatedTokens > int64(settings.AutoUpdateDailyTokenBudget) || usage.QuotaAutomatic+estimatedTokens > autoLimit {
-		return nil
+		return domain.Session{}, errors.New("automatic token allowance reached")
 	}
 	schedule, err := e.store.AutoUpdateScheduleState(ctx)
 	if err != nil {
-		return err
+		return domain.Session{}, err
 	}
-	if attempted, parseErr := time.Parse(time.RFC3339Nano, schedule.LastAttemptAt); parseErr == nil && time.Since(attempted) < 15*time.Minute {
-		return nil
-	}
-	if settings.AutoUpdateMode == "adaptive" {
-		access, parseErr := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
-		if parseErr != nil || time.Since(access) > 15*time.Minute {
-			return nil
+	if !force {
+		if attempted, parseErr := time.Parse(time.RFC3339Nano, schedule.LastAttemptAt); parseErr == nil && time.Since(attempted) < 15*time.Minute {
+			return domain.Session{}, nil
+		}
+		if settings.AutoUpdateMode == "adaptive" {
+			access, parseErr := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
+			if parseErr != nil || time.Since(access) > 15*time.Minute {
+				return domain.Session{}, nil
+			}
+		}
+		last, err := e.store.LastTerminalSessionAt(ctx)
+		if err != nil {
+			return domain.Session{}, err
+		}
+		if completed, parseErr := time.Parse(time.RFC3339Nano, last); parseErr == nil && time.Since(completed) < time.Duration(settings.AutoUpdateIntervalHours)*time.Hour {
+			return domain.Session{}, nil
 		}
 	}
-	last, err := e.store.LastTerminalSessionAt(ctx)
-	if err != nil {
-		return err
-	}
-	if completed, parseErr := time.Parse(time.RFC3339Nano, last); parseErr == nil && time.Since(completed) < time.Duration(settings.AutoUpdateIntervalHours)*time.Hour {
-		return nil
-	}
 	if err := e.store.RecordAutoUpdateAttempt(ctx, ""); err != nil {
-		return err
+		return domain.Session{}, err
 	}
-	if _, err := e.startSession(context.Background(), "What materially changed since my last automatic check?", true); err != nil {
+	session, err := e.startSession(context.Background(), "What materially changed since my last automatic check?", true)
+	if err != nil {
 		_ = e.store.RecordAutoUpdateAttempt(context.Background(), err.Error())
-		return fmt.Errorf("start: %w", err)
+		return domain.Session{}, fmt.Errorf("start: %w", err)
 	}
-	return nil
+	return session, nil
 }

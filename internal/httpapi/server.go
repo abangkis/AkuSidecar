@@ -430,6 +430,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return conflict(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+	case r.Method == http.MethodPost && p == "/api/auto-update/run-now":
+		session, err := s.engine.StartAutoUpdateNow(ctx)
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusCreated, map[string]any{"session": session})
 	case r.Method == http.MethodGet && p == "/api/auto-update/status":
 		s.engine.RecordUIAccess(ctx)
 		status, err := s.engine.AutoUpdateStatus(ctx)

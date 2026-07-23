@@ -125,7 +125,10 @@ h3 { letter-spacing: -0.02em; }
 .processing-panel, .failure-panel { border: 1px solid var(--line); background: rgba(17, 22, 20, 0.94); }
 .update-progress { position: sticky; z-index: 20; top: 12px; margin-top: 14px; padding: 16px 18px; border-radius: 12px; border-color: rgba(183, 242, 108, 0.42); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32); backdrop-filter: blur(16px); }
 .update-progress-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.processing-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .update-progress-heading h3 { margin: 3px 0 2px; font-size: 1rem; }
+.processing-title-line h3 { min-width: 0; }
+.processing-mode-badge { display: inline-flex; align-items: center; flex: 0 0 auto; min-height: 23px; padding: 3px 8px; border: 1px solid rgba(143, 201, 255, 0.52); border-radius: 999px; background: rgba(143, 201, 255, 0.1); color: var(--blue); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; }
 .update-progress-heading #processing-detail { margin: 0; color: var(--muted); font-size: 0.76rem; }
 .progress-track { height: 6px; margin: 12px 0 0; overflow: hidden; border-radius: 999px; background: var(--line); }
 .progress-track span { display: block; width: 12%; height: 100%; border-radius: inherit; background: var(--accent); transition: width 260ms ease; }
@@ -409,7 +412,10 @@ h3 { letter-spacing: -0.02em; }
 .settings-row input[type="checkbox"] { justify-self: end; width: 20px; height: 20px; accent-color: var(--accent); }
 .settings-inline-control { display: grid; grid-template-columns: minmax(72px, 92px) minmax(0, 1fr); gap: 8px; }
 .settings-inline-control button { padding: 9px 10px; white-space: nowrap; }
-.auto-update-budget-control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; max-width: 440px; }
+.auto-update-scheduler-control, .auto-update-budget-control { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 8px; min-width: 0; width: 100%; }
+.auto-update-scheduler-control .settings-detail, .auto-update-budget-control .settings-detail { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.auto-update-scheduler-control button, .auto-update-budget-control button { width: 100%; min-width: 0; white-space: normal; line-height: 1.2; }
+.status-auto-update { border-color: rgba(143, 201, 255, 0.52); background: rgba(143, 201, 255, 0.1); color: var(--blue); font-size: 0.66rem; letter-spacing: 0.06em; }
 .source-settings-row { grid-template-columns: minmax(0, 1fr) minmax(360px, 520px); }
 .source-settings-control { display: grid; grid-template-columns: auto minmax(116px, 1fr) auto; align-items: end; gap: 10px; }
 .source-active-control, .source-hydration-input { display: grid; gap: 5px; color: var(--quiet); font-size: 0.68rem; }

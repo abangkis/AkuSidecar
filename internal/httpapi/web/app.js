@@ -146,6 +146,7 @@ $("#processing-inbox-button").addEventListener("click", () => setView("inbox"));
 $("#processing-settings-button").addEventListener("click", () => setView("settings"));
 $("#auto-update-timeline-settings").addEventListener("click", openAutoUpdateSettings);
 $("#reset-auto-update-budget").addEventListener("click", resetAutoUpdateBudget);
+$("#run-auto-update-now").addEventListener("click", runAutoUpdateNow);
 $("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
 $("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
 $("#onboarding-learning-toggle").addEventListener("click", toggleOnboardingLearningPlayback);
@@ -451,6 +452,7 @@ function renderAutoUpdateStatus(status) {
   const budget = $("#auto-update-budget-status");
   const budgetDetail = $("#auto-update-budget-detail");
   const reset = $("#reset-auto-update-budget");
+  const runNow = $("#run-auto-update-now");
   const timeline = $("#auto-update-timeline-status");
   if (!detail || !queue || !budget || !budgetDetail || !timeline) return;
   if (!status) {
@@ -468,13 +470,15 @@ function renderAutoUpdateStatus(status) {
   const automaticRemaining = status.automaticTokensRemaining || 0;
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
-  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}`;
+  const nextCheck = status.state === "idle" && status.nextCheckAt ? ` · next automatic check ${formatDate(status.nextCheckAt)}` : "";
+  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
   queue.textContent = `${status.preparedBatches?.length || 0} prepared`;
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
   budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} manual reserve`;
   if (reset) reset.disabled = Boolean(state.session);
+  if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running";
   const paused = status.enabled && ["paused", "budget_paused"].includes(status.state);
   timeline.classList.toggle("hidden", !paused);
   if (paused) {
@@ -482,6 +486,25 @@ function renderAutoUpdateStatus(status) {
     $("#auto-update-timeline-detail").textContent = status.state === "budget_paused"
       ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
       : status.reason || "Automatic work is waiting for an available boundary.";
+  }
+}
+
+async function runAutoUpdateNow() {
+  if (state.session) {
+    showError(new Error("Finish or cancel the active check before starting another update."));
+    return;
+  }
+  const button = $("#run-auto-update-now");
+  button.disabled = true;
+  try {
+    const { session } = await api("/api/auto-update/run-now", { method: "POST" });
+    state.session = session;
+    setView("timeline");
+    renderSession();
+    startPolling();
+  } catch (error) {
+    showError(error);
+    button.disabled = false;
   }
 }
 
@@ -1200,6 +1223,8 @@ function dispatch(run) {
 function renderSession() {
   const session = state.session;
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
+  const modeBadge = $("#processing-mode-badge");
+  modeBadge.classList.toggle("hidden", !session?.automatic);
   syncOnboardingLearning(shouldShowOnboardingLearning(session));
   syncRunButtons();
   if (!session || terminalStatuses.has(session.status)) return;
@@ -1208,7 +1233,6 @@ function renderSession() {
     state.sessionProgress = { sessionId: session.id, value: 0 };
   }
   if (session.automatic) {
-    progress.title = `Auto Update · ${progress.title}`;
     progress.detail = `Preparing a background batch · ${progress.detail}`;
   }
   state.sessionProgress.value = Math.max(state.sessionProgress.value, progress.value);
@@ -1645,7 +1669,14 @@ function buildInboxSession(session, expanded) {
   const identity = document.createElement("div");
   identity.className = "inbox-session-identity";
   const title = document.createElement("strong");
-  title.textContent = `${session.automatic ? "Auto · " : ""}Checked ${formatDate(session.createdAt)}`;
+  title.textContent = `${session.automatic ? "Checked" : "Manual check"} ${formatDate(session.createdAt)}`;
+  if (session.automatic) {
+    const automaticBadge = document.createElement("span");
+    automaticBadge.className = "status-pill status-auto-update";
+    automaticBadge.textContent = "↻ AUTO";
+    automaticBadge.setAttribute("aria-label", "Automatic update");
+    identity.append(automaticBadge);
+  }
   const status = document.createElement("span");
   status.className = `status-pill status-${inboxStatusTone(session.status)}`;
   status.textContent = humanize(session.status);

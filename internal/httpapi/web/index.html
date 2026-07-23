@@ -132,7 +132,10 @@
             <div class="settings-card">
               <div class="settings-row">
                 <span class="settings-copy"><strong>Scheduler status</strong><small id="auto-update-status">Loading local queue and token telemetry…</small></span>
-                <span id="auto-update-queue-status" class="settings-detail">—</span>
+                <span class="settings-inline-control auto-update-scheduler-control">
+                  <span id="auto-update-queue-status" class="settings-detail">—</span>
+                  <button id="run-auto-update-now" type="button">Run automatic check now</button>
+                </span>
               </div>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Budget today</strong><small id="auto-update-budget-status">Loading daily budget telemetry…</small></span>
@@ -462,7 +465,10 @@
           <div class="update-progress-heading">
             <div>
               <p class="step-label">02 · BOUNDED PROCESS</p>
-              <h3 id="processing-title">Preparing source check</h3>
+              <div class="processing-title-line">
+                <span id="processing-mode-badge" class="processing-mode-badge hidden" aria-label="Automatic update">↻ AUTO</span>
+                <h3 id="processing-title">Preparing source check</h3>
+              </div>
               <p id="processing-detail">Starting finite session</p>
             </div>
             <button id="cancel-button" class="text-button" type="button">Cancel</button>
