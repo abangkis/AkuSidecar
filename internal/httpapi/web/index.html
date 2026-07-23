@@ -154,7 +154,7 @@
               </label>
               <label class="settings-row" for="auto-update-refill">
                 <span class="settings-copy"><strong>Prepared-slot refill</strong><small>When queue capacity opens, the scheduler may prepare another finite batch after this delay.</small></span>
-                <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="3">3 minutes</option><option value="5">5 minutes — recommended</option><option value="10">10 minutes</option></select>
+                <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="3">3 minutes</option><option value="5">5 minutes — recommended</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option></select>
               </label>
               <label class="settings-row" for="prepared-batch-limit">
                 <span class="settings-copy"><strong>Prepared batch queue</strong><small>Pause background preparation when this many unread finite batches are ready.</small></span>
@@ -235,9 +235,10 @@
                 </span>
               </div>
               <label class="settings-row" for="capture-visibility-policy">
-                <span class="settings-copy"><strong>Capture visibility</strong><small>Quiet isolates capture; Adaptive uses a canonical tab in your normal Chrome window.</small></span>
+                <span class="settings-copy"><strong>Capture visibility</strong><small>Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.</small></span>
                 <select id="capture-visibility-policy" name="captureVisibility">
-                  <option value="quiet">Quiet capture — recommended</option>
+                  <option value="quiet">Quiet capture — single window — recommended</option>
+                  <option value="quiet_multi_window">Quiet capture — multiple windows (trial)</option>
                   <option value="adaptive_fidelity">Adaptive fidelity</option>
                 </select>
               </label>
@@ -446,6 +447,7 @@
           </div>
           <div class="timeline-action-cluster">
             <div class="timeline-actions">
+              <button id="timeline-prepared-button" class="secondary-button hidden" type="button">Load latest batch</button>
               <button id="timeline-runner-button" class="primary-button" type="button">Update now</button>
             </div>
             <small id="timeline-runner-status" class="timeline-runner-status hidden" role="status"></small>

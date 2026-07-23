@@ -61,9 +61,11 @@ h3 { letter-spacing: -0.02em; }
 .status-warning { border-color: rgba(246, 200, 107, 0.45); color: var(--amber); }
 .status-danger { border-color: rgba(255, 141, 131, 0.45); color: var(--danger); }
 .status-neutral { color: var(--muted); }
-.notice { margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-raised); color: var(--muted); }
+.notice { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-raised); color: var(--muted); }
 .notice-complete { border-color: rgba(183, 242, 108, 0.34); background: rgba(183, 242, 108, 0.055); color: var(--muted); }
 .notice-danger { border-color: rgba(255, 141, 131, 0.4); background: rgba(255, 141, 131, 0.07); color: var(--danger); }
+.notice-dismiss { flex: 0 0 auto; margin-left: auto; padding: 0 4px; border: 0; background: transparent; color: currentColor; font-size: 1.25rem; line-height: 1; cursor: pointer; opacity: 0.8; }
+.notice-dismiss:hover, .notice-dismiss:focus-visible { opacity: 1; color: var(--text); }
 
 .primary-button, .secondary-button, .danger-button, .text-button, .feedback-button, .presentation-toggle {
   border-radius: 8px;

@@ -17,6 +17,8 @@ const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
 const BRIDGE_CONTEXT_RECOVERY_KEY = "akuBridgeContextRecoveryAt";
 const BRIDGE_TOKEN_RECOVERY_KEY = "akuBridgeTokenRecoveryAt";
 const BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000;
+const BOOTSTRAP_TIMEOUT_MS = 45000;
+const BOOTSTRAP_RETRY_MS = 3000;
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -31,6 +33,10 @@ const RELEASE_REASONING_DEFAULTS = Object.freeze({
 const state = {
   bootstrap: null,
   bootstrapLoading: true,
+  bootstrapError: null,
+  bootstrapAttempt: 0,
+  bootstrapController: null,
+  bootstrapRetryTimer: null,
   session: null,
   dispatchKey: null,
   dispatchRetryAfter: new Map(),
@@ -64,6 +70,7 @@ const state = {
   passiveMediaEnrichmentTimer: null,
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
+  releasedCaptureSources: new Set(),
   expandedTimelineText: new Set(),
   revealingPreparedBatch: false,
   autoLoadLastScrollY: window.scrollY,
@@ -134,6 +141,7 @@ $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks")
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
+$("#timeline-prepared-button").addEventListener("click", () => revealPreparedBatch("latest"));
 $("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
   const action = $("#retry-button").dataset.action;
@@ -239,14 +247,28 @@ function recordUIActivity(force) {
   });
 }
 
-async function bootstrap() {
+async function bootstrap(options = {}) {
+  clearTimeout(state.bootstrapRetryTimer);
+  state.bootstrapRetryTimer = null;
+  state.bootstrapController?.abort();
+  const attempt = state.bootstrapAttempt + 1;
+  const controller = new AbortController();
+  state.bootstrapAttempt = attempt;
+  state.bootstrapController = controller;
+  state.bootstrapLoading = true;
+  if (options.userInitiated) state.bootstrapError = null;
+  syncRunButtons();
+  const timeout = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
   try {
-    clearNotice();
-    const restored = await api("/api/bootstrap");
+    const restored = await api("/api/bootstrap", { signal: controller.signal });
+    if (attempt !== state.bootstrapAttempt) return;
     if (!["not_started", "completed"].includes(restored?.onboarding?.status)) {
       throw new Error("AkuBrowser could not restore the authoritative onboarding state. Waiting for AkuSidecar to recover.");
     }
+    clearNotice();
     state.bootstrap = restored;
+    state.bootstrapError = null;
+    state.releasedCaptureSources.clear();
     state.lastUIActivitySentAt = Date.now();
     installUIActivityTracking();
     state.session = state.bootstrap.activeSession;
@@ -275,8 +297,17 @@ async function bootstrap() {
     setInterval(pollAutoUpdate, 15_000);
     if (state.session) startPolling();
   } catch (error) {
-    showError(error);
-    setTimeout(bootstrap, 1500);
+    if (attempt !== state.bootstrapAttempt) return;
+    const failure = error?.name === "AbortError"
+      ? new Error("AkuSidecar did not finish restoring within 45 seconds. Retry the connection while the active check continues in the background.")
+      : error;
+    state.bootstrapError = failure;
+    showError(failure);
+    syncRunButtons();
+    state.bootstrapRetryTimer = setTimeout(() => bootstrap(), BOOTSTRAP_RETRY_MS);
+  } finally {
+    clearTimeout(timeout);
+    if (attempt === state.bootstrapAttempt) state.bootstrapController = null;
   }
 }
 
@@ -556,7 +587,7 @@ async function resetAutoUpdateBudget() {
     const notice = $("#provider-notice");
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
-    notice.textContent = "Today’s local Auto Update quota was reset. Recorded model usage was preserved.";
+    setNoticeText(notice, "Today’s local Auto Update quota was reset. Recorded model usage was preserved.");
   } catch (error) {
     showError(error);
   } finally {
@@ -1096,12 +1127,15 @@ function returnToTop() {
 }
 
 async function handleTimelinePrimaryAction() {
-  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
-  if (prepared > 0) {
-    await revealPreparedBatch("latest");
+  if (state.bootstrapLoading || !state.bootstrap) {
+    await retryBootstrap();
     return;
   }
   await startVisibleUpdate();
+}
+
+async function retryBootstrap() {
+  await bootstrap({ userInitiated: true });
 }
 
 async function startVisibleUpdate() {
@@ -1164,6 +1198,7 @@ async function pollSession() {
     const { session } = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
     if (!state.session || state.session.id !== sessionId) return;
     state.session = session;
+    releaseCompletedSourceSurfaces(session);
     renderSession();
     const captureActive = session.runs?.some((run) => run.status === "waiting_for_bridge" && run.bridgeCommandStatus === "claimed");
     const captureRun = session.runs?.find((run) => run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
@@ -1210,11 +1245,11 @@ async function pollSession() {
   }
 }
 
-async function releaseCaptureSurface(leaseId) {
+async function releaseCaptureSurface(leaseId, source = null) {
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      return await releaseCaptureSurfaceOnce(leaseId);
+      return await releaseCaptureSurfaceOnce(leaseId, source);
     } catch (error) {
       lastError = error;
       if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
@@ -1223,7 +1258,7 @@ async function releaseCaptureSurface(leaseId) {
   throw lastError ?? new Error("AkuBridge did not confirm capture-surface cleanup.");
 }
 
-function releaseCaptureSurfaceOnce(leaseId) {
+function releaseCaptureSurfaceOnce(leaseId, source = null) {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       window.removeEventListener("message", onReleaseResult);
@@ -1235,7 +1270,7 @@ function releaseCaptureSurfaceOnce(leaseId) {
       callback(value);
     }
     function onReleaseResult(event) {
-      if (event.source !== window || event.origin !== endpoint || event.data?.leaseId !== leaseId) return;
+      if (event.source !== window || event.origin !== endpoint || event.data?.leaseId !== leaseId || (event.data?.source ?? null) !== source) return;
       if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASED") {
         if (event.data.outcome?.reason === "lease_mismatch") {
           finish(reject, new Error("AkuBridge rejected cleanup because the capture lease changed."));
@@ -1247,8 +1282,22 @@ function releaseCaptureSurfaceOnce(leaseId) {
       }
     }
     window.addEventListener("message", onReleaseResult);
-    window.postMessage({ type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE", leaseId }, endpoint);
+    window.postMessage({ type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE", leaseId, source }, endpoint);
   });
+}
+
+function releaseCompletedSourceSurfaces(session) {
+  if (!session?.id || terminalStatuses.has(session.status)) return;
+  for (const run of session.runs ?? []) {
+    if (!run?.source || !terminalStatuses.has(run.status)) continue;
+    const key = `${session.id}:${run.source}`;
+    if (state.releasedCaptureSources.has(key)) continue;
+    state.releasedCaptureSources.add(key);
+    releaseCaptureSurface(session.id, run.source).catch((error) => {
+      state.releasedCaptureSources.delete(key);
+      console.warn(`Capture-surface cleanup for ${run.source} deferred.`, error);
+    });
+  }
 }
 
 function dispatch(run) {
@@ -1451,10 +1500,14 @@ function describeSessionProgress(session) {
 
 function syncRunButtons() {
   const reason = runDisabledReason();
+  const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError);
   const disabled = Boolean(reason);
-  $("#timeline-runner-button").disabled = disabled;
+  $("#timeline-runner-button").disabled = disabled && !canRetryBootstrap;
+  $("#timeline-prepared-button").disabled = disabled;
   $("#done-button").disabled = disabled;
-  $("#timeline-runner-button").title = reason;
+  $("#timeline-runner-button").textContent = canRetryBootstrap ? "Retry connection" : "Update now";
+  $("#timeline-runner-button").title = canRetryBootstrap ? "Retry restoring the Timeline and active check." : reason;
+  $("#timeline-prepared-button").title = reason;
   $("#done-button").title = reason;
   $("#timeline-runner-status").textContent = reason;
   $("#timeline-runner-status").classList.toggle("hidden", !reason || Boolean(state.session && !terminalStatuses.has(state.session.status)));
@@ -1464,6 +1517,7 @@ function syncRunButtons() {
 }
 
 function runDisabledReason() {
+  if (state.bootstrapLoading && state.bootstrapError) return "Timeline restore was interrupted. Retry now or wait for automatic recovery.";
   if (state.bootstrapLoading) return "Restoring your Timeline and active check…";
   if (state.session) {
     return terminalStatuses.has(state.session.status) ? "Finishing capture cleanup…" : "A check for updates is already running.";
@@ -1647,7 +1701,7 @@ function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID) 
 
 async function handleFinishLineAction() {
   const revealed = await revealPreparedBatch("continue");
-  if (!revealed && state.bootstrap?.settings?.autoUpdateEnabled === false) await startVisibleUpdate();
+  if (!revealed) await startVisibleUpdate();
 }
 
 async function revealPreparedBatch(presentation) {
@@ -2608,23 +2662,19 @@ function renderTimeline(items, latestCheck) {
 
 function renderTimelineActions() {
   const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
-  const autoUpdateEnabled = state.bootstrap?.settings?.autoUpdateEnabled !== false;
   const primary = $("#timeline-runner-button");
+  const preparedButton = $("#timeline-prepared-button");
   const finish = $("#done-button");
+  primary.textContent = "Update now";
+  primary.classList.remove("hidden");
   if (prepared > 0) {
-    primary.textContent = `Load latest batch (${prepared})`;
-    primary.classList.remove("hidden");
+    preparedButton.textContent = `Load latest batch (${prepared})`;
+    preparedButton.classList.remove("hidden");
     finish.textContent = `Continue with next batch (${prepared})`;
     finish.classList.remove("hidden");
     return;
   }
-  if (autoUpdateEnabled) {
-    primary.classList.add("hidden");
-    finish.classList.add("hidden");
-    return;
-  }
-  primary.textContent = "Update now";
-  primary.classList.remove("hidden");
+  preparedButton.classList.add("hidden");
   finish.textContent = "Update now";
   finish.classList.remove("hidden");
 }
@@ -3426,7 +3476,7 @@ function showCorrectionNotice(correction) {
       showError(error);
     }
   });
-  notice.append(message, undo);
+  notice.append(message, undo, createNoticeDismissButton());
 }
 
 function buildSourceLink(entry) {
@@ -3512,9 +3562,9 @@ async function recaptureMedia(entry, button, captureMode) {
     const notice = $("#provider-notice");
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
-    notice.textContent = completed?.outcome === "recovered"
+    setNoticeText(notice, completed?.outcome === "recovered"
       ? "Media recaptured from the native post."
-      : "Media is still unavailable after the foreground capture.";
+      : "Media is still unavailable after the foreground capture.");
   } catch (error) {
     showError(error);
     button.disabled = false;
@@ -3645,14 +3695,14 @@ function showCalibrationRetry(session) {
 
 function showSessionOutcome(session) {
   if (!["completed", "partial"].includes(session.status)) return;
-  const additions = session.items?.length ?? 0;
+  const additions = session.itemCount ?? session.items?.length ?? 0;
   if (session.delivery === "prepared") {
     const notice = $("#provider-notice");
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
-    notice.textContent = additions > 0
+    setNoticeText(notice, additions > 0
       ? `${session.trigger === "scheduler" ? "Auto Update" : "AkuBrowser"} prepared ${additions} item${additions === 1 ? "" : "s"}. Load it from the Timeline header or continue from the finish line when you are ready.`
-      : "Batch preparation completed without a new prepared batch. The diagnostic trace remains in Update Inbox.";
+      : "Batch preparation completed without a new prepared batch. The diagnostic trace remains in Update Inbox.");
     return;
   }
   if (additions > 0) {
@@ -3662,7 +3712,7 @@ function showSessionOutcome(session) {
   const notice = $("#provider-notice");
   notice.className = "notice notice-complete";
   notice.setAttribute("role", "status");
-  notice.textContent = "Update complete: 0 additions. No captured candidate cleared the new, material, and trusted-evidence boundary.";
+  setNoticeText(notice, "Update complete: 0 additions. No captured candidate cleared the new, material, and trusted-evidence boundary.");
 }
 
 function hideFailure() {
@@ -3683,7 +3733,7 @@ function showError(error) {
   const notice = $("#provider-notice");
   notice.className = "notice notice-danger";
   notice.setAttribute("role", "alert");
-  notice.textContent = error.message || String(error);
+  setNoticeText(notice, error.message || String(error));
   setPill(
     "#sidecar-status",
     error.code === "sidecar_unavailable" ? "AkuSidecar offline" : "AkuSidecar attention",
@@ -3695,14 +3745,29 @@ function clearNotice() {
   const notice = $("#provider-notice");
   notice.className = "notice hidden";
   notice.setAttribute("role", "status");
-  notice.textContent = "";
+  notice.replaceChildren();
 }
 
 function showNotice(message) {
   const notice = $("#provider-notice");
   notice.className = "notice notice-complete";
   notice.setAttribute("role", "status");
-  notice.textContent = message;
+  setNoticeText(notice, message);
+}
+
+function setNoticeText(notice, message) {
+  notice.replaceChildren(document.createTextNode(message), createNoticeDismissButton());
+}
+
+function createNoticeDismissButton() {
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "notice-dismiss";
+  dismiss.setAttribute("aria-label", "Dismiss notification");
+  dismiss.title = "Dismiss notification";
+  dismiss.textContent = "×";
+  dismiss.addEventListener("click", clearNotice);
+  return dismiss;
 }
 
 function sourceIdentity(value, source) {
@@ -3869,6 +3934,7 @@ function safeMediaUrl(value) {
 
 async function api(path, options = {}) {
   const init = { method: options.method || "GET", cache: "no-store", headers: {} };
+  if (options.signal) init.signal = options.signal;
   if (options.body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.body);

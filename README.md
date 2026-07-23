@@ -32,7 +32,7 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.7.0-preview.3` / `source-adapters-v73`
+- AkuBridge `0.7.0-preview.3` / `source-adapters-v76`
 - AkuSupervisor is recommended for normal Windows development and daily
   lifecycle ownership; it is not part of the portable runtime or a macOS
   prerequisite
@@ -171,8 +171,10 @@ Standard 1x is the checked-in fresh-database and full-reset default. A user's
 persisted choice, including Expanded 2x or Custom, remains authoritative across
 an ordinary rebuild or restart.
 
-Capture visibility is independent of bounded-load depth. Quiet uses the
-dedicated non-focused managed window. Adaptive fidelity directly uses the
+Capture visibility is independent of bounded-load depth. The default
+single-window Quiet mode shares one non-focused managed window across sources.
+Multi-window Quiet remains available as an experimental per-source isolation
+mode. Adaptive fidelity directly uses the
 newest eligible canonical source tab in an ordinary Chrome window; it does not
 first create or try the Quiet managed window.
 

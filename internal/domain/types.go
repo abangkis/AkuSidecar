@@ -258,7 +258,7 @@ func (s Settings) Validate() error {
 	if s.LoadProfile != "standard" && s.LoadProfile != "expanded" && s.LoadProfile != "stress" && s.LoadProfile != "custom" {
 		return fmt.Errorf("unsupported load profile %q", s.LoadProfile)
 	}
-	if s.CaptureVisibility != "quiet" && s.CaptureVisibility != "adaptive_fidelity" {
+	if s.CaptureVisibility != "quiet_multi_window" && s.CaptureVisibility != "quiet" && s.CaptureVisibility != "adaptive_fidelity" {
 		return fmt.Errorf("unsupported capture visibility %q", s.CaptureVisibility)
 	}
 	if s.SourceWaitMode != "full_wait" && s.SourceWaitMode != "progressive_wait" {
@@ -312,8 +312,8 @@ func (s Settings) Validate() error {
 	if s.AutoUpdateMode != "adaptive" && s.AutoUpdateMode != "fixed" {
 		return fmt.Errorf("unsupported auto update mode %q", s.AutoUpdateMode)
 	}
-	if s.AutoUpdateRefillMinutes != 3 && s.AutoUpdateRefillMinutes != 5 && s.AutoUpdateRefillMinutes != 10 {
-		return errors.New("autoUpdateRefillMinutes must be 3, 5, or 10")
+	if s.AutoUpdateRefillMinutes != 3 && s.AutoUpdateRefillMinutes != 5 && s.AutoUpdateRefillMinutes != 10 && s.AutoUpdateRefillMinutes != 15 && s.AutoUpdateRefillMinutes != 30 {
+		return errors.New("autoUpdateRefillMinutes must be 3, 5, 10, 15, or 30")
 	}
 	if s.PreparedBatchLimit < 1 || s.PreparedBatchLimit > 3 {
 		return errors.New("preparedBatchLimit must be between 1 and 3")
@@ -493,6 +493,7 @@ type Session struct {
 	CompletedAt       *string         `json:"completedAt"`
 	Runs              []Run           `json:"runs"`
 	Items             []TimelineItem  `json:"items"`
+	ItemCount         int             `json:"itemCount,omitempty"`
 	Coverage          map[string]any  `json:"coverage"`
 	Error             *Failure        `json:"error"`
 	Trigger           UpdateTrigger   `json:"trigger"`

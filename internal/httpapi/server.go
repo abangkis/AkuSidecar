@@ -145,7 +145,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": active, "timeline": timeline, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -271,7 +271,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"session": session})
+		return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(session)})
 	case r.Method == http.MethodGet && p == "/api/inbox":
 		limit := boundedInt(r.URL.Query().Get("limit"), 12, 1, 25)
 		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
@@ -379,7 +379,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"session": session})
+		return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(&session)})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/sessions/") && strings.HasSuffix(p, "/cancel"):
 		id := path.Base(strings.TrimSuffix(p, "/cancel"))
 		if err := s.engine.CancelSession(ctx, id); err != nil {
@@ -389,7 +389,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"session": session})
+		return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(&session)})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/runs/"):
 		id := path.Base(p)
 		run, err := s.engine.Run(ctx, id)
@@ -875,6 +875,28 @@ func applyCORS(r *http.Request, w http.ResponseWriter) {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Aku-Bridge-Token, X-Aku-Bridge-Id, X-Aku-Bridge-Contract")
 	}
+}
+
+func sessionProgressProjection(session *domain.Session) *domain.Session {
+	if session == nil {
+		return nil
+	}
+	projected := *session
+	projected.ItemCount = len(session.Items)
+	projected.Items = nil
+	projected.Coverage = nil
+	if stage, ok := session.Coverage["pipelineStage"]; ok {
+		projected.Coverage = map[string]any{"pipelineStage": stage}
+		if updatedAt, exists := session.Coverage["pipelineStageUpdatedAt"]; exists {
+			projected.Coverage["pipelineStageUpdatedAt"] = updatedAt
+		}
+	}
+	projected.Runs = make([]domain.Run, len(session.Runs))
+	copy(projected.Runs, session.Runs)
+	for index := range projected.Runs {
+		projected.Runs[index].Coverage = nil
+	}
+	return &projected
 }
 
 func readJSON(r *http.Request, target any) error {
