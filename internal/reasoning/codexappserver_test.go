@@ -75,6 +75,10 @@ func fakeCodexAppServer() {
 			}
 			thread++
 			fakeRPC(map[string]any{"id": id, "result": map[string]any{"thread": map[string]any{"id": fmt.Sprintf("thread-%d", thread)}}})
+		case "thread/unsubscribe":
+			fakeRPC(map[string]any{"id": id, "result": map[string]any{}})
+		case "thread/delete":
+			fakeRPC(map[string]any{"id": id, "result": map[string]any{}})
 		case "turn/start":
 			turn++
 			turnID := fmt.Sprintf("turn-%d", turn)
@@ -249,8 +253,8 @@ func TestCodexAppServerSerializesConcurrentAdaptersOnOneTransport(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if provider.cmd == nil || provider.nextID != 1+workers*2 {
-		t.Fatalf("concurrent adapters did not share one serialized transport: cmd=%v nextID=%d", provider.cmd, provider.nextID)
+	if provider.cmd == nil || provider.nextID != 2+workers*4 {
+		t.Fatalf("concurrent adapters did not use bounded serialized transports: cmd=%v nextID=%d", provider.cmd, provider.nextID)
 	}
 }
 
@@ -271,6 +275,25 @@ func TestCodexAppServerCloseHasBoundedProcessWait(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 1500*time.Millisecond {
 		t.Fatalf("App Server close exceeded shutdown budget: %s", elapsed)
+	}
+}
+
+func TestCodexAppServerUnsubscribesAndRecyclesAfterBoundedThreads(t *testing.T) {
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	provider := newFakeCodexAppServer(t)
+	defer provider.Close()
+	run, observation := fakeAppServerInput()
+
+	for index := 0; index < appServerThreadLimit; index++ {
+		if _, _, err := provider.Plan(context.Background(), run, observation, nil); err != nil {
+			t.Fatalf("invocation %d failed: %v", index+1, err)
+		}
+	}
+	if provider.cmd != nil || provider.threadsStarted != 0 {
+		t.Fatalf("bounded App Server was not recycled: cmd=%v threads=%d", provider.cmd, provider.threadsStarted)
+	}
+	if provider.nextID != 1+appServerThreadLimit*4 {
+		t.Fatalf("thread release RPC count mismatch: nextID=%d", provider.nextID)
 	}
 }
 

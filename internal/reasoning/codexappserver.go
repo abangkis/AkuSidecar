@@ -29,19 +29,25 @@ type CodexAppServer struct {
 	planSchema   any
 	resultSchema any
 
-	invokeMu      sync.Mutex
-	writeMu       sync.Mutex
-	pendingMu     sync.Mutex
-	cmd           *exec.Cmd
-	stdin         io.WriteCloser
-	pending       map[string]chan rpcMessage
-	notifications chan rpcMessage
-	done          chan error
-	nextID        uint64
-	stderr        *boundedBuffer
+	invokeMu       sync.Mutex
+	writeMu        sync.Mutex
+	pendingMu      sync.Mutex
+	cmd            *exec.Cmd
+	stdin          io.WriteCloser
+	pending        map[string]chan rpcMessage
+	notifications  chan rpcMessage
+	done           chan error
+	nextID         uint64
+	threadsStarted uint64
+	stderr         *boundedBuffer
 }
 
-const appServerStopWait = 750 * time.Millisecond
+const (
+	appServerThreadLimit       = 4
+	appServerThreadReleaseWait = 2 * time.Second
+	appServerGracefulStopWait  = 3 * time.Second
+	appServerForcedStopWait    = 750 * time.Millisecond
+)
 
 type usage struct{ Input, CachedInput, Output, ReasoningOutput *int64 }
 
@@ -249,6 +255,8 @@ func (c *CodexAppServer) invokeAttemptLocked(ctx context.Context, prompt string,
 	if err := json.Unmarshal(threadResult, &thread); err != nil || thread.Thread.ID == "" {
 		return "", usage{}, fmt.Errorf("decode App Server thread/start response: %w", err)
 	}
+	c.threadsStarted++
+	defer c.releaseThreadLocked(thread.Thread.ID)
 	turnResult, err := c.callLocked(ctx, "turn/start", map[string]any{
 		"threadId":       thread.Thread.ID,
 		"input":          []map[string]any{{"type": "text", "text": prompt}},
@@ -328,6 +336,7 @@ func (c *CodexAppServer) ensureStartedLocked(ctx context.Context) error {
 		return fmt.Errorf("start Codex App Server: %w", err)
 	}
 	c.cmd, c.stdin, c.stderr = cmd, stdin, stderr
+	c.threadsStarted = 0
 	c.notifications = make(chan rpcMessage, 1024)
 	c.done = make(chan error, 1)
 	go c.readLoop(cmd, stdout, c.done, c.notifications)
@@ -515,9 +524,27 @@ func (c *CodexAppServer) removePending(id string) {
 	c.pendingMu.Unlock()
 }
 
+func (c *CodexAppServer) releaseThreadLocked(threadID string) {
+	if c.cmd != nil && c.stdin != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), appServerThreadReleaseWait)
+		_, _ = c.callLocked(ctx, "thread/unsubscribe", map[string]any{"threadId": threadID})
+		if c.cmd != nil && c.stdin != nil && ctx.Err() == nil {
+			// Structured invocations never resume their ephemeral thread.
+			// Hard deletion releases its thread-scoped resources immediately;
+			// unsubscribe alone permits App Server to retain them for 30 minutes.
+			_, _ = c.callLocked(ctx, "thread/delete", map[string]any{"threadId": threadID})
+		}
+		cancel()
+	}
+	if c.threadsStarted >= appServerThreadLimit {
+		c.stopLocked(true)
+	}
+}
+
 func (c *CodexAppServer) stopLocked(wait bool) {
 	if c.cmd == nil && c.stdin == nil {
 		c.done = nil
+		c.threadsStarted = 0
 		return
 	}
 	done := c.done
@@ -525,16 +552,29 @@ func (c *CodexAppServer) stopLocked(wait bool) {
 	if c.stdin != nil {
 		_ = c.stdin.Close()
 	}
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-	}
-	if wait && done != nil && !alreadyExited {
+	process := c.cmd
+	if wait && !alreadyExited && process != nil && process.Process != nil && done != nil {
 		select {
 		case <-done:
-		case <-time.After(appServerStopWait):
+			alreadyExited = true
+		case <-time.After(appServerGracefulStopWait):
+		}
+	}
+	if !alreadyExited && process != nil && process.Process != nil {
+		_ = process.Process.Kill()
+	}
+	if wait && done != nil && !alreadyExited && process != nil && process.Process != nil {
+		select {
+		case <-done:
+		case <-time.After(appServerForcedStopWait):
 		}
 	}
 	c.cmd, c.stdin, c.done = nil, nil, nil
+	c.notifications = nil
+	c.threadsStarted = 0
+	c.pendingMu.Lock()
+	c.pending = map[string]chan rpcMessage{}
+	c.pendingMu.Unlock()
 }
 
 func (c *CodexAppServer) Close() error {
