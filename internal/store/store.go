@@ -1047,19 +1047,37 @@ func (s *Store) TimelineItem(ctx context.Context, timelineID string) (domain.Tim
 	}
 	return items[0], nil
 }
+
+const timelinePresentationOrderSQL = `
+	ORDER BY
+	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),'')='append' THEN 1 ELSE 0 END,
+	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),'')<>'append'
+	    THEN COALESCE(
+	      (SELECT b.revealed_at FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),
+	      (SELECT s.completed_at FROM sessions s WHERE s.id=timeline_items.session_id)
+	    )
+	  END DESC,
+	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),'')='append'
+	    THEN COALESCE(
+	      (SELECT b.revealed_at FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),
+	      (SELECT s.completed_at FROM sessions s WHERE s.id=timeline_items.session_id)
+	    )
+	  END ASC,
+	  rank`
+
 func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
 	settings, err := s.GetSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if settings.SemanticEventMode == "show_all" {
-		items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible') ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT ? OFFSET ?`, limit, offset)
+		items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible')`+timelinePresentationOrderSQL+` LIMIT ? OFFSET ?`, limit, offset)
 		for index := range items {
 			items[index].SemanticEvent = nil
 		}
 		return items, err
 	}
-	items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible') ORDER BY (SELECT completed_at FROM sessions WHERE sessions.id=timeline_items.session_id) DESC,rank LIMIT 1000`)
+	items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible')`+timelinePresentationOrderSQL+` LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}

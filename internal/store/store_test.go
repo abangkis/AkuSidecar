@@ -149,7 +149,7 @@ func TestAutomaticSessionRemainsHiddenUntilPreparedBatchIsRevealed(t *testing.T)
 	if len(batches) != 1 || batches[0].ItemCount != 1 {
 		t.Fatalf("prepared batches=%+v", batches)
 	}
-	if _, err := state.RevealPreparedBatch(ctx, session.ID); err != nil {
+	if _, err := state.RevealPreparedBatch(ctx, session.ID, "prepend"); err != nil {
 		t.Fatal(err)
 	}
 	schedule, err := state.AutoUpdateScheduleState(ctx)
@@ -170,8 +170,90 @@ func TestAutomaticSessionRemainsHiddenUntilPreparedBatchIsRevealed(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(batchSummaries) != 1 || batchSummaries[0].SessionID != session.ID || batchSummaries[0].Trigger != domain.UpdateTriggerScheduler || batchSummaries[0].Delivery != domain.UpdateDeliveryPrepared || batchSummaries[0].RevealedAt == "" {
+	if len(batchSummaries) != 1 || batchSummaries[0].SessionID != session.ID || batchSummaries[0].Trigger != domain.UpdateTriggerScheduler || batchSummaries[0].Delivery != domain.UpdateDeliveryPrepared || batchSummaries[0].RevealedAt == "" || batchSummaries[0].Presentation != "prepend" {
 		t.Fatalf("timeline batch summaries=%+v", batchSummaries)
+	}
+}
+
+func TestPreparedBatchPresentationOrderPersists(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		presentation string
+		want         []string
+	}{
+		{name: "header newest first", presentation: "prepend", want: []string{"batch-2", "batch-1"}},
+		{name: "finish line reading order", presentation: "append", want: []string{"batch-1", "batch-2"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := openTestStore(t)
+			ctx := context.Background()
+			settings, err := state.GetSettings(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+				t.Fatal(err)
+			}
+			sessionIDs := make([]string, 0, 2)
+			for ordinal := 1; ordinal <= 2; ordinal++ {
+				session, err := createPreparedUpdateSession(state, ctx, fmt.Sprintf("prepared batch %d", ordinal), settings)
+				if err != nil {
+					t.Fatal(err)
+				}
+				runs, err := state.listRuns(ctx, session.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				now := domain.Now()
+				for _, run := range runs {
+					if _, err := state.db.ExecContext(ctx, `UPDATE runs SET status='completed',stage='completed',started_at=?,completed_at=? WHERE id=?`, now, now, run.ID); err != nil {
+						t.Fatal(err)
+					}
+				}
+				timelineID := fmt.Sprintf("batch-%d", ordinal)
+				if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,created_at) VALUES(?,?,?,?,?,0,'{}','{"urgency":0.5}',?)`, timelineID, session.ID, runs[0].ID, runs[0].Source, timelineID, now); err != nil {
+					t.Fatal(err)
+				}
+				if err := state.FinalizeSession(ctx, session.ID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := state.RevealPreparedBatch(ctx, session.ID, test.presentation); err != nil {
+					t.Fatal(err)
+				}
+				revealedAt := fmt.Sprintf("2026-07-24T00:00:0%dZ", ordinal)
+				if _, err := state.db.ExecContext(ctx, `UPDATE auto_update_batches SET revealed_at=? WHERE session_id=?`, revealedAt, session.ID); err != nil {
+					t.Fatal(err)
+				}
+				sessionIDs = append(sessionIDs, session.ID)
+			}
+			items, err := state.ListTimeline(ctx, 10, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make([]string, 0, len(items))
+			for _, item := range items {
+				got = append(got, item.ID)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("timeline order=%v want=%v sessions=%v", got, test.want, sessionIDs)
+			}
+			batches, err := state.TimelineBatchSummaries(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			firstSession := sessionIDs[0]
+			if test.presentation == "prepend" {
+				firstSession = sessionIDs[1]
+			}
+			if len(batches) != 2 || batches[0].SessionID != firstSession {
+				t.Fatalf("batch summaries=%+v sessions=%v", batches, sessionIDs)
+			}
+			for _, batch := range batches {
+				if batch.Presentation != test.presentation {
+					t.Fatalf("batch presentation=%+v", batch)
+				}
+			}
+		})
 	}
 }
 

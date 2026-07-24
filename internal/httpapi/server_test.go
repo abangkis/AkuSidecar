@@ -239,7 +239,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 			t.Fatalf("active-check navigation guidance missing %q", marker)
 		}
 	}
-	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token", "function runDisabledReason", "function preparedBatchDisabledReason", "No prepared batch is available.", "Finishing capture cleanup", "BOOTSTRAP_TIMEOUT_MS", "function retryBootstrap", "Retry connection", "session.itemCount"} {
+	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token", "function runDisabledReason", "function preparedBatchDisabledReason", "No prepared batch is available.", "Finishing capture cleanup", "BOOTSTRAP_TIMEOUT_MS", "function retryBootstrap", "Retry connection", "session.itemCount", "presentation === \"latest\" ? \"prepend\" : \"append\"", "body: { presentation: revealPlacement }", "placement === \"prepend\""} {
 		if !strings.Contains(string(appPayload), marker) {
 			t.Fatalf("app.js missing runtime reasoning or drawer contract %q", marker)
 		}

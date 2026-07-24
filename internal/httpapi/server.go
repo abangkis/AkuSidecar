@@ -426,7 +426,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/auto-update/batches/") && strings.HasSuffix(p, "/reveal"):
 		id := path.Base(strings.TrimSuffix(p, "/reveal"))
-		batch, err := s.engine.RevealPreparedBatch(ctx, id)
+		var body struct {
+			Presentation string `json:"presentation"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		batch, err := s.engine.RevealPreparedBatch(ctx, id, body.Presentation)
 		if err != nil {
 			return conflict(err.Error())
 		}

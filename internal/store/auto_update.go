@@ -88,9 +88,17 @@ func (s *Store) PreparedBatches(ctx context.Context, _ int) ([]domain.PreparedBa
 	return result, rows.Err()
 }
 
-func (s *Store) RevealPreparedBatch(ctx context.Context, sessionID string) (domain.PreparedBatch, error) {
+func (s *Store) RevealPreparedBatch(ctx context.Context, sessionID, presentation string) (domain.PreparedBatch, error) {
+	if presentation != "prepend" && presentation != "append" {
+		return domain.PreparedBatch{}, errors.New("prepared batch presentation must be prepend or append")
+	}
 	now := domain.Now()
-	result, err := s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='visible',revealed_at=? WHERE session_id=? AND state='prepared' AND (expires_at IS NULL OR expires_at>?)`, now, sessionID, now)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.PreparedBatch{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE auto_update_batches SET state='visible',revealed_at=? WHERE session_id=? AND state='prepared' AND (expires_at IS NULL OR expires_at>?)`, now, sessionID, now)
 	if err != nil {
 		return domain.PreparedBatch{}, err
 	}
@@ -100,6 +108,15 @@ func (s *Store) RevealPreparedBatch(ctx context.Context, sessionID string) (doma
 	}
 	if changed != 1 {
 		return domain.PreparedBatch{}, errors.New("prepared batch is no longer available")
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sessions
+		SET coverage_json=json_set(CASE WHEN json_valid(coverage_json) THEN coverage_json ELSE '{}' END,'$.timelinePresentation',?)
+		WHERE id=?`, presentation, sessionID); err != nil {
+		return domain.PreparedBatch{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.PreparedBatch{}, err
 	}
 	if err := s.recordAutoUpdateQueueVacancy(ctx, now); err != nil {
 		return domain.PreparedBatch{}, err

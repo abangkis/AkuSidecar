@@ -597,13 +597,14 @@ type TimelineCheckSummary struct {
 // boundaries between retained checks. Prepared batches are included only
 // after they become visible, so the Timeline never exposes hidden work.
 type TimelineBatchSummary struct {
-	SessionID   string         `json:"sessionId"`
-	CompletedAt string         `json:"completedAt"`
-	PreparedAt  string         `json:"preparedAt,omitempty"`
-	RevealedAt  string         `json:"revealedAt,omitempty"`
-	Trigger     UpdateTrigger  `json:"trigger"`
-	Delivery    UpdateDelivery `json:"delivery"`
-	ItemCount   int            `json:"itemCount"`
+	SessionID    string         `json:"sessionId"`
+	CompletedAt  string         `json:"completedAt"`
+	PreparedAt   string         `json:"preparedAt,omitempty"`
+	RevealedAt   string         `json:"revealedAt,omitempty"`
+	Presentation string         `json:"presentation,omitempty"`
+	Trigger      UpdateTrigger  `json:"trigger"`
+	Delivery     UpdateDelivery `json:"delivery"`
+	ItemCount    int            `json:"itemCount"`
 }
 
 type InboxRun struct {

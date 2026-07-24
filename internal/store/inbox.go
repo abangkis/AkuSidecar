@@ -176,6 +176,7 @@ func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBa
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id,s.completed_at,
 		       COALESCE(b.prepared_at,''),COALESCE(b.revealed_at,''),
+		       COALESCE(json_extract(s.coverage_json,'$.timelinePresentation'),''),
 		       COALESCE(json_extract(s.coverage_json,'$.trigger'),'user'),
 		       COALESCE(json_extract(s.coverage_json,'$.delivery'),'visible'),
 		       COUNT(t.id)
@@ -186,7 +187,10 @@ func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBa
 		  AND s.completed_at IS NOT NULL
 		  AND (b.state IS NULL OR b.state='visible')
 		GROUP BY s.id,s.completed_at,b.prepared_at,b.revealed_at,s.coverage_json
-		ORDER BY s.completed_at DESC`)
+		ORDER BY
+		  CASE WHEN COALESCE(json_extract(s.coverage_json,'$.timelinePresentation'),'')='append' THEN 1 ELSE 0 END,
+		  CASE WHEN COALESCE(json_extract(s.coverage_json,'$.timelinePresentation'),'')<>'append' THEN COALESCE(b.revealed_at,s.completed_at) END DESC,
+		  CASE WHEN COALESCE(json_extract(s.coverage_json,'$.timelinePresentation'),'')='append' THEN COALESCE(b.revealed_at,s.completed_at) END ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +198,7 @@ func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBa
 	result := []domain.TimelineBatchSummary{}
 	for rows.Next() {
 		var value domain.TimelineBatchSummary
-		if err := rows.Scan(&value.SessionID, &value.CompletedAt, &value.PreparedAt, &value.RevealedAt, &value.Trigger, &value.Delivery, &value.ItemCount); err != nil {
+		if err := rows.Scan(&value.SessionID, &value.CompletedAt, &value.PreparedAt, &value.RevealedAt, &value.Presentation, &value.Trigger, &value.Delivery, &value.ItemCount); err != nil {
 			return nil, err
 		}
 		result = append(result, value)

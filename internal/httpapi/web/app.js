@@ -1689,7 +1689,12 @@ async function refreshTimeline(options = {}) {
     state.timelineBatches = timelineBatches ?? state.timelineBatches;
     renderAutoUpdateStatus(autoUpdate);
     const timelineItems = options.revealedSessionID
-      ? orderTimelineForRevealedBatch(items ?? [], options.previousItems ?? [], options.revealedSessionID)
+      ? orderTimelineForRevealedBatch(
+          items ?? [],
+          options.previousItems ?? [],
+          options.revealedSessionID,
+          options.revealPlacement ?? "append",
+        )
       : items ?? [];
     renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
     if (Number.isFinite(options.restoreScrollY)) {
@@ -1700,13 +1705,14 @@ async function refreshTimeline(options = {}) {
   }
 }
 
-function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID) {
+function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID, placement = "append") {
   const byID = new Map(items.map((entry) => [entry.id, entry]));
   const previousIDs = new Set(previousItems.map((entry) => entry.id));
   const previous = previousItems.map((entry) => byID.get(entry.id)).filter(Boolean);
   const revealed = items.filter((entry) => entry.sessionId === revealedSessionID && !previousIDs.has(entry.id));
   const included = new Set([...previous, ...revealed].map((entry) => entry.id));
   const remaining = items.filter((entry) => !included.has(entry.id));
+  if (placement === "prepend") return [...revealed, ...previous, ...remaining];
   return [...previous, ...revealed, ...remaining];
 }
 
@@ -1728,9 +1734,18 @@ async function revealPreparedBatch(presentation) {
     if (!sessionID) return false;
     const previousItems = [...state.timelineItems];
     const restoreScrollY = window.scrollY;
-    const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, { method: "POST" });
+    const revealPlacement = presentation === "latest" ? "prepend" : "append";
+    const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, {
+      method: "POST",
+      body: { presentation: revealPlacement },
+    });
     if (presentation === "latest") {
-      await refreshTimeline({ extraItems: batch?.itemCount || 0 });
+      await refreshTimeline({
+        revealedSessionID: sessionID,
+        revealPlacement,
+        previousItems,
+        extraItems: batch?.itemCount || 0,
+      });
       showNotice(`Loaded ${batch?.itemCount || 0} item${batch?.itemCount === 1 ? "" : "s"} from the next prepared batch.`);
       requestAnimationFrame(() => {
         $("#timeline-heading")?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -1739,6 +1754,7 @@ async function revealPreparedBatch(presentation) {
     } else {
       await refreshTimeline({
         revealedSessionID: sessionID,
+        revealPlacement,
         previousItems,
         extraItems: batch?.itemCount || 0,
         restoreScrollY,

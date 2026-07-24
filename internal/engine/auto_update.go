@@ -141,10 +141,10 @@ func localBudgetResetAt() string {
 	return time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location()).Format(time.RFC3339Nano)
 }
 
-func (e *Engine) RevealPreparedBatch(ctx context.Context, sessionID string) (domain.PreparedBatch, error) {
+func (e *Engine) RevealPreparedBatch(ctx context.Context, sessionID, presentation string) (domain.PreparedBatch, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
-	batch, err := e.store.RevealPreparedBatch(ctx, sessionID)
+	batch, err := e.store.RevealPreparedBatch(ctx, sessionID, presentation)
 	if err == nil {
 		select {
 		case e.autoWake <- struct{}{}:
