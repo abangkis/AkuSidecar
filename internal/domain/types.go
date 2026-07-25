@@ -823,18 +823,19 @@ type Observation struct {
 }
 
 type Snapshot struct {
-	Index                  int              `json:"index"`
-	AdapterVersion         string           `json:"adapterVersion"`
-	SelectorStrategy       string           `json:"selectorStrategy"`
-	SelectorCounts         map[string]int   `json:"selectorCounts"`
-	SelectorCandidateCount int              `json:"selectorCandidateCount"`
-	VisibleContainerCount  int              `json:"visibleContainerCount"`
-	CapturedAt             string           `json:"capturedAt"`
-	ScrollY                int64            `json:"scrollY"`
-	ViewportHeight         int64            `json:"viewportHeight"`
-	NewCandidateCount      int              `json:"newCandidateCount"`
-	Blocks                 []Block          `json:"blocks"`
-	QualityReports         []map[string]any `json:"qualityReports"`
+	Index                    int              `json:"index"`
+	AdapterVersion           string           `json:"adapterVersion"`
+	SelectorStrategy         string           `json:"selectorStrategy"`
+	SelectorCounts           map[string]int   `json:"selectorCounts"`
+	SelectorCandidateCount   int              `json:"selectorCandidateCount"`
+	StructuralCandidateCount int              `json:"structuralCandidateCount"`
+	VisibleContainerCount    int              `json:"visibleContainerCount"`
+	CapturedAt               string           `json:"capturedAt"`
+	ScrollY                  int64            `json:"scrollY"`
+	ViewportHeight           int64            `json:"viewportHeight"`
+	NewCandidateCount        int              `json:"newCandidateCount"`
+	Blocks                   []Block          `json:"blocks"`
+	QualityReports           []map[string]any `json:"qualityReports"`
 }
 
 type Attachment struct {

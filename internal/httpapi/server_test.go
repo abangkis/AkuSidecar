@@ -581,12 +581,12 @@ func TestStopClosesActiveHTTPConnectionsAfterDrainDeadline(t *testing.T) {
 	}
 }
 
-func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
+func TestBridgeV77ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
 			"index":0,"adapterVersion":"x-dom-v20","selectorStrategy":"article","selectorCounts":{"article":1},
-			"selectorCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
+			"selectorCandidateCount":1,"structuralCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
 			"scrollY":0,"viewportHeight":900,"newCandidateCount":1,
 			"blocks":[{
 				"text":"Material source update","author":"author","avatarUrl":null,"publishedAt":null,
@@ -600,9 +600,9 @@ func TestBridgeV51ObservationShapeDecodesStrictly(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	var observation domain.Observation
 	if err := readJSON(request, &observation); err != nil {
-		t.Fatalf("v51 observation must satisfy the strict Go shape: %v", err)
+		t.Fatalf("v77 observation must satisfy the strict Go shape: %v", err)
 	}
-	if observation.Snapshots[0].Blocks[0].PlatformID != "1" {
+	if observation.Snapshots[0].StructuralCandidateCount != 1 || observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)
 	}
 }
