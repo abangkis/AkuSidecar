@@ -11,7 +11,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
-const ExpectedBridgeBuildID = "aku-bridge-0.7.1-source-adapters-v79"
+const ExpectedBridgeBuildID = "aku-bridge-0.7.2-source-adapters-v79"
 
 var ErrActionNotFound = errors.New("bridge action not found")
 var ErrActionConflict = errors.New("bridge action conflict")

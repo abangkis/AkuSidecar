@@ -180,6 +180,31 @@ func TestDirectMediaProvenanceRoutesToDrawer(t *testing.T) {
 	}
 }
 
+func TestUntrustedOrAbsentMediaProvenanceStaysInline(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		manifestState string
+		aiOrigin      string
+	}{
+		{name: "invalid manifest", manifestState: "invalid", aiOrigin: "unknown"},
+		{name: "no manifest", manifestState: "no_manifest", aiOrigin: "none"},
+		{name: "verified non-ai manifest", manifestState: "valid", aiOrigin: "none"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := resolveAIDetection(nil, "", []domain.MediaProvenanceAssessment{{
+				Status: "completed", ManifestState: test.manifestState, TrustState: "not_evaluated", AIOrigin: test.aiOrigin,
+				MediaIndex: 0, VerifierVersion: "c2pa-image-v1",
+			}})
+			if value == nil {
+				t.Fatal("expected a detection envelope for the completed media inspection")
+			}
+			if value.RouteToSignals || value.HideEligible || value.DirectMediaProvenance || len(value.MediaSignals) != 0 {
+				t.Fatalf("untrusted/absent provenance must remain inline: %+v", value)
+			}
+		})
+	}
+}
+
 func TestTypedPlatformMediaLabelRoutesWithoutClaimingPostAuthorship(t *testing.T) {
 	value := resolveAIDetection(nil, "", nil, map[string]any{
 		"originSignals": []any{map[string]any{

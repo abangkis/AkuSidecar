@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `0.7.1`.
+Status: active runtime contract for `0.7.2`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
@@ -55,7 +55,7 @@ SQLite schema version 6 contains only active tables for metadata, source definit
 
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 
-There is no importer or migration path for an earlier Node or Go database. Schema v6 is the only accepted runtime contract; an existing database with any other schema version fails before AkuSidecar creates or alters application tables. The v6 boundary keeps evaluated-but-unselected reasoned items, source-registry definitions, native-content continuity decisions, stage timings, AI Detection state, and undoable selection corrections. Reset learning preserves the historical Timeline/audit decision but places a new authority boundary before old selection corrections; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.1` defaults including Standard 1x, Progressive wait, Smart resurfacing with a seven-day cooldown, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh for candidate evaluation, and preserves Bridge identity.
+There is no importer or migration path for an earlier Node or Go database. Schema v6 is the only accepted runtime contract; an existing database with any other schema version fails before AkuSidecar creates or alters application tables. The v6 boundary keeps evaluated-but-unselected reasoned items, source-registry definitions, native-content continuity decisions, stage timings, AI Detection state, and undoable selection corrections. Reset learning preserves the historical Timeline/audit decision but places a new authority boundary before old selection corrections; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.2` defaults including Standard 1x, Progressive wait, Smart resurfacing with a seven-day cooldown, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh for candidate evaluation, and preserves Bridge identity.
 
 ## Verification
 
@@ -70,6 +70,12 @@ The authenticated AI Detector acceptance canary is opt-in so ordinary tests neve
 ```powershell
 $env:AKU_CODEX_LIVE = "1"
 go test -v -run TestLiveCodexAppServerAIDetectionAcceptanceCanary -count=1 ./internal/aidetector
+```
+
+The offline acceptance suite also covers the object-scoped AI-origin contract: platform labels and direct C2PA AI provenance may route attached media to AI Signals, while quoted/external evidence, invalid manifests, missing manifests, and valid non-AI manifests remain inline. It does not consume Codex tokens:
+
+```powershell
+go test -count=1 ./internal/aidetector ./internal/mediaprovenance ./internal/store ./internal/httpapi
 ```
 
 The workspace integration gate is `AkuBrowser/scripts/check.ps1`. Runtime replacement is explicit through `scripts/restart-dev.ps1`, which refuses to interrupt an active session and delegates stop/start to AkuSupervisor.
