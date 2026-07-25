@@ -33,6 +33,7 @@ type CodexAppServer struct {
 	writeMu        sync.Mutex
 	pendingMu      sync.Mutex
 	cmd            *exec.Cmd
+	ownership      processOwnership
 	stdin          io.WriteCloser
 	pending        map[string]chan rpcMessage
 	notifications  chan rpcMessage
@@ -322,20 +323,33 @@ func (c *CodexAppServer) ensureStartedLocked(ctx context.Context) error {
 	cmd.Dir = c.root
 	cmd.Env = codexEnvironment(c.pathDirs)
 	configureProcess(cmd)
+	ownership, err := newProcessOwnership()
+	if err != nil {
+		return err
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		ownership.close()
 		return err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		ownership.close()
 		return err
 	}
 	stderr := &boundedBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
+		ownership.close()
 		return fmt.Errorf("start Codex App Server: %w", err)
 	}
-	c.cmd, c.stdin, c.stderr = cmd, stdin, stderr
+	if err := ownership.attach(cmd); err != nil {
+		_ = cmd.Process.Kill()
+		ownership.terminate()
+		ownership.close()
+		return err
+	}
+	c.cmd, c.ownership, c.stdin, c.stderr = cmd, ownership, stdin, stderr
 	c.threadsStarted = 0
 	c.notifications = make(chan rpcMessage, 1024)
 	c.done = make(chan error, 1)
@@ -543,6 +557,9 @@ func (c *CodexAppServer) releaseThreadLocked(threadID string) {
 
 func (c *CodexAppServer) stopLocked(wait bool) {
 	if c.cmd == nil && c.stdin == nil {
+		c.ownership.terminate()
+		c.ownership.close()
+		c.ownership = processOwnership{}
 		c.done = nil
 		c.threadsStarted = 0
 		return
@@ -569,7 +586,13 @@ func (c *CodexAppServer) stopLocked(wait bool) {
 		case <-time.After(appServerForcedStopWait):
 		}
 	}
+	// The Job Object is the authoritative descendant cleanup boundary. It is
+	// intentionally invoked after the graceful window so normal App Server
+	// shutdown can finish without prematurely killing its helpers.
+	c.ownership.terminate()
+	c.ownership.close()
 	c.cmd, c.stdin, c.done = nil, nil, nil
+	c.ownership = processOwnership{}
 	c.notifications = nil
 	c.threadsStarted = 0
 	c.pendingMu.Lock()

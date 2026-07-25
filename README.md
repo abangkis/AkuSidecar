@@ -75,7 +75,9 @@ stored and hot-swapped into the shared runtime only while reasoning is idle;
 result automatically. The default Go provider owns one managed `codex app-server` stdio
 process, creates ephemeral read-only threads,
 sends output schemas at turn start, rejects server callbacks, and stores
-structured token telemetry. Acquisition planning, semantic event resolution,
+structured token telemetry. On Windows, each managed App Server is assigned to
+its own Job Object so forced timeout/recycle also cleans its descendant tool
+processes; the Supervisor remains the outer ownership boundary. Acquisition planning, semantic event resolution,
 and AI Deep Detection default to Luna `high`; candidate evaluation alone uses
 Luna `xhigh`. Deep Detection runs only after Timeline delivery, while
 local deterministic AI Fast Detection does not consume a model. The domain
