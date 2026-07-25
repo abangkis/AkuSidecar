@@ -1288,10 +1288,15 @@ function releaseCaptureSurfaceOnce(leaseId, source = null) {
   });
 }
 
+function sourceCaptureSurfaceReleasable(run) {
+  return terminalStatuses.has(run?.status) ||
+    (run?.status === "reasoning" && run?.stage === "candidate_evaluation");
+}
+
 function releaseCompletedSourceSurfaces(session) {
   if (!session?.id || terminalStatuses.has(session.status)) return;
   for (const run of session.runs ?? []) {
-    if (!run?.source || !terminalStatuses.has(run.status)) continue;
+    if (!run?.source || !sourceCaptureSurfaceReleasable(run)) continue;
     const key = `${session.id}:${run.source}`;
     if (state.releasedCaptureSources.has(key)) continue;
     state.releasedCaptureSources.add(key);
