@@ -52,25 +52,23 @@ var (
 	attachedMediaPattern    = regexp.MustCompile(`(?i)\b(?:image|photo|illustration|video|audio|music|voice)\b`)
 )
 
-// DeepCandidates returns only posts for which asynchronous model review can
-// responsibly change the presentation assessment. Direct platform evidence
-// and user corrections already have higher authority, while inadequate text
-// cannot be repaired by spending more model effort on the same capture.
+// DeepCandidates returns only preliminary deterministic findings for which a
+// model can responsibly confirm or correct object scope. Neutral posts,
+// inadequate captures, direct platform evidence, and user corrections do not
+// benefit from a broad second opinion.
 func DeepCandidates(items []domain.TimelineItem) []domain.TimelineItem {
 	result := make([]domain.TimelineItem, 0, len(items))
 	for _, item := range items {
 		assessment := item.AIDetection
-		if assessment == nil {
-			result = append(result, item)
-			continue
-		}
-		if assessment.UserOverride || assessment.Status == "insufficient_evidence" {
+		if assessment == nil || assessment.UserOverride || assessment.Status != "strong_signals" {
 			continue
 		}
 		if containsCode(assessment.EvidenceCodes, "platform_ai_label") || containsCode(assessment.EvidenceCodes, "verified_ai_provenance") {
 			continue
 		}
-		result = append(result, item)
+		if containsCode(assessment.EvidenceCodes, "author_declared_ai") || containsCode(assessment.EvidenceCodes, "prompt_instruction_residue") {
+			result = append(result, item)
+		}
 	}
 	return result
 }

@@ -23,6 +23,16 @@ func TestFastDetectorUsesOnlyDeterministicOriginSignals(t *testing.T) {
 			status: "strong_signals", confidence: "high", evidence: "platform_ai_label",
 		},
 		{
+			name: "typed attached-media platform label stays object scoped",
+			item: domain.TimelineItem{Evidence: &domain.Block{
+				Text: "A sufficiently long authored post accompanies media that the platform labels as AI.",
+				Presentation: map[string]any{"originSignals": []any{map[string]any{
+					"kind": "platform_ai_label", "scope": "attached_media", "authority": "platform", "label": "AI info",
+				}}},
+			}},
+			status: "no_signal_detected", confidence: "low",
+		},
+		{
 			name: "author declaration",
 			item: domain.TimelineItem{Evidence: &domain.Block{
 				Text: "This post was generated with AI, then reviewed and published by me for this experiment.",

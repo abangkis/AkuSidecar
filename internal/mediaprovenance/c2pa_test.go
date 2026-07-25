@@ -1,6 +1,8 @@
 package mediaprovenance
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestParseC2PAToolOutputClassifiesGeneratedImage(t *testing.T) {
 	result, err := ParseC2PAToolOutput([]byte(`{
@@ -67,11 +69,14 @@ func TestParseC2PAToolOutputDoesNotTrustBrokenManifest(t *testing.T) {
 	}
 }
 
-func TestImageExtensionUsesURLThenContentType(t *testing.T) {
-	if got := imageExtension("/media/photo.PNG", "application/octet-stream"); got != ".png" {
+func TestImageExtensionUsesSniffedBytesBeforeURLMetadata(t *testing.T) {
+	if got := imageExtension("/media/photo.PNG", "image/png", "image/jpeg"); got != ".jpg" {
+		t.Fatalf("sniffed extension=%q", got)
+	}
+	if got := imageExtension("/media/photo.PNG", "application/octet-stream", "application/octet-stream"); got != ".png" {
 		t.Fatalf("URL extension=%q", got)
 	}
-	if got := imageExtension("/media/render", "image/webp; charset=binary"); got != ".webp" {
+	if got := imageExtension("/media/render", "image/webp; charset=binary", "application/octet-stream"); got != ".webp" {
 		t.Fatalf("content-type extension=%q", got)
 	}
 }

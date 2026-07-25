@@ -182,6 +182,65 @@ func (s *Store) AIDetectionJob(ctx context.Context, sessionID string) (*domain.A
 	return &value, nil
 }
 
+func (s *Store) AIDetectorYield(ctx context.Context, sessionID string) (*domain.AIDetectorYield, error) {
+	value := &domain.AIDetectorYield{}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		  COALESCE(SUM(CASE WHEN status='strong_signals' THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN status='no_signal_detected' THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN status='insufficient_evidence' THEN 1 ELSE 0 END),0)
+		FROM ai_assessments WHERE session_id=? AND stage='fast' AND undone_at IS NULL`, sessionID).
+		Scan(&value.FastReviewed, &value.FastStrong, &value.FastNoSignal, &value.FastInsufficient); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM ai_assessments
+		WHERE session_id=? AND stage='deep' AND undone_at IS NULL`, sessionID).
+		Scan(&value.DeepReviewed); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(candidate_count,0) FROM ai_detection_jobs
+		WHERE session_id=? ORDER BY created_at DESC,id DESC LIMIT 1`, sessionID).
+		Scan(&value.DeepEligible); err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	value.DeepSkipped = value.FastReviewed - value.DeepEligible
+	if value.DeepSkipped < 0 {
+		value.DeepSkipped = 0
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+		  COALESCE(SUM(CASE WHEN status IN ('completed','failed') THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN status='completed' AND manifest_state='no_manifest' THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN status='completed' AND manifest_state IN ('valid','invalid') THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN status='completed' AND ai_origin IN ('generated','edited') THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0)
+		FROM media_provenance_assessments WHERE session_id=?`, sessionID).
+		Scan(&value.C2PAInspected, &value.C2PANoManifest, &value.C2PAWithManifest, &value.C2PAAIOrigin, &value.C2PAFailed); err != nil {
+		return nil, err
+	}
+	items, err := s.ListSessionItems(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if item.Evidence == nil {
+			continue
+		}
+		for _, signal := range domain.PlatformOriginSignals(item.Evidence.Presentation) {
+			if signal.Kind == "platform_ai_label" {
+				value.PlatformAISignals++
+				break
+			}
+		}
+	}
+	if value.FastReviewed == 0 && value.C2PAInspected == 0 && value.PlatformAISignals == 0 {
+		return nil, nil
+	}
+	return value, nil
+}
+
 func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineItem) error {
 	if len(items) == 0 {
 		return nil
@@ -264,16 +323,28 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 		}
 	}
 	for timelineID, item := range itemByID {
-		item.AIDetection = resolveAIDetection(byTimeline[timelineID], jobs[item.SessionID], mediaByTimeline[timelineID])
+		var presentation map[string]any
+		if item.Evidence != nil {
+			presentation = item.Evidence.Presentation
+		}
+		item.AIDetection = resolveAIDetection(byTimeline[timelineID], jobs[item.SessionID], mediaByTimeline[timelineID], presentation)
 	}
 	return nil
 }
 
-func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaHistory []domain.MediaProvenanceAssessment) *domain.TimelineAIDetection {
-	if len(history) == 0 && deepStatus == "" && len(mediaHistory) == 0 {
+func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaHistory []domain.MediaProvenanceAssessment, presentations ...map[string]any) *domain.TimelineAIDetection {
+	var platformSignals []domain.PlatformOriginSignal
+	if len(presentations) > 0 {
+		platformSignals = domain.PlatformOriginSignals(presentations[0])
+	}
+	if len(history) == 0 && deepStatus == "" && len(mediaHistory) == 0 && len(platformSignals) == 0 {
 		return nil
 	}
-	value := &domain.TimelineAIDetection{HistoryCount: len(history), DeepStatus: deepStatus, PendingDeep: deepStatus == "queued" || deepStatus == "running"}
+	value := &domain.TimelineAIDetection{
+		HistoryCount: len(history), DeepStatus: deepStatus,
+		PendingDeep:     deepStatus == "queued" || deepStatus == "running",
+		PlatformSignals: platformSignals,
+	}
 	var fast, deep, user *domain.AIAssessment
 	for index := range history {
 		assessment := &history[index]
@@ -328,6 +399,29 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaH
 		return value
 	}
 
+	for _, signal := range platformSignals {
+		if signal.Kind != "platform_ai_label" {
+			continue
+		}
+		value.Stage = "platform_origin"
+		value.Status = "strong_signals"
+		value.ConfidenceBand = "high"
+		value.EvidenceCodes = []string{"platform_ai_label"}
+		value.AssessedObject = signal.Scope
+		value.SignalScope = signal.Scope
+		value.DetectorVersion = "platform-origin-v1"
+		value.BadgeLabel = "Platform AI label"
+		value.Detail = "The source platform displays “" + signal.Label + "” for this item."
+		if signal.Scope == "attached_media" {
+			value.BadgeLabel = "Platform AI media label"
+			value.Detail += " This describes the attached media, not authorship of the social-post text."
+		}
+		value.RouteToSignals = true
+		value.HideEligible = true
+		value.DirectOriginEvidence = true
+		return value
+	}
+
 	if len(value.MediaSignals) > 0 {
 		signal := value.MediaSignals[len(value.MediaSignals)-1]
 		value.Stage = "media_provenance"
@@ -343,6 +437,7 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaH
 		value.RouteToSignals = true
 		value.HideEligible = true
 		value.DirectMediaProvenance = true
+		value.DirectOriginEvidence = true
 		return value
 	}
 

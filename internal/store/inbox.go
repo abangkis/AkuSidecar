@@ -63,6 +63,10 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 		if err != nil {
 			return nil, 0, err
 		}
+		entry.AIDetectorYield, err = s.AIDetectorYield(ctx, session.ID)
+		if err != nil {
+			return nil, 0, err
+		}
 		entry.PreferenceDecisions, err = s.inboxPreferenceDecisions(ctx, session.ID)
 		if err != nil {
 			return nil, 0, err

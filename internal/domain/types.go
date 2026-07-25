@@ -564,6 +564,7 @@ type InboxSession struct {
 	DuplicateReports    int                       `json:"duplicateReports"`
 	EventResolution     *EventResolutionSummary   `json:"eventResolution,omitempty"`
 	AIDetection         *AIDetectionJob           `json:"aiDetection,omitempty"`
+	AIDetectorYield     *AIDetectorYield          `json:"aiDetectorYield,omitempty"`
 	PreferenceDecisions []InboxPreferenceDecision `json:"preferenceDecisions"`
 	Runs                []InboxRun                `json:"runs"`
 	Error               *Failure                  `json:"error"`
@@ -571,6 +572,22 @@ type InboxSession struct {
 	Delivery            UpdateDelivery            `json:"delivery"`
 	BudgetAuthority     BudgetAuthority           `json:"budgetAuthority"`
 	DeliveryState       string                    `json:"deliveryState,omitempty"`
+}
+
+type AIDetectorYield struct {
+	FastReviewed      int `json:"fastReviewed"`
+	FastStrong        int `json:"fastStrong"`
+	FastNoSignal      int `json:"fastNoSignal"`
+	FastInsufficient  int `json:"fastInsufficient"`
+	DeepEligible      int `json:"deepEligible"`
+	DeepReviewed      int `json:"deepReviewed"`
+	DeepSkipped       int `json:"deepSkipped"`
+	C2PAInspected     int `json:"c2paInspected"`
+	C2PANoManifest    int `json:"c2paNoManifest"`
+	C2PAWithManifest  int `json:"c2paWithManifest"`
+	C2PAAIOrigin      int `json:"c2paAiOrigin"`
+	C2PAFailed        int `json:"c2paFailed"`
+	PlatformAISignals int `json:"platformAiSignals"`
 }
 
 type InboxPreferenceDecision struct {
@@ -1051,28 +1068,101 @@ func (a AIAssessment) Validate() error {
 }
 
 type TimelineAIDetection struct {
-	AssessmentID          string          `json:"assessmentId"`
-	Stage                 string          `json:"stage"`
-	Status                string          `json:"status"`
-	ConfidenceBand        string          `json:"confidenceBand"`
-	EvidenceCodes         []string        `json:"evidenceCodes"`
-	AssessedObject        string          `json:"assessedObject,omitempty"`
-	SignalScope           string          `json:"signalScope,omitempty"`
-	BadgeLabel            string          `json:"badgeLabel,omitempty"`
-	Detail                string          `json:"detail,omitempty"`
-	RouteToSignals        bool            `json:"routeToSignals"`
-	HideEligible          bool            `json:"hideEligible"`
-	PendingDeep           bool            `json:"pendingDeep"`
-	DeepStatus            string          `json:"deepStatus,omitempty"`
-	HistoryCount          int             `json:"historyCount"`
-	Corrected             bool            `json:"corrected"`
-	UserOverride          bool            `json:"userOverride"`
-	CorrectionID          string          `json:"correctionId,omitempty"`
-	DetectorVersion       string          `json:"detectorVersion,omitempty"`
-	LatestAssessedAt      string          `json:"latestAssessedAt,omitempty"`
-	MediaSignals          []MediaAISignal `json:"mediaSignals,omitempty"`
-	PendingMedia          bool            `json:"pendingMedia"`
-	DirectMediaProvenance bool            `json:"directMediaProvenance"`
+	AssessmentID          string                 `json:"assessmentId"`
+	Stage                 string                 `json:"stage"`
+	Status                string                 `json:"status"`
+	ConfidenceBand        string                 `json:"confidenceBand"`
+	EvidenceCodes         []string               `json:"evidenceCodes"`
+	AssessedObject        string                 `json:"assessedObject,omitempty"`
+	SignalScope           string                 `json:"signalScope,omitempty"`
+	BadgeLabel            string                 `json:"badgeLabel,omitempty"`
+	Detail                string                 `json:"detail,omitempty"`
+	RouteToSignals        bool                   `json:"routeToSignals"`
+	HideEligible          bool                   `json:"hideEligible"`
+	PendingDeep           bool                   `json:"pendingDeep"`
+	DeepStatus            string                 `json:"deepStatus,omitempty"`
+	HistoryCount          int                    `json:"historyCount"`
+	Corrected             bool                   `json:"corrected"`
+	UserOverride          bool                   `json:"userOverride"`
+	CorrectionID          string                 `json:"correctionId,omitempty"`
+	DetectorVersion       string                 `json:"detectorVersion,omitempty"`
+	LatestAssessedAt      string                 `json:"latestAssessedAt,omitempty"`
+	MediaSignals          []MediaAISignal        `json:"mediaSignals,omitempty"`
+	PlatformSignals       []PlatformOriginSignal `json:"platformSignals,omitempty"`
+	PendingMedia          bool                   `json:"pendingMedia"`
+	DirectMediaProvenance bool                   `json:"directMediaProvenance"`
+	DirectOriginEvidence  bool                   `json:"directOriginEvidence"`
+}
+
+type PlatformOriginSignal struct {
+	Kind      string `json:"kind"`
+	Scope     string `json:"scope"`
+	Authority string `json:"authority"`
+	Label     string `json:"label"`
+	Source    string `json:"source,omitempty"`
+}
+
+func PlatformOriginSignals(presentation map[string]any) []PlatformOriginSignal {
+	raw, ok := presentation["originSignals"]
+	if !ok {
+		return nil
+	}
+	values, ok := raw.([]any)
+	if !ok {
+		if typed, valid := raw.([]map[string]any); valid {
+			values = make([]any, 0, len(typed))
+			for _, value := range typed {
+				values = append(values, value)
+			}
+		} else {
+			return nil
+		}
+	}
+	result := make([]PlatformOriginSignal, 0, len(values))
+	seen := map[string]bool{}
+	for _, rawValue := range values {
+		value, ok := rawValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		signal := PlatformOriginSignal{
+			Kind:      strings.TrimSpace(stringMapValue(value, "kind")),
+			Scope:     strings.TrimSpace(stringMapValue(value, "scope")),
+			Authority: strings.TrimSpace(stringMapValue(value, "authority")),
+			Label:     strings.TrimSpace(stringMapValue(value, "label")),
+			Source:    strings.TrimSpace(stringMapValue(value, "source")),
+		}
+		if signal.Authority != "platform" ||
+			(signal.Kind != "platform_ai_label" && signal.Kind != "content_credentials") ||
+			(signal.Scope != "social_post" && signal.Scope != "attached_media" && signal.Scope != "author_account") ||
+			signal.Label == "" {
+			continue
+		}
+		if len([]rune(signal.Label)) > 120 {
+			signal.Label = string([]rune(signal.Label)[:120])
+		}
+		key := signal.Kind + "\x00" + signal.Scope + "\x00" + strings.ToLower(signal.Label)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, signal)
+		if len(result) == 8 {
+			break
+		}
+	}
+	return result
+}
+
+func stringMapValue(value map[string]any, key string) string {
+	result, _ := value[key].(string)
+	return result
+}
+
+type MediaProvenanceRuntime struct {
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+	Available bool   `json:"available"`
 }
 
 type MediaAISignal struct {

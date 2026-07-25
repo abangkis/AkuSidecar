@@ -97,6 +97,10 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 	if len(inbox) != 1 || inbox[0].AIDetection == nil || inbox[0].AIDetection.ID != job.ID {
 		t.Fatalf("Inbox AI detection=%+v", inbox)
 	}
+	if inbox[0].AIDetectorYield == nil || inbox[0].AIDetectorYield.FastReviewed != 1 ||
+		inbox[0].AIDetectorYield.DeepEligible != 1 || inbox[0].AIDetectorYield.DeepReviewed != 1 {
+		t.Fatalf("Inbox AI Detector yield=%+v", inbox[0].AIDetectorYield)
+	}
 	items, _ = state.ListSessionItems(ctx, session.ID)
 	value = items[0].AIDetection
 	if value.BadgeLabel != "AI assessment corrected" || !value.Corrected || value.RouteToSignals || value.HideEligible || value.PendingDeep {
@@ -173,6 +177,33 @@ func TestDirectMediaProvenanceRoutesToDrawer(t *testing.T) {
 	}
 	if value.AssessedObject != "attached_media" || value.BadgeLabel != "Verified AI media" {
 		t.Fatalf("expected object-scoped trusted media label: %+v", value)
+	}
+}
+
+func TestTypedPlatformMediaLabelRoutesWithoutClaimingPostAuthorship(t *testing.T) {
+	value := resolveAIDetection(nil, "", nil, map[string]any{
+		"originSignals": []any{map[string]any{
+			"kind": "platform_ai_label", "scope": "attached_media",
+			"authority": "platform", "label": "AI info", "source": "facebook",
+		}},
+	})
+	if value == nil || !value.RouteToSignals || !value.DirectOriginEvidence {
+		t.Fatalf("expected platform media label to route to signals: %+v", value)
+	}
+	if value.AssessedObject != "attached_media" || value.SignalScope != "attached_media" || value.BadgeLabel != "Platform AI media label" {
+		t.Fatalf("expected attached-media scope to remain explicit: %+v", value)
+	}
+}
+
+func TestContentCredentialsAloneRemainNeutral(t *testing.T) {
+	value := resolveAIDetection(nil, "", nil, map[string]any{
+		"originSignals": []any{map[string]any{
+			"kind": "content_credentials", "scope": "attached_media",
+			"authority": "platform", "label": "Content Credentials", "source": "linkedin",
+		}},
+	})
+	if value == nil || value.RouteToSignals || value.Status == "strong_signals" {
+		t.Fatalf("content credentials do not by themselves establish AI origin: %+v", value)
 	}
 }
 

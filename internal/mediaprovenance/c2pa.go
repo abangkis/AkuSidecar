@@ -1,6 +1,7 @@
 package mediaprovenance
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -145,13 +146,22 @@ func (i *C2PAToolInspector) download(ctx context.Context, target, tempDir string
 	if contentType != "" && !strings.HasPrefix(contentType, "image/") && !strings.HasPrefix(contentType, "application/octet-stream") {
 		return "", "", fmt.Errorf("media response is not an image: %s", contentType)
 	}
-	path := filepath.Join(tempDir, "asset"+imageExtension(response.Request.URL.Path, contentType))
+	reader := bufio.NewReader(response.Body)
+	header, peekErr := reader.Peek(512)
+	if peekErr != nil && !errors.Is(peekErr, io.EOF) && !errors.Is(peekErr, bufio.ErrBufferFull) {
+		return "", "", peekErr
+	}
+	detectedType := strings.ToLower(http.DetectContentType(header))
+	if detectedType != "" && !strings.HasPrefix(detectedType, "image/") && detectedType != "application/octet-stream" {
+		return "", "", fmt.Errorf("media body is not an image: %s", detectedType)
+	}
+	path := filepath.Join(tempDir, "asset"+imageExtension(response.Request.URL.Path, contentType, detectedType))
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", "", err
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, maxImageBytes+1))
+	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(reader, maxImageBytes+1))
 	closeErr := file.Close()
 	if copyErr != nil {
 		return "", "", copyErr
@@ -168,12 +178,27 @@ func (i *C2PAToolInspector) download(ctx context.Context, target, tempDir string
 	return path, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func imageExtension(path, contentType string) string {
+func imageExtension(path, contentType, detectedType string) string {
+	if extension := contentTypeExtension(detectedType); extension != "" {
+		return extension
+	}
+	if extension := contentTypeExtension(contentType); extension != "" && !strings.Contains(strings.ToLower(contentType), "octet-stream") {
+		return extension
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff", ".heic", ".heif", ".avif":
 		return strings.ToLower(filepath.Ext(path))
 	}
+	if extension := contentTypeExtension(contentType); extension != "" {
+		return extension
+	}
+	return ".jpg"
+}
+
+func contentTypeExtension(contentType string) string {
 	switch strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0])) {
+	case "image/jpeg":
+		return ".jpg"
 	case "image/png":
 		return ".png"
 	case "image/webp":
@@ -189,7 +214,7 @@ func imageExtension(path, contentType string) string {
 	case "image/avif":
 		return ".avif"
 	default:
-		return ".jpg"
+		return ""
 	}
 }
 

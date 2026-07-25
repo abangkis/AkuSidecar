@@ -44,7 +44,7 @@ func detectItem(item domain.TimelineItem) domain.AIAssessment {
 		text = strings.TrimSpace(item.Evidence.Text)
 	}
 	codes := make([]string, 0, 3)
-	if item.Evidence != nil && hasPlatformAILabel(item.Evidence.Presentation) {
+	if item.Evidence != nil && hasSocialPostPlatformAILabel(item.Evidence.Presentation) {
 		codes = append(codes, "platform_ai_label")
 	}
 	if matchesAny(text, authorDeclarationPatterns) {
@@ -92,7 +92,15 @@ func fastSignalScope(status string) string {
 }
 
 func hasPlatformAILabel(value map[string]any) bool {
+	for _, signal := range domain.PlatformOriginSignals(value) {
+		if signal.Kind == "platform_ai_label" {
+			return true
+		}
+	}
 	for key, raw := range value {
+		if key == "originSignals" {
+			continue
+		}
 		normalizedKey := strings.ToLower(strings.NewReplacer("_", " ", "-", " ").Replace(key))
 		if !strings.Contains(normalizedKey, "ai") && !strings.Contains(normalizedKey, "synthetic") && !strings.Contains(normalizedKey, "generated") {
 			continue
@@ -110,6 +118,19 @@ func hasPlatformAILabel(value map[string]any) bool {
 		}
 	}
 	return false
+}
+
+func hasSocialPostPlatformAILabel(value map[string]any) bool {
+	signals := domain.PlatformOriginSignals(value)
+	if len(signals) > 0 {
+		for _, signal := range signals {
+			if signal.Kind == "platform_ai_label" && signal.Scope == "social_post" {
+				return true
+			}
+		}
+		return false
+	}
+	return hasPlatformAILabel(value)
 }
 
 func matchesAny(value string, patterns []*regexp.Regexp) bool {

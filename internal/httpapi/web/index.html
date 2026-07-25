@@ -313,6 +313,10 @@
                   <option value="hide">Hide confirmed signals — high risk</option>
                 </select>
               </label>
+              <div class="settings-row">
+                <span class="settings-copy"><strong>C2PA image provenance</strong><small>Checks attached images asynchronously. Missing manifests are neutral; unavailable means the local verifier is not installed.</small></span>
+                <span id="c2pa-runtime-status" class="settings-detail">Checking verifier…</span>
+              </div>
               <div id="ai-hide-warning" class="settings-row ai-hide-warning hidden">
                 <span class="settings-copy"><strong>High-risk presentation policy</strong><small>AI detection can be wrong. Activating Hide requires an exact typed phrase. Hidden posts remain local and recoverable.</small></span>
                 <span id="ai-hide-status" class="settings-detail">Hide is not active.</span>

@@ -477,6 +477,10 @@ function renderSettings(settings) {
   $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
   $("#ai-detection-enabled").checked = settings.aiDetectionEnabled !== false;
   $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
+  const mediaRuntime = state.bootstrap?.mediaProvenanceRuntime;
+  $("#c2pa-runtime-status").textContent = mediaRuntime?.available
+    ? `${mediaRuntime.provider} ready · ${mediaRuntime.version}`
+    : `${mediaRuntime?.provider || "c2patool"} unavailable`;
   $("#resurface-mode").value = settings.resurfaceMode || "smart";
   $("#resurface-cooldown-days").value = String(settings.resurfaceCooldownDays || 7);
   $("#auto-update-enabled").checked = settings.autoUpdateEnabled !== false;
@@ -758,6 +762,7 @@ async function persistSettings(settings, confirmationPhrase = "") {
     state.bootstrap.settings = response.settings;
     state.bootstrap.reasoningRuntime = response.reasoningRuntime ?? state.bootstrap.reasoningRuntime;
     state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
+    state.bootstrap.mediaProvenanceRuntime = response.mediaProvenanceRuntime ?? state.bootstrap.mediaProvenanceRuntime;
     renderSettings(response.settings);
     syncOnboardingLearning(shouldShowOnboardingLearning(state.session));
     status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
@@ -1854,6 +1859,7 @@ function buildInboxSession(session, expanded) {
   body.append(duration, buildSessionModelUsage(session));
   if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
   if (session.aiDetection) body.append(buildAIDetectionDiagnostic(session.aiDetection));
+  if (session.aiDetectorYield) body.append(buildAIDetectorYield(session.aiDetectorYield));
   if (session.preferenceDecisions?.length) {
     body.append(buildInboxPreferenceDecisions(session.preferenceDecisions));
   }
@@ -2200,6 +2206,39 @@ function buildAIDetectionDiagnostic(value) {
       ].filter(Boolean).join(" \u00b7 ");
   diagnostic.append(title, detail);
   return diagnostic;
+}
+
+function buildAIDetectorYield(value) {
+  const details = document.createElement("details");
+  details.className = "ai-detector-yield";
+  const summary = document.createElement("summary");
+  const title = document.createElement("strong");
+  title.textContent = "AI Detector yield";
+  const rollup = document.createElement("span");
+  rollup.textContent = `${value.fastReviewed || 0} local · ${value.deepReviewed || 0} Deep · ${value.c2paInspected || 0} C2PA`;
+  summary.append(title, rollup);
+  const metrics = document.createElement("div");
+  metrics.className = "ai-detector-yield-metrics";
+  for (const [label, number, detail] of [
+    ["Fast Detection", value.fastReviewed, `${value.fastStrong || 0} preliminary · ${value.fastNoSignal || 0} neutral · ${value.fastInsufficient || 0} insufficient`],
+    ["Deep Detection", value.deepReviewed, `${value.deepEligible || 0} eligible · ${value.deepSkipped || 0} skipped before model use`],
+    ["Platform labels", value.platformAiSignals, "High-authority platform AI labels"],
+    ["C2PA images", value.c2paInspected, `${value.c2paAiOrigin || 0} AI origin · ${value.c2paWithManifest || 0} manifest · ${value.c2paNoManifest || 0} neutral · ${value.c2paFailed || 0} failed`],
+  ]) {
+    const row = document.createElement("article");
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = label;
+    const context = document.createElement("small");
+    context.textContent = detail;
+    copy.append(name, context);
+    const count = document.createElement("strong");
+    count.textContent = String(number || 0);
+    row.append(copy, count);
+    metrics.append(row);
+  }
+  details.append(summary, metrics);
+  return details;
 }
 
 function buildEventResolutionDiagnostic(value) {
@@ -2589,7 +2628,7 @@ function routeAIDetectedItems(items) {
     const detection = entry.aiDetection;
     result.pending ||= Boolean(detection?.pendingDeep || detection?.pendingMedia);
     const seen = state.seenTimelineItems.has(entry.id);
-    const keepPreviouslySeenInline = seen && !detection?.directMediaProvenance;
+    const keepPreviouslySeenInline = seen && !detection?.directOriginEvidence;
     if (mode === "drawer" && detection?.routeToSignals && !keepPreviouslySeenInline) result.drawer.push(entry);
     else if (mode === "hide" && detection?.hideEligible && !keepPreviouslySeenInline) result.hidden.push(entry);
     else result.inline.push(entry);
@@ -3032,7 +3071,10 @@ function buildAIDetectionControls(entry) {
   const mediaSignals = (detection?.mediaSignals || []).map((signal) =>
     [signal.label, humanize(signal.origin), humanize(signal.trustState)].filter(Boolean).join(" / ")
   ).join("; ");
-  const combinedEvidence = [evidence, mediaSignals].filter(Boolean).join("; ");
+  const platformSignals = (detection?.platformSignals || []).map((signal) =>
+    [signal.label, humanize(signal.scope), sourceLabel(signal.source)].filter(Boolean).join(" / ")
+  ).join("; ");
+  const combinedEvidence = [evidence, platformSignals, mediaSignals].filter(Boolean).join("; ");
   meta.textContent = detection
     ? [humanize(detection.stage), humanize(detection.confidenceBand), combinedEvidence, `${detection.historyCount || 0} post assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
     : "No detector assessment yet";

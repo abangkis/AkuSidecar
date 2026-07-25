@@ -21,7 +21,7 @@ import (
 
 const (
 	ExpectedBridgeVersion  = "0.7.1"
-	ExpectedBridgeRevision = "source-adapters-v78"
+	ExpectedBridgeRevision = "source-adapters-v79"
 	ExpectedBridgeID       = "aku-bridge-chrome-mv3-v0"
 )
 
@@ -68,6 +68,14 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
 func (e *Engine) SetMediaProvenanceInspector(value mediaprovenance.Inspector) {
 	e.mediaOrigin = value
+}
+func (e *Engine) MediaProvenanceRuntime() domain.MediaProvenanceRuntime {
+	if e.mediaOrigin == nil {
+		return domain.MediaProvenanceRuntime{Provider: mediaprovenance.ProviderName, Version: mediaprovenance.VerifierVersion}
+	}
+	return domain.MediaProvenanceRuntime{
+		Provider: e.mediaOrigin.Name(), Version: e.mediaOrigin.Version(), Available: e.mediaOrigin.Available(),
+	}
 }
 func (e *Engine) ResumeMediaProvenance(ctx context.Context) error {
 	if e.mediaOrigin == nil || !e.mediaOrigin.Available() {

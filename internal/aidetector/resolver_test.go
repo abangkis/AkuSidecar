@@ -85,7 +85,7 @@ func TestDeepCandidatesSpendModelEffortOnlyWhereReviewCanHelp(t *testing.T) {
 		{ID: "corrected", AIDetection: &domain.TimelineAIDetection{Status: "user_marked_not_ai", UserOverride: true}},
 	}
 	result := DeepCandidates(items)
-	if len(result) != 2 || result[0].ID != "ordinary" || result[1].ID != "preliminary" {
+	if len(result) != 1 || result[0].ID != "preliminary" {
 		t.Fatalf("deep candidates=%+v", result)
 	}
 }
