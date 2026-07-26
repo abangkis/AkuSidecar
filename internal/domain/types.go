@@ -1027,7 +1027,7 @@ func (a AIAssessment) Validate() error {
 	if a.TimelineID == "" || a.SessionID == "" {
 		return errors.New("AI assessment requires timelineId and sessionId")
 	}
-	if a.Stage != "fast" && a.Stage != "deep" && a.Stage != "user" {
+	if a.Stage != "fast" && a.Stage != "deep" {
 		return fmt.Errorf("unsupported AI assessment stage %q", a.Stage)
 	}
 	validStatus := map[string]bool{
@@ -1035,15 +1035,9 @@ func (a AIAssessment) Validate() error {
 		"insufficient_evidence": true,
 		"no_signal_detected":    true,
 		"conflicting_evidence":  true,
-		"user_marked_ai":        true,
-		"user_marked_not_ai":    true,
 	}
 	if !validStatus[a.Status] {
 		return fmt.Errorf("unsupported AI assessment status %q", a.Status)
-	}
-	userStatus := a.Status == "user_marked_ai" || a.Status == "user_marked_not_ai"
-	if (a.Stage == "user") != userStatus {
-		return errors.New("AI assessment stage and status authority do not match")
 	}
 	if a.ConfidenceBand != "low" && a.ConfidenceBand != "medium" && a.ConfidenceBand != "high" {
 		return fmt.Errorf("unsupported AI confidence band %q", a.ConfidenceBand)
@@ -1061,10 +1055,70 @@ func (a AIAssessment) Validate() error {
 	if !validScope[a.SignalScope] {
 		return fmt.Errorf("unsupported AI signal scope %q", a.SignalScope)
 	}
-	if (a.Status == "strong_signals" || a.Status == "user_marked_ai") && a.SignalScope != "social_post" {
+	if a.Status == "strong_signals" && a.SignalScope != "social_post" {
 		return errors.New("a strong social-post assessment requires social_post signal scope")
 	}
 	return nil
+}
+
+type AIFeedbackInput struct {
+	Verdict     string `json:"verdict"`
+	TargetType  string `json:"targetType"`
+	SignalScope string `json:"signalScope"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+func (value AIFeedbackInput) Validate() error {
+	if value.Verdict != "ai" && value.Verdict != "not_ai" && value.Verdict != "unsure" {
+		return fmt.Errorf("unsupported AI feedback verdict %q", value.Verdict)
+	}
+	validTargets := map[string]string{
+		"post": "social_post", "media": "attached_media",
+		"quote": "quoted_post", "account": "author_account",
+	}
+	scope, ok := validTargets[value.TargetType]
+	if !ok {
+		return fmt.Errorf("unsupported AI feedback targetType %q", value.TargetType)
+	}
+	if value.SignalScope != scope {
+		return fmt.Errorf("AI feedback targetType %q requires signalScope %q", value.TargetType, scope)
+	}
+	validReasons := map[string]bool{
+		"": true, "author_disclosed_ai": true, "platform_label": true,
+		"content_credentials": true, "account_identifies_as_agent": true,
+		"repeated_automated_pattern": true, "signal_applies_to_another_object": true,
+		"known_human_authored": true, "insufficient_evidence": true,
+	}
+	if !validReasons[value.Reason] {
+		return fmt.Errorf("unsupported AI feedback reason %q", value.Reason)
+	}
+	return nil
+}
+
+type AIFeedbackEvent struct {
+	ID           string `json:"id"`
+	TimelineID   string `json:"timelineId"`
+	SessionID    string `json:"sessionId"`
+	Source       Source `json:"source"`
+	TargetType   string `json:"targetType"`
+	TargetKey    string `json:"targetKey"`
+	Verdict      string `json:"verdict"`
+	SignalScope  string `json:"signalScope"`
+	Reason       string `json:"reason,omitempty"`
+	SupersedesID string `json:"supersedesId,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+type PersonalAIPolicy struct {
+	Applied         bool   `json:"applied"`
+	Source          string `json:"source,omitempty"`
+	Verdict         string `json:"verdict,omitempty"`
+	TargetType      string `json:"targetType,omitempty"`
+	SignalScope     string `json:"signalScope,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	ReviewRequested bool   `json:"reviewRequested"`
+	AccountRule     bool   `json:"accountRule"`
+	FeedbackEventID string `json:"feedbackEventId,omitempty"`
 }
 
 type TimelineAIDetection struct {
@@ -1092,6 +1146,8 @@ type TimelineAIDetection struct {
 	PendingMedia          bool                   `json:"pendingMedia"`
 	DirectMediaProvenance bool                   `json:"directMediaProvenance"`
 	DirectOriginEvidence  bool                   `json:"directOriginEvidence"`
+	PersonalPolicy        *PersonalAIPolicy      `json:"personalPolicy,omitempty"`
+	FeedbackHistoryCount  int                    `json:"feedbackHistoryCount"`
 }
 
 type PlatformOriginSignal struct {

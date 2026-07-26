@@ -194,6 +194,15 @@ h3 { letter-spacing: -0.02em; }
 .ai-assessment-detail small { color: var(--quiet); font-size: 0.68rem; }
 .ai-assessment-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .ai-assessment-actions button { padding: 4px 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.7rem; }
+.ai-feedback-fields { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, 1fr); gap: 6px; width: 100%; }
+.ai-feedback-fields select { min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); font-size: 0.72rem; }
+.ai-feedback-scope-notice { grid-column: 1 / -1; line-height: 1.4; }
+.ai-feedback-history { width: 100%; margin: 5px 0 0; padding: 9px 9px 9px 28px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 0.72rem; }
+.ai-feedback-history li + li { margin-top: 4px; }
+@media (max-width: 640px) {
+  .ai-feedback-fields { grid-template-columns: 1fr; }
+  .ai-feedback-scope-notice { grid-column: auto; }
+}
 .presentation-toggle { padding: 6px 9px; border: 1px solid var(--line-strong); background: transparent; color: var(--accent); font-size: 0.74rem; }
 .item-layout-view { padding: 20px; }
 .item-layout-view h3 { margin: 15px 0 10px; font-size: 1.16rem; line-height: 1.35; }

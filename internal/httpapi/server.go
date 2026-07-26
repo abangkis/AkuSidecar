@@ -469,32 +469,40 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
-	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-correction"):
-		id := path.Base(strings.TrimSuffix(p, "/ai-correction"))
-		var body struct {
-			Verdict string `json:"verdict"`
-		}
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-feedback"):
+		id := path.Base(strings.TrimSuffix(p, "/ai-feedback"))
+		var body domain.AIFeedbackInput
 		if err := readJSON(r, &body); err != nil {
 			return err
 		}
-		assessment, err := s.engine.CorrectAIDetection(ctx, id, body.Verdict)
+		feedback, err := s.engine.AddAIFeedback(ctx, id, body)
 		if errors.Is(err, sql.ErrNoRows) {
 			return notFound("timeline item")
 		}
 		if err != nil {
 			return badRequest(err.Error())
 		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"assessment": assessment})
-	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/ai-corrections/") && strings.HasSuffix(p, "/undo"):
-		id := path.Base(strings.TrimSuffix(p, "/undo"))
-		assessment, err := s.engine.UndoAICorrection(ctx, id)
+		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-feedback"):
+		id := path.Base(strings.TrimSuffix(p, "/ai-feedback"))
+		feedback, err := s.engine.AIFeedbackHistory(ctx, id)
 		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("AI correction")
+			return notFound("timeline item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/ai-feedback/") && strings.HasSuffix(p, "/undo"):
+		id := path.Base(strings.TrimSuffix(p, "/undo"))
+		feedback, err := s.engine.UndoAIFeedback(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("AI feedback")
 		}
 		if err != nil {
 			return badRequest(err.Error())
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"assessment": assessment})
+		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
 		id := path.Base(strings.TrimSuffix(p, "/recapture"))
 		var body struct {

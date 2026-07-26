@@ -47,6 +47,7 @@ const (
 	deepTextLimit              = 1600
 	deepQuotedTextLimit        = 600
 	deepPreliminarySignalScore = 300
+	deepUserReviewScore        = 400
 	deepAuthorshipReviewScore  = 200
 	deepAgentReviewScore       = 180
 )
@@ -67,11 +68,12 @@ var (
 	}
 )
 
-// DeepCandidates returns a bounded review shortlist. Preliminary deterministic
-// findings remain highest priority, followed by explicit but phrasing-ambiguous
-// authorship or agent-identity disclosures. Style alone never creates a
-// candidate. Direct platform/provenance evidence and user corrections are
-// authoritative and do not spend a model turn.
+// DeepCandidates returns a bounded review shortlist. Explicit unsure feedback
+// receives first priority, followed by preliminary deterministic findings and
+// explicit but phrasing-ambiguous authorship or agent-identity disclosures.
+// Style alone never creates a candidate. Direct
+// platform/provenance evidence and active AI/not-AI policies are authoritative
+// and do not spend a model turn.
 func DeepCandidates(items []domain.TimelineItem) []domain.TimelineItem {
 	return DeepReviewShortlist(items, DefaultDeepReviewLimit)
 }
@@ -88,7 +90,14 @@ func DeepReviewShortlist(items []domain.TimelineItem, limit int) []domain.Timeli
 	ranked := make([]rankedCandidate, 0, len(items))
 	for index, item := range items {
 		assessment := item.AIDetection
-		if assessment == nil || assessment.UserOverride || assessment.Status == "insufficient_evidence" {
+		if assessment == nil {
+			continue
+		}
+		if assessment.PersonalPolicy != nil && assessment.PersonalPolicy.ReviewRequested {
+			ranked = append(ranked, rankedCandidate{item: item, index: index, score: deepUserReviewScore})
+			continue
+		}
+		if assessment.UserOverride || assessment.Status == "insufficient_evidence" {
 			continue
 		}
 		if containsCode(assessment.EvidenceCodes, "platform_ai_label") || containsCode(assessment.EvidenceCodes, "verified_ai_provenance") {

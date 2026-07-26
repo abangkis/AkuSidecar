@@ -191,7 +191,7 @@ first create or try the Quiet managed window.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 6 contains
+The database defaults to `runtime/aku-sidecar.db`. Schema version 7 contains
 only the active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). The
 current preview accepts only that schema version. Additive tables within the
@@ -229,8 +229,9 @@ corrected instead of retaining authority indefinitely.
 - `POST /api/auto-update/budget/reset`
 - `POST /api/auto-update/batches/{sessionId}/reveal`
 - `POST /api/timeline/{id}/feedback`
-- `POST /api/timeline/{id}/ai-correction`
-- `POST /api/ai-corrections/{id}/undo`
+- `POST /api/timeline/{id}/ai-feedback`
+- `GET /api/timeline/{id}/ai-feedback`
+- `POST /api/ai-feedback/{id}/undo`
 - `POST /api/timeline/{id}/recapture`
 - `GET /api/timeline/{id}/event-suggestions`
 - `POST /api/timeline/{id}/event-correction`
@@ -383,11 +384,15 @@ Drawer is the preview default and routes unseen strong-signal posts into the
 generic Timeline side-pane host without moving posts the user already saw.
 Inline remains available. Hide requires the exact phrase `HIDE STRONG AI SIGNALS` and applies only to
 direct platform/provenance evidence, Deep-confirmed strong signals, or a user
-`Mark as AI-generated` correction. Preliminary inferred signals are not
-Hide-eligible. `Mark as AI-generated` and `Mark as not AI-generated` are
+`Mark as AI-generated` feedback. Preliminary inferred signals are not
+Hide-eligible. `Mark as AI-generated`, `Mark as not AI-generated`, and
+`Unsure · Review more deeply` are
 durable, undoable personal corrections and resolve above Fast or Deep output.
 Every card keeps AI status, assessment detail, and corrections in one compact
-expandable badge slot. A subtle `AI signal · Neutral` state exposes the same
+expandable badge slot. Feedback records explicit post, media, quote, or account
+scope plus an optional bounded reason in the append-only `ai_feedback_events`
+ledger. Undo appends a `clear`; it does not mutate history. A subtle
+`AI signal · Neutral` state exposes the same
 controls without claiming that absence of a strong signal proves human origin.
 
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory

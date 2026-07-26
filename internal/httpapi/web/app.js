@@ -3031,7 +3031,7 @@ function buildExpandedTimelineItem(entry) {
 }
 
 function buildAIDetectionControls(entry) {
-  if (state.bootstrap?.settings?.aiDetectionEnabled === false || !entry.aiDetection) {
+  if (state.bootstrap?.settings?.aiDetectionEnabled === false) {
     const badge = document.createElement("span");
     badge.className = "hidden";
     const details = document.createElement("div");
@@ -3075,19 +3075,23 @@ function buildAIDetectionControls(entry) {
     [signal.label, humanize(signal.scope), sourceLabel(signal.source)].filter(Boolean).join(" / ")
   ).join("; ");
   const combinedEvidence = [evidence, platformSignals, mediaSignals].filter(Boolean).join("; ");
+  const policy = detection?.personalPolicy;
+  const policyMeta = policy?.applied
+    ? [policy.source === "account_rule" ? "Explicit account rule" : "Your item feedback", humanize(policy.signalScope), humanize(policy.reason)].filter(Boolean).join(" / ")
+    : "";
   meta.textContent = detection
-    ? [humanize(detection.stage), humanize(detection.confidenceBand), combinedEvidence, `${detection.historyCount || 0} post assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
+    ? [humanize(detection.stage), humanize(detection.confidenceBand), combinedEvidence, policyMeta, `${detection.historyCount || 0} detector assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
     : "No detector assessment yet";
   const actions = document.createElement("div");
   actions.className = "ai-assessment-actions";
-  if (detection?.userOverride && detection.correctionId) {
+  if (policy?.applied && detection.correctionId) {
     const undo = document.createElement("button");
     undo.type = "button";
-    undo.textContent = "Clear my correction";
+    undo.textContent = policy.reviewRequested ? "Clear review request" : "Clear my AI feedback";
     undo.addEventListener("click", async () => {
       undo.disabled = true;
       try {
-        await api(`/api/ai-corrections/${encodeURIComponent(detection.correctionId)}/undo`, { method: "POST" });
+        await api(`/api/ai-feedback/${encodeURIComponent(detection.correctionId)}/undo`, { method: "POST" });
         await refreshTimeline();
       } catch (error) {
         showError(error);
@@ -3095,16 +3099,75 @@ function buildAIDetectionControls(entry) {
       }
     });
     actions.append(undo);
-  } else {
-    const notAI = document.createElement("button");
-    notAI.type = "button";
-    notAI.textContent = "Mark as not AI-generated";
-    notAI.addEventListener("click", () => applyAICorrection(entry.id, "not_ai", notAI));
-    const isAI = document.createElement("button");
-    isAI.type = "button";
-    isAI.textContent = "Mark as AI-generated";
-    isAI.addEventListener("click", () => applyAICorrection(entry.id, "ai", isAI));
-    actions.append(notAI, isAI);
+  }
+  const fields = document.createElement("div");
+  fields.className = "ai-feedback-fields";
+  const target = document.createElement("select");
+  target.setAttribute("aria-label", "AI feedback scope");
+  [
+    ["post", "social_post", "This post text", true],
+    ["media", "attached_media", "Attached media", Boolean(entry.evidence?.attachments?.length || entry.evidence?.media?.length)],
+    ["quote", "quoted_post", "Quoted content", Boolean(entry.evidence?.quotedPost && Object.keys(entry.evidence.quotedPost).length)],
+    ["account", "author_account", "This captured account", Boolean(entry.evidence?.author || entry.item?.author)],
+  ].filter((option) => option[3]).forEach(([value, scope, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.dataset.scope = scope;
+    option.textContent = label;
+    target.append(option);
+  });
+  if (policy?.targetType && [...target.options].some((option) => option.value === policy.targetType)) {
+    target.value = policy.targetType;
+  }
+  const reason = document.createElement("select");
+  reason.setAttribute("aria-label", "Optional AI feedback reason");
+  [
+    ["", "Optional reason"],
+    ["author_disclosed_ai", "Author disclosed AI use"],
+    ["platform_label", "Platform AI label"],
+    ["content_credentials", "Content Credentials / C2PA"],
+    ["account_identifies_as_agent", "Account identifies as an agent"],
+    ["repeated_automated_pattern", "Repeated automated pattern"],
+    ["signal_applies_to_another_object", "Signal applies to another object"],
+    ["known_human_authored", "Known human-authored"],
+    ["insufficient_evidence", "Insufficient evidence"],
+  ].forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    reason.append(option);
+  });
+  if (policy?.reason) reason.value = policy.reason;
+  const scopeNotice = document.createElement("small");
+  scopeNotice.className = "ai-feedback-scope-notice";
+  const syncScopeNotice = () => {
+    scopeNotice.textContent = target.value === "account"
+      ? "This is an explicit rule for the same captured account identity. It is never inferred from one post automatically."
+      : "This changes AI presentation only. It never changes Timeline ranking or preference learning.";
+  };
+  target.addEventListener("change", syncScopeNotice);
+  syncScopeNotice();
+  fields.append(target, reason, scopeNotice);
+  const notAI = document.createElement("button");
+  notAI.type = "button";
+  notAI.textContent = "Mark as not AI-generated";
+  notAI.addEventListener("click", () => applyAIFeedback(entry.id, "not_ai", target, reason, notAI));
+  const unsure = document.createElement("button");
+  unsure.type = "button";
+  unsure.textContent = "Unsure · Review more deeply";
+  unsure.addEventListener("click", () => applyAIFeedback(entry.id, "unsure", target, reason, unsure));
+  const isAI = document.createElement("button");
+  isAI.type = "button";
+  isAI.textContent = "Mark as AI-generated";
+  isAI.addEventListener("click", () => applyAIFeedback(entry.id, "ai", target, reason, isAI));
+  actions.append(fields, notAI, unsure, isAI);
+  if ((detection?.feedbackHistoryCount || 0) > 0) {
+    const history = document.createElement("button");
+    history.type = "button";
+    history.className = "ai-feedback-history-button";
+    history.textContent = `View feedback history (${detection.feedbackHistoryCount})`;
+    history.addEventListener("click", () => loadAIFeedbackHistory(entry.id, history, details));
+    actions.append(history);
   }
   details.append(summary, meta, actions);
   badge.addEventListener("click", () => {
@@ -3115,11 +3178,51 @@ function buildAIDetectionControls(entry) {
   return { badge, details };
 }
 
-async function applyAICorrection(timelineId, verdict, trigger) {
+async function applyAIFeedback(timelineId, verdict, target, reason, trigger) {
+  if (target.value === "account" && !window.confirm(
+    "Apply this as an explicit account-level AI rule? It will affect posts from the same captured account identity, but never Timeline ranking or preference learning."
+  )) {
+    return;
+  }
   trigger.disabled = true;
   try {
-    await api(`/api/timeline/${encodeURIComponent(timelineId)}/ai-correction`, { method: "POST", body: { verdict } });
+    const selected = target.options[target.selectedIndex];
+    await api(`/api/timeline/${encodeURIComponent(timelineId)}/ai-feedback`, {
+      method: "POST",
+      body: {
+        verdict,
+        targetType: target.value,
+        signalScope: selected.dataset.scope,
+        reason: reason.value,
+      },
+    });
     await refreshTimeline();
+  } catch (error) {
+    showError(error);
+    trigger.disabled = false;
+  }
+}
+
+async function loadAIFeedbackHistory(timelineId, trigger, container) {
+  trigger.disabled = true;
+  try {
+    const payload = await api(`/api/timeline/${encodeURIComponent(timelineId)}/ai-feedback`);
+    container.querySelector(".ai-feedback-history")?.remove();
+    const history = document.createElement("ol");
+    history.className = "ai-feedback-history";
+    (payload.feedback || []).forEach((event) => {
+      const row = document.createElement("li");
+      const decision = event.verdict === "clear" ? "Cleared" : humanize(event.verdict);
+      row.textContent = [
+        decision,
+        humanize(event.targetType),
+        humanize(event.reason),
+        event.createdAt ? formatDate(event.createdAt) : "",
+      ].filter(Boolean).join(" · ");
+      history.append(row);
+    });
+    container.append(history);
+    trigger.textContent = "Feedback history loaded";
   } catch (error) {
     showError(error);
     trigger.disabled = false;

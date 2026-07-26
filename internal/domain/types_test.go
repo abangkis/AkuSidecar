@@ -265,16 +265,25 @@ func TestAIAssessmentRejectsInvalidStageStatusPair(t *testing.T) {
 	}
 	value.Stage = "user"
 	if err := value.Validate(); err == nil {
-		t.Fatal("user assessment must use an explicit user verdict")
+		t.Fatal("user feedback must not be stored as a detector assessment")
 	}
-	value.Status = "user_marked_not_ai"
-	value.SignalScope = "none"
+}
+
+func TestAIFeedbackInputRequiresMatchedObjectScope(t *testing.T) {
+	value := AIFeedbackInput{
+		Verdict: "unsure", TargetType: "media", SignalScope: "attached_media", Reason: "insufficient_evidence",
+	}
 	if err := value.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	value.Stage = "deep"
+	value.SignalScope = "social_post"
 	if err := value.Validate(); err == nil {
-		t.Fatal("model assessment must not impersonate user authority")
+		t.Fatal("object target and signal scope must stay explicit")
+	}
+	value.SignalScope = "attached_media"
+	value.Reason = "style_feels_ai"
+	if err := value.Validate(); err == nil {
+		t.Fatal("free-form detector folklore must not enter the canonical feedback ledger")
 	}
 }
 

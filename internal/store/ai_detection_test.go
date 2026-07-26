@@ -107,7 +107,9 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 		t.Fatalf("deep correction presentation=%+v", value)
 	}
 
-	correction, err := state.AddAICorrection(ctx, item.ID, "ai")
+	correction, err := state.AddAIFeedback(ctx, item.ID, domain.AIFeedbackInput{
+		Verdict: "ai", TargetType: "post", SignalScope: "social_post",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,12 +118,107 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 	if value.BadgeLabel != "Marked as AI by you" || !value.UserOverride || !value.RouteToSignals || !value.HideEligible || value.CorrectionID != correction.ID {
 		t.Fatalf("user authority presentation=%+v", value)
 	}
-	if _, err := state.UndoAICorrection(ctx, correction.ID); err != nil {
+	if _, err := state.UndoAIFeedback(ctx, correction.ID); err != nil {
 		t.Fatal(err)
+	}
+	var feedbackRows int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ai_feedback_events WHERE target_key=?`, correction.TargetKey).Scan(&feedbackRows); err != nil {
+		t.Fatal(err)
+	}
+	if feedbackRows != 2 {
+		t.Fatalf("AI feedback and its clear event must both remain append-only; rows=%d", feedbackRows)
 	}
 	items, _ = state.ListSessionItems(ctx, session.ID)
 	if items[0].AIDetection.BadgeLabel != "AI assessment corrected" || items[0].AIDetection.UserOverride {
 		t.Fatalf("undo did not restore resolved assessment=%+v", items[0].AIDetection)
+	}
+}
+
+func TestExplicitAccountPolicyGeneralizesOnlyPresentationForMatchingIdentity(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	session, first := insertAIDetectionTimelineItem(t, state)
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insert := func(id, evidenceKey, author string, rank int) {
+		itemRaw, _ := json.Marshal(domain.ReasonedItem{EvidenceKey: evidenceKey, Author: author, WhatChanged: "Candidate " + id})
+		assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{
+			EvidenceKey: evidenceKey, TopicTags: []string{"unclassified"}, TopicFacets: []string{"other"}, Materiality: .5,
+		})
+		if _, err := state.db.ExecContext(ctx, `
+			INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			id, session.ID, runs[0].ID, runs[0].Source, evidenceKey, rank, string(itemRaw), string(assessmentRaw), "{}", domain.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("timeline-same-account", "x:same-account", "Test author", 1)
+	insert("timeline-other-account", "x:other-account", "Different author", 2)
+
+	feedback, err := state.AddAIFeedback(ctx, first.ID, domain.AIFeedbackInput{
+		Verdict: "ai", TargetType: "account", SignalScope: "author_account", Reason: "account_identifies_as_agent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListSessionItems(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 || items[0].Rank != 0 || items[1].Rank != 1 || items[2].Rank != 2 {
+		t.Fatalf("AI policy must not rerank or select Timeline items: %+v", items)
+	}
+	if items[0].AIDetection == nil || items[1].AIDetection == nil ||
+		!items[0].AIDetection.RouteToSignals || !items[1].AIDetection.RouteToSignals ||
+		!items[1].AIDetection.PersonalPolicy.AccountRule {
+		t.Fatalf("matching captured account identity did not receive explicit policy: %+v", items)
+	}
+	if items[2].AIDetection != nil {
+		t.Fatalf("account policy leaked to a different identity: %+v", items[2].AIDetection)
+	}
+	history, err := state.AIFeedbackHistory(ctx, items[1].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].ID != feedback.ID {
+		t.Fatalf("account feedback must be inspectable from another matching item: %+v", history)
+	}
+}
+
+func TestUnsureFeedbackIsNonVerdictAndScopeAwareNotAIKeepsPostSignal(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	session, item := insertAIDetectionTimelineItem(t, state)
+	if err := state.SaveAIAssessments(ctx, []domain.AIAssessment{{
+		ID: "post-signal", TimelineID: item.ID, SessionID: session.ID, Stage: "fast", Status: "strong_signals",
+		ConfidenceBand: "medium", EvidenceCodes: []string{"author_declared_ai"}, AssessedObject: "social_post",
+		SignalScope: "social_post", Provider: "local", DetectorVersion: "fast-v1", CreatedAt: domain.Now(),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddAIFeedback(ctx, item.ID, domain.AIFeedbackInput{
+		Verdict: "not_ai", TargetType: "media", SignalScope: "attached_media", Reason: "known_human_authored",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListSessionItems(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !items[0].AIDetection.RouteToSignals {
+		t.Fatalf("media-scoped correction must not erase a post-text signal: %+v", items[0].AIDetection)
+	}
+	if _, err := state.AddAIFeedback(ctx, item.ID, domain.AIFeedbackInput{
+		Verdict: "unsure", TargetType: "post", SignalScope: "social_post", Reason: "insufficient_evidence",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = state.ListSessionItems(ctx, session.ID)
+	if items[0].AIDetection.PersonalPolicy == nil || !items[0].AIDetection.PersonalPolicy.ReviewRequested ||
+		items[0].AIDetection.UserOverride {
+		t.Fatalf("unsure must request review without becoming an AI/not-AI verdict: %+v", items[0].AIDetection)
 	}
 }
 
@@ -233,15 +330,14 @@ func TestContentCredentialsAloneRemainNeutral(t *testing.T) {
 }
 
 func TestUserCorrectionOverridesMediaRouting(t *testing.T) {
-	value := resolveAIDetection([]domain.AIAssessment{{
-		ID: "user-1", Stage: "user", Status: "user_marked_not_ai", ConfidenceBand: "high",
-		AssessedObject: "social_post", SignalScope: "none", Provider: "user",
-		DetectorVersion: "personal-override-v1", CreatedAt: domain.Now(),
-	}}, "", []domain.MediaProvenanceAssessment{{
+	value := resolveAIDetectionWithPolicy(nil, "", []domain.MediaProvenanceAssessment{{
 		Status: "completed", ManifestState: "valid", TrustState: "trusted", AIOrigin: "generated",
 		MediaIndex: 0, EvidenceCodes: []string{"c2pa_trained_algorithmic_media"},
 		VerifierVersion: "c2pa-image-v1",
-	}})
+	}}, nil, &domain.PersonalAIPolicy{
+		Applied: true, Verdict: "not_ai", TargetType: "media", SignalScope: "attached_media",
+		FeedbackEventID: "feedback-1",
+	}, 1)
 	if value == nil || value.RouteToSignals || !value.UserOverride {
 		t.Fatalf("expected personal not-AI correction to restore inline routing: %+v", value)
 	}

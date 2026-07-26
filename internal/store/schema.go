@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 6
+const SchemaVersion = 7
 
-const schemaVersion = "6"
+const schemaVersion = "7"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -204,8 +204,8 @@ CREATE TABLE IF NOT EXISTS ai_assessments (
   id TEXT PRIMARY KEY,
   timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  stage TEXT NOT NULL CHECK (stage IN ('fast','deep','user')),
-  status TEXT NOT NULL CHECK (status IN ('strong_signals','insufficient_evidence','no_signal_detected','conflicting_evidence','user_marked_ai','user_marked_not_ai')),
+  stage TEXT NOT NULL CHECK (stage IN ('fast','deep')),
+  status TEXT NOT NULL CHECK (status IN ('strong_signals','insufficient_evidence','no_signal_detected','conflicting_evidence')),
   confidence_band TEXT NOT NULL CHECK (confidence_band IN ('low','medium','high')),
   evidence_json TEXT NOT NULL DEFAULT '[]',
   assessed_object TEXT NOT NULL CHECK (assessed_object IN ('social_post')),
@@ -222,6 +222,27 @@ CREATE TABLE IF NOT EXISTS ai_assessments (
 CREATE INDEX IF NOT EXISTS ai_assessments_timeline_created ON ai_assessments(timeline_id, created_at, id);
 CREATE INDEX IF NOT EXISTS ai_assessments_session_stage ON ai_assessments(session_id, stage, created_at);
 CREATE INDEX IF NOT EXISTS ai_assessments_fingerprint ON ai_assessments(content_fingerprint, stage, created_at);
+
+CREATE TABLE IF NOT EXISTS ai_feedback_events (
+  id TEXT PRIMARY KEY,
+  timeline_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  target_type TEXT NOT NULL CHECK (target_type IN ('post','media','quote','account')),
+  target_key TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('ai','not_ai','unsure','clear')),
+  signal_scope TEXT NOT NULL CHECK (signal_scope IN ('social_post','attached_media','quoted_post','author_account')),
+  reason TEXT NOT NULL DEFAULT '' CHECK (reason IN ('','author_disclosed_ai','platform_label','content_credentials','account_identifies_as_agent','repeated_automated_pattern','signal_applies_to_another_object','known_human_authored','insufficient_evidence')),
+  supersedes_id TEXT REFERENCES ai_feedback_events(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ai_feedback_target_created
+  ON ai_feedback_events(target_type,target_key,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS ai_feedback_timeline_created
+  ON ai_feedback_events(timeline_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS ai_feedback_session_created
+  ON ai_feedback_events(session_id,created_at DESC,id DESC);
 
 CREATE TABLE IF NOT EXISTS ai_detection_jobs (
   id TEXT PRIMARY KEY,

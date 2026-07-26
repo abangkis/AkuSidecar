@@ -1385,15 +1385,18 @@ func (e *Engine) UndoSemanticCorrection(ctx context.Context, id string) (domain.
 	defer e.operation.Unlock()
 	return e.store.UndoSemanticCorrection(ctx, id)
 }
-func (e *Engine) CorrectAIDetection(ctx context.Context, timelineID, verdict string) (domain.AIAssessment, error) {
+func (e *Engine) AddAIFeedback(ctx context.Context, timelineID string, input domain.AIFeedbackInput) (domain.AIFeedbackEvent, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
-	return e.store.AddAICorrection(ctx, timelineID, verdict)
+	return e.store.AddAIFeedback(ctx, timelineID, input)
 }
-func (e *Engine) UndoAICorrection(ctx context.Context, id string) (domain.AIAssessment, error) {
+func (e *Engine) UndoAIFeedback(ctx context.Context, id string) (domain.AIFeedbackEvent, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
-	return e.store.UndoAICorrection(ctx, id)
+	return e.store.UndoAIFeedback(ctx, id)
+}
+func (e *Engine) AIFeedbackHistory(ctx context.Context, timelineID string) ([]domain.AIFeedbackEvent, error) {
+	return e.store.AIFeedbackHistory(ctx, timelineID)
 }
 func (e *Engine) ResetLearning(ctx context.Context) error {
 	e.operation.Lock()

@@ -84,7 +84,7 @@ func TestDeepCandidatesSpendModelEffortOnlyWhereReviewCanHelp(t *testing.T) {
 		{ID: "review-agent", Evidence: &domain.Block{Text: "This account is operated by an autonomous AI agent that publishes a daily briefing."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
 		{ID: "short", AIDetection: &domain.TimelineAIDetection{Status: "insufficient_evidence"}},
 		{ID: "platform", AIDetection: &domain.TimelineAIDetection{Status: "strong_signals", EvidenceCodes: []string{"platform_ai_label"}}},
-		{ID: "corrected", Evidence: &domain.Block{Text: "Claude helped me polish this post before I published it."}, AIDetection: &domain.TimelineAIDetection{Status: "user_marked_not_ai", UserOverride: true}},
+		{ID: "corrected", Evidence: &domain.Block{Text: "Claude helped me polish this post before I published it."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected", UserOverride: true}},
 	}
 	result := DeepCandidates(items)
 	if len(result) != 3 || result[0].ID != "preliminary" || result[1].ID != "review-authorship" || result[2].ID != "review-agent" {
@@ -105,6 +105,27 @@ func TestDeepReviewShortlistIsBoundedAndPrioritizesPreliminarySignals(t *testing
 	}
 }
 
+func TestDeepReviewShortlistPrioritizesExplicitUnsureFeedback(t *testing.T) {
+	items := []domain.TimelineItem{
+		{
+			ID:          "ordinary",
+			Evidence:    &domain.Block{Text: "I used ChatGPT to help write this post."},
+			AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"},
+		},
+		{
+			ID:       "user-unsure",
+			Evidence: &domain.Block{Text: "A completely ordinary sentence."},
+			AIDetection: &domain.TimelineAIDetection{PersonalPolicy: &domain.PersonalAIPolicy{
+				Applied: true, Verdict: "unsure", ReviewRequested: true,
+			}},
+		},
+	}
+	result := DeepReviewShortlist(items, 1)
+	if len(result) != 1 || result[0].ID != "user-unsure" {
+		t.Fatalf("explicit unsure feedback must receive the bounded review slot: %+v", result)
+	}
+}
+
 func TestDeepResolverRejectsIncompleteAssessmentBatch(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[]}`}
 	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
@@ -118,7 +139,7 @@ func TestDeepResolverRejectsUserAuthorityStatus(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"user_marked_ai","confidenceBand":"high","evidenceCodes":[],"assessedObject":"social_post","signalScope":"social_post","rationale":"invalid authority"}]}`}
 	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
 	_, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}})
-	if err == nil || !strings.Contains(err.Error(), "authority do not match") {
+	if err == nil || !strings.Contains(err.Error(), "unsupported AI assessment status") {
 		t.Fatalf("err=%v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -57,53 +58,162 @@ func (s *Store) SaveAIAssessments(ctx context.Context, values []domain.AIAssessm
 	return tx.Commit()
 }
 
-func (s *Store) AddAICorrection(ctx context.Context, timelineID, verdict string) (domain.AIAssessment, error) {
-	var sessionID string
-	if err := s.db.QueryRowContext(ctx, `SELECT session_id FROM timeline_items WHERE id=?`, timelineID).Scan(&sessionID); err != nil {
-		return domain.AIAssessment{}, err
+func (s *Store) AddAIFeedback(ctx context.Context, timelineID string, input domain.AIFeedbackInput) (domain.AIFeedbackEvent, error) {
+	if err := input.Validate(); err != nil {
+		return domain.AIFeedbackEvent{}, err
 	}
-	status := "user_marked_ai"
-	if verdict == "not_ai" {
-		status = "user_marked_not_ai"
-	} else if verdict != "ai" {
-		return domain.AIAssessment{}, errors.New("AI correction verdict must be ai or not_ai")
+	item, err := s.TimelineItem(ctx, timelineID)
+	if err != nil {
+		return domain.AIFeedbackEvent{}, err
 	}
-	value := domain.AIAssessment{
-		ID: domain.NewID("ai_assessment"), TimelineID: timelineID, SessionID: sessionID,
-		Stage: "user", Status: status, ConfidenceBand: "high", Provider: "user",
-		AssessedObject: "social_post", SignalScope: "social_post",
-		DetectorVersion: "personal-override-v1", Rationale: "Personal presentation override recorded by the user.", CreatedAt: domain.Now(),
+	targetKey, err := aiFeedbackTargetKey(item, input.TargetType)
+	if err != nil {
+		return domain.AIFeedbackEvent{}, err
 	}
-	if status == "user_marked_not_ai" {
-		value.SignalScope = "none"
+	value := domain.AIFeedbackEvent{
+		ID: domain.NewID("ai_feedback"), TimelineID: item.ID, SessionID: item.SessionID, Source: item.Source,
+		TargetType: input.TargetType, TargetKey: targetKey, Verdict: input.Verdict,
+		SignalScope: input.SignalScope, Reason: input.Reason, CreatedAt: domain.Now(),
 	}
-	if err := s.SaveAIAssessments(ctx, []domain.AIAssessment{value}); err != nil {
-		return domain.AIAssessment{}, err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.AIFeedbackEvent{}, err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRowContext(ctx, `
+		SELECT id FROM ai_feedback_events
+		WHERE target_type=? AND target_key=?
+		ORDER BY created_at DESC,id DESC LIMIT 1`, value.TargetType, value.TargetKey).Scan(&value.SupersedesID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.AIFeedbackEvent{}, err
+	}
+	var supersedes any
+	if value.SupersedesID != "" {
+		supersedes = value.SupersedesID
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO ai_feedback_events(
+		  id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,supersedes_id,created_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		value.ID, value.TimelineID, value.SessionID, value.Source, value.TargetType, value.TargetKey,
+		value.Verdict, value.SignalScope, value.Reason, supersedes, value.CreatedAt); err != nil {
+		return domain.AIFeedbackEvent{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.AIFeedbackEvent{}, err
 	}
 	return value, nil
 }
 
-func (s *Store) UndoAICorrection(ctx context.Context, id string) (domain.AIAssessment, error) {
-	var value domain.AIAssessment
-	var evidenceRaw string
+func (s *Store) UndoAIFeedback(ctx context.Context, id string) (domain.AIFeedbackEvent, error) {
+	var prior domain.AIFeedbackEvent
 	var supersedes sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id,timeline_id,session_id,stage,status,confidence_band,evidence_json,assessed_object,signal_scope,provider,detector_version,content_fingerprint,rationale,supersedes_id,created_at
-		FROM ai_assessments WHERE id=? AND stage='user' AND undone_at IS NULL`, id).
-		Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Stage, &value.Status, &value.ConfidenceBand,
-			&evidenceRaw, &value.AssessedObject, &value.SignalScope, &value.Provider, &value.DetectorVersion,
-			&value.ContentFingerprint, &value.Rationale, &supersedes, &value.CreatedAt)
+		SELECT id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,supersedes_id,created_at
+		FROM ai_feedback_events WHERE id=? AND verdict<>'clear'`, id).
+		Scan(&prior.ID, &prior.TimelineID, &prior.SessionID, &prior.Source, &prior.TargetType, &prior.TargetKey,
+			&prior.Verdict, &prior.SignalScope, &prior.Reason, &supersedes, &prior.CreatedAt)
 	if err != nil {
-		return domain.AIAssessment{}, err
+		return domain.AIFeedbackEvent{}, err
 	}
-	decodeJSON(evidenceRaw, &value.EvidenceCodes)
-	value.SupersedesID = supersedes.String
-	now := domain.Now()
-	if _, err := s.db.ExecContext(ctx, `UPDATE ai_assessments SET undone_at=? WHERE id=? AND undone_at IS NULL`, now, id); err != nil {
-		return domain.AIAssessment{}, err
+	prior.SupersedesID = supersedes.String
+	var latestID string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT id FROM ai_feedback_events
+		WHERE target_type=? AND target_key=?
+		ORDER BY created_at DESC,id DESC LIMIT 1`, prior.TargetType, prior.TargetKey).Scan(&latestID); err != nil {
+		return domain.AIFeedbackEvent{}, err
 	}
-	value.UndoneAt = &now
+	if latestID != prior.ID {
+		return domain.AIFeedbackEvent{}, errors.New("only the current AI feedback decision can be cleared")
+	}
+	value := prior
+	value.ID = domain.NewID("ai_feedback")
+	value.Verdict = "clear"
+	value.Reason = ""
+	value.SupersedesID = prior.ID
+	value.CreatedAt = domain.Now()
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO ai_feedback_events(
+		  id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,supersedes_id,created_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		value.ID, value.TimelineID, value.SessionID, value.Source, value.TargetType, value.TargetKey,
+		value.Verdict, value.SignalScope, value.Reason, value.SupersedesID, value.CreatedAt); err != nil {
+		return domain.AIFeedbackEvent{}, err
+	}
 	return value, nil
+}
+
+func (s *Store) AIFeedbackHistory(ctx context.Context, timelineID string) ([]domain.AIFeedbackEvent, error) {
+	item, err := s.TimelineItem(ctx, timelineID)
+	if err != nil {
+		return nil, err
+	}
+	targets := aiFeedbackTargetKeys(item)
+	keys := make([]string, 0, len(targets))
+	args := make([]any, 0, len(targets))
+	for _, key := range targets {
+		keys = append(keys, "?")
+		args = append(args, key)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,COALESCE(supersedes_id,''),created_at
+		FROM ai_feedback_events WHERE target_key IN (`+strings.Join(keys, ",")+`)
+		ORDER BY created_at DESC,id DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.AIFeedbackEvent
+	for rows.Next() {
+		var value domain.AIFeedbackEvent
+		if err := rows.Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Source, &value.TargetType,
+			&value.TargetKey, &value.Verdict, &value.SignalScope, &value.Reason, &value.SupersedesID, &value.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+func aiFeedbackTargetKeys(item domain.TimelineItem) map[string]string {
+	result := map[string]string{}
+	for _, targetType := range []string{"post", "media", "quote", "account"} {
+		if key, err := aiFeedbackTargetKey(item, targetType); err == nil {
+			result[targetType] = key
+		}
+	}
+	return result
+}
+
+func aiFeedbackTargetKey(item domain.TimelineItem, targetType string) (string, error) {
+	base := string(item.Source) + "|" + strings.TrimSpace(item.EvidenceKey)
+	switch targetType {
+	case "post":
+		return "post|" + base, nil
+	case "media":
+		return "media|" + base, nil
+	case "quote":
+		return "quote|" + base, nil
+	case "account":
+		author := item.Item.Author
+		if item.Evidence != nil && strings.TrimSpace(item.Evidence.Author) != "" {
+			author = item.Evidence.Author
+		}
+		author = normalizeAIAccountIdentity(author)
+		if author == "" {
+			return "", errors.New("this item has no stable captured account identity")
+		}
+		return "account|" + string(item.Source) + "|" + author, nil
+	default:
+		return "", fmt.Errorf("unsupported AI feedback targetType %q", targetType)
+	}
+}
+
+func normalizeAIAccountIdentity(value string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(strings.TrimSpace(value)), func(char rune) bool {
+		return unicode.IsSpace(char)
+	}), " ")
 }
 
 func (s *Store) CreateAIDetectionJob(ctx context.Context, value domain.AIDetectionJob) (domain.AIDetectionJob, error) {
@@ -322,22 +432,47 @@ func (s *Store) attachAIDetections(ctx context.Context, items []domain.TimelineI
 			return err
 		}
 	}
+	policies, historyCounts, err := s.personalAIPolicies(ctx, items)
+	if err != nil {
+		return err
+	}
 	for timelineID, item := range itemByID {
 		var presentation map[string]any
 		if item.Evidence != nil {
 			presentation = item.Evidence.Presentation
 		}
-		item.AIDetection = resolveAIDetection(byTimeline[timelineID], jobs[item.SessionID], mediaByTimeline[timelineID], presentation)
+		item.AIDetection = resolveAIDetectionWithPolicy(
+			byTimeline[timelineID], jobs[item.SessionID], mediaByTimeline[timelineID],
+			presentation, policies[timelineID], historyCounts[timelineID],
+		)
 	}
 	return nil
 }
 
 func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaHistory []domain.MediaProvenanceAssessment, presentations ...map[string]any) *domain.TimelineAIDetection {
-	var platformSignals []domain.PlatformOriginSignal
+	var presentation map[string]any
 	if len(presentations) > 0 {
-		platformSignals = domain.PlatformOriginSignals(presentations[0])
+		presentation = presentations[0]
 	}
-	if len(history) == 0 && deepStatus == "" && len(mediaHistory) == 0 && len(platformSignals) == 0 {
+	return resolveAIDetectionWithPolicy(history, deepStatus, mediaHistory, presentation, nil, 0)
+}
+
+func resolveAIDetectionWithPolicy(
+	history []domain.AIAssessment,
+	deepStatus string,
+	mediaHistory []domain.MediaProvenanceAssessment,
+	presentation map[string]any,
+	policy *domain.PersonalAIPolicy,
+	feedbackHistoryCount int,
+) (resolved *domain.TimelineAIDetection) {
+	defer func() {
+		resolved = applyPersonalAIPolicy(resolved, policy, feedbackHistoryCount)
+	}()
+	var platformSignals []domain.PlatformOriginSignal
+	if presentation != nil {
+		platformSignals = domain.PlatformOriginSignals(presentation)
+	}
+	if len(history) == 0 && deepStatus == "" && len(mediaHistory) == 0 && len(platformSignals) == 0 && policy == nil {
 		return nil
 	}
 	value := &domain.TimelineAIDetection{
@@ -345,7 +480,7 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaH
 		PendingDeep:     deepStatus == "queued" || deepStatus == "running",
 		PlatformSignals: platformSignals,
 	}
-	var fast, deep, user *domain.AIAssessment
+	var fast, deep *domain.AIAssessment
 	for index := range history {
 		assessment := &history[index]
 		switch assessment.Stage {
@@ -353,16 +488,11 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaH
 			fast = assessment
 		case "deep":
 			deep = assessment
-		case "user":
-			user = assessment
 		}
 	}
 	current := fast
 	if deep != nil {
 		current = deep
-	}
-	if user != nil {
-		current = user
 	}
 	for _, media := range mediaHistory {
 		if media.Status == "queued" || media.Status == "running" {
@@ -383,20 +513,6 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaH
 		value.DetectorVersion = current.DetectorVersion
 		value.LatestAssessedAt = current.CreatedAt
 		value.Detail = current.Rationale
-	}
-
-	if user != nil {
-		value.UserOverride = true
-		value.CorrectionID = user.ID
-		if user.Status == "user_marked_ai" {
-			value.BadgeLabel = "Marked as AI by you"
-			value.RouteToSignals = true
-			value.HideEligible = true
-		} else {
-			value.BadgeLabel = "Marked not AI by you"
-			value.Corrected = (fast != nil && fast.Status == "strong_signals") || (deep != nil && deep.Status == "strong_signals")
-		}
-		return value
 	}
 
 	for _, signal := range platformSignals {
@@ -509,6 +625,159 @@ func resolveAIDetection(history []domain.AIAssessment, deepStatus string, mediaH
 		value.RouteToSignals = true
 	}
 	return value
+}
+
+func applyPersonalAIPolicy(value *domain.TimelineAIDetection, policy *domain.PersonalAIPolicy, historyCount int) *domain.TimelineAIDetection {
+	if value == nil && (policy == nil || !policy.Applied) {
+		return nil
+	}
+	if value == nil {
+		value = &domain.TimelineAIDetection{}
+	}
+	value.FeedbackHistoryCount = historyCount
+	if policy == nil || !policy.Applied {
+		return value
+	}
+	copy := *policy
+	value.PersonalPolicy = &copy
+	value.CorrectionID = policy.FeedbackEventID
+	if policy.ReviewRequested {
+		value.BadgeLabel = "AI review requested by you"
+		if value.Detail == "" {
+			value.Detail = "You marked this item as unsure. AkuBrowser will prioritize it for bounded Deep Detection without treating it as AI-generated."
+		} else {
+			value.Detail += " You marked this item as unsure, so it is prioritized for bounded Deep Detection."
+		}
+		return value
+	}
+	value.UserOverride = true
+	if policy.Verdict == "ai" {
+		value.RouteToSignals = true
+		value.HideEligible = true
+		switch policy.TargetType {
+		case "media":
+			value.BadgeLabel = "AI media marked by you"
+		case "quote":
+			value.BadgeLabel = "AI quote marked by you"
+		case "account":
+			value.BadgeLabel = "AI account rule · You"
+		default:
+			value.BadgeLabel = "Marked as AI by you"
+		}
+		value.Detail = personalAIPolicyDetail(policy)
+		return value
+	}
+	if policy.Verdict != "not_ai" {
+		return value
+	}
+	applies := false
+	switch policy.TargetType {
+	case "media":
+		applies = value.SignalScope == "attached_media" || value.DirectMediaProvenance
+	case "quote":
+		applies = value.SignalScope == "quoted_post"
+	case "account":
+		applies = value.SignalScope != "attached_media" && !value.DirectMediaProvenance
+	default:
+		applies = value.SignalScope != "attached_media" && !value.DirectMediaProvenance
+	}
+	if applies {
+		value.RouteToSignals = false
+		value.HideEligible = false
+		value.Corrected = value.Status == "strong_signals" || value.DirectOriginEvidence
+		value.BadgeLabel = "Marked not AI by you"
+		value.Detail = personalAIPolicyDetail(policy)
+	}
+	return value
+}
+
+func personalAIPolicyDetail(policy *domain.PersonalAIPolicy) string {
+	detail := "Your personal AI feedback is authoritative for this presentation scope."
+	if policy.AccountRule {
+		detail = "Your explicit account-level AI rule is applied to this captured account identity."
+	}
+	if policy.Reason != "" {
+		detail += " Reason: " + strings.ReplaceAll(policy.Reason, "_", " ") + "."
+	}
+	return detail
+}
+
+func (s *Store) personalAIPolicies(ctx context.Context, items []domain.TimelineItem) (map[string]*domain.PersonalAIPolicy, map[string]int, error) {
+	result := make(map[string]*domain.PersonalAIPolicy, len(items))
+	historyCounts := make(map[string]int, len(items))
+	if len(items) == 0 {
+		return result, historyCounts, nil
+	}
+	targetsByTimeline := make(map[string]map[string]string, len(items))
+	uniqueTargets := map[string]bool{}
+	for _, item := range items {
+		targets := aiFeedbackTargetKeys(item)
+		targetsByTimeline[item.ID] = targets
+		for _, key := range targets {
+			uniqueTargets[key] = true
+		}
+	}
+	placeholders := make([]string, 0, len(uniqueTargets))
+	args := make([]any, 0, len(uniqueTargets))
+	for key := range uniqueTargets {
+		placeholders = append(placeholders, "?")
+		args = append(args, key)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,COALESCE(supersedes_id,''),created_at
+		FROM ai_feedback_events WHERE target_key IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY created_at,id`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	latestByTarget := map[string]domain.AIFeedbackEvent{}
+	countByTarget := map[string]int{}
+	for rows.Next() {
+		var value domain.AIFeedbackEvent
+		if err := rows.Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Source, &value.TargetType,
+			&value.TargetKey, &value.Verdict, &value.SignalScope, &value.Reason, &value.SupersedesID, &value.CreatedAt); err != nil {
+			return nil, nil, err
+		}
+		latestByTarget[value.TargetKey] = value
+		countByTarget[value.TargetKey]++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	for timelineID, targets := range targetsByTimeline {
+		var selected *domain.AIFeedbackEvent
+		for _, targetType := range []string{"post", "media", "quote"} {
+			key := targets[targetType]
+			historyCounts[timelineID] += countByTarget[key]
+			value, ok := latestByTarget[key]
+			if !ok || value.Verdict == "clear" {
+				continue
+			}
+			if selected == nil || value.CreatedAt > selected.CreatedAt || (value.CreatedAt == selected.CreatedAt && value.ID > selected.ID) {
+				copy := value
+				selected = &copy
+			}
+		}
+		accountKey := targets["account"]
+		historyCounts[timelineID] += countByTarget[accountKey]
+		if selected == nil {
+			if value, ok := latestByTarget[accountKey]; ok && value.Verdict != "clear" {
+				copy := value
+				selected = &copy
+			}
+		}
+		if selected == nil {
+			continue
+		}
+		result[timelineID] = &domain.PersonalAIPolicy{
+			Applied: true, Source: map[bool]string{true: "account_rule", false: "exact_feedback"}[selected.TargetType == "account"],
+			Verdict: selected.Verdict, TargetType: selected.TargetType, SignalScope: selected.SignalScope,
+			Reason: selected.Reason, ReviewRequested: selected.Verdict == "unsure",
+			AccountRule: selected.TargetType == "account", FeedbackEventID: selected.ID,
+		}
+	}
+	return result, historyCounts, nil
 }
 
 func containsEvidence(values []string, target string) bool {
