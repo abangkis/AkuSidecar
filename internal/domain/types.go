@@ -654,6 +654,9 @@ type InboxCandidateSnapshot struct {
 	Round                     int            `json:"round"`
 	Snapshot                  int            `json:"snapshot"`
 	Strategy                  string         `json:"strategy"`
+	ScrollY                   int64          `json:"scrollY"`
+	ViewportHeight            int64          `json:"viewportHeight"`
+	NewCandidates             int            `json:"newCandidates"`
 	StructuralCandidates      int            `json:"structuralCandidates"`
 	EligibleCandidates        int            `json:"eligibleCandidates"`
 	VisibleEligibleCandidates int            `json:"visibleEligibleCandidates"`

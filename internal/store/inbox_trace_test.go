@@ -49,7 +49,10 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 		CapturedAt: domain.Now(),
 		Snapshots: []domain.Snapshot{
 			{
-				SelectorStrategy: "div[aria-posinset]",
+				SelectorStrategy:  "div[aria-posinset]",
+				ScrollY:           750,
+				ViewportHeight:    900,
+				NewCandidateCount: 4,
 				CandidateDiagnostics: &domain.CandidateDiagnostics{
 					StructuralCandidates:      6,
 					EligibleCandidates:        4,
@@ -146,6 +149,7 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 	diagnostics := inbox[0].Runs[0].CandidateDiagnostics
 	if len(diagnostics) != 1 || diagnostics[0].Round != 1 || diagnostics[0].Snapshot != 1 ||
 		diagnostics[0].StructuralCandidates != 6 || diagnostics[0].EligibleCandidates != 4 ||
+		diagnostics[0].ScrollY != 750 || diagnostics[0].NewCandidates != 4 ||
 		diagnostics[0].RejectedReasons["no_stable_post_identity"] != 2 {
 		t.Fatalf("candidate diagnostics=%+v", diagnostics)
 	}

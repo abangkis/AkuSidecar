@@ -2378,10 +2378,12 @@ function buildCaptureCandidateTelemetry(snapshots) {
     const heading = document.createElement("strong");
     heading.textContent = `Round ${snapshot.round} \u00b7 Snapshot ${snapshot.snapshot}`;
     const counts = document.createElement("span");
-    counts.textContent = `${snapshot.structuralCandidates ?? 0} structural \u2192 ${snapshot.eligibleCandidates ?? 0} eligible \u2192 ${snapshot.visibleEligibleCandidates ?? 0} visible`;
+    counts.textContent = `${snapshot.structuralCandidates ?? 0} structural \u2192 ${snapshot.eligibleCandidates ?? 0} eligible \u2192 ${snapshot.visibleEligibleCandidates ?? 0} visible \u2192 ${snapshot.newCandidates ?? 0} new`;
     const context = document.createElement("small");
     context.textContent = [
       snapshot.strategy ? humanize(snapshot.strategy) : null,
+      Number.isFinite(snapshot.scrollY) ? `scroll ${snapshot.scrollY}px` : null,
+      Number.isFinite(snapshot.viewportHeight) ? `viewport ${snapshot.viewportHeight}px` : null,
       snapshot.actionAnchoredCandidates ? `${snapshot.actionAnchoredCandidates} action anchored` : null,
       formatReasons(snapshot.admittedReasons) ? `admitted: ${formatReasons(snapshot.admittedReasons)}` : null,
       formatReasons(snapshot.rejectedReasons) ? `rejected: ${formatReasons(snapshot.rejectedReasons)}` : null,
