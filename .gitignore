@@ -13,6 +13,8 @@ runtime/
 *.test
 *.out
 coverage/
+.go-build/
+.goland-build/
 
 # Local configuration and secrets
 .env

@@ -5,10 +5,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$workspaceRoot = Split-Path -Parent $repoRoot
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
-$cacheRoot = Join-Path $workspaceRoot '.go-cache'
+$cacheRoot = Join-Path $repoRoot '.go-build'
 
+$previousGoCache = $env:GOCACHE
+$previousGoModCache = $env:GOMODCACHE
+$previousGoTmpDir = $env:GOTMPDIR
 $env:GOCACHE = Join-Path $cacheRoot 'build'
 $env:GOMODCACHE = Join-Path $cacheRoot 'mod'
 $env:GOTMPDIR = Join-Path $cacheRoot 'tmp'
@@ -26,6 +28,9 @@ try {
     }
 }
 finally {
+    $env:GOCACHE = $previousGoCache
+    $env:GOMODCACHE = $previousGoModCache
+    $env:GOTMPDIR = $previousGoTmpDir
     Pop-Location
 }
 
