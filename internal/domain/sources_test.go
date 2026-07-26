@@ -32,6 +32,9 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
 	}
+	if descriptor, _ := SourceByID(SourceFacebook); descriptor.FollowUpPlanningPolicy != "local_frontier" {
+		t.Fatalf("Facebook follow-up planning policy drifted: %+v", descriptor)
+	}
 }
 
 func TestDefaultSourceHydrationTimeoutsFollowRegistry(t *testing.T) {

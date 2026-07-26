@@ -966,20 +966,28 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return err
 	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
-		if err := e.store.SetRunPipelineStage(ctx, runID, "acquisition_planning"); err != nil {
-			return err
-		}
-		plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, knowledge, settings.ReasoningAcquisitionProfile)
-		_ = e.store.SaveTelemetry(context.Background(), telemetry)
-		if planErr != nil {
-			return planErr
-		}
-		if plan.Decision == "request_follow_up" {
-			continuation := continuationFrom(merged)
-			if continuation != nil {
-				payload := capturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
-				_, err = e.store.QueueFollowUp(ctx, runID, payload)
+		if localFrontierFinishesAcquisition(run.Source, observations[0]) {
+			merged.Coverage["acquisitionPlanning"] = map[string]any{
+				"mode":     "local_frontier",
+				"decision": "finish",
+				"reason":   "The bounded source frontier produced no new candidate after scrolling.",
+			}
+		} else {
+			if err := e.store.SetRunPipelineStage(ctx, runID, "acquisition_planning"); err != nil {
 				return err
+			}
+			plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, knowledge, settings.ReasoningAcquisitionProfile)
+			_ = e.store.SaveTelemetry(context.Background(), telemetry)
+			if planErr != nil {
+				return planErr
+			}
+			if plan.Decision == "request_follow_up" {
+				continuation := continuationFrom(merged)
+				if continuation != nil {
+					payload := capturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
+					_, err = e.store.QueueFollowUp(ctx, runID, payload)
+					return err
+				}
 			}
 		}
 	}
@@ -1133,6 +1141,40 @@ func mergeObservations(values []domain.Observation) domain.Observation {
 	result.Coverage["rounds"] = rounds
 	return result
 }
+
+func localFrontierFinishesAcquisition(source domain.Source, observation domain.Observation) bool {
+	descriptor, ok := domain.SourceByID(source)
+	if !ok || descriptor.FollowUpPlanningPolicy != "local_frontier" {
+		return false
+	}
+	if integerCoverageValue(observation.Coverage["performedScrolls"]) < 1 {
+		return false
+	}
+	frontier, ok := observation.Coverage["frontier"].(map[string]any)
+	if !ok || booleanCoverageValue(frontier["hasMoreCandidateSignal"]) {
+		return false
+	}
+	return integerCoverageValue(frontier["newCandidateCount"]) == 0
+}
+
+func integerCoverageValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
+func booleanCoverageValue(value any) bool {
+	typed, _ := value.(bool)
+	return typed
+}
+
 func continuationFrom(value domain.Observation) map[string]any {
 	startScrollY := 0.0
 	anchors := continuationAnchors(value.Coverage)

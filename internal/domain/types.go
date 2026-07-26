@@ -648,6 +648,7 @@ type InboxRun struct {
 	FollowUpFallback     *Failure                 `json:"followUpFallback,omitempty"`
 	CaptureSurface       []CaptureSurfaceEvent    `json:"captureSurface"`
 	CandidateDiagnostics []InboxCandidateSnapshot `json:"candidateDiagnostics"`
+	MediaAcquisition     *InboxMediaAcquisition   `json:"mediaAcquisition,omitempty"`
 }
 
 type InboxCandidateSnapshot struct {
@@ -663,6 +664,18 @@ type InboxCandidateSnapshot struct {
 	ActionAnchoredCandidates  int            `json:"actionAnchoredCandidates"`
 	AdmittedReasons           map[string]int `json:"admittedReasons"`
 	RejectedReasons           map[string]int `json:"rejectedReasons"`
+}
+
+type InboxMediaAcquisition struct {
+	Observations            int            `json:"observations"`
+	CandidateCount          int            `json:"candidateCount"`
+	Attempts                int            `json:"attempts"`
+	RecoveredMediaCount     int            `json:"recoveredMediaCount"`
+	ForegroundRequiredCount int            `json:"foregroundRequiredCount"`
+	ExpectedKindCounts      map[string]int `json:"expectedKindCounts"`
+	Outcomes                map[string]int `json:"outcomes"`
+	StageCounts             map[string]int `json:"stageCounts"`
+	Methods                 []string       `json:"methods"`
 }
 
 type CaptureSurfaceEvent struct {

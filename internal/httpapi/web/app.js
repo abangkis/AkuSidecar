@@ -2340,6 +2340,9 @@ function buildInboxRun(run, sessionStatus = "") {
   if (run.candidateDiagnostics?.length) {
     card.append(buildCaptureCandidateTelemetry(run.candidateDiagnostics));
   }
+  if (run.mediaAcquisition) {
+    card.append(buildMediaAcquisitionTelemetry(run.mediaAcquisition));
+  }
   if (run.captureSurface?.length) {
     card.append(buildCaptureSurfaceTelemetry(run.captureSurface));
   }
@@ -2395,6 +2398,43 @@ function buildCaptureCandidateTelemetry(snapshots) {
   note.className = "capture-candidate-note";
   note.textContent = "Counts are per snapshot observations; repeated DOM candidates are not unique posts.";
   details.append(summary, list, note);
+  return details;
+}
+
+function buildMediaAcquisitionTelemetry(value) {
+  const details = document.createElement("details");
+  details.className = "media-acquisition-telemetry";
+  const summary = document.createElement("summary");
+  const title = document.createElement("strong");
+  title.textContent = "Media evidence";
+  const rollup = document.createElement("span");
+  rollup.textContent = [
+    `${value.outcomes?.primary_complete || 0} primary`,
+    `${value.outcomes?.recovered || 0} recovered`,
+    `${value.outcomes?.unavailable || 0} unavailable`,
+  ].join(" \u00b7 ");
+  summary.append(title, rollup);
+
+  const body = document.createElement("div");
+  body.className = "media-acquisition-body";
+  const kinds = Object.entries(value.expectedKindCounts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([kind, count]) => `${count} ${humanize(kind)}`)
+    .join(", ");
+  const methods = (value.methods || []).map(humanize).join(", ");
+  const outcome = document.createElement("p");
+  outcome.textContent = [
+    `${value.candidateCount || 0} bounded candidate check${value.candidateCount === 1 ? "" : "s"}`,
+    kinds ? `expected media: ${kinds}` : "no rendered media root declared",
+    `${value.attempts || 0} recovery attempt${value.attempts === 1 ? "" : "s"}`,
+    value.foregroundRequiredCount ? `${value.foregroundRequiredCount} foreground-required` : null,
+    methods ? `methods: ${methods}` : null,
+  ].filter(Boolean).join(" \u00b7 ");
+  const note = document.createElement("p");
+  note.className = "capture-candidate-note";
+  note.textContent = "This telemetry reuses local capture evidence and does not invoke a model.";
+  body.append(outcome, note);
+  details.append(summary, body);
   return details;
 }
 

@@ -65,7 +65,19 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 			},
 			{Blocks: []domain.Block{{EvidenceKey: keys[3], Author: "Author 4", Text: "Captured candidate 4, repeated snapshot"}}},
 		},
-		Coverage: map[string]any{"status": "complete"},
+		Coverage: map[string]any{
+			"status": "complete",
+			"mediaAcquisition": map[string]any{
+				"candidateCount":          float64(4),
+				"attempts":                float64(1),
+				"recoveredMediaCount":     float64(1),
+				"foregroundRequiredCount": float64(0),
+				"expectedKindCounts":      map[string]any{"image": float64(2)},
+				"outcomes":                map[string]any{"primary_complete": float64(1), "recovered": float64(1), "not_applicable": float64(2)},
+				"stageCounts":             map[string]any{"primary_missing": float64(1), "alternate_dom_complete": float64(1)},
+				"methods":                 []any{"alternate_dom"},
+			},
+		},
 	}
 	if err := state.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
 		t.Fatal(err)
@@ -152,6 +164,12 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 		diagnostics[0].ScrollY != 750 || diagnostics[0].NewCandidates != 4 ||
 		diagnostics[0].RejectedReasons["no_stable_post_identity"] != 2 {
 		t.Fatalf("candidate diagnostics=%+v", diagnostics)
+	}
+	media := inbox[0].Runs[0].MediaAcquisition
+	if media == nil || media.Observations != 1 || media.CandidateCount != 4 || media.Attempts != 1 ||
+		media.RecoveredMediaCount != 1 || media.ExpectedKindCounts["image"] != 2 ||
+		media.Outcomes["recovered"] != 1 || len(media.Methods) != 1 || media.Methods[0] != "alternate_dom" {
+		t.Fatalf("media acquisition=%+v", media)
 	}
 }
 

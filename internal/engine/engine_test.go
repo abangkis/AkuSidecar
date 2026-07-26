@@ -1183,6 +1183,34 @@ func TestLinkedInContinuationUsesPriorObservedOverlapCheckpoint(t *testing.T) {
 	}
 }
 
+func TestFacebookLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
+	base := domain.Observation{
+		Source: domain.SourceFacebook,
+		Coverage: map[string]any{
+			"performedScrolls": float64(1),
+			"frontier": map[string]any{
+				"newCandidateCount":      float64(0),
+				"hasMoreCandidateSignal": false,
+			},
+		},
+	}
+	if !localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
+		t.Fatal("Facebook exhausted local frontier should finish without model planning")
+	}
+	if localFrontierFinishesAcquisition(domain.SourceX, base) {
+		t.Fatal("X must retain its current model planning behavior")
+	}
+	base.Coverage["frontier"].(map[string]any)["newCandidateCount"] = float64(1)
+	if localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
+		t.Fatal("a new Facebook frontier candidate must retain planning")
+	}
+	base.Coverage["frontier"].(map[string]any)["newCandidateCount"] = float64(0)
+	base.Coverage["performedScrolls"] = float64(0)
+	if localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
+		t.Fatal("Facebook must perform a bounded scroll before the local fast path")
+	}
+}
+
 func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessionID string, source domain.Source, evidenceKey string) {
 	t.Helper()
 	session := waitSession(t, runtime, sessionID, func(value domain.Session) bool {

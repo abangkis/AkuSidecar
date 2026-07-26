@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -219,6 +220,7 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 	allSnapshots := make([]domain.Snapshot, 0)
 	entry.AcquisitionRounds = len(observations)
 	for roundIndex, observation := range observations {
+		mergeInboxMediaAcquisition(&entry, observation.Coverage["mediaAcquisition"])
 		entry.SnapshotCount += len(observation.Snapshots)
 		entry.PerformedScrolls += integerValue(observation.Coverage["performedScrolls"])
 		for snapshotIndex, snapshot := range observation.Snapshots {
@@ -337,4 +339,62 @@ func integerValue(value any) int {
 	default:
 		return 0
 	}
+}
+
+func mergeInboxMediaAcquisition(entry *domain.InboxRun, value any) {
+	summary, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	if entry.MediaAcquisition == nil {
+		entry.MediaAcquisition = &domain.InboxMediaAcquisition{
+			ExpectedKindCounts: map[string]int{},
+			Outcomes:           map[string]int{},
+			StageCounts:        map[string]int{},
+			Methods:            []string{},
+		}
+	}
+	target := entry.MediaAcquisition
+	target.Observations++
+	target.CandidateCount += integerValue(summary["candidateCount"])
+	target.Attempts += integerValue(summary["attempts"])
+	target.RecoveredMediaCount += integerValue(summary["recoveredMediaCount"])
+	target.ForegroundRequiredCount += integerValue(summary["foregroundRequiredCount"])
+	mergeInboxMediaCountMap(target.ExpectedKindCounts, summary["expectedKindCounts"])
+	mergeInboxMediaCountMap(target.Outcomes, summary["outcomes"])
+	mergeInboxMediaCountMap(target.StageCounts, summary["stageCounts"])
+	for _, method := range stringValues(summary["methods"]) {
+		if !slices.Contains(target.Methods, method) {
+			target.Methods = append(target.Methods, method)
+		}
+	}
+}
+
+func mergeInboxMediaCountMap(target map[string]int, value any) {
+	values, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	for key, count := range values {
+		if amount := integerValue(count); amount > 0 {
+			target[key] += amount
+		}
+	}
+}
+
+func stringValues(value any) []string {
+	values, ok := value.([]any)
+	if !ok {
+		if typed, typedOK := value.([]string); typedOK {
+			return typed
+		}
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, item := range values {
+		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+			result = append(result, strings.TrimSpace(text))
+		}
+	}
+	return result
 }

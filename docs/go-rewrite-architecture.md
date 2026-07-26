@@ -28,6 +28,8 @@ or repeating acquisition planning.
 
 - AkuBridge capture is read-only, source-specific, and bounded.
 - Source adapters declare their content family and supported evidence modalities. Generic Bridge admission, not an adapter-specific text-length rule, requires an author, stable identity, and at least one text, image, video, attachment, or quoted-post modality. AkuSidecar independently rejects identity-only evidence and resource or native-URL violations.
+- A source descriptor may declare a bounded follow-up planning policy. Facebook currently uses `local_frontier`: after at least one scroll produces zero new candidates and no explicit `has more` signal, AkuSidecar finishes acquisition locally instead of spending a model turn on a no-op follow-up decision. Candidate evaluation remains model-backed, and other sources retain their existing planning behavior.
+- Update Inbox projects generic media-acquisition outcomes already stored in each Bridge observation. This telemetry adds no capture round and consumes no reasoning tokens.
 - Model output describes every quality-admitted evidence candidate but cannot navigate, expand budgets, or select the Timeline.
 - Direct user feedback outranks source-platform order once repeated evidence is sufficient.
 - Trust protections outrank preference: an evidence-qualified material update or contradiction cannot be suppressed.
