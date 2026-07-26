@@ -544,6 +544,10 @@ func TestSessionSnapshotsSourceWaitModeAndSerializesBrowserClaims(t *testing.T) 
 	if err := state.SaveObservation(ctx, firstCommand.ID, first.ID, observation); err != nil {
 		t.Fatal(err)
 	}
+	active, err = state.GetSession(ctx, session.ID)
+	if err != nil || active.ActiveSource == nil || *active.ActiveSource != first.Source {
+		t.Fatalf("active source must follow the reasoning run after capture: session=%+v err=%v", active, err)
+	}
 	claimedSecond, err = state.ClaimCommand(ctx, second.ID, "bridge-two")
 	if err != nil || claimedSecond == nil {
 		t.Fatalf("second capture did not enter released lane: claim=%+v err=%v", claimedSecond, err)

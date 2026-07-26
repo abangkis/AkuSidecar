@@ -395,11 +395,30 @@ func (s *Store) GetSession(ctx context.Context, id string) (domain.Session, erro
 		return domain.Session{}, err
 	}
 	session.Runs = runs
+	session.ActiveSource = nil
 	for _, run := range runs {
 		if run.Status == "waiting_for_bridge" && run.BridgeCommandStatus == "claimed" {
 			value := run.Source
 			session.ActiveSource = &value
 			break
+		}
+	}
+	if session.ActiveSource == nil {
+		for _, run := range runs {
+			if run.Status == "reasoning" {
+				value := run.Source
+				session.ActiveSource = &value
+				break
+			}
+		}
+	}
+	if session.ActiveSource == nil {
+		for _, run := range runs {
+			if run.Status == "waiting_for_bridge" || run.Status == "queued" {
+				value := run.Source
+				session.ActiveSource = &value
+				break
+			}
 		}
 	}
 	items, err := s.ListSessionItems(ctx, id)

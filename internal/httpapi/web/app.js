@@ -73,10 +73,13 @@ const state = {
   passiveMediaEvidenceAttempts: new Map(),
   releasedCaptureSources: new Set(),
   expandedTimelineText: new Set(),
+  expandedAIDetails: new Set(),
+  expandedAIFeedbackOptions: new Set(),
   revealingPreparedBatch: false,
   autoLoadLastScrollY: window.scrollY,
   uiActivityTrackingInstalled: false,
   lastUIActivitySentAt: 0,
+  sidecarEpochReloading: false,
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -2628,7 +2631,11 @@ function routeAIDetectedItems(items) {
     const detection = entry.aiDetection;
     result.pending ||= Boolean(detection?.pendingDeep || detection?.pendingMedia);
     const seen = state.seenTimelineItems.has(entry.id);
-    const keepPreviouslySeenInline = seen && !detection?.directOriginEvidence;
+    const explicitAIOverride = detection?.personalPolicy?.applied
+      && detection.personalPolicy.verdict === "ai";
+    const keepPreviouslySeenInline = seen
+      && !detection?.directOriginEvidence
+      && !explicitAIOverride;
     if (mode === "drawer" && detection?.routeToSignals && !keepPreviouslySeenInline) result.drawer.push(entry);
     else if (mode === "hide" && detection?.hideEligible && !keepPreviouslySeenInline) result.hidden.push(entry);
     else result.inline.push(entry);
@@ -2650,6 +2657,12 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
   }
   for (const key of state.expandedTimelineText) {
     if (!retainedIDs.has(key.split("|")[0])) state.expandedTimelineText.delete(key);
+  }
+  for (const timelineID of state.expandedAIDetails) {
+    if (!retainedIDs.has(timelineID)) state.expandedAIDetails.delete(timelineID);
+  }
+  for (const timelineID of state.expandedAIFeedbackOptions) {
+    if (!retainedIDs.has(timelineID)) state.expandedAIFeedbackOptions.delete(timelineID);
   }
   schedulePassiveMediaEnrichment(allItems);
   const routed = routeAIDetectedItems(items);
@@ -3043,7 +3056,15 @@ function buildAIDetectionControls(entry) {
   const badgeLabel = detection?.badgeLabel || (detection?.pendingDeep || detection?.pendingMedia
     ? "AI signal · Checking"
     : "AI signal · Neutral");
-  const badgeTone = hasAssessmentLabel
+  const policy = detection?.personalPolicy;
+  const personalTone = policy?.reviewRequested
+    ? "review"
+    : policy?.applied && policy.verdict === "ai"
+      ? "user-ai"
+      : policy?.applied && policy.verdict === "not_ai"
+        ? "user-not-ai"
+        : "";
+  const badgeTone = personalTone || (hasAssessmentLabel
     ? detection.corrected || detection.status === "conflicting_evidence"
       ? "corrected"
       : detection.userOverride
@@ -3051,15 +3072,17 @@ function buildAIDetectionControls(entry) {
         : detection.stage || "fast"
     : detection?.pendingDeep || detection?.pendingMedia
       ? "pending"
-      : "neutral";
+      : "neutral");
   const badge = document.createElement("button");
   badge.type = "button";
   badge.className = `ai-origin-badge ai-origin-${badgeTone}`;
   badge.textContent = badgeLabel;
-  badge.title = "Review AI signal status and corrections";
-  badge.setAttribute("aria-expanded", "false");
+  badge.title = "Open AI signal details and personal corrections";
+  badge.setAttribute("aria-label", `${badgeLabel}. Open AI signal details and personal corrections.`);
+  const initiallyExpanded = state.expandedAIDetails.has(entry.id);
+  badge.setAttribute("aria-expanded", String(initiallyExpanded));
   const details = document.createElement("div");
-  details.className = "ai-assessment-detail hidden";
+  details.className = `ai-assessment-detail${initiallyExpanded ? "" : " hidden"}`;
   const summary = document.createElement("p");
   summary.textContent = detection?.detail || (detection?.pendingDeep || detection?.pendingMedia
     ? detection?.pendingMedia
@@ -3075,7 +3098,6 @@ function buildAIDetectionControls(entry) {
     [signal.label, humanize(signal.scope), sourceLabel(signal.source)].filter(Boolean).join(" / ")
   ).join("; ");
   const combinedEvidence = [evidence, platformSignals, mediaSignals].filter(Boolean).join("; ");
-  const policy = detection?.personalPolicy;
   const policyMeta = policy?.applied
     ? [policy.source === "account_rule" ? "Explicit account rule" : "Your item feedback", humanize(policy.signalScope), humanize(policy.reason)].filter(Boolean).join(" / ")
     : "";
@@ -3160,7 +3182,22 @@ function buildAIDetectionControls(entry) {
   isAI.type = "button";
   isAI.textContent = "Mark as AI-generated";
   isAI.addEventListener("click", () => applyAIFeedback(entry.id, "ai", target, reason, isAI));
-  actions.append(fields, notAI, unsure, isAI);
+  const decisions = document.createElement("div");
+  decisions.className = "ai-feedback-decisions";
+  decisions.append(notAI, unsure, isAI);
+  const options = document.createElement("details");
+  options.className = "ai-feedback-options";
+  options.open = state.expandedAIFeedbackOptions.has(entry.id);
+  const optionsSummary = document.createElement("summary");
+  optionsSummary.textContent = "Change scope or add a reason";
+  const optionsHint = document.createElement("small");
+  optionsHint.textContent = "Optional. The default action applies to this post text.";
+  options.append(optionsSummary, optionsHint, fields);
+  options.addEventListener("toggle", () => {
+    if (options.open) state.expandedAIFeedbackOptions.add(entry.id);
+    else state.expandedAIFeedbackOptions.delete(entry.id);
+  });
+  actions.append(decisions, options);
   if ((detection?.feedbackHistoryCount || 0) > 0) {
     const history = document.createElement("button");
     history.type = "button";
@@ -3174,6 +3211,8 @@ function buildAIDetectionControls(entry) {
     const expanded = badge.getAttribute("aria-expanded") === "true";
     badge.setAttribute("aria-expanded", String(!expanded));
     details.classList.toggle("hidden", expanded);
+    if (expanded) state.expandedAIDetails.delete(entry.id);
+    else state.expandedAIDetails.add(entry.id);
   });
   return { badge, details };
 }
@@ -4135,6 +4174,7 @@ async function api(path, options = {}) {
     init.body = JSON.stringify(options.body);
   }
   const response = await fetchFromSidecar(path, init);
+  enforceCurrentSidecarEpoch(response);
   const payload = response.status === 204 ? null : await response.json();
   if (!response.ok) {
     const error = new Error(payload?.message || `HTTP ${response.status}`);
@@ -4160,6 +4200,7 @@ async function bridgeApi(path, options = {}) {
     init.body = JSON.stringify(options.body);
   }
   const response = await fetchFromSidecar(path, init);
+  enforceCurrentSidecarEpoch(response);
   if (response.status === 204) return null;
   const payload = await response.json();
   if (!response.ok) {
@@ -4175,6 +4216,19 @@ async function bridgeApi(path, options = {}) {
     throw error;
   }
   return payload;
+}
+
+function enforceCurrentSidecarEpoch(response) {
+  const responseEpoch = response.headers.get("X-Aku-Sidecar-Instance-Epoch");
+  const currentEpoch = state.bootstrap?.instanceEpoch;
+  if (!responseEpoch || !currentEpoch || responseEpoch === currentEpoch || state.sidecarEpochReloading) return;
+  state.sidecarEpochReloading = true;
+  window.location.reload();
+  const error = new Error("AkuSidecar restarted. Refreshing the AkuBrowser interface.");
+  error.name = "SidecarEpochChangedError";
+  error.code = "sidecar_epoch_changed";
+  error.recoveryInitiated = true;
+  throw error;
 }
 
 async function fetchFromSidecar(path, init) {
