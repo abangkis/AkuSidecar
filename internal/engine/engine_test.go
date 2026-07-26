@@ -150,6 +150,35 @@ func TestFullWaitKeepsNextSourceQueuedUntilReasoningCompletes(t *testing.T) {
 	}
 }
 
+func TestExpiredBridgeClaimFailsBlockedSourceAndAdvancesSession(t *testing.T) {
+	ctx := context.Background()
+	runtime, _ := testEngine(t)
+	session, err := runtime.StartVisibleUpdate(ctx, "recover an abandoned capture lease")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, first.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("claim=%+v err=%v", command, err)
+	}
+	if err := runtime.recoverExpiredBridgeCommands(ctx, time.Now().Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := runtime.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Runs[0].Status != "failed" || recovered.Runs[0].Error == nil ||
+		recovered.Runs[0].Error.Code != "capture_lease_expired" {
+		t.Fatalf("expired source was not failed explicitly: %+v", recovered.Runs[0])
+	}
+	if recovered.Runs[1].Status != "waiting_for_bridge" || recovered.ActiveSource == nil ||
+		*recovered.ActiveSource != recovered.Runs[1].Source {
+		t.Fatalf("next source did not become the visible capture blocker: %+v", recovered)
+	}
+}
+
 func (provider *shutdownBlockingProvider) Analyze(ctx context.Context, run domain.Run, _ domain.Observation, _ []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	provider.once.Do(func() { close(provider.started) })
 	<-ctx.Done()

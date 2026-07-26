@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -476,6 +477,10 @@ func TestSessionCommandAndObservationLifecycle(t *testing.T) {
 	if err != nil || claimedRun.BridgeCommandStatus != "claimed" {
 		t.Fatalf("claimed bridge status=%q err=%v", claimedRun.BridgeCommandStatus, err)
 	}
+	expired, err := state.ExpiredBridgeCommands(ctx, time.Now().Add(4*time.Minute))
+	if err != nil || len(expired) != 1 || expired[0].ID != command.ID {
+		t.Fatalf("expired commands=%+v err=%v", expired, err)
+	}
 	observation := domain.Observation{Source: run.Source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000001", Text: "Material update"}}}}, Coverage: map[string]any{"status": "complete"}}
 	if err := state.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
 		t.Fatal(err)
@@ -526,6 +531,10 @@ func TestSessionSnapshotsSourceWaitModeAndSerializesBrowserClaims(t *testing.T) 
 	claimedFirst, err := state.ClaimCommand(ctx, first.ID, "bridge-one")
 	if err != nil || claimedFirst == nil || claimedFirst.ID != firstCommand.ID {
 		t.Fatalf("first claim=%+v err=%v", claimedFirst, err)
+	}
+	active, err := state.GetSession(ctx, session.ID)
+	if err != nil || active.ActiveSource == nil || *active.ActiveSource != first.Source {
+		t.Fatalf("active source must follow the claimed capture blocker: session=%+v err=%v", active, err)
 	}
 	claimedSecond, err := state.ClaimCommand(ctx, second.ID, "bridge-two")
 	if err != nil || claimedSecond != nil {

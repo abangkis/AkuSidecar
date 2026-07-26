@@ -167,6 +167,9 @@ func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
 	e.mu.Lock()
 	e.heartbeat = &value
 	e.mu.Unlock()
+	if err := e.recoverExpiredBridgeCommands(context.Background(), time.Now()); err != nil {
+		e.logger.Printf("recover expired Bridge command: %v", err)
+	}
 	e.reloads.Observe(value)
 	select {
 	case e.autoWake <- struct{}{}:
@@ -643,10 +646,42 @@ func capturePayload(run domain.Run, leaseID string, settings domain.Settings, ro
 }
 
 func (e *Engine) ClaimCommand(ctx context.Context, runID, bridgeID string) (*domain.BridgeCommand, error) {
+	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
+		return nil, err
+	}
 	return e.store.ClaimCommand(ctx, runID, bridgeID)
 }
 func (e *Engine) PendingBridgeRunID(ctx context.Context) (string, error) {
+	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
+		return "", err
+	}
 	return e.store.PendingBridgeRunID(ctx)
+}
+
+func (e *Engine) recoverExpiredBridgeCommands(ctx context.Context, now time.Time) error {
+	commands, err := e.store.ExpiredBridgeCommands(ctx, now)
+	if err != nil {
+		return err
+	}
+	for _, command := range commands {
+		failure := domain.Failure{
+			Code:      "capture_lease_expired",
+			Stage:     "capture",
+			Message:   "AkuBridge did not finish the claimed capture before its bounded lease expired.",
+			Retryable: true,
+			Details: map[string]any{
+				"commandId": command.ID,
+				"claimedAt": command.ClaimedAt,
+			},
+		}
+		if _, err := e.FailCommand(ctx, command.ID, command.RunID, failure); err != nil {
+			if strings.Contains(err.Error(), "bridge command is not active") {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
 }
 func (e *Engine) Session(ctx context.Context, id string) (domain.Session, error) {
 	return e.store.GetSession(ctx, id)

@@ -395,6 +395,13 @@ func (s *Store) GetSession(ctx context.Context, id string) (domain.Session, erro
 		return domain.Session{}, err
 	}
 	session.Runs = runs
+	for _, run := range runs {
+		if run.Status == "waiting_for_bridge" && run.BridgeCommandStatus == "claimed" {
+			value := run.Source
+			session.ActiveSource = &value
+			break
+		}
+	}
 	items, err := s.ListSessionItems(ctx, id)
 	if err != nil {
 		return domain.Session{}, err
@@ -585,6 +592,79 @@ func (s *Store) ClaimCommand(ctx context.Context, runID, bridgeID string) (*doma
 	command.ClaimedAt = &now
 	decodeJSON(raw, &command.Payload)
 	return &command, nil
+}
+
+func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]domain.BridgeCommand, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id,run_id,type,status,payload_json,created_at,claimed_at
+		FROM bridge_commands
+		WHERE status='claimed' AND claimed_at IS NOT NULL
+		ORDER BY claimed_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var expired []domain.BridgeCommand
+	for rows.Next() {
+		var command domain.BridgeCommand
+		var raw, claimedAt string
+		if err := rows.Scan(&command.ID, &command.RunID, &command.Type, &command.Status, &raw, &command.CreatedAt, &claimedAt); err != nil {
+			return nil, err
+		}
+		claimed, err := time.Parse(time.RFC3339Nano, claimedAt)
+		if err != nil {
+			continue
+		}
+		decodeJSON(raw, &command.Payload)
+		if now.Before(claimed.Add(bridgeCommandLease(command.Payload))) {
+			continue
+		}
+		command.ClaimedAt = &claimedAt
+		expired = append(expired, command)
+	}
+	return expired, rows.Err()
+}
+
+func bridgeCommandLease(payload map[string]any) time.Duration {
+	const (
+		minimum = 60 * time.Second
+		maximum = 3 * time.Minute
+		grace   = 30 * time.Second
+	)
+	milliseconds := grace.Milliseconds()
+	for _, key := range []string{"sourceHydrationTimeoutMs", "captureTimeoutMs", "pendingContentTimeoutMs"} {
+		milliseconds += int64(numericPayloadValue(payload[key]))
+	}
+	retryBudget := int64(numericPayloadValue(payload["qualityRetryBudget"]))
+	if retryBudget > 0 {
+		milliseconds += retryBudget * int64(numericPayloadValue(payload["qualityRetrySettleMs"]))
+	}
+	lease := time.Duration(milliseconds) * time.Millisecond
+	if lease < minimum {
+		return minimum
+	}
+	if lease > maximum {
+		return maximum
+	}
+	return lease
+}
+
+func numericPayloadValue(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case json.Number:
+		number, _ := typed.Float64()
+		return number
+	default:
+		return 0
+	}
 }
 
 func (s *Store) PendingBridgeRunID(ctx context.Context) (string, error) {

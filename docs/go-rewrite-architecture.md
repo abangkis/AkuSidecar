@@ -53,6 +53,14 @@ or repeating acquisition planning.
 
 SQLite schema version 7 contains only active tables for metadata, source definitions, settings, sessions/runs, Bridge commands/observations, reasoning telemetry, durable assessments for every evaluated candidate, Timeline and append-only selection corrections, detector-owned AI assessment history and asynchronous jobs, canonical append-only personal AI feedback, item-scoped media recaptures and evidence overrides (including passive-enrichment provenance), calibration, preference/model state, source-scoped knowledge, semantic event reports/constraints/corrections, and resolver/trigger telemetry. Source-bearing rows reference the application registry through `source_definitions`; adding a source no longer requires editing every table constraint. Mutable bounded payloads use JSON; lifecycle, integrity, and ordering fields remain typed columns.
 
+Bridge claims are leased rather than permanent. The lease is computed from the
+command's bounded hydration and capture budgets plus a fixed grace window.
+Heartbeat and command polling recover an expired claim as a retryable source
+failure and release the session-wide capture lane for the next source.
+Append-only AI feedback uses SQLite insertion order as its causal ordering;
+timestamps are display telemetry and random IDs are never used as a
+last-write-wins authority.
+
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 
 There is no importer or migration path for an earlier Node or Go database. Schema v7 is the only accepted runtime contract; an existing database with any other schema version fails before AkuSidecar creates or alters application tables. The v7 boundary separates detector-owned `ai_assessments` from the user-owned `ai_feedback_events` ledger. Its deterministic Personal AI Policy may affect badge/drawer presentation and Deep-review priority only; preference fitting and selection do not read it. Reset learning preserves the historical Timeline/audit decision but clears preference and personal AI evidence; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.2` defaults including Standard 1x, Progressive wait, Smart resurfacing with a seven-day cooldown, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh for candidate evaluation, and preserves Bridge identity.

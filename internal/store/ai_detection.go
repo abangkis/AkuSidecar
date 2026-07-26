@@ -83,7 +83,7 @@ func (s *Store) AddAIFeedback(ctx context.Context, timelineID string, input doma
 	err = tx.QueryRowContext(ctx, `
 		SELECT id FROM ai_feedback_events
 		WHERE target_type=? AND target_key=?
-		ORDER BY created_at DESC,id DESC LIMIT 1`, value.TargetType, value.TargetKey).Scan(&value.SupersedesID)
+		ORDER BY rowid DESC LIMIT 1`, value.TargetType, value.TargetKey).Scan(&value.SupersedesID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return domain.AIFeedbackEvent{}, err
 	}
@@ -121,7 +121,7 @@ func (s *Store) UndoAIFeedback(ctx context.Context, id string) (domain.AIFeedbac
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT id FROM ai_feedback_events
 		WHERE target_type=? AND target_key=?
-		ORDER BY created_at DESC,id DESC LIMIT 1`, prior.TargetType, prior.TargetKey).Scan(&latestID); err != nil {
+		ORDER BY rowid DESC LIMIT 1`, prior.TargetType, prior.TargetKey).Scan(&latestID); err != nil {
 		return domain.AIFeedbackEvent{}, err
 	}
 	if latestID != prior.ID {
@@ -159,7 +159,7 @@ func (s *Store) AIFeedbackHistory(ctx context.Context, timelineID string) ([]dom
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,COALESCE(supersedes_id,''),created_at
 		FROM ai_feedback_events WHERE target_key IN (`+strings.Join(keys, ",")+`)
-		ORDER BY created_at DESC,id DESC`, args...)
+		ORDER BY rowid DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -724,22 +724,25 @@ func (s *Store) personalAIPolicies(ctx context.Context, items []domain.TimelineI
 		args = append(args, key)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,COALESCE(supersedes_id,''),created_at
+		SELECT rowid,id,timeline_id,session_id,source,target_type,target_key,verdict,signal_scope,reason,COALESCE(supersedes_id,''),created_at
 		FROM ai_feedback_events WHERE target_key IN (`+strings.Join(placeholders, ",")+`)
-		ORDER BY created_at,id`, args...)
+		ORDER BY rowid`, args...)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
 	latestByTarget := map[string]domain.AIFeedbackEvent{}
+	latestSequenceByTarget := map[string]int64{}
 	countByTarget := map[string]int{}
 	for rows.Next() {
 		var value domain.AIFeedbackEvent
-		if err := rows.Scan(&value.ID, &value.TimelineID, &value.SessionID, &value.Source, &value.TargetType,
+		var sequence int64
+		if err := rows.Scan(&sequence, &value.ID, &value.TimelineID, &value.SessionID, &value.Source, &value.TargetType,
 			&value.TargetKey, &value.Verdict, &value.SignalScope, &value.Reason, &value.SupersedesID, &value.CreatedAt); err != nil {
 			return nil, nil, err
 		}
 		latestByTarget[value.TargetKey] = value
+		latestSequenceByTarget[value.TargetKey] = sequence
 		countByTarget[value.TargetKey]++
 	}
 	if err := rows.Err(); err != nil {
@@ -747,6 +750,7 @@ func (s *Store) personalAIPolicies(ctx context.Context, items []domain.TimelineI
 	}
 	for timelineID, targets := range targetsByTimeline {
 		var selected *domain.AIFeedbackEvent
+		var selectedSequence int64
 		for _, targetType := range []string{"post", "media", "quote"} {
 			key := targets[targetType]
 			historyCounts[timelineID] += countByTarget[key]
@@ -754,9 +758,11 @@ func (s *Store) personalAIPolicies(ctx context.Context, items []domain.TimelineI
 			if !ok || value.Verdict == "clear" {
 				continue
 			}
-			if selected == nil || value.CreatedAt > selected.CreatedAt || (value.CreatedAt == selected.CreatedAt && value.ID > selected.ID) {
+			sequence := latestSequenceByTarget[key]
+			if selected == nil || sequence > selectedSequence {
 				copy := value
 				selected = &copy
+				selectedSequence = sequence
 			}
 		}
 		accountKey := targets["account"]
