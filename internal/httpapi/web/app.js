@@ -2346,6 +2346,9 @@ function buildInboxRun(run, sessionStatus = "") {
   if (run.captureSurface?.length) {
     card.append(buildCaptureSurfaceTelemetry(run.captureSurface));
   }
+  if (run.acquisitionPlanning || run.identityResolution) {
+    card.append(buildAcquisitionIdentityTelemetry(run.acquisitionPlanning, run.identityResolution));
+  }
   card.append(buildInboxFlowInspector(run, (counts) => {
     for (const [stage, number] of Object.entries(metricNumbers)) {
       number.textContent = inboxRunMetricText(run, sessionStatus, stage, counts?.[stage]);
@@ -2489,6 +2492,89 @@ function buildCaptureSurfaceTelemetry(events) {
     list.append(row);
   }
   details.append(summary, list);
+  return details;
+}
+
+function buildAcquisitionIdentityTelemetry(acquisitionPlanning, identityResolution) {
+  const details = document.createElement("details");
+  details.className = "acquisition-identity-telemetry";
+  const summary = document.createElement("summary");
+  const title = document.createElement("strong");
+  title.textContent = "Acquisition & identity";
+  const rollup = document.createElement("span");
+  const rollupParts = [];
+  if (acquisitionPlanning) {
+    const mode = humanize(acquisitionPlanning.mode);
+    const decision = humanize(acquisitionPlanning.decision);
+    if (mode || decision) {
+      rollupParts.push([mode, decision].filter(Boolean).join(" \u00b7 "));
+    }
+    if (acquisitionPlanning.followUpQueued) {
+      rollupParts.push("follow-up queued");
+    }
+    if (Number(acquisitionPlanning.followUpNewCandidates) > 0) {
+      rollupParts.push(`${acquisitionPlanning.followUpNewCandidates} follow-up new`);
+    }
+  }
+  if (identityResolution) {
+    rollupParts.push(`${identityResolution.nativePresent || 0} native \u00b7 ${identityResolution.nativeMissing || 0} fallback`);
+    if (Number(identityResolution.aliasesReused) > 0) {
+      rollupParts.push(`${identityResolution.aliasesReused} alias reused`);
+    }
+    if (Number(identityResolution.fallbacksPromoted) > 0) {
+      rollupParts.push(`${identityResolution.fallbacksPromoted} promoted`);
+    }
+    if (Number(identityResolution.nativeConflicts) > 0) {
+      rollupParts.push(`${identityResolution.nativeConflicts} conflict`);
+    }
+    if (Number(identityResolution.ambiguousFallbacks) > 0) {
+      rollupParts.push(`${identityResolution.ambiguousFallbacks} ambiguous`);
+    }
+  }
+  rollup.textContent = rollupParts.join(" \u00b7 ");
+  summary.append(title, rollup);
+
+  const body = document.createElement("div");
+  body.className = "acquisition-identity-body";
+  if (acquisitionPlanning) {
+    const planning = document.createElement("p");
+    const planningLabel = document.createElement("strong");
+    planningLabel.textContent = "Acquisition planning";
+    const planningDetail = document.createElement("span");
+    const followUpCount = Number(acquisitionPlanning.followUpNewCandidates);
+    planningDetail.textContent = [
+      acquisitionPlanning.mode ? `mode ${humanize(acquisitionPlanning.mode)}` : null,
+      acquisitionPlanning.decision ? `decision ${humanize(acquisitionPlanning.decision)}` : null,
+      acquisitionPlanning.followUpQueued ? "follow-up queued" : "no follow-up queued",
+      Number.isFinite(followUpCount)
+        ? `${followUpCount} new follow-up candidate${followUpCount === 1 ? "" : "s"}`
+        : null,
+      acquisitionPlanning.reason ? String(acquisitionPlanning.reason) : null,
+    ].filter(Boolean).join(" \u00b7 ");
+    planning.append(planningLabel, planningDetail);
+    body.append(planning);
+  }
+  if (identityResolution) {
+    const identity = document.createElement("p");
+    const identityLabel = document.createElement("strong");
+    identityLabel.textContent = "Identity resolution";
+    const identityDetail = document.createElement("span");
+    identityDetail.textContent = [
+      `${identityResolution.nativePresent || 0} native present`,
+      `${identityResolution.nativeMissing || 0} native missing`,
+      `${identityResolution.aliasesReused || 0} aliases reused`,
+      `${identityResolution.fallbacksPromoted || 0} fallbacks promoted`,
+      `${identityResolution.nativeConflicts || 0} native conflicts`,
+      `${identityResolution.ambiguousFallbacks || 0} ambiguous fallbacks`,
+    ].join(" \u00b7 ");
+    identity.append(identityLabel, identityDetail);
+    body.append(identity);
+  }
+  const note = document.createElement("p");
+  note.className = "capture-candidate-note";
+  note.textContent = "This panel reuses local acquisition and identity receipts and does not invoke a model.";
+  body.append(note);
+  details.append(summary, body);
   return details;
 }
 

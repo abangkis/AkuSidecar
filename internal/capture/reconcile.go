@@ -3,6 +3,7 @@ package capture
 import (
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -12,11 +13,48 @@ var punctuationSpacing = regexp.MustCompile(`\s*([.,!?;:])\s*`)
 // ReconcileSnapshots gives repeated capture shapes one canonical evidence
 // identity before reasoning, diagnostics, or user correction can act on them.
 func ReconcileSnapshots(source domain.Source, snapshots []domain.Snapshot) []domain.Snapshot {
+	nativeIDsBySignature := map[string]map[string]bool{}
+	metadataBySignature := map[string]domain.Block{}
+	metadataConflictBySignature := map[string]bool{}
+	fallbackBySignature := map[string]bool{}
+	for _, snapshot := range snapshots {
+		for _, block := range snapshot.Blocks {
+			signature := ContentSignature(source, block)
+			if signature != "" {
+				if previous, exists := metadataBySignature[signature]; exists {
+					if !reconciliationMetadataCompatible(previous, block) {
+						metadataConflictBySignature[signature] = true
+					}
+				} else {
+					metadataBySignature[signature] = block
+				}
+			}
+			nativeID := stableIdentity(block)
+			if signature == "" {
+				continue
+			}
+			if nativeID == "" {
+				fallbackBySignature[signature] = true
+				continue
+			}
+			if nativeIDsBySignature[signature] == nil {
+				nativeIDsBySignature[signature] = map[string]bool{}
+			}
+			nativeIDsBySignature[signature][nativeID] = true
+		}
+	}
+	ambiguous := func(signature string) bool {
+		nativeCount := len(nativeIDsBySignature[signature])
+		metadataConflict := metadataConflictBySignature[signature] &&
+			(fallbackBySignature[signature] || nativeCount != 1)
+		return metadataConflict || nativeCount > 1
+	}
+
 	bestBySignature := map[string]domain.Block{}
 	for _, snapshot := range snapshots {
 		for _, block := range snapshot.Blocks {
-			signature := contentSignature(source, block)
-			if signature == "" {
+			signature := ContentSignature(source, block)
+			if signature == "" || ambiguous(signature) {
 				continue
 			}
 			previous, exists := bestBySignature[signature]
@@ -40,7 +78,12 @@ func ReconcileSnapshots(source domain.Source, snapshots []domain.Snapshot) []dom
 		result[snapshotIndex] = snapshot
 		result[snapshotIndex].Blocks = make([]domain.Block, len(snapshot.Blocks))
 		for blockIndex, block := range snapshot.Blocks {
-			best, exists := bestBySignature[contentSignature(source, block)]
+			signature := ContentSignature(source, block)
+			if ambiguous(signature) {
+				result[snapshotIndex].Blocks[blockIndex] = block
+				continue
+			}
+			best, exists := bestBySignature[signature]
 			if !exists || !hasStableIdentity(best) {
 				result[snapshotIndex].Blocks[blockIndex] = block
 				continue
@@ -59,7 +102,40 @@ func ReconcileSnapshots(source domain.Source, snapshots []domain.Snapshot) []dom
 	return result
 }
 
-func contentSignature(source domain.Source, block domain.Block) string {
+func reconciliationMetadataCompatible(previous, current domain.Block) bool {
+	previousKind := strings.ToLower(strings.TrimSpace(previous.ContentKind))
+	currentKind := strings.ToLower(strings.TrimSpace(current.ContentKind))
+	if previousKind != "" && currentKind != "" && previousKind != currentKind {
+		return false
+	}
+	previousPublishedAt := reconciliationPublishedAt(previous)
+	currentPublishedAt := reconciliationPublishedAt(current)
+	return previousPublishedAt == "" || currentPublishedAt == "" || previousPublishedAt == currentPublishedAt
+}
+
+func reconciliationPublishedAt(block domain.Block) string {
+	if estimated, _ := block.Presentation["timestampEstimated"].(bool); estimated {
+		return ""
+	}
+	if block.PublishedAt == nil {
+		return ""
+	}
+	return normalizeIdentityTimestamp(*block.PublishedAt)
+}
+
+func normalizeIdentityTimestamp(value string) string {
+	value = strings.TrimSpace(value)
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed.UTC().Format(time.RFC3339Nano)
+	}
+	return value
+}
+
+// ContentSignature returns a strict, native-ID-independent identity candidate
+// for a captured social post. It deliberately requires a substantial exact
+// author/text match: the signature is used only to promote a fallback capture
+// to a later native identity, never to infer broad semantic similarity.
+func ContentSignature(source domain.Source, block domain.Block) string {
 	author := strings.ToLower(strings.Join(strings.Fields(block.Author), " "))
 	text := strings.ToLower(strings.Join(strings.Fields(block.Text), " "))
 	text = punctuationSpacing.ReplaceAllString(text, "$1")
@@ -67,14 +143,21 @@ func contentSignature(source domain.Source, block domain.Block) string {
 	if author == "" || len(text) < 80 {
 		return ""
 	}
-	if len(text) > 500 {
-		text = text[:500]
-	}
 	return string(source) + "\x00" + author + "\x00" + text
 }
 
 func hasStableIdentity(block domain.Block) bool {
 	return block.EvidenceKey != "" && (block.PlatformID != "" || block.Permalink != "")
+}
+
+func stableIdentity(block domain.Block) string {
+	if value := strings.TrimSpace(block.PlatformID); value != "" {
+		return "platform:" + strings.ToLower(value)
+	}
+	if value := strings.TrimSpace(block.Permalink); value != "" {
+		return "permalink:" + value
+	}
+	return ""
 }
 
 func mergeBlock(previous, current domain.Block) domain.Block {

@@ -221,6 +221,7 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 	entry.AcquisitionRounds = len(observations)
 	for roundIndex, observation := range observations {
 		mergeInboxMediaAcquisition(&entry, observation.Coverage["mediaAcquisition"])
+		mergeInboxIdentityResolution(&entry, observation.Coverage["contentIdentity"])
 		entry.SnapshotCount += len(observation.Snapshots)
 		entry.PerformedScrolls += integerValue(observation.Coverage["performedScrolls"])
 		for snapshotIndex, snapshot := range observation.Snapshots {
@@ -245,6 +246,7 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		}
 		allSnapshots = append(allSnapshots, observation.Snapshots...)
 	}
+	entry.AcquisitionPlanning = inboxAcquisitionPlanning(run.Coverage["acquisitionPlanning"])
 	evidence := map[string]bool{}
 	for _, snapshot := range capture.ReconcileSnapshots(run.Source, allSnapshots) {
 		for _, block := range snapshot.Blocks {
@@ -339,6 +341,51 @@ func integerValue(value any) int {
 	default:
 		return 0
 	}
+}
+
+func booleanValue(value any) bool {
+	typed, _ := value.(bool)
+	return typed
+}
+
+func inboxStringValue(value any) string {
+	typed, _ := value.(string)
+	return typed
+}
+
+func inboxAcquisitionPlanning(value any) *domain.InboxAcquisitionPlanning {
+	receipt, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	result := &domain.InboxAcquisitionPlanning{
+		Mode:                  inboxStringValue(receipt["mode"]),
+		Decision:              inboxStringValue(receipt["decision"]),
+		Reason:                inboxStringValue(receipt["reason"]),
+		FollowUpQueued:        booleanValue(receipt["followUpQueued"]),
+		FollowUpNewCandidates: integerValue(receipt["followUpNewCandidates"]),
+	}
+	if result.Mode == "" && result.Decision == "" {
+		return nil
+	}
+	return result
+}
+
+func mergeInboxIdentityResolution(entry *domain.InboxRun, value any) {
+	receipt, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	if entry.IdentityResolution == nil {
+		entry.IdentityResolution = &domain.InboxIdentityResolution{}
+	}
+	target := entry.IdentityResolution
+	target.NativePresent += integerValue(receipt["nativePresent"])
+	target.NativeMissing += integerValue(receipt["nativeMissing"])
+	target.AliasesReused += integerValue(receipt["aliasesReused"])
+	target.FallbacksPromoted += integerValue(receipt["fallbacksPromoted"])
+	target.NativeConflicts += integerValue(receipt["nativeConflicts"])
+	target.AmbiguousFallbacks += integerValue(receipt["ambiguousFallbacks"])
 }
 
 func mergeInboxMediaAcquisition(entry *domain.InboxRun, value any) {

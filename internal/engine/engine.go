@@ -45,6 +45,8 @@ type Engine struct {
 	schedule     sync.Mutex
 	heartbeat    *domain.BridgeHeartbeat
 	active       map[string]context.CancelFunc
+	pending      map[string]bool
+	cancelled    map[string]bool
 	shuttingDown bool
 	logger       Logger
 	reloads      *ReloadActions
@@ -63,7 +65,7 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	if len(eventEngines) > 0 {
 		events = eventEngines[0]
 	}
-	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
+	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, pending: map[string]bool{}, cancelled: map[string]bool{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
 }
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
 func (e *Engine) SetMediaProvenanceInspector(value mediaprovenance.Inspector) {
@@ -749,7 +751,7 @@ func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string,
 	} else if firstRunStatus == "pending" {
 		allowPlanning = false
 	}
-	e.launchProcess(runID, allowPlanning)
+	e.launchProcessAfterObservation(runID, allowPlanning)
 	return e.store.GetRun(ctx, runID)
 }
 
@@ -772,7 +774,12 @@ func normalizeObservation(value *domain.Observation) {
 				identity = strings.TrimSpace(block.Permalink)
 			}
 			if identity == "" {
-				identity = strings.ToLower(strings.Join(strings.Fields(block.Text), " "))
+				author := strings.ToLower(strings.Join(strings.Fields(block.Author), " "))
+				text := strings.ToLower(strings.Join(strings.Fields(block.Text), " "))
+				identity = author + "\x00" + text
+				if strings.Trim(identity, "\x00") == "" {
+					identity = ""
+				}
 			}
 			if identity == "" {
 				continue
@@ -859,12 +866,28 @@ func (e *Engine) launch(runID string) {
 }
 
 func (e *Engine) launchProcess(runID string, allowPlanning bool) {
+	e.launchProcessWithPolicy(runID, allowPlanning, false)
+}
+
+func (e *Engine) launchProcessAfterObservation(runID string, allowPlanning bool) {
+	e.launchProcessWithPolicy(runID, allowPlanning, true)
+}
+
+func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfActive bool) {
 	e.mu.Lock()
 	if e.shuttingDown {
 		e.mu.Unlock()
 		return
 	}
+	if e.cancelled[runID] {
+		e.mu.Unlock()
+		return
+	}
 	if _, exists := e.active[runID]; exists {
+		if queueIfActive {
+			queuedAllowPlanning, queued := e.pending[runID]
+			e.pending[runID] = allowPlanning || (queued && queuedAllowPlanning)
+		}
 		e.mu.Unlock()
 		return
 	}
@@ -872,7 +895,18 @@ func (e *Engine) launchProcess(runID string, allowPlanning bool) {
 	e.active[runID] = cancel
 	e.mu.Unlock()
 	go func() {
-		defer func() { e.mu.Lock(); delete(e.active, runID); e.mu.Unlock() }()
+		succeeded := false
+		defer func() {
+			e.mu.Lock()
+			delete(e.active, runID)
+			pendingAllowPlanning, pending := e.pending[runID]
+			delete(e.pending, runID)
+			relaunch := succeeded && pending && !e.cancelled[runID] && !e.shuttingDown
+			e.mu.Unlock()
+			if relaunch {
+				e.launchProcess(runID, pendingAllowPlanning)
+			}
+		}()
 		if err := e.process(ctx, runID, allowPlanning); err != nil {
 			if e.shouldPauseForShutdown(ctx, err) {
 				e.logger.Printf("run %s paused during shutdown and will resume from accepted capture", runID)
@@ -883,7 +917,9 @@ func (e *Engine) launchProcess(runID string, allowPlanning bool) {
 			_ = e.store.FailRun(context.Background(), runID, failure)
 			run, _ := e.store.GetRun(context.Background(), runID)
 			_, _ = e.startNext(context.Background(), run.SessionID)
+			return
 		}
+		succeeded = true
 	}()
 }
 
@@ -938,6 +974,17 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return errors.New("no accepted observation")
 	}
 	merged := mergeObservations(observations)
+	mergeDurableRunCoverage(merged.Coverage, run.Coverage)
+	if len(observations) > 1 {
+		if receipt, ok := merged.Coverage["acquisitionPlanning"].(map[string]any); ok {
+			receipt = cloneCoverageMap(receipt)
+			receipt["followUpNewCandidates"] = followUpNewCandidateCount(observations)
+			merged.Coverage["acquisitionPlanning"] = receipt
+			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
+				return fmt.Errorf("save acquisition planning yield: %w", err)
+			}
+		}
+	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return err
@@ -949,6 +996,19 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	merged = filterResurfacedObservation(merged, continuity)
 	if observationCandidateCount(merged) == 0 {
 		skipped := skippedResurfaceCount(continuity)
+		if _, exists := merged.Coverage["acquisitionPlanning"]; !exists {
+			receipt := map[string]any{
+				"mode":                  "continuity_bypass",
+				"decision":              "finish",
+				"reason":                "All captured candidates were resolved as unchanged native resurfaces before acquisition planning.",
+				"followUpQueued":        false,
+				"followUpNewCandidates": 0,
+			}
+			merged.Coverage["acquisitionPlanning"] = receipt
+			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
+				return fmt.Errorf("save continuity bypass receipt: %w", err)
+			}
+		}
 		result := domain.ReasoningResult{
 			Summary: fmt.Sprintf("%d unchanged resurfaced item%s skipped before reasoning inside the configured cooldown.", skipped, map[bool]string{true: "", false: "s"}[skipped == 1]),
 			Items:   []domain.ReasonedItem{}, CandidateAssessments: []domain.CandidateAssessment{}, Limitations: []string{},
@@ -967,10 +1027,16 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
 		if localFrontierFinishesAcquisition(run.Source, observations[0]) {
-			merged.Coverage["acquisitionPlanning"] = map[string]any{
-				"mode":     "local_frontier",
-				"decision": "finish",
-				"reason":   "The bounded source frontier produced no new candidate after scrolling.",
+			receipt := map[string]any{
+				"mode":                  "local_frontier",
+				"decision":              "finish",
+				"reason":                "The complete bounded source frontier produced no new candidate after scrolling.",
+				"followUpQueued":        false,
+				"followUpNewCandidates": 0,
+			}
+			merged.Coverage["acquisitionPlanning"] = receipt
+			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
+				return fmt.Errorf("save local acquisition planning receipt: %w", err)
 			}
 		} else {
 			if err := e.store.SetRunPipelineStage(ctx, runID, "acquisition_planning"); err != nil {
@@ -981,13 +1047,29 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 			if planErr != nil {
 				return planErr
 			}
+			receipt := map[string]any{
+				"mode":                  "model",
+				"decision":              plan.Decision,
+				"reason":                plan.Reason,
+				"followUpQueued":        false,
+				"followUpNewCandidates": 0,
+			}
 			if plan.Decision == "request_follow_up" {
 				continuation := continuationFrom(merged)
 				if continuation != nil {
 					payload := capturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
-					_, err = e.store.QueueFollowUp(ctx, runID, payload)
-					return err
+					if _, err = e.store.QueueFollowUp(ctx, runID, payload); err != nil {
+						return err
+					}
+					receipt["followUpQueued"] = true
 				}
+			}
+			merged.Coverage["acquisitionPlanning"] = receipt
+			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
+				return fmt.Errorf("save model acquisition planning receipt: %w", err)
+			}
+			if receipt["followUpQueued"] == true {
+				return nil
 			}
 		}
 	}
@@ -1150,11 +1232,68 @@ func localFrontierFinishesAcquisition(source domain.Source, observation domain.O
 	if integerCoverageValue(observation.Coverage["performedScrolls"]) < 1 {
 		return false
 	}
+	if descriptor.FrontierRequiresComplete {
+		captureQuality, ok := observation.Coverage["captureQuality"].(map[string]any)
+		if !ok || strings.TrimSpace(stringCoverageValue(captureQuality["verdict"])) != "complete" {
+			return false
+		}
+		if strings.TrimSpace(stringCoverageValue(observation.Coverage["scrollStopReason"])) == "deadline" {
+			return false
+		}
+	}
 	frontier, ok := observation.Coverage["frontier"].(map[string]any)
 	if !ok || booleanCoverageValue(frontier["hasMoreCandidateSignal"]) {
 		return false
 	}
 	return integerCoverageValue(frontier["newCandidateCount"]) == 0
+}
+
+func mergeDurableRunCoverage(target, durable map[string]any) {
+	for key, value := range durable {
+		if key == "rounds" || key == "acquisitionRounds" {
+			continue
+		}
+		target[key] = value
+	}
+}
+
+func cloneCoverageMap(value map[string]any) map[string]any {
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
+}
+
+func followUpNewCandidateCount(observations []domain.Observation) int {
+	if len(observations) < 2 {
+		return 0
+	}
+	first := observationEvidenceKeys(observations[0].Source, observations[0].Snapshots)
+	allSnapshots := []domain.Snapshot{}
+	for _, observation := range observations {
+		allSnapshots = append(allSnapshots, observation.Snapshots...)
+	}
+	all := observationEvidenceKeys(observations[0].Source, allSnapshots)
+	count := 0
+	for key := range all {
+		if !first[key] {
+			count++
+		}
+	}
+	return count
+}
+
+func observationEvidenceKeys(source domain.Source, snapshots []domain.Snapshot) map[string]bool {
+	result := map[string]bool{}
+	for _, snapshot := range reconcileCapturedSnapshots(source, snapshots) {
+		for _, block := range snapshot.Blocks {
+			if key := strings.TrimSpace(block.EvidenceKey); key != "" {
+				result[key] = true
+			}
+		}
+	}
+	return result
 }
 
 func integerCoverageValue(value any) int {
@@ -1172,6 +1311,11 @@ func integerCoverageValue(value any) int {
 
 func booleanCoverageValue(value any) bool {
 	typed, _ := value.(bool)
+	return typed
+}
+
+func stringCoverageValue(value any) string {
+	typed, _ := value.(string)
 	return typed
 }
 
@@ -1306,12 +1450,19 @@ func (e *Engine) FailCommand(ctx context.Context, commandID, runID string, failu
 	return run, err
 }
 func (e *Engine) CancelSession(ctx context.Context, id string) error {
+	session, err := e.store.GetSession(ctx, id)
+	if err != nil {
+		return err
+	}
 	e.mu.Lock()
-	for runID, cancel := range e.active {
-		run, err := e.store.GetRun(ctx, runID)
-		if err == nil && run.SessionID == id {
+	if e.cancelled == nil {
+		e.cancelled = map[string]bool{}
+	}
+	for _, run := range session.Runs {
+		e.cancelled[run.ID] = true
+		delete(e.pending, run.ID)
+		if cancel, active := e.active[run.ID]; active {
 			cancel()
-			delete(e.active, runID)
 		}
 	}
 	e.mu.Unlock()

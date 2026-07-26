@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,7 +93,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_continuity", "content_continuity_occurrences", "content_identity_aliases", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -638,6 +639,70 @@ func TestPipelineStagesAreDurableAndValidated(t *testing.T) {
 	}
 }
 
+func TestAcquisitionPlanningReceiptSurvivesFollowUpCapture(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	settings.ActiveSources = []domain.Source{domain.SourceLinkedIn}
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	session, err := createVisibleUpdateSession(state, ctx, "durable acquisition receipt", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session.Runs[0]
+	command, err := state.StartRun(ctx, run.ID, map[string]any{"source": run.Source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.ClaimCommand(ctx, run.ID, "receipt-test"); err != nil {
+		t.Fatal(err)
+	}
+	receipt := map[string]any{
+		"mode": "model", "decision": "request_follow_up", "reason": "bounded overlap",
+		"followUpQueued": true, "followUpNewCandidates": 0,
+	}
+	if err := state.SetRunCoverageField(ctx, run.ID, "acquisitionPlanning", receipt); err != nil {
+		t.Fatal(err)
+	}
+	first := domain.Observation{
+		Source: run.Source, CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "linkedin:overlap", Author: "Author",
+			Text: strings.Repeat("Durable LinkedIn overlap evidence. ", 4),
+		}}}},
+		Coverage: map[string]any{"status": "partial"},
+	}
+	if err := state.SaveObservation(ctx, command.ID, run.ID, first); err != nil {
+		t.Fatal(err)
+	}
+	followUp, err := state.QueueFollowUp(ctx, run.ID, map[string]any{"source": run.Source, "round": 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.ClaimCommand(ctx, run.ID, "receipt-test"); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.CapturedAt = domain.Now()
+	if err := state.SaveObservation(ctx, followUp.ID, run.ID, second); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := state.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planning, ok := stored.Coverage["acquisitionPlanning"].(map[string]any)
+	if !ok || planning["decision"] != "request_follow_up" || planning["followUpQueued"] != true {
+		t.Fatalf("planning receipt=%+v", stored.Coverage)
+	}
+	rounds, ok := stored.Coverage["rounds"].([]any)
+	if !ok || len(rounds) != 2 {
+		t.Fatalf("capture rounds=%+v", stored.Coverage)
+	}
+}
+
 func TestSessionRemainsActiveUntilCompositionFinalizes(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
@@ -769,6 +834,9 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	if _, err := state.db.ExecContext(ctx, `INSERT INTO content_continuity(source,evidence_key,content_fingerprint,context_fingerprint,engagement_score,first_seen_at,last_seen_at,last_run_id,seen_count) VALUES(?,?,?,?,?,?,?,?,?)`, domain.SourceLinkedIn, "linkedin:pre-reset", "content-before-reset", "", 0, domain.Now(), domain.Now(), "run-before-reset", 2); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO content_identity_aliases(source,identity_fingerprint,canonical_evidence_key,canonical_platform_id,canonical_permalink,canonical_content_kind,canonical_published_at,ambiguous,first_seen_at,last_seen_at,last_run_id,seen_count) VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, domain.SourceLinkedIn, "identity-before-reset", "linkedin:pre-reset", "", "", "post", "", domain.Now(), domain.Now(), "run-before-reset", 2); err != nil {
+		t.Fatal(err)
+	}
 
 	defaults := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	reset, err := state.FullReset(ctx, defaults)
@@ -798,6 +866,10 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	var continuityCount int
 	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_continuity`).Scan(&continuityCount); err != nil || continuityCount != 0 {
 		t.Fatalf("full reset retained native content continuity: count=%d err=%v", continuityCount, err)
+	}
+	var identityCount int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_identity_aliases`).Scan(&identityCount); err != nil || identityCount != 0 {
+		t.Fatalf("full reset retained content identity aliases: count=%d err=%v", identityCount, err)
 	}
 }
 

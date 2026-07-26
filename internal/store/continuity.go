@@ -73,7 +73,9 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 			decision.PreviousSeenAt = previous.lastSeenAt
 			previousTime, parseErr := time.Parse(time.RFC3339Nano, previous.lastSeenAt)
 			insideCooldown := parseErr == nil && !previousTime.Before(cutoff)
-			changed := contentFingerprint != previous.contentFingerprint || contextFingerprint != previous.contextFingerprint || materialEngagementChange(previous.engagementScore, engagementScore)
+			contentChanged := contentFingerprint != previous.contentFingerprint &&
+				legacyContinuityContentFingerprint(block) != previous.contentFingerprint
+			changed := contentChanged || contextFingerprint != previous.contextFingerprint || materialEngagementChange(previous.engagementScore, engagementScore)
 			switch {
 			case changed:
 				decision.Status = "resurfaced_changed"
@@ -258,6 +260,14 @@ func canonicalContinuityBlocks(observation domain.Observation) []domain.Block {
 }
 
 func continuityContentFingerprint(block domain.Block) string {
+	return continuityContentFingerprintWithPlatformID(block, "")
+}
+
+func legacyContinuityContentFingerprint(block domain.Block) string {
+	return continuityContentFingerprintWithPlatformID(block, strings.TrimSpace(block.PlatformID))
+}
+
+func continuityContentFingerprintWithPlatformID(block domain.Block, platformID string) string {
 	return continuityHash(struct {
 		Text        string `json:"text"`
 		ContentKind string `json:"contentKind"`
@@ -265,7 +275,7 @@ func continuityContentFingerprint(block domain.Block) string {
 	}{
 		Text:        strings.ToLower(strings.Join(strings.Fields(block.Text), " ")),
 		ContentKind: strings.TrimSpace(block.ContentKind),
-		PlatformID:  strings.TrimSpace(block.PlatformID),
+		PlatformID:  platformID,
 	})
 }
 

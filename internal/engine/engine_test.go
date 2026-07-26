@@ -57,6 +57,103 @@ func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
 	}
 }
 
+func TestAcceptedObservationQueuesRelaunchWhilePriorPassIsActive(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	runtime := &Engine{
+		active:  map[string]context.CancelFunc{"run": cancel},
+		pending: map[string]bool{},
+	}
+	runtime.launchProcessWithPolicy("run", true, true)
+	if allowPlanning, queued := runtime.pending["run"]; !queued || !allowPlanning {
+		t.Fatalf("pending relaunch=%v allowPlanning=%v", queued, allowPlanning)
+	}
+	runtime.launchProcessWithPolicy("run", false, false)
+	if allowPlanning := runtime.pending["run"]; !allowPlanning {
+		t.Fatal("a non-observation launch must not erase the accepted-observation relaunch")
+	}
+	cancel()
+}
+
+func TestCancelSessionSuppressesQueuedRelaunchUntilWorkerExits(t *testing.T) {
+	ctx := context.Background()
+	runtime, _ := testEngine(t)
+	session, err := runtime.StartVisibleUpdate(ctx, "cancel queued relaunch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := session.Runs[0].ID
+	workerContext, cancel := context.WithCancel(context.Background())
+	runtime.mu.Lock()
+	runtime.active[runID] = cancel
+	runtime.pending[runID] = true
+	runtime.mu.Unlock()
+
+	if err := runtime.CancelSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-workerContext.Done():
+	default:
+		t.Fatal("active worker was not cancelled")
+	}
+	runtime.mu.RLock()
+	_, active := runtime.active[runID]
+	_, pending := runtime.pending[runID]
+	cancelled := runtime.cancelled[runID]
+	runtime.mu.RUnlock()
+	if !active {
+		t.Fatal("cancel removed active ownership before the worker exited")
+	}
+	if pending || !cancelled {
+		t.Fatalf("cancel state pending=%v cancelled=%v", pending, cancelled)
+	}
+
+	runtime.launchProcessWithPolicy(runID, true, true)
+	runtime.mu.RLock()
+	_, pending = runtime.pending[runID]
+	runtime.mu.RUnlock()
+	if pending {
+		t.Fatal("cancelled work accepted another queued relaunch")
+	}
+
+	runtime.mu.Lock()
+	delete(runtime.active, runID)
+	runtime.mu.Unlock()
+	runtime.launchProcess(runID, true)
+	runtime.mu.RLock()
+	_, active = runtime.active[runID]
+	runtime.mu.RUnlock()
+	if active {
+		t.Fatal("cancelled work relaunched after its worker exited")
+	}
+}
+
+func TestCancelSessionSuppressesRelaunchAfterActiveOwnershipGap(t *testing.T) {
+	ctx := context.Background()
+	runtime, _ := testEngine(t)
+	session, err := runtime.StartVisibleUpdate(ctx, "cancel relaunch ownership gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := session.Runs[0].ID
+	runtime.mu.Lock()
+	runtime.pending[runID] = true
+	runtime.mu.Unlock()
+
+	if err := runtime.CancelSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	runtime.launchProcess(runID, true)
+	runtime.mu.RLock()
+	_, active := runtime.active[runID]
+	_, pending := runtime.pending[runID]
+	cancelled := runtime.cancelled[runID]
+	runtime.mu.RUnlock()
+	if active || pending || !cancelled {
+		t.Fatalf("cancel gap state active=%v pending=%v cancelled=%v", active, pending, cancelled)
+	}
+}
+
 type shutdownBlockingProvider struct {
 	reasoning.Deterministic
 	started chan struct{}
@@ -313,6 +410,128 @@ func TestFailedFollowUpFallsBackToAcceptedObservation(t *testing.T) {
 	inbox, _, err := runtime.Inbox(ctx, 1, 0)
 	if err != nil || len(inbox) != 1 || inbox[0].Runs[0].FollowUpFallback == nil || inbox[0].Runs[0].FollowUpFallback.Code != "frontier_mismatch" {
 		t.Fatalf("fallback inbox=%+v err=%v", inbox, err)
+	}
+}
+
+func TestLinkedInFollowUpCaptureCompletesWithDurablePlanningReceipt(t *testing.T) {
+	ctx := context.Background()
+	settings := domain.DefaultSettings("expanded", "quiet", "guarded_live", true)
+	settings.ActiveSources = []domain.Source{domain.SourceLinkedIn}
+	settings.CalibrationEnabled = false
+	settings.AIDetectionEnabled = false
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { state.Close() })
+	runtime := New(
+		state,
+		followUpProvider{},
+		config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 2}},
+		log.New(io.Discard, "", 0),
+	)
+	runtime.RecordHeartbeat(ExpectedHeartbeat())
+
+	session, err := runtime.StartVisibleUpdate(ctx, "LinkedIn follow-up acceptance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[0].Status == "waiting_for_bridge"
+	})
+	run := active.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("initial command=%+v err=%v", command, err)
+	}
+	overlapText := strings.Repeat("A durable LinkedIn overlap item anchors the next bounded capture round. ", 2)
+	initial := domain.Observation{
+		Source:     domain.SourceLinkedIn,
+		CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{
+			ScrollY: 640,
+			Blocks: []domain.Block{{
+				EvidenceKey: "linkedin:activity:7411111111111111111",
+				PlatformID:  "linkedin:activity:7411111111111111111",
+				Permalink:   "https://www.linkedin.com/feed/update/urn:li:activity:7411111111111111111",
+				Author:      "LinkedIn Author",
+				Text:        overlapText,
+				ContentKind: "post",
+			}},
+		}},
+		Coverage: map[string]any{
+			"performedScrolls": float64(2),
+			"captureQuality":   map[string]any{"verdict": "usable_degraded"},
+			"frontier": map[string]any{
+				"scrollY":                float64(640),
+				"newCandidateCount":      float64(1),
+				"hasMoreCandidateSignal": true,
+			},
+		},
+	}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, initial); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[0].Stage == "follow_up_capture"
+	})
+	followUp, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || followUp == nil {
+		t.Fatalf("follow-up command=%+v err=%v", followUp, err)
+	}
+	if round := integerCoverageValue(followUp.Payload["acquisitionRound"]); round != 2 {
+		t.Fatalf("follow-up acquisition round=%d payload=%+v", round, followUp.Payload)
+	}
+	if continuation, ok := followUp.Payload["continuation"].(map[string]any); !ok || len(continuation) == 0 {
+		t.Fatalf("follow-up continuation=%+v", followUp.Payload["continuation"])
+	}
+
+	newText := strings.Repeat("A second distinct LinkedIn item appears beyond the proven overlap frontier. ", 2)
+	second := domain.Observation{
+		Source:     domain.SourceLinkedIn,
+		CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{
+			ScrollY: 640,
+			Blocks: []domain.Block{{
+				EvidenceKey: "linkedin:activity:7411111111111111111",
+				PlatformID:  "linkedin:activity:7411111111111111111",
+				Permalink:   "https://www.linkedin.com/feed/update/urn:li:activity:7411111111111111111",
+				Author:      "LinkedIn Author",
+				Text:        overlapText,
+				ContentKind: "post",
+			}},
+		}, {
+			ScrollY: 1280,
+			Blocks: []domain.Block{{
+				EvidenceKey: "linkedin:activity:7422222222222222222",
+				PlatformID:  "linkedin:activity:7422222222222222222",
+				Permalink:   "https://www.linkedin.com/feed/update/urn:li:activity:7422222222222222222",
+				Author:      "Second LinkedIn Author",
+				Text:        newText,
+				ContentKind: "post",
+			}},
+		}},
+		Coverage: map[string]any{"performedScrolls": float64(2)},
+	}
+	if _, err := runtime.AcceptObservation(ctx, followUp.ID, run.ID, second); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Status == "completed"
+	})
+	if len(completed.Items) != 2 {
+		t.Fatalf("completed LinkedIn items=%d session=%+v", len(completed.Items), completed)
+	}
+	inbox, _, err := runtime.Inbox(ctx, 1, 0)
+	if err != nil || len(inbox) != 1 || len(inbox[0].Runs) != 1 {
+		t.Fatalf("Inbox=%+v err=%v", inbox, err)
+	}
+	receipt := inbox[0].Runs[0].AcquisitionPlanning
+	if receipt == nil || receipt.Mode != "model" || !receipt.FollowUpQueued || receipt.FollowUpNewCandidates != 1 {
+		t.Fatalf("acquisition planning receipt=%+v", receipt)
 	}
 }
 
@@ -643,6 +862,10 @@ func TestUnchangedResurfaceFailsFastBeforeReasoning(t *testing.T) {
 	}
 	if len(inbox) != 2 || inbox[0].Runs[0].CapturedCandidates != 1 || inbox[0].Runs[0].EvaluatedCandidates != 0 || inbox[0].Runs[0].SkippedResurfaces != 1 {
 		t.Fatalf("unexpected resurface inbox: %+v", inbox)
+	}
+	planning := inbox[0].Runs[0].AcquisitionPlanning
+	if planning == nil || planning.Mode != "continuity_bypass" || planning.Decision != "finish" || planning.FollowUpQueued {
+		t.Fatalf("unexpected continuity bypass receipt: %+v", planning)
 	}
 	for _, stage := range []string{"captured", "evaluated", "selected", "added"} {
 		if _, ok := inbox[1].Runs[0].StageDurationsMS[stage]; !ok {
@@ -1183,11 +1406,13 @@ func TestLinkedInContinuationUsesPriorObservedOverlapCheckpoint(t *testing.T) {
 	}
 }
 
-func TestFacebookLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
+func TestGuardedLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 	base := domain.Observation{
 		Source: domain.SourceFacebook,
 		Coverage: map[string]any{
 			"performedScrolls": float64(1),
+			"captureQuality":   map[string]any{"verdict": "complete"},
+			"scrollStopReason": "no_movement",
 			"frontier": map[string]any{
 				"newCandidateCount":      float64(0),
 				"hasMoreCandidateSignal": false,
@@ -1196,6 +1421,9 @@ func TestFacebookLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 	}
 	if !localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
 		t.Fatal("Facebook exhausted local frontier should finish without model planning")
+	}
+	if !localFrontierFinishesAcquisition(domain.SourceLinkedIn, base) {
+		t.Fatal("LinkedIn complete exhausted frontier should finish without model planning")
 	}
 	if localFrontierFinishesAcquisition(domain.SourceX, base) {
 		t.Fatal("X must retain its current model planning behavior")
@@ -1208,6 +1436,44 @@ func TestFacebookLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 	base.Coverage["performedScrolls"] = float64(0)
 	if localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
 		t.Fatal("Facebook must perform a bounded scroll before the local fast path")
+	}
+	base.Coverage["performedScrolls"] = float64(1)
+	base.Coverage["captureQuality"] = map[string]any{"verdict": "usable_degraded"}
+	if !localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
+		t.Fatal("Facebook must retain its established frontier behavior")
+	}
+	if localFrontierFinishesAcquisition(domain.SourceLinkedIn, base) {
+		t.Fatal("degraded LinkedIn capture must retain model planning")
+	}
+	base.Coverage["captureQuality"] = map[string]any{"verdict": "complete"}
+	base.Coverage["scrollStopReason"] = "deadline"
+	if localFrontierFinishesAcquisition(domain.SourceLinkedIn, base) {
+		t.Fatal("deadline-exhausted LinkedIn capture must retain model planning")
+	}
+}
+
+func TestFollowUpNewCandidateCountExcludesOverlap(t *testing.T) {
+	first := domain.Observation{
+		Source: domain.SourceLinkedIn,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{
+			{EvidenceKey: "linkedin:overlap", Author: "Author", Text: strings.Repeat("First exact LinkedIn overlap content. ", 4)},
+		}}},
+	}
+	overlapOnly := domain.Observation{
+		Source: domain.SourceLinkedIn,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{
+			{EvidenceKey: "linkedin:overlap", Author: "Author", Text: strings.Repeat("First exact LinkedIn overlap content. ", 4)},
+		}}},
+	}
+	if got := followUpNewCandidateCount([]domain.Observation{first, overlapOnly}); got != 0 {
+		t.Fatalf("overlap-only follow-up yield=%d want=0", got)
+	}
+	withNew := overlapOnly
+	withNew.Snapshots = append(withNew.Snapshots, domain.Snapshot{Blocks: []domain.Block{
+		{EvidenceKey: "linkedin:new", Author: "New Author", Text: strings.Repeat("Distinct newly discovered LinkedIn content. ", 4)},
+	}})
+	if got := followUpNewCandidateCount([]domain.Observation{first, withNew}); got != 1 {
+		t.Fatalf("follow-up yield=%d want=1", got)
 	}
 }
 

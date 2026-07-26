@@ -35,6 +35,15 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, _ := SourceByID(SourceFacebook); descriptor.FollowUpPlanningPolicy != "local_frontier" {
 		t.Fatalf("Facebook follow-up planning policy drifted: %+v", descriptor)
 	}
+	if descriptor, _ := SourceByID(SourceLinkedIn); descriptor.FollowUpPlanningPolicy != "local_frontier" || !descriptor.ContinuationOverlapRequired || !descriptor.FrontierRequiresComplete {
+		t.Fatalf("LinkedIn guarded frontier or overlap policy drifted: %+v", descriptor)
+	}
+	if descriptor, _ := SourceByID(SourceFacebook); descriptor.FrontierRequiresComplete {
+		t.Fatalf("Facebook must retain its established frontier behavior: %+v", descriptor)
+	}
+	if descriptor, _ := SourceByID(SourceX); descriptor.FollowUpPlanningPolicy != "" {
+		t.Fatalf("X must retain model acquisition planning: %+v", descriptor)
+	}
 }
 
 func TestDefaultSourceHydrationTimeoutsFollowRegistry(t *testing.T) {
@@ -69,5 +78,31 @@ func TestCanonicalSourceURLSupportsEveryRegisteredSource(t *testing.T) {
 		if got, ok := CanonicalSourceURL(SourceFacebook, raw); ok || got != "" {
 			t.Fatalf("untrusted Facebook URL admitted: %q", raw)
 		}
+	}
+}
+
+func TestLinkedInPermalinkProvesTheSameNativeIdentityAsPlatformID(t *testing.T) {
+	for _, test := range []struct {
+		url  string
+		want string
+	}{
+		{
+			url:  "https://www.linkedin.com/feed/update/urn:li:activity:7411111111111111111/",
+			want: "linkedin:activity:7411111111111111111",
+		},
+		{
+			url:  "https://www.linkedin.com/posts/example_activity-7422222222222222222",
+			want: "linkedin:activity:7422222222222222222",
+		},
+	} {
+		if got := NativeIdentityFromPermalink(SourceLinkedIn, test.url); got != test.want {
+			t.Fatalf("NativeIdentityFromPermalink(%q)=%q want=%q", test.url, got, test.want)
+		}
+	}
+	if got := NativeIdentityFromPermalink(SourceX, "https://x.com/example/status/123"); got != "" {
+		t.Fatalf("X must not infer an unsupported native identity: %q", got)
+	}
+	if got := NormalizeNativeIdentity(SourceLinkedIn, "urn:li:activity:7411111111111111111"); got != "linkedin:activity:7411111111111111111" {
+		t.Fatalf("LinkedIn platform identity was not normalized: %q", got)
 	}
 }

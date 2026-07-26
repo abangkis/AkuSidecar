@@ -66,6 +66,9 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	if err := s.backfillContentContinuity(ctx); err != nil {
 		return fmt.Errorf("backfill content continuity: %w", err)
 	}
+	if err := s.backfillContentIdentityAliases(ctx); err != nil {
+		return fmt.Errorf("backfill content identity aliases: %w", err)
+	}
 	if metaTable == 0 {
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('schema_version',?)`, schemaVersion); err != nil {
 			return fmt.Errorf("save schema version: %w", err)
@@ -703,10 +706,6 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 	if !observation.Source.Valid() {
 		return errors.New("observation source is invalid")
 	}
-	raw, err := json.Marshal(observation)
-	if err != nil {
-		return err
-	}
 	now := domain.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -721,6 +720,23 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 	}
 	if expectedRun != runID || status != "claimed" {
 		return errors.New("bridge command is not claimable for this run")
+	}
+	observedAt := strings.TrimSpace(observation.CapturedAt)
+	if _, parseErr := time.Parse(time.RFC3339Nano, observedAt); parseErr != nil {
+		observedAt = now
+		observation.CapturedAt = observedAt
+	}
+	identity, err := s.resolveObservationContentIdentity(ctx, tx, runID, &observation, observedAt)
+	if err != nil {
+		return err
+	}
+	if observation.Coverage == nil {
+		observation.Coverage = map[string]any{}
+	}
+	observation.Coverage["contentIdentity"] = identity
+	raw, err := json.Marshal(observation)
+	if err != nil {
+		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO observations(id,run_id,command_id,source,observation_json,captured_at,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("observation"), runID, commandID, observation.Source, string(raw), observation.CapturedAt, now); err != nil {
 		return err
@@ -759,12 +775,43 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 func durableCaptureCoverage(raw string, next map[string]any) map[string]any {
 	var current map[string]any
 	decodeJSON(raw, &current)
+	if current == nil {
+		current = map[string]any{}
+	}
 	rounds := make([]any, 0, 2)
 	if values, ok := current["rounds"].([]any); ok {
 		rounds = append(rounds, values...)
 	}
 	rounds = append(rounds, next)
-	return map[string]any{"acquisitionRounds": len(rounds), "rounds": rounds}
+	current["acquisitionRounds"] = len(rounds)
+	current["rounds"] = rounds
+	return current
+}
+
+func (s *Store) SetRunCoverageField(ctx context.Context, runID, key string, value any) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("run coverage key is required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err := tx.QueryRowContext(ctx, `SELECT coverage_json FROM runs WHERE id=?`, runID).Scan(&raw); err != nil {
+		return err
+	}
+	coverage := map[string]any{}
+	decodeJSON(raw, &coverage)
+	coverage[key] = value
+	encoded, err := json.Marshal(coverage)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE runs SET coverage_json=? WHERE id=?`, string(encoded), runID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Observations(ctx context.Context, runID string) ([]domain.Observation, error) {
@@ -1469,7 +1516,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at');`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at');`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=NULL,last_attempt_at=NULL,last_success_at=NULL,last_error='' WHERE id=1`); err != nil {

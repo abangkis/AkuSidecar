@@ -625,30 +625,49 @@ type TimelineBatchSummary struct {
 }
 
 type InboxRun struct {
-	ID                   string                   `json:"id"`
-	Source               Source                   `json:"source"`
-	Status               string                   `json:"status"`
-	Stage                string                   `json:"stage"`
-	StartedAt            *string                  `json:"startedAt"`
-	CompletedAt          *string                  `json:"completedAt"`
-	Summary              string                   `json:"summary"`
-	CapturedCandidates   int                      `json:"capturedCandidates"`
-	EvaluatedCandidates  int                      `json:"evaluatedCandidates"`
-	SelectedCandidates   int                      `json:"selectedCandidates"`
-	AddedItems           int                      `json:"addedItems"`
-	AcquisitionRounds    int                      `json:"acquisitionRounds"`
-	SnapshotCount        int                      `json:"snapshotCount"`
-	PerformedScrolls     int                      `json:"performedScrolls"`
-	ReasoningDurationMS  int64                    `json:"reasoningDurationMs"`
-	TotalDurationMS      int64                    `json:"totalDurationMs"`
-	StageDurationsMS     map[string]int64         `json:"stageDurationsMs"`
-	ResurfacedItems      int                      `json:"resurfacedItems"`
-	SkippedResurfaces    int                      `json:"skippedResurfaces"`
-	Error                *Failure                 `json:"error"`
-	FollowUpFallback     *Failure                 `json:"followUpFallback,omitempty"`
-	CaptureSurface       []CaptureSurfaceEvent    `json:"captureSurface"`
-	CandidateDiagnostics []InboxCandidateSnapshot `json:"candidateDiagnostics"`
-	MediaAcquisition     *InboxMediaAcquisition   `json:"mediaAcquisition,omitempty"`
+	ID                   string                    `json:"id"`
+	Source               Source                    `json:"source"`
+	Status               string                    `json:"status"`
+	Stage                string                    `json:"stage"`
+	StartedAt            *string                   `json:"startedAt"`
+	CompletedAt          *string                   `json:"completedAt"`
+	Summary              string                    `json:"summary"`
+	CapturedCandidates   int                       `json:"capturedCandidates"`
+	EvaluatedCandidates  int                       `json:"evaluatedCandidates"`
+	SelectedCandidates   int                       `json:"selectedCandidates"`
+	AddedItems           int                       `json:"addedItems"`
+	AcquisitionRounds    int                       `json:"acquisitionRounds"`
+	SnapshotCount        int                       `json:"snapshotCount"`
+	PerformedScrolls     int                       `json:"performedScrolls"`
+	ReasoningDurationMS  int64                     `json:"reasoningDurationMs"`
+	TotalDurationMS      int64                     `json:"totalDurationMs"`
+	StageDurationsMS     map[string]int64          `json:"stageDurationsMs"`
+	ResurfacedItems      int                       `json:"resurfacedItems"`
+	SkippedResurfaces    int                       `json:"skippedResurfaces"`
+	Error                *Failure                  `json:"error"`
+	FollowUpFallback     *Failure                  `json:"followUpFallback,omitempty"`
+	CaptureSurface       []CaptureSurfaceEvent     `json:"captureSurface"`
+	CandidateDiagnostics []InboxCandidateSnapshot  `json:"candidateDiagnostics"`
+	MediaAcquisition     *InboxMediaAcquisition    `json:"mediaAcquisition,omitempty"`
+	AcquisitionPlanning  *InboxAcquisitionPlanning `json:"acquisitionPlanning,omitempty"`
+	IdentityResolution   *InboxIdentityResolution  `json:"identityResolution,omitempty"`
+}
+
+type InboxAcquisitionPlanning struct {
+	Mode                  string `json:"mode"`
+	Decision              string `json:"decision"`
+	Reason                string `json:"reason"`
+	FollowUpQueued        bool   `json:"followUpQueued"`
+	FollowUpNewCandidates int    `json:"followUpNewCandidates"`
+}
+
+type InboxIdentityResolution struct {
+	NativePresent      int `json:"nativePresent"`
+	NativeMissing      int `json:"nativeMissing"`
+	AliasesReused      int `json:"aliasesReused"`
+	FallbacksPromoted  int `json:"fallbacksPromoted"`
+	NativeConflicts    int `json:"nativeConflicts"`
+	AmbiguousFallbacks int `json:"ambiguousFallbacks"`
 }
 
 type InboxCandidateSnapshot struct {

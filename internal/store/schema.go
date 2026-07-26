@@ -148,6 +148,25 @@ CREATE TABLE IF NOT EXISTS content_continuity (
 CREATE INDEX IF NOT EXISTS content_continuity_last_seen
   ON content_continuity(last_seen_at);
 
+CREATE TABLE IF NOT EXISTS content_identity_aliases (
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  identity_fingerprint TEXT NOT NULL,
+  canonical_evidence_key TEXT NOT NULL,
+  canonical_platform_id TEXT NOT NULL DEFAULT '',
+  canonical_permalink TEXT NOT NULL DEFAULT '',
+  canonical_content_kind TEXT NOT NULL DEFAULT '',
+  canonical_published_at TEXT NOT NULL DEFAULT '',
+  ambiguous INTEGER NOT NULL DEFAULT 0 CHECK (ambiguous IN (0,1)),
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  last_run_id TEXT NOT NULL,
+  seen_count INTEGER NOT NULL CHECK (seen_count >= 1),
+  PRIMARY KEY(source,identity_fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS content_identity_aliases_last_seen
+  ON content_identity_aliases(last_seen_at);
+
 CREATE TABLE IF NOT EXISTS content_continuity_occurrences (
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   evidence_key TEXT NOT NULL,

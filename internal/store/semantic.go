@@ -528,6 +528,9 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM content_continuity WHERE last_seen_at<?`, cutoff); err != nil {
 		return result, err
 	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM content_identity_aliases WHERE last_seen_at<?`, cutoff); err != nil {
+		return result, err
+	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM ai_feedback_events WHERE target_type<>'account' AND created_at<?`, cutoff); err != nil {
 		return result, err
 	}
@@ -557,6 +560,13 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 		_ = s.cleanupOrphanSemanticEvents(ctx)
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
 		result.DatabaseBytes = s.databaseFootprint()
+	}
+	if result.RemovedSessions > 0 {
+		if _, err := s.db.ExecContext(ctx, `
+			DELETE FROM content_identity_aliases
+			WHERE NOT EXISTS (SELECT 1 FROM runs WHERE runs.id=content_identity_aliases.last_run_id)`); err != nil {
+			return result, err
+		}
 	}
 	if result.RemovedSessions > 0 {
 		_, _ = s.db.ExecContext(ctx, `VACUUM`)

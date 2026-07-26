@@ -2,8 +2,11 @@ package domain
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 )
+
+var linkedInNativeIdentityPattern = regexp.MustCompile(`(?i)(activity|ugcpost|share)(?::|-)(\d+)`)
 
 // CanonicalSourceURL accepts only native post permalinks owned by the captured
 // source. It deliberately excludes arbitrary external references: link
@@ -27,6 +30,37 @@ func CanonicalSourceURL(source Source, raw string) (string, bool) {
 		return "", false
 	}
 	return parsed.String(), true
+}
+
+// NativeIdentityFromPermalink returns a source-owned platform identity only
+// when the canonical native URL itself proves that identity. Sources without
+// such a reversible URL contract deliberately return no inferred identity.
+func NativeIdentityFromPermalink(source Source, raw string) string {
+	canonical, ok := CanonicalSourceURL(source, raw)
+	if !ok {
+		return ""
+	}
+	switch source {
+	case SourceLinkedIn:
+		return NormalizeNativeIdentity(source, canonical)
+	}
+	return ""
+}
+
+// NormalizeNativeIdentity maps equivalent source-native identity spellings to
+// one representation while leaving unknown source formats opaque.
+func NormalizeNativeIdentity(source Source, raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return ""
+	}
+	if source == SourceLinkedIn {
+		match := linkedInNativeIdentityPattern.FindStringSubmatch(value)
+		if len(match) == 3 {
+			return "linkedin:" + strings.ToLower(match[1]) + ":" + match[2]
+		}
+	}
+	return value
 }
 
 func facebookNativePostPath(path string, query url.Values) bool {
