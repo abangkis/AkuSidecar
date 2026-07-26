@@ -688,6 +688,28 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"runId": runID})
+	case r.Method == http.MethodPost && p == "/api/bridge/capture-surfaces/events":
+		if err := s.requireBridge(r); err != nil {
+			return err
+		}
+		var body struct {
+			Events []domain.CaptureSurfaceEvent `json:"events"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		if len(body.Events) < 1 || len(body.Events) > 32 {
+			return badRequest("capture surface telemetry must contain between 1 and 32 events")
+		}
+		recorded := make([]domain.CaptureSurfaceEvent, 0, len(body.Events))
+		for _, event := range body.Events {
+			value, err := s.engine.RecordCaptureSurfaceEvent(ctx, event)
+			if err != nil {
+				return badRequest(err.Error())
+			}
+			recorded = append(recorded, value)
+		}
+		return writeJSON(w, http.StatusAccepted, map[string]any{"events": recorded})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/commands/") && strings.HasSuffix(p, "/observation"):
 		if err := s.requireBridge(r); err != nil {
 			return err

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -320,8 +321,41 @@ func continuityEngagementScore(value any) int64 {
 		if number, err := typed.Int64(); err == nil && number > 0 {
 			return number
 		}
+	case string:
+		return parseContinuityEngagementCount(typed)
 	}
 	return 0
+}
+
+func parseContinuityEngagementCount(value string) int64 {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	if normalized == "" {
+		return 0
+	}
+	multiplier := float64(1)
+	switch normalized[len(normalized)-1] {
+	case 'K':
+		multiplier = 1_000
+		normalized = strings.TrimSpace(normalized[:len(normalized)-1])
+	case 'M':
+		multiplier = 1_000_000
+		normalized = strings.TrimSpace(normalized[:len(normalized)-1])
+	case 'B':
+		multiplier = 1_000_000_000
+		normalized = strings.TrimSpace(normalized[:len(normalized)-1])
+	}
+	if strings.Contains(normalized, ",") {
+		if multiplier > 1 && !strings.Contains(normalized, ".") {
+			normalized = strings.ReplaceAll(normalized, ",", ".")
+		} else {
+			normalized = strings.ReplaceAll(normalized, ",", "")
+		}
+	}
+	number, err := strconv.ParseFloat(normalized, 64)
+	if err != nil || number <= 0 {
+		return 0
+	}
+	return int64(math.Round(number * multiplier))
 }
 
 func materialEngagementChange(previous, current int64) bool {

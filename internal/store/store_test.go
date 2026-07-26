@@ -92,7 +92,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -100,6 +100,49 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		if names[i] != want[i] {
 			t.Fatalf("tables=%v", names)
 		}
+	}
+}
+
+func TestCaptureSurfaceTelemetryPersistsUntilInboxReceipt(t *testing.T) {
+	state := openTestStore(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := createVisibleUpdateSession(state, ctx, "capture lifecycle", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil || len(runs) == 0 {
+		t.Fatalf("runs=%v err=%v", runs, err)
+	}
+	recorded, err := state.RecordCaptureSurfaceEvent(ctx, domain.CaptureSurfaceEvent{
+		ID:        "capture-event-1",
+		SessionID: session.ID,
+		RunID:     runs[0].ID,
+		Source:    runs[0].Source,
+		Event:     "release_requested",
+		Outcome:   "source_acquisition_closed",
+		Detail:    map[string]any{"isolation": "shared"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded.OccurredAt == "" {
+		t.Fatal("capture surface receipt has no timestamp")
+	}
+	sessions, _, err := state.ListInboxSessions(ctx, 5, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || len(sessions[0].Runs) == 0 {
+		t.Fatalf("inbox sessions=%+v", sessions)
+	}
+	got := sessions[0].Runs[0].CaptureSurface
+	if len(got) != 1 || got[0].Event != "release_requested" || got[0].Outcome != "source_acquisition_closed" {
+		t.Fatalf("capture surface telemetry=%+v", got)
 	}
 }
 

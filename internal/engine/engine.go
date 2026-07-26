@@ -715,6 +715,10 @@ func (e *Engine) InboxRunTrace(ctx context.Context, runID, stage string, limit, 
 	return e.store.InboxRunTrace(ctx, runID, stage, limit, offset)
 }
 
+func (e *Engine) RecordCaptureSurfaceEvent(ctx context.Context, value domain.CaptureSurfaceEvent) (domain.CaptureSurfaceEvent, error) {
+	return e.store.RecordCaptureSurfaceEvent(ctx, value)
+}
+
 func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string, value domain.Observation) (domain.Run, error) {
 	run, err := e.store.GetRun(ctx, runID)
 	if err != nil {

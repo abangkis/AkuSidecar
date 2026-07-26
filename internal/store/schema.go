@@ -113,6 +113,25 @@ CREATE TABLE IF NOT EXISTS observations (
 
 CREATE INDEX IF NOT EXISTS observations_run_created ON observations(run_id, created_at);
 
+CREATE TABLE IF NOT EXISTS capture_surface_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  run_id TEXT REFERENCES runs(id) ON DELETE CASCADE,
+  source TEXT REFERENCES source_definitions(id),
+  event TEXT NOT NULL CHECK (event IN (
+    'created','reused','release_requested','released',
+    'preserved_user_owned','focus_intervention','reconciled'
+  )),
+  outcome TEXT NOT NULL DEFAULT '',
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS capture_surface_events_run_occurred
+  ON capture_surface_events(run_id, occurred_at);
+CREATE INDEX IF NOT EXISTS capture_surface_events_session_source
+  ON capture_surface_events(session_id, source, occurred_at);
+
 CREATE TABLE IF NOT EXISTS content_continuity (
   source TEXT NOT NULL REFERENCES source_definitions(id),
   evidence_key TEXT NOT NULL,

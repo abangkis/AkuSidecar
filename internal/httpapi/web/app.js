@@ -2337,12 +2337,69 @@ function buildInboxRun(run, sessionStatus = "") {
     summary.textContent = run.summary;
     card.append(summary);
   }
+  if (run.captureSurface?.length) {
+    card.append(buildCaptureSurfaceTelemetry(run.captureSurface));
+  }
   card.append(buildInboxFlowInspector(run, (counts) => {
     for (const [stage, number] of Object.entries(metricNumbers)) {
       number.textContent = inboxRunMetricText(run, sessionStatus, stage, counts?.[stage]);
     }
   }));
   return card;
+}
+
+function buildCaptureSurfaceTelemetry(events) {
+  const details = document.createElement("details");
+  details.className = "capture-surface-telemetry";
+  const summary = document.createElement("summary");
+  const title = document.createElement("strong");
+  title.textContent = "Capture surface";
+  const rollup = document.createElement("span");
+  const counts = new Map();
+  for (const event of events) {
+    counts.set(event.event, (counts.get(event.event) || 0) + 1);
+  }
+  rollup.textContent = [
+    counts.get("created") ? `${counts.get("created")} created` : null,
+    counts.get("reused") ? `${counts.get("reused")} reused` : null,
+    counts.get("release_requested") ? `${counts.get("release_requested")} release requested` : null,
+    counts.get("released") ? `${counts.get("released")} released` : null,
+    counts.get("preserved_user_owned") ? `${counts.get("preserved_user_owned")} user-owned preserved` : null,
+    counts.get("focus_intervention") ? `${counts.get("focus_intervention")} focus intervention` : null,
+  ].filter(Boolean).join(" \u00b7 ");
+  summary.append(title, rollup);
+  const list = document.createElement("ol");
+  list.className = "capture-surface-events";
+  const labels = {
+    created: "Managed surface created",
+    reused: "Managed surface reused",
+    release_requested: "Cleanup requested",
+    released: "Surface released",
+    preserved_user_owned: "User-owned surface preserved",
+    focus_intervention: "Focus intervention",
+    reconciled: "Stale surface reconciled",
+  };
+  for (const event of events) {
+    const row = document.createElement("li");
+    const copy = document.createElement("span");
+    const label = document.createElement("strong");
+    label.textContent = labels[event.event] || humanize(event.event);
+    const context = document.createElement("small");
+    context.textContent = [
+      humanize(event.outcome),
+      event.detail?.isolation ? humanize(event.detail.isolation) : null,
+      event.detail?.restored === true ? "working focus restored" : null,
+      event.detail?.preservedUserTabs ? `${event.detail.preservedUserTabs} user tab preserved` : null,
+    ].filter(Boolean).join(" \u00b7 ");
+    copy.append(label, context);
+    const time = document.createElement("time");
+    time.dateTime = event.occurredAt || "";
+    time.textContent = event.occurredAt ? formatDate(event.occurredAt) : "";
+    row.append(copy, time);
+    list.append(row);
+  }
+  details.append(summary, list);
+  return details;
 }
 
 function inboxSessionFlowText(session) {

@@ -625,27 +625,39 @@ type TimelineBatchSummary struct {
 }
 
 type InboxRun struct {
-	ID                  string           `json:"id"`
-	Source              Source           `json:"source"`
-	Status              string           `json:"status"`
-	Stage               string           `json:"stage"`
-	StartedAt           *string          `json:"startedAt"`
-	CompletedAt         *string          `json:"completedAt"`
-	Summary             string           `json:"summary"`
-	CapturedCandidates  int              `json:"capturedCandidates"`
-	EvaluatedCandidates int              `json:"evaluatedCandidates"`
-	SelectedCandidates  int              `json:"selectedCandidates"`
-	AddedItems          int              `json:"addedItems"`
-	AcquisitionRounds   int              `json:"acquisitionRounds"`
-	SnapshotCount       int              `json:"snapshotCount"`
-	PerformedScrolls    int              `json:"performedScrolls"`
-	ReasoningDurationMS int64            `json:"reasoningDurationMs"`
-	TotalDurationMS     int64            `json:"totalDurationMs"`
-	StageDurationsMS    map[string]int64 `json:"stageDurationsMs"`
-	ResurfacedItems     int              `json:"resurfacedItems"`
-	SkippedResurfaces   int              `json:"skippedResurfaces"`
-	Error               *Failure         `json:"error"`
-	FollowUpFallback    *Failure         `json:"followUpFallback,omitempty"`
+	ID                  string                `json:"id"`
+	Source              Source                `json:"source"`
+	Status              string                `json:"status"`
+	Stage               string                `json:"stage"`
+	StartedAt           *string               `json:"startedAt"`
+	CompletedAt         *string               `json:"completedAt"`
+	Summary             string                `json:"summary"`
+	CapturedCandidates  int                   `json:"capturedCandidates"`
+	EvaluatedCandidates int                   `json:"evaluatedCandidates"`
+	SelectedCandidates  int                   `json:"selectedCandidates"`
+	AddedItems          int                   `json:"addedItems"`
+	AcquisitionRounds   int                   `json:"acquisitionRounds"`
+	SnapshotCount       int                   `json:"snapshotCount"`
+	PerformedScrolls    int                   `json:"performedScrolls"`
+	ReasoningDurationMS int64                 `json:"reasoningDurationMs"`
+	TotalDurationMS     int64                 `json:"totalDurationMs"`
+	StageDurationsMS    map[string]int64      `json:"stageDurationsMs"`
+	ResurfacedItems     int                   `json:"resurfacedItems"`
+	SkippedResurfaces   int                   `json:"skippedResurfaces"`
+	Error               *Failure              `json:"error"`
+	FollowUpFallback    *Failure              `json:"followUpFallback,omitempty"`
+	CaptureSurface      []CaptureSurfaceEvent `json:"captureSurface"`
+}
+
+type CaptureSurfaceEvent struct {
+	ID         string         `json:"id"`
+	SessionID  string         `json:"sessionId"`
+	RunID      string         `json:"runId,omitempty"`
+	Source     Source         `json:"source,omitempty"`
+	Event      string         `json:"event"`
+	Outcome    string         `json:"outcome,omitempty"`
+	Detail     map[string]any `json:"detail"`
+	OccurredAt string         `json:"occurredAt"`
 }
 
 // ModelUsage records provider-reported token counters. Cached input and

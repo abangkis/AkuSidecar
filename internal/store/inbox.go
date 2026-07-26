@@ -211,7 +211,7 @@ func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBa
 }
 
 func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, error) {
-	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}}
+	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}, CaptureSurface: []domain.CaptureSurfaceEvent{}}
 	observations, err := s.Observations(ctx, run.ID)
 	if err != nil {
 		return domain.InboxRun{}, err
@@ -287,6 +287,10 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		var failure domain.Failure
 		decodeJSON(fallbackRaw.String, &failure)
 		entry.FollowUpFallback = &failure
+	}
+	entry.CaptureSurface, err = s.CaptureSurfaceEvents(ctx, run.ID)
+	if err != nil {
+		return domain.InboxRun{}, err
 	}
 	return entry, nil
 }
