@@ -367,11 +367,15 @@ Detector runs locally after global composition and recognizes only explicit
 evidence: platform labels, author declarations, and prompt/instruction residue.
 It does not use stylistic regularity as proof and cannot change selection,
 ranking, semantic grouping, or capacity. After session finalization, the
-schema-bound Deep Detector reviews eligible bounded untrusted text
-asynchronously over the shared App Server transport. It skips inadequate text,
-direct platform/provenance evidence, and active user corrections because model
-review cannot responsibly improve those higher-authority results. Failure
-leaves the Fast result intact. If Deep
+schema-bound Deep Detector reviews a deterministic shortlist of at most five
+bounded untrusted posts asynchronously over the shared App Server transport.
+Preliminary strong Fast findings have first priority; explicit but
+phrasing-ambiguous authorship or agent-identity disclosures may use remaining
+capacity. Style alone is never eligible. It skips inadequate text, direct
+platform/provenance evidence, ordinary neutral posts, and active user
+corrections because model review cannot responsibly improve those results.
+The source-controlled offline corpus measures shortlist routing without
+consuming model tokens. Failure leaves the Fast result intact. If Deep
 Detection overturns an earlier strong result, the UI keeps a corrected badge;
 it never erases the assessment without explanation.
 

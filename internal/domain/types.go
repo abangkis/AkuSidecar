@@ -40,7 +40,7 @@ const (
 	DefaultPreparedBatchMaxAgeHours = 24
 	DefaultNextBatchBehavior        = "require_action"
 	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
-	CurrentAIDeepDetectorVersion    = "codex-deep-v4"
+	CurrentAIDeepDetectorVersion    = "codex-deep-v5"
 )
 
 type Source string

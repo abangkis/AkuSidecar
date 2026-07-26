@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,36 +42,97 @@ type StructuredResolver struct {
 }
 
 const (
-	DeepDetectorVersion = domain.CurrentAIDeepDetectorVersion
-	deepTextLimit       = 1600
-	deepQuotedTextLimit = 600
+	DeepDetectorVersion        = domain.CurrentAIDeepDetectorVersion
+	DefaultDeepReviewLimit     = 5
+	deepTextLimit              = 1600
+	deepQuotedTextLimit        = 600
+	deepPreliminarySignalScore = 300
+	deepAuthorshipReviewScore  = 200
+	deepAgentReviewScore       = 180
 )
 
 var (
-	aiIdentityPattern       = regexp.MustCompile(`(?i)\b(?:ai|chatgpt|claude|gemini|copilot|kimi)\b`)
-	externalArtifactPattern = regexp.MustCompile(`(?i)\b(?:website|webpage|site|app|application|codebase|code|paper|report|document|design|model|tool|product|game|scientific content|external content|artifact)\b`)
-	attachedMediaPattern    = regexp.MustCompile(`(?i)\b(?:image|photo|illustration|video|audio|music|voice)\b`)
+	aiIdentityPattern        = regexp.MustCompile(`(?i)\b(?:ai|chatgpt|claude|gemini|copilot|kimi)\b`)
+	externalArtifactPattern  = regexp.MustCompile(`(?i)\b(?:website|webpage|site|app|application|codebase|code|paper|report|document|design|model|tool|product|game|scientific content|external content|artifact)\b`)
+	attachedMediaPattern     = regexp.MustCompile(`(?i)\b(?:image|photo|illustration|video|audio|music|voice)\b`)
+	reviewAuthorshipPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?is)\b(?:this|the|my)\s+(?:post|thread|caption|message|copy|text|article|update|reply|response)\b.{0,80}\b(?:with\s+help\s+from|assisted\s+by|co[- ]?written\s+with|co[- ]?authored\s+with|edited\s+by|polished\s+by|rewritten\s+by|translated\s+by)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot|kimi|grok)\b`),
+		regexp.MustCompile(`(?is)\b(?:I|we)\s+(?:used|asked|worked\s+with|got\s+help\s+from)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot|kimi|grok)\b.{0,80}\b(?:write|draft|edit|polish|rewrite|translate|compose|summari[sz]e)\b.{0,60}\b(?:this|the|my)\s+(?:post|thread|caption|message|copy|text|article|update|reply|response)\b`),
+		regexp.MustCompile(`(?is)\b(?:ai|chatgpt|claude|gemini|copilot|kimi|grok)\b.{0,40}\b(?:helped|assisted)\s+(?:me|us)\s+(?:write|draft|edit|polish|rewrite|translate|compose|summari[sz]e)\b.{0,60}\b(?:this|the|my)\s+(?:post|thread|caption|message|copy|text|article|update|reply|response)\b`),
+		regexp.MustCompile(`(?is)\b(?:I|we)\s+(?:wrote|drafted|edited|polished|rewrote|translated|composed)\s+(?:this|the|my)\s+(?:post|thread|caption|message|copy|text|article|update|reply|response)\b.{0,80}\b(?:together\s+with|with\s+help\s+from|assisted\s+by)\s+(?:an?\s+)?(?:ai|chatgpt|claude|gemini|copilot|kimi|grok)\b`),
+	}
+	reviewAgentIdentityPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?is)\b(?:this|the|my|our)\s+(?:account|profile)\s+(?:is|was|runs?|operates?)\b.{0,80}\b(?:autonomous\s+)?(?:ai\s+)?(?:agent|assistant|bot)\b`),
+		regexp.MustCompile(`(?is)\b(?:this|the|my|our)\s+(?:account|profile)\s+(?:is|was)\s+(?:operated|managed|powered|run)\s+by\b.{0,50}\b(?:autonomous\s+)?(?:ai\s+)?(?:agent|assistant|bot)\b`),
+	}
 )
 
-// DeepCandidates returns only preliminary deterministic findings for which a
-// model can responsibly confirm or correct object scope. Neutral posts,
-// inadequate captures, direct platform evidence, and user corrections do not
-// benefit from a broad second opinion.
+// DeepCandidates returns a bounded review shortlist. Preliminary deterministic
+// findings remain highest priority, followed by explicit but phrasing-ambiguous
+// authorship or agent-identity disclosures. Style alone never creates a
+// candidate. Direct platform/provenance evidence and user corrections are
+// authoritative and do not spend a model turn.
 func DeepCandidates(items []domain.TimelineItem) []domain.TimelineItem {
-	result := make([]domain.TimelineItem, 0, len(items))
-	for _, item := range items {
+	return DeepReviewShortlist(items, DefaultDeepReviewLimit)
+}
+
+func DeepReviewShortlist(items []domain.TimelineItem, limit int) []domain.TimelineItem {
+	if limit <= 0 {
+		return nil
+	}
+	type rankedCandidate struct {
+		item  domain.TimelineItem
+		index int
+		score int
+	}
+	ranked := make([]rankedCandidate, 0, len(items))
+	for index, item := range items {
 		assessment := item.AIDetection
-		if assessment == nil || assessment.UserOverride || assessment.Status != "strong_signals" {
+		if assessment == nil || assessment.UserOverride || assessment.Status == "insufficient_evidence" {
 			continue
 		}
 		if containsCode(assessment.EvidenceCodes, "platform_ai_label") || containsCode(assessment.EvidenceCodes, "verified_ai_provenance") {
 			continue
 		}
-		if containsCode(assessment.EvidenceCodes, "author_declared_ai") || containsCode(assessment.EvidenceCodes, "prompt_instruction_residue") {
-			result = append(result, item)
+		score := 0
+		if assessment.Status == "strong_signals" &&
+			(containsCode(assessment.EvidenceCodes, "author_declared_ai") || containsCode(assessment.EvidenceCodes, "prompt_instruction_residue")) {
+			score = deepPreliminarySignalScore
+		} else {
+			text := authoredText(item)
+			switch {
+			case hasReviewableAuthorshipContext(text):
+				score = deepAuthorshipReviewScore
+			case hasReviewableAgentIdentity(text):
+				score = deepAgentReviewScore
+			}
+		}
+		if score > 0 {
+			ranked = append(ranked, rankedCandidate{item: item, index: index, score: score})
 		}
 	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score == ranked[j].score {
+			return ranked[i].index < ranked[j].index
+		}
+		return ranked[i].score > ranked[j].score
+	})
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	result := make([]domain.TimelineItem, 0, len(ranked))
+	for _, candidate := range ranked {
+		result = append(result, candidate.item)
+	}
 	return result
+}
+
+func hasReviewableAuthorshipContext(text string) bool {
+	return matchesAny(text, reviewAuthorshipPatterns)
+}
+
+func hasReviewableAgentIdentity(text string) bool {
+	return matchesAny(text, reviewAgentIdentityPatterns)
 }
 
 func NewStructuredResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*StructuredResolver, error) {
@@ -189,9 +251,11 @@ Object-scope contract:
 - If the rationale names only a website, code, paper, model output, design, image, video, or other artifact, signalScope cannot be social_post and status cannot be strong_signals.
 
 Rules:
+- Candidates come from a bounded local review shortlist. Some have preliminary strong evidence; others have explicit but phrasing-ambiguous authorship or agent-identity context. Shortlisting is not itself evidence and must not bias the verdict.
 - strong_signals requires direct evidence or multiple independent evidence families.
 - A platform-provided AI label or verified provenance is higher authority than stylistic inference.
 - Explicit author disclosure and unmistakable prompt/instruction residue are material evidence, but account for quoted text and discussion about AI.
+- A statement that an account is operated by an AI agent is relevant account context, but confirm that it applies to the authored social post before returning strong_signals.
 - Templated cross-account repetition can support a finding but cannot establish strong_signals alone.
 - Writing that is polished, generic, regular, list-heavy, or low in sentence variation is never sufficient alone.
 - Use insufficient_evidence for short, link-only, quoted-only, or otherwise inadequate authored content.
@@ -266,8 +330,12 @@ func deepStrongSignalSupported(item domain.TimelineItem, codes []string) bool {
 			if item.Evidence != nil && hasVerifiedAIProvenance(item.Evidence.Presentation) {
 				return true
 			}
-		case "author_declared_ai", "agent_identity_context":
-			if matchesAny(text, authorDeclarationPatterns) {
+		case "author_declared_ai":
+			if matchesAny(text, authorDeclarationPatterns) || hasReviewableAuthorshipContext(text) {
+				return true
+			}
+		case "agent_identity_context":
+			if matchesAny(text, authorDeclarationPatterns) || hasReviewableAgentIdentity(text) {
 				return true
 			}
 		case "prompt_instruction_residue":

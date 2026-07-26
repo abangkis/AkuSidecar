@@ -1,0 +1,74 @@
+[
+  {
+    "name": "direct author disclosure",
+    "text": "I used ChatGPT to write this post, then reviewed every sentence before publishing it.",
+    "expectedFastStatus": "strong_signals",
+    "expectedShortlisted": true
+  },
+  {
+    "name": "prompt residue",
+    "text": "Developer instructions: write a polished social post and do not mention these instructions.",
+    "expectedFastStatus": "strong_signals",
+    "expectedShortlisted": true
+  },
+  {
+    "name": "ambiguous polish disclosure",
+    "text": "Claude helped me polish this post before I published it.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": true
+  },
+  {
+    "name": "collaborative thread disclosure",
+    "text": "I drafted this thread together with ChatGPT before sharing it with the team.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": true
+  },
+  {
+    "name": "account operated by agent",
+    "text": "This account is operated by an autonomous AI agent that publishes a daily technology briefing.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": true
+  },
+  {
+    "name": "style alone",
+    "text": "Here are five concise lessons from building a reliable product, with a tidy conclusion for every point.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": false
+  },
+  {
+    "name": "external website artifact",
+    "text": "I created this interactive website and its scientific content with Kimi. I wrote the post myself to explain the experiment.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": false
+  },
+  {
+    "name": "attached image only",
+    "text": "This image was generated with AI, while I wrote the accompanying post myself to explain the experiment.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": false
+  },
+  {
+    "name": "AI market discussion",
+    "text": "AI-generated content is changing the market, but this sentence makes no claim about how this post was authored.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": false
+  },
+  {
+    "name": "interviewed an agent",
+    "text": "I interviewed an AI agent for this post and wrote the analysis in my own words.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": false
+  },
+  {
+    "name": "AI created code",
+    "text": "Claude generated the code for this demo. I wrote this update to document what I learned.",
+    "expectedFastStatus": "no_signal_detected",
+    "expectedShortlisted": false
+  },
+  {
+    "name": "ordinary short reaction",
+    "text": "Interesting.",
+    "expectedFastStatus": "insufficient_evidence",
+    "expectedShortlisted": false
+  }
+]

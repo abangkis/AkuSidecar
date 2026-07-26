@@ -78,15 +78,30 @@ func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
 
 func TestDeepCandidatesSpendModelEffortOnlyWhereReviewCanHelp(t *testing.T) {
 	items := []domain.TimelineItem{
-		{ID: "ordinary", AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
+		{ID: "ordinary", Evidence: &domain.Block{Text: "A normal product update written without any origin disclosure."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
 		{ID: "preliminary", AIDetection: &domain.TimelineAIDetection{Status: "strong_signals", EvidenceCodes: []string{"author_declared_ai"}}},
+		{ID: "review-authorship", Evidence: &domain.Block{Text: "Claude helped me polish this post before I published it."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
+		{ID: "review-agent", Evidence: &domain.Block{Text: "This account is operated by an autonomous AI agent that publishes a daily briefing."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
 		{ID: "short", AIDetection: &domain.TimelineAIDetection{Status: "insufficient_evidence"}},
 		{ID: "platform", AIDetection: &domain.TimelineAIDetection{Status: "strong_signals", EvidenceCodes: []string{"platform_ai_label"}}},
-		{ID: "corrected", AIDetection: &domain.TimelineAIDetection{Status: "user_marked_not_ai", UserOverride: true}},
+		{ID: "corrected", Evidence: &domain.Block{Text: "Claude helped me polish this post before I published it."}, AIDetection: &domain.TimelineAIDetection{Status: "user_marked_not_ai", UserOverride: true}},
 	}
 	result := DeepCandidates(items)
-	if len(result) != 1 || result[0].ID != "preliminary" {
+	if len(result) != 3 || result[0].ID != "preliminary" || result[1].ID != "review-authorship" || result[2].ID != "review-agent" {
 		t.Fatalf("deep candidates=%+v", result)
+	}
+}
+
+func TestDeepReviewShortlistIsBoundedAndPrioritizesPreliminarySignals(t *testing.T) {
+	items := []domain.TimelineItem{
+		{ID: "review-1", Evidence: &domain.Block{Text: "Claude helped me polish this post before I published it."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
+		{ID: "review-2", Evidence: &domain.Block{Text: "I drafted this thread together with ChatGPT before sharing it."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
+		{ID: "preliminary", AIDetection: &domain.TimelineAIDetection{Status: "strong_signals", EvidenceCodes: []string{"prompt_instruction_residue"}}},
+		{ID: "review-3", Evidence: &domain.Block{Text: "This profile is powered by an AI assistant that publishes release summaries."}, AIDetection: &domain.TimelineAIDetection{Status: "no_signal_detected"}},
+	}
+	result := DeepReviewShortlist(items, 2)
+	if len(result) != 2 || result[0].ID != "preliminary" || result[1].ID != "review-1" {
+		t.Fatalf("bounded deep shortlist=%+v", result)
 	}
 }
 
@@ -140,6 +155,32 @@ func TestDeepResolverKeepsVerifiablePostAuthorshipDisclosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Assessments[0].Status != "strong_signals" || result.Assessments[0].SignalScope != "social_post" {
+		t.Fatalf("assessment=%+v", result.Assessments[0])
+	}
+}
+
+func TestDeepResolverCanConfirmReviewShortlistAuthorshipContext(t *testing.T) {
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"medium","evidenceCodes":["author_declared_ai"],"assessedObject":"social_post","signalScope":"social_post","rationale":"The author says Claude helped polish this post."}]}`}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	item := domain.TimelineItem{ID: "timeline", SessionID: "session", Evidence: &domain.Block{Text: "Claude helped me polish this post before I published it."}}
+	result, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Assessments[0].Status != "strong_signals" || result.Assessments[0].SignalScope != "social_post" {
+		t.Fatalf("assessment=%+v", result.Assessments[0])
+	}
+}
+
+func TestDeepResolverStillRejectsStyleOnlyStrongClaim(t *testing.T) {
+	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"strong_signals","confidenceBand":"high","evidenceCodes":["stylometric_pattern"],"assessedObject":"social_post","signalScope":"social_post","rationale":"The prose is highly regular."}]}`}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: map[string]any{}}
+	item := domain.TimelineItem{ID: "timeline", SessionID: "session", Evidence: &domain.Block{Text: "Five carefully structured lessons follow, each with a concise heading and conclusion."}}
+	result, _, _, err := resolver.Resolve(context.Background(), []domain.TimelineItem{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Assessments[0].Status != "no_signal_detected" || result.Assessments[0].SignalScope != "none" {
 		t.Fatalf("assessment=%+v", result.Assessments[0])
 	}
 }
