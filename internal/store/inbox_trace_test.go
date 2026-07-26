@@ -48,7 +48,18 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 		Source:     run.Source,
 		CapturedAt: domain.Now(),
 		Snapshots: []domain.Snapshot{
-			{Blocks: blocks},
+			{
+				SelectorStrategy: "div[aria-posinset]",
+				CandidateDiagnostics: &domain.CandidateDiagnostics{
+					StructuralCandidates:      6,
+					EligibleCandidates:        4,
+					VisibleEligibleCandidates: 3,
+					ActionAnchoredCandidates:  2,
+					AdmittedReasons:           map[string]int{"post_action_cluster": 4},
+					RejectedReasons:           map[string]int{"no_stable_post_identity": 2},
+				},
+				Blocks: blocks,
+			},
 			{Blocks: []domain.Block{{EvidenceKey: keys[3], Author: "Author 4", Text: "Captured candidate 4, repeated snapshot"}}},
 		},
 		Coverage: map[string]any{"status": "complete"},
@@ -131,6 +142,12 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 	}
 	if inbox[0].Runs[0].AddedItems != 1 {
 		t.Fatalf("run additions must exclude semantic duplicate reports: %+v", inbox[0].Runs[0])
+	}
+	diagnostics := inbox[0].Runs[0].CandidateDiagnostics
+	if len(diagnostics) != 1 || diagnostics[0].Round != 1 || diagnostics[0].Snapshot != 1 ||
+		diagnostics[0].StructuralCandidates != 6 || diagnostics[0].EligibleCandidates != 4 ||
+		diagnostics[0].RejectedReasons["no_stable_post_identity"] != 2 {
+		t.Fatalf("candidate diagnostics=%+v", diagnostics)
 	}
 }
 

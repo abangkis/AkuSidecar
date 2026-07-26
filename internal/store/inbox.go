@@ -211,16 +211,33 @@ func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBa
 }
 
 func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, error) {
-	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}, CaptureSurface: []domain.CaptureSurfaceEvent{}}
+	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}, CaptureSurface: []domain.CaptureSurfaceEvent{}, CandidateDiagnostics: []domain.InboxCandidateSnapshot{}}
 	observations, err := s.Observations(ctx, run.ID)
 	if err != nil {
 		return domain.InboxRun{}, err
 	}
 	allSnapshots := make([]domain.Snapshot, 0)
 	entry.AcquisitionRounds = len(observations)
-	for _, observation := range observations {
+	for roundIndex, observation := range observations {
 		entry.SnapshotCount += len(observation.Snapshots)
 		entry.PerformedScrolls += integerValue(observation.Coverage["performedScrolls"])
+		for snapshotIndex, snapshot := range observation.Snapshots {
+			if snapshot.CandidateDiagnostics == nil {
+				continue
+			}
+			diagnostics := snapshot.CandidateDiagnostics
+			entry.CandidateDiagnostics = append(entry.CandidateDiagnostics, domain.InboxCandidateSnapshot{
+				Round:                     roundIndex + 1,
+				Snapshot:                  snapshotIndex + 1,
+				Strategy:                  snapshot.SelectorStrategy,
+				StructuralCandidates:      diagnostics.StructuralCandidates,
+				EligibleCandidates:        diagnostics.EligibleCandidates,
+				VisibleEligibleCandidates: diagnostics.VisibleEligibleCandidates,
+				ActionAnchoredCandidates:  diagnostics.ActionAnchoredCandidates,
+				AdmittedReasons:           cloneStringIntMap(diagnostics.AdmittedReasons),
+				RejectedReasons:           cloneStringIntMap(diagnostics.RejectedReasons),
+			})
+		}
 		allSnapshots = append(allSnapshots, observation.Snapshots...)
 	}
 	evidence := map[string]bool{}
@@ -293,6 +310,17 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		return domain.InboxRun{}, err
 	}
 	return entry, nil
+}
+
+func cloneStringIntMap(value map[string]int) map[string]int {
+	if value == nil {
+		return map[string]int{}
+	}
+	result := make(map[string]int, len(value))
+	for key, count := range value {
+		result[key] = count
+	}
+	return result
 }
 
 func integerValue(value any) int {

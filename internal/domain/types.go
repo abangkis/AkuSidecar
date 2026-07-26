@@ -625,28 +625,41 @@ type TimelineBatchSummary struct {
 }
 
 type InboxRun struct {
-	ID                  string                `json:"id"`
-	Source              Source                `json:"source"`
-	Status              string                `json:"status"`
-	Stage               string                `json:"stage"`
-	StartedAt           *string               `json:"startedAt"`
-	CompletedAt         *string               `json:"completedAt"`
-	Summary             string                `json:"summary"`
-	CapturedCandidates  int                   `json:"capturedCandidates"`
-	EvaluatedCandidates int                   `json:"evaluatedCandidates"`
-	SelectedCandidates  int                   `json:"selectedCandidates"`
-	AddedItems          int                   `json:"addedItems"`
-	AcquisitionRounds   int                   `json:"acquisitionRounds"`
-	SnapshotCount       int                   `json:"snapshotCount"`
-	PerformedScrolls    int                   `json:"performedScrolls"`
-	ReasoningDurationMS int64                 `json:"reasoningDurationMs"`
-	TotalDurationMS     int64                 `json:"totalDurationMs"`
-	StageDurationsMS    map[string]int64      `json:"stageDurationsMs"`
-	ResurfacedItems     int                   `json:"resurfacedItems"`
-	SkippedResurfaces   int                   `json:"skippedResurfaces"`
-	Error               *Failure              `json:"error"`
-	FollowUpFallback    *Failure              `json:"followUpFallback,omitempty"`
-	CaptureSurface      []CaptureSurfaceEvent `json:"captureSurface"`
+	ID                   string                   `json:"id"`
+	Source               Source                   `json:"source"`
+	Status               string                   `json:"status"`
+	Stage                string                   `json:"stage"`
+	StartedAt            *string                  `json:"startedAt"`
+	CompletedAt          *string                  `json:"completedAt"`
+	Summary              string                   `json:"summary"`
+	CapturedCandidates   int                      `json:"capturedCandidates"`
+	EvaluatedCandidates  int                      `json:"evaluatedCandidates"`
+	SelectedCandidates   int                      `json:"selectedCandidates"`
+	AddedItems           int                      `json:"addedItems"`
+	AcquisitionRounds    int                      `json:"acquisitionRounds"`
+	SnapshotCount        int                      `json:"snapshotCount"`
+	PerformedScrolls     int                      `json:"performedScrolls"`
+	ReasoningDurationMS  int64                    `json:"reasoningDurationMs"`
+	TotalDurationMS      int64                    `json:"totalDurationMs"`
+	StageDurationsMS     map[string]int64         `json:"stageDurationsMs"`
+	ResurfacedItems      int                      `json:"resurfacedItems"`
+	SkippedResurfaces    int                      `json:"skippedResurfaces"`
+	Error                *Failure                 `json:"error"`
+	FollowUpFallback     *Failure                 `json:"followUpFallback,omitempty"`
+	CaptureSurface       []CaptureSurfaceEvent    `json:"captureSurface"`
+	CandidateDiagnostics []InboxCandidateSnapshot `json:"candidateDiagnostics"`
+}
+
+type InboxCandidateSnapshot struct {
+	Round                     int            `json:"round"`
+	Snapshot                  int            `json:"snapshot"`
+	Strategy                  string         `json:"strategy"`
+	StructuralCandidates      int            `json:"structuralCandidates"`
+	EligibleCandidates        int            `json:"eligibleCandidates"`
+	VisibleEligibleCandidates int            `json:"visibleEligibleCandidates"`
+	ActionAnchoredCandidates  int            `json:"actionAnchoredCandidates"`
+	AdmittedReasons           map[string]int `json:"admittedReasons"`
+	RejectedReasons           map[string]int `json:"rejectedReasons"`
 }
 
 type CaptureSurfaceEvent struct {
@@ -852,19 +865,29 @@ type Observation struct {
 }
 
 type Snapshot struct {
-	Index                    int              `json:"index"`
-	AdapterVersion           string           `json:"adapterVersion"`
-	SelectorStrategy         string           `json:"selectorStrategy"`
-	SelectorCounts           map[string]int   `json:"selectorCounts"`
-	SelectorCandidateCount   int              `json:"selectorCandidateCount"`
-	StructuralCandidateCount int              `json:"structuralCandidateCount"`
-	VisibleContainerCount    int              `json:"visibleContainerCount"`
-	CapturedAt               string           `json:"capturedAt"`
-	ScrollY                  int64            `json:"scrollY"`
-	ViewportHeight           int64            `json:"viewportHeight"`
-	NewCandidateCount        int              `json:"newCandidateCount"`
-	Blocks                   []Block          `json:"blocks"`
-	QualityReports           []map[string]any `json:"qualityReports"`
+	Index                    int                   `json:"index"`
+	AdapterVersion           string                `json:"adapterVersion"`
+	SelectorStrategy         string                `json:"selectorStrategy"`
+	SelectorCounts           map[string]int        `json:"selectorCounts"`
+	SelectorCandidateCount   int                   `json:"selectorCandidateCount"`
+	StructuralCandidateCount int                   `json:"structuralCandidateCount"`
+	VisibleContainerCount    int                   `json:"visibleContainerCount"`
+	CandidateDiagnostics     *CandidateDiagnostics `json:"candidateDiagnostics,omitempty"`
+	CapturedAt               string                `json:"capturedAt"`
+	ScrollY                  int64                 `json:"scrollY"`
+	ViewportHeight           int64                 `json:"viewportHeight"`
+	NewCandidateCount        int                   `json:"newCandidateCount"`
+	Blocks                   []Block               `json:"blocks"`
+	QualityReports           []map[string]any      `json:"qualityReports"`
+}
+
+type CandidateDiagnostics struct {
+	StructuralCandidates      int            `json:"structuralCandidates"`
+	EligibleCandidates        int            `json:"eligibleCandidates"`
+	VisibleEligibleCandidates int            `json:"visibleEligibleCandidates"`
+	ActionAnchoredCandidates  int            `json:"actionAnchoredCandidates"`
+	AdmittedReasons           map[string]int `json:"admittedReasons"`
+	RejectedReasons           map[string]int `json:"rejectedReasons"`
 }
 
 type Attachment struct {

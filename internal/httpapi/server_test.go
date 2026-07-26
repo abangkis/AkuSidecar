@@ -442,8 +442,8 @@ func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {
 
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"model-usage-view", "model-usage-window", "model-usage-back"},
-		"web/app.js":     {"function buildSessionModelUsage", "function buildModelUsageHelp", "function modelUsageCategoryProfile", "Mixed models", "Configured model pending", "function loadAggregateModelUsage", "Input already includes cached input", "/api/model-usage?windowDays="},
-		"web/styles.css": {".model-usage-help-button", ".model-usage-totals", ".model-usage-category"},
+		"web/app.js":     {"function buildSessionModelUsage", "function buildModelUsageHelp", "function modelUsageCategoryProfile", "Mixed models", "Configured model pending", "function loadAggregateModelUsage", "Input already includes cached input", "/api/model-usage?windowDays=", "function buildCaptureCandidateTelemetry", "Capture candidates", "Counts are per snapshot observations"},
+		"web/styles.css": {".model-usage-help-button", ".model-usage-totals", ".model-usage-category", ".capture-candidate-telemetry", ".capture-candidate-snapshots"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -581,12 +581,13 @@ func TestStopClosesActiveHTTPConnectionsAfterDrainDeadline(t *testing.T) {
 	}
 }
 
-func TestBridgeV77ObservationShapeDecodesStrictly(t *testing.T) {
+func TestBridgeV82ObservationShapeDecodesStrictly(t *testing.T) {
 	raw := `{
 		"source":"x","pageUrl":"https://x.com/home","pageTitle":"Home","capturedAt":"2026-07-15T00:00:00Z",
 		"snapshots":[{
 			"index":0,"adapterVersion":"x-dom-v21","selectorStrategy":"article","selectorCounts":{"article":1},
 			"selectorCandidateCount":1,"structuralCandidateCount":1,"visibleContainerCount":1,"capturedAt":"2026-07-15T00:00:00Z",
+			"candidateDiagnostics":{"structuralCandidates":3,"eligibleCandidates":2,"visibleEligibleCandidates":1,"actionAnchoredCandidates":1,"admittedReasons":{"post_action_cluster":2},"rejectedReasons":{"no_stable_post_identity":1}},
 			"scrollY":0,"viewportHeight":900,"newCandidateCount":1,
 			"blocks":[{
 				"text":"Material source update","author":"author","avatarUrl":null,"publishedAt":null,
@@ -600,9 +601,12 @@ func TestBridgeV77ObservationShapeDecodesStrictly(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	var observation domain.Observation
 	if err := readJSON(request, &observation); err != nil {
-		t.Fatalf("v77 observation must satisfy the strict Go shape: %v", err)
+		t.Fatalf("v82 observation must satisfy the strict Go shape: %v", err)
 	}
-	if observation.Snapshots[0].StructuralCandidateCount != 1 || observation.Snapshots[0].Blocks[0].PlatformID != "1" {
+	if observation.Snapshots[0].StructuralCandidateCount != 1 ||
+		observation.Snapshots[0].CandidateDiagnostics == nil ||
+		observation.Snapshots[0].CandidateDiagnostics.RejectedReasons["no_stable_post_identity"] != 1 ||
+		observation.Snapshots[0].Blocks[0].PlatformID != "1" {
 		t.Fatalf("observation=%+v", observation)
 	}
 }

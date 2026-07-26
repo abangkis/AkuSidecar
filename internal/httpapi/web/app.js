@@ -2337,6 +2337,9 @@ function buildInboxRun(run, sessionStatus = "") {
     summary.textContent = run.summary;
     card.append(summary);
   }
+  if (run.candidateDiagnostics?.length) {
+    card.append(buildCaptureCandidateTelemetry(run.candidateDiagnostics));
+  }
   if (run.captureSurface?.length) {
     card.append(buildCaptureSurfaceTelemetry(run.captureSurface));
   }
@@ -2346,6 +2349,51 @@ function buildInboxRun(run, sessionStatus = "") {
     }
   }));
   return card;
+}
+
+function buildCaptureCandidateTelemetry(snapshots) {
+  const details = document.createElement("details");
+  details.className = "capture-candidate-telemetry";
+  const summary = document.createElement("summary");
+  const title = document.createElement("strong");
+  title.textContent = "Capture candidates";
+  const rollup = document.createElement("span");
+  const maximum = (field) => Math.max(0, ...snapshots.map((snapshot) => Number(snapshot[field]) || 0));
+  rollup.textContent = [
+    `${snapshots.length} observed snapshot${snapshots.length === 1 ? "" : "s"}`,
+    `max ${maximum("structuralCandidates")} structural`,
+    `max ${maximum("eligibleCandidates")} eligible`,
+    `max ${maximum("visibleEligibleCandidates")} visible`,
+  ].join(" \u00b7 ");
+  summary.append(title, rollup);
+
+  const list = document.createElement("ol");
+  list.className = "capture-candidate-snapshots";
+  const formatReasons = (reasons) => Object.entries(reasons || {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([reason, count]) => `${humanize(reason)} ${count}`)
+    .join(", ");
+  for (const snapshot of snapshots) {
+    const row = document.createElement("li");
+    const heading = document.createElement("strong");
+    heading.textContent = `Round ${snapshot.round} \u00b7 Snapshot ${snapshot.snapshot}`;
+    const counts = document.createElement("span");
+    counts.textContent = `${snapshot.structuralCandidates ?? 0} structural \u2192 ${snapshot.eligibleCandidates ?? 0} eligible \u2192 ${snapshot.visibleEligibleCandidates ?? 0} visible`;
+    const context = document.createElement("small");
+    context.textContent = [
+      snapshot.strategy ? humanize(snapshot.strategy) : null,
+      snapshot.actionAnchoredCandidates ? `${snapshot.actionAnchoredCandidates} action anchored` : null,
+      formatReasons(snapshot.admittedReasons) ? `admitted: ${formatReasons(snapshot.admittedReasons)}` : null,
+      formatReasons(snapshot.rejectedReasons) ? `rejected: ${formatReasons(snapshot.rejectedReasons)}` : null,
+    ].filter(Boolean).join(" \u00b7 ");
+    row.append(heading, counts, context);
+    list.append(row);
+  }
+  const note = document.createElement("p");
+  note.className = "capture-candidate-note";
+  note.textContent = "Counts are per snapshot observations; repeated DOM candidates are not unique posts.";
+  details.append(summary, list, note);
+  return details;
 }
 
 function buildCaptureSurfaceTelemetry(events) {
