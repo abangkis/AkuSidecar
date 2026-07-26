@@ -931,6 +931,58 @@ func TestCalibrationSnapshotReflectsAnyReadyPreferenceAuthority(t *testing.T) {
 	}
 }
 
+func TestPreferenceProjectionRejectsStaleMetadataAndPersistsValidatedEnvelope(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := testEngine(t)
+	forged := preferenceProjection{
+		AlgorithmVersion: preferenceAlgorithmVersion,
+		SourceWatermark:  "stale",
+		SourceDigest:     "stale",
+		FittedAt:         domain.Now(),
+		Profile:          preference.Profile{AuthorityReady: true},
+	}
+	if err := state.SavePreferenceModel(ctx, forged, 0); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := runtime.preferenceProfile(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.AuthorityReady {
+		t.Fatal("stale projection metadata was treated as authoritative")
+	}
+	if _, err := runtime.preferenceProfile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	var stored preferenceProjection
+	found, err := state.LoadPreferenceModel(ctx, &stored)
+	if err != nil || !found {
+		t.Fatalf("stored projection found=%v err=%v", found, err)
+	}
+	_, digest, err := preferenceSignalSignature(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.AlgorithmVersion != preferenceAlgorithmVersion ||
+		stored.SourceWatermark != "" ||
+		stored.SourceDigest != digest ||
+		stored.EffectiveSignalCount != 0 ||
+		stored.FittedAt == "" {
+		t.Fatalf("stored projection metadata=%+v", stored)
+	}
+	stored.Profile.AuthorityReady = true
+	if err := state.SavePreferenceModel(ctx, stored, 0); err != nil {
+		t.Fatal(err)
+	}
+	profile, err = runtime.preferenceProfile(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !profile.AuthorityReady {
+		t.Fatal("projection with matching validation metadata was not reused")
+	}
+}
+
 func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)

@@ -397,6 +397,21 @@ CREATE TABLE IF NOT EXISTS preference_model (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS preference_learning_ledger (
+  event_id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  evidence_key TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('more','neutral','less')),
+  reason TEXT,
+  origin TEXT NOT NULL CHECK (origin IN ('routine','calibration','selection_correction')),
+  created_at TEXT NOT NULL,
+  assessment_json TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1))
+);
+
+CREATE INDEX IF NOT EXISTS preference_learning_effective
+  ON preference_learning_ledger(active,source,evidence_key,created_at);
+
 CREATE TABLE IF NOT EXISTS knowledge_events (
   id TEXT PRIMARY KEY,
   source TEXT NOT NULL REFERENCES source_definitions(id),

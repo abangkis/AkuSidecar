@@ -2,14 +2,28 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/preference"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 const calibrationMaxItemsPerSource = 5
+const preferenceAlgorithmVersion = "preference-fit-v1"
+
+type preferenceProjection struct {
+	AlgorithmVersion     string             `json:"algorithmVersion"`
+	SourceWatermark      string             `json:"sourceWatermark"`
+	SourceDigest         string             `json:"sourceDigest"`
+	EffectiveSignalCount int                `json:"effectiveSignalCount"`
+	FittedAt             string             `json:"fittedAt"`
+	Profile              preference.Profile `json:"profile"`
+}
 
 var ErrCalibrationRequiresValidatedCandidate = errors.New("calibration requires at least one validated candidate")
 
@@ -231,6 +245,20 @@ func (e *Engine) preferenceProfile(ctx context.Context, persist bool) (preferenc
 	if err != nil {
 		return preference.Profile{}, err
 	}
+	watermark, digest, err := preferenceSignalSignature(signals)
+	if err != nil {
+		return preference.Profile{}, err
+	}
+	var cached preferenceProjection
+	if found, loadErr := e.store.LoadPreferenceModel(ctx, &cached); loadErr != nil {
+		return preference.Profile{}, loadErr
+	} else if found &&
+		cached.AlgorithmVersion == preferenceAlgorithmVersion &&
+		cached.SourceWatermark == watermark &&
+		cached.SourceDigest == digest &&
+		cached.EffectiveSignalCount == len(signals) {
+		return cached.Profile, nil
+	}
 	converted := make([]preference.Signal, 0, len(signals))
 	for _, signal := range signals {
 		converted = append(converted, preference.Signal{
@@ -241,9 +269,46 @@ func (e *Engine) preferenceProfile(ctx context.Context, persist bool) (preferenc
 	}
 	profile := preference.Fit(converted)
 	if persist {
-		if err := e.store.SavePreferenceModel(ctx, profile, len(signals)); err != nil {
+		projection := preferenceProjection{
+			AlgorithmVersion: preferenceAlgorithmVersion, SourceWatermark: watermark,
+			SourceDigest: digest, EffectiveSignalCount: len(signals),
+			FittedAt: domain.Now(), Profile: profile,
+		}
+		if err := e.store.SavePreferenceModel(ctx, projection, len(signals)); err != nil {
 			return preference.Profile{}, err
 		}
 	}
 	return profile, nil
+}
+
+func preferenceSignalSignature(signals []store.PreferenceSignal) (string, string, error) {
+	type signatureSignal struct {
+		EventID     string                     `json:"eventId"`
+		Source      domain.Source              `json:"source"`
+		EvidenceKey string                     `json:"evidenceKey"`
+		CreatedAt   string                     `json:"createdAt"`
+		Direction   string                     `json:"direction"`
+		Reason      *string                    `json:"reason,omitempty"`
+		Origin      string                     `json:"origin"`
+		Assessment  domain.CandidateAssessment `json:"assessment"`
+	}
+	values := make([]signatureSignal, 0, len(signals))
+	watermark := ""
+	for _, signal := range signals {
+		values = append(values, signatureSignal{
+			EventID: signal.EventID, Source: signal.Source, EvidenceKey: signal.EvidenceKey,
+			CreatedAt: signal.CreatedAt, Direction: signal.Direction, Reason: signal.Reason,
+			Origin: signal.Origin, Assessment: signal.Assessment,
+		})
+		marker := signal.CreatedAt + "|" + signal.EventID
+		if marker > watermark {
+			watermark = marker
+		}
+	}
+	raw, err := json.Marshal(values)
+	if err != nil {
+		return "", "", err
+	}
+	sum := sha256.Sum256(raw)
+	return watermark, hex.EncodeToString(sum[:]), nil
 }

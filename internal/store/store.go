@@ -1359,66 +1359,6 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 	return input, err
 }
 
-type PreferenceSignal struct {
-	Direction  string
-	Reason     *string
-	Origin     string
-	Assessment domain.CandidateAssessment
-}
-
-func (s *Store) PreferenceSignals(ctx context.Context) ([]PreferenceSignal, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		WITH signals AS (
-		  SELECT f.run_id,f.evidence_key,a.source,f.direction,f.reason,'routine' AS origin,f.created_at,a.assessment_json
-		  FROM feedback_events f
-		  JOIN candidate_assessments a ON a.run_id=f.run_id AND a.evidence_key=f.evidence_key
-		  UNION ALL
-		  SELECT c.run_id,c.evidence_key,a.source,
-		    CASE label WHEN 'more_like_this' THEN 'more' WHEN 'less_like_this' THEN 'less' ELSE 'neutral' END,
-		    NULL,'calibration',c.labeled_at,a.assessment_json
-		  FROM calibration_samples c
-		  JOIN candidate_assessments a ON a.run_id=c.run_id AND a.evidence_key=c.evidence_key
-		  WHERE c.label IS NOT NULL
-		  UNION ALL
-		  SELECT c.run_id,c.evidence_key,a.source,'more',NULL,'selection_correction',c.created_at,a.assessment_json
-		  FROM selection_corrections c
-		  JOIN candidate_assessments a ON a.run_id=c.run_id AND a.evidence_key=c.evidence_key
-		  WHERE c.undone_at IS NULL
-		    AND c.created_at > COALESCE((SELECT value FROM meta WHERE key='preference_signal_reset_at'),'')
-		), ranked AS (
-		  SELECT signals.*,ROW_NUMBER() OVER (
-		    PARTITION BY source,evidence_key ORDER BY created_at DESC,
-		      CASE origin WHEN 'routine' THEN 3 WHEN 'selection_correction' THEN 2 ELSE 1 END DESC
-		  ) AS signal_rank
-		  FROM signals
-		)
-		SELECT ranked.direction,ranked.reason,ranked.origin,ranked.assessment_json
-		FROM ranked
-		WHERE ranked.signal_rank=1
-		ORDER BY ranked.created_at`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var signals []PreferenceSignal
-	for rows.Next() {
-		var signal PreferenceSignal
-		var reason sql.NullString
-		var raw string
-		if err := rows.Scan(&signal.Direction, &reason, &signal.Origin, &raw); err != nil {
-			return nil, err
-		}
-		if reason.Valid {
-			signal.Reason = &reason.String
-		}
-		if err := json.Unmarshal([]byte(raw), &signal.Assessment); err != nil {
-			return nil, err
-		}
-		signals = append(signals, signal)
-	}
-	return signals, rows.Err()
-}
-
 func (s *Store) CancelSession(ctx context.Context, id string) error {
 	now := domain.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -1492,6 +1432,7 @@ func (s *Store) ResetLearning(ctx context.Context) error {
 		DELETE FROM calibration_sessions;
 		DELETE FROM feedback_events;
 		DELETE FROM ai_feedback_events;
+		DELETE FROM preference_learning_ledger;
 		DELETE FROM preference_model;
 		DELETE FROM meta WHERE key='calibration_first_run_status';
 		INSERT INTO meta(key,value) VALUES('preference_signal_reset_at',?)
@@ -1528,7 +1469,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at');`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at');`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=NULL,last_attempt_at=NULL,last_success_at=NULL,last_error='' WHERE id=1`); err != nil {

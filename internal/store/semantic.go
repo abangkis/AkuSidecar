@@ -514,6 +514,9 @@ func (s *Store) cleanupOrphanSemanticEvents(ctx context.Context) error {
 func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) (domain.RetentionResult, error) {
 	cutoff := time.Now().UTC().AddDate(0, 0, -settings.KnowledgeRetentionDays).Format(time.RFC3339Nano)
 	result := domain.RetentionResult{LimitBytes: int64(settings.KnowledgeStorageLimitMB) * 1024 * 1024}
+	if err := s.syncPreferenceLearningLedger(ctx); err != nil {
+		return result, fmt.Errorf("preserve preference learning before retention: %w", err)
+	}
 	var eventsBefore int
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsBefore)
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_event_reports WHERE created_at<?`, cutoff); err != nil {

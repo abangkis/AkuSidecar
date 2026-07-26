@@ -92,7 +92,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "content_continuity", "content_continuity_occurrences", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -901,6 +901,62 @@ func TestPreferenceSignalsUseLatestCanonicalSourceEvidenceLabel(t *testing.T) {
 	}
 	if len(signals) != 1 || signals[0].Direction != "less" || signals[0].Reason == nil || *signals[0].Reason != reason {
 		t.Fatalf("signals=%+v", signals)
+	}
+}
+
+func TestPreferenceLearningSurvivesBulkyRunRetention(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	settings.KnowledgeRetentionDays = 30
+	evidence := "x:000000000000000000000551"
+	assessment := domain.CandidateAssessment{
+		EvidenceKey: evidence, TopicTags: []string{"durable taste"}, TopicFacets: []string{"product"},
+	}
+	assessmentRaw, _ := json.Marshal(assessment)
+	session, err := createVisibleUpdateSession(state, ctx, "Old but useful preference evidence", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runs[0]
+	old := "2025-01-01T00:00:00Z"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, run.ID, evidence, run.Source, string(assessmentRaw), .5, 0, .5, 1, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, "timeline-retained-taste", session.ID, run.ID, run.Source, evidence, 0, "{}", string(assessmentRaw), "{}", old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,created_at) VALUES(?,?,?,?,?,?,?)`, "feedback-retained-taste", "timeline-retained-taste", session.ID, run.ID, evidence, "more", old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at=? WHERE id=?`, old, session.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := state.EnforceRetention(ctx, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RemovedSessions != 1 {
+		t.Fatalf("removed sessions=%d", result.RemovedSessions)
+	}
+	var remainingRuns int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=?`, session.ID).Scan(&remainingRuns); err != nil {
+		t.Fatal(err)
+	}
+	if remainingRuns != 0 {
+		t.Fatal("bulky session was not trimmed")
+	}
+	signals, err := state.PreferenceSignals(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signals) != 1 || signals[0].EventID != "feedback-retained-taste" || signals[0].Direction != "more" {
+		t.Fatalf("retained preference signals=%+v", signals)
 	}
 }
 
