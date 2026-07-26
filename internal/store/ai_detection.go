@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -639,15 +640,21 @@ func applyPersonalAIPolicy(value *domain.TimelineAIDetection, policy *domain.Per
 		return value
 	}
 	copy := *policy
+	if copy.ReviewRequested && value != nil && value.Stage == "deep" && happenedAfter(value.LatestAssessedAt, copy.RequestedAt) {
+		copy.ReviewRequested = false
+	}
 	value.PersonalPolicy = &copy
 	value.CorrectionID = policy.FeedbackEventID
-	if policy.ReviewRequested {
+	if copy.ReviewRequested {
 		value.BadgeLabel = "AI review requested by you"
 		if value.Detail == "" {
 			value.Detail = "You marked this item as unsure. AkuBrowser will prioritize it for bounded Deep Detection without treating it as AI-generated."
 		} else {
 			value.Detail += " You marked this item as unsure, so it is prioritized for bounded Deep Detection."
 		}
+		return value
+	}
+	if policy.Verdict == "unsure" {
 		return value
 	}
 	value.UserOverride = true
@@ -780,10 +787,19 @@ func (s *Store) personalAIPolicies(ctx context.Context, items []domain.TimelineI
 			Applied: true, Source: map[bool]string{true: "account_rule", false: "exact_feedback"}[selected.TargetType == "account"],
 			Verdict: selected.Verdict, TargetType: selected.TargetType, SignalScope: selected.SignalScope,
 			Reason: selected.Reason, ReviewRequested: selected.Verdict == "unsure",
-			AccountRule: selected.TargetType == "account", FeedbackEventID: selected.ID,
+			AccountRule: selected.TargetType == "account", FeedbackEventID: selected.ID, RequestedAt: selected.CreatedAt,
 		}
 	}
 	return result, historyCounts, nil
+}
+
+func happenedAfter(value, boundary string) bool {
+	if value == "" || boundary == "" {
+		return false
+	}
+	valueTime, valueErr := time.Parse(time.RFC3339Nano, value)
+	boundaryTime, boundaryErr := time.Parse(time.RFC3339Nano, boundary)
+	return valueErr == nil && boundaryErr == nil && valueTime.After(boundaryTime)
 }
 
 func containsEvidence(values []string, target string) bool {

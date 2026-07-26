@@ -1119,6 +1119,7 @@ type PersonalAIPolicy struct {
 	ReviewRequested bool   `json:"reviewRequested"`
 	AccountRule     bool   `json:"accountRule"`
 	FeedbackEventID string `json:"feedbackEventId,omitempty"`
+	RequestedAt     string `json:"requestedAt,omitempty"`
 }
 
 type TimelineAIDetection struct {

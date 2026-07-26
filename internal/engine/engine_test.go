@@ -531,6 +531,88 @@ func TestAIDetectionSettingDisablesFastAndDeepPaths(t *testing.T) {
 	}
 }
 
+type feedbackDeepResolver struct {
+	called chan []domain.TimelineItem
+}
+
+func (r *feedbackDeepResolver) Name() string { return "feedback-deep-test" }
+func (r *feedbackDeepResolver) Model() config.ModelConfig {
+	return config.ModelConfig{Model: "feedback-deep-test", Effort: "high"}
+}
+func (r *feedbackDeepResolver) Resolve(_ context.Context, items []domain.TimelineItem) (domain.DeepAIResult, domain.ModelUsage, time.Duration, error) {
+	r.called <- items
+	assessments := make([]domain.DeepAIAssessment, len(items))
+	for index := range assessments {
+		assessments[index] = domain.DeepAIAssessment{
+			Status: "no_signal_detected", ConfidenceBand: "medium",
+			EvidenceCodes: []string{}, AssessedObject: "social_post", SignalScope: "social_post",
+			Rationale: "The bounded deep review did not find a strong AI-origin signal.",
+		}
+	}
+	return domain.DeepAIResult{Assessments: assessments}, domain.ModelUsage{}, 5 * time.Millisecond, nil
+}
+
+func TestUnsureAIFeedbackImmediatelyRunsAndClosesBoundedDeepReview(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
+	session, err := runtime.StartVisibleUpdate(ctx, "Create one retained item")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:ai-feedback-deep-review")
+	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(completed.Items) != 1 {
+		t.Fatalf("completed items=%d want=1", len(completed.Items))
+	}
+
+	resolver := &feedbackDeepResolver{called: make(chan []domain.TimelineItem, 1)}
+	runtime.SetAIDeepResolver(resolver)
+	feedback, err := runtime.AddAIFeedback(ctx, completed.Items[0].ID, domain.AIFeedbackInput{
+		TargetType: "post", Verdict: "unsure", SignalScope: "social_post",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feedback.Verdict != "unsure" {
+		t.Fatalf("feedback=%+v", feedback)
+	}
+
+	select {
+	case candidates := <-resolver.called:
+		if len(candidates) != 1 || candidates[0].ID != completed.Items[0].ID {
+			t.Fatalf("deep candidates=%+v", candidates)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("unsure feedback did not invoke Deep Detection")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		job, jobErr := state.AIDetectionJob(ctx, session.ID)
+		if jobErr != nil {
+			t.Fatal(jobErr)
+		}
+		if job != nil && job.Status == "completed" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	item, err := state.TimelineItem(ctx, completed.Items[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.AIDetection == nil || item.AIDetection.Stage != "deep" {
+		t.Fatalf("deep assessment not applied: %+v", item.AIDetection)
+	}
+	if item.AIDetection.PersonalPolicy == nil || item.AIDetection.PersonalPolicy.ReviewRequested {
+		t.Fatalf("completed review must retain feedback history without remaining pending: detection=%+v policy=%+v", item.AIDetection, item.AIDetection.PersonalPolicy)
+	}
+	history, err := state.AIFeedbackHistory(ctx, item.ID)
+	if err != nil || len(history) != 1 || history[0].ID != feedback.ID {
+		t.Fatalf("feedback history=%+v err=%v", history, err)
+	}
+}
+
 func TestUnchangedResurfaceFailsFastBeforeReasoning(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := singleSourceEngine(t, reasoning.Deterministic{})
