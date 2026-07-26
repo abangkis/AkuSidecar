@@ -2,6 +2,7 @@ package aidetector
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -12,12 +13,14 @@ import (
 
 type fakeStructuredInvoker struct {
 	prompt string
+	schema any
 	raw    string
 	model  config.ModelConfig
 }
 
-func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, _ any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
 	f.prompt = prompt
+	f.schema = schema
 	f.model = model
 	input, output := int64(100), int64(20)
 	return f.raw, domain.ModelUsage{Input: &input, Output: &output}, 15 * time.Millisecond, nil
@@ -41,7 +44,10 @@ func TestDeepResolverUsesSelectedBackendProfile(t *testing.T) {
 
 func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],"assessedObject":"social_post","signalScope":"none","rationale":"The available authored content is inadequate."}]}`}
-	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
+	resolver, err := NewStructuredResolver("../..", invoker, config.ModelConfig{Model: "test", Effort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	item := domain.TimelineItem{
 		ID: "private-timeline-id", SessionID: "private-session-id", Source: domain.SourceX,
 		Item: domain.ReasonedItem{Author: "Author", WhatChanged: "Fallback text"},
@@ -66,9 +72,22 @@ func TestDeepResolverUsesBoundedUntrustedEvidenceAndNoTools(t *testing.T) {
 	if strings.Contains(invoker.prompt, "A bounded prior event") {
 		t.Fatal("AI Detector does not need the semantic canonical claim in its prompt")
 	}
-	if len(invoker.prompt) > 10000 {
+	for _, forbiddenField := range []string{`"semanticEvent"`, `"userOverride"`, `"corrected"`} {
+		if strings.Contains(invoker.prompt, forbiddenField) {
+			t.Fatalf("prompt retained redundant field %s", forbiddenField)
+		}
+	}
+	if len(invoker.prompt) > 5000 {
 		t.Fatalf("bounded AI Detector prompt unexpectedly grew to %d bytes", len(invoker.prompt))
 	}
+	schema, err := json.Marshal(invoker.schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schema) > 1300 {
+		t.Fatalf("bounded AI Detector schema unexpectedly grew to %d bytes", len(schema))
+	}
+	t.Logf("deep request application payload: prompt=%d bytes schema=%d bytes", len(invoker.prompt), len(schema))
 	for _, required := range []string{"untrusted social-media evidence", "Do not browse", "AI origin signals", "post_001", "external_artifact", "Never transfer provenance"} {
 		if !strings.Contains(invoker.prompt, required) {
 			t.Fatalf("prompt missing %q", required)

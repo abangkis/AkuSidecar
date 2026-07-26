@@ -1,7 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://akubrowser.local/contracts/ai-deep-detection.schema.json",
-  "title": "AkuBrowser AI Deep Detection Result",
   "type": "object",
   "additionalProperties": false,
   "required": ["assessments"],
