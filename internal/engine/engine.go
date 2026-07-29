@@ -1692,3 +1692,38 @@ func (e *Engine) WaitForIdle(timeout time.Duration) bool {
 	}
 	return false
 }
+
+func (e *Engine) RuntimeUpdateReadiness(ctx context.Context) (bool, string, error) {
+	active, err := e.store.ActiveSession(ctx)
+	if err != nil {
+		return false, "state_unavailable", err
+	}
+	if active != nil {
+		return false, "active_session", nil
+	}
+	calibration, err := e.store.ActiveCalibration(ctx)
+	if err != nil {
+		return false, "state_unavailable", err
+	}
+	if calibration != nil {
+		return false, "active_calibration", nil
+	}
+	recapturing, err := e.store.ActiveMediaRecapture(ctx)
+	if err != nil {
+		return false, "state_unavailable", err
+	}
+	if recapturing {
+		return false, "active_media_recapture", nil
+	}
+	e.mu.RLock()
+	activeWorkers := len(e.active)
+	shuttingDown := e.shuttingDown
+	e.mu.RUnlock()
+	if shuttingDown {
+		return false, "shutdown_in_progress", nil
+	}
+	if activeWorkers > 0 {
+		return false, "background_work", nil
+	}
+	return true, "idle", nil
+}

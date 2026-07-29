@@ -57,6 +57,23 @@ func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
 	}
 }
 
+func TestRuntimeUpdateReadinessFailsClosedWhileWorkIsActive(t *testing.T) {
+	runtime, _ := testEngine(t)
+	ready, reason, err := runtime.RuntimeUpdateReadiness(context.Background())
+	if err != nil || !ready || reason != "idle" {
+		t.Fatalf("idle readiness ready=%v reason=%q err=%v", ready, reason, err)
+	}
+	_, cancel := context.WithCancel(context.Background())
+	runtime.mu.Lock()
+	runtime.active["candidate_evaluation"] = cancel
+	runtime.mu.Unlock()
+	ready, reason, err = runtime.RuntimeUpdateReadiness(context.Background())
+	if err != nil || ready || reason != "background_work" {
+		t.Fatalf("active readiness ready=%v reason=%q err=%v", ready, reason, err)
+	}
+	cancel()
+}
+
 func TestAcceptedObservationQueuesRelaunchWhilePriorPassIsActive(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	runtime := &Engine{

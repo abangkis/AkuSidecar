@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,14 +13,15 @@ import (
 )
 
 type Config struct {
-	Version    int              `json:"version"`
-	Server     ServerConfig     `json:"server"`
-	Database   DatabaseConfig   `json:"database"`
-	Reasoning  ReasoningConfig  `json:"reasoning"`
-	Capture    CaptureConfig    `json:"capture"`
-	Preference PreferenceConfig `json:"preference"`
-	Root       string           `json:"-"`
-	Dev        bool             `json:"-"`
+	Version             int              `json:"version"`
+	Server              ServerConfig     `json:"server"`
+	Database            DatabaseConfig   `json:"database"`
+	Reasoning           ReasoningConfig  `json:"reasoning"`
+	Capture             CaptureConfig    `json:"capture"`
+	Preference          PreferenceConfig `json:"preference"`
+	Root                string           `json:"-"`
+	Dev                 bool             `json:"-"`
+	RuntimeControlToken string           `json:"-"`
 }
 
 type ServerConfig struct {
@@ -58,13 +60,15 @@ type PreferenceConfig struct {
 }
 
 type Options struct {
-	ConfigPath    string
-	CodexPath     string
-	DatabasePath  string
-	Provider      string
-	Port          int
-	Dev           bool
-	DiscoverCodex bool
+	ConfigPath            string
+	CodexPath             string
+	DatabasePath          string
+	Provider              string
+	Port                  int
+	Dev                   bool
+	DiscoverCodex         bool
+	RuntimeControlToken   string
+	RuntimeCandidateProbe bool
 }
 
 func ParseFlags() Options {
@@ -76,6 +80,8 @@ func ParseFlags() Options {
 	flag.IntVar(&options.Port, "port", 0, "override loopback HTTP port for this process")
 	flag.BoolVar(&options.Dev, "dev", false, "enable development asset and reload behavior")
 	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
+	flag.StringVar(&options.RuntimeControlToken, "runtime-control-token", "", "instance-scoped token used by the signed runtime host")
+	flag.BoolVar(&options.RuntimeCandidateProbe, "runtime-candidate-probe", false, "validate the packaged runtime contract and exit")
 	flag.Parse()
 	return options
 }
@@ -100,6 +106,7 @@ func Load(options Options) (Config, error) {
 	}
 	cfg.Root = filepath.Dir(filepath.Dir(absConfig))
 	cfg.Dev = options.Dev
+	cfg.RuntimeControlToken = options.RuntimeControlToken
 	if options.CodexPath != "" {
 		cfg.Reasoning.Executable = options.CodexPath
 	}
@@ -127,6 +134,14 @@ func (c Config) Validate() error {
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return errors.New("server port is invalid")
+	}
+	if c.RuntimeControlToken != "" {
+		if len(c.RuntimeControlToken) != 64 {
+			return errors.New("runtime control token must contain 32 bytes")
+		}
+		if _, err := hex.DecodeString(c.RuntimeControlToken); err != nil {
+			return errors.New("runtime control token must be lowercase hexadecimal")
+		}
 	}
 	if c.Database.Path == "" {
 		return errors.New("database path is required")

@@ -30,6 +30,16 @@ func main() {
 	}
 	cfg, err := config.Load(options)
 	fatal(logger, err)
+	if options.RuntimeCandidateProbe {
+		fatal(logger, json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"status":                "ok",
+			"version":               domain.ApplicationVersion,
+			"runtime":               "go",
+			"bridgeContractVersion": domain.BridgeContractVersion,
+			"configVersion":         cfg.Version,
+		}))
+		return
+	}
 	settings := domain.DefaultSettings(cfg.Capture.Profile, cfg.Capture.Visibility, cfg.Preference.Mode, cfg.Capture.OpenMissingSource)
 	state, err := store.Open(cfg.Database.Path, settings)
 	fatal(logger, err)
@@ -87,7 +97,10 @@ func main() {
 	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	<-signals
+	select {
+	case <-signals:
+	case <-server.ShutdownRequested():
+	}
 	shutdownStarted := time.Now()
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()

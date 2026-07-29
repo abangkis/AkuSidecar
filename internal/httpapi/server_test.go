@@ -47,6 +47,18 @@ func TestSessionProgressProjectionKeepsOnlyPollingState(t *testing.T) {
 	}
 }
 
+func TestRuntimeControlTokenIsRequiredAndComparedExactly(t *testing.T) {
+	token := strings.Repeat("a", 64)
+	if !validRuntimeControlToken(token, token) {
+		t.Fatal("exact runtime control token was rejected")
+	}
+	for _, supplied := range []string{"", strings.Repeat("a", 63), strings.Repeat("b", 64)} {
+		if validRuntimeControlToken(token, supplied) {
+			t.Fatalf("invalid runtime control token was accepted: %q", supplied)
+		}
+	}
+}
+
 func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)

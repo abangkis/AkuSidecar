@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
@@ -25,13 +27,15 @@ import (
 )
 
 type Server struct {
-	config   config.Config
-	store    *store.Store
-	engine   *engine.Engine
-	http     *http.Server
-	listener net.Listener
-	logger   *log.Logger
-	started  time.Time
+	config            config.Config
+	store             *store.Store
+	engine            *engine.Engine
+	http              *http.Server
+	listener          net.Listener
+	logger            *log.Logger
+	started           time.Time
+	shutdownRequested chan struct{}
+	shutdownOnce      sync.Once
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {
@@ -39,12 +43,23 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 	if err != nil {
 		return nil, err
 	}
-	server := &Server{config: cfg, store: state, engine: runtime, logger: logger, started: time.Now()}
+	server := &Server{
+		config: cfg, store: state, engine: runtime, logger: logger,
+		started: time.Now(), shutdownRequested: make(chan struct{}),
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.api())
 	mux.Handle("/", server.static(http.FS(assets)))
 	server.http = &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port), Handler: security(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 130 * time.Second, IdleTimeout: 60 * time.Second}
 	return server, nil
+}
+
+func (s *Server) ShutdownRequested() <-chan struct{} {
+	return s.shutdownRequested
+}
+
+func (s *Server) requestShutdown() {
+	s.shutdownOnce.Do(func() { close(s.shutdownRequested) })
 }
 
 func (s *Server) Start() (net.Addr, error) {
@@ -111,6 +126,34 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
+	case r.Method == http.MethodGet && p == "/api/runtime/update-readiness":
+		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{
+			"ready": ready, "reason": reason, "instanceEpoch": s.engine.Epoch(),
+			"controlAvailable": s.config.RuntimeControlToken != "",
+		})
+	case r.Method == http.MethodPost && p == "/api/runtime/shutdown-if-idle":
+		if !validRuntimeControlToken(s.config.RuntimeControlToken, r.Header.Get("X-Aku-Runtime-Control-Token")) {
+			return apiError{Status: http.StatusForbidden, Code: "runtime_control_denied", Message: "Runtime control authorization failed."}
+		}
+		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			return apiError{Status: http.StatusConflict, Code: "runtime_busy", Message: "Runtime update is blocked by active work.", Details: map[string]any{"reason": reason}}
+		}
+		if err := writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "instanceEpoch": s.engine.Epoch()}); err != nil {
+			return err
+		}
+		go func() {
+			time.Sleep(25 * time.Millisecond)
+			s.requestShutdown()
+		}()
+		return nil
 	case r.Method == http.MethodGet && p == "/api/bootstrap":
 		s.engine.RecordUIAccess(ctx)
 		settings, err := s.store.GetSettings(ctx)
@@ -835,6 +878,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return notFound("route")
 	}
+}
+
+func validRuntimeControlToken(expected, supplied string) bool {
+	if len(expected) < 32 || len(supplied) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(supplied)) == 1
 }
 
 func (s *Server) requireBridge(r *http.Request) error {
