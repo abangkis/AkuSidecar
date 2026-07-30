@@ -131,8 +131,16 @@ already running, use the explicit rebuild/restart command from AkuSidecar:
 ```
 
 The command first builds `aku-sidecar.next.exe`, refuses to interrupt an active
-session, asks AkuSupervisor to stop the registered service, atomically promotes
-the candidate to `aku-sidecar.exe`, and asks AkuSupervisor to start it again.
+session or other runtime-owned background work, waits up to 15 minutes by
+default for update readiness, asks AkuSupervisor to stop the registered
+service, atomically promotes the candidate to `aku-sidecar.exe`, and asks
+AkuSupervisor to start it again.
+Every development build writes an adjacent
+`aku-sidecar.exe.runtime-state.json` provenance receipt containing the
+application version, source commit, dirty state, build time, and binary
+SHA-256. Candidate provenance is promoted atomically with the executable, and
+the restart succeeds only after the new health endpoint reports the recorded
+version.
 Use `build-dev.ps1` alone when only a stopped binary needs to be built.
 Restarting the service directly through AkuSupervisor never rebuilds embedded
 UI or Go source and must not be used while an update is active.
