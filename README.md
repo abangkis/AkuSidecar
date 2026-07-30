@@ -303,13 +303,20 @@ local event index; Codex App Server proposes only typed relationships. URL,
 platform, and generic-language tokens cannot trigger the resolver. Without a
 historical shortlist or strong intra-check event anchor, Go creates separate
 event threads through a zero-token local fast path. Resolver prompts use
-evaluated summaries and evidence excerpts capped at 600 characters. The
+evaluated summaries and evidence excerpts capped at 600 characters. Event
+membership and information novelty are separate decisions: the same occurrence
+may be a repeated report or a meaningful update. Each event keeps at most eight
+recent source-backed deltas locally, while only the three newest compact deltas
+enter a resolver prompt. Candidates are resolved sequentially so a fact accepted
+from an earlier report is already known when later authors repeat it. The
 default collapses true duplicate reports while keeping them inspectable. Show
 all bypasses the engine, and Hide removes duplicate reports from the Timeline.
 Only `duplicate_report` is capacity-free; material updates, contradictions,
 new consequences, and context remain unique. Automatic merging uses a bounded
 confidence threshold: `0.92` by default, user-tunable from `0.85` to `0.95` in
-`0.01` steps. User corrections create undoable local constraints.
+`0.01` steps. Duplicate audit rows are bounded separately and never displace
+the configured unique-information capacity. User corrections create undoable
+local constraints for both event membership and report novelty.
 
 An exact native-source replay is resolved before semantic inference. When the
 same opaque evidence identity already belongs to a retained event, Go emits a

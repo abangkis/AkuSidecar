@@ -581,11 +581,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		var body struct {
 			Action        string `json:"action"`
 			TargetEventID string `json:"targetEventId"`
+			Relation      string `json:"relation"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			return err
 		}
-		correction, err := s.engine.CorrectSemanticEvent(ctx, id, body.Action, body.TargetEventID)
+		correction, err := s.engine.CorrectSemanticEvent(ctx, id, body.Action, body.TargetEventID, body.Relation)
 		if errors.Is(err, sql.ErrNoRows) {
 			return notFound("semantic event report")
 		}

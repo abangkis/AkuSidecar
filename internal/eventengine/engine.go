@@ -65,6 +65,10 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 	if err != nil {
 		return summary, err
 	}
+	noveltyConstraints, err := e.store.SemanticNoveltyConstraints(ctx, candidateEvidenceKeys(candidates))
+	if err != nil {
+		return summary, err
+	}
 	exactEventIDs, err := e.store.ExactSemanticEventIDs(ctx, candidateEvidenceKeys(candidates))
 	if err != nil {
 		return summary, err
@@ -119,7 +123,7 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 		}
 	}
 
-	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, settings.KnowledgeRetentionDays, settings.SemanticEventMergeThreshold)
+	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, noveltyConstraints, settings.KnowledgeRetentionDays, settings.SemanticEventMergeThreshold)
 	duplicates := 0
 	for _, report := range reports {
 		if report.Relation == "duplicate_report" {
@@ -159,6 +163,10 @@ func (e *Engine) ProcessTimelineItem(ctx context.Context, timelineID string, set
 	if err != nil {
 		return domain.ResolvedSemanticReport{}, err
 	}
+	noveltyConstraints, err := e.store.SemanticNoveltyConstraints(ctx, []string{candidate.EvidenceKey})
+	if err != nil {
+		return domain.ResolvedSemanticReport{}, err
+	}
 	exactEventIDs, err := e.store.ExactSemanticEventIDs(ctx, []string{candidate.EvidenceKey})
 	if err != nil {
 		return domain.ResolvedSemanticReport{}, err
@@ -173,7 +181,7 @@ func (e *Engine) ProcessTimelineItem(ctx context.Context, timelineID string, set
 			return domain.ResolvedSemanticReport{}, err
 		}
 	}
-	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, settings.KnowledgeRetentionDays, settings.SemanticEventMergeThreshold)
+	reports := resolveReports(candidates, shortlist, catalog, resolution, constraints, noveltyConstraints, settings.KnowledgeRetentionDays, settings.SemanticEventMergeThreshold)
 	if len(reports) != 1 {
 		return domain.ResolvedSemanticReport{}, errors.New("selection correction produced no semantic report")
 	}
@@ -328,7 +336,7 @@ func strongestIntraCheckSignal(candidates []domain.SemanticCandidate) triggerSig
 	return strongest
 }
 
-func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []domain.SemanticEvent, resolution domain.SemanticResolution, constraints map[string]map[string]string, retentionDays int, mergeThreshold float64) []domain.ResolvedSemanticReport {
+func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []domain.SemanticEvent, resolution domain.SemanticResolution, constraints, noveltyConstraints map[string]map[string]string, retentionDays int, mergeThreshold float64) []domain.ResolvedSemanticReport {
 	decisions := map[string]domain.SemanticDecision{}
 	for _, decision := range resolution.Decisions {
 		if _, exists := decisions[decision.CandidateAlias]; !exists {
@@ -356,7 +364,11 @@ func resolveReports(candidates []domain.SemanticCandidate, shortlist, catalog []
 		for eventID, kind := range constraints[candidate.EvidenceKey] {
 			if kind == "must_merge" {
 				if value, exists := allEvents[eventID]; exists {
-					target, targetFound, relation, confidence, reason = value, true, "duplicate_report", 1, "User-confirmed semantic event."
+					relation = noveltyConstraints[candidate.EvidenceKey][eventID]
+					if relation == "" {
+						relation = "duplicate_report"
+					}
+					target, targetFound, confidence, reason = value, true, 1, "User-confirmed semantic event and information novelty."
 				}
 				break
 			}

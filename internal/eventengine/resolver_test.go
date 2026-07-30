@@ -68,3 +68,35 @@ func TestStructuredResolverBoundsUntrustedEvidenceExcerpt(t *testing.T) {
 		t.Fatalf("evidence excerpt was not bounded: %s", invoker.prompt)
 	}
 }
+
+func TestStructuredResolverIncludesBoundedKnownDeltasAndSequentialNoveltyContract(t *testing.T) {
+	invoker := &fakeStructuredInvoker{}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test", Effort: "high"}, schema: map[string]any{}}
+	events := []domain.SemanticEvent{{
+		ID:             "event-secret",
+		CanonicalClaim: "OpenAI changed Luna pricing",
+		KnownDeltas: []domain.SemanticEventDelta{
+			{ID: "delta-secret-1", Claim: "Luna is twenty percent cheaper", Kind: "material_update", Source: domain.SourceX, Confidence: .99},
+			{ID: "delta-secret-2", Claim: "The change applies to paid usage", Kind: "material_update", Source: domain.SourceLinkedIn, Confidence: .95},
+			{ID: "delta-secret-3", Claim: "The new pricing starts today", Kind: "material_update", Source: domain.SourceX, Confidence: .94},
+			{ID: "delta-secret-4", Claim: "This fourth delta must not enter the prompt", Kind: "material_update", Source: domain.SourceX, Confidence: .93},
+		},
+	}}
+	candidates := []domain.SemanticCandidate{
+		{Alias: "candidate_001", Text: "Luna is twenty percent cheaper"},
+		{Alias: "candidate_002", Text: "Another author says Luna is twenty percent cheaper"},
+	}
+	if _, _, _, err := resolver.Resolve(context.Background(), candidates, events); err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"knownDeltas", "twenty percent cheaper", "Process candidates sequentially", "merely repeats that fact is duplicate_report", "Unverified motive"} {
+		if !strings.Contains(invoker.prompt, required) {
+			t.Fatalf("prompt missing %q: %s", required, invoker.prompt)
+		}
+	}
+	for _, forbidden := range []string{"event-secret", "delta-secret", "fourth delta"} {
+		if strings.Contains(invoker.prompt, forbidden) {
+			t.Fatalf("bounded semantic identity or delta leaked: %q", forbidden)
+		}
+	}
+}

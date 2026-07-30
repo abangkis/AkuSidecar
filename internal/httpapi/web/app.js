@@ -3848,7 +3848,7 @@ function buildSemanticCorrectionActions(entry) {
   button.className = "event-correction-button";
   button.textContent = entry.semanticEvent.corrected
     ? "Undo correction"
-    : entry.semanticEvent.relation === "duplicate_report" ? "Not the same event" : "Same event…";
+    : "Review event…";
   button.disabled = entry.semanticEvent.corrected && !entry.semanticEvent.correctionId;
   button.addEventListener("click", async () => {
     button.disabled = true;
@@ -3857,8 +3857,6 @@ function buildSemanticCorrectionActions(entry) {
         await api(`/api/event-corrections/${encodeURIComponent(entry.semanticEvent.correctionId)}/undo`, { method: "POST" });
         await refreshTimeline();
         clearNotice();
-      } else if (entry.semanticEvent.relation === "duplicate_report") {
-        await applySemanticCorrection(entry.id, "not_same_event", "");
       } else {
         await showEventSuggestions(entry, controls, button);
       }
@@ -3875,31 +3873,36 @@ function buildSemanticCorrectionActions(entry) {
 async function showEventSuggestions(entry, controls, trigger) {
   const { suggestions = [] } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/event-suggestions?limit=3`);
   controls.querySelector(".event-suggestion-editor")?.remove();
-  if (!suggestions.length) {
-    const message = document.createElement("span");
-    message.className = "event-suggestion-editor";
-    message.textContent = "No plausible retained event thread found.";
-    controls.append(message);
-    return;
-  }
   const editor = document.createElement("span");
   editor.className = "event-suggestion-editor";
   const select = document.createElement("select");
   select.setAttribute("aria-label", "Choose the same semantic event");
-  for (const suggestion of suggestions) {
+  const available = [{
+    eventId: entry.semanticEvent.eventId,
+    canonicalClaim: entry.semanticEvent.canonicalClaim || entry.item?.whatChanged || "Current event",
+    reportCount: entry.semanticEvent.reportCount || 1,
+  }, ...suggestions.filter((suggestion) => suggestion.eventId !== entry.semanticEvent.eventId)];
+  for (const suggestion of available) {
     const option = document.createElement("option");
     option.value = suggestion.eventId;
     option.textContent = `${suggestion.canonicalClaim} (${suggestion.reportCount} reports)`;
     select.append(option);
   }
+  const novelty = document.createElement("select");
+  novelty.setAttribute("aria-label", "Choose whether this report adds new information");
+  novelty.append(
+    new Option("Same event · repeated report", "duplicate_report"),
+    new Option("Same event · meaningful update", "material_update"),
+  );
+  novelty.value = entry.semanticEvent.relation === "duplicate_report" ? "duplicate_report" : "material_update";
   const confirm = document.createElement("button");
   confirm.type = "button";
-  confirm.textContent = "Confirm";
+  confirm.textContent = "Apply";
   confirm.addEventListener("click", async () => {
     confirm.disabled = true;
     trigger.disabled = true;
     try {
-      await applySemanticCorrection(entry.id, "same_event", select.value);
+      await applySemanticCorrection(entry.id, "same_event", select.value, novelty.value);
     } catch (error) {
       showError(error);
       confirm.disabled = false;
@@ -3910,14 +3913,28 @@ async function showEventSuggestions(entry, controls, trigger) {
   cancel.type = "button";
   cancel.textContent = "Cancel";
   cancel.addEventListener("click", () => editor.remove());
-  editor.append(select, confirm, cancel);
+  const split = document.createElement("button");
+  split.type = "button";
+  split.textContent = "Not the same event";
+  split.addEventListener("click", async () => {
+    split.disabled = true;
+    trigger.disabled = true;
+    try {
+      await applySemanticCorrection(entry.id, "not_same_event", "", "");
+    } catch (error) {
+      showError(error);
+      split.disabled = false;
+      trigger.disabled = false;
+    }
+  });
+  editor.append(select, novelty, confirm, split, cancel);
   controls.append(editor);
 }
 
-async function applySemanticCorrection(timelineId, action, targetEventId) {
+async function applySemanticCorrection(timelineId, action, targetEventId, relation = "") {
   const { correction } = await api(`/api/timeline/${encodeURIComponent(timelineId)}/event-correction`, {
     method: "POST",
-    body: { action, targetEventId },
+    body: { action, targetEventId, relation },
   });
   await refreshTimeline();
   showCorrectionNotice(correction);
@@ -3929,7 +3946,11 @@ function showCorrectionNotice(correction) {
   notice.setAttribute("role", "status");
   notice.replaceChildren();
   const message = document.createElement("span");
-  message.textContent = correction.action === "not_same_event" ? "Event split applied." : "Reports merged into the selected event.";
+  message.textContent = correction.action === "not_same_event"
+    ? "This report now starts a separate event."
+    : correction.toRelation === "material_update"
+      ? "Same event, meaningful update applied."
+      : "Same event, repeated report applied.";
   const undo = document.createElement("button");
   undo.type = "button";
   undo.textContent = "Undo";

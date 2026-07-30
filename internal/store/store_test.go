@@ -93,7 +93,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_continuity", "content_continuity_occurrences", "content_identity_aliases", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_reports", "semantic_events", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_continuity", "content_continuity_occurrences", "content_identity_aliases", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_deltas", "semantic_event_reports", "semantic_events", "semantic_novelty_constraints", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -935,6 +935,65 @@ func TestSessionCompositionUsesGlobalScoreWithSourceDiversity(t *testing.T) {
 		if items[index].Source != source || items[index].Rank != index {
 			t.Fatalf("items[%d]=%+v", index, items[index])
 		}
+	}
+}
+
+func TestSessionCompositionCountsOnlyUniqueInformationAgainstCapacity(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+	session, err := createVisibleUpdateSession(state, ctx, "What changed?", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET max_items_total=2 WHERE id=?`, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil || len(runs) == 0 {
+		t.Fatalf("runs=%+v err=%v", runs, err)
+	}
+	now := domain.Now()
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO semantic_events(id,canonical_claim,actor,event_kind,aliases_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?)`, "event-capacity", "OpenAI changed Luna pricing", "OpenAI", "pricing", "[]", now, now); err != nil {
+		t.Fatal(err)
+	}
+	relations := []string{"duplicate_report", "new_event", "duplicate_report", "new_event", "duplicate_report"}
+	for index, relation := range relations {
+		evidence := fmt.Sprintf("x:capacity-%d", index)
+		timelineID := fmt.Sprintf("timeline-capacity-%d", index)
+		assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{EvidenceKey: evidence})
+		itemRaw, _ := json.Marshal(domain.ReasonedItem{EvidenceKey: evidence, Source: runs[0].Source, WhatChanged: fmt.Sprintf("Luna pricing report %d", index)})
+		score := 1 - float64(index)*.1
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO candidate_assessments(run_id,evidence_key,source,assessment_json,base_score,preference_score,final_score,selected,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, runs[0].ID, evidence, runs[0].Source, string(assessmentRaw), score, 0, score, 1, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, timelineID, session.ID, runs[0].ID, runs[0].Source, evidence, index, string(itemRaw), string(assessmentRaw), "{}", now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `INSERT INTO semantic_event_reports(id,event_id,timeline_id,session_id,run_id,evidence_key,source,relation,confidence,reason,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, fmt.Sprintf("report-capacity-%d", index), "event-capacity", timelineID, session.ID, runs[0].ID, evidence, runs[0].Source, relation, .99, "fixture", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := state.ComposeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListSessionItems(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unique, duplicates := 0, 0
+	for index, item := range items {
+		if item.Rank != index {
+			t.Fatalf("non-compact rank at %d: %+v", index, item)
+		}
+		if item.SemanticEvent != nil && item.SemanticEvent.Relation == "duplicate_report" {
+			duplicates++
+		} else {
+			unique++
+		}
+	}
+	if unique != 2 || duplicates != 2 || len(items) != 4 {
+		t.Fatalf("unique=%d duplicates=%d items=%+v", unique, duplicates, items)
 	}
 }
 

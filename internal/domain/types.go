@@ -1391,18 +1391,31 @@ type DeepAIResult struct {
 }
 
 type SemanticEvent struct {
-	ID             string   `json:"id"`
-	CanonicalClaim string   `json:"canonicalClaim"`
-	Actor          string   `json:"actor"`
-	Action         string   `json:"action"`
-	Object         string   `json:"object"`
-	EventKind      string   `json:"eventKind"`
-	EventStart     *string  `json:"eventStart"`
-	EventEnd       *string  `json:"eventEnd"`
-	Aliases        []string `json:"aliases"`
-	ReportCount    int      `json:"reportCount"`
-	FirstSeenAt    string   `json:"firstSeenAt"`
-	LastSeenAt     string   `json:"lastSeenAt"`
+	ID             string               `json:"id"`
+	CanonicalClaim string               `json:"canonicalClaim"`
+	Actor          string               `json:"actor"`
+	Action         string               `json:"action"`
+	Object         string               `json:"object"`
+	EventKind      string               `json:"eventKind"`
+	EventStart     *string              `json:"eventStart"`
+	EventEnd       *string              `json:"eventEnd"`
+	Aliases        []string             `json:"aliases"`
+	KnownDeltas    []SemanticEventDelta `json:"knownDeltas,omitempty"`
+	ReportCount    int                  `json:"reportCount"`
+	FirstSeenAt    string               `json:"firstSeenAt"`
+	LastSeenAt     string               `json:"lastSeenAt"`
+}
+
+type SemanticEventDelta struct {
+	ID          string  `json:"id"`
+	EventID     string  `json:"eventId"`
+	Claim       string  `json:"claim"`
+	Kind        string  `json:"kind"`
+	Source      Source  `json:"source"`
+	EvidenceKey string  `json:"evidenceKey"`
+	Confidence  float64 `json:"confidence"`
+	FirstSeenAt string  `json:"firstSeenAt"`
+	LastSeenAt  string  `json:"lastSeenAt"`
 }
 
 type SemanticCandidate struct {
@@ -1492,6 +1505,7 @@ type EventCorrection struct {
 	Action      string  `json:"action"`
 	FromEventID string  `json:"fromEventId"`
 	ToEventID   string  `json:"toEventId"`
+	ToRelation  string  `json:"toRelation"`
 	CreatedAt   string  `json:"createdAt"`
 	UndoneAt    *string `json:"undoneAt,omitempty"`
 }

@@ -497,10 +497,35 @@ CREATE TABLE IF NOT EXISTS semantic_event_reports (
 CREATE INDEX IF NOT EXISTS semantic_reports_event_created ON semantic_event_reports(event_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS semantic_reports_session_relation ON semantic_event_reports(session_id, relation);
 
+CREATE TABLE IF NOT EXISTS semantic_event_deltas (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
+  report_id TEXT REFERENCES semantic_event_reports(id) ON DELETE SET NULL,
+  fingerprint TEXT NOT NULL,
+  claim TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('material_update','contradiction','new_consequence','context_only')),
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  evidence_key TEXT NOT NULL,
+  confidence REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  UNIQUE(event_id, fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS semantic_event_deltas_event_seen ON semantic_event_deltas(event_id, last_seen_at DESC);
+
 CREATE TABLE IF NOT EXISTS semantic_event_constraints (
   evidence_key TEXT NOT NULL,
   event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('must_merge','must_not_merge')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(evidence_key, event_id)
+);
+
+CREATE TABLE IF NOT EXISTS semantic_novelty_constraints (
+  evidence_key TEXT NOT NULL,
+  event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL CHECK (relation IN ('duplicate_report','material_update')),
   created_at TEXT NOT NULL,
   PRIMARY KEY(evidence_key, event_id)
 );

@@ -162,7 +162,7 @@ func TestSemanticAcceptanceMatrixEndToEnd(t *testing.T) {
 			runSemanticAcceptanceSession(t, runtime, fixtures)
 			items := acceptanceTimeline(t, runtime)
 			duplicate := itemWithSemanticRelation(t, items, "duplicate_report")
-			correction, err := runtime.CorrectSemanticEvent(context.Background(), duplicate.ID, "not_same_event", "")
+			correction, err := runtime.CorrectSemanticEvent(context.Background(), duplicate.ID, "not_same_event", "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -186,11 +186,32 @@ func TestSemanticAcceptanceMatrixEndToEnd(t *testing.T) {
 			if err != nil || !containsEventSuggestion(suggestions, targetID) {
 				t.Fatalf("suggestions=%+v err=%v", suggestions, err)
 			}
-			correction, err := runtime.CorrectSemanticEvent(context.Background(), items[1].ID, "same_event", targetID)
+			correction, err := runtime.CorrectSemanticEvent(context.Background(), items[1].ID, "same_event", targetID, "duplicate_report")
 			if err != nil {
 				t.Fatal(err)
 			}
 			assertLatestSemanticCount(t, runtime, 1, 1)
+			if _, err := runtime.UndoSemanticCorrection(context.Background(), correction.ID); err != nil {
+				t.Fatal(err)
+			}
+			assertLatestSemanticCount(t, runtime, 2, 0)
+		})
+
+		t.Run("same event with meaningful update", func(t *testing.T) {
+			fixtures := nearMissFixtures()
+			runtime, _ := semanticAcceptanceRuntime(t, fixtures, acceptanceResolverFor("new_event", .99), nil)
+			runSemanticAcceptanceSession(t, runtime, fixtures)
+			items := acceptanceTimeline(t, runtime)
+			targetID := semanticEventID(items[0])
+			correction, err := runtime.CorrectSemanticEvent(context.Background(), items[1].ID, "same_event", targetID, "material_update")
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated := acceptanceTimeline(t, runtime)
+			if len(updated) != 2 || countSemanticRelation(updated, "material_update") != 1 || semanticEventID(updated[0]) != semanticEventID(updated[1]) {
+				t.Fatalf("meaningful update correction=%+v", updated)
+			}
+			assertLatestSemanticCount(t, runtime, 2, 0)
 			if _, err := runtime.UndoSemanticCorrection(context.Background(), correction.ID); err != nil {
 				t.Fatal(err)
 			}

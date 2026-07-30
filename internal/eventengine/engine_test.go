@@ -73,13 +73,13 @@ func TestOnlyHighConfidenceTrueDuplicateConsumesNoUniqueCapacity(t *testing.T) {
 	candidate := domain.SemanticCandidate{Alias: "candidate_001", TimelineID: "timeline-1", EvidenceKey: "x:1", WhatChanged: "OpenAI launches Codex App Server"}
 	target := "event_001"
 	resolution := domain.SemanticResolution{Decisions: []domain.SemanticDecision{{CandidateAlias: candidate.Alias, Relation: "duplicate_report", TargetAlias: &target, Confidence: .96, Reason: "Same occurrence"}}}
-	reports := resolveReports([]domain.SemanticCandidate{candidate}, []domain.SemanticEvent{event}, []domain.SemanticEvent{event}, resolution, nil, 30, domain.DefaultSemanticMergeThreshold)
+	reports := resolveReports([]domain.SemanticCandidate{candidate}, []domain.SemanticEvent{event}, []domain.SemanticEvent{event}, resolution, nil, nil, 30, domain.DefaultSemanticMergeThreshold)
 	if len(reports) != 1 || reports[0].Relation != "duplicate_report" || reports[0].Event.ID != event.ID {
 		t.Fatalf("reports=%+v", reports)
 	}
 
 	resolution.Decisions[0].Confidence = .91
-	reports = resolveReports([]domain.SemanticCandidate{candidate}, []domain.SemanticEvent{event}, []domain.SemanticEvent{event}, resolution, nil, 30, domain.DefaultSemanticMergeThreshold)
+	reports = resolveReports([]domain.SemanticCandidate{candidate}, []domain.SemanticEvent{event}, []domain.SemanticEvent{event}, resolution, nil, nil, 30, domain.DefaultSemanticMergeThreshold)
 	if reports[0].Relation != "new_event" || reports[0].Event.ID == event.ID {
 		t.Fatalf("low-confidence merge was not rejected: %+v", reports[0])
 	}
@@ -94,12 +94,23 @@ func TestExactSourceReplayIsDeterministicAndSkipsSemanticInference(t *testing.T)
 	if pending := candidatesRequiringResolution([]domain.SemanticCandidate{candidate}, constraints); len(pending) != 0 {
 		t.Fatalf("exact replay reached semantic inference: %+v", pending)
 	}
-	reports := resolveReports([]domain.SemanticCandidate{candidate}, nil, []domain.SemanticEvent{event}, domain.SemanticResolution{}, constraints, 30, domain.DefaultSemanticMergeThreshold)
+	reports := resolveReports([]domain.SemanticCandidate{candidate}, nil, []domain.SemanticEvent{event}, domain.SemanticResolution{}, constraints, nil, 30, domain.DefaultSemanticMergeThreshold)
 	if len(reports) != 1 || reports[0].Relation != "duplicate_report" || reports[0].Confidence != 1 || reports[0].Event.ID != event.ID {
 		t.Fatalf("exact replay report=%+v", reports)
 	}
 	if reports[0].Reason != "Exact native source post was already captured." {
 		t.Fatalf("exact replay reason=%q", reports[0].Reason)
+	}
+}
+
+func TestUserMergeConstraintPreservesConfirmedInformationNovelty(t *testing.T) {
+	event := domain.SemanticEvent{ID: "event-existing", CanonicalClaim: "OpenAI changed Luna pricing", LastSeenAt: domain.Now()}
+	candidate := domain.SemanticCandidate{Alias: "candidate_001", EvidenceKey: "x:luna-pricing"}
+	constraints := map[string]map[string]string{candidate.EvidenceKey: {event.ID: "must_merge"}}
+	novelty := map[string]map[string]string{candidate.EvidenceKey: {event.ID: "material_update"}}
+	reports := resolveReports([]domain.SemanticCandidate{candidate}, nil, []domain.SemanticEvent{event}, domain.SemanticResolution{}, constraints, novelty, 30, domain.DefaultSemanticMergeThreshold)
+	if len(reports) != 1 || reports[0].Event.ID != event.ID || reports[0].Relation != "material_update" || reports[0].Confidence != 1 {
+		t.Fatalf("reports=%+v", reports)
 	}
 }
 
@@ -117,7 +128,7 @@ func TestMaterialUpdateRemainsUniqueEvenWhenAttachedToEvent(t *testing.T) {
 	candidate := domain.SemanticCandidate{Alias: "candidate_001", TimelineID: "timeline-1", EvidenceKey: "x:1", WhatChanged: "App Server adds a new capability"}
 	target := "event_001"
 	resolution := domain.SemanticResolution{Decisions: []domain.SemanticDecision{{CandidateAlias: candidate.Alias, Relation: "material_update", TargetAlias: &target, Confidence: .90, Reason: "New information about the same occurrence"}}}
-	reports := resolveReports([]domain.SemanticCandidate{candidate}, []domain.SemanticEvent{event}, []domain.SemanticEvent{event}, resolution, nil, 30, domain.DefaultSemanticMergeThreshold)
+	reports := resolveReports([]domain.SemanticCandidate{candidate}, []domain.SemanticEvent{event}, []domain.SemanticEvent{event}, resolution, nil, nil, 30, domain.DefaultSemanticMergeThreshold)
 	if reports[0].Relation != "material_update" || reports[0].Event.ID != event.ID {
 		t.Fatalf("material update lost its event relationship: %+v", reports[0])
 	}

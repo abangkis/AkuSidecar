@@ -63,6 +63,9 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	if err := s.syncSourceDefinitions(ctx); err != nil {
 		return err
 	}
+	if err := s.backfillSemanticEventDeltas(ctx); err != nil {
+		return fmt.Errorf("backfill semantic event deltas: %w", err)
+	}
 	if err := s.backfillContentContinuity(ctx); err != nil {
 		return fmt.Errorf("backfill content continuity: %w", err)
 	}
@@ -1095,13 +1098,15 @@ func (s *Store) PreviouslyKnownEvents(ctx context.Context, source domain.Source,
 }
 
 type compositionItem struct {
-	id       string
-	source   domain.Source
-	evidence string
-	score    float64
-	itemRaw  string
-	item     domain.ReasonedItem
-	created  string
+	id               string
+	source           domain.Source
+	evidence         string
+	score            float64
+	itemRaw          string
+	item             domain.ReasonedItem
+	created          string
+	semanticEventID  string
+	semanticRelation string
 }
 
 // ComposeSession establishes one global personalized order after every source
@@ -1113,9 +1118,11 @@ func (s *Store) ComposeSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT t.id,t.source,t.evidence_key,a.final_score,t.item_json,t.created_at
+		SELECT t.id,t.source,t.evidence_key,a.final_score,t.item_json,t.created_at,
+		       COALESCE(r.event_id,''),COALESCE(r.relation,'')
 		FROM timeline_items t
 		JOIN candidate_assessments a ON a.run_id=t.run_id AND a.evidence_key=t.evidence_key
+		LEFT JOIN semantic_event_reports r ON r.timeline_id=t.id
 		WHERE t.session_id=?
 		ORDER BY a.final_score DESC,t.created_at,t.rank`, sessionID)
 	if err != nil {
@@ -1124,7 +1131,7 @@ func (s *Store) ComposeSession(ctx context.Context, sessionID string) error {
 	var remaining []compositionItem
 	for rows.Next() {
 		var item compositionItem
-		if err := rows.Scan(&item.id, &item.source, &item.evidence, &item.score, &item.itemRaw, &item.created); err != nil {
+		if err := rows.Scan(&item.id, &item.source, &item.evidence, &item.score, &item.itemRaw, &item.created, &item.semanticEventID, &item.semanticRelation); err != nil {
 			rows.Close()
 			return err
 		}
@@ -1161,11 +1168,31 @@ func (s *Store) ComposeSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	defer tx.Rollback()
-	for rank, item := range ordered {
-		if rank < limit {
+	uniqueKept := 0
+	duplicateKept := 0
+	rank := 0
+	duplicatesPerEvent := map[string]int{}
+	for _, item := range ordered {
+		keep := false
+		if item.semanticRelation == "duplicate_report" {
+			eventKey := item.semanticEventID
+			if eventKey == "" {
+				eventKey = item.evidence
+			}
+			if duplicateKept < limit && duplicatesPerEvent[eventKey] < 3 {
+				keep = true
+				duplicateKept++
+				duplicatesPerEvent[eventKey]++
+			}
+		} else if uniqueKept < limit {
+			keep = true
+			uniqueKept++
+		}
+		if keep {
 			if _, err := tx.ExecContext(ctx, `UPDATE timeline_items SET rank=? WHERE id=?`, rank, item.id); err != nil {
 				return err
 			}
+			rank++
 			if item.item.EventKey != "" {
 				if _, err := tx.ExecContext(ctx, `INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source,event_key) DO UPDATE SET evidence_key=excluded.evidence_key,item_json=excluded.item_json,last_seen_at=excluded.last_seen_at WHERE excluded.last_seen_at >= knowledge_events.last_seen_at`, domain.NewID("knowledge"), item.source, item.item.EventKey, item.evidence, item.itemRaw, item.created, item.created); err != nil {
 					return err

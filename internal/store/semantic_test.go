@@ -105,7 +105,7 @@ func TestSemanticCorrectionUndoRemovesConstraint(t *testing.T) {
 	if err := state.SaveEventResolutionSummary(ctx, domain.EventResolutionSummary{SessionID: session.ID, Status: "completed", Provider: "test", Model: "test", Effort: "none", CandidateCount: 1, UniqueItems: 0, DuplicateReports: 1, CreatedAt: domain.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	correction, err := state.CorrectSemanticEvent(ctx, timelineID, "not_same_event", "")
+	correction, err := state.CorrectSemanticEvent(ctx, timelineID, "not_same_event", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +158,65 @@ func TestSemanticCorrectionSummaryCountsUserMerge(t *testing.T) {
 	if err := state.SaveEventResolutionSummary(ctx, domain.EventResolutionSummary{SessionID: session.ID, Status: "completed", Provider: "test", Model: "test", Effort: "none", CandidateCount: 1, UniqueItems: 1, CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := state.CorrectSemanticEvent(ctx, timelineID, "same_event", targetEventID); err != nil {
+	if _, err := state.CorrectSemanticEvent(ctx, timelineID, "same_event", targetEventID, "duplicate_report"); err != nil {
 		t.Fatal(err)
 	}
 	summary, err := state.EventResolutionSummary(ctx, session.ID)
 	if err != nil || summary == nil || summary.UserSplitCorrections != 0 || summary.UserMergeCorrections != 1 {
 		t.Fatalf("user merge diagnostics=%+v err=%v", summary, err)
+	}
+}
+
+func TestSemanticCorrectionStoresNoveltyAuthorityAndDelta(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	_, timelineID := insertSemanticTimelineFixture(t, state, "new_event")
+	correction, err := state.CorrectSemanticEvent(ctx, timelineID, "same_event", "event-existing", "material_update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if correction.ToRelation != "material_update" {
+		t.Fatalf("correction=%+v", correction)
+	}
+	var novelty string
+	if err := state.db.QueryRowContext(ctx, `SELECT relation FROM semantic_novelty_constraints WHERE evidence_key=? AND event_id=?`, "x:semantic-fixture", "event-existing").Scan(&novelty); err != nil || novelty != "material_update" {
+		t.Fatalf("novelty=%q err=%v", novelty, err)
+	}
+	var deltas int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas WHERE event_id=?`, "event-existing").Scan(&deltas); err != nil || deltas != 1 {
+		t.Fatalf("deltas=%d err=%v", deltas, err)
+	}
+	events, err := state.ListSemanticEvents(ctx, "", 10)
+	if err != nil || len(events) != 1 || len(events[0].KnownDeltas) != 1 {
+		t.Fatalf("events=%+v err=%v", events, err)
+	}
+	if _, err := state.UndoSemanticCorrection(ctx, correction.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_novelty_constraints`).Scan(&deltas); err != nil || deltas != 0 {
+		t.Fatalf("novelty constraints after undo=%d err=%v", deltas, err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&deltas); err != nil || deltas != 0 {
+		t.Fatalf("deltas after undo=%d err=%v", deltas, err)
+	}
+}
+
+func TestSemanticDeltaLedgerBackfillsRetainedSchemaSevenReports(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	insertSemanticTimelineFixture(t, state, "material_update")
+	if err := state.backfillSemanticEventDeltas(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("backfilled deltas=%d err=%v", count, err)
+	}
+	if err := state.backfillSemanticEventDeltas(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("idempotent deltas=%d err=%v", count, err)
 	}
 }
 

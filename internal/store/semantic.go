@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,7 +88,46 @@ func (s *Store) ListSemanticEvents(ctx context.Context, cutoff string, limit int
 		decodeJSON(aliases, &value.Aliases)
 		result = append(result, value)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.attachSemanticEventDeltas(ctx, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Store) attachSemanticEventDeltas(ctx context.Context, events []domain.SemanticEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	byID := make(map[string]*domain.SemanticEvent, len(events))
+	placeholders := make([]string, 0, len(events))
+	args := make([]any, 0, len(events))
+	for index := range events {
+		byID[events[index].ID] = &events[index]
+		placeholders = append(placeholders, "?")
+		args = append(args, events[index].ID)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id,event_id,claim,kind,source,evidence_key,confidence,first_seen_at,last_seen_at
+		FROM semantic_event_deltas
+		WHERE event_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY event_id,last_seen_at DESC`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var value domain.SemanticEventDelta
+		if err := rows.Scan(&value.ID, &value.EventID, &value.Claim, &value.Kind, &value.Source, &value.EvidenceKey, &value.Confidence, &value.FirstSeenAt, &value.LastSeenAt); err != nil {
+			return err
+		}
+		if event := byID[value.EventID]; event != nil {
+			event.KnownDeltas = append(event.KnownDeltas, value)
+		}
+	}
+	return rows.Err()
 }
 
 func (s *Store) SemanticConstraints(ctx context.Context, evidenceKeys []string) (map[string]map[string]string, error) {
@@ -114,6 +155,35 @@ func (s *Store) SemanticConstraints(ctx context.Context, evidenceKeys []string) 
 			result[evidence] = map[string]string{}
 		}
 		result[evidence][eventID] = kind
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) SemanticNoveltyConstraints(ctx context.Context, evidenceKeys []string) (map[string]map[string]string, error) {
+	result := map[string]map[string]string{}
+	if len(evidenceKeys) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(evidenceKeys))
+	args := make([]any, len(evidenceKeys))
+	for index, value := range evidenceKeys {
+		placeholders[index] = "?"
+		args[index] = value
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT evidence_key,event_id,relation FROM semantic_novelty_constraints WHERE evidence_key IN (`+strings.Join(placeholders, ",")+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var evidence, eventID, relation string
+		if err := rows.Scan(&evidence, &eventID, &relation); err != nil {
+			return nil, err
+		}
+		if result[evidence] == nil {
+			result[evidence] = map[string]string{}
+		}
+		result[evidence][eventID] = relation
 	}
 	return result, rows.Err()
 }
@@ -175,11 +245,18 @@ func (s *Store) SaveSemanticReports(ctx context.Context, reports []domain.Resolv
 		if report.Corrected {
 			corrected = 1
 		}
+		reportID := domain.NewID("event_report")
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO semantic_event_reports(id,event_id,timeline_id,session_id,run_id,evidence_key,source,relation,confidence,reason,corrected,created_at)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(timeline_id) DO UPDATE SET event_id=excluded.event_id,relation=excluded.relation,confidence=excluded.confidence,reason=excluded.reason,corrected=excluded.corrected`,
-			domain.NewID("event_report"), event.ID, report.Candidate.TimelineID, report.Candidate.SessionID, report.Candidate.RunID, report.Candidate.EvidenceKey, report.Candidate.Source, report.Relation, report.Confidence, report.Reason, corrected, domain.Now()); err != nil {
+			reportID, event.ID, report.Candidate.TimelineID, report.Candidate.SessionID, report.Candidate.RunID, report.Candidate.EvidenceKey, report.Candidate.Source, report.Relation, report.Confidence, report.Reason, corrected, domain.Now()); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM semantic_event_reports WHERE timeline_id=?`, report.Candidate.TimelineID).Scan(&reportID); err != nil {
+			return err
+		}
+		if err := syncSemanticDelta(ctx, tx, reportID, report); err != nil {
 			return err
 		}
 	}
@@ -187,6 +264,119 @@ func (s *Store) SaveSemanticReports(ctx context.Context, reports []domain.Resolv
 		return err
 	}
 	return s.cleanupOrphanSemanticEvents(ctx)
+}
+
+const maxSemanticEventDeltas = 8
+
+func semanticDeltaRelation(relation string) bool {
+	switch relation {
+	case "material_update", "contradiction", "new_consequence", "context_only":
+		return true
+	default:
+		return false
+	}
+}
+
+func semanticDeltaFingerprint(value string) string {
+	normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:])
+}
+
+func syncSemanticDelta(ctx context.Context, tx *sql.Tx, reportID string, report domain.ResolvedSemanticReport) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_deltas WHERE report_id=?`, reportID); err != nil {
+		return err
+	}
+	claim := strings.TrimSpace(report.Candidate.WhatChanged)
+	if !semanticDeltaRelation(report.Relation) || claim == "" {
+		return nil
+	}
+	now := domain.Now()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO semantic_event_deltas(id,event_id,report_id,fingerprint,claim,kind,source,evidence_key,confidence,first_seen_at,last_seen_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(event_id,fingerprint) DO UPDATE SET
+		  last_seen_at=excluded.last_seen_at,
+		  confidence=MAX(semantic_event_deltas.confidence,excluded.confidence)`,
+		domain.NewID("event_delta"), report.Event.ID, reportID, semanticDeltaFingerprint(claim), claim, report.Relation, report.Candidate.Source, report.Candidate.EvidenceKey, report.Confidence, now, now); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+		DELETE FROM semantic_event_deltas
+		WHERE event_id=? AND id NOT IN (
+		  SELECT id FROM semantic_event_deltas WHERE event_id=? ORDER BY last_seen_at DESC LIMIT ?
+		)`, report.Event.ID, report.Event.ID, maxSemanticEventDeltas)
+	return err
+}
+
+func (s *Store) backfillSemanticEventDeltas(ctx context.Context) error {
+	// Schema 7 databases created before the delta ledger need one additive
+	// rebuild. Normal report writes maintain the ledger incrementally, so avoid
+	// rewriting retained history on every Sidecar startup.
+	var existing int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&existing); err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.id,r.event_id,r.relation,r.confidence,r.source,r.evidence_key,t.item_json
+		FROM semantic_event_reports r
+		JOIN timeline_items t ON t.id=r.timeline_id
+		WHERE r.relation IN ('material_update','contradiction','new_consequence','context_only')
+		ORDER BY r.created_at`)
+	if err != nil {
+		return err
+	}
+	type retainedReport struct {
+		reportID   string
+		eventID    string
+		relation   string
+		confidence float64
+		source     domain.Source
+		evidence   string
+		item       domain.ReasonedItem
+	}
+	var retained []retainedReport
+	for rows.Next() {
+		var value retainedReport
+		var itemRaw string
+		if err := rows.Scan(&value.reportID, &value.eventID, &value.relation, &value.confidence, &value.source, &value.evidence, &itemRaw); err != nil {
+			rows.Close()
+			return err
+		}
+		decodeJSON(itemRaw, &value.item)
+		retained = append(retained, value)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, value := range retained {
+		report := domain.ResolvedSemanticReport{
+			Candidate: domain.SemanticCandidate{
+				EvidenceKey: value.evidence,
+				Source:      value.source,
+				WhatChanged: value.item.WhatChanged,
+			},
+			Event:      domain.SemanticEvent{ID: value.eventID},
+			Relation:   value.relation,
+			Confidence: value.confidence,
+		}
+		if err := syncSemanticDelta(ctx, tx, value.reportID, report); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SaveEventResolutionSummary(ctx context.Context, value domain.EventResolutionSummary) error {
@@ -404,9 +594,17 @@ func semanticOverlap(left, right map[string]bool) int {
 	return count
 }
 
-func (s *Store) CorrectSemanticEvent(ctx context.Context, timelineID, action, targetEventID string) (domain.EventCorrection, error) {
+func (s *Store) CorrectSemanticEvent(ctx context.Context, timelineID, action, targetEventID, targetRelation string) (domain.EventCorrection, error) {
 	if action != "not_same_event" && action != "same_event" {
 		return domain.EventCorrection{}, fmt.Errorf("unsupported event correction %q", action)
+	}
+	if action == "same_event" {
+		if targetRelation == "" {
+			targetRelation = "duplicate_report"
+		}
+		if targetRelation != "duplicate_report" && targetRelation != "material_update" {
+			return domain.EventCorrection{}, fmt.Errorf("unsupported event novelty %q", targetRelation)
+		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -414,18 +612,19 @@ func (s *Store) CorrectSemanticEvent(ctx context.Context, timelineID, action, ta
 	}
 	defer tx.Rollback()
 	var reportID, evidenceKey, fromEventID, fromRelation, itemRaw string
+	var source domain.Source
 	var alreadyCorrected int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT r.id,r.evidence_key,r.event_id,r.relation,t.item_json,r.corrected
+		SELECT r.id,r.evidence_key,r.event_id,r.relation,t.item_json,r.corrected,r.source
 		FROM semantic_event_reports r JOIN timeline_items t ON t.id=r.timeline_id WHERE r.timeline_id=?`, timelineID).
-		Scan(&reportID, &evidenceKey, &fromEventID, &fromRelation, &itemRaw, &alreadyCorrected); err != nil {
+		Scan(&reportID, &evidenceKey, &fromEventID, &fromRelation, &itemRaw, &alreadyCorrected, &source); err != nil {
 		return domain.EventCorrection{}, err
 	}
 	if alreadyCorrected == 1 {
 		return domain.EventCorrection{}, errors.New("existing event correction must be undone first")
 	}
 	toEventID := targetEventID
-	toRelation := "duplicate_report"
+	toRelation := targetRelation
 	if action == "not_same_event" {
 		var item domain.ReasonedItem
 		decodeJSON(itemRaw, &item)
@@ -439,6 +638,9 @@ func (s *Store) CorrectSemanticEvent(ctx context.Context, timelineID, action, ta
 		if _, err := tx.ExecContext(ctx, `INSERT INTO semantic_event_constraints(evidence_key,event_id,kind,created_at) VALUES(?,?,?,?) ON CONFLICT(evidence_key,event_id) DO UPDATE SET kind=excluded.kind,created_at=excluded.created_at`, evidenceKey, fromEventID, "must_not_merge", now); err != nil {
 			return domain.EventCorrection{}, err
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE evidence_key=? AND event_id=?`, evidenceKey, fromEventID); err != nil {
+			return domain.EventCorrection{}, err
+		}
 	} else {
 		var exists int
 		if targetEventID == "" || tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events WHERE id=?`, targetEventID).Scan(&exists) != nil || exists != 1 {
@@ -447,11 +649,24 @@ func (s *Store) CorrectSemanticEvent(ctx context.Context, timelineID, action, ta
 		if _, err := tx.ExecContext(ctx, `INSERT INTO semantic_event_constraints(evidence_key,event_id,kind,created_at) VALUES(?,?,?,?) ON CONFLICT(evidence_key,event_id) DO UPDATE SET kind=excluded.kind,created_at=excluded.created_at`, evidenceKey, targetEventID, "must_merge", domain.Now()); err != nil {
 			return domain.EventCorrection{}, err
 		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO semantic_novelty_constraints(evidence_key,event_id,relation,created_at) VALUES(?,?,?,?) ON CONFLICT(evidence_key,event_id) DO UPDATE SET relation=excluded.relation,created_at=excluded.created_at`, evidenceKey, targetEventID, toRelation, domain.Now()); err != nil {
+			return domain.EventCorrection{}, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE semantic_event_reports SET event_id=?,relation=?,confidence=1,reason='User correction',corrected=1 WHERE id=?`, toEventID, toRelation, reportID); err != nil {
 		return domain.EventCorrection{}, err
 	}
-	value := domain.EventCorrection{ID: domain.NewID("event_correction"), TimelineID: timelineID, Action: action, FromEventID: fromEventID, ToEventID: toEventID, CreatedAt: domain.Now()}
+	var item domain.ReasonedItem
+	decodeJSON(itemRaw, &item)
+	if err := syncSemanticDelta(ctx, tx, reportID, domain.ResolvedSemanticReport{
+		Candidate:  domain.SemanticCandidate{EvidenceKey: evidenceKey, Source: source, WhatChanged: item.WhatChanged},
+		Event:      domain.SemanticEvent{ID: toEventID},
+		Relation:   toRelation,
+		Confidence: 1,
+	}); err != nil {
+		return domain.EventCorrection{}, err
+	}
+	value := domain.EventCorrection{ID: domain.NewID("event_correction"), TimelineID: timelineID, Action: action, FromEventID: fromEventID, ToEventID: toEventID, ToRelation: toRelation, CreatedAt: domain.Now()}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO semantic_event_corrections(id,report_id,timeline_id,action,from_event_id,from_relation,to_event_id,to_relation,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, value.ID, reportID, timelineID, action, fromEventID, fromRelation, toEventID, toRelation, value.CreatedAt); err != nil {
 		return domain.EventCorrection{}, err
 	}
@@ -474,6 +689,7 @@ func (s *Store) UndoSemanticCorrection(ctx context.Context, id string) (domain.E
 		Scan(&value.ID, &reportID, &value.TimelineID, &value.Action, &value.FromEventID, &fromRelation, &value.ToEventID, &toRelation, &value.CreatedAt); err != nil {
 		return domain.EventCorrection{}, err
 	}
+	value.ToRelation = toRelation
 	if _, err := tx.ExecContext(ctx, `UPDATE semantic_event_reports SET event_id=?,relation=?,confidence=1,reason='User correction undone',corrected=0 WHERE id=?`, value.FromEventID, fromRelation, reportID); err != nil {
 		return domain.EventCorrection{}, err
 	}
@@ -486,6 +702,26 @@ func (s *Store) UndoSemanticCorrection(ctx context.Context, id string) (domain.E
 		constraintEventID = value.FromEventID
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE evidence_key=? AND event_id=?`, evidenceKey, constraintEventID); err != nil {
+		return domain.EventCorrection{}, err
+	}
+	if value.Action == "same_event" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE evidence_key=? AND event_id=?`, evidenceKey, value.ToEventID); err != nil {
+			return domain.EventCorrection{}, err
+		}
+	}
+	var source domain.Source
+	var itemRaw string
+	if err := tx.QueryRowContext(ctx, `SELECT r.source,t.item_json FROM semantic_event_reports r JOIN timeline_items t ON t.id=r.timeline_id WHERE r.id=?`, reportID).Scan(&source, &itemRaw); err != nil {
+		return domain.EventCorrection{}, err
+	}
+	var item domain.ReasonedItem
+	decodeJSON(itemRaw, &item)
+	if err := syncSemanticDelta(ctx, tx, reportID, domain.ResolvedSemanticReport{
+		Candidate:  domain.SemanticCandidate{EvidenceKey: evidenceKey, Source: source, WhatChanged: item.WhatChanged},
+		Event:      domain.SemanticEvent{ID: value.FromEventID},
+		Relation:   fromRelation,
+		Confidence: 1,
+	}); err != nil {
 		return domain.EventCorrection{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE semantic_event_corrections SET undone_at=? WHERE id=?`, domain.Now(), id); err != nil {
@@ -503,6 +739,7 @@ func (s *Store) cleanupOrphanSemanticEvents(ctx context.Context) error {
 		DELETE FROM semantic_events
 		WHERE NOT EXISTS (SELECT 1 FROM semantic_event_reports r WHERE r.event_id=semantic_events.id)
 		  AND NOT EXISTS (SELECT 1 FROM semantic_event_constraints c WHERE c.event_id=semantic_events.id)
+		  AND NOT EXISTS (SELECT 1 FROM semantic_novelty_constraints n WHERE n.event_id=semantic_events.id)
 		  AND NOT EXISTS (
 			SELECT 1 FROM semantic_event_corrections c
 			WHERE c.undone_at IS NULL
@@ -523,6 +760,9 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 		return result, err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
+		return result, err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_novelty_constraints.evidence_key)`, cutoff); err != nil {
 		return result, err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM content_continuity WHERE last_seen_at<?`, cutoff); err != nil {

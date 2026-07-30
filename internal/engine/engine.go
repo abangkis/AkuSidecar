@@ -1623,10 +1623,10 @@ func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bri
 func (e *Engine) SemanticEventSuggestions(ctx context.Context, timelineID string, limit int) ([]domain.EventSuggestion, error) {
 	return e.store.SuggestSemanticEvents(ctx, timelineID, limit)
 }
-func (e *Engine) CorrectSemanticEvent(ctx context.Context, timelineID, action, targetEventID string) (domain.EventCorrection, error) {
+func (e *Engine) CorrectSemanticEvent(ctx context.Context, timelineID, action, targetEventID, targetRelation string) (domain.EventCorrection, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
-	return e.store.CorrectSemanticEvent(ctx, timelineID, action, targetEventID)
+	return e.store.CorrectSemanticEvent(ctx, timelineID, action, targetEventID, targetRelation)
 }
 func (e *Engine) UndoSemanticCorrection(ctx context.Context, id string) (domain.EventCorrection, error) {
 	e.operation.Lock()
