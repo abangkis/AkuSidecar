@@ -35,11 +35,14 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, _ := SourceByID(SourceFacebook); descriptor.FollowUpPlanningPolicy != "local_frontier" {
 		t.Fatalf("Facebook follow-up planning policy drifted: %+v", descriptor)
 	}
-	if descriptor, _ := SourceByID(SourceLinkedIn); descriptor.FollowUpPlanningPolicy != "local_frontier" || !descriptor.ContinuationOverlapRequired || !descriptor.FrontierRequiresComplete {
+	if descriptor, _ := SourceByID(SourceLinkedIn); descriptor.FollowUpPlanningPolicy != "local_frontier" || !descriptor.ContinuationOverlapRequired || !descriptor.FrontierRequiresComplete || descriptor.InitialRoundCandidateTarget != 1 {
 		t.Fatalf("LinkedIn guarded frontier or overlap policy drifted: %+v", descriptor)
 	}
 	if descriptor, _ := SourceByID(SourceFacebook); descriptor.FrontierRequiresComplete {
 		t.Fatalf("Facebook must retain its established frontier behavior: %+v", descriptor)
+	}
+	if descriptor, _ := SourceByID(SourceFacebook); descriptor.InitialRoundCandidateTarget != 0 {
+		t.Fatalf("Facebook must not inherit LinkedIn's initial-round candidate target: %+v", descriptor)
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.FollowUpPlanningPolicy != "" {
 		t.Fatalf("X must retain model acquisition planning: %+v", descriptor)

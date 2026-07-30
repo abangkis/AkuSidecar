@@ -1026,11 +1026,11 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return err
 	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
-		if localFrontierFinishesAcquisition(run.Source, observations[0]) {
+		if localReason, localFinish := localAcquisitionCompletionReason(run.Source, observations[0], observationCandidateCount(merged)); localFinish {
 			receipt := map[string]any{
 				"mode":                  "local_frontier",
 				"decision":              "finish",
-				"reason":                "The complete bounded source frontier produced no new candidate after scrolling.",
+				"reason":                localReason,
 				"followUpQueued":        false,
 				"followUpNewCandidates": 0,
 			}
@@ -1225,27 +1225,43 @@ func mergeObservations(values []domain.Observation) domain.Observation {
 }
 
 func localFrontierFinishesAcquisition(source domain.Source, observation domain.Observation) bool {
+	_, finished := localAcquisitionCompletionReason(source, observation, observationCandidateCount(observation))
+	return finished
+}
+
+func localAcquisitionCompletionReason(source domain.Source, observation domain.Observation, eligibleCandidateCount int) (string, bool) {
 	descriptor, ok := domain.SourceByID(source)
 	if !ok || descriptor.FollowUpPlanningPolicy != "local_frontier" {
-		return false
+		return "", false
 	}
 	if integerCoverageValue(observation.Coverage["performedScrolls"]) < 1 {
-		return false
+		return "", false
 	}
 	if descriptor.FrontierRequiresComplete {
 		captureQuality, ok := observation.Coverage["captureQuality"].(map[string]any)
 		if !ok || strings.TrimSpace(stringCoverageValue(captureQuality["verdict"])) != "complete" {
-			return false
+			return "", false
 		}
 		if strings.TrimSpace(stringCoverageValue(observation.Coverage["scrollStopReason"])) == "deadline" {
-			return false
+			return "", false
 		}
 	}
 	frontier, ok := observation.Coverage["frontier"].(map[string]any)
-	if !ok || booleanCoverageValue(frontier["hasMoreCandidateSignal"]) {
-		return false
+	if !ok {
+		return "", false
 	}
-	return integerCoverageValue(frontier["newCandidateCount"]) == 0
+	if descriptor.InitialRoundCandidateTarget > 0 &&
+		eligibleCandidateCount >= descriptor.InitialRoundCandidateTarget &&
+		integerCoverageValue(frontier["newCandidateCount"]) >= descriptor.InitialRoundCandidateTarget {
+		return "The complete first capture round already produced the configured bounded candidate target; older-feed coverage is deferred to the next finite check.", true
+	}
+	if booleanCoverageValue(frontier["hasMoreCandidateSignal"]) {
+		return "", false
+	}
+	if integerCoverageValue(frontier["newCandidateCount"]) == 0 {
+		return "The complete bounded source frontier produced no new candidate after scrolling.", true
+	}
+	return "", false
 }
 
 func mergeDurableRunCoverage(target, durable map[string]any) {

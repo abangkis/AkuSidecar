@@ -1446,10 +1446,15 @@ func TestGuardedLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 		t.Fatal("X must retain its current model planning behavior")
 	}
 	base.Coverage["frontier"].(map[string]any)["newCandidateCount"] = float64(1)
+	base.Coverage["frontier"].(map[string]any)["hasMoreCandidateSignal"] = true
+	if _, finished := localAcquisitionCompletionReason(domain.SourceLinkedIn, base, 1); !finished {
+		t.Fatal("a complete LinkedIn round that reaches its candidate target should defer older-feed coverage")
+	}
 	if localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
 		t.Fatal("a new Facebook frontier candidate must retain planning")
 	}
 	base.Coverage["frontier"].(map[string]any)["newCandidateCount"] = float64(0)
+	base.Coverage["frontier"].(map[string]any)["hasMoreCandidateSignal"] = false
 	base.Coverage["performedScrolls"] = float64(0)
 	if localFrontierFinishesAcquisition(domain.SourceFacebook, base) {
 		t.Fatal("Facebook must perform a bounded scroll before the local fast path")
