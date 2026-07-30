@@ -640,7 +640,7 @@ func applyPersonalAIPolicy(value *domain.TimelineAIDetection, policy *domain.Per
 		return value
 	}
 	copy := *policy
-	if copy.ReviewRequested && value != nil && value.Stage == "deep" && happenedAfter(value.LatestAssessedAt, copy.RequestedAt) {
+	if copy.ReviewRequested && value != nil && value.Stage == "deep" && happenedAtOrAfter(value.LatestAssessedAt, copy.RequestedAt) {
 		copy.ReviewRequested = false
 	}
 	value.PersonalPolicy = &copy
@@ -793,13 +793,13 @@ func (s *Store) personalAIPolicies(ctx context.Context, items []domain.TimelineI
 	return result, historyCounts, nil
 }
 
-func happenedAfter(value, boundary string) bool {
+func happenedAtOrAfter(value, boundary string) bool {
 	if value == "" || boundary == "" {
 		return false
 	}
 	valueTime, valueErr := time.Parse(time.RFC3339Nano, value)
 	boundaryTime, boundaryErr := time.Parse(time.RFC3339Nano, boundary)
-	return valueErr == nil && boundaryErr == nil && valueTime.After(boundaryTime)
+	return valueErr == nil && boundaryErr == nil && !valueTime.Before(boundaryTime)
 }
 
 func containsEvidence(values []string, target string) bool {

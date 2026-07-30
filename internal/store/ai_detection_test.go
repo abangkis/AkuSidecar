@@ -8,6 +8,16 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
+func TestDeepReviewAtFeedbackTimestampClosesPendingRequest(t *testing.T) {
+	const timestamp = "2026-07-30T18:01:46.6054094Z"
+	if !happenedAtOrAfter(timestamp, timestamp) {
+		t.Fatal("a deep review completed at the persisted feedback timestamp must close the pending request")
+	}
+	if happenedAtOrAfter("2026-07-30T18:01:45Z", timestamp) {
+		t.Fatal("an assessment before the feedback request must not close it")
+	}
+}
+
 func insertAIDetectionTimelineItem(t *testing.T, state *Store) (domain.Session, domain.TimelineItem) {
 	t.Helper()
 	ctx := context.Background()
