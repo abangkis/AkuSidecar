@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `0.7.4`.
+Status: active runtime contract for `0.7.5`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
@@ -68,7 +68,7 @@ last-write-wins authority.
 
 Semantic event memory is bounded by both age and total SQLite footprint. Cleanup runs on startup, Settings save, and terminal-session finalization. The default is 30 days or 100 MB, whichever is reached first.
 
-There is no importer or migration path for an earlier Node or Go database. Schema v7 is the only accepted runtime contract; an existing database with any other schema version fails before AkuSidecar creates or alters application tables. The v7 boundary separates detector-owned `ai_assessments` from the user-owned `ai_feedback_events` ledger. Its deterministic Personal AI Policy may affect badge/drawer presentation and Deep-review priority only; preference fitting and selection do not read it. Reset learning preserves the historical Timeline/audit decision but clears preference and personal AI evidence; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.4` defaults including Standard 1x, Progressive wait, Smart resurfacing with a seven-day cooldown, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh for candidate evaluation, and preserves Bridge identity.
+There is no importer or migration path for an earlier Node or Go database. Schema v7 is the only accepted runtime contract; an existing database with any other schema version fails before AkuSidecar creates or alters application tables. The v7 boundary separates detector-owned `ai_assessments` from the user-owned `ai_feedback_events` ledger. Its deterministic Personal AI Policy may affect badge/drawer presentation and Deep-review priority only; preference fitting and selection do not read it. Reset learning preserves the historical Timeline/audit decision but clears preference and personal AI evidence; full reset is idle-only, creates and verifies a SQLite backup, clears product state, restores the `0.7.5` defaults including Standard 1x, Progressive wait, Smart resurfacing with a seven-day cooldown, Drawer AI signals, Luna High for acquisition/semantic/AI Deep, and Luna XHigh only for candidate evaluation, and preserves Bridge identity.
 
 ## Verification
 
