@@ -246,17 +246,18 @@ func (s *Store) SaveSemanticReports(ctx context.Context, reports []domain.Resolv
 			corrected = 1
 		}
 		reportID := domain.NewID("event_report")
+		reportCreatedAt := domain.Now()
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO semantic_event_reports(id,event_id,timeline_id,session_id,run_id,evidence_key,source,relation,confidence,reason,corrected,created_at)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(timeline_id) DO UPDATE SET event_id=excluded.event_id,relation=excluded.relation,confidence=excluded.confidence,reason=excluded.reason,corrected=excluded.corrected`,
-			reportID, event.ID, report.Candidate.TimelineID, report.Candidate.SessionID, report.Candidate.RunID, report.Candidate.EvidenceKey, report.Candidate.Source, report.Relation, report.Confidence, report.Reason, corrected, domain.Now()); err != nil {
+			reportID, event.ID, report.Candidate.TimelineID, report.Candidate.SessionID, report.Candidate.RunID, report.Candidate.EvidenceKey, report.Candidate.Source, report.Relation, report.Confidence, report.Reason, corrected, reportCreatedAt); err != nil {
 			return err
 		}
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM semantic_event_reports WHERE timeline_id=?`, report.Candidate.TimelineID).Scan(&reportID); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT id,created_at FROM semantic_event_reports WHERE timeline_id=?`, report.Candidate.TimelineID).Scan(&reportID, &reportCreatedAt); err != nil {
 			return err
 		}
-		if err := syncSemanticDelta(ctx, tx, reportID, report); err != nil {
+		if err := syncSemanticDeltaAt(ctx, tx, reportID, report, reportCreatedAt); err != nil {
 			return err
 		}
 	}
@@ -284,6 +285,10 @@ func semanticDeltaFingerprint(value string) string {
 }
 
 func syncSemanticDelta(ctx context.Context, tx *sql.Tx, reportID string, report domain.ResolvedSemanticReport) error {
+	return syncSemanticDeltaAt(ctx, tx, reportID, report, domain.Now())
+}
+
+func syncSemanticDeltaAt(ctx context.Context, tx *sql.Tx, reportID string, report domain.ResolvedSemanticReport, observedAt string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_deltas WHERE report_id=?`, reportID); err != nil {
 		return err
 	}
@@ -291,14 +296,17 @@ func syncSemanticDelta(ctx context.Context, tx *sql.Tx, reportID string, report 
 	if !semanticDeltaRelation(report.Relation) || claim == "" {
 		return nil
 	}
-	now := domain.Now()
+	observedAt = strings.TrimSpace(observedAt)
+	if observedAt == "" {
+		observedAt = domain.Now()
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO semantic_event_deltas(id,event_id,report_id,fingerprint,claim,kind,source,evidence_key,confidence,first_seen_at,last_seen_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(event_id,fingerprint) DO UPDATE SET
 		  last_seen_at=excluded.last_seen_at,
 		  confidence=MAX(semantic_event_deltas.confidence,excluded.confidence)`,
-		domain.NewID("event_delta"), report.Event.ID, reportID, semanticDeltaFingerprint(claim), claim, report.Relation, report.Candidate.Source, report.Candidate.EvidenceKey, report.Confidence, now, now); err != nil {
+		domain.NewID("event_delta"), report.Event.ID, reportID, semanticDeltaFingerprint(claim), claim, report.Relation, report.Candidate.Source, report.Candidate.EvidenceKey, report.Confidence, observedAt, observedAt); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
@@ -309,19 +317,23 @@ func syncSemanticDelta(ctx context.Context, tx *sql.Tx, reportID string, report 
 	return err
 }
 
+const semanticDeltaBackfillVersion = "2"
+
 func (s *Store) backfillSemanticEventDeltas(ctx context.Context) error {
-	// Schema 7 databases created before the delta ledger need one additive
-	// rebuild. Normal report writes maintain the ledger incrementally, so avoid
-	// rewriting retained history on every Sidecar startup.
-	var existing int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&existing); err != nil {
-		return err
-	}
-	if existing > 0 {
+	// Version 2 repairs the original schema-7 backfill, which stamped retained
+	// history with Sidecar startup time instead of each report's observed time.
+	// Normal report writes maintain the ledger incrementally after this one-time
+	// rebuild.
+	var version string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='semantic_delta_backfill_version'`).Scan(&version)
+	if err == nil && version == semanticDeltaBackfillVersion {
 		return nil
 	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id,r.event_id,r.relation,r.confidence,r.source,r.evidence_key,t.item_json
+		SELECT r.id,r.event_id,r.relation,r.confidence,r.source,r.evidence_key,r.created_at,t.item_json
 		FROM semantic_event_reports r
 		JOIN timeline_items t ON t.id=r.timeline_id
 		WHERE r.relation IN ('material_update','contradiction','new_consequence','context_only')
@@ -336,13 +348,14 @@ func (s *Store) backfillSemanticEventDeltas(ctx context.Context) error {
 		confidence float64
 		source     domain.Source
 		evidence   string
+		createdAt  string
 		item       domain.ReasonedItem
 	}
 	var retained []retainedReport
 	for rows.Next() {
 		var value retainedReport
 		var itemRaw string
-		if err := rows.Scan(&value.reportID, &value.eventID, &value.relation, &value.confidence, &value.source, &value.evidence, &itemRaw); err != nil {
+		if err := rows.Scan(&value.reportID, &value.eventID, &value.relation, &value.confidence, &value.source, &value.evidence, &value.createdAt, &itemRaw); err != nil {
 			rows.Close()
 			return err
 		}
@@ -361,6 +374,9 @@ func (s *Store) backfillSemanticEventDeltas(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_deltas`); err != nil {
+		return err
+	}
 	for _, value := range retained {
 		report := domain.ResolvedSemanticReport{
 			Candidate: domain.SemanticCandidate{
@@ -372,9 +388,14 @@ func (s *Store) backfillSemanticEventDeltas(ctx context.Context) error {
 			Relation:   value.relation,
 			Confidence: value.confidence,
 		}
-		if err := syncSemanticDelta(ctx, tx, value.reportID, report); err != nil {
+		if err := syncSemanticDeltaAt(ctx, tx, value.reportID, report, value.createdAt); err != nil {
 			return err
 		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO meta(key,value) VALUES('semantic_delta_backfill_version',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, semanticDeltaBackfillVersion); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

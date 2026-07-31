@@ -205,6 +205,19 @@ func TestSemanticDeltaLedgerBackfillsRetainedSchemaSevenReports(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	insertSemanticTimelineFixture(t, state, "material_update")
+	observedAt := "2026-07-30T17:56:01Z"
+	if _, err := state.db.ExecContext(ctx, `UPDATE semantic_event_reports SET created_at=?`, observedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `DELETE FROM meta WHERE key='semantic_delta_backfill_version'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `
+		INSERT INTO semantic_event_deltas(id,event_id,report_id,fingerprint,claim,kind,source,evidence_key,confidence,first_seen_at,last_seen_at)
+		SELECT 'delta-wrong',r.event_id,r.id,'wrong-fingerprint','wrong startup claim','material_update',r.source,r.evidence_key,r.confidence,'2026-07-31T00:00:00Z','2026-07-31T00:00:00Z'
+		FROM semantic_event_reports r LIMIT 1`); err != nil {
+		t.Fatal(err)
+	}
 	if err := state.backfillSemanticEventDeltas(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -212,11 +225,24 @@ func TestSemanticDeltaLedgerBackfillsRetainedSchemaSevenReports(t *testing.T) {
 	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("backfilled deltas=%d err=%v", count, err)
 	}
+	var firstSeenAt, lastSeenAt, marker string
+	if err := state.db.QueryRowContext(ctx, `SELECT first_seen_at,last_seen_at FROM semantic_event_deltas`).Scan(&firstSeenAt, &lastSeenAt); err != nil {
+		t.Fatal(err)
+	}
+	if firstSeenAt != observedAt || lastSeenAt != observedAt {
+		t.Fatalf("delta chronology first=%q last=%q want=%q", firstSeenAt, lastSeenAt, observedAt)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='semantic_delta_backfill_version'`).Scan(&marker); err != nil || marker != semanticDeltaBackfillVersion {
+		t.Fatalf("migration marker=%q err=%v", marker, err)
+	}
 	if err := state.backfillSemanticEventDeltas(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_event_deltas`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("idempotent deltas=%d err=%v", count, err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT first_seen_at,last_seen_at FROM semantic_event_deltas`).Scan(&firstSeenAt, &lastSeenAt); err != nil || firstSeenAt != observedAt || lastSeenAt != observedAt {
+		t.Fatalf("idempotent chronology first=%q last=%q err=%v", firstSeenAt, lastSeenAt, err)
 	}
 }
 
