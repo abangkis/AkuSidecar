@@ -88,9 +88,13 @@ const $ = (selector) => document.querySelector(selector);
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== endpoint || !event.data) return;
   if (event.data.type === "AKU_BROWSER_BRIDGE_READY") {
+    const capabilities = {
+      ...(event.data.capabilities ?? {}),
+      extensionOrigin: event.data.extensionOrigin || event.data.capabilities?.extensionOrigin || "",
+    };
     bridgeApi("/api/bridge/heartbeat", {
       method: "POST",
-      body: { capabilities: event.data.capabilities ?? {} },
+      body: { capabilities },
     }).then(({ bridge }) => {
       sessionStorage.removeItem(BRIDGE_CONTEXT_RECOVERY_KEY);
       sessionStorage.removeItem(BRIDGE_TOKEN_RECOVERY_KEY);
@@ -148,6 +152,7 @@ $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
 $("#source-access-setup-button").addEventListener("click", openBridgeSourceAccessSetup);
+$("#settings-source-access-button").addEventListener("click", openBridgeSourceAccessSetup);
 $("#timeline-prepared-button").addEventListener("click", () => revealPreparedBatch("latest"));
 $("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
@@ -431,12 +436,16 @@ async function bridgeActionLoop() {
 function renderBridge(bridge) {
   if (state.bootstrap) state.bootstrap.bridge = bridge;
   if (bridge?.compatible) {
-    const grantedSources = bridge.actual?.sourceAccess?.grantedSources;
+    const readiness = bridgeSourceReadiness();
     const activeSources = state.bootstrap?.settings?.activeSources ?? [];
-    if (!Array.isArray(grantedSources)) {
+    const readySources = new Set(readiness.filter((source) => source.ready).map((source) => source.source));
+    const readyActiveCount = activeSources.filter((source) => readySources.has(source)).length;
+    if (!readiness.length) {
       setPill("#bridge-status", "AkuBridge source access checking", "warning");
-    } else if (!activeSources.some((source) => grantedSources.includes(source))) {
+    } else if (readyActiveCount === 0) {
       setPill("#bridge-status", "AkuBridge source access needed", "warning");
+    } else if (readyActiveCount < activeSources.length) {
+      setPill("#bridge-status", `AkuBridge partial · ${readyActiveCount}/${activeSources.length} sources ready`, "warning");
     } else {
       setPill("#bridge-status", `AkuBridge ${bridge.actual?.extensionVersion} ready`, "ok");
     }
@@ -447,6 +456,7 @@ function renderBridge(bridge) {
     setPill("#bridge-status", "AkuBridge reconnecting", "warning");
   }
   syncRunButtons();
+  renderSourceSettingsValues(state.bootstrap?.settings);
   if (bridge?.compatible) schedulePassiveMediaEnrichment();
 }
 
@@ -615,11 +625,30 @@ async function resetAutoUpdateBudget() {
 }
 
 function renderSourceSettingsValues(settings) {
+  if (!settings) return;
+  const readiness = new Map(bridgeSourceReadiness().map((source) => [source.source, source]));
   for (const source of sourceDescriptors()) {
     const defaultMS = source.hydrationTimeoutDefaultMs;
     const input = document.querySelector(`[data-source-hydration="${source.id}"]`);
     if (input && defaultMS) {
       input.value = String((settings.sourceHydrationTimeoutMs?.[source.id] || defaultMS) / 1000);
+    }
+    const status = document.querySelector(`[data-source-readiness="${source.id}"]`);
+    if (status) {
+      const current = readiness.get(source.id);
+      status.className = "source-readiness-status";
+      if (!current) {
+        status.textContent = "Checking access";
+      } else if (current.ready) {
+        status.textContent = "Ready";
+        status.classList.add("source-readiness-ready");
+      } else if (!current.permissionGranted) {
+        status.textContent = "Chrome permission needed";
+        status.classList.add("source-readiness-warning");
+      } else {
+        status.textContent = "Capture script not ready";
+        status.classList.add("source-readiness-warning");
+      }
     }
   }
 }
@@ -1565,16 +1594,21 @@ function runDisabledReason() {
   const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
   if (!Array.isArray(grantedSources)) return "Waiting for AkuBridge source permission status…";
   if (sourceAccessNeedsAttention()) {
-    return "No active source is allowed. Open AkuBridge setup and enable at least one source before updating.";
+    return "No active source is ready. Open AkuBridge setup, enable at least one source, and let its capture script register before updating.";
   }
   return "";
 }
 
 function sourceAccessNeedsAttention() {
   const activeSources = state.bootstrap?.settings?.activeSources ?? [];
-  const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
-  return !Array.isArray(grantedSources)
-    || !activeSources.some((source) => grantedSources.includes(source));
+  const readySources = new Set(bridgeSourceReadiness().filter((source) => source.ready).map((source) => source.source));
+  return readySources.size === 0 || !activeSources.some((source) => readySources.has(source));
+}
+
+function bridgeSourceReadiness() {
+  const access = state.bootstrap?.bridge?.actual?.sourceAccess;
+  if (Array.isArray(access?.sources) && access.sources.length) return access.sources;
+  return [];
 }
 
 function openBridgeSourceAccessSetup() {
@@ -4407,7 +4441,11 @@ function renderSourceControls() {
     settingsStrong.textContent = descriptor.displayName;
     const settingsSmall = document.createElement("small");
     settingsSmall.textContent = `Use the signed-in ${descriptor.displayName} feed during the next update.`;
-    settingsCopy.append(settingsStrong, settingsSmall);
+    const readiness = document.createElement("small");
+    readiness.dataset.sourceReadiness = descriptor.id;
+    readiness.className = "source-readiness-status";
+    readiness.textContent = "Checking access";
+    settingsCopy.append(settingsStrong, settingsSmall, readiness);
     const controls = document.createElement("span");
     controls.className = "source-settings-control";
     const activeLabel = document.createElement("label");

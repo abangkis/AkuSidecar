@@ -50,7 +50,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.api())
 	mux.Handle("/", server.static(http.FS(assets)))
-	server.http = &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port), Handler: security(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 130 * time.Second, IdleTimeout: 60 * time.Second}
+	server.http = &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port), Handler: server.security(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 130 * time.Second, IdleTimeout: 60 * time.Second}
 	return server, nil
 }
 
@@ -93,7 +93,7 @@ func (s *Server) Stop(ctx context.Context) error {
 
 func (s *Server) api() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		applyCORS(r, w)
+		s.applyCORS(r, w)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -635,6 +635,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err := readJSON(r, &body); err != nil {
 			return err
 		}
+		if origin := canonicalExtensionOrigin(r.Header.Get("Origin")); origin != "" {
+			body.Capabilities.ExtensionOrigin = origin
+		} else {
+			body.Capabilities.ExtensionOrigin = canonicalExtensionOrigin(body.Capabilities.ExtensionOrigin)
+		}
 		return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.RecordHeartbeat(body.Capabilities)})
 	case r.Method == http.MethodPost && p == "/api/operations/bridge/actions/reload-self":
 		if err := s.requireBridge(r); err != nil {
@@ -914,7 +919,7 @@ func (s *Server) static(files http.FileSystem) http.Handler {
 	})
 }
 
-func security(next http.Handler) http.Handler {
+func (s *Server) security(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -924,7 +929,7 @@ func security(next http.Handler) http.Handler {
 			http.Error(w, "loopback host required", http.StatusForbidden)
 			return
 		}
-		if !trustedBrowserOrigin(r) {
+		if !s.trustedBrowserOrigin(r) {
 			http.Error(w, "origin is not allowed", http.StatusForbidden)
 			return
 		}
@@ -943,7 +948,7 @@ func trustedLoopbackHost(raw string) bool {
 	return host == "127.0.0.1" || host == "localhost"
 }
 
-func trustedBrowserOrigin(r *http.Request) bool {
+func (s *Server) trustedBrowserOrigin(r *http.Request) bool {
 	raw := strings.TrimSpace(r.Header.Get("Origin"))
 	if raw == "" {
 		return true
@@ -955,16 +960,33 @@ func trustedBrowserOrigin(r *http.Request) bool {
 	if origin.Scheme == "http" && strings.EqualFold(origin.Host, r.Host) {
 		return true
 	}
-	return origin.Scheme == "chrome-extension" && origin.Host != "" && bridgePath(r.URL.Path)
+	if origin.Scheme != "chrome-extension" || origin.Host == "" || !bridgePath(r.URL.Path) {
+		return false
+	}
+	actual := canonicalExtensionOrigin(raw)
+	for _, allowed := range s.config.Bridge.TrustedExtensionOrigins {
+		if actual == canonicalExtensionOrigin(allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalExtensionOrigin(raw string) string {
+	origin, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || origin.Scheme != "chrome-extension" || origin.Host == "" {
+		return ""
+	}
+	return "chrome-extension://" + strings.ToLower(origin.Host)
 }
 
 func bridgePath(value string) bool {
 	return strings.HasPrefix(value, "/api/bridge/") || strings.HasPrefix(value, "/api/operations/bridge/")
 }
 
-func applyCORS(r *http.Request, w http.ResponseWriter) {
+func (s *Server) applyCORS(r *http.Request, w http.ResponseWriter) {
 	origin := r.Header.Get("Origin")
-	if strings.HasPrefix(origin, "chrome-extension://") && bridgePath(r.URL.Path) && trustedBrowserOrigin(r) {
+	if strings.HasPrefix(origin, "chrome-extension://") && bridgePath(r.URL.Path) && s.trustedBrowserOrigin(r) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")

@@ -511,7 +511,7 @@ func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}}
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 0}, Bridge: config.BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://abcdefghijklmnop/"}}}
 	runtime := engine.New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
 	server, err := New(cfg, state, runtime, log.New(io.Discard, "", 0))
 	if err != nil {
@@ -533,6 +533,7 @@ func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 		{name: "same origin UI reaches route", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "application/json", want: http.StatusOK},
 		{name: "localhost alias reaches route", method: http.MethodPut, path: "/api/onboarding", host: "localhost:11122", origin: "http://localhost:11122", contentType: "application/json", want: http.StatusOK},
 		{name: "extension reaches bridge authentication", method: http.MethodPost, path: "/api/bridge/heartbeat", host: "localhost:11122", origin: "chrome-extension://abcdefghijklmnop", contentType: "application/json", want: http.StatusUnauthorized},
+		{name: "different extension cannot reach bridge", method: http.MethodPost, path: "/api/bridge/heartbeat", host: "localhost:11122", origin: "chrome-extension://ponmlkjihgfedcba", contentType: "application/json", want: http.StatusForbidden},
 		{name: "JSON mutation rejects text content", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "text/plain", want: http.StatusUnsupportedMediaType},
 	}
 	for _, test := range tests {

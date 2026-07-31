@@ -882,12 +882,22 @@ type BridgeHeartbeat struct {
 	Authority                    string              `json:"authority"`
 	CaptureLimits                BridgeCaptureLimits `json:"captureLimits"`
 	SourceAccess                 BridgeSourceAccess  `json:"sourceAccess"`
+	ExtensionOrigin              string              `json:"extensionOrigin,omitempty"`
 	ReceivedAt                   string              `json:"receivedAt,omitempty"`
 }
 
 type BridgeSourceAccess struct {
-	GrantedSources []string `json:"grantedSources"`
-	ObservedAt     string   `json:"observedAt"`
+	GrantedSources []string                `json:"grantedSources"`
+	Sources        []BridgeSourceReadiness `json:"sources,omitempty"`
+	ObservedAt     string                  `json:"observedAt"`
+}
+
+type BridgeSourceReadiness struct {
+	Source            string `json:"source"`
+	PermissionGranted bool   `json:"permissionGranted"`
+	ScriptRegistered  bool   `json:"scriptRegistered"`
+	Ready             bool   `json:"ready"`
+	Reason            string `json:"reason"`
 }
 
 type BridgeCaptureLimits struct {

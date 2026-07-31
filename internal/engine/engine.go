@@ -21,7 +21,7 @@ import (
 
 const (
 	ExpectedBridgeVersion  = "0.7.4"
-	ExpectedBridgeRevision = "source-adapters-v84"
+	ExpectedBridgeRevision = "source-adapters-v85"
 	ExpectedBridgeID       = "aku-bridge-chrome-mv3-v0"
 )
 
@@ -36,26 +36,27 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
-	store        *store.Store
-	provider     reasoning.Provider
-	config       config.Config
-	epoch        string
-	mu           sync.RWMutex
-	operation    sync.Mutex
-	schedule     sync.Mutex
-	heartbeat    *domain.BridgeHeartbeat
-	active       map[string]context.CancelFunc
-	pending      map[string]bool
-	cancelled    map[string]bool
-	shuttingDown bool
-	logger       Logger
-	reloads      *ReloadActions
-	events       *semanticengine.Engine
-	aiFast       aidetector.FastDetector
-	aiDeep       aidetector.Resolver
-	mediaOrigin  mediaprovenance.Inspector
-	autoCancel   context.CancelFunc
-	autoWake     chan struct{}
+	store         *store.Store
+	provider      reasoning.Provider
+	config        config.Config
+	epoch         string
+	mu            sync.RWMutex
+	operation     sync.Mutex
+	schedule      sync.Mutex
+	heartbeat     *domain.BridgeHeartbeat
+	bridgeOrigins map[string]time.Time
+	active        map[string]context.CancelFunc
+	pending       map[string]bool
+	cancelled     map[string]bool
+	shuttingDown  bool
+	logger        Logger
+	reloads       *ReloadActions
+	events        *semanticengine.Engine
+	aiFast        aidetector.FastDetector
+	aiDeep        aidetector.Resolver
+	mediaOrigin   mediaprovenance.Inspector
+	autoCancel    context.CancelFunc
+	autoWake      chan struct{}
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -65,7 +66,7 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	if len(eventEngines) > 0 {
 		events = eventEngines[0]
 	}
-	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, pending: map[string]bool{}, cancelled: map[string]bool{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
+	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, pending: map[string]bool{}, cancelled: map[string]bool{}, bridgeOrigins: map[string]time.Time{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
 }
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
 func (e *Engine) SetMediaProvenanceInspector(value mediaprovenance.Inspector) {
@@ -167,6 +168,15 @@ type BridgeStatus struct {
 func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
 	value.ReceivedAt = domain.Now()
 	e.mu.Lock()
+	now := time.Now()
+	for origin, seenAt := range e.bridgeOrigins {
+		if now.Sub(seenAt) > 2*time.Minute {
+			delete(e.bridgeOrigins, origin)
+		}
+	}
+	if value.ExtensionOrigin != "" {
+		e.bridgeOrigins[value.ExtensionOrigin] = now
+	}
 	e.heartbeat = &value
 	e.mu.Unlock()
 	if err := e.recoverExpiredBridgeCommands(context.Background(), time.Now()); err != nil {
@@ -244,6 +254,15 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	if copy.CaptureLimits != (domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}) {
 		status.Reasons = append(status.Reasons, "capture limits mismatch")
 	}
+	if !validBridgeSourceReadiness(copy.SourceAccess.Sources, expectedSources) {
+		status.Reasons = append(status.Reasons, "source readiness contract mismatch")
+	}
+	if len(e.config.Bridge.TrustedExtensionOrigins) > 0 && (copy.ExtensionOrigin == "" || !e.trustedBridgeExtensionOrigin(copy.ExtensionOrigin)) {
+		status.Reasons = append(status.Reasons, "AkuBridge extension origin is not trusted; keep the Chrome Web Store extension or configure one exact development origin")
+	}
+	if len(e.bridgeOrigins) > 1 {
+		status.Reasons = append(status.Reasons, "multiple AkuBridge extension origins are active; disable the legacy unpacked extension and keep only the intended AkuBridge installation")
+	}
 	status.Compatible = len(status.Reasons) == 0
 	if !status.Compatible {
 		status.State = "incompatible"
@@ -251,8 +270,27 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	return status
 }
 
+func (e *Engine) trustedBridgeExtensionOrigin(actual string) bool {
+	actual = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(actual)), "/")
+	// Directly constructed engines are used by deterministic unit tests. The
+	// executable configuration path always validates a non-empty allowlist.
+	if len(e.config.Bridge.TrustedExtensionOrigins) == 0 {
+		return actual == ""
+	}
+	for _, allowed := range e.config.Bridge.TrustedExtensionOrigins {
+		if actual == strings.TrimSuffix(strings.ToLower(strings.TrimSpace(allowed)), "/") {
+			return true
+		}
+	}
+	return false
+}
+
 func ExpectedHeartbeat() domain.BridgeHeartbeat {
-	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), ObservedAt: domain.Now()}}
+	readiness := make([]domain.BridgeSourceReadiness, 0, len(domain.SourceIDs()))
+	for _, source := range domain.SourceIDs() {
+		readiness = append(readiness, domain.BridgeSourceReadiness{Source: source, PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"})
+	}
+	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), Sources: readiness, ObservedAt: domain.Now()}}
 }
 
 func sameStringMap(actual, expected map[string]string) bool {
@@ -286,6 +324,28 @@ func sameStringSet(actual, expected []string) bool {
 	return true
 }
 
+func validBridgeSourceReadiness(actual []domain.BridgeSourceReadiness, expected []string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	values := make(map[string]domain.BridgeSourceReadiness, len(actual))
+	for _, value := range actual {
+		if _, duplicate := values[value.Source]; duplicate {
+			return false
+		}
+		if value.Ready != (value.PermissionGranted && value.ScriptRegistered) {
+			return false
+		}
+		values[value.Source] = value
+	}
+	for _, source := range expected {
+		if _, ok := values[source]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func (e *Engine) StartVisibleUpdate(ctx context.Context, intent string) (domain.Session, error) {
 	trigger := domain.UpdateTriggerUser
 	firstRunStatus, err := e.store.CalibrationFirstRunStatus(ctx)
@@ -305,13 +365,13 @@ func (e *Engine) grantedActiveSources(settings domain.Settings) []domain.Source 
 	if !status.Compatible || status.Actual == nil {
 		return nil
 	}
-	granted := make(map[string]bool, len(status.Actual.SourceAccess.GrantedSources))
-	for _, source := range status.Actual.SourceAccess.GrantedSources {
-		granted[source] = true
+	ready := make(map[string]bool, len(status.Actual.SourceAccess.Sources))
+	for _, source := range status.Actual.SourceAccess.Sources {
+		ready[source.Source] = source.Ready
 	}
 	valid := make([]domain.Source, 0, len(settings.ActiveSources))
 	for _, source := range settings.ActiveSources {
-		if granted[string(source)] {
+		if ready[string(source)] {
 			valid = append(valid, source)
 		}
 	}
@@ -319,7 +379,7 @@ func (e *Engine) grantedActiveSources(settings domain.Settings) []domain.Source 
 }
 
 func noGrantedActiveSourceError() error {
-	return errors.New("No active source has AkuBridge permission. Open AkuBridge setup, enable at least one active source, and accept Chrome's permission prompt.")
+	return errors.New("No active source is ready in AkuBridge. Open AkuBridge setup, enable at least one active source, accept Chrome's permission prompt, and let its capture script register.")
 }
 
 func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -19,6 +21,7 @@ type Config struct {
 	Reasoning           ReasoningConfig  `json:"reasoning"`
 	Capture             CaptureConfig    `json:"capture"`
 	Preference          PreferenceConfig `json:"preference"`
+	Bridge              BridgeConfig     `json:"bridge"`
 	Root                string           `json:"-"`
 	Dev                 bool             `json:"-"`
 	RuntimeControlToken string           `json:"-"`
@@ -59,6 +62,10 @@ type PreferenceConfig struct {
 	Mode string `json:"mode"`
 }
 
+type BridgeConfig struct {
+	TrustedExtensionOrigins []string `json:"trustedExtensionOrigins"`
+}
+
 type Options struct {
 	ConfigPath            string
 	CodexPath             string
@@ -69,6 +76,7 @@ type Options struct {
 	DiscoverCodex         bool
 	RuntimeControlToken   string
 	RuntimeCandidateProbe bool
+	BridgeExtensionOrigin string
 }
 
 func ParseFlags() Options {
@@ -82,6 +90,7 @@ func ParseFlags() Options {
 	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
 	flag.StringVar(&options.RuntimeControlToken, "runtime-control-token", "", "instance-scoped token used by the signed runtime host")
 	flag.BoolVar(&options.RuntimeCandidateProbe, "runtime-candidate-probe", false, "validate the packaged runtime contract and exit")
+	flag.StringVar(&options.BridgeExtensionOrigin, "bridge-extension-origin", "", "override the exact trusted AkuBridge chrome-extension origin")
 	flag.Parse()
 	return options
 }
@@ -119,6 +128,9 @@ func Load(options Options) (Config, error) {
 	if options.DatabasePath != "" {
 		cfg.Database.Path = options.DatabasePath
 	}
+	if strings.TrimSpace(options.BridgeExtensionOrigin) != "" {
+		cfg.Bridge.TrustedExtensionOrigins = []string{strings.TrimSpace(options.BridgeExtensionOrigin)}
+	}
 	if !filepath.IsAbs(cfg.Database.Path) {
 		cfg.Database.Path = filepath.Join(cfg.Root, cfg.Database.Path)
 	}
@@ -145,6 +157,21 @@ func (c Config) Validate() error {
 	}
 	if c.Database.Path == "" {
 		return errors.New("database path is required")
+	}
+	if len(c.Bridge.TrustedExtensionOrigins) == 0 {
+		return errors.New("at least one trusted Bridge extension origin is required")
+	}
+	seenOrigins := map[string]bool{}
+	for _, raw := range c.Bridge.TrustedExtensionOrigins {
+		parsed, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || parsed.Scheme != "chrome-extension" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+			return fmt.Errorf("invalid trusted Bridge extension origin %q", raw)
+		}
+		canonical := "chrome-extension://" + strings.ToLower(parsed.Host)
+		if seenOrigins[canonical] {
+			return fmt.Errorf("duplicate trusted Bridge extension origin %q", raw)
+		}
+		seenOrigins[canonical] = true
 	}
 	if c.Reasoning.Provider != "deterministic" && c.Reasoning.Provider != "codex-app-server" {
 		return fmt.Errorf("unsupported reasoning provider %q", c.Reasoning.Provider)

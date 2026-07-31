@@ -34,6 +34,11 @@
     "openMissingSource": true,
     "maxAcquisitionRounds": 2
   },
+  "bridge": {
+    "trustedExtensionOrigins": [
+      "chrome-extension://kpepkhjfebddlghebcaglbmobgihfcip/"
+    ]
+  },
   "preference": {
     "mode": "guarded_live"
   }

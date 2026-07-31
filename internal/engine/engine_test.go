@@ -77,11 +77,15 @@ func TestRuntimeUpdateReadinessFailsClosedWhileWorkIsActive(t *testing.T) {
 func TestUpdateStopsBeforeSessionCreationWithoutGrantedActiveSource(t *testing.T) {
 	runtime, state := testEngine(t)
 	heartbeat := ExpectedHeartbeat()
-	heartbeat.SourceAccess = domain.BridgeSourceAccess{GrantedSources: []string{}, ObservedAt: domain.Now()}
+	heartbeat.SourceAccess = domain.BridgeSourceAccess{GrantedSources: []string{}, Sources: []domain.BridgeSourceReadiness{
+		{Source: "x", Reason: "permission_not_granted"},
+		{Source: "linkedin", Reason: "permission_not_granted"},
+		{Source: "facebook", Reason: "permission_not_granted"},
+	}, ObservedAt: domain.Now()}
 	runtime.RecordHeartbeat(heartbeat)
 
 	_, err := runtime.StartVisibleUpdate(context.Background(), "must stop before creating a session")
-	if err == nil || !strings.Contains(err.Error(), "No active source has AkuBridge permission") {
+	if err == nil || !strings.Contains(err.Error(), "No active source is ready") {
 		t.Fatalf("start error=%v", err)
 	}
 	active, activeErr := state.ActiveSession(context.Background())
@@ -97,7 +101,11 @@ func TestUpdateStopsBeforeSessionCreationWithoutGrantedActiveSource(t *testing.T
 func TestUpdateCreatesRunsOnlyForGrantedActiveSources(t *testing.T) {
 	runtime, _ := testEngine(t)
 	heartbeat := ExpectedHeartbeat()
-	heartbeat.SourceAccess = domain.BridgeSourceAccess{GrantedSources: []string{"linkedin"}, ObservedAt: domain.Now()}
+	heartbeat.SourceAccess = domain.BridgeSourceAccess{GrantedSources: []string{"linkedin"}, Sources: []domain.BridgeSourceReadiness{
+		{Source: "x", Reason: "permission_not_granted"},
+		{Source: "linkedin", PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"},
+		{Source: "facebook", Reason: "permission_not_granted"},
+	}, ObservedAt: domain.Now()}
 	runtime.RecordHeartbeat(heartbeat)
 
 	session, err := runtime.StartVisibleUpdate(context.Background(), "use only valid sources")
@@ -106,6 +114,42 @@ func TestUpdateCreatesRunsOnlyForGrantedActiveSources(t *testing.T) {
 	}
 	if len(session.Runs) != 1 || session.Runs[0].Source != domain.SourceLinkedIn {
 		t.Fatalf("runs=%+v", session.Runs)
+	}
+}
+
+func TestUpdateUsesEffectiveSourceReadinessInsteadOfPermissionAlone(t *testing.T) {
+	runtime, _ := testEngine(t)
+	heartbeat := ExpectedHeartbeat()
+	heartbeat.SourceAccess = domain.BridgeSourceAccess{
+		GrantedSources: []string{"x", "linkedin"},
+		Sources: []domain.BridgeSourceReadiness{
+			{Source: "x", PermissionGranted: true, ScriptRegistered: false, Ready: false, Reason: "content_script_not_registered"},
+			{Source: "linkedin", PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"},
+			{Source: "facebook", PermissionGranted: false, ScriptRegistered: false, Ready: false, Reason: "permission_not_granted"},
+		},
+		ObservedAt: domain.Now(),
+	}
+	runtime.RecordHeartbeat(heartbeat)
+
+	session, err := runtime.StartVisibleUpdate(context.Background(), "skip granted but unready source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Runs) != 1 || session.Runs[0].Source != domain.SourceLinkedIn {
+		t.Fatalf("runs=%+v", session.Runs)
+	}
+}
+
+func TestMultipleLiveBridgeOriginsStopDispatch(t *testing.T) {
+	runtime, _ := testEngine(t)
+	first := ExpectedHeartbeat()
+	first.ExtensionOrigin = "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	runtime.RecordHeartbeat(first)
+	second := ExpectedHeartbeat()
+	second.ExtensionOrigin = "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	status := runtime.RecordHeartbeat(second)
+	if status.Compatible || status.State != "incompatible" || !strings.Contains(strings.Join(status.Reasons, ";"), "multiple AkuBridge") {
+		t.Fatalf("status=%+v", status)
 	}
 }
 
