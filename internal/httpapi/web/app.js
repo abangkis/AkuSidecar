@@ -75,6 +75,8 @@ const state = {
   expandedTimelineText: new Set(),
   expandedAIDetails: new Set(),
   expandedAIFeedbackOptions: new Set(),
+  backgroundTimelineRefreshPending: false,
+  backgroundTimelineRefreshInFlight: false,
   revealingPreparedBatch: false,
   autoLoadLastScrollY: window.scrollY,
   uiActivityTrackingInstalled: false,
@@ -145,6 +147,7 @@ $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks")
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
+$("#source-access-setup-button").addEventListener("click", openBridgeSourceAccessSetup);
 $("#timeline-prepared-button").addEventListener("click", () => revealPreparedBatch("latest"));
 $("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
@@ -330,7 +333,6 @@ async function pollAutoUpdate() {
       renderSession();
       startPolling();
     }
-    if (!state.session && state.currentView === "timeline") renderTimeline(state.timelineItems, state.bootstrap.latestCheck ?? null, state.timelineBatches);
   } catch (error) {
     console.warn("Auto Update status refresh deferred.", error);
   }
@@ -429,7 +431,15 @@ async function bridgeActionLoop() {
 function renderBridge(bridge) {
   if (state.bootstrap) state.bootstrap.bridge = bridge;
   if (bridge?.compatible) {
-    setPill("#bridge-status", `AkuBridge ${bridge.actual?.extensionVersion} ready`, "ok");
+    const grantedSources = bridge.actual?.sourceAccess?.grantedSources;
+    const activeSources = state.bootstrap?.settings?.activeSources ?? [];
+    if (!Array.isArray(grantedSources)) {
+      setPill("#bridge-status", "AkuBridge source access checking", "warning");
+    } else if (!activeSources.some((source) => grantedSources.includes(source))) {
+      setPill("#bridge-status", "AkuBridge source access needed", "warning");
+    } else {
+      setPill("#bridge-status", `AkuBridge ${bridge.actual?.extensionVersion} ready`, "ok");
+    }
     configureBackgroundBridge();
   } else if (bridge?.state === "incompatible") {
     setPill("#bridge-status", bridge.reasons?.join(", ") || "Bridge incompatible", "danger");
@@ -1526,8 +1536,10 @@ function syncRunButtons() {
   $("#timeline-runner-button").title = canRetryBootstrap ? "Retry restoring the Timeline and active check." : reason;
   $("#timeline-prepared-button").title = preparedReason;
   $("#done-button").title = prepared > 0 ? preparedReason : reason;
+  const showGuidance = Boolean(reason) && !Boolean(state.session && !terminalStatuses.has(state.session.status));
   $("#timeline-runner-status").textContent = reason;
-  $("#timeline-runner-status").classList.toggle("hidden", !reason || Boolean(state.session && !terminalStatuses.has(state.session.status)));
+  $("#timeline-runner-guidance").classList.toggle("hidden", !showGuidance);
+  $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || !sourceAccessNeedsAttention());
   for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled;
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
@@ -1550,7 +1562,23 @@ function runDisabledReason() {
   if (state.bootstrap?.calibration?.active) return "Finish calibration before starting another check.";
   if (state.bootstrap?.onboarding?.status !== "completed") return "Complete source setup before checking for updates.";
   if (!state.bootstrap?.bridge?.compatible) return "Waiting for AkuBridge to reconnect…";
+  const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
+  if (!Array.isArray(grantedSources)) return "Waiting for AkuBridge source permission status…";
+  if (sourceAccessNeedsAttention()) {
+    return "No active source is allowed. Open AkuBridge setup and enable at least one source before updating.";
+  }
   return "";
+}
+
+function sourceAccessNeedsAttention() {
+  const activeSources = state.bootstrap?.settings?.activeSources ?? [];
+  const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
+  return !Array.isArray(grantedSources)
+    || !activeSources.some((source) => grantedSources.includes(source));
+}
+
+function openBridgeSourceAccessSetup() {
+  window.postMessage({ type: "AKU_BROWSER_OPEN_BRIDGE_SETUP" }, endpoint);
 }
 
 async function startPendingFirstCalibration(session) {
@@ -3062,7 +3090,7 @@ async function enrichPassiveXMedia(items) {
         console.debug("Passive X media enrichment was not applied", error);
       }
     }
-    if (updated) await refreshTimeline();
+    if (updated) queueBackgroundTimelineRefresh();
   } catch (error) {
     console.debug("Passive X media evidence is not available yet", error);
   } finally {
@@ -3135,11 +3163,48 @@ function scheduleAIDeepRefresh(pending) {
     return;
   }
   if (state.aiDeepPoller) return;
-  state.aiDeepPoller = window.setTimeout(async () => {
+  state.aiDeepPoller = window.setTimeout(() => {
     state.aiDeepPoller = null;
-    await refreshTimeline();
+    queueBackgroundTimelineRefresh();
   }, AI_DEEP_POLL_INTERVAL_MS);
 }
+
+function timelineInteractionActive() {
+  const timeline = $("#result-items");
+  if (!timeline) return false;
+  if (timeline.querySelector(".event-suggestion-editor")) return true;
+  if (timeline.querySelector(".ai-feedback-options[open]")) return true;
+  const active = document.activeElement;
+  return Boolean(
+    active
+    && timeline.contains(active)
+    && active.matches("button, select, summary, input, textarea, a[href]"),
+  );
+}
+
+function queueBackgroundTimelineRefresh() {
+  state.backgroundTimelineRefreshPending = true;
+  void flushBackgroundTimelineRefresh();
+}
+
+async function flushBackgroundTimelineRefresh() {
+  if (
+    !state.backgroundTimelineRefreshPending
+    || state.backgroundTimelineRefreshInFlight
+    || timelineInteractionActive()
+  ) return;
+  state.backgroundTimelineRefreshPending = false;
+  state.backgroundTimelineRefreshInFlight = true;
+  try {
+    await refreshTimeline();
+  } finally {
+    state.backgroundTimelineRefreshInFlight = false;
+  }
+}
+
+document.addEventListener("focusout", () => {
+  window.setTimeout(() => void flushBackgroundTimelineRefresh(), 0);
+});
 
 function renderTimelineSidePane(items, pending) {
   scheduleTimelineSidePanePosition();

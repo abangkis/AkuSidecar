@@ -103,6 +103,10 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		status.State, status.Reason = "disabled", "Auto Update is off"
 		return status, nil
 	}
+	if bridge := e.BridgeStatus(); bridge.Compatible && len(e.grantedActiveSources(settings)) == 0 {
+		status.State, status.Reason = "paused", "No active source has AkuBridge permission"
+		return status, nil
+	}
 	if len(batches) >= settings.PreparedBatchLimit {
 		status.State, status.Reason = "paused", "Prepared batch limit reached"
 		return status, nil

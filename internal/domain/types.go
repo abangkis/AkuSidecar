@@ -881,7 +881,13 @@ type BridgeHeartbeat struct {
 	Actions                      []string            `json:"actions"`
 	Authority                    string              `json:"authority"`
 	CaptureLimits                BridgeCaptureLimits `json:"captureLimits"`
+	SourceAccess                 BridgeSourceAccess  `json:"sourceAccess"`
 	ReceivedAt                   string              `json:"receivedAt,omitempty"`
+}
+
+type BridgeSourceAccess struct {
+	GrantedSources []string `json:"grantedSources"`
+	ObservedAt     string   `json:"observedAt"`
 }
 
 type BridgeCaptureLimits struct {

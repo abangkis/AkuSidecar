@@ -74,6 +74,41 @@ func TestRuntimeUpdateReadinessFailsClosedWhileWorkIsActive(t *testing.T) {
 	cancel()
 }
 
+func TestUpdateStopsBeforeSessionCreationWithoutGrantedActiveSource(t *testing.T) {
+	runtime, state := testEngine(t)
+	heartbeat := ExpectedHeartbeat()
+	heartbeat.SourceAccess = domain.BridgeSourceAccess{GrantedSources: []string{}, ObservedAt: domain.Now()}
+	runtime.RecordHeartbeat(heartbeat)
+
+	_, err := runtime.StartVisibleUpdate(context.Background(), "must stop before creating a session")
+	if err == nil || !strings.Contains(err.Error(), "No active source has AkuBridge permission") {
+		t.Fatalf("start error=%v", err)
+	}
+	active, activeErr := state.ActiveSession(context.Background())
+	if activeErr != nil || active != nil {
+		t.Fatalf("active session=%+v err=%v", active, activeErr)
+	}
+	status, statusErr := runtime.AutoUpdateStatus(context.Background())
+	if statusErr != nil || status.State != "paused" || !strings.Contains(status.Reason, "No active source") {
+		t.Fatalf("auto update status=%+v err=%v", status, statusErr)
+	}
+}
+
+func TestUpdateCreatesRunsOnlyForGrantedActiveSources(t *testing.T) {
+	runtime, _ := testEngine(t)
+	heartbeat := ExpectedHeartbeat()
+	heartbeat.SourceAccess = domain.BridgeSourceAccess{GrantedSources: []string{"linkedin"}, ObservedAt: domain.Now()}
+	runtime.RecordHeartbeat(heartbeat)
+
+	session, err := runtime.StartVisibleUpdate(context.Background(), "use only valid sources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Runs) != 1 || session.Runs[0].Source != domain.SourceLinkedIn {
+		t.Fatalf("runs=%+v", session.Runs)
+	}
+}
+
 func TestAcceptedObservationQueuesRelaunchWhilePriorPassIsActive(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	runtime := &Engine{

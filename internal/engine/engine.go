@@ -252,7 +252,7 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 }
 
 func ExpectedHeartbeat() domain.BridgeHeartbeat {
-	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}
+	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), ObservedAt: domain.Now()}}
 }
 
 func sameStringMap(actual, expected map[string]string) bool {
@@ -300,6 +300,28 @@ func (e *Engine) StartVisibleUpdate(ctx context.Context, intent string) (domain.
 	})
 }
 
+func (e *Engine) grantedActiveSources(settings domain.Settings) []domain.Source {
+	status := e.BridgeStatus()
+	if !status.Compatible || status.Actual == nil {
+		return nil
+	}
+	granted := make(map[string]bool, len(status.Actual.SourceAccess.GrantedSources))
+	for _, source := range status.Actual.SourceAccess.GrantedSources {
+		granted[source] = true
+	}
+	valid := make([]domain.Source, 0, len(settings.ActiveSources))
+	for _, source := range settings.ActiveSources {
+		if granted[string(source)] {
+			valid = append(valid, source)
+		}
+	}
+	return valid
+}
+
+func noGrantedActiveSourceError() error {
+	return errors.New("No active source has AkuBridge permission. Open AkuBridge setup, enable at least one active source, and accept Chrome's permission prompt.")
+}
+
 func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
@@ -333,6 +355,11 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 	if err != nil {
 		return domain.Session{}, err
 	}
+	validSources := e.grantedActiveSources(settings)
+	if len(validSources) == 0 {
+		return domain.Session{}, noGrantedActiveSourceError()
+	}
+	settings.ActiveSources = validSources
 	e.cancelDeepDetections()
 	session, err := e.store.CreateUpdateSession(ctx, intent, settings, policy)
 	if err != nil {
