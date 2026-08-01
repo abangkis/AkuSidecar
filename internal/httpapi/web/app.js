@@ -4236,16 +4236,28 @@ function showSessionFailure(session) {
   const failedRuns = (session.runs ?? []).filter((run) => ["failed", "cancelled"].includes(run.status));
   const failedSources = failedRuns.map((run) => sourceLabel(run.source)).join(" and ");
   const sourcesUnavailable = failedRuns.length > 0 && failedRuns.every((run) => run.error?.code === "source_unavailable");
+  const windowsSecurityBlocked = failedRuns.some(isWindowsSecurityRuntimeFailure);
   const panel = $("#failure-panel");
+  const runtimeRecovery = $("#failure-runtime-recovery");
   $("#retry-button").dataset.action = "return";
   $("#retry-button").textContent = "Return to timeline";
-  panel.classList.toggle("failure-panel-warning", sourcesUnavailable);
+  runtimeRecovery.classList.toggle("hidden", !windowsSecurityBlocked);
+  if (windowsSecurityBlocked) {
+    $("#failure-manual-bundle-download").href = matchingWindowsPortableBundleURL();
+  }
+  panel.classList.toggle("failure-panel-warning", sourcesUnavailable || windowsSecurityBlocked);
   panel.setAttribute("role", sourcesUnavailable ? "status" : "alert");
-  $("#failure-label").textContent = sourcesUnavailable ? "SOURCE UNAVAILABLE" : "RUN STOPPED";
-  $("#failure-title").textContent = sourcesUnavailable
-    ? `${failedSources || "One source"} is temporarily unavailable`
-    : "The bounded snapshot could not finish";
-  if (sourcesUnavailable) {
+  $("#failure-label").textContent = windowsSecurityBlocked
+    ? "WINDOWS SECURITY BLOCKED RUNTIME"
+    : sourcesUnavailable ? "SOURCE UNAVAILABLE" : "RUN STOPPED";
+  $("#failure-title").textContent = windowsSecurityBlocked
+    ? "AkuSidecar could not start Codex with normal file access"
+    : sourcesUnavailable
+      ? `${failedSources || "One source"} is temporarily unavailable`
+      : "The bounded snapshot could not finish";
+  if (windowsSecurityBlocked) {
+    $("#failure-message").textContent = "The local runtime is installed and healthy, but Avast or another Windows security product denied the Codex process access to its local state. Repeating Update now without restarting AkuSidecar will fail again.";
+  } else if (sourcesUnavailable) {
     $("#failure-message").textContent = `${failedSources} reported a temporary service issue. AkuBrowser kept the validated results from every source that completed; retry after the source recovers.`;
   } else if (session.status === "partial") {
     $("#failure-message").textContent = `${failedSources || "One source"} could not finish. AkuBrowser retained and ordered the validated result from the source that completed.`;
@@ -4255,6 +4267,22 @@ function showSessionFailure(session) {
       || "The session stopped before an active source could finish.";
   }
   panel.classList.remove("hidden");
+}
+
+function isWindowsSecurityRuntimeFailure(run) {
+  if (run?.error?.code !== "reasoning_failed") return false;
+  const message = String(run.error.message || "").toLowerCase();
+  const accessDenied = message.includes("access is denied") || message.includes("os error 5") || message.includes("spawn eperm");
+  const codexState = message.includes("codex app server") || message.includes("sqlite state runtime") || message.includes("state runtime");
+  return accessDenied && codexState;
+}
+
+function matchingWindowsPortableBundleURL() {
+  const version = String(state.bootstrap?.version || "").trim();
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    return "https://github.com/abangkis/AkuBrowser/releases/latest";
+  }
+  return `https://github.com/abangkis/AkuBrowser/releases/download/v${version}/AkuBrowser-${version}-windows-x64.zip`;
 }
 
 function firstRunCalibrationPending() {
@@ -4268,6 +4296,7 @@ function showCalibrationRetry(session) {
     .filter((run) => run.status === "failed")
     .map((run) => sourceLabel(run.source));
   const panel = $("#failure-panel");
+  $("#failure-runtime-recovery").classList.add("hidden");
   panel.classList.add("failure-panel-warning");
   panel.setAttribute("role", "status");
   $("#failure-label").textContent = "CALIBRATION WAITING";
@@ -4304,6 +4333,7 @@ function showSessionOutcome(session) {
 
 function hideFailure() {
   $("#failure-panel").classList.add("hidden");
+  $("#failure-runtime-recovery").classList.add("hidden");
   $("#retry-button").dataset.action = "return";
   $("#retry-button").textContent = "Return to timeline";
 }

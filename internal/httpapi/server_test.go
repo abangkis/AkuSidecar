@@ -504,6 +504,24 @@ func TestEmbeddedInboxDistinguishesActiveEvaluationFromFinalZero(t *testing.T) {
 	}
 }
 
+func TestEmbeddedWindowsSecurityFailureOffersManualBundleRecovery(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"failure-runtime-recovery", "Download manual Windows bundle", "Do not run installed and portable runtimes together"},
+		"web/app.js":     {"function isWindowsSecurityRuntimeFailure", "function matchingWindowsPortableBundleURL", "WINDOWS SECURITY BLOCKED RUNTIME", "Repeating Update now without restarting AkuSidecar will fail again"},
+		"web/styles.css": {".failure-runtime-recovery", ".failure-download-link"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
