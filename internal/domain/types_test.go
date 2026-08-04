@@ -226,6 +226,13 @@ func TestLearningPanelStartsOnForOnboarding(t *testing.T) {
 	}
 }
 
+func TestAutoUpdateDefaultsUseTwoMillionDailyBudget(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.AutoUpdateDailyTokenBudget != 2000000 || value.AutoUpdateManualReservePct != 25 {
+		t.Fatalf("auto update budget defaults=%+v", value)
+	}
+}
+
 func TestResurfaceSettingsUseSmartSevenDayDefaultAndLockedCooldowns(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
 	if value.ResurfaceMode != "smart" || value.ResurfaceCooldownDays != 7 {
@@ -249,7 +256,7 @@ func TestResurfaceSettingsUseSmartSevenDayDefaultAndLockedCooldowns(t *testing.T
 
 func TestReasoningProfilesUseReleaseDefaultsAndRejectUnsafeIDs(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
-	if value.ReasoningAcquisitionProfile != "luna_high" || value.ReasoningEvaluationProfile != "luna_xhigh" || value.ReasoningSemanticProfile != "luna_high" || value.ReasoningAIDeepProfile != "luna_high" {
+	if value.ReasoningAcquisitionProfile != "luna_high" || value.ReasoningEvaluationProfile != "luna_max" || value.ReasoningSemanticProfile != "luna_high" || value.ReasoningAIDeepProfile != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", value)
 	}
 	value.ReasoningAcquisitionProfile = "Sol Medium"

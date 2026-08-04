@@ -20,13 +20,16 @@ import (
 func TestCodexProfileCatalogIsBounded(t *testing.T) {
 	provider := &CodexAppServer{}
 	options := provider.ProfileOptions()
-	if len(options) != 5 {
+	if len(options) != 6 {
 		t.Fatalf("options=%+v", options)
 	}
-	for _, id := range []string{"luna_high", "luna_xhigh", "terra_high", "terra_xhigh", "sol_medium"} {
+	for _, id := range []string{"luna_high", "luna_xhigh", "luna_max", "terra_high", "terra_xhigh", "sol_medium"} {
 		if model, ok := provider.ResolveProfile(id); !ok || model.Model == "" || model.Effort == "" {
 			t.Fatalf("profile %q model=%+v ok=%v", id, model, ok)
 		}
+	}
+	if model, ok := provider.ResolveProfile("luna_max"); !ok || model.Model != "gpt-5.6-luna" || model.Effort != "max" {
+		t.Fatalf("luna max profile=%+v ok=%v", model, ok)
 	}
 	if _, ok := provider.ResolveProfile("sol_xhigh"); ok {
 		t.Fatal("unlisted profile must fail closed")

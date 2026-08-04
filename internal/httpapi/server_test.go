@@ -136,10 +136,10 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["showLearningPanel"] != true || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "drawer" || bootstrapSettings["aiDetectionEnabled"] != true || bootstrapSettings["resurfaceMode"] != "smart" || bootstrapSettings["resurfaceCooldownDays"] != float64(7) {
 		t.Fatalf("timeline boundary cue settings=%+v", bootstrapSettings)
 	}
-	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_xhigh" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
+	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_max" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", bootstrapSettings)
 	}
-	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateRefillMinutes"] != float64(5) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(1000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
+	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateRefillMinutes"] != float64(5) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(2000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
 		t.Fatalf("auto update defaults=%+v", bootstrapSettings)
 	}
 	autoUpdate := bootstrap["autoUpdate"].(map[string]any)
@@ -149,7 +149,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(5) {
 		t.Fatalf("auto update queue telemetry=%+v", autoUpdate)
 	}
-	if autoUpdate["dailyTokenBudget"] != float64(1000000) || autoUpdate["dailyTokensUsed"] != float64(0) || autoUpdate["quotaTokensUsed"] != float64(0) || autoUpdate["dailyTokensRemaining"] != float64(1000000) || autoUpdate["manualReserveTokens"] != float64(250000) || autoUpdate["automaticTokenLimit"] != float64(750000) || autoUpdate["automaticTokensRemaining"] != float64(750000) || autoUpdate["budgetResetAt"] == "" {
+	if autoUpdate["dailyTokenBudget"] != float64(2000000) || autoUpdate["dailyTokensUsed"] != float64(0) || autoUpdate["quotaTokensUsed"] != float64(0) || autoUpdate["dailyTokensRemaining"] != float64(2000000) || autoUpdate["manualReserveTokens"] != float64(500000) || autoUpdate["automaticTokenLimit"] != float64(1500000) || autoUpdate["automaticTokensRemaining"] != float64(1500000) || autoUpdate["budgetResetAt"] == "" {
 		t.Fatalf("auto update budget telemetry=%+v", autoUpdate)
 	}
 	activityBeforeStatus, err := state.AutoUpdateScheduleState(context.Background())

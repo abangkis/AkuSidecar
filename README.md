@@ -79,14 +79,15 @@ structured token telemetry. On Windows, each managed App Server is assigned to
 its own Job Object so forced timeout/recycle also cleans its descendant tool
 processes; the Supervisor remains the outer ownership boundary. Acquisition planning, semantic event resolution,
 and AI Deep Detection default to Luna `high`; candidate evaluation alone uses
-Luna `xhigh`. Deep Detection runs only after Timeline delivery, while
+Luna `max`. Deep Detection runs only after Timeline delivery, while
 local deterministic AI Fast Detection does not consume a model. The domain
 adapters depend on a generic structured-inference contract rather than the
 Codex transport, so another backend can replace App Server without changing
 their schemas or authority rules. Settings exposes the active provider, model,
 effort, and execution phase for each process. Each process can be tuned for the
 next invocation through a backend-owned bounded catalog: Luna High, Luna XHigh,
-Terra High, Terra XHigh, or Sol Medium. Free-form model IDs are never accepted.
+Luna Max, Terra High, Terra XHigh, or Sol Medium. Free-form model IDs are never
+accepted.
 
 An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
@@ -173,7 +174,7 @@ typed, stored in SQLite, and changed through `GET/PUT /api/settings`.
 Auto Update is also a typed product setting. One Sidecar-owned scheduler can
 prepare hidden finite batches while the process is alive. Adaptive scheduling
 is the default, the queue defaults to two, and local invocation telemetry gates
-automatic work. The fresh daily boundary is 1M tokens with 25% unavailable to
+automatic work. The fresh daily boundary is 2M tokens with 25% unavailable to
 automatic work for user-visible updates. A user-authorized daily quota reset preserves
 invocation history while establishing a new local allowance baseline. Prepared
 batches do not enter the Timeline until revealed.

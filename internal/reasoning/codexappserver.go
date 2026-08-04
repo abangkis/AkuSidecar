@@ -143,6 +143,7 @@ func (c *CodexAppServer) ProfileOptions() []ProfileOption {
 	return []ProfileOption{
 		{ID: "luna_high", Label: "Luna High", Model: "gpt-5.6-luna", Effort: "high"},
 		{ID: "luna_xhigh", Label: "Luna XHigh", Model: "gpt-5.6-luna", Effort: "xhigh"},
+		{ID: "luna_max", Label: "Luna Max", Model: "gpt-5.6-luna", Effort: "max"},
 		{ID: "terra_high", Label: "Terra High", Model: "gpt-5.6-terra", Effort: "high"},
 		{ID: "terra_xhigh", Label: "Terra XHigh", Model: "gpt-5.6-terra", Effort: "xhigh"},
 		{ID: "sol_medium", Label: "Sol Medium", Model: "gpt-5.6-sol", Effort: "medium"},

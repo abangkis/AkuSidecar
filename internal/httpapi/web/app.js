@@ -26,7 +26,7 @@ const LOAD_PROFILE_PRESETS = {
 };
 const RELEASE_REASONING_DEFAULTS = Object.freeze({
   acquisition_planning: "luna_high",
-  candidate_evaluation: "luna_xhigh",
+  candidate_evaluation: "luna_max",
   semantic_event_resolution: "luna_high",
   ai_deep_detection: "luna_high",
 });
@@ -510,7 +510,7 @@ function renderSettings(settings) {
   $("#auto-update-mode").value = settings.autoUpdateMode || "adaptive";
   $("#auto-update-refill").value = String(settings.autoUpdateRefillMinutes || 5);
   $("#prepared-batch-limit").value = String(settings.preparedBatchLimit || 2);
-  $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 1000000);
+  $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 2000000);
   $("#auto-update-manual-reserve").value = String(settings.autoUpdateManualReservePct || 25);
   $("#prepared-batch-max-age").value = String(settings.preparedBatchMaxAgeHours || 24);
   $("#next-batch-behavior").value = settings.nextBatchBehavior || "require_action";

@@ -28,14 +28,14 @@ const (
 	DefaultResurfaceMode            = "smart"
 	DefaultResurfaceCooldownDays    = 7
 	DefaultReasoningAcquisition     = "luna_high"
-	DefaultReasoningEvaluation      = "luna_xhigh"
+	DefaultReasoningEvaluation      = "luna_max"
 	DefaultReasoningSemantic        = "luna_high"
 	DefaultReasoningAIDeep          = "luna_high"
 	DefaultSourceWaitMode           = "progressive_wait"
 	DefaultAutoUpdateMode           = "adaptive"
 	DefaultAutoUpdateRefillMin      = 5
 	DefaultPreparedBatchLimit       = 2
-	DefaultAutoUpdateDailyTokens    = 1000000
+	DefaultAutoUpdateDailyTokens    = 2000000
 	DefaultAutoUpdateManualReserve  = 25
 	DefaultPreparedBatchMaxAgeHours = 24
 	DefaultNextBatchBehavior        = "require_action"
