@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -28,6 +29,7 @@ type ReasoningRuntimeProfile struct {
 	Label          string `json:"label"`
 	ExecutablePath string `json:"executablePath"`
 	Editable       bool   `json:"editable"`
+	AutoRepaired   bool   `json:"autoRepaired,omitempty"`
 }
 
 func (e *Engine) ReasoningRuntime() ReasoningRuntimeProfile {
@@ -43,6 +45,8 @@ func (e *Engine) ReasoningRuntime() ReasoningRuntimeProfile {
 }
 
 func (e *Engine) DiscoverReasoningExecutable(ctx context.Context) (ReasoningRuntimeProfile, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
 	runtime, ok := e.provider.(reasoning.ExecutableRuntime)
 	if !ok {
 		return e.ReasoningRuntime(), fmt.Errorf("%s does not expose an editable executable", e.ProviderName())
@@ -53,7 +57,26 @@ func (e *Engine) DiscoverReasoningExecutable(ctx context.Context) (ReasoningRunt
 	}
 	result := e.ReasoningRuntime()
 	result.ExecutablePath = path
+	if executableAvailable(runtime.ExecutablePath()) {
+		return result, nil
+	}
+	settings, err := e.store.GetSettings(ctx)
+	if err != nil {
+		return e.ReasoningRuntime(), err
+	}
+	settings.ReasoningExecutablePath = path
+	if err := e.store.SaveSettings(ctx, settings); err != nil {
+		return e.ReasoningRuntime(), fmt.Errorf("persist rediscovered reasoning executable: %w", err)
+	}
+	runtime.UseExecutable(path)
+	result = e.ReasoningRuntime()
+	result.AutoRepaired = true
 	return result, nil
+}
+
+func executableAvailable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func (e *Engine) ReasoningProcesses(settings domain.Settings) []ReasoningProcessProfile {

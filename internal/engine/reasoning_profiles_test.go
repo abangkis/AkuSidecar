@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -129,5 +130,58 @@ func TestReasoningExecutableIsValidatedPersistedAndActivated(t *testing.T) {
 	stored, _ = state.GetSettings(context.Background())
 	if stored.ReasoningExecutablePath != provider.path {
 		t.Fatalf("invalid executable changed durable settings: %+v", stored)
+	}
+}
+
+func TestReasoningDiscoveryRepairsMissingActiveExecutable(t *testing.T) {
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.ReasoningExecutablePath = filepath.Join(t.TempDir(), "removed-codex.exe")
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	provider := &executableTestProvider{path: settings.ReasoningExecutablePath}
+	runtime := New(state, provider, config.Config{}, log.New(io.Discard, "", 0))
+
+	profile, err := runtime.DiscoverReasoningExecutable(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !profile.AutoRepaired || profile.ExecutablePath != provider.path {
+		t.Fatalf("profile=%+v provider=%+v", profile, provider)
+	}
+	stored, err := state.GetSettings(context.Background())
+	if err != nil || stored.ReasoningExecutablePath != provider.path {
+		t.Fatalf("stored=%+v provider=%+v err=%v", stored, provider, err)
+	}
+}
+
+func TestReasoningDiscoveryDoesNotReplaceAvailableUserExecutable(t *testing.T) {
+	root := t.TempDir()
+	current := filepath.Join(root, "current-codex.exe")
+	if err := os.WriteFile(current, []byte("test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.ReasoningExecutablePath = current
+	state, err := store.Open(filepath.Join(root, "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	provider := &executableTestProvider{path: current}
+	runtime := New(state, provider, config.Config{}, log.New(io.Discard, "", 0))
+
+	profile, err := runtime.DiscoverReasoningExecutable(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.AutoRepaired || provider.path != current {
+		t.Fatalf("valid user executable was replaced: profile=%+v provider=%+v", profile, provider)
+	}
+	stored, _ := state.GetSettings(context.Background())
+	if stored.ReasoningExecutablePath != current {
+		t.Fatalf("stored path=%q want=%q", stored.ReasoningExecutablePath, current)
 	}
 }

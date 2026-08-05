@@ -474,7 +474,7 @@ function renderSettings(settings) {
   renderReasoningProcesses(state.bootstrap?.reasoningProcesses ?? []);
   const reasoningRuntime = state.bootstrap?.reasoningRuntime;
   $("#reasoning-executable-label").textContent = reasoningRuntime?.label || "Inference executable";
-  $("#reasoning-executable-path").value = settings.reasoningExecutablePath || reasoningRuntime?.executablePath || "";
+  $("#reasoning-executable-path").value = reasoningRuntime?.executablePath || settings.reasoningExecutablePath || "";
   $("#reasoning-executable-path").disabled = reasoningRuntime?.editable === false;
   $("#detect-reasoning-executable").disabled = reasoningRuntime?.editable === false;
   $("#bounded-load-profile").value = settings.loadProfile;
@@ -824,9 +824,14 @@ async function detectReasoningExecutable() {
     const response = await api("/api/reasoning/runtime/discover", { method: "POST" });
     const runtime = response.reasoningRuntime;
     state.bootstrap.reasoningRuntime = runtime;
+    if (runtime.autoRepaired && state.bootstrap.settings) {
+      state.bootstrap.settings.reasoningExecutablePath = runtime.executablePath;
+    }
     $("#reasoning-executable-label").textContent = runtime.label || "Inference executable";
     $("#reasoning-executable-path").value = runtime.executablePath || "";
-    status.textContent = "Detected · save settings to use this executable";
+    status.textContent = runtime.autoRepaired
+      ? "Detected and refreshed · ready to use"
+      : "Detected · save settings to use this executable";
   } catch (error) {
     status.textContent = error.message;
     showError(error);
