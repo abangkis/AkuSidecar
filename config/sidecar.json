@@ -35,9 +35,7 @@
     "maxAcquisitionRounds": 2
   },
   "bridge": {
-    "trustedExtensionOrigins": [
-      "chrome-extension://phkaipecbhpgopggbfpcejgngbhddnkk/"
-    ]
+    "trustedExtensionOrigins": []
   },
   "preference": {
     "mode": "guarded_live"

@@ -120,11 +120,15 @@ the development stack through the workspace bootstrap:
 
 ```powershell
 cd ..\AkuSupervisor
-.\scripts\dev-akuworkspace.ps1 akusidecar
+.\scripts\dev.ps1 akusidecar
 ```
 
-The bootstrap performs the incremental Go build before the generic Supervisor
-validates its service configuration. After a source change while the stack is
+The bootstrap resolves AkuBrowser's `development` profile from the single
+Bridge identity registry, writes its exact origin as a generated argument in
+the active Supervisor configuration, and performs the incremental Go build
+before the generic Supervisor validates its service configuration. The
+checked-in Sidecar base configuration intentionally contains no trusted Bridge
+origin. After a source change while the stack is
 already running, use the explicit rebuild/restart command from AkuSidecar:
 
 ```powershell
@@ -146,10 +150,17 @@ Use `build-dev.ps1` alone when only a stopped binary needs to be built.
 Restarting the service directly through AkuSupervisor never rebuilds embedded
 UI or Go source and must not be used while an update is active.
 
-For an isolated production-style run:
+For an isolated direct development run, derive the exact origin from the same
+registry rather than copying an ID into another file:
 
 ```powershell
-.\runtime\dev\aku-sidecar.exe --config .\config\sidecar.json
+$identity = Get-Content ..\AkuBrowser\config\bridge-identities.json -Raw |
+  ConvertFrom-Json |
+  Select-Object -ExpandProperty profiles |
+  Select-Object -ExpandProperty development
+$origin = "chrome-extension://$($identity.extensionId)/"
+.\runtime\dev\aku-sidecar.exe --config .\config\sidecar.json `
+  --bridge-extension-origin $origin
 ```
 
 Normal workspace operation is owned by AkuSupervisor. Its canonical service
@@ -167,6 +178,13 @@ Runtime flags may override only process-local concerns:
 - `--codex-path`
 - `--port`
 - `--dev`
+- `--bridge-extension-origin`
+
+`--bridge-extension-origin` is a launcher-owned trust projection. Normal
+development receives it from `AkuSupervisor\scripts\dev.ps1`; production
+packages receive it from AkuBrowser release tooling. It is not a user-tunable
+product setting and must resolve to one exact identity declared by
+`AkuBrowser\config\bridge-identities.json`.
 
 There are no environment-based compatibility settings. Product settings are
 typed, stored in SQLite, and changed through `GET/PUT /api/settings`.
