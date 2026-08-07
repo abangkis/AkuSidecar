@@ -14,7 +14,7 @@ func TestCodexAppServerRequiresSeparateAIDetectionProfile(t *testing.T) {
 			SemanticEvent: ModelConfig{Model: "event", Effort: "high"},
 		},
 		Capture: CaptureConfig{MaxAcquisitionRounds: 1},
-		Bridge:  BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://kpepkhjfebddlghebcaglbmobgihfcip/"}},
+		Bridge:  BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://phkaipecbhpgopggbfpcejgngbhddnkk/"}},
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "AI detection model") {
 		t.Fatalf("missing AI Detector profile error=%v", err)
