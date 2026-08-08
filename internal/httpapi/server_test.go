@@ -222,6 +222,24 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 			}
 		}
 	}
+	response, err = client.Get("http://" + address.String() + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPayload, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.7.8"`) {
+		t.Fatal("AkuBrowser page does not declare its branded favicon")
+	}
+	response, err = client.Get("http://" + address.String() + "/favicon.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	faviconPayload, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(faviconPayload), `aria-label="AkuBrowser"`) {
+		t.Fatal("AkuBrowser favicon is not served as an embedded asset")
+	}
 	response, err = client.Get("http://" + address.String() + "/app.js")
 	if err != nil {
 		t.Fatal(err)
