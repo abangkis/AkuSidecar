@@ -256,10 +256,12 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		"function buildVideoMedia",
 		"function buildVideoPosterControl",
 		"function activateInlineVideo",
+		"function observeInlineVideoVisibility",
 		"function safeXPlaybackUrl",
 		"video.preload = \"none\"",
 		"video.src = playbackUrl",
 		"video.addEventListener(\"error\", useNativeFallback",
+		"!entry.isIntersecting && !observedVideo.paused",
 		"Play video",
 		"Play on native post",
 	} {

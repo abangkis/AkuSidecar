@@ -2970,6 +2970,7 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
   renderTimelineSidePane(routed.drawer, routed.pending);
   scheduleAIDeepRefresh(routed.pending);
   const container = $("#result-items");
+  stopObservingInlineVideoVisibilityWithin(container);
   container.replaceChildren();
   if (latestCheck) {
     const unique = latestCheck.addedItems ?? 0;
@@ -3900,6 +3901,7 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
 
   const useNativeFallback = () => {
     if (!video.isConnected) return;
+    stopObservingInlineVideoVisibility(video);
     video.pause();
     video.removeAttribute("src");
     video.replaceWith(buildVideoPosterControl({
@@ -3912,6 +3914,7 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
   video.addEventListener("error", useNativeFallback, { once: true });
 
   control.replaceWith(video);
+  observeInlineVideoVisibility(video);
   // Assigning src only after the explicit click keeps Timeline rendering from
   // creating a passive video request to X's CDN.
   video.src = playbackUrl;
@@ -3926,6 +3929,35 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
 function pauseOtherInlineVideos(activeVideo) {
   for (const video of document.querySelectorAll("video.source-layout-inline-video")) {
     if (video !== activeVideo && !video.paused) video.pause();
+  }
+}
+
+let inlineVideoVisibilityObserver = null;
+
+function observeInlineVideoVisibility(video) {
+  if (!(video instanceof HTMLVideoElement) || !("IntersectionObserver" in window)) return;
+  if (!inlineVideoVisibilityObserver) {
+    inlineVideoVisibilityObserver = new IntersectionObserver((entries, observer) => {
+      for (const entry of entries) {
+        const observedVideo = entry.target;
+        if (!observedVideo.isConnected) {
+          observer.unobserve(observedVideo);
+          continue;
+        }
+        if (!entry.isIntersecting && !observedVideo.paused) observedVideo.pause();
+      }
+    }, { threshold: 0 });
+  }
+  inlineVideoVisibilityObserver.observe(video);
+}
+
+function stopObservingInlineVideoVisibility(video) {
+  inlineVideoVisibilityObserver?.unobserve(video);
+}
+
+function stopObservingInlineVideoVisibilityWithin(root) {
+  for (const video of root?.querySelectorAll?.("video.source-layout-inline-video") ?? []) {
+    stopObservingInlineVideoVisibility(video);
   }
 }
 

@@ -455,7 +455,9 @@ rendering does not preload the video. The application CSP limits media loading
 to `video.twimg.com` and pauses another inline player when a new one starts.
 The poster never shows inline and native-play actions at the same time. If the
 playback URL is absent or native playback fails, the poster returns to the
-previous **Play on native post** behavior.
+previous **Play on native post** behavior. An active inline player pauses when
+it leaves the viewport completely and remains paused when the user scrolls
+back; playback resumes only through an explicit user action.
 
 The same response adapter may expose the owning Tweet author's allowlisted X
 avatar URL to AkuBridge's isolated runtime. Avatar evidence is held only in a
