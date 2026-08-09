@@ -452,8 +452,10 @@ allowlisted `https://video.twimg.com/` MP4 URL, the Timeline keeps rendering
 the poster until the user explicitly selects **Play video**. Only that action
 assigns the URL to a native `<video controls>` element; ordinary Timeline
 rendering does not preload the video. The application CSP limits media loading
-to `video.twimg.com`, pauses another inline player when a new one starts, and
-keeps the canonical **Open on X** link as the failure fallback.
+to `video.twimg.com` and pauses another inline player when a new one starts.
+The poster never shows inline and native-play actions at the same time. If the
+playback URL is absent or native playback fails, the poster returns to the
+previous **Play on native post** behavior.
 
 The same response adapter may expose the owning Tweet author's allowlisted X
 avatar URL to AkuBridge's isolated runtime. Avatar evidence is held only in a

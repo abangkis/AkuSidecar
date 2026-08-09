@@ -254,16 +254,21 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	for _, marker := range []string{
 		"function buildVideoMedia",
+		"function buildVideoPosterControl",
 		"function activateInlineVideo",
 		"function safeXPlaybackUrl",
 		"video.preload = \"none\"",
 		"video.src = playbackUrl",
+		"video.addEventListener(\"error\", useNativeFallback",
 		"Play video",
-		"Open on",
+		"Play on native post",
 	} {
 		if !strings.Contains(string(appPayload), marker) {
 			t.Fatalf("app.js missing X inline playback contract %q", marker)
 		}
+	}
+	if strings.Contains(string(appPayload), "source-layout-video-native-link") {
+		t.Fatal("inline X video poster must not render a simultaneous native-post overlay")
 	}
 	if !strings.Contains(string(appPayload), "entry.feedback?.direction") {
 		t.Fatal("timeline feedback state is not restored after rendering")

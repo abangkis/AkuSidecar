@@ -3830,12 +3830,33 @@ function buildVideoMedia(value, source, nativePostUrl) {
   const shell = document.createElement("div");
   shell.className = "source-layout-video-shell";
   const canPlayInline = Boolean(value.inlinePlaybackUrl);
+  const control = buildVideoPosterControl({
+    posterUrl: value.displayUrl,
+    alt: value.alt,
+    source,
+    nativePostUrl,
+    playInline: canPlayInline
+      ? () => activateInlineVideo(shell, {
+        playbackUrl: value.inlinePlaybackUrl,
+        posterUrl: value.displayUrl,
+        alt: value.alt,
+        source,
+        nativePostUrl,
+      })
+      : null,
+  });
+  shell.append(control);
+  return shell;
+}
+
+function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, playInline = null }) {
+  const canPlayInline = typeof playInline === "function";
   const control = document.createElement(canPlayInline || !nativePostUrl ? "button" : "a");
   if (control.tagName === "BUTTON") control.type = "button";
   control.className = "source-layout-media-item is-video-poster";
   const image = document.createElement("img");
-  image.src = value.displayUrl;
-  image.alt = value.alt || `${sourceLabel(source)} video poster`;
+  image.src = posterUrl;
+  image.alt = alt || `${sourceLabel(source)} video poster`;
   image.loading = "lazy";
   image.referrerPolicy = "no-referrer";
   control.append(image);
@@ -3851,12 +3872,7 @@ function buildVideoMedia(value, source, nativePostUrl) {
 
   if (canPlayInline) {
     control.setAttribute("aria-label", `Play ${sourceLabel(source)} video in AkuBrowser`);
-    control.addEventListener("click", () => activateInlineVideo(shell, {
-      playbackUrl: value.inlinePlaybackUrl,
-      posterUrl: value.displayUrl,
-      source,
-      nativePostUrl,
-    }));
+    control.addEventListener("click", playInline);
   } else if (nativePostUrl) {
     control.href = nativePostUrl;
     control.target = "_blank";
@@ -3866,22 +3882,10 @@ function buildVideoMedia(value, source, nativePostUrl) {
     control.disabled = true;
     control.setAttribute("aria-label", `${sourceLabel(source)} video preview; native post unavailable`);
   }
-  shell.append(control);
-
-  if (canPlayInline && nativePostUrl) {
-    const nativeLink = document.createElement("a");
-    nativeLink.className = "source-layout-video-native-link";
-    nativeLink.href = nativePostUrl;
-    nativeLink.target = "_blank";
-    nativeLink.rel = "noopener noreferrer";
-    nativeLink.textContent = `Open on ${sourceLabel(source)}`;
-    nativeLink.setAttribute("aria-label", `Open ${sourceLabel(source)} post in a new tab`);
-    shell.append(nativeLink);
-  }
-  return shell;
+  return control;
 }
 
-function activateInlineVideo(shell, { playbackUrl, posterUrl, source, nativePostUrl }) {
+function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl }) {
   if (!shell || shell.querySelector("video.source-layout-inline-video")) return;
   const control = shell.querySelector(".source-layout-media-item");
   if (!control) return;
@@ -3894,25 +3898,29 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, source, nativePost
   video.setAttribute("aria-label", `${sourceLabel(source)} video`);
   video.addEventListener("play", () => pauseOtherInlineVideos(video));
 
-  const status = document.createElement("div");
-  status.className = "source-layout-video-status";
-  status.setAttribute("role", "status");
-  status.hidden = true;
-  video.addEventListener("error", () => {
-    shell.classList.add("has-playback-error");
-    status.textContent = nativePostUrl
-      ? `Video unavailable here. Open the original ${sourceLabel(source)} post to continue.`
-      : "Video unavailable here.";
-    status.hidden = false;
-  }, { once: true });
+  const useNativeFallback = () => {
+    if (!video.isConnected) return;
+    video.pause();
+    video.removeAttribute("src");
+    video.replaceWith(buildVideoPosterControl({
+      posterUrl,
+      alt,
+      source,
+      nativePostUrl,
+    }));
+  };
+  video.addEventListener("error", useNativeFallback, { once: true });
 
   control.replaceWith(video);
-  shell.append(status);
   // Assigning src only after the explicit click keeps Timeline rendering from
   // creating a passive video request to X's CDN.
   video.src = playbackUrl;
   const playback = video.play();
-  if (playback?.catch) playback.catch(() => {});
+  if (playback?.catch) {
+    playback.catch(() => {
+      if (video.error) useNativeFallback();
+    });
+  }
 }
 
 function pauseOtherInlineVideos(activeVideo) {
