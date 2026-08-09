@@ -105,6 +105,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if !strings.Contains(csp, "https://*.fbcdn.net") || !strings.Contains(csp, "https://*.fbsbx.com") {
 		t.Fatalf("Facebook media hosts missing from CSP: %s", csp)
 	}
+	if !strings.Contains(csp, "media-src 'self' https://video.twimg.com") {
+		t.Fatalf("X video playback host missing from CSP: %s", csp)
+	}
 	response, err = client.Get("http://" + address.String() + "/api/bootstrap")
 	if err != nil {
 		t.Fatal(err)
@@ -248,6 +251,19 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	response.Body.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		"function buildVideoMedia",
+		"function activateInlineVideo",
+		"function safeXPlaybackUrl",
+		"video.preload = \"none\"",
+		"video.src = playbackUrl",
+		"Play video",
+		"Open on",
+	} {
+		if !strings.Contains(string(appPayload), marker) {
+			t.Fatalf("app.js missing X inline playback contract %q", marker)
+		}
 	}
 	if !strings.Contains(string(appPayload), "entry.feedback?.direction") {
 		t.Fatal("timeline feedback state is not restored after rendering")

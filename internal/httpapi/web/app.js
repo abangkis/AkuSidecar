@@ -3788,7 +3788,13 @@ function buildExpandableText(value, { characterLimit, lineLimit, label, expansio
 
 function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
   const media = (Array.isArray(values) ? values : [])
-    .map((value) => ({ ...value, displayUrl: safeMediaUrl(value.posterUrl || value.url) }))
+    .map((value) => ({
+      ...value,
+      displayUrl: safeMediaUrl(value.posterUrl || value.url),
+      inlinePlaybackUrl: value.playbackMode === "inline"
+        ? safeXPlaybackUrl(value.playbackUrl, source)
+        : null,
+    }))
     .filter((value) => value.displayUrl)
     .slice(0, 4);
   if (!media.length) return null;
@@ -3798,8 +3804,12 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
   gallery.className = `source-layout-media media-count-${media.length}`;
   for (const value of media) {
     const isVideo = isVideoMedia(value);
-    const control = document.createElement(isVideo && nativePostUrl ? "a" : "button");
-    if (control.tagName === "BUTTON") control.type = "button";
+    if (isVideo) {
+      gallery.append(buildVideoMedia(value, source, nativePostUrl));
+      continue;
+    }
+    const control = document.createElement("button");
+    control.type = "button";
     control.className = "source-layout-media-item";
     const image = document.createElement("img");
     image.src = value.displayUrl;
@@ -3807,35 +3817,108 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
     image.loading = "lazy";
     image.referrerPolicy = "no-referrer";
     control.append(image);
-    if (isVideo) {
-      control.classList.add("is-video-poster");
-      const cue = document.createElement("span");
-      cue.className = "source-layout-video-cue";
-      cue.setAttribute("aria-hidden", "true");
-      cue.textContent = "▶";
-      const label = document.createElement("span");
-      label.className = "source-layout-video-label";
-      label.textContent = nativePostUrl ? "Play on native post" : "Video preview";
-      control.append(cue, label);
-      control.setAttribute("aria-label", nativePostUrl
-        ? `Open ${sourceLabel(source)} native post to play video`
-        : `${sourceLabel(source)} video preview; native post unavailable`);
-      if (nativePostUrl) {
-        control.href = nativePostUrl;
-        control.target = "_blank";
-        control.rel = "noopener noreferrer";
-      } else {
-        control.disabled = true;
-      }
-    } else {
-      control.addEventListener("click", () => openMedia(
-        imageMedia.map((entry) => entry.displayUrl),
-        imageMedia.indexOf(value),
-      ));
-    }
+    control.addEventListener("click", () => openMedia(
+      imageMedia.map((entry) => entry.displayUrl),
+      imageMedia.indexOf(value),
+    ));
     gallery.append(control);
   }
   return gallery;
+}
+
+function buildVideoMedia(value, source, nativePostUrl) {
+  const shell = document.createElement("div");
+  shell.className = "source-layout-video-shell";
+  const canPlayInline = Boolean(value.inlinePlaybackUrl);
+  const control = document.createElement(canPlayInline || !nativePostUrl ? "button" : "a");
+  if (control.tagName === "BUTTON") control.type = "button";
+  control.className = "source-layout-media-item is-video-poster";
+  const image = document.createElement("img");
+  image.src = value.displayUrl;
+  image.alt = value.alt || `${sourceLabel(source)} video poster`;
+  image.loading = "lazy";
+  image.referrerPolicy = "no-referrer";
+  control.append(image);
+
+  const cue = document.createElement("span");
+  cue.className = "source-layout-video-cue";
+  cue.setAttribute("aria-hidden", "true");
+  cue.textContent = "▶";
+  const label = document.createElement("span");
+  label.className = "source-layout-video-label";
+  label.textContent = canPlayInline ? "Play video" : nativePostUrl ? "Play on native post" : "Video preview";
+  control.append(cue, label);
+
+  if (canPlayInline) {
+    control.setAttribute("aria-label", `Play ${sourceLabel(source)} video in AkuBrowser`);
+    control.addEventListener("click", () => activateInlineVideo(shell, {
+      playbackUrl: value.inlinePlaybackUrl,
+      posterUrl: value.displayUrl,
+      source,
+      nativePostUrl,
+    }));
+  } else if (nativePostUrl) {
+    control.href = nativePostUrl;
+    control.target = "_blank";
+    control.rel = "noopener noreferrer";
+    control.setAttribute("aria-label", `Open ${sourceLabel(source)} native post to play video`);
+  } else {
+    control.disabled = true;
+    control.setAttribute("aria-label", `${sourceLabel(source)} video preview; native post unavailable`);
+  }
+  shell.append(control);
+
+  if (canPlayInline && nativePostUrl) {
+    const nativeLink = document.createElement("a");
+    nativeLink.className = "source-layout-video-native-link";
+    nativeLink.href = nativePostUrl;
+    nativeLink.target = "_blank";
+    nativeLink.rel = "noopener noreferrer";
+    nativeLink.textContent = `Open on ${sourceLabel(source)}`;
+    nativeLink.setAttribute("aria-label", `Open ${sourceLabel(source)} post in a new tab`);
+    shell.append(nativeLink);
+  }
+  return shell;
+}
+
+function activateInlineVideo(shell, { playbackUrl, posterUrl, source, nativePostUrl }) {
+  if (!shell || shell.querySelector("video.source-layout-inline-video")) return;
+  const control = shell.querySelector(".source-layout-media-item");
+  if (!control) return;
+  const video = document.createElement("video");
+  video.className = "source-layout-inline-video";
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = "none";
+  video.poster = posterUrl;
+  video.setAttribute("aria-label", `${sourceLabel(source)} video`);
+  video.addEventListener("play", () => pauseOtherInlineVideos(video));
+
+  const status = document.createElement("div");
+  status.className = "source-layout-video-status";
+  status.setAttribute("role", "status");
+  status.hidden = true;
+  video.addEventListener("error", () => {
+    shell.classList.add("has-playback-error");
+    status.textContent = nativePostUrl
+      ? `Video unavailable here. Open the original ${sourceLabel(source)} post to continue.`
+      : "Video unavailable here.";
+    status.hidden = false;
+  }, { once: true });
+
+  control.replaceWith(video);
+  shell.append(status);
+  // Assigning src only after the explicit click keeps Timeline rendering from
+  // creating a passive video request to X's CDN.
+  video.src = playbackUrl;
+  const playback = video.play();
+  if (playback?.catch) playback.catch(() => {});
+}
+
+function pauseOtherInlineVideos(activeVideo) {
+  for (const video of document.querySelectorAll("video.source-layout-inline-video")) {
+    if (video !== activeVideo && !video.paused) video.pause();
+  }
 }
 
 function buildAttachments(values, source) {
@@ -4553,6 +4636,27 @@ function safeMediaUrl(value) {
   try {
     const url = new URL(value);
     return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeXPlaybackUrl(value, source) {
+  if (source !== "x" || typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "video.twimg.com" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      !/^\/(?:amplify_video|ext_tw_video|tweet_video)\//.test(url.pathname)
+    ) {
+      return null;
+    }
+    url.hash = "";
+    return url.href;
   } catch {
     return null;
   }

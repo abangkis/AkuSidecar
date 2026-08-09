@@ -447,6 +447,14 @@ four allowlisted `pbs.twimg.com`/`video.twimg.com` post-media records, preserves
 operation. The enrichment consumes no reasoning call or Timeline capacity and
 cannot add, rerank, or semantically regroup an item.
 
+When an accepted X video record contains `playbackMode=inline` and an
+allowlisted `https://video.twimg.com/` MP4 URL, the Timeline keeps rendering
+the poster until the user explicitly selects **Play video**. Only that action
+assigns the URL to a native `<video controls>` element; ordinary Timeline
+rendering does not preload the video. The application CSP limits media loading
+to `video.twimg.com`, pauses another inline player when a new one starts, and
+keeps the canonical **Open on X** link as the failure fallback.
+
 The same response adapter may expose the owning Tweet author's allowlisted X
 avatar URL to AkuBridge's isolated runtime. Avatar evidence is held only in a
 separate bounded in-memory cache and fills presentation when Quiet DOM
