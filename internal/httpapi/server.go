@@ -549,7 +549,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
 		id := path.Base(strings.TrimSuffix(p, "/recapture"))
 		var body struct {
-			CaptureMode domain.MediaRecaptureMode `json:"captureMode"`
+			CaptureMode domain.MediaRecaptureMode   `json:"captureMode"`
+			Reason      domain.MediaRecaptureReason `json:"reason"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			return err
@@ -557,7 +558,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if body.CaptureMode != domain.MediaRecaptureBackground && body.CaptureMode != domain.MediaRecaptureForeground {
 			return badRequest("captureMode must be background or foreground")
 		}
-		recapture, err := s.engine.QueueMediaRecapture(ctx, id, body.CaptureMode)
+		if body.Reason == "" {
+			body.Reason = domain.MediaRecaptureMissingMedia
+		}
+		if !body.Reason.Valid() {
+			return badRequest("reason must be missing_media or playback_error")
+		}
+		recapture, err := s.engine.QueueMediaRecaptureForReason(ctx, id, body.CaptureMode, body.Reason)
 		if errors.Is(err, sql.ErrNoRows) {
 			return notFound("timeline item")
 		}

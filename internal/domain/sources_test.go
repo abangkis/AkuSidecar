@@ -35,7 +35,7 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
 	}
-	if descriptor, _ := SourceByID(SourceLinkedIn); descriptor.MediaEvidenceAdapterVersion != "linkedin-main-world-video-v1" || !slices.Contains(descriptor.TrustedMediaHostSuffixes, "dms.licdn.com") {
+	if descriptor, _ := SourceByID(SourceLinkedIn); descriptor.MediaEvidenceAdapterVersion != "linkedin-main-world-video-v1" || descriptor.PlaybackRecoveryCapability != "native_post_recapture" || !slices.Contains(descriptor.TrustedMediaHostSuffixes, "dms.licdn.com") {
 		t.Fatalf("LinkedIn media capability drifted: %+v", descriptor)
 	}
 	if descriptor, _ := SourceByID(SourceFacebook); descriptor.FollowUpPlanningPolicy != "local_frontier" {
@@ -52,6 +52,28 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.FollowUpPlanningPolicy != "" {
 		t.Fatalf("X must retain model acquisition planning: %+v", descriptor)
+	}
+}
+
+func TestLinkedInPlaybackRecoveryUsesOnlyProgressiveDMSURLs(t *testing.T) {
+	valid := "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123#ignored"
+	canonical, ok := CanonicalInlinePlaybackURL(SourceLinkedIn, valid)
+	if !ok || canonical != "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123" {
+		t.Fatalf("canonical playback=%q ok=%v", canonical, ok)
+	}
+	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || SupportsPlaybackErrorRecapture(SourceX) || SupportsPlaybackErrorRecapture(SourceFacebook) {
+		t.Fatal("playback-error recapture capability must remain LinkedIn-only")
+	}
+	for _, raw := range []string{
+		"https://dms.licdn.com/playlist/vid/v2/example/master.m3u8",
+		"https://dms.licdn.com/playlist/vid/v2/example/thumbnail-low/example/0/1",
+		"https://dms.licdn.com.evil.test/playlist/vid/v2/example/mp4-720p/video.mp4",
+		"https://user@dms.licdn.com/playlist/vid/v2/example/mp4-720p/video.mp4",
+		"http://dms.licdn.com/playlist/vid/v2/example/mp4-720p/video.mp4",
+	} {
+		if got, admitted := CanonicalInlinePlaybackURL(SourceLinkedIn, raw); admitted || got != "" {
+			t.Fatalf("unsafe playback admitted: %q -> %q", raw, got)
+		}
 	}
 }
 

@@ -114,6 +114,87 @@ func TestForegroundMediaRecaptureRequiresUnavailableBackgroundAttempt(t *testing
 	}
 }
 
+func TestLinkedInPlaybackErrorRecaptureRequiresAFreshProgressiveURL(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, evidenceKey, failedPlaybackURL := insertLinkedInPlaybackFixture(t, state)
+
+	if _, err := state.CreateMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground); err == nil {
+		t.Fatal("ordinary missing-media recapture must reject an existing inline video")
+	}
+	job, err := state.CreateMediaRecaptureForReason(ctx, timelineID, domain.MediaRecaptureBackground, domain.MediaRecapturePlaybackError)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Payload["reason"] != domain.MediaRecapturePlaybackError || job.Payload["failedPlaybackUrl"] != failedPlaybackURL || job.Payload["foregroundAuthorized"] != false {
+		t.Fatalf("playback recapture payload=%+v", job.Payload)
+	}
+	job, err = state.ClaimMediaRecapture(ctx, job.ID, "bridge-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshPlaybackURL := "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=999&token=fresh"
+	job, err = state.CompleteMediaRecapture(ctx, job.ID, linkedInPlaybackObservation(evidenceKey, freshPlaybackURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Outcome != "recovered" {
+		t.Fatalf("playback recapture=%+v", job)
+	}
+	items, err := state.ListTimeline(ctx, 24, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Evidence == nil || items[0].Evidence.Media[0]["playbackUrl"] != freshPlaybackURL {
+		t.Fatalf("items=%+v", items)
+	}
+	if items[0].Evidence.MediaRecovery["reason"] != string(domain.MediaRecapturePlaybackError) || items[0].Evidence.MediaRecovery["method"] != "native_post_recapture" {
+		t.Fatalf("media recovery=%+v", items[0].Evidence.MediaRecovery)
+	}
+}
+
+func TestLinkedInPlaybackErrorRecaptureRejectsTheFailedURLAndPreservesForegroundGate(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, evidenceKey, failedPlaybackURL := insertLinkedInPlaybackFixture(t, state)
+
+	background, err := state.CreateMediaRecaptureForReason(ctx, timelineID, domain.MediaRecaptureBackground, domain.MediaRecapturePlaybackError)
+	if err != nil {
+		t.Fatal(err)
+	}
+	background, err = state.ClaimMediaRecapture(ctx, background.ID, "bridge-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	background, err = state.CompleteMediaRecapture(ctx, background.ID, linkedInPlaybackObservation(evidenceKey, failedPlaybackURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if background.Outcome != "unavailable" {
+		t.Fatalf("same URL must remain unavailable: %+v", background)
+	}
+	items, err := state.ListTimeline(ctx, 24, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items[0].Evidence.MediaRecovery["outcome"] != "unavailable" || items[0].Evidence.MediaRecovery["foregroundRequired"] != true {
+		t.Fatalf("media recovery=%+v", items[0].Evidence.MediaRecovery)
+	}
+	if items[0].Evidence.Media[0]["playbackUrl"] != nil || items[0].Evidence.Media[0]["playbackMode"] != "native" {
+		t.Fatalf("failed inline playback survived override: %+v", items[0].Evidence.Media[0])
+	}
+	if _, err := state.CreateMediaRecaptureForReason(ctx, timelineID, domain.MediaRecaptureForeground, domain.MediaRecaptureMissingMedia); err == nil {
+		t.Fatal("foreground recapture must match the failed background reason")
+	}
+	foreground, err := state.CreateMediaRecaptureForReason(ctx, timelineID, domain.MediaRecaptureForeground, domain.MediaRecapturePlaybackError)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foreground.Payload["failedPlaybackUrl"] != failedPlaybackURL || foreground.Payload["foregroundAuthorized"] != true {
+		t.Fatalf("foreground payload=%+v", foreground.Payload)
+	}
+}
+
 func TestPassiveXMediaEvidenceEnrichesWithoutQueueingBrowserWork(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
@@ -305,4 +386,68 @@ func insertUnavailableMediaFixture(t *testing.T, state *Store) (string, string) 
 		t.Fatal(err)
 	}
 	return timelineID, evidenceKey
+}
+
+func insertLinkedInPlaybackFixture(t *testing.T, state *Store) (string, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceLinkedIn}
+	session, err := createVisibleUpdateSession(state, ctx, "fixture", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runs[0]
+	evidenceKey := "linkedin:activity:7411111111111111111"
+	failedPlaybackURL := "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123&token=expired"
+	block := linkedInPlaybackObservation(evidenceKey, failedPlaybackURL).Snapshots[0].Blocks[0]
+	observationRaw, _ := json.Marshal(domain.Observation{Source: domain.SourceLinkedIn, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Index: 0, CapturedAt: domain.Now(), Blocks: []domain.Block{block}}}})
+	itemRaw, _ := json.Marshal(domain.ReasonedItem{Source: domain.SourceLinkedIn, SourceURL: block.Permalink, SourceURLKind: "native_post", EvidenceKey: evidenceKey})
+	assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{EvidenceKey: evidenceKey})
+	now := domain.Now()
+	commandID := "command-linkedin-playback-fixture"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO bridge_commands(id,run_id,type,status,payload_json,created_at,completed_at) VALUES(?,?,?,'completed','{}',?,?)`, commandID, run.ID, "collect_visible", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO observations(id,run_id,command_id,source,observation_json,captured_at,created_at) VALUES(?,?,?,?,?,?,?)`, "observation-linkedin-playback-fixture", run.ID, commandID, run.Source, string(observationRaw), now, now); err != nil {
+		t.Fatal(err)
+	}
+	timelineID := "timeline-linkedin-playback-fixture"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, timelineID, session.ID, run.ID, run.Source, evidenceKey, 0, string(itemRaw), string(assessmentRaw), now); err != nil {
+		t.Fatal(err)
+	}
+	return timelineID, evidenceKey, failedPlaybackURL
+}
+
+func linkedInPlaybackObservation(evidenceKey, playbackURL string) domain.Observation {
+	posterURL := "https://dms.licdn.com/playlist/vid/v2/example/thumbnail-low/example/0/1"
+	return domain.Observation{
+		Source: domain.SourceLinkedIn,
+		Snapshots: []domain.Snapshot{{
+			Index: 0,
+			Blocks: []domain.Block{{
+				EvidenceKey: evidenceKey,
+				PlatformID:  evidenceKey,
+				Author:      "Example",
+				Text:        "A sufficiently long LinkedIn post body with inline video evidence.",
+				Permalink:   "https://www.linkedin.com/feed/update/urn:li:activity:7411111111111111111/",
+				ContentKind: "video",
+				Media: []map[string]any{{
+					"kind":         "video",
+					"url":          posterURL,
+					"posterUrl":    posterURL,
+					"playbackUrl":  playbackURL,
+					"playbackMode": "inline",
+				}},
+				MediaRecovery: map[string]any{"outcome": "recovered", "attempts": 0},
+			}},
+		}},
+	}
 }

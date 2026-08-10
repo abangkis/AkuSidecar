@@ -22,8 +22,15 @@ var (
 const passiveXMediaEngineVersion = "passive-x-media-enrichment-v2"
 
 func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode) (domain.MediaRecapture, error) {
+	return s.CreateMediaRecaptureForReason(ctx, timelineID, mode, domain.MediaRecaptureMissingMedia)
+}
+
+func (s *Store) CreateMediaRecaptureForReason(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason) (domain.MediaRecapture, error) {
 	if mode != domain.MediaRecaptureBackground && mode != domain.MediaRecaptureForeground {
 		return domain.MediaRecapture{}, errors.New("media recapture mode must be background or foreground")
+	}
+	if !reason.Valid() {
+		return domain.MediaRecapture{}, errors.New("media recapture reason must be missing_media or playback_error")
 	}
 	var source domain.Source
 	var evidenceKey, itemRaw string
@@ -43,13 +50,31 @@ func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string, mod
 	if !nativeSourceURL(source, targetURL) {
 		return domain.MediaRecapture{}, errors.New("this item has no recapturable native post URL")
 	}
-	if len(block.Media) > 0 || stringValue(block.MediaRecovery, "outcome") != "unavailable" {
-		return domain.MediaRecapture{}, errors.New("this item does not have unavailable captured media")
-	}
 	foregroundAuthorized := mode == domain.MediaRecaptureForeground
+	var priorPayload map[string]any
 	if foregroundAuthorized {
-		if err := s.requireUnavailableBackgroundRecapture(ctx, timelineID); err != nil {
+		priorPayload, err = s.requireUnavailableBackgroundRecapture(ctx, timelineID, reason)
+		if err != nil {
 			return domain.MediaRecapture{}, err
+		}
+	}
+	failedPlaybackURL := ""
+	switch reason {
+	case domain.MediaRecaptureMissingMedia:
+		if len(block.Media) > 0 || stringValue(block.MediaRecovery, "outcome") != "unavailable" {
+			return domain.MediaRecapture{}, errors.New("this item does not have unavailable captured media")
+		}
+	case domain.MediaRecapturePlaybackError:
+		if !domain.SupportsPlaybackErrorRecapture(source) {
+			return domain.MediaRecapture{}, errors.New("this source does not support playback-error recapture")
+		}
+		if foregroundAuthorized {
+			failedPlaybackURL = stringValue(priorPayload, "failedPlaybackUrl")
+		} else {
+			failedPlaybackURL = inlinePlaybackURL(block, source, "")
+		}
+		if failedPlaybackURL == "" {
+			return domain.MediaRecapture{}, errors.New("this item does not have a recapturable inline playback URL")
 		}
 	}
 	settings, err := s.GetSettings(ctx)
@@ -67,6 +92,7 @@ func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string, mod
 	}
 	job.Payload = map[string]any{
 		"mode":                     "recapture_media",
+		"reason":                   reason,
 		"source":                   source,
 		"sourceHydrationTimeoutMs": settings.SourceHydrationTimeout(source),
 		"targetUrl":                targetURL,
@@ -97,6 +123,9 @@ func (s *Store) CreateMediaRecapture(ctx context.Context, timelineID string, mod
 		"browserAdapter":       "aku-bridge",
 		"acquisitionRound":     1,
 		"maxAcquisitionRounds": 1,
+	}
+	if failedPlaybackURL != "" {
+		job.Payload["failedPlaybackUrl"] = failedPlaybackURL
 	}
 	payload, _ := json.Marshal(job.Payload)
 	_, err = s.db.ExecContext(ctx, `INSERT INTO media_recaptures(id,timeline_id,source,target_url,evidence_key,status,payload_json,created_at) VALUES(?,?,?,?,?,'queued',?,?)`, job.ID, job.TimelineID, job.Source, job.TargetURL, job.EvidenceKey, string(payload), job.CreatedAt)
@@ -236,22 +265,23 @@ func (s *Store) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, brid
 	return job, true, nil
 }
 
-func (s *Store) requireUnavailableBackgroundRecapture(ctx context.Context, timelineID string) error {
+func (s *Store) requireUnavailableBackgroundRecapture(ctx context.Context, timelineID string, reason domain.MediaRecaptureReason) (map[string]any, error) {
 	var outcome, payloadRaw string
 	err := s.db.QueryRowContext(ctx, `SELECT outcome,payload_json FROM media_recaptures WHERE timeline_id=? AND status='completed' ORDER BY completed_at DESC LIMIT 1`, timelineID).Scan(&outcome, &payloadRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("foreground recapture requires a completed unavailable background attempt")
+			return nil, errors.New("foreground recapture requires a completed unavailable background attempt")
 		}
-		return err
+		return nil, err
 	}
 	var payload map[string]any
 	decodeJSON(payloadRaw, &payload)
 	priorForeground, _ := payload["foregroundAuthorized"].(bool)
-	if outcome != "unavailable" || priorForeground {
-		return errors.New("foreground recapture requires the latest completed attempt to be unavailable in the background")
+	priorReason := mediaRecaptureReason(payload)
+	if outcome != "unavailable" || priorForeground || priorReason != reason {
+		return nil, errors.New("foreground recapture requires the latest same-reason attempt to be unavailable in the background")
 	}
-	return nil
+	return payload, nil
 }
 
 func (s *Store) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {
@@ -304,14 +334,38 @@ func (s *Store) CompleteMediaRecapture(ctx context.Context, id string, observati
 	if !ok {
 		return domain.MediaRecapture{}, errors.New("recapture did not return the requested native post")
 	}
-	evidenceRaw, _ := json.Marshal(block)
-	resultRaw, _ := json.Marshal(observation)
 	outcome := "unavailable"
-	if len(block.Media) > 0 {
+	reason := mediaRecaptureReason(job.Payload)
+	if reason == domain.MediaRecapturePlaybackError {
+		failedPlaybackURL := stringValue(job.Payload, "failedPlaybackUrl")
+		if inlinePlaybackURL(block, job.Source, failedPlaybackURL) != "" {
+			outcome = "recovered"
+		}
+		mediaRecovery := mergeAnyValues(block.MediaRecovery, map[string]any{
+			"outcome":              outcome,
+			"reason":               string(reason),
+			"method":               "native_post_recapture",
+			"acquisitionStage":     "playback_error_recapture",
+			"foregroundAuthorized": job.Payload["foregroundAuthorized"],
+			"foregroundRequired":   outcome == "unavailable" && job.Payload["foregroundAuthorized"] != true,
+		})
+		if outcome == "recovered" || job.Payload["foregroundAuthorized"] == true {
+			delete(mediaRecovery, "visibilityRequirement")
+			delete(mediaRecovery, "limitation")
+		} else {
+			mediaRecovery["visibilityRequirement"] = "foreground_window"
+		}
+		block.MediaRecovery = mediaRecovery
+		if outcome == "unavailable" {
+			block.Media = withoutInlinePlayback(block.Media)
+		}
+	} else if len(block.Media) > 0 {
 		outcome = "recovered"
 	} else if value := stringValue(block.MediaRecovery, "outcome"); value != "" {
 		outcome = value
 	}
+	evidenceRaw, _ := json.Marshal(block)
+	resultRaw, _ := json.Marshal(observation)
 	now := domain.Now()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO timeline_evidence_overrides(timeline_id,recapture_id,evidence_json,updated_at) VALUES(?,?,?,?) ON CONFLICT(timeline_id) DO UPDATE SET recapture_id=excluded.recapture_id,evidence_json=excluded.evidence_json,updated_at=excluded.updated_at`, job.TimelineID, job.ID, string(evidenceRaw), now); err != nil {
 		return domain.MediaRecapture{}, err
@@ -451,6 +505,43 @@ func sameNativeURL(left, right string) bool {
 func stringValue(values map[string]any, key string) string {
 	value, _ := values[key].(string)
 	return value
+}
+
+func mediaRecaptureReason(payload map[string]any) domain.MediaRecaptureReason {
+	reason := domain.MediaRecaptureReason(stringValue(payload, "reason"))
+	if !reason.Valid() {
+		return domain.MediaRecaptureMissingMedia
+	}
+	return reason
+}
+
+func inlinePlaybackURL(block domain.Block, source domain.Source, excluded string) string {
+	for _, media := range block.Media {
+		kind, _ := media["kind"].(string)
+		mode, _ := media["playbackMode"].(string)
+		raw, _ := media["playbackUrl"].(string)
+		canonical, ok := domain.CanonicalInlinePlaybackURL(source, raw)
+		if kind == "video" && mode == "inline" && ok && canonical != excluded {
+			return canonical
+		}
+	}
+	return ""
+}
+
+func withoutInlinePlayback(values []map[string]any) []map[string]any {
+	result := make([]map[string]any, 0, len(values))
+	for _, media := range values {
+		copyValue := make(map[string]any, len(media))
+		for key, value := range media {
+			copyValue[key] = value
+		}
+		delete(copyValue, "playbackUrl")
+		if copyValue["playbackMode"] == "inline" {
+			copyValue["playbackMode"] = "native"
+		}
+		result = append(result, copyValue)
+	}
+	return result
 }
 
 func normalizeXCandidateID(value string) string {

@@ -1659,6 +1659,10 @@ func (e *Engine) UndoSelectionCorrection(ctx context.Context, id string) (domain
 }
 
 func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode) (domain.MediaRecapture, error) {
+	return e.QueueMediaRecaptureForReason(ctx, timelineID, mode, domain.MediaRecaptureMissingMedia)
+}
+
+func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason) (domain.MediaRecapture, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	if active, err := e.store.ActiveSession(ctx); err != nil {
@@ -1670,7 +1674,7 @@ func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mod
 	if !status.Compatible {
 		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
 	}
-	return e.store.CreateMediaRecapture(ctx, timelineID, mode)
+	return e.store.CreateMediaRecaptureForReason(ctx, timelineID, mode, reason)
 }
 
 func (e *Engine) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {

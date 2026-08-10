@@ -60,7 +60,8 @@ const state = {
   backToTopLastScrollY: 0,
   backToTopBoundary: null,
   mediaRecaptureActive: false,
-  foregroundRecaptureOffers: new Set(),
+  foregroundRecaptureOffers: new Map(),
+  playbackRecoveryAttempts: new Map(),
   pendingSettings: null,
   seenTimelineItems: new Set(),
   aiDeepPoller: null,
@@ -3692,7 +3693,7 @@ function buildSourceCard(entry) {
   const attachments = buildAttachments(evidence.attachments, source);
   if (attachments) card.append(attachments);
   const nativePostUrl = safeSourceUrl(item.sourceUrl || evidence.permalink, source);
-  const media = buildMedia(evidence.media, source, evidence.contentKind, nativePostUrl);
+  const media = buildMedia(evidence.media, source, evidence.contentKind, nativePostUrl, entry);
   if (media) card.append(media);
   if (evidence.mediaRecovery?.outcome === "unavailable") {
     const unavailable = document.createElement("div");
@@ -3787,7 +3788,7 @@ function buildExpandableText(value, { characterLimit, lineLimit, label, expansio
   return wrapper;
 }
 
-function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
+function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry = null) {
   const media = (Array.isArray(values) ? values : [])
     .map((value) => ({
       ...value,
@@ -3806,7 +3807,7 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
   for (const value of media) {
     const isVideo = isVideoMedia(value);
     if (isVideo) {
-      gallery.append(buildVideoMedia(value, source, nativePostUrl));
+      gallery.append(buildVideoMedia(value, source, nativePostUrl, entry));
       continue;
     }
     const control = document.createElement("button");
@@ -3827,7 +3828,7 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
   return gallery;
 }
 
-function buildVideoMedia(value, source, nativePostUrl) {
+function buildVideoMedia(value, source, nativePostUrl, entry = null) {
   const shell = document.createElement("div");
   shell.className = "source-layout-video-shell";
   const canPlayInline = Boolean(value.inlinePlaybackUrl);
@@ -3843,6 +3844,7 @@ function buildVideoMedia(value, source, nativePostUrl) {
         alt: value.alt,
         source,
         nativePostUrl,
+        entry,
       })
       : null,
   });
@@ -3889,7 +3891,7 @@ function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, playIn
   return control;
 }
 
-function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl }) {
+function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl, entry = null }) {
   if (!shell || shell.querySelector("video.source-layout-inline-video")) return;
   const control = shell.querySelector(".source-layout-media-item");
   if (!control) return;
@@ -3902,7 +3904,10 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
   video.setAttribute("aria-label", `${sourceLabel(source)} video`);
   video.addEventListener("play", () => pauseOtherInlineVideos(video));
 
+  let fallbackUsed = false;
   const useNativeFallback = () => {
+    if (fallbackUsed) return;
+    fallbackUsed = true;
     if (!video.isConnected) return;
     stopObservingInlineVideoVisibility(video);
     video.pause();
@@ -3913,6 +3918,7 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
       source,
       nativePostUrl,
     }));
+    queueInlinePlaybackRecovery(entry, source, playbackUrl);
   };
   video.addEventListener("error", useNativeFallback, { once: true });
 
@@ -3927,6 +3933,21 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
       if (video.error) useNativeFallback();
     });
   }
+}
+
+function queueInlinePlaybackRecovery(entry, source, playbackUrl) {
+  const descriptor = sourceDescriptor(source);
+  if (
+    descriptor?.playbackRecoveryCapability !== "native_post_recapture" ||
+    !entry?.id || !safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, source) ||
+    state.session || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible
+  ) return;
+  if (state.playbackRecoveryAttempts.get(entry.id) === playbackUrl) return;
+  if (state.playbackRecoveryAttempts.size >= 64) {
+    state.playbackRecoveryAttempts.delete(state.playbackRecoveryAttempts.keys().next().value);
+  }
+  state.playbackRecoveryAttempts.set(entry.id, playbackUrl);
+  void recaptureMedia(entry, null, "background", "playback_error");
 }
 
 function pauseOtherInlineVideos(activeVideo) {
@@ -4243,7 +4264,12 @@ function buildForegroundRecaptureOffer(entry) {
   accept.className = "recapture-button foreground-recapture-button";
   accept.textContent = "Try in foreground";
   accept.disabled = Boolean(state.session) || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible;
-  accept.addEventListener("click", () => recaptureMedia(entry, accept, "foreground"));
+  accept.addEventListener("click", () => recaptureMedia(
+    entry,
+    accept,
+    "foreground",
+    state.foregroundRecaptureOffers.get(entry.id) || "missing_media",
+  ));
   const dismiss = document.createElement("button");
   dismiss.type = "button";
   dismiss.className = "foreground-recapture-dismiss";
@@ -4257,21 +4283,25 @@ function buildForegroundRecaptureOffer(entry) {
   return offer;
 }
 
-async function recaptureMedia(entry, button, captureMode) {
+async function recaptureMedia(entry, button, captureMode, reason = "missing_media") {
   if (state.session || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible) return;
   state.mediaRecaptureActive = true;
-  button.disabled = true;
-  button.textContent = captureMode === "foreground" ? "Capturing in foreground..." : "Recapturing...";
+  if (button) {
+    button.disabled = true;
+    button.textContent = captureMode === "foreground" ? "Capturing in foreground..." : "Recapturing...";
+  }
   syncRunButtons();
   clearNotice();
   try {
     const { recapture } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/recapture`, {
       method: "POST",
-      body: { captureMode },
+      // The original missing-media request used body: { captureMode }.
+      // A typed reason now reuses the same bounded recapture transport.
+      body: { captureMode, reason },
     });
     const completed = await dispatchMediaRecapture(recapture.id);
     if (captureMode === "background" && completed?.outcome !== "recovered") {
-      state.foregroundRecaptureOffers.add(entry.id);
+      state.foregroundRecaptureOffers.set(entry.id, reason);
       await refreshTimeline();
       return;
     }
@@ -4281,12 +4311,16 @@ async function recaptureMedia(entry, button, captureMode) {
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
     setNoticeText(notice, completed?.outcome === "recovered"
-      ? "Media recaptured from the native post."
+      ? reason === "playback_error"
+        ? "Playback refreshed from the native post. Select play again."
+        : "Media recaptured from the native post."
       : "Media is still unavailable after the foreground capture.");
   } catch (error) {
     showError(error);
-    button.disabled = false;
-    button.textContent = captureMode === "foreground" ? "Try in foreground" : "Recapture";
+    if (button) {
+      button.disabled = false;
+      button.textContent = captureMode === "foreground" ? "Try in foreground" : "Recapture";
+    }
   } finally {
     state.mediaRecaptureActive = false;
     syncRunButtons();

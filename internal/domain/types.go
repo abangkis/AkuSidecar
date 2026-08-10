@@ -832,6 +832,17 @@ const (
 	MediaRecaptureForeground MediaRecaptureMode = "foreground"
 )
 
+type MediaRecaptureReason string
+
+const (
+	MediaRecaptureMissingMedia  MediaRecaptureReason = "missing_media"
+	MediaRecapturePlaybackError MediaRecaptureReason = "playback_error"
+)
+
+func (value MediaRecaptureReason) Valid() bool {
+	return value == MediaRecaptureMissingMedia || value == MediaRecapturePlaybackError
+}
+
 type MediaRecapture struct {
 	ID          string         `json:"id"`
 	TimelineID  string         `json:"timelineId"`

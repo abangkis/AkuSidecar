@@ -1,6 +1,10 @@
 package domain
 
-import "strings"
+import (
+	"net/url"
+	"regexp"
+	"strings"
+)
 
 // SourceDescriptor is the application-owned source contract. Source-specific
 // facts live here; orchestration, selection, preference learning, semantic
@@ -27,6 +31,7 @@ type SourceDescriptor struct {
 	IdentityFormat              string                   `json:"identityFormat,omitempty"`
 	AvatarFallback              string                   `json:"avatarFallback"`
 	PassiveMediaCapability      string                   `json:"passiveMediaCapability,omitempty"`
+	PlaybackRecoveryCapability  string                   `json:"playbackRecoveryCapability,omitempty"`
 	TrustedMediaHostSuffixes    []string                 `json:"trustedMediaHostSuffixes,omitempty"`
 	HydrationTimeoutDefaultMS   int                      `json:"hydrationTimeoutDefaultMs"`
 	HydrationTimeoutMinMS       int                      `json:"hydrationTimeoutMinMs"`
@@ -41,7 +46,7 @@ type SourceEngagementMetric struct {
 
 var sourceRegistry = []SourceDescriptor{
 	{ID: SourceX, DisplayName: "X", ShortLabel: "X", IconText: "X", IconBackground: "#e7e9ea", IconForeground: "#0f1419", OnboardingDescription: "Your home timeline", PresentationStyle: "compact", SocialContextPlacement: "content", DefaultActive: true, AdapterVersion: "x-dom-v21", MediaEvidenceAdapterVersion: "x-response-evidence-v2", NativeHosts: []string{"x.com"}, NativePathTokens: []string{"/status/"}, IdentityFormat: "display_handle", AvatarFallback: "source_icon", PassiveMediaCapability: "x_response", TrustedMediaHostSuffixes: []string{"pbs.twimg.com"}, HydrationTimeoutDefaultMS: 12000, HydrationTimeoutMinMS: 7000, HydrationTimeoutMaxMS: 17000, EngagementMetrics: []SourceEngagementMetric{{Key: "reply", Icon: "\u25cb"}, {Key: "repost", Icon: "\u21bb"}, {Key: "like", Icon: "\u2661"}, {Key: "view", Icon: "\u25a5"}}},
-	{ID: SourceLinkedIn, DisplayName: "LinkedIn", ShortLabel: "in", IconText: "in", IconBackground: "#0a66c2", IconForeground: "#ffffff", OnboardingDescription: "Your professional feed", PresentationStyle: "professional", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "linkedin-dom-v20", MediaEvidenceAdapterVersion: "linkedin-main-world-video-v1", ContinuationOverlapRequired: true, FollowUpPlanningPolicy: "local_frontier", FrontierRequiresComplete: true, InitialRoundCandidateTarget: 1, NativeHosts: []string{"www.linkedin.com"}, NativePathTokens: []string{"/posts/", "/feed/update/"}, AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"media.licdn.com", "dms.licdn.com"}, HydrationTimeoutDefaultMS: 18000, HydrationTimeoutMinMS: 13000, HydrationTimeoutMaxMS: 23000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
+	{ID: SourceLinkedIn, DisplayName: "LinkedIn", ShortLabel: "in", IconText: "in", IconBackground: "#0a66c2", IconForeground: "#ffffff", OnboardingDescription: "Your professional feed", PresentationStyle: "professional", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "linkedin-dom-v20", MediaEvidenceAdapterVersion: "linkedin-main-world-video-v1", PlaybackRecoveryCapability: "native_post_recapture", ContinuationOverlapRequired: true, FollowUpPlanningPolicy: "local_frontier", FrontierRequiresComplete: true, InitialRoundCandidateTarget: 1, NativeHosts: []string{"www.linkedin.com"}, NativePathTokens: []string{"/posts/", "/feed/update/"}, AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"media.licdn.com", "dms.licdn.com"}, HydrationTimeoutDefaultMS: 18000, HydrationTimeoutMinMS: 13000, HydrationTimeoutMaxMS: 23000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
 	{ID: SourceFacebook, DisplayName: "Facebook", ShortLabel: "f", IconText: "f", IconBackground: "#0866ff", IconForeground: "#ffffff", OnboardingDescription: "Your Home Feed", PresentationStyle: "social", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "facebook-dom-v18", MediaEvidenceAdapterVersion: "facebook-structured-video-v1", FollowUpPlanningPolicy: "local_frontier", NativeHosts: []string{"facebook.com", "www.facebook.com", "m.facebook.com"}, NativePathTokens: []string{"/posts/", "/permalink/", "/story.php", "/photo", "/watch/", "/video.php", "/videos/", "/reel/"}, AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"fbcdn.net", "fbsbx.com"}, HydrationTimeoutDefaultMS: 25000, HydrationTimeoutMinMS: 20000, HydrationTimeoutMaxMS: 30000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
 }
 
@@ -102,4 +107,25 @@ func ExpectedMediaEvidenceAdapterVersions() map[string]string {
 		}
 	}
 	return result
+}
+
+var linkedInProgressivePlaybackPath = regexp.MustCompile(`/mp4-[0-9]{2,4}p(?:-|/)`)
+
+func CanonicalInlinePlaybackURL(source Source, raw string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" {
+		return "", false
+	}
+	if source != SourceLinkedIn || strings.ToLower(parsed.Hostname()) != "dms.licdn.com" ||
+		!strings.HasPrefix(strings.ToLower(parsed.Path), "/playlist/") ||
+		!linkedInProgressivePlaybackPath.MatchString(strings.ToLower(parsed.Path)) {
+		return "", false
+	}
+	parsed.Fragment = ""
+	return parsed.String(), true
+}
+
+func SupportsPlaybackErrorRecapture(source Source) bool {
+	descriptor, ok := SourceByID(source)
+	return ok && descriptor.PlaybackRecoveryCapability == "native_post_recapture"
 }
