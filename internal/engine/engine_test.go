@@ -37,6 +37,27 @@ func testEngine(t *testing.T) (*Engine, *store.Store) {
 	return runtime, state
 }
 
+type mutableEngineClock struct {
+	now time.Time
+}
+
+func (clock *mutableEngineClock) Now() time.Time { return clock.now }
+
+func testEngineWithClock(t *testing.T, clock store.Clock) (*Engine, *store.Store) {
+	t.Helper()
+	settings := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := store.OpenWithClock(filepath.Join(t.TempDir(), "sidecar.db"), settings, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(context.Background(), settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { state.Close() })
+	runtime := New(state, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
+	return runtime, state
+}
+
 func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	runtime := &Engine{active: map[string]context.CancelFunc{"work": cancel}}
@@ -1764,5 +1785,82 @@ func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
 				t.Fatalf("manual action created a scheduler receipt: %+v err=%v", receiptsAfterManual, err)
 			}
 		})
+	}
+}
+
+func TestAdaptiveSchedulerUsesInjectedClockAcrossCadenceTiers(t *testing.T) {
+	location := time.FixedZone("WIB", 7*60*60)
+	initial := time.Date(2026, time.August, 10, 20, 0, 0, 0, location)
+	clock := &mutableEngineClock{now: initial}
+	blocked, state := testEngineWithClock(t, clock)
+	ctx := context.Background()
+
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.AutoUpdateMode = "adaptive"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+
+	blocked.RecordUIAccess(ctx)
+	select {
+	case <-blocked.autoWake:
+	default:
+		t.Fatal("user activity did not wake the scheduler")
+	}
+	status, err := blocked.AutoUpdateStatus(ctx)
+	wantResetAt := time.Date(2026, time.August, 11, 0, 0, 0, 0, location).Format(time.RFC3339Nano)
+	if err != nil || status.BudgetResetAt != wantResetAt || status.CadenceTier != "active" {
+		t.Fatalf("initial status=%+v err=%v", status, err)
+	}
+	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
+		t.Fatalf("active tick error=%v", err)
+	}
+
+	clock.now = initial.Add(4 * time.Minute)
+	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
+		t.Fatalf("active cadence ran early: %v", err)
+	}
+	clock.now = initial.Add(6 * time.Minute)
+	status, err = blocked.AutoUpdateStatus(ctx)
+	if err != nil || status.CadenceTier != "warm" || status.CadenceMinutes != 15 || status.NextCheckAt != initial.Add(15*time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("warm status=%+v err=%v", status, err)
+	}
+	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
+		t.Fatalf("warm cadence ran early: %v", err)
+	}
+
+	clock.now = initial.Add(16 * time.Minute)
+	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
+		t.Fatalf("warm tick error=%v", err)
+	}
+	clock.now = initial.Add(31 * time.Minute)
+	status, err = blocked.AutoUpdateStatus(ctx)
+	if err != nil || status.CadenceTier != "idle" || status.CadenceMinutes != 60 || status.NextCheckAt != initial.Add(76*time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("idle status=%+v err=%v", status, err)
+	}
+
+	clock.now = initial.Add(40 * time.Minute)
+	blocked.RecordUIAccess(ctx)
+	select {
+	case <-blocked.autoWake:
+	default:
+		t.Fatal("new user activity did not wake the scheduler")
+	}
+	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
+		t.Fatalf("activity-accelerated tick error=%v", err)
+	}
+	status, err = blocked.AutoUpdateStatus(ctx)
+	if err != nil || status.CadenceTier != "active" || status.CadenceMinutes != 5 || status.NextCheckAt != initial.Add(45*time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("accelerated status=%+v err=%v", status, err)
+	}
+	receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10)
+	if err != nil || len(receipts) != 3 {
+		t.Fatalf("receipts=%+v err=%v", receipts, err)
+	}
+	if receipts[0].CadenceTier != "active" || receipts[0].TickAt != initial.Add(40*time.Minute).Format(time.RFC3339Nano) || receipts[1].CadenceTier != "warm" || receipts[2].CadenceTier != "active" {
+		t.Fatalf("cadence receipts=%+v", receipts)
 	}
 }

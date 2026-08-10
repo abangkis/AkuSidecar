@@ -86,7 +86,7 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	automaticLimit := dailyBudget - manualReserve
 	status := domain.AutoUpdateStatus{
 		Enabled: settings.AutoUpdateEnabled, Mode: settings.AutoUpdateMode, State: "idle",
-		BudgetResetAt: localBudgetResetAt(), LastManualBudgetResetAt: usage.LastManualResetAt,
+		BudgetResetAt: localBudgetResetAt(e.store.Now()), LastManualBudgetResetAt: usage.LastManualResetAt,
 		DailyTokenBudget: dailyBudget, DailyTokensUsed: usage.ActualTotal,
 		QuotaTokensUsed: usage.QuotaTotal, DailyTokensRemaining: maxNonNegative(dailyBudget - usage.QuotaTotal),
 		AutomaticTokensUsed: usage.QuotaAutomatic, AutomaticTokensRemaining: maxNonNegative(automaticLimit - usage.QuotaAutomatic),
@@ -102,7 +102,7 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	if err != nil {
 		return domain.AutoUpdateStatus{}, err
 	}
-	now := time.Now()
+	now := e.store.Now()
 	cadence := scheduledAutoUpdateCadence(settings, schedule, now)
 	status.LastUserActivityAt = schedule.LastUIAccessAt
 	status.RecentUserActivity = cadence.Tier == "active" || cadence.Tier == "warm"
@@ -158,8 +158,7 @@ func maxNonNegative(value int64) int64 {
 	return value
 }
 
-func localBudgetResetAt() string {
-	now := time.Now()
+func localBudgetResetAt(now time.Time) string {
 	return time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location()).Format(time.RFC3339Nano)
 }
 
@@ -232,7 +231,7 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 			return
 		}
 		completed := *tickReceipt
-		completed.DecidedAt = domain.Now()
+		completed.DecidedAt = e.store.Now().UTC().Format(time.RFC3339Nano)
 		if resultErr != nil {
 			completed.Outcome = "skipped"
 			completed.Reason = resultErr.Error()
@@ -249,7 +248,7 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 		if err != nil {
 			return domain.Session{}, err
 		}
-		now := time.Now()
+		now := e.store.Now()
 		cadence := scheduledAutoUpdateCadence(settings, schedule, now)
 		if _, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now); !due {
 			return domain.Session{}, nil

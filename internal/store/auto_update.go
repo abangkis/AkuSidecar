@@ -31,12 +31,12 @@ type AutoUpdateBudgetUsage struct {
 }
 
 func (s *Store) RecordAutoUpdateUIAccess(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=? WHERE id=1`, domain.Now())
+	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=? WHERE id=1`, s.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *Store) RecordAutoUpdateAttempt(ctx context.Context, message string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_attempt_at=?,last_error=? WHERE id=1`, domain.Now(), message)
+	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_attempt_at=?,last_error=? WHERE id=1`, s.Now().UTC().Format(time.RFC3339Nano), message)
 	return err
 }
 
@@ -137,7 +137,7 @@ func writeAutoUpdateSchedulerReceiptsTx(ctx context.Context, tx *sql.Tx, receipt
 }
 
 func (s *Store) RecordAutoUpdateSuccess(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_success_at=?,last_error='' WHERE id=1`, domain.Now())
+	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_success_at=?,last_error='' WHERE id=1`, s.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 
@@ -158,7 +158,7 @@ func (s *Store) AutoUpdateScheduleState(ctx context.Context) (AutoUpdateSchedule
 }
 
 func (s *Store) PreparedBatches(ctx context.Context, _ int) ([]domain.PreparedBatch, error) {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	expired, err := s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='expired' WHERE state='prepared' AND expires_at IS NOT NULL AND expires_at<=?`, now)
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func (s *Store) RevealPreparedBatch(ctx context.Context, sessionID, presentation
 	if presentation != "prepend" && presentation != "append" {
 		return domain.PreparedBatch{}, errors.New("prepared batch presentation must be prepend or append")
 	}
-	now := domain.Now()
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.PreparedBatch{}, err
@@ -239,7 +239,7 @@ func (s *Store) recordAutoUpdateQueueVacancy(ctx context.Context, at string) err
 }
 
 func (s *Store) DailyTokenUsage(ctx context.Context) (total, automatic int64, err error) {
-	now := time.Now()
+	now := s.Now()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).UTC().Format(time.RFC3339Nano)
 	query := `
 		WITH usage AS (
@@ -277,7 +277,7 @@ func (s *Store) AutoUpdateBudgetUsage(ctx context.Context) (AutoUpdateBudgetUsag
 		return AutoUpdateBudgetUsage{}, err
 	}
 	result := AutoUpdateBudgetUsage{ActualTotal: total, ActualAutomatic: automatic}
-	if resetDay == time.Now().Format("2006-01-02") {
+	if resetDay == s.Now().Format("2006-01-02") {
 		baselineTotal, _ := strconv.ParseInt(totalBaseline, 10, 64)
 		baselineAutomatic, _ := strconv.ParseInt(automaticBaseline, 10, 64)
 		result.QuotaTotal = maxInt64(total-baselineTotal, 0)
@@ -298,7 +298,7 @@ func (s *Store) ResetAutoUpdateDailyQuota(ctx context.Context) (AutoUpdateBudget
 	if err != nil {
 		return AutoUpdateBudgetUsage{}, err
 	}
-	now := time.Now()
+	now := s.Now()
 	values := map[string]string{
 		"auto_update_budget_reset_day":       now.Format("2006-01-02"),
 		"auto_update_budget_reset_total":     strconv.FormatInt(total, 10),

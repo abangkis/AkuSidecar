@@ -20,11 +20,27 @@ import (
 )
 
 type Store struct {
-	db   *sql.DB
-	path string
+	db    *sql.DB
+	path  string
+	clock Clock
 }
 
+type Clock interface {
+	Now() time.Time
+}
+
+type systemClock struct{}
+
+func (systemClock) Now() time.Time { return time.Now() }
+
 func Open(path string, defaults domain.Settings) (*Store, error) {
+	return OpenWithClock(path, defaults, systemClock{})
+}
+
+func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, error) {
+	if clock == nil {
+		return nil, errors.New("store clock is required")
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
@@ -34,12 +50,19 @@ func Open(path string, defaults domain.Settings) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	store := &Store{db: db, path: path}
+	store := &Store{db: db, path: path, clock: clock}
 	if err := store.initialize(defaults); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return store, nil
+}
+
+func (s *Store) Now() time.Time {
+	if s.clock == nil {
+		return time.Now()
+	}
+	return s.clock.Now()
 }
 
 func (s *Store) initialize(defaults domain.Settings) error {
@@ -1015,7 +1038,7 @@ func (s *Store) FinalizeSession(ctx context.Context, sessionID string) error {
 	case highestUrgency >= 0.50 && freshHours > 12:
 		freshHours = 12
 	}
-	expiresAt := time.Now().UTC().Add(time.Duration(freshHours) * time.Hour).Format(time.RFC3339Nano)
+	expiresAt := s.Now().UTC().Add(time.Duration(freshHours) * time.Hour).Format(time.RFC3339Nano)
 	if _, err = s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state=CASE WHEN EXISTS (SELECT 1 FROM timeline_items t WHERE t.session_id=?) THEN 'prepared' ELSE 'expired' END,prepared_at=?,expires_at=? WHERE session_id=? AND state='preparing'`, sessionID, now, expiresAt, sessionID); err != nil {
 		return err
 	}
