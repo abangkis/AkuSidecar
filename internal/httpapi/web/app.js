@@ -3793,7 +3793,7 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "") {
       ...value,
       displayUrl: safeMediaUrl(value.posterUrl || value.url),
       inlinePlaybackUrl: value.playbackMode === "inline"
-        ? safeXPlaybackUrl(value.playbackUrl, source)
+        ? safePlaybackUrl(value.playbackUrl, source)
         : null,
     }))
     .filter((value) => value.displayUrl)
@@ -3916,7 +3916,7 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
   control.replaceWith(video);
   observeInlineVideoVisibility(video);
   // Assigning src only after the explicit click keeps Timeline rendering from
-  // creating a passive video request to X's CDN.
+  // creating a passive request to the source video CDN.
   video.src = playbackUrl;
   const playback = video.play();
   if (playback?.catch) {
@@ -4681,18 +4681,23 @@ function safeMediaUrl(value) {
   }
 }
 
-function safeXPlaybackUrl(value, source) {
-  if (source !== "x" || typeof value !== "string") return null;
+function safePlaybackUrl(value, source) {
+  if (typeof value !== "string") return null;
   try {
     const url = new URL(value);
-    if (
-      url.protocol !== "https:" ||
-      url.hostname !== "video.twimg.com" ||
-      url.port ||
-      url.username ||
-      url.password ||
-      !/^\/(?:amplify_video|ext_tw_video|tweet_video)\//.test(url.pathname)
-    ) {
+    if (url.protocol !== "https:" || url.port || url.username || url.password) return null;
+    const host = url.hostname.toLowerCase();
+    if (source === "x") {
+      if (
+        host !== "video.twimg.com" ||
+        !/^\/(?:amplify_video|ext_tw_video|tweet_video)\//.test(url.pathname)
+      ) return null;
+    } else if (source === "facebook") {
+      if (
+        !["fbcdn.net", "fbsbx.com"].some((suffix) => host === suffix || host.endsWith(`.${suffix}`)) ||
+        !/\.mp4$/i.test(url.pathname)
+      ) return null;
+    } else {
       return null;
     }
     url.hash = "";

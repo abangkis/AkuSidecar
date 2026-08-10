@@ -105,8 +105,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if !strings.Contains(csp, "https://*.fbcdn.net") || !strings.Contains(csp, "https://*.fbsbx.com") {
 		t.Fatalf("Facebook media hosts missing from CSP: %s", csp)
 	}
-	if !strings.Contains(csp, "media-src 'self' https://video.twimg.com") {
-		t.Fatalf("X video playback host missing from CSP: %s", csp)
+	if !strings.Contains(csp, "media-src 'self' https://video.twimg.com https://fbcdn.net https://*.fbcdn.net https://fbsbx.com https://*.fbsbx.com") {
+		t.Fatalf("video playback hosts missing from CSP: %s", csp)
 	}
 	response, err = client.Get("http://" + address.String() + "/api/bootstrap")
 	if err != nil {
@@ -257,7 +257,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		"function buildVideoPosterControl",
 		"function activateInlineVideo",
 		"function observeInlineVideoVisibility",
-		"function safeXPlaybackUrl",
+		"function safePlaybackUrl",
+		"source === \"facebook\"",
 		"video.preload = \"none\"",
 		"video.src = playbackUrl",
 		"video.addEventListener(\"error\", useNativeFallback",
@@ -266,7 +267,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		"Play on native post",
 	} {
 		if !strings.Contains(string(appPayload), marker) {
-			t.Fatalf("app.js missing X inline playback contract %q", marker)
+			t.Fatalf("app.js missing inline playback contract %q", marker)
 		}
 	}
 	if strings.Contains(string(appPayload), "source-layout-video-native-link") {
