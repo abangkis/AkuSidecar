@@ -3866,10 +3866,13 @@ function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, playIn
   cue.className = "source-layout-video-cue";
   cue.setAttribute("aria-hidden", "true");
   cue.textContent = "▶";
-  const label = document.createElement("span");
-  label.className = "source-layout-video-label";
-  label.textContent = canPlayInline ? "Play video" : nativePostUrl ? "Play on native post" : "Video preview";
-  control.append(cue, label);
+  control.append(cue);
+  if (!canPlayInline) {
+    const label = document.createElement("span");
+    label.className = "source-layout-video-label";
+    label.textContent = nativePostUrl ? "Play on native post" : "Video preview";
+    control.append(label);
+  }
 
   if (canPlayInline) {
     control.setAttribute("aria-label", `Play ${sourceLabel(source)} video in AkuBrowser`);

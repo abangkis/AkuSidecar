@@ -263,12 +263,14 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		"video.src = playbackUrl",
 		"video.addEventListener(\"error\", useNativeFallback",
 		"!entry.isIntersecting && !observedVideo.paused",
-		"Play video",
 		"Play on native post",
 	} {
 		if !strings.Contains(string(appPayload), marker) {
 			t.Fatalf("app.js missing inline playback contract %q", marker)
 		}
+	}
+	if strings.Contains(string(appPayload), "Play video") {
+		t.Fatal("inline playback should rely on the centered play cue without a redundant text label")
 	}
 	if strings.Contains(string(appPayload), "source-layout-video-native-link") {
 		t.Fatal("inline X video poster must not render a simultaneous native-post overlay")
