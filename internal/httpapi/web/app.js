@@ -517,7 +517,7 @@ function renderSettings(settings) {
   $("#resurface-cooldown-days").value = String(settings.resurfaceCooldownDays || 7);
   $("#auto-update-enabled").checked = settings.autoUpdateEnabled !== false;
   $("#auto-update-mode").value = settings.autoUpdateMode || "adaptive";
-  $("#auto-update-refill").value = String(settings.autoUpdateRefillMinutes || 5);
+  $("#auto-update-refill").value = String(settings.autoUpdateRefillMinutes || 15);
   syncAutoUpdateModeSettings();
   $("#prepared-batch-limit").value = String(settings.preparedBatchLimit || 2);
   $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 2000000);
@@ -564,8 +564,9 @@ function renderAutoUpdateStatus(status) {
   const automaticRemaining = status.automaticTokensRemaining || 0;
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
-  const nextCheck = status.mode === "fixed" && status.nextCheckAt ? ` · next scheduled tick ${formatDate(status.nextCheckAt)}` : "";
-  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
+  const cadence = status.cadenceMinutes ? ` · ${humanize(status.cadenceTier)} cadence ${status.cadenceMinutes}m` : "";
+  const nextCheck = status.nextCheckAt ? ` · next scheduled tick ${formatDate(status.nextCheckAt)}` : "";
+  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""}${cadence} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
   const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
@@ -580,14 +581,10 @@ function renderAutoUpdateStatus(status) {
   const paused = status.enabled && ["paused", "budget_paused"].includes(status.state);
   timeline.classList.toggle("hidden", !paused);
   if (paused) {
-    const activityPaused = status.mode === "adaptive" && status.recentUserActivity === false;
-    const activityWindow = status.activityWindowMinutes || 15;
     $("#auto-update-timeline-title").textContent = status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
     $("#auto-update-timeline-detail").textContent = status.state === "budget_paused"
       ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
-      : activityPaused
-        ? `Presence-aware mode refills only after visible activity within ${activityWindow} minutes. Opening AkuBrowser, interacting with it, or actively playing a video renews presence. Continuous background ignores this presence gate but still obeys cadence, queue, and token limits.`
-        : status.reason || "Automatic work is waiting for an available boundary.";
+      : status.reason || "Automatic work is waiting for an available boundary.";
   }
 }
 

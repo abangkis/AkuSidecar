@@ -1655,94 +1655,103 @@ func TestCapturePayloadCarriesPerSourceHydrationTimeout(t *testing.T) {
 	}
 }
 
-func TestAutoUpdateBoundaryUsesLatestAttemptOrQueueVacancy(t *testing.T) {
-	attempt := time.Now().Add(-10 * time.Minute).UTC()
-	vacancy := time.Now().Add(-2 * time.Minute).UTC()
-	boundary, ok := latestAutoUpdateBoundary(store.AutoUpdateScheduleState{
-		LastAttemptAt:      attempt.Format(time.RFC3339Nano),
-		LastQueueVacancyAt: vacancy.Format(time.RFC3339Nano),
-	})
-	if !ok || !boundary.Equal(vacancy) {
-		t.Fatalf("boundary=%v ok=%v, want latest queue vacancy %v", boundary, ok, vacancy)
+func TestScheduledAutoUpdateCadenceUsesFixedOrPresenceTier(t *testing.T) {
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	now := time.Now().UTC()
+	tests := []struct {
+		name         string
+		mode         string
+		activityAge  time.Duration
+		hasActivity  bool
+		fixedMinutes int
+		wantTier     string
+		wantDuration time.Duration
+	}{
+		{name: "continuous", mode: "fixed", fixedMinutes: 30, wantTier: "continuous", wantDuration: 30 * time.Minute},
+		{name: "active", mode: "adaptive", hasActivity: true, activityAge: time.Minute, wantTier: "active", wantDuration: 5 * time.Minute},
+		{name: "warm", mode: "adaptive", hasActivity: true, activityAge: 10 * time.Minute, wantTier: "warm", wantDuration: 15 * time.Minute},
+		{name: "idle old", mode: "adaptive", hasActivity: true, activityAge: 31 * time.Minute, wantTier: "idle", wantDuration: time.Hour},
+		{name: "idle missing", mode: "adaptive", wantTier: "idle", wantDuration: time.Hour},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			settings.AutoUpdateMode = test.mode
+			if test.fixedMinutes != 0 {
+				settings.AutoUpdateRefillMinutes = test.fixedMinutes
+			}
+			schedule := store.AutoUpdateScheduleState{}
+			if test.hasActivity {
+				schedule.LastUIAccessAt = now.Add(-test.activityAge).Format(time.RFC3339Nano)
+			}
+			cadence := scheduledAutoUpdateCadence(settings, schedule, now)
+			if cadence.Tier != test.wantTier || cadence.Duration != test.wantDuration {
+				t.Fatalf("cadence=%+v, want tier=%s duration=%v", cadence, test.wantTier, test.wantDuration)
+			}
+		})
 	}
 }
 
-func TestContinuousBackgroundTickUsesIndependentPeriodicCadence(t *testing.T) {
-	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
-	settings.AutoUpdateMode = "fixed"
+func TestScheduledAutoUpdateTickUsesSelectedCadence(t *testing.T) {
 	now := time.Now().UTC()
 
-	next, due := nextContinuousBackgroundTick(store.AutoUpdateScheduleState{}, settings, now)
+	next, due := nextScheduledAutoUpdateTick(store.AutoUpdateScheduleState{}, 15*time.Minute, now)
 	if !due || !next.Equal(now) {
 		t.Fatalf("first tick next=%v due=%v, want due now", next, due)
 	}
 
-	lastTick := now.Add(-2 * time.Minute)
-	next, due = nextContinuousBackgroundTick(store.AutoUpdateScheduleState{
+	lastTick := now.Add(-14 * time.Minute)
+	next, due = nextScheduledAutoUpdateTick(store.AutoUpdateScheduleState{
 		LastSchedulerTickAt: lastTick.Format(time.RFC3339Nano),
-	}, settings, now)
-	if due || !next.Equal(lastTick.Add(5*time.Minute)) {
-		t.Fatalf("next=%v due=%v, want %v and not due", next, due, lastTick.Add(5*time.Minute))
+	}, 15*time.Minute, now)
+	if due || !next.Equal(lastTick.Add(15*time.Minute)) {
+		t.Fatalf("next=%v due=%v, want %v and not due", next, due, lastTick.Add(15*time.Minute))
 	}
 
-	lastTick = now.Add(-6 * time.Minute)
-	_, due = nextContinuousBackgroundTick(store.AutoUpdateScheduleState{
+	lastTick = now.Add(-16 * time.Minute)
+	_, due = nextScheduledAutoUpdateTick(store.AutoUpdateScheduleState{
 		LastSchedulerTickAt: lastTick.Format(time.RFC3339Nano),
-	}, settings, now)
+	}, 15*time.Minute, now)
 	if !due {
-		t.Fatal("continuous tick older than the configured interval must be due")
+		t.Fatal("tick older than the selected cadence must be due")
 	}
 }
 
-func TestContinuousBackgroundConsumesTickBeforeStopperCheck(t *testing.T) {
-	_, state := testEngine(t)
-	ctx := context.Background()
-	settings, err := state.GetSettings(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings.AutoUpdateMode = "fixed"
-	if err := state.SaveSettings(ctx, settings); err != nil {
-		t.Fatal(err)
-	}
+func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
+	for _, mode := range []string{"fixed", "adaptive"} {
+		t.Run(mode, func(t *testing.T) {
+			_, state := testEngine(t)
+			ctx := context.Background()
+			settings, err := state.GetSettings(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings.AutoUpdateMode = mode
+			if err := state.SaveSettings(ctx, settings); err != nil {
+				t.Fatal(err)
+			}
 
-	// A new engine has no compatible Bridge heartbeat, providing a stable
-	// stopper without starting any background work.
-	blocked := New(state, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
-	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
-		t.Fatalf("first scheduled tick error=%v", err)
-	}
-	first, err := state.AutoUpdateScheduleState(ctx)
-	if err != nil || first.LastSchedulerTickAt == "" {
-		t.Fatalf("first scheduler tick=%+v err=%v", first, err)
-	}
+			// A new engine has no compatible Bridge heartbeat, providing a stable
+			// stopper without starting any background work.
+			blocked := New(state, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
+			if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
+				t.Fatalf("first scheduled tick error=%v", err)
+			}
+			first, err := state.AutoUpdateScheduleState(ctx)
+			if err != nil || first.LastSchedulerTickAt == "" {
+				t.Fatalf("first scheduler tick=%+v err=%v", first, err)
+			}
 
-	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
-		t.Fatalf("stopper was rechecked before the next interval: %v", err)
-	}
-	second, err := state.AutoUpdateScheduleState(ctx)
-	if err != nil || second.LastSchedulerTickAt != first.LastSchedulerTickAt {
-		t.Fatalf("scheduler tick changed before interval: first=%+v second=%+v err=%v", first, second, err)
-	}
-	status, err := blocked.AutoUpdateStatus(ctx)
-	if err != nil || status.LastSchedulerTickAt != first.LastSchedulerTickAt || status.NextCheckAt == "" {
-		t.Fatalf("continuous scheduler status=%+v err=%v", status, err)
-	}
-}
-
-func TestAutoUpdateRecentActivityIgnoresMissingOrOldAccess(t *testing.T) {
-	now := time.Now().UTC()
-	if hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{}, now) {
-		t.Fatal("missing UI activity must not be treated as recent")
-	}
-	if hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{
-		LastUIAccessAt: now.Add(-autoUpdateRecentActivityWindow - time.Second).Format(time.RFC3339Nano),
-	}, now) {
-		t.Fatal("old UI activity must not be treated as recent")
-	}
-	if !hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{
-		LastUIAccessAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
-	}, now) {
-		t.Fatal("recent human activity was not recognized")
+			if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
+				t.Fatalf("stopper was rechecked before the next cadence: %v", err)
+			}
+			second, err := state.AutoUpdateScheduleState(ctx)
+			if err != nil || second.LastSchedulerTickAt != first.LastSchedulerTickAt {
+				t.Fatalf("scheduler tick changed before cadence: first=%+v second=%+v err=%v", first, second, err)
+			}
+			status, err := blocked.AutoUpdateStatus(ctx)
+			if err != nil || status.LastSchedulerTickAt != first.LastSchedulerTickAt || status.NextCheckAt == "" {
+				t.Fatalf("scheduler status=%+v err=%v", status, err)
+			}
+		})
 	}
 }

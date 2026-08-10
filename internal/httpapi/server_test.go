@@ -142,17 +142,17 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_xhigh" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", bootstrapSettings)
 	}
-	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateRefillMinutes"] != float64(5) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(2000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
+	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateRefillMinutes"] != float64(15) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(2000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
 		t.Fatalf("auto update defaults=%+v", bootstrapSettings)
 	}
 	autoUpdate := bootstrap["autoUpdate"].(map[string]any)
-	if autoUpdate["enabled"] != true || autoUpdate["mode"] != "adaptive" || autoUpdate["state"] != "paused" {
+	if autoUpdate["enabled"] != true || autoUpdate["mode"] != "adaptive" || autoUpdate["state"] != "idle" {
 		t.Fatalf("auto update status=%+v", autoUpdate)
 	}
-	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(5) {
+	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(15) {
 		t.Fatalf("auto update queue telemetry=%+v", autoUpdate)
 	}
-	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(15) {
+	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "idle" || autoUpdate["cadenceMinutes"] != float64(60) || autoUpdate["nextCheckAt"] == "" {
 		t.Fatalf("auto update activity telemetry=%+v", autoUpdate)
 	}
 	if autoUpdate["dailyTokenBudget"] != float64(2000000) || autoUpdate["dailyTokensUsed"] != float64(0) || autoUpdate["quotaTokensUsed"] != float64(0) || autoUpdate["dailyTokensRemaining"] != float64(2000000) || autoUpdate["manualReserveTokens"] != float64(500000) || autoUpdate["automaticTokenLimit"] != float64(1500000) || autoUpdate["automaticTokensRemaining"] != float64(1500000) || autoUpdate["budgetResetAt"] == "" {
@@ -195,7 +195,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	activityResponse.Body.Close()
-	if !activityPayload.Recorded || !activityPayload.AutoUpdate.RecentUserActivity || activityPayload.AutoUpdate.LastUserActivityAt == "" || activityPayload.AutoUpdate.State != "idle" {
+	if !activityPayload.Recorded || !activityPayload.AutoUpdate.RecentUserActivity || activityPayload.AutoUpdate.LastUserActivityAt == "" || activityPayload.AutoUpdate.State != "idle" || activityPayload.AutoUpdate.CadenceTier != "active" || activityPayload.AutoUpdate.CadenceMinutes != 5 {
 		t.Fatalf("explicit UI activity status=%+v", activityPayload)
 	}
 	activityAfterEvent, err := state.AutoUpdateScheduleState(context.Background())
@@ -559,8 +559,8 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 
 func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval."},
-		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick"},
+		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "5-minute active, 15-minute warm, and 60-minute idle cadence"},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "settings.autoUpdateRefillMinutes || 15"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

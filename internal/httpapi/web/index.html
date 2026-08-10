@@ -150,12 +150,12 @@
                 </span>
               </div>
               <label class="settings-row" for="auto-update-mode">
-                <span class="settings-copy"><strong>Background policy</strong><small>Presence-aware responds to recent visible activity. Continuous background evaluates one scheduled tick at every configured interval.</small></span>
+                <span class="settings-copy"><strong>Background policy</strong><small>Presence-aware uses 5-minute active, 15-minute warm, and 60-minute idle cadence. Continuous background uses one fixed interval.</small></span>
                 <select id="auto-update-mode" name="autoUpdateMode"><option value="adaptive">Presence-aware — recommended</option><option value="fixed">Continuous background</option></select>
               </label>
               <label id="continuous-background-interval-row" class="settings-row hidden" for="auto-update-refill">
                 <span class="settings-copy"><strong>Continuous interval</strong><small>At each interval, check all stoppers once. A skipped tick waits for the next interval.</small></span>
-                <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="3">3 minutes</option><option value="5">5 minutes — recommended</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option></select>
+                <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes — recommended</option><option value="30">30 minutes</option><option value="60">1 hour</option></select>
               </label>
               <label class="settings-row" for="prepared-batch-limit">
                 <span class="settings-copy"><strong>Prepared batch queue</strong><small>Pause background preparation when this many unread finite batches are ready.</small></span>

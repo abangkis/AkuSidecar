@@ -33,7 +33,7 @@ const (
 	DefaultReasoningAIDeep          = "luna_high"
 	DefaultSourceWaitMode           = "progressive_wait"
 	DefaultAutoUpdateMode           = "adaptive"
-	DefaultAutoUpdateRefillMin      = 5
+	DefaultAutoUpdateRefillMin      = 15
 	DefaultPreparedBatchLimit       = 2
 	DefaultAutoUpdateDailyTokens    = 2000000
 	DefaultAutoUpdateManualReserve  = 25
@@ -236,7 +236,7 @@ func (s *Settings) Normalize() {
 	if s.PreparedBatchLimit == 0 {
 		s.PreparedBatchLimit = DefaultPreparedBatchLimit
 	}
-	if s.AutoUpdateRefillMinutes == 0 {
+	if s.AutoUpdateRefillMinutes == 0 || s.AutoUpdateRefillMinutes == 3 {
 		s.AutoUpdateRefillMinutes = DefaultAutoUpdateRefillMin
 	}
 	if s.AutoUpdateDailyTokenBudget < 1000000 {
@@ -312,8 +312,8 @@ func (s Settings) Validate() error {
 	if s.AutoUpdateMode != "adaptive" && s.AutoUpdateMode != "fixed" {
 		return fmt.Errorf("unsupported auto update mode %q", s.AutoUpdateMode)
 	}
-	if s.AutoUpdateRefillMinutes != 3 && s.AutoUpdateRefillMinutes != 5 && s.AutoUpdateRefillMinutes != 10 && s.AutoUpdateRefillMinutes != 15 && s.AutoUpdateRefillMinutes != 30 {
-		return errors.New("autoUpdateRefillMinutes must be 3, 5, 10, 15, or 30")
+	if s.AutoUpdateRefillMinutes != 5 && s.AutoUpdateRefillMinutes != 10 && s.AutoUpdateRefillMinutes != 15 && s.AutoUpdateRefillMinutes != 30 && s.AutoUpdateRefillMinutes != 60 {
+		return errors.New("autoUpdateRefillMinutes must be 5, 10, 15, 30, or 60")
 	}
 	if s.PreparedBatchLimit < 1 || s.PreparedBatchLimit > 3 {
 		return errors.New("preparedBatchLimit must be between 1 and 3")
@@ -521,6 +521,8 @@ type AutoUpdateStatus struct {
 	ActivityWindowMinutes    int             `json:"activityWindowMinutes"`
 	LastSchedulerTickAt      string          `json:"lastSchedulerTickAt,omitempty"`
 	NextCheckAt              string          `json:"nextCheckAt,omitempty"`
+	CadenceTier              string          `json:"cadenceTier"`
+	CadenceMinutes           int             `json:"cadenceMinutes"`
 	BudgetResetAt            string          `json:"budgetResetAt"`
 	LastManualBudgetResetAt  string          `json:"lastManualBudgetResetAt,omitempty"`
 	DailyTokenBudget         int64           `json:"dailyTokenBudget"`

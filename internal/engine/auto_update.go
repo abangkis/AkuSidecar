@@ -12,7 +12,16 @@ import (
 
 const defaultAutoUpdateEstimatedTokens int64 = 100000
 const autoDeepDetectionEstimatedTokens int64 = 20000
-const autoUpdateRecentActivityWindow = 15 * time.Minute
+const autoUpdateActiveWindow = 5 * time.Minute
+const autoUpdateWarmWindow = 30 * time.Minute
+const autoUpdateActiveCadence = 5 * time.Minute
+const autoUpdateWarmCadence = 15 * time.Minute
+const autoUpdateIdleCadence = 60 * time.Minute
+
+type autoUpdateCadence struct {
+	Tier     string
+	Duration time.Duration
+}
 
 func (e *Engine) autoDeepDetectionAllowed(ctx context.Context, settings domain.Settings) bool {
 	usage, err := e.store.AutoUpdateBudgetUsage(ctx)
@@ -93,13 +102,20 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	if err != nil {
 		return domain.AutoUpdateStatus{}, err
 	}
+	now := time.Now()
+	cadence := scheduledAutoUpdateCadence(settings, schedule, now)
 	status.LastUserActivityAt = schedule.LastUIAccessAt
-	status.RecentUserActivity = hasRecentAutoUpdateActivity(schedule, time.Now())
-	status.ActivityWindowMinutes = int(autoUpdateRecentActivityWindow / time.Minute)
+	status.RecentUserActivity = cadence.Tier == "active" || cadence.Tier == "warm"
+	status.ActivityWindowMinutes = int(autoUpdateWarmWindow / time.Minute)
 	status.LastSchedulerTickAt = schedule.LastSchedulerTickAt
-	if settings.AutoUpdateEnabled && settings.AutoUpdateMode == "fixed" {
-		next, _ := nextContinuousBackgroundTick(schedule, settings, time.Now())
+	status.CadenceTier = cadence.Tier
+	status.CadenceMinutes = int(cadence.Duration / time.Minute)
+	if settings.AutoUpdateEnabled {
+		next, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now)
 		status.NextCheckAt = next.Format(time.RFC3339Nano)
+		if !due {
+			status.Reason = fmt.Sprintf("Waiting for the next %s cadence tick", cadence.Tier)
+		}
 	}
 	if active, activeErr := e.store.ActiveSession(ctx); activeErr != nil {
 		return domain.AutoUpdateStatus{}, activeErr
@@ -126,22 +142,6 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	if usage.QuotaAutomatic+estimatedTokens > status.AutomaticTokenLimit || usage.QuotaTotal+estimatedTokens > dailyBudget {
 		status.State, status.Reason = "budget_paused", "Automatic token allowance reached"
 		return status, nil
-	}
-	if settings.AutoUpdateMode == "adaptive" && !status.RecentUserActivity {
-		status.State = "paused"
-		status.Reason = fmt.Sprintf("Presence-aware mode has no visible activity in the last %d minutes", status.ActivityWindowMinutes)
-		return status, nil
-	}
-	if settings.AutoUpdateMode == "adaptive" {
-		boundary, ok := latestAutoUpdateBoundary(schedule)
-		if !ok {
-			return status, nil
-		}
-		next := boundary.Add(autoUpdateRefillDuration(settings))
-		if time.Now().Before(next) {
-			status.Reason = "Waiting to refill an open prepared-batch slot"
-			status.NextCheckAt = next.Format(time.RFC3339Nano)
-		}
 	}
 	return status, nil
 }
@@ -207,7 +207,7 @@ func (e *Engine) maybeStartAutoUpdate(ctx context.Context) error {
 
 // StartPreparedUpdateNow prepares a finite batch on explicit user request.
 // It keeps all safety and budget gates, but intentionally bypasses the
-// scheduler's cadence and adaptive recent-use gates.
+// scheduler's cadence gate.
 func (e *Engine) StartPreparedUpdateNow(ctx context.Context) (domain.Session, error) {
 	return e.startAutoUpdate(ctx, true)
 }
@@ -226,15 +226,15 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 		if err != nil {
 			return domain.Session{}, err
 		}
-		if settings.AutoUpdateMode == "fixed" {
-			if _, due := nextContinuousBackgroundTick(schedule, settings, time.Now()); !due {
-				return domain.Session{}, nil
-			}
-			// A continuous-background tick is consumed even when a safety,
-			// capacity, or quota gate below causes this cycle to be skipped.
-			if err := e.store.RecordAutoUpdateSchedulerTick(ctx); err != nil {
-				return domain.Session{}, err
-			}
+		now := time.Now()
+		cadence := scheduledAutoUpdateCadence(settings, schedule, now)
+		if _, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now); !due {
+			return domain.Session{}, nil
+		}
+		// Every scheduled tick is consumed before the shared safety, capacity,
+		// and quota stoppers below. A skipped tick waits for its next cadence.
+		if err := e.store.RecordAutoUpdateSchedulerTick(ctx); err != nil {
+			return domain.Session{}, err
 		}
 	}
 	onboarding, err := e.store.Onboarding(ctx)
@@ -281,16 +281,6 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 	if usage.QuotaTotal+estimatedTokens > int64(settings.AutoUpdateDailyTokenBudget) || usage.QuotaAutomatic+estimatedTokens > autoLimit {
 		return domain.Session{}, errors.New("automatic token allowance reached")
 	}
-	if !force {
-		if settings.AutoUpdateMode == "adaptive" {
-			if boundary, ok := latestAutoUpdateBoundary(schedule); ok && time.Since(boundary) < autoUpdateRefillDuration(settings) {
-				return domain.Session{}, nil
-			}
-			if !hasRecentAutoUpdateActivity(schedule, time.Now()) {
-				return domain.Session{}, nil
-			}
-		}
-	}
 	if err := e.store.RecordAutoUpdateAttempt(ctx, ""); err != nil {
 		return domain.Session{}, err
 	}
@@ -308,31 +298,25 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 	return session, nil
 }
 
-func autoUpdateRefillDuration(settings domain.Settings) time.Duration {
-	return time.Duration(settings.AutoUpdateRefillMinutes) * time.Minute
-}
-
-func nextContinuousBackgroundTick(schedule store.AutoUpdateScheduleState, settings domain.Settings, now time.Time) (time.Time, bool) {
+func nextScheduledAutoUpdateTick(schedule store.AutoUpdateScheduleState, cadence time.Duration, now time.Time) (time.Time, bool) {
 	lastTick, err := time.Parse(time.RFC3339Nano, schedule.LastSchedulerTickAt)
 	if err != nil {
 		return now, true
 	}
-	next := lastTick.Add(autoUpdateRefillDuration(settings))
+	next := lastTick.Add(cadence)
 	return next, !now.Before(next)
 }
 
-func latestAutoUpdateBoundary(schedule store.AutoUpdateScheduleState) (time.Time, bool) {
-	var latest time.Time
-	for _, raw := range []string{schedule.LastAttemptAt, schedule.LastQueueVacancyAt} {
-		value, err := time.Parse(time.RFC3339Nano, raw)
-		if err == nil && value.After(latest) {
-			latest = value
-		}
+func scheduledAutoUpdateCadence(settings domain.Settings, schedule store.AutoUpdateScheduleState, now time.Time) autoUpdateCadence {
+	if settings.AutoUpdateMode == "fixed" {
+		return autoUpdateCadence{Tier: "continuous", Duration: time.Duration(settings.AutoUpdateRefillMinutes) * time.Minute}
 	}
-	return latest, !latest.IsZero()
-}
-
-func hasRecentAutoUpdateActivity(schedule store.AutoUpdateScheduleState, now time.Time) bool {
 	access, err := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
-	return err == nil && now.Sub(access) <= autoUpdateRecentActivityWindow
+	if err != nil || now.Sub(access) > autoUpdateWarmWindow {
+		return autoUpdateCadence{Tier: "idle", Duration: autoUpdateIdleCadence}
+	}
+	if now.Sub(access) <= autoUpdateActiveWindow {
+		return autoUpdateCadence{Tier: "active", Duration: autoUpdateActiveCadence}
+	}
+	return autoUpdateCadence{Tier: "warm", Duration: autoUpdateWarmCadence}
 }

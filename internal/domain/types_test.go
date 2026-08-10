@@ -26,6 +26,24 @@ func TestProfilesStayBounded(t *testing.T) {
 	}
 }
 
+func TestAutoUpdateContinuousIntervalDefaultsAndChoices(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.AutoUpdateRefillMinutes != 15 {
+		t.Fatalf("continuous interval default=%d", value.AutoUpdateRefillMinutes)
+	}
+	for _, minutes := range []int{5, 10, 15, 30, 60} {
+		value.AutoUpdateRefillMinutes = minutes
+		if err := value.Validate(); err != nil {
+			t.Fatalf("continuous interval %d rejected: %v", minutes, err)
+		}
+	}
+	value.AutoUpdateRefillMinutes = 3
+	value.Normalize()
+	if value.AutoUpdateRefillMinutes != 15 {
+		t.Fatalf("legacy 3-minute interval normalized to %d", value.AutoUpdateRefillMinutes)
+	}
+}
+
 func TestMissingOrUnknownProfileDefaultsToStandard(t *testing.T) {
 	for _, profile := range []string{"", "unknown"} {
 		value := DefaultSettings(profile, "quiet", "promote_unused_budget", true)
