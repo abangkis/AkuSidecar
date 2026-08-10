@@ -89,6 +89,18 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	}
 	estimatedTokens := e.estimatedAutoUpdateTokens(ctx)
 	status.EstimatedNextRunTokens = estimatedTokens
+	schedule, err := e.store.AutoUpdateScheduleState(ctx)
+	if err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
+	status.LastUserActivityAt = schedule.LastUIAccessAt
+	status.RecentUserActivity = hasRecentAutoUpdateActivity(schedule, time.Now())
+	status.ActivityWindowMinutes = int(autoUpdateRecentActivityWindow / time.Minute)
+	status.LastSchedulerTickAt = schedule.LastSchedulerTickAt
+	if settings.AutoUpdateEnabled && settings.AutoUpdateMode == "fixed" {
+		next, _ := nextContinuousBackgroundTick(schedule, settings, time.Now())
+		status.NextCheckAt = next.Format(time.RFC3339Nano)
+	}
 	if active, activeErr := e.store.ActiveSession(ctx); activeErr != nil {
 		return domain.AutoUpdateStatus{}, activeErr
 	} else if active != nil {
@@ -115,15 +127,16 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		status.State, status.Reason = "budget_paused", "Automatic token allowance reached"
 		return status, nil
 	}
-	schedule, err := e.store.AutoUpdateScheduleState(ctx)
-	if err != nil {
-		return domain.AutoUpdateStatus{}, err
-	}
-	if settings.AutoUpdateMode == "adaptive" && !hasRecentAutoUpdateActivity(schedule, time.Now()) {
-		status.State, status.Reason = "paused", "Waiting for recent user activity"
+	if settings.AutoUpdateMode == "adaptive" && !status.RecentUserActivity {
+		status.State = "paused"
+		status.Reason = fmt.Sprintf("Presence-aware mode has no visible activity in the last %d minutes", status.ActivityWindowMinutes)
 		return status, nil
 	}
-	if boundary, ok := latestAutoUpdateBoundary(schedule); ok {
+	if settings.AutoUpdateMode == "adaptive" {
+		boundary, ok := latestAutoUpdateBoundary(schedule)
+		if !ok {
+			return status, nil
+		}
 		next := boundary.Add(autoUpdateRefillDuration(settings))
 		if time.Now().Before(next) {
 			status.Reason = "Waiting to refill an open prepared-batch slot"
@@ -207,6 +220,23 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 		}
 		return domain.Session{}, err
 	}
+	var schedule store.AutoUpdateScheduleState
+	if !force {
+		schedule, err = e.store.AutoUpdateScheduleState(ctx)
+		if err != nil {
+			return domain.Session{}, err
+		}
+		if settings.AutoUpdateMode == "fixed" {
+			if _, due := nextContinuousBackgroundTick(schedule, settings, time.Now()); !due {
+				return domain.Session{}, nil
+			}
+			// A continuous-background tick is consumed even when a safety,
+			// capacity, or quota gate below causes this cycle to be skipped.
+			if err := e.store.RecordAutoUpdateSchedulerTick(ctx); err != nil {
+				return domain.Session{}, err
+			}
+		}
+	}
 	onboarding, err := e.store.Onboarding(ctx)
 	if err != nil || onboarding.Status != "completed" {
 		if err == nil {
@@ -251,16 +281,14 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 	if usage.QuotaTotal+estimatedTokens > int64(settings.AutoUpdateDailyTokenBudget) || usage.QuotaAutomatic+estimatedTokens > autoLimit {
 		return domain.Session{}, errors.New("automatic token allowance reached")
 	}
-	schedule, err := e.store.AutoUpdateScheduleState(ctx)
-	if err != nil {
-		return domain.Session{}, err
-	}
 	if !force {
-		if boundary, ok := latestAutoUpdateBoundary(schedule); ok && time.Since(boundary) < autoUpdateRefillDuration(settings) {
-			return domain.Session{}, nil
-		}
-		if settings.AutoUpdateMode == "adaptive" && !hasRecentAutoUpdateActivity(schedule, time.Now()) {
-			return domain.Session{}, nil
+		if settings.AutoUpdateMode == "adaptive" {
+			if boundary, ok := latestAutoUpdateBoundary(schedule); ok && time.Since(boundary) < autoUpdateRefillDuration(settings) {
+				return domain.Session{}, nil
+			}
+			if !hasRecentAutoUpdateActivity(schedule, time.Now()) {
+				return domain.Session{}, nil
+			}
 		}
 	}
 	if err := e.store.RecordAutoUpdateAttempt(ctx, ""); err != nil {
@@ -282,6 +310,15 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 
 func autoUpdateRefillDuration(settings domain.Settings) time.Duration {
 	return time.Duration(settings.AutoUpdateRefillMinutes) * time.Minute
+}
+
+func nextContinuousBackgroundTick(schedule store.AutoUpdateScheduleState, settings domain.Settings, now time.Time) (time.Time, bool) {
+	lastTick, err := time.Parse(time.RFC3339Nano, schedule.LastSchedulerTickAt)
+	if err != nil {
+		return now, true
+	}
+	next := lastTick.Add(autoUpdateRefillDuration(settings))
+	return next, !now.Before(next)
 }
 
 func latestAutoUpdateBoundary(schedule store.AutoUpdateScheduleState) (time.Time, bool) {

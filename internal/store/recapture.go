@@ -334,6 +334,7 @@ func (s *Store) CompleteMediaRecapture(ctx context.Context, id string, observati
 	if !ok {
 		return domain.MediaRecapture{}, errors.New("recapture did not return the requested native post")
 	}
+	now := domain.Now()
 	outcome := "unavailable"
 	reason := mediaRecaptureReason(job.Payload)
 	if reason == domain.MediaRecapturePlaybackError {
@@ -341,13 +342,21 @@ func (s *Store) CompleteMediaRecapture(ctx context.Context, id string, observati
 		if inlinePlaybackURL(block, job.Source, failedPlaybackURL) != "" {
 			outcome = "recovered"
 		}
+		recoveryMode := "background"
+		if job.Payload["foregroundAuthorized"] == true {
+			recoveryMode = "foreground"
+		}
 		mediaRecovery := mergeAnyValues(block.MediaRecovery, map[string]any{
-			"outcome":              outcome,
-			"reason":               string(reason),
-			"method":               "native_post_recapture",
-			"acquisitionStage":     "playback_error_recapture",
-			"foregroundAuthorized": job.Payload["foregroundAuthorized"],
-			"foregroundRequired":   outcome == "unavailable" && job.Payload["foregroundAuthorized"] != true,
+			"outcome":                     outcome,
+			"reason":                      string(reason),
+			"method":                      "native_post_recapture",
+			"acquisitionStage":            "playback_error_recapture",
+			"foregroundAuthorized":        job.Payload["foregroundAuthorized"],
+			"foregroundRequired":          outcome == "unavailable" && job.Payload["foregroundAuthorized"] != true,
+			"playbackRecoveryRequestedAt": job.CreatedAt,
+			"playbackRecoveryCompletedAt": now,
+			"playbackReplacementChanged":  outcome == "recovered",
+			"playbackRecoveryMode":        recoveryMode,
 		})
 		if outcome == "recovered" || job.Payload["foregroundAuthorized"] == true {
 			delete(mediaRecovery, "visibilityRequirement")
@@ -366,7 +375,6 @@ func (s *Store) CompleteMediaRecapture(ctx context.Context, id string, observati
 	}
 	evidenceRaw, _ := json.Marshal(block)
 	resultRaw, _ := json.Marshal(observation)
-	now := domain.Now()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO timeline_evidence_overrides(timeline_id,recapture_id,evidence_json,updated_at) VALUES(?,?,?,?) ON CONFLICT(timeline_id) DO UPDATE SET recapture_id=excluded.recapture_id,evidence_json=excluded.evidence_json,updated_at=excluded.updated_at`, job.TimelineID, job.ID, string(evidenceRaw), now); err != nil {
 		return domain.MediaRecapture{}, err
 	}

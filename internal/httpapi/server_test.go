@@ -146,11 +146,14 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("auto update defaults=%+v", bootstrapSettings)
 	}
 	autoUpdate := bootstrap["autoUpdate"].(map[string]any)
-	if autoUpdate["enabled"] != true || autoUpdate["mode"] != "adaptive" || autoUpdate["state"] != "idle" {
+	if autoUpdate["enabled"] != true || autoUpdate["mode"] != "adaptive" || autoUpdate["state"] != "paused" {
 		t.Fatalf("auto update status=%+v", autoUpdate)
 	}
 	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(5) {
 		t.Fatalf("auto update queue telemetry=%+v", autoUpdate)
+	}
+	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(15) {
+		t.Fatalf("auto update activity telemetry=%+v", autoUpdate)
 	}
 	if autoUpdate["dailyTokenBudget"] != float64(2000000) || autoUpdate["dailyTokensUsed"] != float64(0) || autoUpdate["quotaTokensUsed"] != float64(0) || autoUpdate["dailyTokensRemaining"] != float64(2000000) || autoUpdate["manualReserveTokens"] != float64(500000) || autoUpdate["automaticTokenLimit"] != float64(1500000) || autoUpdate["automaticTokensRemaining"] != float64(1500000) || autoUpdate["budgetResetAt"] == "" {
 		t.Fatalf("auto update budget telemetry=%+v", autoUpdate)
@@ -158,6 +161,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	activityBeforeStatus, err := state.AutoUpdateScheduleState(context.Background())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if activityBeforeStatus.LastUIAccessAt != "" {
+		t.Fatal("read-only bootstrap fetch must not impersonate visible user activity")
 	}
 	statusResponse, err := client.Get("http://" + address.String() + "/api/auto-update/status")
 	if err != nil {
@@ -180,7 +186,18 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var activityPayload struct {
+		Recorded   bool                    `json:"recorded"`
+		AutoUpdate domain.AutoUpdateStatus `json:"autoUpdate"`
+	}
+	if err := json.NewDecoder(activityResponse.Body).Decode(&activityPayload); err != nil {
+		activityResponse.Body.Close()
+		t.Fatal(err)
+	}
 	activityResponse.Body.Close()
+	if !activityPayload.Recorded || !activityPayload.AutoUpdate.RecentUserActivity || activityPayload.AutoUpdate.LastUserActivityAt == "" || activityPayload.AutoUpdate.State != "idle" {
+		t.Fatalf("explicit UI activity status=%+v", activityPayload)
+	}
 	activityAfterEvent, err := state.AutoUpdateScheduleState(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -263,6 +280,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		"source === \"facebook\"",
 		"video.preload = \"none\"",
 		"video.src = playbackUrl",
+		"video.addEventListener(\"timeupdate\"",
+		"if (!video.paused) recordUIActivity(false)",
 		"video.addEventListener(\"error\", useNativeFallback",
 		"!entry.isIntersecting && !observedVideo.paused",
 		"Play on native post",
@@ -308,7 +327,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 			t.Fatalf("active-check navigation guidance missing %q", marker)
 		}
 	}
-	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token", "function runDisabledReason", "function sourceAccessNeedsAttention", "AKU_BROWSER_OPEN_BRIDGE_SETUP", "source-access-setup-button", "function preparedBatchDisabledReason", "No prepared batch is available.", "Finishing capture cleanup", "BOOTSTRAP_TIMEOUT_MS", "function retryBootstrap", "Retry connection", "session.itemCount", "presentation === \"latest\" ? \"prepend\" : \"append\"", "body: { presentation: revealPlacement }", "placement === \"prepend\""} {
+	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token", "function runDisabledReason", "function sourceAccessNeedsAttention", "AKU_BROWSER_OPEN_BRIDGE_SETUP", "source-access-setup-button", "function preparedBatchDisabledReason", "No prepared batch is available.", "Finishing capture cleanup", "BOOTSTRAP_TIMEOUT_MS", "function retryBootstrap", "Retry connection", "state.lastUIActivitySentAt = 0", "recordUIActivity(true)", "session.itemCount", "presentation === \"latest\" ? \"prepend\" : \"append\"", "body: { presentation: revealPlacement }", "placement === \"prepend\""} {
 		if !strings.Contains(string(appPayload), marker) {
 			t.Fatalf("app.js missing runtime reasoning or drawer contract %q", marker)
 		}
@@ -534,6 +553,23 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 	for _, marker := range []string{"dispatchRetryAfter", "expectedLaneWait", "No queued browser command was available"} {
 		if !strings.Contains(string(payload), marker) {
 			t.Fatalf("embedded relay is missing %q", marker)
+		}
+	}
+}
+
+func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval."},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing continuous scheduler contract %q", asset, marker)
+			}
 		}
 	}
 }

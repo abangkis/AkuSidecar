@@ -148,7 +148,12 @@ func TestLinkedInPlaybackErrorRecaptureRequiresAFreshProgressiveURL(t *testing.T
 	if len(items) != 1 || items[0].Evidence == nil || items[0].Evidence.Media[0]["playbackUrl"] != freshPlaybackURL {
 		t.Fatalf("items=%+v", items)
 	}
-	if items[0].Evidence.MediaRecovery["reason"] != string(domain.MediaRecapturePlaybackError) || items[0].Evidence.MediaRecovery["method"] != "native_post_recapture" {
+	if items[0].Evidence.MediaRecovery["reason"] != string(domain.MediaRecapturePlaybackError) ||
+		items[0].Evidence.MediaRecovery["method"] != "native_post_recapture" ||
+		items[0].Evidence.MediaRecovery["playbackReplacementChanged"] != true ||
+		items[0].Evidence.MediaRecovery["playbackRecoveryMode"] != "background" ||
+		items[0].Evidence.MediaRecovery["playbackRecoveryRequestedAt"] == "" ||
+		items[0].Evidence.MediaRecovery["playbackRecoveryCompletedAt"] == "" {
 		t.Fatalf("media recovery=%+v", items[0].Evidence.MediaRecovery)
 	}
 }
@@ -192,6 +197,64 @@ func TestLinkedInPlaybackErrorRecaptureRejectsTheFailedURLAndPreservesForeground
 	}
 	if foreground.Payload["failedPlaybackUrl"] != failedPlaybackURL || foreground.Payload["foregroundAuthorized"] != true {
 		t.Fatalf("foreground payload=%+v", foreground.Payload)
+	}
+}
+
+func TestFacebookPlaybackErrorRecaptureRequiresAFreshTrustedMP4(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, evidenceKey, _ := insertFacebookPlaybackFixture(t, state)
+
+	job, err := state.CreateMediaRecaptureForReason(ctx, timelineID, domain.MediaRecaptureBackground, domain.MediaRecapturePlaybackError)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = state.ClaimMediaRecapture(ctx, job.ID, "bridge-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshPlaybackURL := "https://video-cgk1-1.xx.fbcdn.net/v/t42.1790-2/example.mp4?token=fresh"
+	job, err = state.CompleteMediaRecapture(ctx, job.ID, facebookPlaybackObservation(evidenceKey, freshPlaybackURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Outcome != "recovered" {
+		t.Fatalf("Facebook playback recapture=%+v", job)
+	}
+	items, err := state.ListTimeline(ctx, 24, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Evidence == nil || items[0].Evidence.Media[0]["playbackUrl"] != freshPlaybackURL {
+		t.Fatalf("items=%+v", items)
+	}
+	if items[0].Evidence.MediaRecovery["playbackReplacementChanged"] != true || items[0].Evidence.MediaRecovery["playbackRecoveryMode"] != "background" {
+		t.Fatalf("media recovery=%+v", items[0].Evidence.MediaRecovery)
+	}
+
+	secondState := openTestStore(t)
+	secondTimelineID, secondEvidenceKey, secondFailedURL := insertFacebookPlaybackFixture(t, secondState)
+	secondJob, err := secondState.CreateMediaRecaptureForReason(ctx, secondTimelineID, domain.MediaRecaptureBackground, domain.MediaRecapturePlaybackError)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJob, err = secondState.ClaimMediaRecapture(ctx, secondJob.ID, "bridge-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJob, err = secondState.CompleteMediaRecapture(ctx, secondJob.ID, facebookPlaybackObservation(secondEvidenceKey, secondFailedURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondJob.Outcome != "unavailable" {
+		t.Fatalf("same Facebook playback URL must remain unavailable: %+v", secondJob)
+	}
+	secondItems, err := secondState.ListTimeline(ctx, 24, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondItems[0].Evidence.Media[0]["playbackUrl"] != nil || secondItems[0].Evidence.Media[0]["playbackMode"] != "native" || secondItems[0].Evidence.MediaRecovery["playbackReplacementChanged"] != false {
+		t.Fatalf("failed Facebook playback survived override: %+v recovery=%+v", secondItems[0].Evidence.Media[0], secondItems[0].Evidence.MediaRecovery)
 	}
 }
 
@@ -438,6 +501,70 @@ func linkedInPlaybackObservation(evidenceKey, playbackURL string) domain.Observa
 				Author:      "Example",
 				Text:        "A sufficiently long LinkedIn post body with inline video evidence.",
 				Permalink:   "https://www.linkedin.com/feed/update/urn:li:activity:7411111111111111111/",
+				ContentKind: "video",
+				Media: []map[string]any{{
+					"kind":         "video",
+					"url":          posterURL,
+					"posterUrl":    posterURL,
+					"playbackUrl":  playbackURL,
+					"playbackMode": "inline",
+				}},
+				MediaRecovery: map[string]any{"outcome": "recovered", "attempts": 0},
+			}},
+		}},
+	}
+}
+
+func insertFacebookPlaybackFixture(t *testing.T, state *Store) (string, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceFacebook}
+	session, err := createVisibleUpdateSession(state, ctx, "fixture", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := state.listRuns(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runs[0]
+	evidenceKey := "facebook:video:12345"
+	failedPlaybackURL := "https://video-cgk1-1.xx.fbcdn.net/v/t42.1790-2/example.mp4?token=expired"
+	block := facebookPlaybackObservation(evidenceKey, failedPlaybackURL).Snapshots[0].Blocks[0]
+	observationRaw, _ := json.Marshal(domain.Observation{Source: domain.SourceFacebook, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Index: 0, CapturedAt: domain.Now(), Blocks: []domain.Block{block}}}})
+	itemRaw, _ := json.Marshal(domain.ReasonedItem{Source: domain.SourceFacebook, SourceURL: block.Permalink, SourceURLKind: "native_post", EvidenceKey: evidenceKey})
+	assessmentRaw, _ := json.Marshal(domain.CandidateAssessment{EvidenceKey: evidenceKey})
+	now := domain.Now()
+	commandID := "command-facebook-playback-fixture"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO bridge_commands(id,run_id,type,status,payload_json,created_at,completed_at) VALUES(?,?,?,'completed','{}',?,?)`, commandID, run.ID, "collect_visible", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO observations(id,run_id,command_id,source,observation_json,captured_at,created_at) VALUES(?,?,?,?,?,?,?)`, "observation-facebook-playback-fixture", run.ID, commandID, run.Source, string(observationRaw), now, now); err != nil {
+		t.Fatal(err)
+	}
+	timelineID := "timeline-facebook-playback-fixture"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, timelineID, session.ID, run.ID, run.Source, evidenceKey, 0, string(itemRaw), string(assessmentRaw), now); err != nil {
+		t.Fatal(err)
+	}
+	return timelineID, evidenceKey, failedPlaybackURL
+}
+
+func facebookPlaybackObservation(evidenceKey, playbackURL string) domain.Observation {
+	posterURL := "https://scontent-cgk1-1.xx.fbcdn.net/v/t15.5256-10/example.jpg"
+	return domain.Observation{
+		Source: domain.SourceFacebook,
+		Snapshots: []domain.Snapshot{{
+			Index: 0,
+			Blocks: []domain.Block{{
+				EvidenceKey: evidenceKey,
+				PlatformID:  evidenceKey,
+				Author:      "Example",
+				Text:        "A sufficiently long Facebook post body with inline video evidence.",
+				Permalink:   "https://www.facebook.com/example/videos/12345/",
 				ContentKind: "video",
 				Media: []map[string]any{{
 					"kind":         "video",

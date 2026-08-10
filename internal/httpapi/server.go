@@ -155,7 +155,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}()
 		return nil
 	case r.Method == http.MethodGet && p == "/api/bootstrap":
-		s.engine.RecordUIAccess(ctx)
 		settings, err := s.store.GetSettings(ctx)
 		if err != nil {
 			return err
@@ -494,7 +493,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusCreated, map[string]any{"session": session})
 	case r.Method == http.MethodPost && p == "/api/ui/activity":
 		s.engine.RecordUIAccess(ctx)
-		return writeJSON(w, http.StatusOK, map[string]any{"recorded": true})
+		status, err := s.engine.AutoUpdateStatus(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"recorded": true, "autoUpdate": status})
 	case r.Method == http.MethodGet && p == "/api/auto-update/status":
 		status, err := s.engine.AutoUpdateStatus(ctx)
 		if err != nil {

@@ -11,10 +11,11 @@ import (
 )
 
 type AutoUpdateScheduleState struct {
-	LastUIAccessAt     string
-	LastAttemptAt      string
-	LastSuccessAt      string
-	LastQueueVacancyAt string
+	LastUIAccessAt      string
+	LastAttemptAt       string
+	LastSuccessAt       string
+	LastQueueVacancyAt  string
+	LastSchedulerTickAt string
 }
 
 type AutoUpdateBudgetUsage struct {
@@ -35,6 +36,13 @@ func (s *Store) RecordAutoUpdateAttempt(ctx context.Context, message string) err
 	return err
 }
 
+func (s *Store) RecordAutoUpdateSchedulerTick(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO meta(key,value) VALUES('auto_update_scheduler_tick_at',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, domain.Now())
+	return err
+}
+
 func (s *Store) RecordAutoUpdateSuccess(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE auto_update_state SET last_success_at=?,last_error='' WHERE id=1`, domain.Now())
 	return err
@@ -42,15 +50,17 @@ func (s *Store) RecordAutoUpdateSuccess(ctx context.Context) error {
 
 func (s *Store) AutoUpdateScheduleState(ctx context.Context) (AutoUpdateScheduleState, error) {
 	var value AutoUpdateScheduleState
-	var access, attempt, success, vacancy sql.NullString
+	var access, attempt, success, vacancy, schedulerTick sql.NullString
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT last_ui_access_at,last_attempt_at,last_success_at,
-		  (SELECT value FROM meta WHERE key='auto_update_queue_vacancy_at')
-		FROM auto_update_state WHERE id=1`).Scan(&access, &attempt, &success, &vacancy); err != nil {
+		  (SELECT value FROM meta WHERE key='auto_update_queue_vacancy_at'),
+		  (SELECT value FROM meta WHERE key='auto_update_scheduler_tick_at')
+		FROM auto_update_state WHERE id=1`).Scan(&access, &attempt, &success, &vacancy, &schedulerTick); err != nil {
 		return value, err
 	}
 	value.LastUIAccessAt, value.LastAttemptAt, value.LastSuccessAt = access.String, attempt.String, success.String
 	value.LastQueueVacancyAt = vacancy.String
+	value.LastSchedulerTickAt = schedulerTick.String
 	return value, nil
 }
 

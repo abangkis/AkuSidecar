@@ -516,6 +516,10 @@ type AutoUpdateStatus struct {
 	Mode                     string          `json:"mode"`
 	State                    string          `json:"state"`
 	Reason                   string          `json:"reason,omitempty"`
+	LastUserActivityAt       string          `json:"lastUserActivityAt,omitempty"`
+	RecentUserActivity       bool            `json:"recentUserActivity"`
+	ActivityWindowMinutes    int             `json:"activityWindowMinutes"`
+	LastSchedulerTickAt      string          `json:"lastSchedulerTickAt,omitempty"`
 	NextCheckAt              string          `json:"nextCheckAt,omitempty"`
 	BudgetResetAt            string          `json:"budgetResetAt"`
 	LastManualBudgetResetAt  string          `json:"lastManualBudgetResetAt,omitempty"`

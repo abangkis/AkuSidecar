@@ -186,6 +186,7 @@ $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSetti
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
 $("#ai-detection-enabled").addEventListener("change", syncAIDetectionSettings);
 $("#ai-detection-presentation").addEventListener("change", syncAIDetectionSettings);
+$("#auto-update-mode").addEventListener("change", syncAutoUpdateModeSettings);
 $("#reset-semantic-event-merge-threshold").addEventListener("click", resetSemanticEventMergeThreshold);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
@@ -255,9 +256,15 @@ function recordUIActivity(force) {
   const now = Date.now();
   if (!force && now - state.lastUIActivitySentAt < 60_000) return;
   state.lastUIActivitySentAt = now;
-  api("/api/ui/activity", { method: "POST" }).catch((error) => {
-    console.warn("Recent user activity could not be recorded.", error);
-  });
+  api("/api/ui/activity", { method: "POST" })
+    .then(({ autoUpdate }) => {
+      if (!autoUpdate || !state.bootstrap) return;
+      state.bootstrap.autoUpdate = autoUpdate;
+      renderAutoUpdateStatus(autoUpdate);
+    })
+    .catch((error) => {
+      console.warn("Recent user activity could not be recorded.", error);
+    });
 }
 
 async function bootstrap(options = {}) {
@@ -282,8 +289,9 @@ async function bootstrap(options = {}) {
     state.bootstrap = restored;
     state.bootstrapError = null;
     state.releasedCaptureSources.clear();
-    state.lastUIActivitySentAt = Date.now();
+    state.lastUIActivitySentAt = 0;
     installUIActivityTracking();
+    recordUIActivity(true);
     state.session = state.bootstrap.activeSession;
     state.bootstrapLoading = false;
     renderSourceControls();
@@ -510,6 +518,7 @@ function renderSettings(settings) {
   $("#auto-update-enabled").checked = settings.autoUpdateEnabled !== false;
   $("#auto-update-mode").value = settings.autoUpdateMode || "adaptive";
   $("#auto-update-refill").value = String(settings.autoUpdateRefillMinutes || 5);
+  syncAutoUpdateModeSettings();
   $("#prepared-batch-limit").value = String(settings.preparedBatchLimit || 2);
   $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 2000000);
   $("#auto-update-manual-reserve").value = String(settings.autoUpdateManualReservePct || 25);
@@ -555,7 +564,7 @@ function renderAutoUpdateStatus(status) {
   const automaticRemaining = status.automaticTokensRemaining || 0;
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
-  const nextCheck = status.state === "idle" && status.nextCheckAt ? ` · next prepared check ${formatDate(status.nextCheckAt)}` : "";
+  const nextCheck = status.mode === "fixed" && status.nextCheckAt ? ` · next scheduled tick ${formatDate(status.nextCheckAt)}` : "";
   detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
@@ -571,11 +580,21 @@ function renderAutoUpdateStatus(status) {
   const paused = status.enabled && ["paused", "budget_paused"].includes(status.state);
   timeline.classList.toggle("hidden", !paused);
   if (paused) {
+    const activityPaused = status.mode === "adaptive" && status.recentUserActivity === false;
+    const activityWindow = status.activityWindowMinutes || 15;
     $("#auto-update-timeline-title").textContent = status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
     $("#auto-update-timeline-detail").textContent = status.state === "budget_paused"
       ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
-      : status.reason || "Automatic work is waiting for an available boundary.";
+      : activityPaused
+        ? `Presence-aware mode refills only after visible activity within ${activityWindow} minutes. Opening AkuBrowser, interacting with it, or actively playing a video renews presence. Continuous background ignores this presence gate but still obeys cadence, queue, and token limits.`
+        : status.reason || "Automatic work is waiting for an available boundary.";
   }
+}
+
+function syncAutoUpdateModeSettings() {
+  const intervalRow = $("#continuous-background-interval-row");
+  if (!intervalRow) return;
+  intervalRow.classList.toggle("hidden", $("#auto-update-mode").value !== "fixed");
 }
 
 async function prepareBatchNow() {
@@ -3902,7 +3921,13 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
   video.preload = "none";
   video.poster = posterUrl;
   video.setAttribute("aria-label", `${sourceLabel(source)} video`);
-  video.addEventListener("play", () => pauseOtherInlineVideos(video));
+  video.addEventListener("play", () => {
+    pauseOtherInlineVideos(video);
+    recordUIActivity(false);
+  });
+  video.addEventListener("timeupdate", () => {
+    if (!video.paused) recordUIActivity(false);
+  });
 
   let fallbackUsed = false;
   const useNativeFallback = () => {

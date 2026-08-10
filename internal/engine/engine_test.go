@@ -1667,6 +1667,69 @@ func TestAutoUpdateBoundaryUsesLatestAttemptOrQueueVacancy(t *testing.T) {
 	}
 }
 
+func TestContinuousBackgroundTickUsesIndependentPeriodicCadence(t *testing.T) {
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.AutoUpdateMode = "fixed"
+	now := time.Now().UTC()
+
+	next, due := nextContinuousBackgroundTick(store.AutoUpdateScheduleState{}, settings, now)
+	if !due || !next.Equal(now) {
+		t.Fatalf("first tick next=%v due=%v, want due now", next, due)
+	}
+
+	lastTick := now.Add(-2 * time.Minute)
+	next, due = nextContinuousBackgroundTick(store.AutoUpdateScheduleState{
+		LastSchedulerTickAt: lastTick.Format(time.RFC3339Nano),
+	}, settings, now)
+	if due || !next.Equal(lastTick.Add(5*time.Minute)) {
+		t.Fatalf("next=%v due=%v, want %v and not due", next, due, lastTick.Add(5*time.Minute))
+	}
+
+	lastTick = now.Add(-6 * time.Minute)
+	_, due = nextContinuousBackgroundTick(store.AutoUpdateScheduleState{
+		LastSchedulerTickAt: lastTick.Format(time.RFC3339Nano),
+	}, settings, now)
+	if !due {
+		t.Fatal("continuous tick older than the configured interval must be due")
+	}
+}
+
+func TestContinuousBackgroundConsumesTickBeforeStopperCheck(t *testing.T) {
+	_, state := testEngine(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.AutoUpdateMode = "fixed"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new engine has no compatible Bridge heartbeat, providing a stable
+	// stopper without starting any background work.
+	blocked := New(state, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
+	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
+		t.Fatalf("first scheduled tick error=%v", err)
+	}
+	first, err := state.AutoUpdateScheduleState(ctx)
+	if err != nil || first.LastSchedulerTickAt == "" {
+		t.Fatalf("first scheduler tick=%+v err=%v", first, err)
+	}
+
+	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
+		t.Fatalf("stopper was rechecked before the next interval: %v", err)
+	}
+	second, err := state.AutoUpdateScheduleState(ctx)
+	if err != nil || second.LastSchedulerTickAt != first.LastSchedulerTickAt {
+		t.Fatalf("scheduler tick changed before interval: first=%+v second=%+v err=%v", first, second, err)
+	}
+	status, err := blocked.AutoUpdateStatus(ctx)
+	if err != nil || status.LastSchedulerTickAt != first.LastSchedulerTickAt || status.NextCheckAt == "" {
+		t.Fatalf("continuous scheduler status=%+v err=%v", status, err)
+	}
+}
+
 func TestAutoUpdateRecentActivityIgnoresMissingOrOldAccess(t *testing.T) {
 	now := time.Now().UTC()
 	if hasRecentAutoUpdateActivity(store.AutoUpdateScheduleState{}, now) {

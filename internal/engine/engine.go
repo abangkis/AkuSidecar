@@ -146,6 +146,10 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	if _, err := e.store.EnforceRetention(ctx, saved); err != nil {
 		return domain.Settings{}, fmt.Errorf("apply retention settings: %w", err)
 	}
+	select {
+	case e.autoWake <- struct{}{}:
+	default:
+	}
 	return saved, nil
 }
 func (e *Engine) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
