@@ -105,7 +105,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if !strings.Contains(csp, "https://*.fbcdn.net") || !strings.Contains(csp, "https://*.fbsbx.com") {
 		t.Fatalf("Facebook media hosts missing from CSP: %s", csp)
 	}
-	if !strings.Contains(csp, "media-src 'self' https://video.twimg.com https://fbcdn.net https://*.fbcdn.net https://fbsbx.com https://*.fbsbx.com") {
+	if !strings.Contains(csp, "media-src 'self' https://video.twimg.com https://dms.licdn.com https://fbcdn.net https://*.fbcdn.net https://fbsbx.com https://*.fbsbx.com") {
 		t.Fatalf("video playback hosts missing from CSP: %s", csp)
 	}
 	response, err = client.Get("http://" + address.String() + "/api/bootstrap")
@@ -258,6 +258,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		"function activateInlineVideo",
 		"function observeInlineVideoVisibility",
 		"function safePlaybackUrl",
+		"source === \"linkedin\"",
+		"host !== \"dms.licdn.com\"",
 		"source === \"facebook\"",
 		"video.preload = \"none\"",
 		"video.src = playbackUrl",

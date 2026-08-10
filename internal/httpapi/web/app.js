@@ -4695,6 +4695,12 @@ function safePlaybackUrl(value, source) {
         host !== "video.twimg.com" ||
         !/^\/(?:amplify_video|ext_tw_video|tweet_video)\//.test(url.pathname)
       ) return null;
+    } else if (source === "linkedin") {
+      if (
+        host !== "dms.licdn.com" ||
+        !/^\/playlist\//i.test(url.pathname) ||
+        !/\/mp4-\d{2,4}p(?:-|\/)/i.test(url.pathname)
+      ) return null;
     } else if (source === "facebook") {
       if (
         !["fbcdn.net", "fbsbx.com"].some((suffix) => host === suffix || host.endsWith(`.${suffix}`)) ||
