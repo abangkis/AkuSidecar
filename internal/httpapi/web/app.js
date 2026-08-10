@@ -566,7 +566,11 @@ function renderAutoUpdateStatus(status) {
   const estimate = status.estimatedNextRunTokens || 0;
   const cadence = status.cadenceMinutes ? ` · ${humanize(status.cadenceTier)} cadence ${status.cadenceMinutes}m` : "";
   const nextCheck = status.nextCheckAt ? ` · next scheduled tick ${formatDate(status.nextCheckAt)}` : "";
-  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""}${cadence} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
+  const latestReceipt = status.schedulerReceipts?.[0];
+  const lastTick = latestReceipt
+    ? ` · last tick ${humanize(latestReceipt.outcome)}${latestReceipt.reason ? `: ${latestReceipt.reason}` : ""}`
+    : "";
+  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""}${cadence}${lastTick} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
   const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);

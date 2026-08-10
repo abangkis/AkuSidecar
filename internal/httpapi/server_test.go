@@ -155,6 +155,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "idle" || autoUpdate["cadenceMinutes"] != float64(60) || autoUpdate["nextCheckAt"] == "" {
 		t.Fatalf("auto update activity telemetry=%+v", autoUpdate)
 	}
+	if receipts, ok := autoUpdate["schedulerReceipts"].([]any); !ok || len(receipts) != 0 {
+		t.Fatalf("fresh scheduler receipts=%+v", autoUpdate["schedulerReceipts"])
+	}
 	if autoUpdate["dailyTokenBudget"] != float64(2000000) || autoUpdate["dailyTokensUsed"] != float64(0) || autoUpdate["quotaTokensUsed"] != float64(0) || autoUpdate["dailyTokensRemaining"] != float64(2000000) || autoUpdate["manualReserveTokens"] != float64(500000) || autoUpdate["automaticTokenLimit"] != float64(1500000) || autoUpdate["automaticTokensRemaining"] != float64(1500000) || autoUpdate["budgetResetAt"] == "" {
 		t.Fatalf("auto update budget telemetry=%+v", autoUpdate)
 	}
@@ -560,7 +563,7 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "5-minute active, 15-minute warm, and 60-minute idle cadence"},
-		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "settings.autoUpdateRefillMinutes || 15"},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

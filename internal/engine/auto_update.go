@@ -117,6 +117,11 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 			status.Reason = fmt.Sprintf("Waiting for the next %s cadence tick", cadence.Tier)
 		}
 	}
+	receipts, err := e.store.AutoUpdateSchedulerReceipts(ctx, 10)
+	if err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
+	status.SchedulerReceipts = receipts
 	if active, activeErr := e.store.ActiveSession(ctx); activeErr != nil {
 		return domain.AutoUpdateStatus{}, activeErr
 	} else if active != nil {
@@ -212,7 +217,7 @@ func (e *Engine) StartPreparedUpdateNow(ctx context.Context) (domain.Session, er
 	return e.startAutoUpdate(ctx, true)
 }
 
-func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Session, error) {
+func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domain.Session, resultErr error) {
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil || !settings.AutoUpdateEnabled {
 		if err == nil {
@@ -221,6 +226,24 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 		return domain.Session{}, err
 	}
 	var schedule store.AutoUpdateScheduleState
+	var tickReceipt *domain.AutoUpdateTickReceipt
+	defer func() {
+		if tickReceipt == nil {
+			return
+		}
+		completed := *tickReceipt
+		completed.DecidedAt = domain.Now()
+		if resultErr != nil {
+			completed.Outcome = "skipped"
+			completed.Reason = resultErr.Error()
+		} else {
+			completed.Outcome = "started"
+			completed.SessionID = session.ID
+		}
+		if err := e.store.CompleteAutoUpdateSchedulerTick(context.Background(), completed); err != nil {
+			e.logger.Printf("complete Auto Update scheduler receipt: %v", err)
+		}
+	}()
 	if !force {
 		schedule, err = e.store.AutoUpdateScheduleState(ctx)
 		if err != nil {
@@ -233,9 +256,16 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 		}
 		// Every scheduled tick is consumed before the shared safety, capacity,
 		// and quota stoppers below. A skipped tick waits for its next cadence.
-		if err := e.store.RecordAutoUpdateSchedulerTick(ctx); err != nil {
+		receipt := domain.AutoUpdateTickReceipt{
+			ID: domain.NewID("tick"), TickAt: now.Format(time.RFC3339Nano),
+			Mode: settings.AutoUpdateMode, CadenceTier: cadence.Tier,
+			CadenceMinutes: int(cadence.Duration / time.Minute),
+			NextTickAt:     now.Add(cadence.Duration).Format(time.RFC3339Nano), Outcome: "checking",
+		}
+		if err := e.store.RecordAutoUpdateSchedulerTick(ctx, receipt); err != nil {
 			return domain.Session{}, err
 		}
+		tickReceipt = &receipt
 	}
 	onboarding, err := e.store.Onboarding(ctx)
 	if err != nil || onboarding.Status != "completed" {
@@ -288,7 +318,7 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (domain.Sessio
 	if force {
 		trigger = domain.UpdateTriggerUser
 	}
-	session, err := e.startSession(context.Background(), "What materially changed since my last prepared batch?", domain.UpdatePolicy{
+	session, err = e.startSession(context.Background(), "What materially changed since my last prepared batch?", domain.UpdatePolicy{
 		Trigger: trigger, Delivery: domain.UpdateDeliveryPrepared, BudgetAuthority: domain.BudgetAuthorityAutomatic,
 	})
 	if err != nil {

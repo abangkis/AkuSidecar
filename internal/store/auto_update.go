@@ -3,12 +3,16 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
+
+const maxAutoUpdateSchedulerReceipts = 32
 
 type AutoUpdateScheduleState struct {
 	LastUIAccessAt      string
@@ -36,10 +40,99 @@ func (s *Store) RecordAutoUpdateAttempt(ctx context.Context, message string) err
 	return err
 }
 
-func (s *Store) RecordAutoUpdateSchedulerTick(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
+func (s *Store) RecordAutoUpdateSchedulerTick(ctx context.Context, receipt domain.AutoUpdateTickReceipt) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	receipts, err := autoUpdateSchedulerReceiptsTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	receipts = append([]domain.AutoUpdateTickReceipt{receipt}, receipts...)
+	if len(receipts) > maxAutoUpdateSchedulerReceipts {
+		receipts = receipts[:maxAutoUpdateSchedulerReceipts]
+	}
+	if err := writeAutoUpdateSchedulerReceiptsTx(ctx, tx, receipts); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO meta(key,value) VALUES('auto_update_scheduler_tick_at',?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, domain.Now())
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, receipt.TickAt); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) CompleteAutoUpdateSchedulerTick(ctx context.Context, receipt domain.AutoUpdateTickReceipt) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	receipts, err := autoUpdateSchedulerReceiptsTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	found := false
+	for index := range receipts {
+		if receipts[index].ID == receipt.ID {
+			receipts[index] = receipt
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("Auto Update scheduler receipt %s was not found", receipt.ID)
+	}
+	if err := writeAutoUpdateSchedulerReceiptsTx(ctx, tx, receipts); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) AutoUpdateSchedulerReceipts(ctx context.Context, limit int) ([]domain.AutoUpdateTickReceipt, error) {
+	var raw sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='auto_update_scheduler_receipts'`).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return []domain.AutoUpdateTickReceipt{}, nil
+		}
+		return nil, err
+	}
+	var receipts []domain.AutoUpdateTickReceipt
+	if err := json.Unmarshal([]byte(raw.String), &receipts); err != nil {
+		return nil, fmt.Errorf("decode Auto Update scheduler receipts: %w", err)
+	}
+	if limit > 0 && len(receipts) > limit {
+		receipts = receipts[:limit]
+	}
+	return receipts, nil
+}
+
+func autoUpdateSchedulerReceiptsTx(ctx context.Context, tx *sql.Tx) ([]domain.AutoUpdateTickReceipt, error) {
+	var raw sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='auto_update_scheduler_receipts'`).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return []domain.AutoUpdateTickReceipt{}, nil
+		}
+		return nil, err
+	}
+	var receipts []domain.AutoUpdateTickReceipt
+	if err := json.Unmarshal([]byte(raw.String), &receipts); err != nil {
+		return nil, fmt.Errorf("decode Auto Update scheduler receipts: %w", err)
+	}
+	return receipts, nil
+}
+
+func writeAutoUpdateSchedulerReceiptsTx(ctx context.Context, tx *sql.Tx, receipts []domain.AutoUpdateTickReceipt) error {
+	raw, err := json.Marshal(receipts)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO meta(key,value) VALUES('auto_update_scheduler_receipts',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(raw))
 	return err
 }
 

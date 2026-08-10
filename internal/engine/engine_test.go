@@ -1748,9 +1748,20 @@ func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
 			if err != nil || second.LastSchedulerTickAt != first.LastSchedulerTickAt {
 				t.Fatalf("scheduler tick changed before cadence: first=%+v second=%+v err=%v", first, second, err)
 			}
+			receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10)
+			if err != nil || len(receipts) != 1 || receipts[0].Mode != mode || receipts[0].Outcome != "skipped" || receipts[0].Reason != "AkuBridge is not ready" || receipts[0].NextTickAt == "" {
+				t.Fatalf("scheduler receipts=%+v err=%v", receipts, err)
+			}
 			status, err := blocked.AutoUpdateStatus(ctx)
-			if err != nil || status.LastSchedulerTickAt != first.LastSchedulerTickAt || status.NextCheckAt == "" {
+			if err != nil || status.LastSchedulerTickAt != first.LastSchedulerTickAt || status.NextCheckAt == "" || len(status.SchedulerReceipts) != 1 || status.SchedulerReceipts[0].Outcome != "skipped" {
 				t.Fatalf("scheduler status=%+v err=%v", status, err)
+			}
+			if _, err := blocked.StartPreparedUpdateNow(ctx); err == nil {
+				t.Fatal("manual prepared update unexpectedly bypassed the Bridge stopper")
+			}
+			receiptsAfterManual, err := state.AutoUpdateSchedulerReceipts(ctx, 10)
+			if err != nil || len(receiptsAfterManual) != 1 {
+				t.Fatalf("manual action created a scheduler receipt: %+v err=%v", receiptsAfterManual, err)
 			}
 		})
 	}

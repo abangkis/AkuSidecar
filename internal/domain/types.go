@@ -511,33 +511,47 @@ type PreparedBatch struct {
 	Urgency    float64 `json:"highestUrgency"`
 }
 
+type AutoUpdateTickReceipt struct {
+	ID             string `json:"id"`
+	TickAt         string `json:"tickAt"`
+	DecidedAt      string `json:"decidedAt,omitempty"`
+	Mode           string `json:"mode"`
+	CadenceTier    string `json:"cadenceTier"`
+	CadenceMinutes int    `json:"cadenceMinutes"`
+	NextTickAt     string `json:"nextTickAt"`
+	Outcome        string `json:"outcome"`
+	Reason         string `json:"reason,omitempty"`
+	SessionID      string `json:"sessionId,omitempty"`
+}
+
 type AutoUpdateStatus struct {
-	Enabled                  bool            `json:"enabled"`
-	Mode                     string          `json:"mode"`
-	State                    string          `json:"state"`
-	Reason                   string          `json:"reason,omitempty"`
-	LastUserActivityAt       string          `json:"lastUserActivityAt,omitempty"`
-	RecentUserActivity       bool            `json:"recentUserActivity"`
-	ActivityWindowMinutes    int             `json:"activityWindowMinutes"`
-	LastSchedulerTickAt      string          `json:"lastSchedulerTickAt,omitempty"`
-	NextCheckAt              string          `json:"nextCheckAt,omitempty"`
-	CadenceTier              string          `json:"cadenceTier"`
-	CadenceMinutes           int             `json:"cadenceMinutes"`
-	BudgetResetAt            string          `json:"budgetResetAt"`
-	LastManualBudgetResetAt  string          `json:"lastManualBudgetResetAt,omitempty"`
-	DailyTokenBudget         int64           `json:"dailyTokenBudget"`
-	DailyTokensUsed          int64           `json:"dailyTokensUsed"`
-	QuotaTokensUsed          int64           `json:"quotaTokensUsed"`
-	DailyTokensRemaining     int64           `json:"dailyTokensRemaining"`
-	AutomaticTokensUsed      int64           `json:"automaticTokensUsed"`
-	AutomaticTokensRemaining int64           `json:"automaticTokensRemaining"`
-	ManualReserveTokens      int64           `json:"manualReserveTokens"`
-	EstimatedNextRunTokens   int64           `json:"estimatedNextRunTokens"`
-	AutomaticTokenLimit      int64           `json:"automaticTokenLimit"`
-	PreparedBatchLimit       int             `json:"preparedBatchLimit"`
-	AvailablePreparedSlots   int             `json:"availablePreparedSlots"`
-	RefillIntervalMinutes    int             `json:"refillIntervalMinutes"`
-	PreparedBatches          []PreparedBatch `json:"preparedBatches"`
+	Enabled                  bool                    `json:"enabled"`
+	Mode                     string                  `json:"mode"`
+	State                    string                  `json:"state"`
+	Reason                   string                  `json:"reason,omitempty"`
+	LastUserActivityAt       string                  `json:"lastUserActivityAt,omitempty"`
+	RecentUserActivity       bool                    `json:"recentUserActivity"`
+	ActivityWindowMinutes    int                     `json:"activityWindowMinutes"`
+	LastSchedulerTickAt      string                  `json:"lastSchedulerTickAt,omitempty"`
+	NextCheckAt              string                  `json:"nextCheckAt,omitempty"`
+	CadenceTier              string                  `json:"cadenceTier"`
+	CadenceMinutes           int                     `json:"cadenceMinutes"`
+	BudgetResetAt            string                  `json:"budgetResetAt"`
+	LastManualBudgetResetAt  string                  `json:"lastManualBudgetResetAt,omitempty"`
+	DailyTokenBudget         int64                   `json:"dailyTokenBudget"`
+	DailyTokensUsed          int64                   `json:"dailyTokensUsed"`
+	QuotaTokensUsed          int64                   `json:"quotaTokensUsed"`
+	DailyTokensRemaining     int64                   `json:"dailyTokensRemaining"`
+	AutomaticTokensUsed      int64                   `json:"automaticTokensUsed"`
+	AutomaticTokensRemaining int64                   `json:"automaticTokensRemaining"`
+	ManualReserveTokens      int64                   `json:"manualReserveTokens"`
+	EstimatedNextRunTokens   int64                   `json:"estimatedNextRunTokens"`
+	AutomaticTokenLimit      int64                   `json:"automaticTokenLimit"`
+	PreparedBatchLimit       int                     `json:"preparedBatchLimit"`
+	AvailablePreparedSlots   int                     `json:"availablePreparedSlots"`
+	RefillIntervalMinutes    int                     `json:"refillIntervalMinutes"`
+	PreparedBatches          []PreparedBatch         `json:"preparedBatches"`
+	SchedulerReceipts        []AutoUpdateTickReceipt `json:"schedulerReceipts"`
 }
 
 type Run struct {
