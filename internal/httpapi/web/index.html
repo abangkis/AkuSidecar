@@ -80,16 +80,17 @@
       </section>
 
       <section id="settings-panel" class="settings-panel hidden" aria-labelledby="settings-heading">
-        <div class="section-heading">
-          <div>
-            <p class="step-label">RUNTIME CONFIGURATION</p>
-            <h2 id="settings-heading" tabindex="-1">Browser behavior</h2>
+          <div class="section-heading">
+            <div>
+              <p class="step-label">RUNTIME CONFIGURATION</p>
+              <h2 id="settings-heading" tabindex="-1">Browser behavior</h2>
+            </div>
+            <div class="settings-heading-actions">
+              <span id="settings-dirty-indicator" class="settings-dirty-indicator hidden" role="status">Unsaved changes</span>
+              <span id="runtime-settings-status" class="settings-detail" role="status"></span>
+              <button id="save-runtime-settings" class="primary-button" type="submit" form="runtime-settings-form" disabled>Save settings</button>
+            </div>
           </div>
-          <div class="settings-heading-actions">
-            <span id="runtime-settings-status" class="settings-detail" role="status"></span>
-            <button id="save-runtime-settings" class="primary-button" type="submit" form="runtime-settings-form">Save settings</button>
-          </div>
-        </div>
         <form id="runtime-settings-form" class="settings-form">
           <fieldset class="settings-group">
             <legend>Personalization</legend>

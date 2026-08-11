@@ -1,3 +1,5 @@
+import { createDirtyStateTracker } from "./settings-dirty-state.js";
+
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
 const terminalStatuses = new Set(["completed", "partial", "failed", "cancelled"]);
@@ -83,7 +85,12 @@ const state = {
   uiActivityTrackingInstalled: false,
   lastUIActivitySentAt: 0,
   sidecarEpochReloading: false,
+  settingsUnloadBypass: false,
 };
+const settingsDirty = createDirtyStateTracker({
+  readSnapshot: () => readSettingsDraft(state.bootstrap?.settings ?? {}),
+  onChange: renderSettingsDirtyState,
+});
 const $ = (selector) => document.querySelector(selector);
 
 window.addEventListener("message", (event) => {
@@ -130,6 +137,7 @@ function recoverInvalidatedBridgeContext(message) {
     return true;
   }
   sessionStorage.setItem(BRIDGE_CONTEXT_RECOVERY_KEY, String(now));
+  state.settingsUnloadBypass = true;
   location.reload();
   return true;
 }
@@ -140,6 +148,7 @@ function recoverInvalidBridgeToken(code) {
   const lastAttempt = Number(sessionStorage.getItem(BRIDGE_TOKEN_RECOVERY_KEY) || 0);
   if (Number.isFinite(lastAttempt) && now - lastAttempt < BRIDGE_CONTEXT_RECOVERY_WINDOW_MS) return false;
   sessionStorage.setItem(BRIDGE_TOKEN_RECOVERY_KEY, String(now));
+  state.settingsUnloadBypass = true;
   location.reload();
   return true;
 }
@@ -181,7 +190,13 @@ $("#onboarding-learning-panel").addEventListener("focusin", () => pauseOnboardin
 $("#onboarding-learning-panel").addEventListener("focusout", () => {
   setTimeout(() => pauseOnboardingLearning($("#onboarding-learning-panel").contains(document.activeElement)), 0);
 });
-$("#runtime-settings-form").addEventListener("submit", saveSettings);
+const settingsForm = $("#runtime-settings-form");
+settingsForm.addEventListener("submit", saveSettings);
+settingsForm.addEventListener("input", refreshSettingsDirtyState);
+settingsForm.addEventListener("change", refreshSettingsDirtyState);
+settingsForm.addEventListener("click", (event) => {
+  if (event.target.closest("button")) queueMicrotask(refreshSettingsDirtyState);
+});
 $("#detect-reasoning-executable").addEventListener("click", detectReasoningExecutable);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
@@ -223,6 +238,11 @@ window.addEventListener("resize", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
 }, { passive: true });
+window.addEventListener("beforeunload", (event) => {
+  if (!settingsDirty.isDirty() || state.settingsUnloadBypass) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 window.addEventListener("scroll", () => {
   const movingDown = window.scrollY > state.autoLoadLastScrollY;
   state.autoLoadLastScrollY = window.scrollY;
@@ -537,6 +557,7 @@ function renderSettings(settings) {
   syncSemanticEventSettings();
   syncAIDetectionSettings();
   renderAutoUpdateStatus(state.bootstrap?.autoUpdate);
+  settingsDirty.setBaseline(readSettingsDraft(settings));
 }
 
 function renderAutoUpdateStatus(status) {
@@ -869,25 +890,19 @@ function formatReasoningEffort(value) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-async function saveSettings(event) {
-  event.preventDefault();
-  const current = state.bootstrap.settings;
-  const activeSources = [...document.querySelectorAll("#settings-source-options input[type='checkbox']:checked")].map((input) => input.value);
-  if (!activeSources.length) {
-    $("#runtime-settings-status").textContent = "Choose at least one active source.";
-    return;
-  }
+function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
+  const activeSources = [...document.querySelectorAll("#settings-source-options input[type='checkbox']:checked")]
+    .map((input) => input.value)
+    .sort();
   const loadProfile = $("#bounded-load-profile").value;
   const preset = LOAD_PROFILE_PRESETS[loadProfile];
   const perSource = Number.parseInt($("#max-items-per-source").value, 10);
   const sourceHydrationTimeoutMs = Object.fromEntries(
-    [...document.querySelectorAll("[data-source-hydration]")].map((input) => [
-      input.dataset.sourceHydration,
-      Number.parseInt(input.value, 10) * 1000,
-    ]),
+    [...document.querySelectorAll("[data-source-hydration]")]
+      .map((input) => [input.dataset.sourceHydration, Number.parseInt(input.value, 10) * 1000])
+      .sort(([left], [right]) => left.localeCompare(right)),
   );
-  const settings = {
-    ...current,
+  return {
     loadProfile,
     captureVisibility: $("#capture-visibility-policy").value,
     sourceWaitMode: $("#source-wait-mode").value,
@@ -930,6 +945,30 @@ async function saveSettings(event) {
     reasoningSemanticProfile: reasoningProfileValue("semantic_event_resolution", current.reasoningSemanticProfile),
     reasoningAiDeepProfile: reasoningProfileValue("ai_deep_detection", current.reasoningAiDeepProfile),
   };
+}
+
+function refreshSettingsDirtyState() {
+  settingsDirty.refresh();
+}
+
+function renderSettingsDirtyState(dirty) {
+  const indicator = $("#settings-dirty-indicator");
+  const save = $("#save-runtime-settings");
+  if (!indicator || !save) return;
+  indicator.classList.toggle("hidden", !dirty);
+  save.disabled = !dirty;
+  save.setAttribute("aria-disabled", String(!dirty));
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const current = state.bootstrap.settings;
+  const draft = readSettingsDraft(current);
+  if (!draft.activeSources.length) {
+    $("#runtime-settings-status").textContent = "Choose at least one active source.";
+    return;
+  }
+  const settings = { ...current, ...draft };
   if (settings.aiDetectionEnabled && settings.aiDetectionPresentation === "hide" && current.aiDetectionPresentation !== "hide") {
     state.pendingSettings = settings;
     openResetDialog("ai-hide");
@@ -947,7 +986,9 @@ function reasoningProfileValue(processId, fallback) {
 
 async function persistSettings(settings, confirmationPhrase = "") {
   const status = $("#runtime-settings-status");
+  const saveButton = $("#save-runtime-settings");
   status.textContent = "Saving…";
+  if (saveButton) saveButton.disabled = true;
   try {
     const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
     state.bootstrap.settings = response.settings;
@@ -963,6 +1004,8 @@ async function persistSettings(settings, confirmationPhrase = "") {
     status.textContent = error.message;
     showError(error);
     return null;
+  } finally {
+    renderSettingsDirtyState(settingsDirty.isDirty());
   }
 }
 
@@ -978,6 +1021,7 @@ async function detectReasoningExecutable() {
     }
     $("#reasoning-executable-label").textContent = runtime.label || "Inference executable";
     $("#reasoning-executable-path").value = runtime.executablePath || "";
+    refreshSettingsDirtyState();
     status.textContent = runtime.autoRepaired
       ? "Detected and refreshed · ready to use"
       : "Detected · save settings to use this executable";
@@ -1166,6 +1210,7 @@ function openResetDialog(operation) {
       state.pendingSettings = null;
       $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
       syncAIDetectionSettings();
+      refreshSettingsDirtyState();
     }
     return;
   }
@@ -1192,6 +1237,7 @@ function closeResetDialog() {
   if (state.resetOperation === "ai-hide" && state.bootstrap?.settings) {
     $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
     syncAIDetectionSettings();
+    refreshSettingsDirtyState();
   }
   state.resetOperation = null;
   state.pendingSettings = null;
@@ -1230,6 +1276,7 @@ async function submitReset() {
     const response = await api(path, { method: "POST", body: { confirmation: phrase } });
     if (operation === "full") {
       $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Returning to onboarding…`;
+      state.settingsUnloadBypass = true;
       window.setTimeout(() => window.location.reload(), 350);
       return;
     }

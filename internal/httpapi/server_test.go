@@ -647,6 +647,25 @@ func TestEmbeddedSchedulerStatusUsesScannableSummary(t *testing.T) {
 	}
 }
 
+func TestEmbeddedSettingsDirtyStateContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"settings-dirty-indicator", "Unsaved changes", "save-runtime-settings"},
+		"web/app.js":     {`import { createDirtyStateTracker } from "./settings-dirty-state.js"`, "const settingsDirty = createDirtyStateTracker", "function readSettingsDraft", "settingsDirty.setBaseline", "beforeunload", "settingsForm.addEventListener(\"input\"", "settingsForm.addEventListener(\"change\""},
+		"web/settings-dirty-state.js": {"export function createDirtyStateTracker", "setBaseline", "isDirty"},
+		"web/styles.css": {".settings-dirty-indicator"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing settings dirty-state contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestEmbeddedUsageLimitPauseRequiresExplicitRestoreConfirmation(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"confirm-codex-usage-restored", "Confirm Codex usage restored"},
