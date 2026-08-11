@@ -542,17 +542,30 @@ function renderSettings(settings) {
 function renderAutoUpdateStatus(status) {
   const detail = $("#auto-update-status");
   const queue = $("#auto-update-queue-status");
+  const stateBadge = $("#auto-update-state-badge");
+  const preparedMetric = $("#auto-update-prepared-metric");
+  const runwayLabel = $("#auto-update-runway-label");
+  const runwayMetric = $("#auto-update-runway-metric");
+  const resultMetric = $("#auto-update-result-metric");
+  const pressureLabel = $("#auto-update-pressure-label");
+  const pressureMetric = $("#auto-update-pressure-metric");
+  const allowanceLabel = $("#auto-update-allowance-label");
+  const allowanceMetric = $("#auto-update-allowance-metric");
+  const nextMetric = $("#auto-update-next-metric");
   const budget = $("#auto-update-budget-status");
   const budgetDetail = $("#auto-update-budget-detail");
   const reset = $("#reset-auto-update-budget");
   const confirmRestored = $("#confirm-codex-usage-restored");
   const runNow = $("#prepare-batch-now");
   const timeline = $("#auto-update-timeline-status");
-  if (!detail || !queue || !budget || !budgetDetail || !timeline) return;
+  if (!detail || !queue || !stateBadge || !preparedMetric || !runwayLabel || !runwayMetric || !resultMetric || !pressureLabel || !pressureMetric || !allowanceLabel || !allowanceMetric || !nextMetric || !budget || !budgetDetail || !timeline) return;
   if (state.bootstrap && status) state.bootstrap.autoUpdate = status;
   if (!status) {
     detail.textContent = "Local scheduler telemetry is not available yet.";
     queue.textContent = "—";
+    stateBadge.textContent = "Unavailable";
+    stateBadge.className = "auto-update-state-pill auto-update-state-neutral";
+    for (const metric of [preparedMetric, runwayMetric, resultMetric, pressureMetric, allowanceMetric, nextMetric]) metric.textContent = "—";
     budget.textContent = "Daily token telemetry is not available yet.";
     budgetDetail.textContent = "—";
     timeline.classList.add("hidden");
@@ -566,13 +579,26 @@ function renderAutoUpdateStatus(status) {
   const automaticRemaining = status.automaticTokensRemaining || 0;
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
-  const cadence = status.cadenceMinutes ? ` · ${humanize(status.cadenceTier)} cadence ${status.cadenceMinutes}m` : "";
-  const nextCheckLabel = status.mode === "adaptive" ? "next adaptive check" : "next scheduled tick";
-  const nextCheck = status.nextCheckAt ? ` · ${nextCheckLabel} ${formatDate(status.nextCheckAt)}` : "";
+  const adaptive = status.mode === "adaptive";
+  const stateTone = status.state === "running"
+    ? "active"
+    : ["paused", "budget_paused"].includes(status.state)
+      ? "warning"
+      : status.state === "usage_limit_paused" ? "danger" : "neutral";
+  stateBadge.textContent = humanize(status.state || "idle");
+  stateBadge.className = `auto-update-state-pill auto-update-state-${stateTone}`;
+  detail.textContent = status.reason || (status.enabled ? "Automatic checks are ready." : "Automatic checks are off.");
+
+  const prepared = status.preparedBatches?.length || 0;
+  const limit = status.preparedBatchLimit || prepared;
+  const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
+  preparedMetric.textContent = `${prepared} / ${limit} batches`;
+  runwayLabel.textContent = adaptive ? "Ready posts" : "Open slots";
+  runwayMetric.textContent = adaptive
+    ? `${status.adaptiveReadyItems || 0} / ${status.adaptiveReadyItemTarget || 1} posts`
+    : `${available} available`;
+
   const latestReceipt = status.schedulerReceipts?.[0];
-  const lastTick = latestReceipt
-    ? ` · last tick ${humanize(latestReceipt.outcome)}${latestReceipt.reason ? `: ${latestReceipt.reason}` : ""}`
-    : "";
   const outcomeSources = (status.lastAdaptiveOutcomeCompletedSources || 0)
     + (status.lastAdaptiveOutcomeFailedSources || 0)
     + (status.lastAdaptiveOutcomeCancelledSources || 0);
@@ -581,41 +607,42 @@ function renderAutoUpdateStatus(status) {
   const outcomeSourceDetail = outcomeSources > 0
     ? `${status.lastAdaptiveOutcomeCompletedSources || 0}/${outcomeSources} source${outcomeSources === 1 ? "" : "s"} completed${failedOutcomeSources ? `, ${failedOutcomeSources} failed` : ""}${cancelledOutcomeSources ? `, ${cancelledOutcomeSources} cancelled` : ""}`
     : "source counts unavailable";
-  const lastOutcome = status.lastAdaptiveOutcome
-    ? ` · last outcome ${humanize(status.lastAdaptiveOutcome)}: ${status.lastAdaptiveOutcomeItems || 0} item${status.lastAdaptiveOutcomeItems === 1 ? "" : "s"}, ${outcomeSourceDetail}`
-    : "";
-  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""}${cadence}${lastTick}${lastOutcome} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
-  const prepared = status.preparedBatches?.length || 0;
-  const limit = status.preparedBatchLimit || prepared;
-  const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
-  const adaptiveTarget = status.mode === "adaptive"
-    ? ` · target ${status.adaptiveTargetBatches || 1}${status.adaptiveBaseTargetBatches > status.adaptiveTargetBatches ? ` of learned ${status.adaptiveBaseTargetBatches}` : ""}`
-    : "";
-  const readyRunway = status.mode === "adaptive"
-    ? ` · runway ${status.adaptiveReadyItems || 0}/${status.adaptiveReadyItemTarget || 1} items`
-    : "";
-  const consumptionPace = status.mode === "adaptive" && status.consumptionPaceMinutes
-    ? ` · pace ~${status.consumptionPaceMinutes}m/batch`
-    : status.mode === "adaptive" ? " · learning consumption pace" : "";
-  const generationAllowance = status.mode === "adaptive"
-    ? ` · ${status.generationAllowanceUsed || 0}/${status.generationAllowanceLimit || limit} generated per ${status.generationWindowMinutes || 30}m window`
-    : "";
-  const supplyBackoff = status.supplyBackoffUntil && Date.parse(status.supplyBackoffUntil) > Date.now()
-    ? ` · supply cooldown until ${formatDate(status.supplyBackoffUntil)}`
-    : "";
-  const technicalBackoff = status.technicalBackoffUntil && Date.parse(status.technicalBackoffUntil) > Date.now()
-    ? ` · retry cooldown until ${formatDate(status.technicalBackoffUntil)}`
-    : "";
-  const pressure = status.mode === "adaptive"
-    ? ` · pressure ${status.replenishmentPressureTier || "low"} ${status.replenishmentPressure || 0}/100${status.pressureAdditionalDelayMinutes ? `, +${status.pressureAdditionalDelayMinutes}m spacing` : ""}`
-    : "";
-  const pressureWait = status.pressureRefillNotBefore && Date.parse(status.pressureRefillNotBefore) > Date.now()
-    ? ` · pressure spacing until ${formatDate(status.pressureRefillNotBefore)}`
-    : "";
-  const readingGrace = status.mode === "adaptive" && status.adaptiveReadingGraceUntil && Date.parse(status.adaptiveReadingGraceUntil) > Date.now()
-    ? ` · reading grace until ${formatDate(status.adaptiveReadingGraceUntil)}`
-    : "";
-  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget}${readyRunway} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${pressure}${pressureWait}${readingGrace}${supplyBackoff}${technicalBackoff}`;
+  resultMetric.textContent = status.lastAdaptiveOutcome
+    ? `${humanize(status.lastAdaptiveOutcome)} · ${status.lastAdaptiveOutcomeItems || 0} post${status.lastAdaptiveOutcomeItems === 1 ? "" : "s"}`
+    : latestReceipt ? humanize(latestReceipt.outcome) : "No result yet";
+  pressureLabel.textContent = adaptive ? "Pressure" : "Cadence";
+  pressureMetric.textContent = adaptive
+    ? `${humanize(status.replenishmentPressureTier || "low")} · ${status.replenishmentPressure || 0}/100`
+    : `${status.cadenceMinutes || status.refillIntervalMinutes || 0} min`;
+  allowanceLabel.textContent = adaptive ? `Attempts (${status.generationWindowMinutes || 30}m)` : "Policy";
+  allowanceMetric.textContent = adaptive
+    ? `${status.generationAllowanceUsed || 0} / ${status.generationAllowanceLimit || limit}`
+    : "Continuous";
+  nextMetric.textContent = status.state === "usage_limit_paused"
+    ? "Needs confirmation"
+    : status.state === "budget_paused"
+      ? "Waiting for budget"
+      : status.state === "disabled"
+        ? "Off"
+        : status.nextCheckAt ? formatSchedulerMoment(status.nextCheckAt) : "Ready when needed";
+
+  const diagnostics = [];
+  if (adaptive) {
+    const baseTarget = status.adaptiveBaseTargetBatches || status.adaptiveTargetBatches || 1;
+    diagnostics.push(`Target ${status.adaptiveTargetBatches || 1}${baseTarget > status.adaptiveTargetBatches ? ` of learned ${baseTarget}` : ""} batch${baseTarget === 1 ? "" : "es"}`);
+    diagnostics.push(status.consumptionPaceMinutes ? `Pace ~${status.consumptionPaceMinutes}m/batch` : "Learning consumption pace");
+    if (status.pressureAdditionalDelayMinutes) diagnostics.push(`Pressure adds ${status.pressureAdditionalDelayMinutes}m spacing`);
+  } else {
+    diagnostics.push(`${humanize(status.cadenceTier || "continuous")} cadence ${status.cadenceMinutes || status.refillIntervalMinutes || 0}m`);
+  }
+  if (latestReceipt) diagnostics.push(`Last tick ${humanize(latestReceipt.outcome)}${latestReceipt.reason ? `: ${latestReceipt.reason}` : ""}`);
+  if (status.lastAdaptiveOutcome) diagnostics.push(`Last outcome: ${outcomeSourceDetail}`);
+  diagnostics.push(`Next estimate ${formatTokenCount(estimate)}`);
+  if (status.pressureRefillNotBefore && Date.parse(status.pressureRefillNotBefore) > Date.now()) diagnostics.push(`Pressure spacing until ${formatDate(status.pressureRefillNotBefore)}`);
+  if (adaptive && status.adaptiveReadingGraceUntil && Date.parse(status.adaptiveReadingGraceUntil) > Date.now()) diagnostics.push(`Reading grace until ${formatDate(status.adaptiveReadingGraceUntil)}`);
+  if (status.supplyBackoffUntil && Date.parse(status.supplyBackoffUntil) > Date.now()) diagnostics.push(`Supply cooldown until ${formatDate(status.supplyBackoffUntil)}`);
+  if (status.technicalBackoffUntil && Date.parse(status.technicalBackoffUntil) > Date.now()) diagnostics.push(`Retry cooldown until ${formatDate(status.technicalBackoffUntil)}`);
+  queue.textContent = diagnostics.join(" · ");
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
@@ -4791,6 +4818,17 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatSchedulerMoment(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  const today = new Date();
+  const sameDay = date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate();
+  return new Intl.DateTimeFormat(undefined, sameDay ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function formatDurationBetween(startedAt, completedAt) {

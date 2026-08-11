@@ -135,13 +135,30 @@
                 <span class="settings-copy"><strong>Automatic checks</strong><small>Prepare updates in the background and catch up after AkuBrowser is opened.</small></span>
                 <input id="auto-update-enabled" name="autoUpdateEnabled" type="checkbox" />
               </label>
-              <div class="settings-row">
-                <span class="settings-copy"><strong>Scheduler status</strong><small id="auto-update-status">Loading local queue and token telemetry…</small></span>
-                <span class="settings-inline-control auto-update-scheduler-control">
-                  <span id="auto-update-queue-status" class="settings-detail">—</span>
-                  <button id="confirm-codex-usage-restored" class="hidden" type="button">Confirm Codex usage restored</button>
-                  <button id="prepare-batch-now" type="button">Prepare batch now</button>
+              <div class="settings-row auto-update-status-row">
+                <span class="settings-copy auto-update-status-copy">
+                  <span class="auto-update-status-heading">
+                    <strong>Scheduler status</strong>
+                    <span id="auto-update-state-badge" class="auto-update-state-pill auto-update-state-neutral">Loading</span>
+                  </span>
+                  <small id="auto-update-status">Loading local queue and token telemetry…</small>
                 </span>
+                <span class="auto-update-scheduler-actions">
+                  <button id="confirm-codex-usage-restored" class="secondary-button hidden" type="button">Confirm Codex usage restored</button>
+                  <button id="prepare-batch-now" class="secondary-button" type="button">Prepare batch now</button>
+                </span>
+                <dl class="auto-update-metrics" aria-label="Scheduler summary">
+                  <div><dt>Prepared</dt><dd id="auto-update-prepared-metric">—</dd></div>
+                  <div><dt id="auto-update-runway-label">Ready posts</dt><dd id="auto-update-runway-metric">—</dd></div>
+                  <div><dt>Last result</dt><dd id="auto-update-result-metric">—</dd></div>
+                  <div><dt id="auto-update-pressure-label">Pressure</dt><dd id="auto-update-pressure-metric">—</dd></div>
+                  <div><dt id="auto-update-allowance-label">Attempts</dt><dd id="auto-update-allowance-metric">—</dd></div>
+                  <div><dt>Next check</dt><dd id="auto-update-next-metric">—</dd></div>
+                </dl>
+                <details class="auto-update-diagnostics">
+                  <summary>Technical details</summary>
+                  <span id="auto-update-queue-status" class="settings-detail">—</span>
+                </details>
               </div>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Budget today</strong><small id="auto-update-budget-status">Loading daily budget telemetry…</small></span>

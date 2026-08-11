@@ -603,7 +603,7 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "Adaptive demand learns batch consumption pace"},
-		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15", "status.adaptiveTargetBatches", "adaptiveReadyItems", "runway", "adaptiveReadingGraceUntil", "reading grace until", "lastAdaptiveOutcome", "technicalBackoffUntil", "retry cooldown until", "learning consumption pace", "generationAllowanceUsed", "replenishmentPressure", "pressure spacing until"},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "status.cadenceTier", "settings.autoUpdateRefillMinutes || 15"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -612,6 +612,24 @@ func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *test
 		for _, marker := range markers {
 			if !strings.Contains(string(contents), marker) {
 				t.Fatalf("%s missing continuous scheduler contract %q", asset, marker)
+			}
+		}
+	}
+}
+
+func TestEmbeddedSchedulerStatusUsesScannableSummary(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"auto-update-state-badge", "auto-update-metrics", "auto-update-prepared-metric", "auto-update-runway-metric", "auto-update-result-metric", "auto-update-pressure-metric", "auto-update-allowance-metric", "auto-update-next-metric", "Technical details"},
+		"web/styles.css": {".auto-update-status-row", ".auto-update-state-pill", ".auto-update-metrics", ".auto-update-diagnostics", "@media (max-width: 460px)"},
+		"web/app.js":     {"function renderAutoUpdateStatus", "function formatSchedulerMoment", "stateBadge.className", "preparedMetric.textContent", "runwayMetric.textContent", "resultMetric.textContent", "pressureMetric.textContent", "allowanceMetric.textContent", "nextMetric.textContent", `diagnostics.join(" · ")`},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing scheduler summary contract %q", asset, marker)
 			}
 		}
 	}
