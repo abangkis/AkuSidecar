@@ -152,8 +152,11 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(15) {
 		t.Fatalf("auto update queue telemetry=%+v", autoUpdate)
 	}
-	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "idle" || autoUpdate["cadenceMinutes"] != float64(60) || autoUpdate["nextCheckAt"] == "" {
+	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "standby" || autoUpdate["cadenceMinutes"] != float64(0) {
 		t.Fatalf("auto update activity telemetry=%+v", autoUpdate)
+	}
+	if autoUpdate["adaptiveTargetBatches"] != float64(1) || autoUpdate["consumptionSamples"] != float64(0) || autoUpdate["preparationLeadMinutes"] != float64(8) || autoUpdate["generationWindowMinutes"] != float64(30) || autoUpdate["generationAllowanceUsed"] != float64(0) || autoUpdate["generationAllowanceLimit"] != float64(2) {
+		t.Fatalf("adaptive demand telemetry=%+v", autoUpdate)
 	}
 	if receipts, ok := autoUpdate["schedulerReceipts"].([]any); !ok || len(receipts) != 0 {
 		t.Fatalf("fresh scheduler receipts=%+v", autoUpdate["schedulerReceipts"])
@@ -198,7 +201,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	activityResponse.Body.Close()
-	if !activityPayload.Recorded || !activityPayload.AutoUpdate.RecentUserActivity || activityPayload.AutoUpdate.LastUserActivityAt == "" || activityPayload.AutoUpdate.State != "idle" || activityPayload.AutoUpdate.CadenceTier != "active" || activityPayload.AutoUpdate.CadenceMinutes != 5 {
+	if !activityPayload.Recorded || !activityPayload.AutoUpdate.RecentUserActivity || activityPayload.AutoUpdate.LastUserActivityAt == "" || activityPayload.AutoUpdate.State != "idle" || activityPayload.AutoUpdate.CadenceTier != "demand" || activityPayload.AutoUpdate.CadenceMinutes != 5 || activityPayload.AutoUpdate.AdaptiveTargetBatches != 1 {
 		t.Fatalf("explicit UI activity status=%+v", activityPayload)
 	}
 	activityAfterEvent, err := state.AutoUpdateScheduleState(context.Background())
@@ -562,8 +565,8 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 
 func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "5-minute active, 15-minute warm, and 60-minute idle cadence"},
-		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15"},
+		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "Adaptive demand learns batch consumption pace"},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15", "status.adaptiveTargetBatches", "learning consumption pace", "generationAllowanceUsed"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

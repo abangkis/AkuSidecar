@@ -508,6 +508,10 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 			if recordErr := e.store.RecordAutoUpdateSuccess(ctx); recordErr != nil {
 				e.logger.Printf("record auto update success for session %s failed: %v", sessionID, recordErr)
 			}
+			select {
+			case e.autoWake <- struct{}{}:
+			default:
+			}
 		}
 		if _, retentionErr := e.store.EnforceRetention(ctx, settings); retentionErr != nil {
 			e.logger.Printf("retention after session %s failed: %v", sessionID, retentionErr)

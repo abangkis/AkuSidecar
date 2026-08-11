@@ -565,7 +565,8 @@ function renderAutoUpdateStatus(status) {
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
   const cadence = status.cadenceMinutes ? ` · ${humanize(status.cadenceTier)} cadence ${status.cadenceMinutes}m` : "";
-  const nextCheck = status.nextCheckAt ? ` · next scheduled tick ${formatDate(status.nextCheckAt)}` : "";
+  const nextCheckLabel = status.mode === "adaptive" ? "next adaptive check" : "next scheduled tick";
+  const nextCheck = status.nextCheckAt ? ` · ${nextCheckLabel} ${formatDate(status.nextCheckAt)}` : "";
   const latestReceipt = status.schedulerReceipts?.[0];
   const lastTick = latestReceipt
     ? ` · last tick ${humanize(latestReceipt.outcome)}${latestReceipt.reason ? `: ${latestReceipt.reason}` : ""}`
@@ -574,7 +575,17 @@ function renderAutoUpdateStatus(status) {
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
   const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
-  queue.textContent = `${prepared} of ${limit} prepared · ${available} slot${available === 1 ? "" : "s"} open`;
+  const adaptiveTarget = status.mode === "adaptive" ? ` · target ${status.adaptiveTargetBatches || 1}` : "";
+  const consumptionPace = status.mode === "adaptive" && status.consumptionPaceMinutes
+    ? ` · pace ~${status.consumptionPaceMinutes}m/batch`
+    : status.mode === "adaptive" ? " · learning consumption pace" : "";
+  const generationAllowance = status.mode === "adaptive"
+    ? ` · ${status.generationAllowanceUsed || 0}/${status.generationAllowanceLimit || limit} generated per ${status.generationWindowMinutes || 30}m window`
+    : "";
+  const supplyBackoff = status.supplyBackoffUntil && Date.parse(status.supplyBackoffUntil) > Date.now()
+    ? ` · supply cooldown until ${formatDate(status.supplyBackoffUntil)}`
+    : "";
+  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${supplyBackoff}`;
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;

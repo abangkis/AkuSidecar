@@ -340,7 +340,7 @@ func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings
 	if open != nil {
 		return domain.Session{}, errors.New("an active session already exists")
 	}
-	now := domain.Now()
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	sessionID := domain.NewID("session")
 	coverage, err := json.Marshal(map[string]any{
 		"sourceWaitMode":  settings.SourceWaitMode,
@@ -553,7 +553,7 @@ func (s *Store) StartRun(ctx context.Context, runID string, payload map[string]a
 	if err != nil {
 		return domain.BridgeCommand{}, err
 	}
-	now := domain.Now()
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.BridgeCommand{}, err
@@ -999,7 +999,7 @@ func (s *Store) FinalizeSession(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	now := domain.Now()
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	completed := 0
 	failed := 0
 	for _, run := range runs {

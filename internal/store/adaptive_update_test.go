@@ -1,0 +1,101 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/abangkis/AkuSidecar/internal/domain"
+)
+
+func TestAutoUpdateAdaptiveSignalsMeasureDemandLeadAllowanceAndSupply(t *testing.T) {
+	location := time.FixedZone("WIB", 7*60*60)
+	now := time.Date(2026, time.August, 10, 12, 0, 0, 0, location)
+	clock := &mutableStoreClock{now: now}
+	state := openTestStoreWithClock(t, clock)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+
+	completedOffsets := []time.Duration{-20 * time.Minute, -10 * time.Minute, -time.Minute}
+	revealedOffsets := []time.Duration{-10 * time.Minute, -5 * time.Minute, 0}
+	createdOffsets := []time.Duration{-25 * time.Minute, -15 * time.Minute, -5 * time.Minute}
+	for index := range completedOffsets {
+		session, err := createPreparedUpdateSession(state, ctx, fmt.Sprintf("adaptive fixture %d", index), settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs, err := state.listRuns(ctx, session.ID)
+		if err != nil || len(runs) == 0 {
+			t.Fatalf("runs=%+v err=%v", runs, err)
+		}
+		completedAt := now.Add(completedOffsets[index])
+		startedAt := completedAt.Add(-6 * time.Minute)
+		if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',started_at=?,completed_at=? WHERE id=?`, startedAt.UTC().Format(time.RFC3339Nano), completedAt.UTC().Format(time.RFC3339Nano), session.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='visible',created_at=?,prepared_at=?,revealed_at=? WHERE session_id=?`, now.Add(createdOffsets[index]).UTC().Format(time.RFC3339Nano), completedAt.UTC().Format(time.RFC3339Nano), now.Add(revealedOffsets[index]).UTC().Format(time.RFC3339Nano), session.ID); err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			if _, err := state.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,created_at) VALUES(?,?,?,?,?,0,'{}','{}',?)`, "adaptive-yield", session.ID, runs[0].ID, runs[0].Source, "x:adaptive-yield", completedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 8*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if signals.ConsumptionPace != 5*time.Minute || signals.ConsumptionSamples != 2 {
+		t.Fatalf("consumption signals=%+v", signals)
+	}
+	if signals.PreparationLead != 8*time.Minute {
+		t.Fatalf("preparation lead=%v", signals.PreparationLead)
+	}
+	if len(signals.GenerationAttempts) != 3 {
+		t.Fatalf("generation attempts=%+v", signals.GenerationAttempts)
+	}
+	wantBackoff := now.Add(29 * time.Minute)
+	if signals.LastYieldItems != 0 || signals.EmptyYieldStreak != 2 || !signals.SupplyBackoffUntil.Equal(wantBackoff) {
+		t.Fatalf("supply signals=%+v want backoff=%v", signals, wantBackoff)
+	}
+}
+
+func TestAutoUpdateAdaptiveSignalsIgnoreManualPreparedAttempts(t *testing.T) {
+	clock := &mutableStoreClock{now: time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)}
+	state := openTestStoreWithClock(t, clock)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := state.CreateUpdateSession(ctx, "manual prepared fixture", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryPrepared, BudgetAuthority: domain.BudgetAuthorityAutomatic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := clock.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',started_at=?,completed_at=? WHERE id=?`, completedAt, completedAt, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='expired',prepared_at=? WHERE session_id=?`, completedAt, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 8*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signals.GenerationAttempts) != 0 {
+		t.Fatalf("manual prepared action consumed adaptive allowance: %+v", signals.GenerationAttempts)
+	}
+	if signals.EmptyYieldStreak != 1 {
+		t.Fatalf("manual prepared outcome did not inform supply backoff: %+v", signals)
+	}
+}

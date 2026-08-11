@@ -550,6 +550,16 @@ type AutoUpdateStatus struct {
 	PreparedBatchLimit       int                     `json:"preparedBatchLimit"`
 	AvailablePreparedSlots   int                     `json:"availablePreparedSlots"`
 	RefillIntervalMinutes    int                     `json:"refillIntervalMinutes"`
+	AdaptiveTargetBatches    int                     `json:"adaptiveTargetBatches"`
+	ConsumptionPaceMinutes   int                     `json:"consumptionPaceMinutes,omitempty"`
+	ConsumptionSamples       int                     `json:"consumptionSamples"`
+	PreparationLeadMinutes   int                     `json:"preparationLeadMinutes,omitempty"`
+	GenerationWindowMinutes  int                     `json:"generationWindowMinutes,omitempty"`
+	GenerationAllowanceUsed  int                     `json:"generationAllowanceUsed"`
+	GenerationAllowanceLimit int                     `json:"generationAllowanceLimit"`
+	LastPreparedYieldItems   int                     `json:"lastPreparedYieldItems"`
+	EmptyYieldStreak         int                     `json:"emptyYieldStreak"`
+	SupplyBackoffUntil       string                  `json:"supplyBackoffUntil,omitempty"`
 	PreparedBatches          []PreparedBatch         `json:"preparedBatches"`
 	SchedulerReceipts        []AutoUpdateTickReceipt `json:"schedulerReceipts"`
 }

@@ -12,11 +12,6 @@ import (
 
 const defaultAutoUpdateEstimatedTokens int64 = 100000
 const autoDeepDetectionEstimatedTokens int64 = 20000
-const autoUpdateActiveWindow = 5 * time.Minute
-const autoUpdateWarmWindow = 30 * time.Minute
-const autoUpdateActiveCadence = 5 * time.Minute
-const autoUpdateWarmCadence = 15 * time.Minute
-const autoUpdateIdleCadence = 60 * time.Minute
 
 type autoUpdateCadence struct {
 	Tier     string
@@ -103,18 +98,28 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		return domain.AutoUpdateStatus{}, err
 	}
 	now := e.store.Now()
-	cadence := scheduledAutoUpdateCadence(settings, schedule, now)
 	status.LastUserActivityAt = schedule.LastUIAccessAt
-	status.RecentUserActivity = cadence.Tier == "active" || cadence.Tier == "warm"
-	status.ActivityWindowMinutes = int(autoUpdateWarmWindow / time.Minute)
 	status.LastSchedulerTickAt = schedule.LastSchedulerTickAt
-	status.CadenceTier = cadence.Tier
-	status.CadenceMinutes = int(cadence.Duration / time.Minute)
-	if settings.AutoUpdateEnabled {
-		next, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now)
-		status.NextCheckAt = next.Format(time.RFC3339Nano)
-		if !due {
-			status.Reason = fmt.Sprintf("Waiting for the next %s cadence tick", cadence.Tier)
+	if settings.AutoUpdateMode == "adaptive" {
+		plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, len(batches), now)
+		if planErr != nil {
+			return domain.AutoUpdateStatus{}, planErr
+		}
+		applyAdaptiveStatus(&status, plan)
+	} else {
+		cadence := scheduledAutoUpdateCadence(settings)
+		status.CadenceTier = cadence.Tier
+		status.CadenceMinutes = int(cadence.Duration / time.Minute)
+		status.AdaptiveTargetBatches = settings.PreparedBatchLimit
+		status.ActivityWindowMinutes = int(adaptivePresenceWindow / time.Minute)
+		status.GenerationAllowanceLimit = settings.PreparedBatchLimit
+		status.GenerationWindowMinutes = int(adaptiveGenerationWindow / time.Minute)
+		if settings.AutoUpdateEnabled {
+			next, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now)
+			status.NextCheckAt = next.Format(time.RFC3339Nano)
+			if !due {
+				status.Reason = "Waiting for the next continuous cadence tick"
+			}
 		}
 	}
 	receipts, err := e.store.AutoUpdateSchedulerReceipts(ctx, 10)
@@ -140,7 +145,7 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		status.State, status.Reason = "paused", "No active source has AkuBridge permission"
 		return status, nil
 	}
-	if len(batches) >= settings.PreparedBatchLimit {
+	if settings.AutoUpdateMode != "adaptive" && len(batches) >= settings.PreparedBatchLimit {
 		status.State, status.Reason = "paused", "Prepared batch limit reached"
 		return status, nil
 	}
@@ -249,7 +254,21 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 			return domain.Session{}, err
 		}
 		now := e.store.Now()
-		cadence := scheduledAutoUpdateCadence(settings, schedule, now)
+		cadence := scheduledAutoUpdateCadence(settings)
+		if settings.AutoUpdateMode == "adaptive" {
+			batches, batchesErr := e.store.PreparedBatches(ctx, settings.PreparedBatchMaxAgeHours)
+			if batchesErr != nil {
+				return domain.Session{}, batchesErr
+			}
+			plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, len(batches), now)
+			if planErr != nil {
+				return domain.Session{}, planErr
+			}
+			if !plan.Eligible {
+				return domain.Session{}, nil
+			}
+			cadence = autoUpdateCadence{Tier: "demand", Duration: adaptiveRefillCadence}
+		}
 		if _, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now); !due {
 			return domain.Session{}, nil
 		}
@@ -336,16 +355,6 @@ func nextScheduledAutoUpdateTick(schedule store.AutoUpdateScheduleState, cadence
 	return next, !now.Before(next)
 }
 
-func scheduledAutoUpdateCadence(settings domain.Settings, schedule store.AutoUpdateScheduleState, now time.Time) autoUpdateCadence {
-	if settings.AutoUpdateMode == "fixed" {
-		return autoUpdateCadence{Tier: "continuous", Duration: time.Duration(settings.AutoUpdateRefillMinutes) * time.Minute}
-	}
-	access, err := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
-	if err != nil || now.Sub(access) > autoUpdateWarmWindow {
-		return autoUpdateCadence{Tier: "idle", Duration: autoUpdateIdleCadence}
-	}
-	if now.Sub(access) <= autoUpdateActiveWindow {
-		return autoUpdateCadence{Tier: "active", Duration: autoUpdateActiveCadence}
-	}
-	return autoUpdateCadence{Tier: "warm", Duration: autoUpdateWarmCadence}
+func scheduledAutoUpdateCadence(settings domain.Settings) autoUpdateCadence {
+	return autoUpdateCadence{Tier: "continuous", Duration: time.Duration(settings.AutoUpdateRefillMinutes) * time.Minute}
 }

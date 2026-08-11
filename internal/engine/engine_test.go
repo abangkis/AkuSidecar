@@ -1676,39 +1676,13 @@ func TestCapturePayloadCarriesPerSourceHydrationTimeout(t *testing.T) {
 	}
 }
 
-func TestScheduledAutoUpdateCadenceUsesFixedOrPresenceTier(t *testing.T) {
+func TestScheduledAutoUpdateCadenceUsesContinuousInterval(t *testing.T) {
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
-	now := time.Now().UTC()
-	tests := []struct {
-		name         string
-		mode         string
-		activityAge  time.Duration
-		hasActivity  bool
-		fixedMinutes int
-		wantTier     string
-		wantDuration time.Duration
-	}{
-		{name: "continuous", mode: "fixed", fixedMinutes: 30, wantTier: "continuous", wantDuration: 30 * time.Minute},
-		{name: "active", mode: "adaptive", hasActivity: true, activityAge: time.Minute, wantTier: "active", wantDuration: 5 * time.Minute},
-		{name: "warm", mode: "adaptive", hasActivity: true, activityAge: 10 * time.Minute, wantTier: "warm", wantDuration: 15 * time.Minute},
-		{name: "idle old", mode: "adaptive", hasActivity: true, activityAge: 31 * time.Minute, wantTier: "idle", wantDuration: time.Hour},
-		{name: "idle missing", mode: "adaptive", wantTier: "idle", wantDuration: time.Hour},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			settings.AutoUpdateMode = test.mode
-			if test.fixedMinutes != 0 {
-				settings.AutoUpdateRefillMinutes = test.fixedMinutes
-			}
-			schedule := store.AutoUpdateScheduleState{}
-			if test.hasActivity {
-				schedule.LastUIAccessAt = now.Add(-test.activityAge).Format(time.RFC3339Nano)
-			}
-			cadence := scheduledAutoUpdateCadence(settings, schedule, now)
-			if cadence.Tier != test.wantTier || cadence.Duration != test.wantDuration {
-				t.Fatalf("cadence=%+v, want tier=%s duration=%v", cadence, test.wantTier, test.wantDuration)
-			}
-		})
+	settings.AutoUpdateMode = "fixed"
+	settings.AutoUpdateRefillMinutes = 30
+	cadence := scheduledAutoUpdateCadence(settings)
+	if cadence.Tier != "continuous" || cadence.Duration != 30*time.Minute {
+		t.Fatalf("cadence=%+v", cadence)
 	}
 }
 
@@ -1754,6 +1728,10 @@ func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
 			// A new engine has no compatible Bridge heartbeat, providing a stable
 			// stopper without starting any background work.
 			blocked := New(state, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
+			if mode == "adaptive" {
+				blocked.RecordUIAccess(ctx)
+				<-blocked.autoWake
+			}
 			if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
 				t.Fatalf("first scheduled tick error=%v", err)
 			}
@@ -1788,7 +1766,7 @@ func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
 	}
 }
 
-func TestAdaptiveSchedulerUsesInjectedClockAcrossCadenceTiers(t *testing.T) {
+func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) {
 	location := time.FixedZone("WIB", 7*60*60)
 	initial := time.Date(2026, time.August, 10, 20, 0, 0, 0, location)
 	clock := &mutableEngineClock{now: initial}
@@ -1800,8 +1778,20 @@ func TestAdaptiveSchedulerUsesInjectedClockAcrossCadenceTiers(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings.AutoUpdateMode = "adaptive"
+	settings.PreparedBatchLimit = 3
 	if err := state.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
+	}
+
+	status, err := blocked.AutoUpdateStatus(ctx)
+	if err != nil || status.CadenceTier != "standby" || status.AdaptiveTargetBatches != 1 || status.NextCheckAt != "" {
+		t.Fatalf("standby status=%+v err=%v", status, err)
+	}
+	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
+		t.Fatalf("standby scheduler should not run: %v", err)
+	}
+	if receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10); err != nil || len(receipts) != 0 {
+		t.Fatalf("standby receipts=%+v err=%v", receipts, err)
 	}
 
 	blocked.RecordUIAccess(ctx)
@@ -1810,36 +1800,27 @@ func TestAdaptiveSchedulerUsesInjectedClockAcrossCadenceTiers(t *testing.T) {
 	default:
 		t.Fatal("user activity did not wake the scheduler")
 	}
-	status, err := blocked.AutoUpdateStatus(ctx)
+	status, err = blocked.AutoUpdateStatus(ctx)
 	wantResetAt := time.Date(2026, time.August, 11, 0, 0, 0, 0, location).Format(time.RFC3339Nano)
-	if err != nil || status.BudgetResetAt != wantResetAt || status.CadenceTier != "active" {
+	if err != nil || status.BudgetResetAt != wantResetAt || status.CadenceTier != "demand" || status.CadenceMinutes != 5 || status.AdaptiveTargetBatches != 1 {
 		t.Fatalf("initial status=%+v err=%v", status, err)
 	}
 	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
-		t.Fatalf("active tick error=%v", err)
+		t.Fatalf("demand tick error=%v", err)
 	}
 
 	clock.now = initial.Add(4 * time.Minute)
 	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
-		t.Fatalf("active cadence ran early: %v", err)
+		t.Fatalf("adaptive refill cadence ran early: %v", err)
 	}
 	clock.now = initial.Add(6 * time.Minute)
-	status, err = blocked.AutoUpdateStatus(ctx)
-	if err != nil || status.CadenceTier != "warm" || status.CadenceMinutes != 15 || status.NextCheckAt != initial.Add(15*time.Minute).Format(time.RFC3339Nano) {
-		t.Fatalf("warm status=%+v err=%v", status, err)
-	}
-	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
-		t.Fatalf("warm cadence ran early: %v", err)
-	}
-
-	clock.now = initial.Add(16 * time.Minute)
 	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
-		t.Fatalf("warm tick error=%v", err)
+		t.Fatalf("second demand tick error=%v", err)
 	}
 	clock.now = initial.Add(31 * time.Minute)
 	status, err = blocked.AutoUpdateStatus(ctx)
-	if err != nil || status.CadenceTier != "idle" || status.CadenceMinutes != 60 || status.NextCheckAt != initial.Add(76*time.Minute).Format(time.RFC3339Nano) {
-		t.Fatalf("idle status=%+v err=%v", status, err)
+	if err != nil || status.CadenceTier != "standby" || status.NextCheckAt != "" {
+		t.Fatalf("expired demand status=%+v err=%v", status, err)
 	}
 
 	clock.now = initial.Add(40 * time.Minute)
@@ -1850,17 +1831,85 @@ func TestAdaptiveSchedulerUsesInjectedClockAcrossCadenceTiers(t *testing.T) {
 		t.Fatal("new user activity did not wake the scheduler")
 	}
 	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
-		t.Fatalf("activity-accelerated tick error=%v", err)
+		t.Fatalf("renewed demand tick error=%v", err)
 	}
 	status, err = blocked.AutoUpdateStatus(ctx)
-	if err != nil || status.CadenceTier != "active" || status.CadenceMinutes != 5 || status.NextCheckAt != initial.Add(45*time.Minute).Format(time.RFC3339Nano) {
-		t.Fatalf("accelerated status=%+v err=%v", status, err)
+	if err != nil || status.CadenceTier != "demand" || status.CadenceMinutes != 5 {
+		t.Fatalf("renewed demand status=%+v err=%v", status, err)
 	}
 	receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10)
 	if err != nil || len(receipts) != 3 {
 		t.Fatalf("receipts=%+v err=%v", receipts, err)
 	}
-	if receipts[0].CadenceTier != "active" || receipts[0].TickAt != initial.Add(40*time.Minute).Format(time.RFC3339Nano) || receipts[1].CadenceTier != "warm" || receipts[2].CadenceTier != "active" {
-		t.Fatalf("cadence receipts=%+v", receipts)
+	for _, receipt := range receipts {
+		if receipt.CadenceTier != "demand" || receipt.Outcome != "skipped" || receipt.Reason != "AkuBridge is not ready" {
+			t.Fatalf("demand receipt=%+v", receipt)
+		}
+	}
+}
+
+func TestAdaptivePreparedTargetUsesConsumptionPaceWithinUserCeiling(t *testing.T) {
+	tests := []struct {
+		name    string
+		limit   int
+		pace    time.Duration
+		samples int
+		lead    time.Duration
+		want    int
+	}{
+		{name: "unknown pace starts conservatively", limit: 3, lead: 8 * time.Minute, want: 1},
+		{name: "relaxed consumption", limit: 3, pace: 15 * time.Minute, samples: 2, lead: 8 * time.Minute, want: 1},
+		{name: "steady consumption", limit: 3, pace: 5 * time.Minute, samples: 2, lead: 8 * time.Minute, want: 2},
+		{name: "fast consumption", limit: 3, pace: 2 * time.Minute, samples: 2, lead: 8 * time.Minute, want: 3},
+		{name: "user ceiling wins", limit: 2, pace: 2 * time.Minute, samples: 2, lead: 8 * time.Minute, want: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := adaptivePreparedTarget(test.limit, test.pace, test.samples, test.lead); got != test.want {
+				t.Fatalf("target=%d want=%d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
+	now := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.AutoUpdateMode = "adaptive"
+	settings.PreparedBatchLimit = 3
+	schedule := store.AutoUpdateScheduleState{
+		LastUIAccessAt:      now.Format(time.RFC3339Nano),
+		LastSchedulerTickAt: now.Add(-6 * time.Minute).Format(time.RFC3339Nano),
+	}
+	signals := store.AutoUpdateAdaptiveSignals{
+		ConsumptionPace:    5 * time.Minute,
+		ConsumptionSamples: 2,
+		PreparationLead:    8 * time.Minute,
+	}
+
+	ready := buildAdaptiveUpdatePlan(settings, schedule, 1, now, signals)
+	if !ready.Eligible || ready.Target != 2 || ready.AllowanceLimit != 3 {
+		t.Fatalf("ready plan=%+v", ready)
+	}
+	buffered := buildAdaptiveUpdatePlan(settings, schedule, 2, now, signals)
+	if buffered.Eligible || !strings.Contains(buffered.Reason, "buffer ready") {
+		t.Fatalf("buffered plan=%+v", buffered)
+	}
+
+	signals.GenerationAttempts = []time.Time{now.Add(-20 * time.Minute), now.Add(-10 * time.Minute), now.Add(-5 * time.Minute)}
+	bounded := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	if bounded.Eligible || bounded.AllowanceUsed != 3 || !bounded.NextCheckAt.Equal(now.Add(10*time.Minute)) || bounded.Reason != "Bounded generation allowance reached" {
+		t.Fatalf("bounded plan=%+v", bounded)
+	}
+
+	signals.SupplyBackoffUntil = now.Add(15 * time.Minute)
+	cooled := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	if cooled.Eligible || !cooled.NextCheckAt.Equal(signals.SupplyBackoffUntil) || cooled.Reason != "Fresh-content supply is cooling down after an empty update" {
+		t.Fatalf("cooled plan=%+v", cooled)
+	}
+
+	standby := buildAdaptiveUpdatePlan(settings, store.AutoUpdateScheduleState{}, 0, now, signals)
+	if standby.Eligible || standby.RecentDemand || standby.NextCheckAt != (time.Time{}) {
+		t.Fatalf("standby plan=%+v", standby)
 	}
 }
