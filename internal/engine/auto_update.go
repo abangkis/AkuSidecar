@@ -112,7 +112,7 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		status.UsageLimitMessage = usageLimitPause.Message
 	}
 	if settings.AutoUpdateMode == "adaptive" {
-		plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, len(batches), now)
+		plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, batches, now)
 		if planErr != nil {
 			return domain.AutoUpdateStatus{}, planErr
 		}
@@ -300,7 +300,7 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 			if batchesErr != nil {
 				return domain.Session{}, batchesErr
 			}
-			plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, len(batches), now)
+			plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, batches, now)
 			if planErr != nil {
 				return domain.Session{}, planErr
 			}

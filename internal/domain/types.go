@@ -558,6 +558,9 @@ type AutoUpdateStatus struct {
 	RefillIntervalMinutes               int                     `json:"refillIntervalMinutes"`
 	AdaptiveTargetBatches               int                     `json:"adaptiveTargetBatches"`
 	AdaptiveBaseTargetBatches           int                     `json:"adaptiveBaseTargetBatches"`
+	AdaptiveReadyItems                  int                     `json:"adaptiveReadyItems"`
+	AdaptiveReadyItemTarget             int                     `json:"adaptiveReadyItemTarget"`
+	AdaptiveReadingGraceUntil           string                  `json:"adaptiveReadingGraceUntil,omitempty"`
 	ConsumptionPaceMinutes              int                     `json:"consumptionPaceMinutes,omitempty"`
 	ConsumptionSamples                  int                     `json:"consumptionSamples"`
 	PreparationLeadMinutes              int                     `json:"preparationLeadMinutes,omitempty"`

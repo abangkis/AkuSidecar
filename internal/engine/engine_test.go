@@ -1969,35 +1969,35 @@ func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
 		PreparationLead:    8 * time.Minute,
 	}
 
-	ready := buildAdaptiveUpdatePlan(settings, schedule, 1, now, signals)
+	ready := buildAdaptiveUpdatePlan(settings, schedule, adaptiveTestBatches(3), now, signals)
 	if !ready.Eligible || ready.Target != 2 || ready.AllowanceLimit != 3 {
 		t.Fatalf("ready plan=%+v", ready)
 	}
-	buffered := buildAdaptiveUpdatePlan(settings, schedule, 2, now, signals)
+	buffered := buildAdaptiveUpdatePlan(settings, schedule, adaptiveTestBatches(3, 3), now, signals)
 	if buffered.Eligible || !strings.Contains(buffered.Reason, "buffer ready") {
 		t.Fatalf("buffered plan=%+v", buffered)
 	}
 
 	signals.GenerationAttempts = []time.Time{now.Add(-20 * time.Minute), now.Add(-10 * time.Minute), now.Add(-5 * time.Minute)}
-	bounded := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	bounded := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
 	if bounded.Eligible || bounded.AllowanceUsed != 3 || !bounded.NextCheckAt.Equal(now.Add(10*time.Minute)) || bounded.Reason != "Bounded generation allowance reached" {
 		t.Fatalf("bounded plan=%+v", bounded)
 	}
 
 	signals.SupplyBackoffUntil = now.Add(15 * time.Minute)
-	cooled := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	cooled := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
 	if cooled.Eligible || !cooled.NextCheckAt.Equal(signals.SupplyBackoffUntil) || cooled.Reason != "Fresh-content supply is cooling down after an empty update" {
 		t.Fatalf("cooled plan=%+v", cooled)
 	}
 
 	signals.SupplyBackoffUntil = time.Time{}
 	signals.TechnicalBackoffUntil = now.Add(5 * time.Minute)
-	technical := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	technical := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
 	if technical.Eligible || !technical.NextCheckAt.Equal(signals.TechnicalBackoffUntil) || technical.Reason != "Previous update failed technically; waiting before retry" {
 		t.Fatalf("technical plan=%+v", technical)
 	}
 
-	standby := buildAdaptiveUpdatePlan(settings, store.AutoUpdateScheduleState{}, 0, now, signals)
+	standby := buildAdaptiveUpdatePlan(settings, store.AutoUpdateScheduleState{}, nil, now, signals)
 	if standby.Eligible || standby.RecentDemand || standby.NextCheckAt != (time.Time{}) {
 		t.Fatalf("standby plan=%+v", standby)
 	}
@@ -2006,11 +2006,11 @@ func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
 	signals.GenerationAttempts = nil
 	signals.ReplenishmentPressure = 50
 	signals.LastOutcome = store.AutoUpdateAdaptiveOutcome{CompletedAt: now.Add(-2 * time.Minute), Kind: "productive", ItemCount: 2}
-	pressureBuffered := buildAdaptiveUpdatePlan(settings, schedule, 1, now, signals)
+	pressureBuffered := buildAdaptiveUpdatePlan(settings, schedule, adaptiveTestBatches(3), now, signals)
 	if pressureBuffered.Eligible || pressureBuffered.BaseTarget != 2 || pressureBuffered.Target != 1 || !strings.Contains(pressureBuffered.Reason, "buffer ready") {
 		t.Fatalf("pressure-buffered plan=%+v", pressureBuffered)
 	}
-	pressureSpaced := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	pressureSpaced := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
 	if pressureSpaced.Eligible || pressureSpaced.PressureTier != "high" || !pressureSpaced.NextCheckAt.Equal(now.Add(8*time.Minute)) || pressureSpaced.Reason != "Replenishment pressure is spacing the next refill" {
 		t.Fatalf("pressure-spaced plan=%+v", pressureSpaced)
 	}

@@ -23,6 +23,9 @@ type adaptiveAutoUpdatePlan struct {
 	ConsumptionPace       time.Duration
 	ConsumptionSamples    int
 	PreparationLead       time.Duration
+	PreparedItems         int
+	RequiredReadyItems    int
+	ReadingGraceUntil     time.Time
 	AllowanceUsed         int
 	AllowanceLimit        int
 	NextAllowanceAt       time.Time
@@ -44,23 +47,27 @@ type adaptiveAutoUpdatePlan struct {
 	Reason                string
 }
 
-func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Settings, schedule store.AutoUpdateScheduleState, preparedCount int, now time.Time) (adaptiveAutoUpdatePlan, error) {
+func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Settings, schedule store.AutoUpdateScheduleState, batches []domain.PreparedBatch, now time.Time) (adaptiveAutoUpdatePlan, error) {
 	signals, err := e.store.AutoUpdateAdaptiveSignals(ctx, adaptiveGenerationWindow, adaptivePressureWindow, adaptivePressureHalfLife, adaptiveDefaultPreparationLead)
 	if err != nil {
 		return adaptiveAutoUpdatePlan{}, err
 	}
-	return buildAdaptiveUpdatePlan(settings, schedule, preparedCount, now, signals), nil
+	return buildAdaptiveUpdatePlan(settings, schedule, batches, now, signals), nil
 }
 
-func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdateScheduleState, preparedCount int, now time.Time, signals store.AutoUpdateAdaptiveSignals) adaptiveAutoUpdatePlan {
+func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdateScheduleState, batches []domain.PreparedBatch, now time.Time, signals store.AutoUpdateAdaptiveSignals) adaptiveAutoUpdatePlan {
 	baseTarget := adaptivePreparedTarget(settings.PreparedBatchLimit, signals.ConsumptionPace, signals.ConsumptionSamples, signals.PreparationLead)
 	target, pressureTier, pressureDelay := adaptivePressurePolicy(baseTarget, signals.ReplenishmentPressure)
+	readiness := evaluateAdaptiveReadiness(settings, batches, target, signals.LastRevealAt, now)
 	plan := adaptiveAutoUpdatePlan{
 		BaseTarget:            baseTarget,
 		Target:                target,
 		ConsumptionPace:       signals.ConsumptionPace,
 		ConsumptionSamples:    signals.ConsumptionSamples,
 		PreparationLead:       signals.PreparationLead,
+		PreparedItems:         readiness.PreparedItems,
+		RequiredReadyItems:    readiness.RequiredItems,
+		ReadingGraceUntil:     readiness.ReadingGraceUntil,
 		AllowanceUsed:         len(signals.GenerationAttempts),
 		AllowanceLimit:        settings.PreparedBatchLimit,
 		LastYieldItems:        signals.LastYieldItems,
@@ -91,8 +98,12 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 	case !plan.RecentDemand:
 		plan.Reason = "Waiting for recent Timeline demand"
 		return plan
-	case preparedCount >= plan.Target:
-		plan.Reason = fmt.Sprintf("Adaptive buffer ready (%d of %d target)", preparedCount, plan.Target)
+	case readiness.BufferReady:
+		if readiness.CapacityBounded && (readiness.PreparedBatches < readiness.RequiredBatches || readiness.PreparedItems < readiness.RequiredItems) {
+			plan.Reason = fmt.Sprintf("Adaptive buffer reached bounded capacity (%d batches, %d items)", readiness.PreparedBatches, readiness.PreparedItems)
+		} else {
+			plan.Reason = fmt.Sprintf("Adaptive buffer ready (%d batches, %d items; target %d batches, %d items)", readiness.PreparedBatches, readiness.PreparedItems, readiness.RequiredBatches, readiness.RequiredItems)
+		}
 		return plan
 	case !plan.SupplyBackoffUntil.IsZero() && now.Before(plan.SupplyBackoffUntil):
 		plan.NextCheckAt = plan.SupplyBackoffUntil
@@ -109,6 +120,10 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 	case !plan.PressureNotBefore.IsZero() && now.Before(plan.PressureNotBefore):
 		plan.NextCheckAt = plan.PressureNotBefore
 		plan.Reason = "Replenishment pressure is spacing the next refill"
+		return plan
+	case !plan.ReadingGraceUntil.IsZero() && now.Before(plan.ReadingGraceUntil):
+		plan.NextCheckAt = plan.ReadingGraceUntil
+		plan.Reason = "Reading grace is spacing refill after batch reveal"
 		return plan
 	}
 
@@ -171,6 +186,11 @@ func applyAdaptiveStatus(status *domain.AutoUpdateStatus, plan adaptiveAutoUpdat
 	status.ConsumptionPaceMinutes = roundedDurationMinutes(plan.ConsumptionPace)
 	status.ConsumptionSamples = plan.ConsumptionSamples
 	status.PreparationLeadMinutes = roundedDurationMinutes(plan.PreparationLead)
+	status.AdaptiveReadyItems = plan.PreparedItems
+	status.AdaptiveReadyItemTarget = plan.RequiredReadyItems
+	if !plan.ReadingGraceUntil.IsZero() {
+		status.AdaptiveReadingGraceUntil = plan.ReadingGraceUntil.Format(time.RFC3339Nano)
+	}
 	status.GenerationWindowMinutes = int(adaptiveGenerationWindow / time.Minute)
 	status.GenerationAllowanceUsed = plan.AllowanceUsed
 	status.GenerationAllowanceLimit = plan.AllowanceLimit

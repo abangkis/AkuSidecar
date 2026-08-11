@@ -591,6 +591,9 @@ function renderAutoUpdateStatus(status) {
   const adaptiveTarget = status.mode === "adaptive"
     ? ` · target ${status.adaptiveTargetBatches || 1}${status.adaptiveBaseTargetBatches > status.adaptiveTargetBatches ? ` of learned ${status.adaptiveBaseTargetBatches}` : ""}`
     : "";
+  const readyRunway = status.mode === "adaptive"
+    ? ` · runway ${status.adaptiveReadyItems || 0}/${status.adaptiveReadyItemTarget || 1} items`
+    : "";
   const consumptionPace = status.mode === "adaptive" && status.consumptionPaceMinutes
     ? ` · pace ~${status.consumptionPaceMinutes}m/batch`
     : status.mode === "adaptive" ? " · learning consumption pace" : "";
@@ -609,7 +612,10 @@ function renderAutoUpdateStatus(status) {
   const pressureWait = status.pressureRefillNotBefore && Date.parse(status.pressureRefillNotBefore) > Date.now()
     ? ` · pressure spacing until ${formatDate(status.pressureRefillNotBefore)}`
     : "";
-  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${pressure}${pressureWait}${supplyBackoff}${technicalBackoff}`;
+  const readingGrace = status.mode === "adaptive" && status.adaptiveReadingGraceUntil && Date.parse(status.adaptiveReadingGraceUntil) > Date.now()
+    ? ` · reading grace until ${formatDate(status.adaptiveReadingGraceUntil)}`
+    : "";
+  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget}${readyRunway} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${pressure}${pressureWait}${readingGrace}${supplyBackoff}${technicalBackoff}`;
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;

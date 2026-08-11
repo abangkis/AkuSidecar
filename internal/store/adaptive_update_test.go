@@ -60,6 +60,9 @@ func TestAutoUpdateAdaptiveSignalsMeasureDemandLeadAllowanceAndSupply(t *testing
 	if signals.ConsumptionPace != 5*time.Minute || signals.ConsumptionSamples != 2 {
 		t.Fatalf("consumption signals=%+v", signals)
 	}
+	if !signals.LastRevealAt.Equal(now) {
+		t.Fatalf("last reveal=%v want=%v", signals.LastRevealAt, now)
+	}
 	if signals.PreparationLead != 8*time.Minute {
 		t.Fatalf("preparation lead=%v", signals.PreparationLead)
 	}

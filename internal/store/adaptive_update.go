@@ -34,6 +34,7 @@ type AutoUpdateAdaptiveSignals struct {
 	ConsumptionPace       time.Duration
 	ConsumptionSamples    int
 	PreparationLead       time.Duration
+	LastRevealAt          time.Time
 	GenerationAttempts    []time.Time
 	LastYieldItems        int
 	EmptyYieldStreak      int
@@ -61,6 +62,9 @@ func (s *Store) AutoUpdateAdaptiveSignals(ctx context.Context, generationWindow,
 		if interval > 0 && interval <= 2*time.Hour {
 			intervals = append(intervals, interval)
 		}
+	}
+	if len(reveals) > 0 {
+		result.LastRevealAt = reveals[len(reveals)-1]
 	}
 	if len(intervals) > 0 {
 		result.ConsumptionPace = medianDuration(intervals)

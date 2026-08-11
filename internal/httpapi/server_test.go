@@ -155,7 +155,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "standby" || autoUpdate["cadenceMinutes"] != float64(0) {
 		t.Fatalf("auto update activity telemetry=%+v", autoUpdate)
 	}
-	if autoUpdate["adaptiveTargetBatches"] != float64(1) || autoUpdate["adaptiveBaseTargetBatches"] != float64(1) || autoUpdate["consumptionSamples"] != float64(0) || autoUpdate["preparationLeadMinutes"] != float64(8) || autoUpdate["generationWindowMinutes"] != float64(30) || autoUpdate["generationAllowanceUsed"] != float64(0) || autoUpdate["generationAllowanceLimit"] != float64(2) || autoUpdate["replenishmentPressure"] != float64(0) || autoUpdate["pressureWindowMinutes"] != float64(60) || autoUpdate["pressureHalfLifeMinutes"] != float64(30) {
+	if autoUpdate["adaptiveTargetBatches"] != float64(1) || autoUpdate["adaptiveBaseTargetBatches"] != float64(1) || autoUpdate["adaptiveReadyItems"] != float64(0) || autoUpdate["adaptiveReadyItemTarget"] != float64(3) || autoUpdate["consumptionSamples"] != float64(0) || autoUpdate["preparationLeadMinutes"] != float64(8) || autoUpdate["generationWindowMinutes"] != float64(30) || autoUpdate["generationAllowanceUsed"] != float64(0) || autoUpdate["generationAllowanceLimit"] != float64(2) || autoUpdate["replenishmentPressure"] != float64(0) || autoUpdate["pressureWindowMinutes"] != float64(60) || autoUpdate["pressureHalfLifeMinutes"] != float64(30) {
 		t.Fatalf("adaptive demand telemetry=%+v", autoUpdate)
 	}
 	if receipts, ok := autoUpdate["schedulerReceipts"].([]any); !ok || len(receipts) != 0 {
@@ -603,7 +603,7 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "Adaptive demand learns batch consumption pace"},
-		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15", "status.adaptiveTargetBatches", "lastAdaptiveOutcome", "technicalBackoffUntil", "retry cooldown until", "learning consumption pace", "generationAllowanceUsed", "replenishmentPressure", "pressure spacing until"},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15", "status.adaptiveTargetBatches", "adaptiveReadyItems", "runway", "adaptiveReadingGraceUntil", "reading grace until", "lastAdaptiveOutcome", "technicalBackoffUntil", "retry cooldown until", "learning consumption pace", "generationAllowanceUsed", "replenishmentPressure", "pressure spacing until"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
