@@ -135,31 +135,6 @@
                 <span class="settings-copy"><strong>Automatic checks</strong><small>Prepare updates in the background and catch up after AkuBrowser is opened.</small></span>
                 <input id="auto-update-enabled" name="autoUpdateEnabled" type="checkbox" />
               </label>
-              <div class="settings-row auto-update-status-row">
-                <span class="settings-copy auto-update-status-copy">
-                  <span class="auto-update-status-heading">
-                    <strong>Scheduler status</strong>
-                    <span id="auto-update-state-badge" class="auto-update-state-pill auto-update-state-neutral">Loading</span>
-                  </span>
-                  <small id="auto-update-status">Loading local queue and token telemetry…</small>
-                </span>
-                <span class="auto-update-scheduler-actions">
-                  <button id="confirm-codex-usage-restored" class="secondary-button hidden" type="button">Confirm Codex usage restored</button>
-                  <button id="prepare-batch-now" class="secondary-button" type="button">Prepare batch now</button>
-                </span>
-                <dl class="auto-update-metrics" aria-label="Scheduler summary">
-                  <div><dt>Prepared</dt><dd id="auto-update-prepared-metric">—</dd></div>
-                  <div><dt id="auto-update-runway-label">Ready posts</dt><dd id="auto-update-runway-metric">—</dd></div>
-                  <div><dt>Last result</dt><dd id="auto-update-result-metric">—</dd></div>
-                  <div><dt id="auto-update-pressure-label">Pressure</dt><dd id="auto-update-pressure-metric">—</dd></div>
-                  <div><dt id="auto-update-allowance-label">Attempts</dt><dd id="auto-update-allowance-metric">—</dd></div>
-                  <div><dt>Next check</dt><dd id="auto-update-next-metric">—</dd></div>
-                </dl>
-                <details class="auto-update-diagnostics">
-                  <summary>Technical details</summary>
-                  <span id="auto-update-queue-status" class="settings-detail">—</span>
-                </details>
-              </div>
               <div class="settings-row">
                 <span class="settings-copy"><strong>Budget today</strong><small id="auto-update-budget-status">Loading daily budget telemetry…</small></span>
                 <span class="settings-inline-control auto-update-budget-control">
@@ -179,6 +154,33 @@
                 <span class="settings-copy"><strong>Prepared batch queue</strong><small>Maximum unread finite batches. Adaptive demand may maintain fewer based on consumption pace and replenishment pressure.</small></span>
                 <select id="prepared-batch-limit" name="preparedBatchLimit"><option value="1">1 batch</option><option value="2">2 batches — recommended</option><option value="3">3 batches</option></select>
               </label>
+              <div class="settings-row auto-update-status-row">
+                <span class="settings-copy auto-update-status-copy">
+                  <span class="auto-update-status-heading">
+                    <strong>Scheduler status</strong>
+                    <span id="auto-update-mode-badge" class="auto-update-mode-pill">Loading</span>
+                    <span id="auto-update-state-badge" class="auto-update-state-pill auto-update-state-neutral">Loading</span>
+                  </span>
+                  <small id="auto-update-mode-notice" class="auto-update-mode-notice hidden"></small>
+                  <small id="auto-update-status">Loading local queue and token telemetry…</small>
+                </span>
+                <span class="auto-update-scheduler-actions">
+                  <button id="confirm-codex-usage-restored" class="secondary-button hidden" type="button">Confirm Codex usage restored</button>
+                  <button id="prepare-batch-now" class="secondary-button" type="button">Prepare batch now</button>
+                </span>
+                <dl class="auto-update-metrics" aria-label="Scheduler summary">
+                  <div><dt>Prepared</dt><dd id="auto-update-prepared-metric">—</dd></div>
+                  <div><dt id="auto-update-runway-label">Ready posts</dt><dd id="auto-update-runway-metric">—</dd></div>
+                  <div><dt>Last result</dt><dd id="auto-update-result-metric">—</dd></div>
+                  <div><dt id="auto-update-pressure-label">Pressure</dt><dd id="auto-update-pressure-metric">—</dd></div>
+                  <div><dt id="auto-update-allowance-label">Attempts</dt><dd id="auto-update-allowance-metric">—</dd></div>
+                  <div><dt>Next check</dt><dd id="auto-update-next-metric">—</dd></div>
+                </dl>
+                <details class="auto-update-diagnostics">
+                  <summary>Technical details</summary>
+                  <span id="auto-update-queue-status" class="settings-detail">—</span>
+                </details>
+              </div>
               <label class="settings-row" for="next-batch-behavior">
                 <span class="settings-copy"><strong>Next batch behavior</strong><small>Require an action by default, or reveal only batches present when this reading session began as you reach the finish line.</small></span>
                 <select id="next-batch-behavior" name="nextBatchBehavior"><option value="require_action">Require action — recommended</option><option value="auto_at_finish">Auto-load at finish line</option></select>

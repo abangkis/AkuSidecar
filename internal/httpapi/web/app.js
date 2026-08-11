@@ -542,6 +542,8 @@ function renderSettings(settings) {
 function renderAutoUpdateStatus(status) {
   const detail = $("#auto-update-status");
   const queue = $("#auto-update-queue-status");
+  const modeBadge = $("#auto-update-mode-badge");
+  const modeNotice = $("#auto-update-mode-notice");
   const stateBadge = $("#auto-update-state-badge");
   const preparedMetric = $("#auto-update-prepared-metric");
   const runwayLabel = $("#auto-update-runway-label");
@@ -558,11 +560,14 @@ function renderAutoUpdateStatus(status) {
   const confirmRestored = $("#confirm-codex-usage-restored");
   const runNow = $("#prepare-batch-now");
   const timeline = $("#auto-update-timeline-status");
-  if (!detail || !queue || !stateBadge || !preparedMetric || !runwayLabel || !runwayMetric || !resultMetric || !pressureLabel || !pressureMetric || !allowanceLabel || !allowanceMetric || !nextMetric || !budget || !budgetDetail || !timeline) return;
+  if (!detail || !queue || !modeBadge || !modeNotice || !stateBadge || !preparedMetric || !runwayLabel || !runwayMetric || !resultMetric || !pressureLabel || !pressureMetric || !allowanceLabel || !allowanceMetric || !nextMetric || !budget || !budgetDetail || !timeline) return;
   if (state.bootstrap && status) state.bootstrap.autoUpdate = status;
   if (!status) {
     detail.textContent = "Local scheduler telemetry is not available yet.";
     queue.textContent = "—";
+    modeBadge.textContent = "Unknown";
+    modeNotice.textContent = "";
+    modeNotice.classList.add("hidden");
     stateBadge.textContent = "Unavailable";
     stateBadge.className = "auto-update-state-pill auto-update-state-neutral";
     for (const metric of [preparedMetric, runwayMetric, resultMetric, pressureMetric, allowanceMetric, nextMetric]) metric.textContent = "—";
@@ -580,6 +585,20 @@ function renderAutoUpdateStatus(status) {
   const reserve = status.manualReserveTokens || 0;
   const estimate = status.estimatedNextRunTokens || 0;
   const adaptive = status.mode === "adaptive";
+  const liveMode = adaptive ? "adaptive" : "fixed";
+  const configuredMode = state.bootstrap?.settings?.autoUpdateMode || liveMode;
+  const selectedMode = $("#auto-update-mode")?.value || configuredMode;
+  const unsavedModeChange = selectedMode !== configuredMode;
+  const applyingModeChange = !unsavedModeChange && configuredMode !== liveMode;
+  modeBadge.textContent = autoUpdateModeLabel(liveMode);
+  modeNotice.classList.toggle("hidden", !unsavedModeChange && !applyingModeChange);
+  if (unsavedModeChange) {
+    modeNotice.textContent = `Unsaved change: ${autoUpdateModeDescription(selectedMode)}. Status below still reflects the current ${autoUpdateModeDescription(liveMode)} scheduler.`;
+  } else if (applyingModeChange) {
+    modeNotice.textContent = `Applying ${autoUpdateModeDescription(configuredMode)}. Status below will switch after the scheduler confirms the new policy.`;
+  } else {
+    modeNotice.textContent = "";
+  }
   const stateTone = status.state === "running"
     ? "active"
     : ["paused", "budget_paused"].includes(status.state)
@@ -669,10 +688,19 @@ function renderAutoUpdateStatus(status) {
   }
 }
 
+function autoUpdateModeLabel(mode) {
+  return mode === "fixed" ? "Continuous" : "Adaptive";
+}
+
+function autoUpdateModeDescription(mode) {
+  return mode === "fixed" ? "Continuous background" : "Adaptive demand";
+}
+
 function syncAutoUpdateModeSettings() {
   const intervalRow = $("#continuous-background-interval-row");
   if (!intervalRow) return;
   intervalRow.classList.toggle("hidden", $("#auto-update-mode").value !== "fixed");
+  renderAutoUpdateStatus(state.bootstrap?.autoUpdate);
 }
 
 async function prepareBatchNow() {

@@ -618,10 +618,22 @@ func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *test
 }
 
 func TestEmbeddedSchedulerStatusUsesScannableSummary(t *testing.T) {
+	indexHTML, err := embeddedAssets.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexText := string(indexHTML)
+	backgroundPolicy := strings.Index(indexText, `for="auto-update-mode"`)
+	schedulerStatus := strings.Index(indexText, `class="settings-row auto-update-status-row"`)
+	preparedQueue := strings.Index(indexText, `for="prepared-batch-limit"`)
+	if backgroundPolicy < 0 || schedulerStatus < 0 || preparedQueue < 0 || !(backgroundPolicy < preparedQueue && preparedQueue < schedulerStatus) {
+		t.Fatalf("scheduler status must appear below prepared batch queue: background=%d queue=%d scheduler=%d", backgroundPolicy, preparedQueue, schedulerStatus)
+	}
+
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"auto-update-state-badge", "auto-update-metrics", "auto-update-prepared-metric", "auto-update-runway-metric", "auto-update-result-metric", "auto-update-pressure-metric", "auto-update-allowance-metric", "auto-update-next-metric", "Technical details"},
-		"web/styles.css": {".auto-update-status-row", ".auto-update-state-pill", ".auto-update-metrics", ".auto-update-diagnostics", "@media (max-width: 460px)"},
-		"web/app.js":     {"function renderAutoUpdateStatus", "function formatSchedulerMoment", "stateBadge.className", "preparedMetric.textContent", "runwayMetric.textContent", "resultMetric.textContent", "pressureMetric.textContent", "allowanceMetric.textContent", "nextMetric.textContent", `diagnostics.join(" · ")`},
+		"web/index.html": {"auto-update-mode-badge", "auto-update-mode-notice", "auto-update-state-badge", "auto-update-metrics", "auto-update-prepared-metric", "auto-update-runway-metric", "auto-update-result-metric", "auto-update-pressure-metric", "auto-update-allowance-metric", "auto-update-next-metric", "Technical details"},
+		"web/styles.css": {".auto-update-status-row", ".auto-update-mode-pill", ".auto-update-mode-notice", ".auto-update-state-pill", ".auto-update-metrics", ".auto-update-diagnostics", "@media (max-width: 460px)"},
+		"web/app.js":     {"function renderAutoUpdateStatus", "function autoUpdateModeLabel", "function autoUpdateModeDescription", "unsavedModeChange", "applyingModeChange", "function formatSchedulerMoment", "stateBadge.className", "preparedMetric.textContent", "runwayMetric.textContent", "resultMetric.textContent", "pressureMetric.textContent", "allowanceMetric.textContent", "nextMetric.textContent", `diagnostics.join(" · ")`},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
