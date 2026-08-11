@@ -557,6 +557,7 @@ type AutoUpdateStatus struct {
 	AvailablePreparedSlots              int                     `json:"availablePreparedSlots"`
 	RefillIntervalMinutes               int                     `json:"refillIntervalMinutes"`
 	AdaptiveTargetBatches               int                     `json:"adaptiveTargetBatches"`
+	AdaptiveBaseTargetBatches           int                     `json:"adaptiveBaseTargetBatches"`
 	ConsumptionPaceMinutes              int                     `json:"consumptionPaceMinutes,omitempty"`
 	ConsumptionSamples                  int                     `json:"consumptionSamples"`
 	PreparationLeadMinutes              int                     `json:"preparationLeadMinutes,omitempty"`
@@ -575,6 +576,15 @@ type AutoUpdateStatus struct {
 	LastAdaptiveOutcomeCancelledSources int                     `json:"lastAdaptiveOutcomeCancelledSources,omitempty"`
 	TechnicalFailureStreak              int                     `json:"technicalFailureStreak,omitempty"`
 	TechnicalBackoffUntil               string                  `json:"technicalBackoffUntil,omitempty"`
+	ReplenishmentPressure               int                     `json:"replenishmentPressure"`
+	ReplenishmentPressureTier           string                  `json:"replenishmentPressureTier,omitempty"`
+	PressureWindowMinutes               int                     `json:"pressureWindowMinutes,omitempty"`
+	PressureHalfLifeMinutes             int                     `json:"pressureHalfLifeMinutes,omitempty"`
+	PressureFromReveals                 int                     `json:"pressureFromReveals"`
+	PressureFromUpdates                 int                     `json:"pressureFromUpdates"`
+	PressureFromYield                   int                     `json:"pressureFromYield"`
+	PressureAdditionalDelayMinutes      int                     `json:"pressureAdditionalDelayMinutes"`
+	PressureRefillNotBefore             string                  `json:"pressureRefillNotBefore,omitempty"`
 	UsageLimitPausedAt                  string                  `json:"usageLimitPausedAt,omitempty"`
 	UsageLimitMessage                   string                  `json:"usageLimitMessage,omitempty"`
 	PreparedBatches                     []PreparedBatch         `json:"preparedBatches"`

@@ -588,7 +588,9 @@ function renderAutoUpdateStatus(status) {
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
   const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
-  const adaptiveTarget = status.mode === "adaptive" ? ` · target ${status.adaptiveTargetBatches || 1}` : "";
+  const adaptiveTarget = status.mode === "adaptive"
+    ? ` · target ${status.adaptiveTargetBatches || 1}${status.adaptiveBaseTargetBatches > status.adaptiveTargetBatches ? ` of learned ${status.adaptiveBaseTargetBatches}` : ""}`
+    : "";
   const consumptionPace = status.mode === "adaptive" && status.consumptionPaceMinutes
     ? ` · pace ~${status.consumptionPaceMinutes}m/batch`
     : status.mode === "adaptive" ? " · learning consumption pace" : "";
@@ -601,7 +603,13 @@ function renderAutoUpdateStatus(status) {
   const technicalBackoff = status.technicalBackoffUntil && Date.parse(status.technicalBackoffUntil) > Date.now()
     ? ` · retry cooldown until ${formatDate(status.technicalBackoffUntil)}`
     : "";
-  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${supplyBackoff}${technicalBackoff}`;
+  const pressure = status.mode === "adaptive"
+    ? ` · pressure ${status.replenishmentPressureTier || "low"} ${status.replenishmentPressure || 0}/100${status.pressureAdditionalDelayMinutes ? `, +${status.pressureAdditionalDelayMinutes}m spacing` : ""}`
+    : "";
+  const pressureWait = status.pressureRefillNotBefore && Date.parse(status.pressureRefillNotBefore) > Date.now()
+    ? ` · pressure spacing until ${formatDate(status.pressureRefillNotBefore)}`
+    : "";
+  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${pressure}${pressureWait}${supplyBackoff}${technicalBackoff}`;
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;

@@ -192,8 +192,10 @@ typed, stored in SQLite, and changed through `GET/PUT /api/settings`.
 Auto Update is also a typed product setting. One Sidecar-owned scheduler can
 prepare hidden finite batches while the process is alive. Adaptive demand is
 the default: recent batch-reveal pace selects a ready-buffer target beneath the
-user's queue ceiling, a rolling generation allowance bounds throughput, and
-empty prepared results back off exhausted supply. The queue defaults to two,
+user's queue ceiling; a decaying replenishment-pressure score can lower that
+target and space refills when recent consumption and generation are already
+intense or yield is weak. A rolling generation allowance bounds throughput,
+and empty prepared results back off exhausted supply. The queue defaults to two,
 and local invocation telemetry gates automatic work. The fresh daily boundary
 is 2M tokens with 25% unavailable to
 automatic work for user-visible updates. A user-authorized daily quota reset preserves

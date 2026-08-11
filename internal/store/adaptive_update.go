@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"sort"
 	"time"
 )
@@ -40,9 +41,13 @@ type AutoUpdateAdaptiveSignals struct {
 	LastOutcome           AutoUpdateAdaptiveOutcome
 	TechnicalStreak       int
 	TechnicalBackoffUntil time.Time
+	ReplenishmentPressure int
+	PressureFromReveals   int
+	PressureFromUpdates   int
+	PressureFromYield     int
 }
 
-func (s *Store) AutoUpdateAdaptiveSignals(ctx context.Context, generationWindow, defaultPreparationLead time.Duration) (AutoUpdateAdaptiveSignals, error) {
+func (s *Store) AutoUpdateAdaptiveSignals(ctx context.Context, generationWindow, pressureWindow, pressureHalfLife, defaultPreparationLead time.Duration) (AutoUpdateAdaptiveSignals, error) {
 	now := s.Now()
 	result := AutoUpdateAdaptiveSignals{PreparationLead: defaultPreparationLead}
 
@@ -133,6 +138,16 @@ func (s *Store) AutoUpdateAdaptiveSignals(ctx context.Context, generationWindow,
 		}
 		result.TechnicalBackoffUntil = result.LastOutcome.CompletedAt.Add(backoff)
 	}
+	pressureReveals, err := s.autoUpdateRevealTimes(ctx, now.Add(-pressureWindow), 20)
+	if err != nil {
+		return result, err
+	}
+	pressureOutcomes, err := s.recentAdaptiveOutcomesSince(ctx, now.Add(-pressureWindow), 20)
+	if err != nil {
+		return result, err
+	}
+	result.PressureFromReveals, result.PressureFromUpdates, result.PressureFromYield = replenishmentPressureComponents(now, pressureHalfLife, pressureReveals, pressureOutcomes)
+	result.ReplenishmentPressure = clampInt(result.PressureFromReveals+result.PressureFromUpdates+result.PressureFromYield, 0, 100)
 	return result, nil
 }
 
@@ -245,6 +260,14 @@ func (s *Store) recentPreparedUpdateYields(ctx context.Context, limit int) (time
 }
 
 func (s *Store) recentAdaptiveOutcomes(ctx context.Context, limit int) ([]AutoUpdateAdaptiveOutcome, error) {
+	return s.recentAdaptiveOutcomesSince(ctx, time.Time{}, limit)
+}
+
+func (s *Store) recentAdaptiveOutcomesSince(ctx context.Context, since time.Time, limit int) ([]AutoUpdateAdaptiveOutcome, error) {
+	sinceRaw := ""
+	if !since.IsZero() {
+		sinceRaw = since.UTC().Format(time.RFC3339Nano)
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.completed_at,
 		       COALESCE(json_extract(s.coverage_json,'$.trigger'),'user'),
@@ -259,8 +282,9 @@ func (s *Store) recentAdaptiveOutcomes(ctx context.Context, limit int) ([]AutoUp
 		WHERE s.completed_at IS NOT NULL
 		  AND s.status IN ('completed','partial','failed','cancelled')
 		  AND COALESCE(json_extract(s.coverage_json,'$.trigger'),'user') IN ('scheduler','user')
+		  AND (?='' OR s.completed_at>=?)
 		GROUP BY s.id,s.completed_at,s.coverage_json
-		ORDER BY s.completed_at DESC LIMIT ?`, limit)
+		ORDER BY s.completed_at DESC LIMIT ?`, sinceRaw, sinceRaw, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -294,6 +318,63 @@ func (s *Store) recentAdaptiveOutcomes(ctx context.Context, limit int) ([]AutoUp
 		})
 	}
 	return result, rows.Err()
+}
+
+func replenishmentPressureComponents(now time.Time, halfLife time.Duration, reveals []time.Time, outcomes []AutoUpdateAdaptiveOutcome) (int, int, int) {
+	if halfLife <= 0 {
+		halfLife = 30 * time.Minute
+	}
+	revealPressure := 0
+	for index, revealedAt := range reveals {
+		points := 18
+		if index > 0 {
+			interval := revealedAt.Sub(reveals[index-1])
+			if interval > 0 && interval <= 5*time.Minute {
+				points += 8
+			} else if interval > 0 && interval <= 10*time.Minute {
+				points += 4
+			}
+		}
+		revealPressure += decayedPressurePoints(points, revealedAt, now, halfLife)
+	}
+	updatePressure := 0
+	yieldPressure := 0
+	for _, outcome := range outcomes {
+		updatePressure += decayedPressurePoints(10, outcome.CompletedAt, now, halfLife)
+		yieldPoints := 0
+		switch outcome.ItemCount {
+		case 0:
+			yieldPoints = 10
+		case 1:
+			yieldPoints = 7
+		case 2:
+			yieldPoints = 4
+		default:
+			if outcome.ItemCount >= 5 {
+				yieldPoints = -4
+			}
+		}
+		yieldPressure += decayedPressurePoints(yieldPoints, outcome.CompletedAt, now, halfLife)
+	}
+	return clampInt(revealPressure, 0, 100), clampInt(updatePressure, 0, 100), clampInt(yieldPressure, -25, 50)
+}
+
+func decayedPressurePoints(points int, occurredAt, now time.Time, halfLife time.Duration) int {
+	if points == 0 || occurredAt.IsZero() || occurredAt.After(now) {
+		return 0
+	}
+	weight := math.Pow(0.5, now.Sub(occurredAt).Seconds()/halfLife.Seconds())
+	return int(math.Round(float64(points) * weight))
+}
+
+func clampInt(value, minimum, maximum int) int {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
 }
 
 func medianDuration(values []time.Duration) time.Duration {

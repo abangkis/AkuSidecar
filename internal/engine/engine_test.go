@@ -1934,6 +1934,26 @@ func TestAdaptivePreparedTargetUsesConsumptionPaceWithinUserCeiling(t *testing.T
 	}
 }
 
+func TestAdaptivePressurePolicySoftensTargetAndSpacesRefill(t *testing.T) {
+	tests := []struct {
+		pressure int
+		target   int
+		tier     string
+		delay    time.Duration
+	}{
+		{pressure: 0, target: 3, tier: "low", delay: 0},
+		{pressure: 25, target: 3, tier: "moderate", delay: 5 * time.Minute},
+		{pressure: 45, target: 1, tier: "high", delay: 10 * time.Minute},
+		{pressure: 65, target: 1, tier: "elevated", delay: 15 * time.Minute},
+	}
+	for _, test := range tests {
+		target, tier, delay := adaptivePressurePolicy(3, test.pressure)
+		if target != test.target || tier != test.tier || delay != test.delay {
+			t.Fatalf("pressure=%d target=%d tier=%s delay=%v", test.pressure, target, tier, delay)
+		}
+	}
+}
+
 func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
 	now := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
@@ -1980,5 +2000,18 @@ func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
 	standby := buildAdaptiveUpdatePlan(settings, store.AutoUpdateScheduleState{}, 0, now, signals)
 	if standby.Eligible || standby.RecentDemand || standby.NextCheckAt != (time.Time{}) {
 		t.Fatalf("standby plan=%+v", standby)
+	}
+
+	signals.TechnicalBackoffUntil = time.Time{}
+	signals.GenerationAttempts = nil
+	signals.ReplenishmentPressure = 50
+	signals.LastOutcome = store.AutoUpdateAdaptiveOutcome{CompletedAt: now.Add(-2 * time.Minute), Kind: "productive", ItemCount: 2}
+	pressureBuffered := buildAdaptiveUpdatePlan(settings, schedule, 1, now, signals)
+	if pressureBuffered.Eligible || pressureBuffered.BaseTarget != 2 || pressureBuffered.Target != 1 || !strings.Contains(pressureBuffered.Reason, "buffer ready") {
+		t.Fatalf("pressure-buffered plan=%+v", pressureBuffered)
+	}
+	pressureSpaced := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	if pressureSpaced.Eligible || pressureSpaced.PressureTier != "high" || !pressureSpaced.NextCheckAt.Equal(now.Add(8*time.Minute)) || pressureSpaced.Reason != "Replenishment pressure is spacing the next refill" {
+		t.Fatalf("pressure-spaced plan=%+v", pressureSpaced)
 	}
 }

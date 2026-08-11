@@ -13,8 +13,11 @@ const adaptivePresenceWindow = 30 * time.Minute
 const adaptiveRefillCadence = 5 * time.Minute
 const adaptiveGenerationWindow = 30 * time.Minute
 const adaptiveDefaultPreparationLead = 8 * time.Minute
+const adaptivePressureWindow = 60 * time.Minute
+const adaptivePressureHalfLife = 30 * time.Minute
 
 type adaptiveAutoUpdatePlan struct {
+	BaseTarget            int
 	Target                int
 	RecentDemand          bool
 	ConsumptionPace       time.Duration
@@ -29,13 +32,20 @@ type adaptiveAutoUpdatePlan struct {
 	LastOutcome           store.AutoUpdateAdaptiveOutcome
 	TechnicalStreak       int
 	TechnicalBackoffUntil time.Time
+	Pressure              int
+	PressureTier          string
+	PressureFromReveals   int
+	PressureFromUpdates   int
+	PressureFromYield     int
+	PressureDelay         time.Duration
+	PressureNotBefore     time.Time
 	NextCheckAt           time.Time
 	Eligible              bool
 	Reason                string
 }
 
 func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Settings, schedule store.AutoUpdateScheduleState, preparedCount int, now time.Time) (adaptiveAutoUpdatePlan, error) {
-	signals, err := e.store.AutoUpdateAdaptiveSignals(ctx, adaptiveGenerationWindow, adaptiveDefaultPreparationLead)
+	signals, err := e.store.AutoUpdateAdaptiveSignals(ctx, adaptiveGenerationWindow, adaptivePressureWindow, adaptivePressureHalfLife, adaptiveDefaultPreparationLead)
 	if err != nil {
 		return adaptiveAutoUpdatePlan{}, err
 	}
@@ -43,8 +53,11 @@ func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Setting
 }
 
 func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdateScheduleState, preparedCount int, now time.Time, signals store.AutoUpdateAdaptiveSignals) adaptiveAutoUpdatePlan {
+	baseTarget := adaptivePreparedTarget(settings.PreparedBatchLimit, signals.ConsumptionPace, signals.ConsumptionSamples, signals.PreparationLead)
+	target, pressureTier, pressureDelay := adaptivePressurePolicy(baseTarget, signals.ReplenishmentPressure)
 	plan := adaptiveAutoUpdatePlan{
-		Target:                adaptivePreparedTarget(settings.PreparedBatchLimit, signals.ConsumptionPace, signals.ConsumptionSamples, signals.PreparationLead),
+		BaseTarget:            baseTarget,
+		Target:                target,
 		ConsumptionPace:       signals.ConsumptionPace,
 		ConsumptionSamples:    signals.ConsumptionSamples,
 		PreparationLead:       signals.PreparationLead,
@@ -56,6 +69,15 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 		LastOutcome:           signals.LastOutcome,
 		TechnicalStreak:       signals.TechnicalStreak,
 		TechnicalBackoffUntil: signals.TechnicalBackoffUntil,
+		Pressure:              signals.ReplenishmentPressure,
+		PressureTier:          pressureTier,
+		PressureFromReveals:   signals.PressureFromReveals,
+		PressureFromUpdates:   signals.PressureFromUpdates,
+		PressureFromYield:     signals.PressureFromYield,
+		PressureDelay:         pressureDelay,
+	}
+	if pressureDelay > 0 && !signals.LastOutcome.CompletedAt.IsZero() {
+		plan.PressureNotBefore = signals.LastOutcome.CompletedAt.Add(pressureDelay)
 	}
 	if len(signals.GenerationAttempts) >= plan.AllowanceLimit && len(signals.GenerationAttempts) > 0 {
 		plan.NextAllowanceAt = signals.GenerationAttempts[0].Add(adaptiveGenerationWindow)
@@ -84,6 +106,10 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 		plan.NextCheckAt = plan.NextAllowanceAt
 		plan.Reason = "Bounded generation allowance reached"
 		return plan
+	case !plan.PressureNotBefore.IsZero() && now.Before(plan.PressureNotBefore):
+		plan.NextCheckAt = plan.PressureNotBefore
+		plan.Reason = "Replenishment pressure is spacing the next refill"
+		return plan
 	}
 
 	next, due := nextScheduledAutoUpdateTick(schedule, adaptiveRefillCadence, now)
@@ -96,6 +122,22 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 	plan.Eligible = true
 	plan.Reason = "Adaptive refill is ready"
 	return plan
+}
+
+func adaptivePressurePolicy(baseTarget, pressure int) (int, string, time.Duration) {
+	if baseTarget < 1 {
+		baseTarget = 1
+	}
+	switch {
+	case pressure < 25:
+		return baseTarget, "low", 0
+	case pressure < 45:
+		return baseTarget, "moderate", 5 * time.Minute
+	case pressure < 65:
+		return 1, "high", 10 * time.Minute
+	default:
+		return 1, "elevated", 15 * time.Minute
+	}
 }
 
 func adaptivePreparedTarget(limit int, consumptionPace time.Duration, samples int, preparationLead time.Duration) int {
@@ -125,6 +167,7 @@ func applyAdaptiveStatus(status *domain.AutoUpdateStatus, plan adaptiveAutoUpdat
 		status.CadenceMinutes = int(adaptiveRefillCadence / time.Minute)
 	}
 	status.AdaptiveTargetBatches = plan.Target
+	status.AdaptiveBaseTargetBatches = plan.BaseTarget
 	status.ConsumptionPaceMinutes = roundedDurationMinutes(plan.ConsumptionPace)
 	status.ConsumptionSamples = plan.ConsumptionSamples
 	status.PreparationLeadMinutes = roundedDurationMinutes(plan.PreparationLead)
@@ -148,6 +191,17 @@ func applyAdaptiveStatus(status *domain.AutoUpdateStatus, plan adaptiveAutoUpdat
 	status.TechnicalFailureStreak = plan.TechnicalStreak
 	if !plan.TechnicalBackoffUntil.IsZero() {
 		status.TechnicalBackoffUntil = plan.TechnicalBackoffUntil.Format(time.RFC3339Nano)
+	}
+	status.ReplenishmentPressure = plan.Pressure
+	status.ReplenishmentPressureTier = plan.PressureTier
+	status.PressureWindowMinutes = int(adaptivePressureWindow / time.Minute)
+	status.PressureHalfLifeMinutes = int(adaptivePressureHalfLife / time.Minute)
+	status.PressureFromReveals = plan.PressureFromReveals
+	status.PressureFromUpdates = plan.PressureFromUpdates
+	status.PressureFromYield = plan.PressureFromYield
+	status.PressureAdditionalDelayMinutes = roundedDurationMinutes(plan.PressureDelay)
+	if !plan.PressureNotBefore.IsZero() {
+		status.PressureRefillNotBefore = plan.PressureNotBefore.Format(time.RFC3339Nano)
 	}
 	if !plan.NextCheckAt.IsZero() {
 		status.NextCheckAt = plan.NextCheckAt.Format(time.RFC3339Nano)

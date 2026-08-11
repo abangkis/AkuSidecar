@@ -151,7 +151,7 @@
                 </span>
               </div>
               <label class="settings-row" for="auto-update-mode">
-                <span class="settings-copy"><strong>Background policy</strong><small>Adaptive demand learns batch consumption pace and prepares only the bounded buffer likely to be needed. Continuous background uses one fixed interval.</small></span>
+                <span class="settings-copy"><strong>Background policy</strong><small>Adaptive demand learns batch consumption pace, then uses decaying replenishment pressure to soften its target and refill timing. Continuous background uses one fixed interval.</small></span>
                 <select id="auto-update-mode" name="autoUpdateMode"><option value="adaptive">Adaptive demand — recommended</option><option value="fixed">Continuous background</option></select>
               </label>
               <label id="continuous-background-interval-row" class="settings-row hidden" for="auto-update-refill">
@@ -159,7 +159,7 @@
                 <select id="auto-update-refill" name="autoUpdateRefillMinutes"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes — recommended</option><option value="30">30 minutes</option><option value="60">1 hour</option></select>
               </label>
               <label class="settings-row" for="prepared-batch-limit">
-                <span class="settings-copy"><strong>Prepared batch queue</strong><small>Maximum unread finite batches. Adaptive demand may maintain fewer based on consumption pace.</small></span>
+                <span class="settings-copy"><strong>Prepared batch queue</strong><small>Maximum unread finite batches. Adaptive demand may maintain fewer based on consumption pace and replenishment pressure.</small></span>
                 <select id="prepared-batch-limit" name="preparedBatchLimit"><option value="1">1 batch</option><option value="2">2 batches — recommended</option><option value="3">3 batches</option></select>
               </label>
               <label class="settings-row" for="next-batch-behavior">

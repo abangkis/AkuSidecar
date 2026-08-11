@@ -53,7 +53,7 @@ func TestAutoUpdateAdaptiveSignalsMeasureDemandLeadAllowanceAndSupply(t *testing
 		}
 	}
 
-	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 8*time.Minute)
+	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 60*time.Minute, 30*time.Minute, 8*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +72,9 @@ func TestAutoUpdateAdaptiveSignalsMeasureDemandLeadAllowanceAndSupply(t *testing
 	}
 	if signals.LastOutcome.Kind != "valid_empty" || signals.LastOutcome.ItemCount != 0 || signals.LastOutcome.Trigger != "scheduler" {
 		t.Fatalf("last outcome=%+v", signals.LastOutcome)
+	}
+	if signals.ReplenishmentPressure < 65 || signals.PressureFromReveals == 0 || signals.PressureFromUpdates == 0 || signals.PressureFromYield == 0 {
+		t.Fatalf("replenishment pressure=%+v", signals)
 	}
 }
 
@@ -97,7 +100,7 @@ func TestAutoUpdateAdaptiveSignalsIgnoreManualPreparedAttempts(t *testing.T) {
 	if _, err := state.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='expired',prepared_at=? WHERE session_id=?`, completedAt, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 8*time.Minute)
+	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 60*time.Minute, 30*time.Minute, 8*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +139,7 @@ func TestAutoUpdateAdaptiveSignalsSeparateTechnicalFailureFromValidEmpty(t *test
 		t.Fatal(err)
 	}
 
-	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 8*time.Minute)
+	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 60*time.Minute, 30*time.Minute, 8*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,11 +197,27 @@ func TestAutoUpdateAdaptiveSignalsUseProductiveUserUpdateToClearSupplyBackoff(t 
 		t.Fatal(err)
 	}
 
-	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 8*time.Minute)
+	signals, err := state.AutoUpdateAdaptiveSignals(ctx, 30*time.Minute, 60*time.Minute, 30*time.Minute, 8*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if signals.LastOutcome.Kind != "productive" || signals.LastOutcome.Trigger != "user" || signals.LastOutcome.ItemCount != 1 || signals.EmptyYieldStreak != 0 || !signals.SupplyBackoffUntil.IsZero() {
 		t.Fatalf("productive user outcome=%+v", signals)
+	}
+}
+
+func TestReplenishmentPressureDecaysAndRewardsHealthyYield(t *testing.T) {
+	now := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
+	reveals := []time.Time{now.Add(-10 * time.Minute), now.Add(-5 * time.Minute)}
+	outcomes := []AutoUpdateAdaptiveOutcome{
+		{CompletedAt: now.Add(-4 * time.Minute), ItemCount: 5},
+	}
+	reveal, updates, yield := replenishmentPressureComponents(now, 30*time.Minute, reveals, outcomes)
+	if reveal <= 0 || updates <= 0 || yield >= 0 {
+		t.Fatalf("unexpected pressure components reveal=%d updates=%d yield=%d", reveal, updates, yield)
+	}
+	lateReveal, lateUpdates, lateYield := replenishmentPressureComponents(now.Add(45*time.Minute), 30*time.Minute, reveals, outcomes)
+	if lateReveal >= reveal || lateUpdates >= updates || lateYield <= yield {
+		t.Fatalf("pressure did not decay: now=(%d,%d,%d) later=(%d,%d,%d)", reveal, updates, yield, lateReveal, lateUpdates, lateYield)
 	}
 }
