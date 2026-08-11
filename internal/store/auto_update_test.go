@@ -78,6 +78,38 @@ func TestAutoUpdateSchedulerReceiptsPersistCompleteAndStayBounded(t *testing.T) 
 	}
 }
 
+func TestAutoUpdateUsageLimitPausePersistsUntilExplicitConfirmation(t *testing.T) {
+	location := time.FixedZone("WIB", 7*60*60)
+	clock := &mutableStoreClock{now: time.Date(2026, time.August, 11, 14, 30, 0, 0, location)}
+	state := openTestStoreWithClock(t, clock)
+	ctx := context.Background()
+
+	pause := domain.AutoUpdateUsageLimitPause{Message: "You've hit your usage limit", SessionID: "session-fixture"}
+	if err := state.PauseAutoUpdateForUsageLimit(ctx, pause); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := state.AutoUpdateUsageLimitPause(ctx)
+	if err != nil || stored == nil || stored.Message != pause.Message || stored.SessionID != pause.SessionID || stored.PausedAt != clock.Now().UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("stored pause=%+v err=%v", stored, err)
+	}
+
+	clock.now = clock.now.Add(24 * time.Hour)
+	if err := state.PauseAutoUpdateForUsageLimit(ctx, domain.AutoUpdateUsageLimitPause{Message: "later duplicate"}); err != nil {
+		t.Fatal(err)
+	}
+	stillPaused, err := state.AutoUpdateUsageLimitPause(ctx)
+	if err != nil || stillPaused == nil || stillPaused.Message != pause.Message || stillPaused.PausedAt != stored.PausedAt {
+		t.Fatalf("usage-limit pause must not expire automatically: pause=%+v err=%v", stillPaused, err)
+	}
+	if err := state.ConfirmAutoUpdateUsageRestored(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := state.AutoUpdateUsageLimitPause(ctx)
+	if err != nil || cleared != nil {
+		t.Fatalf("confirmed pause=%+v err=%v", cleared, err)
+	}
+}
+
 func TestAutoUpdateQuotaUsesInjectedLocalDayAcrossMidnightAndDowntime(t *testing.T) {
 	location := time.FixedZone("WIB", 7*60*60)
 	clock := &mutableStoreClock{now: time.Date(2026, time.August, 10, 23, 58, 0, 0, location)}

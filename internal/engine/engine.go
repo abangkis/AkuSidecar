@@ -478,6 +478,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 			}
 			if eventErr != nil {
 				e.logger.Printf("semantic event resolution for session %s degraded safely: %v", sessionID, eventErr)
+				e.pauseAutoUpdateForUsageLimit(context.Background(), sessionID, eventErr)
 			}
 		}
 		if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "timeline_composition"); stageErr != nil {
@@ -701,6 +702,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, status, duration.Milliseconds(), usage, resolveErr)
 			if status != "cancelled" {
 				e.logger.Printf("AI Deep Detection for session %s degraded safely: %v", sessionID, resolveErr)
+				e.pauseAutoUpdateForUsageLimit(context.Background(), sessionID, resolveErr)
 			}
 			return
 		}
@@ -1008,14 +1010,57 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 				return
 			}
 			e.logger.Printf("run %s failed: %v", runID, err)
-			failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: err.Error(), Retryable: true}
-			_ = e.store.FailRun(context.Background(), runID, failure)
-			run, _ := e.store.GetRun(context.Background(), runID)
-			_, _ = e.startNext(context.Background(), run.SessionID)
+			if failErr := e.failRunAfterProcessError(context.Background(), runID, err); failErr != nil {
+				e.logger.Printf("record failed run %s: %v", runID, failErr)
+			}
 			return
 		}
 		succeeded = true
 	}()
+}
+
+func (e *Engine) failRunAfterProcessError(ctx context.Context, runID string, processErr error) error {
+	usageLimit := reasoning.IsUsageLimitError(processErr)
+	failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: processErr.Error(), Retryable: true}
+	if usageLimit {
+		failure.Code = "codex_usage_limit"
+		failure.Retryable = false
+	}
+	if err := e.store.FailRun(ctx, runID, failure); err != nil {
+		return err
+	}
+	run, err := e.store.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if usageLimit {
+		e.pauseAutoUpdateForUsageLimit(ctx, run.SessionID, processErr)
+		if err := e.store.FailQueuedRuns(ctx, run.SessionID, failure); err != nil {
+			return err
+		}
+	}
+	_, err = e.startNext(ctx, run.SessionID)
+	return err
+}
+
+func (e *Engine) pauseAutoUpdateForUsageLimit(ctx context.Context, sessionID string, err error) bool {
+	if !reasoning.IsUsageLimitError(err) {
+		return false
+	}
+	message := strings.TrimSpace(err.Error())
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	pause := domain.AutoUpdateUsageLimitPause{Message: message, SessionID: sessionID}
+	if pauseErr := e.store.PauseAutoUpdateForUsageLimit(ctx, pause); pauseErr != nil {
+		e.logger.Printf("pause Auto Update after Codex usage limit: %v", pauseErr)
+		return false
+	}
+	select {
+	case e.autoWake <- struct{}{}:
+	default:
+	}
+	return true
 }
 
 func (e *Engine) shouldPauseForShutdown(ctx context.Context, err error) bool {

@@ -6,14 +6,40 @@ import (
 	"time"
 )
 
+const (
+	autoUpdateOutcomeProductive     = "productive"
+	autoUpdateOutcomeValidEmpty     = "valid_empty"
+	autoUpdateOutcomeTechnical      = "technical_failure"
+	autoUpdateOutcomeInterrupted    = "interrupted"
+	autoUpdateOutcomeUnknown        = "unknown"
+	adaptiveTechnicalBackoffInitial = 5 * time.Minute
+	adaptiveTechnicalBackoffSecond  = 15 * time.Minute
+	adaptiveTechnicalBackoffMax     = 30 * time.Minute
+)
+
+type AutoUpdateAdaptiveOutcome struct {
+	CompletedAt   time.Time
+	Kind          string
+	Trigger       string
+	Delivery      string
+	ItemCount     int
+	TotalRuns     int
+	CompletedRuns int
+	FailedRuns    int
+	CancelledRuns int
+}
+
 type AutoUpdateAdaptiveSignals struct {
-	ConsumptionPace    time.Duration
-	ConsumptionSamples int
-	PreparationLead    time.Duration
-	GenerationAttempts []time.Time
-	LastYieldItems     int
-	EmptyYieldStreak   int
-	SupplyBackoffUntil time.Time
+	ConsumptionPace       time.Duration
+	ConsumptionSamples    int
+	PreparationLead       time.Duration
+	GenerationAttempts    []time.Time
+	LastYieldItems        int
+	EmptyYieldStreak      int
+	SupplyBackoffUntil    time.Time
+	LastOutcome           AutoUpdateAdaptiveOutcome
+	TechnicalStreak       int
+	TechnicalBackoffUntil time.Time
 }
 
 func (s *Store) AutoUpdateAdaptiveSignals(ctx context.Context, generationWindow, defaultPreparationLead time.Duration) (AutoUpdateAdaptiveSignals, error) {
@@ -59,27 +85,53 @@ func (s *Store) AutoUpdateAdaptiveSignals(ctx context.Context, generationWindow,
 	if err != nil {
 		return result, err
 	}
-	latestCompletedAt, yields, err := s.recentPreparedUpdateYields(ctx, 3)
+	_, yields, err := s.recentPreparedUpdateYields(ctx, 5)
 	if err != nil {
 		return result, err
 	}
 	if len(yields) > 0 {
 		result.LastYieldItems = yields[0]
-		for _, itemCount := range yields {
-			if itemCount > 0 {
-				break
+	}
+	outcomes, err := s.recentAdaptiveOutcomes(ctx, 5)
+	if err != nil {
+		return result, err
+	}
+	if len(outcomes) > 0 {
+		result.LastOutcome = outcomes[0]
+		if outcomes[0].Kind == autoUpdateOutcomeValidEmpty {
+			for _, outcome := range outcomes {
+				if outcome.Kind != autoUpdateOutcomeValidEmpty {
+					break
+				}
+				result.EmptyYieldStreak++
 			}
-			result.EmptyYieldStreak++
+		}
+		if outcomes[0].Kind == autoUpdateOutcomeTechnical {
+			for _, outcome := range outcomes {
+				if outcome.Kind != autoUpdateOutcomeTechnical {
+					break
+				}
+				result.TechnicalStreak++
+			}
 		}
 	}
-	if result.EmptyYieldStreak > 0 && !latestCompletedAt.IsZero() {
+	if result.EmptyYieldStreak > 0 && result.LastOutcome.Kind == autoUpdateOutcomeValidEmpty && !result.LastOutcome.CompletedAt.IsZero() {
 		backoff := 15 * time.Minute
 		if result.EmptyYieldStreak == 2 {
 			backoff = 30 * time.Minute
 		} else if result.EmptyYieldStreak >= 3 {
 			backoff = 60 * time.Minute
 		}
-		result.SupplyBackoffUntil = latestCompletedAt.Add(backoff)
+		result.SupplyBackoffUntil = result.LastOutcome.CompletedAt.Add(backoff)
+	}
+	if result.TechnicalStreak > 0 && result.LastOutcome.Kind == autoUpdateOutcomeTechnical && !result.LastOutcome.CompletedAt.IsZero() {
+		backoff := adaptiveTechnicalBackoffInitial
+		if result.TechnicalStreak == 2 {
+			backoff = adaptiveTechnicalBackoffSecond
+		} else if result.TechnicalStreak >= 3 {
+			backoff = adaptiveTechnicalBackoffMax
+		}
+		result.TechnicalBackoffUntil = result.LastOutcome.CompletedAt.Add(backoff)
 	}
 	return result, nil
 }
@@ -190,6 +242,58 @@ func (s *Store) recentPreparedUpdateYields(ctx context.Context, limit int) (time
 		yields = append(yields, itemCount)
 	}
 	return latest, yields, rows.Err()
+}
+
+func (s *Store) recentAdaptiveOutcomes(ctx context.Context, limit int) ([]AutoUpdateAdaptiveOutcome, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT s.completed_at,
+		       COALESCE(json_extract(s.coverage_json,'$.trigger'),'user'),
+		       COALESCE(json_extract(s.coverage_json,'$.delivery'),'visible'),
+		       COUNT(r.id),
+		       COALESCE(SUM(CASE WHEN r.status='completed' THEN 1 ELSE 0 END),0),
+		       COALESCE(SUM(CASE WHEN r.status='failed' THEN 1 ELSE 0 END),0),
+		       COALESCE(SUM(CASE WHEN r.status='cancelled' THEN 1 ELSE 0 END),0),
+		       (SELECT COUNT(*) FROM timeline_items t WHERE t.session_id=s.id)
+		FROM sessions s
+		LEFT JOIN runs r ON r.session_id=s.id
+		WHERE s.completed_at IS NOT NULL
+		  AND s.status IN ('completed','partial','failed','cancelled')
+		  AND COALESCE(json_extract(s.coverage_json,'$.trigger'),'user') IN ('scheduler','user')
+		GROUP BY s.id,s.completed_at,s.coverage_json
+		ORDER BY s.completed_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []AutoUpdateAdaptiveOutcome{}
+	for rows.Next() {
+		var completedRaw, trigger, delivery string
+		var totalRuns, completedRuns, failedRuns, cancelledRuns, itemCount int
+		if err := rows.Scan(&completedRaw, &trigger, &delivery, &totalRuns, &completedRuns, &failedRuns, &cancelledRuns, &itemCount); err != nil {
+			return nil, err
+		}
+		completedAt, parseErr := time.Parse(time.RFC3339Nano, completedRaw)
+		if parseErr != nil {
+			continue
+		}
+		kind := autoUpdateOutcomeUnknown
+		switch {
+		case itemCount > 0:
+			kind = autoUpdateOutcomeProductive
+		case failedRuns > 0:
+			kind = autoUpdateOutcomeTechnical
+		case cancelledRuns > 0:
+			kind = autoUpdateOutcomeInterrupted
+		case totalRuns > 0 && completedRuns == totalRuns:
+			kind = autoUpdateOutcomeValidEmpty
+		}
+		result = append(result, AutoUpdateAdaptiveOutcome{
+			CompletedAt: completedAt, Kind: kind, Trigger: trigger, Delivery: delivery,
+			ItemCount: itemCount, TotalRuns: totalRuns, CompletedRuns: completedRuns,
+			FailedRuns: failedRuns, CancelledRuns: cancelledRuns,
+		})
+	}
+	return result, rows.Err()
 }
 
 func medianDuration(values []time.Duration) time.Duration {

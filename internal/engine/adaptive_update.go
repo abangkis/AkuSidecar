@@ -15,20 +15,23 @@ const adaptiveGenerationWindow = 30 * time.Minute
 const adaptiveDefaultPreparationLead = 8 * time.Minute
 
 type adaptiveAutoUpdatePlan struct {
-	Target             int
-	RecentDemand       bool
-	ConsumptionPace    time.Duration
-	ConsumptionSamples int
-	PreparationLead    time.Duration
-	AllowanceUsed      int
-	AllowanceLimit     int
-	NextAllowanceAt    time.Time
-	LastYieldItems     int
-	EmptyYieldStreak   int
-	SupplyBackoffUntil time.Time
-	NextCheckAt        time.Time
-	Eligible           bool
-	Reason             string
+	Target                int
+	RecentDemand          bool
+	ConsumptionPace       time.Duration
+	ConsumptionSamples    int
+	PreparationLead       time.Duration
+	AllowanceUsed         int
+	AllowanceLimit        int
+	NextAllowanceAt       time.Time
+	LastYieldItems        int
+	EmptyYieldStreak      int
+	SupplyBackoffUntil    time.Time
+	LastOutcome           store.AutoUpdateAdaptiveOutcome
+	TechnicalStreak       int
+	TechnicalBackoffUntil time.Time
+	NextCheckAt           time.Time
+	Eligible              bool
+	Reason                string
 }
 
 func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Settings, schedule store.AutoUpdateScheduleState, preparedCount int, now time.Time) (adaptiveAutoUpdatePlan, error) {
@@ -41,15 +44,18 @@ func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Setting
 
 func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdateScheduleState, preparedCount int, now time.Time, signals store.AutoUpdateAdaptiveSignals) adaptiveAutoUpdatePlan {
 	plan := adaptiveAutoUpdatePlan{
-		Target:             adaptivePreparedTarget(settings.PreparedBatchLimit, signals.ConsumptionPace, signals.ConsumptionSamples, signals.PreparationLead),
-		ConsumptionPace:    signals.ConsumptionPace,
-		ConsumptionSamples: signals.ConsumptionSamples,
-		PreparationLead:    signals.PreparationLead,
-		AllowanceUsed:      len(signals.GenerationAttempts),
-		AllowanceLimit:     settings.PreparedBatchLimit,
-		LastYieldItems:     signals.LastYieldItems,
-		EmptyYieldStreak:   signals.EmptyYieldStreak,
-		SupplyBackoffUntil: signals.SupplyBackoffUntil,
+		Target:                adaptivePreparedTarget(settings.PreparedBatchLimit, signals.ConsumptionPace, signals.ConsumptionSamples, signals.PreparationLead),
+		ConsumptionPace:       signals.ConsumptionPace,
+		ConsumptionSamples:    signals.ConsumptionSamples,
+		PreparationLead:       signals.PreparationLead,
+		AllowanceUsed:         len(signals.GenerationAttempts),
+		AllowanceLimit:        settings.PreparedBatchLimit,
+		LastYieldItems:        signals.LastYieldItems,
+		EmptyYieldStreak:      signals.EmptyYieldStreak,
+		SupplyBackoffUntil:    signals.SupplyBackoffUntil,
+		LastOutcome:           signals.LastOutcome,
+		TechnicalStreak:       signals.TechnicalStreak,
+		TechnicalBackoffUntil: signals.TechnicalBackoffUntil,
 	}
 	if len(signals.GenerationAttempts) >= plan.AllowanceLimit && len(signals.GenerationAttempts) > 0 {
 		plan.NextAllowanceAt = signals.GenerationAttempts[0].Add(adaptiveGenerationWindow)
@@ -69,6 +75,10 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 	case !plan.SupplyBackoffUntil.IsZero() && now.Before(plan.SupplyBackoffUntil):
 		plan.NextCheckAt = plan.SupplyBackoffUntil
 		plan.Reason = "Fresh-content supply is cooling down after an empty update"
+		return plan
+	case !plan.TechnicalBackoffUntil.IsZero() && now.Before(plan.TechnicalBackoffUntil):
+		plan.NextCheckAt = plan.TechnicalBackoffUntil
+		plan.Reason = "Previous update failed technically; waiting before retry"
 		return plan
 	case plan.AllowanceUsed >= plan.AllowanceLimit:
 		plan.NextCheckAt = plan.NextAllowanceAt
@@ -125,6 +135,19 @@ func applyAdaptiveStatus(status *domain.AutoUpdateStatus, plan adaptiveAutoUpdat
 	status.EmptyYieldStreak = plan.EmptyYieldStreak
 	if !plan.SupplyBackoffUntil.IsZero() {
 		status.SupplyBackoffUntil = plan.SupplyBackoffUntil.Format(time.RFC3339Nano)
+	}
+	status.LastAdaptiveOutcome = plan.LastOutcome.Kind
+	if !plan.LastOutcome.CompletedAt.IsZero() {
+		status.LastAdaptiveOutcomeAt = plan.LastOutcome.CompletedAt.Format(time.RFC3339Nano)
+	}
+	status.LastAdaptiveOutcomeItems = plan.LastOutcome.ItemCount
+	status.LastAdaptiveOutcomeTrigger = plan.LastOutcome.Trigger
+	status.LastAdaptiveOutcomeCompletedSources = plan.LastOutcome.CompletedRuns
+	status.LastAdaptiveOutcomeFailedSources = plan.LastOutcome.FailedRuns
+	status.LastAdaptiveOutcomeCancelledSources = plan.LastOutcome.CancelledRuns
+	status.TechnicalFailureStreak = plan.TechnicalStreak
+	if !plan.TechnicalBackoffUntil.IsZero() {
+		status.TechnicalBackoffUntil = plan.TechnicalBackoffUntil.Format(time.RFC3339Nano)
 	}
 	if !plan.NextCheckAt.IsZero() {
 		status.NextCheckAt = plan.NextCheckAt.Format(time.RFC3339Nano)

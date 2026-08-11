@@ -925,6 +925,15 @@ func (s *Store) FailRun(ctx context.Context, runID string, failure domain.Failur
 	return err
 }
 
+func (s *Store) FailQueuedRuns(ctx context.Context, sessionID string, failure domain.Failure) error {
+	raw, err := json.Marshal(failure)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE runs SET status='failed',stage=?,completed_at=?,error_json=? WHERE session_id=? AND status='queued'`, failure.Stage, s.Now().UTC().Format(time.RFC3339Nano), string(raw), sessionID)
+	return err
+}
+
 func (s *Store) SaveTelemetry(ctx context.Context, value domain.ReasoningTelemetry) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO reasoning_invocations(id,run_id,phase,provider,model,effort,duration_ms,status,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, value.ID, value.RunID, value.Phase, value.Provider, value.Model, value.Effort, value.DurationMS, value.Status, value.InputTokens, value.CachedInputTokens, value.OutputTokens, value.ReasoningOutputTokens, value.CreatedAt)
 	return err
@@ -1566,7 +1575,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts');`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts','auto_update_usage_limit_pause');`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=NULL,last_attempt_at=NULL,last_success_at=NULL,last_error='' WHERE id=1`); err != nil {

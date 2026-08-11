@@ -224,12 +224,49 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		payload, _ := io.ReadAll(resetResponse.Body)
 		t.Fatalf("quota reset status=%d body=%s", resetResponse.StatusCode, payload)
 	}
+	if err := state.PauseAutoUpdateForUsageLimit(context.Background(), domain.AutoUpdateUsageLimitPause{Message: "You've hit your usage limit"}); err != nil {
+		t.Fatal(err)
+	}
+	usageStatusResponse, err := client.Get("http://" + address.String() + "/api/auto-update/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var usageStatusPayload struct {
+		AutoUpdate domain.AutoUpdateStatus `json:"autoUpdate"`
+	}
+	if err := json.NewDecoder(usageStatusResponse.Body).Decode(&usageStatusPayload); err != nil {
+		usageStatusResponse.Body.Close()
+		t.Fatal(err)
+	}
+	usageStatusResponse.Body.Close()
+	if usageStatusPayload.AutoUpdate.State != "usage_limit_paused" || usageStatusPayload.AutoUpdate.UsageLimitMessage == "" {
+		t.Fatalf("usage-limit status=%+v", usageStatusPayload.AutoUpdate)
+	}
+	restoreRequest, err := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/auto-update/usage-limit/restore", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoreResponse, err := client.Do(restoreRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restorePayload struct {
+		AutoUpdate domain.AutoUpdateStatus `json:"autoUpdate"`
+	}
+	if err := json.NewDecoder(restoreResponse.Body).Decode(&restorePayload); err != nil {
+		restoreResponse.Body.Close()
+		t.Fatal(err)
+	}
+	restoreResponse.Body.Close()
+	if restoreResponse.StatusCode != http.StatusOK || restorePayload.AutoUpdate.State == "usage_limit_paused" {
+		t.Fatalf("usage restore status=%d payload=%+v", restoreResponse.StatusCode, restorePayload.AutoUpdate)
+	}
 	onboarding := bootstrap["onboarding"].(map[string]any)
 	if onboarding["status"] != "not_started" {
 		t.Fatalf("fresh onboarding=%+v", onboarding)
 	}
 	for path, markers := range map[string][]string{
-		"/":           {"Semantic event engine", "AI Detector", "AI Detection", "ai-detection-enabled", "Resurfaced content", "resurface-mode", "resurface-cooldown-days", "Auto Update", "auto-update-enabled", "auto-update-budget-status", "auto-update-budget-detail", "Prepare batch now", "Update now", "timeline-prepared-button", "Load next batch", "Reasoning processes", "reasoning-processes", "reasoning-executable-path", "detect-reasoning-executable", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms", "capture-visibility-policy", "quiet_multi_window", "Quiet capture — single window — recommended", "Quiet capture — multiple windows (trial)", "show-learning-panel", "Learning panel", "timeline-runner-status", "onboarding-learning-panel", "MEET AKUBROWSER", "WHAT THIS BUILD ADDS", "INSIDE AN UPDATE", "First, each source is read and evaluated", "Then, one finite Timeline is composed", "data-onboarding-slide=\"5\"", "onboarding-check-stages", "Restoring your Timeline and active check", "finish-line hidden", "view-switch hidden"},
+		"/":           {"Semantic event engine", "AI Detector", "AI Detection", "ai-detection-enabled", "Resurfaced content", "resurface-mode", "resurface-cooldown-days", "Auto Update", "auto-update-enabled", "auto-update-budget-status", "auto-update-budget-detail", "Confirm Codex usage restored", "Prepare batch now", "Update now", "timeline-prepared-button", "Load next batch", "Reasoning processes", "reasoning-processes", "reasoning-executable-path", "detect-reasoning-executable", "ai-detection-presentation", "timeline-side-pane", "semantic-event-shortlist", "semantic-event-merge-threshold", "reset-semantic-event-merge-threshold", "knowledge-retention-days", "knowledge-storage-limit", "timeline-boundary-follow", "timeline-boundary-return-ms", "capture-visibility-policy", "quiet_multi_window", "Quiet capture — single window — recommended", "Quiet capture — multiple windows (trial)", "show-learning-panel", "Learning panel", "timeline-runner-status", "onboarding-learning-panel", "MEET AKUBROWSER", "WHAT THIS BUILD ADDS", "INSIDE AN UPDATE", "First, each source is read and evaluated", "Then, one finite Timeline is composed", "data-onboarding-slide=\"5\"", "onboarding-check-stages", "Restoring your Timeline and active check", "finish-line hidden", "view-switch hidden"},
 		"/app.js":     {"SOURCE_TEXT_COLLAPSE_CHARACTERS = 420", "function buildExpandableText", "function buildAttachments", "source-layout-attachments", "function buildMedia(values, source, contentKind", "source-layout-video-cue", "Video preview", "notice notice-complete", "function createNoticeDismissButton", "Dismiss notification", "timeline-history-boundary", "timeline-older-batch-marker", "syncBackToTopBoundaryPosition", "timelineBoundaryCueMode", "timelineBoundaryReturnMs", "DEFAULT_TIMELINE_BOUNDARY_RETURN_MS = 350", "DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD = 0.92", "semanticEventMergeThreshold", "resetSemanticEventMergeThreshold", "is-following-boundary", "duplicate report", "function buildCollapsedDuplicate", "function showCorrectionNotice", "function buildMediaRecaptureButton", "function buildForegroundRecaptureOffer", "Try in foreground", "body: { captureMode }", "document.querySelectorAll(\".recapture-button\")", "AKU_BROWSER_MEDIA_RECAPTURE", "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP", "AKU_BROWSER_DISPATCH_FAILED", "recoverInvalidatedBridgeContext", "BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000", "authoritative Sidecar run outcome", "function enrichPassiveXMedia", "passive_x_cache", "/media-evidence", "\"not_interested\"", "Local fast path", "strongest overlap", "DEFAULT_TIMELINE_BATCH_GAP_PX = 36", "function buildInboxPreferenceDecisions", "section = document.createElement(\"details\")", "The latest More or Less decision is authoritative.", "function buildCaptureSurfaceTelemetry", "Capture surface", "function buildMediaAcquisitionTelemetry", "Media evidence", "function buildAcquisitionIdentityTelemetry", "Acquisition & identity", "does not invoke a model", "function buildInboxFlowInspector", "/api/inbox/runs/", "function buildInboxFlowItem", "Open source", "Should have selected", "/selection-corrections", "Re-evaluate run", "Selected by you", "Already captured", "Semantic duplicate", "source_unavailable", "SOURCE UNAVAILABLE", "function routeAIDetectedItems", "explicitAIOverride", "function buildAIDetectionControls", "function buildSourceIcon", "timeline-source-icon-", "expandedAIDetails", "expandedAIFeedbackOptions", "AI signal · Neutral", "Mark as not AI-generated", "Mark as AI-generated", "Unsure · Review more deeply", "Change scope or add a reason", "Optional AI feedback reason", "/ai-feedback", "function loadAIFeedbackHistory", "HIDE STRONG AI SIGNALS", "function timelineInteractionActive", "function queueBackgroundTimelineRefresh", "function flushBackgroundTimelineRefresh", "function timelineSidePaneAvailable", "function syncTimelineSidePaneVisibility", "state.timelineItems.length > 0", "function scheduleTimelineSidePanePosition", "--timeline-side-pane-top", "--timeline-side-pane-toggle-top", "ResizeObserver", "borderTopLeftRadius", "#result-items > [data-timeline-id]", "function detectReasoningExecutable", "/api/reasoning/runtime/discover", "reasoningExecutablePath", "function enforceCurrentSidecarEpoch", "sidecar_epoch_changed", "AkuSidecar is offline or unreachable", "AkuSidecar offline", "sidecar_unavailable", "pollInFlight", "function describeSessionProgress", "AI Fast Detection", "AI Deep Detection continues asynchronously", "ONBOARDING_LEARNING_INTERVAL_MS = 7000", "function shouldShowOnboardingLearning", "function toggleOnboardingLearningPlayback", "bootstrapLoading", "Restoring your Timeline and active check", "function onboardingRequiresSetup", "state.bootstrapLoading || !state.bootstrap", "status === \"not_started\""},
 		"/styles.css": {".notice-complete", ".notice-dismiss", ".expandable-text-copy.is-collapsed", ".content-expander", ".timeline-batch-marker", ".timeline-older-batch-marker", "--timeline-batch-gap", "--back-to-top-return-duration", ".semantic-duplicate-item", ".paired-setting-control", ".recapture-button", ".foreground-recapture-offer", ".inbox-preference-decision", ".inbox-flow-inspector", ".inbox-flow-filters", ".inbox-flow-item-actions", ".inbox-selection-correction-button", ".inbox-flow-outcome-user_selected", ".inbox-flow-outcome-collapsed_duplicate", ".acquisition-identity-telemetry", ".acquisition-identity-body", ".ai-origin-badge", ".ai-origin-neutral", ".timeline-side-pane", ".timeline-source-icon-x { background: #050505; color: #fff; }", ".onboarding-learning-panel", ".onboarding-learning-track", ".onboarding-learning-dots", ".onboarding-check-stages"},
 	} {
@@ -566,7 +603,7 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "Adaptive demand learns batch consumption pace"},
-		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15", "status.adaptiveTargetBatches", "learning consumption pace", "generationAllowanceUsed"},
+		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "next scheduled tick", "status.cadenceTier", "status.schedulerReceipts?.[0]", "last tick", "settings.autoUpdateRefillMinutes || 15", "status.adaptiveTargetBatches", "lastAdaptiveOutcome", "technicalBackoffUntil", "retry cooldown until", "learning consumption pace", "generationAllowanceUsed"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -575,6 +612,23 @@ func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *test
 		for _, marker := range markers {
 			if !strings.Contains(string(contents), marker) {
 				t.Fatalf("%s missing continuous scheduler contract %q", asset, marker)
+			}
+		}
+	}
+}
+
+func TestEmbeddedUsageLimitPauseRequiresExplicitRestoreConfirmation(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"confirm-codex-usage-restored", "Confirm Codex usage restored"},
+		"web/app.js":     {"usage_limit_paused", "Auto Update paused by Codex usage limit", "Automatic checks will not retry until you confirm", "/api/auto-update/usage-limit/restore", "function confirmCodexUsageRestored"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing usage-limit pause contract %q", asset, marker)
 			}
 		}
 	}

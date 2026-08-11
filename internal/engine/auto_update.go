@@ -19,6 +19,9 @@ type autoUpdateCadence struct {
 }
 
 func (e *Engine) autoDeepDetectionAllowed(ctx context.Context, settings domain.Settings) bool {
+	if pause, err := e.store.AutoUpdateUsageLimitPause(ctx); err != nil || pause != nil {
+		return false
+	}
 	usage, err := e.store.AutoUpdateBudgetUsage(ctx)
 	if err != nil {
 		return false
@@ -100,6 +103,14 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	now := e.store.Now()
 	status.LastUserActivityAt = schedule.LastUIAccessAt
 	status.LastSchedulerTickAt = schedule.LastSchedulerTickAt
+	usageLimitPause, err := e.store.AutoUpdateUsageLimitPause(ctx)
+	if err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
+	if usageLimitPause != nil {
+		status.UsageLimitPausedAt = usageLimitPause.PausedAt
+		status.UsageLimitMessage = usageLimitPause.Message
+	}
 	if settings.AutoUpdateMode == "adaptive" {
 		plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, len(batches), now)
 		if planErr != nil {
@@ -139,6 +150,12 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	}
 	if !settings.AutoUpdateEnabled {
 		status.State, status.Reason = "disabled", "Auto Update is off"
+		return status, nil
+	}
+	if usageLimitPause != nil {
+		status.State = "usage_limit_paused"
+		status.Reason = "Codex usage limit reached; confirm restored usage to resume automatic checks"
+		status.NextCheckAt = ""
 		return status, nil
 	}
 	if bridge := e.BridgeStatus(); bridge.Compatible && len(e.grantedActiveSources(settings)) == 0 {
@@ -193,6 +210,24 @@ func (e *Engine) ResetAutoUpdateDailyQuota(ctx context.Context) (domain.AutoUpda
 	return e.AutoUpdateStatus(ctx)
 }
 
+func (e *Engine) ConfirmAutoUpdateUsageRestored(ctx context.Context) (domain.AutoUpdateStatus, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	if active, err := e.store.ActiveSession(ctx); err != nil {
+		return domain.AutoUpdateStatus{}, err
+	} else if active != nil {
+		return domain.AutoUpdateStatus{}, errors.New("finish the active check before confirming restored Codex usage")
+	}
+	if err := e.store.ConfirmAutoUpdateUsageRestored(ctx); err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
+	select {
+	case e.autoWake <- struct{}{}:
+	default:
+	}
+	return e.AutoUpdateStatus(ctx)
+}
+
 func (e *Engine) autoUpdateLoop(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -228,6 +263,11 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 			err = fmt.Errorf("Auto Update is disabled")
 		}
 		return domain.Session{}, err
+	}
+	if pause, pauseErr := e.store.AutoUpdateUsageLimitPause(ctx); pauseErr != nil {
+		return domain.Session{}, pauseErr
+	} else if pause != nil {
+		return domain.Session{}, errors.New("Auto Update is paused because Codex usage is exhausted; confirm restored usage in Settings")
 	}
 	var schedule store.AutoUpdateScheduleState
 	var tickReceipt *domain.AutoUpdateTickReceipt

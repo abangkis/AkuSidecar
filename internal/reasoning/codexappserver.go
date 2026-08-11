@@ -293,6 +293,32 @@ func retryableAppServerError(err error) bool {
 	return strings.Contains(message, "model is at capacity")
 }
 
+// IsUsageLimitError identifies account-level Codex exhaustion. Unlike model
+// capacity, these failures will not recover through an immediate retry or a
+// different source lane and must be acknowledged by the user before automatic
+// work resumes.
+func IsUsageLimitError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "model is at capacity") {
+		return false
+	}
+	markers := []string{
+		"usage limit", "usage_limit", "insufficient_quota", "weekly limit", "monthly limit",
+	}
+	for _, marker := range markers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return strings.Contains(message, "limit") && (strings.Contains(message, "you've hit") ||
+		strings.Contains(message, "you have hit") ||
+		strings.Contains(message, "you've reached") ||
+		strings.Contains(message, "you have reached"))
+}
+
 func addUsage(left, right usage) usage {
 	return usage{
 		Input:           addTokenCount(left.Input, right.Input),

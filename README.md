@@ -198,7 +198,18 @@ and local invocation telemetry gates automatic work. The fresh daily boundary
 is 2M tokens with 25% unavailable to
 automatic work for user-visible updates. A user-authorized daily quota reset preserves
 invocation history while establishing a new local allowance baseline. Prepared
-batches do not enter the Timeline until revealed.
+batches do not enter the Timeline until revealed. An account-level Codex usage
+limit creates a durable scheduler stopper before another tick is admitted. The
+Timeline and Settings expose the pause, and automatic work resumes only after
+the user explicitly confirms that Codex usage has been restored.
+
+Adaptive supply telemetry classifies every completed user or scheduler update:
+an update with retained items is productive, an all-source successful update
+with no retained items is valid-empty, and a timeout, capacity, Bridge, or
+other failed source is technical. Only valid-empty outcomes increment the
+supply streak. Technical outcomes use a separate short retry backoff, while a
+productive manual update clears a stale supply cooldown. Scheduler generation
+allowance remains scheduler-only and is never consumed by user-visible work.
 
 Built-in bounded-load profiles remain:
 

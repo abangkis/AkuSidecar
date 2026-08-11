@@ -13,6 +13,7 @@ import (
 )
 
 const maxAutoUpdateSchedulerReceipts = 32
+const autoUpdateUsageLimitPauseKey = "auto_update_usage_limit_pause"
 
 type AutoUpdateScheduleState struct {
 	LastUIAccessAt      string
@@ -28,6 +29,50 @@ type AutoUpdateBudgetUsage struct {
 	QuotaTotal        int64
 	QuotaAutomatic    int64
 	LastManualResetAt string
+}
+
+func (s *Store) PauseAutoUpdateForUsageLimit(ctx context.Context, pause domain.AutoUpdateUsageLimitPause) error {
+	if pause.PausedAt == "" {
+		pause.PausedAt = s.Now().UTC().Format(time.RFC3339Nano)
+	}
+	raw, err := json.Marshal(pause)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO meta(key,value) VALUES(?,?)
+		ON CONFLICT(key) DO NOTHING`, autoUpdateUsageLimitPauseKey, string(raw))
+	return err
+}
+
+func (s *Store) AutoUpdateUsageLimitPause(ctx context.Context) (*domain.AutoUpdateUsageLimitPause, error) {
+	var raw string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, autoUpdateUsageLimitPauseKey).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var pause domain.AutoUpdateUsageLimitPause
+	if err := json.Unmarshal([]byte(raw), &pause); err != nil {
+		return nil, fmt.Errorf("decode Auto Update usage-limit pause: %w", err)
+	}
+	return &pause, nil
+}
+
+func (s *Store) ConfirmAutoUpdateUsageRestored(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM meta WHERE key=?`, autoUpdateUsageLimitPauseKey); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE auto_update_state SET last_error='' WHERE id=1`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) RecordAutoUpdateUIAccess(ctx context.Context) error {

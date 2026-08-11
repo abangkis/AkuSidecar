@@ -167,6 +167,7 @@ $("#processing-inbox-button").addEventListener("click", () => setView("inbox"));
 $("#processing-settings-button").addEventListener("click", () => setView("settings"));
 $("#auto-update-timeline-settings").addEventListener("click", openAutoUpdateSettings);
 $("#reset-auto-update-budget").addEventListener("click", resetAutoUpdateBudget);
+$("#confirm-codex-usage-restored").addEventListener("click", confirmCodexUsageRestored);
 $("#prepare-batch-now").addEventListener("click", prepareBatchNow);
 $("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
 $("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
@@ -544,6 +545,7 @@ function renderAutoUpdateStatus(status) {
   const budget = $("#auto-update-budget-status");
   const budgetDetail = $("#auto-update-budget-detail");
   const reset = $("#reset-auto-update-budget");
+  const confirmRestored = $("#confirm-codex-usage-restored");
   const runNow = $("#prepare-batch-now");
   const timeline = $("#auto-update-timeline-status");
   if (!detail || !queue || !budget || !budgetDetail || !timeline) return;
@@ -571,7 +573,18 @@ function renderAutoUpdateStatus(status) {
   const lastTick = latestReceipt
     ? ` · last tick ${humanize(latestReceipt.outcome)}${latestReceipt.reason ? `: ${latestReceipt.reason}` : ""}`
     : "";
-  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""}${cadence}${lastTick} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
+  const outcomeSources = (status.lastAdaptiveOutcomeCompletedSources || 0)
+    + (status.lastAdaptiveOutcomeFailedSources || 0)
+    + (status.lastAdaptiveOutcomeCancelledSources || 0);
+  const failedOutcomeSources = status.lastAdaptiveOutcomeFailedSources || 0;
+  const cancelledOutcomeSources = status.lastAdaptiveOutcomeCancelledSources || 0;
+  const outcomeSourceDetail = outcomeSources > 0
+    ? `${status.lastAdaptiveOutcomeCompletedSources || 0}/${outcomeSources} source${outcomeSources === 1 ? "" : "s"} completed${failedOutcomeSources ? `, ${failedOutcomeSources} failed` : ""}${cancelledOutcomeSources ? `, ${cancelledOutcomeSources} cancelled` : ""}`
+    : "source counts unavailable";
+  const lastOutcome = status.lastAdaptiveOutcome
+    ? ` · last outcome ${humanize(status.lastAdaptiveOutcome)}: ${status.lastAdaptiveOutcomeItems || 0} item${status.lastAdaptiveOutcomeItems === 1 ? "" : "s"}, ${outcomeSourceDetail}`
+    : "";
+  detail.textContent = `${humanize(status.state)}${status.reason ? ` · ${status.reason}` : ""}${cadence}${lastTick}${lastOutcome} · next estimate ${formatTokenCount(estimate)}${nextCheck}`;
   const prepared = status.preparedBatches?.length || 0;
   const limit = status.preparedBatchLimit || prepared;
   const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
@@ -585,21 +598,33 @@ function renderAutoUpdateStatus(status) {
   const supplyBackoff = status.supplyBackoffUntil && Date.parse(status.supplyBackoffUntil) > Date.now()
     ? ` · supply cooldown until ${formatDate(status.supplyBackoffUntil)}`
     : "";
-  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${supplyBackoff}`;
+  const technicalBackoff = status.technicalBackoffUntil && Date.parse(status.technicalBackoffUntil) > Date.now()
+    ? ` · retry cooldown until ${formatDate(status.technicalBackoffUntil)}`
+    : "";
+  queue.textContent = `${prepared} of ${limit} prepared${adaptiveTarget} · ${available} slot${available === 1 ? "" : "s"} open${consumptionPace}${generationAllowance}${supplyBackoff}${technicalBackoff}`;
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
   budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} user reserve`;
+  const usageLimitPaused = status.state === "usage_limit_paused";
   if (reset) reset.disabled = Boolean(state.session);
-  if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running";
+  if (confirmRestored) {
+    confirmRestored.classList.toggle("hidden", !usageLimitPaused);
+    confirmRestored.disabled = Boolean(state.session);
+  }
+  if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running" || usageLimitPaused;
   renderTimelineActions();
-  const paused = status.enabled && ["paused", "budget_paused"].includes(status.state);
+  const paused = status.enabled && ["paused", "budget_paused", "usage_limit_paused"].includes(status.state);
   timeline.classList.toggle("hidden", !paused);
   if (paused) {
-    $("#auto-update-timeline-title").textContent = status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
-    $("#auto-update-timeline-detail").textContent = status.state === "budget_paused"
-      ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
-      : status.reason || "Automatic work is waiting for an available boundary.";
+    $("#auto-update-timeline-title").textContent = usageLimitPaused
+      ? "Auto Update paused by Codex usage limit"
+      : status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
+    $("#auto-update-timeline-detail").textContent = usageLimitPaused
+      ? `Codex reported a usage limit${status.usageLimitPausedAt ? ` at ${formatDate(status.usageLimitPausedAt)}` : ""}. Automatic checks will not retry until you confirm in Settings that usage is restored.`
+      : status.state === "budget_paused"
+        ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
+        : status.reason || "Automatic work is waiting for an available boundary.";
   }
 }
 
@@ -649,6 +674,29 @@ async function resetAutoUpdateBudget() {
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
     setNoticeText(notice, "Today’s local Auto Update quota was reset. Recorded model usage was preserved.");
+  } catch (error) {
+    showError(error);
+  } finally {
+    button.disabled = Boolean(state.session);
+  }
+}
+
+async function confirmCodexUsageRestored() {
+  if (state.session) {
+    showError(new Error("Finish or cancel the active check before confirming restored Codex usage."));
+    return;
+  }
+  if (!window.confirm("Confirm that your Codex usage limit has been restored? Auto Update may resume immediately.")) return;
+  const button = $("#confirm-codex-usage-restored");
+  button.disabled = true;
+  try {
+    const { autoUpdate } = await api("/api/auto-update/usage-limit/restore", { method: "POST" });
+    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
+    renderAutoUpdateStatus(autoUpdate);
+    const notice = $("#provider-notice");
+    notice.className = "notice notice-complete";
+    notice.setAttribute("role", "status");
+    setNoticeText(notice, "Codex usage restoration confirmed. Auto Update may resume at the next eligible scheduler boundary.");
   } catch (error) {
     showError(error);
   } finally {

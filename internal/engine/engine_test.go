@@ -1711,6 +1711,68 @@ func TestScheduledAutoUpdateTickUsesSelectedCadence(t *testing.T) {
 	}
 }
 
+func TestCodexUsageLimitPausesSchedulerUntilUserConfirmation(t *testing.T) {
+	runtime, state := testEngine(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.AutoUpdateMode = "fixed"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+
+	if !runtime.pauseAutoUpdateForUsageLimit(ctx, "session-limited", errors.New("You've hit your usage limit. Try again later.")) {
+		t.Fatal("usage-limit error did not create an Auto Update stopper")
+	}
+	status, err := runtime.AutoUpdateStatus(ctx)
+	if err != nil || status.State != "usage_limit_paused" || status.UsageLimitPausedAt == "" || status.UsageLimitMessage == "" || status.NextCheckAt != "" {
+		t.Fatalf("paused status=%+v err=%v", status, err)
+	}
+	if _, err := runtime.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "confirm restored usage") {
+		t.Fatalf("paused scheduler error=%v", err)
+	}
+	if receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10); err != nil || len(receipts) != 0 {
+		t.Fatalf("usage-limit stopper must run before scheduler receipt: receipts=%+v err=%v", receipts, err)
+	}
+	select {
+	case <-runtime.autoWake:
+	default:
+	}
+
+	restored, err := runtime.ConfirmAutoUpdateUsageRestored(ctx)
+	if err != nil || restored.State == "usage_limit_paused" || restored.UsageLimitPausedAt != "" {
+		t.Fatalf("restored status=%+v err=%v", restored, err)
+	}
+	select {
+	case <-runtime.autoWake:
+	default:
+		t.Fatal("restored usage did not wake scheduler")
+	}
+}
+
+func TestCodexUsageLimitFailsRemainingSourceLanesWithoutMoreReasoning(t *testing.T) {
+	runtime, _ := testEngine(t)
+	ctx := context.Background()
+	session, err := runtime.StartVisibleUpdate(ctx, "usage limit fixture")
+	if err != nil || len(session.Runs) < 2 {
+		t.Fatalf("session=%+v err=%v", session, err)
+	}
+	if err := runtime.failRunAfterProcessError(ctx, session.Runs[0].ID, errors.New("You've hit your usage limit. Try again later.")); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := runtime.Session(ctx, session.ID)
+	if err != nil || completed.Status != "failed" {
+		t.Fatalf("completed session=%+v err=%v", completed, err)
+	}
+	for _, run := range completed.Runs {
+		if run.Status != "failed" || run.Error == nil || run.Error.Code != "codex_usage_limit" || run.Error.Retryable {
+			t.Fatalf("usage-limited run=%+v", run)
+		}
+	}
+}
+
 func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
 	for _, mode := range []string{"fixed", "adaptive"} {
 		t.Run(mode, func(t *testing.T) {
@@ -1906,6 +1968,13 @@ func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
 	cooled := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
 	if cooled.Eligible || !cooled.NextCheckAt.Equal(signals.SupplyBackoffUntil) || cooled.Reason != "Fresh-content supply is cooling down after an empty update" {
 		t.Fatalf("cooled plan=%+v", cooled)
+	}
+
+	signals.SupplyBackoffUntil = time.Time{}
+	signals.TechnicalBackoffUntil = now.Add(5 * time.Minute)
+	technical := buildAdaptiveUpdatePlan(settings, schedule, 0, now, signals)
+	if technical.Eligible || !technical.NextCheckAt.Equal(signals.TechnicalBackoffUntil) || technical.Reason != "Previous update failed technically; waiting before retry" {
+		t.Fatalf("technical plan=%+v", technical)
 	}
 
 	standby := buildAdaptiveUpdatePlan(settings, store.AutoUpdateScheduleState{}, 0, now, signals)

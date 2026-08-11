@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -267,6 +268,30 @@ func TestAppServerRetryExcludesCancellationAndDeadline(t *testing.T) {
 	}
 	if !retryableAppServerError(fmt.Errorf("Selected model is at capacity. Please try a different model.")) {
 		t.Fatal("explicit capacity failure must retry")
+	}
+}
+
+func TestUsageLimitErrorClassificationExcludesTransientCapacity(t *testing.T) {
+	for _, message := range []string{
+		"You've hit your usage limit. Try again later.",
+		"rate_limit_exceeded: weekly limit reached",
+		"insufficient_quota",
+		"You have reached your monthly limit",
+	} {
+		if !IsUsageLimitError(errors.New(message)) {
+			t.Fatalf("usage-limit message was not classified: %q", message)
+		}
+	}
+	for _, err := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		errors.New("Selected model is at capacity. Please try a different model."),
+		errors.New("rate limit exceeded; retry after 30 seconds"),
+		errors.New("temporary network timeout"),
+	} {
+		if IsUsageLimitError(err) {
+			t.Fatalf("transient error was classified as usage limit: %v", err)
+		}
 	}
 }
 

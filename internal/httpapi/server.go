@@ -485,6 +485,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return conflict(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+	case r.Method == http.MethodPost && p == "/api/auto-update/usage-limit/restore":
+		status, err := s.engine.ConfirmAutoUpdateUsageRestored(ctx)
+		if err != nil {
+			return conflict(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
 	case r.Method == http.MethodPost && p == "/api/auto-update/prepare":
 		session, err := s.engine.StartPreparedUpdateNow(ctx)
 		if err != nil {
