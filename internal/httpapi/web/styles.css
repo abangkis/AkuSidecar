@@ -225,7 +225,7 @@ h3 { letter-spacing: -0.02em; }
 
 .source-layout-card { overflow: hidden; background: transparent; }
 .source-x { border: 1px solid var(--line-strong); border-radius: 16px; background: #080b09; }
-.source-linkedin, .source-facebook { background: #171d1a; }
+.source-linkedin, .source-facebook, .source-instagram { background: #171d1a; }
 .source-layout-card > header { display: flex; align-items: center; gap: 11px; padding: 16px 18px 12px; }
 .source-layout-card > header > div { display: grid; min-width: 0; gap: 2px; }
 .source-layout-card > header span:not(.source-layout-badge) { color: var(--quiet); font-size: 0.75rem; }

@@ -102,6 +102,7 @@ func TestUpdateStopsBeforeSessionCreationWithoutGrantedActiveSource(t *testing.T
 		{Source: "x", Reason: "permission_not_granted"},
 		{Source: "linkedin", Reason: "permission_not_granted"},
 		{Source: "facebook", Reason: "permission_not_granted"},
+		{Source: "instagram", Reason: "permission_not_granted"},
 	}, ObservedAt: domain.Now()}
 	runtime.RecordHeartbeat(heartbeat)
 
@@ -126,6 +127,7 @@ func TestUpdateCreatesRunsOnlyForGrantedActiveSources(t *testing.T) {
 		{Source: "x", Reason: "permission_not_granted"},
 		{Source: "linkedin", PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"},
 		{Source: "facebook", Reason: "permission_not_granted"},
+		{Source: "instagram", Reason: "permission_not_granted"},
 	}, ObservedAt: domain.Now()}
 	runtime.RecordHeartbeat(heartbeat)
 
@@ -147,6 +149,7 @@ func TestUpdateUsesEffectiveSourceReadinessInsteadOfPermissionAlone(t *testing.T
 			{Source: "x", PermissionGranted: true, ScriptRegistered: false, Ready: false, Reason: "content_script_not_registered"},
 			{Source: "linkedin", PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"},
 			{Source: "facebook", PermissionGranted: false, ScriptRegistered: false, Ready: false, Reason: "permission_not_granted"},
+			{Source: "instagram", PermissionGranted: false, ScriptRegistered: false, Ready: false, Reason: "permission_not_granted"},
 		},
 		ObservedAt: domain.Now(),
 	}

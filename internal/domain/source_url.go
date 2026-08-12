@@ -7,6 +7,8 @@ import (
 )
 
 var linkedInNativeIdentityPattern = regexp.MustCompile(`(?i)(activity|ugcpost|share)(?::|-)(\d+)`)
+var instagramNativeIdentityPattern = regexp.MustCompile(`(?i)/(p|reel|tv)/([a-z0-9_-]+)`)
+var instagramNormalizedIdentityPattern = regexp.MustCompile(`(?i)^instagram:(p|reel|tv):([a-z0-9_-]+)$`)
 
 // CanonicalSourceURL accepts only native post permalinks owned by the captured
 // source. It deliberately excludes arbitrary external references: link
@@ -25,6 +27,8 @@ func CanonicalSourceURL(source Source, raw string) (string, bool) {
 		valid = host == "www.linkedin.com" && (strings.Contains(parsed.Path, "/posts/") || strings.Contains(parsed.Path, "/feed/update/"))
 	case SourceFacebook:
 		valid = (host == "www.facebook.com" || host == "facebook.com" || host == "m.facebook.com") && facebookNativePostPath(parsed.Path, parsed.Query())
+	case SourceInstagram:
+		valid = (host == "www.instagram.com" || host == "instagram.com") && instagramNativePostPath(parsed.Path)
 	}
 	if !valid {
 		return "", false
@@ -41,7 +45,7 @@ func NativeIdentityFromPermalink(source Source, raw string) string {
 		return ""
 	}
 	switch source {
-	case SourceLinkedIn:
+	case SourceLinkedIn, SourceInstagram:
 		return NormalizeNativeIdentity(source, canonical)
 	}
 	return ""
@@ -50,17 +54,43 @@ func NativeIdentityFromPermalink(source Source, raw string) string {
 // NormalizeNativeIdentity maps equivalent source-native identity spellings to
 // one representation while leaving unknown source formats opaque.
 func NormalizeNativeIdentity(source Source, raw string) string {
-	value := strings.ToLower(strings.TrimSpace(raw))
-	if value == "" {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
 		return ""
 	}
+	value := strings.ToLower(trimmed)
 	if source == SourceLinkedIn {
 		match := linkedInNativeIdentityPattern.FindStringSubmatch(value)
 		if len(match) == 3 {
 			return "linkedin:" + strings.ToLower(match[1]) + ":" + match[2]
 		}
 	}
+	if source == SourceInstagram {
+		match := instagramNativeIdentityPattern.FindStringSubmatch(trimmed)
+		if len(match) == 3 {
+			return "instagram:" + strings.ToLower(match[1]) + ":" + match[2]
+		}
+		match = instagramNormalizedIdentityPattern.FindStringSubmatch(trimmed)
+		if len(match) == 3 {
+			return "instagram:" + strings.ToLower(match[1]) + ":" + match[2]
+		}
+	}
 	return value
+}
+
+func instagramNativePostPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || (parts[0] != "p" && parts[0] != "reel" && parts[0] != "tv") || parts[1] == "" {
+		return false
+	}
+	for _, character := range parts[1] {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' || character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func facebookNativePostPath(path string, query url.Values) bool {

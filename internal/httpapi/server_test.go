@@ -105,6 +105,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if !strings.Contains(csp, "https://*.fbcdn.net") || !strings.Contains(csp, "https://*.fbsbx.com") {
 		t.Fatalf("Facebook media hosts missing from CSP: %s", csp)
 	}
+	if !strings.Contains(csp, "https://cdninstagram.com") || !strings.Contains(csp, "https://*.cdninstagram.com") {
+		t.Fatalf("Instagram media hosts missing from CSP: %s", csp)
+	}
 	if !strings.Contains(csp, "media-src 'self' https://video.twimg.com https://dms.licdn.com https://fbcdn.net https://*.fbcdn.net https://fbsbx.com https://*.fbsbx.com") {
 		t.Fatalf("video playback hosts missing from CSP: %s", csp)
 	}
@@ -124,7 +127,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
 	sources := bootstrap["sources"].([]any)
-	if len(sources) != 3 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != true {
+	if len(sources) != 4 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != true || sources[3].(map[string]any)["id"] != "instagram" || sources[3].(map[string]any)["defaultActive"] != false {
 		t.Fatalf("source descriptors=%+v", sources)
 	}
 	reasoningProcesses := bootstrap["reasoningProcesses"].([]any)
@@ -649,10 +652,10 @@ func TestEmbeddedSchedulerStatusUsesScannableSummary(t *testing.T) {
 
 func TestEmbeddedSettingsDirtyStateContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"settings-dirty-indicator", "Unsaved changes", "save-runtime-settings"},
-		"web/app.js":     {`import { createDirtyStateTracker } from "./settings-dirty-state.js"`, "const settingsDirty = createDirtyStateTracker", "function readSettingsDraft", "settingsDirty.setBaseline", "beforeunload", "settingsForm.addEventListener(\"input\"", "settingsForm.addEventListener(\"change\""},
+		"web/index.html":              {"settings-dirty-indicator", "Unsaved changes", "save-runtime-settings"},
+		"web/app.js":                  {`import { createDirtyStateTracker } from "./settings-dirty-state.js"`, "const settingsDirty = createDirtyStateTracker", "function readSettingsDraft", "settingsDirty.setBaseline", "beforeunload", "settingsForm.addEventListener(\"input\"", "settingsForm.addEventListener(\"change\""},
 		"web/settings-dirty-state.js": {"export function createDirtyStateTracker", "setBaseline", "isDirty"},
-		"web/styles.css": {".settings-dirty-indicator"},
+		"web/styles.css":              {".settings-dirty-indicator"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

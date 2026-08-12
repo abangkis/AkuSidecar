@@ -7,10 +7,10 @@ import (
 
 func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	descriptors := Sources()
-	if len(descriptors) != 3 {
-		t.Fatalf("source count=%d want=3", len(descriptors))
+	if len(descriptors) != 4 {
+		t.Fatalf("source count=%d want=4", len(descriptors))
 	}
-	want := []Source{SourceX, SourceLinkedIn, SourceFacebook}
+	want := []Source{SourceX, SourceLinkedIn, SourceFacebook, SourceInstagram}
 	for index, descriptor := range descriptors {
 		if descriptor.ID != want[index] || !descriptor.ID.Valid() {
 			t.Fatalf("source[%d]=%+v", index, descriptor)
@@ -31,6 +31,9 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	}
 	if descriptor, ok := SourceByID(SourceFacebook); !ok || !descriptor.DefaultActive {
 		t.Fatalf("Facebook must be available and preselected: %+v ok=%v", descriptor, ok)
+	}
+	if descriptor, ok := SourceByID(SourceInstagram); !ok || descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" {
+		t.Fatalf("Instagram must be available as an opt-in local-frontier source: %+v ok=%v", descriptor, ok)
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
@@ -61,7 +64,7 @@ func TestLinkedInPlaybackRecoveryUsesOnlyProgressiveDMSURLs(t *testing.T) {
 	if !ok || canonical != "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123" {
 		t.Fatalf("canonical playback=%q ok=%v", canonical, ok)
 	}
-	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || !SupportsPlaybackErrorRecapture(SourceFacebook) || SupportsPlaybackErrorRecapture(SourceX) {
+	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || !SupportsPlaybackErrorRecapture(SourceFacebook) || SupportsPlaybackErrorRecapture(SourceX) || SupportsPlaybackErrorRecapture(SourceInstagram) {
 		t.Fatal("playback-error recapture capability must remain source-declared for LinkedIn and Facebook")
 	}
 	for _, raw := range []string{
@@ -98,7 +101,7 @@ func TestFacebookPlaybackRecoveryUsesOnlyTrustedProgressiveMP4URLs(t *testing.T)
 
 func TestDefaultSourceHydrationTimeoutsFollowRegistry(t *testing.T) {
 	defaults := DefaultSourceHydrationTimeouts()
-	if defaults[SourceX] != 12000 || defaults[SourceLinkedIn] != 18000 || defaults[SourceFacebook] != 25000 {
+	if defaults[SourceX] != 12000 || defaults[SourceLinkedIn] != 18000 || defaults[SourceFacebook] != 25000 || defaults[SourceInstagram] != 15000 {
 		t.Fatalf("hydration defaults=%v", defaults)
 	}
 }
@@ -113,6 +116,8 @@ func TestCanonicalSourceURLSupportsEveryRegisteredSource(t *testing.T) {
 		{SourceFacebook, "https://www.facebook.com/example/posts/12345"},
 		{SourceFacebook, "https://www.facebook.com/story.php?story_fbid=12345&id=1"},
 		{SourceFacebook, "https://www.facebook.com/reel/12345/"},
+		{SourceInstagram, "https://www.instagram.com/p/ABC_123/"},
+		{SourceInstagram, "https://www.instagram.com/reel/Reel-123/"},
 	}
 	for _, test := range tests {
 		if got, ok := CanonicalSourceURL(test.source, test.url); !ok || got != test.url {
@@ -127,6 +132,29 @@ func TestCanonicalSourceURLSupportsEveryRegisteredSource(t *testing.T) {
 	} {
 		if got, ok := CanonicalSourceURL(SourceFacebook, raw); ok || got != "" {
 			t.Fatalf("untrusted Facebook URL admitted: %q", raw)
+		}
+	}
+}
+
+func TestInstagramPermalinkProvesNativeShortcodeIdentity(t *testing.T) {
+	for _, test := range []struct {
+		url  string
+		want string
+	}{
+		{"https://www.instagram.com/p/ABC_123/", "instagram:p:ABC_123"},
+		{"https://www.instagram.com/reel/Reel-123/", "instagram:reel:Reel-123"},
+	} {
+		if got := NativeIdentityFromPermalink(SourceInstagram, test.url); got != test.want {
+			t.Fatalf("NativeIdentityFromPermalink(%q)=%q want=%q", test.url, got, test.want)
+		}
+	}
+	for _, raw := range []string{
+		"https://evil.example/p/ABC_123/",
+		"https://www.instagram.com/explore/",
+		"https://www.instagram.com/p/unsafe.shortcode/",
+	} {
+		if got, ok := CanonicalSourceURL(SourceInstagram, raw); ok || got != "" {
+			t.Fatalf("untrusted Instagram URL admitted: %q", raw)
 		}
 	}
 }

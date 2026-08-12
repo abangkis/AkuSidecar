@@ -46,9 +46,10 @@ const (
 type Source string
 
 const (
-	SourceX        Source = "x"
-	SourceLinkedIn Source = "linkedin"
-	SourceFacebook Source = "facebook"
+	SourceX         Source = "x"
+	SourceLinkedIn  Source = "linkedin"
+	SourceFacebook  Source = "facebook"
+	SourceInstagram Source = "instagram"
 )
 
 func (s Source) Valid() bool {

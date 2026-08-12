@@ -119,6 +119,7 @@ func TestSourceHydrationSettingsUseOneSecondStepsWithinFiveSeconds(t *testing.T)
 	value.SourceHydrationTimeoutMS[SourceX] = 7000
 	value.SourceHydrationTimeoutMS[SourceLinkedIn] = 23000
 	value.SourceHydrationTimeoutMS[SourceFacebook] = 26000
+	value.SourceHydrationTimeoutMS[SourceInstagram] = 17000
 	if err := value.Validate(); err != nil {
 		t.Fatal(err)
 	}
