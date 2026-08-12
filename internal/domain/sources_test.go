@@ -32,7 +32,7 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, ok := SourceByID(SourceFacebook); !ok || !descriptor.DefaultActive {
 		t.Fatalf("Facebook must be available and preselected: %+v ok=%v", descriptor, ok)
 	}
-	if descriptor, ok := SourceByID(SourceInstagram); !ok || !descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" {
+	if descriptor, ok := SourceByID(SourceInstagram); !ok || !descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" || descriptor.MediaEvidenceAdapterVersion != "instagram-structured-video-v1" || descriptor.PlaybackRecoveryCapability != "native_post_recapture" {
 		t.Fatalf("Instagram must be available and preselected as a local-frontier source: %+v ok=%v", descriptor, ok)
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
@@ -64,8 +64,8 @@ func TestLinkedInPlaybackRecoveryUsesOnlyProgressiveDMSURLs(t *testing.T) {
 	if !ok || canonical != "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123" {
 		t.Fatalf("canonical playback=%q ok=%v", canonical, ok)
 	}
-	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || !SupportsPlaybackErrorRecapture(SourceFacebook) || SupportsPlaybackErrorRecapture(SourceX) || SupportsPlaybackErrorRecapture(SourceInstagram) {
-		t.Fatal("playback-error recapture capability must remain source-declared for LinkedIn and Facebook")
+	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || !SupportsPlaybackErrorRecapture(SourceFacebook) || !SupportsPlaybackErrorRecapture(SourceInstagram) || SupportsPlaybackErrorRecapture(SourceX) {
+		t.Fatal("playback-error recapture capability must remain source-declared for LinkedIn, Facebook, and Instagram")
 	}
 	for _, raw := range []string{
 		"https://dms.licdn.com/playlist/vid/v2/example/master.m3u8",
@@ -95,6 +95,25 @@ func TestFacebookPlaybackRecoveryUsesOnlyTrustedProgressiveMP4URLs(t *testing.T)
 	} {
 		if got, admitted := CanonicalInlinePlaybackURL(SourceFacebook, raw); admitted || got != "" {
 			t.Fatalf("unsafe Facebook playback admitted: %q -> %q", raw, got)
+		}
+	}
+}
+
+func TestInstagramPlaybackRecoveryUsesOnlyTrustedProgressiveMP4URLs(t *testing.T) {
+	valid := "https://instagram.fcgk4-5.fna.fbcdn.net/o1/v/video.mp4?token=signed#ignored"
+	canonical, ok := CanonicalInlinePlaybackURL(SourceInstagram, valid)
+	if !ok || canonical != "https://instagram.fcgk4-5.fna.fbcdn.net/o1/v/video.mp4?token=signed" {
+		t.Fatalf("canonical playback=%q ok=%v", canonical, ok)
+	}
+	for _, raw := range []string{
+		"https://scontent.cdninstagram.com/o1/video.m3u8",
+		"https://cdninstagram.com.evil.test/o1/video.mp4",
+		"https://user@instagram.example.fbcdn.net/o1/video.mp4",
+		"https://instagram.example.fbcdn.net:444/o1/video.mp4",
+		"http://instagram.example.fbcdn.net/o1/video.mp4",
+	} {
+		if got, admitted := CanonicalInlinePlaybackURL(SourceInstagram, raw); admitted || got != "" {
+			t.Fatalf("unsafe Instagram playback admitted: %q -> %q", raw, got)
 		}
 	}
 }

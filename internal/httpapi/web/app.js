@@ -4963,6 +4963,11 @@ function safePlaybackUrl(value, source) {
         !["fbcdn.net", "fbsbx.com"].some((suffix) => host === suffix || host.endsWith(`.${suffix}`)) ||
         !/\.mp4$/i.test(url.pathname)
       ) return null;
+    } else if (source === "instagram") {
+      if (
+        !["fbcdn.net", "cdninstagram.com"].some((suffix) => host === suffix || host.endsWith(`.${suffix}`)) ||
+        !/\.mp4$/i.test(url.pathname)
+      ) return null;
     } else {
       return null;
     }
