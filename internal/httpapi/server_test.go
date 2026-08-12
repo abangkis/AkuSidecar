@@ -208,7 +208,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if autoUpdate["preparedBatchLimit"] != float64(2) || autoUpdate["availablePreparedSlots"] != float64(2) || autoUpdate["refillIntervalMinutes"] != float64(15) {
 		t.Fatalf("auto update queue telemetry=%+v", autoUpdate)
 	}
-	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "standby" || autoUpdate["cadenceMinutes"] != float64(0) {
+	if _, exposed := autoUpdate["lastUserActivityAt"]; exposed || autoUpdate["recentUserActivity"] != false || autoUpdate["activityWindowMinutes"] != float64(30) || autoUpdate["cadenceTier"] != "standby" || autoUpdate["cadenceMinutes"] != float64(15) || autoUpdate["nextCheckAt"] == "" {
 		t.Fatalf("auto update activity telemetry=%+v", autoUpdate)
 	}
 	if autoUpdate["adaptiveTargetBatches"] != float64(1) || autoUpdate["adaptiveBaseTargetBatches"] != float64(1) || autoUpdate["adaptiveReadyItems"] != float64(0) || autoUpdate["adaptiveReadyItemTarget"] != float64(3) || autoUpdate["consumptionSamples"] != float64(0) || autoUpdate["preparationLeadMinutes"] != float64(8) || autoUpdate["generationWindowMinutes"] != float64(30) || autoUpdate["generationAllowanceUsed"] != float64(0) || autoUpdate["generationAllowanceLimit"] != float64(2) || autoUpdate["replenishmentPressure"] != float64(0) || autoUpdate["pressureWindowMinutes"] != float64(60) || autoUpdate["pressureHalfLifeMinutes"] != float64(30) {

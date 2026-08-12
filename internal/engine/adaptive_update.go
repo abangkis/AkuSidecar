@@ -11,6 +11,7 @@ import (
 
 const adaptivePresenceWindow = 30 * time.Minute
 const adaptiveRefillCadence = 5 * time.Minute
+const adaptiveStandbyCadence = 15 * time.Minute
 const adaptiveGenerationWindow = 30 * time.Minute
 const adaptiveDefaultPreparationLead = 8 * time.Minute
 const adaptivePressureWindow = 60 * time.Minute
@@ -20,6 +21,8 @@ type adaptiveAutoUpdatePlan struct {
 	BaseTarget            int
 	Target                int
 	RecentDemand          bool
+	StandbyFloor          bool
+	PriorityRefill        bool
 	ConsumptionPace       time.Duration
 	ConsumptionSamples    int
 	PreparationLead       time.Duration
@@ -56,12 +59,18 @@ func (e *Engine) adaptiveUpdatePlan(ctx context.Context, settings domain.Setting
 }
 
 func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdateScheduleState, batches []domain.PreparedBatch, now time.Time, signals store.AutoUpdateAdaptiveSignals) adaptiveAutoUpdatePlan {
+	recentDemand := recentTimelineDemand(schedule, now)
 	baseTarget := adaptivePreparedTarget(settings.PreparedBatchLimit, signals.ConsumptionPace, signals.ConsumptionSamples, signals.PreparationLead)
 	target, pressureTier, pressureDelay := adaptivePressurePolicy(baseTarget, signals.ReplenishmentPressure)
+	if !recentDemand {
+		target = 1
+	}
 	readiness := evaluateAdaptiveReadiness(settings, batches, target, signals.LastRevealAt, now)
 	plan := adaptiveAutoUpdatePlan{
 		BaseTarget:            baseTarget,
 		Target:                target,
+		RecentDemand:          recentDemand,
+		StandbyFloor:          !recentDemand,
 		ConsumptionPace:       signals.ConsumptionPace,
 		ConsumptionSamples:    signals.ConsumptionSamples,
 		PreparationLead:       signals.PreparationLead,
@@ -89,15 +98,15 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 	if len(signals.GenerationAttempts) >= plan.AllowanceLimit && len(signals.GenerationAttempts) > 0 {
 		plan.NextAllowanceAt = signals.GenerationAttempts[0].Add(adaptiveGenerationWindow)
 	}
-	if access, parseErr := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt); parseErr == nil {
-		age := now.Sub(access)
-		plan.RecentDemand = age >= 0 && age <= adaptivePresenceWindow
+	if plan.RecentDemand && !signals.LastRevealAt.IsZero() {
+		revealAge := now.Sub(signals.LastRevealAt)
+		if revealAge >= 0 && revealAge <= adaptivePresenceWindow {
+			lastTick, tickErr := time.Parse(time.RFC3339Nano, schedule.LastSchedulerTickAt)
+			plan.PriorityRefill = tickErr != nil || signals.LastRevealAt.After(lastTick)
+		}
 	}
 
 	switch {
-	case !plan.RecentDemand:
-		plan.Reason = "Waiting for recent Timeline demand"
-		return plan
 	case readiness.BufferReady:
 		if readiness.CapacityBounded && (readiness.PreparedBatches < readiness.RequiredBatches || readiness.PreparedItems < readiness.RequiredItems) {
 			plan.Reason = fmt.Sprintf("Adaptive buffer reached bounded capacity (%d batches, %d items)", readiness.PreparedBatches, readiness.PreparedItems)
@@ -117,13 +126,29 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 		plan.NextCheckAt = plan.NextAllowanceAt
 		plan.Reason = "Bounded generation allowance reached"
 		return plan
-	case !plan.PressureNotBefore.IsZero() && now.Before(plan.PressureNotBefore):
-		plan.NextCheckAt = plan.PressureNotBefore
-		plan.Reason = "Replenishment pressure is spacing the next refill"
-		return plan
 	case !plan.ReadingGraceUntil.IsZero() && now.Before(plan.ReadingGraceUntil):
 		plan.NextCheckAt = plan.ReadingGraceUntil
 		plan.Reason = "Reading grace is spacing refill after batch reveal"
+		return plan
+	case plan.PriorityRefill:
+		plan.NextCheckAt = now
+		plan.Eligible = true
+		plan.Reason = "Post-reveal priority refill is ready"
+		return plan
+	case plan.StandbyFloor:
+		next, due := nextScheduledAutoUpdateTick(schedule, adaptiveStandbyCadence, now)
+		plan.NextCheckAt = next
+		if !due {
+			plan.Reason = "Waiting for the next standby refill opportunity"
+			return plan
+		}
+		plan.NextCheckAt = now
+		plan.Eligible = true
+		plan.Reason = "Adaptive standby refill is ready"
+		return plan
+	case !plan.PressureNotBefore.IsZero() && now.Before(plan.PressureNotBefore):
+		plan.NextCheckAt = plan.PressureNotBefore
+		plan.Reason = "Replenishment pressure is spacing the next refill"
 		return plan
 	}
 
@@ -137,6 +162,15 @@ func buildAdaptiveUpdatePlan(settings domain.Settings, schedule store.AutoUpdate
 	plan.Eligible = true
 	plan.Reason = "Adaptive refill is ready"
 	return plan
+}
+
+func recentTimelineDemand(schedule store.AutoUpdateScheduleState, now time.Time) bool {
+	access, err := time.Parse(time.RFC3339Nano, schedule.LastUIAccessAt)
+	if err != nil {
+		return false
+	}
+	age := now.Sub(access)
+	return age >= 0 && age <= adaptivePresenceWindow
 }
 
 func adaptivePressurePolicy(baseTarget, pressure int) (int, string, time.Duration) {
@@ -176,7 +210,7 @@ func applyAdaptiveStatus(status *domain.AutoUpdateStatus, plan adaptiveAutoUpdat
 	status.RecentUserActivity = plan.RecentDemand
 	status.ActivityWindowMinutes = int(adaptivePresenceWindow / time.Minute)
 	status.CadenceTier = "standby"
-	status.CadenceMinutes = 0
+	status.CadenceMinutes = int(adaptiveStandbyCadence / time.Minute)
 	if plan.RecentDemand {
 		status.CadenceTier = "demand"
 		status.CadenceMinutes = int(adaptiveRefillCadence / time.Minute)

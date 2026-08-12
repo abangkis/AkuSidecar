@@ -189,6 +189,13 @@ func (e *Engine) RevealPreparedBatch(ctx context.Context, sessionID, presentatio
 	defer e.operation.Unlock()
 	batch, err := e.store.RevealPreparedBatch(ctx, sessionID, presentation)
 	if err == nil {
+		if settings, settingsErr := e.store.GetSettings(ctx); settingsErr != nil {
+			e.logger.Printf("read adaptive mode after batch reveal failed: %v", settingsErr)
+		} else if settings.AutoUpdateMode == "adaptive" {
+			if activityErr := e.store.RecordAutoUpdateUIAccess(ctx); activityErr != nil {
+				e.logger.Printf("record adaptive demand after batch reveal failed: %v", activityErr)
+			}
+		}
 		select {
 		case e.autoWake <- struct{}{}:
 		default:
@@ -295,6 +302,7 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 		}
 		now := e.store.Now()
 		cadence := scheduledAutoUpdateCadence(settings)
+		adaptivePlanned := false
 		if settings.AutoUpdateMode == "adaptive" {
 			batches, batchesErr := e.store.PreparedBatches(ctx, settings.PreparedBatchMaxAgeHours)
 			if batchesErr != nil {
@@ -307,10 +315,16 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 			if !plan.Eligible {
 				return domain.Session{}, nil
 			}
-			cadence = autoUpdateCadence{Tier: "demand", Duration: adaptiveRefillCadence}
+			adaptivePlanned = true
+			cadence = autoUpdateCadence{Tier: "standby", Duration: adaptiveStandbyCadence}
+			if plan.RecentDemand {
+				cadence = autoUpdateCadence{Tier: "demand", Duration: adaptiveRefillCadence}
+			}
 		}
-		if _, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now); !due {
-			return domain.Session{}, nil
+		if !adaptivePlanned {
+			if _, due := nextScheduledAutoUpdateTick(schedule, cadence.Duration, now); !due {
+				return domain.Session{}, nil
+			}
 		}
 		// Every scheduled tick is consumed before the shared safety, capacity,
 		// and quota stoppers below. A skipped tick waits for its next cadence.

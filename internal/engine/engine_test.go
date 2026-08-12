@@ -1408,9 +1408,9 @@ func TestBridgeCompatibilityUsesProtocolAndRequiredCapabilitySubsets(t *testing.
 	}
 	value := ExpectedHeartbeat()
 	value.ExtensionVersion = "0.8.0"
-	value.RuntimeRevision = "source-adapters-v92"
-	value.BuildID = "aku-bridge-0.8.0-source-adapters-v92"
-	value.AdapterVersions["x"] = "x-dom-v22"
+	value.RuntimeRevision = "source-adapters-v93"
+	value.BuildID = "aku-bridge-0.8.0-source-adapters-v93"
+	value.AdapterVersions["x"] = "x-dom-v23"
 	value.MediaEvidenceAdapterVersions["x"] = "x-response-evidence-v3"
 	value.Actions = append(value.Actions, "future_optional_action")
 	value.UpdateCapabilities = append(value.UpdateCapabilities, "future_update_capability")
@@ -1969,13 +1969,13 @@ func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) 
 	}
 
 	status, err := blocked.AutoUpdateStatus(ctx)
-	if err != nil || status.CadenceTier != "standby" || status.AdaptiveTargetBatches != 1 || status.NextCheckAt != "" {
+	if err != nil || status.CadenceTier != "standby" || status.CadenceMinutes != 15 || status.AdaptiveTargetBatches != 1 || status.NextCheckAt != initial.Format(time.RFC3339Nano) {
 		t.Fatalf("standby status=%+v err=%v", status, err)
 	}
-	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
-		t.Fatalf("standby scheduler should not run: %v", err)
+	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
+		t.Fatalf("standby floor tick error=%v", err)
 	}
-	if receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10); err != nil || len(receipts) != 0 {
+	if receipts, err := state.AutoUpdateSchedulerReceipts(ctx, 10); err != nil || len(receipts) != 1 || receipts[0].CadenceTier != "standby" {
 		t.Fatalf("standby receipts=%+v err=%v", receipts, err)
 	}
 
@@ -1990,8 +1990,8 @@ func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) 
 	if err != nil || status.BudgetResetAt != wantResetAt || status.CadenceTier != "demand" || status.CadenceMinutes != 5 || status.AdaptiveTargetBatches != 1 {
 		t.Fatalf("initial status=%+v err=%v", status, err)
 	}
-	if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
-		t.Fatalf("demand tick error=%v", err)
+	if _, err := blocked.startAutoUpdate(ctx, false); err != nil {
+		t.Fatalf("demand cadence should wait after standby tick: %v", err)
 	}
 
 	clock.now = initial.Add(4 * time.Minute)
@@ -2004,7 +2004,7 @@ func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) 
 	}
 	clock.now = initial.Add(31 * time.Minute)
 	status, err = blocked.AutoUpdateStatus(ctx)
-	if err != nil || status.CadenceTier != "standby" || status.NextCheckAt != "" {
+	if err != nil || status.CadenceTier != "standby" || status.CadenceMinutes != 15 || status.NextCheckAt != clock.now.Format(time.RFC3339Nano) {
 		t.Fatalf("expired demand status=%+v err=%v", status, err)
 	}
 
@@ -2026,8 +2026,12 @@ func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) 
 	if err != nil || len(receipts) != 3 {
 		t.Fatalf("receipts=%+v err=%v", receipts, err)
 	}
-	for _, receipt := range receipts {
-		if receipt.CadenceTier != "demand" || receipt.Outcome != "skipped" || receipt.Reason != "AkuBridge is not ready" {
+	for index, receipt := range receipts {
+		wantTier := "demand"
+		if index == len(receipts)-1 {
+			wantTier = "standby"
+		}
+		if receipt.CadenceTier != wantTier || receipt.Outcome != "skipped" || receipt.Reason != "AkuBridge is not ready" {
 			t.Fatalf("demand receipt=%+v", receipt)
 		}
 	}
@@ -2120,13 +2124,13 @@ func TestAdaptivePlanSeparatesDemandTargetAllowanceAndSupply(t *testing.T) {
 		t.Fatalf("technical plan=%+v", technical)
 	}
 
+	signals.TechnicalBackoffUntil = time.Time{}
+	signals.GenerationAttempts = nil
 	standby := buildAdaptiveUpdatePlan(settings, store.AutoUpdateScheduleState{}, nil, now, signals)
-	if standby.Eligible || standby.RecentDemand || standby.NextCheckAt != (time.Time{}) {
+	if !standby.Eligible || standby.RecentDemand || !standby.StandbyFloor || standby.Target != 1 || !standby.NextCheckAt.Equal(now) {
 		t.Fatalf("standby plan=%+v", standby)
 	}
 
-	signals.TechnicalBackoffUntil = time.Time{}
-	signals.GenerationAttempts = nil
 	signals.ReplenishmentPressure = 50
 	signals.LastOutcome = store.AutoUpdateAdaptiveOutcome{CompletedAt: now.Add(-2 * time.Minute), Kind: "productive", ItemCount: 2}
 	pressureBuffered := buildAdaptiveUpdatePlan(settings, schedule, adaptiveTestBatches(3), now, signals)
