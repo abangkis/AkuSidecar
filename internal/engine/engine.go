@@ -20,9 +20,15 @@ import (
 )
 
 const (
-	ExpectedBridgeVersion  = "0.7.9"
-	ExpectedBridgeRevision = "source-adapters-v91"
-	ExpectedBridgeID       = "aku-bridge-chrome-mv3-v0"
+	ExpectedBridgeVersion       = "0.7.9"
+	ExpectedBridgeRevision      = "source-adapters-v91"
+	ExpectedBridgeID            = "aku-bridge-chrome-mv3-v0"
+	BridgeProtocolMajor         = 2
+	BridgeProtocolMinor         = 0
+	MinimumBridgeProtocolMinor  = 0
+	MaximumBridgeProtocolMinor  = 65535
+	MaxBridgeUpdateCapabilities = 32
+	MaxBridgeCapabilityLength   = 64
 )
 
 var expectedBridgeActions = []string{
@@ -162,11 +168,19 @@ func (e *Engine) CompleteOnboarding(ctx context.Context, sources []domain.Source
 }
 
 type BridgeStatus struct {
-	State      string                  `json:"state"`
-	Compatible bool                    `json:"compatible"`
-	Reasons    []string                `json:"reasons"`
-	Expected   map[string]any          `json:"expected"`
-	Actual     *domain.BridgeHeartbeat `json:"actual"`
+	State              string                     `json:"state"`
+	Compatible         bool                       `json:"compatible"`
+	Reasons            []string                   `json:"reasons"`
+	Warnings           []string                   `json:"warnings"`
+	Expected           map[string]any             `json:"expected"`
+	Actual             *domain.BridgeHeartbeat    `json:"actual"`
+	NegotiatedProtocol *BridgeProtocolNegotiation `json:"negotiatedProtocol,omitempty"`
+}
+
+type BridgeProtocolNegotiation struct {
+	Major           int  `json:"major"`
+	Minor           int  `json:"minor"`
+	LegacyHeartbeat bool `json:"legacyHeartbeat"`
 }
 
 func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
@@ -215,42 +229,71 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	expectedSources := domain.SourceIDs()
 	expectedAdapters := domain.ExpectedAdapterVersions()
 	expectedMediaAdapters := domain.ExpectedMediaEvidenceAdapterVersions()
-	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "adapterVersions": expectedAdapters, "mediaEvidenceAdapterVersions": expectedMediaAdapters, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedSources, "actions": expectedBridgeActions, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
+	requiredCapabilities := append([]string(nil), expectedBridgeActions...)
+	requiredCapabilities = append(requiredCapabilities, "authority.read_only_bounded", "capture.bounded")
+	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "protocolMajor": BridgeProtocolMajor, "minimumProtocolMinor": MinimumBridgeProtocolMinor, "supportedProtocolMinor": BridgeProtocolMinor, "adapterVersions": expectedAdapters, "mediaEvidenceAdapterVersions": expectedMediaAdapters, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedSources, "actions": expectedBridgeActions, "requiredCapabilities": requiredCapabilities, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
 	if e.heartbeat == nil {
 		return status
 	}
 	copy := *e.heartbeat
 	status.Actual = &copy
 	status.State = "healthy"
+	protocolMajor, protocolMinor, legacyHeartbeat := bridgeProtocol(copy)
+	negotiatedMinor := protocolMinor
+	if negotiatedMinor > BridgeProtocolMinor {
+		negotiatedMinor = BridgeProtocolMinor
+	}
+	status.NegotiatedProtocol = &BridgeProtocolNegotiation{Major: protocolMajor, Minor: negotiatedMinor, LegacyHeartbeat: legacyHeartbeat}
 	if copy.BridgeID != ExpectedBridgeID {
 		status.Reasons = append(status.Reasons, "bridge id mismatch")
 	}
+	if protocolMajor != BridgeProtocolMajor {
+		status.Reasons = append(status.Reasons, "bridge protocol major mismatch")
+	}
+	if protocolMinor < MinimumBridgeProtocolMinor {
+		status.Reasons = append(status.Reasons, "bridge protocol minor is too old")
+	}
+	if protocolMinor > MaximumBridgeProtocolMinor {
+		status.Reasons = append(status.Reasons, "bridge protocol minor is out of bounds")
+	}
+	if !validBoundedBridgeCapabilities(copy.UpdateCapabilities) {
+		status.Reasons = append(status.Reasons, "bridge update capabilities are malformed or out of bounds")
+	}
+	if legacyHeartbeat {
+		status.Warnings = append(status.Warnings, "legacy Bridge v2 heartbeat inferred as protocol 2.0")
+	} else if protocolMinor > BridgeProtocolMinor {
+		status.Warnings = append(status.Warnings, "bridge protocol minor is newer than this Sidecar")
+	}
 	if copy.ExtensionVersion != ExpectedBridgeVersion {
-		status.Reasons = append(status.Reasons, "extension version mismatch")
+		status.Warnings = append(status.Warnings, "extension version differs from the Sidecar release reference")
 	}
 	if copy.RuntimeRevision != ExpectedBridgeRevision {
-		status.Reasons = append(status.Reasons, "runtime revision mismatch")
+		status.Warnings = append(status.Warnings, "runtime revision differs from the Sidecar release reference")
 	}
 	if copy.ContractVersion != domain.BridgeContractVersion {
 		status.Reasons = append(status.Reasons, "bridge contract mismatch")
 	}
 	if copy.BuildID != ExpectedBridgeBuildID {
-		status.Reasons = append(status.Reasons, "bridge build mismatch")
+		status.Warnings = append(status.Warnings, "bridge build differs from the Sidecar release reference")
 	}
-	if !sameStringMap(copy.AdapterVersions, expectedAdapters) {
-		status.Reasons = append(status.Reasons, "adapter version mismatch")
+	if !hasRequiredStringMapKeys(copy.AdapterVersions, expectedAdapters) {
+		status.Reasons = append(status.Reasons, "required source adapter capability missing")
+	} else if !sameStringMap(copy.AdapterVersions, expectedAdapters) {
+		status.Warnings = append(status.Warnings, "source adapter versions differ from the Sidecar release reference")
 	}
-	if !sameStringMap(copy.MediaEvidenceAdapterVersions, expectedMediaAdapters) {
-		status.Reasons = append(status.Reasons, "media evidence adapter version mismatch")
+	if !hasRequiredStringMapKeys(copy.MediaEvidenceAdapterVersions, expectedMediaAdapters) {
+		status.Reasons = append(status.Reasons, "required media evidence capability missing")
+	} else if !sameStringMap(copy.MediaEvidenceAdapterVersions, expectedMediaAdapters) {
+		status.Warnings = append(status.Warnings, "media evidence adapter versions differ from the Sidecar release reference")
 	}
 	if copy.ManifestVersion != 3 {
 		status.Reasons = append(status.Reasons, "manifest version mismatch")
 	}
-	if !sameStringSet(copy.Sources, expectedSources) {
-		status.Reasons = append(status.Reasons, "bridge sources mismatch")
+	if !containsRequiredStrings(copy.Sources, expectedSources) {
+		status.Reasons = append(status.Reasons, "required bridge source capability missing")
 	}
-	if !sameStringSet(copy.Actions, expectedBridgeActions) {
-		status.Reasons = append(status.Reasons, "bridge actions mismatch")
+	if !containsRequiredStrings(copy.Actions, expectedBridgeActions) {
+		status.Reasons = append(status.Reasons, "required bridge action capability missing")
 	}
 	if copy.Authority != "read_only_bounded" {
 		status.Reasons = append(status.Reasons, "bridge authority mismatch")
@@ -258,7 +301,7 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	if copy.CaptureLimits != (domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}) {
 		status.Reasons = append(status.Reasons, "capture limits mismatch")
 	}
-	if !validBridgeSourceReadiness(copy.SourceAccess.Sources, expectedSources) {
+	if !validBridgeSourceReadiness(copy.SourceAccess.Sources, copy.Sources) {
 		status.Reasons = append(status.Reasons, "source readiness contract mismatch")
 	}
 	if len(e.config.Bridge.TrustedExtensionOrigins) > 0 && (copy.ExtensionOrigin == "" || !e.trustedBridgeExtensionOrigin(copy.ExtensionOrigin)) {
@@ -270,6 +313,8 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	status.Compatible = len(status.Reasons) == 0
 	if !status.Compatible {
 		status.State = "incompatible"
+	} else if len(status.Warnings) > 0 {
+		status.State = "degraded"
 	}
 	return status
 }
@@ -294,7 +339,14 @@ func ExpectedHeartbeat() domain.BridgeHeartbeat {
 	for _, source := range domain.SourceIDs() {
 		readiness = append(readiness, domain.BridgeSourceReadiness{Source: source, PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"})
 	}
-	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), Sources: readiness, ObservedAt: domain.Now()}}
+	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, ProtocolMajor: BridgeProtocolMajor, ProtocolMinor: BridgeProtocolMinor, UpdateCapabilities: []string{"background_check", "staged_apply", "idle_deferral", "rollback_status"}, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), Sources: readiness, ObservedAt: domain.Now()}}
+}
+
+func bridgeProtocol(value domain.BridgeHeartbeat) (major, minor int, legacy bool) {
+	if value.ProtocolMajor == 0 && value.ProtocolMinor == 0 && value.ContractVersion == domain.BridgeContractVersion {
+		return BridgeProtocolMajor, 0, true
+	}
+	return value.ProtocolMajor, value.ProtocolMinor, false
 }
 
 func sameStringMap(actual, expected map[string]string) bool {
@@ -309,21 +361,47 @@ func sameStringMap(actual, expected map[string]string) bool {
 	return true
 }
 
-func sameStringSet(actual, expected []string) bool {
-	if len(actual) != len(expected) {
-		return false
+func hasRequiredStringMapKeys(actual, required map[string]string) bool {
+	for key := range required {
+		if strings.TrimSpace(actual[key]) == "" {
+			return false
+		}
 	}
+	return true
+}
+
+func containsRequiredStrings(actual, required []string) bool {
 	values := make(map[string]bool, len(actual))
 	for _, value := range actual {
 		values[value] = true
 	}
-	if len(values) != len(expected) {
-		return false
-	}
-	for _, value := range expected {
+	for _, value := range required {
 		if !values[value] {
 			return false
 		}
+	}
+	return true
+}
+
+func validBoundedBridgeCapabilities(values []string) bool {
+	if len(values) > MaxBridgeUpdateCapabilities {
+		return false
+	}
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if value == "" || value != strings.TrimSpace(value) || len(value) > MaxBridgeCapabilityLength || seen[value] {
+			return false
+		}
+		for index := 0; index < len(value); index++ {
+			character := value[index]
+			if index == 0 && (character < 'a' || character > 'z') {
+				return false
+			}
+			if index > 0 && (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
+				return false
+			}
+		}
+		seen[value] = true
 	}
 	return true
 }

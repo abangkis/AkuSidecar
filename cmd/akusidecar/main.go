@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -31,13 +32,9 @@ func main() {
 	cfg, err := config.Load(options)
 	fatal(logger, err)
 	if options.RuntimeCandidateProbe {
-		fatal(logger, json.NewEncoder(os.Stdout).Encode(map[string]any{
-			"status":                "ok",
-			"version":               domain.ApplicationVersion,
-			"runtime":               "go",
-			"bridgeContractVersion": domain.BridgeContractVersion,
-			"configVersion":         cfg.Version,
-		}))
+		probe, probeErr := runtimeCandidateProbe(cfg.Version, options.RuntimeCandidateProbeSchema)
+		fatal(logger, probeErr)
+		fatal(logger, json.NewEncoder(os.Stdout).Encode(probe))
 		return
 	}
 	settings := domain.DefaultSettings(cfg.Capture.Profile, cfg.Capture.Visibility, cfg.Preference.Mode, cfg.Capture.OpenMissingSource)
@@ -116,6 +113,22 @@ func main() {
 		logger.Printf("reasoning provider shutdown failed: %v", err)
 	}
 	logger.Printf("shutdown completed duration_ms=%d", time.Since(shutdownStarted).Milliseconds())
+}
+
+func runtimeCandidateProbe(configVersion, schemaVersion int) (map[string]any, error) {
+	probe := map[string]any{
+		"status":                "ok",
+		"version":               domain.ApplicationVersion,
+		"runtime":               "go",
+		"bridgeContractVersion": domain.BridgeContractVersion,
+		"configVersion":         configVersion,
+	}
+	if schemaVersion == 2 {
+		probe["databaseSchemaVersion"] = store.SchemaVersion
+	} else if schemaVersion != 1 {
+		return nil, fmt.Errorf("unsupported runtime candidate probe schema %d", schemaVersion)
+	}
+	return probe, nil
 }
 
 func discoverCodex(options config.Options) int {

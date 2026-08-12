@@ -441,7 +441,11 @@ function setInboxSubView(view) {
 }
 
 function pingBridge() {
-  window.postMessage({ type: "AKU_BROWSER_BRIDGE_PING" }, endpoint);
+  window.postMessage({
+    type: "AKU_BROWSER_BRIDGE_PING",
+    protocolMajor: 2,
+    protocolMinor: 0,
+  }, endpoint);
 }
 
 async function bridgeActionLoop() {

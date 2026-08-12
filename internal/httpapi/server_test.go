@@ -126,6 +126,18 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if health["runtime"] != "go" || health["bridgeContractVersion"] != domain.BridgeContractVersion {
 		t.Fatalf("health=%+v", health)
 	}
+	softwareUpdate := health["softwareUpdate"].(map[string]any)
+	if softwareUpdate["component"] != "AkuSidecar" || softwareUpdate["currentVersion"] != domain.ApplicationVersion || softwareUpdate["protocolVersion"] != domain.SidecarUpdateProtocolVersion || softwareUpdate["databaseSchemaVersion"] != float64(store.SchemaVersion) {
+		t.Fatalf("software update metadata=%+v", softwareUpdate)
+	}
+	bridgeProtocol := softwareUpdate["bridgeProtocol"].(map[string]any)
+	if bridgeProtocol["name"] != "aku-browser.bridge" || bridgeProtocol["minVersion"] != float64(engine.BridgeProtocolMajor) || bridgeProtocol["maxVersion"] != float64(engine.BridgeProtocolMajor) {
+		t.Fatalf("software update Bridge protocol=%+v", bridgeProtocol)
+	}
+	updateCapabilities := softwareUpdate["updateCapabilities"].([]any)
+	if len(updateCapabilities) != 3 || updateCapabilities[0] != "runtime_update_readiness" || updateCapabilities[1] != "authorized_idle_shutdown" || updateCapabilities[2] != "instance_epoch_health" {
+		t.Fatalf("software update capabilities=%+v", updateCapabilities)
+	}
 	database := health["database"].(map[string]any)
 	if database["status"] != "healthy" {
 		t.Fatalf("database health=%+v", database)
@@ -160,6 +172,12 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	if bootstrap["bridgeToken"] == "" || bootstrap["provider"] != "deterministic" {
 		t.Fatalf("bootstrap=%+v", bootstrap)
+	}
+	bootstrapSoftwareUpdate := bootstrap["softwareUpdate"].(map[string]any)
+	healthSoftwareUpdateJSON, _ := json.Marshal(softwareUpdate)
+	bootstrapSoftwareUpdateJSON, _ := json.Marshal(bootstrapSoftwareUpdate)
+	if !bytes.Equal(bootstrapSoftwareUpdateJSON, healthSoftwareUpdateJSON) {
+		t.Fatalf("bootstrap software update metadata=%+v", bootstrapSoftwareUpdate)
 	}
 	sources := bootstrap["sources"].([]any)
 	if len(sources) != 4 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != true || sources[3].(map[string]any)["id"] != "instagram" || sources[3].(map[string]any)["defaultActive"] != true {
@@ -485,24 +503,46 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if calibration["firstRunStatus"] != "pending" || calibration["enabled"] != true || calibration["batchSize"] != float64(10) {
 		t.Fatalf("onboarding calibration=%+v", calibration)
 	}
-	heartbeat, _ := json.Marshal(map[string]any{"capabilities": engine.ExpectedHeartbeat()})
-	request, err = http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/bridge/heartbeat", bytes.NewReader(heartbeat))
-	if err != nil {
-		t.Fatal(err)
+	postHeartbeat := func(capabilities domain.BridgeHeartbeat) (int, engine.BridgeStatus) {
+		t.Helper()
+		heartbeat, _ := json.Marshal(map[string]any{"capabilities": capabilities})
+		heartbeatRequest, requestErr := http.NewRequest(http.MethodPost, "http://"+address.String()+"/api/bridge/heartbeat", bytes.NewReader(heartbeat))
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		heartbeatRequest.Header.Set("Content-Type", "application/json")
+		heartbeatRequest.Header.Set("X-Aku-Bridge-Token", bootstrap["bridgeToken"].(string))
+		heartbeatRequest.Header.Set("X-Aku-Bridge-Id", "http-test")
+		heartbeatRequest.Header.Set("X-Aku-Bridge-Contract", domain.BridgeContractVersion)
+		heartbeatResponse, requestErr := client.Do(heartbeatRequest)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		defer heartbeatResponse.Body.Close()
+		var heartbeatPayload struct {
+			Bridge engine.BridgeStatus `json:"bridge"`
+		}
+		if err := json.NewDecoder(heartbeatResponse.Body).Decode(&heartbeatPayload); err != nil {
+			t.Fatal(err)
+		}
+		return heartbeatResponse.StatusCode, heartbeatPayload.Bridge
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Aku-Bridge-Token", bootstrap["bridgeToken"].(string))
-	request.Header.Set("X-Aku-Bridge-Id", "http-test")
-	request.Header.Set("X-Aku-Bridge-Contract", domain.BridgeContractVersion)
-	response, err = client.Do(request)
-	if err != nil {
-		t.Fatal(err)
+	legacyHeartbeat := engine.ExpectedHeartbeat()
+	legacyHeartbeat.ProtocolMajor = 0
+	legacyHeartbeat.ProtocolMinor = 0
+	legacyHeartbeat.UpdateCapabilities = nil
+	legacyJSON, _ := json.Marshal(legacyHeartbeat)
+	if bytes.Contains(legacyJSON, []byte("protocolMajor")) || bytes.Contains(legacyJSON, []byte("protocolMinor")) || bytes.Contains(legacyJSON, []byte("updateCapabilities")) {
+		t.Fatalf("legacy heartbeat fixture contains additive protocol fields: %s", legacyJSON)
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusAccepted {
-		t.Fatalf("heartbeat status=%d", response.StatusCode)
+	statusCode, legacyStatus := postHeartbeat(legacyHeartbeat)
+	if statusCode != http.StatusAccepted || !legacyStatus.Compatible || legacyStatus.State != "degraded" || legacyStatus.NegotiatedProtocol == nil || !legacyStatus.NegotiatedProtocol.LegacyHeartbeat {
+		t.Fatalf("legacy heartbeat status=%d bridge=%+v", statusCode, legacyStatus)
 	}
-	response.Body.Close()
+	statusCode, currentStatus := postHeartbeat(engine.ExpectedHeartbeat())
+	if statusCode != http.StatusAccepted || !currentStatus.Compatible || currentStatus.State != "healthy" || currentStatus.NegotiatedProtocol == nil || currentStatus.NegotiatedProtocol.LegacyHeartbeat || currentStatus.Actual == nil || len(currentStatus.Actual.UpdateCapabilities) != 4 {
+		t.Fatalf("protocol 2 heartbeat status=%d bridge=%+v", statusCode, currentStatus)
+	}
 	hideSettings := settings
 	hideSettings.AIDetectionPresentation = "hide"
 	badHidePayload, _ := json.Marshal(map[string]any{"settings": hideSettings, "confirmationPhrase": "wrong"})
@@ -634,6 +674,18 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 	for _, marker := range []string{"dispatchRetryAfter", "expectedLaneWait", "No queued browser command was available"} {
 		if !strings.Contains(string(payload), marker) {
 			t.Fatalf("embedded relay is missing %q", marker)
+		}
+	}
+}
+
+func TestEmbeddedBridgePingAdvertisesBoundedProtocol(t *testing.T) {
+	payload, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`type: "AKU_BROWSER_BRIDGE_PING"`, "protocolMajor: 2", "protocolMinor: 0"} {
+		if !strings.Contains(string(payload), marker) {
+			t.Fatalf("embedded Bridge ping is missing %q", marker)
 		}
 	}
 }

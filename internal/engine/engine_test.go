@@ -1396,14 +1396,41 @@ func TestCalibrationSamplerPreservesSourceOrderAndCapsEachSource(t *testing.T) {
 	}
 }
 
-func TestBridgeV2RequiresExactCapabilities(t *testing.T) {
+func TestBridgeCompatibilityUsesProtocolAndRequiredCapabilitySubsets(t *testing.T) {
 	runtime, _ := testEngine(t)
-	if status := runtime.BridgeStatus(); !status.Compatible || status.State != "healthy" {
-		t.Fatalf("expected exact heartbeat to pass: %+v", status)
+	exactStatus := runtime.BridgeStatus()
+	if !exactStatus.Compatible || exactStatus.State != "healthy" {
+		t.Fatalf("expected exact heartbeat to pass: %+v", exactStatus)
+	}
+	requiredCapabilities := exactStatus.Expected["requiredCapabilities"].([]string)
+	if len(requiredCapabilities) != len(expectedBridgeActions)+2 || requiredCapabilities[len(requiredCapabilities)-2] != "authority.read_only_bounded" || requiredCapabilities[len(requiredCapabilities)-1] != "capture.bounded" {
+		t.Fatalf("required Bridge capabilities=%+v", requiredCapabilities)
 	}
 	value := ExpectedHeartbeat()
-	value.Actions = value.Actions[:len(value.Actions)-1]
+	value.ExtensionVersion = "0.8.0"
+	value.RuntimeRevision = "source-adapters-v92"
+	value.BuildID = "aku-bridge-0.8.0-source-adapters-v92"
+	value.AdapterVersions["x"] = "x-dom-v22"
+	value.MediaEvidenceAdapterVersions["x"] = "x-response-evidence-v3"
+	value.Actions = append(value.Actions, "future_optional_action")
+	value.UpdateCapabilities = append(value.UpdateCapabilities, "future_update_capability")
 	status := runtime.RecordHeartbeat(value)
+	if !status.Compatible || status.State != "degraded" || len(status.Reasons) != 0 {
+		t.Fatalf("independent compatible Bridge release was rejected: %+v", status)
+	}
+	if status.NegotiatedProtocol == nil || status.NegotiatedProtocol.Major != BridgeProtocolMajor || status.NegotiatedProtocol.Minor != BridgeProtocolMinor || status.NegotiatedProtocol.LegacyHeartbeat {
+		t.Fatalf("protocol negotiation=%+v", status.NegotiatedProtocol)
+	}
+	warnings := strings.Join(status.Warnings, " | ")
+	for _, expected := range []string{"extension version", "runtime revision", "bridge build", "source adapter versions", "media evidence adapter versions"} {
+		if !strings.Contains(warnings, expected) {
+			t.Fatalf("missing %q advisory: %+v", expected, status)
+		}
+	}
+
+	value = ExpectedHeartbeat()
+	value.Actions = value.Actions[:len(value.Actions)-1]
+	status = runtime.RecordHeartbeat(value)
 	if status.Compatible || status.State != "incompatible" {
 		t.Fatalf("missing reload_self action must fail closed: %+v", status)
 	}
@@ -1416,8 +1443,83 @@ func TestBridgeV2RequiresExactCapabilities(t *testing.T) {
 	value = ExpectedHeartbeat()
 	value.MediaEvidenceAdapterVersions["x"] = "x-response-evidence-v0"
 	status = runtime.RecordHeartbeat(value)
-	if status.Compatible || status.State != "incompatible" {
-		t.Fatalf("stale X media evidence adapter version must fail closed: %+v", status)
+	if !status.Compatible || status.State != "degraded" {
+		t.Fatalf("different but present X media evidence capability should be advisory: %+v", status)
+	}
+}
+
+func TestBridgeProtocolNegotiationPreservesLegacyV2Heartbeat(t *testing.T) {
+	runtime, _ := testEngine(t)
+	legacy := ExpectedHeartbeat()
+	legacy.ProtocolMajor = 0
+	legacy.ProtocolMinor = 0
+	legacy.UpdateCapabilities = nil
+	status := runtime.RecordHeartbeat(legacy)
+	if !status.Compatible || status.State != "degraded" || status.NegotiatedProtocol == nil || !status.NegotiatedProtocol.LegacyHeartbeat || status.NegotiatedProtocol.Major != 2 || status.NegotiatedProtocol.Minor != 0 {
+		t.Fatalf("legacy v2 heartbeat was not negotiated as protocol 2.0: %+v", status)
+	}
+
+	newerMinor := ExpectedHeartbeat()
+	newerMinor.ProtocolMinor = BridgeProtocolMinor + 1
+	status = runtime.RecordHeartbeat(newerMinor)
+	if !status.Compatible || status.NegotiatedProtocol == nil || status.NegotiatedProtocol.Minor != BridgeProtocolMinor {
+		t.Fatalf("newer compatible protocol minor was rejected: %+v", status)
+	}
+
+	outOfBoundsMinor := ExpectedHeartbeat()
+	outOfBoundsMinor.ProtocolMinor = MaximumBridgeProtocolMinor + 1
+	status = runtime.RecordHeartbeat(outOfBoundsMinor)
+	if status.Compatible || !strings.Contains(strings.Join(status.Reasons, " | "), "out of bounds") {
+		t.Fatalf("out-of-bounds protocol minor was accepted: %+v", status)
+	}
+
+	wrongMajor := ExpectedHeartbeat()
+	wrongMajor.ProtocolMajor = BridgeProtocolMajor + 1
+	status = runtime.RecordHeartbeat(wrongMajor)
+	if status.Compatible || !strings.Contains(strings.Join(status.Reasons, " | "), "protocol major") {
+		t.Fatalf("incompatible protocol major was accepted: %+v", status)
+	}
+}
+
+func TestBridgeUpdateCapabilityAdvertisementIsBoundedAndForwardCompatible(t *testing.T) {
+	runtime, _ := testEngine(t)
+	forwardCompatible := ExpectedHeartbeat()
+	forwardCompatible.UpdateCapabilities = append(forwardCompatible.UpdateCapabilities, "future_capability_v2")
+	if status := runtime.RecordHeartbeat(forwardCompatible); !status.Compatible {
+		t.Fatalf("well-formed future update capability was rejected: %+v", status)
+	}
+
+	invalid := map[string][]string{
+		"duplicate":  {"background_check", "background_check"},
+		"bad format": {"Background-Check"},
+		"too many":   make([]string, MaxBridgeUpdateCapabilities+1),
+	}
+	for name, capabilities := range invalid {
+		t.Run(name, func(t *testing.T) {
+			value := ExpectedHeartbeat()
+			value.UpdateCapabilities = capabilities
+			status := runtime.RecordHeartbeat(value)
+			if status.Compatible || !strings.Contains(strings.Join(status.Reasons, " | "), "update capabilities") {
+				t.Fatalf("invalid update capabilities were accepted: %+v", status)
+			}
+		})
+	}
+}
+
+func TestBridgeCompatibilityKeepsSecurityBoundaryStrict(t *testing.T) {
+	runtime, _ := testEngine(t)
+	value := ExpectedHeartbeat()
+	value.Authority = "write_anywhere"
+	status := runtime.RecordHeartbeat(value)
+	if status.Compatible || !strings.Contains(strings.Join(status.Reasons, " | "), "authority") {
+		t.Fatalf("unsafe authority was accepted: %+v", status)
+	}
+
+	value = ExpectedHeartbeat()
+	value.CaptureLimits.MaxSnapshots++
+	status = runtime.RecordHeartbeat(value)
+	if status.Compatible || !strings.Contains(strings.Join(status.Reasons, " | "), "capture limits") {
+		t.Fatalf("expanded capture limit was accepted: %+v", status)
 	}
 }
 

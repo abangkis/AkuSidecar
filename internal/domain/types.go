@@ -14,6 +14,7 @@ import (
 const (
 	ApplicationVersion              = "0.7.9"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
+	SidecarUpdateProtocolVersion    = "aku-sidecar.software-update.v1"
 	DefaultTimelineBatchGapPX       = 36
 	DefaultTimelineBoundaryCueMode  = "follow"
 	DefaultTimelineBoundaryReturnMS = 350
@@ -945,6 +946,9 @@ type BridgeHeartbeat struct {
 	ExtensionVersion             string              `json:"extensionVersion"`
 	RuntimeRevision              string              `json:"runtimeRevision"`
 	BuildID                      string              `json:"buildId"`
+	ProtocolMajor                int                 `json:"protocolMajor,omitempty"`
+	ProtocolMinor                int                 `json:"protocolMinor,omitempty"`
+	UpdateCapabilities           []string            `json:"updateCapabilities,omitempty"`
 	AdapterVersions              map[string]string   `json:"adapterVersions"`
 	MediaEvidenceAdapterVersions map[string]string   `json:"mediaEvidenceAdapterVersions"`
 	ContractVersion              string              `json:"contractVersion"`
@@ -956,6 +960,36 @@ type BridgeHeartbeat struct {
 	SourceAccess                 BridgeSourceAccess  `json:"sourceAccess"`
 	ExtensionOrigin              string              `json:"extensionOrigin,omitempty"`
 	ReceivedAt                   string              `json:"receivedAt,omitempty"`
+}
+
+type SoftwareUpdateMetadata struct {
+	Component             string                       `json:"component"`
+	CurrentVersion        string                       `json:"currentVersion"`
+	ProtocolVersion       string                       `json:"protocolVersion"`
+	DatabaseSchemaVersion int                          `json:"databaseSchemaVersion"`
+	BridgeProtocol        SoftwareUpdateBridgeProtocol `json:"bridgeProtocol"`
+	UpdateCapabilities    []string                     `json:"updateCapabilities"`
+}
+
+type SoftwareUpdateBridgeProtocol struct {
+	Name       string `json:"name"`
+	MinVersion int    `json:"minVersion"`
+	MaxVersion int    `json:"maxVersion"`
+}
+
+func SidecarSoftwareUpdateMetadata(databaseSchemaVersion int) SoftwareUpdateMetadata {
+	return SoftwareUpdateMetadata{
+		Component:             "AkuSidecar",
+		CurrentVersion:        ApplicationVersion,
+		ProtocolVersion:       SidecarUpdateProtocolVersion,
+		DatabaseSchemaVersion: databaseSchemaVersion,
+		BridgeProtocol:        SoftwareUpdateBridgeProtocol{Name: "aku-browser.bridge", MinVersion: 2, MaxVersion: 2},
+		UpdateCapabilities: []string{
+			"runtime_update_readiness",
+			"authorized_idle_shutdown",
+			"instance_epoch_health",
+		},
+	}
 }
 
 type BridgeSourceAccess struct {

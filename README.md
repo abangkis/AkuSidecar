@@ -302,6 +302,20 @@ All Bridge heartbeat, capture-command, media-recapture, passive-media-evidence,
 and cooperative-action routes require both the durable Bridge token and
 `X-Aku-Bridge-Contract: aku-browser.bridge.v2`.
 
+Bridge usability is negotiated independently from product release numbers.
+Heartbeat protocol major versions must match, the Bridge minor version must
+meet Sidecar's minimum, and its declared actions, sources, and adapter entries
+must contain Sidecar's required capability subsets. Extension version, build,
+runtime revision, and present adapter-version differences are reported as
+degraded advisories rather than blocking otherwise compatible work. A legacy
+v2 heartbeat without explicit protocol fields is accepted as protocol 2.0
+during the transition. `/api/health` and `/api/bootstrap` expose the Sidecar
+software-update protocol, database schema, Bridge protocol range, and supported
+update-handoff capabilities. Candidate probe schema 1 keeps the frozen
+five-field response required by deployed strict hosts; a current host
+explicitly requests schema 2, which also reports the database schema version
+for pre-activation validation.
+
 The embedded UI restores the source-first dark shell, first-run source
 onboarding, editable active sources, bounded custom capture controls, persisted
 Source/Brief and stream-width preferences, collapsed long text with Show more,
