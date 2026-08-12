@@ -117,9 +117,19 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		if err != nil {
 			return err
 		}
+		adoptInstagram, err := s.shouldAdoptInstagramDefault(ctx, settings.ActiveSources)
+		if err != nil {
+			return err
+		}
+		if adoptInstagram {
+			settings.ActiveSources = append(settings.ActiveSources, domain.SourceInstagram)
+		}
 		if err := s.SaveSettings(ctx, settings); err != nil {
 			return err
 		}
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('source_default_instagram_v1','applied') ON CONFLICT(key) DO NOTHING`); err != nil {
+		return fmt.Errorf("record Instagram default migration: %w", err)
 	}
 	if err := s.initializeOnboarding(ctx, fresh); err != nil {
 		return err
@@ -130,6 +140,21 @@ func (s *Store) initialize(defaults domain.Settings) error {
 	}
 	_, err = s.EnforceRetention(ctx, settings)
 	return err
+}
+
+func (s *Store) shouldAdoptInstagramDefault(ctx context.Context, active []domain.Source) (bool, error) {
+	var marker string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='source_default_instagram_v1'`).Scan(&marker)
+	if err == nil {
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read Instagram default migration: %w", err)
+	}
+	return len(active) == 3 &&
+		active[0] == domain.SourceX &&
+		active[1] == domain.SourceLinkedIn &&
+		active[2] == domain.SourceFacebook, nil
 }
 
 func (s *Store) syncSourceDefinitions(ctx context.Context) error {

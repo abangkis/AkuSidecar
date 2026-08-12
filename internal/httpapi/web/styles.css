@@ -184,6 +184,33 @@ h3 { letter-spacing: -0.02em; }
 .timeline-source-icon { display: grid; flex: 0 0 auto; width: 24px; height: 24px; place-items: center; border-radius: 5px; }
 .timeline-source-icon svg { display: block; width: 16px; height: 16px; fill: currentColor; shape-rendering: geometricPrecision; }
 .timeline-source-icon-x { background: #050505; color: #fff; }
+.timeline-source-icon-instagram { background: #f4f2ee; }
+.instagram-source-glyph {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  background: radial-gradient(circle at 30% 105%, #ffd86f 0 18%, #ff6b35 35%, #d62976 58%, #8a3ab9 76%, #4f5bd5 100%);
+}
+.instagram-source-glyph::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1.5px solid #fff;
+  border-radius: 3px;
+}
+.instagram-source-glyph::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 4px;
+  height: 4px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 3px -3px 0 -1px #fff;
+}
 .timeline-source-icon { font-weight: 800; }
 .ai-origin-badge { display: inline-flex; max-width: 100%; overflow: hidden; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid rgba(246, 200, 107, 0.42); border-radius: 999px; background: rgba(246, 200, 107, 0.07); box-shadow: 0 0 0 1px rgba(255,255,255,0.018) inset; color: var(--amber); font-size: 0.7rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, color 150ms ease, box-shadow 150ms ease; }
 .ai-origin-badge::after { flex: 0 0 auto; color: currentColor; font-size: 0.86rem; line-height: 1; content: "›"; opacity: 0.72; transition: transform 150ms ease, opacity 150ms ease; }
@@ -472,6 +499,8 @@ h3 { letter-spacing: -0.02em; }
 .source-settings-group .settings-card + .settings-card { margin-top: 10px; }
 .settings-group-heading-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-group-heading-actions .settings-group-note { margin: 0; }
+.source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }
+.source-setup-button { flex: 0 0 auto; white-space: nowrap; }
 .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 260px); align-items: center; gap: 24px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .settings-row:last-child { border-bottom: 0; }
 .settings-copy { display: grid; gap: 4px; }

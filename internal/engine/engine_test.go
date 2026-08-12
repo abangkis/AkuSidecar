@@ -664,19 +664,23 @@ func TestUnifiedSessionCompletesAllDefaultSources(t *testing.T) {
 	}
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000001")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
-		return len(value.Runs) == 3 && value.Runs[1].Status == "waiting_for_bridge"
+		return len(value.Runs) == 4 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceLinkedIn, "linkedin:000000000000000000000002")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
 		return value.Runs[2].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000003")
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[3].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceInstagram, "instagram:p:000000000000000000000004")
 	completed := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
-	if len(completed.Items) != 3 {
+	if len(completed.Items) != 4 {
 		t.Fatalf("items=%d session=%+v", len(completed.Items), completed)
 	}
 	timeline, err := runtime.Timeline(ctx, 10, 0)
-	if err != nil || len(timeline) != 3 {
+	if err != nil || len(timeline) != 4 {
 		t.Fatalf("timeline=%d err=%v", len(timeline), err)
 	}
 }
@@ -1130,13 +1134,17 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	}
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000011")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
-		return len(value.Runs) == 3 && value.Runs[1].Status == "waiting_for_bridge"
+		return len(value.Runs) == 4 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceLinkedIn, "linkedin:000000000000000000000012")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
 		return value.Runs[2].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000013")
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[3].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceInstagram, "instagram:p:000000000000000000000014")
 	completedSession := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
 	for _, run := range completedSession.Runs {
 		observations, observationErr := state.Observations(ctx, run.ID)
@@ -1160,7 +1168,7 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 		t.Fatalf("onboarding must not queue AI Deep Detection: job=%+v err=%v", job, jobErr)
 	}
 	calibration := waitActiveCalibration(t, runtime)
-	if calibration.Status != "reviewing" || calibration.SampleCount != 3 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn || calibration.Samples[2].Source != domain.SourceFacebook {
+	if calibration.Status != "reviewing" || calibration.SampleCount != 4 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceLinkedIn || calibration.Samples[2].Source != domain.SourceFacebook || calibration.Samples[3].Source != domain.SourceInstagram {
 		t.Fatalf("calibration=%+v", calibration)
 	}
 	if _, err := runtime.StartVisibleUpdate(ctx, "must be blocked"); err == nil {
@@ -1181,7 +1189,11 @@ func TestFirstRunCalibrationFollowsTheInitialUnifiedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 1 || calibration.Snapshot.Labels["lessLikeThis"] != 1 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
+	calibration, err = runtime.DecideCalibration(ctx, calibration.ID, 3, domain.CalibrationDecision{Label: &neutral})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calibration.Status != "completed" || calibration.Snapshot == nil || calibration.Snapshot.Labels["moreLikeThis"] != 1 || calibration.Snapshot.Labels["neutral"] != 2 || calibration.Snapshot.Labels["lessLikeThis"] != 1 || calibration.Snapshot.ActivationState != "feeds_local_fit" {
 		t.Fatalf("completed calibration=%+v", calibration)
 	}
 	settingsAfterCalibration, err := state.GetSettings(ctx)
@@ -1335,7 +1347,7 @@ func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 	}
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceX, "x:000000000000000000000021")
 	current := waitSession(t, runtime, session.ID, func(value domain.Session) bool {
-		return len(value.Runs) == 3 && value.Runs[1].Status == "waiting_for_bridge"
+		return len(value.Runs) == 4 && value.Runs[1].Status == "waiting_for_bridge"
 	})
 	linkedin := current.Runs[1]
 	command, err := runtime.ClaimCommand(ctx, linkedin.ID, "bridge-test")
@@ -1349,9 +1361,13 @@ func TestPartialFirstUpdateStillSuppliesCalibration(t *testing.T) {
 		return value.Runs[2].Status == "waiting_for_bridge"
 	})
 	completeActiveRun(t, runtime, state, session.ID, domain.SourceFacebook, "facebook:post:000000000000000000000022")
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool {
+		return value.Runs[3].Status == "waiting_for_bridge"
+	})
+	completeActiveRun(t, runtime, state, session.ID, domain.SourceInstagram, "instagram:p:000000000000000000000023")
 	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "partial" })
 	calibration := waitActiveCalibration(t, runtime)
-	if calibration.SampleCount != 2 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceFacebook {
+	if calibration.SampleCount != 3 || calibration.Samples[0].Source != domain.SourceX || calibration.Samples[1].Source != domain.SourceFacebook || calibration.Samples[2].Source != domain.SourceInstagram {
 		t.Fatalf("partial calibration=%+v", calibration)
 	}
 }
@@ -1628,6 +1644,8 @@ func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessio
 		permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + strings.TrimPrefix(evidenceKey, "linkedin:")
 	} else if source == domain.SourceFacebook {
 		permalink = "https://www.facebook.com/example/posts/" + strings.TrimPrefix(evidenceKey, "facebook:post:")
+	} else if source == domain.SourceInstagram {
+		permalink = "https://www.instagram.com/p/" + strings.TrimPrefix(evidenceKey, "instagram:p:") + "/"
 	}
 	value := domain.Observation{Source: source, PageURL: "https://example.test", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: evidenceKey, Text: "Material source update", Author: "author", Permalink: permalink}}}}, Coverage: map[string]any{"quality": "complete"}}
 	if _, err := runtime.AcceptObservation(context.Background(), command.ID, run.ID, value); err != nil {

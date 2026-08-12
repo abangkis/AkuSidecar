@@ -47,6 +47,41 @@ func TestSessionProgressProjectionKeepsOnlyPollingState(t *testing.T) {
 	}
 }
 
+func TestSettingsSourcesExposeExtensionSetupCTA(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"settings-source-access-button", "secondary-button source-setup-button", "Open AkuBrowser setup"},
+		"web/app.js":     {"function openBridgeSourceAccessSetup", "AKU_BROWSER_OPEN_BRIDGE_SETUP"},
+		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".source-setup-button", "white-space: nowrap"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing setup CTA contract %q", asset, marker)
+			}
+		}
+	}
+}
+
+func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/app.js":     {`source === "instagram"`, `glyph.className = "instagram-source-glyph"`, `aria-hidden`},
+		"web/styles.css": {".timeline-source-icon-instagram", ".instagram-source-glyph::before", ".instagram-source-glyph::after", "radial-gradient"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing Instagram post icon contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestRuntimeControlTokenIsRequiredAndComparedExactly(t *testing.T) {
 	token := strings.Repeat("a", 64)
 	if !validRuntimeControlToken(token, token) {
@@ -127,7 +162,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
 	sources := bootstrap["sources"].([]any)
-	if len(sources) != 4 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != true || sources[3].(map[string]any)["id"] != "instagram" || sources[3].(map[string]any)["defaultActive"] != false {
+	if len(sources) != 4 || sources[2].(map[string]any)["id"] != "facebook" || sources[2].(map[string]any)["defaultActive"] != true || sources[3].(map[string]any)["id"] != "instagram" || sources[3].(map[string]any)["defaultActive"] != true {
 		t.Fatalf("source descriptors=%+v", sources)
 	}
 	reasoningProcesses := bootstrap["reasoningProcesses"].([]any)

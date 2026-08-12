@@ -25,6 +25,56 @@ func openTestStore(t *testing.T) *Store {
 	return value
 }
 
+func TestExistingDefaultSourceProfileAdoptsInstagramOnlyOnce(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "sidecar.db")
+	defaults := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
+	state, err := Open(path, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceX, domain.SourceLinkedIn, domain.SourceFacebook}
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `DELETE FROM meta WHERE key='source_default_instagram_v1'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err = Open(path, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err = state.GetSettings(ctx)
+	if err != nil || len(settings.ActiveSources) != 4 || settings.ActiveSources[3] != domain.SourceInstagram {
+		t.Fatalf("migrated active sources=%v err=%v", settings.ActiveSources, err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceX, domain.SourceLinkedIn, domain.SourceFacebook}
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err = Open(path, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { state.Close() })
+	settings, err = state.GetSettings(ctx)
+	if err != nil || len(settings.ActiveSources) != 3 {
+		t.Fatalf("explicit post-migration source choice was overwritten: %v err=%v", settings.ActiveSources, err)
+	}
+}
+
 func visibleUpdatePolicy() domain.UpdatePolicy {
 	return domain.UpdatePolicy{
 		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
@@ -792,7 +842,7 @@ func TestTimelineIncludesCapturedSourceEvidence(t *testing.T) {
 		t.Fatalf("evidence=%+v", items[0].Evidence)
 	}
 	inbox, total, err := state.ListInboxSessions(ctx, 10, 0)
-	if err != nil || total != 1 || len(inbox) != 1 || len(inbox[0].Runs) != 3 {
+	if err != nil || total != 1 || len(inbox) != 1 || len(inbox[0].Runs) != 4 {
 		t.Fatalf("inbox=%+v total=%d err=%v", inbox, total, err)
 	}
 	diagnostic := inbox[0].Runs[0]
@@ -852,7 +902,7 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 		t.Fatalf("reset onboarding=%+v err=%v", onboarding, err)
 	}
 	after, err := state.GetSettings(ctx)
-	if err != nil || after.LoadProfile != "expanded" || len(after.ActiveSources) != 3 || after.ActiveSources[2] != domain.SourceFacebook || after.DefaultPresentation != "source" || after.StreamWidth != "social" {
+	if err != nil || after.LoadProfile != "expanded" || len(after.ActiveSources) != 4 || after.ActiveSources[3] != domain.SourceInstagram || after.DefaultPresentation != "source" || after.StreamWidth != "social" {
 		t.Fatalf("reset settings=%+v err=%v", after, err)
 	}
 	afterToken, err := state.BridgeToken(ctx)

@@ -4779,6 +4779,13 @@ function buildSourceIcon(source) {
   icon.className = `timeline-source-icon timeline-source-icon-${source}`;
   icon.title = sourceLabel(source);
   icon.setAttribute("aria-label", `Source: ${sourceLabel(source)}`);
+  if (source === "instagram") {
+    const glyph = document.createElement("span");
+    glyph.className = "instagram-source-glyph";
+    glyph.setAttribute("aria-hidden", "true");
+    icon.append(glyph);
+    return icon;
+  }
   icon.style.background = descriptor?.iconBackground || "var(--panel-strong)";
   icon.style.color = descriptor?.iconForeground || "var(--text)";
   icon.textContent = descriptor?.iconText || sourceLabel(source).slice(0, 1);

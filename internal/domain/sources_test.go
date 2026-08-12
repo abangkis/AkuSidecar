@@ -26,14 +26,14 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 		}
 	}
 	defaults := DefaultSources()
-	if len(defaults) != 3 || defaults[0] != SourceX || defaults[1] != SourceLinkedIn || defaults[2] != SourceFacebook {
+	if len(defaults) != 4 || defaults[0] != SourceX || defaults[1] != SourceLinkedIn || defaults[2] != SourceFacebook || defaults[3] != SourceInstagram {
 		t.Fatalf("default sources=%v", defaults)
 	}
 	if descriptor, ok := SourceByID(SourceFacebook); !ok || !descriptor.DefaultActive {
 		t.Fatalf("Facebook must be available and preselected: %+v ok=%v", descriptor, ok)
 	}
-	if descriptor, ok := SourceByID(SourceInstagram); !ok || descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" {
-		t.Fatalf("Instagram must be available as an opt-in local-frontier source: %+v ok=%v", descriptor, ok)
+	if descriptor, ok := SourceByID(SourceInstagram); !ok || !descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" {
+		t.Fatalf("Instagram must be available and preselected as a local-frontier source: %+v ok=%v", descriptor, ok)
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
