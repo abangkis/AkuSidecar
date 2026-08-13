@@ -485,7 +485,8 @@ function renderBridge(bridge) {
     }
     configureBackgroundBridge();
   } else if (bridge?.state === "incompatible") {
-    setPill("#bridge-status", bridge.reasons?.join(", ") || "Bridge incompatible", "danger");
+    const reasons = bridge.reasons?.join(", ");
+    setPill("#bridge-status", reasons ? `AkuBridge incompatible · ${reasons}` : "AkuBridge incompatible", "danger");
   } else {
     setPill("#bridge-status", "AkuBridge reconnecting", "warning");
   }
@@ -1795,13 +1796,27 @@ function runDisabledReason() {
   if (state.mediaRecaptureActive) return "Finishing media recapture…";
   if (state.bootstrap?.calibration?.active) return "Finish calibration before starting another check.";
   if (state.bootstrap?.onboarding?.status !== "completed") return "Complete source setup before checking for updates.";
-  if (!state.bootstrap?.bridge?.compatible) return "Waiting for AkuBridge to reconnect…";
+  const bridgeUnavailable = bridgeUnavailableReason(state.bootstrap?.bridge);
+  if (bridgeUnavailable) return bridgeUnavailable;
   const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
   if (!Array.isArray(grantedSources)) return "Waiting for AkuBridge source permission status…";
   if (sourceAccessNeedsAttention()) {
     return "No active source is ready. Open AkuBridge setup, enable at least one source, and let its capture script register before updating.";
   }
   return "";
+}
+
+function bridgeUnavailableReason(bridge) {
+  if (bridge?.compatible) return "";
+  if (bridge?.state === "incompatible") {
+    const reasons = Array.isArray(bridge.reasons)
+      ? bridge.reasons.map((reason) => String(reason ?? "").trim()).filter(Boolean)
+      : [];
+    return reasons.length
+      ? `AkuBridge update or reload required: ${reasons.join(", ")}.`
+      : "AkuBridge update or reload required because its capabilities are incompatible.";
+  }
+  return "Waiting for AkuBridge to reconnect…";
 }
 
 function sourceAccessNeedsAttention() {

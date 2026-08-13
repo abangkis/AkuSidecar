@@ -37,7 +37,7 @@ func TestAdaptiveReadinessRequiresContentRunway(t *testing.T) {
 	}
 }
 
-func TestAdaptivePlanUsesReadingGraceOnlyAfterReveal(t *testing.T) {
+func TestAdaptivePlanDoesNotDelayRefillAfterReveal(t *testing.T) {
 	now := time.Date(2026, time.August, 11, 9, 9, 42, 0, time.UTC)
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
 	settings.AutoUpdateMode = "adaptive"
@@ -51,14 +51,9 @@ func TestAdaptivePlanUsesReadingGraceOnlyAfterReveal(t *testing.T) {
 		LastRevealAt:    now,
 	}
 
-	grace := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
-	if grace.Eligible || grace.ReadingGraceUntil.IsZero() || !grace.NextCheckAt.Equal(now.Add(adaptiveReadingGrace)) || !strings.Contains(grace.Reason, "Reading grace") {
-		t.Fatalf("grace plan=%+v", grace)
-	}
-
-	afterGrace := buildAdaptiveUpdatePlan(settings, schedule, nil, now.Add(adaptiveReadingGrace), signals)
-	if !afterGrace.Eligible || !afterGrace.ReadingGraceUntil.IsZero() {
-		t.Fatalf("after-grace plan=%+v", afterGrace)
+	immediate := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
+	if !immediate.Eligible || !immediate.ReadingGraceUntil.IsZero() || !immediate.PriorityRefill {
+		t.Fatalf("immediate refill plan=%+v", immediate)
 	}
 }
 
@@ -114,7 +109,7 @@ func TestAdaptiveIdleMaintainsOneHealthyStandbyBatch(t *testing.T) {
 	}
 }
 
-func TestAdaptiveRevealGetsOnePriorityRefillAfterReadingGrace(t *testing.T) {
+func TestAdaptiveRevealGetsOneImmediatePriorityRefill(t *testing.T) {
 	now := time.Date(2026, time.August, 12, 9, 0, 0, 0, time.UTC)
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
 	settings.AutoUpdateMode = "adaptive"
@@ -133,18 +128,13 @@ func TestAdaptiveRevealGetsOnePriorityRefillAfterReadingGrace(t *testing.T) {
 		LastSchedulerTickAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
 	}
 
-	duringGrace := buildAdaptiveUpdatePlan(settings, schedule, nil, now.Add(time.Minute), signals)
-	if duringGrace.Eligible || !strings.Contains(duringGrace.Reason, "Reading grace") {
-		t.Fatalf("during grace plan=%+v", duringGrace)
+	immediate := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
+	if !immediate.Eligible || !immediate.PriorityRefill || immediate.Reason != "Post-reveal priority refill is ready" {
+		t.Fatalf("priority plan=%+v", immediate)
 	}
 
-	afterGrace := buildAdaptiveUpdatePlan(settings, schedule, nil, now.Add(adaptiveReadingGrace), signals)
-	if !afterGrace.Eligible || !afterGrace.PriorityRefill || afterGrace.Reason != "Post-reveal priority refill is ready" {
-		t.Fatalf("priority plan=%+v", afterGrace)
-	}
-
-	schedule.LastSchedulerTickAt = now.Add(time.Minute).Format(time.RFC3339Nano)
-	consumed := buildAdaptiveUpdatePlan(settings, schedule, nil, now.Add(adaptiveReadingGrace), signals)
+	schedule.LastSchedulerTickAt = now.Format(time.RFC3339Nano)
+	consumed := buildAdaptiveUpdatePlan(settings, schedule, nil, now, signals)
 	if consumed.Eligible || consumed.PriorityRefill || consumed.Reason != "Replenishment pressure is spacing the next refill" {
 		t.Fatalf("consumed priority plan=%+v", consumed)
 	}

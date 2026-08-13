@@ -432,6 +432,11 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 			t.Fatalf("app.js missing runtime reasoning or drawer contract %q", marker)
 		}
 	}
+	for _, marker := range []string{"function bridgeUnavailableReason", "AkuBridge update or reload required", "Waiting for AkuBridge to reconnect"} {
+		if !strings.Contains(string(appPayload), marker) {
+			t.Fatalf("app.js missing distinct Bridge compatibility guidance %q", marker)
+		}
+	}
 	response, err = client.Get("http://" + address.String() + "/api/inbox?limit=5&offset=0")
 	if err != nil {
 		t.Fatal(err)

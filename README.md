@@ -41,7 +41,7 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.7.9` / `source-adapters-v93`
+- AkuBridge `0.7.9` / `source-adapters-v98`
 - AkuSupervisor is recommended for normal Windows development and daily
   lifecycle ownership; it is not part of the portable runtime or a macOS
   prerequisite
@@ -194,7 +194,7 @@ prepare hidden finite batches while the process is alive. Adaptive demand is
 the default: while the Timeline is idle it maintains one low-frequency standby
 batch, then recent batch-reveal pace selects a larger ready-buffer target beneath
 the user's queue ceiling after reading resumes. Revealing the standby batch marks
-fresh demand and receives one priority refill after a 90-second reading grace;
+fresh demand and receives one immediate priority refill after a batch reveal;
 later refills return to the normal demand cadence. A decaying replenishment-pressure
 score can lower the active target and space ordinary refills when recent consumption
 and generation are already intense or yield is weak, but it does not suppress the

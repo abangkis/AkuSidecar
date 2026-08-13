@@ -8,7 +8,7 @@ import (
 
 const (
 	adaptiveMinimumReadyItemsPerBatch = 3
-	adaptiveReadingGrace              = 90 * time.Second
+	adaptiveReadingGrace              = 0 * time.Second
 )
 
 // adaptiveReadinessPolicy keeps the content-runway and post-reveal quiet-time
