@@ -51,6 +51,7 @@ func (s *Store) ListInboxSessions(ctx context.Context, limit, offset int) ([]dom
 				return nil, 0, err
 			}
 			entry.CapturedCandidates += diagnostic.CapturedCandidates
+			entry.SkippedResurfaces += diagnostic.SkippedResurfaces
 			entry.EvaluatedCandidates += diagnostic.EvaluatedCandidates
 			entry.SelectedCandidates += diagnostic.SelectedCandidates
 			entry.AddedItems += diagnostic.AddedItems

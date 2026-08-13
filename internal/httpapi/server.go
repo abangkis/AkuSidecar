@@ -358,8 +358,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if stage == "" {
 			stage = "captured"
 		}
-		if stage != "captured" && stage != "evaluated" && stage != "selected" && stage != "added" {
-			return badRequest("stage must be captured, evaluated, selected, or added")
+		if stage != "captured" && stage != "skipped" && stage != "evaluated" && stage != "selected" && stage != "added" {
+			return badRequest("stage must be captured, skipped, evaluated, selected, or added")
 		}
 		limit := boundedInt(r.URL.Query().Get("limit"), 10, 1, 20)
 		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)

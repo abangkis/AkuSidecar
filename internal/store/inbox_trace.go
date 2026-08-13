@@ -86,6 +86,7 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		correction, corrected := corrections[key]
 		selected := evaluated && (assessment.selected || corrected)
 		added := hasTimeline && timelineValue.relation != "duplicate_report"
+		continuityDecision, hasContinuity := continuity[key]
 		if evaluated {
 			trace.Counts.Evaluated++
 		}
@@ -106,9 +107,12 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 			Selected:    selected,
 			Added:       added,
 		}
-		if decision, ok := continuity[key]; ok && decision.Status != "fresh" {
-			item.ContinuityStatus = decision.Status
-			item.ContinuityDetail = decision.Reason
+		if hasContinuity && continuityDecision.Status != "fresh" {
+			item.ContinuityStatus = continuityDecision.Status
+			item.ContinuityDetail = continuityDecision.Reason
+		}
+		if hasContinuity && continuityDecision.Status == "resurfaced_unchanged" && continuityDecision.Action == "fail_fast" && !evaluated {
+			trace.Counts.Skipped++
 		}
 		if evaluated && assessment.value.KnowledgeRelation == "prior_knowledge_overlap" && item.ContinuityStatus == "" {
 			item.ContinuityStatus = "prior_knowledge_overlap"
@@ -266,6 +270,8 @@ func mergeInboxTraceBlock(current, next domain.Block) domain.Block {
 
 func inboxTraceMatchesStage(item domain.InboxFlowItem, stage string) bool {
 	switch stage {
+	case "skipped":
+		return item.ContinuityStatus == "resurfaced_unchanged" && !item.Evaluated
 	case "evaluated":
 		return item.Evaluated
 	case "selected":

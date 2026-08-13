@@ -415,7 +415,7 @@ h3 { letter-spacing: -0.02em; }
 .inbox-runs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .inbox-run-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-raised); }
 .inbox-run-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.inbox-pipeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 14px; }
+.inbox-pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 14px; }
 .inbox-pipeline > div { display: grid; gap: 2px; padding: 9px 7px; border-radius: 8px; background: var(--panel-strong); text-align: center; }
 .inbox-pipeline strong { color: var(--text); font-size: 1.05rem; }
 .inbox-pipeline span { color: var(--quiet); font-size: 0.66rem; text-transform: uppercase; }
@@ -458,7 +458,7 @@ h3 { letter-spacing: -0.02em; }
 .inbox-flow-toggle { width: max-content; padding: 5px 8px; border-color: var(--line-strong); background: transparent; color: var(--accent); font-size: 0.72rem; }
 .inbox-flow-panel { display: grid; gap: 9px; }
 .inbox-flow-panel[hidden] { display: none; }
-.inbox-flow-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.inbox-flow-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
 .inbox-flow-filters button { min-width: 0; padding: 5px 4px; border-color: var(--line); background: transparent; color: var(--quiet); font-size: 0.65rem; }
 .inbox-flow-filters button.selected { border-color: rgba(183, 242, 108, 0.48); background: rgba(183, 242, 108, 0.075); color: var(--accent); }
 .inbox-flow-list { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: rgba(8, 11, 9, 0.18); }
@@ -635,6 +635,7 @@ h3 { letter-spacing: -0.02em; }
   .inbox-preference-copy > strong { white-space: normal; }
   .inbox-preference-actions { justify-content: flex-start; }
   .inbox-runs { grid-template-columns: 1fr; }
+  .inbox-pipeline, .inbox-flow-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .model-usage-section > summary, .model-usage-category > summary { align-items: flex-start; flex-direction: column; }
   .model-usage-category > summary > span:last-child { text-align: left; }
   .model-usage-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }

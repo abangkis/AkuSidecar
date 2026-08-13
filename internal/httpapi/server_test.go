@@ -347,7 +347,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	indexPayload, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.7.9"`) {
+	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.8.0"`) {
 		t.Fatal("AkuBrowser page does not declare its branded favicon")
 	}
 	response, err = client.Get("http://" + address.String() + "/favicon.svg")
@@ -784,7 +784,7 @@ func TestEmbeddedInboxDistinguishesActiveEvaluationFromFinalZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"function inboxSessionFlowText", "function inboxRunMetricText", `Evaluating\u2026`, "composition pending"} {
+	for _, marker := range []string{"function inboxSessionFlowText", "function inboxRunMetricText", "Skipped unchanged", "inboxRunCaptureReliabilityNotice", `Evaluating\u2026`, "composition pending"} {
 		if !strings.Contains(string(payload), marker) {
 			t.Fatalf("embedded Inbox progress is missing %q", marker)
 		}

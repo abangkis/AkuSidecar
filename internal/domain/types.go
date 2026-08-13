@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "0.7.9"
+	ApplicationVersion              = "0.8.0"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	SidecarUpdateProtocolVersion    = "aku-sidecar.software-update.v1"
 	DefaultTimelineBatchGapPX       = 36
@@ -620,6 +620,7 @@ type InboxSession struct {
 	StartedAt           *string                   `json:"startedAt"`
 	CompletedAt         *string                   `json:"completedAt"`
 	CapturedCandidates  int                       `json:"capturedCandidates"`
+	SkippedResurfaces   int                       `json:"skippedResurfaces"`
 	EvaluatedCandidates int                       `json:"evaluatedCandidates"`
 	SelectedCandidates  int                       `json:"selectedCandidates"`
 	AddedItems          int                       `json:"addedItems"`
@@ -825,6 +826,7 @@ type ModelUsageReport struct {
 
 type InboxFlowCounts struct {
 	Captured  int `json:"captured"`
+	Skipped   int `json:"skipped"`
 	Evaluated int `json:"evaluated"`
 	Selected  int `json:"selected"`
 	Added     int `json:"added"`

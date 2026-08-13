@@ -2570,19 +2570,20 @@ function buildInboxRun(run, sessionStatus = "") {
   const pipeline = document.createElement("div");
   pipeline.className = "inbox-pipeline";
   const metricNumbers = {};
-  for (const [label, value] of [
-    ["Captured", run.capturedCandidates],
-    ["Evaluated", run.evaluatedCandidates],
-    ["Selected", run.selectedCandidates],
-    ["Added", run.addedItems],
+  for (const [label, stage, value] of [
+    ["Captured", "captured", run.capturedCandidates],
+    ["Skipped unchanged", "skipped", run.skippedResurfaces],
+    ["Evaluated", "evaluated", run.evaluatedCandidates],
+    ["Selected", "selected", run.selectedCandidates],
+    ["Added", "added", run.addedItems],
   ]) {
     const metric = document.createElement("div");
     const number = document.createElement("strong");
-    number.textContent = inboxRunMetricText(run, sessionStatus, label.toLowerCase(), value);
-    metricNumbers[label.toLowerCase()] = number;
+    number.textContent = inboxRunMetricText(run, sessionStatus, stage, value);
+    metricNumbers[stage] = number;
     const name = document.createElement("span");
     name.textContent = label;
-    const stageDuration = run.stageDurationsMs?.[label.toLowerCase()];
+    const stageDuration = run.stageDurationsMs?.[stage];
     const timing = document.createElement("small");
     timing.className = "inbox-pipeline-duration";
     timing.textContent = Number.isFinite(stageDuration) ? formatDuration(stageDuration) : "";
@@ -2597,7 +2598,8 @@ function buildInboxRun(run, sessionStatus = "") {
     `${run.performedScrolls ?? 0} scrolls`,
     run.totalDurationMs ? `Total ${formatDuration(run.totalDurationMs)}` : null,
     run.reasoningDurationMs ? `${formatDuration(run.reasoningDurationMs)} model time` : null,
-    run.resurfacedItems ? `${run.resurfacedItems} resurfaced${run.skippedResurfaces ? ` · ${run.skippedResurfaces} skipped` : ""}` : null,
+    run.resurfacedItems ? `${run.resurfacedItems} resurfaced${run.skippedResurfaces ? ` · ${run.skippedResurfaces} unchanged skipped` : ""}` : null,
+    (run.evaluatedCandidates ?? 0) > 0 ? `${Math.round(((run.selectedCandidates ?? 0) / run.evaluatedCandidates) * 100)}% selection yield` : null,
   ].filter(Boolean).join(" \u00b7 ");
   card.append(header, pipeline, mechanics);
   if (run.error) {
@@ -2612,6 +2614,13 @@ function buildInboxRun(run, sessionStatus = "") {
     fallback.className = "inbox-run-warning";
     fallback.textContent = `Completed from the initial capture after optional follow-up failed: ${run.followUpFallback.message}`;
     card.append(fallback);
+  }
+  const captureReliabilityNotice = inboxRunCaptureReliabilityNotice(run);
+  if (captureReliabilityNotice) {
+    const notice = document.createElement("p");
+    notice.className = captureReliabilityNotice.tone === "danger" ? "inbox-run-error" : "inbox-run-warning";
+    notice.textContent = captureReliabilityNotice.text;
+    card.append(notice);
   }
   if (!run.error && run.summary) {
     const summary = document.createElement("p");
@@ -2637,6 +2646,16 @@ function buildInboxRun(run, sessionStatus = "") {
     }
   }));
   return card;
+}
+
+function inboxRunCaptureReliabilityNotice(run) {
+  const captured = Number(run.capturedCandidates) || 0;
+  const terminal = ["completed", "partial", "failed", "cancelled"].includes(run.status);
+  if (captured > 0 || !terminal) return null;
+  if (run.error) {
+    return { tone: "danger", text: "Capture reliability alert: no candidate reached the evaluation pipeline." };
+  }
+  return { tone: "warning", text: "Capture completed with no candidates; evaluation was not attempted." };
 }
 
 function buildCaptureCandidateTelemetry(snapshots) {
@@ -2862,13 +2881,15 @@ function buildAcquisitionIdentityTelemetry(acquisitionPlanning, identityResoluti
 
 function inboxSessionFlowText(session) {
   const terminal = ["completed", "partial", "failed", "cancelled"].includes(session.status);
+  const skipped = Number(session.skippedResurfaces) || 0;
+  const continuity = skipped ? ` · ${skipped} skipped unchanged` : "";
   if (!terminal) {
     const evaluation = (session.capturedCandidates ?? 0) > 0 && (session.evaluatedCandidates ?? 0) === 0
       ? "evaluating candidates"
       : `${session.evaluatedCandidates ?? 0} evaluated`;
-    return `${session.capturedCandidates ?? 0} captured \u2192 ${evaluation} \u2192 composition pending`;
+    return `${session.capturedCandidates ?? 0} captured${continuity} \u2192 ${evaluation} \u2192 composition pending`;
   }
-  return `${session.capturedCandidates} captured \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} unique${session.duplicateReports ? ` + ${session.duplicateReports} duplicate` : ""}`;
+  return `${session.capturedCandidates} captured${continuity} \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} unique${session.duplicateReports ? ` + ${session.duplicateReports} duplicate` : ""}`;
 }
 
 function inboxRunMetricText(run, sessionStatus, stage, value) {
@@ -2876,6 +2897,7 @@ function inboxRunMetricText(run, sessionStatus, stage, value) {
   const sessionTerminal = ["completed", "partial", "failed", "cancelled"].includes(sessionStatus);
   if (runTerminal && sessionTerminal) return String(value ?? 0);
   if (stage === "captured") return String(value ?? 0);
+  if (stage === "skipped") return String(value ?? 0);
   if (stage === "evaluated") {
     if (runTerminal) return String(value ?? 0);
     if ((value ?? 0) > 0) return String(value);
@@ -2946,11 +2968,11 @@ function buildInboxFlowInspector(run, onCounts) {
   let total = 0;
   let loading = false;
   const stageButtons = {};
-  for (const stage of ["captured", "evaluated", "selected", "added"]) {
+  for (const stage of ["captured", "skipped", "evaluated", "selected", "added"]) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.stage = stage;
-    button.textContent = humanize(stage);
+    button.textContent = stage === "skipped" ? "Skipped unchanged" : humanize(stage);
     button.addEventListener("click", () => {
       if (activeStage === stage || loading) return;
       activeStage = stage;
@@ -2962,7 +2984,12 @@ function buildInboxFlowInspector(run, onCounts) {
 
   const renderFilterState = (counts = {}) => {
     for (const [stage, button] of Object.entries(stageButtons)) {
-      const count = counts[stage] ?? run[`${stage}Candidates`] ?? (stage === "added" ? run.addedItems : 0);
+      const fallback = stage === "skipped"
+        ? run.skippedResurfaces
+        : stage === "added"
+          ? run.addedItems
+          : run[`${stage}Candidates`];
+      const count = counts[stage] ?? fallback ?? 0;
       button.textContent = `${humanize(stage)} ${count ?? 0}`;
       button.classList.toggle("selected", stage === activeStage);
       button.setAttribute("aria-pressed", String(stage === activeStage));
@@ -2995,7 +3022,8 @@ function buildInboxFlowInspector(run, onCounts) {
       if (!list.children.length) {
         const empty = document.createElement("p");
         empty.className = "inbox-flow-empty";
-        empty.textContent = `No ${humanize(activeStage).toLowerCase()} candidates in this source run.`;
+        const stageLabel = activeStage === "skipped" ? "skipped unchanged" : humanize(activeStage).toLowerCase();
+        empty.textContent = `No ${stageLabel} candidates in this source run.`;
         list.append(empty);
       }
       meta.textContent = total ? `${Math.min(offset, total)} of ${total}` : "No matching candidates";
