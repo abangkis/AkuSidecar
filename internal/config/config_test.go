@@ -63,3 +63,28 @@ func TestBridgeExtensionOriginFlagCompletesBaseConfiguration(t *testing.T) {
 		t.Fatalf("trusted origins=%v", cfg.Bridge.TrustedExtensionOrigins)
 	}
 }
+
+func TestDeploymentIdentityCombinations(t *testing.T) {
+	valid := []DeploymentConfig{
+		{Mode: "development", RuntimeInstallKind: "workspace", BridgeIdentityProfile: "development"},
+		{Mode: "acceptance", RuntimeInstallKind: "installed", BridgeIdentityProfile: "acceptance", ReleaseVersion: "0.8.0"},
+		{Mode: "production-store", RuntimeInstallKind: "installed", BridgeIdentityProfile: "production-store", ReleaseVersion: "0.8.0"},
+		{Mode: "production-offline", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-offline", ReleaseVersion: "0.8.0"},
+	}
+	for _, deployment := range valid {
+		if err := deployment.Validate(); err != nil {
+			t.Fatalf("valid deployment %+v: %v", deployment, err)
+		}
+	}
+
+	invalid := []DeploymentConfig{
+		{Mode: "acceptance", RuntimeInstallKind: "installed", BridgeIdentityProfile: "development", ReleaseVersion: "0.8.0"},
+		{Mode: "production-store", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-store", ReleaseVersion: "0.8.0"},
+		{Mode: "production-offline", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-offline"},
+	}
+	for _, deployment := range invalid {
+		if err := deployment.Validate(); err == nil {
+			t.Fatalf("invalid deployment accepted: %+v", deployment)
+		}
+	}
+}

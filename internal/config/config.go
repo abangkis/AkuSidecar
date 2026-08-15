@@ -16,6 +16,7 @@ import (
 
 type Config struct {
 	Version             int              `json:"version"`
+	Deployment          DeploymentConfig `json:"deployment,omitempty"`
 	Server              ServerConfig     `json:"server"`
 	Database            DatabaseConfig   `json:"database"`
 	Reasoning           ReasoningConfig  `json:"reasoning"`
@@ -25,6 +26,30 @@ type Config struct {
 	Root                string           `json:"-"`
 	Dev                 bool             `json:"-"`
 	RuntimeControlToken string           `json:"-"`
+}
+
+type DeploymentConfig struct {
+	Mode                  string `json:"mode"`
+	RuntimeInstallKind    string `json:"runtimeInstallKind"`
+	BridgeIdentityProfile string `json:"bridgeIdentityProfile"`
+	ReleaseVersion        string `json:"releaseVersion,omitempty"`
+	SourceFreeze          string `json:"sourceFreeze,omitempty"`
+	ArtifactID            string `json:"artifactId,omitempty"`
+}
+
+func (d DeploymentConfig) PublicStatus() map[string]string {
+	mode := strings.TrimSpace(d.Mode)
+	if mode == "" {
+		mode = "unknown"
+	}
+	return map[string]string{
+		"mode":                  mode,
+		"runtimeInstallKind":    strings.TrimSpace(d.RuntimeInstallKind),
+		"bridgeIdentityProfile": strings.TrimSpace(d.BridgeIdentityProfile),
+		"releaseVersion":        strings.TrimSpace(d.ReleaseVersion),
+		"sourceFreeze":          strings.TrimSpace(d.SourceFreeze),
+		"artifactId":            strings.TrimSpace(d.ArtifactID),
+	}
 }
 
 type ServerConfig struct {
@@ -143,6 +168,9 @@ func Load(options Options) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if err := c.Deployment.Validate(); err != nil {
+		return err
+	}
 	if c.Server.Host != "127.0.0.1" && c.Server.Host != "localhost" {
 		return errors.New("server host must remain loopback")
 	}
@@ -196,6 +224,37 @@ func (c Config) Validate() error {
 	}
 	if c.Capture.MaxAcquisitionRounds < 1 || c.Capture.MaxAcquisitionRounds > 2 {
 		return errors.New("max acquisition rounds must be one or two")
+	}
+	return nil
+}
+
+func (d DeploymentConfig) Validate() error {
+	if d.Mode == "" {
+		// Older local configurations remain runnable but surface as Unknown in the
+		// UI. Every release packager projects an explicit deployment identity.
+		return nil
+	}
+	allowed := map[string]struct {
+		profile string
+		kinds   map[string]bool
+	}{
+		"development":        {profile: "development", kinds: map[string]bool{"workspace": true}},
+		"acceptance":         {profile: "acceptance", kinds: map[string]bool{"installed": true}},
+		"production-store":   {profile: "production-store", kinds: map[string]bool{"installed": true}},
+		"production-offline": {profile: "production-offline", kinds: map[string]bool{"portable": true, "installed": true}},
+	}
+	rule, ok := allowed[d.Mode]
+	if !ok {
+		return fmt.Errorf("unsupported deployment mode %q", d.Mode)
+	}
+	if d.BridgeIdentityProfile != rule.profile {
+		return fmt.Errorf("deployment mode %q requires Bridge identity profile %q", d.Mode, rule.profile)
+	}
+	if !rule.kinds[d.RuntimeInstallKind] {
+		return fmt.Errorf("deployment mode %q does not support runtime install kind %q", d.Mode, d.RuntimeInstallKind)
+	}
+	if d.Mode != "development" && strings.TrimSpace(d.ReleaseVersion) == "" {
+		return fmt.Errorf("deployment mode %q requires a release version", d.Mode)
 	}
 	return nil
 }

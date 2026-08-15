@@ -320,6 +320,7 @@ async function bootstrap(options = {}) {
     $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
     $("#provider-value").textContent = state.bootstrap.provider;
     $("#database-status").textContent = state.bootstrap.database?.status ?? "healthy";
+    renderDeployment(state.bootstrap.deployment);
     setPill("#sidecar-status", "AkuSidecar ready", "ok");
     setPill("#reasoning-status", state.bootstrap.provider, "neutral");
     renderBridge(state.bootstrap.bridge);
@@ -352,6 +353,22 @@ async function bootstrap(options = {}) {
     clearTimeout(timeout);
     if (attempt === state.bootstrapAttempt) state.bootstrapController = null;
   }
+}
+
+function renderDeployment(deployment) {
+  const mode = deployment?.mode ?? "unknown";
+  const installKind = deployment?.runtimeInstallKind;
+  const labels = {
+    development: "Development",
+    acceptance: "Stable candidate · 3B",
+    "production-store": "Production · Web Store",
+    "production-offline": "Production · Offline bundle",
+    unknown: "Mode unknown",
+  };
+  const suffix = installKind && !["workspace", "installed"].includes(installKind)
+    ? ` · ${installKind}`
+    : "";
+  setPill("#deployment-status", `${labels[mode] ?? "Mode invalid"}${suffix}`, mode === "unknown" ? "warning" : "neutral");
 }
 
 async function pollAutoUpdate() {
