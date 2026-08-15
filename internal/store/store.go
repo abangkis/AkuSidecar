@@ -41,6 +41,9 @@ func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, 
 	if clock == nil {
 		return nil, errors.New("store clock is required")
 	}
+	if err := validateDataRuntimeVersion(path, domain.ApplicationVersion); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
@@ -52,6 +55,10 @@ func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, 
 	db.SetMaxIdleConns(1)
 	store := &Store{db: db, path: path, clock: clock}
 	if err := store.initialize(defaults); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := writeDataRuntimeVersion(path, domain.ApplicationVersion); err != nil {
 		db.Close()
 		return nil, err
 	}
