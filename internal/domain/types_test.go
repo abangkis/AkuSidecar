@@ -297,7 +297,7 @@ func TestResurfaceSettingsUseSmartSevenDayDefaultAndLockedCooldowns(t *testing.T
 
 func TestReasoningProfilesUseReleaseDefaultsAndRejectUnsafeIDs(t *testing.T) {
 	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
-	if value.ReasoningAcquisitionProfile != "luna_high" || value.ReasoningEvaluationProfile != "luna_xhigh" || value.ReasoningSemanticProfile != "luna_high" || value.ReasoningAIDeepProfile != "luna_high" {
+	if value.ReasoningAcquisitionProfile != "luna_high" || value.ReasoningEvaluationProfile != "luna_high" || value.ReasoningSemanticProfile != "luna_high" || value.ReasoningAIDeepProfile != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", value)
 	}
 	value.ReasoningAcquisitionProfile = "Sol Medium"

@@ -22,7 +22,7 @@
     },
     "evaluation": {
       "model": "gpt-5.6-luna",
-      "effort": "xhigh"
+      "effort": "high"
     },
     "semanticEvent": {
       "model": "gpt-5.6-luna",

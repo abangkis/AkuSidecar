@@ -78,8 +78,9 @@ sends output schemas at turn start, rejects server callbacks, and stores
 structured token telemetry. On Windows, each managed App Server is assigned to
 its own Job Object so forced timeout/recycle also cleans its descendant tool
 processes; the Supervisor remains the outer ownership boundary. Acquisition planning, semantic event resolution,
-and AI Deep Detection default to Luna `high`; candidate evaluation alone uses
-Luna `max`. Deep Detection runs only after Timeline delivery, while
+and AI Deep Detection default to Luna `high`; candidate evaluation also defaults
+to Luna `high` so routine checks stay within the bounded reasoning deadline.
+Luna XHigh and Luna Max remain explicit tuning options. Deep Detection runs only after Timeline delivery, while
 local deterministic AI Fast Detection does not consume a model. The domain
 adapters depend on a generic structured-inference contract rather than the
 Codex transport, so another backend can replace App Server without changing

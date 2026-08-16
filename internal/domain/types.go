@@ -29,7 +29,7 @@ const (
 	DefaultResurfaceMode            = "smart"
 	DefaultResurfaceCooldownDays    = 7
 	DefaultReasoningAcquisition     = "luna_high"
-	DefaultReasoningEvaluation      = "luna_xhigh"
+	DefaultReasoningEvaluation      = "luna_high"
 	DefaultReasoningSemantic        = "luna_high"
 	DefaultReasoningAIDeep          = "luna_high"
 	DefaultSourceWaitMode           = "progressive_wait"

@@ -28,7 +28,7 @@ const LOAD_PROFILE_PRESETS = {
 };
 const RELEASE_REASONING_DEFAULTS = Object.freeze({
   acquisition_planning: "luna_high",
-  candidate_evaluation: "luna_xhigh",
+  candidate_evaluation: "luna_high",
   semantic_event_resolution: "luna_high",
   ai_deep_detection: "luna_high",
 });

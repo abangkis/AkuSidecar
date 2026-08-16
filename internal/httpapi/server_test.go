@@ -231,7 +231,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["showLearningPanel"] != true || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "drawer" || bootstrapSettings["aiDetectionEnabled"] != true || bootstrapSettings["resurfaceMode"] != "smart" || bootstrapSettings["resurfaceCooldownDays"] != float64(7) {
 		t.Fatalf("timeline boundary cue settings=%+v", bootstrapSettings)
 	}
-	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_xhigh" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
+	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_high" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {
 		t.Fatalf("reasoning defaults=%+v", bootstrapSettings)
 	}
 	if bootstrapSettings["autoUpdateEnabled"] != true || bootstrapSettings["autoUpdateMode"] != "adaptive" || bootstrapSettings["autoUpdateRefillMinutes"] != float64(15) || bootstrapSettings["preparedBatchLimit"] != float64(2) || bootstrapSettings["autoUpdateDailyTokenBudget"] != float64(2000000) || bootstrapSettings["autoUpdateManualReservePct"] != float64(25) || bootstrapSettings["preparedBatchMaxAgeHours"] != float64(24) || bootstrapSettings["nextBatchBehavior"] != "require_action" {
