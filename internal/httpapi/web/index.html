@@ -642,13 +642,18 @@
     </button>
 
     <dialog id="media-viewer" class="media-viewer" aria-label="Post media viewer">
-      <div class="media-viewer-toolbar">
+      <form method="dialog" class="media-viewer-toolbar">
         <span id="media-viewer-count"></span>
-        <button id="media-viewer-close" type="button" aria-label="Close image viewer">Close</button>
-      </div>
+        <div class="media-viewer-toolbar-actions">
+          <button id="media-viewer-zoom" type="button" aria-label="Zoom image to full size" aria-pressed="false">Zoom</button>
+          <button id="media-viewer-close" type="submit" aria-label="Close image viewer">Close</button>
+        </div>
+      </form>
       <div class="media-viewer-stage">
         <button id="media-viewer-previous" type="button" aria-label="Previous image">‹</button>
-        <img id="media-viewer-image" alt="" />
+        <div id="media-viewer-canvas" class="media-viewer-canvas">
+          <img id="media-viewer-image" alt="" />
+        </div>
         <button id="media-viewer-next" type="button" aria-label="Next image">›</button>
       </div>
     </dialog>

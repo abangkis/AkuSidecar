@@ -82,6 +82,24 @@ func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
 	}
 }
 
+func TestEmbeddedMediaViewerStartsFittedSupportsZoomAndClosesCleanly(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"method=\"dialog\"", "media-viewer-zoom", "aria-pressed=\"false\"", "media-viewer-canvas", "type=\"submit\""},
+		"web/app.js":     {"function setMediaZoom", "setMediaZoom(false)", "mediaZoomed", "Fit image to container", "Zoom image to full size"},
+		"web/styles.css": {".media-viewer[open]", ".media-viewer:not([open])", ".media-viewer-canvas", ".media-viewer.is-zoomed", "overflow: hidden", "max-width: none"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing media viewer zoom contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestRuntimeControlTokenIsRequiredAndComparedExactly(t *testing.T) {
 	token := strings.Repeat("a", 64)
 	if !validRuntimeControlToken(token, token) {

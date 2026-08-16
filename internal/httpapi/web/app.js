@@ -50,6 +50,7 @@ const state = {
   modelUsageHelpSequence: 0,
   media: [],
   mediaIndex: 0,
+  mediaZoomed: false,
   onboardingEditing: false,
   calibration: null,
   calibrationOrdinal: 0,
@@ -227,7 +228,7 @@ $("#reset-confirmation-submit").addEventListener("click", submitReset);
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
 $("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
 $("#back-to-top").addEventListener("click", returnToTop);
-$("#media-viewer-close").addEventListener("click", () => $("#media-viewer").close());
+$("#media-viewer-zoom").addEventListener("click", () => setMediaZoom(!state.mediaZoomed));
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
 window.addEventListener("scroll", () => {
@@ -4645,6 +4646,7 @@ async function sendFeedback(id, direction, reason) {
 function openMedia(media, index) {
   state.media = media;
   state.mediaIndex = index;
+  setMediaZoom(false);
   renderMedia();
   $("#media-viewer").showModal();
 }
@@ -4657,9 +4659,21 @@ function moveMedia(delta) {
 
 function renderMedia() {
   $("#media-viewer-image").src = state.media[state.mediaIndex] ?? "";
+  $("#media-viewer-canvas").scrollTo(0, 0);
   $("#media-viewer-count").textContent = `${state.mediaIndex + 1} of ${state.media.length}`;
   $("#media-viewer-previous").disabled = state.media.length < 2;
   $("#media-viewer-next").disabled = state.media.length < 2;
+}
+
+function setMediaZoom(zoomed) {
+  state.mediaZoomed = zoomed;
+  const viewer = $("#media-viewer");
+  const button = $("#media-viewer-zoom");
+  viewer.classList.toggle("is-zoomed", zoomed);
+  button.textContent = zoomed ? "Fit" : "Zoom";
+  button.setAttribute("aria-pressed", String(zoomed));
+  button.setAttribute("aria-label", zoomed ? "Fit image to container" : "Zoom image to full size");
+  button.title = zoomed ? "Fit image to container" : "Zoom image to full size";
 }
 
 function showSessionFailure(session) {
