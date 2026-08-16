@@ -798,6 +798,23 @@ func TestEmbeddedSettingsDirtyStateContract(t *testing.T) {
 	}
 }
 
+func TestEmbeddedCaptureSurfaceReleaseBarrierContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/app.js": {`import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js"`, "const captureSurfaceBarrier = await releaseCompletedSourceSurfaces", "captureSurfaceBarrier.ready"},
+		"web/capture-surface-release-barrier.js": {"export async function releaseCompletedSourceSurfaces", "await releaseSource(session.id, run.source)", "ready: false", "releasedSources.delete(key)"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s missing capture-surface release barrier contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestEmbeddedUsageLimitPauseRequiresExplicitRestoreConfirmation(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"confirm-codex-usage-restored", "Confirm Codex usage restored"},

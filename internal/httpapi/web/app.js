@@ -1,4 +1,5 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
+import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -1479,11 +1480,18 @@ async function pollSession() {
     const { session } = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
     if (!state.session || state.session.id !== sessionId) return;
     state.session = session;
-    releaseCompletedSourceSurfaces(session);
+    const captureSurfaceBarrier = await releaseCompletedSourceSurfaces({
+      session,
+      releasedSources: state.releasedCaptureSources,
+      releaseSource: releaseCaptureSurface,
+    });
+    if (!captureSurfaceBarrier.ready) {
+      console.warn("Capture-surface cleanup deferred before the next source.", captureSurfaceBarrier.error);
+    }
     renderSession();
     const captureActive = session.runs?.some((run) => run.status === "waiting_for_bridge" && run.bridgeCommandStatus === "claimed");
     const captureRun = session.runs?.find((run) => run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
-    if (!captureActive && captureRun) dispatch(captureRun);
+    if (!captureActive && captureRun && captureSurfaceBarrier.ready) dispatch(captureRun);
     if (terminalStatuses.has(session.status)) {
       stopPolling();
       state.dispatchKey = null;
@@ -1565,25 +1573,6 @@ function releaseCaptureSurfaceOnce(leaseId, source = null) {
     window.addEventListener("message", onReleaseResult);
     window.postMessage({ type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE", leaseId, source }, endpoint);
   });
-}
-
-function sourceCaptureSurfaceReleasable(run) {
-  return terminalStatuses.has(run?.status) ||
-    (run?.status === "reasoning" && run?.stage === "candidate_evaluation");
-}
-
-function releaseCompletedSourceSurfaces(session) {
-  if (!session?.id || terminalStatuses.has(session.status)) return;
-  for (const run of session.runs ?? []) {
-    if (!run?.source || !sourceCaptureSurfaceReleasable(run)) continue;
-    const key = `${session.id}:${run.source}`;
-    if (state.releasedCaptureSources.has(key)) continue;
-    state.releasedCaptureSources.add(key);
-    releaseCaptureSurface(session.id, run.source).catch((error) => {
-      state.releasedCaptureSources.delete(key);
-      console.warn(`Capture-surface cleanup for ${run.source} deferred.`, error);
-    });
-  }
 }
 
 function dispatch(run) {
