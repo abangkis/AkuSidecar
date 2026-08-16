@@ -206,6 +206,7 @@ $("#ai-detection-presentation").addEventListener("change", syncAIDetectionSettin
 $("#auto-update-mode").addEventListener("change", syncAutoUpdateModeSettings);
 $("#reset-semantic-event-merge-threshold").addEventListener("click", resetSemanticEventMergeThreshold);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
+$("#single-image-fit").addEventListener("change", () => applySingleImageFit($("#single-image-fit").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
 $("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
 $("#timeline-boundary-return-ms").addEventListener("input", () => applyTimelineBoundaryReturnDuration($("#timeline-boundary-return-ms").value));
@@ -543,6 +544,7 @@ function renderSettings(settings) {
   $("#max-scrolls").value = settings.maxScrolls;
   $("#default-presentation").value = settings.defaultPresentation || "source";
   $("#stream-width").value = settings.streamWidth || "social";
+  $("#single-image-fit").value = settings.singleImageFit || "cover";
   $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
   $("#timeline-boundary-follow").checked = settings.timelineBoundaryCueMode !== "static";
   $("#timeline-boundary-return-ms").value = settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
@@ -573,6 +575,7 @@ function renderSettings(settings) {
     input.checked = settings.activeSources?.includes(input.value) ?? false;
   }
   applyStreamWidth(settings.streamWidth || "social");
+  applySingleImageFit(settings.singleImageFit || "cover");
   applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
   applyTimelineBoundaryReturnDuration(settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
   if (settings.timelineBoundaryCueMode === "static") releaseBackToTopBoundary();
@@ -942,6 +945,7 @@ function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
     maxScrolls: Number.parseInt($("#max-scrolls").value, 10),
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
+    singleImageFit: $("#single-image-fit").value,
     timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
     timelineBoundaryCueMode: $("#timeline-boundary-follow").checked ? "follow" : "static",
     timelineBoundaryReturnMs: Number.parseInt($("#timeline-boundary-return-ms").value, 10),
@@ -1100,6 +1104,10 @@ function applyStreamWidth(value) {
   document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
+}
+
+function applySingleImageFit(value) {
+  document.body.dataset.singleImageFit = value === "contain" ? "contain" : "cover";
 }
 
 function scheduleTimelineSidePanePosition() {

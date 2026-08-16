@@ -75,6 +75,7 @@ type Settings struct {
 	CalibrationBatchSize        int            `json:"calibrationBatchSize"`
 	DefaultPresentation         string         `json:"defaultPresentation"`
 	StreamWidth                 string         `json:"streamWidth"`
+	SingleImageFit              string         `json:"singleImageFit"`
 	TimelineBatchGapPX          int            `json:"timelineBatchGapPx"`
 	TimelineBoundaryCueMode     string         `json:"timelineBoundaryCueMode"`
 	TimelineBoundaryReturnMS    int            `json:"timelineBoundaryReturnMs"`
@@ -116,6 +117,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		CalibrationBatchSize:        10,
 		DefaultPresentation:         "source",
 		StreamWidth:                 "social",
+		SingleImageFit:              "cover",
 		TimelineBatchGapPX:          DefaultTimelineBatchGapPX,
 		TimelineBoundaryCueMode:     DefaultTimelineBoundaryCueMode,
 		TimelineBoundaryReturnMS:    DefaultTimelineBoundaryReturnMS,
@@ -184,6 +186,9 @@ func (s *Settings) Normalize() {
 	}
 	if s.StreamWidth == "" {
 		s.StreamWidth = "social"
+	}
+	if s.SingleImageFit == "" {
+		s.SingleImageFit = "cover"
 	}
 	if s.TimelineBatchGapPX == 0 {
 		s.TimelineBatchGapPX = DefaultTimelineBatchGapPX
@@ -274,6 +279,9 @@ func (s Settings) Validate() error {
 	}
 	if s.StreamWidth != "compact" && s.StreamWidth != "social" && s.StreamWidth != "comfortable" && s.StreamWidth != "wide" {
 		return fmt.Errorf("unsupported stream width %q", s.StreamWidth)
+	}
+	if s.SingleImageFit != "cover" && s.SingleImageFit != "contain" {
+		return fmt.Errorf("unsupported single image fit %q", s.SingleImageFit)
 	}
 	if s.TimelineBatchGapPX < 16 || s.TimelineBatchGapPX > 80 {
 		return errors.New("timelineBatchGapPx must be between 16 and 80")

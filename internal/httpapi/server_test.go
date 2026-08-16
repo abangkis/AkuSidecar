@@ -100,6 +100,24 @@ func TestEmbeddedMediaViewerStartsFittedSupportsZoomAndClosesCleanly(t *testing.
 	}
 }
 
+func TestEmbeddedSingleImageFitSettingDefaultsToCoverAndSupportsContain(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"data-single-image-fit=\"cover\"", "id=\"single-image-fit\"", "value=\"cover\"", "value=\"contain\""},
+		"web/app.js":     {"function applySingleImageFit", "settings.singleImageFit || \"cover\"", "singleImageFit: $(\"#single-image-fit\").value"},
+		"web/styles.css": {"[data-single-image-fit=\"contain\"] .source-layout-media.media-count-1 > .source-layout-media-item img", "object-fit: contain"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing single-image fit setting contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestRuntimeControlTokenIsRequiredAndComparedExactly(t *testing.T) {
 	token := strings.Repeat("a", 64)
 	if !validRuntimeControlToken(token, token) {

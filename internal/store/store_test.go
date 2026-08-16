@@ -25,6 +25,29 @@ func openTestStore(t *testing.T) *Store {
 	return value
 }
 
+func TestSettingsPersistSingleImageFit(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.SingleImageFit != "cover" {
+		t.Fatalf("default single image fit=%q", settings.SingleImageFit)
+	}
+	settings.SingleImageFit = "contain"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.SingleImageFit != "contain" {
+		t.Fatalf("persisted single image fit=%q", persisted.SingleImageFit)
+	}
+}
+
 func TestExistingDefaultSourceProfileAdoptsInstagramOnlyOnce(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "sidecar.db")

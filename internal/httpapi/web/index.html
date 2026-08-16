@@ -7,7 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.8.0" />
     <link rel="stylesheet" href="/styles.css?runtime=release-0.8.0" />
   </head>
-  <body data-stream-width="social">
+  <body data-stream-width="social" data-single-image-fit="cover">
     <main class="shell">
       <header class="topbar">
         <div>
@@ -240,6 +240,13 @@
                   <option value="social">Social — recommended</option>
                   <option value="comfortable">Comfortable</option>
                   <option value="wide">Wide</option>
+                </select>
+              </label>
+              <label class="settings-row" for="single-image-fit">
+                <span class="settings-copy"><strong>Single-image display</strong><small>Cover fills the Timeline media area; Contain shows the complete image without cropping.</small></span>
+                <select id="single-image-fit" name="singleImageFit">
+                  <option value="cover">Cover — default</option>
+                  <option value="contain">Contain — show full image</option>
                 </select>
               </label>
               <div class="settings-row">

@@ -89,6 +89,28 @@ func TestCustomProfileKeepsSupportedUIPreferences(t *testing.T) {
 	}
 }
 
+func TestSingleImageFitDefaultsAndStaysBounded(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.SingleImageFit != "cover" {
+		t.Fatalf("default single image fit=%q", value.SingleImageFit)
+	}
+
+	value.SingleImageFit = ""
+	value.Normalize()
+	if value.SingleImageFit != "cover" {
+		t.Fatalf("legacy single image fit normalized to %q", value.SingleImageFit)
+	}
+
+	value.SingleImageFit = "contain"
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.SingleImageFit = "stretch"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unsupported single image fit must be rejected")
+	}
+}
+
 func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	if value.TimelineBatchGapPX != DefaultTimelineBatchGapPX {
