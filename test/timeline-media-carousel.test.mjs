@@ -55,3 +55,11 @@ test("carousel swipe capture stays on horizontal viewport movement and preserves
   assert.doesNotMatch(appSource.slice(pointerDownStart, pointerMoveStart), /setPointerCapture/);
   assert.match(appSource.slice(pointerMoveStart, pointerUpStart), /viewport\.setPointerCapture\?\.\(event\.pointerId\)/);
 });
+
+test("media viewer arrows use bounded timeline navigation at both ends", async () => {
+  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /state\.mediaIndex = moveTimelineCarouselIndex\(state\.mediaIndex, delta, state\.media\.length\)/);
+  assert.match(appSource, /\$\("#media-viewer-previous"\)\.disabled = state\.media\.length < 2 \|\| state\.mediaIndex === 0/);
+  assert.match(appSource, /\$\("#media-viewer-next"\)\.disabled = state\.media\.length < 2 \|\| state\.mediaIndex === state\.media\.length - 1/);
+});

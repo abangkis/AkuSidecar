@@ -4782,7 +4782,7 @@ function openMedia(media, index) {
 
 function moveMedia(delta) {
   if (!state.media.length) return;
-  state.mediaIndex = (state.mediaIndex + delta + state.media.length) % state.media.length;
+  state.mediaIndex = moveTimelineCarouselIndex(state.mediaIndex, delta, state.media.length);
   renderMedia();
 }
 
@@ -4790,8 +4790,8 @@ function renderMedia() {
   $("#media-viewer-image").src = state.media[state.mediaIndex] ?? "";
   $("#media-viewer-canvas").scrollTo(0, 0);
   $("#media-viewer-count").textContent = `${state.mediaIndex + 1} of ${state.media.length}`;
-  $("#media-viewer-previous").disabled = state.media.length < 2;
-  $("#media-viewer-next").disabled = state.media.length < 2;
+  $("#media-viewer-previous").disabled = state.media.length < 2 || state.mediaIndex === 0;
+  $("#media-viewer-next").disabled = state.media.length < 2 || state.mediaIndex === state.media.length - 1;
 }
 
 function setMediaZoom(zoomed) {
