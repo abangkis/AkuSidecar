@@ -14,6 +14,8 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 )
 
+const maxAutomaticMediaProvenancePerItem = 4
+
 func (s *Store) QueueMediaProvenance(ctx context.Context, items []domain.TimelineItem, provider, verifierVersion string) (int, error) {
 	if provider == "" || verifierVersion == "" {
 		return 0, errors.New("media provenance queue requires provider and verifier version")
@@ -28,12 +30,17 @@ func (s *Store) QueueMediaProvenance(ctx context.Context, items []domain.Timelin
 		if item.Evidence == nil {
 			continue
 		}
+		eligibleImages := 0
 		for mediaIndex, media := range item.Evidence.Media {
 			kind, _ := media["kind"].(string)
 			target, _ := media["url"].(string)
 			if strings.ToLower(strings.TrimSpace(kind)) != "image" || !strings.HasPrefix(strings.TrimSpace(target), "https://") {
 				continue
 			}
+			if eligibleImages >= maxAutomaticMediaProvenancePerItem {
+				break
+			}
+			eligibleImages++
 			sum := sha256.Sum256([]byte(target))
 			targetHash := hex.EncodeToString(sum[:])
 			result, err := tx.ExecContext(ctx, `

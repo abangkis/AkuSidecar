@@ -21,7 +21,7 @@ import (
 
 const (
 	ExpectedBridgeVersion       = "0.8.0"
-	ExpectedBridgeRevision      = "source-adapters-v100"
+	ExpectedBridgeRevision      = "source-adapters-v101"
 	ExpectedBridgeID            = "aku-bridge-chrome-mv3-v0"
 	BridgeProtocolMajor         = 2
 	BridgeProtocolMinor         = 0
@@ -231,7 +231,7 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	expectedMediaAdapters := domain.ExpectedMediaEvidenceAdapterVersions()
 	requiredCapabilities := append([]string(nil), expectedBridgeActions...)
 	requiredCapabilities = append(requiredCapabilities, "authority.read_only_bounded", "capture.bounded")
-	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "protocolMajor": BridgeProtocolMajor, "minimumProtocolMinor": MinimumBridgeProtocolMinor, "supportedProtocolMinor": BridgeProtocolMinor, "adapterVersions": expectedAdapters, "mediaEvidenceAdapterVersions": expectedMediaAdapters, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedSources, "actions": expectedBridgeActions, "requiredCapabilities": requiredCapabilities, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}}}
+	status := BridgeStatus{State: "reconnecting", Expected: map[string]any{"bridgeId": ExpectedBridgeID, "extensionVersion": ExpectedBridgeVersion, "runtimeRevision": ExpectedBridgeRevision, "buildId": ExpectedBridgeBuildID, "protocolMajor": BridgeProtocolMajor, "minimumProtocolMinor": MinimumBridgeProtocolMinor, "supportedProtocolMinor": BridgeProtocolMinor, "adapterVersions": expectedAdapters, "mediaEvidenceAdapterVersions": expectedMediaAdapters, "contract": domain.BridgeContractVersion, "manifestVersion": 3, "sources": expectedSources, "actions": expectedBridgeActions, "requiredCapabilities": requiredCapabilities, "authority": "read_only_bounded", "captureLimits": domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20, MaxMediaPerBlock: 20}}}
 	if e.heartbeat == nil {
 		return status
 	}
@@ -298,7 +298,7 @@ func (e *Engine) BridgeStatus() BridgeStatus {
 	if copy.Authority != "read_only_bounded" {
 		status.Reasons = append(status.Reasons, "bridge authority mismatch")
 	}
-	if copy.CaptureLimits != (domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}) {
+	if copy.CaptureLimits != (domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20, MaxMediaPerBlock: 20}) {
 		status.Reasons = append(status.Reasons, "capture limits mismatch")
 	}
 	if !validBridgeSourceReadiness(copy.SourceAccess.Sources, copy.Sources) {
@@ -339,7 +339,7 @@ func ExpectedHeartbeat() domain.BridgeHeartbeat {
 	for _, source := range domain.SourceIDs() {
 		readiness = append(readiness, domain.BridgeSourceReadiness{Source: source, PermissionGranted: true, ScriptRegistered: true, Ready: true, Reason: "ready"})
 	}
-	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, ProtocolMajor: BridgeProtocolMajor, ProtocolMinor: BridgeProtocolMinor, UpdateCapabilities: []string{"background_check", "staged_apply", "idle_deferral", "rollback_status"}, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), Sources: readiness, ObservedAt: domain.Now()}}
+	return domain.BridgeHeartbeat{BridgeID: ExpectedBridgeID, ExtensionVersion: ExpectedBridgeVersion, RuntimeRevision: ExpectedBridgeRevision, BuildID: ExpectedBridgeBuildID, ProtocolMajor: BridgeProtocolMajor, ProtocolMinor: BridgeProtocolMinor, UpdateCapabilities: []string{"background_check", "staged_apply", "idle_deferral", "rollback_status"}, AdapterVersions: domain.ExpectedAdapterVersions(), MediaEvidenceAdapterVersions: domain.ExpectedMediaEvidenceAdapterVersions(), ContractVersion: domain.BridgeContractVersion, ManifestVersion: 3, Sources: domain.SourceIDs(), Actions: append([]string(nil), expectedBridgeActions...), Authority: "read_only_bounded", CaptureLimits: domain.BridgeCaptureLimits{MaxScrolls: 6, MaxSnapshots: 7, MaxBlocksPerSnapshot: 20, MaxMediaPerBlock: 20}, SourceAccess: domain.BridgeSourceAccess{GrantedSources: domain.SourceIDs(), Sources: readiness, ObservedAt: domain.Now()}}
 }
 
 func bridgeProtocol(value domain.BridgeHeartbeat) (major, minor int, legacy bool) {

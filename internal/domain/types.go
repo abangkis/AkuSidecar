@@ -1020,6 +1020,7 @@ type BridgeCaptureLimits struct {
 	MaxScrolls           int `json:"maxScrolls"`
 	MaxSnapshots         int `json:"maxSnapshots"`
 	MaxBlocksPerSnapshot int `json:"maxBlocksPerSnapshot"`
+	MaxMediaPerBlock     int `json:"maxMediaPerBlock"`
 }
 
 type Observation struct {

@@ -1,5 +1,12 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
+import {
+  boundedTimelineMedia,
+  moveTimelineCarouselIndex,
+  normalizeTimelineCarouselIndex,
+  shouldUseTimelineCarousel,
+  timelineCarouselDotIndexes,
+} from "./timeline-media-carousel.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -78,6 +85,7 @@ const state = {
   passiveMediaEvidenceAttempts: new Map(),
   releasedCaptureSources: new Set(),
   expandedTimelineText: new Set(),
+  timelineCarouselIndexes: new Map(),
   expandedAIDetails: new Set(),
   expandedAIFeedbackOptions: new Set(),
   backgroundTimelineRefreshPending: false,
@@ -4046,7 +4054,7 @@ function buildExpandableText(value, { characterLimit, lineLimit, label, expansio
 }
 
 function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry = null) {
-  const media = (Array.isArray(values) ? values : [])
+  const media = boundedTimelineMedia((Array.isArray(values) ? values : [])
     .map((value) => ({
       ...value,
       displayUrl: safeMediaUrl(value.posterUrl || value.url),
@@ -4054,11 +4062,20 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry 
         ? safePlaybackUrl(value.playbackUrl, source)
         : null,
     }))
-    .filter((value) => value.displayUrl)
-    .slice(0, 4);
+    .filter((value) => value.displayUrl));
   if (!media.length) return null;
   const isVideoMedia = (value) => value.kind === "video" || (contentKind === "video" && media.length === 1);
   const imageMedia = media.filter((value) => !isVideoMedia(value));
+  if (shouldUseTimelineCarousel(media)) {
+    return buildTimelineMediaCarousel({
+      media,
+      imageMedia,
+      isVideoMedia,
+      source,
+      nativePostUrl,
+      entry,
+    });
+  }
   const gallery = document.createElement("div");
   gallery.className = `source-layout-media media-count-${media.length}`;
   for (const value of media) {
@@ -4067,22 +4084,125 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry 
       gallery.append(buildVideoMedia(value, source, nativePostUrl, entry));
       continue;
     }
-    const control = document.createElement("button");
-    control.type = "button";
-    control.className = "source-layout-media-item";
-    const image = document.createElement("img");
-    image.src = value.displayUrl;
-    image.alt = value.alt || `${sourceLabel(source)} post media`;
-    image.loading = "lazy";
-    image.referrerPolicy = "no-referrer";
-    control.append(image);
-    control.addEventListener("click", () => openMedia(
-      imageMedia.map((entry) => entry.displayUrl),
-      imageMedia.indexOf(value),
-    ));
-    gallery.append(control);
+    gallery.append(buildImageMediaControl(value, source, imageMedia));
   }
   return gallery;
+}
+
+function buildTimelineMediaCarousel({ media, imageMedia, isVideoMedia, source, nativePostUrl, entry }) {
+  const carousel = document.createElement("section");
+  carousel.className = `source-layout-media source-layout-media-carousel media-count-${media.length}`;
+  carousel.tabIndex = 0;
+  carousel.setAttribute("role", "region");
+  carousel.setAttribute("aria-label", `${sourceLabel(source)} post media carousel`);
+
+  const stage = document.createElement("div");
+  stage.className = "source-layout-media-carousel-stage";
+  const viewport = document.createElement("div");
+  viewport.className = "source-layout-media-carousel-viewport";
+  const previous = document.createElement("button");
+  previous.type = "button";
+  previous.className = "source-layout-media-carousel-previous";
+  previous.setAttribute("aria-label", "Previous post image");
+  previous.textContent = "‹";
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "source-layout-media-carousel-next";
+  next.setAttribute("aria-label", "Next post image");
+  next.textContent = "›";
+  stage.append(viewport, previous, next);
+
+  const navigation = document.createElement("div");
+  navigation.className = "source-layout-media-carousel-navigation";
+  const dots = document.createElement("div");
+  dots.className = "source-layout-media-carousel-dots";
+  dots.setAttribute("aria-hidden", "true");
+  const status = document.createElement("span");
+  status.className = "source-layout-media-carousel-status";
+  status.setAttribute("aria-live", "polite");
+  navigation.append(dots, status);
+  carousel.append(stage, navigation);
+
+  const carouselKey = entry?.id ? String(entry.id) : null;
+  let currentIndex = normalizeTimelineCarouselIndex(
+    carouselKey ? state.timelineCarouselIndexes.get(carouselKey) : 0,
+    media.length,
+  );
+  let suppressOpenUntil = 0;
+
+  function show(index) {
+    currentIndex = normalizeTimelineCarouselIndex(index, media.length);
+    if (carouselKey) state.timelineCarouselIndexes.set(carouselKey, currentIndex);
+    const value = media[currentIndex];
+    viewport.replaceChildren(isVideoMedia(value)
+      ? buildVideoMedia(value, source, nativePostUrl, entry)
+      : buildImageMediaControl(value, source, imageMedia, () => Date.now() >= suppressOpenUntil));
+    previous.disabled = currentIndex === 0;
+    next.disabled = currentIndex === media.length - 1;
+    status.textContent = `${currentIndex + 1} of ${media.length}`;
+    dots.replaceChildren(...timelineCarouselDotIndexes(media.length, currentIndex).map((index, offset, indexes) => {
+      const dot = document.createElement("span");
+      dot.className = "source-layout-media-carousel-dot";
+      dot.classList.toggle("is-current", index === currentIndex);
+      dot.classList.toggle("is-window-edge", (
+        offset === 0 && index > 0 ||
+        offset === indexes.length - 1 && index < media.length - 1
+      ));
+      return dot;
+    }));
+  }
+
+  function move(delta) {
+    show(moveTimelineCarouselIndex(currentIndex, delta, media.length));
+  }
+
+  previous.addEventListener("click", () => move(-1));
+  next.addEventListener("click", () => move(1));
+  carousel.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    move(event.key === "ArrowLeft" ? -1 : 1);
+  });
+
+  let pointerStart = null;
+  stage.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary || event.button !== 0 || event.target.closest("video")) return;
+    pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    stage.setPointerCapture?.(event.pointerId);
+  });
+  stage.addEventListener("pointerup", (event) => {
+    if (!pointerStart || pointerStart.id !== event.pointerId) return;
+    const deltaX = event.clientX - pointerStart.x;
+    const deltaY = event.clientY - pointerStart.y;
+    pointerStart = null;
+    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+    suppressOpenUntil = Date.now() + 300;
+    event.preventDefault();
+    move(deltaX < 0 ? 1 : -1);
+  });
+  stage.addEventListener("pointercancel", () => { pointerStart = null; });
+
+  show(currentIndex);
+  return carousel;
+}
+
+function buildImageMediaControl(value, source, imageMedia, canOpen = () => true) {
+  const control = document.createElement("button");
+  control.type = "button";
+  control.className = "source-layout-media-item";
+  const imageIndex = imageMedia.indexOf(value);
+  control.setAttribute("aria-label", `Open image ${imageIndex + 1} of ${imageMedia.length} in viewer`);
+  const image = document.createElement("img");
+  image.src = value.displayUrl;
+  image.alt = value.alt || `${sourceLabel(source)} post media`;
+  image.loading = "lazy";
+  image.referrerPolicy = "no-referrer";
+  control.append(image);
+  control.addEventListener("click", () => {
+    if (!canOpen()) return;
+    openMedia(imageMedia.map((entry) => entry.displayUrl), imageIndex);
+  });
+  return control;
 }
 
 function buildVideoMedia(value, source, nativePostUrl, entry = null) {

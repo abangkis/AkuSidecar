@@ -32,7 +32,7 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, ok := SourceByID(SourceFacebook); !ok || !descriptor.DefaultActive {
 		t.Fatalf("Facebook must be available and preselected: %+v ok=%v", descriptor, ok)
 	}
-	if descriptor, ok := SourceByID(SourceInstagram); !ok || !descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" || descriptor.MediaEvidenceAdapterVersion != "instagram-structured-video-v1" || descriptor.PlaybackRecoveryCapability != "native_post_recapture" {
+	if descriptor, ok := SourceByID(SourceInstagram); !ok || !descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" || descriptor.MediaEvidenceAdapterVersion != "instagram-structured-carousel-v2" || descriptor.PlaybackRecoveryCapability != "native_post_recapture" {
 		t.Fatalf("Instagram must be available and preselected as a local-frontier source: %+v ok=%v", descriptor, ok)
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
