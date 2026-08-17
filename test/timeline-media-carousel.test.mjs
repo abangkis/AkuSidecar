@@ -39,12 +39,19 @@ test("carousel dot window follows the current slide in long galleries", () => {
   assert.deepEqual(timelineCarouselDotIndexes(12, 11), [5, 6, 7, 8, 9, 10, 11]);
 });
 
-test("carousel swipe capture stays on the viewport and never captures arrow clicks", async () => {
+test("carousel swipe capture stays on horizontal viewport movement and preserves taps", async () => {
   const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
 
   assert.match(appSource, /viewport\.addEventListener\("pointerdown"/);
-  assert.match(appSource, /viewport\.setPointerCapture\?\.\(event\.pointerId\)/);
+  assert.match(appSource, /viewport\.addEventListener\("pointermove"/);
   assert.match(appSource, /viewport\.addEventListener\("pointerup"/);
   assert.match(appSource, /viewport\.addEventListener\("pointercancel"/);
   assert.doesNotMatch(appSource, /stage\.(?:addEventListener\("pointer(?:down|up|cancel)"|setPointerCapture)/);
+
+  const pointerDownStart = appSource.indexOf('viewport.addEventListener("pointerdown"');
+  const pointerMoveStart = appSource.indexOf('viewport.addEventListener("pointermove"');
+  const pointerUpStart = appSource.indexOf('viewport.addEventListener("pointerup"');
+  assert.ok(pointerDownStart >= 0 && pointerMoveStart > pointerDownStart && pointerUpStart > pointerMoveStart);
+  assert.doesNotMatch(appSource.slice(pointerDownStart, pointerMoveStart), /setPointerCapture/);
+  assert.match(appSource.slice(pointerMoveStart, pointerUpStart), /viewport\.setPointerCapture\?\.\(event\.pointerId\)/);
 });

@@ -4168,7 +4168,18 @@ function buildTimelineMediaCarousel({ media, imageMedia, isVideoMedia, source, n
   let pointerStart = null;
   viewport.addEventListener("pointerdown", (event) => {
     if (!event.isPrimary || event.button !== 0 || event.target.closest("video")) return;
-    pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, captured: false };
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (!pointerStart || pointerStart.id !== event.pointerId || pointerStart.captured) return;
+    const deltaX = event.clientX - pointerStart.x;
+    const deltaY = event.clientY - pointerStart.y;
+    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) return;
+    if (Math.abs(deltaX) <= Math.abs(deltaY)) {
+      pointerStart = null;
+      return;
+    }
+    pointerStart.captured = true;
     viewport.setPointerCapture?.(event.pointerId);
   });
   viewport.addEventListener("pointerup", (event) => {
