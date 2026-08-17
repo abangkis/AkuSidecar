@@ -63,3 +63,13 @@ test("media viewer arrows use bounded timeline navigation at both ends", async (
   assert.match(appSource, /\$\("#media-viewer-previous"\)\.disabled = state\.media\.length < 2 \|\| state\.mediaIndex === 0/);
   assert.match(appSource, /\$\("#media-viewer-next"\)\.disabled = state\.media\.length < 2 \|\| state\.mediaIndex === state\.media\.length - 1/);
 });
+
+test("media viewer keeps focus on the dialog and routes arrow keys to navigation", async () => {
+  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const indexSource = await readFile(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
+
+  assert.match(indexSource, /<dialog id="media-viewer"[^>]*tabindex="-1"/);
+  assert.match(appSource, /\$\("#media-viewer"\)\.addEventListener\("keydown"/);
+  assert.match(appSource, /moveMedia\(event\.key === "ArrowLeft" \? -1 : 1\)/);
+  assert.match(appSource, /viewer\.focus\(\{ preventScroll: true \}\)/);
+});

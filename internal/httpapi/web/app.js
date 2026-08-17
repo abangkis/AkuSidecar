@@ -241,6 +241,11 @@ $("#back-to-top").addEventListener("click", returnToTop);
 $("#media-viewer-zoom").addEventListener("click", () => setMediaZoom(!state.mediaZoomed));
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
+$("#media-viewer").addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  moveMedia(event.key === "ArrowLeft" ? -1 : 1);
+});
 window.addEventListener("scroll", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
@@ -4777,7 +4782,9 @@ function openMedia(media, index) {
   state.mediaIndex = index;
   setMediaZoom(false);
   renderMedia();
-  $("#media-viewer").showModal();
+  const viewer = $("#media-viewer");
+  viewer.showModal();
+  viewer.focus({ preventScroll: true });
 }
 
 function moveMedia(delta) {
