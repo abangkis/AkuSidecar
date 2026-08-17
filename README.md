@@ -41,7 +41,7 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.8.0` / `source-adapters-v101`
+- AkuBridge `0.8.0` / `source-adapters-v102`
 - AkuSupervisor is recommended for normal Windows development and daily
   lifecycle ownership; it is not part of the portable runtime or a macOS
   prerequisite
@@ -392,6 +392,13 @@ controls; a new choice supersedes the earlier source/evidence label during
 fitting while preserving the append-only feedback audit trail. This makes
 semantic, preference, and AI Detector cost and correction signals visible
 without exposing raw database identities.
+
+Adapter performance is reported separately from raw feed coverage. A bounded
+viewport observation remains `partial` because AkuBridge never claims full-feed
+coverage; Inbox derives `capturePerformance.outcome` as `complete`, `degraded`,
+or `unavailable` from the latest capture-quality verdict. This prevents a
+healthy bounded capture from appearing as an adapter failure while preserving
+the narrower raw-coverage claim for diagnostics.
 
 The live update indicator is a monotonic view of the complete synchronous
 pipeline: source capture, acquisition planning, follow-up capture, candidate

@@ -247,6 +247,7 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		}
 		allSnapshots = append(allSnapshots, observation.Snapshots...)
 	}
+	entry.CapturePerformance = inboxCapturePerformance(observations)
 	entry.AcquisitionPlanning = inboxAcquisitionPlanning(run.Coverage["acquisitionPlanning"])
 	evidence := map[string]bool{}
 	for _, snapshot := range capture.ReconcileSnapshots(run.Source, allSnapshots) {
@@ -368,6 +369,36 @@ func inboxAcquisitionPlanning(value any) *domain.InboxAcquisitionPlanning {
 	}
 	if result.Mode == "" && result.Decision == "" {
 		return nil
+	}
+	return result
+}
+
+func inboxCapturePerformance(observations []domain.Observation) *domain.InboxCapturePerformance {
+	if len(observations) == 0 {
+		return nil
+	}
+	latest := observations[len(observations)-1]
+	coverage := latest.Coverage
+	quality, _ := coverage["captureQuality"].(map[string]any)
+	health, _ := coverage["adapterHealth"].(map[string]any)
+	result := &domain.InboxCapturePerformance{
+		Scope:             "bounded_viewport",
+		RawCoverageStatus: inboxStringValue(coverage["status"]),
+		QualityVerdict:    inboxStringValue(quality["verdict"]),
+		AdapterHealth:     inboxStringValue(health["state"]),
+		CaptureMethod:     inboxStringValue(coverage["captureMethod"]),
+	}
+	candidates := 0
+	for _, snapshot := range latest.Snapshots {
+		candidates += len(snapshot.Blocks)
+	}
+	switch {
+	case result.RawCoverageStatus == "unavailable" || candidates == 0:
+		result.Outcome = "unavailable"
+	case result.QualityVerdict == "complete":
+		result.Outcome = "complete"
+	default:
+		result.Outcome = "degraded"
 	}
 	return result
 }

@@ -722,6 +722,16 @@ type InboxRun struct {
 	MediaAcquisition     *InboxMediaAcquisition    `json:"mediaAcquisition,omitempty"`
 	AcquisitionPlanning  *InboxAcquisitionPlanning `json:"acquisitionPlanning,omitempty"`
 	IdentityResolution   *InboxIdentityResolution  `json:"identityResolution,omitempty"`
+	CapturePerformance   *InboxCapturePerformance  `json:"capturePerformance,omitempty"`
+}
+
+type InboxCapturePerformance struct {
+	Outcome           string `json:"outcome"`
+	Scope             string `json:"scope"`
+	RawCoverageStatus string `json:"rawCoverageStatus,omitempty"`
+	QualityVerdict    string `json:"qualityVerdict,omitempty"`
+	AdapterHealth     string `json:"adapterHealth,omitempty"`
+	CaptureMethod     string `json:"captureMethod,omitempty"`
 }
 
 type InboxAcquisitionPlanning struct {

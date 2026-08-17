@@ -2616,6 +2616,7 @@ function buildInboxRun(run, sessionStatus = "") {
   const mechanics = document.createElement("p");
   mechanics.className = "inbox-run-mechanics";
   mechanics.textContent = [
+	  run.capturePerformance?.outcome ? `Capture ${humanize(run.capturePerformance.outcome)}` : null,
     `${run.acquisitionRounds ?? 0} capture round${run.acquisitionRounds === 1 ? "" : "s"}`,
     `${run.snapshotCount ?? 0} snapshots`,
     `${run.performedScrolls ?? 0} scrolls`,

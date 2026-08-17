@@ -21,7 +21,7 @@ import (
 
 const (
 	ExpectedBridgeVersion       = "0.8.0"
-	ExpectedBridgeRevision      = "source-adapters-v101"
+	ExpectedBridgeRevision      = "source-adapters-v102"
 	ExpectedBridgeID            = "aku-bridge-chrome-mv3-v0"
 	BridgeProtocolMajor         = 2
 	BridgeProtocolMinor         = 0
@@ -1244,9 +1244,16 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return err
 	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
-		if localReason, localFinish := localAcquisitionCompletionReason(run.Source, observations[0], observationCandidateCount(merged)); localFinish {
+		localMode := "local_frontier"
+		localReason, localFinish := localStructuredFallbackCompletionReason(run.Source, observations[0])
+		if localFinish {
+			localMode = "structured_fallback"
+		} else {
+			localReason, localFinish = localAcquisitionCompletionReason(run.Source, observations[0], observationCandidateCount(merged))
+		}
+		if localFinish {
 			receipt := map[string]any{
-				"mode":                  "local_frontier",
+				"mode":                  localMode,
 				"decision":              "finish",
 				"reason":                localReason,
 				"followUpQueued":        false,
@@ -1445,6 +1452,22 @@ func mergeObservations(values []domain.Observation) domain.Observation {
 func localFrontierFinishesAcquisition(source domain.Source, observation domain.Observation) bool {
 	_, finished := localAcquisitionCompletionReason(source, observation, observationCandidateCount(observation))
 	return finished
+}
+
+func localStructuredFallbackCompletionReason(source domain.Source, observation domain.Observation) (string, bool) {
+	if source != domain.SourceInstagram || observationCandidateCount(observation) == 0 {
+		return "", false
+	}
+	if strings.TrimSpace(stringCoverageValue(observation.Coverage["captureMethod"])) != "instagram_structured_feed_json" ||
+		strings.TrimSpace(stringCoverageValue(observation.Coverage["scrollStopReason"])) != "structured_fallback" ||
+		integerCoverageValue(observation.Coverage["performedScrolls"]) != 0 {
+		return "", false
+	}
+	frontier, ok := observation.Coverage["frontier"].(map[string]any)
+	if !ok || booleanCoverageValue(frontier["hasMoreCandidateSignal"]) || len(continuationAnchors(observation.Coverage)) > 0 {
+		return "", false
+	}
+	return "The structured Instagram fallback produced bounded candidates but no navigable continuation frontier; repeating the same fallback would not extend coverage.", true
 }
 
 func localAcquisitionCompletionReason(source domain.Source, observation domain.Observation, eligibleCandidateCount int) (string, bool) {

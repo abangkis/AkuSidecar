@@ -1415,8 +1415,8 @@ func TestBridgeCompatibilityUsesProtocolAndRequiredCapabilitySubsets(t *testing.
 	}
 	value := ExpectedHeartbeat()
 	value.ExtensionVersion = "0.8.1"
-	value.RuntimeRevision = "source-adapters-v102"
-	value.BuildID = "aku-bridge-0.8.1-source-adapters-v102"
+	value.RuntimeRevision = "source-adapters-v103"
+	value.BuildID = "aku-bridge-0.8.1-source-adapters-v103"
 	value.AdapterVersions["x"] = "x-dom-v23"
 	value.MediaEvidenceAdapterVersions["x"] = "x-response-evidence-v3"
 	value.Actions = append(value.Actions, "future_optional_action")
@@ -1699,6 +1699,37 @@ func TestGuardedLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 	base.Coverage["scrollStopReason"] = "deadline"
 	if localFrontierFinishesAcquisition(domain.SourceLinkedIn, base) {
 		t.Fatal("deadline-exhausted LinkedIn capture must retain model planning")
+	}
+}
+
+func TestInstagramStructuredFallbackFinishesWithoutRepeatingIdenticalEvidence(t *testing.T) {
+	observation := domain.Observation{
+		Source: domain.SourceInstagram,
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "instagram:bounded123",
+			PlatformID:  "instagram:shortcode:bounded123",
+			Permalink:   "https://www.instagram.com/p/bounded123/",
+			Text:        "A bounded structured Instagram candidate.",
+		}}}},
+		Coverage: map[string]any{
+			"captureMethod":    "instagram_structured_feed_json",
+			"scrollStopReason": "structured_fallback",
+			"performedScrolls": float64(0),
+			"frontier": map[string]any{
+				"anchorKeys":             []any{},
+				"newCandidateCount":      float64(1),
+				"hasMoreCandidateSignal": false,
+			},
+		},
+	}
+
+	reason, finished := localStructuredFallbackCompletionReason(domain.SourceInstagram, observation)
+	if !finished || !strings.Contains(reason, "no navigable continuation frontier") {
+		t.Fatalf("structured fallback completion reason=%q finished=%t", reason, finished)
+	}
+	observation.Coverage["frontier"].(map[string]any)["anchorKeys"] = []any{"instagram:shortcode:bounded123"}
+	if _, finished := localStructuredFallbackCompletionReason(domain.SourceInstagram, observation); finished {
+		t.Fatal("a structured fallback with a navigable frontier must retain continuation planning")
 	}
 }
 
