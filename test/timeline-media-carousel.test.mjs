@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   MAX_TIMELINE_MEDIA,
   boundedTimelineMedia,
@@ -36,4 +37,14 @@ test("carousel dot window follows the current slide in long galleries", () => {
   assert.deepEqual(timelineCarouselDotIndexes(12, 0), [0, 1, 2, 3, 4, 5, 6]);
   assert.deepEqual(timelineCarouselDotIndexes(12, 6), [3, 4, 5, 6, 7, 8, 9]);
   assert.deepEqual(timelineCarouselDotIndexes(12, 11), [5, 6, 7, 8, 9, 10, 11]);
+});
+
+test("carousel swipe capture stays on the viewport and never captures arrow clicks", async () => {
+  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /viewport\.addEventListener\("pointerdown"/);
+  assert.match(appSource, /viewport\.setPointerCapture\?\.\(event\.pointerId\)/);
+  assert.match(appSource, /viewport\.addEventListener\("pointerup"/);
+  assert.match(appSource, /viewport\.addEventListener\("pointercancel"/);
+  assert.doesNotMatch(appSource, /stage\.(?:addEventListener\("pointer(?:down|up|cancel)"|setPointerCapture)/);
 });

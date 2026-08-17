@@ -4166,12 +4166,12 @@ function buildTimelineMediaCarousel({ media, imageMedia, isVideoMedia, source, n
   });
 
   let pointerStart = null;
-  stage.addEventListener("pointerdown", (event) => {
+  viewport.addEventListener("pointerdown", (event) => {
     if (!event.isPrimary || event.button !== 0 || event.target.closest("video")) return;
     pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
-    stage.setPointerCapture?.(event.pointerId);
+    viewport.setPointerCapture?.(event.pointerId);
   });
-  stage.addEventListener("pointerup", (event) => {
+  viewport.addEventListener("pointerup", (event) => {
     if (!pointerStart || pointerStart.id !== event.pointerId) return;
     const deltaX = event.clientX - pointerStart.x;
     const deltaY = event.clientY - pointerStart.y;
@@ -4181,7 +4181,7 @@ function buildTimelineMediaCarousel({ media, imageMedia, isVideoMedia, source, n
     event.preventDefault();
     move(deltaX < 0 ? 1 : -1);
   });
-  stage.addEventListener("pointercancel", () => { pointerStart = null; });
+  viewport.addEventListener("pointercancel", () => { pointerStart = null; });
 
   show(currentIndex);
   return carousel;
