@@ -1,12 +1,9 @@
 package reasoning
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +14,14 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/ai4u-inference-sdk-go/inference"
+	"github.com/abangkis/ai4u-inference-sdk-go/providers/codexappserver"
 )
+
+// appServerThreadLimit mirrors the Codex App Server transport's thread budget.
+// Structured invocations never reuse an ephemeral thread, so the transport
+// recycles its managed process once this many threads have been started.
+const appServerThreadLimit = 4
 
 type CodexAppServer struct {
 	executable   string
@@ -28,41 +32,9 @@ type CodexAppServer struct {
 	evaluation   config.ModelConfig
 	planSchema   any
 	resultSchema any
+	transport    *codexappserver.Adapter
 
-	invokeMu       sync.Mutex
-	writeMu        sync.Mutex
-	pendingMu      sync.Mutex
-	cmd            *exec.Cmd
-	ownership      processOwnership
-	stdin          io.WriteCloser
-	pending        map[string]chan rpcMessage
-	notifications  chan rpcMessage
-	done           chan error
-	nextID         uint64
-	threadsStarted uint64
-	stderr         *boundedBuffer
-}
-
-const (
-	appServerThreadLimit       = 4
-	appServerThreadReleaseWait = 2 * time.Second
-	appServerGracefulStopWait  = 3 * time.Second
-	appServerForcedStopWait    = 750 * time.Millisecond
-)
-
-type usage struct{ Input, CachedInput, Output, ReasoningOutput *int64 }
-
-type rpcMessage struct {
-	ID     json.RawMessage `json:"id,omitempty"`
-	Method string          `json:"method,omitempty"`
-	Params json.RawMessage `json:"params,omitempty"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *rpcError       `json:"error,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	exeMu sync.Mutex
 }
 
 type boundedBuffer struct {
@@ -99,7 +71,7 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &CodexAppServer{
+	provider := &CodexAppServer{
 		executable:   executable,
 		pathDirs:     codexPathDirs(executable),
 		root:         cfg.Root,
@@ -108,15 +80,26 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 		evaluation:   cfg.Reasoning.Evaluation,
 		planSchema:   planSchema,
 		resultSchema: resultSchema,
-		pending:      map[string]chan rpcMessage{},
-	}, nil
+	}
+	transport, err := codexappserver.New(codexappserver.Config{
+		WorkingDir:    provider.root,
+		Timeout:       provider.timeout,
+		ClientName:    "AkuSidecar",
+		ClientVersion: domain.ApplicationVersion,
+		Start:         provider.startSession,
+	})
+	if err != nil {
+		return nil, err
+	}
+	provider.transport = transport
+	return provider, nil
 }
 
 func (c *CodexAppServer) Name() string { return "codex-app-server" }
 
 func (c *CodexAppServer) ExecutablePath() string {
-	c.invokeMu.Lock()
-	defer c.invokeMu.Unlock()
+	c.exeMu.Lock()
+	defer c.exeMu.Unlock()
 	return c.executable
 }
 
@@ -129,14 +112,19 @@ func (c *CodexAppServer) DiscoverExecutable(ctx context.Context, requested strin
 }
 
 func (c *CodexAppServer) UseExecutable(executable string) {
-	c.invokeMu.Lock()
-	defer c.invokeMu.Unlock()
+	c.exeMu.Lock()
 	if filepath.Clean(executable) == filepath.Clean(c.executable) {
+		c.exeMu.Unlock()
 		return
 	}
-	c.stopLocked(true)
+	c.exeMu.Unlock()
+	if c.transport != nil {
+		_ = c.transport.Close()
+	}
+	c.exeMu.Lock()
 	c.executable = executable
 	c.pathDirs = codexPathDirs(executable)
+	c.exeMu.Unlock()
 }
 
 func (c *CodexAppServer) ProfileOptions() []ProfileOption {
@@ -207,90 +195,11 @@ func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, o
 	return result, telemetry, nil
 }
 
-func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema any, model config.ModelConfig) (string, usage, time.Duration, error) {
-	c.invokeMu.Lock()
-	defer c.invokeMu.Unlock()
-	ctx, cancel := context.WithTimeout(parent, c.timeout)
-	defer cancel()
-	started := time.Now()
-	var totalUsage usage
-	for attempt := 1; attempt <= 2; attempt++ {
-		raw, attemptUsage, err := c.invokeAttemptLocked(ctx, prompt, schema, model)
-		totalUsage = addUsage(totalUsage, attemptUsage)
-		if err == nil {
-			return raw, totalUsage, time.Since(started), nil
-		}
-		retry := attempt < 2 && retryableAppServerError(err) && ctx.Err() == nil
-		c.stopLocked(true)
-		if !retry {
-			return "", totalUsage, time.Since(started), err
-		}
-		// Capacity is process-transient. Retry once through a fresh App Server,
-		// with the same model and the same overall invocation deadline.
-	}
-	panic("unreachable App Server retry loop")
-}
-
-func (c *CodexAppServer) invokeAttemptLocked(ctx context.Context, prompt string, schema any, model config.ModelConfig) (string, usage, error) {
-	if err := c.ensureStartedLocked(ctx); err != nil {
-		return "", usage{}, err
-	}
-	c.drainNotifications()
-
-	threadResult, err := c.callLocked(ctx, "thread/start", map[string]any{
-		"model":            model.Model,
-		"cwd":              c.root,
-		"approvalPolicy":   "never",
-		"sandbox":          "read-only",
-		"ephemeral":        true,
-		"baseInstructions": "Return only the requested structured result. Do not use tools, browse, execute commands, edit files, or read workspace files.",
-		"config":           map[string]any{"web_search": "disabled", "approval_policy": "never", "sandbox_workspace_write": map[string]any{"network_access": false}},
+func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema any, model config.ModelConfig) (string, codexappserver.Usage, time.Duration, error) {
+	return c.transport.InvokeStructured(parent, prompt, schema, codexappserver.ModelConfig{
+		Model:  model.Model,
+		Effort: inference.ReasoningEffort(model.Effort),
 	})
-	if err != nil {
-		return "", usage{}, err
-	}
-	var thread struct {
-		Thread struct {
-			ID string `json:"id"`
-		} `json:"thread"`
-	}
-	if err := json.Unmarshal(threadResult, &thread); err != nil || thread.Thread.ID == "" {
-		return "", usage{}, fmt.Errorf("decode App Server thread/start response: %w", err)
-	}
-	c.threadsStarted++
-	defer c.releaseThreadLocked(thread.Thread.ID)
-	turnResult, err := c.callLocked(ctx, "turn/start", map[string]any{
-		"threadId":       thread.Thread.ID,
-		"input":          []map[string]any{{"type": "text", "text": prompt}},
-		"model":          model.Model,
-		"effort":         model.Effort,
-		"approvalPolicy": "never",
-		"outputSchema":   schema,
-	})
-	if err != nil {
-		return "", usage{}, err
-	}
-	var turn struct {
-		Turn struct {
-			ID string `json:"id"`
-		} `json:"turn"`
-	}
-	if err := json.Unmarshal(turnResult, &turn); err != nil || turn.Turn.ID == "" {
-		return "", usage{}, fmt.Errorf("decode App Server turn/start response: %w", err)
-	}
-	final, tokenUsage, err := c.waitTurnLocked(ctx, thread.Thread.ID, turn.Turn.ID)
-	if err != nil {
-		return "", tokenUsage, err
-	}
-	return final, tokenUsage, nil
-}
-
-func retryableAppServerError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "model is at capacity")
 }
 
 // IsUsageLimitError identifies account-level Codex exhaustion. Unlike model
@@ -298,347 +207,71 @@ func retryableAppServerError(err error) bool {
 // different source lane and must be acknowledged by the user before automatic
 // work resumes.
 func IsUsageLimitError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "model is at capacity") {
-		return false
-	}
-	markers := []string{
-		"usage limit", "usage_limit", "insufficient_quota", "weekly limit", "monthly limit",
-	}
-	for _, marker := range markers {
-		if strings.Contains(message, marker) {
-			return true
-		}
-	}
-	return strings.Contains(message, "limit") && (strings.Contains(message, "you've hit") ||
-		strings.Contains(message, "you have hit") ||
-		strings.Contains(message, "you've reached") ||
-		strings.Contains(message, "you have reached"))
+	return codexappserver.IsUsageLimitError(err)
 }
 
-func addUsage(left, right usage) usage {
-	return usage{
-		Input:           addTokenCount(left.Input, right.Input),
-		CachedInput:     addTokenCount(left.CachedInput, right.CachedInput),
-		Output:          addTokenCount(left.Output, right.Output),
-		ReasoningOutput: addTokenCount(left.ReasoningOutput, right.ReasoningOutput),
-	}
-}
-
-func addTokenCount(left, right *int64) *int64 {
-	if left == nil && right == nil {
-		return nil
-	}
-	var total int64
-	if left != nil {
-		total += *left
-	}
-	if right != nil {
-		total += *right
-	}
-	return &total
-}
-
-func (c *CodexAppServer) ensureStartedLocked(ctx context.Context) error {
-	if c.cmd != nil {
-		return nil
-	}
-	cmd := exec.Command(c.executable, "app-server", "--listen", "stdio://")
+// startSession launches a fresh managed App Server process and returns its
+// stdio session. The transport adapter owns the RPC protocol and lifecycle;
+// AkuSidecar retains process discovery, configuration, environment, and
+// descendant cleanup so the wire behavior is unchanged.
+func (c *CodexAppServer) startSession() (codexappserver.Session, error) {
+	c.exeMu.Lock()
+	executable := c.executable
+	pathDirs := c.pathDirs
+	c.exeMu.Unlock()
+	cmd := exec.Command(executable, "app-server", "--listen", "stdio://")
 	cmd.Dir = c.root
-	cmd.Env = codexEnvironment(c.pathDirs)
+	cmd.Env = codexEnvironment(pathDirs)
 	configureProcess(cmd)
 	ownership, err := newProcessOwnership()
 	if err != nil {
-		return err
+		return codexappserver.Session{}, err
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		ownership.close()
-		return err
+		return codexappserver.Session{}, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		ownership.close()
-		return err
+		return codexappserver.Session{}, err
 	}
 	stderr := &boundedBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		ownership.close()
-		return fmt.Errorf("start Codex App Server: %w", err)
+		return codexappserver.Session{}, fmt.Errorf("start Codex App Server: %w", err)
 	}
 	if err := ownership.attach(cmd); err != nil {
 		_ = cmd.Process.Kill()
 		ownership.terminate()
 		ownership.close()
-		return err
+		return codexappserver.Session{}, err
 	}
-	c.cmd, c.ownership, c.stdin, c.stderr = cmd, ownership, stdin, stderr
-	c.threadsStarted = 0
-	c.notifications = make(chan rpcMessage, 1024)
-	c.done = make(chan error, 1)
-	go c.readLoop(cmd, stdout, c.done, c.notifications)
-	if _, err := c.callLocked(ctx, "initialize", map[string]any{
-		"clientInfo":   map[string]any{"name": "AkuSidecar", "title": "AkuSidecar Go", "version": domain.ApplicationVersion},
-		"capabilities": map[string]any{"experimentalApi": false},
-	}); err != nil {
-		c.stopLocked(true)
-		return fmt.Errorf("initialize Codex App Server: %w", err)
-	}
-	if err := c.write(map[string]any{"method": "initialized"}); err != nil {
-		c.stopLocked(true)
-		return err
-	}
-	return nil
-}
-
-func (c *CodexAppServer) callLocked(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	c.nextID++
-	id := fmt.Sprintf("aku-%d", c.nextID)
-	result := make(chan rpcMessage, 1)
-	c.pendingMu.Lock()
-	c.pending[id] = result
-	c.pendingMu.Unlock()
-	if err := c.write(map[string]any{"id": id, "method": method, "params": params}); err != nil {
-		c.removePending(id)
-		return nil, err
-	}
-	select {
-	case response := <-result:
-		if response.Error != nil {
-			return nil, fmt.Errorf("App Server %s error %d: %s", method, response.Error.Code, response.Error.Message)
-		}
-		return response.Result, nil
-	case err := <-c.done:
-		c.removePending(id)
-		return nil, fmt.Errorf("Codex App Server exited: %w: %s", err, c.stderrText())
-	case <-ctx.Done():
-		c.removePending(id)
-		c.stopLocked(true)
-		return nil, fmt.Errorf("Codex App Server %s timed out: %w", method, ctx.Err())
-	}
-}
-
-func (c *CodexAppServer) waitTurnLocked(ctx context.Context, threadID, turnID string) (string, usage, error) {
-	var final string
-	var tokenUsage usage
-	for {
-		select {
-		case message := <-c.notifications:
-			switch message.Method {
-			case "item/completed":
-				var event struct {
-					ThreadID string         `json:"threadId"`
-					TurnID   string         `json:"turnId"`
-					Item     map[string]any `json:"item"`
+	var stopOnce sync.Once
+	return codexappserver.Session{
+		Stdin:  stdin,
+		Stdout: stdout,
+		Wait:   cmd.Wait,
+		Stderr: stderr.String,
+		Stop: func() {
+			stopOnce.Do(func() {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
 				}
-				if json.Unmarshal(message.Params, &event) == nil && event.ThreadID == threadID && event.TurnID == turnID {
-					if text := agentMessageText(event.Item); text != "" {
-						final = text
-					}
-				}
-			case "thread/tokenUsage/updated":
-				var event struct {
-					ThreadID   string `json:"threadId"`
-					TurnID     string `json:"turnId"`
-					TokenUsage struct {
-						Last struct {
-							Input     int64 `json:"inputTokens"`
-							Cached    int64 `json:"cachedInputTokens"`
-							Output    int64 `json:"outputTokens"`
-							Reasoning int64 `json:"reasoningOutputTokens"`
-						} `json:"last"`
-					} `json:"tokenUsage"`
-				}
-				if json.Unmarshal(message.Params, &event) == nil && event.ThreadID == threadID && event.TurnID == turnID {
-					tokenUsage = usage{Input: ptr(event.TokenUsage.Last.Input), CachedInput: ptr(event.TokenUsage.Last.Cached), Output: ptr(event.TokenUsage.Last.Output), ReasoningOutput: ptr(event.TokenUsage.Last.Reasoning)}
-				}
-			case "turn/completed":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					Turn     struct {
-						ID     string `json:"id"`
-						Status string `json:"status"`
-						Error  *struct {
-							Message string `json:"message"`
-						} `json:"error"`
-						Items []map[string]any `json:"items"`
-					} `json:"turn"`
-				}
-				if json.Unmarshal(message.Params, &event) != nil || event.ThreadID != threadID || event.Turn.ID != turnID {
-					continue
-				}
-				if event.Turn.Status != "completed" {
-					message := "turn did not complete"
-					if event.Turn.Error != nil && event.Turn.Error.Message != "" {
-						message = event.Turn.Error.Message
-					}
-					return "", tokenUsage, errors.New(message)
-				}
-				if final == "" {
-					for _, item := range event.Turn.Items {
-						if text := agentMessageText(item); text != "" {
-							final = text
-						}
-					}
-				}
-				if strings.TrimSpace(final) == "" {
-					return "", tokenUsage, errors.New("Codex App Server returned no final response")
-				}
-				return final, tokenUsage, nil
-			}
-		case err := <-c.done:
-			return "", tokenUsage, fmt.Errorf("Codex App Server exited: %w: %s", err, c.stderrText())
-		case <-ctx.Done():
-			return "", tokenUsage, fmt.Errorf("Codex App Server turn timed out: %w", ctx.Err())
-		}
-	}
-}
-
-func (c *CodexAppServer) readLoop(cmd *exec.Cmd, stdout io.Reader, done chan<- error, notifications chan<- rpcMessage) {
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		var message rpcMessage
-		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
-			continue
-		}
-		if len(message.ID) > 0 && (len(message.Result) > 0 || message.Error != nil) {
-			id := rawID(message.ID)
-			c.pendingMu.Lock()
-			channel := c.pending[id]
-			delete(c.pending, id)
-			c.pendingMu.Unlock()
-			if channel != nil {
-				channel <- message
-			}
-			continue
-		}
-		if len(message.ID) > 0 && message.Method != "" {
-			_ = c.write(map[string]any{"id": rawValue(message.ID), "error": map[string]any{"code": -32601, "message": "AkuSidecar does not authorize App Server callbacks"}})
-			continue
-		}
-		notifications <- message
-	}
-	err := scanner.Err()
-	if waitErr := cmd.Wait(); err == nil {
-		err = waitErr
-	}
-	if err == nil {
-		err = errors.New("process closed")
-	}
-	done <- err
-}
-
-func (c *CodexAppServer) write(value any) error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	if c.stdin == nil {
-		return errors.New("Codex App Server stdin is unavailable")
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	_, err = c.stdin.Write(raw)
-	return err
-}
-
-func (c *CodexAppServer) drainNotifications() {
-	for {
-		select {
-		case <-c.notifications:
-			continue
-		default:
-			return
-		}
-	}
-}
-
-func (c *CodexAppServer) removePending(id string) {
-	c.pendingMu.Lock()
-	delete(c.pending, id)
-	c.pendingMu.Unlock()
-}
-
-func (c *CodexAppServer) releaseThreadLocked(threadID string) {
-	if c.cmd != nil && c.stdin != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), appServerThreadReleaseWait)
-		_, _ = c.callLocked(ctx, "thread/unsubscribe", map[string]any{"threadId": threadID})
-		if c.cmd != nil && c.stdin != nil && ctx.Err() == nil {
-			// Structured invocations never resume their ephemeral thread.
-			// Hard deletion releases its thread-scoped resources immediately;
-			// unsubscribe alone permits App Server to retain them for 30 minutes.
-			_, _ = c.callLocked(ctx, "thread/delete", map[string]any{"threadId": threadID})
-		}
-		cancel()
-	}
-	if c.threadsStarted >= appServerThreadLimit {
-		c.stopLocked(true)
-	}
-}
-
-func (c *CodexAppServer) stopLocked(wait bool) {
-	if c.cmd == nil && c.stdin == nil {
-		c.ownership.terminate()
-		c.ownership.close()
-		c.ownership = processOwnership{}
-		c.done = nil
-		c.threadsStarted = 0
-		return
-	}
-	done := c.done
-	alreadyExited := c.cmd != nil && c.cmd.ProcessState != nil && c.cmd.ProcessState.Exited()
-	if c.stdin != nil {
-		_ = c.stdin.Close()
-	}
-	process := c.cmd
-	if wait && !alreadyExited && process != nil && process.Process != nil && done != nil {
-		select {
-		case <-done:
-			alreadyExited = true
-		case <-time.After(appServerGracefulStopWait):
-		}
-	}
-	if !alreadyExited && process != nil && process.Process != nil {
-		_ = process.Process.Kill()
-	}
-	if wait && done != nil && !alreadyExited && process != nil && process.Process != nil {
-		select {
-		case <-done:
-		case <-time.After(appServerForcedStopWait):
-		}
-	}
-	// The Job Object is the authoritative descendant cleanup boundary. It is
-	// intentionally invoked after the graceful window so normal App Server
-	// shutdown can finish without prematurely killing its helpers.
-	c.ownership.terminate()
-	c.ownership.close()
-	c.cmd, c.stdin, c.done = nil, nil, nil
-	c.ownership = processOwnership{}
-	c.notifications = nil
-	c.threadsStarted = 0
-	c.pendingMu.Lock()
-	c.pending = map[string]chan rpcMessage{}
-	c.pendingMu.Unlock()
+				ownership.terminate()
+				ownership.close()
+			})
+		},
+	}, nil
 }
 
 func (c *CodexAppServer) Close() error {
-	c.invokeMu.Lock()
-	defer c.invokeMu.Unlock()
-	c.stopLocked(true)
-	return nil
-}
-
-func (c *CodexAppServer) stderrText() string {
-	if c.stderr == nil {
-		return ""
+	if c.transport == nil {
+		return nil
 	}
-	return c.stderr.String()
+	return c.transport.Close()
 }
 
 func codexPathDirs(executable string) []string {
@@ -677,21 +310,7 @@ func readSchema(path string) (any, error) {
 	return value, nil
 }
 
-func rawID(value json.RawMessage) string { var id string; _ = json.Unmarshal(value, &id); return id }
-func rawValue(value json.RawMessage) any {
-	var result any
-	_ = json.Unmarshal(value, &result)
-	return result
-}
-func ptr(value int64) *int64 { return &value }
-func agentMessageText(item map[string]any) string {
-	if item["type"] != "agentMessage" {
-		return ""
-	}
-	value, _ := item["text"].(string)
-	return value
-}
-func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value usage, runErr error) domain.ReasoningTelemetry {
+func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value codexappserver.Usage, runErr error) domain.ReasoningTelemetry {
 	status := "completed"
 	if runErr != nil {
 		status = "failed"

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -142,7 +141,7 @@ func TestCodexAppServerRestartsAfterUnexpectedExitOnNextInvocation(t *testing.T)
 	if _, _, err := provider.Plan(context.Background(), run, observation, nil); err == nil {
 		t.Fatal("unexpected App Server exit must fail the active invocation")
 	}
-	if provider.cmd != nil {
+	if provider.transport.SessionActive() {
 		t.Fatal("exited App Server process must be discarded")
 	}
 	plan, _, err := provider.Plan(context.Background(), run, observation, nil)
@@ -179,7 +178,7 @@ func TestCodexAppServerRejectsCompletedTurnWithoutFinalResponse(t *testing.T) {
 	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !strings.Contains(err.Error(), "no final response") {
 		t.Fatalf("empty completed turn error=%v", err)
 	}
-	if provider.cmd != nil {
+	if provider.transport.SessionActive() {
 		t.Fatal("invalid App Server process must be discarded after a protocol failure")
 	}
 }
@@ -203,7 +202,7 @@ func TestCodexAppServerDeadlineDiscardsProcessAndRecovers(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("fake App Server never reached the hanging turn: %v", err)
 	}
-	if provider.cmd != nil {
+	if provider.transport.SessionActive() {
 		t.Fatal("timed-out App Server process must be discarded")
 	}
 	plan, _, err := provider.Plan(context.Background(), run, observation, nil)
@@ -222,7 +221,7 @@ func TestCodexAppServerMalformedStructuredResultDoesNotPoisonTransport(t *testin
 	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !strings.Contains(err.Error(), "decode App Server reasoning result") {
 		t.Fatalf("malformed structured result error=%v", err)
 	}
-	if provider.cmd == nil {
+	if !provider.transport.SessionActive() {
 		t.Fatal("a model validation failure must not restart the healthy transport implicitly")
 	}
 	result, _, err := provider.Analyze(context.Background(), run, observation, nil)
@@ -257,17 +256,8 @@ func TestCodexAppServerSerializesConcurrentAdaptersOnOneTransport(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if provider.cmd == nil || provider.nextID != 2+workers*4 {
-		t.Fatalf("concurrent adapters did not use bounded serialized transports: cmd=%v nextID=%d", provider.cmd, provider.nextID)
-	}
-}
-
-func TestAppServerRetryExcludesCancellationAndDeadline(t *testing.T) {
-	if retryableAppServerError(context.Canceled) || retryableAppServerError(context.DeadlineExceeded) {
-		t.Fatal("cancellation and deadline must never retry")
-	}
-	if !retryableAppServerError(fmt.Errorf("Selected model is at capacity. Please try a different model.")) {
-		t.Fatal("explicit capacity failure must retry")
+	if !provider.transport.SessionActive() || provider.transport.NextRequestID() != 2+workers*4 {
+		t.Fatalf("concurrent adapters did not use bounded serialized transports: nextID=%d", provider.transport.NextRequestID())
 	}
 }
 
@@ -296,7 +286,15 @@ func TestUsageLimitErrorClassificationExcludesTransientCapacity(t *testing.T) {
 }
 
 func TestCodexAppServerCloseHasBoundedProcessWait(t *testing.T) {
-	provider := &CodexAppServer{cmd: &exec.Cmd{}, done: make(chan error)}
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	provider := newFakeCodexAppServer(t)
+	run, observation := fakeAppServerInput()
+	if _, _, err := provider.Plan(context.Background(), run, observation, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !provider.transport.SessionActive() {
+		t.Fatal("fake App Server session was not active before close")
+	}
 	started := time.Now()
 	if err := provider.Close(); err != nil {
 		t.Fatal(err)
@@ -317,11 +315,11 @@ func TestCodexAppServerUnsubscribesAndRecyclesAfterBoundedThreads(t *testing.T) 
 			t.Fatalf("invocation %d failed: %v", index+1, err)
 		}
 	}
-	if provider.cmd != nil || provider.threadsStarted != 0 {
-		t.Fatalf("bounded App Server was not recycled: cmd=%v threads=%d", provider.cmd, provider.threadsStarted)
+	if provider.transport.SessionActive() || provider.transport.ThreadsStarted() != 0 {
+		t.Fatalf("bounded App Server was not recycled: threads=%d", provider.transport.ThreadsStarted())
 	}
-	if provider.nextID != 1+appServerThreadLimit*4 {
-		t.Fatalf("thread release RPC count mismatch: nextID=%d", provider.nextID)
+	if provider.transport.NextRequestID() != 1+appServerThreadLimit*4 {
+		t.Fatalf("thread release RPC count mismatch: nextID=%d", provider.transport.NextRequestID())
 	}
 }
 
@@ -363,8 +361,8 @@ func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err != nil {
 		t.Fatalf("managed process was not reusable after recovery: %v", err)
 	}
-	if provider.cmd == nil || provider.nextID < 10 {
-		t.Fatalf("managed process was not reused: cmd=%v nextID=%d", provider.cmd, provider.nextID)
+	if !provider.transport.SessionActive() || provider.transport.NextRequestID() < 10 {
+		t.Fatalf("managed process was not reused: nextID=%d", provider.transport.NextRequestID())
 	}
 }
 
