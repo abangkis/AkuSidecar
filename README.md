@@ -112,6 +112,17 @@ go vet ./...
 `-p 1` avoids transient Windows executable-cleanup locks observed when multiple
 test binaries finish concurrently.
 
+### Inference SDK local dependency
+
+During development, `go.mod` pins `github.com/abangkis/ai4u-inference-sdk-go` to
+the local checkout at `../AI4UInferenceSDKGo` with a `replace` directive so
+frequent GitHub publishing is not required. That local SDK checkout must be
+present and kept in sync with the published branch.
+
+**Production builds must not link to a local checkout.** Release builds remove
+the `replace` directive and resolve the SDK from a published semantic version on
+GitHub; never ship a binary built against a project-local checkout.
+
 ## Development
 
 AkuSupervisor directly owns `runtime\dev\aku-sidecar.exe`; there is no

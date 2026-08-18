@@ -23,4 +23,5 @@ require (
 	modernc.org/token v1.1.0 // indirect
 )
 
+// Local bootstrap only. Remove this when the SDK has a published module version.
 replace github.com/abangkis/ai4u-inference-sdk-go => ../AI4UInferenceSDKGo
