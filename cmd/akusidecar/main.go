@@ -38,12 +38,30 @@ func main() {
 		return
 	}
 	settings := domain.DefaultSettings(cfg.Capture.Profile, cfg.Capture.Visibility, cfg.Preference.Mode, cfg.Capture.OpenMissingSource)
+	settings.ReasoningProvider = cfg.Reasoning.ActiveProvider
 	state, err := store.Open(cfg.Database.Path, settings)
 	fatal(logger, err)
 	defer state.Close()
 	persistedSettings, err := state.GetSettings(context.Background())
 	fatal(logger, err)
-	if options.CodexPath == "" && persistedSettings.ReasoningExecutablePath != "" {
+	selected := cfg.Reasoning.ActiveProvider
+	if !cfg.Reasoning.ProviderOverride && persistedSettings.ReasoningProvider != "" {
+		selected = persistedSettings.ReasoningProvider
+	}
+	if err := cfg.Reasoning.Select(selected); err != nil {
+		if cfg.Reasoning.ProviderOverride || persistedSettings.ReasoningProvider == "" {
+			fatal(logger, err)
+		}
+		logger.Printf("persisted reasoning provider %q is not declared; falling back to %q (%v)", selected, cfg.Reasoning.ActiveProvider, err)
+		if err := cfg.Reasoning.Select(cfg.Reasoning.ActiveProvider); err != nil {
+			fatal(logger, err)
+		}
+	}
+	if persistedSettings.ReasoningProvider != cfg.Reasoning.Provider {
+		persistedSettings.ReasoningProvider = cfg.Reasoning.Provider
+		fatal(logger, state.SaveSettings(context.Background(), persistedSettings))
+	}
+	if options.CodexPath == "" && cfg.Reasoning.Provider == "codex-app-server" && persistedSettings.ReasoningExecutablePath != "" {
 		persistedPath := persistedSettings.ReasoningExecutablePath
 		if _, statErr := os.Stat(persistedPath); statErr == nil {
 			cfg.Reasoning.Executable = persistedPath

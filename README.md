@@ -198,6 +198,15 @@ product setting and must resolve to one exact identity declared by
 There are no environment-based compatibility settings. Product settings are
 typed, stored in SQLite, and changed through `GET/PUT /api/settings`.
 
+`config/sidecar.json` declares every inference backend under
+`reasoning.providers` and picks the first-boot default with
+`reasoning.activeProvider`. A legacy single `reasoning.provider` block still
+loads and is projected into one declared provider. The selected provider is a
+typed product setting (`reasoningProvider`): switching it in Settings takes
+effect the next time the sidecar starts, and the boot-time profile migration
+re-resolves saved reasoning profiles against the new provider's catalog. A
+`--provider` flag overrides the Settings selection for one process launch.
+
 Auto Update is also a typed product setting. One Sidecar-owned scheduler can
 prepare hidden finite batches while the process is alive. Adaptive demand is
 the default: while the Timeline is idle it maintains one low-frequency standby

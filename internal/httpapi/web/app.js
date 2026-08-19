@@ -541,6 +541,18 @@ function renderSettings(settings) {
   if (!settings) return;
   renderReasoningProcesses(state.bootstrap?.reasoningProcesses ?? []);
   const reasoningRuntime = state.bootstrap?.reasoningRuntime;
+  const reasoningProviders = state.bootstrap?.reasoningProviders || [];
+  const reasoningProviderSelect = $("#reasoning-provider");
+  if (reasoningProviderSelect) {
+    const activeProvider = settings.reasoningProvider || state.bootstrap?.provider;
+    reasoningProviderSelect.replaceChildren(...reasoningProviders.map((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.name;
+      option.textContent = entry.label;
+      return option;
+    }));
+    if (reasoningProviders.some((entry) => entry.name === activeProvider)) reasoningProviderSelect.value = activeProvider;
+  }
   $("#reasoning-executable-label").textContent = reasoningRuntime?.label || "Inference executable";
   $("#reasoning-executable-path").value = reasoningRuntime?.executablePath || settings.reasoningExecutablePath || "";
   $("#reasoning-executable-path").disabled = reasoningRuntime?.editable === false;
@@ -981,6 +993,7 @@ function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
     preparedBatchMaxAgeHours: Number.parseInt($("#prepared-batch-max-age").value, 10),
     nextBatchBehavior: $("#next-batch-behavior").value,
     reasoningExecutablePath: $("#reasoning-executable-path").value.trim(),
+    reasoningProvider: $("#reasoning-provider")?.value || current.reasoningProvider,
     reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
     reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
     reasoningSemanticProfile: reasoningProfileValue("semantic_event_resolution", current.reasoningSemanticProfile),

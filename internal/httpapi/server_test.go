@@ -136,6 +136,23 @@ func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *
 	}
 }
 
+func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "applies after the sidecar restarts"},
+		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = activeProvider", "$(\"#reasoning-provider\")?.value"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing reasoning provider selection contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestRuntimeControlTokenIsRequiredAndComparedExactly(t *testing.T) {
 	token := strings.Repeat("a", 64)
 	if !validRuntimeControlToken(token, token) {
@@ -244,6 +261,9 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	reasoningRuntime := bootstrap["reasoningRuntime"].(map[string]any)
 	if reasoningRuntime["provider"] != "deterministic" || reasoningRuntime["editable"] != false {
 		t.Fatalf("reasoning runtime=%+v", reasoningRuntime)
+	}
+	if reasoningProviders, ok := bootstrap["reasoningProviders"].([]any); !ok || len(reasoningProviders) != 0 {
+		t.Fatalf("reasoning providers=%+v", bootstrap["reasoningProviders"])
 	}
 	bootstrapSettings := bootstrap["settings"].(map[string]any)
 	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["showLearningPanel"] != true || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "drawer" || bootstrapSettings["aiDetectionEnabled"] != true || bootstrapSettings["resurfaceMode"] != "smart" || bootstrapSettings["resurfaceCooldownDays"] != float64(7) {

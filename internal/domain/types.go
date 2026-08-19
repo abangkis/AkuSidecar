@@ -89,6 +89,7 @@ type Settings struct {
 	AIDetectionEnabled          bool           `json:"aiDetectionEnabled"`
 	ResurfaceMode               string         `json:"resurfaceMode"`
 	ResurfaceCooldownDays       int            `json:"resurfaceCooldownDays"`
+	ReasoningProvider           string         `json:"reasoningProvider"`
 	ReasoningExecutablePath     string         `json:"reasoningExecutablePath"`
 	ReasoningAcquisitionProfile string         `json:"reasoningAcquisitionProfile"`
 	ReasoningEvaluationProfile  string         `json:"reasoningEvaluationProfile"`

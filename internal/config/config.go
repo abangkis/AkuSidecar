@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -62,7 +63,22 @@ type DatabaseConfig struct {
 }
 
 type ReasoningConfig struct {
-	Provider      string      `json:"provider"`
+	ActiveProvider   string                    `json:"activeProvider"`
+	ProviderOverride bool                      `json:"-"`
+	Providers        map[string]ProviderConfig `json:"providers"`
+
+	Provider      string      `json:"-"`
+	Executable    string      `json:"-"`
+	Endpoint      string      `json:"-"`
+	MaxRetries    int         `json:"-"`
+	TimeoutMS     int         `json:"-"`
+	Planning      ModelConfig `json:"-"`
+	Evaluation    ModelConfig `json:"-"`
+	SemanticEvent ModelConfig `json:"-"`
+	AIDetection   ModelConfig `json:"-"`
+}
+
+type ProviderConfig struct {
 	Executable    string      `json:"executable"`
 	Endpoint      string      `json:"endpoint"`
 	MaxRetries    int         `json:"maxRetries,omitempty"`
@@ -76,6 +92,155 @@ type ReasoningConfig struct {
 type ModelConfig struct {
 	Model  string `json:"model"`
 	Effort string `json:"effort"`
+}
+
+// UnmarshalJSON accepts either the multi-provider shape (activeProvider with a
+// providers map) or the legacy single-provider shape (provider with flat
+// transport and model fields), so existing sidecar.json files keep loading.
+func (r *ReasoningConfig) UnmarshalJSON(data []byte) error {
+	var probe struct {
+		ActiveProvider string          `json:"activeProvider"`
+		Providers      json.RawMessage `json:"providers"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return err
+	}
+	if probe.ActiveProvider != "" || probe.Providers != nil {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		var modern struct {
+			ActiveProvider string                    `json:"activeProvider"`
+			Providers      map[string]ProviderConfig `json:"providers"`
+		}
+		if err := decoder.Decode(&modern); err != nil {
+			return err
+		}
+		r.ActiveProvider = modern.ActiveProvider
+		r.Providers = modern.Providers
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var legacy struct {
+		Provider      string      `json:"provider"`
+		Executable    string      `json:"executable"`
+		Endpoint      string      `json:"endpoint"`
+		MaxRetries    int         `json:"maxRetries"`
+		TimeoutMS     int         `json:"timeoutMs"`
+		Planning      ModelConfig `json:"planning"`
+		Evaluation    ModelConfig `json:"evaluation"`
+		SemanticEvent ModelConfig `json:"semanticEvent"`
+		AIDetection   ModelConfig `json:"aiDetection"`
+	}
+	if err := decoder.Decode(&legacy); err != nil {
+		return err
+	}
+	r.ActiveProvider = legacy.Provider
+	r.Providers = map[string]ProviderConfig{
+		legacy.Provider: {
+			Executable:    legacy.Executable,
+			Endpoint:      legacy.Endpoint,
+			MaxRetries:    legacy.MaxRetries,
+			TimeoutMS:     legacy.TimeoutMS,
+			Planning:      legacy.Planning,
+			Evaluation:    legacy.Evaluation,
+			SemanticEvent: legacy.SemanticEvent,
+			AIDetection:   legacy.AIDetection,
+		},
+	}
+	return nil
+}
+
+// Select resolves providerName as the active provider, projecting its declared
+// transport and model configuration onto the flat fields consumed by the
+// reasoning factory, resolvers, and engine.
+func (r *ReasoningConfig) Select(providerName string) error {
+	entry, ok := r.Providers[providerName]
+	if !ok {
+		return fmt.Errorf("reasoning provider %q is not declared", providerName)
+	}
+	r.Provider = providerName
+	r.Executable = entry.Executable
+	r.Endpoint = entry.Endpoint
+	r.MaxRetries = entry.MaxRetries
+	r.TimeoutMS = entry.TimeoutMS
+	r.Planning = entry.Planning
+	r.Evaluation = entry.Evaluation
+	r.SemanticEvent = entry.SemanticEvent
+	r.AIDetection = entry.AIDetection
+	return nil
+}
+
+type ProviderSummary struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+}
+
+func ProviderLabel(name string) string {
+	switch name {
+	case "codex-app-server":
+		return "Codex App Server"
+	case "ollama":
+		return "Ollama"
+	case "deterministic":
+		return "Local deterministic"
+	default:
+		return name
+	}
+}
+
+func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
+	names := make([]string, 0, len(r.Providers))
+	for name := range r.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	summaries := make([]ProviderSummary, 0, len(names))
+	for _, name := range names {
+		summaries = append(summaries, ProviderSummary{Name: name, Label: ProviderLabel(name)})
+	}
+	return summaries
+}
+
+func (r ReasoningConfig) Validate() error {
+	if len(r.Providers) == 0 {
+		return errors.New("at least one reasoning provider must be declared")
+	}
+	if _, ok := r.Providers[r.ActiveProvider]; !ok {
+		return fmt.Errorf("active reasoning provider %q is not declared", r.ActiveProvider)
+	}
+	for name, provider := range r.Providers {
+		if err := provider.Validate(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p ProviderConfig) Validate(name string) error {
+	if name != "deterministic" && name != "codex-app-server" && name != "ollama" {
+		return fmt.Errorf("unsupported reasoning provider %q", name)
+	}
+	if p.MaxRetries < 0 || p.MaxRetries > 5 {
+		return fmt.Errorf("reasoning provider %q max retries must be between 0 and 5", name)
+	}
+	if p.TimeoutMS < int((5*time.Second)/time.Millisecond) {
+		return fmt.Errorf("reasoning provider %q timeout must be at least 5000 ms", name)
+	}
+	if name == "codex-app-server" || name == "ollama" {
+		models := map[string]ModelConfig{
+			"planning":       p.Planning,
+			"evaluation":     p.Evaluation,
+			"semantic event": p.SemanticEvent,
+			"AI detection":   p.AIDetection,
+		}
+		for task, model := range models {
+			if model.Model == "" || model.Effort == "" {
+				return fmt.Errorf("%s model and effort are required for provider %q", task, name)
+			}
+		}
+	}
+	return nil
 }
 
 type CaptureConfig struct {
@@ -146,10 +311,17 @@ func Load(options Options) (Config, error) {
 	cfg.Dev = options.Dev
 	cfg.RuntimeControlToken = options.RuntimeControlToken
 	if options.CodexPath != "" {
-		cfg.Reasoning.Executable = options.CodexPath
+		if entry, ok := cfg.Reasoning.Providers["codex-app-server"]; ok {
+			entry.Executable = options.CodexPath
+			cfg.Reasoning.Providers["codex-app-server"] = entry
+		} else if entry, ok := cfg.Reasoning.Providers[cfg.Reasoning.ActiveProvider]; ok {
+			entry.Executable = options.CodexPath
+			cfg.Reasoning.Providers[cfg.Reasoning.ActiveProvider] = entry
+		}
 	}
 	if options.Provider != "" {
-		cfg.Reasoning.Provider = options.Provider
+		cfg.Reasoning.ActiveProvider = options.Provider
+		cfg.Reasoning.ProviderOverride = true
 	}
 	if options.Port != 0 {
 		cfg.Server.Port = options.Port
@@ -162,6 +334,9 @@ func Load(options Options) (Config, error) {
 	}
 	if !filepath.IsAbs(cfg.Database.Path) {
 		cfg.Database.Path = filepath.Join(cfg.Root, cfg.Database.Path)
+	}
+	if err := cfg.Reasoning.Select(cfg.Reasoning.ActiveProvider); err != nil {
+		return Config{}, err
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -205,27 +380,8 @@ func (c Config) Validate() error {
 		}
 		seenOrigins[canonical] = true
 	}
-	if c.Reasoning.Provider != "deterministic" && c.Reasoning.Provider != "codex-app-server" && c.Reasoning.Provider != "ollama" {
-		return fmt.Errorf("unsupported reasoning provider %q", c.Reasoning.Provider)
-	}
-	if c.Reasoning.MaxRetries < 0 || c.Reasoning.MaxRetries > 5 {
-		return errors.New("reasoning max retries must be between 0 and 5")
-	}
-	if c.Reasoning.TimeoutMS < int((5*time.Second)/time.Millisecond) {
-		return errors.New("reasoning timeout must be at least 5000 ms")
-	}
-	if c.Reasoning.Provider == "codex-app-server" || c.Reasoning.Provider == "ollama" {
-		models := map[string]ModelConfig{
-			"planning":       c.Reasoning.Planning,
-			"evaluation":     c.Reasoning.Evaluation,
-			"semantic event": c.Reasoning.SemanticEvent,
-			"AI detection":   c.Reasoning.AIDetection,
-		}
-		for name, model := range models {
-			if model.Model == "" || model.Effort == "" {
-				return fmt.Errorf("%s model and effort are required", name)
-			}
-		}
+	if err := c.Reasoning.Validate(); err != nil {
+		return err
 	}
 	if c.Capture.MaxAcquisitionRounds < 1 || c.Capture.MaxAcquisitionRounds > 2 {
 		return errors.New("max acquisition rounds must be one or two")

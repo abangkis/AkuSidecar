@@ -48,6 +48,26 @@ func TestSettingsPersistSingleImageFit(t *testing.T) {
 	}
 }
 
+func TestSettingsPersistReasoningProvider(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ReasoningProvider = "ollama"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ReasoningProvider != "ollama" {
+		t.Fatalf("persisted reasoning provider=%q", persisted.ReasoningProvider)
+	}
+}
+
 func TestExistingDefaultSourceProfileAdoptsInstagramOnlyOnce(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "sidecar.db")
