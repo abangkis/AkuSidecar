@@ -11,6 +11,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 )
 
 func ollamaTestServer(t *testing.T, wantThink any, content string) *httptest.Server {
@@ -157,6 +158,48 @@ func TestOllamaStructuredAnalyzeBindsEvidenceKeys(t *testing.T) {
 	}
 	if telemetry.Provider != "ollama" || telemetry.Effort != "high" || telemetry.OutputTokens == nil || *telemetry.OutputTokens != 5 {
 		t.Fatalf("telemetry=%+v", telemetry)
+	}
+}
+
+// TestOllamaCatalogSatisfiesBuiltinProfiles proves the consumer shares the
+// SDK's single profile model: every built-in execution profile resolves to a
+// native thinking budget whose neutral tier meets the profile's need through
+// the shared resolver.
+func TestOllamaCatalogSatisfiesBuiltinProfiles(t *testing.T) {
+	server := ollamaTestServer(t, nil, "")
+	provider, err := NewOllama(ollamaTestConfig(t, server))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	tier := map[string]inference.ReasoningEffort{
+		"off":    inference.ReasoningEffortNone,
+		"low":    inference.ReasoningEffortLow,
+		"medium": inference.ReasoningEffortMedium,
+		"high":   inference.ReasoningEffortHigh,
+		"max":    inference.ReasoningEffortMax,
+	}
+	for _, id := range []inference.ProfileID{
+		inference.ProfileStructuredFast,
+		inference.ProfileShortReasoning,
+		inference.ProfileGeneralSynthesis,
+		inference.ProfileDeepReasoning,
+	} {
+		spec, ok := inference.ProfileSpec(id)
+		if !ok {
+			t.Fatalf("profile spec %q missing", id)
+		}
+		model, ok := provider.ResolveProfile(string(id))
+		if !ok {
+			t.Fatalf("catalog cannot resolve built-in profile %q", id)
+		}
+		effort, ok := tier[model.Effort]
+		if !ok {
+			t.Fatalf("profile %q resolved to unknown effort %q", id, model.Effort)
+		}
+		if !inference.TierAtLeast(effort, spec.ReasoningTier) {
+			t.Fatalf("profile %q effort %q (tier %q) below need %q", id, model.Effort, effort, spec.ReasoningTier)
+		}
 	}
 }
 
