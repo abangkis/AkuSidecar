@@ -88,3 +88,34 @@ func TestDeploymentIdentityCombinations(t *testing.T) {
 		}
 	}
 }
+
+func TestOllamaRequiresModelsAndBoundsRetries(t *testing.T) {
+	base := Config{
+		Server: ServerConfig{Host: "127.0.0.1", Port: 11122}, Database: DatabaseConfig{Path: "test.db"},
+		Reasoning: ReasoningConfig{
+			Provider: "ollama", TimeoutMS: 5000, Endpoint: "http://127.0.0.1:11434",
+			Planning: ModelConfig{Model: "nemotron", Effort: "high"}, Evaluation: ModelConfig{Model: "nemotron", Effort: "high"},
+			SemanticEvent: ModelConfig{Model: "nemotron", Effort: "high"}, AIDetection: ModelConfig{Model: "nemotron", Effort: "high"},
+		},
+		Capture: CaptureConfig{MaxAcquisitionRounds: 1},
+		Bridge:  BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://abcdefghijklmnopabcdefghijklmnop/"}},
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid ollama configuration rejected: %v", err)
+	}
+	missing := base
+	missing.Reasoning.Planning = ModelConfig{Model: "nemotron"}
+	if err := missing.Validate(); err == nil || !strings.Contains(err.Error(), "planning model and effort") {
+		t.Fatalf("missing planning model error=%v", err)
+	}
+	retries := base
+	retries.Reasoning.MaxRetries = 6
+	if err := retries.Validate(); err == nil || !strings.Contains(err.Error(), "max retries") {
+		t.Fatalf("out of range retries error=%v", err)
+	}
+	unsupported := base
+	unsupported.Reasoning.Provider = "claude"
+	if err := unsupported.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported reasoning provider") {
+		t.Fatalf("unsupported provider error=%v", err)
+	}
+}

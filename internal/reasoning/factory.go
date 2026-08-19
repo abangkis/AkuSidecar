@@ -2,6 +2,7 @@ package reasoning
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 )
@@ -12,7 +13,54 @@ func NewProvider(cfg config.Config) (Provider, error) {
 		return Deterministic{}, nil
 	case "codex-app-server":
 		return NewCodexAppServer(cfg)
+	case "ollama":
+		return NewOllama(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported reasoning provider %q", cfg.Reasoning.Provider)
 	}
+}
+
+// effortRank orders the native effort vocabularies published by AkuSidecar
+// providers so a catalog default can be chosen deterministically.
+func effortRank(effort string) int {
+	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "none", "off":
+		return 0
+	case "low":
+		return 1
+	case "medium":
+		return 2
+	case "high":
+		return 3
+	case "xhigh":
+		return 4
+	case "max":
+		return 5
+	default:
+		return -1
+	}
+}
+
+// EnsureResolvableProfile returns the supplied profile ID when the provider
+// catalog can resolve it; otherwise it returns the provider's highest-effort
+// catalog profile so legacy settings values remain valid for a replacement
+// backend. Providers without a catalog return the input unchanged.
+func EnsureResolvableProfile(provider Provider, id string) string {
+	catalog, ok := provider.(ProfileProvider)
+	if !ok {
+		return id
+	}
+	if _, found := catalog.ResolveProfile(id); found {
+		return id
+	}
+	best, bestRank := "", -1
+	for _, option := range catalog.ProfileOptions() {
+		if rank := effortRank(option.Effort); rank > bestRank {
+			best, bestRank = option.ID, rank
+		}
+	}
+	if best == "" {
+		return id
+	}
+	return best
 }

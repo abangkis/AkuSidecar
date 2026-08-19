@@ -54,6 +54,24 @@ func main() {
 	}
 	provider, err := reasoning.NewProvider(cfg)
 	fatal(logger, err)
+	if _, ok := provider.(reasoning.ProfileProvider); ok {
+		migrated := false
+		for _, current := range []*string{
+			&persistedSettings.ReasoningAcquisitionProfile,
+			&persistedSettings.ReasoningEvaluationProfile,
+			&persistedSettings.ReasoningSemanticProfile,
+			&persistedSettings.ReasoningAIDeepProfile,
+		} {
+			if replacement := reasoning.EnsureResolvableProfile(provider, *current); replacement != *current {
+				*current = replacement
+				migrated = true
+			}
+		}
+		if migrated {
+			logger.Printf("migrated reasoning profiles for provider %s", provider.Name())
+			fatal(logger, state.SaveSettings(context.Background(), persistedSettings))
+		}
+	}
 	if executableRuntime, ok := provider.(reasoning.ExecutableRuntime); ok {
 		resolved := executableRuntime.ExecutablePath()
 		if persistedSettings.ReasoningExecutablePath != resolved {

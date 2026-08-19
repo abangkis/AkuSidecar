@@ -64,6 +64,8 @@ type DatabaseConfig struct {
 type ReasoningConfig struct {
 	Provider      string      `json:"provider"`
 	Executable    string      `json:"executable"`
+	Endpoint      string      `json:"endpoint"`
+	MaxRetries    int         `json:"maxRetries,omitempty"`
 	TimeoutMS     int         `json:"timeoutMs"`
 	Planning      ModelConfig `json:"planning"`
 	Evaluation    ModelConfig `json:"evaluation"`
@@ -203,13 +205,16 @@ func (c Config) Validate() error {
 		}
 		seenOrigins[canonical] = true
 	}
-	if c.Reasoning.Provider != "deterministic" && c.Reasoning.Provider != "codex-app-server" {
+	if c.Reasoning.Provider != "deterministic" && c.Reasoning.Provider != "codex-app-server" && c.Reasoning.Provider != "ollama" {
 		return fmt.Errorf("unsupported reasoning provider %q", c.Reasoning.Provider)
+	}
+	if c.Reasoning.MaxRetries < 0 || c.Reasoning.MaxRetries > 5 {
+		return errors.New("reasoning max retries must be between 0 and 5")
 	}
 	if c.Reasoning.TimeoutMS < int((5*time.Second)/time.Millisecond) {
 		return errors.New("reasoning timeout must be at least 5000 ms")
 	}
-	if c.Reasoning.Provider == "codex-app-server" {
+	if c.Reasoning.Provider == "codex-app-server" || c.Reasoning.Provider == "ollama" {
 		models := map[string]ModelConfig{
 			"planning":       c.Reasoning.Planning,
 			"evaluation":     c.Reasoning.Evaluation,
