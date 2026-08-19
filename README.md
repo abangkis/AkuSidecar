@@ -112,16 +112,13 @@ go vet ./...
 `-p 1` avoids transient Windows executable-cleanup locks observed when multiple
 test binaries finish concurrently.
 
-### Inference SDK local dependency
+### Inference SDK dependency
 
-During development, `go.mod` pins `github.com/abangkis/ai4u-inference-sdk-go` to
-the local checkout at `../AI4UInferenceSDKGo` with a `replace` directive so
-frequent GitHub publishing is not required. That local SDK checkout must be
-present and kept in sync with the published branch.
-
-**Production builds must not link to a local checkout.** Release builds remove
-the `replace` directive and resolve the SDK from a published semantic version on
-GitHub; never ship a binary built against a project-local checkout.
+`go.mod` requires `github.com/abangkis/ai4u-inference-sdk-go` at the published
+`v0.1.0` tag on GitHub; there is no local `replace` directive. The exact module
+hash is locked in `go.sum`. Bump the version when a newer SDK release is needed.
+Because the module is private, `GOPRIVATE=github.com/abangkis/*` must be set so
+`go` fetches directly from GitHub instead of the public proxy and checksum DB.
 
 ## Development
 
