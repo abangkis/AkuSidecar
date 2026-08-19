@@ -42,6 +42,7 @@ func ollamaBindings() map[inference.ProfileID]inference.Binding {
 // model: the built-in profiles resolve to native thinking budgets via a
 // capability binding map, and inference.Resolve enforces satisfiability.
 type Ollama struct {
+	name         string
 	endpoint     string
 	maxRetries   int
 	timeout      time.Duration
@@ -57,6 +58,10 @@ type Ollama struct {
 }
 
 func NewOllama(cfg config.Config) (*Ollama, error) {
+	name := strings.TrimSpace(cfg.Reasoning.Provider)
+	if name == "" {
+		name = "ollama"
+	}
 	endpoint := strings.TrimSpace(cfg.Reasoning.Endpoint)
 	if endpoint == "" {
 		endpoint = ollamaDefaultEndpoint
@@ -82,6 +87,7 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 		return nil, err
 	}
 	provider := &Ollama{
+		name:         name,
 		endpoint:     endpoint,
 		maxRetries:   cfg.Reasoning.MaxRetries,
 		timeout:      time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
@@ -98,7 +104,7 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 	return provider, nil
 }
 
-func (o *Ollama) Name() string { return "ollama" }
+func (o *Ollama) Name() string { return o.name }
 
 func (o *Ollama) ProfileOptions() []ProfileOption {
 	options := make([]ProfileOption, 0, len(o.order))
@@ -145,7 +151,7 @@ func (o *Ollama) Plan(ctx context.Context, run domain.Run, observation domain.Ob
 
 func (o *Ollama) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
 	raw, usage, duration, err := o.invoke(ctx, buildPlanningPrompt(run, observation, knowledge), o.planSchema, model)
-	telemetry := ollamaTelemetry(run, "acquisition_planning", model, duration, usage, err)
+	telemetry := o.telemetry(run, "acquisition_planning", model, duration, usage, err)
 	if err != nil {
 		return AcquisitionPlan{}, telemetry, err
 	}
@@ -166,7 +172,7 @@ func (o *Ollama) Analyze(ctx context.Context, run domain.Run, observation domain
 func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	request := buildEvaluationRequest(run, observation, knowledge)
 	raw, usage, duration, err := o.invoke(ctx, request.prompt, o.resultSchema, model)
-	telemetry := ollamaTelemetry(run, "candidate_evaluation", model, duration, usage, err)
+	telemetry := o.telemetry(run, "candidate_evaluation", model, duration, usage, err)
 	if err != nil {
 		return domain.ReasoningResult{}, telemetry, err
 	}
@@ -204,10 +210,10 @@ func ollamaProfileLabel(id inference.ProfileID) string {
 	return labels[id]
 }
 
-func ollamaTelemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value ollama.Usage, runErr error) domain.ReasoningTelemetry {
+func (o *Ollama) telemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value ollama.Usage, runErr error) domain.ReasoningTelemetry {
 	status := "completed"
 	if runErr != nil {
 		status = "failed"
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "ollama", Model: model.Model, Effort: model.Effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: model.Model, Effort: model.Effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
 }
