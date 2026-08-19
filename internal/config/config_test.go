@@ -98,7 +98,7 @@ func TestMultiProviderConfigurationSelectsActiveProvider(t *testing.T) {
         "semanticEvent": {"model": "gpt-5.6-luna", "effort": "high"},
         "aiDetection": {"model": "gpt-5.6-luna", "effort": "high"}
       },
-      "ollama": {
+      "ollama-nemotron": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
         "timeoutMs": 300000,
@@ -106,6 +106,15 @@ func TestMultiProviderConfigurationSelectsActiveProvider(t *testing.T) {
         "evaluation": {"model": "nemotron-3.5-lightning:latest", "effort": "high"},
         "semanticEvent": {"model": "nemotron-3.5-lightning:latest", "effort": "high"},
         "aiDetection": {"model": "nemotron-3.5-lightning:latest", "effort": "high"}
+      },
+      "ollama-qwen": {
+        "endpoint": "http://127.0.0.1:11434",
+        "maxRetries": 1,
+        "timeoutMs": 300000,
+        "planning": {"model": "qwen3.8:27b", "effort": "high"},
+        "evaluation": {"model": "qwen3.8:27b", "effort": "high"},
+        "semanticEvent": {"model": "qwen3.8:27b", "effort": "high"},
+        "aiDetection": {"model": "qwen3.8:27b", "effort": "high"}
       }
     }
   },
@@ -128,14 +137,23 @@ func TestMultiProviderConfigurationSelectsActiveProvider(t *testing.T) {
 		t.Fatalf("active projection=%+v", cfg.Reasoning)
 	}
 	summaries := cfg.Reasoning.ProviderSummary()
-	if len(summaries) != 2 || summaries[0].Name != "codex-app-server" || summaries[0].Label != "Codex App Server" || summaries[1].Name != "ollama" || summaries[1].Label != "Ollama" {
+	if len(summaries) != 3 ||
+		summaries[0].Name != "codex-app-server" || summaries[0].Label != "Codex App Server" ||
+		summaries[1].Name != "ollama-nemotron" || summaries[1].Label != "Ollama · Nemotron 3.5 Lightning" ||
+		summaries[2].Name != "ollama-qwen" || summaries[2].Label != "Ollama · Qwen 3.8 27B" {
 		t.Fatalf("provider summaries=%+v", summaries)
 	}
-	if err := cfg.Reasoning.Select("ollama"); err != nil {
+	if err := cfg.Reasoning.Select("ollama-nemotron"); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Reasoning.Provider != "ollama" || cfg.Reasoning.Endpoint != "http://127.0.0.1:11434" || cfg.Reasoning.MaxRetries != 1 || cfg.Reasoning.TimeoutMS != 300000 || cfg.Reasoning.Planning.Model != "nemotron-3.5-lightning:latest" {
-		t.Fatalf("re-projected ollama=%+v", cfg.Reasoning)
+	if cfg.Reasoning.Provider != "ollama-nemotron" || cfg.Reasoning.Endpoint != "http://127.0.0.1:11434" || cfg.Reasoning.MaxRetries != 1 || cfg.Reasoning.TimeoutMS != 300000 || cfg.Reasoning.Planning.Model != "nemotron-3.5-lightning:latest" {
+		t.Fatalf("re-projected ollama-nemotron=%+v", cfg.Reasoning)
+	}
+	if err := cfg.Reasoning.Select("ollama-qwen"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Reasoning.Provider != "ollama-qwen" || cfg.Reasoning.Planning.Model != "qwen3.8:27b" {
+		t.Fatalf("re-projected ollama-qwen=%+v", cfg.Reasoning)
 	}
 	if err := cfg.Reasoning.Select("missing"); err == nil || !strings.Contains(err.Error(), "not declared") {
 		t.Fatalf("undeclared provider selection error=%v", err)
@@ -209,15 +227,23 @@ func TestOllamaRequiresModelsAndBoundsRetries(t *testing.T) {
 	base := Config{
 		Server: ServerConfig{Host: "127.0.0.1", Port: 11122}, Database: DatabaseConfig{Path: "test.db"},
 		Reasoning: ReasoningConfig{
-			ActiveProvider: "ollama",
+			ActiveProvider: "ollama-nemotron",
 			Providers: map[string]ProviderConfig{
-				"ollama": {
+				"ollama-nemotron": {
 					TimeoutMS:     5000,
 					Endpoint:      "http://127.0.0.1:11434",
 					Planning:      ModelConfig{Model: "nemotron", Effort: "high"},
 					Evaluation:    ModelConfig{Model: "nemotron", Effort: "high"},
 					SemanticEvent: ModelConfig{Model: "nemotron", Effort: "high"},
 					AIDetection:   ModelConfig{Model: "nemotron", Effort: "high"},
+				},
+				"ollama-qwen": {
+					TimeoutMS:     5000,
+					Endpoint:      "http://127.0.0.1:11434",
+					Planning:      ModelConfig{Model: "qwen3.8:27b", Effort: "high"},
+					Evaluation:    ModelConfig{Model: "qwen3.8:27b", Effort: "high"},
+					SemanticEvent: ModelConfig{Model: "qwen3.8:27b", Effort: "high"},
+					AIDetection:   ModelConfig{Model: "qwen3.8:27b", Effort: "high"},
 				},
 			},
 		},
@@ -227,24 +253,49 @@ func TestOllamaRequiresModelsAndBoundsRetries(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatalf("valid ollama configuration rejected: %v", err)
 	}
+	if err := base.Reasoning.Select("ollama-qwen"); err != nil {
+		t.Fatal(err)
+	}
+	if base.Reasoning.Planning.Model != "qwen3.8:27b" {
+		t.Fatalf("selected ollama-qwen projection=%+v", base.Reasoning)
+	}
 	missing := base
-	entry := missing.Reasoning.Providers["ollama"]
+	missing.Reasoning.Providers = copyProviders(base.Reasoning.Providers)
+	entry := missing.Reasoning.Providers["ollama-nemotron"]
 	entry.Planning = ModelConfig{Model: "nemotron"}
-	missing.Reasoning.Providers["ollama"] = entry
+	missing.Reasoning.Providers["ollama-nemotron"] = entry
 	if err := missing.Validate(); err == nil || !strings.Contains(err.Error(), "planning model and effort") {
 		t.Fatalf("missing planning model error=%v", err)
 	}
+	qwenMissing := base
+	qwenMissing.Reasoning.Providers = copyProviders(base.Reasoning.Providers)
+	qwenEntry := qwenMissing.Reasoning.Providers["ollama-qwen"]
+	qwenEntry.AIDetection = ModelConfig{Model: "qwen3.8:27b"}
+	qwenMissing.Reasoning.Providers["ollama-qwen"] = qwenEntry
+	if err := qwenMissing.Validate(); err == nil || !strings.Contains(err.Error(), "AI detection model and effort") {
+		t.Fatalf("missing qwen ai detection model error=%v", err)
+	}
 	retries := base
-	entry = retries.Reasoning.Providers["ollama"]
+	retries.Reasoning.Providers = copyProviders(base.Reasoning.Providers)
+	entry = retries.Reasoning.Providers["ollama-nemotron"]
 	entry.MaxRetries = 6
-	retries.Reasoning.Providers["ollama"] = entry
+	retries.Reasoning.Providers["ollama-nemotron"] = entry
 	if err := retries.Validate(); err == nil || !strings.Contains(err.Error(), "max retries") {
 		t.Fatalf("out of range retries error=%v", err)
 	}
 	unsupported := base
-	unsupported.Reasoning.Providers = map[string]ProviderConfig{"claude": unsupported.Reasoning.Providers["ollama"]}
+	unsupported.Reasoning.Providers = copyProviders(base.Reasoning.Providers)
+	unsupported.Reasoning.Providers = map[string]ProviderConfig{"claude": unsupported.Reasoning.Providers["ollama-nemotron"]}
 	unsupported.Reasoning.ActiveProvider = "claude"
 	if err := unsupported.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported reasoning provider") {
 		t.Fatalf("unsupported provider error=%v", err)
 	}
+}
+
+func copyProviders(providers map[string]ProviderConfig) map[string]ProviderConfig {
+	cloned := make(map[string]ProviderConfig, len(providers))
+	for name, provider := range providers {
+		cloned[name] = provider
+	}
+	return cloned
 }

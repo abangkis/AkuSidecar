@@ -176,15 +176,29 @@ type ProviderSummary struct {
 	Label string `json:"label"`
 }
 
+// IsOllamaProvider reports whether the provider name routes to the Ollama
+// transport. Model-scoped provider entries are named ollama-<alias> so each
+// declared backend can carry its own model catalog.
+func IsOllamaProvider(name string) bool {
+	return name == "ollama" || strings.HasPrefix(name, "ollama-")
+}
+
 func ProviderLabel(name string) string {
 	switch name {
 	case "codex-app-server":
 		return "Codex App Server"
 	case "ollama":
 		return "Ollama"
+	case "ollama-nemotron":
+		return "Ollama · Nemotron 3.5 Lightning"
+	case "ollama-qwen":
+		return "Ollama · Qwen 3.8 27B"
 	case "deterministic":
 		return "Local deterministic"
 	default:
+		if IsOllamaProvider(name) {
+			return "Ollama · " + strings.TrimPrefix(name, "ollama-")
+		}
 		return name
 	}
 }
@@ -218,7 +232,7 @@ func (r ReasoningConfig) Validate() error {
 }
 
 func (p ProviderConfig) Validate(name string) error {
-	if name != "deterministic" && name != "codex-app-server" && name != "ollama" {
+	if name != "deterministic" && name != "codex-app-server" && !IsOllamaProvider(name) {
 		return fmt.Errorf("unsupported reasoning provider %q", name)
 	}
 	if p.MaxRetries < 0 || p.MaxRetries > 5 {
@@ -227,7 +241,7 @@ func (p ProviderConfig) Validate(name string) error {
 	if p.TimeoutMS < int((5*time.Second)/time.Millisecond) {
 		return fmt.Errorf("reasoning provider %q timeout must be at least 5000 ms", name)
 	}
-	if name == "codex-app-server" || name == "ollama" {
+	if name == "codex-app-server" || IsOllamaProvider(name) {
 		models := map[string]ModelConfig{
 			"planning":       p.Planning,
 			"evaluation":     p.Evaluation,

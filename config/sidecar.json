@@ -36,7 +36,7 @@
           "effort": "high"
         }
       },
-      "ollama": {
+      "ollama-nemotron": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
         "timeoutMs": 300000,
@@ -54,6 +54,27 @@
         },
         "aiDetection": {
           "model": "nemotron-3.5-lightning:latest",
+          "effort": "high"
+        }
+      },
+      "ollama-qwen": {
+        "endpoint": "http://127.0.0.1:11434",
+        "maxRetries": 1,
+        "timeoutMs": 300000,
+        "planning": {
+          "model": "qwen3.8:27b",
+          "effort": "high"
+        },
+        "evaluation": {
+          "model": "qwen3.8:27b",
+          "effort": "high"
+        },
+        "semanticEvent": {
+          "model": "qwen3.8:27b",
+          "effort": "high"
+        },
+        "aiDetection": {
+          "model": "qwen3.8:27b",
           "effort": "high"
         }
       }

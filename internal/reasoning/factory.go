@@ -13,9 +13,10 @@ func NewProvider(cfg config.Config) (Provider, error) {
 		return Deterministic{}, nil
 	case "codex-app-server":
 		return NewCodexAppServer(cfg)
-	case "ollama":
-		return NewOllama(cfg)
 	default:
+		if config.IsOllamaProvider(cfg.Reasoning.Provider) {
+			return NewOllama(cfg)
+		}
 		return nil, fmt.Errorf("unsupported reasoning provider %q", cfg.Reasoning.Provider)
 	}
 }
