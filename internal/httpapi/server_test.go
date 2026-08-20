@@ -118,6 +118,24 @@ func TestEmbeddedSingleImageFitSettingDefaultsToCoverAndSupportsContain(t *testi
 	}
 }
 
+func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {"data-post-freshness-style=\"header_shade\"", "id=\"post-freshness-style\"", "value=\"header_shade\"", "value=\"border_shade\"", "value=\"off\""},
+		"web/app.js":     {"post-freshness.js", "function applyPostFreshness", "function applyPostFreshnessStyle", "settings.postFreshnessStyle || \"header_shade\"", "postFreshnessStyle: $(\"#post-freshness-style\").value"},
+		"web/styles.css": {"data-freshness=\"current\"", "data-post-freshness-style=\"header_shade\"", "data-post-freshness-style=\"border_shade\"", "freshness-header-opacity"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing post freshness contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js":                     {"timeline-media-carousel.js", "function buildTimelineMediaCarousel", "timelineCarouselIndexes", "Previous post image", "Next post image", "openMedia(imageMedia.map"},

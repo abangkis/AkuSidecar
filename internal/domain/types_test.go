@@ -111,6 +111,37 @@ func TestSingleImageFitDefaultsAndStaysBounded(t *testing.T) {
 	}
 }
 
+func TestPostFreshnessStyleDefaultsAndStaysBounded(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.PostFreshnessStyle != "header_shade" {
+		t.Fatalf("default post freshness style=%q", value.PostFreshnessStyle)
+	}
+
+	value.PostFreshnessStyle = ""
+	value.Normalize()
+	if value.PostFreshnessStyle != "header_shade" {
+		t.Fatalf("legacy post freshness style normalized to %q", value.PostFreshnessStyle)
+	}
+
+	for _, style := range []string{"header_shade", "border_shade", "off"} {
+		value.PostFreshnessStyle = style
+		if err := value.Validate(); err != nil {
+			t.Fatalf("supported post freshness style %q rejected: %v", style, err)
+		}
+	}
+	for legacy, expected := range map[string]string{"pill": "header_shade", "header_tint": "header_shade", "card_tint": "border_shade"} {
+		value.PostFreshnessStyle = legacy
+		value.Normalize()
+		if value.PostFreshnessStyle != expected {
+			t.Fatalf("legacy post freshness style %q normalized to %q, want %q", legacy, value.PostFreshnessStyle, expected)
+		}
+	}
+	value.PostFreshnessStyle = "background"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unsupported post freshness style must be rejected")
+	}
+}
+
 func TestTimelineBatchGapDefaultsAndStaysBounded(t *testing.T) {
 	value := DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	if value.TimelineBatchGapPX != DefaultTimelineBatchGapPX {

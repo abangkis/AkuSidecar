@@ -68,6 +68,29 @@ func TestSettingsPersistReasoningProvider(t *testing.T) {
 	}
 }
 
+func TestSettingsPersistPostFreshnessStyle(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.PostFreshnessStyle != "header_shade" {
+		t.Fatalf("default post freshness style=%q", settings.PostFreshnessStyle)
+	}
+	settings.PostFreshnessStyle = "border_shade"
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.PostFreshnessStyle != "border_shade" {
+		t.Fatalf("persisted post freshness style=%q", persisted.PostFreshnessStyle)
+	}
+}
+
 func TestExistingDefaultSourceProfileAdoptsInstagramOnlyOnce(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "sidecar.db")

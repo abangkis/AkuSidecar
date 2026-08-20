@@ -76,6 +76,7 @@ type Settings struct {
 	DefaultPresentation         string         `json:"defaultPresentation"`
 	StreamWidth                 string         `json:"streamWidth"`
 	SingleImageFit              string         `json:"singleImageFit"`
+	PostFreshnessStyle          string         `json:"postFreshnessStyle"`
 	TimelineBatchGapPX          int            `json:"timelineBatchGapPx"`
 	TimelineBoundaryCueMode     string         `json:"timelineBoundaryCueMode"`
 	TimelineBoundaryReturnMS    int            `json:"timelineBoundaryReturnMs"`
@@ -119,6 +120,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		DefaultPresentation:         "source",
 		StreamWidth:                 "social",
 		SingleImageFit:              "cover",
+		PostFreshnessStyle:          "header_shade",
 		TimelineBatchGapPX:          DefaultTimelineBatchGapPX,
 		TimelineBoundaryCueMode:     DefaultTimelineBoundaryCueMode,
 		TimelineBoundaryReturnMS:    DefaultTimelineBoundaryReturnMS,
@@ -190,6 +192,16 @@ func (s *Settings) Normalize() {
 	}
 	if s.SingleImageFit == "" {
 		s.SingleImageFit = "cover"
+	}
+	if s.PostFreshnessStyle == "" {
+		s.PostFreshnessStyle = "header_shade"
+	} else {
+		switch s.PostFreshnessStyle {
+		case "pill", "header_tint":
+			s.PostFreshnessStyle = "header_shade"
+		case "card_tint":
+			s.PostFreshnessStyle = "border_shade"
+		}
 	}
 	if s.TimelineBatchGapPX == 0 {
 		s.TimelineBatchGapPX = DefaultTimelineBatchGapPX
@@ -283,6 +295,9 @@ func (s Settings) Validate() error {
 	}
 	if s.SingleImageFit != "cover" && s.SingleImageFit != "contain" {
 		return fmt.Errorf("unsupported single image fit %q", s.SingleImageFit)
+	}
+	if s.PostFreshnessStyle != "header_shade" && s.PostFreshnessStyle != "border_shade" && s.PostFreshnessStyle != "off" {
+		return fmt.Errorf("unsupported post freshness style %q", s.PostFreshnessStyle)
 	}
 	if s.TimelineBatchGapPX < 16 || s.TimelineBatchGapPX > 80 {
 		return errors.New("timelineBatchGapPx must be between 16 and 80")

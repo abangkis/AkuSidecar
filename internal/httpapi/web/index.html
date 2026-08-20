@@ -7,7 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.8.0" />
     <link rel="stylesheet" href="/styles.css?runtime=release-0.8.0" />
   </head>
-  <body data-stream-width="social" data-single-image-fit="cover">
+  <body data-stream-width="social" data-single-image-fit="cover" data-post-freshness-style="header_shade">
     <main class="shell">
       <header class="topbar">
         <div>
@@ -247,6 +247,14 @@
                 <select id="single-image-fit" name="singleImageFit">
                   <option value="cover">Cover — default</option>
                   <option value="contain">Contain — show full image</option>
+                </select>
+              </label>
+              <label class="settings-row" for="post-freshness-style">
+                <span class="settings-copy"><strong>Post freshness cue</strong><small>Subtly emphasizes newer posts without adding labels. Choose a header shade, border shade, or turn the cue off.</small></span>
+                <select id="post-freshness-style" name="postFreshnessStyle">
+                  <option value="header_shade">Header shade — default</option>
+                  <option value="border_shade">Border shade</option>
+                  <option value="off">Off — timestamp only</option>
                 </select>
               </label>
               <div class="settings-row">

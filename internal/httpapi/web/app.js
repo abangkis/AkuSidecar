@@ -7,6 +7,7 @@ import {
   shouldUseTimelineCarousel,
   timelineCarouselDotIndexes,
 } from "./timeline-media-carousel.js";
+import { classifyPostFreshness } from "./post-freshness.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -216,6 +217,7 @@ $("#auto-update-mode").addEventListener("change", syncAutoUpdateModeSettings);
 $("#reset-semantic-event-merge-threshold").addEventListener("click", resetSemanticEventMergeThreshold);
 $("#stream-width").addEventListener("change", () => applyStreamWidth($("#stream-width").value));
 $("#single-image-fit").addEventListener("change", () => applySingleImageFit($("#single-image-fit").value));
+$("#post-freshness-style").addEventListener("change", () => applyPostFreshnessStyle($("#post-freshness-style").value));
 $("#timeline-batch-gap").addEventListener("input", () => applyTimelineBatchGap($("#timeline-batch-gap").value));
 $("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
 $("#timeline-boundary-return-ms").addEventListener("input", () => applyTimelineBoundaryReturnDuration($("#timeline-boundary-return-ms").value));
@@ -571,6 +573,7 @@ function renderSettings(settings) {
   $("#default-presentation").value = settings.defaultPresentation || "source";
   $("#stream-width").value = settings.streamWidth || "social";
   $("#single-image-fit").value = settings.singleImageFit || "cover";
+  $("#post-freshness-style").value = settings.postFreshnessStyle || "header_shade";
   $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
   $("#timeline-boundary-follow").checked = settings.timelineBoundaryCueMode !== "static";
   $("#timeline-boundary-return-ms").value = settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
@@ -602,6 +605,7 @@ function renderSettings(settings) {
   }
   applyStreamWidth(settings.streamWidth || "social");
   applySingleImageFit(settings.singleImageFit || "cover");
+  applyPostFreshnessStyle(settings.postFreshnessStyle || "header_shade");
   applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
   applyTimelineBoundaryReturnDuration(settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
   if (settings.timelineBoundaryCueMode === "static") releaseBackToTopBoundary();
@@ -975,6 +979,7 @@ function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
     defaultPresentation: $("#default-presentation").value,
     streamWidth: $("#stream-width").value,
     singleImageFit: $("#single-image-fit").value,
+    postFreshnessStyle: $("#post-freshness-style").value,
     timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
     timelineBoundaryCueMode: $("#timeline-boundary-follow").checked ? "follow" : "static",
     timelineBoundaryReturnMs: Number.parseInt($("#timeline-boundary-return-ms").value, 10),
@@ -1138,6 +1143,10 @@ function applyStreamWidth(value) {
 
 function applySingleImageFit(value) {
   document.body.dataset.singleImageFit = value === "contain" ? "contain" : "cover";
+}
+
+function applyPostFreshnessStyle(value) {
+  document.body.dataset.postFreshnessStyle = ["header_shade", "border_shade", "off"].includes(value) ? value : "header_shade";
 }
 
 function scheduleTimelineSidePanePosition() {
@@ -3940,6 +3949,10 @@ function buildSourceCard(entry) {
   }
   if (context.textContent) identity.append(context);
   header.append(avatar, identity);
+  applyPostFreshness(card, {
+    publishedAt: evidence.publishedAt || item.publishedAt,
+    timestampText: presentation.timestampText || parsed.secondary,
+  });
 
   if (descriptor.socialContextPlacement === "above" && presentation.socialContext) {
     const social = document.createElement("div");
@@ -3997,6 +4010,22 @@ function buildSourceCard(entry) {
   if (engagement) card.append(engagement);
   return card;
 }
+
+function applyPostFreshness(card, value) {
+  const result = classifyPostFreshness(value);
+  card.dataset.freshness = result.key;
+  if (Number.isFinite(result.referenceAt)) card.dataset.freshnessReferenceAt = String(result.referenceAt);
+  else delete card.dataset.freshnessReferenceAt;
+}
+
+function refreshVisiblePostFreshness() {
+  const now = Date.now();
+  for (const card of document.querySelectorAll(".source-layout-card[data-freshness]")) {
+    applyPostFreshness(card, { referenceAt: Number(card.dataset.freshnessReferenceAt), now });
+  }
+}
+
+window.setInterval(refreshVisiblePostFreshness, 60 * 1000);
 
 function buildAvatar(url, source, author) {
   if (safeMediaUrl(url)) {
