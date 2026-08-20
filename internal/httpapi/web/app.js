@@ -1320,17 +1320,6 @@ function closeResetDialog() {
   $("#reset-confirmation-dialog").close();
 }
 
-function closeResetDialog() {
-  if (state.resetOperation === "ai-hide" && state.bootstrap?.settings) {
-    $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
-    syncAIDetectionSettings();
-    refreshSettingsDirtyState();
-  }
-  state.resetOperation = null;
-  state.pendingSettings = null;
-  $("#reset-confirmation-dialog").close();
-}
-
 function exportDiagnostics() {
   const since = $("#diagnostics-since").value ? new Date($("#diagnostics-since").value).toISOString() : "";
   const until = $("#diagnostics-until").value ? new Date($("#diagnostics-until").value).toISOString() : "";
