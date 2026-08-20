@@ -39,7 +39,7 @@
       "ollama-nemotron": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
-        "timeoutMs": 300000,
+        "timeoutMs": 600000,
         "warmupTimeoutMs": 300000,
         "keepAliveMinutes": 10,
         "planning": {

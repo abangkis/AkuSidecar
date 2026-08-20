@@ -2186,11 +2186,33 @@ func deref(p *int64) int64 {
 
 func (e *Engine) collectReasoningTelemetry(ctx context.Context, sessions []domain.SessionExport) []domain.ReasoningTelemetry {
 	var telemetry []domain.ReasoningTelemetry
-	for _, s := range sessions {
-		for _, r := range s.Runs {
-			if r.Telemetry != nil {
-				telemetry = append(telemetry, *r.Telemetry)
+	for i := range sessions {
+		invocations, err := e.store.ReasoningInvocationsBySession(ctx, sessions[i].ID)
+		if err != nil {
+			continue
+		}
+		byRun := map[string][]domain.ReasoningTelemetry{}
+		for _, inv := range invocations {
+			byRun[inv.RunID] = append(byRun[inv.RunID], inv)
+		}
+		for j := range sessions[i].Runs {
+			runID := sessions[i].Runs[j].ID
+			inv, ok := byRun[runID]
+			if !ok || len(inv) == 0 {
+				continue
 			}
+			var elapsed int64
+			for _, t := range inv {
+				elapsed += t.DurationMS
+			}
+			re := &sessions[i].Runs[j]
+			re.Provider = inv[0].Provider
+			re.Model = inv[0].Model
+			re.Effort = inv[0].Effort
+			re.ElapsedMillis = elapsed
+			last := inv[len(inv)-1]
+			re.Telemetry = &last
+			telemetry = append(telemetry, inv...)
 		}
 	}
 	return telemetry
