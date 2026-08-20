@@ -212,6 +212,27 @@ profile migration re-resolves saved reasoning profiles against the new
 provider's catalog. A `--provider` flag overrides the Settings selection for
 one process launch.
 
+Provider entries are provider-specific, so cold-start handling stays local to
+the backend that has it. An Ollama runtime evicts a loaded model after a few
+minutes of idle, which forces every scheduler-backed session to pay the model
+load cost again; that load time is invisible to the model but inflates the
+invocation timeout and can trigger a false "awaiting headers" deadline.
+`ollama-*` providers therefore expose three independent controls:
+
+- `timeoutMs` bounds only the generation/invocation phase of a warmed request.
+- `warmupTimeoutMs` grants a separate, isolated budget spent loading the model
+  (the Ollama warm primitive issues a minimal chat request and waits only for
+  headers); if the model is already resident this step returns at once, so it
+  never inflates `timeoutMs`.
+- `keepAliveMinutes` sets Ollama's `keep_alive` option on every request so the
+  model stays resident between scheduler ticks. Raise it (e.g. `120`–`300`) to
+  suppress recurring cold starts, or set `0` to fall back to the runtime
+  default and accept per-session warm-up. `numCtx` raises a model's default
+  context window to avoid response truncation without deriving a custom model.
+
+Warm-up, keep-alive, and `numCtx` only apply to `ollama-*` providers;
+declaring them elsewhere fails startup validation.
+
 Auto Update is also a typed product setting. One Sidecar-owned scheduler can
 prepare hidden finite batches while the process is alive. Adaptive demand is
 the default: while the Timeline is idle it maintains one low-frequency standby

@@ -67,26 +67,32 @@ type ReasoningConfig struct {
 	ProviderOverride bool                      `json:"-"`
 	Providers        map[string]ProviderConfig `json:"providers"`
 
-	Provider      string      `json:"-"`
-	Executable    string      `json:"-"`
-	Endpoint      string      `json:"-"`
-	MaxRetries    int         `json:"-"`
-	TimeoutMS     int         `json:"-"`
-	Planning      ModelConfig `json:"-"`
-	Evaluation    ModelConfig `json:"-"`
-	SemanticEvent ModelConfig `json:"-"`
-	AIDetection   ModelConfig `json:"-"`
+	Provider         string      `json:"-"`
+	Executable       string      `json:"-"`
+	Endpoint         string      `json:"-"`
+	MaxRetries       int         `json:"-"`
+	TimeoutMS        int         `json:"-"`
+	WarmupTimeoutMS  int         `json:"-"`
+	KeepAliveMinutes int         `json:"-"`
+	NumCtx           int         `json:"-"`
+	Planning         ModelConfig `json:"-"`
+	Evaluation       ModelConfig `json:"-"`
+	SemanticEvent    ModelConfig `json:"-"`
+	AIDetection      ModelConfig `json:"-"`
 }
 
 type ProviderConfig struct {
-	Executable    string      `json:"executable"`
-	Endpoint      string      `json:"endpoint"`
-	MaxRetries    int         `json:"maxRetries,omitempty"`
-	TimeoutMS     int         `json:"timeoutMs"`
-	Planning      ModelConfig `json:"planning"`
-	Evaluation    ModelConfig `json:"evaluation"`
-	SemanticEvent ModelConfig `json:"semanticEvent"`
-	AIDetection   ModelConfig `json:"aiDetection"`
+	Executable       string      `json:"executable"`
+	Endpoint         string      `json:"endpoint"`
+	MaxRetries       int         `json:"maxRetries,omitempty"`
+	TimeoutMS        int         `json:"timeoutMs"`
+	WarmupTimeoutMS  int         `json:"warmupTimeoutMs,omitempty"`
+	KeepAliveMinutes int         `json:"keepAliveMinutes,omitempty"`
+	NumCtx           int         `json:"numCtx,omitempty"`
+	Planning         ModelConfig `json:"planning"`
+	Evaluation       ModelConfig `json:"evaluation"`
+	SemanticEvent    ModelConfig `json:"semanticEvent"`
+	AIDetection      ModelConfig `json:"aiDetection"`
 }
 
 type ModelConfig struct {
@@ -164,6 +170,9 @@ func (r *ReasoningConfig) Select(providerName string) error {
 	r.Endpoint = entry.Endpoint
 	r.MaxRetries = entry.MaxRetries
 	r.TimeoutMS = entry.TimeoutMS
+	r.WarmupTimeoutMS = entry.WarmupTimeoutMS
+	r.KeepAliveMinutes = entry.KeepAliveMinutes
+	r.NumCtx = entry.NumCtx
 	r.Planning = entry.Planning
 	r.Evaluation = entry.Evaluation
 	r.SemanticEvent = entry.SemanticEvent
@@ -240,6 +249,18 @@ func (p ProviderConfig) Validate(name string) error {
 	}
 	if p.TimeoutMS < int((5*time.Second)/time.Millisecond) {
 		return fmt.Errorf("reasoning provider %q timeout must be at least 5000 ms", name)
+	}
+	if p.WarmupTimeoutMS < 0 {
+		return fmt.Errorf("reasoning provider %q warmup timeout must not be negative", name)
+	}
+	if p.KeepAliveMinutes < 0 {
+		return fmt.Errorf("reasoning provider %q keep-alive minutes must not be negative", name)
+	}
+	if p.NumCtx < 0 {
+		return fmt.Errorf("reasoning provider %q context length must not be negative", name)
+	}
+	if !IsOllamaProvider(name) && (p.WarmupTimeoutMS != 0 || p.KeepAliveMinutes != 0 || p.NumCtx != 0) {
+		return fmt.Errorf("warmup, keep-alive, and context length apply only to ollama providers (%q)", name)
 	}
 	if name == "codex-app-server" || IsOllamaProvider(name) {
 		models := map[string]ModelConfig{

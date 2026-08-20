@@ -39,7 +39,9 @@
       "ollama-nemotron": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
-        "timeoutMs": 600000,
+        "timeoutMs": 300000,
+        "warmupTimeoutMs": 300000,
+        "keepAliveMinutes": 120,
         "planning": {
           "model": "nemotron-3.5-lightning:latest",
           "effort": "high"
@@ -60,7 +62,10 @@
       "ollama-qwen": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
-        "timeoutMs": 600000,
+        "timeoutMs": 300000,
+        "warmupTimeoutMs": 300000,
+        "keepAliveMinutes": 300,
+        "numCtx": 32768,
         "planning": {
           "model": "qwen3.8:27b",
           "effort": "high"

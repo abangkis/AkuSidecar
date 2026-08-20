@@ -111,6 +111,61 @@ func TestOllamaRequiresPlanningModel(t *testing.T) {
 	}
 }
 
+func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
+	recorded := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Model    string           `json:"model"`
+			Think    any              `json:"think"`
+			Format   any              `json:"format"`
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode ollama payload: %v", err)
+		}
+		recorded = append(recorded, fmt.Sprintf("think=%v content=%v", payload.Think, payload.Messages[0]["content"]))
+		raw, _ := json.Marshal(`{"decision":"finish","reason":"enough"}`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"message":{"content":%s},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":5,"load_duration":2000000000}`, raw)
+	}))
+	defer server.Close()
+
+	provider, err := NewOllama(config.Config{
+		Root: filepathRoot(t),
+		Reasoning: config.ReasoningConfig{
+			Provider:        "ollama-nemotron",
+			Endpoint:        server.URL,
+			TimeoutMS:       30000,
+			WarmupTimeoutMS: 30000,
+			Planning:        config.ModelConfig{Model: "nemotron", Effort: "high"},
+			Evaluation:      config.ModelConfig{Model: "nemotron", Effort: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+
+	observation := domain.Observation{
+		Source: domain.SourceX,
+		Snapshots: []domain.Snapshot{{
+			Blocks: []domain.Block{{EvidenceKey: "x:000000000000000000000001", Text: "ok"}},
+		}},
+	}
+	if _, _, err := provider.Plan(context.Background(), domain.Run{ID: "run-1", Source: domain.SourceX}, observation, nil); err != nil {
+		t.Fatalf("Plan failed: %v", err)
+	}
+	if len(recorded) < 2 {
+		t.Fatalf("expected warm then invoke requests, got %d: %+v", len(recorded), recorded)
+	}
+	if recorded[0] != "think=false content=warm" {
+		t.Errorf("first request was not the warm call: %q", recorded[0])
+	}
+	if strings.HasPrefix(recorded[1], "think=false") || !strings.Contains(recorded[1], "content=") {
+		t.Errorf("second request was not the real invocation: %q", recorded[1])
+	}
+}
+
 func TestOllamaStructuredPlan(t *testing.T) {
 	content := `{"decision":"finish","reason":"enough bounded evidence"}`
 	server := ollamaTestServer(t, "high", content)
@@ -137,8 +192,8 @@ func TestOllamaStructuredPlan(t *testing.T) {
 
 func TestOllamaStructuredAnalyzeBindsEvidenceKeys(t *testing.T) {
 	raw, _ := json.Marshal(domain.ReasoningResult{
-		Summary: "fake ollama",
-		Items:   []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}},
+		Summary:              "fake ollama",
+		Items:                []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}},
 		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture"}},
 		Limitations:          []string{},
 	})

@@ -111,6 +111,9 @@ func TestMultiProviderConfigurationSelectsActiveProvider(t *testing.T) {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
         "timeoutMs": 300000,
+        "warmupTimeoutMs": 300000,
+        "keepAliveMinutes": 300,
+        "numCtx": 32768,
         "planning": {"model": "qwen3.8:27b", "effort": "high"},
         "evaluation": {"model": "qwen3.8:27b", "effort": "high"},
         "semanticEvent": {"model": "qwen3.8:27b", "effort": "high"},
@@ -152,7 +155,8 @@ func TestMultiProviderConfigurationSelectsActiveProvider(t *testing.T) {
 	if err := cfg.Reasoning.Select("ollama-qwen"); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Reasoning.Provider != "ollama-qwen" || cfg.Reasoning.Planning.Model != "qwen3.8:27b" {
+	if cfg.Reasoning.Provider != "ollama-qwen" || cfg.Reasoning.Planning.Model != "qwen3.8:27b" ||
+		cfg.Reasoning.WarmupTimeoutMS != 300000 || cfg.Reasoning.KeepAliveMinutes != 300 || cfg.Reasoning.NumCtx != 32768 {
 		t.Fatalf("re-projected ollama-qwen=%+v", cfg.Reasoning)
 	}
 	if err := cfg.Reasoning.Select("missing"); err == nil || !strings.Contains(err.Error(), "not declared") {
@@ -289,6 +293,57 @@ func TestOllamaRequiresModelsAndBoundsRetries(t *testing.T) {
 	unsupported.Reasoning.ActiveProvider = "claude"
 	if err := unsupported.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported reasoning provider") {
 		t.Fatalf("unsupported provider error=%v", err)
+	}
+}
+
+func TestProviderSpecificWarmAndKeepAliveOnlyOnOllama(t *testing.T) {
+	base := Config{
+		Server: ServerConfig{Host: "127.0.0.1", Port: 11122}, Database: DatabaseConfig{Path: "test.db"},
+		Reasoning: ReasoningConfig{
+			ActiveProvider: "codex-app-server",
+			Providers: map[string]ProviderConfig{
+				"codex-app-server": {
+					TimeoutMS:        5000,
+					WarmupTimeoutMS:  1000,
+					KeepAliveMinutes: 60,
+					NumCtx:           32768,
+					Planning:         ModelConfig{Model: "gpt-5.6-luna", Effort: "high"},
+					Evaluation:       ModelConfig{Model: "gpt-5.6-luna", Effort: "high"},
+					SemanticEvent:    ModelConfig{Model: "gpt-5.6-luna", Effort: "high"},
+					AIDetection:      ModelConfig{Model: "gpt-5.6-luna", Effort: "high"},
+				},
+			},
+		},
+		Capture: CaptureConfig{MaxAcquisitionRounds: 1},
+		Bridge:  BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://abcdefghijklmnopabcdefghijklmnop/"}},
+	}
+	err := base.Validate()
+	if err == nil || !strings.Contains(err.Error(), "apply only to ollama providers") {
+		t.Fatalf("expected ollama-only restriction, got %v", err)
+	}
+	ollamaBase := base
+	ollamaBase.Reasoning.ActiveProvider = "ollama-nemotron"
+	ollamaBase.Reasoning.Providers = map[string]ProviderConfig{
+		"ollama-nemotron": {
+			TimeoutMS:        5000,
+			WarmupTimeoutMS:  1000,
+			KeepAliveMinutes: 60,
+			NumCtx:           32768,
+			Endpoint:         "http://127.0.0.1:11434",
+			Planning:         ModelConfig{Model: "nemotron", Effort: "high"},
+			Evaluation:       ModelConfig{Model: "nemotron", Effort: "high"},
+			SemanticEvent:    ModelConfig{Model: "nemotron", Effort: "high"},
+			AIDetection:      ModelConfig{Model: "nemotron", Effort: "high"},
+		},
+	}
+	if err := ollamaBase.Validate(); err != nil {
+		t.Fatalf("valid ollama warm/keepalive config rejected: %v", err)
+	}
+	if err := ollamaBase.Reasoning.Select("ollama-nemotron"); err != nil {
+		t.Fatal(err)
+	}
+	if ollamaBase.Reasoning.WarmupTimeoutMS != 1000 || ollamaBase.Reasoning.KeepAliveMinutes != 60 || ollamaBase.Reasoning.NumCtx != 32768 {
+		t.Fatalf("warm/keepalive/numCtx not projected: %+v", ollamaBase.Reasoning)
 	}
 }
 

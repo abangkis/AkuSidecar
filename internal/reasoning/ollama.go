@@ -42,19 +42,20 @@ func ollamaBindings() map[inference.ProfileID]inference.Binding {
 // model: the built-in profiles resolve to native thinking budgets via a
 // capability binding map, and inference.Resolve enforces satisfiability.
 type Ollama struct {
-	name         string
-	endpoint     string
-	maxRetries   int
-	timeout      time.Duration
-	model        string
-	planning     config.ModelConfig
-	evaluation   config.ModelConfig
-	planSchema   any
-	resultSchema any
-	transport    *ollama.Adapter
-	caps         inference.ProviderCapabilities
-	bindings     map[inference.ProfileID]inference.Binding
-	order        []inference.ProfileID
+	name          string
+	endpoint      string
+	maxRetries    int
+	timeout       time.Duration
+	warmupTimeout time.Duration
+	model         string
+	planning      config.ModelConfig
+	evaluation    config.ModelConfig
+	planSchema    any
+	resultSchema  any
+	transport     *ollama.Adapter
+	caps          inference.ProviderCapabilities
+	bindings      map[inference.ProfileID]inference.Binding
+	order         []inference.ProfileID
 }
 
 func NewOllama(cfg config.Config) (*Ollama, error) {
@@ -79,27 +80,30 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 		return nil, err
 	}
 	transport, err := ollama.New(ollama.Config{
-		BaseURL:    endpoint,
-		Timeout:    time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
-		MaxRetries: cfg.Reasoning.MaxRetries,
+		BaseURL:          endpoint,
+		Timeout:          time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
+		MaxRetries:       cfg.Reasoning.MaxRetries,
+		KeepAliveSeconds: cfg.Reasoning.KeepAliveMinutes * 60,
+		NumCtx:           cfg.Reasoning.NumCtx,
 	})
 	if err != nil {
 		return nil, err
 	}
 	provider := &Ollama{
-		name:         name,
-		endpoint:     endpoint,
-		maxRetries:   cfg.Reasoning.MaxRetries,
-		timeout:      time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
-		model:        model,
-		planning:     cfg.Reasoning.Planning,
-		evaluation:   cfg.Reasoning.Evaluation,
-		planSchema:   planSchema,
-		resultSchema: resultSchema,
-		transport:    transport,
-		caps:         transport.Capabilities(),
-		bindings:     ollamaBindings(),
-		order:        ollamaProfileOrder,
+		name:          name,
+		endpoint:      endpoint,
+		maxRetries:    cfg.Reasoning.MaxRetries,
+		timeout:       time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
+		warmupTimeout: time.Duration(cfg.Reasoning.WarmupTimeoutMS) * time.Millisecond,
+		model:         model,
+		planning:      cfg.Reasoning.Planning,
+		evaluation:    cfg.Reasoning.Evaluation,
+		planSchema:    planSchema,
+		resultSchema:  resultSchema,
+		transport:     transport,
+		caps:          transport.Capabilities(),
+		bindings:      ollamaBindings(),
+		order:         ollamaProfileOrder,
 	}
 	return provider, nil
 }
@@ -187,6 +191,11 @@ func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observati
 }
 
 func (o *Ollama) invoke(parent context.Context, prompt string, schema any, model config.ModelConfig) (string, ollama.Usage, time.Duration, error) {
+	if o.warmupTimeout > 0 {
+		if _, err := o.transport.Warm(parent, model.Model, o.warmupTimeout); err != nil {
+			return "", ollama.Usage{}, 0, err
+		}
+	}
 	return o.transport.InvokeStructured(parent, prompt, schema, ollama.ModelConfig{
 		Model: model.Model,
 		Think: ollama.ThinkBudget(model.Effort),
