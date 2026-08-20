@@ -542,10 +542,10 @@ h3 { letter-spacing: -0.02em; }
 .ai-detector-yield-metrics small { color: var(--muted); }
 .settings-inline-control { display: grid; grid-template-columns: minmax(72px, 92px) minmax(0, 1fr); gap: 8px; }
 .settings-inline-control button { padding: 9px 10px; white-space: nowrap; }
-.diagnostics-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.diagnostics-controls { display: grid; grid-template-columns: auto minmax(180px, 1fr); align-items: center; gap: 10px; min-width: 0; }
 .diagnostics-controls label { white-space: nowrap; font-size: 0.8rem; color: var(--muted); }
-.diagnostics-controls input[type="datetime-local"] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 0.8rem; min-width: 180px; }
-.diagnostics-controls button { padding: 8px 14px; white-space: nowrap; }
+.diagnostics-controls input[type="datetime-local"] { width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 0.8rem; }
+.diagnostics-controls button { grid-column: 1 / -1; width: 100%; padding: 8px 14px; white-space: nowrap; }
 .auto-update-budget-control { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 8px; min-width: 0; width: 100%; }
 .auto-update-budget-control .settings-detail { min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .auto-update-budget-control button { width: 100%; min-width: 0; white-space: normal; line-height: 1.2; }
