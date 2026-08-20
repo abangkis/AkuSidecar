@@ -64,23 +64,23 @@
         "maxRetries": 1,
         "timeoutMs": 900000,
         "warmupTimeoutMs": 300000,
-        "keepAliveMinutes": 300,
+        "keepAliveMinutes": 30,
         "numCtx": 32768,
         "planning": {
           "model": "qwen3.8:27b",
-          "effort": "high"
+          "effort": "xhigh"
         },
         "evaluation": {
           "model": "qwen3.8:27b",
-          "effort": "high"
+          "effort": "xhigh"
         },
         "semanticEvent": {
           "model": "qwen3.8:27b",
-          "effort": "high"
+          "effort": "xhigh"
         },
         "aiDetection": {
           "model": "qwen3.8:27b",
-          "effort": "high"
+          "effort": "xhigh"
         }
       }
     }
