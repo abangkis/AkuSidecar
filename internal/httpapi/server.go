@@ -120,6 +120,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		p = "/"
 	}
 	switch {
+	case r.Method == http.MethodGet && p == "/api/diagnostics/export":
+		since := r.URL.Query().Get("since")
+		until := r.URL.Query().Get("until")
+		sessionID := r.URL.Query().Get("sessionId")
+		export, err := s.engine.DiagnosticsExport(ctx, since, until, sessionID)
+		if err != nil {
+			return err
+		}
+		w.Header().Set("Content-Disposition", "attachment; filename=aku-diagnostics-"+time.Now().UTC().Format("20060102T150405")+".json")
+		return writeJSON(w, http.StatusOK, export)
 	case r.Method == http.MethodGet && p == "/api/health":
 		settings, err := s.store.GetSettings(ctx)
 		if err != nil {

@@ -1799,6 +1799,120 @@ func NewID(prefix string) string {
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
+// DiagnosticsExport is a comprehensive diagnostic bundle for troubleshooting.
+type DiagnosticsExport struct {
+	Metadata    DiagnosticsMetadata     `json:"metadata"`
+	Config      RedactedConfig          `json:"config"`
+	Sessions    []SessionExport         `json:"sessions"`
+	ModelUsage  ModelUsageExport        `json:"modelUsage"`
+	Reasoning   []ReasoningTelemetry    `json:"reasoning"`
+	Bridge      BridgeStatus            `json:"bridge"`
+	Errors      []ErrorEvent            `json:"errors"`
+	GeneratedAt string                  `json:"generatedAt"`
+}
+
+type DiagnosticsMetadata struct {
+	Version       string    `json:"version"`
+	InstanceEpoch string    `json:"instanceEpoch"`
+	TimeRange     TimeRange `json:"timeRange"`
+	PIIRedacted   bool      `json:"piiRedacted"`
+	SessionID     string    `json:"sessionId,omitempty"`
+}
+
+type TimeRange struct {
+	Since string `json:"since,omitempty"`
+	Until string `json:"until,omitempty"`
+}
+
+type RedactedConfig struct {
+	ReasoningProvider       string                 `json:"reasoningProvider"`
+	ReasoningProcesses      []ReasoningProcessInfo `json:"reasoningProcesses"`
+	ActiveSources           []Source               `json:"activeSources"`
+	TimelineCapacity        int                    `json:"timelineCapacity"`
+	AutoUpdateEnabled       bool                   `json:"autoUpdateEnabled"`
+	AutoUpdateMode          string                 `json:"autoUpdateMode"`
+	LoadProfile             string                 `json:"loadProfile"`
+	AIDetectionEnabled      bool                   `json:"aiDetectionEnabled"`
+	ResurfaceMode           string                 `json:"resurfaceMode"`
+	BridgeContractVersion   string                 `json:"bridgeContractVersion"`
+	DatabaseSchemaVersion   int                    `json:"databaseSchemaVersion"`
+	ReasoningExecutablePath string                 `json:"reasoningExecutablePath"`
+}
+
+type ReasoningProcessInfo struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	Effort      string `json:"effort"`
+	Execution   string `json:"execution"`
+	ProfileID   string `json:"profileId"`
+}
+
+type SessionExport struct {
+	ID            string                 `json:"id"`
+	Intent        string                 `json:"intent"`
+	Status        string                 `json:"status"`
+	CreatedAt     string                 `json:"createdAt"`
+	CompletedAt   *string                `json:"completedAt,omitempty"`
+	Runs          []RunExport            `json:"runs"`
+	Coverage      map[string]any         `json:"coverage"`
+	PipelineStage string                 `json:"pipelineStage"`
+}
+
+type RunExport struct {
+	ID            string                 `json:"id"`
+	Source        Source                 `json:"source"`
+	Status        string                 `json:"status"`
+	Stage         string                 `json:"stage"`
+	Provider      string                 `json:"provider"`
+	Model         string                 `json:"model"`
+	Effort        string                 `json:"effort"`
+	ElapsedMillis int64                  `json:"elapsedMillis"`
+	Error         *RunError              `json:"error,omitempty"`
+	Telemetry     *ReasoningTelemetry    `json:"telemetry,omitempty"`
+}
+
+type RunError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Stage   string `json:"stage"`
+}
+
+type ModelUsageExport struct {
+	WindowDays      int                    `json:"windowDays"`
+	SessionCount    int                    `json:"sessionCount"`
+	GeneratedAt     string                 `json:"generatedAt"`
+	Status          string                 `json:"status"`
+	AggregateTokens TokenUsage             `json:"aggregateTokens"`
+	Categories      []ModelUsageCategory   `json:"categories"`
+}
+
+type TokenUsage struct {
+	InputTokens           int64 `json:"inputTokens"`
+	CachedInputTokens     int64 `json:"cachedInputTokens"`
+	OutputTokens          int64 `json:"outputTokens"`
+	ReasoningOutputTokens int64 `json:"reasoningOutputTokens"`
+}
+
+type BridgeStatus struct {
+	State                   string   `json:"state"`
+	Compatible              bool     `json:"compatible"`
+	Reasons                 []string `json:"reasons"`
+	Warnings                []string `json:"warnings"`
+	Expected                string   `json:"expected"`
+	Actual                  string   `json:"actual"`
+	NegotiatedProtocol      string   `json:"negotiatedProtocol"`
+}
+
+type ErrorEvent struct {
+	Timestamp   string `json:"timestamp"`
+	Source      string `json:"source"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	Context     string `json:"context,omitempty"`
+}
+
 func ValidateIntent(value string) error {
 	value = strings.TrimSpace(value)
 	if len(value) < 1 || len(value) > 500 {

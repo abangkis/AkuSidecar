@@ -234,6 +234,7 @@ for (const button of document.querySelectorAll("[data-calibration-issue]")) {
 }
 $("#open-reset-learning").addEventListener("click", () => openResetDialog("learning"));
 $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
+$("#export-diagnostics").addEventListener("click", exportDiagnostics);
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
 $("#reset-confirmation-submit").addEventListener("click", submitReset);
@@ -613,6 +614,11 @@ function renderSettings(settings) {
   syncSemanticEventSettings();
   syncAIDetectionSettings();
   renderAutoUpdateStatus(state.bootstrap?.autoUpdate);
+  const now = new Date();
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const until = new Date();
+  $("#diagnostics-since").value = since.toISOString().slice(0, 16);
+  $("#diagnostics-until").value = until.toISOString().slice(0, 16);
   settingsDirty.setBaseline(readSettingsDraft(settings));
 }
 
@@ -1312,6 +1318,47 @@ function closeResetDialog() {
   state.resetOperation = null;
   state.pendingSettings = null;
   $("#reset-confirmation-dialog").close();
+}
+
+function closeResetDialog() {
+  if (state.resetOperation === "ai-hide" && state.bootstrap?.settings) {
+    $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
+    syncAIDetectionSettings();
+    refreshSettingsDirtyState();
+  }
+  state.resetOperation = null;
+  state.pendingSettings = null;
+  $("#reset-confirmation-dialog").close();
+}
+
+function exportDiagnostics() {
+  const since = $("#diagnostics-since").value ? new Date($("#diagnostics-since").value).toISOString() : "";
+  const until = $("#diagnostics-until").value ? new Date($("#diagnostics-until").value).toISOString() : "";
+  const button = $("#export-diagnostics");
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Exporting…";
+  const params = new URLSearchParams();
+  if (since) params.set("since", since);
+  if (until) params.set("until", until);
+  api("/api/diagnostics/export?" + params.toString(), { method: "GET", responseType: "blob" })
+    .then((blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "aku-diagnostics-" + new Date().toISOString().slice(0, 19).replace(/[:-]/g, "") + ".json";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    })
+    .catch((err) => {
+      $("#runtime-settings-status").textContent = "Export failed: " + (err.message || err);
+    })
+    .finally(() => {
+      button.disabled = false;
+      button.textContent = "Export diagnostics…";
+    });
 }
 
 function syncResetConfirmation() {
@@ -5242,6 +5289,16 @@ async function api(path, options = {}) {
   }
   const response = await fetchFromSidecar(path, init);
   enforceCurrentSidecarEpoch(response);
+  if (options.responseType === "blob") {
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const error = new Error(payload?.message || `HTTP ${response.status}`);
+      error.code = payload?.error || `http_${response.status}`;
+      error.details = payload?.details;
+      throw error;
+    }
+    return response.blob();
+  }
   const payload = response.status === 204 ? null : await response.json();
   if (!response.ok) {
     const error = new Error(payload?.message || `HTTP ${response.status}`);
