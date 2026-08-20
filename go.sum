@@ -1,5 +1,5 @@
-github.com/abangkis/ai4u-inference-sdk-go v0.2.0 h1:E8+Kt7KtZ/1Mw3x8Dgsepeg1egEj5lXELzYwYm1FWYU=
-github.com/abangkis/ai4u-inference-sdk-go v0.2.0/go.mod h1:Y3eEDBVnJhcfJSKCGNb3hoRufvywK2XG746lYrQN90Y=
+github.com/abangkis/ai4u-inference-sdk-go v0.3.0 h1:lxo8v/KNL+OmB+iqtF/8vKvxEWHZHPrb8t4rFlRcOeU=
+github.com/abangkis/ai4u-inference-sdk-go v0.3.0/go.mod h1:Y3eEDBVnJhcfJSKCGNb3hoRufvywK2XG746lYrQN90Y=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd h1:gbpYu9NMq8jhDVbvlGkMFWCjLFlqqEZjEmObmhUy6Vo=
