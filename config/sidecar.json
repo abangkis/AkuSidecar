@@ -62,7 +62,7 @@
       "ollama-qwen": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,
-        "timeoutMs": 300000,
+        "timeoutMs": 900000,
         "warmupTimeoutMs": 300000,
         "keepAliveMinutes": 300,
         "numCtx": 32768,
