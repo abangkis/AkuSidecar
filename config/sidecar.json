@@ -41,7 +41,7 @@
         "maxRetries": 1,
         "timeoutMs": 300000,
         "warmupTimeoutMs": 300000,
-        "keepAliveMinutes": 20,
+        "keepAliveMinutes": 10,
         "planning": {
           "model": "nemotron-3.5-lightning:latest",
           "effort": "high"
@@ -64,7 +64,7 @@
         "maxRetries": 1,
         "timeoutMs": 900000,
         "warmupTimeoutMs": 300000,
-        "keepAliveMinutes": 20,
+        "keepAliveMinutes": 10,
         "numCtx": 32768,
         "planning": {
           "model": "qwen3.8:27b",
