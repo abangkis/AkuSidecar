@@ -123,7 +123,13 @@ func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode ollama payload: %v", err)
 		}
-		recorded = append(recorded, fmt.Sprintf("think=%v content=%v", payload.Think, payload.Messages[0]["content"]))
+		var content string
+		if len(payload.Messages) == 0 {
+			content = "(warm preload)"
+		} else {
+			content = payload.Messages[0]["content"].(string)
+		}
+		recorded = append(recorded, fmt.Sprintf("think=%v content=%s", payload.Think, content))
 		raw, _ := json.Marshal(`{"decision":"finish","reason":"enough"}`)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"message":{"content":%s},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":5,"load_duration":2000000000}`, raw)
@@ -158,7 +164,7 @@ func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
 	if len(recorded) < 2 {
 		t.Fatalf("expected warm then invoke requests, got %d: %+v", len(recorded), recorded)
 	}
-	if recorded[0] != "think=false content=warm" {
+	if !strings.Contains(recorded[0], "(warm preload)") {
 		t.Errorf("first request was not the warm call: %q", recorded[0])
 	}
 	if strings.HasPrefix(recorded[1], "think=false") || !strings.Contains(recorded[1], "content=") {

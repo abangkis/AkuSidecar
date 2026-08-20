@@ -3,7 +3,7 @@ module github.com/abangkis/AkuSidecar
 go 1.25.0
 
 require (
-	github.com/abangkis/ai4u-inference-sdk-go v0.1.1
+	github.com/abangkis/ai4u-inference-sdk-go v0.1.2
 	golang.org/x/sys v0.19.0
 	modernc.org/sqlite v1.29.10
 )
