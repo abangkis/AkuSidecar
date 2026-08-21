@@ -143,7 +143,7 @@ func TestMultiProviderConfigurationSelectsActiveProvider(t *testing.T) {
 	if len(summaries) != 3 ||
 		summaries[0].Name != "codex-app-server" || summaries[0].Label != "Codex App Server" ||
 		summaries[1].Name != "ollama-nemotron" || summaries[1].Label != "Ollama · Nemotron 3.5 Lightning" ||
-		summaries[2].Name != "ollama-qwen" || summaries[2].Label != "Ollama · Qwen 3.8 27B" {
+		summaries[2].Name != "ollama-qwen" || summaries[2].Label != "Ollama · Qwen 3.8 Unsloth VL Q2KXL · Experimental" {
 		t.Fatalf("provider summaries=%+v", summaries)
 	}
 	if err := cfg.Reasoning.Select("ollama-nemotron"); err != nil {

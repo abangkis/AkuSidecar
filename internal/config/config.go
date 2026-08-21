@@ -263,7 +263,7 @@ func ProviderLabel(name string) string {
 	case "ollama-nemotron":
 		return "Ollama · Nemotron 3.5 Lightning"
 	case "ollama-qwen":
-		return "Ollama · Qwen 3.8 27B"
+		return "Ollama · Qwen 3.8 Unsloth VL Q2KXL · Experimental"
 	case "deterministic":
 		return "Local deterministic"
 	default:

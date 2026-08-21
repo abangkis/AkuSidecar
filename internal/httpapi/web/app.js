@@ -937,7 +937,7 @@ function formatReasoningProvider(value) {
   if (value === "codex-app-server") return "Codex App Server";
   if (value === "deterministic") return "Local deterministic";
   if (value === "ollama-nemotron") return "Ollama · Nemotron 3.5 Lightning";
-  if (value === "ollama-qwen") return "Ollama · Qwen 3.8 27B";
+  if (value === "ollama-qwen") return "Ollama · Qwen 3.8 Unsloth VL Q2KXL · Experimental";
   if (String(value).startsWith("ollama-")) return `Ollama · ${String(value).replace("ollama-", "")}`;
   return String(value || "Custom backend").replaceAll("-", " ");
 }
