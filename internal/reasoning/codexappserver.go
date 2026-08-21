@@ -33,6 +33,7 @@ type CodexAppServer struct {
 	planSchema   any
 	resultSchema any
 	transport    *codexappserver.Adapter
+	clients      *boundClientPool
 
 	exeMu sync.Mutex
 }
@@ -91,7 +92,13 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	clients, err := newBoundClientPool(transport)
+	if err != nil {
+		_ = transport.Close()
+		return nil, err
+	}
 	provider.transport = transport
+	provider.clients = clients
 	return provider, nil
 }
 
@@ -141,7 +148,11 @@ func (c *CodexAppServer) ProfileOptions() []ProfileOption {
 func (c *CodexAppServer) ResolveProfile(id string) (config.ModelConfig, bool) {
 	for _, option := range c.ProfileOptions() {
 		if option.ID == id {
-			return config.ModelConfig{Model: option.Model, Effort: option.Effort}, true
+			modelID, ok := codexStableModelID(option.Model)
+			if !ok {
+				return config.ModelConfig{}, false
+			}
+			return config.ModelConfig{ModelID: modelID, Model: option.Model, MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, ProfileID: id}, true
 		}
 	}
 	return config.ModelConfig{}, false
@@ -149,17 +160,16 @@ func (c *CodexAppServer) ResolveProfile(id string) (config.ModelConfig, bool) {
 
 // InvokeStructured exposes the shared App Server transport to bounded adapters
 // without adding their domain-specific methods to the reasoning Provider.
-func (c *CodexAppServer) InvokeStructured(ctx context.Context, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	raw, value, duration, err := c.invoke(ctx, prompt, schema, model)
-	return raw, domain.ModelUsage{Input: value.Input, CachedInput: value.CachedInput, Output: value.Output, ReasoningOutput: value.ReasoningOutput}, duration, err
+func (c *CodexAppServer) InvokeStructured(ctx context.Context, profileID string, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+	return c.invoke(ctx, inference.ProfileID(profileID), prompt, schema, model)
 }
 
 func (c *CodexAppServer) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
-	return c.PlanWithModel(ctx, run, observation, knowledge, c.planning)
+	return c.PlanWithModel(ctx, run, observation, knowledge, string(ExecutionProfilePlanning), c.planning)
 }
 
-func (c *CodexAppServer) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
-	raw, usage, duration, err := c.invoke(ctx, buildPlanningPrompt(run, observation, knowledge), c.planSchema, model)
+func (c *CodexAppServer) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string, model config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
+	raw, usage, duration, err := c.invoke(ctx, inference.ProfileID(profileID), buildPlanningPrompt(run, observation, knowledge), c.planSchema, model)
 	telemetry := appServerTelemetry(run, "acquisition_planning", model, duration, usage, err)
 	if err != nil {
 		return AcquisitionPlan{}, telemetry, err
@@ -175,12 +185,12 @@ func (c *CodexAppServer) PlanWithModel(ctx context.Context, run domain.Run, obse
 }
 
 func (c *CodexAppServer) Analyze(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
-	return c.AnalyzeWithModel(ctx, run, observation, knowledge, c.evaluation)
+	return c.AnalyzeWithModel(ctx, run, observation, knowledge, string(ExecutionProfileEvaluation), c.evaluation)
 }
 
-func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	request := buildEvaluationRequest(run, observation, knowledge)
-	raw, usage, duration, err := c.invoke(ctx, request.prompt, c.resultSchema, model)
+	raw, usage, duration, err := c.invoke(ctx, inference.ProfileID(profileID), request.prompt, c.resultSchema, model)
 	telemetry := appServerTelemetry(run, "candidate_evaluation", model, duration, usage, err)
 	if err != nil {
 		return domain.ReasoningResult{}, telemetry, err
@@ -195,11 +205,29 @@ func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, o
 	return result, telemetry, nil
 }
 
-func (c *CodexAppServer) invoke(parent context.Context, prompt string, schema any, model config.ModelConfig) (string, codexappserver.Usage, time.Duration, error) {
-	return c.transport.InvokeStructured(parent, prompt, schema, codexappserver.ModelConfig{
-		Model:  model.Model,
-		Effort: inference.ReasoningEffort(model.Effort),
-	})
+func (c *CodexAppServer) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+	modelID, ok := codexStableModelID(model.ModelID)
+	if !ok {
+		modelID, ok = codexStableModelID(model.Model)
+	}
+	if !ok {
+		return "", domain.ModelUsage{}, 0, fmt.Errorf("unknown Codex App Server model %q; use a provider-owned stable model ID", model.StableModelID())
+	}
+	return invokeBound(parent, c.clients, profileID, prompt, schema, model, modelID)
+}
+
+func codexStableModelID(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	switch value {
+	case string(codexappserver.ModelLuna), "gpt-5.6-luna":
+		return string(codexappserver.ModelLuna), true
+	case string(codexappserver.ModelTerra), "gpt-5.6-terra":
+		return string(codexappserver.ModelTerra), true
+	case string(codexappserver.ModelSol), "gpt-5.6-sol":
+		return string(codexappserver.ModelSol), true
+	default:
+		return "", false
+	}
 }
 
 // IsUsageLimitError identifies account-level Codex exhaustion. Unlike model
@@ -310,12 +338,20 @@ func readSchema(path string) (any, error) {
 	return value, nil
 }
 
-func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value codexappserver.Usage, runErr error) domain.ReasoningTelemetry {
+func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value domain.ModelUsage, runErr error) domain.ReasoningTelemetry {
 	status := "completed"
 	if runErr != nil {
 		status = "failed"
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: model.Model, Effort: model.Effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	modelName := model.Model
+	if modelName == "" {
+		modelName = value.ProviderModel
+	}
+	effort := model.Effort
+	if effort == "" {
+		effort = value.NativeReasoning
+	}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
 }
 
 func resolveExecutable(root, value string) (string, error) {

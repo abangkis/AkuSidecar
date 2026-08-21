@@ -17,6 +17,11 @@ import (
 func ollamaTestServer(t *testing.T, wantThink any, content string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"capabilities":["completion","thinking"]}`)
+			return
+		}
 		var payload struct {
 			Model  string         `json:"model"`
 			Think  any            `json:"think"`
@@ -25,8 +30,8 @@ func ollamaTestServer(t *testing.T, wantThink any, content string) *httptest.Ser
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode ollama payload: %v", err)
 		}
-		if payload.Model != "nemotron" {
-			t.Errorf("model = %v, want nemotron", payload.Model)
+		if payload.Model != "nemotron-3.5-lightning:latest" {
+			t.Errorf("model = %v, want nemotron-3.5-lightning:latest", payload.Model)
 		}
 		if wantThink != nil && payload.Think != wantThink {
 			t.Errorf("think = %v, want %v", payload.Think, wantThink)
@@ -50,8 +55,8 @@ func ollamaTestConfig(t *testing.T, server *httptest.Server) config.Config {
 			Provider:   "ollama",
 			Endpoint:   server.URL,
 			TimeoutMS:  5000,
-			Planning:   config.ModelConfig{Model: "nemotron", Effort: "high"},
-			Evaluation: config.ModelConfig{Model: "nemotron", Effort: "high"},
+			Planning:   config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
+			Evaluation: config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
 		},
 	}
 }
@@ -68,7 +73,7 @@ func TestOllamaProfileCatalog(t *testing.T) {
 		t.Fatalf("options=%+v", options)
 	}
 	for _, id := range []string{"structured_fast", "short_reasoning", "general_synthesis", "deep_reasoning"} {
-		if model, ok := provider.ResolveProfile(id); !ok || model.Model != "nemotron" || model.Effort == "" {
+		if model, ok := provider.ResolveProfile(id); !ok || model.Model != "nemotron-3.5-lightning:latest" || model.Effort == "" {
 			t.Fatalf("profile %q model=%+v ok=%v", id, model, ok)
 		}
 	}
@@ -85,8 +90,8 @@ func TestOllamaDefaultsEndpointWhenUnset(t *testing.T) {
 		Root: filepathRoot(t),
 		Reasoning: config.ReasoningConfig{
 			Provider: "ollama", TimeoutMS: 5000,
-			Planning:   config.ModelConfig{Model: "nemotron", Effort: "high"},
-			Evaluation: config.ModelConfig{Model: "nemotron", Effort: "high"},
+			Planning:   config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
+			Evaluation: config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
 		},
 	})
 	if err != nil {
@@ -114,6 +119,11 @@ func TestOllamaRequiresPlanningModel(t *testing.T) {
 func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
 	recorded := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"capabilities":["completion","thinking"]}`)
+			return
+		}
 		var payload struct {
 			Model    string           `json:"model"`
 			Think    any              `json:"think"`
@@ -143,8 +153,8 @@ func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
 			Endpoint:        server.URL,
 			TimeoutMS:       30000,
 			WarmupTimeoutMS: 30000,
-			Planning:        config.ModelConfig{Model: "nemotron", Effort: "high"},
-			Evaluation:      config.ModelConfig{Model: "nemotron", Effort: "high"},
+			Planning:        config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
+			Evaluation:      config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
 		},
 	})
 	if err != nil {
@@ -185,7 +195,7 @@ func TestOllamaStructuredPlan(t *testing.T) {
 	if err != nil || plan.Decision != "finish" {
 		t.Fatalf("plan=%+v err=%v", plan, err)
 	}
-	if telemetry.Provider != "ollama" || telemetry.Model != "nemotron" || telemetry.Effort != "high" || telemetry.Phase != "acquisition_planning" {
+	if telemetry.Provider != "ollama" || telemetry.Model != "nemotron-3.5-lightning:latest" || telemetry.Effort != "high" || telemetry.Phase != "acquisition_planning" {
 		t.Fatalf("telemetry=%+v", telemetry)
 	}
 	if telemetry.InputTokens == nil || *telemetry.InputTokens != 10 {
@@ -240,17 +250,8 @@ func TestOllamaCatalogSatisfiesBuiltinProfiles(t *testing.T) {
 		"high":   inference.ReasoningEffortHigh,
 		"max":    inference.ReasoningEffortMax,
 	}
-	for _, id := range []inference.ProfileID{
-		inference.ProfileStructuredFast,
-		inference.ProfileShortReasoning,
-		inference.ProfileGeneralSynthesis,
-		inference.ProfileDeepReasoning,
-	} {
-		spec, ok := inference.ProfileSpec(id)
-		if !ok {
-			t.Fatalf("profile spec %q missing", id)
-		}
-		model, ok := provider.ResolveProfile(string(id))
+	for _, id := range []string{"structured_fast", "short_reasoning", "general_synthesis", "deep_reasoning"} {
+		model, ok := provider.ResolveProfile(id)
 		if !ok {
 			t.Fatalf("catalog cannot resolve built-in profile %q", id)
 		}
@@ -258,9 +259,58 @@ func TestOllamaCatalogSatisfiesBuiltinProfiles(t *testing.T) {
 		if !ok {
 			t.Fatalf("profile %q resolved to unknown effort %q", id, model.Effort)
 		}
-		if !inference.TierAtLeast(effort, spec.ReasoningTier) {
-			t.Fatalf("profile %q effort %q (tier %q) below need %q", id, model.Effort, effort, spec.ReasoningTier)
+		if !inference.TierAtLeast(effort, inference.ReasoningEffort(model.MinimumTier())) {
+			t.Fatalf("profile %q effort %q (tier %q) below need %q", id, model.Effort, effort, model.MinimumTier())
 		}
+	}
+}
+
+func TestOllamaQwenXHighUsesNativeMaxAndRejectsExactXHigh(t *testing.T) {
+	var generations int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"capabilities":["completion","thinking"]}`)
+			return
+		}
+		var payload struct {
+			Model string `json:"model"`
+			Think string `json:"think"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode qwen payload: %v", err)
+		}
+		generations++
+		if payload.Model != "qwen3.8:27b" || payload.Think != "max" {
+			t.Errorf("qwen payload model=%q think=%q, want qwen3.8:27b/max", payload.Model, payload.Think)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"message":{"content":"{\"decision\":\"finish\",\"reason\":\"ok\"}"},"done":true,"prompt_eval_count":1,"eval_count":1}`)
+	}))
+	defer server.Close()
+	base := ollamaTestConfig(t, server)
+	base.Reasoning.Planning = config.ModelConfig{ModelID: "qwen3.8-27b", MinReasoningTier: "xhigh"}
+	base.Reasoning.Evaluation = base.Reasoning.Planning
+	provider, err := NewOllama(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	if _, _, err := provider.Plan(context.Background(), domain.Run{ID: "qwen-max", Source: domain.SourceX}, domain.Observation{}, nil); err != nil {
+		t.Fatalf("xhigh requirement should resolve to native max: %v", err)
+	}
+	if generations != 1 {
+		t.Fatalf("generation count=%d, want 1", generations)
+	}
+
+	base.Reasoning.Planning.ReasoningOptionID = "xhigh"
+	rejected, err := NewOllama(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rejected.Close()
+	if _, _, err := rejected.Plan(context.Background(), domain.Run{ID: "qwen-exact", Source: domain.SourceX}, domain.Observation{}, nil); err == nil {
+		t.Fatal("exact Qwen xhigh must fail closed before generation")
 	}
 }
 

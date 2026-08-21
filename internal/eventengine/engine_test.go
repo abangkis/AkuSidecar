@@ -6,6 +6,19 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
+func TestApplyReceiptMetadataProjectsActualExecution(t *testing.T) {
+	summary := domain.EventResolutionSummary{Model: "stable-model-id", Effort: "xhigh", Usage: domain.ModelUsage{ProviderModel: "qwen3.8:27b", NativeReasoning: "max"}}
+	applyReceiptMetadata(&summary)
+	if summary.Model != "qwen3.8:27b" || summary.Effort != "max" {
+		t.Fatalf("receipt projection=%+v", summary)
+	}
+	empty := domain.EventResolutionSummary{Model: "configured", Effort: "high"}
+	applyReceiptMetadata(&empty)
+	if empty.Model != "configured" || empty.Effort != "high" {
+		t.Fatalf("empty receipt overwrote configured display=%+v", empty)
+	}
+}
+
 func TestShortlistIsGloballyBounded(t *testing.T) {
 	candidates := []domain.SemanticCandidate{{Alias: "candidate_001", EvidenceKey: "x:1", WhatChanged: "OpenAI launches Codex App Server"}}
 	events := make([]domain.SemanticEvent, 0, 20)

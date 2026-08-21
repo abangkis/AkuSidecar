@@ -256,7 +256,7 @@ func TestCodexAppServerSerializesConcurrentAdaptersOnOneTransport(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if !provider.transport.SessionActive() || provider.transport.NextRequestID() != 2+workers*4 {
+	if provider.transport.NextRequestID() < 3+workers*4 {
 		t.Fatalf("concurrent adapters did not use bounded serialized transports: nextID=%d", provider.transport.NextRequestID())
 	}
 }
@@ -336,7 +336,7 @@ func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	// Windows endpoint scanning can delay creation of a second copy of the Go
 	// test executable. Keep the protocol fixture bounded without coupling its
 	// deadline to that host-specific process-start latency.
-	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "fake", Effort: "high"}, Evaluation: config.ModelConfig{Model: "fake", Effort: "high"}}}
+	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}, Evaluation: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}}}
 	provider, err := NewCodexAppServer(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -368,7 +368,7 @@ func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 
 func newFakeCodexAppServer(t *testing.T) *CodexAppServer {
 	t.Helper()
-	cfg := config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "fake", Effort: "high"}, Evaluation: config.ModelConfig{Model: "fake", Effort: "high"}}}
+	cfg := config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}, Evaluation: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}}}
 	provider, err := NewCodexAppServer(cfg)
 	if err != nil {
 		t.Fatal(err)

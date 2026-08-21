@@ -96,8 +96,50 @@ type ProviderConfig struct {
 }
 
 type ModelConfig struct {
-	Model  string `json:"model"`
-	Effort string `json:"effort"`
+	// ModelID is the provider-owned stable identity used for binding. Model is
+	// retained as an explicit wire-name migration alias and telemetry field.
+	ModelID string `json:"modelId,omitempty"`
+	Model   string `json:"model,omitempty"`
+	// MinReasoningTier is the client-owned need. ReasoningOptionID is an
+	// optional exact provider option; Effort is the legacy alias for the former.
+	MinReasoningTier  string `json:"minReasoningTier,omitempty"`
+	ReasoningOptionID string `json:"reasoningOptionId,omitempty"`
+	Effort            string `json:"effort,omitempty"`
+	// ProfileID is internal invocation identity and is never persisted.
+	ProfileID string `json:"-"`
+}
+
+func (m ModelConfig) StableModelID() string {
+	if strings.TrimSpace(m.ModelID) != "" {
+		return strings.TrimSpace(m.ModelID)
+	}
+	return strings.TrimSpace(m.Model)
+}
+
+func (m ModelConfig) MinimumTier() string {
+	value := strings.TrimSpace(m.MinReasoningTier)
+	if value == "" {
+		value = strings.TrimSpace(m.Effort)
+	}
+	if strings.EqualFold(value, "off") {
+		return "none"
+	}
+	return value
+}
+
+func (m ModelConfig) ExactReasoningOption() string {
+	return strings.TrimSpace(m.ReasoningOptionID)
+}
+
+// DisplayModel and DisplayEffort are compatibility/UI projections only. They
+// do not participate in provider capability resolution or binding.
+func (m ModelConfig) DisplayModel() string { return m.StableModelID() }
+
+func (m ModelConfig) DisplayEffort() string {
+	if value := strings.TrimSpace(m.Effort); value != "" {
+		return value
+	}
+	return strings.TrimSpace(m.MinReasoningTier)
 }
 
 // UnmarshalJSON accepts either the multi-provider shape (activeProvider with a
@@ -270,8 +312,8 @@ func (p ProviderConfig) Validate(name string) error {
 			"AI detection":   p.AIDetection,
 		}
 		for task, model := range models {
-			if model.Model == "" || model.Effort == "" {
-				return fmt.Errorf("%s model and effort are required for provider %q", task, name)
+			if model.StableModelID() == "" || model.MinimumTier() == "" {
+				return fmt.Errorf("%s model_id/model and minimum reasoning tier are required for provider %q", task, name)
 			}
 		}
 	}

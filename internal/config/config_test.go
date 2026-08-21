@@ -268,7 +268,7 @@ func TestOllamaRequiresModelsAndBoundsRetries(t *testing.T) {
 	entry := missing.Reasoning.Providers["ollama-nemotron"]
 	entry.Planning = ModelConfig{Model: "nemotron"}
 	missing.Reasoning.Providers["ollama-nemotron"] = entry
-	if err := missing.Validate(); err == nil || !strings.Contains(err.Error(), "planning model and effort") {
+	if err := missing.Validate(); err == nil || !strings.Contains(err.Error(), "minimum reasoning tier") {
 		t.Fatalf("missing planning model error=%v", err)
 	}
 	qwenMissing := base
@@ -276,7 +276,7 @@ func TestOllamaRequiresModelsAndBoundsRetries(t *testing.T) {
 	qwenEntry := qwenMissing.Reasoning.Providers["ollama-qwen"]
 	qwenEntry.AIDetection = ModelConfig{Model: "qwen3.8:27b"}
 	qwenMissing.Reasoning.Providers["ollama-qwen"] = qwenEntry
-	if err := qwenMissing.Validate(); err == nil || !strings.Contains(err.Error(), "AI detection model and effort") {
+	if err := qwenMissing.Validate(); err == nil || !strings.Contains(err.Error(), "minimum reasoning tier") {
 		t.Fatalf("missing qwen ai detection model error=%v", err)
 	}
 	retries := base

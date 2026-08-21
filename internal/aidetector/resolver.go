@@ -22,7 +22,7 @@ type Resolver interface {
 }
 
 type StructuredInvoker interface {
-	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
+	InvokeStructured(context.Context, string, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
 type ProfileInvoker interface {
@@ -40,6 +40,8 @@ type StructuredResolver struct {
 	model   config.ModelConfig
 	schema  any
 }
+
+const aiDetectionExecutionProfile = "akusidecar.ai_detection"
 
 const (
 	DeepDetectorVersion        = domain.CurrentAIDeepDetectorVersion
@@ -245,7 +247,7 @@ Scope and evidence rules:
 - Emit only evidence codes present in the candidate and a concise source-grounded rationale.
 
 Candidates: %s`, mustJSON(values))
-	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, prompt, r.schema, model)
+	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, aiDetectionExecutionProfile, prompt, r.schema, model)
 	if err != nil {
 		return domain.DeepAIResult{}, usage, duration, err
 	}

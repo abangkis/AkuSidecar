@@ -254,8 +254,13 @@ func (s *Store) FinishAIDetectionJob(ctx context.Context, id, status string, dur
 		message = runErr.Error()
 	}
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE ai_detection_jobs SET status=?,duration_ms=?,input_tokens=?,cached_input_tokens=?,output_tokens=?,reasoning_output_tokens=?,error=?,completed_at=? WHERE id=?`,
-		status, durationMS, usage.Input, usage.CachedInput, usage.Output, usage.ReasoningOutput, message, domain.Now(), id)
+		UPDATE ai_detection_jobs SET status=?,duration_ms=?,input_tokens=?,cached_input_tokens=?,output_tokens=?,reasoning_output_tokens=?,
+		model=CASE WHEN ? <> '' THEN ? ELSE model END,
+		effort=CASE WHEN ? <> '' THEN ? ELSE effort END,
+		error=?,completed_at=? WHERE id=?`,
+		status, durationMS, usage.Input, usage.CachedInput, usage.Output, usage.ReasoningOutput,
+		usage.ProviderModel, usage.ProviderModel, usage.NativeReasoning, usage.NativeReasoning,
+		message, domain.Now(), id)
 	return err
 }
 

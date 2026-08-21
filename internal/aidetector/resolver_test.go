@@ -18,7 +18,7 @@ type fakeStructuredInvoker struct {
 	model  config.ModelConfig
 }
 
-func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, _ string, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
 	f.prompt = prompt
 	f.schema = schema
 	f.model = model

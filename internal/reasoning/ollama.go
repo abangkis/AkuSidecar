@@ -19,24 +19,12 @@ const ollamaDefaultEndpoint = "http://127.0.0.1:11434"
 
 // ollamaProfileOrder keeps the published profile catalog deterministic.
 var ollamaProfileOrder = []inference.ProfileID{
-	inference.ProfileStructuredFast,
-	inference.ProfileShortReasoning,
-	inference.ProfileGeneralSynthesis,
-	inference.ProfileDeepReasoning,
+	"structured_fast", "short_reasoning", "general_synthesis", "deep_reasoning",
 }
 
 // ollamaBindings maps each built-in execution profile to a native Ollama
 // thinking budget. The adapter's own native-to-tier claims make the map
 // satisfiable; inference.Resolve verifies the binding at profile resolution.
-func ollamaBindings() map[inference.ProfileID]inference.Binding {
-	return map[inference.ProfileID]inference.Binding{
-		inference.ProfileStructuredFast:   {Adapter: "ollama", Capability: string(ollama.ThinkOff)},
-		inference.ProfileShortReasoning:   {Adapter: "ollama", Capability: string(ollama.ThinkLow)},
-		inference.ProfileGeneralSynthesis: {Adapter: "ollama", Capability: string(ollama.ThinkMedium)},
-		inference.ProfileDeepReasoning:    {Adapter: "ollama", Capability: string(ollama.ThinkHigh)},
-	}
-}
-
 // Ollama exposes the Ollama Chat transport as an AkuSidecar reasoning
 // provider. Profile selection is validated through the execution profile
 // model: the built-in profiles resolve to native thinking budgets via a
@@ -47,14 +35,12 @@ type Ollama struct {
 	maxRetries    int
 	timeout       time.Duration
 	warmupTimeout time.Duration
-	model         string
 	planning      config.ModelConfig
 	evaluation    config.ModelConfig
 	planSchema    any
 	resultSchema  any
 	transport     *ollama.Adapter
-	caps          inference.ProviderCapabilities
-	bindings      map[inference.ProfileID]inference.Binding
+	clients       *boundClientPool
 	order         []inference.ProfileID
 }
 
@@ -67,8 +53,7 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 	if endpoint == "" {
 		endpoint = ollamaDefaultEndpoint
 	}
-	model := strings.TrimSpace(cfg.Reasoning.Planning.Model)
-	if model == "" {
+	if cfg.Reasoning.Planning.StableModelID() == "" {
 		return nil, fmt.Errorf("ollama planning model is required")
 	}
 	planSchema, err := readSchema(filepath.Join(cfg.Root, "schemas", "acquisition-plan.schema.json"))
@@ -89,20 +74,23 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 	if err != nil {
 		return nil, err
 	}
+	clients, err := newBoundClientPool(transport)
+	if err != nil {
+		_ = transport.Close()
+		return nil, err
+	}
 	provider := &Ollama{
 		name:          name,
 		endpoint:      endpoint,
 		maxRetries:    cfg.Reasoning.MaxRetries,
 		timeout:       time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
 		warmupTimeout: time.Duration(cfg.Reasoning.WarmupTimeoutMS) * time.Millisecond,
-		model:         model,
 		planning:      cfg.Reasoning.Planning,
 		evaluation:    cfg.Reasoning.Evaluation,
 		planSchema:    planSchema,
 		resultSchema:  resultSchema,
 		transport:     transport,
-		caps:          transport.Capabilities(),
-		bindings:      ollamaBindings(),
+		clients:       clients,
 		order:         ollamaProfileOrder,
 	}
 	return provider, nil
@@ -112,49 +100,52 @@ func (o *Ollama) Name() string { return o.name }
 
 func (o *Ollama) ProfileOptions() []ProfileOption {
 	options := make([]ProfileOption, 0, len(o.order))
+	model := o.planning.Model
+	if stableID, err := ollamaStableModelID(o.planning); err == nil {
+		if wire, wireErr := ollamaWireModel(stableID); wireErr == nil {
+			model = wire
+		}
+	}
 	for _, id := range o.order {
-		binding := o.bindings[id]
+		effort := map[inference.ProfileID]string{
+			"structured_fast": "off", "short_reasoning": "low",
+			"general_synthesis": "medium", "deep_reasoning": "high",
+		}[id]
 		options = append(options, ProfileOption{
 			ID:     string(id),
 			Label:  ollamaProfileLabel(id),
-			Model:  o.model,
-			Effort: binding.Capability,
+			Model:  model,
+			Effort: effort,
 		})
 	}
 	return options
 }
 
 func (o *Ollama) ResolveProfile(id string) (config.ModelConfig, bool) {
-	profile := inference.ProfileID(id)
-	binding, ok := o.bindings[profile]
-	if !ok {
-		return config.ModelConfig{}, false
+	for _, option := range o.ProfileOptions() {
+		if option.ID == id {
+			modelID, err := ollamaStableModelID(o.planning)
+			if err != nil {
+				return config.ModelConfig{}, false
+			}
+			return config.ModelConfig{ModelID: modelID, Model: option.Model, MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, ProfileID: id}, true
+		}
 	}
-	spec, ok := inference.ProfileSpec(profile)
-	if !ok {
-		return config.ModelConfig{}, false
-	}
-	binding.Model = o.model
-	resolved, err := inference.Resolve(spec, binding, o.caps)
-	if err != nil {
-		return config.ModelConfig{}, false
-	}
-	return config.ModelConfig{Model: resolved.Model, Effort: resolved.Native}, true
+	return config.ModelConfig{}, false
 }
 
 // InvokeStructured exposes the shared Ollama transport to bounded adapters
 // without adding their domain-specific methods to the reasoning Provider.
-func (o *Ollama) InvokeStructured(ctx context.Context, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	raw, value, duration, err := o.invoke(ctx, prompt, schema, model)
-	return raw, domain.ModelUsage{Input: value.Input, CachedInput: value.CachedInput, Output: value.Output, ReasoningOutput: value.ReasoningOutput}, duration, err
+func (o *Ollama) InvokeStructured(ctx context.Context, profileID string, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+	return o.invoke(ctx, inference.ProfileID(profileID), prompt, schema, model)
 }
 
 func (o *Ollama) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
-	return o.PlanWithModel(ctx, run, observation, knowledge, o.planning)
+	return o.PlanWithModel(ctx, run, observation, knowledge, string(ExecutionProfilePlanning), o.planning)
 }
 
-func (o *Ollama) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
-	raw, usage, duration, err := o.invoke(ctx, buildPlanningPrompt(run, observation, knowledge), o.planSchema, model)
+func (o *Ollama) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string, model config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
+	raw, usage, duration, err := o.invoke(ctx, inference.ProfileID(profileID), buildPlanningPrompt(run, observation, knowledge), o.planSchema, model)
 	telemetry := o.telemetry(run, "acquisition_planning", model, duration, usage, err)
 	if err != nil {
 		return AcquisitionPlan{}, telemetry, err
@@ -170,12 +161,12 @@ func (o *Ollama) PlanWithModel(ctx context.Context, run domain.Run, observation 
 }
 
 func (o *Ollama) Analyze(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
-	return o.AnalyzeWithModel(ctx, run, observation, knowledge, o.evaluation)
+	return o.AnalyzeWithModel(ctx, run, observation, knowledge, string(ExecutionProfileEvaluation), o.evaluation)
 }
 
-func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	request := buildEvaluationRequest(run, observation, knowledge)
-	raw, usage, duration, err := o.invoke(ctx, request.prompt, o.resultSchema, model)
+	raw, usage, duration, err := o.invoke(ctx, inference.ProfileID(profileID), request.prompt, o.resultSchema, model)
 	telemetry := o.telemetry(run, "candidate_evaluation", model, duration, usage, err)
 	if err != nil {
 		return domain.ReasoningResult{}, telemetry, err
@@ -190,16 +181,21 @@ func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observati
 	return result, telemetry, nil
 }
 
-func (o *Ollama) invoke(parent context.Context, prompt string, schema any, model config.ModelConfig) (string, ollama.Usage, time.Duration, error) {
+func (o *Ollama) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+	modelID, err := ollamaStableModelID(model)
+	if err != nil {
+		return "", domain.ModelUsage{}, 0, err
+	}
 	if o.warmupTimeout > 0 {
-		if _, err := o.transport.Warm(parent, model.Model, o.warmupTimeout); err != nil {
-			return "", ollama.Usage{}, 0, err
+		wireModel, err := ollamaWireModel(modelID)
+		if err != nil {
+			return "", domain.ModelUsage{}, 0, err
+		}
+		if _, err := o.transport.Warm(parent, wireModel, o.warmupTimeout); err != nil {
+			return "", domain.ModelUsage{}, 0, err
 		}
 	}
-	return o.transport.InvokeStructured(parent, prompt, schema, ollama.ModelConfig{
-		Model: model.Model,
-		Think: ollama.ThinkBudget(model.Effort),
-	})
+	return invokeBound(parent, o.clients, profileID, prompt, schema, model, modelID)
 }
 
 func (o *Ollama) Close() error {
@@ -211,18 +207,51 @@ func (o *Ollama) Close() error {
 
 func ollamaProfileLabel(id inference.ProfileID) string {
 	labels := map[inference.ProfileID]string{
-		inference.ProfileStructuredFast:   "Structured Fast",
-		inference.ProfileShortReasoning:   "Short Reasoning",
-		inference.ProfileGeneralSynthesis: "General Synthesis",
-		inference.ProfileDeepReasoning:    "Deep Reasoning",
+		"structured_fast": "Structured Fast", "short_reasoning": "Short Reasoning",
+		"general_synthesis": "General Synthesis", "deep_reasoning": "Deep Reasoning",
 	}
 	return labels[id]
 }
 
-func (o *Ollama) telemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value ollama.Usage, runErr error) domain.ReasoningTelemetry {
+func (o *Ollama) telemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value domain.ModelUsage, runErr error) domain.ReasoningTelemetry {
 	status := "completed"
 	if runErr != nil {
 		status = "failed"
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: model.Model, Effort: model.Effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	modelName := model.Model
+	if modelName == "" {
+		modelName = value.ProviderModel
+	}
+	if modelName == "" {
+		if stableID, err := ollamaStableModelID(model); err == nil {
+			modelName, _ = ollamaWireModel(stableID)
+		}
+	}
+	effort := model.Effort
+	if effort == "" {
+		effort = value.NativeReasoning
+	}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+}
+
+func ollamaStableModelID(model config.ModelConfig) (string, error) {
+	requested := strings.TrimSpace(model.ModelID)
+	if requested == "" {
+		requested = strings.TrimSpace(model.Model)
+	}
+	for _, id := range ollama.KnownModels() {
+		descriptor, ok := ollama.KnownModel(id)
+		if ok && (requested == descriptor.ModelID || requested == descriptor.ProviderModel) {
+			return descriptor.ModelID, nil
+		}
+	}
+	return "", fmt.Errorf("unknown Ollama model %q; use a provider-owned stable model ID", requested)
+}
+
+func ollamaWireModel(modelID string) (string, error) {
+	descriptor, ok := ollama.KnownModel(ollama.ModelID(modelID))
+	if !ok {
+		return "", fmt.Errorf("unknown Ollama stable model ID %q", modelID)
+	}
+	return descriptor.ProviderModel, nil
 }

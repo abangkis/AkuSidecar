@@ -115,6 +115,7 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 		model := e.modelForProfile(settings.ReasoningSemanticProfile)
 		summary.Provider, summary.Model, summary.Effort = e.resolver.Name(), model.Model, model.Effort
 		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, resolverCandidates, shortlist, settings.ReasoningSemanticProfile)
+		applyReceiptMetadata(&summary)
 		if err != nil {
 			summary.Status = "failed"
 			summary.Error = &domain.Failure{Code: "semantic_resolution_failed", Stage: "semantic_event_resolution", Message: err.Error(), Retryable: true}
@@ -139,6 +140,18 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 		return summary, err
 	}
 	return summary, nil
+}
+
+func applyReceiptMetadata(summary *domain.EventResolutionSummary) {
+	if summary == nil {
+		return
+	}
+	if summary.Usage.ProviderModel != "" {
+		summary.Model = summary.Usage.ProviderModel
+	}
+	if summary.Usage.NativeReasoning != "" {
+		summary.Effort = summary.Usage.NativeReasoning
+	}
 }
 
 // ProcessTimelineItem resolves one user-restored report against the retained

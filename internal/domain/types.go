@@ -813,6 +813,11 @@ type ModelUsage struct {
 	CachedInput     *int64 `json:"cachedInputTokens"`
 	Output          *int64 `json:"outputTokens"`
 	ReasoningOutput *int64 `json:"reasoningOutputTokens"`
+	// Receipt metadata is provider-reported execution fact, not a model
+	// capability declaration. It is retained for workload telemetry.
+	ProviderModel   string `json:"providerModel,omitempty"`
+	NativeReasoning string `json:"nativeReasoning,omitempty"`
+	ReasoningTier   string `json:"reasoningTier,omitempty"`
 }
 
 type ModelUsageEntry struct {

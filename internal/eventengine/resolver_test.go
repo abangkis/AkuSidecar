@@ -15,7 +15,7 @@ type fakeStructuredInvoker struct {
 	model  config.ModelConfig
 }
 
-func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, prompt string, _ any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, _ string, prompt string, _ any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
 	f.prompt = prompt
 	f.model = model
 	return `{"decisions":[{"candidateAlias":"candidate_001","relation":"new_event","targetAlias":null,"confidence":0.95,"reason":"Distinct occurrence","event":{"canonicalClaim":"A release happened","actor":"OpenAI","action":"released","object":"Codex","eventKind":"release","aliases":[]}}]}`, domain.ModelUsage{}, time.Millisecond, nil

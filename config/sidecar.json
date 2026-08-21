@@ -20,20 +20,20 @@
         "maxRetries": 0,
         "timeoutMs": 120000,
         "planning": {
-          "model": "gpt-5.6-luna",
-          "effort": "high"
+          "modelId": "codex-luna",
+          "minReasoningTier": "high"
         },
         "evaluation": {
-          "model": "gpt-5.6-luna",
-          "effort": "high"
+          "modelId": "codex-luna",
+          "minReasoningTier": "high"
         },
         "semanticEvent": {
-          "model": "gpt-5.6-luna",
-          "effort": "high"
+          "modelId": "codex-luna",
+          "minReasoningTier": "high"
         },
         "aiDetection": {
-          "model": "gpt-5.6-luna",
-          "effort": "high"
+          "modelId": "codex-luna",
+          "minReasoningTier": "high"
         }
       },
       "ollama-nemotron": {
@@ -43,20 +43,20 @@
         "warmupTimeoutMs": 300000,
         "keepAliveMinutes": 10,
         "planning": {
-          "model": "nemotron-3.5-lightning:latest",
-          "effort": "high"
+          "modelId": "nemotron-3.5-lightning",
+          "minReasoningTier": "high"
         },
         "evaluation": {
-          "model": "nemotron-3.5-lightning:latest",
-          "effort": "high"
+          "modelId": "nemotron-3.5-lightning",
+          "minReasoningTier": "high"
         },
         "semanticEvent": {
-          "model": "nemotron-3.5-lightning:latest",
-          "effort": "high"
+          "modelId": "nemotron-3.5-lightning",
+          "minReasoningTier": "high"
         },
         "aiDetection": {
-          "model": "nemotron-3.5-lightning:latest",
-          "effort": "high"
+          "modelId": "nemotron-3.5-lightning",
+          "minReasoningTier": "high"
         }
       },
       "ollama-qwen": {
@@ -67,20 +67,20 @@
         "keepAliveMinutes": 10,
         "numCtx": 32768,
         "planning": {
-          "model": "qwen3.8:27b",
-          "effort": "xhigh"
+          "modelId": "qwen3.8-27b",
+          "minReasoningTier": "xhigh"
         },
         "evaluation": {
-          "model": "qwen3.8:27b",
-          "effort": "xhigh"
+          "modelId": "qwen3.8-27b",
+          "minReasoningTier": "xhigh"
         },
         "semanticEvent": {
-          "model": "qwen3.8:27b",
-          "effort": "xhigh"
+          "modelId": "qwen3.8-27b",
+          "minReasoningTier": "xhigh"
         },
         "aiDetection": {
-          "model": "qwen3.8:27b",
-          "effort": "xhigh"
+          "modelId": "qwen3.8-27b",
+          "minReasoningTier": "xhigh"
         }
       }
     }

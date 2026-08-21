@@ -92,7 +92,7 @@ func (e *Engine) ReasoningProcesses(settings domain.Settings) []ReasoningProcess
 		}
 		return ReasoningProcessProfile{
 			ID: id, Label: label, Description: description, Provider: provider,
-			Model: model.Model, Effort: model.Effort, Execution: execution,
+			Model: model.DisplayModel(), Effort: model.DisplayEffort(), Execution: execution,
 			ProfileID: profileID, Options: append([]reasoning.ProfileOption(nil), options...),
 		}
 	}
@@ -133,14 +133,14 @@ func (e *Engine) validateReasoningProfiles(settings domain.Settings) error {
 
 func (e *Engine) planWithProfile(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string) (reasoning.AcquisitionPlan, domain.ReasoningTelemetry, error) {
 	if routed, ok := e.provider.(reasoning.RoutedProvider); ok {
-		return routed.PlanWithModel(ctx, run, observation, knowledge, e.reasoningModel(profileID, e.config.Reasoning.Planning))
+		return routed.PlanWithModel(ctx, run, observation, knowledge, string(reasoning.ExecutionProfilePlanning), e.reasoningModel(profileID, e.config.Reasoning.Planning))
 	}
 	return e.provider.Plan(ctx, run, observation, knowledge)
 }
 
 func (e *Engine) analyzeWithProfile(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	if routed, ok := e.provider.(reasoning.RoutedProvider); ok {
-		return routed.AnalyzeWithModel(ctx, run, observation, knowledge, e.reasoningModel(profileID, e.config.Reasoning.Evaluation))
+		return routed.AnalyzeWithModel(ctx, run, observation, knowledge, string(reasoning.ExecutionProfileEvaluation), e.reasoningModel(profileID, e.config.Reasoning.Evaluation))
 	}
 	return e.provider.Analyze(ctx, run, observation, knowledge)
 }

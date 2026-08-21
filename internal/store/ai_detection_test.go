@@ -68,7 +68,7 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 		t.Fatalf("fast presentation=%+v", value)
 	}
 
-	job, err := state.CreateAIDetectionJob(ctx, domain.AIDetectionJob{SessionID: session.ID, Provider: "test", CandidateCount: 1})
+	job, err := state.CreateAIDetectionJob(ctx, domain.AIDetectionJob{SessionID: session.ID, Provider: "test", Model: "configured-model", Effort: "xhigh", CandidateCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,14 +90,14 @@ func TestAIDetectionAcceptanceMatrixAndUserAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	input, cached, output, reasoning := int64(120), int64(80), int64(30), int64(10)
-	if err := state.FinishAIDetectionJob(ctx, job.ID, "completed", 25, domain.ModelUsage{Input: &input, CachedInput: &cached, Output: &output, ReasoningOutput: &reasoning}, nil); err != nil {
+	if err := state.FinishAIDetectionJob(ctx, job.ID, "completed", 25, domain.ModelUsage{Input: &input, CachedInput: &cached, Output: &output, ReasoningOutput: &reasoning, ProviderModel: "qwen3.8:27b", NativeReasoning: "max"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	loadedJob, err := state.AIDetectionJob(ctx, session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loadedJob == nil || loadedJob.Status != "completed" || loadedJob.DurationMS != 25 || loadedJob.InputTokens == nil || *loadedJob.InputTokens != input || loadedJob.CachedInputTokens == nil || *loadedJob.CachedInputTokens != cached {
+	if loadedJob == nil || loadedJob.Status != "completed" || loadedJob.Model != "qwen3.8:27b" || loadedJob.Effort != "max" || loadedJob.DurationMS != 25 || loadedJob.InputTokens == nil || *loadedJob.InputTokens != input || loadedJob.CachedInputTokens == nil || *loadedJob.CachedInputTokens != cached {
 		t.Fatalf("AI detection job=%+v", loadedJob)
 	}
 	inbox, _, err := state.ListInboxSessions(ctx, 5, 0)

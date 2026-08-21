@@ -20,7 +20,7 @@ type Resolver interface {
 }
 
 type StructuredInvoker interface {
-	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
+	InvokeStructured(context.Context, string, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
 type ProfileInvoker interface {
@@ -38,6 +38,8 @@ type StructuredResolver struct {
 	model   config.ModelConfig
 	schema  any
 }
+
+const semanticExecutionProfile = "akusidecar.semantic_event_resolution"
 
 func NewStructuredResolver(root string, invoker StructuredInvoker, model config.ModelConfig) (*StructuredResolver, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "schemas", "semantic-event-resolution.schema.json"))
@@ -141,7 +143,7 @@ Unverified motive, rhetorical framing, sentiment, competitive interpretation, pa
 
 Historical event shortlist: %s
 Current candidates: %s`, mustJSON(refs), mustJSON(candidateRefs))
-	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, prompt, r.schema, model)
+	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, semanticExecutionProfile, prompt, r.schema, model)
 	if err != nil {
 		return domain.SemanticResolution{}, usage, duration, err
 	}

@@ -24,7 +24,7 @@ type Provider interface {
 // A replacement backend can implement this contract without exposing its
 // transport details to either domain package.
 type StructuredInvoker interface {
-	InvokeStructured(context.Context, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
+	InvokeStructured(context.Context, string, string, any, config.ModelConfig) (string, domain.ModelUsage, time.Duration, error)
 }
 
 type ProfileOption struct {
@@ -43,8 +43,8 @@ type ProfileProvider interface {
 }
 
 type RoutedProvider interface {
-	PlanWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error)
-	AnalyzeWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error)
+	PlanWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, string, config.ModelConfig) (AcquisitionPlan, domain.ReasoningTelemetry, error)
+	AnalyzeWithModel(context.Context, domain.Run, domain.Observation, []domain.ReasonedItem, string, config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error)
 }
 
 // ExecutableRuntime is an optional provider capability for inference backends

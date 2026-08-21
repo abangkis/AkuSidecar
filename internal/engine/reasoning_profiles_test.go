@@ -56,12 +56,12 @@ func (p *routedProfileProvider) ResolveProfile(id string) (config.ModelConfig, b
 	return config.ModelConfig{}, false
 }
 
-func (p *routedProfileProvider) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (reasoning.AcquisitionPlan, domain.ReasoningTelemetry, error) {
+func (p *routedProfileProvider) PlanWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, _ string, model config.ModelConfig) (reasoning.AcquisitionPlan, domain.ReasoningTelemetry, error) {
 	p.planningModel = model
 	return p.Deterministic.Plan(ctx, run, observation, knowledge)
 }
 
-func (p *routedProfileProvider) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
+func (p *routedProfileProvider) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, _ string, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
 	p.evaluationModel = model
 	return p.Deterministic.Analyze(ctx, run, observation, knowledge)
 }

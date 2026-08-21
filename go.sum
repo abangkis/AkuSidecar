@@ -49,3 +49,7 @@ modernc.org/strutil v1.2.0 h1:agBi9dp1I+eOnxXeiZawM8F4LawKv4NzGWSaLfyeNZA=
 modernc.org/strutil v1.2.0/go.mod h1:/mdcBmfOibveCTBxUl5B5l6W+TTH1FXPLHZE6bTosX0=
 modernc.org/token v1.1.0 h1:Xl7Ap9dKaEs5kLoOQeQmPWevfnk/DM5qcLcYlA8ys6Y=
 modernc.org/token v1.1.0/go.mod h1:UGzOrNV1mAFSEB63lOFHIpNRUVMvYTc6yu1SMY/XTDM=
+github.com/abangkis/ai4u-common-execution-profile-go v0.1.0 h1:ai7c2cgEhKYKRFnZnwSylgib4d55uOYK+aab8A1a4iw=
+github.com/abangkis/ai4u-common-execution-profile-go v0.1.0/go.mod h1:J+zBjPD/4F4BQWnrekSuL/AW/mFXhpNZOE4cM4Xjwew=
+github.com/abangkis/ai4u-inference-sdk-go v0.6.0 h1:FJQM43BQO8VwoSabbjIyJD4+SQeKd19mydEtF24IVh0=
+github.com/abangkis/ai4u-inference-sdk-go v0.6.0/go.mod h1:46VEPPvPMeReagEq5k50+DOFv2gx83NQzrBe08sAI38=
