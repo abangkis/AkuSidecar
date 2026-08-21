@@ -417,10 +417,10 @@ func (s *Store) SaveEventResolutionSummary(ctx context.Context, value domain.Eve
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO event_resolution_invocations(session_id,status,provider,model,effort,candidate_count,shortlist_count,unique_items,duplicate_reports,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error_json,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(session_id) DO UPDATE SET status=excluded.status,provider=excluded.provider,model=excluded.model,effort=excluded.effort,candidate_count=excluded.candidate_count,shortlist_count=excluded.shortlist_count,unique_items=excluded.unique_items,duplicate_reports=excluded.duplicate_reports,duration_ms=excluded.duration_ms,caller_latency_ms=excluded.caller_latency_ms,queue_wait_ms=excluded.queue_wait_ms,provider_execution_ms=excluded.provider_execution_ms,response_total_ms=excluded.response_total_ms,input_tokens=excluded.input_tokens,cached_input_tokens=excluded.cached_input_tokens,output_tokens=excluded.output_tokens,reasoning_output_tokens=excluded.reasoning_output_tokens,error_json=excluded.error_json,created_at=excluded.created_at`,
-		value.SessionID, value.Status, value.Provider, value.Model, value.Effort, value.CandidateCount, value.ShortlistCount, value.UniqueItems, value.DuplicateReports, value.DurationMS, value.CallerLatencyMS, value.QueueWaitMS, value.ProviderExecutionMS, value.ResponseTotalMS, value.Usage.Input, value.Usage.CachedInput, value.Usage.Output, value.Usage.ReasoningOutput, failure, value.CreatedAt); err != nil {
+		INSERT INTO event_resolution_invocations(session_id,status,provider,model,model_descriptor_version,model_maturity,effort,candidate_count,shortlist_count,unique_items,duplicate_reports,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error_json,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(session_id) DO UPDATE SET status=excluded.status,provider=excluded.provider,model=excluded.model,model_descriptor_version=excluded.model_descriptor_version,model_maturity=excluded.model_maturity,effort=excluded.effort,candidate_count=excluded.candidate_count,shortlist_count=excluded.shortlist_count,unique_items=excluded.unique_items,duplicate_reports=excluded.duplicate_reports,duration_ms=excluded.duration_ms,caller_latency_ms=excluded.caller_latency_ms,queue_wait_ms=excluded.queue_wait_ms,provider_execution_ms=excluded.provider_execution_ms,response_total_ms=excluded.response_total_ms,input_tokens=excluded.input_tokens,cached_input_tokens=excluded.cached_input_tokens,output_tokens=excluded.output_tokens,reasoning_output_tokens=excluded.reasoning_output_tokens,error_json=excluded.error_json,created_at=excluded.created_at`,
+		value.SessionID, value.Status, value.Provider, value.Model, value.Usage.ModelDescriptorVersion, value.Usage.ModelMaturity, value.Effort, value.CandidateCount, value.ShortlistCount, value.UniqueItems, value.DuplicateReports, value.DurationMS, value.CallerLatencyMS, value.QueueWaitMS, value.ProviderExecutionMS, value.ResponseTotalMS, value.Usage.Input, value.Usage.CachedInput, value.Usage.Output, value.Usage.ReasoningOutput, failure, value.CreatedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -451,10 +451,10 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 	var historicalEventCount, resolverInvoked, strongestOverlap sql.NullInt64
 	var triggerReason, triggerTokens sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.session_id,i.status,i.provider,i.model,i.effort,i.candidate_count,i.shortlist_count,i.unique_items,i.duplicate_reports,i.duration_ms,i.caller_latency_ms,i.queue_wait_ms,i.provider_execution_ms,i.response_total_ms,i.input_tokens,i.cached_input_tokens,i.output_tokens,i.reasoning_output_tokens,i.error_json,i.created_at,
+		SELECT i.session_id,i.status,i.provider,i.model,i.model_descriptor_version,i.model_maturity,i.effort,i.candidate_count,i.shortlist_count,i.unique_items,i.duplicate_reports,i.duration_ms,i.caller_latency_ms,i.queue_wait_ms,i.provider_execution_ms,i.response_total_ms,i.input_tokens,i.cached_input_tokens,i.output_tokens,i.reasoning_output_tokens,i.error_json,i.created_at,
 		       d.historical_event_count,d.resolver_invoked,d.trigger_reason,d.strongest_overlap,d.trigger_tokens_json
 		FROM event_resolution_invocations i LEFT JOIN event_resolution_diagnostics d ON d.session_id=i.session_id WHERE i.session_id=?`, sessionID).
-		Scan(&value.SessionID, &value.Status, &value.Provider, &value.Model, &value.Effort, &value.CandidateCount, &value.ShortlistCount, &value.UniqueItems, &value.DuplicateReports, &value.DurationMS, &value.CallerLatencyMS, &value.QueueWaitMS, &value.ProviderExecutionMS, &value.ResponseTotalMS, &value.Usage.Input, &value.Usage.CachedInput, &value.Usage.Output, &value.Usage.ReasoningOutput, &failure, &value.CreatedAt, &historicalEventCount, &resolverInvoked, &triggerReason, &strongestOverlap, &triggerTokens)
+		Scan(&value.SessionID, &value.Status, &value.Provider, &value.Model, &value.ModelDescriptorVersion, &value.ModelMaturity, &value.Effort, &value.CandidateCount, &value.ShortlistCount, &value.UniqueItems, &value.DuplicateReports, &value.DurationMS, &value.CallerLatencyMS, &value.QueueWaitMS, &value.ProviderExecutionMS, &value.ResponseTotalMS, &value.Usage.Input, &value.Usage.CachedInput, &value.Usage.Output, &value.Usage.ReasoningOutput, &failure, &value.CreatedAt, &historicalEventCount, &resolverInvoked, &triggerReason, &strongestOverlap, &triggerTokens)
 	if value.CallerLatencyMS == 0 {
 		value.CallerLatencyMS = value.DurationMS
 	}
@@ -462,6 +462,8 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 	value.Usage.QueueWaitMS = value.QueueWaitMS
 	value.Usage.ProviderExecutionMS = value.ProviderExecutionMS
 	value.Usage.ResponseTotalMS = value.ResponseTotalMS
+	value.Usage.ModelDescriptorVersion = value.ModelDescriptorVersion
+	value.Usage.ModelMaturity = value.ModelMaturity
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

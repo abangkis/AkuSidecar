@@ -211,6 +211,26 @@ func TestConcurrencyConfigurationDefaultsAndOptInValidation(t *testing.T) {
 	}
 }
 
+func TestExperimentalModelConfigurationIsExplicitAndProviderScoped(t *testing.T) {
+	provider := ProviderConfig{
+		TimeoutMS: 5000,
+		ExperimentalModelIDs: []string{"qwen3.8-unsloth-vl-q2kxl"},
+		Planning: ModelConfig{ModelID: "qwen3.8-unsloth-vl-q2kxl", MinReasoningTier: "xhigh"},
+		Evaluation: ModelConfig{ModelID: "qwen3.8-unsloth-vl-q2kxl", MinReasoningTier: "xhigh"},
+		SemanticEvent: ModelConfig{ModelID: "qwen3.8-unsloth-vl-q2kxl", MinReasoningTier: "xhigh"},
+		AIDetection: ModelConfig{ModelID: "qwen3.8-unsloth-vl-q2kxl", MinReasoningTier: "xhigh"},
+	}
+	if err := provider.Validate("ollama-qwen"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (ProviderConfig{TimeoutMS: 5000, ExperimentalModelIDs: []string{"qwen3.8-unsloth-vl-q2kxl"}}).Validate("codex-app-server"); err == nil {
+		t.Fatal("experimental model opt-in unexpectedly accepted by Codex")
+	}
+	if err := (ProviderConfig{TimeoutMS: 5000, ExperimentalModelIDs: []string{""}}).Validate("ollama-qwen"); err == nil {
+		t.Fatal("empty experimental model ID unexpectedly accepted")
+	}
+}
+
 func TestRepositorySidecarConfigLoads(t *testing.T) {
 	configPath := filepath.Join("..", "..", "config", "sidecar.json")
 	if _, err := os.Stat(configPath); err != nil {

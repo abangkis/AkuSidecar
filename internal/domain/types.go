@@ -815,9 +815,11 @@ type ModelUsage struct {
 	ReasoningOutput *int64 `json:"reasoningOutputTokens"`
 	// Receipt metadata is provider-reported execution fact, not a model
 	// capability declaration. It is retained for workload telemetry.
-	ProviderModel   string `json:"providerModel,omitempty"`
-	NativeReasoning string `json:"nativeReasoning,omitempty"`
-	ReasoningTier   string `json:"reasoningTier,omitempty"`
+	ProviderModel          string `json:"providerModel,omitempty"`
+	NativeReasoning        string `json:"nativeReasoning,omitempty"`
+	ReasoningTier          string `json:"reasoningTier,omitempty"`
+	ModelDescriptorVersion string `json:"modelDescriptorVersion,omitempty"`
+	ModelMaturity          string `json:"modelMaturity,omitempty"`
 	// Timing is retained separately from token receipt metadata. DurationMS on
 	// the containing invocation remains the caller-observed compatibility
 	// latency; these fields describe the SDK response when available.
@@ -828,22 +830,24 @@ type ModelUsage struct {
 }
 
 type ModelUsageEntry struct {
-	ID                  string     `json:"id"`
-	CategoryID          string     `json:"categoryId"`
-	Source              Source     `json:"source,omitempty"`
-	Status              string     `json:"status"`
-	Provider            string     `json:"provider"`
-	Model               string     `json:"model"`
-	Effort              string     `json:"effort"`
-	InvocationCount     int        `json:"invocationCount"`
-	DurationMS          int64      `json:"durationMs"`
-	CallerLatencyMS     int64      `json:"callerLatencyMs,omitempty"`
-	QueueWaitMS         int64      `json:"queueWaitMs,omitempty"`
-	ProviderExecutionMS int64      `json:"providerExecutionMs,omitempty"`
-	ResponseTotalMS     int64      `json:"responseTotalMs,omitempty"`
-	Usage               ModelUsage `json:"usage"`
-	UsageCoverage       string     `json:"usageCoverage"`
-	CreatedAt           string     `json:"createdAt,omitempty"`
+	ID                     string     `json:"id"`
+	CategoryID             string     `json:"categoryId"`
+	Source                 Source     `json:"source,omitempty"`
+	Status                 string     `json:"status"`
+	Provider               string     `json:"provider"`
+	Model                  string     `json:"model"`
+	Effort                 string     `json:"effort"`
+	ModelDescriptorVersion string     `json:"modelDescriptorVersion,omitempty"`
+	ModelMaturity          string     `json:"modelMaturity,omitempty"`
+	InvocationCount        int        `json:"invocationCount"`
+	DurationMS             int64      `json:"durationMs"`
+	CallerLatencyMS        int64      `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS            int64      `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS    int64      `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS        int64      `json:"responseTotalMs,omitempty"`
+	Usage                  ModelUsage `json:"usage"`
+	UsageCoverage          string     `json:"usageCoverage"`
+	CreatedAt              string     `json:"createdAt,omitempty"`
 }
 
 type ModelUsageCategory struct {
@@ -1217,23 +1221,25 @@ type ReasoningResult struct {
 }
 
 type ReasoningTelemetry struct {
-	ID                    string `json:"id"`
-	RunID                 string `json:"runId"`
-	Phase                 string `json:"phase"`
-	Provider              string `json:"provider"`
-	Model                 string `json:"model"`
-	Effort                string `json:"effort"`
-	DurationMS            int64  `json:"durationMs"`
-	CallerLatencyMS       int64  `json:"callerLatencyMs,omitempty"`
-	QueueWaitMS           int64  `json:"queueWaitMs,omitempty"`
-	ProviderExecutionMS   int64  `json:"providerExecutionMs,omitempty"`
-	ResponseTotalMS       int64  `json:"responseTotalMs,omitempty"`
-	Status                string `json:"status"`
-	InputTokens           *int64 `json:"inputTokens"`
-	CachedInputTokens     *int64 `json:"cachedInputTokens"`
-	OutputTokens          *int64 `json:"outputTokens"`
-	ReasoningOutputTokens *int64 `json:"reasoningOutputTokens"`
-	CreatedAt             string `json:"createdAt"`
+	ID                     string `json:"id"`
+	RunID                  string `json:"runId"`
+	Phase                  string `json:"phase"`
+	Provider               string `json:"provider"`
+	Model                  string `json:"model"`
+	Effort                 string `json:"effort"`
+	ModelDescriptorVersion string `json:"modelDescriptorVersion,omitempty"`
+	ModelMaturity          string `json:"modelMaturity,omitempty"`
+	DurationMS             int64  `json:"durationMs"`
+	CallerLatencyMS        int64  `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS            int64  `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS    int64  `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS        int64  `json:"responseTotalMs,omitempty"`
+	Status                 string `json:"status"`
+	InputTokens            *int64 `json:"inputTokens"`
+	CachedInputTokens      *int64 `json:"cachedInputTokens"`
+	OutputTokens           *int64 `json:"outputTokens"`
+	ReasoningOutputTokens  *int64 `json:"reasoningOutputTokens"`
+	CreatedAt              string `json:"createdAt"`
 }
 
 type TimelineItem struct {
@@ -1538,26 +1544,28 @@ func (a MediaProvenanceAssessment) Validate() error {
 }
 
 type AIDetectionJob struct {
-	ID                    string `json:"id"`
-	SessionID             string `json:"sessionId"`
-	Status                string `json:"status"`
-	Provider              string `json:"provider"`
-	Model                 string `json:"model"`
-	Effort                string `json:"effort"`
-	CandidateCount        int    `json:"candidateCount"`
-	DurationMS            int64  `json:"durationMs"`
-	CallerLatencyMS       int64  `json:"callerLatencyMs,omitempty"`
-	QueueWaitMS           int64  `json:"queueWaitMs,omitempty"`
-	ProviderExecutionMS   int64  `json:"providerExecutionMs,omitempty"`
-	ResponseTotalMS       int64  `json:"responseTotalMs,omitempty"`
-	InputTokens           *int64 `json:"inputTokens,omitempty"`
-	CachedInputTokens     *int64 `json:"cachedInputTokens,omitempty"`
-	OutputTokens          *int64 `json:"outputTokens,omitempty"`
-	ReasoningOutputTokens *int64 `json:"reasoningOutputTokens,omitempty"`
-	Error                 string `json:"error,omitempty"`
-	CreatedAt             string `json:"createdAt"`
-	StartedAt             string `json:"startedAt,omitempty"`
-	CompletedAt           string `json:"completedAt,omitempty"`
+	ID                     string `json:"id"`
+	SessionID              string `json:"sessionId"`
+	Status                 string `json:"status"`
+	Provider               string `json:"provider"`
+	Model                  string `json:"model"`
+	Effort                 string `json:"effort"`
+	ModelDescriptorVersion string `json:"modelDescriptorVersion,omitempty"`
+	ModelMaturity          string `json:"modelMaturity,omitempty"`
+	CandidateCount         int    `json:"candidateCount"`
+	DurationMS             int64  `json:"durationMs"`
+	CallerLatencyMS        int64  `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS            int64  `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS    int64  `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS        int64  `json:"responseTotalMs,omitempty"`
+	InputTokens            *int64 `json:"inputTokens,omitempty"`
+	CachedInputTokens      *int64 `json:"cachedInputTokens,omitempty"`
+	OutputTokens           *int64 `json:"outputTokens,omitempty"`
+	ReasoningOutputTokens  *int64 `json:"reasoningOutputTokens,omitempty"`
+	Error                  string `json:"error,omitempty"`
+	CreatedAt              string `json:"createdAt"`
+	StartedAt              string `json:"startedAt,omitempty"`
+	CompletedAt            string `json:"completedAt,omitempty"`
 }
 
 type DeepAIAssessment struct {
@@ -1651,30 +1659,32 @@ type TimelineSemanticEvent struct {
 }
 
 type EventResolutionSummary struct {
-	SessionID            string     `json:"sessionId"`
-	Status               string     `json:"status"`
-	Provider             string     `json:"provider"`
-	Model                string     `json:"model"`
-	Effort               string     `json:"effort"`
-	CandidateCount       int        `json:"candidateCount"`
-	HistoricalEventCount int        `json:"historicalEventCount"`
-	ShortlistCount       int        `json:"shortlistCount"`
-	UniqueItems          int        `json:"uniqueItems"`
-	DuplicateReports     int        `json:"duplicateReports"`
-	UserSplitCorrections int        `json:"userSplitCorrections"`
-	UserMergeCorrections int        `json:"userMergeCorrections"`
-	ResolverInvoked      bool       `json:"resolverInvoked"`
-	TriggerReason        string     `json:"triggerReason"`
-	StrongestOverlap     int        `json:"strongestOverlap"`
-	TriggerTokens        []string   `json:"triggerTokens"`
-	DurationMS           int64      `json:"durationMs"`
-	CallerLatencyMS      int64      `json:"callerLatencyMs,omitempty"`
-	QueueWaitMS          int64      `json:"queueWaitMs,omitempty"`
-	ProviderExecutionMS  int64      `json:"providerExecutionMs,omitempty"`
-	ResponseTotalMS      int64      `json:"responseTotalMs,omitempty"`
-	Usage                ModelUsage `json:"usage"`
-	Error                *Failure   `json:"error,omitempty"`
-	CreatedAt            string     `json:"createdAt"`
+	SessionID              string     `json:"sessionId"`
+	Status                 string     `json:"status"`
+	Provider               string     `json:"provider"`
+	Model                  string     `json:"model"`
+	Effort                 string     `json:"effort"`
+	ModelDescriptorVersion string     `json:"modelDescriptorVersion,omitempty"`
+	ModelMaturity          string     `json:"modelMaturity,omitempty"`
+	CandidateCount         int        `json:"candidateCount"`
+	HistoricalEventCount   int        `json:"historicalEventCount"`
+	ShortlistCount         int        `json:"shortlistCount"`
+	UniqueItems            int        `json:"uniqueItems"`
+	DuplicateReports       int        `json:"duplicateReports"`
+	UserSplitCorrections   int        `json:"userSplitCorrections"`
+	UserMergeCorrections   int        `json:"userMergeCorrections"`
+	ResolverInvoked        bool       `json:"resolverInvoked"`
+	TriggerReason          string     `json:"triggerReason"`
+	StrongestOverlap       int        `json:"strongestOverlap"`
+	TriggerTokens          []string   `json:"triggerTokens"`
+	DurationMS             int64      `json:"durationMs"`
+	CallerLatencyMS        int64      `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS            int64      `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS    int64      `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS        int64      `json:"responseTotalMs,omitempty"`
+	Usage                  ModelUsage `json:"usage"`
+	Error                  *Failure   `json:"error,omitempty"`
+	CreatedAt              string     `json:"createdAt"`
 }
 
 type EventSuggestion struct {

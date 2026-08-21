@@ -228,9 +228,9 @@ func (s *Store) CreateAIDetectionJob(ctx context.Context, value domain.AIDetecti
 		value.CreatedAt = domain.Now()
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO ai_detection_jobs(id,session_id,status,provider,model,effort,candidate_count,created_at)
-		VALUES(?,?,?,?,?,?,?,?)`,
-		value.ID, value.SessionID, value.Status, value.Provider, value.Model, value.Effort, value.CandidateCount, value.CreatedAt)
+		INSERT INTO ai_detection_jobs(id,session_id,status,provider,model,model_descriptor_version,model_maturity,effort,candidate_count,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		value.ID, value.SessionID, value.Status, value.Provider, value.Model, value.ModelDescriptorVersion, value.ModelMaturity, value.Effort, value.CandidateCount, value.CreatedAt)
 	return value, err
 }
 
@@ -260,10 +260,12 @@ func (s *Store) FinishAIDetectionJob(ctx context.Context, id, status string, dur
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE ai_detection_jobs SET status=?,duration_ms=?,caller_latency_ms=?,queue_wait_ms=?,provider_execution_ms=?,response_total_ms=?,input_tokens=?,cached_input_tokens=?,output_tokens=?,reasoning_output_tokens=?,
 		model=CASE WHEN ? <> '' THEN ? ELSE model END,
+		model_descriptor_version=CASE WHEN ? <> '' THEN ? ELSE model_descriptor_version END,
+		model_maturity=CASE WHEN ? <> '' THEN ? ELSE model_maturity END,
 		effort=CASE WHEN ? <> '' THEN ? ELSE effort END,
 		error=?,completed_at=? WHERE id=?`,
 		status, durationMS, callerLatency, usage.QueueWaitMS, usage.ProviderExecutionMS, usage.ResponseTotalMS, usage.Input, usage.CachedInput, usage.Output, usage.ReasoningOutput,
-		usage.ProviderModel, usage.ProviderModel, usage.NativeReasoning, usage.NativeReasoning,
+		usage.ProviderModel, usage.ProviderModel, usage.ModelDescriptorVersion, usage.ModelDescriptorVersion, usage.ModelMaturity, usage.ModelMaturity, usage.NativeReasoning, usage.NativeReasoning,
 		message, domain.Now(), id)
 	return err
 }
@@ -273,11 +275,11 @@ func (s *Store) AIDetectionJob(ctx context.Context, sessionID string) (*domain.A
 	var input, cachedInput, output, reasoningOutput sql.NullInt64
 	var startedAt, completedAt sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id,session_id,status,provider,model,effort,candidate_count,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,
+		SELECT id,session_id,status,provider,model,model_descriptor_version,model_maturity,effort,candidate_count,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,
 		       input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,error,created_at,started_at,completed_at
 		FROM ai_detection_jobs WHERE session_id=? ORDER BY created_at DESC,id DESC LIMIT 1`, sessionID).
-		Scan(&value.ID, &value.SessionID, &value.Status, &value.Provider, &value.Model, &value.Effort,
-			&value.CandidateCount, &value.DurationMS, &value.CallerLatencyMS, &value.QueueWaitMS, &value.ProviderExecutionMS, &value.ResponseTotalMS, &input, &cachedInput, &output, &reasoningOutput,
+		Scan(&value.ID, &value.SessionID, &value.Status, &value.Provider, &value.Model,
+			&value.ModelDescriptorVersion, &value.ModelMaturity, &value.Effort, &value.CandidateCount, &value.DurationMS, &value.CallerLatencyMS, &value.QueueWaitMS, &value.ProviderExecutionMS, &value.ResponseTotalMS, &input, &cachedInput, &output, &reasoningOutput,
 			&value.Error, &value.CreatedAt, &startedAt, &completedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

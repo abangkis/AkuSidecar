@@ -64,6 +64,10 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 	if err != nil {
 		return nil, err
 	}
+	experimentalModelIDs, err := ollamaExperimentalModelIDs(cfg.Reasoning.ExperimentalModelIDs)
+	if err != nil {
+		return nil, err
+	}
 	transport, err := ollama.New(ollama.Config{
 		BaseURL:                  endpoint,
 		Timeout:                  time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
@@ -71,6 +75,7 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 		KeepAliveSeconds:         cfg.Reasoning.KeepAliveMinutes * 60,
 		NumCtx:                   cfg.Reasoning.NumCtx,
 		MaxConcurrentInvocations: cfg.Reasoning.OllamaMaxConcurrentInvocations,
+		ExperimentalModelIDs:     experimentalModelIDs,
 	})
 	if err != nil {
 		return nil, err
@@ -102,16 +107,31 @@ func (o *Ollama) Name() string { return o.name }
 func (o *Ollama) ProfileOptions() []ProfileOption {
 	options := make([]ProfileOption, 0, len(o.order))
 	model := o.planning.Model
-	if stableID, err := ollamaStableModelID(o.planning); err == nil {
-		if wire, wireErr := ollamaWireModel(stableID); wireErr == nil {
+	modelID, modelErr := ollamaModelID(o.transport.ModelCatalog(), o.planning)
+	if modelErr == nil {
+		if wire, wireErr := ollamaWireModel(o.transport.ModelCatalog(), modelID); wireErr == nil {
 			model = wire
 		}
 	}
-	for _, id := range o.order {
+	order := o.order
+	if modelErr == nil {
+		if descriptor, ok := o.transport.ModelCatalog().Lookup(modelID); ok && descriptor.Maturity == inference.ModelMaturityExperimental {
+			// Experimental descriptors own their complete reasoning surface. The
+			// SDK currently exposes only xhigh/native think for this model, so do
+			// not advertise unsupported lower tiers from the stable UI catalog.
+			order = []inference.ProfileID{"deep_reasoning"}
+		}
+	}
+	for _, id := range order {
 		effort := map[inference.ProfileID]string{
 			"structured_fast": "off", "short_reasoning": "low",
 			"general_synthesis": "medium", "deep_reasoning": "high",
 		}[id]
+		if modelErr == nil {
+			if descriptor, ok := o.transport.ModelCatalog().Lookup(modelID); ok && descriptor.Maturity == inference.ModelMaturityExperimental {
+				effort = "xhigh"
+			}
+		}
 		options = append(options, ProfileOption{
 			ID:     string(id),
 			Label:  ollamaProfileLabel(id),
@@ -125,7 +145,7 @@ func (o *Ollama) ProfileOptions() []ProfileOption {
 func (o *Ollama) ResolveProfile(id string) (config.ModelConfig, bool) {
 	for _, option := range o.ProfileOptions() {
 		if option.ID == id {
-			modelID, err := ollamaStableModelID(o.planning)
+			modelID, err := ollamaModelID(o.transport.ModelCatalog(), o.planning)
 			if err != nil {
 				return config.ModelConfig{}, false
 			}
@@ -183,12 +203,12 @@ func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observati
 }
 
 func (o *Ollama) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	modelID, err := ollamaStableModelID(model)
+	modelID, err := ollamaModelID(o.transport.ModelCatalog(), model)
 	if err != nil {
 		return "", domain.ModelUsage{}, 0, err
 	}
 	if o.warmupTimeout > 0 {
-		wireModel, err := ollamaWireModel(modelID)
+		wireModel, err := ollamaWireModel(o.transport.ModelCatalog(), modelID)
 		if err != nil {
 			return "", domain.ModelUsage{}, 0, err
 		}
@@ -230,8 +250,8 @@ func (o *Ollama) telemetry(run domain.Run, phase string, model config.ModelConfi
 		modelName = value.ProviderModel
 	}
 	if modelName == "" {
-		if stableID, err := ollamaStableModelID(model); err == nil {
-			modelName, _ = ollamaWireModel(stableID)
+		if stableID, err := ollamaModelID(o.transport.ModelCatalog(), model); err == nil {
+			modelName, _ = ollamaWireModel(o.transport.ModelCatalog(), stableID)
 		}
 	}
 	effort := model.Effort
@@ -242,27 +262,46 @@ func (o *Ollama) telemetry(run domain.Run, phase string, model config.ModelConfi
 	if callerLatency == 0 {
 		callerLatency = duration.Milliseconds()
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), CallerLatencyMS: callerLatency, QueueWaitMS: value.QueueWaitMS, ProviderExecutionMS: value.ProviderExecutionMS, ResponseTotalMS: value.ResponseTotalMS, Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: modelName, Effort: effort, ModelDescriptorVersion: value.ModelDescriptorVersion, ModelMaturity: value.ModelMaturity, DurationMS: duration.Milliseconds(), CallerLatencyMS: callerLatency, QueueWaitMS: value.QueueWaitMS, ProviderExecutionMS: value.ProviderExecutionMS, ResponseTotalMS: value.ResponseTotalMS, Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
 }
 
-func ollamaStableModelID(model config.ModelConfig) (string, error) {
+func ollamaModelID(catalog inference.ModelCatalog, model config.ModelConfig) (string, error) {
 	requested := strings.TrimSpace(model.ModelID)
 	if requested == "" {
 		requested = strings.TrimSpace(model.Model)
 	}
-	for _, id := range ollama.KnownModels() {
-		descriptor, ok := ollama.KnownModel(id)
-		if ok && (requested == descriptor.ModelID || requested == descriptor.ProviderModel) {
+	for _, descriptor := range catalog.List() {
+		if requested == descriptor.ModelID || requested == descriptor.ProviderModel {
 			return descriptor.ModelID, nil
 		}
 	}
-	return "", fmt.Errorf("unknown Ollama model %q; use a provider-owned stable model ID", requested)
+	return "", fmt.Errorf("unknown Ollama model %q; use a provider-owned configured model ID", requested)
 }
 
-func ollamaWireModel(modelID string) (string, error) {
-	descriptor, ok := ollama.KnownModel(ollama.ModelID(modelID))
+func ollamaWireModel(catalog inference.ModelCatalog, modelID string) (string, error) {
+	descriptor, ok := catalog.Lookup(modelID)
 	if !ok {
-		return "", fmt.Errorf("unknown Ollama stable model ID %q", modelID)
+		return "", fmt.Errorf("unknown Ollama configured model ID %q", modelID)
 	}
 	return descriptor.ProviderModel, nil
+}
+
+func ollamaExperimentalModelIDs(values []string) ([]ollama.ModelID, error) {
+	result := make([]ollama.ModelID, 0, len(values))
+	for _, raw := range values {
+		requested := strings.TrimSpace(raw)
+		matched := false
+		for _, id := range ollama.ExperimentalModels() {
+			descriptor, ok := ollama.ExperimentalModel(id)
+			if ok && (requested == descriptor.ModelID || requested == descriptor.ProviderModel) {
+				result = append(result, id)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil, fmt.Errorf("unknown Ollama experimental model %q; use an SDK-owned experimental model ID", requested)
+		}
+	}
+	return result, nil
 }

@@ -26,7 +26,7 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 	}
 	if err := state.SaveTelemetry(ctx, domain.ReasoningTelemetry{
 		ID: "usage-plan", RunID: runs[0].ID, Phase: "acquisition_planning", Provider: "codex-app-server",
-		Model: "gpt-test", Effort: "high", DurationMS: 1000, Status: "completed",
+		Model: "gpt-test", Effort: "high", ModelDescriptorVersion: "descriptor-1", ModelMaturity: "experimental", DurationMS: 1000, Status: "completed",
 		CallerLatencyMS: 1100, QueueWaitMS: 10, ProviderExecutionMS: 900, ResponseTotalMS: 1000,
 		InputTokens: tokenPointer(100), CachedInputTokens: tokenPointer(60), OutputTokens: tokenPointer(20), ReasoningOutputTokens: tokenPointer(5), CreatedAt: domain.Now(),
 	}); err != nil {
@@ -34,7 +34,7 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 	}
 	if err := state.SaveTelemetry(ctx, domain.ReasoningTelemetry{
 		ID: "usage-evaluate", RunID: runs[1].ID, Phase: "candidate_evaluation", Provider: "codex-app-server",
-		Model: "gpt-test", Effort: "xhigh", DurationMS: 2000, Status: "failed", CreatedAt: domain.Now(),
+		Model: "gpt-test", Effort: "xhigh", ModelDescriptorVersion: "descriptor-1", ModelMaturity: "experimental", DurationMS: 2000, Status: "failed", CreatedAt: domain.Now(),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 		SessionID: session.ID, Status: "completed", Provider: "codex-app-server", Model: "gpt-test", Effort: "high",
 		CandidateCount: 1, ShortlistCount: 1, UniqueItems: 1, DurationMS: 3000,
 		CallerLatencyMS: 3000, QueueWaitMS: 20, ProviderExecutionMS: 2500, ResponseTotalMS: 2600,
-		Usage: domain.ModelUsage{Input: tokenPointer(200), CachedInput: tokenPointer(150), Output: tokenPointer(40), ReasoningOutput: tokenPointer(10)}, CreatedAt: domain.Now(),
+		Usage: domain.ModelUsage{Input: tokenPointer(200), CachedInput: tokenPointer(150), Output: tokenPointer(40), ReasoningOutput: tokenPointer(10), ModelDescriptorVersion: "descriptor-1", ModelMaturity: "experimental"}, CreatedAt: domain.Now(),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +55,7 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 	}
 	if err := state.FinishAIDetectionJob(ctx, job.ID, "completed", 4000, domain.ModelUsage{
 		Input: tokenPointer(300), CachedInput: tokenPointer(200), Output: tokenPointer(60), ReasoningOutput: tokenPointer(15),
+		ModelDescriptorVersion: "descriptor-1", ModelMaturity: "experimental",
 		CallerLatencyMS: 4000, QueueWaitMS: 30, ProviderExecutionMS: 3500, ResponseTotalMS: 3600,
 	}, nil); err != nil {
 		t.Fatal(err)
@@ -72,6 +73,9 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 	}
 	if report.Usage.CallerLatencyMS != 10100 || report.Usage.QueueWaitMS != 60 || report.Usage.ProviderExecutionMS != 6900 || report.Usage.ResponseTotalMS != 7200 {
 		t.Fatalf("timing usage=%+v", report.Usage)
+	}
+	if report.Usage.ModelDescriptorVersion != "descriptor-1" || report.Usage.ModelMaturity != "experimental" {
+		t.Fatalf("receipt metadata usage=%+v", report.Usage)
 	}
 	if report.Categories[0].InvocationCount != 1 || report.Categories[1].Status != "failed" || report.Categories[1].UsageCoverage != "unavailable" {
 		t.Fatalf("categories=%+v", report.Categories)

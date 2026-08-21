@@ -226,6 +226,8 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	}
 	usage.NativeReasoning = response.Receipt.NativeReasoningValue
 	usage.ReasoningTier = string(response.Receipt.ReasoningTier)
+	usage.ModelDescriptorVersion = response.Receipt.ModelDescriptorVersion
+	usage.ModelMaturity = string(response.Receipt.ModelMaturity)
 	providerExecution := time.Duration(response.DurationMillis) * time.Millisecond
 	responseTotal := providerExecution
 	queueWait := time.Duration(0)

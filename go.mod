@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/abangkis/ai4u-common-execution-profile-go v0.1.0
-	github.com/abangkis/ai4u-inference-sdk-go v0.6.1
+	github.com/abangkis/ai4u-inference-sdk-go v0.7.0
 	golang.org/x/sys v0.19.0
 	modernc.org/sqlite v1.29.10
 )

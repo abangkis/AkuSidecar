@@ -556,7 +556,7 @@ func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "8" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "9" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	for _, table := range []string{"reasoning_invocations", "event_resolution_invocations", "ai_detection_jobs"} {
@@ -578,7 +578,7 @@ func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
 		if err := rows.Close(); err != nil {
 			t.Fatal(err)
 		}
-		for _, column := range []string{"caller_latency_ms", "queue_wait_ms", "provider_execution_ms", "response_total_ms"} {
+		for _, column := range []string{"caller_latency_ms", "queue_wait_ms", "provider_execution_ms", "response_total_ms", "model_descriptor_version", "model_maturity"} {
 			if !columns[column] {
 				t.Fatalf("%s missing migrated column %s", table, column)
 			}

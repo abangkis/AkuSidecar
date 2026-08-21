@@ -417,7 +417,7 @@ func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, 
 	if callerLatency == 0 {
 		callerLatency = duration.Milliseconds()
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), CallerLatencyMS: callerLatency, QueueWaitMS: value.QueueWaitMS, ProviderExecutionMS: value.ProviderExecutionMS, ResponseTotalMS: value.ResponseTotalMS, Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: modelName, Effort: effort, ModelDescriptorVersion: value.ModelDescriptorVersion, ModelMaturity: value.ModelMaturity, DurationMS: duration.Milliseconds(), CallerLatencyMS: callerLatency, QueueWaitMS: value.QueueWaitMS, ProviderExecutionMS: value.ProviderExecutionMS, ResponseTotalMS: value.ResponseTotalMS, Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
 }
 
 func resolveExecutable(root, value string) (string, error) {

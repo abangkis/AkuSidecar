@@ -12,6 +12,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/ai4u-inference-sdk-go/inference"
+	"github.com/abangkis/ai4u-inference-sdk-go/providers/ollama"
 )
 
 func ollamaTestServer(t *testing.T, wantThink any, content string) *httptest.Server {
@@ -82,6 +83,93 @@ func TestOllamaProfileCatalog(t *testing.T) {
 	}
 	if model, ok := provider.ResolveProfile("luna_high"); ok {
 		t.Fatalf("legacy profile unexpectedly resolved: %+v", model)
+	}
+}
+
+func TestOllamaExperimentalModelRequiresExplicitOptIn(t *testing.T) {
+	provider, err := NewOllama(config.Config{
+		Root: filepathRoot(t),
+		Reasoning: config.ReasoningConfig{
+			Provider: "ollama-qwen", TimeoutMS: 5000,
+			Planning:   config.ModelConfig{ModelID: string(ollama.ModelQwen38UnslothVLQ2KXL), MinReasoningTier: "xhigh"},
+			Evaluation: config.ModelConfig{ModelID: string(ollama.ModelQwen38UnslothVLQ2KXL), MinReasoningTier: "xhigh"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	if _, ok := provider.transport.ModelCatalog().Lookup(string(ollama.ModelQwen38UnslothVLQ2KXL)); ok {
+		t.Fatal("experimental model leaked into the stable-only default catalog")
+	}
+}
+
+func TestOllamaRejectsUnknownExperimentalModelOptIn(t *testing.T) {
+	_, err := NewOllama(config.Config{
+		Root: filepathRoot(t),
+		Reasoning: config.ReasoningConfig{
+			Provider: "ollama-qwen", TimeoutMS: 5000,
+			ExperimentalModelIDs: []string{"not-an-sdk-model"},
+			Planning:             config.ModelConfig{ModelID: "not-an-sdk-model", MinReasoningTier: "xhigh"},
+			Evaluation:           config.ModelConfig{ModelID: "not-an-sdk-model", MinReasoningTier: "xhigh"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "SDK-owned experimental model ID") {
+		t.Fatalf("unknown experimental opt-in error = %v", err)
+	}
+}
+
+func TestOllamaExperimentalModelBindsOnlySDKAdvertisedXHigh(t *testing.T) {
+	var payload struct {
+		Model string `json:"model"`
+		Think any    `json:"think"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"capabilities":["completion","thinking"]}`)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode experimental Ollama payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"message":{"content":"{\"decision\":\"finish\",\"reason\":\"ok\"}"},"done":true,"prompt_eval_count":10,"eval_count":5}`)
+	}))
+	defer server.Close()
+	modelID := string(ollama.ModelQwen38UnslothVLQ2KXL)
+	provider, err := NewOllama(config.Config{
+		Root: filepathRoot(t),
+		Reasoning: config.ReasoningConfig{
+			Provider: "ollama-qwen", Endpoint: server.URL, TimeoutMS: 5000,
+			ExperimentalModelIDs: []string{modelID},
+			Planning:             config.ModelConfig{ModelID: modelID, MinReasoningTier: "xhigh"},
+			Evaluation:           config.ModelConfig{ModelID: modelID, MinReasoningTier: "xhigh"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	options := provider.ProfileOptions()
+	if len(options) != 1 || options[0].Effort != "xhigh" || options[0].ID != "deep_reasoning" {
+		t.Fatalf("experimental profile options=%+v", options)
+	}
+	if _, ok := provider.ResolveProfile("structured_fast"); ok {
+		t.Fatal("experimental model advertised unsupported structured_fast tier")
+	}
+	if _, _, err := provider.Plan(context.Background(), domain.Run{ID: "experimental", Source: domain.SourceX}, domain.Observation{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Model != "qwen3.8-unsloth-vl:q2kxl" || payload.Think != true {
+		t.Fatalf("experimental payload model=%q think=%v", payload.Model, payload.Think)
+	}
+	_, telemetry, err := provider.Plan(context.Background(), domain.Run{ID: "experimental-receipt", Source: domain.SourceX}, domain.Observation{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if telemetry.ModelDescriptorVersion == "" || telemetry.ModelMaturity != string(inference.ModelMaturityExperimental) {
+		t.Fatalf("receipt metadata was not projected to telemetry: %+v", telemetry)
 	}
 }
 

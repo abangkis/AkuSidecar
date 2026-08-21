@@ -1,9 +1,7 @@
 github.com/abangkis/ai4u-common-execution-profile-go v0.1.0 h1:ai7c2cgEhKYKRFnZnwSylgib4d55uOYK+aab8A1a4iw=
 github.com/abangkis/ai4u-common-execution-profile-go v0.1.0/go.mod h1:J+zBjPD/4F4BQWnrekSuL/AW/mFXhpNZOE4cM4Xjwew=
-github.com/abangkis/ai4u-inference-sdk-go v0.3.0 h1:lxo8v/KNL+OmB+iqtF/8vKvxEWHZHPrb8t4rFlRcOeU=
-github.com/abangkis/ai4u-inference-sdk-go v0.3.0/go.mod h1:Y3eEDBVnJhcfJSKCGNb3hoRufvywK2XG746lYrQN90Y=
-github.com/abangkis/ai4u-inference-sdk-go v0.6.1 h1:TrP59CGoAXh6oyr/iM3n/XC9/SFwDL1Sbdl1m+0iBxM=
-github.com/abangkis/ai4u-inference-sdk-go v0.6.1/go.mod h1:46VEPPvPMeReagEq5k50+DOFv2gx83NQzrBe08sAI38=
+github.com/abangkis/ai4u-inference-sdk-go v0.7.0 h1:HW76Www+56KhL/najj222v1RcncinxjAImVVdQ6B0Q8=
+github.com/abangkis/ai4u-inference-sdk-go v0.7.0/go.mod h1:46VEPPvPMeReagEq5k50+DOFv2gx83NQzrBe08sAI38=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd h1:gbpYu9NMq8jhDVbvlGkMFWCjLFlqqEZjEmObmhUy6Vo=

@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 8
+const SchemaVersion = 9
 
-const schemaVersion = "8"
+const schemaVersion = "9"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS reasoning_invocations (
   phase TEXT NOT NULL CHECK (phase IN ('acquisition_planning','candidate_evaluation')),
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
+  model_descriptor_version TEXT NOT NULL DEFAULT '',
+  model_maturity TEXT NOT NULL DEFAULT '',
   effort TEXT NOT NULL,
   duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
   caller_latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (caller_latency_ms >= 0),
@@ -292,6 +294,8 @@ CREATE TABLE IF NOT EXISTS ai_detection_jobs (
   status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
+  model_descriptor_version TEXT NOT NULL DEFAULT '',
+  model_maturity TEXT NOT NULL DEFAULT '',
   effort TEXT NOT NULL,
   candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
   duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
@@ -543,6 +547,8 @@ CREATE TABLE IF NOT EXISTS event_resolution_invocations (
   status TEXT NOT NULL CHECK (status IN ('completed','failed','bypassed')),
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
+  model_descriptor_version TEXT NOT NULL DEFAULT '',
+  model_maturity TEXT NOT NULL DEFAULT '',
   effort TEXT NOT NULL,
   candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
   shortlist_count INTEGER NOT NULL CHECK (shortlist_count >= 0),

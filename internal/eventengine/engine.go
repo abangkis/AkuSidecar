@@ -159,6 +159,8 @@ func applyReceiptMetadata(summary *domain.EventResolutionSummary) {
 	if summary.Usage.NativeReasoning != "" {
 		summary.Effort = summary.Usage.NativeReasoning
 	}
+	summary.ModelDescriptorVersion = summary.Usage.ModelDescriptorVersion
+	summary.ModelMaturity = summary.Usage.ModelMaturity
 }
 
 // ProcessTimelineItem resolves one user-restored report against the retained

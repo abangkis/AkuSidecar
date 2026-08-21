@@ -283,7 +283,7 @@ func TestCodexAppServerSerializesConcurrentAdaptersOnOneTransport(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	// v0.6.1 keeps the same serialized transport guarantee while avoiding one
+	// v0.7.0 keeps the same serialized transport guarantee while avoiding one
 	// redundant RPC during the first managed-session turn.
 	if provider.transport.NextRequestID() < 2+workers*4 {
 		t.Fatalf("concurrent adapters did not use bounded serialized transports: nextID=%d", provider.transport.NextRequestID())
