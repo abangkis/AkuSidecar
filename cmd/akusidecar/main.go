@@ -58,6 +58,12 @@ func main() {
 		}
 	}
 	if persistedSettings.ReasoningProvider != cfg.Reasoning.Provider {
+		// Preserve the old active projection before changing the provider key;
+		// this also covers config-driven provider switches that bypass the HTTP
+		// settings path.
+		if persistedSettings.ReasoningProvider != "" {
+			persistedSettings.RememberReasoningProfileSet(persistedSettings.ReasoningProvider)
+		}
 		persistedSettings.ReasoningProvider = cfg.Reasoning.Provider
 		fatal(logger, state.SaveSettings(context.Background(), persistedSettings))
 	}
@@ -72,7 +78,9 @@ func main() {
 	}
 	provider, err := reasoning.NewProvider(cfg)
 	fatal(logger, err)
-	if _, ok := provider.(reasoning.ProfileProvider); ok {
+	if profileProvider, ok := provider.(reasoning.ProfileProvider); ok {
+		restored, profileErr := reasoning.ActivateProviderProfileSet(&persistedSettings, cfg.Reasoning.Provider, profileProvider)
+		fatal(logger, profileErr)
 		migrated := false
 		for _, current := range []*string{
 			&persistedSettings.ReasoningAcquisitionProfile,
@@ -85,8 +93,14 @@ func main() {
 				migrated = true
 			}
 		}
-		if migrated {
-			logger.Printf("migrated reasoning profiles for provider %s", provider.Name())
+		remembered := persistedSettings.RememberReasoningProfileSet(cfg.Reasoning.Provider)
+		if restored || migrated || remembered {
+			if restored {
+				logger.Printf("restored provider-specific reasoning profiles for provider %s", provider.Name())
+			}
+			if migrated {
+				logger.Printf("migrated reasoning profiles for provider %s", provider.Name())
+			}
 			fatal(logger, state.SaveSettings(context.Background(), persistedSettings))
 		}
 	}

@@ -63,6 +63,31 @@ func TestCodexProfileCatalogIsBounded(t *testing.T) {
 	}
 }
 
+func TestAppServerTelemetryPreservesQueueWait(t *testing.T) {
+	telemetry := appServerTelemetry(
+		domain.Run{ID: "run-test"},
+		"candidate_evaluation",
+		config.ModelConfig{Model: "gpt-5.6-luna", Effort: "max"},
+		14*time.Millisecond,
+		domain.ModelUsage{
+			CallerLatencyMS:        17,
+			QueueWaitMS:            5,
+			ProviderExecutionMS:    9,
+			ResponseTotalMS:        14,
+			ProviderModel:          "gpt-5.6-luna",
+			NativeReasoning:        "max",
+			ModelDescriptorVersion: "test-descriptor",
+		},
+		nil,
+	)
+	if telemetry.QueueWaitMS != 5 || telemetry.CallerLatencyMS != 17 || telemetry.ProviderExecutionMS != 9 || telemetry.ResponseTotalMS != 14 {
+		t.Fatalf("telemetry timing=%+v", telemetry)
+	}
+	if telemetry.Provider != "codex-app-server" || telemetry.Status != "completed" {
+		t.Fatalf("telemetry identity/status=%+v", telemetry)
+	}
+}
+
 func TestCodexAppServerCanSwitchValidatedExecutableWithoutReplacingProvider(t *testing.T) {
 	initial := filepath.Join(t.TempDir(), "initial-codex.exe")
 	replacement := filepath.Join(t.TempDir(), "replacement-codex.exe")

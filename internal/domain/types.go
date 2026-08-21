@@ -96,14 +96,62 @@ type Settings struct {
 	ReasoningEvaluationProfile  string         `json:"reasoningEvaluationProfile"`
 	ReasoningSemanticProfile    string         `json:"reasoningSemanticProfile"`
 	ReasoningAIDeepProfile      string         `json:"reasoningAiDeepProfile"`
-	AutoUpdateEnabled           bool           `json:"autoUpdateEnabled"`
-	AutoUpdateMode              string         `json:"autoUpdateMode"`
-	AutoUpdateRefillMinutes     int            `json:"autoUpdateRefillMinutes"`
-	PreparedBatchLimit          int            `json:"preparedBatchLimit"`
-	AutoUpdateDailyTokenBudget  int            `json:"autoUpdateDailyTokenBudget"`
-	AutoUpdateManualReservePct  int            `json:"autoUpdateManualReservePct"`
-	PreparedBatchMaxAgeHours    int            `json:"preparedBatchMaxAgeHours"`
-	NextBatchBehavior           string         `json:"nextBatchBehavior"`
+	// ReasoningProfilesByProvider keeps each backend's selections independent.
+	// The four top-level fields above remain the active provider projection for
+	// backwards-compatible API and runtime consumers.
+	ReasoningProfilesByProvider map[string]ReasoningProfileSet `json:"reasoningProfilesByProvider,omitempty"`
+	AutoUpdateEnabled           bool                           `json:"autoUpdateEnabled"`
+	AutoUpdateMode              string                         `json:"autoUpdateMode"`
+	AutoUpdateRefillMinutes     int                            `json:"autoUpdateRefillMinutes"`
+	PreparedBatchLimit          int                            `json:"preparedBatchLimit"`
+	AutoUpdateDailyTokenBudget  int                            `json:"autoUpdateDailyTokenBudget"`
+	AutoUpdateManualReservePct  int                            `json:"autoUpdateManualReservePct"`
+	PreparedBatchMaxAgeHours    int                            `json:"preparedBatchMaxAgeHours"`
+	NextBatchBehavior           string                         `json:"nextBatchBehavior"`
+}
+
+// ReasoningProfileSet is the persisted selection for one reasoning backend.
+// Profile IDs remain opaque to the domain; the active provider validates them
+// against its own catalog before invocation.
+type ReasoningProfileSet struct {
+	Acquisition string `json:"acquisition"`
+	Evaluation  string `json:"evaluation"`
+	Semantic    string `json:"semantic"`
+	AIDeep      string `json:"aiDeep"`
+}
+
+func (s Settings) ActiveReasoningProfileSet() ReasoningProfileSet {
+	return ReasoningProfileSet{
+		Acquisition: s.ReasoningAcquisitionProfile,
+		Evaluation:  s.ReasoningEvaluationProfile,
+		Semantic:    s.ReasoningSemanticProfile,
+		AIDeep:      s.ReasoningAIDeepProfile,
+	}
+}
+
+func (s *Settings) ApplyReasoningProfileSet(value ReasoningProfileSet) {
+	s.ReasoningAcquisitionProfile = value.Acquisition
+	s.ReasoningEvaluationProfile = value.Evaluation
+	s.ReasoningSemanticProfile = value.Semantic
+	s.ReasoningAIDeepProfile = value.AIDeep
+}
+
+// RememberReasoningProfileSet records the active projection under provider.
+// It returns true when the durable settings value changed.
+func (s *Settings) RememberReasoningProfileSet(provider string) bool {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return false
+	}
+	if s.ReasoningProfilesByProvider == nil {
+		s.ReasoningProfilesByProvider = map[string]ReasoningProfileSet{}
+	}
+	value := s.ActiveReasoningProfileSet()
+	if current, ok := s.ReasoningProfilesByProvider[provider]; ok && current == value {
+		return false
+	}
+	s.ReasoningProfilesByProvider[provider] = value
+	return true
 }
 
 func DefaultSettings(profile, visibility, preferenceMode string, openMissing bool) Settings {
@@ -367,6 +415,27 @@ func (s Settings) Validate() error {
 	} {
 		if !validReasoningProfileID(profile) {
 			return fmt.Errorf("%s contains an invalid profile id", name)
+		}
+	}
+	if len(s.ReasoningProfilesByProvider) > 32 {
+		return errors.New("reasoningProfilesByProvider contains too many providers")
+	}
+	for provider, profiles := range s.ReasoningProfilesByProvider {
+		if !validReasoningProfileID(provider) {
+			return fmt.Errorf("reasoningProfilesByProvider contains an invalid provider id %q", provider)
+		}
+		for name, profile := range map[string]string{
+			"acquisition": profiles.Acquisition,
+			"evaluation":  profiles.Evaluation,
+			"semantic":    profiles.Semantic,
+			"aiDeep":      profiles.AIDeep,
+		} {
+			// Empty provider-specific entries are allowed so the active
+			// provider's legacy resolver can fill missing values exactly as it
+			// did before provider-specific snapshots existed.
+			if profile != "" && !validReasoningProfileID(profile) {
+				return fmt.Errorf("reasoningProfilesByProvider[%q].%s contains an invalid profile id", provider, name)
+			}
 		}
 	}
 	if s.MaxScrolls < 0 || s.MaxScrolls > 6 {
