@@ -73,7 +73,7 @@ func TestActivateProviderProfileSetLeavesStaleIDsForLegacyFallback(t *testing.T)
 	if got := settings.ActiveReasoningProfileSet(); got != want {
 		t.Fatalf("active profiles=%+v, want persisted stale set=%+v", got, want)
 	}
-	if got := EnsureResolvableProfile(codex, "unknown"); got != "luna_max" {
-		t.Fatalf("legacy unknown-profile fallback changed to %q, want luna_max", got)
+	if got := EnsureResolvableProfile(codex, "unknown"); got != "luna_high" {
+		t.Fatalf("safe unknown-profile fallback=%q, want luna_high", got)
 	}
 }

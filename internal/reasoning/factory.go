@@ -43,9 +43,10 @@ func effortRank(effort string) int {
 }
 
 // EnsureResolvableProfile returns the supplied profile ID when the provider
-// catalog can resolve it; otherwise it returns the provider's highest-effort
-// catalog profile so legacy settings values remain valid for a replacement
-// backend. Providers without a catalog return the input unchanged.
+// catalog can resolve it. Unknown IDs fall back to the provider's high-effort
+// profile, or its lowest-effort profile when high is unavailable. This keeps a
+// provider switch from silently escalating automatic work to xhigh or max.
+// Providers without a catalog return the input unchanged.
 func EnsureResolvableProfile(provider Provider, id string) string {
 	catalog, ok := provider.(ProfileProvider)
 	if !ok {
@@ -54,14 +55,23 @@ func EnsureResolvableProfile(provider Provider, id string) string {
 	if _, found := catalog.ResolveProfile(id); found {
 		return id
 	}
-	best, bestRank := "", -1
-	for _, option := range catalog.ProfileOptions() {
-		if rank := effortRank(option.Effort); rank > bestRank {
-			best, bestRank = option.ID, rank
+	options := catalog.ProfileOptions()
+	for _, option := range options {
+		if effortRank(option.Effort) == effortRank("high") {
+			return option.ID
 		}
 	}
-	if best == "" {
-		return id
+	lowest, lowestRank := "", int(^uint(0)>>1)
+	for _, option := range options {
+		if rank := effortRank(option.Effort); rank >= 0 && rank < lowestRank {
+			lowest, lowestRank = option.ID, rank
+		}
 	}
-	return best
+	if lowest != "" {
+		return lowest
+	}
+	if len(options) > 0 {
+		return options[0].ID
+	}
+	return id
 }
