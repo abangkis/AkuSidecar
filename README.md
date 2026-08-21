@@ -214,8 +214,7 @@ loads and is projected into one declared provider. Provider names are the
 transport switch: `codex-app-server` routes to the managed Codex app-server
 stdio runtime, while every `ollama-*` name routes to the local Ollama endpoint
 with that entry's own model catalog (for example `ollama-nemotron` runs
-`nemotron-3.5-lightning:latest` and `ollama-qwen` runs the explicitly opted-in
-experimental `qwen3.8-unsloth-vl:q2kxl`). The
+`nemotron-3.5-lightning:latest` and `ollama-qwen` runs `qwen3.8:27b`). The
 selected provider is a typed product setting (`reasoningProvider`): switching
 it in Settings takes effect the next time the sidecar starts, and the boot-time
 profile migration re-resolves saved reasoning profiles against the new
@@ -243,15 +242,9 @@ invocation timeout and can trigger a false "awaiting headers" deadline.
 Warm-up, keep-alive, and `numCtx` only apply to `ollama-*` providers;
 declaring them elsewhere fails startup validation.
 
-Ollama is stable-only by default. An experimental SDK descriptor must be opted
-in per provider with `experimentalModelIds`, then selected explicitly in each
-role's `modelId`. The checked-in `ollama-qwen` entry opts in
-`qwen3.8-unsloth-vl-q2kxl`, whose provider wire name is
-`qwen3.8-unsloth-vl:q2kxl`. The SDK descriptor is authoritative: this model
-currently exposes only `xhigh` with native `think: true`, so AkuSidecar does
-not advertise or synthesize lower tiers. Its `modelDescriptorVersion` and
-`modelMaturity` receipt fields are retained in reasoning, event-resolution,
-and AI Deep Detection telemetry.
+The SDK descriptor's `modelDescriptorVersion` and `modelMaturity` receipt
+fields are retained in reasoning, event-resolution, and AI Deep Detection
+telemetry.
 
 Ollama invocation capacity remains one by default. Set `maxConcurrentInvocations`
 only after measuring the local runtime;

@@ -156,8 +156,8 @@ func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *
 
 func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "Reasoning provider / model", "Experimental models are identified explicitly", "applies after the sidecar restarts"},
-		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = activeProvider", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 Unsloth VL Q2KXL · Experimental"},
+		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "Reasoning provider", "Choose the inference backend used by every reasoning process", "applies after the sidecar restarts"},
+		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = activeProvider", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

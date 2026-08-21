@@ -66,23 +66,20 @@
         "warmupTimeoutMs": 300000,
         "keepAliveMinutes": 10,
         "numCtx": 32768,
-        "experimentalModelIds": [
-          "qwen3.8-unsloth-vl-q2kxl"
-        ],
         "planning": {
-          "modelId": "qwen3.8-unsloth-vl-q2kxl",
+          "modelId": "qwen3.8-27b",
           "minReasoningTier": "xhigh"
         },
         "evaluation": {
-          "modelId": "qwen3.8-unsloth-vl-q2kxl",
+          "modelId": "qwen3.8-27b",
           "minReasoningTier": "xhigh"
         },
         "semanticEvent": {
-          "modelId": "qwen3.8-unsloth-vl-q2kxl",
+          "modelId": "qwen3.8-27b",
           "minReasoningTier": "xhigh"
         },
         "aiDetection": {
-          "modelId": "qwen3.8-unsloth-vl-q2kxl",
+          "modelId": "qwen3.8-27b",
           "minReasoningTier": "xhigh"
         }
       }

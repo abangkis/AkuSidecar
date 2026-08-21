@@ -64,10 +64,6 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 	if err != nil {
 		return nil, err
 	}
-	experimentalModelIDs, err := ollamaExperimentalModelIDs(cfg.Reasoning.ExperimentalModelIDs)
-	if err != nil {
-		return nil, err
-	}
 	transport, err := ollama.New(ollama.Config{
 		BaseURL:                  endpoint,
 		Timeout:                  time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
@@ -75,7 +71,6 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 		KeepAliveSeconds:         cfg.Reasoning.KeepAliveMinutes * 60,
 		NumCtx:                   cfg.Reasoning.NumCtx,
 		MaxConcurrentInvocations: cfg.Reasoning.OllamaMaxConcurrentInvocations,
-		ExperimentalModelIDs:     experimentalModelIDs,
 	})
 	if err != nil {
 		return nil, err
@@ -113,25 +108,11 @@ func (o *Ollama) ProfileOptions() []ProfileOption {
 			model = wire
 		}
 	}
-	order := o.order
-	if modelErr == nil {
-		if descriptor, ok := o.transport.ModelCatalog().Lookup(modelID); ok && descriptor.Maturity == inference.ModelMaturityExperimental {
-			// Experimental descriptors own their complete reasoning surface. The
-			// SDK currently exposes only xhigh/native think for this model, so do
-			// not advertise unsupported lower tiers from the stable UI catalog.
-			order = []inference.ProfileID{"deep_reasoning"}
-		}
-	}
-	for _, id := range order {
+	for _, id := range o.order {
 		effort := map[inference.ProfileID]string{
 			"structured_fast": "off", "short_reasoning": "low",
 			"general_synthesis": "medium", "deep_reasoning": "high",
 		}[id]
-		if modelErr == nil {
-			if descriptor, ok := o.transport.ModelCatalog().Lookup(modelID); ok && descriptor.Maturity == inference.ModelMaturityExperimental {
-				effort = "xhigh"
-			}
-		}
 		options = append(options, ProfileOption{
 			ID:     string(id),
 			Label:  ollamaProfileLabel(id),
@@ -284,24 +265,4 @@ func ollamaWireModel(catalog inference.ModelCatalog, modelID string) (string, er
 		return "", fmt.Errorf("unknown Ollama configured model ID %q", modelID)
 	}
 	return descriptor.ProviderModel, nil
-}
-
-func ollamaExperimentalModelIDs(values []string) ([]ollama.ModelID, error) {
-	result := make([]ollama.ModelID, 0, len(values))
-	for _, raw := range values {
-		requested := strings.TrimSpace(raw)
-		matched := false
-		for _, id := range ollama.ExperimentalModels() {
-			descriptor, ok := ollama.ExperimentalModel(id)
-			if ok && (requested == descriptor.ModelID || requested == descriptor.ProviderModel) {
-				result = append(result, id)
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return nil, fmt.Errorf("unknown Ollama experimental model %q; use an SDK-owned experimental model ID", requested)
-		}
-	}
-	return result, nil
 }

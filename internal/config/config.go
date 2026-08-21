@@ -82,7 +82,6 @@ type ReasoningConfig struct {
 	// OllamaMaxConcurrentInvocations is provider-side invocation capacity. Zero
 	// is intentionally normalized by the SDK to one.
 	OllamaMaxConcurrentInvocations int         `json:"-"`
-	ExperimentalModelIDs           []string    `json:"-"`
 	Planning                       ModelConfig `json:"-"`
 	Evaluation                     ModelConfig `json:"-"`
 	SemanticEvent                  ModelConfig `json:"-"`
@@ -100,16 +99,11 @@ type ProviderConfig struct {
 	// Codex session pooling is opt-in. Leave this unset for one session.
 	CodexSessionPoolSize int `json:"codexSessionPoolSize,omitempty"`
 	// Ollama concurrency is opt-in; zero retains the effective limit of one.
-	MaxConcurrentInvocations int `json:"maxConcurrentInvocations,omitempty"`
-	// ExperimentalModelIDs explicitly opts SDK-owned experimental Ollama
-	// descriptors into this provider. The role ModelID must still select one
-	// of these descriptors explicitly; the SDK remains the authority for its
-	// capabilities and reasoning options.
-	ExperimentalModelIDs []string    `json:"experimentalModelIds,omitempty"`
-	Planning             ModelConfig `json:"planning"`
-	Evaluation           ModelConfig `json:"evaluation"`
-	SemanticEvent        ModelConfig `json:"semanticEvent"`
-	AIDetection          ModelConfig `json:"aiDetection"`
+	MaxConcurrentInvocations int         `json:"maxConcurrentInvocations,omitempty"`
+	Planning                 ModelConfig `json:"planning"`
+	Evaluation               ModelConfig `json:"evaluation"`
+	SemanticEvent            ModelConfig `json:"semanticEvent"`
+	AIDetection              ModelConfig `json:"aiDetection"`
 }
 
 type ModelConfig struct {
@@ -234,7 +228,6 @@ func (r *ReasoningConfig) Select(providerName string) error {
 	r.NumCtx = entry.NumCtx
 	r.CodexSessionPoolSize = entry.CodexSessionPoolSize
 	r.OllamaMaxConcurrentInvocations = entry.MaxConcurrentInvocations
-	r.ExperimentalModelIDs = append([]string(nil), entry.ExperimentalModelIDs...)
 	r.Planning = entry.Planning
 	r.Evaluation = entry.Evaluation
 	r.SemanticEvent = entry.SemanticEvent
@@ -263,7 +256,7 @@ func ProviderLabel(name string) string {
 	case "ollama-nemotron":
 		return "Ollama · Nemotron 3.5 Lightning"
 	case "ollama-qwen":
-		return "Ollama · Qwen 3.8 Unsloth VL Q2KXL · Experimental"
+		return "Ollama · Qwen 3.8 27B"
 	case "deterministic":
 		return "Local deterministic"
 	default:
@@ -338,20 +331,6 @@ func (p ProviderConfig) Validate(name string) error {
 	}
 	if !IsOllamaProvider(name) && p.MaxConcurrentInvocations != 0 {
 		return fmt.Errorf("Ollama concurrency settings apply only to ollama providers")
-	}
-	if !IsOllamaProvider(name) && len(p.ExperimentalModelIDs) != 0 {
-		return fmt.Errorf("experimental model settings apply only to ollama providers")
-	}
-	seenExperimental := map[string]bool{}
-	for _, modelID := range p.ExperimentalModelIDs {
-		modelID = strings.TrimSpace(modelID)
-		if modelID == "" {
-			return fmt.Errorf("reasoning provider %q has an empty experimental model ID", name)
-		}
-		if seenExperimental[modelID] {
-			return fmt.Errorf("reasoning provider %q repeats experimental model ID %q", name, modelID)
-		}
-		seenExperimental[modelID] = true
 	}
 	if name == "codex-app-server" || IsOllamaProvider(name) {
 		models := map[string]ModelConfig{
