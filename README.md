@@ -115,7 +115,7 @@ test binaries finish concurrently.
 ### Inference SDK dependency
 
 `go.mod` requires `github.com/abangkis/ai4u-inference-sdk-go` at the published
-`v0.6.0` tag and `github.com/abangkis/ai4u-common-execution-profile-go` at
+`v0.6.1` tag and `github.com/abangkis/ai4u-common-execution-profile-go` at
 `v0.1.0` on GitHub; there is no local `replace` directive. The exact module
 hash is locked in `go.sum`. Bump the version when a newer SDK release is needed.
 Because the module is private, `GOPRIVATE=github.com/abangkis/*` must be set so
@@ -241,6 +241,16 @@ invocation timeout and can trigger a false "awaiting headers" deadline.
 
 Warm-up, keep-alive, and `numCtx` only apply to `ollama-*` providers;
 declaring them elsewhere fails startup validation.
+
+Ollama invocation capacity remains one by default. Set `maxConcurrentInvocations`
+only after measuring the local runtime;
+values are bounded and validated at startup. Codex App Server remains a single
+managed session unless `codexSessionPoolSize` is set to a positive value. That
+option explicitly creates an SDK session pool; it does not use the SDK pool's
+multi-session default implicitly. Invocation `durationMs` is the caller-observed
+end-to-end latency, including binding. The API also reports `callerLatencyMs`,
+`queueWaitMs`, `providerExecutionMs`, and `responseTotalMs` separately when the
+provider returns typed timing.
 
 Auto Update is also a typed product setting. One Sidecar-owned scheduler can
 prepare hidden finite batches while the process is alive. Adaptive demand is

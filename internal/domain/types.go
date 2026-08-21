@@ -818,21 +818,32 @@ type ModelUsage struct {
 	ProviderModel   string `json:"providerModel,omitempty"`
 	NativeReasoning string `json:"nativeReasoning,omitempty"`
 	ReasoningTier   string `json:"reasoningTier,omitempty"`
+	// Timing is retained separately from token receipt metadata. DurationMS on
+	// the containing invocation remains the caller-observed compatibility
+	// latency; these fields describe the SDK response when available.
+	CallerLatencyMS     int64 `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS         int64 `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS int64 `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS     int64 `json:"responseTotalMs,omitempty"`
 }
 
 type ModelUsageEntry struct {
-	ID              string     `json:"id"`
-	CategoryID      string     `json:"categoryId"`
-	Source          Source     `json:"source,omitempty"`
-	Status          string     `json:"status"`
-	Provider        string     `json:"provider"`
-	Model           string     `json:"model"`
-	Effort          string     `json:"effort"`
-	InvocationCount int        `json:"invocationCount"`
-	DurationMS      int64      `json:"durationMs"`
-	Usage           ModelUsage `json:"usage"`
-	UsageCoverage   string     `json:"usageCoverage"`
-	CreatedAt       string     `json:"createdAt,omitempty"`
+	ID                  string     `json:"id"`
+	CategoryID          string     `json:"categoryId"`
+	Source              Source     `json:"source,omitempty"`
+	Status              string     `json:"status"`
+	Provider            string     `json:"provider"`
+	Model               string     `json:"model"`
+	Effort              string     `json:"effort"`
+	InvocationCount     int        `json:"invocationCount"`
+	DurationMS          int64      `json:"durationMs"`
+	CallerLatencyMS     int64      `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS         int64      `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS int64      `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS     int64      `json:"responseTotalMs,omitempty"`
+	Usage               ModelUsage `json:"usage"`
+	UsageCoverage       string     `json:"usageCoverage"`
+	CreatedAt           string     `json:"createdAt,omitempty"`
 }
 
 type ModelUsageCategory struct {
@@ -1213,6 +1224,10 @@ type ReasoningTelemetry struct {
 	Model                 string `json:"model"`
 	Effort                string `json:"effort"`
 	DurationMS            int64  `json:"durationMs"`
+	CallerLatencyMS       int64  `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS           int64  `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS   int64  `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS       int64  `json:"responseTotalMs,omitempty"`
 	Status                string `json:"status"`
 	InputTokens           *int64 `json:"inputTokens"`
 	CachedInputTokens     *int64 `json:"cachedInputTokens"`
@@ -1531,6 +1546,10 @@ type AIDetectionJob struct {
 	Effort                string `json:"effort"`
 	CandidateCount        int    `json:"candidateCount"`
 	DurationMS            int64  `json:"durationMs"`
+	CallerLatencyMS       int64  `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS           int64  `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS   int64  `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS       int64  `json:"responseTotalMs,omitempty"`
 	InputTokens           *int64 `json:"inputTokens,omitempty"`
 	CachedInputTokens     *int64 `json:"cachedInputTokens,omitempty"`
 	OutputTokens          *int64 `json:"outputTokens,omitempty"`
@@ -1649,6 +1668,10 @@ type EventResolutionSummary struct {
 	StrongestOverlap     int        `json:"strongestOverlap"`
 	TriggerTokens        []string   `json:"triggerTokens"`
 	DurationMS           int64      `json:"durationMs"`
+	CallerLatencyMS      int64      `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS          int64      `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS  int64      `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS      int64      `json:"responseTotalMs,omitempty"`
 	Usage                ModelUsage `json:"usage"`
 	Error                *Failure   `json:"error,omitempty"`
 	CreatedAt            string     `json:"createdAt"`
@@ -1806,14 +1829,14 @@ func Now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
 // DiagnosticsExport is a comprehensive diagnostic bundle for troubleshooting.
 type DiagnosticsExport struct {
-	Metadata    DiagnosticsMetadata     `json:"metadata"`
-	Config      RedactedConfig          `json:"config"`
-	Sessions    []SessionExport         `json:"sessions"`
-	ModelUsage  ModelUsageExport        `json:"modelUsage"`
-	Reasoning   []ReasoningTelemetry    `json:"reasoning"`
-	Bridge      BridgeStatus            `json:"bridge"`
-	Errors      []ErrorEvent            `json:"errors"`
-	GeneratedAt string                  `json:"generatedAt"`
+	Metadata    DiagnosticsMetadata  `json:"metadata"`
+	Config      RedactedConfig       `json:"config"`
+	Sessions    []SessionExport      `json:"sessions"`
+	ModelUsage  ModelUsageExport     `json:"modelUsage"`
+	Reasoning   []ReasoningTelemetry `json:"reasoning"`
+	Bridge      BridgeStatus         `json:"bridge"`
+	Errors      []ErrorEvent         `json:"errors"`
+	GeneratedAt string               `json:"generatedAt"`
 }
 
 type DiagnosticsMetadata struct {
@@ -1845,37 +1868,37 @@ type RedactedConfig struct {
 }
 
 type ReasoningProcessInfo struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	Effort      string `json:"effort"`
-	Execution   string `json:"execution"`
-	ProfileID   string `json:"profileId"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	Effort    string `json:"effort"`
+	Execution string `json:"execution"`
+	ProfileID string `json:"profileId"`
 }
 
 type SessionExport struct {
-	ID            string                 `json:"id"`
-	Intent        string                 `json:"intent"`
-	Status        string                 `json:"status"`
-	CreatedAt     string                 `json:"createdAt"`
-	CompletedAt   *string                `json:"completedAt,omitempty"`
-	Runs          []RunExport            `json:"runs"`
-	Coverage      map[string]any         `json:"coverage"`
-	PipelineStage string                 `json:"pipelineStage"`
+	ID            string         `json:"id"`
+	Intent        string         `json:"intent"`
+	Status        string         `json:"status"`
+	CreatedAt     string         `json:"createdAt"`
+	CompletedAt   *string        `json:"completedAt,omitempty"`
+	Runs          []RunExport    `json:"runs"`
+	Coverage      map[string]any `json:"coverage"`
+	PipelineStage string         `json:"pipelineStage"`
 }
 
 type RunExport struct {
-	ID            string                 `json:"id"`
-	Source        Source                 `json:"source"`
-	Status        string                 `json:"status"`
-	Stage         string                 `json:"stage"`
-	Provider      string                 `json:"provider"`
-	Model         string                 `json:"model"`
-	Effort        string                 `json:"effort"`
-	ElapsedMillis int64                  `json:"elapsedMillis"`
-	Error         *RunError              `json:"error,omitempty"`
-	Telemetry     *ReasoningTelemetry    `json:"telemetry,omitempty"`
+	ID            string              `json:"id"`
+	Source        Source              `json:"source"`
+	Status        string              `json:"status"`
+	Stage         string              `json:"stage"`
+	Provider      string              `json:"provider"`
+	Model         string              `json:"model"`
+	Effort        string              `json:"effort"`
+	ElapsedMillis int64               `json:"elapsedMillis"`
+	Error         *RunError           `json:"error,omitempty"`
+	Telemetry     *ReasoningTelemetry `json:"telemetry,omitempty"`
 }
 
 type RunError struct {
@@ -1885,12 +1908,12 @@ type RunError struct {
 }
 
 type ModelUsageExport struct {
-	WindowDays      int                    `json:"windowDays"`
-	SessionCount    int                    `json:"sessionCount"`
-	GeneratedAt     string                 `json:"generatedAt"`
-	Status          string                 `json:"status"`
-	AggregateTokens TokenUsage             `json:"aggregateTokens"`
-	Categories      []ModelUsageCategory   `json:"categories"`
+	WindowDays      int                  `json:"windowDays"`
+	SessionCount    int                  `json:"sessionCount"`
+	GeneratedAt     string               `json:"generatedAt"`
+	Status          string               `json:"status"`
+	AggregateTokens TokenUsage           `json:"aggregateTokens"`
+	Categories      []ModelUsageCategory `json:"categories"`
 }
 
 type TokenUsage struct {
@@ -1901,21 +1924,21 @@ type TokenUsage struct {
 }
 
 type BridgeStatus struct {
-	State                   string   `json:"state"`
-	Compatible              bool     `json:"compatible"`
-	Reasons                 []string `json:"reasons"`
-	Warnings                []string `json:"warnings"`
-	Expected                string   `json:"expected"`
-	Actual                  string   `json:"actual"`
-	NegotiatedProtocol      string   `json:"negotiatedProtocol"`
+	State              string   `json:"state"`
+	Compatible         bool     `json:"compatible"`
+	Reasons            []string `json:"reasons"`
+	Warnings           []string `json:"warnings"`
+	Expected           string   `json:"expected"`
+	Actual             string   `json:"actual"`
+	NegotiatedProtocol string   `json:"negotiatedProtocol"`
 }
 
 type ErrorEvent struct {
-	Timestamp   string `json:"timestamp"`
-	Source      string `json:"source"`
-	Code        string `json:"code"`
-	Message     string `json:"message"`
-	Context     string `json:"context,omitempty"`
+	Timestamp string `json:"timestamp"`
+	Source    string `json:"source"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Context   string `json:"context,omitempty"`
 }
 
 func ValidateIntent(value string) error {

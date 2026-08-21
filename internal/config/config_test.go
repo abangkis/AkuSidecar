@@ -188,6 +188,29 @@ func TestActiveReasoningProviderMustBeDeclared(t *testing.T) {
 	}
 }
 
+func TestConcurrencyConfigurationDefaultsAndOptInValidation(t *testing.T) {
+	ollama := ProviderConfig{TimeoutMS: 5000,
+		Planning: ModelConfig{Model: "nemotron", Effort: "high"}, Evaluation: ModelConfig{Model: "nemotron", Effort: "high"},
+		SemanticEvent: ModelConfig{Model: "nemotron", Effort: "high"}, AIDetection: ModelConfig{Model: "nemotron", Effort: "high"}}
+	if err := ollama.Validate("ollama"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (ProviderConfig{TimeoutMS: 5000, MaxConcurrentInvocations: 65}).Validate("ollama"); err == nil {
+		t.Fatal("Ollama concurrency above the SDK bound must fail")
+	}
+	if err := (ProviderConfig{TimeoutMS: 5000, CodexSessionPoolSize: 2}).Validate("codex-app-server"); err == nil {
+		// The test intentionally supplies required model profiles below; this
+		// branch only guards accidental acceptance of an incomplete provider.
+		t.Fatal("incomplete Codex provider unexpectedly validated")
+	}
+	codex := ProviderConfig{TimeoutMS: 5000, CodexSessionPoolSize: 2,
+		Planning: ModelConfig{Model: "codex", Effort: "high"}, Evaluation: ModelConfig{Model: "codex", Effort: "high"},
+		SemanticEvent: ModelConfig{Model: "codex", Effort: "high"}, AIDetection: ModelConfig{Model: "codex", Effort: "high"}}
+	if err := codex.Validate("codex-app-server"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRepositorySidecarConfigLoads(t *testing.T) {
 	configPath := filepath.Join("..", "..", "config", "sidecar.json")
 	if _, err := os.Stat(configPath); err != nil {

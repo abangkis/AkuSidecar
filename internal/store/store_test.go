@@ -530,6 +530,62 @@ func TestRetiredSchemasFailWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema7.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+		INSERT INTO meta(key,value) VALUES('schema_version','7');
+		CREATE TABLE reasoning_invocations (id TEXT PRIMARY KEY,run_id TEXT,created_at TEXT);
+		CREATE TABLE event_resolution_invocations (session_id TEXT PRIMARY KEY);
+		CREATE TABLE ai_detection_jobs (id TEXT PRIMARY KEY,status TEXT,created_at TEXT);
+	`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version string
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "8" {
+		t.Fatalf("schema version=%q err=%v", version, err)
+	}
+	for _, table := range []string{"reasoning_invocations", "event_resolution_invocations", "ai_detection_jobs"} {
+		rows, err := state.db.Query(`PRAGMA table_info(` + table + `)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns := map[string]bool{}
+		for rows.Next() {
+			var ordinal, notNull, primaryKey int
+			var name, kind string
+			var defaultValue any
+			if err := rows.Scan(&ordinal, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			columns[name] = true
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for _, column := range []string{"caller_latency_ms", "queue_wait_ms", "provider_execution_ms", "response_total_ms"} {
+			if !columns[column] {
+				t.Fatalf("%s missing migrated column %s", table, column)
+			}
+		}
+	}
+}
+
 func TestLatestTimelineCheckUsesLatestTerminalSessionEvenWithZeroAdditions(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

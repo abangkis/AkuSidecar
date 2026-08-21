@@ -15,7 +15,34 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	sdkcodex "github.com/abangkis/ai4u-inference-sdk-go/providers/codexappserver"
 )
+
+func TestCodexTransportPoolIsExplicitOptIn(t *testing.T) {
+	cfg := sdkcodex.Config{WorkingDir: t.TempDir(), Timeout: time.Second, ClientName: "test", ClientVersion: "test", Start: func() (sdkcodex.Session, error) {
+		return sdkcodex.Session{}, nil
+	}}
+	single, err := newCodexTransport(cfg, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := single.(*sdkcodex.Adapter); !ok {
+		t.Fatalf("default transport type=%T, want single session", single)
+	}
+	if err := single.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pooled, err := newCodexTransport(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pooled.(*sdkcodex.PoolAdapter); !ok {
+		t.Fatalf("opt-in transport type=%T, want session pool", pooled)
+	}
+	if err := pooled.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestCodexProfileCatalogIsBounded(t *testing.T) {
 	provider := &CodexAppServer{}
@@ -256,7 +283,9 @@ func TestCodexAppServerSerializesConcurrentAdaptersOnOneTransport(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if provider.transport.NextRequestID() < 3+workers*4 {
+	// v0.6.1 keeps the same serialized transport guarantee while avoiding one
+	// redundant RPC during the first managed-session turn.
+	if provider.transport.NextRequestID() < 2+workers*4 {
 		t.Fatalf("concurrent adapters did not use bounded serialized transports: nextID=%d", provider.transport.NextRequestID())
 	}
 }

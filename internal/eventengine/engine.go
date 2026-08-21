@@ -115,6 +115,13 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 		model := e.modelForProfile(settings.ReasoningSemanticProfile)
 		summary.Provider, summary.Model, summary.Effort = e.resolver.Name(), model.Model, model.Effort
 		resolution, summary.Usage, summary.DurationMS, err = e.resolve(ctx, resolverCandidates, shortlist, settings.ReasoningSemanticProfile)
+		summary.CallerLatencyMS = summary.Usage.CallerLatencyMS
+		summary.QueueWaitMS = summary.Usage.QueueWaitMS
+		summary.ProviderExecutionMS = summary.Usage.ProviderExecutionMS
+		summary.ResponseTotalMS = summary.Usage.ResponseTotalMS
+		if summary.CallerLatencyMS == 0 {
+			summary.CallerLatencyMS = summary.DurationMS
+		}
 		applyReceiptMetadata(&summary)
 		if err != nil {
 			summary.Status = "failed"

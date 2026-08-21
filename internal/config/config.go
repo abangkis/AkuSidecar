@@ -67,32 +67,43 @@ type ReasoningConfig struct {
 	ProviderOverride bool                      `json:"-"`
 	Providers        map[string]ProviderConfig `json:"providers"`
 
-	Provider         string      `json:"-"`
-	Executable       string      `json:"-"`
-	Endpoint         string      `json:"-"`
-	MaxRetries       int         `json:"-"`
-	TimeoutMS        int         `json:"-"`
-	WarmupTimeoutMS  int         `json:"-"`
-	KeepAliveMinutes int         `json:"-"`
-	NumCtx           int         `json:"-"`
-	Planning         ModelConfig `json:"-"`
-	Evaluation       ModelConfig `json:"-"`
-	SemanticEvent    ModelConfig `json:"-"`
-	AIDetection      ModelConfig `json:"-"`
+	Provider         string `json:"-"`
+	Executable       string `json:"-"`
+	Endpoint         string `json:"-"`
+	MaxRetries       int    `json:"-"`
+	TimeoutMS        int    `json:"-"`
+	WarmupTimeoutMS  int    `json:"-"`
+	KeepAliveMinutes int    `json:"-"`
+	NumCtx           int    `json:"-"`
+	// CodexSessionPoolSize opts into independent App Server sessions. Zero
+	// keeps the historical single-session adapter; positive values are passed
+	// explicitly to the SDK pool and never use its own default.
+	CodexSessionPoolSize int `json:"-"`
+	// OllamaMaxConcurrentInvocations is provider-side invocation capacity. Zero
+	// is intentionally normalized by the SDK to one.
+	OllamaMaxConcurrentInvocations int         `json:"-"`
+	Planning                       ModelConfig `json:"-"`
+	Evaluation                     ModelConfig `json:"-"`
+	SemanticEvent                  ModelConfig `json:"-"`
+	AIDetection                    ModelConfig `json:"-"`
 }
 
 type ProviderConfig struct {
-	Executable       string      `json:"executable"`
-	Endpoint         string      `json:"endpoint"`
-	MaxRetries       int         `json:"maxRetries,omitempty"`
-	TimeoutMS        int         `json:"timeoutMs"`
-	WarmupTimeoutMS  int         `json:"warmupTimeoutMs,omitempty"`
-	KeepAliveMinutes int         `json:"keepAliveMinutes,omitempty"`
-	NumCtx           int         `json:"numCtx,omitempty"`
-	Planning         ModelConfig `json:"planning"`
-	Evaluation       ModelConfig `json:"evaluation"`
-	SemanticEvent    ModelConfig `json:"semanticEvent"`
-	AIDetection      ModelConfig `json:"aiDetection"`
+	Executable       string `json:"executable"`
+	Endpoint         string `json:"endpoint"`
+	MaxRetries       int    `json:"maxRetries,omitempty"`
+	TimeoutMS        int    `json:"timeoutMs"`
+	WarmupTimeoutMS  int    `json:"warmupTimeoutMs,omitempty"`
+	KeepAliveMinutes int    `json:"keepAliveMinutes,omitempty"`
+	NumCtx           int    `json:"numCtx,omitempty"`
+	// Codex session pooling is opt-in. Leave this unset for one session.
+	CodexSessionPoolSize int `json:"codexSessionPoolSize,omitempty"`
+	// Ollama concurrency is opt-in; zero retains the effective limit of one.
+	MaxConcurrentInvocations int         `json:"maxConcurrentInvocations,omitempty"`
+	Planning                 ModelConfig `json:"planning"`
+	Evaluation               ModelConfig `json:"evaluation"`
+	SemanticEvent            ModelConfig `json:"semanticEvent"`
+	AIDetection              ModelConfig `json:"aiDetection"`
 }
 
 type ModelConfig struct {
@@ -215,6 +226,8 @@ func (r *ReasoningConfig) Select(providerName string) error {
 	r.WarmupTimeoutMS = entry.WarmupTimeoutMS
 	r.KeepAliveMinutes = entry.KeepAliveMinutes
 	r.NumCtx = entry.NumCtx
+	r.CodexSessionPoolSize = entry.CodexSessionPoolSize
+	r.OllamaMaxConcurrentInvocations = entry.MaxConcurrentInvocations
 	r.Planning = entry.Planning
 	r.Evaluation = entry.Evaluation
 	r.SemanticEvent = entry.SemanticEvent
@@ -301,8 +314,23 @@ func (p ProviderConfig) Validate(name string) error {
 	if p.NumCtx < 0 {
 		return fmt.Errorf("reasoning provider %q context length must not be negative", name)
 	}
+	if p.CodexSessionPoolSize < 0 {
+		return fmt.Errorf("reasoning provider %q Codex session pool size must not be negative", name)
+	}
+	if p.CodexSessionPoolSize > 64 {
+		return fmt.Errorf("reasoning provider %q Codex session pool size must be at most 64", name)
+	}
+	if p.MaxConcurrentInvocations < 0 || p.MaxConcurrentInvocations > 64 {
+		return fmt.Errorf("reasoning provider %q maxConcurrentInvocations must be between 0 and 64", name)
+	}
 	if !IsOllamaProvider(name) && (p.WarmupTimeoutMS != 0 || p.KeepAliveMinutes != 0 || p.NumCtx != 0) {
 		return fmt.Errorf("warmup, keep-alive, and context length apply only to ollama providers (%q)", name)
+	}
+	if name != "codex-app-server" && p.CodexSessionPoolSize != 0 {
+		return fmt.Errorf("Codex session pool settings apply only to codex-app-server")
+	}
+	if !IsOllamaProvider(name) && p.MaxConcurrentInvocations != 0 {
+		return fmt.Errorf("Ollama concurrency settings apply only to ollama providers")
 	}
 	if name == "codex-app-server" || IsOllamaProvider(name) {
 		models := map[string]ModelConfig{

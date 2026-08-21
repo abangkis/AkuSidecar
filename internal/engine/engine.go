@@ -2018,8 +2018,8 @@ func (e *Engine) DiagnosticsExport(ctx context.Context, since, until string, ses
 				Since: sinceTime.Format(time.RFC3339),
 				Until: untilTime.Format(time.RFC3339),
 			},
-			PIIRedacted:   true,
-			SessionID:     sessionID,
+			PIIRedacted: true,
+			SessionID:   sessionID,
 		},
 		Config:      exportConfig(settings, e),
 		Sessions:    sessions,
@@ -2072,21 +2072,21 @@ func exportInboxSession(is domain.InboxSession) domain.SessionExport {
 		}
 	}
 	return domain.SessionExport{
-		ID:            is.ID,
-		Intent:        is.Intent,
-		Status:        is.Status,
-		CreatedAt:     is.CreatedAt,
-		CompletedAt:   is.CompletedAt,
-		Runs:          runs,
+		ID:          is.ID,
+		Intent:      is.Intent,
+		Status:      is.Status,
+		CreatedAt:   is.CreatedAt,
+		CompletedAt: is.CompletedAt,
+		Runs:        runs,
 	}
 }
 
 func exportRun(r domain.Run) domain.RunExport {
 	re := domain.RunExport{
-		ID:            r.ID,
-		Source:        r.Source,
-		Status:        r.Status,
-		Stage:         r.Stage,
+		ID:     r.ID,
+		Source: r.Source,
+		Status: r.Status,
+		Stage:  r.Stage,
 	}
 	if r.Error != nil {
 		re.Error = &domain.RunError{
@@ -2134,18 +2134,22 @@ func exportModelUsage(mu domain.ModelUsageReport) domain.ModelUsageExport {
 		entries := make([]domain.ModelUsageEntry, len(c.Entries))
 		for j, e := range c.Entries {
 			entries[j] = domain.ModelUsageEntry{
-				ID:              e.ID,
-				CategoryID:      c.ID,
-				Source:          e.Source,
-				Status:          e.Status,
-				Provider:        e.Provider,
-				Model:           e.Model,
-				Effort:          e.Effort,
-				InvocationCount: e.InvocationCount,
-				DurationMS:      e.DurationMS,
-				Usage:           e.Usage,
-				UsageCoverage:   e.UsageCoverage,
-				CreatedAt:       e.CreatedAt,
+				ID:                  e.ID,
+				CategoryID:          c.ID,
+				Source:              e.Source,
+				Status:              e.Status,
+				Provider:            e.Provider,
+				Model:               e.Model,
+				Effort:              e.Effort,
+				InvocationCount:     e.InvocationCount,
+				DurationMS:          e.DurationMS,
+				CallerLatencyMS:     e.CallerLatencyMS,
+				QueueWaitMS:         e.QueueWaitMS,
+				ProviderExecutionMS: e.ProviderExecutionMS,
+				ResponseTotalMS:     e.ResponseTotalMS,
+				Usage:               e.Usage,
+				UsageCoverage:       e.UsageCoverage,
+				CreatedAt:           e.CreatedAt,
 			}
 		}
 		cats[i] = domain.ModelUsageCategory{

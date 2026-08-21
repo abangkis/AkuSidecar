@@ -155,7 +155,7 @@ func NewStructuredResolver(root string, invoker StructuredInvoker, model config.
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		return nil, fmt.Errorf("decode AI deep-detection schema: %w", err)
 	}
-	return &StructuredResolver{invoker: invoker, model: model, schema: schema}, nil
+	return &StructuredResolver{invoker: invoker, model: model, schema: json.RawMessage(append([]byte(nil), raw...))}, nil
 }
 
 func (r *StructuredResolver) Name() string              { return "structured-inference" }

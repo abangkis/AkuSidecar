@@ -82,6 +82,10 @@ func (a *usageAccumulator) add(entry domain.ModelUsageEntry) {
 	addUsageCounter(&a.usage.CachedInput, entry.Usage.CachedInput)
 	addUsageCounter(&a.usage.Output, entry.Usage.Output)
 	addUsageCounter(&a.usage.ReasoningOutput, entry.Usage.ReasoningOutput)
+	a.usage.CallerLatencyMS += entry.CallerLatencyMS
+	a.usage.QueueWaitMS += entry.QueueWaitMS
+	a.usage.ProviderExecutionMS += entry.ProviderExecutionMS
+	a.usage.ResponseTotalMS += entry.ResponseTotalMS
 }
 
 func (a usageAccumulator) coverage() string {
@@ -160,7 +164,10 @@ func finalizeCategory(category *domain.ModelUsageCategory, sessionStatus string)
 	category.Note = categoryNote(category.ID, category.Status)
 }
 
-func usageEntry(id, categoryID string, source domain.Source, status, provider, model, effort string, duration int64, input, cached, output, reasoning sql.NullInt64, createdAt string) domain.ModelUsageEntry {
+func usageEntry(id, categoryID string, source domain.Source, status, provider, model, effort string, duration, callerLatency, queueWait, providerExecution, responseTotal int64, input, cached, output, reasoning sql.NullInt64, createdAt string) domain.ModelUsageEntry {
+	if callerLatency == 0 {
+		callerLatency = duration
+	}
 	count := 1
 	if status == "bypassed" || provider == "local-index" || model == "none" || model == "local-deterministic" {
 		count = 0
@@ -168,8 +175,8 @@ func usageEntry(id, categoryID string, source domain.Source, status, provider, m
 	entry := domain.ModelUsageEntry{
 		ID: id, CategoryID: categoryID, Source: source, Status: status,
 		Provider: provider, Model: model, Effort: effort, InvocationCount: count,
-		DurationMS: duration, CreatedAt: createdAt,
-		Usage: domain.ModelUsage{Input: nullableToken(input), CachedInput: nullableToken(cached), Output: nullableToken(output), ReasoningOutput: nullableToken(reasoning)},
+		DurationMS: duration, CallerLatencyMS: callerLatency, QueueWaitMS: queueWait, ProviderExecutionMS: providerExecution, ResponseTotalMS: responseTotal, CreatedAt: createdAt,
+		Usage: domain.ModelUsage{Input: nullableToken(input), CachedInput: nullableToken(cached), Output: nullableToken(output), ReasoningOutput: nullableToken(reasoning), CallerLatencyMS: callerLatency, QueueWaitMS: queueWait, ProviderExecutionMS: providerExecution, ResponseTotalMS: responseTotal},
 	}
 	if count == 0 {
 		entry.UsageCoverage = "not_applicable"
@@ -194,7 +201,7 @@ func (s *Store) SessionModelUsage(ctx context.Context, sessionID string) (domain
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT i.id,r.source,i.phase,i.status,i.provider,i.model,i.effort,i.duration_ms,
+		SELECT i.id,r.source,i.phase,i.status,i.provider,i.model,i.effort,i.duration_ms,i.caller_latency_ms,i.queue_wait_ms,i.provider_execution_ms,i.response_total_ms,
 		       i.input_tokens,i.cached_input_tokens,i.output_tokens,i.reasoning_output_tokens,i.created_at
 		FROM reasoning_invocations i JOIN runs r ON r.id=i.run_id
 		WHERE r.session_id=? ORDER BY i.created_at,i.id`, sessionID)
@@ -204,15 +211,15 @@ func (s *Store) SessionModelUsage(ctx context.Context, sessionID string) (domain
 	for rows.Next() {
 		var id, phase, status, provider, model, effort, invocationAt string
 		var source domain.Source
-		var duration int64
+		var duration, callerLatency, queueWait, providerExecution, responseTotal int64
 		var input, cached, output, reasoning sql.NullInt64
-		if err := rows.Scan(&id, &source, &phase, &status, &provider, &model, &effort, &duration, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
+		if err := rows.Scan(&id, &source, &phase, &status, &provider, &model, &effort, &duration, &callerLatency, &queueWait, &providerExecution, &responseTotal, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
 			rows.Close()
 			return domain.ModelUsageReport{}, err
 		}
 		category := byID[phase]
 		if category != nil {
-			category.Entries = append(category.Entries, usageEntry(id, phase, source, status, provider, model, effort, duration, input, cached, output, reasoning, invocationAt))
+			category.Entries = append(category.Entries, usageEntry(id, phase, source, status, provider, model, effort, duration, callerLatency, queueWait, providerExecution, responseTotal, input, cached, output, reasoning, invocationAt))
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -224,36 +231,36 @@ func (s *Store) SessionModelUsage(ctx context.Context, sessionID string) (domain
 	}
 
 	var semanticID, semanticStatus, semanticProvider, semanticModel, semanticEffort, semanticAt string
-	var semanticDuration int64
+	var semanticDuration, semanticCallerLatency, semanticQueueWait, semanticProviderExecution, semanticResponseTotal int64
 	var semanticInput, semanticCached, semanticOutput, semanticReasoning sql.NullInt64
 	err = s.db.QueryRowContext(ctx, `
-		SELECT session_id,status,provider,model,effort,duration_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at
+		SELECT session_id,status,provider,model,effort,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at
 		FROM event_resolution_invocations WHERE session_id=?`, sessionID).
-		Scan(&semanticID, &semanticStatus, &semanticProvider, &semanticModel, &semanticEffort, &semanticDuration, &semanticInput, &semanticCached, &semanticOutput, &semanticReasoning, &semanticAt)
+		Scan(&semanticID, &semanticStatus, &semanticProvider, &semanticModel, &semanticEffort, &semanticDuration, &semanticCallerLatency, &semanticQueueWait, &semanticProviderExecution, &semanticResponseTotal, &semanticInput, &semanticCached, &semanticOutput, &semanticReasoning, &semanticAt)
 	if err != nil && err != sql.ErrNoRows {
 		return domain.ModelUsageReport{}, err
 	}
 	if err == nil {
 		byID["semantic_event_resolution"].Entries = append(byID["semantic_event_resolution"].Entries,
-			usageEntry(semanticID+":semantic", "semantic_event_resolution", "", semanticStatus, semanticProvider, semanticModel, semanticEffort, semanticDuration, semanticInput, semanticCached, semanticOutput, semanticReasoning, semanticAt))
+			usageEntry(semanticID+":semantic", "semantic_event_resolution", "", semanticStatus, semanticProvider, semanticModel, semanticEffort, semanticDuration, semanticCallerLatency, semanticQueueWait, semanticProviderExecution, semanticResponseTotal, semanticInput, semanticCached, semanticOutput, semanticReasoning, semanticAt))
 	}
 
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT id,status,provider,model,effort,duration_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at
+		SELECT id,status,provider,model,effort,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at
 		FROM ai_detection_jobs WHERE session_id=? ORDER BY created_at,id`, sessionID)
 	if err != nil {
 		return domain.ModelUsageReport{}, err
 	}
 	for rows.Next() {
 		var id, status, provider, model, effort, invocationAt string
-		var duration int64
+		var duration, callerLatency, queueWait, providerExecution, responseTotal int64
 		var input, cached, output, reasoning sql.NullInt64
-		if err := rows.Scan(&id, &status, &provider, &model, &effort, &duration, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
+		if err := rows.Scan(&id, &status, &provider, &model, &effort, &duration, &callerLatency, &queueWait, &providerExecution, &responseTotal, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
 			rows.Close()
 			return domain.ModelUsageReport{}, err
 		}
 		byID["ai_deep_detection"].Entries = append(byID["ai_deep_detection"].Entries,
-			usageEntry(id, "ai_deep_detection", "", status, provider, model, effort, duration, input, cached, output, reasoning, invocationAt))
+			usageEntry(id, "ai_deep_detection", "", status, provider, model, effort, duration, callerLatency, queueWait, providerExecution, responseTotal, input, cached, output, reasoning, invocationAt))
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -311,6 +318,10 @@ func aggregateModelUsageEntries(entries []domain.ModelUsageEntry) []domain.Model
 		}
 		current.InvocationCount += entry.InvocationCount
 		current.DurationMS += entry.DurationMS
+		current.CallerLatencyMS += entry.CallerLatencyMS
+		current.QueueWaitMS += entry.QueueWaitMS
+		current.ProviderExecutionMS += entry.ProviderExecutionMS
+		current.ResponseTotalMS += entry.ResponseTotalMS
 		current.Status = mergeUsageStatus(current.Status, entry.Status)
 		if current.UsageCoverage != entry.UsageCoverage {
 			current.UsageCoverage = "partial"
@@ -319,6 +330,10 @@ func aggregateModelUsageEntries(entries []domain.ModelUsageEntry) []domain.Model
 		addUsageCounter(&current.Usage.CachedInput, entry.Usage.CachedInput)
 		addUsageCounter(&current.Usage.Output, entry.Usage.Output)
 		addUsageCounter(&current.Usage.ReasoningOutput, entry.Usage.ReasoningOutput)
+		current.Usage.CallerLatencyMS += entry.Usage.CallerLatencyMS
+		current.Usage.QueueWaitMS += entry.Usage.QueueWaitMS
+		current.Usage.ProviderExecutionMS += entry.Usage.ProviderExecutionMS
+		current.Usage.ResponseTotalMS += entry.Usage.ResponseTotalMS
 	}
 	result := make([]domain.ModelUsageEntry, 0, len(grouped))
 	for _, entry := range grouped {
@@ -377,7 +392,7 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 		byID[categories[index].ID] = &categories[index]
 	}
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT i.id,r.source,i.phase,i.status,i.provider,i.model,i.effort,i.duration_ms,
+		SELECT i.id,r.source,i.phase,i.status,i.provider,i.model,i.effort,i.duration_ms,i.caller_latency_ms,i.queue_wait_ms,i.provider_execution_ms,i.response_total_ms,
 		       i.input_tokens,i.cached_input_tokens,i.output_tokens,i.reasoning_output_tokens,i.created_at
 		FROM reasoning_invocations i
 		JOIN runs r ON r.id=i.run_id
@@ -389,14 +404,14 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 	for rows.Next() {
 		var id, phase, invocationStatus, provider, model, effort, invocationAt string
 		var source domain.Source
-		var duration int64
+		var duration, callerLatency, queueWait, providerExecution, responseTotal int64
 		var input, cached, output, reasoning sql.NullInt64
-		if err := rows.Scan(&id, &source, &phase, &invocationStatus, &provider, &model, &effort, &duration, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
+		if err := rows.Scan(&id, &source, &phase, &invocationStatus, &provider, &model, &effort, &duration, &callerLatency, &queueWait, &providerExecution, &responseTotal, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
 			rows.Close()
 			return domain.ModelUsageReport{}, err
 		}
 		if category := byID[phase]; category != nil {
-			category.Entries = append(category.Entries, usageEntry(id, phase, source, invocationStatus, provider, model, effort, duration, input, cached, output, reasoning, invocationAt))
+			category.Entries = append(category.Entries, usageEntry(id, phase, source, invocationStatus, provider, model, effort, duration, callerLatency, queueWait, providerExecution, responseTotal, input, cached, output, reasoning, invocationAt))
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -408,7 +423,7 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 	}
 
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT e.session_id,e.status,e.provider,e.model,e.effort,e.duration_ms,
+		SELECT e.session_id,e.status,e.provider,e.model,e.effort,e.duration_ms,e.caller_latency_ms,e.queue_wait_ms,e.provider_execution_ms,e.response_total_ms,
 		       e.input_tokens,e.cached_input_tokens,e.output_tokens,e.reasoning_output_tokens,e.created_at
 		FROM event_resolution_invocations e
 		JOIN sessions s ON s.id=e.session_id
@@ -418,14 +433,14 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 	}
 	for rows.Next() {
 		var sessionID, invocationStatus, provider, model, effort, invocationAt string
-		var duration int64
+		var duration, callerLatency, queueWait, providerExecution, responseTotal int64
 		var input, cached, output, reasoning sql.NullInt64
-		if err := rows.Scan(&sessionID, &invocationStatus, &provider, &model, &effort, &duration, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
+		if err := rows.Scan(&sessionID, &invocationStatus, &provider, &model, &effort, &duration, &callerLatency, &queueWait, &providerExecution, &responseTotal, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
 			rows.Close()
 			return domain.ModelUsageReport{}, err
 		}
 		byID["semantic_event_resolution"].Entries = append(byID["semantic_event_resolution"].Entries,
-			usageEntry(sessionID+":semantic", "semantic_event_resolution", "", invocationStatus, provider, model, effort, duration, input, cached, output, reasoning, invocationAt))
+			usageEntry(sessionID+":semantic", "semantic_event_resolution", "", invocationStatus, provider, model, effort, duration, callerLatency, queueWait, providerExecution, responseTotal, input, cached, output, reasoning, invocationAt))
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -436,7 +451,7 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 	}
 
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT a.id,a.status,a.provider,a.model,a.effort,a.duration_ms,
+		SELECT a.id,a.status,a.provider,a.model,a.effort,a.duration_ms,a.caller_latency_ms,a.queue_wait_ms,a.provider_execution_ms,a.response_total_ms,
 		       a.input_tokens,a.cached_input_tokens,a.output_tokens,a.reasoning_output_tokens,a.created_at
 		FROM ai_detection_jobs a
 		JOIN sessions s ON s.id=a.session_id
@@ -446,14 +461,14 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 	}
 	for rows.Next() {
 		var id, invocationStatus, provider, model, effort, invocationAt string
-		var duration int64
+		var duration, callerLatency, queueWait, providerExecution, responseTotal int64
 		var input, cached, output, reasoning sql.NullInt64
-		if err := rows.Scan(&id, &invocationStatus, &provider, &model, &effort, &duration, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
+		if err := rows.Scan(&id, &invocationStatus, &provider, &model, &effort, &duration, &callerLatency, &queueWait, &providerExecution, &responseTotal, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
 			rows.Close()
 			return domain.ModelUsageReport{}, err
 		}
 		byID["ai_deep_detection"].Entries = append(byID["ai_deep_detection"].Entries,
-			usageEntry(id, "ai_deep_detection", "", invocationStatus, provider, model, effort, duration, input, cached, output, reasoning, invocationAt))
+			usageEntry(id, "ai_deep_detection", "", invocationStatus, provider, model, effort, duration, callerLatency, queueWait, providerExecution, responseTotal, input, cached, output, reasoning, invocationAt))
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()

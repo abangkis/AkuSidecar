@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 7
+const SchemaVersion = 8
 
-const schemaVersion = "7"
+const schemaVersion = "8"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -197,6 +197,10 @@ CREATE TABLE IF NOT EXISTS reasoning_invocations (
   model TEXT NOT NULL,
   effort TEXT NOT NULL,
   duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+  caller_latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (caller_latency_ms >= 0),
+  queue_wait_ms INTEGER NOT NULL DEFAULT 0 CHECK (queue_wait_ms >= 0),
+  provider_execution_ms INTEGER NOT NULL DEFAULT 0 CHECK (provider_execution_ms >= 0),
+  response_total_ms INTEGER NOT NULL DEFAULT 0 CHECK (response_total_ms >= 0),
   status TEXT NOT NULL CHECK (status IN ('completed','failed','cancelled')),
   input_tokens INTEGER,
   cached_input_tokens INTEGER,
@@ -291,6 +295,10 @@ CREATE TABLE IF NOT EXISTS ai_detection_jobs (
   effort TEXT NOT NULL,
   candidate_count INTEGER NOT NULL CHECK (candidate_count >= 0),
   duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  caller_latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (caller_latency_ms >= 0),
+  queue_wait_ms INTEGER NOT NULL DEFAULT 0 CHECK (queue_wait_ms >= 0),
+  provider_execution_ms INTEGER NOT NULL DEFAULT 0 CHECK (provider_execution_ms >= 0),
+  response_total_ms INTEGER NOT NULL DEFAULT 0 CHECK (response_total_ms >= 0),
   input_tokens INTEGER,
   cached_input_tokens INTEGER,
   output_tokens INTEGER,
@@ -541,6 +549,10 @@ CREATE TABLE IF NOT EXISTS event_resolution_invocations (
   unique_items INTEGER NOT NULL CHECK (unique_items >= 0),
   duplicate_reports INTEGER NOT NULL CHECK (duplicate_reports >= 0),
   duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+  caller_latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (caller_latency_ms >= 0),
+  queue_wait_ms INTEGER NOT NULL DEFAULT 0 CHECK (queue_wait_ms >= 0),
+  provider_execution_ms INTEGER NOT NULL DEFAULT 0 CHECK (provider_execution_ms >= 0),
+  response_total_ms INTEGER NOT NULL DEFAULT 0 CHECK (response_total_ms >= 0),
   input_tokens INTEGER,
   cached_input_tokens INTEGER,
   output_tokens INTEGER,

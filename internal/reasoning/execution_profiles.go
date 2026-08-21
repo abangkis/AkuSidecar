@@ -43,9 +43,21 @@ func newExecutionProfile(id inference.ProfileID, model config.ModelConfig) (infe
 
 type boundClientPool struct {
 	registry  *inference.Registry
+	adapter   inference.Adapter
 	adapterID string
 	clients   map[string]inference.Client
+	flights   map[string]*bindingFlight
 	mu        sync.Mutex
+	closeOnce sync.Once
+	closed    bool
+	closeErr  error
+	flightWG  sync.WaitGroup
+}
+
+type bindingFlight struct {
+	done   chan struct{}
+	client inference.Client
+	err    error
 }
 
 func newBoundClientPool(adapter inference.Adapter) (*boundClientPool, error) {
@@ -53,10 +65,13 @@ func newBoundClientPool(adapter inference.Adapter) (*boundClientPool, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &boundClientPool{registry: registry, adapterID: adapter.ID(), clients: map[string]inference.Client{}}, nil
+	return &boundClientPool{registry: registry, adapter: adapter, adapterID: adapter.ID(), clients: map[string]inference.Client{}, flights: map[string]*bindingFlight{}}, nil
 }
 
 func (p *boundClientPool) get(ctx context.Context, profileID inference.ProfileID, model config.ModelConfig, modelID string) (inference.Client, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	profile, err := newExecutionProfile(profileID, model)
 	if err != nil {
 		return nil, err
@@ -64,10 +79,26 @@ func (p *boundClientPool) get(ctx context.Context, profileID inference.ProfileID
 	optionID := model.ExactReasoningOption()
 	key := string(profileID) + "|" + modelID + "|" + optionID + "|" + model.MinimumTier()
 	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("inference adapter %q is closed", p.adapterID)
+	}
 	if client, ok := p.clients[key]; ok {
 		p.mu.Unlock()
 		return client, nil
 	}
+	if flight, ok := p.flights[key]; ok {
+		p.mu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.client, flight.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	flight := &bindingFlight{done: make(chan struct{})}
+	p.flights[key] = flight
+	p.flightWG.Add(1)
 	p.mu.Unlock()
 
 	binding := inference.Binding{
@@ -77,45 +108,100 @@ func (p *boundClientPool) get(ctx context.Context, profileID inference.ProfileID
 	}
 	client, _, err := p.registry.BindBinding(profile, binding)
 	if err != nil {
+		p.finishFlight(key, flight, nil, err)
 		return nil, err
 	}
 	if err := inference.Preflight(ctx, client); err != nil {
-		if closer, ok := client.(interface{ Close() error }); ok {
-			_ = closer.Close()
-		}
-		return nil, fmt.Errorf("preflight %s profile %q model %q: %w", p.adapterID, profileID, modelID, err)
+		closeInferenceClient(client)
+		wrapped := fmt.Errorf("preflight %s profile %q model %q: %w", p.adapterID, profileID, modelID, err)
+		p.finishFlight(key, flight, nil, wrapped)
+		return nil, wrapped
 	}
 	p.mu.Lock()
-	if existing, ok := p.clients[key]; ok {
+	if p.closed {
 		p.mu.Unlock()
-		if closer, ok := client.(interface{ Close() error }); ok {
-			_ = closer.Close()
-		}
-		return existing, nil
+		closeInferenceClient(client)
+		p.finishFlight(key, flight, nil, fmt.Errorf("inference adapter %q is closed", p.adapterID))
+		return nil, fmt.Errorf("inference adapter %q is closed", p.adapterID)
 	}
 	p.clients[key] = client
 	p.mu.Unlock()
+	p.finishFlight(key, flight, client, nil)
 	return client, nil
 }
 
+func (p *boundClientPool) finishFlight(key string, flight *bindingFlight, client inference.Client, err error) {
+	p.mu.Lock()
+	flight.client, flight.err = client, err
+	delete(p.flights, key)
+	close(flight.done)
+	p.mu.Unlock()
+	p.flightWG.Done()
+}
+
+func closeInferenceClient(client inference.Client) error {
+	if closer, ok := client.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
+// Close releases cached bound-client leases exactly once, then closes the
+// composition-root adapter. A bound client's Close never owns the transport.
+func (p *boundClientPool) Close() error {
+	if p == nil {
+		return nil
+	}
+	p.closeOnce.Do(func() {
+		p.mu.Lock()
+		p.closed = true
+		p.mu.Unlock()
+		p.flightWG.Wait()
+		p.mu.Lock()
+		clients := make([]inference.Client, 0, len(p.clients))
+		for key, client := range p.clients {
+			clients = append(clients, client)
+			delete(p.clients, key)
+		}
+		p.mu.Unlock()
+		for _, client := range clients {
+			if err := closeInferenceClient(client); err != nil && p.closeErr == nil {
+				p.closeErr = err
+			}
+		}
+		if closer, ok := p.adapter.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil && p.closeErr == nil {
+				p.closeErr = err
+			}
+		}
+	})
+	return p.closeErr
+}
+
 func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig, modelID string) (string, domain.ModelUsage, time.Duration, error) {
+	started := time.Now()
 	client, err := pool.get(ctx, profileID, model, modelID)
 	if err != nil {
-		return "", domain.ModelUsage{}, 0, err
+		latency := time.Since(started)
+		return "", domain.ModelUsage{CallerLatencyMS: latency.Milliseconds()}, latency, err
 	}
-	rawSchema, err := json.Marshal(schema)
+	rawSchema, err := schemaJSON(schema)
 	if err != nil {
-		return "", domain.ModelUsage{}, 0, fmt.Errorf("encode %s response schema: %w", profileID, err)
+		latency := time.Since(started)
+		return "", domain.ModelUsage{CallerLatencyMS: latency.Milliseconds()}, latency, fmt.Errorf("encode %s response schema: %w", profileID, err)
 	}
-	started := time.Now()
 	response, err := client.Generate(ctx, inference.Request{
 		ProfileID: profileID, Workload: string(profileID),
 		SystemPrompt: "Return only the requested structured JSON result.", UserPrompt: prompt,
 		ResponseFormat:  inference.JSONSchema(string(profileID), string(profileID), "AkuSidecar structured result", rawSchema, true),
 		MaxOutputTokens: defaultProfileMaxOutputTokens,
 	})
+	callerLatency := time.Since(started)
 	if err != nil {
-		return "", domain.ModelUsage{}, time.Since(started), err
+		return "", domain.ModelUsage{CallerLatencyMS: callerLatency.Milliseconds()}, callerLatency, err
+	}
+	if response == nil {
+		return "", domain.ModelUsage{CallerLatencyMS: callerLatency.Milliseconds()}, callerLatency, fmt.Errorf("%s returned an empty response", profileID)
 	}
 	usage := domain.ModelUsage{}
 	if response.Usage.InputTokens != 0 {
@@ -140,9 +226,38 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	}
 	usage.NativeReasoning = response.Receipt.NativeReasoningValue
 	usage.ReasoningTier = string(response.Receipt.ReasoningTier)
-	duration := time.Duration(response.DurationMillis) * time.Millisecond
-	if duration <= 0 {
-		duration = time.Since(started)
+	providerExecution := time.Duration(response.DurationMillis) * time.Millisecond
+	responseTotal := providerExecution
+	queueWait := time.Duration(0)
+	if response.Timing != nil {
+		queueWait = response.Timing.QueueWait
+		if response.Timing.ProviderExecution > 0 {
+			providerExecution = response.Timing.ProviderExecution
+		}
+		if response.Timing.Total > 0 {
+			responseTotal = response.Timing.Total
+		}
 	}
-	return response.Text, usage, duration, nil
+	if responseTotal <= 0 {
+		responseTotal = providerExecution
+	}
+	usage.CallerLatencyMS = callerLatency.Milliseconds()
+	usage.QueueWaitMS = queueWait.Milliseconds()
+	usage.ProviderExecutionMS = providerExecution.Milliseconds()
+	usage.ResponseTotalMS = responseTotal.Milliseconds()
+	return response.Text, usage, callerLatency, nil
+}
+
+func schemaJSON(schema any) ([]byte, error) {
+	switch value := schema.(type) {
+	case json.RawMessage:
+		return value, nil
+	case *json.RawMessage:
+		if value == nil {
+			return nil, fmt.Errorf("schema is nil")
+		}
+		return *value, nil
+	default:
+		return json.Marshal(schema)
+	}
 }

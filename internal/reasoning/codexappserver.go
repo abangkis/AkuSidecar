@@ -32,10 +32,20 @@ type CodexAppServer struct {
 	evaluation   config.ModelConfig
 	planSchema   any
 	resultSchema any
-	transport    *codexappserver.Adapter
+	// transport keeps the concrete single-session view used by diagnostics and
+	// existing tests. adapter is the lifecycle abstraction that also accepts
+	// the SDK PoolAdapter when pooling is explicitly enabled.
+	transport *codexappserver.Adapter
+	adapter   interface {
+		inference.Adapter
+		Close() error
+	}
 	clients      *boundClientPool
+	poolSize     int
+	transportCfg codexappserver.Config
 
-	exeMu sync.Mutex
+	exeMu  sync.Mutex
+	lifeMu sync.RWMutex
 }
 
 type boundedBuffer struct {
@@ -82,13 +92,14 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 		planSchema:   planSchema,
 		resultSchema: resultSchema,
 	}
-	transport, err := codexappserver.New(codexappserver.Config{
+	transportConfig := codexappserver.Config{
 		WorkingDir:    provider.root,
 		Timeout:       provider.timeout,
 		ClientName:    "AkuSidecar",
 		ClientVersion: domain.ApplicationVersion,
 		Start:         provider.startSession,
-	})
+	}
+	transport, err := newCodexTransport(transportConfig, cfg.Reasoning.CodexSessionPoolSize)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +108,24 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 		_ = transport.Close()
 		return nil, err
 	}
-	provider.transport = transport
+	provider.adapter = transport
+	if single, ok := transport.(*codexappserver.Adapter); ok {
+		provider.transport = single
+	}
 	provider.clients = clients
+	provider.poolSize = cfg.Reasoning.CodexSessionPoolSize
+	provider.transportCfg = transportConfig
 	return provider, nil
+}
+
+func newCodexTransport(cfg codexappserver.Config, poolSize int) (interface {
+	inference.Adapter
+	Close() error
+}, error) {
+	if poolSize > 0 {
+		return codexappserver.NewSessionPool(codexappserver.PoolConfig{Config: cfg, Size: poolSize})
+	}
+	return codexappserver.New(cfg)
 }
 
 func (c *CodexAppServer) Name() string { return "codex-app-server" }
@@ -125,13 +151,33 @@ func (c *CodexAppServer) UseExecutable(executable string) {
 		return
 	}
 	c.exeMu.Unlock()
-	if c.transport != nil {
-		_ = c.transport.Close()
-	}
 	c.exeMu.Lock()
 	c.executable = executable
 	c.pathDirs = codexPathDirs(executable)
 	c.exeMu.Unlock()
+	// Recompose the transport so an opt-in SDK pool is not left permanently
+	// closed after an executable switch. Readers hold the lifecycle lock across
+	// invocation, preventing a close/rebind race with an in-flight request.
+	c.lifeMu.Lock()
+	defer c.lifeMu.Unlock()
+	if c.clients != nil {
+		_ = c.clients.Close()
+	}
+	transport, err := newCodexTransport(c.transportCfg, c.poolSize)
+	if err != nil {
+		return
+	}
+	clients, err := newBoundClientPool(transport)
+	if err != nil {
+		_ = transport.Close()
+		return
+	}
+	c.adapter, c.clients = transport, clients
+	if single, ok := transport.(*codexappserver.Adapter); ok {
+		c.transport = single
+	} else {
+		c.transport = nil
+	}
 }
 
 func (c *CodexAppServer) ProfileOptions() []ProfileOption {
@@ -206,6 +252,8 @@ func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, o
 }
 
 func (c *CodexAppServer) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
+	c.lifeMu.RLock()
+	defer c.lifeMu.RUnlock()
 	modelID, ok := codexStableModelID(model.ModelID)
 	if !ok {
 		modelID, ok = codexStableModelID(model.Model)
@@ -296,10 +344,22 @@ func (c *CodexAppServer) startSession() (codexappserver.Session, error) {
 }
 
 func (c *CodexAppServer) Close() error {
-	if c.transport == nil {
+	c.lifeMu.Lock()
+	defer c.lifeMu.Unlock()
+	if c.clients != nil {
+		err := c.clients.Close()
+		c.clients = nil
+		c.adapter = nil
+		c.transport = nil
+		return err
+	}
+	if c.adapter == nil {
 		return nil
 	}
-	return c.transport.Close()
+	err := c.adapter.Close()
+	c.adapter = nil
+	c.transport = nil
+	return err
 }
 
 func codexPathDirs(executable string) []string {
@@ -335,7 +395,9 @@ func readSchema(path string) (any, error) {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return nil, fmt.Errorf("decode output schema: %w", err)
 	}
-	return value, nil
+	// Keep the validated bytes immutable so the hot invocation path can reuse
+	// the static schema without marshaling it for every request.
+	return json.RawMessage(append([]byte(nil), raw...)), nil
 }
 
 func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, duration time.Duration, value domain.ModelUsage, runErr error) domain.ReasoningTelemetry {
@@ -351,7 +413,11 @@ func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, 
 	if effort == "" {
 		effort = value.NativeReasoning
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	callerLatency := value.CallerLatencyMS
+	if callerLatency == 0 {
+		callerLatency = duration.Milliseconds()
+	}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: "codex-app-server", Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), CallerLatencyMS: callerLatency, QueueWaitMS: value.QueueWaitMS, ProviderExecutionMS: value.ProviderExecutionMS, ResponseTotalMS: value.ResponseTotalMS, Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
 }
 
 func resolveExecutable(root, value string) (string, error) {

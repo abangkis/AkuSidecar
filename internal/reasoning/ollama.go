@@ -65,11 +65,12 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 		return nil, err
 	}
 	transport, err := ollama.New(ollama.Config{
-		BaseURL:          endpoint,
-		Timeout:          time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
-		MaxRetries:       cfg.Reasoning.MaxRetries,
-		KeepAliveSeconds: cfg.Reasoning.KeepAliveMinutes * 60,
-		NumCtx:           cfg.Reasoning.NumCtx,
+		BaseURL:                  endpoint,
+		Timeout:                  time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
+		MaxRetries:               cfg.Reasoning.MaxRetries,
+		KeepAliveSeconds:         cfg.Reasoning.KeepAliveMinutes * 60,
+		NumCtx:                   cfg.Reasoning.NumCtx,
+		MaxConcurrentInvocations: cfg.Reasoning.OllamaMaxConcurrentInvocations,
 	})
 	if err != nil {
 		return nil, err
@@ -199,6 +200,12 @@ func (o *Ollama) invoke(parent context.Context, profileID inference.ProfileID, p
 }
 
 func (o *Ollama) Close() error {
+	if o.clients != nil {
+		err := o.clients.Close()
+		o.clients = nil
+		o.transport = nil
+		return err
+	}
 	if o.transport == nil {
 		return nil
 	}
@@ -231,7 +238,11 @@ func (o *Ollama) telemetry(run domain.Run, phase string, model config.ModelConfi
 	if effort == "" {
 		effort = value.NativeReasoning
 	}
-	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
+	callerLatency := value.CallerLatencyMS
+	if callerLatency == 0 {
+		callerLatency = duration.Milliseconds()
+	}
+	return domain.ReasoningTelemetry{ID: domain.NewID("reasoning"), RunID: run.ID, Phase: phase, Provider: o.name, Model: modelName, Effort: effort, DurationMS: duration.Milliseconds(), CallerLatencyMS: callerLatency, QueueWaitMS: value.QueueWaitMS, ProviderExecutionMS: value.ProviderExecutionMS, ResponseTotalMS: value.ResponseTotalMS, Status: status, InputTokens: value.Input, CachedInputTokens: value.CachedInput, OutputTokens: value.Output, ReasoningOutputTokens: value.ReasoningOutput, CreatedAt: domain.Now()}
 }
 
 func ollamaStableModelID(model config.ModelConfig) (string, error) {
