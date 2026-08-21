@@ -121,6 +121,14 @@ hash is locked in `go.sum`. Bump the version when a newer SDK release is needed.
 Because the module is private, `GOPRIVATE=github.com/abangkis/*` must be set so
 `go` fetches directly from GitHub instead of the public proxy and checksum DB.
 
+The legacy inference model fields `model` (provider wire-model name) and
+`effort` are deprecated as of AkuSidecar v0.8.0. New configuration must use the
+provider-owned stable `modelId`, client-owned `minReasoningTier`, and optional
+exact `reasoningOptionId`. v0.8.5 is the migration-warning milestone: remaining
+legacy values should produce actionable diagnostics while still loading. The
+aliases are scheduled for removal with the breaking configuration contract in
+v0.9.0; configurations that still use them will then fail validation.
+
 ## Development
 
 AkuSupervisor directly owns `runtime\dev\aku-sidecar.exe`; there is no
