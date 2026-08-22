@@ -122,6 +122,8 @@ type ModelConfig struct {
 	MinReasoningTier  string `json:"minReasoningTier,omitempty"`
 	ReasoningOptionID string `json:"reasoningOptionId,omitempty"`
 	Effort            string `json:"effort,omitempty"`
+	// Assurance optionally tightens structured-output resolution for this role.
+	Assurance string `json:"assurance,omitempty"`
 	// ProfileID is internal invocation identity and is never persisted.
 	ProfileID string `json:"-"`
 }
@@ -504,6 +506,20 @@ func (c Config) Validate() error {
 	}
 	if c.Capture.MaxAcquisitionRounds < 1 || c.Capture.MaxAcquisitionRounds > 2 {
 		return errors.New("max acquisition rounds must be one or two")
+	}
+	for providerName, provider := range c.Reasoning.Providers {
+		for roleName, role := range map[string]ModelConfig{
+			"planning":    provider.Planning,
+			"evaluation":  provider.Evaluation,
+			"semantic":    provider.SemanticEvent,
+			"aiDetection": provider.AIDetection,
+		} {
+			switch role.Assurance {
+			case "", "sdk_validated", "provider_strict":
+			default:
+				return fmt.Errorf("provider %q role %q has unsupported assurance %q", providerName, roleName, role.Assurance)
+			}
+		}
 	}
 	return nil
 }

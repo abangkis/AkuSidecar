@@ -25,7 +25,8 @@
         },
         "evaluation": {
           "modelId": "codex-luna",
-          "minReasoningTier": "high"
+          "minReasoningTier": "high",
+          "assurance": "provider_strict"
         },
         "semanticEvent": {
           "modelId": "codex-luna",

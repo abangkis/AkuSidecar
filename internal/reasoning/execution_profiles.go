@@ -77,7 +77,8 @@ func (p *boundClientPool) get(ctx context.Context, profileID inference.ProfileID
 		return nil, err
 	}
 	optionID := model.ExactReasoningOption()
-	key := string(profileID) + "|" + modelID + "|" + optionID + "|" + model.MinimumTier()
+	assurance := inference.AssurancePolicy(strings.TrimSpace(model.Assurance))
+	key := string(profileID) + "|" + modelID + "|" + optionID + "|" + model.MinimumTier() + "|" + string(assurance)
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -105,6 +106,7 @@ func (p *boundClientPool) get(ctx context.Context, profileID inference.ProfileID
 		ID:      "akusidecar-" + strings.ReplaceAll(string(profileID), ".", "-") + "-" + modelID,
 		Version: "1", AdapterID: p.adapterID, ModelID: modelID,
 		ReasoningOptionID: optionID,
+		AssurancePolicy:   assurance,
 	}
 	client, _, err := p.registry.BindBinding(profile, binding)
 	if err != nil {
