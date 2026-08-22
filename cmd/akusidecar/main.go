@@ -207,7 +207,8 @@ func existingInstance(healthURL string, timeout time.Duration) (string, bool) {
 	return payload.Version, true
 }
 
-func runtimeCandidateProbe(configVersion, schemaVersion int) (map[string]any, error) {	probe := map[string]any{
+func runtimeCandidateProbe(configVersion, schemaVersion int) (map[string]any, error) {
+	probe := map[string]any{
 		"status":                "ok",
 		"version":               domain.ApplicationVersion,
 		"runtime":               "go",
