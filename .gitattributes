@@ -1,0 +1,3 @@
+# Normalize repository content. The Go toolchain and gofmt expect LF; keep Go
+# sources on LF in every working tree so local gofmt checks stay quiet.
+*.go text eol=lf

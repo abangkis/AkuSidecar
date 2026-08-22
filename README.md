@@ -120,17 +120,17 @@ app-shell release.
 
 ## Build and test
 
-On this Windows workspace, keep Go caches outside the module so antivirus and
-module discovery do not interfere with the repository:
+On this Windows workspace, Go caches live inside the repository under
+`.go-build/` so antivirus interference and module discovery stay away from
+global locations. `scripts/build-dev.ps1` configures these caches and writes
+the build provenance receipt automatically:
 
 ```powershell
-$env:GOCACHE = "C:\WorkspaceCodex\AkuWorkspace\.go-cache\build"
-$env:GOMODCACHE = "C:\WorkspaceCodex\AkuWorkspace\.go-cache\mod"
-$env:GOTMPDIR = "C:\WorkspaceCodex\AkuWorkspace\.go-cache\tmp"
+.\scripts\build-dev.ps1
 
 go test -p 1 ./...
 go vet ./...
-.\scripts\build-dev.ps1
+node --test "test/*.test.mjs"
 ```
 
 `-p 1` avoids transient Windows executable-cleanup locks observed when multiple
@@ -346,12 +346,11 @@ first create or try the Quiet managed window.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 7 contains
+The database defaults to `runtime/aku-sidecar.db`. Schema version 9 contains
 only the active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). The
-current preview accepts only that schema version. Additive tables within the
-same preview line are created idempotently at startup; this is not a Node
-compatibility path.
+current preview accepts schema version 9 and migrates additive changes from
+version 7 idempotently at startup; this is not a Node compatibility path.
 
 There is no importer for the Node database. A mismatched schema fails closed;
 delete or move the development database and start again.
