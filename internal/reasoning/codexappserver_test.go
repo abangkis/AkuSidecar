@@ -15,8 +15,43 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 	sdkcodex "github.com/abangkis/ai4u-inference-sdk-go/providers/codexappserver"
 )
+
+func isInferenceFailure(err error, code inference.FailureCode, messagePart string) bool {
+	var infErr *inference.Error
+	if !errors.As(err, &infErr) || infErr.Code != code {
+		return false
+	}
+	if messagePart == "" {
+		return true
+	}
+	for cause := error(infErr); cause != nil; cause = errors.Unwrap(cause) {
+		if strings.Contains(cause.Error(), messagePart) {
+			return true
+		}
+	}
+	return false
+}
+
+func stripItemSourceKeys(raw []byte) []byte {
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return raw
+	}
+	items, _ := doc["items"].([]any)
+	for _, value := range items {
+		if item, ok := value.(map[string]any); ok {
+			delete(item, "source")
+		}
+	}
+	conformed, err := json.Marshal(doc)
+	if err != nil {
+		return raw
+	}
+	return conformed
+}
 
 func TestCodexTransportPoolIsExplicitOptIn(t *testing.T) {
 	cfg := sdkcodex.Config{WorkingDir: t.TempDir(), Timeout: time.Second, ClientName: "test", ClientVersion: "test", Start: func() (sdkcodex.Session, error) {
@@ -166,9 +201,10 @@ func fakeCodexAppServer() {
 					fakeRPC(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": turnID, "status": "completed", "items": []any{}}}})
 					continue
 				}
-				output = domain.ReasoningResult{Summary: "fake app server", Items: []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}}, CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture"}}, Limitations: []string{}}
+				output = domain.ReasoningResult{Summary: "fake app server", Items: []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}}, CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture", KnowledgeRelation: "new_information"}}, Limitations: []string{}}
 			}
 			raw, _ := json.Marshal(output)
+			raw = stripItemSourceKeys(raw)
 			if marker := os.Getenv("AKU_FAKE_CODEX_MALFORMED_ONCE"); marker != "" {
 				if _, err := os.Stat(marker); os.IsNotExist(err) {
 					_ = os.WriteFile(marker, []byte("malformed once"), 0o600)
@@ -227,7 +263,7 @@ func TestCodexAppServerRejectsCompletedTurnWithoutFinalResponse(t *testing.T) {
 	provider := newFakeCodexAppServer(t)
 	defer provider.Close()
 	run, observation := fakeAppServerInput()
-	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !strings.Contains(err.Error(), "no final response") {
+	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !isInferenceFailure(err, inference.FailureCodeProvider, "") {
 		t.Fatalf("empty completed turn error=%v", err)
 	}
 	if provider.transport.SessionActive() {
@@ -248,7 +284,7 @@ func TestCodexAppServerDeadlineDiscardsProcessAndRecovers(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	if _, telemetry, err := provider.Plan(ctx, run, observation, nil); err == nil || !strings.Contains(err.Error(), "deadline exceeded") || telemetry.Status != "failed" {
+	if _, telemetry, err := provider.Plan(ctx, run, observation, nil); err == nil || !isInferenceFailure(err, inference.FailureCodeTimeout, "") || telemetry.Status != "failed" {
 		t.Fatalf("deadline result telemetry=%+v err=%v", telemetry, err)
 	}
 	if _, err := os.Stat(marker); err != nil {
@@ -270,7 +306,7 @@ func TestCodexAppServerMalformedStructuredResultDoesNotPoisonTransport(t *testin
 	provider := newFakeCodexAppServer(t)
 	defer provider.Close()
 	run, observation := fakeAppServerInput()
-	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !strings.Contains(err.Error(), "decode App Server reasoning result") {
+	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !isInferenceFailure(err, inference.FailureCodeValidation, "") {
 		t.Fatalf("malformed structured result error=%v", err)
 	}
 	if !provider.transport.SessionActive() {
@@ -384,6 +420,9 @@ func fakeRPC(value any) {
 
 func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	dump := `C:\WorkspaceOpencode\SharedTemp\akusidecar-sdk-dump`
+	_ = os.RemoveAll(dump)
+	t.Setenv("AKU_FAKE_CODEX_DUMP", dump)
 	marker := filepath.Join(t.TempDir(), "capacity-once")
 	t.Setenv("AKU_FAKE_CODEX_CAPACITY_ONCE", marker)
 	root := filepathRoot(t)

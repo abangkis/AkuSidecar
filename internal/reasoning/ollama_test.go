@@ -209,11 +209,11 @@ func TestOllamaStructuredPlan(t *testing.T) {
 func TestOllamaStructuredAnalyzeBindsEvidenceKeys(t *testing.T) {
 	raw, _ := json.Marshal(domain.ReasoningResult{
 		Summary:              "fake ollama",
-		Items:                []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", Source: domain.SourceX, EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}},
-		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture"}},
+		Items:                []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}},
+		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture", KnowledgeRelation: "new_information"}},
 		Limitations:          []string{},
 	})
-	server := ollamaTestServer(t, "high", string(raw))
+	server := ollamaTestServer(t, "high", conformReasoningFixture(t, raw))
 	provider, err := NewOllama(ollamaTestConfig(t, server))
 	if err != nil {
 		t.Fatal(err)
@@ -328,4 +328,71 @@ func TestEnsureResolvableProfileMigratesLegacyValues(t *testing.T) {
 	if got := EnsureResolvableProfile(Deterministic{}, "anything"); got != "anything" {
 		t.Fatalf("non-catalog provider changed profile to %q", got)
 	}
+}
+
+func conformReasoningFixture(t *testing.T, raw []byte) string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := doc["items"].([]any)
+	for _, value := range items {
+		item, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(item, "source")
+	}
+	conformed, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(conformed)
+}
+
+func TestProbeValidationDetail(t *testing.T) {
+	var capturedSchema map[string]any
+	var capturedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, "{\"capabilities\":[\"completion\",\"thinking\"]}")
+			return
+		}
+		var payload struct {
+			Model  string         `json:"model"`
+			Think  any            `json:"think"`
+			Format map[string]any `json:"format"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		capturedSchema = payload.Format
+		raw, _ := json.Marshal(capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, "{\"message\":{\"content\":%s},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":10,\"eval_count\":5}", raw)
+	}))
+	defer server.Close()
+
+	raw, _ := json.Marshal(domain.ReasoningResult{
+		Summary:              "fake ollama",
+		Items:                []domain.ReasonedItem{{ID: "item-1", WhatChanged: "Changed", WhyItMatters: "Matters", EvidenceKey: "candidate_001", EventKey: "event-one", KnowledgeDelta: "new_event", Author: "author", Confidence: .9, EvidenceState: "primary"}},
+		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture", KnowledgeRelation: "new_information"}},
+		Limitations:          []string{},
+	})
+	capturedBody = conformReasoningFixture(t, raw)
+
+	cfg := ollamaTestConfig(t, server)
+	provider, err := NewOllama(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	run, observation := fakeAppServerInput()
+	_, _, _ = provider.Analyze(context.Background(), run, observation, nil)
+
+	schemaBytes, _ := json.Marshal(capturedSchema)
+	if detail := inference.ValidateJSONSchemaResponse(capturedBody, schemaBytes); detail != nil {
+		t.Fatalf("PROBE validation detail: %v", detail)
+	}
+	t.Log("PROBE: fixture conforms")
 }

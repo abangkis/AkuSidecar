@@ -139,7 +139,7 @@ test binaries finish concurrently.
 ### Inference SDK dependency
 
 `go.mod` requires `github.com/abangkis/ai4u-inference-sdk-go` at the published
-`v0.7.0` tag and `github.com/abangkis/ai4u-common-execution-profile-go` at
+`v0.9.0` tag and `github.com/abangkis/ai4u-common-execution-profile-go` at
 `v0.1.0` on GitHub; there is no local `replace` directive. The exact module
 hash is locked in `go.sum`. Bump the version when a newer SDK release is needed.
 Because the module is private, `GOPRIVATE=github.com/abangkis/*` must be set so

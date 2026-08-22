@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/abangkis/ai4u-common-execution-profile-go v0.1.0
-	github.com/abangkis/ai4u-inference-sdk-go v0.7.0
+	github.com/abangkis/ai4u-inference-sdk-go v0.9.0
 	golang.org/x/sys v0.19.0
 	modernc.org/sqlite v1.29.10
 )
@@ -16,6 +16,8 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
 	modernc.org/libc v1.49.3 // indirect
 	modernc.org/mathutil v1.6.0 // indirect

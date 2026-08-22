@@ -1114,9 +1114,30 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 	}()
 }
 
+func boundedFailureMessage(err error) string {
+	return boundedText(err.Error(), 500)
+}
+
+func boundedText(value string, limit int) string {
+	message := strings.TrimSpace(value)
+	if len(message) > limit {
+		return message[:limit]
+	}
+	return message
+}
+
 func (e *Engine) failRunAfterProcessError(ctx context.Context, runID string, processErr error) error {
 	usageLimit := reasoning.IsUsageLimitError(processErr)
-	failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: processErr.Error(), Retryable: true}
+	failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: boundedFailureMessage(processErr), Retryable: true}
+	if providerFailure, ok := reasoning.ProviderFailureFrom(processErr); ok {
+		failure.Details = map[string]any{"sdkCode": providerFailure.Code, "sdkStage": providerFailure.Stage, "sdkRetry": providerFailure.Retry}
+		if !providerFailure.RetryTransient {
+			failure.Retryable = false
+		}
+		if providerFailure.Message != "" {
+			failure.Message = boundedText(providerFailure.Message+" ("+processErr.Error()+")", 500)
+		}
+	}
 	if usageLimit {
 		failure.Code = "codex_usage_limit"
 		failure.Retryable = false

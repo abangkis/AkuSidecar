@@ -3,6 +3,7 @@ package reasoning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -283,7 +284,27 @@ func codexStableModelID(value string) (string, bool) {
 // different source lane and must be acknowledged by the user before automatic
 // work resumes.
 func IsUsageLimitError(err error) bool {
+	var infErr *inference.Error
+	if errors.As(err, &infErr) {
+		return infErr.Code == inference.FailureCodeQuota
+	}
 	return codexappserver.IsUsageLimitError(err)
+}
+
+type ProviderFailure struct {
+	Code           string
+	Stage          string
+	Retry          string
+	RetryTransient bool
+	Message        string
+}
+
+func ProviderFailureFrom(err error) (ProviderFailure, bool) {
+	var infErr *inference.Error
+	if !errors.As(err, &infErr) {
+		return ProviderFailure{}, false
+	}
+	return ProviderFailure{Code: string(infErr.Code), Stage: string(infErr.Stage), Retry: string(infErr.Retry), RetryTransient: infErr.Retry == inference.RetryTransient, Message: infErr.Message}, true
 }
 
 // startSession launches a fresh managed App Server process and returns its
