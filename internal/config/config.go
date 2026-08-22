@@ -7,10 +7,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -56,6 +58,10 @@ func (d DeploymentConfig) PublicStatus() map[string]string {
 type ServerConfig struct {
 	Host string `json:"host"`
 	Port int    `json:"port"`
+}
+
+func (s ServerConfig) HostPort() string {
+	return net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
 }
 
 type DatabaseConfig struct {

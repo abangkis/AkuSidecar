@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -42,6 +44,10 @@ func main() {
 		fatal(logger, probeErr)
 		fatal(logger, json.NewEncoder(os.Stdout).Encode(probe))
 		return
+	}
+	if version, running := existingInstance(fmt.Sprintf("http://%s/api/health", cfg.Server.HostPort()), time.Second); running {
+		logger.Printf("another AkuSidecar instance version=%s is already serving this address; start cancelled to avoid a second instance", version)
+		os.Exit(5)
 	}
 	settings := domain.DefaultSettings(cfg.Capture.Profile, cfg.Capture.Visibility, cfg.Preference.Mode, cfg.Capture.OpenMissingSource)
 	settings.ReasoningProvider = cfg.Reasoning.ActiveProvider
@@ -178,8 +184,30 @@ func main() {
 	logger.Printf("shutdown completed duration_ms=%d", time.Since(shutdownStarted).Milliseconds())
 }
 
-func runtimeCandidateProbe(configVersion, schemaVersion int) (map[string]any, error) {
-	probe := map[string]any{
+func existingInstance(healthURL string, timeout time.Duration) (string, bool) {
+	client := &http.Client{Timeout: timeout}
+	response, err := client.Get(healthURL)
+	if err != nil {
+		return "", false
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", false
+	}
+	var payload struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&payload); err != nil {
+		return "", false
+	}
+	if payload.Status != "ok" {
+		return "", false
+	}
+	return payload.Version, true
+}
+
+func runtimeCandidateProbe(configVersion, schemaVersion int) (map[string]any, error) {	probe := map[string]any{
 		"status":                "ok",
 		"version":               domain.ApplicationVersion,
 		"runtime":               "go",

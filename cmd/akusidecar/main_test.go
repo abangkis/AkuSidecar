@@ -1,12 +1,57 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
+
+func TestExistingInstanceDetectsHealthySidecar(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/health" {
+			t.Fatalf("unexpected probe path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok","version":"0.8.0"}`))
+	}))
+	defer server.Close()
+	version, running := existingInstance(server.URL+"/api/health", time.Second)
+	if !running || version != "0.8.0" {
+		t.Fatalf("existing instance not detected: running=%v version=%q", running, version)
+	}
+}
+
+func TestExistingInstanceIgnoresUnhealthyResponses(t *testing.T) {
+	for name, handler := range map[string]http.HandlerFunc{
+		"not ok status": func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`{"status":"degraded","version":"0.8.0"}`))
+		},
+		"error payload": func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		},
+		"malformed json": func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`not-json`))
+		},
+	} {
+		server := httptest.NewServer(handler)
+		if _, running := existingInstance(server.URL+"/api/health", time.Second); running {
+			defer server.Close()
+			t.Fatalf("%s must not count as an existing instance", name)
+		}
+		server.Close()
+	}
+}
+
+func TestExistingInstanceTreatsUnreachableAsAbsent(t *testing.T) {
+	if _, running := existingInstance("http://127.0.0.1:1/api/health", 250*time.Millisecond); running {
+		t.Fatal("unreachable endpoint must not count as an existing instance")
+	}
+}
 
 func TestRuntimeCandidateProbeMatchesPublishedUpdateMetadata(t *testing.T) {
 	probe, err := runtimeCandidateProbe(1, 2)
