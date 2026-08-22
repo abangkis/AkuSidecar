@@ -94,6 +94,27 @@ An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
 timeout, validation errors, and hidden model fallback are not retryable.
 
+## Optional pinned-Chromium app shell
+
+`--app-shell` opens AkuSidecar's UI inside a locally pinned Chromium window in
+app mode, turning the loopback server into a desktop-like application without
+changing the acquisition or reasoning architecture. Discovery checks the
+explicit `--chromium-path`, `AKU_CHROMIUM_PATH`, `PATH`, the sidecar-relative
+`runtime/chromium/bin` directory, and known installed locations, in that
+order, and accepts a candidate only after its `--version` capability probe
+succeeds; `--discover-chromium` exposes the same JSON probe to launchers.
+Closing the window requests a graceful Sidecar shutdown, and on Windows the
+window belongs to its own Job Object so Sidecar exit also closes descendant
+renderer processes. `--bridge-extension-path` loads an unpacked AkuBridge
+directory into the window through `--load-extension`; the browser profile is
+separate from any user Chrome profile and persists under
+`runtime/app-profile`. `scripts/fetch-chromium.ps1` downloads a pinned
+Chrome-for-Testing build into `runtime/chromium` and records its version,
+source URL, and SHA-256 in `pin.json`; the pinned engine is a local runtime
+artifact and is never committed. Engine freshness is the application's own
+responsibility: the recorded pin is the patch channel, and a stale pin is a
+product defect rather than an operating-system concern.
+
 ## Build and test
 
 On this Windows workspace, keep Go caches outside the module so antivirus and
@@ -194,6 +215,10 @@ Runtime flags may override only process-local concerns:
 - `--database`
 - `--provider`
 - `--codex-path`
+- `--chromium-path`
+- `--bridge-extension-path`
+- `--app-shell`
+- `--discover-chromium`
 - `--port`
 - `--dev`
 - `--bridge-extension-origin`

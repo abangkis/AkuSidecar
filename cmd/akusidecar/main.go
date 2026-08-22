@@ -8,10 +8,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
+	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -28,6 +31,9 @@ func main() {
 	options := config.ParseFlags()
 	if options.DiscoverCodex {
 		os.Exit(discoverCodex(options))
+	}
+	if options.DiscoverChromium {
+		os.Exit(discoverChromium(options))
 	}
 	cfg, err := config.Load(options)
 	fatal(logger, err)
@@ -142,15 +148,22 @@ func main() {
 	if resumed > 0 {
 		logger.Printf("resumed_reasoning_runs=%d from_durable_capture=true", resumed)
 	}
+	var shell *appshell.Window
+	if options.AppShell {
+		shell = launchAppShell(logger, options, cfg, address.String())
+	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-signals:
 	case <-server.ShutdownRequested():
+	case <-shell.Done():
+		logger.Printf("app shell window closed")
 	}
 	shutdownStarted := time.Now()
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()
+	shell.Terminate()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	if err := server.Stop(ctx); err != nil {
 		logger.Printf("HTTP shutdown degraded: %v", err)
@@ -190,6 +203,48 @@ func discoverCodex(options config.Options) int {
 		return 2
 	}
 	return 0
+}
+
+func discoverChromium(options config.Options) int {
+	result, err := appshell.Discover(context.Background(), options.ChromiumPath)
+	if encodeErr := json.NewEncoder(os.Stdout).Encode(result); encodeErr != nil {
+		return 3
+	}
+	if err != nil {
+		return 2
+	}
+	return 0
+}
+
+func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string) *appshell.Window {
+	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
+	cancel()
+	if err != nil {
+		var discoveryErr *appshell.DiscoveryError
+		if errors.As(err, &discoveryErr) {
+			for index, attempt := range discoveryErr.Result.Attempts {
+				logger.Printf("Chromium discovery attempt=%d source=%s path=%q reason=%s", index+1, attempt.Source, attempt.Path, attempt.Reason)
+			}
+		}
+		logger.Fatalf("startup failed: resolve app shell Chromium: %v", err)
+	}
+	target := address
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	if !strings.HasSuffix(target, "/") {
+		target += "/"
+	}
+	window, err := appshell.Launch(context.Background(), appshell.LaunchOptions{
+		Executable:    result.Executable,
+		ExtensionPath: options.BridgeExtensionPath,
+		UserDataDir:   filepath.Join(cfg.Root, "runtime", "app-profile"),
+		URL:           target,
+	})
+	fatal(logger, err)
+	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
+	return window
 }
 
 func fatal(logger *log.Logger, err error) {

@@ -371,6 +371,10 @@ type Options struct {
 	Port                        int
 	Dev                         bool
 	DiscoverCodex               bool
+	DiscoverChromium            bool
+	AppShell                    bool
+	ChromiumPath                string
+	BridgeExtensionPath         string
 	RuntimeControlToken         string
 	RuntimeCandidateProbe       bool
 	RuntimeCandidateProbeSchema int
@@ -386,6 +390,10 @@ func ParseFlags() Options {
 	flag.IntVar(&options.Port, "port", 0, "override loopback HTTP port for this process")
 	flag.BoolVar(&options.Dev, "dev", false, "enable development asset and reload behavior")
 	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
+	flag.BoolVar(&options.DiscoverChromium, "discover-chromium", false, "discover and validate a pinned-Chromium executable, print JSON, and exit")
+	flag.BoolVar(&options.AppShell, "app-shell", false, "open the embedded pinned-Chromium application window after startup")
+	flag.StringVar(&options.ChromiumPath, "chromium-path", "", "override pinned-Chromium executable for this process")
+	flag.StringVar(&options.BridgeExtensionPath, "bridge-extension-path", "", "unpacked AkuBridge extension directory loaded into the app shell")
 	flag.StringVar(&options.RuntimeControlToken, "runtime-control-token", "", "instance-scoped token used by the signed runtime host")
 	flag.BoolVar(&options.RuntimeCandidateProbe, "runtime-candidate-probe", false, "validate the packaged runtime contract and exit")
 	flag.IntVar(&options.RuntimeCandidateProbeSchema, "runtime-candidate-probe-schema", 1, "candidate probe response schema (1=legacy, 2=current)")
