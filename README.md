@@ -113,7 +113,10 @@ Chrome-for-Testing build into `runtime/chromium` and records its version,
 source URL, and SHA-256 in `pin.json`; the pinned engine is a local runtime
 artifact and is never committed. Engine freshness is the application's own
 responsibility: the recorded pin is the patch channel, and a stale pin is a
-product defect rather than an operating-system concern.
+product defect rather than an operating-system concern. An automatic engine
+patch path that swaps `runtime/chromium` independently of application releases
+is a deliberate nice-to-have and is deferred until after the first packaged
+app-shell release.
 
 ## Build and test
 
