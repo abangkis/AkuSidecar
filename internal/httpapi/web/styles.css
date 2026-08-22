@@ -213,7 +213,7 @@ h3 { letter-spacing: -0.02em; }
 }
 .timeline-source-icon { font-weight: 800; }
 .ai-origin-badge { display: inline-flex; max-width: 100%; overflow: hidden; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid rgba(246, 200, 107, 0.42); border-radius: 999px; background: rgba(246, 200, 107, 0.07); box-shadow: 0 0 0 1px rgba(255,255,255,0.018) inset; color: var(--amber); font-size: 0.7rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, color 150ms ease, box-shadow 150ms ease; }
-.ai-origin-badge::after { flex: 0 0 auto; color: currentColor; font-size: 0.86rem; line-height: 1; content: "›"; opacity: 0.72; transition: transform 150ms ease, opacity 150ms ease; }
+.ai-origin-badge::after { flex: 0 0 auto; color: currentColor; font-size: 0.86rem; line-height: 1; content: "â€º"; opacity: 0.72; transition: transform 150ms ease, opacity 150ms ease; }
 .ai-origin-badge:hover, .ai-origin-badge:focus-visible, .ai-origin-badge[aria-expanded="true"] { border-color: rgba(183, 242, 108, 0.52); background: rgba(183, 242, 108, 0.09); box-shadow: 0 0 0 2px rgba(183, 242, 108, 0.055); color: var(--accent); }
 .ai-origin-badge[aria-expanded="true"]::after { transform: rotate(90deg); opacity: 1; }
 .ai-origin-deep { border-color: rgba(154, 180, 255, 0.48); background: rgba(154, 180, 255, 0.08); color: #b9c9ff; }
@@ -715,10 +715,3 @@ h3 { letter-spacing: -0.02em; }
 @media (prefers-reduced-motion: reduce) {
   .back-to-top, .timeline-side-pane, .timeline-side-pane-toggle { transition: none; }
 }
-.calibration-results { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-.calibration-row { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--muted); flex-wrap: wrap; }
-.calibration-row strong { color: var(--text); }
-.calibration-row time { margin-left: auto; }
-.calibration-status { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
-.calibration-ok { background: #4caf7d; }
-.calibration-bad { background: #d06a5a; }

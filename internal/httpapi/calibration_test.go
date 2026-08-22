@@ -57,6 +57,47 @@ func TestCalibrationLedgerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCalibrationEndpointsHiddenWithoutDevFlag(t *testing.T) {
+	settings := domain.DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{
+		Server:     config.ServerConfig{Host: "127.0.0.1", Port: 0},
+		Capture:    config.CaptureConfig{Profile: "standard", Visibility: "quiet", OpenMissingSource: true, MaxAcquisitionRounds: 2},
+		Preference: config.PreferenceConfig{Mode: "promote_unused_budget"},
+	}
+	logger := log.New(io.Discard, "", 0)
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, logger)
+	server, err := New(cfg, state, runtime, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, err := server.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Stop(context.Background())
+	client := http.Client{Timeout: 5 * time.Second}
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		request, err := http.NewRequest(method, "http://"+address.String()+"/api/diagnostics/calibration", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s without --dev must be not found, got %d", method, response.StatusCode)
+		}
+	}
+}
+
 func TestCalibrationEndpointsRoundTrip(t *testing.T) {
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -75,8 +116,9 @@ func TestCalibrationEndpointsRoundTrip(t *testing.T) {
 	}
 	defer state.Close()
 	cfg := config.Config{
-		Root:       t.TempDir(),
-		Server:     config.ServerConfig{Host: "127.0.0.1", Port: 0},
+		Root:      t.TempDir(),
+		Dev:       true,
+		Server:    config.ServerConfig{Host: "127.0.0.1", Port: 0},
 		Capture:    config.CaptureConfig{Profile: "standard", Visibility: "quiet", OpenMissingSource: true, MaxAcquisitionRounds: 2},
 		Preference: config.PreferenceConfig{Mode: "promote_unused_budget"},
 		Reasoning: config.ReasoningConfig{

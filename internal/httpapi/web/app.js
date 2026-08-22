@@ -235,7 +235,6 @@ for (const button of document.querySelectorAll("[data-calibration-issue]")) {
 $("#open-reset-learning").addEventListener("click", () => openResetDialog("learning"));
 $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
   $("#export-diagnostics").addEventListener("click", exportDiagnostics);
-  $("#run-calibration").addEventListener("click", runCalibration);
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
 $("#reset-confirmation-submit").addEventListener("click", submitReset);
@@ -451,7 +450,6 @@ function setView(view) {
     if (state.inboxSubView === "usage") loadAggregateModelUsage();
     else loadInbox();
   }
-  if (settings) refreshCalibrationReports();
   scheduleBackToTop();
 }
 
@@ -1355,56 +1353,6 @@ function exportDiagnostics() {
 function syncResetConfirmation() {
   const phrase = $("#reset-confirmation-phrase").textContent;
   $("#reset-confirmation-submit").disabled = $("#reset-confirmation-input").value !== phrase;
-}
-
-function escapeCalibrationText(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-}
-
-function renderCalibrationReports(reports) {
-  const host = $("#calibration-results");
-  if (!reports || !reports.length) {
-    host.hidden = true;
-    host.innerHTML = "";
-    return;
-  }
-  const rows = reports.map((report) => {
-    const when = report.timestamp ? new Date(report.timestamp).toLocaleString() : "unknown time";
-    const status = report.result && report.result.success ? "success" : (report.error ? `failed · ${report.error.code || "error"}` : "failed");
-    const tier = report.capability ? `${report.capability.reasoningTier || "?"} · ${report.capability.outputEnforcement || "?"}` : "";
-    return `<div class="calibration-row"><span class="calibration-status calibration-${status.startsWith("success") ? "ok" : "bad"}"></span><strong>${escapeCalibrationText(report.modelId || "?")}</strong><span>${escapeCalibrationText(tier)}</span><span>${escapeCalibrationText(status)}</span><time>${escapeCalibrationText(when)}</time></div>`;
-  });
-  host.innerHTML = rows.join("");
-  host.hidden = false;
-}
-
-function refreshCalibrationReports() {
-  api("/api/diagnostics/calibration")
-    .then((payload) => renderCalibrationReports(payload.reports))
-    .catch(() => {});
-}
-
-function runCalibration() {
-  const button = $("#run-calibration");
-  const originalText = button.textContent;
-  button.disabled = true;
-  button.textContent = "Calibrating…";
-  api("/api/diagnostics/calibration", { method: "POST" })
-    .then((payload) => {
-      if (payload.error) {
-        $("#runtime-settings-status").textContent = "Calibration completed with a provider failure: " + payload.error;
-      } else {
-        $("#runtime-settings-status").textContent = "Calibration succeeded for " + (payload.report?.modelId || "the active model") + ".";
-      }
-      refreshCalibrationReports();
-    })
-    .catch((err) => {
-      $("#runtime-settings-status").textContent = "Calibration failed: " + (err.message || err);
-    })
-    .finally(() => {
-      button.disabled = false;
-      button.textContent = originalText;
-    });
 }
 
 async function submitReset() {

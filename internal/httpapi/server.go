@@ -146,7 +146,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			"ready": ready, "reason": reason, "instanceEpoch": s.engine.Epoch(),
 			"controlAvailable": s.config.RuntimeControlToken != "",
 		})
-	case r.Method == http.MethodPost && p == "/api/diagnostics/calibration":
+	case s.config.Dev && r.Method == http.MethodPost && p == "/api/diagnostics/calibration":
 		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
 		if err != nil {
 			return err
@@ -166,7 +166,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			payload["error"] = calErr.Error()
 		}
 		return writeJSON(w, http.StatusOK, payload)
-	case r.Method == http.MethodGet && p == "/api/diagnostics/calibration":
+	case s.config.Dev && r.Method == http.MethodGet && p == "/api/diagnostics/calibration":
 		reports, err := readCalibrationReports(s.calibrationLedgerPath(), calibrationLedgerLimit)
 		if err != nil {
 			return apiError{Status: http.StatusInternalServerError, Code: "calibration_ledger_unreadable", Message: err.Error()}

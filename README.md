@@ -369,8 +369,6 @@ corrected instead of retaining authority indefinitely.
 - `POST /api/sessions/{id}/cancel`
 - `GET /api/inbox`
 - `GET /api/runs/{id}`
-- `POST /api/diagnostics/calibration`
-- `GET /api/diagnostics/calibration`
 - `GET /api/timeline`
 - `GET /api/auto-update/status`
 - `POST /api/auto-update/budget/reset`
@@ -402,6 +400,13 @@ corrected instead of retaining authority indefinitely.
 All Bridge heartbeat, capture-command, media-recapture, passive-media-evidence,
 and cooperative-action routes require both the durable Bridge token and
 `X-Aku-Bridge-Contract: aku-browser.bridge.v2`.
+
+Development-only diagnostics: `POST/GET /api/diagnostics/calibration` run one
+bounded live capability check against the configured evaluation model and
+append a content-safe observation to `runtime/calibration-results.jsonl`.
+They exist only while the `--dev` flag is active, are never exposed in
+production builds or product UI, and are part of the development calibration
+workflow rather than a user-facing feature.
 
 Bridge usability is negotiated independently from product release numbers.
 Heartbeat protocol major versions must match, the Bridge minor version must
