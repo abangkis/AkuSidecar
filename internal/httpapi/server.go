@@ -154,7 +154,21 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if !ready {
 			return apiError{Status: http.StatusConflict, Code: "runtime_busy", Message: "Calibration needs an idle runtime.", Details: map[string]any{"reason": reason}}
 		}
-		report, calErr := reasoning.RunCalibration(ctx, s.config)
+		var body struct {
+			Provider string `json:"provider"`
+		}
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+				return badRequest("calibration request body must be valid JSON: " + err.Error())
+			}
+		}
+		cfg := s.config
+		if providerName := strings.TrimSpace(body.Provider); providerName != "" {
+			if err := cfg.Reasoning.Select(providerName); err != nil {
+				return apiError{Status: http.StatusBadRequest, Code: "unknown_provider", Message: err.Error()}
+			}
+		}
+		report, calErr := reasoning.RunCalibration(ctx, cfg)
 		if report.ModelID == "" && calErr != nil {
 			return apiError{Status: http.StatusInternalServerError, Code: "calibration_failed", Message: calErr.Error()}
 		}
