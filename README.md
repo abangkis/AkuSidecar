@@ -307,6 +307,16 @@ limit creates a durable scheduler stopper before another tick is admitted. The
 Timeline and Settings expose the pause, and automatic work resumes only after
 the user explicitly confirms that Codex usage has been restored.
 
+Measured cost context from the development calibration harness: every Codex
+App Server invocation carries a fixed context baseline of roughly 12-13k input
+tokens regardless of payload size (the trivial synthetic calibration request
+billed 12,657 input tokens), while the Ollama adapters billed fewer than 40
+input tokens for the identical task. A single check that fans out across
+planning, per-source evaluation, semantic resolution, and deep detection can
+therefore spend several dozen thousand input tokens on context overhead alone,
+which is a meaningful share of the fresh daily boundary and the strongest
+economic argument for keeping routine automatic work on local providers.
+
 Adaptive supply telemetry classifies every completed user or scheduler update:
 an update with retained items is productive, an all-source successful update
 with no retained items is valid-empty, and a timeout, capacity, Bridge, or
