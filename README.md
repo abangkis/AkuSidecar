@@ -369,6 +369,8 @@ corrected instead of retaining authority indefinitely.
 - `POST /api/sessions/{id}/cancel`
 - `GET /api/inbox`
 - `GET /api/runs/{id}`
+- `POST /api/diagnostics/calibration`
+- `GET /api/diagnostics/calibration`
 - `GET /api/timeline`
 - `GET /api/auto-update/status`
 - `POST /api/auto-update/budget/reset`

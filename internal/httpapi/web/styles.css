@@ -715,3 +715,10 @@ h3 { letter-spacing: -0.02em; }
 @media (prefers-reduced-motion: reduce) {
   .back-to-top, .timeline-side-pane, .timeline-side-pane-toggle { transition: none; }
 }
+.calibration-results { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.calibration-row { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--muted); flex-wrap: wrap; }
+.calibration-row strong { color: var(--text); }
+.calibration-row time { margin-left: auto; }
+.calibration-status { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.calibration-ok { background: #4caf7d; }
+.calibration-bad { background: #d06a5a; }

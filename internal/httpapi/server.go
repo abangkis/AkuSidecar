@@ -23,6 +23,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
+	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
@@ -145,6 +146,32 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			"ready": ready, "reason": reason, "instanceEpoch": s.engine.Epoch(),
 			"controlAvailable": s.config.RuntimeControlToken != "",
 		})
+	case r.Method == http.MethodPost && p == "/api/diagnostics/calibration":
+		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			return apiError{Status: http.StatusConflict, Code: "runtime_busy", Message: "Calibration needs an idle runtime.", Details: map[string]any{"reason": reason}}
+		}
+		report, calErr := reasoning.RunCalibration(ctx, s.config)
+		if report.ModelID == "" && calErr != nil {
+			return apiError{Status: http.StatusInternalServerError, Code: "calibration_failed", Message: calErr.Error()}
+		}
+		if appendErr := appendCalibrationReport(s.calibrationLedgerPath(), report); appendErr != nil {
+			s.logger.Printf("calibration ledger append failed: %v", appendErr)
+		}
+		payload := map[string]any{"report": report}
+		if calErr != nil {
+			payload["error"] = calErr.Error()
+		}
+		return writeJSON(w, http.StatusOK, payload)
+	case r.Method == http.MethodGet && p == "/api/diagnostics/calibration":
+		reports, err := readCalibrationReports(s.calibrationLedgerPath(), calibrationLedgerLimit)
+		if err != nil {
+			return apiError{Status: http.StatusInternalServerError, Code: "calibration_ledger_unreadable", Message: err.Error()}
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
 	case r.Method == http.MethodPost && p == "/api/runtime/shutdown-if-idle":
 		if !validRuntimeControlToken(s.config.RuntimeControlToken, r.Header.Get("X-Aku-Runtime-Control-Token")) {
 			return apiError{Status: http.StatusForbidden, Code: "runtime_control_denied", Message: "Runtime control authorization failed."}
