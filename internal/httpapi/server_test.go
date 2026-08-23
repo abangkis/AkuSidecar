@@ -65,6 +65,24 @@ func TestSettingsSourcesExposeExtensionSetupCTA(t *testing.T) {
 	}
 }
 
+func TestEmbeddedInstalledAppBridgeRecoveryContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/app.js":                           {"scheduleInstalledAppBridgeRecovery", "cancelInstalledAppBridgeRecovery", "AKU_BROWSER_BRIDGE_READY"},
+		"web/installed-app-bridge-recovery.js": {"production-installed-app", "akuBrowserInstalledAppBridgeRecoveryV1", "shouldScheduleInstalledAppBridgeRecovery"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(contents)
+		for _, marker := range markers {
+			if !strings.Contains(text, marker) {
+				t.Fatalf("%s is missing installed-app Bridge recovery marker %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js":     {`source === "instagram"`, `glyph.className = "instagram-source-glyph"`, `aria-hidden`},
