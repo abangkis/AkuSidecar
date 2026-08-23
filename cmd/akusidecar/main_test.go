@@ -3,13 +3,31 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
+
+func TestBrowserProfilePathPrefersExplicitInstalledAppPath(t *testing.T) {
+	cfg := config.Config{Root: `C:\Program Files\AkuBrowser\runtime\versions\1.2.3`}
+	want := `C:\Users\tester\AppData\Local\AkuBrowser\browser-profile`
+	if got := browserProfilePath(config.Options{BrowserProfilePath: "  " + want + "  "}, cfg); got != want {
+		t.Fatalf("browserProfilePath=%q want=%q", got, want)
+	}
+}
+
+func TestBrowserProfilePathKeepsLegacyFallback(t *testing.T) {
+	cfg := config.Config{Root: t.TempDir()}
+	want := filepath.Join(cfg.Root, "runtime", "app-profile")
+	if got := browserProfilePath(config.Options{}, cfg); got != want {
+		t.Fatalf("browserProfilePath=%q want=%q", got, want)
+	}
+}
 
 func TestExistingInstanceDetectsHealthySidecar(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -268,12 +268,19 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	window, err := appshell.Launch(context.Background(), appshell.LaunchOptions{
 		Executable:    result.Executable,
 		ExtensionPath: options.BridgeExtensionPath,
-		UserDataDir:   filepath.Join(cfg.Root, "runtime", "app-profile"),
+		UserDataDir:   browserProfilePath(options, cfg),
 		URL:           target,
 	})
 	fatal(logger, err)
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
 	return window
+}
+
+func browserProfilePath(options config.Options, cfg config.Config) string {
+	if profilePath := strings.TrimSpace(options.BrowserProfilePath); profilePath != "" {
+		return profilePath
+	}
+	return filepath.Join(cfg.Root, "runtime", "app-profile")
 }
 
 func fatal(logger *log.Logger, err error) {
