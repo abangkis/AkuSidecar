@@ -382,6 +382,7 @@ function renderDeployment(deployment) {
     acceptance: "Stable candidate · 3B",
     "production-store": "Production · Web Store",
     "production-offline": "Production · Offline bundle",
+    "production-installed-app": "Production · Installed app",
     unknown: "Mode unknown",
   };
   const suffix = installKind && !["workspace", "installed"].includes(installKind)

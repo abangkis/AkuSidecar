@@ -231,6 +231,7 @@ func TestDeploymentIdentityCombinations(t *testing.T) {
 		{Mode: "acceptance", RuntimeInstallKind: "installed", BridgeIdentityProfile: "acceptance", ReleaseVersion: "0.8.0"},
 		{Mode: "production-store", RuntimeInstallKind: "installed", BridgeIdentityProfile: "production-store", ReleaseVersion: "0.8.0"},
 		{Mode: "production-offline", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-offline", ReleaseVersion: "0.8.0"},
+		{Mode: "production-installed-app", RuntimeInstallKind: "installed", BridgeIdentityProfile: "production-app", ReleaseVersion: "0.8.0"},
 	}
 	for _, deployment := range valid {
 		if err := deployment.Validate(); err != nil {
@@ -242,6 +243,8 @@ func TestDeploymentIdentityCombinations(t *testing.T) {
 		{Mode: "acceptance", RuntimeInstallKind: "installed", BridgeIdentityProfile: "development", ReleaseVersion: "0.8.0"},
 		{Mode: "production-store", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-store", ReleaseVersion: "0.8.0"},
 		{Mode: "production-offline", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-offline"},
+		{Mode: "production-installed-app", RuntimeInstallKind: "portable", BridgeIdentityProfile: "production-app", ReleaseVersion: "0.8.0"},
+		{Mode: "production-installed-app", RuntimeInstallKind: "installed", BridgeIdentityProfile: "production-offline", ReleaseVersion: "0.8.0"},
 	}
 	for _, deployment := range invalid {
 		if err := deployment.Validate(); err == nil {

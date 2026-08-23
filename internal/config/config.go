@@ -536,10 +536,11 @@ func (d DeploymentConfig) Validate() error {
 		profile string
 		kinds   map[string]bool
 	}{
-		"development":        {profile: "development", kinds: map[string]bool{"workspace": true}},
-		"acceptance":         {profile: "acceptance", kinds: map[string]bool{"installed": true}},
-		"production-store":   {profile: "production-store", kinds: map[string]bool{"installed": true}},
-		"production-offline": {profile: "production-offline", kinds: map[string]bool{"portable": true, "installed": true}},
+		"development":              {profile: "development", kinds: map[string]bool{"workspace": true}},
+		"acceptance":               {profile: "acceptance", kinds: map[string]bool{"installed": true}},
+		"production-store":         {profile: "production-store", kinds: map[string]bool{"installed": true}},
+		"production-offline":       {profile: "production-offline", kinds: map[string]bool{"portable": true, "installed": true}},
+		"production-installed-app": {profile: "production-app", kinds: map[string]bool{"installed": true}},
 	}
 	rule, ok := allowed[d.Mode]
 	if !ok {
