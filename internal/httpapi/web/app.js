@@ -8,14 +8,6 @@ import {
   timelineCarouselDotIndexes,
 } from "./timeline-media-carousel.js";
 import { classifyPostFreshness } from "./post-freshness.js";
-import {
-  INSTALLED_APP_BRIDGE_RECOVERY_GRACE_MS,
-  clearInstalledAppBridgeRecoveryAttempt,
-  hasInstalledAppBridgeRecoveryAttempt,
-  recordInstalledAppBridgeRecoveryAttempt,
-  shouldClearInstalledAppBridgeRecoveryAfterHeartbeat,
-  shouldScheduleInstalledAppBridgeRecovery,
-} from "./installed-app-bridge-recovery.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -56,7 +48,6 @@ const state = {
   bootstrapAttempt: 0,
   bootstrapController: null,
   bootstrapRetryTimer: null,
-  installedAppBridgeRecoveryTimer: null,
   session: null,
   dispatchKey: null,
   dispatchRetryAfter: new Map(),
@@ -124,9 +115,6 @@ window.addEventListener("message", (event) => {
       method: "POST",
       body: { capabilities },
     }).then((response) => {
-      if (shouldClearInstalledAppBridgeRecoveryAfterHeartbeat(response)) {
-        cancelInstalledAppBridgeRecovery();
-      }
       const { bridge } = response;
       sessionStorage.removeItem(BRIDGE_CONTEXT_RECOVERY_KEY);
       sessionStorage.removeItem(BRIDGE_TOKEN_RECOVERY_KEY);
@@ -164,32 +152,6 @@ function recoverInvalidatedBridgeContext(message) {
   state.settingsUnloadBypass = true;
   location.reload();
   return true;
-}
-
-function cancelInstalledAppBridgeRecovery() {
-  clearTimeout(state.installedAppBridgeRecoveryTimer);
-  state.installedAppBridgeRecoveryTimer = null;
-  clearInstalledAppBridgeRecoveryAttempt(sessionStorage);
-}
-
-function scheduleInstalledAppBridgeRecovery(bootstrapState) {
-  clearTimeout(state.installedAppBridgeRecoveryTimer);
-  state.installedAppBridgeRecoveryTimer = null;
-  if (!shouldScheduleInstalledAppBridgeRecovery(
-    bootstrapState,
-    hasInstalledAppBridgeRecoveryAttempt(sessionStorage),
-  )) return;
-
-  state.installedAppBridgeRecoveryTimer = setTimeout(() => {
-    state.installedAppBridgeRecoveryTimer = null;
-    if (!shouldScheduleInstalledAppBridgeRecovery(
-      state.bootstrap,
-      hasInstalledAppBridgeRecoveryAttempt(sessionStorage),
-    )) return;
-    recordInstalledAppBridgeRecoveryAttempt(sessionStorage);
-    state.settingsUnloadBypass = true;
-    location.reload();
-  }, INSTALLED_APP_BRIDGE_RECOVERY_GRACE_MS);
 }
 
 function recoverInvalidBridgeToken(code) {
@@ -382,7 +344,6 @@ async function bootstrap(options = {}) {
     setPill("#sidecar-status", "AkuSidecar ready", "ok");
     setPill("#reasoning-status", state.bootstrap.provider, "neutral");
     renderBridge(state.bootstrap.bridge);
-    scheduleInstalledAppBridgeRecovery(state.bootstrap);
     renderSettings(state.bootstrap.settings);
     state.timelineBatches = state.bootstrap.timelineBatches ?? [];
     renderTimeline(state.bootstrap.timeline ?? [], state.bootstrap.latestCheck ?? null, state.timelineBatches);
