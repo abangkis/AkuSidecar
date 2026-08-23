@@ -150,6 +150,17 @@ window.addEventListener("message", (event) => {
     renderSourceSessionReadiness();
     window.setTimeout(() => requestSourceSessionReadiness(), 2_000);
   }
+  if (event.data.type === "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED") {
+    const source = sourceDescriptor(event.data.source);
+    if (source) setSourceSessionStatus(source.id, {
+      source: source.id,
+      state: "permission_required",
+      observedAt: new Date().toISOString(),
+      tabCount: 1,
+      detail: `Grant ${source.label} access in the permission tab, then AkuBrowser will continue to the source.`,
+    });
+    renderSourceSessionReadiness();
+  }
   if (event.data.type === "AKU_BROWSER_SOURCE_OPEN_FAILED") {
     renderSourceSessionError(event.data.message, event.data.source);
   }
@@ -580,6 +591,7 @@ function renderSourceSessionReadiness() {
     const labels = {
       ready: "Session: feed available",
       login_required: "Session: sign-in required",
+      permission_required: "Access: permission required",
       not_observed: "Session: source not open",
       loading: "Session: loading",
       unavailable: "Session: temporarily unavailable",
@@ -588,8 +600,10 @@ function renderSourceSessionReadiness() {
     status.textContent = labels[stateValue] ?? labels.unknown;
     status.title = observation?.detail || "";
     if (stateValue === "ready") status.classList.add("source-session-ready");
-    if (stateValue === "login_required") status.classList.add("source-session-warning");
-    button.textContent = stateValue === "login_required" ? "Sign in" : "Open source";
+    if (stateValue === "login_required" || stateValue === "permission_required") status.classList.add("source-session-warning");
+    button.textContent = stateValue === "permission_required"
+      ? "Grant access"
+      : stateValue === "login_required" ? "Sign in" : "Open source";
     button.disabled = !state.bootstrap?.bridge?.compatible;
   }
 }
