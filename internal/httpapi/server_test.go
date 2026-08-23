@@ -93,6 +93,18 @@ func TestSettingsSourcesExposeSessionReadinessAndSignInCTA(t *testing.T) {
 	}
 }
 
+func TestEmbeddedAppDoesNotEscapeTemplateLiteralDelimiters(t *testing.T) {
+	contents, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []string{"\\`", "\\${"} {
+		if strings.Contains(string(contents), invalid) {
+			t.Fatalf("web/app.js contains invalid escaped template syntax %q", invalid)
+		}
+	}
+}
+
 func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js":     {`source === "instagram"`, `glyph.className = "instagram-source-glyph"`, `aria-hidden`},

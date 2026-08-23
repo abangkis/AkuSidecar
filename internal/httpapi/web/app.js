@@ -566,8 +566,8 @@ function renderSourceSessionError(message, source = null) {
 function renderSourceSessionReadiness() {
   for (const descriptor of sourceDescriptors()) {
     const observation = state.sourceSessionReadiness?.[descriptor.id] ?? null;
-    const status = document.querySelector(\`[data-source-session-readiness="\${descriptor.id}"]\`);
-    const button = document.querySelector(\`[data-source-open="\${descriptor.id}"]\`);
+    const status = document.querySelector(`[data-source-session-readiness="${descriptor.id}"]`);
+    const button = document.querySelector(`[data-source-open="${descriptor.id}"]`);
     if (!status || !button) continue;
     status.className = "source-session-status";
     if (state.sourceSessionProbeInFlight && !observation) {
