@@ -94,7 +94,7 @@ An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
 timeout, validation errors, and hidden model fallback are not retryable.
 
-## Optional pinned-Chromium app shell
+## Optional Chromium app shell
 
 `--app-shell` opens AkuSidecar's UI inside a locally pinned Chromium window in
 app mode, turning the loopback server into a desktop-like application without
@@ -117,6 +117,19 @@ product defect rather than an operating-system concern. An automatic engine
 patch path that swaps `runtime/chromium` independently of application releases
 is a deliberate nice-to-have and is deferred until after the first packaged
 app-shell release.
+
+The AkuSupervisor development bootstrap deliberately overrides the executable
+with the user's installed Google Chrome Stable and stores its isolated profile
+under `runtime/dev-chrome-profile`. This development-only lane supports normal
+interactive Google sign-in without reading or owning the user's personal
+Chrome profile. Since regular Chrome 137+ ignores `--load-extension`, AkuBridge
+must be loaded unpacked once from `chrome://extensions` in that dedicated
+profile. Automated acceptance continues to use the pinned Chrome for Testing
+runtime with a fresh profile.
+
+Run `..\AkuSupervisor\scripts\setup-akubrowser-dev-profile.ps1` once to open
+the correct dedicated profile and extension-management page before starting
+the normal Supervisor development stack.
 
 ## Build and test
 
