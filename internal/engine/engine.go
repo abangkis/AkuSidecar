@@ -1126,11 +1126,34 @@ func boundedText(value string, limit int) string {
 	return message
 }
 
+func providerFailureDetails(failure reasoning.ProviderFailure) map[string]any {
+	details := map[string]any{"sdkCode": failure.Code, "sdkStage": failure.Stage, "sdkRetry": failure.Retry}
+	if failure.Category != "" {
+		details["sdkCategory"] = failure.Category
+	}
+	if failure.Reason != "" {
+		details["sdkReason"] = failure.Reason
+	}
+	if failure.ProviderStatus != 0 {
+		details["sdkProviderStatus"] = failure.ProviderStatus
+	}
+	if failure.Operation != "" {
+		details["sdkOperation"] = failure.Operation
+	}
+	if failure.RPCCode != 0 {
+		details["sdkRPCCode"] = failure.RPCCode
+	}
+	if failure.ProcessExitCode != 0 {
+		details["sdkProcessExitCode"] = failure.ProcessExitCode
+	}
+	return details
+}
+
 func (e *Engine) failRunAfterProcessError(ctx context.Context, runID string, processErr error) error {
 	usageLimit := reasoning.IsUsageLimitError(processErr)
 	failure := domain.Failure{Code: "reasoning_failed", Stage: "reasoning", Message: boundedFailureMessage(processErr), Retryable: true}
 	if providerFailure, ok := reasoning.ProviderFailureFrom(processErr); ok {
-		failure.Details = map[string]any{"sdkCode": providerFailure.Code, "sdkStage": providerFailure.Stage, "sdkRetry": providerFailure.Retry}
+		failure.Details = providerFailureDetails(providerFailure)
 		if !providerFailure.RetryTransient {
 			failure.Retryable = false
 		}

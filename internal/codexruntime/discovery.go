@@ -57,6 +57,21 @@ func Discover(ctx context.Context, explicit string) (Result, error) {
 	return discover(ctx, candidates, strict, validateCandidate)
 }
 
+// IsManagedPath reports whether path belongs to a Codex App-managed runtime
+// location. Persisted paths in these locations may be refreshed when the app
+// installs a newer version; arbitrary user-selected executables remain pinned.
+func IsManagedPath(path string) bool {
+	for _, candidate := range platformCandidates() {
+		if !strings.HasPrefix(candidate.Source, "codex-app-") {
+			continue
+		}
+		if samePath(path, candidate.Path) {
+			return true
+		}
+	}
+	return false
+}
+
 func discoveryCandidates(explicit string) ([]Candidate, bool) {
 	if value := strings.TrimSpace(explicit); value != "" {
 		return []Candidate{{Path: value, Source: "explicit"}}, true
@@ -65,13 +80,17 @@ func discoveryCandidates(explicit string) ([]Candidate, bool) {
 		return []Candidate{{Path: value, Source: "environment"}}, true
 	}
 
+	const automaticGroup = "automatic"
 	candidates := make([]Candidate, 0, 12)
 	for _, name := range executableNames() {
 		if found, err := exec.LookPath(name); err == nil {
-			candidates = append(candidates, Candidate{Path: found, Source: "path"})
+			candidates = append(candidates, Candidate{Path: found, Source: "path", SelectionGroup: automaticGroup})
 		}
 	}
-	candidates = append(candidates, platformCandidates()...)
+	for _, candidate := range platformCandidates() {
+		candidate.SelectionGroup = automaticGroup
+		candidates = append(candidates, candidate)
+	}
 	return candidates, false
 }
 
@@ -246,6 +265,18 @@ func deduplicate(candidates []Candidate) []Candidate {
 		result = append(result, candidate)
 	}
 	return result
+}
+
+func samePath(left, right string) bool {
+	left = filepath.Clean(strings.TrimSpace(left))
+	right = filepath.Clean(strings.TrimSpace(right))
+	if left == "." || right == "." {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }
 
 func executableNames() []string {

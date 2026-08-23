@@ -75,6 +75,31 @@ func TestManagedCandidatesSelectHighestSemanticVersion(t *testing.T) {
 	}
 }
 
+func TestAutomaticCandidatesSelectNewerManagedRuntimeOverOlderPathRuntime(t *testing.T) {
+	pathRuntime := filepath.Join(t.TempDir(), "path-codex")
+	managedRuntime := filepath.Join(t.TempDir(), "managed-codex")
+	for _, path := range []string{pathRuntime, managedRuntime} {
+		if err := osWriteTestFile(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := discover(context.Background(), []Candidate{
+		{Path: pathRuntime, Source: "path", SelectionGroup: "automatic"},
+		{Path: managedRuntime, Source: "codex-app-managed", SelectionGroup: "automatic"},
+	}, false, func(_ context.Context, candidate Candidate) (string, error) {
+		if candidate.Source == "path" {
+			return "codex-cli 0.130.0-alpha.5", nil
+		}
+		return "codex-cli 0.149.0-alpha.4.1", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Source != "codex-app-managed" || result.Executable != managedRuntime || result.Version != "codex-cli 0.149.0-alpha.4.1" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
 func TestCompareCodexVersionsUsesSemverPrereleaseRules(t *testing.T) {
 	for _, test := range []struct {
 		left  string

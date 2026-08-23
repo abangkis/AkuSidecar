@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/preference"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
+	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 )
 
 func testEngine(t *testing.T) (*Engine, *store.Store) {
@@ -1930,6 +1932,66 @@ func TestCodexUsageLimitFailsRemainingSourceLanesWithoutMoreReasoning(t *testing
 	for _, run := range completed.Runs {
 		if run.Status != "failed" || run.Error == nil || run.Error.Code != "codex_usage_limit" || run.Error.Retryable {
 			t.Fatalf("usage-limited run=%+v", run)
+		}
+	}
+}
+
+func TestProviderFailureMetadataPersistsWithoutRawCause(t *testing.T) {
+	runtime, state := testEngine(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	session, err := state.CreateUpdateSession(ctx, "provider failure fixture", settings, domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+	})
+	if err != nil || len(session.Runs) != 1 {
+		t.Fatalf("session=%+v err=%v", session, err)
+	}
+	const secret = "raw-provider-payload-must-not-persist"
+	processErr := &inference.Error{
+		Code: inference.FailureCodeProvider, Category: inference.FailureCategoryAuthentication,
+		Reason: inference.FailureReason("unauthorized"), ProviderStatus: 401,
+		Stage: inference.FailureStageProvider, Retry: inference.RetryNever,
+		Operation: "initialize", RPCCode: 401, ProcessExitCode: 23, Message: "Codex authentication failed",
+		Cause: errors.New(secret),
+	}
+	if err := runtime.failRunAfterProcessError(ctx, session.Runs[0].ID, processErr); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := state.GetRun(ctx, session.Runs[0].ID)
+	if err != nil || stored.Error == nil {
+		t.Fatalf("stored run=%+v err=%v", stored, err)
+	}
+	want := map[string]any{
+		"sdkCode": "provider", "sdkCategory": "authentication", "sdkStage": "provider", "sdkRetry": "never",
+		"sdkReason": "unauthorized", "sdkProviderStatus": float64(401), "sdkOperation": "initialize",
+		"sdkRPCCode": float64(401), "sdkProcessExitCode": float64(23),
+	}
+	for key, value := range want {
+		if stored.Error.Details[key] != value {
+			t.Fatalf("details[%q]=%#v, want %#v; details=%+v", key, stored.Error.Details[key], value, stored.Error.Details)
+		}
+	}
+	encoded, err := json.Marshal(stored.Error)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), secret) {
+		t.Fatalf("persisted failure leaked raw cause: %s", encoded)
+	}
+}
+
+func TestProviderFailureDetailsOmitAbsentMetadata(t *testing.T) {
+	details := providerFailureDetails(reasoning.ProviderFailure{Code: "provider", Stage: "provider", Retry: "never"})
+	if len(details) != 3 || details["sdkCode"] != "provider" || details["sdkStage"] != "provider" || details["sdkRetry"] != "never" {
+		t.Fatalf("details=%+v", details)
+	}
+	for _, key := range []string{"sdkCategory", "sdkReason", "sdkProviderStatus", "sdkOperation", "sdkRPCCode", "sdkProcessExitCode"} {
+		if _, ok := details[key]; ok {
+			t.Fatalf("absent %s must be omitted: %+v", key, details)
 		}
 	}
 }

@@ -15,7 +15,11 @@ func TestLiveCodexAppServerStructuredPlan(t *testing.T) {
 		t.Skip("set AKU_CODEX_LIVE=1 for an authenticated native App Server smoke test")
 	}
 	root := filepathRoot(t)
-	cfg, err := config.Load(config.Options{ConfigPath: filepath.Join(root, "config", "sidecar.json"), Provider: "codex-app-server"})
+	cfg, err := config.Load(config.Options{
+		ConfigPath:            filepath.Join(root, "config", "sidecar.json"),
+		Provider:              "codex-app-server",
+		BridgeExtensionOrigin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop/",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

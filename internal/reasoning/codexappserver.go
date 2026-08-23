@@ -292,11 +292,17 @@ func IsUsageLimitError(err error) bool {
 }
 
 type ProviderFailure struct {
-	Code           string
-	Stage          string
-	Retry          string
-	RetryTransient bool
-	Message        string
+	Code            string
+	Category        string
+	Reason          string
+	Stage           string
+	Retry           string
+	RetryTransient  bool
+	ProviderStatus  int
+	Operation       string
+	RPCCode         int
+	ProcessExitCode int
+	Message         string
 }
 
 func ProviderFailureFrom(err error) (ProviderFailure, bool) {
@@ -304,7 +310,19 @@ func ProviderFailureFrom(err error) (ProviderFailure, bool) {
 	if !errors.As(err, &infErr) {
 		return ProviderFailure{}, false
 	}
-	return ProviderFailure{Code: string(infErr.Code), Stage: string(infErr.Stage), Retry: string(infErr.Retry), RetryTransient: infErr.Retry == inference.RetryTransient, Message: infErr.Message}, true
+	return ProviderFailure{
+		Code:            string(infErr.Code),
+		Category:        string(infErr.Category),
+		Reason:          string(infErr.Reason),
+		Stage:           string(infErr.Stage),
+		Retry:           string(infErr.Retry),
+		RetryTransient:  infErr.Retry == inference.RetryTransient,
+		ProviderStatus:  infErr.ProviderStatus,
+		Operation:       infErr.Operation,
+		RPCCode:         infErr.RPCCode,
+		ProcessExitCode: infErr.ProcessExitCode,
+		Message:         infErr.Message,
+	}, true
 }
 
 // startSession launches a fresh managed App Server process and returns its

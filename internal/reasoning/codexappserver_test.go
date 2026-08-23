@@ -98,6 +98,45 @@ func TestCodexProfileCatalogIsBounded(t *testing.T) {
 	}
 }
 
+func TestProviderFailureFromProjectsOnlySafeTypedMetadata(t *testing.T) {
+	const secret = "raw-provider-payload-must-not-escape"
+	failure, ok := ProviderFailureFrom(&inference.Error{
+		Code:            inference.FailureCodeProvider,
+		Category:        inference.FailureCategoryAuthentication,
+		Reason:          inference.FailureReason("unauthorized"),
+		Stage:           inference.FailureStageProvider,
+		Retry:           inference.RetryNever,
+		ProviderStatus:  401,
+		Operation:       "initialize",
+		RPCCode:         401,
+		ProcessExitCode: 23,
+		Message:         "Codex authentication failed",
+		Cause:           errors.New(secret),
+	})
+	if !ok {
+		t.Fatal("typed inference error was not recognized")
+	}
+	if failure.Code != "provider" || failure.Category != "authentication" || failure.Reason != "unauthorized" || failure.Stage != "provider" || failure.Retry != "never" || failure.RetryTransient {
+		t.Fatalf("failure taxonomy=%+v", failure)
+	}
+	if failure.ProviderStatus != 401 || failure.Operation != "initialize" || failure.RPCCode != 401 || failure.ProcessExitCode != 23 || failure.Message != "Codex authentication failed" {
+		t.Fatalf("failure metadata=%+v", failure)
+	}
+	if strings.Contains(fmt.Sprint(failure), secret) {
+		t.Fatalf("provider failure projection leaked raw cause: %+v", failure)
+	}
+}
+
+func TestProviderFailureFromLeavesAbsentMetadataEmpty(t *testing.T) {
+	failure, ok := ProviderFailureFrom(&inference.Error{Code: inference.FailureCodeProvider, Stage: inference.FailureStageProvider, Retry: inference.RetryNever})
+	if !ok {
+		t.Fatal("typed inference error was not recognized")
+	}
+	if failure.Category != "" || failure.Reason != "" || failure.ProviderStatus != 0 || failure.Operation != "" || failure.RPCCode != 0 || failure.ProcessExitCode != 0 {
+		t.Fatalf("absent metadata gained values: %+v", failure)
+	}
+}
+
 func TestAppServerTelemetryPreservesQueueWait(t *testing.T) {
 	telemetry := appServerTelemetry(
 		domain.Run{ID: "run-test"},
@@ -190,7 +229,7 @@ func fakeCodexAppServer() {
 			if _, planning := properties["decision"]; !planning && capacityMarker != "" {
 				if _, err := os.Stat(capacityMarker); os.IsNotExist(err) {
 					_ = os.WriteFile(capacityMarker, []byte("failed once"), 0o600)
-					fakeRPC(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": turnID, "status": "failed", "error": map[string]any{"message": "Selected model is at capacity. Please try a different model."}}}})
+					fakeRPC(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": turnID, "status": "failed", "error": map[string]any{"message": "Selected model is at capacity. Please try a different model."}, "items": []any{}}}})
 					continue
 				}
 			}
@@ -263,8 +302,10 @@ func TestCodexAppServerRejectsCompletedTurnWithoutFinalResponse(t *testing.T) {
 	provider := newFakeCodexAppServer(t)
 	defer provider.Close()
 	run, observation := fakeAppServerInput()
-	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !isInferenceFailure(err, inference.FailureCodeProvider, "") {
+	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err == nil || !isInferenceFailure(err, inference.FailureCodeResponse, "") {
 		t.Fatalf("empty completed turn error=%v", err)
+	} else if failure, ok := ProviderFailureFrom(err); !ok || failure.Category != "response_missing" || failure.Reason != "emptyFinalResponse" || failure.Operation != "turn/completed" {
+		t.Fatalf("empty completed turn metadata=%+v ok=%v", failure, ok)
 	}
 	if provider.transport.SessionActive() {
 		t.Fatal("invalid App Server process must be discarded after a protocol failure")
@@ -420,9 +461,6 @@ func fakeRPC(value any) {
 
 func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
-	dump := `C:\WorkspaceOpencode\SharedTemp\akusidecar-sdk-dump`
-	_ = os.RemoveAll(dump)
-	t.Setenv("AKU_FAKE_CODEX_DUMP", dump)
 	marker := filepath.Join(t.TempDir(), "capacity-once")
 	t.Setenv("AKU_FAKE_CODEX_CAPACITY_ONCE", marker)
 	root := filepathRoot(t)

@@ -83,6 +83,14 @@ func main() {
 		persistedPath := persistedSettings.ReasoningExecutablePath
 		if _, statErr := os.Stat(persistedPath); statErr == nil {
 			cfg.Reasoning.Executable = persistedPath
+			if codexruntime.IsManagedPath(persistedPath) {
+				if discovered, discoverErr := codexruntime.Discover(context.Background(), ""); discoverErr != nil {
+					logger.Printf("could not refresh managed Codex executable; keeping path=%q error=%v", persistedPath, discoverErr)
+				} else if discovered.Executable != "" && !strings.EqualFold(discovered.Executable, persistedPath) {
+					logger.Printf("refreshed managed Codex executable old=%q new=%q version=%q", persistedPath, discovered.Executable, discovered.Version)
+					cfg.Reasoning.Executable = discovered.Executable
+				}
+			}
 		} else {
 			logger.Printf("persisted Codex executable is unavailable; rediscovering path=%q error=%v", persistedPath, statErr)
 			persistedSettings.ReasoningExecutablePath = ""
