@@ -13,6 +13,7 @@ import {
   clearInstalledAppBridgeRecoveryAttempt,
   hasInstalledAppBridgeRecoveryAttempt,
   recordInstalledAppBridgeRecoveryAttempt,
+  shouldClearInstalledAppBridgeRecoveryAfterHeartbeat,
   shouldScheduleInstalledAppBridgeRecovery,
 } from "./installed-app-bridge-recovery.js";
 
@@ -115,7 +116,6 @@ const $ = (selector) => document.querySelector(selector);
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== endpoint || !event.data) return;
   if (event.data.type === "AKU_BROWSER_BRIDGE_READY") {
-    cancelInstalledAppBridgeRecovery();
     const capabilities = {
       ...(event.data.capabilities ?? {}),
       extensionOrigin: event.data.extensionOrigin || event.data.capabilities?.extensionOrigin || "",
@@ -123,7 +123,11 @@ window.addEventListener("message", (event) => {
     bridgeApi("/api/bridge/heartbeat", {
       method: "POST",
       body: { capabilities },
-    }).then(({ bridge }) => {
+    }).then((response) => {
+      if (shouldClearInstalledAppBridgeRecoveryAfterHeartbeat(response)) {
+        cancelInstalledAppBridgeRecovery();
+      }
+      const { bridge } = response;
       sessionStorage.removeItem(BRIDGE_CONTEXT_RECOVERY_KEY);
       sessionStorage.removeItem(BRIDGE_TOKEN_RECOVERY_KEY);
       renderBridge(bridge);

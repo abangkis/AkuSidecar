@@ -11,6 +11,10 @@ export function shouldScheduleInstalledAppBridgeRecovery(bootstrap, attemptRecor
   return !attemptRecorded && isEligibleForInstalledAppBridgeRecovery(bootstrap);
 }
 
+export function shouldClearInstalledAppBridgeRecoveryAfterHeartbeat(response) {
+  return response?.bridge?.actual != null;
+}
+
 export function hasInstalledAppBridgeRecoveryAttempt(storage) {
   return storage?.getItem(INSTALLED_APP_BRIDGE_RECOVERY_KEY) === "1";
 }

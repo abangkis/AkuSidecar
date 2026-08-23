@@ -6,6 +6,7 @@ import {
   hasInstalledAppBridgeRecoveryAttempt,
   isEligibleForInstalledAppBridgeRecovery,
   recordInstalledAppBridgeRecoveryAttempt,
+  shouldClearInstalledAppBridgeRecoveryAfterHeartbeat,
   shouldScheduleInstalledAppBridgeRecovery,
 } from "../internal/httpapi/web/installed-app-bridge-recovery.js";
 
@@ -52,4 +53,12 @@ test("installed-app recovery records at most one attempt and clears on Bridge re
 
   clearInstalledAppBridgeRecoveryAttempt(store);
   assert.equal(hasInstalledAppBridgeRecoveryAttempt(store), false);
+});
+
+test("a failed or malformed Bridge heartbeat keeps recovery armed", () => {
+  assert.equal(shouldClearInstalledAppBridgeRecoveryAfterHeartbeat(undefined), false);
+  assert.equal(shouldClearInstalledAppBridgeRecoveryAfterHeartbeat({ error: "invalid_bridge_token" }), false);
+  assert.equal(shouldClearInstalledAppBridgeRecoveryAfterHeartbeat({ bridge: null }), false);
+  assert.equal(shouldClearInstalledAppBridgeRecoveryAfterHeartbeat({ bridge: { state: "reconnecting", actual: null } }), false);
+  assert.equal(shouldClearInstalledAppBridgeRecoveryAfterHeartbeat({ bridge: { state: "healthy", actual: { extensionVersion: "0.8.0" } } }), true);
 });
