@@ -8,12 +8,31 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
 $cacheRoot = Join-Path $repoRoot '.go-build'
 
+function Resolve-WorkspaceSharedTemp {
+    $cursor = Get-Item -LiteralPath $repoRoot
+    while ($null -ne $cursor) {
+        $candidate = Join-Path $cursor.FullName 'SharedTemp'
+        if (Test-Path -LiteralPath $candidate -PathType Container) {
+            return [IO.Path]::GetFullPath($candidate)
+        }
+        $cursor = $cursor.Parent
+    }
+    throw "No workspace SharedTemp directory was found above $repoRoot"
+}
+
+$sharedTempRoot = Resolve-WorkspaceSharedTemp
+$goTempRoot = [IO.Path]::GetFullPath((Join-Path $sharedTempRoot "akusidecar-go-build-$PID"))
+$sharedTempBoundary = $sharedTempRoot.TrimEnd('\') + '\'
+if (-not $goTempRoot.StartsWith($sharedTempBoundary, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Resolved Go temporary directory escapes SharedTemp: $goTempRoot"
+}
+
 $previousGoCache = $env:GOCACHE
 $previousGoModCache = $env:GOMODCACHE
 $previousGoTmpDir = $env:GOTMPDIR
 $env:GOCACHE = Join-Path $cacheRoot 'build'
 $env:GOMODCACHE = Join-Path $cacheRoot 'mod'
-$env:GOTMPDIR = Join-Path $cacheRoot 'tmp'
+$env:GOTMPDIR = $goTempRoot
 
 @($runtimeDir, $env:GOCACHE, $env:GOMODCACHE, $env:GOTMPDIR) | ForEach-Object {
     New-Item -ItemType Directory -Path $_ -Force | Out-Null
@@ -62,6 +81,13 @@ finally {
     $env:GOMODCACHE = $previousGoModCache
     $env:GOTMPDIR = $previousGoTmpDir
     Pop-Location
+    if (Test-Path -LiteralPath $goTempRoot -PathType Container) {
+        $resolvedCleanup = [IO.Path]::GetFullPath($goTempRoot)
+        if (-not $resolvedCleanup.StartsWith($sharedTempBoundary, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to clean a Go temporary directory outside SharedTemp: $resolvedCleanup"
+        }
+        Remove-Item -LiteralPath $resolvedCleanup -Recurse -Force
+    }
 }
 
 Write-Host "Built AkuSidecar: $output"

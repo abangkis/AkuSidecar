@@ -134,9 +134,10 @@ the normal Supervisor development stack.
 ## Build and test
 
 On this Windows workspace, Go caches live inside the repository under
-`.go-build/` so antivirus interference and module discovery stay away from
-global locations. `scripts/build-dev.ps1` configures these caches and writes
-the build provenance receipt automatically:
+`.go-build/`, while transient Go build files use the nearest workspace
+`SharedTemp` directory. This keeps antivirus interference and module discovery
+away from global locations. `scripts/build-dev.ps1` configures these locations
+and writes the build provenance receipt automatically:
 
 ```powershell
 .\scripts\build-dev.ps1
