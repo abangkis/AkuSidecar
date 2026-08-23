@@ -571,7 +571,7 @@ h3 { letter-spacing: -0.02em; }
 .auto-update-diagnostics .settings-detail { display: block; min-width: 0; padding-top: 8px; overflow-wrap: anywhere; font-size: 0.68rem; line-height: 1.45; text-align: left; }
 .status-auto-update { border-color: rgba(143, 201, 255, 0.52); background: rgba(143, 201, 255, 0.1); color: var(--blue); font-size: 0.66rem; letter-spacing: 0.06em; }
 .source-settings-row { grid-template-columns: minmax(0, 1fr) minmax(360px, 520px); }
-.source-settings-control { display: grid; grid-template-columns: auto minmax(116px, 1fr) auto; align-items: end; gap: 10px; }
+.source-settings-control { display: grid; grid-template-columns: auto minmax(116px, 1fr) auto auto; align-items: end; gap: 10px; }
 .source-active-control, .source-hydration-input { display: grid; gap: 5px; color: var(--quiet); font-size: 0.68rem; }
 .source-active-control { grid-template-columns: 20px auto; align-items: center; align-self: center; }
 .source-active-control input[type="checkbox"] { justify-self: start; }
@@ -580,6 +580,10 @@ h3 { letter-spacing: -0.02em; }
 .source-readiness-status { font-weight: 700; color: var(--muted); }
 .source-readiness-ready { color: var(--accent); }
 .source-readiness-warning { color: var(--amber); }
+.source-session-status { font-weight: 700; color: var(--muted); }
+.source-session-ready { color: var(--accent); }
+.source-session-warning { color: var(--amber); }
+.source-open-button { padding: 9px 10px; white-space: nowrap; }
 .boundary-cue-control { display: grid; grid-template-columns: 20px minmax(76px, 92px) minmax(0, 1fr); align-items: center; gap: 8px; }
 .boundary-cue-control input[type="checkbox"] { justify-self: center; }
 .boundary-cue-control button { padding: 9px 10px; white-space: nowrap; }
@@ -683,7 +687,7 @@ h3 { letter-spacing: -0.02em; }
   .auto-update-scheduler-actions { justify-content: flex-start; }
   .auto-update-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .source-settings-row { grid-template-columns: 1fr; }
-  .source-settings-control { grid-template-columns: auto minmax(110px, 1fr) auto; }
+  .source-settings-control { grid-template-columns: auto minmax(110px, 1fr) auto auto; }
   .reasoning-process-route { justify-items: start; text-align: left; }
   .boundary-cue-control { grid-template-columns: 20px minmax(76px, 92px) minmax(0, 1fr); }
   .paired-setting-control { grid-template-columns: 1fr; }

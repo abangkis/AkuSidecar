@@ -81,6 +81,8 @@ const state = {
   sidePaneFrame: null,
   timelineItems: [],
   timelineBatches: [],
+  sourceSessionReadiness: {},
+  sourceSessionProbeInFlight: false,
   passiveMediaEnrichmentTimer: null,
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
@@ -119,11 +121,37 @@ window.addEventListener("message", (event) => {
       sessionStorage.removeItem(BRIDGE_CONTEXT_RECOVERY_KEY);
       sessionStorage.removeItem(BRIDGE_TOKEN_RECOVERY_KEY);
       renderBridge(bridge);
+      requestSourceSessionReadiness();
     }).catch(showError);
   }
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
     if (recoverInvalidatedBridgeContext(event.data.message)) return;
     showError(new Error(event.data.message));
+  }
+  if (event.data.type === "AKU_BROWSER_SOURCE_SESSIONS_RESULT") {
+    state.sourceSessionReadiness = event.data.sessions && typeof event.data.sessions === "object"
+      ? event.data.sessions
+      : {};
+    state.sourceSessionProbeInFlight = false;
+    renderSourceSessionReadiness();
+  }
+  if (event.data.type === "AKU_BROWSER_SOURCE_SESSIONS_FAILED") {
+    state.sourceSessionProbeInFlight = false;
+    renderSourceSessionError(event.data.message);
+  }
+  if (event.data.type === "AKU_BROWSER_SOURCE_OPENED") {
+    const source = sourceDescriptor(event.data.source);
+    if (source) setSourceSessionStatus(source.id, {
+      source: source.id,
+      state: "loading",
+      observedAt: new Date().toISOString(),
+      tabCount: 1,
+    });
+    renderSourceSessionReadiness();
+    window.setTimeout(() => requestSourceSessionReadiness(), 2_000);
+  }
+  if (event.data.type === "AKU_BROWSER_SOURCE_OPEN_FAILED") {
+    renderSourceSessionError(event.data.message, event.data.source);
   }
   if (event.data.type === "AKU_BROWSER_DISPATCH_FAILED") {
     const runId = String(event.data.runId || "");
@@ -167,7 +195,10 @@ function recoverInvalidBridgeToken(code) {
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
-$("#settings-view-button").addEventListener("click", () => setView("settings"));
+$("#settings-view-button").addEventListener("click", () => {
+  setView("settings");
+  requestSourceSessionReadiness();
+});
 $("#inbox-refresh-button").addEventListener("click", loadInbox);
 $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
@@ -484,6 +515,83 @@ function pingBridge() {
     protocolMajor: 2,
     protocolMinor: 0,
   }, endpoint);
+}
+
+function requestSourceSessionReadiness() {
+  if (!state.bootstrap?.bridge?.compatible || state.sourceSessionProbeInFlight) return;
+  state.sourceSessionProbeInFlight = true;
+  renderSourceSessionReadiness();
+  window.postMessage({
+    type: "AKU_BROWSER_PROBE_SOURCE_SESSIONS",
+  }, endpoint);
+}
+
+function openSourceFromSettings(source) {
+  const descriptor = sourceDescriptor(source);
+  if (!descriptor || !state.bootstrap?.bridge?.compatible) return;
+  setSourceSessionStatus(source, {
+    source,
+    state: "loading",
+    observedAt: new Date().toISOString(),
+    tabCount: 1,
+  });
+  renderSourceSessionReadiness();
+  window.postMessage({
+    type: "AKU_BROWSER_OPEN_SOURCE",
+    source,
+  }, endpoint);
+}
+
+function setSourceSessionStatus(source, observation) {
+  state.sourceSessionReadiness = {
+    ...(state.sourceSessionReadiness ?? {}),
+    [source]: observation,
+  };
+}
+
+function renderSourceSessionError(message, source = null) {
+  const detail = String(message || "Source session status is unavailable.").slice(0, 160);
+  if (source) {
+    setSourceSessionStatus(source, {
+      source,
+      state: "unknown",
+      observedAt: new Date().toISOString(),
+      tabCount: 0,
+      detail,
+    });
+  }
+  renderSourceSessionReadiness();
+}
+
+function renderSourceSessionReadiness() {
+  for (const descriptor of sourceDescriptors()) {
+    const observation = state.sourceSessionReadiness?.[descriptor.id] ?? null;
+    const status = document.querySelector(\`[data-source-session-readiness="\${descriptor.id}"]\`);
+    const button = document.querySelector(\`[data-source-open="\${descriptor.id}"]\`);
+    if (!status || !button) continue;
+    status.className = "source-session-status";
+    if (state.sourceSessionProbeInFlight && !observation) {
+      status.textContent = "Session: checking existing tabs";
+      button.textContent = "Open source";
+      button.disabled = false;
+      continue;
+    }
+    const stateValue = observation?.state ?? "unknown";
+    const labels = {
+      ready: "Session: feed available",
+      login_required: "Session: sign-in required",
+      not_observed: "Session: source not open",
+      loading: "Session: loading",
+      unavailable: "Session: temporarily unavailable",
+      unknown: "Session: not confirmed",
+    };
+    status.textContent = labels[stateValue] ?? labels.unknown;
+    status.title = observation?.detail || "";
+    if (stateValue === "ready") status.classList.add("source-session-ready");
+    if (stateValue === "login_required") status.classList.add("source-session-warning");
+    button.textContent = stateValue === "login_required" ? "Sign in" : "Open source";
+    button.disabled = !state.bootstrap?.bridge?.compatible;
+  }
 }
 
 async function bridgeActionLoop() {
@@ -5140,12 +5248,17 @@ function renderSourceControls() {
     const settingsStrong = document.createElement("strong");
     settingsStrong.textContent = descriptor.displayName;
     const settingsSmall = document.createElement("small");
-    settingsSmall.textContent = `Use the signed-in ${descriptor.displayName} feed during the next update.`;
+    settingsSmall.textContent = `Use the ${descriptor.displayName} feed during the next update; sign-in is checked separately.`;
     const readiness = document.createElement("small");
     readiness.dataset.sourceReadiness = descriptor.id;
     readiness.className = "source-readiness-status";
     readiness.textContent = "Checking access";
+    const sessionStatus = document.createElement("small");
+    sessionStatus.dataset.sourceSessionReadiness = descriptor.id;
+    sessionStatus.className = "source-session-status";
+    sessionStatus.textContent = "Session: checking existing tabs";
     settingsCopy.append(settingsStrong, settingsSmall, readiness);
+    settingsCopy.append(sessionStatus);
     const controls = document.createElement("span");
     controls.className = "source-settings-control";
     const activeLabel = document.createElement("label");
@@ -5181,10 +5294,17 @@ function renderSourceControls() {
     reset.addEventListener("click", () => {
       hydrationInput.value = String(descriptor.hydrationTimeoutDefaultMs / 1000);
     });
-    controls.append(activeLabel, hydrationLabel, reset);
+    const openSource = document.createElement("button");
+    openSource.type = "button";
+    openSource.className = "secondary-button source-open-button";
+    openSource.dataset.sourceOpen = descriptor.id;
+    openSource.textContent = "Open source";
+    openSource.addEventListener("click", () => openSourceFromSettings(descriptor.id));
+    controls.append(activeLabel, hydrationLabel, openSource, reset);
     settingsLabel.append(settingsCopy, controls);
     settings.append(settingsLabel);
   }
+  renderSourceSessionReadiness();
 }
 
 function humanize(value) {

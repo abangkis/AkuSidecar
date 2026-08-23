@@ -65,6 +65,34 @@ func TestSettingsSourcesExposeExtensionSetupCTA(t *testing.T) {
 	}
 }
 
+func TestSettingsSourcesExposeSessionReadinessAndSignInCTA(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/app.js": {
+			"requestSourceSessionReadiness",
+			"AKU_BROWSER_PROBE_SOURCE_SESSIONS",
+			"AKU_BROWSER_SOURCE_SESSIONS_RESULT",
+			"AKU_BROWSER_OPEN_SOURCE",
+			"data-source-session-readiness",
+			"Session: feed available",
+		},
+		"web/styles.css": {
+			".source-session-status",
+			".source-session-warning",
+			".source-open-button",
+		},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing session readiness contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js":     {`source === "instagram"`, `glyph.className = "instagram-source-glyph"`, `aria-hidden`},
