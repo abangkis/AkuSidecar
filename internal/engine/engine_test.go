@@ -1673,7 +1673,7 @@ func TestGuardedLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 		t.Fatal("LinkedIn complete exhausted frontier should finish without model planning")
 	}
 	if localFrontierFinishesAcquisition(domain.SourceX, base) {
-		t.Fatal("X must retain its current model planning behavior")
+		t.Fatal("X must not use the local finish-frontier policy")
 	}
 	base.Coverage["frontier"].(map[string]any)["newCandidateCount"] = float64(1)
 	base.Coverage["frontier"].(map[string]any)["hasMoreCandidateSignal"] = true
@@ -1701,6 +1701,104 @@ func TestGuardedLocalFrontierCanFinishWithoutModelPlanning(t *testing.T) {
 	base.Coverage["scrollStopReason"] = "deadline"
 	if localFrontierFinishesAcquisition(domain.SourceLinkedIn, base) {
 		t.Fatal("deadline-exhausted LinkedIn capture must retain model planning")
+	}
+}
+
+func TestGuardedXFrontierQueuesExactlyOneLocalFollowUpAndPreservesYield(t *testing.T) {
+	ctx := context.Background()
+	settings := domain.DefaultSettings("expanded", "quiet", "guarded_live", true)
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	settings.CalibrationEnabled = false
+	settings.AIDetectionEnabled = false
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { state.Close() })
+	runtime := New(state, reasoning.Deterministic{}, config.Config{Capture: config.CaptureConfig{MaxAcquisitionRounds: 2}}, log.New(io.Discard, "", 0))
+	runtime.RecordHeartbeat(ExpectedHeartbeat())
+
+	session, err := runtime.StartVisibleUpdate(ctx, "X local frontier gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Runs[0].Status == "waiting_for_bridge" })
+	run := active.Runs[0]
+	command, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("initial command=%+v err=%v", command, err)
+	}
+	firstBlock := domain.Block{EvidenceKey: "x:status:initial", PlatformID: "x:status:initial", Author: "Initial X author", Text: "Initial bounded X evidence"}
+	initial := domain.Observation{
+		Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{ScrollY: 1208, Blocks: []domain.Block{firstBlock}}},
+		Coverage: map[string]any{
+			"performedScrolls": float64(2), "scrollStopReason": "budget_exhausted",
+			"captureQuality": map[string]any{"verdict": "complete", "candidateReportCount": float64(5)},
+			"frontier":       map[string]any{"scrollY": float64(1208), "newCandidateCount": float64(1), "hasMoreCandidateSignal": true, "anchorKeys": []any{"x:status:initial"}},
+		},
+	}
+	if reason, ok := localXFollowUpReason(domain.SourceX, initial); !ok || !strings.Contains(reason, "queue one adjacent follow-up") {
+		t.Fatalf("local X decision reason=%q ok=%t", reason, ok)
+	}
+	if _, err := runtime.AcceptObservation(ctx, command.ID, run.ID, initial); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Runs[0].Stage == "follow_up_capture" })
+	followUp, err := runtime.ClaimCommand(ctx, run.ID, "bridge-test")
+	if err != nil || followUp == nil {
+		t.Fatalf("follow-up command=%+v err=%v", followUp, err)
+	}
+	if round := integerCoverageValue(followUp.Payload["acquisitionRound"]); round != 2 {
+		t.Fatalf("follow-up acquisition round=%d", round)
+	}
+	second := domain.Observation{
+		Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{ScrollY: 2416, Blocks: []domain.Block{
+			firstBlock,
+			{EvidenceKey: "x:status:new-1", PlatformID: "x:status:new-1", Author: "Second X author", Text: "First new bounded follow-up candidate"},
+			{EvidenceKey: "x:status:new-2", PlatformID: "x:status:new-2", Author: "Third X author", Text: "Second new bounded follow-up candidate"},
+			{EvidenceKey: "x:status:new-3", PlatformID: "x:status:new-3", Author: "Fourth X author", Text: "Third new bounded follow-up candidate"},
+		}}}, Coverage: map[string]any{"performedScrolls": float64(2)},
+	}
+	if _, err := runtime.AcceptObservation(ctx, followUp.ID, run.ID, second); err != nil {
+		t.Fatal(err)
+	}
+	waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	inbox, _, err := runtime.Inbox(ctx, 1, 0)
+	if err != nil || len(inbox) != 1 || len(inbox[0].Runs) != 1 {
+		t.Fatalf("inbox=%+v err=%v", inbox, err)
+	}
+	receipt := inbox[0].Runs[0].AcquisitionPlanning
+	if receipt == nil || receipt.Mode != "local_frontier" || receipt.Decision != "request_follow_up" || !receipt.FollowUpQueued || receipt.FollowUpNewCandidates != 3 {
+		t.Fatalf("local X planning receipt=%+v", receipt)
+	}
+}
+
+func TestGuardedXFrontierFallsBackToModelWhenAmbiguous(t *testing.T) {
+	base := domain.Observation{Source: domain.SourceX, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{EvidenceKey: "x:one", PlatformID: "x:one", Text: "bounded"}}}}, Coverage: map[string]any{
+		"performedScrolls": float64(2), "scrollStopReason": "budget_exhausted", "captureQuality": map[string]any{"verdict": "complete"},
+		"frontier": map[string]any{"newCandidateCount": float64(1), "hasMoreCandidateSignal": true, "anchorKeys": []any{"x:one"}},
+	}}
+	mutations := []func(domain.Observation){
+		func(value domain.Observation) { value.Coverage["scrollStopReason"] = "deadline" },
+		func(value domain.Observation) {
+			value.Coverage["captureQuality"] = map[string]any{"verdict": "usable_degraded"}
+		},
+		func(value domain.Observation) {
+			value.Coverage["frontier"].(map[string]any)["hasMoreCandidateSignal"] = false
+		},
+		func(value domain.Observation) { value.Coverage["frontier"].(map[string]any)["anchorKeys"] = []any{} },
+	}
+	for index, mutate := range mutations {
+		candidate := base
+		candidate.Coverage = cloneCoverageMap(base.Coverage)
+		candidate.Coverage["frontier"] = cloneCoverageMap(base.Coverage["frontier"].(map[string]any))
+		mutate(candidate)
+		if reason, ok := localXFollowUpReason(domain.SourceX, candidate); ok {
+			t.Fatalf("ambiguous case %d unexpectedly used local gate: %q", index, reason)
+		}
 	}
 }
 

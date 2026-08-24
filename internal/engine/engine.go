@@ -1300,10 +1300,6 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		_, err = e.startNext(ctx, run.SessionID)
 		return err
 	}
-	knowledge, err := e.store.Knowledge(ctx, run.Source, 200)
-	if err != nil {
-		return err
-	}
 	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
 		localMode := "local_frontier"
 		localReason, localFinish := localStructuredFallbackCompletionReason(run.Source, observations[0])
@@ -1324,11 +1320,29 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
 				return fmt.Errorf("save local acquisition planning receipt: %w", err)
 			}
+		} else if localReason, localFollowUp := localXFollowUpReason(run.Source, observations[0]); localFollowUp {
+			continuation := continuationFrom(merged)
+			payload := capturePayload(run, run.SessionID, settings, 2, continuation, localReason)
+			if _, err = e.store.QueueFollowUp(ctx, runID, payload); err != nil {
+				return err
+			}
+			receipt := map[string]any{
+				"mode":                  "local_frontier",
+				"decision":              "request_follow_up",
+				"reason":                localReason,
+				"followUpQueued":        true,
+				"followUpNewCandidates": 0,
+			}
+			merged.Coverage["acquisitionPlanning"] = receipt
+			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
+				return fmt.Errorf("save local X acquisition planning receipt: %w", err)
+			}
+			return nil
 		} else {
 			if err := e.store.SetRunPipelineStage(ctx, runID, "acquisition_planning"); err != nil {
 				return err
 			}
-			plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, knowledge, settings.ReasoningAcquisitionProfile)
+			plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, nil, settings.ReasoningAcquisitionProfile)
 			_ = e.store.SaveTelemetry(context.Background(), telemetry)
 			if planErr != nil {
 				return planErr
@@ -1358,6 +1372,10 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 				return nil
 			}
 		}
+	}
+	knowledge, err := e.store.Knowledge(ctx, run.Source, 200)
+	if err != nil {
+		return err
 	}
 	if err := e.store.SetRunPipelineStage(ctx, runID, "candidate_evaluation"); err != nil {
 		return err
@@ -1564,6 +1582,27 @@ func localAcquisitionCompletionReason(source domain.Source, observation domain.O
 		return "The complete bounded source frontier produced no new candidate after scrolling.", true
 	}
 	return "", false
+}
+
+// localXFollowUpReason handles only the complete, budget-exhausted X frontier
+// shape whose outcome is mechanically encoded by Bridge telemetry. Any missing,
+// degraded, contradictory, or otherwise ambiguous signal remains model-planned.
+func localXFollowUpReason(source domain.Source, observation domain.Observation) (string, bool) {
+	descriptor, ok := domain.SourceByID(source)
+	if !ok || descriptor.FollowUpPlanningPolicy != "guarded_request_frontier" || integerCoverageValue(observation.Coverage["performedScrolls"]) < 1 ||
+		strings.TrimSpace(stringCoverageValue(observation.Coverage["scrollStopReason"])) != "budget_exhausted" {
+		return "", false
+	}
+	quality, ok := observation.Coverage["captureQuality"].(map[string]any)
+	if !ok || strings.TrimSpace(stringCoverageValue(quality["verdict"])) != "complete" {
+		return "", false
+	}
+	frontier, ok := observation.Coverage["frontier"].(map[string]any)
+	if !ok || !booleanCoverageValue(frontier["hasMoreCandidateSignal"]) || integerCoverageValue(frontier["newCandidateCount"]) < 1 ||
+		len(continuationAnchors(observation.Coverage)) == 0 || continuationFrom(observation) == nil {
+		return "", false
+	}
+	return "The complete X capture exhausted its bounded scroll budget while reporting a navigable older-feed frontier; queue one adjacent follow-up round.", true
 }
 
 func mergeDurableRunCoverage(target, durable map[string]any) {

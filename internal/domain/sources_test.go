@@ -53,8 +53,8 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, _ := SourceByID(SourceFacebook); descriptor.InitialRoundCandidateTarget != 0 {
 		t.Fatalf("Facebook must not inherit LinkedIn's initial-round candidate target: %+v", descriptor)
 	}
-	if descriptor, _ := SourceByID(SourceX); descriptor.FollowUpPlanningPolicy != "" {
-		t.Fatalf("X must retain model acquisition planning: %+v", descriptor)
+	if descriptor, _ := SourceByID(SourceX); descriptor.FollowUpPlanningPolicy != "guarded_request_frontier" {
+		t.Fatalf("X guarded request-frontier policy drifted: %+v", descriptor)
 	}
 }
 
