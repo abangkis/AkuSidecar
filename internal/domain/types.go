@@ -1728,32 +1728,57 @@ type TimelineSemanticEvent struct {
 }
 
 type EventResolutionSummary struct {
-	SessionID              string     `json:"sessionId"`
-	Status                 string     `json:"status"`
-	Provider               string     `json:"provider"`
-	Model                  string     `json:"model"`
-	Effort                 string     `json:"effort"`
-	ModelDescriptorVersion string     `json:"modelDescriptorVersion,omitempty"`
-	ModelMaturity          string     `json:"modelMaturity,omitempty"`
-	CandidateCount         int        `json:"candidateCount"`
-	HistoricalEventCount   int        `json:"historicalEventCount"`
-	ShortlistCount         int        `json:"shortlistCount"`
-	UniqueItems            int        `json:"uniqueItems"`
-	DuplicateReports       int        `json:"duplicateReports"`
-	UserSplitCorrections   int        `json:"userSplitCorrections"`
-	UserMergeCorrections   int        `json:"userMergeCorrections"`
-	ResolverInvoked        bool       `json:"resolverInvoked"`
-	TriggerReason          string     `json:"triggerReason"`
-	StrongestOverlap       int        `json:"strongestOverlap"`
-	TriggerTokens          []string   `json:"triggerTokens"`
-	DurationMS             int64      `json:"durationMs"`
-	CallerLatencyMS        int64      `json:"callerLatencyMs,omitempty"`
-	QueueWaitMS            int64      `json:"queueWaitMs,omitempty"`
-	ProviderExecutionMS    int64      `json:"providerExecutionMs,omitempty"`
-	ResponseTotalMS        int64      `json:"responseTotalMs,omitempty"`
-	Usage                  ModelUsage `json:"usage"`
-	Error                  *Failure   `json:"error,omitempty"`
-	CreatedAt              string     `json:"createdAt"`
+	SessionID              string                 `json:"sessionId"`
+	Status                 string                 `json:"status"`
+	Provider               string                 `json:"provider"`
+	Model                  string                 `json:"model"`
+	Effort                 string                 `json:"effort"`
+	ModelDescriptorVersion string                 `json:"modelDescriptorVersion,omitempty"`
+	ModelMaturity          string                 `json:"modelMaturity,omitempty"`
+	CandidateCount         int                    `json:"candidateCount"`
+	HistoricalEventCount   int                    `json:"historicalEventCount"`
+	ShortlistCount         int                    `json:"shortlistCount"`
+	UniqueItems            int                    `json:"uniqueItems"`
+	DuplicateReports       int                    `json:"duplicateReports"`
+	UserSplitCorrections   int                    `json:"userSplitCorrections"`
+	UserMergeCorrections   int                    `json:"userMergeCorrections"`
+	ResolverInvoked        bool                   `json:"resolverInvoked"`
+	TriggerReason          string                 `json:"triggerReason"`
+	StrongestOverlap       int                    `json:"strongestOverlap"`
+	TriggerTokens          []string               `json:"triggerTokens"`
+	SignalReceipt          *SemanticSignalReceipt `json:"signalReceipt,omitempty"`
+	DurationMS             int64                  `json:"durationMs"`
+	CallerLatencyMS        int64                  `json:"callerLatencyMs,omitempty"`
+	QueueWaitMS            int64                  `json:"queueWaitMs,omitempty"`
+	ProviderExecutionMS    int64                  `json:"providerExecutionMs,omitempty"`
+	ResponseTotalMS        int64                  `json:"responseTotalMs,omitempty"`
+	Usage                  ModelUsage             `json:"usage"`
+	Error                  *Failure               `json:"error,omitempty"`
+	CreatedAt              string                 `json:"createdAt"`
+}
+
+// SemanticSignalReceipt contains only bounded aggregate signals computed at
+// shortlist construction time. It intentionally has no token strings, names,
+// event keys, URLs, claims, excerpts, aliases, or prompt fragments.
+type SemanticSignalReceipt struct {
+	Version                                string `json:"version"`
+	CandidateCount                         int    `json:"candidateCount"`
+	ShortlistedEventCount                  int    `json:"shortlistedEventCount"`
+	TopOverlap                             int    `json:"topOverlap"`
+	TriggerTokenTotal                      int    `json:"triggerTokenTotal"`
+	TriggerRareTokenCount                  int    `json:"triggerRareTokenCount"`
+	TriggerCommonTokenCount                int    `json:"triggerCommonTokenCount"`
+	TriggerUnknownTokenCount               int    `json:"triggerUnknownTokenCount"`
+	CandidateActorOverlapCount             int    `json:"candidateActorOverlapCount"`
+	CandidateActorUnavailableCount         int    `json:"candidateActorUnavailableCount"`
+	CandidateObjectOverlapCount            int    `json:"candidateObjectOverlapCount"`
+	CandidateObjectUnavailableCount        int    `json:"candidateObjectUnavailableCount"`
+	CandidateTimeWithin24HoursCount        int    `json:"candidateTimeWithin24HoursCount"`
+	CandidateTimeWithin7DaysCount          int    `json:"candidateTimeWithin7DaysCount"`
+	CandidateTimeBeyond7DaysCount          int    `json:"candidateTimeBeyond7DaysCount"`
+	CandidateTimeUnavailableCount          int    `json:"candidateTimeUnavailableCount"`
+	CandidateExactEventKeyMatchCount       int    `json:"candidateExactEventKeyMatchCount"`
+	CandidateExactEventKeyUnavailableCount int    `json:"candidateExactEventKeyUnavailableCount"`
 }
 
 type EventSuggestion struct {

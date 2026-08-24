@@ -86,17 +86,17 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 	shortlist, historicalSignal := rankShortlist(resolverCandidates, catalog, settings.SemanticEventShortlist)
 	summary.ShortlistCount = len(shortlist)
 	intraCheckSignal := strongestIntraCheckSignal(resolverCandidates)
-	triggerSignal := intraCheckSignal
+	selectedTriggerSignal := intraCheckSignal
 	shouldResolve := intraCheckSignal.Strong
 	if len(shortlist) > 0 {
-		triggerSignal = historicalSignal
+		selectedTriggerSignal = historicalSignal
 		shouldResolve = true
 		summary.TriggerReason = "historical_shortlist"
 	} else if intraCheckSignal.Strong {
 		summary.TriggerReason = intraCheckSignal.Reason
 	}
-	summary.StrongestOverlap = triggerSignal.Overlap
-	summary.TriggerTokens = append([]string(nil), triggerSignal.Tokens...)
+	summary.StrongestOverlap = selectedTriggerSignal.Overlap
+	summary.TriggerTokens = append([]string(nil), selectedTriggerSignal.Tokens...)
 	if onboardingFastPath {
 		shortlist = nil
 		shouldResolve = false
@@ -104,7 +104,10 @@ func (e *Engine) processSession(ctx context.Context, sessionID string, settings 
 		summary.TriggerReason = "onboarding_local_index"
 		summary.StrongestOverlap = 0
 		summary.TriggerTokens = nil
+		selectedTriggerSignal = triggerSignal{}
 	}
+	signalReceipt := buildSemanticSignalReceipt(resolverCandidates, shortlist, catalog, selectedTriggerSignal)
+	summary.SignalReceipt = &signalReceipt
 
 	var resolution domain.SemanticResolution
 	if len(resolverCandidates) == 0 {

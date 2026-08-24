@@ -37,6 +37,28 @@ func Open(path string, defaults domain.Settings) (*Store, error) {
 	return OpenWithClock(path, defaults, systemClock{})
 }
 
+// OpenReadOnly opens an existing database without running initialization,
+// migrations, retention, or any other write path. It is intended for bounded
+// diagnostics and export tools. Callers must not use mutating Store methods
+// on the returned handle.
+func OpenReadOnly(path string) (*Store, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("read-only database path is required")
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite read-only: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	store := &Store{db: db, path: path, clock: systemClock{}}
+	if err := db.PingContext(context.Background()); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping sqlite read-only: %w", err)
+	}
+	return store, nil
+}
+
 func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, error) {
 	if clock == nil {
 		return nil, errors.New("store clock is required")
@@ -92,6 +114,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		if version == "8" {
 			if err := migrateSchema8To9(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 8 to 9: %w", err)
+			}
+			version = "9"
+		}
+		if version == "9" {
+			if err := migrateSchema9To10(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 9 to 10: %w", err)
 			}
 			version = schemaVersion
 		}
@@ -194,6 +222,27 @@ func migrateSchema8To9(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='9' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema9To10(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var tableCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='event_resolution_diagnostics'`).Scan(&tableCount); err != nil {
+		return err
+	}
+	if tableCount > 0 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE event_resolution_diagnostics ADD COLUMN receipt_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='10' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -556,8 +556,12 @@ func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "9" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "10" {
 		t.Fatalf("schema version=%q err=%v", version, err)
+	}
+	var receiptColumn int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('event_resolution_diagnostics') WHERE name='receipt_json'`).Scan(&receiptColumn); err != nil || receiptColumn != 1 {
+		t.Fatalf("receipt_json migration column=%d err=%v", receiptColumn, err)
 	}
 	for _, table := range []string{"reasoning_invocations", "event_resolution_invocations", "ai_detection_jobs"} {
 		rows, err := state.db.Query(`PRAGMA table_info(` + table + `)`)
@@ -583,6 +587,49 @@ func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
 				t.Fatalf("%s missing migrated column %s", table, column)
 			}
 		}
+	}
+}
+
+func TestSchema9MigratesSemanticSignalReceiptColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema9.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+		INSERT INTO meta(key,value) VALUES('schema_version','9');
+		CREATE TABLE event_resolution_diagnostics (
+			session_id TEXT PRIMARY KEY,
+			historical_event_count INTEGER NOT NULL,
+			resolver_invoked INTEGER NOT NULL,
+			trigger_reason TEXT NOT NULL,
+			strongest_overlap INTEGER NOT NULL,
+			trigger_tokens_json TEXT NOT NULL DEFAULT '[]'
+		);
+	`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version string
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "10" {
+		t.Fatalf("schema version=%q err=%v", version, err)
+	}
+	var receiptColumn int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('event_resolution_diagnostics') WHERE name='receipt_json'`).Scan(&receiptColumn); err != nil || receiptColumn != 1 {
+		t.Fatalf("receipt_json column=%d err=%v", receiptColumn, err)
+	}
+	var legacyDefault string
+	if err := state.db.QueryRow(`SELECT dflt_value FROM pragma_table_info('event_resolution_diagnostics') WHERE name='receipt_json'`).Scan(&legacyDefault); err != nil || legacyDefault != "'{}'" {
+		t.Fatalf("receipt_json default=%q err=%v", legacyDefault, err)
 	}
 }
 

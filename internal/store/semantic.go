@@ -407,6 +407,12 @@ func (s *Store) SaveEventResolutionSummary(ctx context.Context, value domain.Eve
 		failure = string(raw)
 	}
 	triggerTokens, _ := json.Marshal(value.TriggerTokens)
+	receiptJSON := "{}"
+	if value.SignalReceipt != nil && value.SignalReceipt.Version != "" {
+		if raw, err := json.Marshal(value.SignalReceipt); err == nil {
+			receiptJSON = string(raw)
+		}
+	}
 	resolverInvoked := 0
 	if value.ResolverInvoked {
 		resolverInvoked = 1
@@ -424,10 +430,10 @@ func (s *Store) SaveEventResolutionSummary(ctx context.Context, value domain.Eve
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO event_resolution_diagnostics(session_id,historical_event_count,resolver_invoked,trigger_reason,strongest_overlap,trigger_tokens_json)
-		VALUES(?,?,?,?,?,?)
-		ON CONFLICT(session_id) DO UPDATE SET historical_event_count=excluded.historical_event_count,resolver_invoked=excluded.resolver_invoked,trigger_reason=excluded.trigger_reason,strongest_overlap=excluded.strongest_overlap,trigger_tokens_json=excluded.trigger_tokens_json`,
-		value.SessionID, value.HistoricalEventCount, resolverInvoked, value.TriggerReason, value.StrongestOverlap, string(triggerTokens)); err != nil {
+		INSERT INTO event_resolution_diagnostics(session_id,historical_event_count,resolver_invoked,trigger_reason,strongest_overlap,trigger_tokens_json,receipt_json)
+		VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(session_id) DO UPDATE SET historical_event_count=excluded.historical_event_count,resolver_invoked=excluded.resolver_invoked,trigger_reason=excluded.trigger_reason,strongest_overlap=excluded.strongest_overlap,trigger_tokens_json=excluded.trigger_tokens_json,receipt_json=excluded.receipt_json`,
+		value.SessionID, value.HistoricalEventCount, resolverInvoked, value.TriggerReason, value.StrongestOverlap, string(triggerTokens), receiptJSON); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -449,12 +455,12 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 	var value domain.EventResolutionSummary
 	var failure sql.NullString
 	var historicalEventCount, resolverInvoked, strongestOverlap sql.NullInt64
-	var triggerReason, triggerTokens sql.NullString
+	var triggerReason, triggerTokens, receiptJSON sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT i.session_id,i.status,i.provider,i.model,i.model_descriptor_version,i.model_maturity,i.effort,i.candidate_count,i.shortlist_count,i.unique_items,i.duplicate_reports,i.duration_ms,i.caller_latency_ms,i.queue_wait_ms,i.provider_execution_ms,i.response_total_ms,i.input_tokens,i.cached_input_tokens,i.output_tokens,i.reasoning_output_tokens,i.error_json,i.created_at,
-		       d.historical_event_count,d.resolver_invoked,d.trigger_reason,d.strongest_overlap,d.trigger_tokens_json
+		       d.historical_event_count,d.resolver_invoked,d.trigger_reason,d.strongest_overlap,d.trigger_tokens_json,d.receipt_json
 		FROM event_resolution_invocations i LEFT JOIN event_resolution_diagnostics d ON d.session_id=i.session_id WHERE i.session_id=?`, sessionID).
-		Scan(&value.SessionID, &value.Status, &value.Provider, &value.Model, &value.ModelDescriptorVersion, &value.ModelMaturity, &value.Effort, &value.CandidateCount, &value.ShortlistCount, &value.UniqueItems, &value.DuplicateReports, &value.DurationMS, &value.CallerLatencyMS, &value.QueueWaitMS, &value.ProviderExecutionMS, &value.ResponseTotalMS, &value.Usage.Input, &value.Usage.CachedInput, &value.Usage.Output, &value.Usage.ReasoningOutput, &failure, &value.CreatedAt, &historicalEventCount, &resolverInvoked, &triggerReason, &strongestOverlap, &triggerTokens)
+		Scan(&value.SessionID, &value.Status, &value.Provider, &value.Model, &value.ModelDescriptorVersion, &value.ModelMaturity, &value.Effort, &value.CandidateCount, &value.ShortlistCount, &value.UniqueItems, &value.DuplicateReports, &value.DurationMS, &value.CallerLatencyMS, &value.QueueWaitMS, &value.ProviderExecutionMS, &value.ResponseTotalMS, &value.Usage.Input, &value.Usage.CachedInput, &value.Usage.Output, &value.Usage.ReasoningOutput, &failure, &value.CreatedAt, &historicalEventCount, &resolverInvoked, &triggerReason, &strongestOverlap, &triggerTokens, &receiptJSON)
 	if value.CallerLatencyMS == 0 {
 		value.CallerLatencyMS = value.DurationMS
 	}
@@ -487,6 +493,12 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 	}
 	if triggerTokens.Valid {
 		decodeJSON(triggerTokens.String, &value.TriggerTokens)
+	}
+	if receiptJSON.Valid {
+		var receipt domain.SemanticSignalReceipt
+		if decodeJSON(receiptJSON.String, &receipt); receipt.Version == "semantic-signal-receipt-v1" {
+			value.SignalReceipt = &receipt
+		}
 	}
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(CASE WHEN c.action='not_same_event' THEN 1 ELSE 0 END),0),

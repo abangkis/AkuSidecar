@@ -360,11 +360,13 @@ first create or try the Quiet managed window.
 
 ## Fresh database
 
-The database defaults to `runtime/aku-sidecar.db`. Schema version 9 contains
+The database defaults to `runtime/aku-sidecar.db`. Schema version 10 contains
 only the active tables documented in
 [`docs/go-rewrite-architecture.md`](docs/go-rewrite-architecture.md). The
-current preview accepts schema version 9 and migrates additive changes from
-version 7 idempotently at startup; this is not a Node compatibility path.
+current preview migrates additive changes from schema versions 7, 8, and 9
+idempotently at startup; this is not a Node compatibility path. The v10
+semantic signal receipt is aggregate-only and is unavailable for rows written
+before the migration; those rows are never backfilled from raw history.
 
 There is no importer for the Node database. A mismatched schema fails closed;
 delete or move the development database and start again.

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -298,6 +299,7 @@ func TestEventResolutionDiagnosticsRoundTrip(t *testing.T) {
 		TriggerReason:        "weak_intra_check_overlap",
 		StrongestOverlap:     2,
 		TriggerTokens:        []string{"kimi", "model"},
+		SignalReceipt:        &domain.SemanticSignalReceipt{Version: "semantic-signal-receipt-v1", CandidateCount: 3, ShortlistedEventCount: 2, TopOverlap: 2, TriggerTokenTotal: 2, TriggerRareTokenCount: 1, TriggerUnknownTokenCount: 1, CandidateActorUnavailableCount: 3},
 		CreatedAt:            domain.Now(),
 	}
 	if err := state.SaveEventResolutionSummary(ctx, value); err != nil {
@@ -309,5 +311,8 @@ func TestEventResolutionDiagnosticsRoundTrip(t *testing.T) {
 	}
 	if loaded.ResolverInvoked || loaded.HistoricalEventCount != 7 || loaded.TriggerReason != value.TriggerReason || loaded.StrongestOverlap != 2 || len(loaded.TriggerTokens) != 2 {
 		t.Fatalf("diagnostics=%+v", loaded)
+	}
+	if !reflect.DeepEqual(loaded.SignalReceipt, value.SignalReceipt) {
+		t.Fatalf("signal receipt=%+v want=%+v", loaded.SignalReceipt, value.SignalReceipt)
 	}
 }

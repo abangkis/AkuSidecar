@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 9
+const SchemaVersion = 10
 
-const schemaVersion = "9"
+const schemaVersion = "10"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -573,7 +573,8 @@ CREATE TABLE IF NOT EXISTS event_resolution_diagnostics (
   resolver_invoked INTEGER NOT NULL CHECK (resolver_invoked IN (0,1)),
   trigger_reason TEXT NOT NULL,
   strongest_overlap INTEGER NOT NULL CHECK (strongest_overlap >= 0),
-  trigger_tokens_json TEXT NOT NULL DEFAULT '[]'
+  trigger_tokens_json TEXT NOT NULL DEFAULT '[]',
+  receipt_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS semantic_event_corrections (
