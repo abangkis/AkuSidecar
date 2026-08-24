@@ -318,8 +318,9 @@ automatic work for user-visible updates. A user-authorized daily quota reset pre
 invocation history while establishing a new local allowance baseline. Prepared
 batches do not enter the Timeline until revealed. An account-level Codex usage
 limit creates a durable scheduler stopper before another tick is admitted. The
-Timeline and Settings expose the pause, and automatic work resumes only after
-the user explicitly confirms that Codex usage has been restored.
+Timeline and Settings expose the pause. Automatic work resumes after the user
+explicitly confirms that Codex usage has been restored, or after a later visible
+user update completes with clean model-backed usage and no failed invocation.
 
 Measured cost context from the development calibration harness: every Codex
 App Server invocation carries a fixed context baseline of roughly 12-13k input

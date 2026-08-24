@@ -600,6 +600,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if policyErr != nil {
 			return nil, policyErr
 		}
+		e.clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx, completedSession)
 		if completedSession.Delivery == domain.UpdateDeliveryPrepared {
 			if recordErr := e.store.RecordAutoUpdateSuccess(ctx); recordErr != nil {
 				e.logger.Printf("record auto update success for session %s failed: %v", sessionID, recordErr)
@@ -1200,6 +1201,54 @@ func (e *Engine) pauseAutoUpdateForUsageLimit(ctx context.Context, sessionID str
 	default:
 	}
 	return true
+}
+
+func (e *Engine) clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx context.Context, session domain.Session) {
+	if session.Status != "completed" || session.Trigger != domain.UpdateTriggerUser || session.Delivery != domain.UpdateDeliveryVisible || session.BudgetAuthority != domain.BudgetAuthorityUser {
+		return
+	}
+	pause, err := e.store.AutoUpdateUsageLimitPause(ctx)
+	if err != nil {
+		e.logger.Printf("read Auto Update usage-limit pause after successful user session %s: %v", session.ID, err)
+		return
+	}
+	if pause == nil {
+		return
+	}
+	report, err := e.store.SessionModelUsage(ctx, session.ID)
+	if err != nil {
+		e.logger.Printf("read model usage before restoring Auto Update after user session %s: %v", session.ID, err)
+		return
+	}
+	if !modelUsageProvesCodexRestored(report) {
+		return
+	}
+	if err := e.store.ConfirmAutoUpdateUsageRestored(ctx); err != nil {
+		e.logger.Printf("restore Auto Update after successful user session %s: %v", session.ID, err)
+		return
+	}
+	e.logger.Printf("restored Auto Update after model-backed user session %s completed successfully", session.ID)
+	select {
+	case e.autoWake <- struct{}{}:
+	default:
+	}
+}
+
+func modelUsageProvesCodexRestored(report domain.ModelUsageReport) bool {
+	completedModelInvocation := false
+	for _, category := range report.Categories {
+		for _, entry := range category.Entries {
+			switch entry.Status {
+			case "failed":
+				return false
+			case "completed":
+				if strings.TrimSpace(entry.Provider) != "" && strings.TrimSpace(entry.Model) != "" && !strings.EqualFold(strings.TrimSpace(entry.Model), "none") {
+					completedModelInvocation = true
+				}
+			}
+		}
+	}
+	return completedModelInvocation
 }
 
 func (e *Engine) shouldPauseForShutdown(ctx context.Context, err error) bool {

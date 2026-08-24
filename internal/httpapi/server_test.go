@@ -915,7 +915,7 @@ func TestEmbeddedCaptureSurfaceReleaseBarrierContract(t *testing.T) {
 func TestEmbeddedUsageLimitPauseRequiresExplicitRestoreConfirmation(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"confirm-codex-usage-restored", "Confirm Codex usage restored"},
-		"web/app.js":     {"usage_limit_paused", "Auto Update paused by Codex usage limit", "Automatic checks will not retry until you confirm", "/api/auto-update/usage-limit/restore", "function confirmCodexUsageRestored"},
+		"web/app.js":     {"usage_limit_paused", "Auto Update paused by Codex usage limit", "Automatic checks will not retry until you confirm", "/api/auto-update/usage-limit/restore", "function confirmCodexUsageRestored", "function handleAutoUpdateTimelineAction", "Confirm usage restored", "The Codex provider pause is unchanged"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

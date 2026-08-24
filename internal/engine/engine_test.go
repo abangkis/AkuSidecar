@@ -2013,6 +2013,54 @@ func TestCodexUsageLimitPausesSchedulerUntilUserConfirmation(t *testing.T) {
 	}
 }
 
+func TestModelUsageProvesCodexRestoredOnlyAfterCleanModelBackedSuccess(t *testing.T) {
+	completed := domain.ModelUsageEntry{Status: "completed", Provider: "codex-app-server", Model: "gpt-5.6-luna"}
+	failed := domain.ModelUsageEntry{Status: "failed", Provider: "structured-inference", Model: "gpt-5.6-luna"}
+
+	if modelUsageProvesCodexRestored(domain.ModelUsageReport{}) {
+		t.Fatal("empty usage must not prove restored Codex access")
+	}
+	if modelUsageProvesCodexRestored(domain.ModelUsageReport{Categories: []domain.ModelUsageCategory{{Entries: []domain.ModelUsageEntry{{Status: "completed", Provider: "local-index", Model: "none"}}}}}) {
+		t.Fatal("local-only completion must not prove restored Codex access")
+	}
+	if modelUsageProvesCodexRestored(domain.ModelUsageReport{Categories: []domain.ModelUsageCategory{{Entries: []domain.ModelUsageEntry{completed, failed}}}}) {
+		t.Fatal("a failed model invocation must keep the usage-limit pause")
+	}
+	if !modelUsageProvesCodexRestored(domain.ModelUsageReport{Categories: []domain.ModelUsageCategory{{Entries: []domain.ModelUsageEntry{completed}}}}) {
+		t.Fatal("clean model-backed completion should prove restored Codex access")
+	}
+}
+
+func TestSuccessfulModelBackedUserSessionClearsUsageLimitPause(t *testing.T) {
+	runtime, state := testEngine(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := state.CreateUpdateSession(ctx, "restored usage proof", settings, domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+	})
+	if err != nil || len(session.Runs) == 0 {
+		t.Fatalf("session=%+v err=%v", session, err)
+	}
+	if err := state.SaveTelemetry(ctx, domain.ReasoningTelemetry{
+		ID: domain.NewID("reasoning"), RunID: session.Runs[0].ID, Phase: "candidate_evaluation",
+		Provider: "codex-app-server", Model: "gpt-5.6-luna", Effort: "high", Status: "completed", CreatedAt: domain.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.pauseAutoUpdateForUsageLimit(ctx, "older-limited-session", errors.New("You've hit your usage limit. Try again later.")) {
+		t.Fatal("usage-limit pause was not stored")
+	}
+	session.Status = "completed"
+	runtime.clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx, session)
+	pause, err := state.AutoUpdateUsageLimitPause(ctx)
+	if err != nil || pause != nil {
+		t.Fatalf("pause=%+v err=%v", pause, err)
+	}
+}
+
 func TestCodexUsageLimitFailsRemainingSourceLanesWithoutMoreReasoning(t *testing.T) {
 	runtime, _ := testEngine(t)
 	ctx := context.Background()

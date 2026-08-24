@@ -228,7 +228,7 @@ $("#retry-button").addEventListener("click", () => {
 $("#cancel-button").addEventListener("click", cancelSession);
 $("#processing-inbox-button").addEventListener("click", () => setView("inbox"));
 $("#processing-settings-button").addEventListener("click", () => setView("settings"));
-$("#auto-update-timeline-settings").addEventListener("click", openAutoUpdateSettings);
+$("#auto-update-timeline-settings").addEventListener("click", handleAutoUpdateTimelineAction);
 $("#reset-auto-update-budget").addEventListener("click", resetAutoUpdateBudget);
 $("#confirm-codex-usage-restored").addEventListener("click", confirmCodexUsageRestored);
 $("#prepare-batch-now").addEventListener("click", prepareBatchNow);
@@ -767,6 +767,7 @@ function renderAutoUpdateStatus(status) {
   const confirmRestored = $("#confirm-codex-usage-restored");
   const runNow = $("#prepare-batch-now");
   const timeline = $("#auto-update-timeline-status");
+  const timelineAction = $("#auto-update-timeline-settings");
   if (!detail || !queue || !modeBadge || !modeNotice || !stateBadge || !preparedMetric || !runwayLabel || !runwayMetric || !resultMetric || !pressureLabel || !pressureMetric || !allowanceLabel || !allowanceMetric || !nextMetric || !budget || !budgetDetail || !timeline) return;
   if (state.bootstrap && status) state.bootstrap.autoUpdate = status;
   if (!status) {
@@ -874,6 +875,7 @@ function renderAutoUpdateStatus(status) {
   budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
   budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} user reserve`;
   const usageLimitPaused = status.state === "usage_limit_paused";
+  if (timelineAction) timelineAction.textContent = usageLimitPaused ? "Confirm usage restored" : "Review Auto Update";
   if (reset) reset.disabled = Boolean(state.session);
   if (confirmRestored) {
     confirmRestored.classList.toggle("hidden", !usageLimitPaused);
@@ -934,6 +936,14 @@ function openAutoUpdateSettings() {
   requestAnimationFrame(() => document.querySelector("#auto-update-enabled")?.closest("fieldset")?.scrollIntoView({ block: "start", behavior: "smooth" }));
 }
 
+function handleAutoUpdateTimelineAction() {
+  if (state.bootstrap?.autoUpdate?.state === "usage_limit_paused") {
+    confirmCodexUsageRestored();
+    return;
+  }
+  openAutoUpdateSettings();
+}
+
 async function resetAutoUpdateBudget() {
   if (state.session) {
     showError(new Error("Finish or cancel the active check before resetting today’s Auto Update quota."));
@@ -949,7 +959,8 @@ async function resetAutoUpdateBudget() {
     const notice = $("#provider-notice");
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
-    setNoticeText(notice, "Today’s local Auto Update quota was reset. Recorded model usage was preserved.");
+    const providerPause = autoUpdate.state === "usage_limit_paused" ? " The Codex provider pause is unchanged; confirm restored usage separately." : "";
+    setNoticeText(notice, `Today’s local Auto Update quota was reset. Recorded model usage was preserved.${providerPause}`);
   } catch (error) {
     showError(error);
   } finally {
@@ -963,8 +974,8 @@ async function confirmCodexUsageRestored() {
     return;
   }
   if (!window.confirm("Confirm that your Codex usage limit has been restored? Auto Update may resume immediately.")) return;
-  const button = $("#confirm-codex-usage-restored");
-  button.disabled = true;
+  const buttons = [$("#confirm-codex-usage-restored"), $("#auto-update-timeline-settings")].filter(Boolean);
+  for (const button of buttons) button.disabled = true;
   try {
     const { autoUpdate } = await api("/api/auto-update/usage-limit/restore", { method: "POST" });
     if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
@@ -976,7 +987,7 @@ async function confirmCodexUsageRestored() {
   } catch (error) {
     showError(error);
   } finally {
-    button.disabled = Boolean(state.session);
+    for (const button of buttons) button.disabled = Boolean(state.session);
   }
 }
 
