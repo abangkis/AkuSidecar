@@ -54,14 +54,13 @@ func groqTestServer(t *testing.T, output string) *httptest.Server {
 
 func groqTestConfig(t *testing.T, endpoint string) config.Config {
 	t.Helper()
-	t.Setenv("GROQ_API_KEY", "test-only-key")
 	model := config.ModelConfig{ModelID: "openai/gpt-oss-120b", MinReasoningTier: "high", ReasoningOptionID: "high", Assurance: "provider_strict", MaxOutputTokens: 512}
-	return config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Provider: "groq", Endpoint: endpoint, CredentialRef: "env:GROQ_API_KEY", TimeoutMS: 5000, Planning: model, Evaluation: model}}
+	return config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Provider: "groq", Endpoint: endpoint, CredentialRef: "groq.primary", TimeoutMS: 5000, Planning: model, Evaluation: model}}
 }
 
 func TestGroqProfileCatalog(t *testing.T) {
 	server := groqTestServer(t, `{}`)
-	provider, err := NewGroq(groqTestConfig(t, server.URL))
+	provider, err := newGroq(groqTestConfig(t, server.URL), staticCredentialResolver("test-only-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +77,7 @@ func TestGroqProfileCatalog(t *testing.T) {
 
 func TestGroqStructuredPlan(t *testing.T) {
 	server := groqTestServer(t, `{"decision":"finish","reason":"enough bounded evidence"}`)
-	provider, err := NewGroq(groqTestConfig(t, server.URL))
+	provider, err := newGroq(groqTestConfig(t, server.URL), staticCredentialResolver("test-only-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,13 +99,13 @@ func TestGroqDoesNotFallBackToImplicitEnvironmentReference(t *testing.T) {
 	server := groqTestServer(t, `{}`)
 	cfg := groqTestConfig(t, server.URL)
 	cfg.Reasoning.CredentialRef = ""
-	if _, err := NewGroq(cfg); err == nil || !strings.Contains(err.Error(), "unsupported credential reference") {
+	if _, err := newGroq(cfg, staticCredentialResolver("test-only-key")); err == nil || !strings.Contains(err.Error(), "credential ref is required") {
 		t.Fatalf("error=%v", err)
 	}
 }
 
 func TestExactCandidateCountSchemaConstrainsBothEvaluationArrays(t *testing.T) {
-	provider, err := NewGroq(groqTestConfig(t, groqTestServer(t, `{}`).URL))
+	provider, err := newGroq(groqTestConfig(t, groqTestServer(t, `{}`).URL), staticCredentialResolver("test-only-key"))
 	if err != nil {
 		t.Fatal(err)
 	}

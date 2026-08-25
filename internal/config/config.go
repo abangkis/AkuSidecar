@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abangkis/AkuSidecar/internal/credentials"
 )
 
 type Config struct {
@@ -101,8 +103,8 @@ type ProviderConfig struct {
 	// HideFromSettings keeps an assessment-only composition available to
 	// explicit development overrides without advertising it as user-ready.
 	HideFromSettings bool `json:"hideFromSettings,omitempty"`
-	// CredentialRef names a runtime-only secret source. Secret values are never
-	// valid configuration fields and must not be persisted beside this reference.
+	// CredentialRef names an entry in AkuSidecar's centralized local credential
+	// store. Secret values are never valid provider configuration fields.
 	CredentialRef    string `json:"credentialRef,omitempty"`
 	MaxRetries       int    `json:"maxRetries,omitempty"`
 	TimeoutMS        int    `json:"timeoutMs"`
@@ -386,12 +388,12 @@ func (p ProviderConfig) Validate(name string) error {
 	}
 	credentialRef := strings.TrimSpace(p.CredentialRef)
 	if name == "groq" {
-		if credentialRef != "env:GROQ_API_KEY" {
-			return fmt.Errorf("reasoning provider %q credentialRef must be env:GROQ_API_KEY", name)
+		if err := credentials.ValidateReference("groq", credentialRef); err != nil {
+			return err
 		}
 	} else if IsGeminiProvider(name) {
-		if credentialRef != "env:GEMINI_API_KEY" {
-			return fmt.Errorf("reasoning provider %q credentialRef must be env:GEMINI_API_KEY", name)
+		if err := credentials.ValidateReference("gemini", credentialRef); err != nil {
+			return err
 		}
 	} else if credentialRef != "" {
 		return fmt.Errorf("credentialRef is not supported for reasoning provider %q", name)

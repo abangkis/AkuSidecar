@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/credentials"
@@ -14,14 +13,15 @@ import (
 
 func (e *Engine) ReasoningProviders() []config.ProviderSummary {
 	summaries := e.config.Reasoning.ProviderSummary()
+	store := credentials.ForRoot(e.config.Root)
 	for index := range summaries {
 		provider := e.config.Reasoning.Providers[summaries[index].Name]
-		credentialRef := strings.TrimSpace(provider.CredentialRef)
+		credentialRef := provider.CredentialRef
 		if credentialRef == "" {
 			continue
 		}
-		summaries[index].CredentialName = strings.TrimPrefix(credentialRef, "env:")
-		if _, err := (credentials.Environment{}).Resolve(credentialRef); err != nil {
+		summaries[index].CredentialName = credentialRef
+		if _, err := store.Resolve(credentialRef); err != nil {
 			summaries[index].Configured = false
 			summaries[index].ConfigurationStatus = "missing_credential"
 		}

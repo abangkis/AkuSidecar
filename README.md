@@ -94,6 +94,22 @@ An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
 timeout, validation errors, and hidden model fallback are not retryable.
 
+Remote-provider credentials use one Sidecar-owned local store. The tracked
+provider configuration contains only namespaced references such as
+`gemini.primary` and `groq.primary`; raw keys belong only in the ignored
+`runtime/config/credentials.local.json` file:
+
+```powershell
+New-Item -ItemType Directory -Force .\runtime\config | Out-Null
+Copy-Item .\config\credentials.example.json .\runtime\config\credentials.local.json
+# Paste keys into credentialStore.values in the copied local file.
+```
+
+AkuSidecar resolves one referenced value only when composing that provider.
+Settings reads the same store on demand, shows only reference availability,
+and never returns the secret. AkuSupervisor remains responsible only for the
+Sidecar process lifecycle and does not receive provider credentials.
+
 ## Optional Chromium app shell
 
 `--app-shell` opens AkuSidecar's UI inside a locally pinned Chromium window in

@@ -999,9 +999,9 @@ function syncReasoningProviderSelection() {
   if (!provider) {
     status.textContent = "No selectable reasoning provider is available.";
   } else if (provider.configured === false) {
-    status.textContent = `${provider.credentialName || "Required credential"} is not available to AkuSidecar. Configure it before selecting this provider.`;
+    status.textContent = `${provider.credentialName || "Required credential"} is not available in AkuSidecar's local credential store. Configure it before selecting this provider.`;
   } else if (provider.runtimeKind === "remote_api") {
-    status.textContent = `${provider.credentialName} is available to this AkuSidecar process. The secret value is never shown.`;
+    status.textContent = `${provider.credentialName} is available in AkuSidecar's local credential store. The secret value is never shown.`;
   } else if (provider.runtimeKind === "executable") {
     status.textContent = "Uses the validated local executable shown below.";
   } else {

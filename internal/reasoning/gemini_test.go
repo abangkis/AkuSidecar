@@ -12,6 +12,15 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 )
 
+type staticCredentialResolver string
+
+func (resolver staticCredentialResolver) Resolve(reference string) (string, error) {
+	if strings.TrimSpace(reference) == "" {
+		return "", fmt.Errorf("credential ref is required")
+	}
+	return string(resolver), nil
+}
+
 func geminiTestServer(t *testing.T, output string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,14 +68,13 @@ func geminiTestServer(t *testing.T, output string) *httptest.Server {
 
 func geminiTestConfig(t *testing.T, endpoint string) config.Config {
 	t.Helper()
-	t.Setenv("GEMINI_API_KEY", "gemini-test-key")
 	model := config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", ReasoningOptionID: "high", Assurance: "provider_strict", MaxOutputTokens: 512}
-	return config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Provider: "gemini-flash-lite", Endpoint: endpoint, CredentialRef: "env:GEMINI_API_KEY", TimeoutMS: 5000, Planning: model, Evaluation: model}}
+	return config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Provider: "gemini-flash-lite", Endpoint: endpoint, CredentialRef: "gemini.primary", TimeoutMS: 5000, Planning: model, Evaluation: model}}
 }
 
 func TestGeminiProfileCatalog(t *testing.T) {
 	server := geminiTestServer(t, `{}`)
-	provider, err := NewGemini(geminiTestConfig(t, server.URL))
+	provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +91,7 @@ func TestGeminiProfileCatalog(t *testing.T) {
 
 func TestGeminiStructuredPlanUsesProjectedWireSchemaAndFullLocalValidation(t *testing.T) {
 	server := geminiTestServer(t, `{"decision":"finish","reason":"enough bounded evidence"}`)
-	provider, err := NewGemini(geminiTestConfig(t, server.URL))
+	provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +108,7 @@ func TestGeminiStructuredPlanUsesProjectedWireSchemaAndFullLocalValidation(t *te
 
 func TestGeminiRejectsResponseThatViolatesCompleteSidecarSchema(t *testing.T) {
 	server := geminiTestServer(t, `{"decision":"finish","reason":""}`)
-	provider, err := NewGemini(geminiTestConfig(t, server.URL))
+	provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +123,7 @@ func TestGeminiDoesNotUseImplicitCredentialReference(t *testing.T) {
 	server := geminiTestServer(t, `{}`)
 	cfg := geminiTestConfig(t, server.URL)
 	cfg.Reasoning.CredentialRef = ""
-	if _, err := NewGemini(cfg); err == nil || !strings.Contains(err.Error(), "unsupported credential reference") {
+	if _, err := newGemini(cfg, staticCredentialResolver("gemini-test-key")); err == nil || !strings.Contains(err.Error(), "credential ref is required") {
 		t.Fatalf("error=%v", err)
 	}
 }

@@ -2,6 +2,7 @@ package reasoning
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -79,6 +80,31 @@ func TestNewProviderRoutesModelScopedOllamaEntries(t *testing.T) {
 func TestNewProviderRoutesGeminiEntries(t *testing.T) {
 	server := geminiTestServer(t, `{}`)
 	cfg := geminiTestConfig(t, server.URL)
+	root := t.TempDir()
+	for _, relative := range []string{
+		"schemas/acquisition-plan.schema.json",
+		"schemas/reasoning-result.schema.json",
+	} {
+		source, err := os.ReadFile(filepath.Join(cfg.Root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(root, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, source, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	credentialPath := filepath.Join(root, "runtime", "config", "credentials.local.json")
+	if err := os.MkdirAll(filepath.Dir(credentialPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credentialPath, []byte(`{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.primary":"gemini-test-key"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Root = root
 
 	got, err := NewProvider(cfg)
 	if err != nil {

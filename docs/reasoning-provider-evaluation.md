@@ -19,11 +19,12 @@ Codex App Server even if a development fallback is later accepted.
   integration approval.
 - Assessment uses synthetic or source-controlled fixtures first. A live shadow
   run must not persist candidate-provider decisions to Timeline or model state.
-- Provider credentials are never stored in Sidecar configuration, SQLite,
-  receipts, diagnostics, or assessment artifacts. Configuration carries only
-  a `credentialRef`; the initial development adapter accepts exactly
-  `env:GROQ_API_KEY` or `env:GEMINI_API_KEY` and resolves it in memory at
-  provider composition time.
+- Provider credentials are never stored in the tracked Sidecar configuration,
+  SQLite, receipts, diagnostics, or assessment artifacts. Provider entries
+  carry only a namespaced `credentialRef` such as `groq.primary` or
+  `gemini.primary`. AkuSidecar resolves that reference at provider composition
+  time from the ignored centralized local store at
+  `runtime/config/credentials.local.json`.
 - OpenRouter development tooling uses `OPENROUTER_API_KEY`. The retired
   `OPENROUTER_CODEX_KEY` name is not part of the contract.
 - ZDR enforcement is a separate SDK/provider-routing experiment. The Nemotron
@@ -105,9 +106,10 @@ AkuSidecar consumes Inference SDK v0.11.0 and exposes the curated Groq route
 workloads use provider-strict JSON Schema; conditional-free retries remain zero
 by default. The checked-in active provider is still `codex-app-server`.
 
-The environment resolver is deliberately not presented as the final central
-secret store. A future OS-backed implementation can satisfy the same resolver
-boundary while config continues to retain only an opaque `credentialRef`.
+The centralized local JSON store is the development secret boundary. Its
+resolver contract remains replaceable by an OS-backed implementation without
+changing provider entries, which retain only an opaque namespaced
+`credentialRef`.
 
 SDK v0.11.0 fixes the Groq model preflight for provider model IDs containing a
 slash. The opt-in `TestGroqLiveSidecarWorkloads` retains the Sidecar-level live
@@ -146,8 +148,9 @@ retest, not additional automatic retries in the active Sidecar flow.
 
 AkuSidecar consumes Inference SDK v0.12.0 and composes the native stateless
 Gemini Interactions v1 adapter with `gemini-3.5-flash-lite`. Configuration
-contains only `credentialRef: env:GEMINI_API_KEY`; the key is resolved in memory
-and sent by the SDK only in the provider header.
+contains only `credentialRef: gemini.primary`; the key is resolved in memory
+from the ignored centralized local store and sent by the SDK only in the
+provider header.
 
 Gemini accepts a narrower JSON Schema subset than AkuSidecar uses locally. The
 composition removes the unsupported wire keywords (`$schema`, `pattern`,
@@ -175,10 +178,19 @@ Initial bounded evidence:
   near-miss negative control both passed.
 
 No raw prompt, output, provider error body, or credential was retained. Gemini
-Flash Lite is selectable in Settings only when `GEMINI_API_KEY` is available to
-the running Sidecar process. Saving the choice persists it in Sidecar state;
-the same Supervisor-managed application activates it after restart. No
-Supervisor service parameters or lifecycle responsibilities are added.
+Flash Lite is selectable in Settings only when `gemini.primary` is populated
+in `runtime/config/credentials.local.json`. Saving the choice persists it in
+Sidecar state; the same Supervisor-managed application activates it after
+restart. No Supervisor service parameters or lifecycle responsibilities are
+added.
+
+Create the ignored local store from the tracked secret-free example:
+
+```powershell
+New-Item -ItemType Directory -Force .\runtime\config | Out-Null
+Copy-Item .\config\credentials.example.json .\runtime\config\credentials.local.json
+# Edit credentialStore.values in credentials.local.json; never commit that file.
+```
 
 ## Separate OpenRouter privacy gate
 

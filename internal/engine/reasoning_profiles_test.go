@@ -100,7 +100,7 @@ func TestReasoningProfilesUseBackendCatalogPerInvocation(t *testing.T) {
 }
 
 func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
-	t.Setenv("GEMINI_API_KEY", "")
+	root := t.TempDir()
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
 	settings.ReasoningProvider = "codex-app-server"
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
@@ -108,21 +108,27 @@ func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	cfg := config.Config{Reasoning: config.ReasoningConfig{Providers: map[string]config.ProviderConfig{
+	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Providers: map[string]config.ProviderConfig{
 		"codex-app-server":  {},
-		"gemini-flash-lite": {CredentialRef: "env:GEMINI_API_KEY"},
+		"gemini-flash-lite": {CredentialRef: "gemini.primary"},
 	}}}
 	runtime := New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
 	providers := runtime.ReasoningProviders()
-	if len(providers) != 2 || providers[1].Name != "gemini-flash-lite" || providers[1].Configured || providers[1].ConfigurationStatus != "missing_credential" || providers[1].CredentialName != "GEMINI_API_KEY" {
+	if len(providers) != 2 || providers[1].Name != "gemini-flash-lite" || providers[1].Configured || providers[1].ConfigurationStatus != "missing_credential" || providers[1].CredentialName != "gemini.primary" {
 		t.Fatalf("providers=%+v", providers)
 	}
 
 	settings.ReasoningProvider = "gemini-flash-lite"
-	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil || !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil || !strings.Contains(err.Error(), "gemini.primary") {
 		t.Fatalf("missing credential selection error=%v", err)
 	}
-	t.Setenv("GEMINI_API_KEY", "test-only-gemini-key")
+	credentialPath := filepath.Join(root, "runtime", "config", "credentials.local.json")
+	if err := os.MkdirAll(filepath.Dir(credentialPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credentialPath, []byte(`{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.primary":"test-only-gemini-key"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	saved, err := runtime.SaveSettings(context.Background(), settings)
 	if err != nil || saved.ReasoningProvider != "gemini-flash-lite" {
 		t.Fatalf("saved=%+v err=%v", saved, err)

@@ -39,7 +39,7 @@
       },
       "groq": {
         "endpoint": "https://api.groq.com/openai/v1",
-        "credentialRef": "env:GROQ_API_KEY",
+        "credentialRef": "groq.primary",
         "hideFromSettings": true,
         "maxRetries": 0,
         "timeoutMs": 120000,
@@ -73,7 +73,7 @@
       },
       "gemini-flash-lite": {
         "endpoint": "https://generativelanguage.googleapis.com/v1",
-        "credentialRef": "env:GEMINI_API_KEY",
+        "credentialRef": "gemini.primary",
         "maxRetries": 0,
         "timeoutMs": 120000,
         "planning": {

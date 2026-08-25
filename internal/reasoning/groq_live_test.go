@@ -11,7 +11,8 @@ import (
 
 // TestGroqLiveSidecarWorkloads is an explicit, non-authoritative development
 // gate. It does not mutate Sidecar state and never logs prompts, outputs, or
-// credentials. Enable it with AKU_GROQ_LIVE=1 and GROQ_API_KEY.
+// credentials. Enable it with AKU_GROQ_LIVE=1 after configuring groq.primary
+// in runtime/config/credentials.local.json.
 func TestGroqLiveSidecarWorkloads(t *testing.T) {
 	if os.Getenv("AKU_GROQ_LIVE") != "1" {
 		t.Skip("set AKU_GROQ_LIVE=1 to run the live Groq Sidecar gate")
@@ -22,7 +23,7 @@ func TestGroqLiveSidecarWorkloads(t *testing.T) {
 	provider, err := NewGroq(config.Config{
 		Root: filepathRoot(t),
 		Reasoning: config.ReasoningConfig{
-			Provider: "groq", CredentialRef: "env:GROQ_API_KEY", TimeoutMS: 120000,
+			Provider: "groq", CredentialRef: "groq.primary", TimeoutMS: 120000,
 			Planning: planning, Evaluation: evaluation,
 		},
 	})

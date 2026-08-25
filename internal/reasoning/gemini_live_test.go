@@ -21,7 +21,7 @@ func TestGeminiLiveSidecarWorkloads(t *testing.T) {
 	provider, err := NewGemini(config.Config{
 		Root: filepathRoot(t),
 		Reasoning: config.ReasoningConfig{
-			Provider: "gemini-flash-lite", CredentialRef: "env:GEMINI_API_KEY", TimeoutMS: 120000,
+			Provider: "gemini-flash-lite", CredentialRef: "gemini.primary", TimeoutMS: 120000,
 			Planning: planning, Evaluation: evaluation,
 		},
 	})

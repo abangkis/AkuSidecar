@@ -1,10 +1,20 @@
 package credentials
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+const LocalStoreRelativePath = "runtime/config/credentials.local.json"
+
+var referencePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*\.[a-z][a-z0-9._-]*$`)
 
 // Resolver materializes a credential only at the provider composition
 // boundary. Implementations must not persist or log the returned value.
@@ -12,18 +22,97 @@ type Resolver interface {
 	Resolve(reference string) (string, error)
 }
 
-// Environment resolves the deliberately small development-only reference
-// vocabulary. It is an adapter boundary, not a durable secret store.
-type Environment struct{}
+type storeDocument struct {
+	SchemaVersion   int             `json:"schemaVersion"`
+	CredentialStore credentialStore `json:"credentialStore"`
+}
 
-func (Environment) Resolve(reference string) (string, error) {
-	name, ok := strings.CutPrefix(strings.TrimSpace(reference), "env:")
-	if !ok || (name != "GROQ_API_KEY" && name != "GEMINI_API_KEY") {
-		return "", fmt.Errorf("unsupported credential reference")
+type credentialStore struct {
+	Type   string            `json:"type"`
+	Values map[string]string `json:"values"`
+}
+
+// LocalStore is AkuSidecar's centralized, project-local credential boundary.
+// The ignored file is read on demand so Settings can observe credentials added
+// after startup without retaining or exposing the whole store.
+type LocalStore struct {
+	path string
+}
+
+func ForRoot(root string) LocalStore {
+	return LocalStore{path: filepath.Join(root, filepath.FromSlash(LocalStoreRelativePath))}
+}
+
+func AtPath(path string) LocalStore {
+	return LocalStore{path: path}
+}
+
+func (store LocalStore) Resolve(reference string) (string, error) {
+	reference = strings.TrimSpace(reference)
+	if !referencePattern.MatchString(reference) {
+		return "", fmt.Errorf("credential ref %q is malformed", reference)
 	}
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return "", fmt.Errorf("credential %q is unavailable in the process environment", reference)
+	data, err := os.ReadFile(store.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("credential ref %q is unavailable: local credential store is missing", reference)
+		}
+		return "", fmt.Errorf("read local credential store for ref %q: %w", reference, err)
 	}
-	return value, nil
+	var document storeDocument
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&document); err != nil {
+		return "", fmt.Errorf("decode local credential store for ref %q: %w", reference, err)
+	}
+	if err := ensureEOF(decoder); err != nil {
+		return "", fmt.Errorf("decode local credential store for ref %q: %w", reference, err)
+	}
+	if document.SchemaVersion != 1 {
+		return "", fmt.Errorf("credential ref %q is unavailable: unsupported local credential store schemaVersion %d", reference, document.SchemaVersion)
+	}
+	if strings.ToLower(strings.TrimSpace(document.CredentialStore.Type)) != "inline" {
+		return "", fmt.Errorf("credential ref %q is unavailable: local credential store type must be %q", reference, "inline")
+	}
+	if document.CredentialStore.Values == nil {
+		return "", fmt.Errorf("credential ref %q is unavailable: local credential store values are missing", reference)
+	}
+	for configuredRef := range document.CredentialStore.Values {
+		if !referencePattern.MatchString(strings.TrimSpace(configuredRef)) {
+			return "", fmt.Errorf("local credential store contains malformed ref %q", configuredRef)
+		}
+	}
+	value, ok := document.CredentialStore.Values[reference]
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("credential ref %q is missing", reference)
+	}
+	return strings.TrimSpace(value), nil
+}
+
+// ValidateReference ensures that a provider can only select a credential from
+// its own namespace, for example gemini.primary or groq.primary.
+func ValidateReference(provider, reference string) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return fmt.Errorf("credential ref is required for provider %q", provider)
+	}
+	if !referencePattern.MatchString(reference) {
+		return fmt.Errorf("credential ref %q is malformed for provider %q", reference, provider)
+	}
+	prefix := strings.SplitN(reference, ".", 2)[0]
+	if prefix != provider {
+		return fmt.Errorf("credential ref %q has the wrong provider prefix for %q", reference, provider)
+	}
+	return nil
+}
+
+func ensureEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); err == io.EOF {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return errors.New("local credential store contains multiple JSON values")
 }

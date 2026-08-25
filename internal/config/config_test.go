@@ -190,7 +190,7 @@ func TestActiveReasoningProviderMustBeDeclared(t *testing.T) {
 
 func TestGroqRequiresReferenceWithoutResolvingSecretDuringConfigLoad(t *testing.T) {
 	model := ModelConfig{ModelID: "openai/gpt-oss-120b", MinReasoningTier: "high", ReasoningOptionID: "high"}
-	provider := ProviderConfig{CredentialRef: "env:GROQ_API_KEY", TimeoutMS: 120000, Planning: model, Evaluation: model, SemanticEvent: model, AIDetection: model}
+	provider := ProviderConfig{CredentialRef: "groq.primary", TimeoutMS: 120000, Planning: model, Evaluation: model, SemanticEvent: model, AIDetection: model}
 	if err := provider.Validate("groq"); err != nil {
 		t.Fatal(err)
 	}
@@ -198,11 +198,11 @@ func TestGroqRequiresReferenceWithoutResolvingSecretDuringConfigLoad(t *testing.
 		t.Fatalf("label=%q", label)
 	}
 	provider.CredentialRef = ""
-	if err := provider.Validate("groq"); err == nil || !strings.Contains(err.Error(), "env:GROQ_API_KEY") {
+	if err := provider.Validate("groq"); err == nil || !strings.Contains(err.Error(), "required") {
 		t.Fatalf("missing reference error=%v", err)
 	}
-	provider.CredentialRef = "env:OTHER_API_KEY"
-	if err := provider.Validate("groq"); err == nil || !strings.Contains(err.Error(), "env:GROQ_API_KEY") {
+	provider.CredentialRef = "gemini.primary"
+	if err := provider.Validate("groq"); err == nil || !strings.Contains(err.Error(), "wrong provider prefix") {
 		t.Fatalf("unexpected reference error=%v", err)
 	}
 }
@@ -220,7 +220,7 @@ func TestAssessmentProviderCanRemainHiddenFromSettings(t *testing.T) {
 
 func TestGeminiProviderRequiresCanonicalCredentialReference(t *testing.T) {
 	model := ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", ReasoningOptionID: "high", MaxOutputTokens: 512}
-	provider := ProviderConfig{CredentialRef: "env:GEMINI_API_KEY", TimeoutMS: 120000, Planning: model, Evaluation: model, SemanticEvent: model, AIDetection: model}
+	provider := ProviderConfig{CredentialRef: "gemini.primary", TimeoutMS: 120000, Planning: model, Evaluation: model, SemanticEvent: model, AIDetection: model}
 	if err := provider.Validate("gemini-flash-lite"); err != nil {
 		t.Fatal(err)
 	}
@@ -235,8 +235,8 @@ func TestGeminiProviderRequiresCanonicalCredentialReference(t *testing.T) {
 	if len(summaries) != 2 || summaries[1].Name != "gemini-flash-lite" || summaries[1].RuntimeKind != "remote_api" || !summaries[1].Configured {
 		t.Fatalf("Gemini provider summary=%+v", summaries)
 	}
-	provider.CredentialRef = "env:OTHER_API_KEY"
-	if err := provider.Validate("gemini-flash-lite"); err == nil || !strings.Contains(err.Error(), "env:GEMINI_API_KEY") {
+	provider.CredentialRef = "groq.primary"
+	if err := provider.Validate("gemini-flash-lite"); err == nil || !strings.Contains(err.Error(), "wrong provider prefix") {
 		t.Fatalf("unexpected reference error=%v", err)
 	}
 }
