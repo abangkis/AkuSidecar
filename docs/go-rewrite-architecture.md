@@ -12,7 +12,9 @@ AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-
 - `internal/store` owns the active SQLite v10 schema and rejects every other existing schema before mutating application tables. Schema v9 databases upgrade transactionally by adding the bounded semantic signal receipt column; legacy rows decode as receipt-unavailable.
 - `internal/selection` owns generic trust/materiality admission, high-authority personalization, protected updates, exact-evidence exclusion, and the discovery lane.
 - `internal/preference` fits the rebuildable local profile from canonical direct signals.
-- `internal/reasoning` owns the single managed Codex App Server transport and candidate-evaluation adapter.
+- `internal/reasoning` owns provider-neutral execution profiles, bounded
+  provider compositions, and the current managed Codex App Server transport.
+  OpenRouter remains an SDK-level assessment and is not yet a Sidecar provider.
 - `internal/eventengine` owns bounded event retrieval, the separate App Server resolver, high-precision merging, and safe degradation.
 - `internal/aidetector` owns deterministic text-first Fast Detection and the separate asynchronous App Server resolver. It does not own selection or the generic side-pane UI primitive.
 - AkuSupervisor starts and stops `runtime/dev/aku-sidecar.exe` directly.

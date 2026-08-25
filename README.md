@@ -332,6 +332,16 @@ therefore spend several dozen thousand input tokens on context overhead alone,
 which is a meaningful share of the fresh daily boundary and the strongest
 economic argument for keeping routine automatic work on local providers.
 
+Development-provider replacement is now evaluated independently from further
+payload-saving work. Codex App Server remains the authoritative baseline and
+the configured Sidecar backend. OpenRouter candidates are assessed through the
+Inference SDK and isolated synthetic/corpus gates before any Sidecar provider
+composition or Settings option is added. The 2026-08-25 Nemotron Ultra
+assessment found promising prompt-only schema conformance but insufficient
+free-route reliability and tail latency for default use. The canonical results,
+credential convention, privacy boundary, and remaining gates are recorded in
+[`docs/reasoning-provider-evaluation.md`](docs/reasoning-provider-evaluation.md).
+
 Adaptive supply telemetry classifies every completed user or scheduler update:
 an update with retained items is productive, an all-source successful update
 with no retained items is valid-empty, and a timeout, capacity, Bridge, or
