@@ -108,6 +108,15 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	if err != nil {
 		return domain.Settings{}, err
 	}
+	if target := strings.TrimSpace(value.ReasoningProvider); target != "" && target != current.ReasoningProvider && len(e.config.Reasoning.Providers) > 0 {
+		provider, selectable := e.reasoningProviderConfiguration(target)
+		if !selectable {
+			return domain.Settings{}, fmt.Errorf("reasoning provider %q is not selectable", target)
+		}
+		if !provider.Configured {
+			return domain.Settings{}, fmt.Errorf("%s is not configured: set %s before selecting it", provider.Label, provider.CredentialName)
+		}
+	}
 	var executableRuntime reasoning.ExecutableRuntime
 	var resolvedExecutable string
 	if strings.TrimSpace(value.ReasoningExecutablePath) != strings.TrimSpace(current.ReasoningExecutablePath) {

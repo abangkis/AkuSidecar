@@ -74,7 +74,6 @@
       "gemini-flash-lite": {
         "endpoint": "https://generativelanguage.googleapis.com/v1",
         "credentialRef": "env:GEMINI_API_KEY",
-        "hideFromSettings": true,
         "maxRetries": 0,
         "timeoutMs": 120000,
         "planning": {

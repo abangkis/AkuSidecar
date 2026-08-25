@@ -255,6 +255,7 @@ settingsForm.addEventListener("click", (event) => {
   if (event.target.closest("button")) queueMicrotask(refreshSettingsDirtyState);
 });
 $("#detect-reasoning-executable").addEventListener("click", detectReasoningExecutable);
+$("#reasoning-provider").addEventListener("change", syncReasoningProviderSelection);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
 $("#ai-detection-enabled").addEventListener("change", syncAIDetectionSettings);
@@ -724,10 +725,12 @@ function renderSettings(settings) {
     reasoningProviderSelect.replaceChildren(...reasoningProviders.map((entry) => {
       const option = document.createElement("option");
       option.value = entry.name;
-      option.textContent = entry.label;
+      option.textContent = entry.configured === false ? `${entry.label} · credential missing` : entry.label;
+      option.disabled = entry.configured === false;
       return option;
     }));
     if (reasoningProviders.some((entry) => entry.name === activeProvider)) reasoningProviderSelect.value = activeProvider;
+    syncReasoningProviderSelection();
   }
   $("#reasoning-executable-label").textContent = reasoningRuntime?.label || "Inference executable";
   $("#reasoning-executable-path").value = reasoningRuntime?.executablePath || settings.reasoningExecutablePath || "";
@@ -983,6 +986,27 @@ async function prepareBatchNow() {
 function openAutoUpdateSettings() {
   setView("settings");
   requestAnimationFrame(() => document.querySelector("#auto-update-enabled")?.closest("fieldset")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+}
+
+function syncReasoningProviderSelection() {
+  const selected = $("#reasoning-provider")?.value;
+  const provider = (state.bootstrap?.reasoningProviders || []).find((entry) => entry.name === selected);
+  const status = $("#reasoning-provider-status");
+  const executableRow = document.querySelector(".reasoning-executable-row");
+  if (executableRow) executableRow.hidden = provider?.runtimeKind !== "executable";
+  if (!status) return;
+  status.classList.toggle("is-warning", provider?.configured === false);
+  if (!provider) {
+    status.textContent = "No selectable reasoning provider is available.";
+  } else if (provider.configured === false) {
+    status.textContent = `${provider.credentialName || "Required credential"} is not available to AkuSidecar. Configure it before selecting this provider.`;
+  } else if (provider.runtimeKind === "remote_api") {
+    status.textContent = `${provider.credentialName} is available to this AkuSidecar process. The secret value is never shown.`;
+  } else if (provider.runtimeKind === "executable") {
+    status.textContent = "Uses the validated local executable shown below.";
+  } else {
+    status.textContent = "Provider configuration is ready.";
+  }
 }
 
 function handleAutoUpdateTimelineAction() {
@@ -1242,14 +1266,18 @@ async function persistSettings(settings, confirmationPhrase = "") {
   status.textContent = "Saving…";
   if (saveButton) saveButton.disabled = true;
   try {
+    const previousProvider = state.bootstrap.settings?.reasoningProvider || state.bootstrap.provider;
     const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
     state.bootstrap.settings = response.settings;
+    state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
     state.bootstrap.reasoningRuntime = response.reasoningRuntime ?? state.bootstrap.reasoningRuntime;
     state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
     state.bootstrap.mediaProvenanceRuntime = response.mediaProvenanceRuntime ?? state.bootstrap.mediaProvenanceRuntime;
     renderSettings(response.settings);
     syncOnboardingLearning(shouldShowOnboardingLearning(state.session));
-    status.textContent = `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
+    status.textContent = response.settings.reasoningProvider !== previousProvider
+      ? "Saved · restart AkuSidecar to activate the selected reasoning provider."
+      : `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
     await refreshTimeline();
     return response.settings;
   } catch (error) {

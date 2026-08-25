@@ -392,7 +392,10 @@
             <div class="settings-card reasoning-processes-card">
               <label class="settings-row" for="reasoning-provider">
                 <span class="settings-copy"><strong>Reasoning provider</strong><small>Choose the inference backend used by every reasoning process. The switch applies after the sidecar restarts.</small></span>
-                <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select"></select>
+                <span class="reasoning-provider-control">
+                  <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select" aria-describedby="reasoning-provider-status"></select>
+                  <small id="reasoning-provider-status" class="reasoning-provider-status" aria-live="polite"></small>
+                </span>
               </label>
               <label class="settings-row reasoning-executable-row" for="reasoning-executable-path">
                 <span class="settings-copy"><strong id="reasoning-executable-label">Codex executable</strong><small>The validated local runtime used by every Codex-backed reasoning process. Changes apply immediately when no reasoning work is active.</small></span>

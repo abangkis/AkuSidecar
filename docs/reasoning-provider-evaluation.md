@@ -1,10 +1,9 @@
 # Development reasoning-provider evaluation
 
-Status: active assessment. Groq and Gemini Flash Lite are composed as opt-in
-AkuSidecar development providers, while Codex App Server remains the
-authoritative development baseline. Both entries remain hidden from Settings
-until credential storage and their relevant live gates are complete; they can
-only be selected through an explicit development override.
+Status: active assessment. Groq remains an opt-in hidden assessment provider.
+Gemini Flash Lite has passed the four bounded Sidecar live gates and is exposed
+as a persisted application-level Settings choice, while Codex App Server
+remains the checked-in development default and fallback.
 
 This work seeks a free or materially cheaper provider for routine development
 flows. It is separate from the completed payload-saving effort: model and route
@@ -176,8 +175,10 @@ Initial bounded evidence:
   near-miss negative control both passed.
 
 No raw prompt, output, provider error body, or credential was retained. Gemini
-Flash Lite remains hidden from Settings and is not yet authorized to replace
-Codex App Server as the default.
+Flash Lite is selectable in Settings only when `GEMINI_API_KEY` is available to
+the running Sidecar process. Saving the choice persists it in Sidecar state;
+the same Supervisor-managed application activates it after restart. No
+Supervisor service parameters or lifecycle responsibilities are added.
 
 ## Separate OpenRouter privacy gate
 

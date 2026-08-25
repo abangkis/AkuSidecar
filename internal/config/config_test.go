@@ -227,6 +227,14 @@ func TestGeminiProviderRequiresCanonicalCredentialReference(t *testing.T) {
 	if label := ProviderLabel("gemini-flash-lite"); label != "Gemini · 3.5 Flash Lite" {
 		t.Fatalf("label=%q", label)
 	}
+	reasoning := ReasoningConfig{Providers: map[string]ProviderConfig{
+		"codex-app-server":  {},
+		"gemini-flash-lite": provider,
+	}}
+	summaries := reasoning.ProviderSummary()
+	if len(summaries) != 2 || summaries[1].Name != "gemini-flash-lite" || summaries[1].RuntimeKind != "remote_api" || !summaries[1].Configured {
+		t.Fatalf("Gemini provider summary=%+v", summaries)
+	}
 	provider.CredentialRef = "env:OTHER_API_KEY"
 	if err := provider.Validate("gemini-flash-lite"); err == nil || !strings.Contains(err.Error(), "env:GEMINI_API_KEY") {
 		t.Fatalf("unexpected reference error=%v", err)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
@@ -95,6 +96,36 @@ func TestReasoningProfilesUseBackendCatalogPerInvocation(t *testing.T) {
 	settings.ReasoningAIDeepProfile = "unknown"
 	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil {
 		t.Fatal("provider must reject a profile outside its catalog")
+	}
+}
+
+func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
+	settings.ReasoningProvider = "codex-app-server"
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Reasoning: config.ReasoningConfig{Providers: map[string]config.ProviderConfig{
+		"codex-app-server":  {},
+		"gemini-flash-lite": {CredentialRef: "env:GEMINI_API_KEY"},
+	}}}
+	runtime := New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
+	providers := runtime.ReasoningProviders()
+	if len(providers) != 2 || providers[1].Name != "gemini-flash-lite" || providers[1].Configured || providers[1].ConfigurationStatus != "missing_credential" || providers[1].CredentialName != "GEMINI_API_KEY" {
+		t.Fatalf("providers=%+v", providers)
+	}
+
+	settings.ReasoningProvider = "gemini-flash-lite"
+	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil || !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+		t.Fatalf("missing credential selection error=%v", err)
+	}
+	t.Setenv("GEMINI_API_KEY", "test-only-gemini-key")
+	saved, err := runtime.SaveSettings(context.Background(), settings)
+	if err != nil || saved.ReasoningProvider != "gemini-flash-lite" {
+		t.Fatalf("saved=%+v err=%v", saved, err)
 	}
 }
 

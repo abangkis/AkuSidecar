@@ -255,8 +255,12 @@ func (r *ReasoningConfig) Select(providerName string) error {
 }
 
 type ProviderSummary struct {
-	Name  string `json:"name"`
-	Label string `json:"label"`
+	Name                string `json:"name"`
+	Label               string `json:"label"`
+	RuntimeKind         string `json:"runtimeKind"`
+	Configured          bool   `json:"configured"`
+	ConfigurationStatus string `json:"configurationStatus"`
+	CredentialName      string `json:"credentialName,omitempty"`
 }
 
 // IsOllamaProvider reports whether the provider name routes to the Ollama
@@ -296,6 +300,19 @@ func ProviderLabel(name string) string {
 	}
 }
 
+func ProviderRuntimeKind(name string) string {
+	switch {
+	case name == "codex-app-server":
+		return "executable"
+	case name == "groq" || IsGeminiProvider(name):
+		return "remote_api"
+	case IsOllamaProvider(name):
+		return "local_endpoint"
+	default:
+		return "embedded"
+	}
+}
+
 func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 	names := make([]string, 0, len(r.Providers))
 	for name := range r.Providers {
@@ -307,7 +324,10 @@ func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 		if r.Providers[name].HideFromSettings {
 			continue
 		}
-		summaries = append(summaries, ProviderSummary{Name: name, Label: ProviderLabel(name)})
+		summaries = append(summaries, ProviderSummary{
+			Name: name, Label: ProviderLabel(name), RuntimeKind: ProviderRuntimeKind(name),
+			Configured: true, ConfigurationStatus: "ready",
+		})
 	}
 	return summaries
 }
