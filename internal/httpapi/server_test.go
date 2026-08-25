@@ -47,11 +47,11 @@ func TestSessionProgressProjectionKeepsOnlyPollingState(t *testing.T) {
 	}
 }
 
-func TestSettingsSourcesExposeExtensionSetupCTA(t *testing.T) {
+func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"settings-source-access-button", "secondary-button source-setup-button", "Open AkuBrowser setup"},
-		"web/app.js":     {"function openBridgeSourceAccessSetup", "AKU_BROWSER_OPEN_BRIDGE_SETUP"},
-		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".source-setup-button", "white-space: nowrap"},
+		"web/index.html": {"onboarding-source-options", "Grant access or Sign in action below", "source-settings-group"},
+		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourceReadyForOnboarding", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness"},
+		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".onboarding-source-access", "white-space: nowrap"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -61,6 +61,15 @@ func TestSettingsSourcesExposeExtensionSetupCTA(t *testing.T) {
 			if !strings.Contains(string(contents), marker) {
 				t.Fatalf("%s is missing setup CTA contract %q", asset, marker)
 			}
+		}
+	}
+	for _, asset := range []string{"web/index.html", "web/app.js"} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(contents), "AKU_BROWSER_OPEN_BRIDGE_SETUP") || strings.Contains(string(contents), "Open AkuBrowser setup") {
+			t.Fatalf("%s must not expose the legacy global Bridge setup action", asset)
 		}
 	}
 }
@@ -560,7 +569,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 			t.Fatalf("active-check navigation guidance missing %q", marker)
 		}
 	}
-	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token", "function runDisabledReason", "function sourceAccessNeedsAttention", "AKU_BROWSER_OPEN_BRIDGE_SETUP", "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED", "Access: permission required", "Grant access", "source-access-setup-button", "function preparedBatchDisabledReason", "No prepared batch is available.", "Finishing capture cleanup", "BOOTSTRAP_TIMEOUT_MS", "function retryBootstrap", "Retry connection", "state.lastUIActivitySentAt = 0", "recordUIActivity(true)", "session.itemCount", "presentation === \"latest\" ? \"prepend\" : \"append\"", "body: { presentation: revealPlacement }", "placement === \"prepend\""} {
+	for _, marker := range []string{"function reasoningProfileValue", "function syncTimelineSidePanePosition", "reasoningAcquisitionProfile", "reasoningAiDeepProfile", "function recoverInvalidBridgeToken", "invalid_bridge_token", "function runDisabledReason", "function sourceAccessNeedsAttention", "function onboardingReadinessGate", "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED", "Access: permission required", "Grant access", "source-access-setup-button", "function preparedBatchDisabledReason", "No prepared batch is available.", "Finishing capture cleanup", "BOOTSTRAP_TIMEOUT_MS", "function retryBootstrap", "Retry connection", "state.lastUIActivitySentAt = 0", "recordUIActivity(true)", "session.itemCount", "presentation === \"latest\" ? \"prepend\" : \"append\"", "body: { presentation: revealPlacement }", "placement === \"prepend\""} {
 		if !strings.Contains(string(appPayload), marker) {
 			t.Fatalf("app.js missing runtime reasoning or drawer contract %q", marker)
 		}

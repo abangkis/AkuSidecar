@@ -36,14 +36,14 @@
         <div class="onboarding-card">
           <p class="step-label">SOURCE SETUP</p>
           <h2 id="onboarding-heading" tabindex="-1">Build your personal intelligence feed</h2>
-          <p class="onboarding-explanation">Choose the sources you trust. AkuBrowser will learn from real entries, tune itself to your priorities, and build your first focused Timeline.</p>
+          <p class="onboarding-explanation">Choose the sources you trust. AkuBrowser checks each source separately: grant access when asked, then sign in if needed. Your first Timeline starts only after at least one selected source is ready.</p>
           <form id="onboarding-form">
             <div id="onboarding-source-options" class="onboarding-options"></div>
-            <div id="onboarding-summary" class="onboarding-summary">Choose at least one source feed.</div>
+            <div id="onboarding-summary" class="onboarding-summary">Choose at least one source feed, then make one selected source ready.</div>
             <p id="onboarding-error" class="settings-detail" role="alert"></p>
             <div class="onboarding-actions">
               <button id="onboarding-cancel" class="secondary-button hidden" type="button">Cancel</button>
-              <button id="onboarding-finish" class="primary-button" type="submit">Start calibrating</button>
+              <button id="onboarding-finish" class="primary-button" type="submit">Continue when ready</button>
             </div>
           </form>
         </div>
@@ -409,8 +409,7 @@
           <fieldset class="settings-group source-settings-group">
             <legend>Sources</legend>
             <div class="settings-group-heading-actions">
-              <p class="settings-group-note">Activate the signed-in feeds you want AkuBrowser to check and tune each source's bounded hydration wait. At least one source must remain active.</p>
-              <button id="settings-source-access-button" class="secondary-button source-setup-button" type="button">Open AkuBrowser setup</button>
+              <p class="settings-group-note">Activate the feeds you want AkuBrowser to check and tune each source's bounded hydration wait. Use each source's Grant access or Sign in action below; at least one source must remain active.</p>
             </div>
             <div class="settings-card">
               <label class="settings-row" for="source-wait-mode">

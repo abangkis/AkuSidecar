@@ -134,10 +134,12 @@ window.addEventListener("message", (event) => {
       : {};
     state.sourceSessionProbeInFlight = false;
     renderSourceSessionReadiness();
+    updateOnboardingSummary();
   }
   if (event.data.type === "AKU_BROWSER_SOURCE_SESSIONS_FAILED") {
     state.sourceSessionProbeInFlight = false;
     renderSourceSessionError(event.data.message);
+    updateOnboardingSummary();
   }
   if (event.data.type === "AKU_BROWSER_SOURCE_OPENED") {
     const source = sourceDescriptor(event.data.source);
@@ -148,6 +150,7 @@ window.addEventListener("message", (event) => {
       tabCount: 1,
     });
     renderSourceSessionReadiness();
+    updateOnboardingSummary();
     window.setTimeout(() => requestSourceSessionReadiness(), 2_000);
   }
   if (event.data.type === "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED") {
@@ -160,6 +163,7 @@ window.addEventListener("message", (event) => {
       detail: `Grant ${source.label} access in the permission tab, then AkuBrowser will continue to the source.`,
     });
     renderSourceSessionReadiness();
+    updateOnboardingSummary();
   }
   if (event.data.type === "AKU_BROWSER_SOURCE_OPEN_FAILED") {
     renderSourceSessionError(event.data.message, event.data.source);
@@ -215,8 +219,7 @@ $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks")
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
-$("#source-access-setup-button").addEventListener("click", openBridgeSourceAccessSetup);
-$("#settings-source-access-button").addEventListener("click", openBridgeSourceAccessSetup);
+$("#source-access-setup-button").addEventListener("click", openSourceAccessSettings);
 $("#timeline-prepared-button").addEventListener("click", () => revealPreparedBatch("latest"));
 $("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
@@ -606,6 +609,51 @@ function renderSourceSessionReadiness() {
       : stateValue === "login_required" ? "Sign in" : "Open source";
     button.disabled = !state.bootstrap?.bridge?.compatible;
   }
+  renderOnboardingSourceReadiness();
+}
+
+function renderOnboardingSourceReadiness() {
+  const accessBySource = new Map(bridgeSourceReadiness().map((entry) => [entry.source, entry]));
+  for (const descriptor of sourceDescriptors()) {
+    const accessStatus = document.querySelector(`[data-onboarding-source-readiness="${descriptor.id}"]`);
+    const sessionStatus = document.querySelector(`[data-onboarding-source-session-readiness="${descriptor.id}"]`);
+    const button = document.querySelector(`[data-onboarding-source-open="${descriptor.id}"]`);
+    if (!accessStatus || !sessionStatus || !button) continue;
+    const access = accessBySource.get(descriptor.id);
+    accessStatus.className = "source-readiness-status";
+    if (!access) {
+      accessStatus.textContent = "Access: checking";
+    } else if (!access.permissionGranted) {
+      accessStatus.textContent = "Access: permission required";
+      accessStatus.classList.add("source-readiness-warning");
+    } else if (!access.scriptRegistered || !access.ready) {
+      accessStatus.textContent = "Access: capture not ready";
+      accessStatus.classList.add("source-readiness-warning");
+    } else {
+      accessStatus.textContent = "Access: ready";
+      accessStatus.classList.add("source-readiness-ready");
+    }
+    const observation = state.sourceSessionReadiness?.[descriptor.id] ?? null;
+    const stateValue = observation?.state ?? "unknown";
+    const labels = {
+      ready: "Session: feed available",
+      login_required: "Session: sign-in required",
+      permission_required: "Session: permission required",
+      not_observed: "Session: source not open",
+      loading: "Session: loading",
+      unavailable: "Session: temporarily unavailable",
+      unknown: "Session: not confirmed",
+    };
+    sessionStatus.className = "source-session-status";
+    sessionStatus.textContent = labels[stateValue] ?? labels.unknown;
+    sessionStatus.title = observation?.detail || "";
+    if (stateValue === "ready") sessionStatus.classList.add("source-session-ready");
+    if (stateValue === "login_required" || stateValue === "permission_required") sessionStatus.classList.add("source-session-warning");
+    button.textContent = !access?.permissionGranted || stateValue === "permission_required"
+      ? "Grant access"
+      : stateValue === "login_required" ? "Sign in" : "Open source";
+    button.disabled = !state.bootstrap?.bridge?.compatible;
+  }
 }
 
 async function bridgeActionLoop() {
@@ -652,6 +700,7 @@ function renderBridge(bridge) {
   }
   syncRunButtons();
   renderSourceSettingsValues(state.bootstrap?.settings);
+  updateOnboardingSummary();
   if (bridge?.compatible) schedulePassiveMediaEnrichment();
 }
 
@@ -1363,7 +1412,7 @@ function showOnboarding(editing) {
     input.checked = sources.includes(input.value);
   }
   $("#onboarding-cancel").classList.toggle("hidden", !editing);
-  $("#onboarding-finish").textContent = editing ? "Save profile" : "Start calibrating";
+  $("#onboarding-finish").textContent = editing ? "Save profile" : "Continue when ready";
   $("#onboarding-error").textContent = "";
   $("#settings-panel").classList.add("hidden");
   $("#inbox-panel").classList.add("hidden");
@@ -1373,16 +1422,49 @@ function showOnboarding(editing) {
   document.querySelector(".view-switch")?.classList.add("hidden");
   syncTimelineSidePaneVisibility();
   updateOnboardingSummary();
+  if (state.bootstrap?.bridge?.compatible) requestSourceSessionReadiness();
   $("#onboarding-heading").focus();
   window.scrollTo({ top: 0, behavior: editing ? "smooth" : "auto" });
   scheduleBackToTop();
 }
 
 function updateOnboardingSummary() {
-  const count = document.querySelectorAll("#onboarding-form input[type='checkbox']:checked").length;
-  $("#onboarding-summary").textContent = count
-    ? `${count} source feed${count === 1 ? "" : "s"} selected · ready to calibrate your Timeline`
-    : "Choose at least one source feed.";
+  const activeSources = [...document.querySelectorAll("#onboarding-form input[type='checkbox']:checked")].map((input) => input.value);
+  if (!activeSources.length) {
+    $("#onboarding-summary").textContent = "Choose at least one source feed, then make one selected source ready.";
+    return;
+  }
+  const readyCount = activeSources.filter((source) => sourceReadyForOnboarding(source)).length;
+  const selectedLabel = activeSources.length + " source feed" + (activeSources.length === 1 ? "" : "s") + " selected";
+  $("#onboarding-summary").textContent = readyCount
+    ? selectedLabel + " · " + readyCount + " ready · continue to your first Timeline"
+    : selectedLabel + " · grant access and sign in to at least one selected source";
+}
+
+function sourceReadyForOnboarding(source) {
+  const access = bridgeSourceReadiness().find((entry) => entry.source === source);
+  const session = state.sourceSessionReadiness?.[source];
+  return Boolean(access?.permissionGranted && access?.scriptRegistered && access?.ready && session?.state === "ready");
+}
+
+function onboardingReadinessGate(activeSources) {
+  if (!state.bootstrap?.bridge?.compatible) {
+    return { ready: false, message: "AkuBridge is still connecting. Keep this page open while source access is checked." };
+  }
+  if (!bridgeSourceReadiness().length || state.sourceSessionProbeInFlight) {
+    return { ready: false, message: "AkuBrowser is still checking per-source access and sign-in status. Try Continue when ready again in a moment." };
+  }
+  if (activeSources.some((source) => sourceReadyForOnboarding(source))) return { ready: true };
+  const selected = activeSources.map((source) => {
+    const access = bridgeSourceReadiness().find((entry) => entry.source === source);
+    const session = state.sourceSessionReadiness?.[source];
+    if (!access || !access.permissionGranted) return sourceLabel(source) + " needs access permission";
+    if (!access.scriptRegistered || !access.ready) return sourceLabel(source) + " capture is not ready";
+    if (session?.state === "login_required") return sourceLabel(source) + " needs sign-in";
+    if (session?.state === "ready") return sourceLabel(source) + " is ready";
+    return sourceLabel(source) + " session is not confirmed";
+  });
+  return { ready: false, message: "Make at least one selected source ready before continuing: " + selected.join("; ") + "." };
 }
 
 async function saveOnboarding(event) {
@@ -1393,6 +1475,15 @@ async function saveOnboarding(event) {
     return;
   }
   const firstCompletion = onboardingRequiresSetup();
+  if (firstCompletion) {
+    const gate = onboardingReadinessGate(activeSources);
+    if (!gate.ready) {
+      $("#onboarding-error").textContent = gate.message;
+      requestSourceSessionReadiness();
+      renderSourceSessionReadiness();
+      return;
+    }
+  }
   const button = $("#onboarding-finish");
   button.disabled = true;
   $("#onboarding-error").textContent = "Saving source profile…";
@@ -2025,7 +2116,7 @@ function runDisabledReason() {
   const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
   if (!Array.isArray(grantedSources)) return "Waiting for AkuBridge source permission status…";
   if (sourceAccessNeedsAttention()) {
-    return "No active source is ready. Open AkuBridge setup, enable at least one source, and let its capture script register before updating.";
+    return "No active source is ready. Open Settings, then use each source's Grant access or Sign in action before updating.";
   }
   return "";
 }
@@ -2055,8 +2146,9 @@ function bridgeSourceReadiness() {
   return [];
 }
 
-function openBridgeSourceAccessSetup() {
-  window.postMessage({ type: "AKU_BROWSER_OPEN_BRIDGE_SETUP" }, endpoint);
+function openSourceAccessSettings() {
+  setView("settings");
+  requestSourceSessionReadiness();
 }
 
 async function startPendingFirstCalibration(session) {
@@ -5264,7 +5356,31 @@ function renderSourceControls() {
     check.textContent = "✓";
     card.append(icon, copy, check);
     label.append(input, card);
-    onboarding.append(label);
+    const onboardingAccess = document.createElement("div");
+    onboardingAccess.className = "onboarding-source-access";
+    const onboardingStatuses = document.createElement("span");
+    onboardingStatuses.className = "onboarding-source-statuses";
+    const onboardingReadiness = document.createElement("small");
+    onboardingReadiness.dataset.onboardingSourceReadiness = descriptor.id;
+    onboardingReadiness.className = "source-readiness-status";
+    onboardingReadiness.textContent = "Access: checking";
+    const onboardingSession = document.createElement("small");
+    onboardingSession.dataset.onboardingSourceSessionReadiness = descriptor.id;
+    onboardingSession.className = "source-session-status";
+    onboardingSession.textContent = "Session: checking existing tabs";
+    onboardingStatuses.append(onboardingReadiness, onboardingSession);
+    const onboardingOpen = document.createElement("button");
+    onboardingOpen.type = "button";
+    onboardingOpen.className = "secondary-button source-open-button";
+    onboardingOpen.dataset.onboardingSourceOpen = descriptor.id;
+    onboardingOpen.setAttribute("aria-label", `Open ${descriptor.displayName} source`);
+    onboardingOpen.textContent = "Open source";
+    onboardingOpen.addEventListener("click", () => openSourceFromSettings(descriptor.id));
+    onboardingAccess.append(onboardingStatuses, onboardingOpen);
+    const onboardingGroup = document.createElement("div");
+    onboardingGroup.className = "onboarding-source-group";
+    onboardingGroup.append(label, onboardingAccess);
+    onboarding.append(onboardingGroup);
 
     const settingsLabel = document.createElement("div");
     settingsLabel.className = "settings-row source-settings-row";
@@ -5330,6 +5446,7 @@ function renderSourceControls() {
     settings.append(settingsLabel);
   }
   renderSourceSessionReadiness();
+  renderOnboardingSourceReadiness();
 }
 
 function humanize(value) {

@@ -82,6 +82,7 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-card h2 { margin-bottom: 10px; }
 .onboarding-explanation { margin-bottom: 24px; color: var(--muted); line-height: 1.55; }
 .onboarding-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.onboarding-source-group { min-width: 0; }
 .onboarding-source-option { position: relative; display: block; cursor: pointer; }
 .onboarding-source-option > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .onboarding-source-card { display: grid; grid-template-columns: 46px minmax(0, 1fr) 24px; align-items: center; gap: 12px; min-height: 78px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.018); transition: border-color 150ms ease, background-color 150ms ease; }
@@ -94,6 +95,9 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-source-copy small { color: var(--muted); font-size: 0.74rem; }
 .onboarding-source-check { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid var(--line-strong); border-radius: 999px; color: transparent; font-size: 0.75rem; font-weight: 800; }
 .onboarding-source-option > input:checked + .onboarding-source-card .onboarding-source-check { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.onboarding-source-access { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 7px 2px 0; }
+.onboarding-source-statuses { display: grid; gap: 2px; min-width: 0; }
+.onboarding-source-access .source-open-button { flex: 0 0 auto; padding: 7px 9px; font-size: 0.72rem; }
 .onboarding-summary { margin-top: 16px; padding: 13px 15px; border-radius: 10px; background: var(--panel-strong); color: var(--muted); }
 .onboarding-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
