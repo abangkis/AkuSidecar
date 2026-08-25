@@ -210,3 +210,21 @@ func TestInvokeBoundNilTimingFallsBackToLegacyDuration(t *testing.T) {
 	}
 	_ = pool.Close()
 }
+
+func TestResponseFormatNamePreservesStableSchemaIDVocabulary(t *testing.T) {
+	if got := responseFormatName(ExecutionProfilePlanning); got != "akusidecar-planning" {
+		t.Fatalf("planning response format name=%q", got)
+	}
+	if got := responseFormatName("custom.profile/value"); got != "custom-profile-value" {
+		t.Fatalf("sanitized response format name=%q", got)
+	}
+}
+
+func TestModelMaxOutputTokensKeepsDefaultAndAllowsProviderOverride(t *testing.T) {
+	if got := modelMaxOutputTokens(config.ModelConfig{}); got != defaultProfileMaxOutputTokens {
+		t.Fatalf("default max output tokens=%d", got)
+	}
+	if got := modelMaxOutputTokens(config.ModelConfig{MaxOutputTokens: 4096}); got != 4096 {
+		t.Fatalf("provider max output tokens=%d", got)
+	}
+}

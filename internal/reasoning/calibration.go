@@ -62,6 +62,16 @@ func RunCalibration(ctx context.Context, cfg config.Config) (calibration.Report,
 			Adapter: adapter, AdapterID: "ollama", ModelID: modelID,
 			ReasoningOptionID: strings.TrimSpace(model.ExactReasoningOption()),
 		})
+	case provider == "groq":
+		live, err := NewGroq(cfg)
+		if err != nil {
+			return calibration.Report{}, err
+		}
+		defer live.Close()
+		return calibration.Calibrate(ctx, calibration.Config{
+			Adapter: live.transport, AdapterID: "groq", ModelID: modelID,
+			ReasoningOptionID: strings.TrimSpace(model.ExactReasoningOption()),
+		})
 	default:
 		return calibration.Report{}, fmt.Errorf("calibration is unavailable for provider %q", provider)
 	}

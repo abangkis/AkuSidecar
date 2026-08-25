@@ -76,6 +76,7 @@ type ReasoningConfig struct {
 	Provider         string `json:"-"`
 	Executable       string `json:"-"`
 	Endpoint         string `json:"-"`
+	CredentialRef    string `json:"-"`
 	MaxRetries       int    `json:"-"`
 	TimeoutMS        int    `json:"-"`
 	WarmupTimeoutMS  int    `json:"-"`
@@ -95,8 +96,14 @@ type ReasoningConfig struct {
 }
 
 type ProviderConfig struct {
-	Executable       string `json:"executable"`
-	Endpoint         string `json:"endpoint"`
+	Executable string `json:"executable"`
+	Endpoint   string `json:"endpoint"`
+	// HideFromSettings keeps an assessment-only composition available to
+	// explicit development overrides without advertising it as user-ready.
+	HideFromSettings bool `json:"hideFromSettings,omitempty"`
+	// CredentialRef names a runtime-only secret source. Secret values are never
+	// valid configuration fields and must not be persisted beside this reference.
+	CredentialRef    string `json:"credentialRef,omitempty"`
 	MaxRetries       int    `json:"maxRetries,omitempty"`
 	TimeoutMS        int    `json:"timeoutMs"`
 	WarmupTimeoutMS  int    `json:"warmupTimeoutMs,omitempty"`
@@ -124,6 +131,9 @@ type ModelConfig struct {
 	Effort            string `json:"effort,omitempty"`
 	// Assurance optionally tightens structured-output resolution for this role.
 	Assurance string `json:"assurance,omitempty"`
+	// MaxOutputTokens optionally applies a provider/workload-specific output
+	// budget. Zero retains AkuSidecar's established default.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 	// ProfileID is internal invocation identity and is never persisted.
 	ProfileID string `json:"-"`
 }
@@ -229,6 +239,7 @@ func (r *ReasoningConfig) Select(providerName string) error {
 	r.Provider = providerName
 	r.Executable = entry.Executable
 	r.Endpoint = entry.Endpoint
+	r.CredentialRef = entry.CredentialRef
 	r.MaxRetries = entry.MaxRetries
 	r.TimeoutMS = entry.TimeoutMS
 	r.WarmupTimeoutMS = entry.WarmupTimeoutMS
@@ -265,6 +276,8 @@ func ProviderLabel(name string) string {
 		return "Ollama · Nemotron 3.5 Lightning"
 	case "ollama-qwen":
 		return "Ollama · Qwen 3.8 27B"
+	case "groq":
+		return "Groq · GPT-OSS 120B"
 	case "deterministic":
 		return "Local deterministic"
 	default:
@@ -283,6 +296,9 @@ func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 	sort.Strings(names)
 	summaries := make([]ProviderSummary, 0, len(names))
 	for _, name := range names {
+		if r.Providers[name].HideFromSettings {
+			continue
+		}
 		summaries = append(summaries, ProviderSummary{Name: name, Label: ProviderLabel(name)})
 	}
 	return summaries
@@ -304,7 +320,7 @@ func (r ReasoningConfig) Validate() error {
 }
 
 func (p ProviderConfig) Validate(name string) error {
-	if name != "deterministic" && name != "codex-app-server" && !IsOllamaProvider(name) {
+	if name != "deterministic" && name != "codex-app-server" && name != "groq" && !IsOllamaProvider(name) {
 		return fmt.Errorf("unsupported reasoning provider %q", name)
 	}
 	if p.MaxRetries < 0 || p.MaxRetries > 5 {
@@ -340,7 +356,15 @@ func (p ProviderConfig) Validate(name string) error {
 	if !IsOllamaProvider(name) && p.MaxConcurrentInvocations != 0 {
 		return fmt.Errorf("Ollama concurrency settings apply only to ollama providers")
 	}
-	if name == "codex-app-server" || IsOllamaProvider(name) {
+	credentialRef := strings.TrimSpace(p.CredentialRef)
+	if name == "groq" {
+		if credentialRef != "env:GROQ_API_KEY" {
+			return fmt.Errorf("reasoning provider %q credentialRef must be env:GROQ_API_KEY", name)
+		}
+	} else if credentialRef != "" {
+		return fmt.Errorf("credentialRef is not supported for reasoning provider %q", name)
+	}
+	if name == "codex-app-server" || name == "groq" || IsOllamaProvider(name) {
 		models := map[string]ModelConfig{
 			"planning":       p.Planning,
 			"evaluation":     p.Evaluation,
@@ -350,6 +374,9 @@ func (p ProviderConfig) Validate(name string) error {
 		for task, model := range models {
 			if model.StableModelID() == "" || model.MinimumTier() == "" {
 				return fmt.Errorf("%s model_id/model and minimum reasoning tier are required for provider %q", task, name)
+			}
+			if model.MaxOutputTokens < 0 || model.MaxOutputTokens > 131072 {
+				return fmt.Errorf("%s maxOutputTokens must be between 1 and 131072 when set for provider %q", task, name)
 			}
 		}
 	}

@@ -188,6 +188,36 @@ func TestActiveReasoningProviderMustBeDeclared(t *testing.T) {
 	}
 }
 
+func TestGroqRequiresReferenceWithoutResolvingSecretDuringConfigLoad(t *testing.T) {
+	model := ModelConfig{ModelID: "openai/gpt-oss-120b", MinReasoningTier: "high", ReasoningOptionID: "high"}
+	provider := ProviderConfig{CredentialRef: "env:GROQ_API_KEY", TimeoutMS: 120000, Planning: model, Evaluation: model, SemanticEvent: model, AIDetection: model}
+	if err := provider.Validate("groq"); err != nil {
+		t.Fatal(err)
+	}
+	if label := ProviderLabel("groq"); label != "Groq · GPT-OSS 120B" {
+		t.Fatalf("label=%q", label)
+	}
+	provider.CredentialRef = ""
+	if err := provider.Validate("groq"); err == nil || !strings.Contains(err.Error(), "env:GROQ_API_KEY") {
+		t.Fatalf("missing reference error=%v", err)
+	}
+	provider.CredentialRef = "env:OTHER_API_KEY"
+	if err := provider.Validate("groq"); err == nil || !strings.Contains(err.Error(), "env:GROQ_API_KEY") {
+		t.Fatalf("unexpected reference error=%v", err)
+	}
+}
+
+func TestAssessmentProviderCanRemainHiddenFromSettings(t *testing.T) {
+	reasoning := ReasoningConfig{Providers: map[string]ProviderConfig{
+		"codex-app-server": {},
+		"groq":             {HideFromSettings: true},
+	}}
+	summaries := reasoning.ProviderSummary()
+	if len(summaries) != 1 || summaries[0].Name != "codex-app-server" {
+		t.Fatalf("summaries=%+v", summaries)
+	}
+}
+
 func TestConcurrencyConfigurationDefaultsAndOptInValidation(t *testing.T) {
 	ollama := ProviderConfig{TimeoutMS: 5000,
 		Planning: ModelConfig{Model: "nemotron", Effort: "high"}, Evaluation: ModelConfig{Model: "nemotron", Effort: "high"},

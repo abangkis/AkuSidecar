@@ -37,6 +37,40 @@
           "minReasoningTier": "high"
         }
       },
+      "groq": {
+        "endpoint": "https://api.groq.com/openai/v1",
+        "credentialRef": "env:GROQ_API_KEY",
+        "hideFromSettings": true,
+        "maxRetries": 0,
+        "timeoutMs": 120000,
+        "planning": {
+          "modelId": "openai/gpt-oss-120b",
+          "minReasoningTier": "high",
+          "reasoningOptionId": "high",
+          "maxOutputTokens": 512
+        },
+        "evaluation": {
+          "modelId": "openai/gpt-oss-120b",
+          "minReasoningTier": "high",
+          "reasoningOptionId": "high",
+          "assurance": "provider_strict",
+          "maxOutputTokens": 4096
+        },
+        "semanticEvent": {
+          "modelId": "openai/gpt-oss-120b",
+          "minReasoningTier": "high",
+          "reasoningOptionId": "high",
+          "assurance": "provider_strict",
+          "maxOutputTokens": 4096
+        },
+        "aiDetection": {
+          "modelId": "openai/gpt-oss-120b",
+          "minReasoningTier": "high",
+          "reasoningOptionId": "high",
+          "assurance": "provider_strict",
+          "maxOutputTokens": 4096
+        }
+      },
       "ollama-nemotron": {
         "endpoint": "http://127.0.0.1:11434",
         "maxRetries": 1,

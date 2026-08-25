@@ -26,6 +26,13 @@ const (
 
 const defaultProfileMaxOutputTokens = 16384
 
+func modelMaxOutputTokens(model config.ModelConfig) int {
+	if model.MaxOutputTokens > 0 {
+		return model.MaxOutputTokens
+	}
+	return defaultProfileMaxOutputTokens
+}
+
 func newExecutionProfile(id inference.ProfileID, model config.ModelConfig) (inference.ExecutionProfile, error) {
 	tier := strings.TrimSpace(model.MinimumTier())
 	if tier == "" {
@@ -37,7 +44,7 @@ func newExecutionProfile(id inference.ProfileID, model config.ModelConfig) (infe
 			MinReasoningTier: executionprofile.ReasoningTier(tier),
 			OutputFormat:     executionprofile.OutputJSONSchema,
 		},
-		Limits: executionprofile.Limits{MaxOutputTokens: defaultProfileMaxOutputTokens},
+		Limits: executionprofile.Limits{MaxOutputTokens: modelMaxOutputTokens(model)},
 	})
 }
 
@@ -195,8 +202,8 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	response, err := client.Generate(ctx, inference.Request{
 		ProfileID: profileID, Workload: string(profileID),
 		SystemPrompt: "Return only the requested structured JSON result.", UserPrompt: prompt,
-		ResponseFormat:  inference.JSONSchema(string(profileID), string(profileID), "AkuSidecar structured result", rawSchema, true),
-		MaxOutputTokens: defaultProfileMaxOutputTokens,
+		ResponseFormat:  inference.JSONSchema(string(profileID), responseFormatName(profileID), "AkuSidecar structured result", rawSchema, true),
+		MaxOutputTokens: modelMaxOutputTokens(model),
 	})
 	callerLatency := time.Since(started)
 	if err != nil {
@@ -250,6 +257,24 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	usage.ProviderExecutionMS = providerExecution.Milliseconds()
 	usage.ResponseTotalMS = responseTotal.Milliseconds()
 	return response.Text, usage, callerLatency, nil
+}
+
+// responseFormatName projects the stable workload ID into the conservative
+// schema-name vocabulary accepted by provider APIs. SchemaID remains unchanged
+// and continues to carry the dotted application identity.
+func responseFormatName(profileID inference.ProfileID) string {
+	value := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			return r
+		default:
+			return '-'
+		}
+	}, string(profileID))
+	if len(value) > 64 {
+		value = value[:64]
+	}
+	return value
 }
 
 func schemaJSON(schema any) ([]byte, error) {

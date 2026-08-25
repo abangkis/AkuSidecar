@@ -1,7 +1,9 @@
 # Development reasoning-provider evaluation
 
-Status: active assessment; no OpenRouter provider is integrated into
-AkuSidecar and Codex App Server remains the authoritative development baseline.
+Status: active assessment. Groq is composed as an opt-in AkuSidecar development
+provider, while Codex App Server remains the authoritative development baseline.
+The Groq entry is hidden from Settings until credential storage and live gates
+are complete; it can only be selected through an explicit development override.
 
 This work seeks a free or materially cheaper provider for routine development
 flows. It is separate from the completed payload-saving effort: model and route
@@ -18,7 +20,9 @@ Codex App Server even if a development fallback is later accepted.
 - Assessment uses synthetic or source-controlled fixtures first. A live shadow
   run must not persist candidate-provider decisions to Timeline or model state.
 - Provider credentials are never stored in Sidecar configuration, SQLite,
-  receipts, diagnostics, or assessment artifacts.
+  receipts, diagnostics, or assessment artifacts. Configuration carries only
+  a `credentialRef`; the initial development adapter accepts exactly
+  `env:GROQ_API_KEY` and resolves it in memory at provider composition time.
 - OpenRouter development tooling uses `OPENROUTER_API_KEY`. The retired
   `OPENROUTER_CODEX_KEY` name is not part of the contract.
 - ZDR enforcement is a separate SDK/provider-routing experiment. The Nemotron
@@ -90,8 +94,52 @@ fallback experiment; it must not replace Codex App Server yet.
    Codex remains authoritative; the candidate receives equivalent bounded
    evidence, but its decisions cannot mutate Timeline, calibration, preference,
    semantic-event, or AI-detection state.
-6. Add a Sidecar provider composition and Settings option only after the SDK
-   exposes the required model capability and failure/receipt contract.
+6. Groq provider composition is now available for explicit development tests.
+   Keep it non-authoritative until it passes the same corpus and shadow gates.
+
+## Groq integration baseline — 2026-08-25
+
+AkuSidecar consumes Inference SDK v0.11.0 and exposes the curated Groq route
+`openai/gpt-oss-120b` at low, medium, and high reasoning. All four Sidecar
+workloads use provider-strict JSON Schema; conditional-free retries remain zero
+by default. The checked-in active provider is still `codex-app-server`.
+
+The environment resolver is deliberately not presented as the final central
+secret store. A future OS-backed implementation can satisfy the same resolver
+boundary while config continues to retain only an opaque `credentialRef`.
+
+SDK v0.11.0 fixes the Groq model preflight for provider model IDs containing a
+slash. The opt-in `TestGroqLiveSidecarWorkloads` retains the Sidecar-level live
+acceptance gate; its current result is recorded below.
+
+### Live result after SDK v0.11.0
+
+The SDK fix is verified: model preflight now succeeds. A synthetic SDK
+calibration at high reasoning failed with a 128-token output budget, then
+passed with 512 tokens in 1.70 seconds. The successful run reported 189 input,
+109 output, 84 reasoning, and 298 total tokens with SDK schema validation
+passed.
+
+Sidecar-level results remain below the acceptance bar:
+
+- the dotted workload identity had to be projected to a provider-safe schema
+  name (`akusidecar-planning`) while retaining the stable dotted SchemaID;
+- Planning completed successfully once after that correction, but subsequent
+  equivalent requests returned provider HTTP 400;
+- Evaluation once completed with zero items for one candidate, demonstrating
+  that its former schema did not encode the one-result-per-candidate invariant;
+- Evaluation now projects exact candidate counts into both result arrays and
+  retains the local exact-count check;
+- the former 16K output reservation triggered HTTP 413 on the free route, so
+  Groq uses workload-scoped budgets of 512 for Planning and 4096 for the larger
+  structured workloads; existing providers retain the 16K default;
+- after reducing the Evaluation budget, the request reached the provider but
+  still returned HTTP 400.
+
+No raw prompt or model output was retained in these measurements. Groq remains
+hidden from Settings and must not replace Codex App Server. The next Groq work
+should be an offline schema/prompt compatibility study or a later provider
+retest, not additional automatic retries in the active Sidecar flow.
 
 ## Separate OpenRouter privacy gate
 

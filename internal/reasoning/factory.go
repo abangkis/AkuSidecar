@@ -13,6 +13,8 @@ func NewProvider(cfg config.Config) (Provider, error) {
 		return Deterministic{}, nil
 	case "codex-app-server":
 		return NewCodexAppServer(cfg)
+	case "groq":
+		return NewGroq(cfg)
 	default:
 		if config.IsOllamaProvider(cfg.Reasoning.Provider) {
 			return NewOllama(cfg)
