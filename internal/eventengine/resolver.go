@@ -143,7 +143,11 @@ Unverified motive, rhetorical framing, sentiment, competitive interpretation, pa
 
 Historical event shortlist: %s
 Current candidates: %s`, mustJSON(refs), mustJSON(candidateRefs))
-	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, semanticExecutionProfile, prompt, r.schema, model)
+	requestSchema, err := exactSemanticDecisionCountSchema(r.schema, len(candidates))
+	if err != nil {
+		return domain.SemanticResolution{}, domain.ModelUsage{}, 0, err
+	}
+	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, semanticExecutionProfile, prompt, requestSchema, model)
 	if err != nil {
 		return domain.SemanticResolution{}, usage, duration, err
 	}
@@ -152,6 +156,34 @@ Current candidates: %s`, mustJSON(refs), mustJSON(candidateRefs))
 		return domain.SemanticResolution{}, usage, duration, fmt.Errorf("decode semantic event resolution: %w", err)
 	}
 	return result, usage, duration, nil
+}
+
+func exactSemanticDecisionCountSchema(schema any, candidateCount int) (any, error) {
+	if candidateCount < 1 {
+		return nil, fmt.Errorf("semantic resolution requires at least one candidate, got %d", candidateCount)
+	}
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("clone semantic event schema: %w", err)
+	}
+	var projected map[string]any
+	if err := json.Unmarshal(raw, &projected); err != nil {
+		return nil, fmt.Errorf("decode semantic event schema: %w", err)
+	}
+	properties, ok := projected["properties"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("semantic event schema has no properties object")
+	}
+	decisions, ok := properties["decisions"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("semantic event schema decisions field is not an array schema")
+	}
+	if maximum, ok := decisions["maxItems"].(float64); ok && candidateCount > int(maximum) {
+		return nil, fmt.Errorf("semantic resolution supports at most %d candidates, got %d", int(maximum), candidateCount)
+	}
+	decisions["minItems"] = candidateCount
+	decisions["maxItems"] = candidateCount
+	return projected, nil
 }
 
 func compactEvidenceExcerpt(candidate domain.SemanticCandidate) string {

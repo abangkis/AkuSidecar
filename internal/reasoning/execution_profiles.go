@@ -277,6 +277,33 @@ func responseFormatName(profileID inference.ProfileID) string {
 	return value
 }
 
+func exactCandidateCountSchema(schema any, candidateCount int) (any, error) {
+	if candidateCount < 1 || candidateCount > maxEvaluationCandidates {
+		return nil, fmt.Errorf("structured evaluation requires between 1 and %d candidates, got %d", maxEvaluationCandidates, candidateCount)
+	}
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("clone evaluation schema: %w", err)
+	}
+	var projected map[string]any
+	if err := json.Unmarshal(raw, &projected); err != nil {
+		return nil, fmt.Errorf("decode evaluation schema: %w", err)
+	}
+	properties, ok := projected["properties"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("evaluation schema has no properties object")
+	}
+	for _, field := range []string{"items", "candidateAssessments"} {
+		arraySchema, ok := properties[field].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("evaluation schema field %q is not an array schema", field)
+		}
+		arraySchema["minItems"] = candidateCount
+		arraySchema["maxItems"] = candidateCount
+	}
+	return projected, nil
+}
+
 func schemaJSON(schema any) ([]byte, error) {
 	switch value := schema.(type) {
 	case json.RawMessage:

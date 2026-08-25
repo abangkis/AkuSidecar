@@ -266,6 +266,10 @@ func IsOllamaProvider(name string) bool {
 	return name == "ollama" || strings.HasPrefix(name, "ollama-")
 }
 
+func IsGeminiProvider(name string) bool {
+	return name == "gemini" || strings.HasPrefix(name, "gemini-")
+}
+
 func ProviderLabel(name string) string {
 	switch name {
 	case "codex-app-server":
@@ -278,6 +282,10 @@ func ProviderLabel(name string) string {
 		return "Ollama · Qwen 3.8 27B"
 	case "groq":
 		return "Groq · GPT-OSS 120B"
+	case "gemini-flash-lite":
+		return "Gemini · 3.5 Flash Lite"
+	case "gemini-flash":
+		return "Gemini · 3.7 Flash"
 	case "deterministic":
 		return "Local deterministic"
 	default:
@@ -320,7 +328,7 @@ func (r ReasoningConfig) Validate() error {
 }
 
 func (p ProviderConfig) Validate(name string) error {
-	if name != "deterministic" && name != "codex-app-server" && name != "groq" && !IsOllamaProvider(name) {
+	if name != "deterministic" && name != "codex-app-server" && name != "groq" && !IsGeminiProvider(name) && !IsOllamaProvider(name) {
 		return fmt.Errorf("unsupported reasoning provider %q", name)
 	}
 	if p.MaxRetries < 0 || p.MaxRetries > 5 {
@@ -361,10 +369,14 @@ func (p ProviderConfig) Validate(name string) error {
 		if credentialRef != "env:GROQ_API_KEY" {
 			return fmt.Errorf("reasoning provider %q credentialRef must be env:GROQ_API_KEY", name)
 		}
+	} else if IsGeminiProvider(name) {
+		if credentialRef != "env:GEMINI_API_KEY" {
+			return fmt.Errorf("reasoning provider %q credentialRef must be env:GEMINI_API_KEY", name)
+		}
 	} else if credentialRef != "" {
 		return fmt.Errorf("credentialRef is not supported for reasoning provider %q", name)
 	}
-	if name == "codex-app-server" || name == "groq" || IsOllamaProvider(name) {
+	if name == "codex-app-server" || name == "groq" || IsGeminiProvider(name) || IsOllamaProvider(name) {
 		models := map[string]ModelConfig{
 			"planning":       p.Planning,
 			"evaluation":     p.Evaluation,

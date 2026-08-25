@@ -218,6 +218,21 @@ func TestAssessmentProviderCanRemainHiddenFromSettings(t *testing.T) {
 	}
 }
 
+func TestGeminiProviderRequiresCanonicalCredentialReference(t *testing.T) {
+	model := ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", ReasoningOptionID: "high", MaxOutputTokens: 512}
+	provider := ProviderConfig{CredentialRef: "env:GEMINI_API_KEY", TimeoutMS: 120000, Planning: model, Evaluation: model, SemanticEvent: model, AIDetection: model}
+	if err := provider.Validate("gemini-flash-lite"); err != nil {
+		t.Fatal(err)
+	}
+	if label := ProviderLabel("gemini-flash-lite"); label != "Gemini · 3.5 Flash Lite" {
+		t.Fatalf("label=%q", label)
+	}
+	provider.CredentialRef = "env:OTHER_API_KEY"
+	if err := provider.Validate("gemini-flash-lite"); err == nil || !strings.Contains(err.Error(), "env:GEMINI_API_KEY") {
+		t.Fatalf("unexpected reference error=%v", err)
+	}
+}
+
 func TestConcurrencyConfigurationDefaultsAndOptInValidation(t *testing.T) {
 	ollama := ProviderConfig{TimeoutMS: 5000,
 		Planning: ModelConfig{Model: "nemotron", Effort: "high"}, Evaluation: ModelConfig{Model: "nemotron", Effort: "high"},

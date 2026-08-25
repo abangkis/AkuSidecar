@@ -1,9 +1,10 @@
 # Development reasoning-provider evaluation
 
-Status: active assessment. Groq is composed as an opt-in AkuSidecar development
-provider, while Codex App Server remains the authoritative development baseline.
-The Groq entry is hidden from Settings until credential storage and live gates
-are complete; it can only be selected through an explicit development override.
+Status: active assessment. Groq and Gemini Flash Lite are composed as opt-in
+AkuSidecar development providers, while Codex App Server remains the
+authoritative development baseline. Both entries remain hidden from Settings
+until credential storage and their relevant live gates are complete; they can
+only be selected through an explicit development override.
 
 This work seeks a free or materially cheaper provider for routine development
 flows. It is separate from the completed payload-saving effort: model and route
@@ -22,7 +23,8 @@ Codex App Server even if a development fallback is later accepted.
 - Provider credentials are never stored in Sidecar configuration, SQLite,
   receipts, diagnostics, or assessment artifacts. Configuration carries only
   a `credentialRef`; the initial development adapter accepts exactly
-  `env:GROQ_API_KEY` and resolves it in memory at provider composition time.
+  `env:GROQ_API_KEY` or `env:GEMINI_API_KEY` and resolves it in memory at
+  provider composition time.
 - OpenRouter development tooling uses `OPENROUTER_API_KEY`. The retired
   `OPENROUTER_CODEX_KEY` name is not part of the contract.
 - ZDR enforcement is a separate SDK/provider-routing experiment. The Nemotron
@@ -140,6 +142,42 @@ No raw prompt or model output was retained in these measurements. Groq remains
 hidden from Settings and must not replace Codex App Server. The next Groq work
 should be an offline schema/prompt compatibility study or a later provider
 retest, not additional automatic retries in the active Sidecar flow.
+
+## Gemini Flash Lite integration baseline — 2026-08-25
+
+AkuSidecar consumes Inference SDK v0.12.0 and composes the native stateless
+Gemini Interactions v1 adapter with `gemini-3.5-flash-lite`. Configuration
+contains only `credentialRef: env:GEMINI_API_KEY`; the key is resolved in memory
+and sent by the SDK only in the provider header.
+
+Gemini accepts a narrower JSON Schema subset than AkuSidecar uses locally. The
+composition removes the unsupported wire keywords (`$schema`, `pattern`,
+`minLength`, and `maxLength`) plus `maxItems` from a cloned provider schema.
+Although Gemini documents `maxItems`, its Interactions v1 endpoint consistently
+rejected the Semantic Event schema when `decisions.maxItems` was 20; the same
+schema was accepted when that one keyword was removed or reduced to 3. Every
+successful response is then validated again against the complete unchanged
+Sidecar schema, in addition to SDK validation of the provider projection.
+Semantic resolution also projects an exact local `minItems`/`maxItems` count
+from the candidate batch before invocation, requiring exactly one decision per
+candidate regardless of provider behavior.
+
+Initial bounded evidence:
+
+- SDK calibration with high reasoning and 512 output tokens passed in 11.19
+  seconds; usage was 22 input, 18 output, 173 reasoning, and 213 total tokens;
+- final combined gate: Acquisition Planning passed in 4.78 seconds;
+- final combined gate: Candidate Evaluation passed in 5.65 seconds with the required one
+  item and one assessment;
+- final combined gate: AI Deep Detection passed in 11.74 seconds across six synthetic positive,
+  negative, quoted-context, external-artifact, and short-content controls;
+- final combined gate: Semantic Event Resolution passed in 10.87 seconds after the bounded schema
+  diagnostic and exact-count projection; its duplicate positive control and
+  near-miss negative control both passed.
+
+No raw prompt, output, provider error body, or credential was retained. Gemini
+Flash Lite remains hidden from Settings and is not yet authorized to replace
+Codex App Server as the default.
 
 ## Separate OpenRouter privacy gate
 

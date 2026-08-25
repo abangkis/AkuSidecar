@@ -75,3 +75,18 @@ func TestNewProviderRoutesModelScopedOllamaEntries(t *testing.T) {
 		t.Fatalf("unsupported provider error=%v", err)
 	}
 }
+
+func TestNewProviderRoutesGeminiEntries(t *testing.T) {
+	server := geminiTestServer(t, `{}`)
+	cfg := geminiTestConfig(t, server.URL)
+
+	got, err := NewProvider(cfg)
+	if err != nil {
+		t.Fatalf("NewProvider(gemini-flash-lite) error=%v", err)
+	}
+	gemini, ok := got.(*Gemini)
+	if !ok {
+		t.Fatalf("NewProvider(gemini-flash-lite) type=%T, want *Gemini", got)
+	}
+	defer gemini.Close()
+}

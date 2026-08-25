@@ -16,6 +16,9 @@ func NewProvider(cfg config.Config) (Provider, error) {
 	case "groq":
 		return NewGroq(cfg)
 	default:
+		if config.IsGeminiProvider(cfg.Reasoning.Provider) {
+			return NewGemini(cfg)
+		}
 		if config.IsOllamaProvider(cfg.Reasoning.Provider) {
 			return NewOllama(cfg)
 		}

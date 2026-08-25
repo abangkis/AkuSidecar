@@ -18,7 +18,7 @@ type Environment struct{}
 
 func (Environment) Resolve(reference string) (string, error) {
 	name, ok := strings.CutPrefix(strings.TrimSpace(reference), "env:")
-	if !ok || name != "GROQ_API_KEY" {
+	if !ok || (name != "GROQ_API_KEY" && name != "GEMINI_API_KEY") {
 		return "", fmt.Errorf("unsupported credential reference")
 	}
 	value := strings.TrimSpace(os.Getenv(name))

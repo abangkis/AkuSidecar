@@ -145,33 +145,6 @@ func (g *Groq) AnalyzeWithModel(ctx context.Context, run domain.Run, observation
 	return result, telemetry, nil
 }
 
-func exactCandidateCountSchema(schema any, candidateCount int) (any, error) {
-	if candidateCount < 1 || candidateCount > maxEvaluationCandidates {
-		return nil, fmt.Errorf("Groq evaluation requires between 1 and %d candidates, got %d", maxEvaluationCandidates, candidateCount)
-	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		return nil, fmt.Errorf("clone Groq evaluation schema: %w", err)
-	}
-	var projected map[string]any
-	if err := json.Unmarshal(raw, &projected); err != nil {
-		return nil, fmt.Errorf("decode Groq evaluation schema: %w", err)
-	}
-	properties, ok := projected["properties"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("Groq evaluation schema has no properties object")
-	}
-	for _, field := range []string{"items", "candidateAssessments"} {
-		arraySchema, ok := properties[field].(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("Groq evaluation schema field %q is not an array schema", field)
-		}
-		arraySchema["minItems"] = candidateCount
-		arraySchema["maxItems"] = candidateCount
-	}
-	return projected, nil
-}
-
 func (g *Groq) invoke(ctx context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
 	modelID := strings.TrimSpace(model.StableModelID())
 	if _, ok := g.transport.ModelCatalog().Lookup(modelID); !ok {
