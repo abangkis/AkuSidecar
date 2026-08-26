@@ -273,16 +273,52 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	if !strings.HasSuffix(target, "/") {
 		target += "/"
 	}
+	identity, err := appShellIdentity(options, cfg)
+	fatal(logger, err)
 	window, err := appshell.Launch(context.Background(), appshell.LaunchOptions{
 		Executable:    result.Executable,
 		ExtensionPath: options.BridgeExtensionPath,
 		IconPath:      appShellIconPath(options.BridgeExtensionPath),
+		Identity:      identity,
 		UserDataDir:   browserProfilePath(options, cfg),
 		URL:           target,
 	})
 	fatal(logger, err)
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
 	return window
+}
+
+func appShellIdentity(options config.Options, cfg config.Config) (appshell.ApplicationIdentity, error) {
+	identity := appshell.ApplicationIdentity{
+		ID:              strings.TrimSpace(options.AppUserModelID),
+		RelaunchCommand: strings.TrimSpace(options.AppRelaunchCommand),
+		DisplayName:     strings.TrimSpace(options.AppRelaunchDisplayName),
+	}
+	if identity.ID != "" || identity.RelaunchCommand != "" || identity.DisplayName != "" || !options.Dev {
+		return identity, nil
+	}
+	workspaceRoot := filepath.Dir(cfg.Root)
+	launcherPath := filepath.Join(workspaceRoot, "AkuBrowser", "launcher", "AkuBrowserLauncher.exe")
+	launcherArgument, err := quoteWindowsRelaunchArgument(launcherPath)
+	if err != nil {
+		return appshell.ApplicationIdentity{}, err
+	}
+	workspaceArgument, err := quoteWindowsRelaunchArgument(workspaceRoot)
+	if err != nil {
+		return appshell.ApplicationIdentity{}, err
+	}
+	return appshell.ApplicationIdentity{
+		ID:              "AI4U.AkuBrowser.Development",
+		RelaunchCommand: launcherArgument + " --development-workspace " + workspaceArgument,
+		DisplayName:     "AkuBrowser Development",
+	}, nil
+}
+
+func quoteWindowsRelaunchArgument(value string) (string, error) {
+	if strings.ContainsRune(value, '"') {
+		return "", fmt.Errorf("Windows relaunch argument contains a quote")
+	}
+	return `"` + value + `"`, nil
 }
 
 func appShellIconPath(extensionPath string) string {

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,22 @@ func TestAppShellIconPathUsesAkuBridgeAsset(t *testing.T) {
 	}
 	if got := appShellIconPath("  "); got != "" {
 		t.Fatalf("empty extension path produced icon path %q", got)
+	}
+}
+
+func TestDevelopmentAppShellIdentityRelaunchesThroughAkuBrowserLauncher(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := config.Config{Root: filepath.Join(workspace, "AkuSidecar")}
+	identity, err := appShellIdentity(config.Options{Dev: true}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.ID != "AI4U.AkuBrowser.Development" || identity.DisplayName != "AkuBrowser Development" {
+		t.Fatalf("identity=%+v", identity)
+	}
+	launcher := filepath.Join(workspace, "AkuBrowser", "launcher", "AkuBrowserLauncher.exe")
+	if !strings.Contains(identity.RelaunchCommand, launcher) || !strings.Contains(identity.RelaunchCommand, "--development-workspace") {
+		t.Fatalf("relaunch command=%q", identity.RelaunchCommand)
 	}
 }
 

@@ -68,7 +68,7 @@ func (o processOwnership) close() {}
 
 type windowIcon struct{}
 
-func applyWindowIcon(int, string) (windowIcon, error) {
+func applyWindowIcon(int, string, string, ApplicationIdentity) (windowIcon, error) {
 	return windowIcon{}, nil
 }
 

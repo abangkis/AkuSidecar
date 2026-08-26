@@ -3,10 +3,13 @@
 package appshell
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +26,7 @@ const (
 
 var (
 	user32                     = windows.NewLazySystemDLL("user32.dll")
+	shell32                    = windows.NewLazySystemDLL("shell32.dll")
 	procCreateIconFromResource = user32.NewProc("CreateIconFromResourceEx")
 	procDestroyIcon            = user32.NewProc("DestroyIcon")
 	procEnumWindows            = user32.NewProc("EnumWindows")
@@ -30,7 +34,44 @@ var (
 	procGetWindowThreadProcess = user32.NewProc("GetWindowThreadProcessId")
 	procIsWindowVisible        = user32.NewProc("IsWindowVisible")
 	procSendMessageW           = user32.NewProc("SendMessageW")
+	procPropertyStoreForWindow = shell32.NewProc("SHGetPropertyStoreForWindow")
 )
+
+var (
+	propertyStoreIID = windows.GUID{Data1: 0x886d8eeb, Data2: 0x8cf2, Data3: 0x4446, Data4: [8]byte{0x8d, 0x02, 0xcd, 0xba, 0x1d, 0xbd, 0xcf, 0x99}}
+	appModelFormatID = windows.GUID{Data1: 0x9f4c2855, Data2: 0x9f79, Data3: 0x4b39, Data4: [8]byte{0xa8, 0xd0, 0xe1, 0xd4, 0x2d, 0xe1, 0xd5, 0xf3}}
+)
+
+const variantWideString = 31
+
+type propertyKey struct {
+	FormatID windows.GUID
+	ID       uint32
+}
+
+type propertyVariant struct {
+	Type      uint16
+	Reserved1 uint16
+	Reserved2 uint16
+	Reserved3 uint16
+	Pointer   uintptr
+	Padding   uintptr
+}
+
+type propertyStore struct {
+	VTable *propertyStoreVTable
+}
+
+type propertyStoreVTable struct {
+	QueryInterface uintptr
+	AddRef         uintptr
+	Release        uintptr
+	GetCount       uintptr
+	GetAt          uintptr
+	GetValue       uintptr
+	SetValue       uintptr
+	Commit         uintptr
+}
 
 func executableName() string {
 	return "chrome.exe"
@@ -116,7 +157,7 @@ type windowIcon struct {
 	handles []windows.Handle
 }
 
-func applyWindowIcon(pid int, path string) (windowIcon, error) {
+func applyWindowIcon(pid int, path, userDataDir string, identity ApplicationIdentity) (windowIcon, error) {
 	if strings.TrimSpace(path) == "" {
 		return windowIcon{}, nil
 	}
@@ -137,6 +178,17 @@ func applyWindowIcon(pid int, path string) (windowIcon, error) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if handle := visibleTopLevelWindow(uint32(pid)); handle != 0 {
+			if strings.TrimSpace(identity.ID) != "" {
+				iconFile, err := materializeRelaunchIcon(data, userDataDir)
+				if err != nil {
+					icon.close()
+					return windowIcon{}, err
+				}
+				if err := setWindowApplicationIdentity(handle, identity, iconFile+",0"); err != nil {
+					icon.close()
+					return windowIcon{}, err
+				}
+			}
 			procSendMessageW.Call(handle, windowIconMessage, iconSmall, uintptr(small))
 			procSendMessageW.Call(handle, windowIconMessage, iconBig, uintptr(large))
 			return icon, nil
@@ -145,6 +197,93 @@ func applyWindowIcon(pid int, path string) (windowIcon, error) {
 	}
 	icon.close()
 	return windowIcon{}, fmt.Errorf("AkuBrowser app-shell window did not become available for icon assignment")
+}
+
+func materializeRelaunchIcon(pngData []byte, userDataDir string) (string, error) {
+	if len(pngData) == 0 {
+		return "", fmt.Errorf("AkuBrowser relaunch icon is empty")
+	}
+	if strings.TrimSpace(userDataDir) == "" {
+		return "", fmt.Errorf("AkuBrowser relaunch icon requires a stable user-data directory")
+	}
+	if len(pngData) > int(^uint32(0)) {
+		return "", fmt.Errorf("AkuBrowser relaunch icon is too large")
+	}
+	ico := make([]byte, 22+len(pngData))
+	binary.LittleEndian.PutUint16(ico[2:4], 1)
+	binary.LittleEndian.PutUint16(ico[4:6], 1)
+	ico[6] = 128
+	ico[7] = 128
+	binary.LittleEndian.PutUint16(ico[10:12], 1)
+	binary.LittleEndian.PutUint16(ico[12:14], 32)
+	binary.LittleEndian.PutUint32(ico[14:18], uint32(len(pngData)))
+	binary.LittleEndian.PutUint32(ico[18:22], 22)
+	copy(ico[22:], pngData)
+	if err := os.MkdirAll(userDataDir, 0o700); err != nil {
+		return "", fmt.Errorf("create app-shell identity directory: %w", err)
+	}
+	path := filepath.Join(userDataDir, "AkuBrowser.ico")
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, ico) {
+		return path, nil
+	}
+	if err := os.WriteFile(path, ico, 0o600); err != nil {
+		return "", fmt.Errorf("write AkuBrowser relaunch icon: %w", err)
+	}
+	return path, nil
+}
+
+func setWindowApplicationIdentity(window uintptr, identity ApplicationIdentity, iconResource string) error {
+	var store *propertyStore
+	result, _, callErr := procPropertyStoreForWindow.Call(
+		window,
+		uintptr(unsafe.Pointer(&propertyStoreIID)),
+		uintptr(unsafe.Pointer(&store)),
+	)
+	if int32(result) < 0 || store == nil {
+		return fmt.Errorf("open app-shell window property store: HRESULT 0x%08x (%v)", uint32(result), callErr)
+	}
+	defer func() {
+		_, _, _ = syscall.SyscallN(store.VTable.Release, uintptr(unsafe.Pointer(store)))
+	}()
+	for _, value := range []struct {
+		id    uint32
+		value string
+	}{
+		{id: 2, value: identity.RelaunchCommand},
+		{id: 4, value: identity.DisplayName},
+		{id: 3, value: iconResource},
+		// Set AppUserModelID last so the taskbar refresh observes the complete
+		// relaunch tuple rather than briefly falling back to chrome.exe.
+		{id: 5, value: identity.ID},
+	} {
+		if err := setWindowStringProperty(store, propertyKey{FormatID: appModelFormatID, ID: value.id}, value.value); err != nil {
+			return err
+		}
+	}
+	result, _, _ = syscall.SyscallN(store.VTable.Commit, uintptr(unsafe.Pointer(store)))
+	if int32(result) < 0 {
+		return fmt.Errorf("commit app-shell application identity: HRESULT 0x%08x", uint32(result))
+	}
+	return nil
+}
+
+func setWindowStringProperty(store *propertyStore, key propertyKey, value string) error {
+	pointer, err := windows.UTF16PtrFromString(value)
+	if err != nil {
+		return fmt.Errorf("encode app-shell application identity: %w", err)
+	}
+	variant := propertyVariant{Type: variantWideString, Pointer: uintptr(unsafe.Pointer(pointer))}
+	result, _, _ := syscall.SyscallN(
+		store.VTable.SetValue,
+		uintptr(unsafe.Pointer(store)),
+		uintptr(unsafe.Pointer(&key)),
+		uintptr(unsafe.Pointer(&variant)),
+	)
+	runtime.KeepAlive(pointer)
+	if int32(result) < 0 {
+		return fmt.Errorf("set app-shell application identity property %d: HRESULT 0x%08x", key.ID, uint32(result))
+	}
+	return nil
 }
 
 func createWindowIcon(data []byte, size uintptr) (windows.Handle, error) {

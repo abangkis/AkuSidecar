@@ -55,6 +55,19 @@ func TestLaunchOptionsCarryIndependentWindowIcon(t *testing.T) {
 	}
 }
 
+func TestApplicationIdentityRequiresCompleteRelaunchTuple(t *testing.T) {
+	if err := (ApplicationIdentity{ID: "AI4U.AkuBrowser.Development"}).validate(); err == nil {
+		t.Fatal("partial application identity must fail")
+	}
+	if err := (ApplicationIdentity{
+		ID:              "AI4U.AkuBrowser.Development",
+		RelaunchCommand: `AkuBrowserLauncher.exe --development-workspace C:\workspace`,
+		DisplayName:     "AkuBrowser Development",
+	}).validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDiscoverAcceptsExistingExplicitCandidate(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, executableName())

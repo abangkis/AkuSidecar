@@ -445,6 +445,9 @@ type Options struct {
 	ChromiumPath                string
 	BridgeExtensionPath         string
 	BrowserProfilePath          string
+	AppUserModelID              string
+	AppRelaunchCommand          string
+	AppRelaunchDisplayName      string
 	RuntimeControlToken         string
 	RuntimeCandidateProbe       bool
 	RuntimeCandidateProbeSchema int
@@ -465,6 +468,9 @@ func ParseFlags() Options {
 	flag.StringVar(&options.ChromiumPath, "chromium-path", "", "override pinned-Chromium executable for this process")
 	flag.StringVar(&options.BridgeExtensionPath, "bridge-extension-path", "", "unpacked AkuBridge extension directory loaded into the app shell")
 	flag.StringVar(&options.BrowserProfilePath, "browser-profile", "", "override the app-shell browser profile directory for this process")
+	flag.StringVar(&options.AppUserModelID, "app-user-model-id", "", "explicit Windows application identity for app-shell grouping and pinning")
+	flag.StringVar(&options.AppRelaunchCommand, "app-relaunch-command", "", "Windows command used to relaunch a pinned app shell")
+	flag.StringVar(&options.AppRelaunchDisplayName, "app-relaunch-display-name", "", "Windows display name for a pinned app shell")
 	flag.StringVar(&options.RuntimeControlToken, "runtime-control-token", "", "instance-scoped token used by the signed runtime host")
 	flag.BoolVar(&options.RuntimeCandidateProbe, "runtime-candidate-probe", false, "validate the packaged runtime contract and exit")
 	flag.IntVar(&options.RuntimeCandidateProbeSchema, "runtime-candidate-probe-schema", 1, "candidate probe response schema (1=legacy, 2=current)")

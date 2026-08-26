@@ -56,9 +56,33 @@ type LaunchOptions struct {
 	Executable    string
 	ExtensionPath string
 	IconPath      string
+	Identity      ApplicationIdentity
 	UserDataDir   string
 	URL           string
 	ExtraArgs     []string
+}
+
+type ApplicationIdentity struct {
+	ID              string
+	RelaunchCommand string
+	DisplayName     string
+}
+
+func (identity ApplicationIdentity) validate() error {
+	values := []string{identity.ID, identity.RelaunchCommand, identity.DisplayName}
+	present := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			present++
+		}
+	}
+	if present != 0 && present != len(values) {
+		return errors.New("app-shell application identity requires ID, relaunch command, and display name together")
+	}
+	if len(strings.TrimSpace(identity.ID)) > 128 {
+		return errors.New("app-shell application identity exceeds 128 characters")
+	}
+	return nil
 }
 
 type Window struct {
@@ -195,6 +219,9 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 	if strings.TrimSpace(options.URL) == "" {
 		return nil, errors.New("app shell URL is required")
 	}
+	if err := options.Identity.validate(); err != nil {
+		return nil, err
+	}
 	args := buildArgs(options)
 	command := exec.Command(options.Executable, args...)
 	command.Stdin = nil
@@ -212,7 +239,7 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		owner.close()
 		return nil, err
 	}
-	icon, err := applyWindowIcon(command.Process.Pid, options.IconPath)
+	icon, err := applyWindowIcon(command.Process.Pid, options.IconPath, options.UserDataDir, options.Identity)
 	if err != nil {
 		owner.terminate()
 		_ = command.Wait()
