@@ -17,7 +17,7 @@ func TestGeminiLiveSidecarWorkloads(t *testing.T) {
 	}
 	planning := config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", ReasoningOptionID: "high", Assurance: "provider_strict", MaxOutputTokens: 512}
 	evaluation := planning
-	evaluation.MaxOutputTokens = 4096
+	evaluation.MaxOutputTokens = 8192
 	provider, err := NewGemini(config.Config{
 		Root: filepathRoot(t),
 		Reasoning: config.ReasoningConfig{

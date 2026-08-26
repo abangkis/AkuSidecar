@@ -17,6 +17,12 @@ import (
 
 const geminiDefaultEndpoint = "https://generativelanguage.googleapis.com/v1"
 
+// Gemini Interactions structured output currently rejects candidate-evaluation
+// requests with seven effective candidates, while the same shape succeeds for
+// six. Keep this adapter boundary local to Gemini; other providers retain the
+// full bounded candidate set and their existing request contract.
+const geminiCandidateEvaluationChunkSize = 6
+
 // Gemini composes the SDK's native stateless Interactions adapter. Provider
 // schema projection is always followed by validation against the complete
 // application schema, so unsupported wire constraints are never silently lost.
@@ -132,24 +138,125 @@ func (g *Gemini) Analyze(ctx context.Context, run domain.Run, observation domain
 }
 
 func (g *Gemini) AnalyzeWithModel(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem, profileID string, model config.ModelConfig) (domain.ReasoningResult, domain.ReasoningTelemetry, error) {
-	request := buildEvaluationRequest(run, observation, knowledge)
-	schema, err := exactCandidateCountSchema(g.resultSchema, len(request.evidenceKeys))
-	if err != nil {
+	compact, evidenceKeys := evaluationPromptObservation(observation)
+	if len(evidenceKeys) == 0 {
+		request := buildEvaluationRequestFromCompact(run, observation, compact, evidenceKeys, knowledge)
+		err := fmt.Errorf("structured evaluation requires between 1 and %d candidates, got %d", maxEvaluationCandidates, len(request.evidenceKeys))
 		return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, 0, domain.ModelUsage{}, err), err
 	}
-	raw, usage, duration, err := g.invoke(ctx, inference.ProfileID(profileID), request.prompt, schema, model)
-	telemetry := g.telemetry(run, "candidate_evaluation", model, duration, usage, err)
-	if err != nil {
-		return domain.ReasoningResult{}, telemetry, err
+
+	var merged domain.ReasoningResult
+	aggregateUsage := domain.ModelUsage{}
+	var aggregateDuration time.Duration
+	chunkCount := (len(evidenceKeys) + geminiCandidateEvaluationChunkSize - 1) / geminiCandidateEvaluationChunkSize
+	for chunkIndex, start := 0, 0; start < len(evidenceKeys); chunkIndex, start = chunkIndex+1, start+geminiCandidateEvaluationChunkSize {
+		end := start + geminiCandidateEvaluationChunkSize
+		if end > len(evidenceKeys) {
+			end = len(evidenceKeys)
+		}
+		chunkObservation := compact
+		chunkObservation.Candidates = append([]evaluationCandidate(nil), compact.Candidates[start:end]...)
+		request := buildEvaluationRequestFromCompact(run, observation, chunkObservation, evidenceKeys[start:end], knowledge)
+		schema, err := exactCandidateCountSchema(g.resultSchema, len(request.evidenceKeys))
+		if err != nil {
+			wrapped := fmt.Errorf("Gemini candidate evaluation chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
+			return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, wrapped), wrapped
+		}
+		raw, usage, duration, err := g.invoke(ctx, inference.ProfileID(profileID), request.prompt, schema, model)
+		aggregateModelUsage(&aggregateUsage, usage)
+		aggregateDuration += duration
+		if err != nil {
+			wrapped := fmt.Errorf("Gemini candidate evaluation chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
+			return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, wrapped), wrapped
+		}
+		var chunkResult domain.ReasoningResult
+		if err := json.Unmarshal([]byte(raw), &chunkResult); err != nil {
+			wrapped := fmt.Errorf("decode Gemini reasoning result for chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
+			return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, wrapped), wrapped
+		}
+		if err := bindEvidenceKeysByPosition(&chunkResult, request.evidenceKeys); err != nil {
+			wrapped := fmt.Errorf("bind Gemini reasoning result for chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
+			return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, wrapped), wrapped
+		}
+		mergeGeminiEvaluationResult(&merged, chunkResult)
 	}
-	var result domain.ReasoningResult
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return domain.ReasoningResult{}, telemetry, fmt.Errorf("decode Gemini reasoning result: %w", err)
+	return merged, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, nil), nil
+}
+
+func mergeGeminiEvaluationResult(dst *domain.ReasoningResult, src domain.ReasoningResult) {
+	dst.Items = append(dst.Items, src.Items...)
+	dst.CandidateAssessments = append(dst.CandidateAssessments, src.CandidateAssessments...)
+	dst.Summary = mergeGeminiText(dst.Summary, src.Summary)
+	dst.Limitations = appendUniqueGeminiStrings(dst.Limitations, src.Limitations...)
+	dst.RepeatedClaimsCollapsed += src.RepeatedClaimsCollapsed
+	dst.DeferredByBudget += src.DeferredByBudget
+}
+
+func mergeGeminiText(existing, next string) string {
+	existing, next = strings.TrimSpace(existing), strings.TrimSpace(next)
+	switch {
+	case existing == "":
+		return next
+	case next == "" || next == existing:
+		return existing
+	default:
+		return existing + "\n\n" + next
 	}
-	if err := bindEvidenceKeysByPosition(&result, request.evidenceKeys); err != nil {
-		return domain.ReasoningResult{}, telemetry, err
+}
+
+func appendUniqueGeminiStrings(values []string, additions ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(additions))
+	for _, value := range values {
+		seen[value] = struct{}{}
 	}
-	return result, telemetry, nil
+	for _, value := range additions {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values
+}
+
+func aggregateModelUsage(total *domain.ModelUsage, next domain.ModelUsage) {
+	total.Input = sumModelUsageCounter(total.Input, next.Input)
+	total.CachedInput = sumModelUsageCounter(total.CachedInput, next.CachedInput)
+	total.Output = sumModelUsageCounter(total.Output, next.Output)
+	total.ReasoningOutput = sumModelUsageCounter(total.ReasoningOutput, next.ReasoningOutput)
+	total.CallerLatencyMS += next.CallerLatencyMS
+	total.QueueWaitMS += next.QueueWaitMS
+	total.ProviderExecutionMS += next.ProviderExecutionMS
+	total.ResponseTotalMS += next.ResponseTotalMS
+	if total.ProviderModel == "" {
+		total.ProviderModel = next.ProviderModel
+	}
+	if total.NativeReasoning == "" {
+		total.NativeReasoning = next.NativeReasoning
+	}
+	if total.ReasoningTier == "" {
+		total.ReasoningTier = next.ReasoningTier
+	}
+	if total.ModelDescriptorVersion == "" {
+		total.ModelDescriptorVersion = next.ModelDescriptorVersion
+	}
+	if total.ModelMaturity == "" {
+		total.ModelMaturity = next.ModelMaturity
+	}
+}
+
+func sumModelUsageCounter(existing, next *int64) *int64 {
+	if existing == nil && next == nil {
+		return nil
+	}
+	var total int64
+	if existing != nil {
+		total += *existing
+	}
+	if next != nil {
+		total += *next
+	}
+	return &total
 }
 
 func (g *Gemini) invoke(ctx context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {

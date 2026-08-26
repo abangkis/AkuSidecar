@@ -276,6 +276,10 @@ func TestRepositorySidecarConfigLoads(t *testing.T) {
 	if len(cfg.Reasoning.Providers) == 0 || cfg.Reasoning.Provider == "" {
 		t.Fatalf("repository config did not resolve a provider: %+v", cfg.Reasoning)
 	}
+	gemini := cfg.Reasoning.Providers["gemini-flash-lite"]
+	if gemini.Evaluation.MaxOutputTokens != 8192 || gemini.SemanticEvent.MaxOutputTokens != 8192 || gemini.AIDetection.MaxOutputTokens != 4096 {
+		t.Fatalf("Gemini workload output budgets=%+v", gemini)
+	}
 }
 
 func TestDeploymentIdentityCombinations(t *testing.T) {

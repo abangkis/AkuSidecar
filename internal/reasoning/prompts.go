@@ -128,6 +128,10 @@ type evaluationAttachment struct {
 
 func buildEvaluationRequest(run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) evaluationRequest {
 	compact, evidenceKeys := evaluationPromptObservation(observation)
+	return buildEvaluationRequestFromCompact(run, observation, compact, evidenceKeys, knowledge)
+}
+
+func buildEvaluationRequestFromCompact(run domain.Run, observation domain.Observation, compact evaluationObservation, evidenceKeys []string, knowledge []domain.ReasonedItem) evaluationRequest {
 	allowed := make([]string, len(compact.Candidates))
 	for index := range compact.Candidates {
 		allowed[index] = compact.Candidates[index].Alias

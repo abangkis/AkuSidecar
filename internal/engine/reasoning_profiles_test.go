@@ -99,6 +99,21 @@ func TestReasoningProfilesUseBackendCatalogPerInvocation(t *testing.T) {
 	}
 }
 
+func TestReasoningProfilePreservesWorkloadPolicy(t *testing.T) {
+	runtime := &Engine{provider: &routedProfileProvider{}}
+	fallback := config.ModelConfig{
+		ModelID: "fallback-model", MinReasoningTier: "high",
+		Assurance: "provider_strict", MaxOutputTokens: 8192,
+	}
+	model := runtime.reasoningModel("sol_medium", fallback)
+	if model.Model != "gpt-5.6-sol" || model.Effort != "medium" {
+		t.Fatalf("profile identity was not selected: %+v", model)
+	}
+	if model.Assurance != "provider_strict" || model.MaxOutputTokens != 8192 {
+		t.Fatalf("workload policy was replaced by profile defaults: %+v", model)
+	}
+}
+
 func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 	root := t.TempDir()
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)

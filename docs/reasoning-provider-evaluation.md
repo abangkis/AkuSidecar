@@ -11,6 +11,19 @@ trade-offs may be evaluated, but further prompt/token optimization is not the
 current priority. Exceptional or quality-critical cases may continue to use
 Codex App Server even if a development fallback is later accepted.
 
+## Current tuning focus
+
+The current phase tunes endpoint behavior and reliability: request acceptance,
+structured-output completion, endpoint-specific output budgets, latency, and
+typed failures. Provider-type tuning is deliberately deferred. Codex App
+Server and Ollama still inherit AkuSidecar's historical 16,384-token fallback
+where a workload-specific value is absent; that fallback is not evidence that
+their Planning, Evaluation, Semantic Event, or AI Detection budgets are
+optimal. A later provider-type pass will derive separate workload budgets from
+completed-run telemetry and quality gates for Codex, Ollama, Gemini, Groq, and
+any other accepted provider. Do not copy one endpoint's budget into another
+without endpoint-specific evidence.
+
 ## Boundaries
 
 - `reasoning.activeProvider` remains unchanged until a candidate passes the
@@ -183,6 +196,105 @@ in `runtime/config/credentials.local.json`. Saving the choice persists it in
 Sidecar state; the same Supervisor-managed application activates it after
 restart. No Supervisor service parameters or lifecycle responsibilities are
 added.
+
+### Development runtime output-budget result — 2026-08-26
+
+Seven development sessions using the former 4,096-token Candidate Evaluation
+budget produced two completed sessions, four partial sessions, and one failed
+session. Across their fourteen source runs, eight Candidate Evaluation
+invocations completed, five returned the typed non-retryable
+`incomplete_response`, and one eight-candidate X request returned HTTP 400
+`invalid_request`. Successful invocations remained materially faster than the
+recent Codex App Server comparison, but the session completion rate was not
+acceptable.
+
+A controlled change raised only Gemini Candidate Evaluation to 8,192 output
+tokens. Profile selection was also corrected to retain the workload-owned
+output budget and structured-output assurance instead of replacing them with
+a provider-wide profile default. Planning remains 512 tokens; Semantic Event
+Resolution and AI Deep Detection remain 4,096 tokens.
+
+The first post-change visible update completed both sources and the semantic
+pass in 60 seconds. LinkedIn evaluated four captured candidates in 17.58
+seconds and reported 1,526 output plus 4,865 reasoning tokens. X evaluated six
+of seven captured candidates in 19.19 seconds and reported 2,126 output plus
+4,867 reasoning tokens. Their combined output and reasoning totals, 6,391 and
+6,993 respectively, exceeded the former 4,096 ceiling while remaining below
+8,192. Semantic resolution completed in 9.14 seconds under its unchanged
+4,096-token budget. This confirms that the former ceiling caused at least the
+observed incomplete responses for these batch sizes; it does not yet explain
+or remediate the separate HTTP 400 seen with an eight-candidate X request.
+
+No raw prompt or model output was retained. More completed sessions are needed
+before treating the new budget as a reliability baseline.
+
+### Duplicate-admission observation after the evaluation change
+
+The next completed visible update confirmed that Candidate Evaluation remained
+healthy at the new 8,192-token budget, but Semantic Event Resolution retained
+its separate 4,096-token budget and returned a non-retryable
+`incomplete_response`. The semantic stage had five selected candidates, ten
+shortlisted historical events, a strongest lexical overlap of fifteen, and was
+invoked rather than bypassed. Because semantic resolution is currently a
+degraded-availability stage, the engine recorded the semantic failure and then
+continued Timeline composition. All five selected candidates were consequently
+added as unique reports and the session itself remained `completed`.
+
+This behavior provides a direct path for an observed duplicate to pass through:
+the immediate failure is semantic endpoint completion followed by the existing
+fail-open composition policy, not proven Gemini misclassification. Earlier
+Gemini semantic calls did complete and one detected duplicate report, so model
+classification quality must be evaluated separately from resolver availability.
+The next endpoint-focused experiment raised only Gemini Semantic Event to
+8,192 tokens. Planning remains 512, Candidate Evaluation remains 8,192, and AI
+Deep Detection remains 4,096. The first post-change canary completed in 89.5
+seconds with ten captured candidates, four evaluated candidates, and three
+items admitted. Semantic resolution compared three selected candidates with a
+ten-event historical shortlist and completed in 9.44 seconds, reporting 718
+output plus 2,352 reasoning tokens. This confirms that the larger budget is
+wired through and provides headroom for the previously incomplete workload; a
+single success does not yet establish a reliability baseline.
+
+Four additional pre-change semantic invocations also completed under 4,096 in
+6.18 to 8.44 seconds and detected three duplicate reports in total. The
+semantic failure therefore depends on workload shape rather than occurring on
+every invocation. Whether semantic failure should remain fail-open is a
+separate product-policy decision and is not changed during endpoint tuning.
+
+Two independent Candidate Evaluation issues remain. X batches with eight
+captured candidates twice returned provider HTTP 400 `invalid_request`, while
+the post-change canary completed with seven captured and four evaluated X
+candidates. One LinkedIn invocation also returned structurally valid JSON that
+failed the complete local schema because `topicFacets` contained four entries
+where the contract permits at most three. Neither issue is addressed by the
+Semantic Event budget change; both require focused reproduction before a fix.
+
+### Gemini candidate-evaluation cardinality boundary — 2026-08-26
+
+A focused endpoint canary isolated the X `invalid_request`: six effective
+Candidate Evaluation candidates completed in 12.5 seconds, while seven were
+rejected in 1.14 seconds before any model usage was reported. Three production
+failures had exactly seven effective candidates. This boundary is independent
+of prompt content, output budget, and timeout.
+
+Gemini's Sidecar adapter now evaluates candidates in ordered chunks of at most
+six when the effective set exceeds that boundary. The adapter preserves the
+original evidence order and rebinds each returned item and assessment to its
+source evidence key by position. It merges chunk items and assessments in
+order, combines non-duplicate limitations deterministically, joins distinct
+chunk summaries, and sums repeated-claim, deferred-budget, token, timing, and
+duration telemetry. Any chunk failure remains a failed evaluation and returns
+no partial result. Other providers retain their existing full-batch contract.
+
+The post-fix live gate evaluated the same seven-candidate synthetic control
+successfully through two bounded chunks in 19.35 seconds. The merged result
+contained seven items and seven assessments in source order, with aggregate
+usage of 1,061 input, 2,132 output, and 3,914 reasoning tokens. The rebuilt
+development runtime remained healthy under Supervisor ownership.
+
+No raw prompt, output, or provider error body is retained by this mitigation.
+The separate local-schema issue (`topicFacets` exceeding three entries) remains
+an independent provider-conformance problem.
 
 Create the ignored local store from the tracked secret-free example:
 
