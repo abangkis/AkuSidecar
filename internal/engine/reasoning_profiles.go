@@ -135,12 +135,7 @@ func (e *Engine) ReasoningProcesses(settings domain.Settings) []ReasoningProcess
 func (e *Engine) reasoningModel(profileID string, fallback config.ModelConfig) config.ModelConfig {
 	if catalog, ok := e.provider.(reasoning.ProfileProvider); ok {
 		if model, found := catalog.ResolveProfile(profileID); found {
-			// Profile selection owns model identity and reasoning effort. Output
-			// budgets and structured-output assurance remain workload policy and
-			// must not be replaced by a provider-wide profile default.
-			model.Assurance = fallback.Assurance
-			model.MaxOutputTokens = fallback.MaxOutputTokens
-			return model
+			return fallback.WithProfileSelection(model)
 		}
 	}
 	return fallback

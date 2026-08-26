@@ -28,16 +28,16 @@ func (f *fakeStructuredInvoker) InvokeStructured(_ context.Context, _ string, pr
 
 func (f *fakeStructuredInvoker) ResolveProfile(id string) (config.ModelConfig, bool) {
 	if id == "sol_medium" {
-		return config.ModelConfig{Model: "gpt-5.6-sol", Effort: "medium"}, true
+		return config.ModelConfig{Model: "gpt-5.6-sol", Effort: "medium", Assurance: "sdk_validated", MaxOutputTokens: 4096}, true
 	}
 	return config.ModelConfig{}, false
 }
 
 func TestDeepResolverUsesSelectedBackendProfile(t *testing.T) {
 	invoker := &fakeStructuredInvoker{raw: `{"assessments":[{"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],"assessedObject":"social_post","signalScope":"none","rationale":"Not enough evidence."}]}`}
-	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "fallback", Effort: "high"}, schema: map[string]any{}}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "fallback", Effort: "high", Assurance: "provider_strict", MaxOutputTokens: 6144}, schema: map[string]any{}}
 	_, _, _, err := resolver.ResolveWithProfile(context.Background(), []domain.TimelineItem{{ID: "timeline", SessionID: "session"}}, "sol_medium")
-	if err != nil || invoker.model.Model != "gpt-5.6-sol" || invoker.model.Effort != "medium" {
+	if err != nil || invoker.model.Model != "gpt-5.6-sol" || invoker.model.Effort != "medium" || invoker.model.Assurance != "provider_strict" || invoker.model.MaxOutputTokens != 6144 {
 		t.Fatalf("model=%+v err=%v", invoker.model, err)
 	}
 }

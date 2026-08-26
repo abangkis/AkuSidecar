@@ -62,16 +62,16 @@ func TestExactSemanticDecisionCountSchemaRejectsInvalidCounts(t *testing.T) {
 
 func (f *fakeStructuredInvoker) ResolveProfile(id string) (config.ModelConfig, bool) {
 	if id == "terra_xhigh" {
-		return config.ModelConfig{Model: "gpt-5.6-terra", Effort: "xhigh"}, true
+		return config.ModelConfig{Model: "gpt-5.6-terra", Effort: "xhigh", Assurance: "sdk_validated", MaxOutputTokens: 4096}, true
 	}
 	return config.ModelConfig{}, false
 }
 
 func TestStructuredResolverUsesSelectedBackendProfile(t *testing.T) {
 	invoker := &fakeStructuredInvoker{}
-	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "fallback", Effort: "high"}, schema: semanticResolverTestSchema()}
+	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "fallback", Effort: "high", Assurance: "provider_strict", MaxOutputTokens: 8192}, schema: semanticResolverTestSchema()}
 	_, _, _, err := resolver.ResolveWithProfile(context.Background(), []domain.SemanticCandidate{{Alias: "candidate_001", Text: "OpenAI released Codex"}}, nil, "terra_xhigh")
-	if err != nil || invoker.model.Model != "gpt-5.6-terra" || invoker.model.Effort != "xhigh" {
+	if err != nil || invoker.model.Model != "gpt-5.6-terra" || invoker.model.Effort != "xhigh" || invoker.model.Assurance != "provider_strict" || invoker.model.MaxOutputTokens != 8192 {
 		t.Fatalf("model=%+v err=%v", invoker.model, err)
 	}
 }

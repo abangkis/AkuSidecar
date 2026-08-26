@@ -87,7 +87,7 @@ func TestGeminiProfileCatalog(t *testing.T) {
 		t.Fatalf("options=%+v", options)
 	}
 	model, ok := provider.ResolveProfile("gemini_high")
-	if !ok || model.ModelID != "gemini-3.5-flash-lite" || model.ReasoningOptionID != "high" {
+	if !ok || model.ModelID != "gemini-3.5-flash-lite" || model.ReasoningOptionID != "high" || model.MaxOutputTokens != 0 || model.Assurance != "" {
 		t.Fatalf("model=%+v ok=%v", model, ok)
 	}
 }

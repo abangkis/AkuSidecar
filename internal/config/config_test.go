@@ -7,6 +7,34 @@ import (
 	"testing"
 )
 
+func TestModelConfigWithProfileSelectionPreservesWorkloadPolicy(t *testing.T) {
+	workload := ModelConfig{
+		ModelID:         "fallback",
+		Effort:          "medium",
+		Assurance:       "provider_strict",
+		MaxOutputTokens: 8192,
+	}
+	profile := ModelConfig{
+		ModelID:           "gemini-3.5-flash-lite",
+		ReasoningOptionID: "high",
+		Effort:            "high",
+		Assurance:         "sdk_validated",
+		MaxOutputTokens:   4096,
+		ProfileID:         "gemini_high",
+	}
+
+	got := workload.WithProfileSelection(profile)
+	if got.ModelID != profile.ModelID || got.ReasoningOptionID != profile.ReasoningOptionID || got.Effort != profile.Effort || got.ProfileID != profile.ProfileID {
+		t.Fatalf("profile identity not preserved: %+v", got)
+	}
+	if got.Assurance != workload.Assurance || got.MaxOutputTokens != workload.MaxOutputTokens {
+		t.Fatalf("workload policy not preserved: %+v", got)
+	}
+	if profile.Assurance != "sdk_validated" || profile.MaxOutputTokens != 4096 {
+		t.Fatalf("profile input mutated: %+v", profile)
+	}
+}
+
 func TestCodexAppServerRequiresSeparateAIDetectionProfile(t *testing.T) {
 	cfg := Config{
 		Server: ServerConfig{Host: "127.0.0.1", Port: 11122}, Database: DatabaseConfig{Path: "test.db"},

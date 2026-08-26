@@ -145,6 +145,15 @@ type ModelConfig struct {
 	ProfileID string `json:"-"`
 }
 
+// WithProfileSelection composes provider-owned model/reasoning identity with
+// workload-owned output and assurance policy. Selecting a runtime profile must
+// not silently replace the budget calibrated for the invoking workload.
+func (m ModelConfig) WithProfileSelection(profile ModelConfig) ModelConfig {
+	profile.Assurance = m.Assurance
+	profile.MaxOutputTokens = m.MaxOutputTokens
+	return profile
+}
+
 func (m ModelConfig) StableModelID() string {
 	if strings.TrimSpace(m.ModelID) != "" {
 		return strings.TrimSpace(m.ModelID)

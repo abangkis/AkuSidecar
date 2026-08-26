@@ -164,7 +164,7 @@ func (r *StructuredResolver) Model() config.ModelConfig { return r.model }
 func (r *StructuredResolver) ModelForProfile(profileID string) config.ModelConfig {
 	if catalog, ok := r.invoker.(ProfileInvoker); ok {
 		if model, found := catalog.ResolveProfile(profileID); found {
-			return model
+			return r.model.WithProfileSelection(model)
 		}
 	}
 	return r.model

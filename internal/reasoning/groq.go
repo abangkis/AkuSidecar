@@ -90,7 +90,7 @@ func (g *Groq) ProfileOptions() []ProfileOption {
 func (g *Groq) ResolveProfile(id string) (config.ModelConfig, bool) {
 	for _, option := range g.ProfileOptions() {
 		if option.ID == id {
-			return config.ModelConfig{ModelID: option.Model, Model: option.Model, MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, MaxOutputTokens: 4096, ProfileID: id}, true
+			return config.ModelConfig{ModelID: option.Model, Model: option.Model, MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, ProfileID: id}, true
 		}
 	}
 	return config.ModelConfig{}, false

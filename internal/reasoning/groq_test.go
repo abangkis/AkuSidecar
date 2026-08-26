@@ -70,7 +70,7 @@ func TestGroqProfileCatalog(t *testing.T) {
 		t.Fatalf("options=%+v", options)
 	}
 	model, ok := provider.ResolveProfile("groq_high")
-	if !ok || model.ModelID != "openai/gpt-oss-120b" || model.ReasoningOptionID != "high" {
+	if !ok || model.ModelID != "openai/gpt-oss-120b" || model.ReasoningOptionID != "high" || model.MaxOutputTokens != 0 || model.Assurance != "" {
 		t.Fatalf("model=%+v ok=%v", model, ok)
 	}
 }
