@@ -3,6 +3,7 @@ package reasoning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -207,46 +208,72 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	})
 	callerLatency := time.Since(started)
 	if err != nil {
-		return "", domain.ModelUsage{CallerLatencyMS: callerLatency.Milliseconds()}, callerLatency, err
+		return "", modelUsageFromInferenceFailure(err, callerLatency), callerLatency, err
 	}
 	if response == nil {
 		return "", domain.ModelUsage{CallerLatencyMS: callerLatency.Milliseconds()}, callerLatency, fmt.Errorf("%s returned an empty response", profileID)
 	}
+	usage := modelUsageFromInferenceEvidence(response.Usage, &response.Receipt, response.Timing, response.DurationMillis, callerLatency)
+	return response.Text, usage, callerLatency, nil
+}
+
+func modelUsageFromInferenceFailure(err error, callerLatency time.Duration) domain.ModelUsage {
+	usage := domain.ModelUsage{CallerLatencyMS: callerLatency.Milliseconds()}
+	var failure *inference.Error
+	if !errors.As(err, &failure) {
+		return usage
+	}
+	evidence := failure.Usage
+	timing := failure.Timing
+	if failure.Receipt != nil {
+		if evidence == (inference.Usage{}) {
+			evidence = failure.Receipt.Usage
+		}
+		if timing == nil {
+			timing = failure.Receipt.Timing
+		}
+	}
+	return modelUsageFromInferenceEvidence(evidence, failure.Receipt, timing, 0, callerLatency)
+}
+
+func modelUsageFromInferenceEvidence(evidence inference.Usage, receipt *inference.ExecutionReceipt, timing *inference.ResponseTiming, durationMillis int64, callerLatency time.Duration) domain.ModelUsage {
 	usage := domain.ModelUsage{}
-	if response.Usage.InputTokens != 0 {
-		value := int64(response.Usage.InputTokens)
+	if evidence.InputTokens != 0 {
+		value := int64(evidence.InputTokens)
 		usage.Input = &value
 	}
-	if response.Usage.CachedInputTokens != 0 {
-		value := int64(response.Usage.CachedInputTokens)
+	if evidence.CachedInputTokens != 0 {
+		value := int64(evidence.CachedInputTokens)
 		usage.CachedInput = &value
 	}
-	if response.Usage.OutputTokens != 0 {
-		value := int64(response.Usage.OutputTokens)
+	if evidence.OutputTokens != 0 {
+		value := int64(evidence.OutputTokens)
 		usage.Output = &value
 	}
-	if response.Usage.ReasoningTokens != 0 {
-		value := int64(response.Usage.ReasoningTokens)
+	if evidence.ReasoningTokens != 0 {
+		value := int64(evidence.ReasoningTokens)
 		usage.ReasoningOutput = &value
 	}
-	usage.ProviderModel = response.Receipt.ActualProviderModel
-	if usage.ProviderModel == "" {
-		usage.ProviderModel = response.Receipt.ProviderModel
+	if receipt != nil {
+		usage.ProviderModel = receipt.ActualProviderModel
+		if usage.ProviderModel == "" {
+			usage.ProviderModel = receipt.ProviderModel
+		}
+		usage.NativeReasoning = receipt.NativeReasoningValue
+		usage.ReasoningTier = string(receipt.ReasoningTier)
+		usage.ModelDescriptorVersion = receipt.ModelDescriptorVersion
+		usage.ModelMaturity = string(receipt.ModelMaturity)
 	}
-	usage.NativeReasoning = response.Receipt.NativeReasoningValue
-	usage.ReasoningTier = string(response.Receipt.ReasoningTier)
-	usage.ModelDescriptorVersion = response.Receipt.ModelDescriptorVersion
-	usage.ModelMaturity = string(response.Receipt.ModelMaturity)
-	providerExecution := time.Duration(response.DurationMillis) * time.Millisecond
+	providerExecution := time.Duration(durationMillis) * time.Millisecond
 	responseTotal := providerExecution
 	queueWait := time.Duration(0)
-	if response.Timing != nil {
-		queueWait = response.Timing.QueueWait
-		if response.Timing.ProviderExecution > 0 {
-			providerExecution = response.Timing.ProviderExecution
+	if timing != nil {
+		queueWait = timing.QueueWait
+		if timing.ProviderExecution > 0 {
+			providerExecution = timing.ProviderExecution
 		}
-		if response.Timing.Total > 0 {
-			responseTotal = response.Timing.Total
+		if timing.Total > 0 {
+			responseTotal = timing.Total
 		}
 	}
 	if responseTotal <= 0 {
@@ -256,7 +283,7 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	usage.QueueWaitMS = queueWait.Milliseconds()
 	usage.ProviderExecutionMS = providerExecution.Milliseconds()
 	usage.ResponseTotalMS = responseTotal.Milliseconds()
-	return response.Text, usage, callerLatency, nil
+	return usage
 }
 
 // responseFormatName projects the stable workload ID into the conservative

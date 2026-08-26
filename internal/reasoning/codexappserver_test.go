@@ -101,17 +101,21 @@ func TestCodexProfileCatalogIsBounded(t *testing.T) {
 func TestProviderFailureFromProjectsOnlySafeTypedMetadata(t *testing.T) {
 	const secret = "raw-provider-payload-must-not-escape"
 	failure, ok := ProviderFailureFrom(&inference.Error{
-		Code:            inference.FailureCodeProvider,
-		Category:        inference.FailureCategoryAuthentication,
-		Reason:          inference.FailureReason("unauthorized"),
-		Stage:           inference.FailureStageProvider,
-		Retry:           inference.RetryNever,
-		ProviderStatus:  401,
-		Operation:       "initialize",
-		RPCCode:         401,
-		ProcessExitCode: 23,
-		Message:         "Codex authentication failed",
-		Cause:           errors.New(secret),
+		Code:                   inference.FailureCodeProvider,
+		Category:               inference.FailureCategoryAuthentication,
+		Reason:                 inference.FailureReason("unauthorized"),
+		ProviderResponseStatus: "incomplete",
+		PartialOutputSeen:      true,
+		DiagnosticCodes:        []string{"provider_capacity"},
+		Stage:                  inference.FailureStageProvider,
+		Retry:                  inference.RetryNever,
+		ProviderStatus:         401,
+		RequestID:              "request-safe-123",
+		Operation:              "initialize",
+		RPCCode:                401,
+		ProcessExitCode:        23,
+		Message:                "Codex authentication failed",
+		Cause:                  errors.New(secret),
 	})
 	if !ok {
 		t.Fatal("typed inference error was not recognized")
@@ -119,7 +123,7 @@ func TestProviderFailureFromProjectsOnlySafeTypedMetadata(t *testing.T) {
 	if failure.Code != "provider" || failure.Category != "authentication" || failure.Reason != "unauthorized" || failure.Stage != "provider" || failure.Retry != "never" || failure.RetryTransient {
 		t.Fatalf("failure taxonomy=%+v", failure)
 	}
-	if failure.ProviderStatus != 401 || failure.Operation != "initialize" || failure.RPCCode != 401 || failure.ProcessExitCode != 23 || failure.Message != "Codex authentication failed" {
+	if failure.ProviderResponseStatus != "incomplete" || !failure.PartialOutputSeen || len(failure.DiagnosticCodes) != 1 || failure.DiagnosticCodes[0] != "provider_capacity" || failure.ProviderStatus != 401 || failure.RequestID != "request-safe-123" || failure.Operation != "initialize" || failure.RPCCode != 401 || failure.ProcessExitCode != 23 || failure.Message != "Codex authentication failed" {
 		t.Fatalf("failure metadata=%+v", failure)
 	}
 	if strings.Contains(fmt.Sprint(failure), secret) {
@@ -132,7 +136,7 @@ func TestProviderFailureFromLeavesAbsentMetadataEmpty(t *testing.T) {
 	if !ok {
 		t.Fatal("typed inference error was not recognized")
 	}
-	if failure.Category != "" || failure.Reason != "" || failure.ProviderStatus != 0 || failure.Operation != "" || failure.RPCCode != 0 || failure.ProcessExitCode != 0 {
+	if failure.Category != "" || failure.Reason != "" || failure.ProviderResponseStatus != "" || failure.PartialOutputSeen || len(failure.DiagnosticCodes) != 0 || failure.ProviderStatus != 0 || failure.RequestID != "" || failure.Operation != "" || failure.RPCCode != 0 || failure.ProcessExitCode != 0 {
 		t.Fatalf("absent metadata gained values: %+v", failure)
 	}
 }

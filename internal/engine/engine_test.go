@@ -2107,9 +2107,10 @@ func TestProviderFailureMetadataPersistsWithoutRawCause(t *testing.T) {
 	const secret = "raw-provider-payload-must-not-persist"
 	processErr := &inference.Error{
 		Code: inference.FailureCodeProvider, Category: inference.FailureCategoryAuthentication,
-		Reason: inference.FailureReason("unauthorized"), ProviderStatus: 401,
+		Reason: inference.FailureReason("unauthorized"), ProviderResponseStatus: "incomplete",
+		PartialOutputSeen: true, DiagnosticCodes: []string{"provider_capacity"}, ProviderStatus: 401,
 		Stage: inference.FailureStageProvider, Retry: inference.RetryNever,
-		Operation: "initialize", RPCCode: 401, ProcessExitCode: 23, Message: "Codex authentication failed",
+		RequestID: "request-safe-123", Operation: "initialize", RPCCode: 401, ProcessExitCode: 23, Message: "Codex authentication failed",
 		Cause: errors.New(secret),
 	}
 	if err := runtime.failRunAfterProcessError(ctx, session.Runs[0].ID, processErr); err != nil {
@@ -2121,13 +2122,17 @@ func TestProviderFailureMetadataPersistsWithoutRawCause(t *testing.T) {
 	}
 	want := map[string]any{
 		"sdkCode": "provider", "sdkCategory": "authentication", "sdkStage": "provider", "sdkRetry": "never",
-		"sdkReason": "unauthorized", "sdkProviderStatus": float64(401), "sdkOperation": "initialize",
+		"sdkReason": "unauthorized", "sdkProviderResponseStatus": "incomplete", "sdkPartialOutputSeen": true,
+		"sdkProviderStatus": float64(401), "sdkRequestID": "request-safe-123", "sdkOperation": "initialize",
 		"sdkRPCCode": float64(401), "sdkProcessExitCode": float64(23),
 	}
 	for key, value := range want {
 		if stored.Error.Details[key] != value {
 			t.Fatalf("details[%q]=%#v, want %#v; details=%+v", key, stored.Error.Details[key], value, stored.Error.Details)
 		}
+	}
+	if got, ok := stored.Error.Details["sdkDiagnosticCodes"].([]any); !ok || len(got) != 1 || got[0] != "provider_capacity" {
+		t.Fatalf("diagnostic codes=%#v; details=%+v", stored.Error.Details["sdkDiagnosticCodes"], stored.Error.Details)
 	}
 	encoded, err := json.Marshal(stored.Error)
 	if err != nil {
@@ -2143,7 +2148,7 @@ func TestProviderFailureDetailsOmitAbsentMetadata(t *testing.T) {
 	if len(details) != 3 || details["sdkCode"] != "provider" || details["sdkStage"] != "provider" || details["sdkRetry"] != "never" {
 		t.Fatalf("details=%+v", details)
 	}
-	for _, key := range []string{"sdkCategory", "sdkReason", "sdkProviderStatus", "sdkOperation", "sdkRPCCode", "sdkProcessExitCode"} {
+	for _, key := range []string{"sdkCategory", "sdkReason", "sdkProviderResponseStatus", "sdkPartialOutputSeen", "sdkDiagnosticCodes", "sdkProviderStatus", "sdkRequestID", "sdkOperation", "sdkRPCCode", "sdkProcessExitCode"} {
 		if _, ok := details[key]; ok {
 			t.Fatalf("absent %s must be omitted: %+v", key, details)
 		}

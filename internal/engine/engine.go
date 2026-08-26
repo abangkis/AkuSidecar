@@ -1144,8 +1144,20 @@ func providerFailureDetails(failure reasoning.ProviderFailure) map[string]any {
 	if failure.Reason != "" {
 		details["sdkReason"] = failure.Reason
 	}
+	if failure.ProviderResponseStatus != "" {
+		details["sdkProviderResponseStatus"] = failure.ProviderResponseStatus
+	}
+	if failure.PartialOutputSeen {
+		details["sdkPartialOutputSeen"] = true
+	}
+	if len(failure.DiagnosticCodes) > 0 {
+		details["sdkDiagnosticCodes"] = append([]string(nil), failure.DiagnosticCodes...)
+	}
 	if failure.ProviderStatus != 0 {
 		details["sdkProviderStatus"] = failure.ProviderStatus
+	}
+	if failure.RequestID != "" {
+		details["sdkRequestID"] = failure.RequestID
 	}
 	if failure.Operation != "" {
 		details["sdkOperation"] = failure.Operation

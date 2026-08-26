@@ -27,9 +27,12 @@ type poolTestAdapter struct {
 }
 
 type poolTestClient struct {
-	adapter    *poolTestAdapter
-	closeOnce  sync.Once
-	closeCalls atomic.Int32
+	adapter     *poolTestAdapter
+	closeOnce   sync.Once
+	closeCalls  atomic.Int32
+	generateErr error
+	usage       inference.Usage
+	receipt     inference.ExecutionReceipt
 }
 
 func newPoolTestAdapter() *poolTestAdapter {
@@ -80,7 +83,10 @@ func (a *poolTestAdapter) preflight(ctx context.Context) error {
 
 func (c *poolTestClient) Preflight(ctx context.Context) error { return c.adapter.preflight(ctx) }
 func (c *poolTestClient) Generate(context.Context, inference.Request) (*inference.Response, error) {
-	response := &inference.Response{Text: "{}", DurationMillis: c.adapter.durationMillis, Timing: c.adapter.responseTiming}
+	if c.generateErr != nil {
+		return nil, c.generateErr
+	}
+	response := &inference.Response{Text: "{}", DurationMillis: c.adapter.durationMillis, Timing: c.adapter.responseTiming, Usage: c.usage, Receipt: c.receipt}
 	return response, nil
 }
 func (c *poolTestClient) Close() error {
@@ -207,6 +213,39 @@ func TestInvokeBoundNilTimingFallsBackToLegacyDuration(t *testing.T) {
 	}
 	if usage.ProviderExecutionMS != 17 || usage.ResponseTotalMS != 17 || usage.QueueWaitMS != 0 {
 		t.Fatalf("legacy timing fallback=%+v", usage)
+	}
+	_ = pool.Close()
+}
+
+func TestInvokeBoundPreservesSafeUsageAndTimingFromFailedInferenceInvocation(t *testing.T) {
+	adapter := newPoolTestAdapter()
+	close(adapter.release)
+	adapter.client.generateErr = inference.WithMetadata(nil, inference.ErrorMetadata{
+		Code: inference.FailureCodeIncomplete, Stage: inference.FailureStageProvider,
+		Usage:  inference.Usage{InputTokens: 101, CachedInputTokens: 40, OutputTokens: 17, ReasoningTokens: 9, TotalTokens: 118},
+		Timing: &inference.ResponseTiming{QueueWait: 4 * time.Millisecond, ProviderExecution: 13 * time.Millisecond, Total: 19 * time.Millisecond},
+		Receipt: &inference.ExecutionReceipt{
+			ProviderModel: "gemini-3.7-flash", ActualProviderModel: "gemini-3.7-flash",
+			NativeReasoningValue: "low", ReasoningTier: inference.ReasoningEffortLow,
+			ModelDescriptorVersion: "gemini-catalog-2026-08-25", ModelMaturity: inference.ModelMaturityStable,
+		},
+	})
+	pool, err := newBoundClientPool(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, usage, callerLatency, err := invokeBound(context.Background(), pool, ExecutionProfileEvaluation, "prompt", json.RawMessage(`{"type":"object"}`), poolTestModel(), "test-model")
+	if err == nil {
+		t.Fatal("failed inference invocation unexpectedly succeeded")
+	}
+	if usage.Input == nil || *usage.Input != 101 || usage.CachedInput == nil || *usage.CachedInput != 40 || usage.Output == nil || *usage.Output != 17 || usage.ReasoningOutput == nil || *usage.ReasoningOutput != 9 {
+		t.Fatalf("failed invocation usage=%+v", usage)
+	}
+	if usage.ProviderModel != "gemini-3.7-flash" || usage.NativeReasoning != "low" || usage.ReasoningTier != "low" || usage.ModelDescriptorVersion != "gemini-catalog-2026-08-25" || usage.ModelMaturity != "stable" {
+		t.Fatalf("failed invocation receipt=%+v", usage)
+	}
+	if usage.CallerLatencyMS != callerLatency.Milliseconds() || usage.QueueWaitMS != 4 || usage.ProviderExecutionMS != 13 || usage.ResponseTotalMS != 19 {
+		t.Fatalf("failed invocation timing caller=%s usage=%+v", callerLatency, usage)
 	}
 	_ = pool.Close()
 }

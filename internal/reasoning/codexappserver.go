@@ -292,17 +292,21 @@ func IsUsageLimitError(err error) bool {
 }
 
 type ProviderFailure struct {
-	Code            string
-	Category        string
-	Reason          string
-	Stage           string
-	Retry           string
-	RetryTransient  bool
-	ProviderStatus  int
-	Operation       string
-	RPCCode         int
-	ProcessExitCode int
-	Message         string
+	Code                   string
+	Category               string
+	Reason                 string
+	ProviderResponseStatus string
+	PartialOutputSeen      bool
+	DiagnosticCodes        []string
+	Stage                  string
+	Retry                  string
+	RetryTransient         bool
+	ProviderStatus         int
+	RequestID              string
+	Operation              string
+	RPCCode                int
+	ProcessExitCode        int
+	Message                string
 }
 
 func ProviderFailureFrom(err error) (ProviderFailure, bool) {
@@ -311,17 +315,21 @@ func ProviderFailureFrom(err error) (ProviderFailure, bool) {
 		return ProviderFailure{}, false
 	}
 	return ProviderFailure{
-		Code:            string(infErr.Code),
-		Category:        string(infErr.Category),
-		Reason:          string(infErr.Reason),
-		Stage:           string(infErr.Stage),
-		Retry:           string(infErr.Retry),
-		RetryTransient:  infErr.Retry == inference.RetryTransient,
-		ProviderStatus:  infErr.ProviderStatus,
-		Operation:       infErr.Operation,
-		RPCCode:         infErr.RPCCode,
-		ProcessExitCode: infErr.ProcessExitCode,
-		Message:         infErr.Message,
+		Code:                   string(infErr.Code),
+		Category:               string(infErr.Category),
+		Reason:                 string(infErr.Reason),
+		ProviderResponseStatus: infErr.ProviderResponseStatus,
+		PartialOutputSeen:      infErr.PartialOutputSeen,
+		DiagnosticCodes:        append([]string(nil), infErr.DiagnosticCodes...),
+		Stage:                  string(infErr.Stage),
+		Retry:                  string(infErr.Retry),
+		RetryTransient:         infErr.Retry == inference.RetryTransient,
+		ProviderStatus:         infErr.ProviderStatus,
+		RequestID:              infErr.RequestID,
+		Operation:              infErr.Operation,
+		RPCCode:                infErr.RPCCode,
+		ProcessExitCode:        infErr.ProcessExitCode,
+		Message:                infErr.Message,
 	}, true
 }
 
