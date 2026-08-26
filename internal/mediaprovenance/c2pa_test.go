@@ -1,8 +1,16 @@
 package mediaprovenance
 
 import (
+	"path/filepath"
 	"testing"
 )
+
+func TestConfiguredMissingC2PAToolFailsClosed(t *testing.T) {
+	t.Setenv("AKU_C2PATOOL_PATH", "")
+	if got := discoverExecutable(filepath.Join(t.TempDir(), "missing-c2patool.exe")); got != "" {
+		t.Fatalf("configured missing c2patool fell back to %q", got)
+	}
+}
 
 func TestParseC2PAToolOutputClassifiesGeneratedImage(t *testing.T) {
 	result, err := ParseC2PAToolOutput([]byte(`{

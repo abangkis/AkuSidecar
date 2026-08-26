@@ -7,6 +7,7 @@ import (
 )
 
 var linkedInNativeIdentityPattern = regexp.MustCompile(`(?i)(activity|ugcpost|share)(?::|-)(\d+)`)
+var xNativeStatusPathPattern = regexp.MustCompile(`^/([^/]+)/status/(\d+)(?:/.*)?$`)
 var instagramNativeIdentityPattern = regexp.MustCompile(`(?i)/(p|reel|tv)/([a-z0-9_-]+)`)
 var instagramNormalizedIdentityPattern = regexp.MustCompile(`(?i)^instagram:(p|reel|tv):([a-z0-9_-]+)$`)
 
@@ -22,7 +23,16 @@ func CanonicalSourceURL(source Source, raw string) (string, bool) {
 	valid := false
 	switch source {
 	case SourceX:
-		valid = host == "x.com" && strings.Contains(parsed.Path, "/status/")
+		if host == "x.com" {
+			match := xNativeStatusPathPattern.FindStringSubmatch(parsed.Path)
+			if len(match) == 3 {
+				parsed.Path = "/" + match[1] + "/status/" + match[2]
+				parsed.RawPath = ""
+				parsed.RawQuery = ""
+				parsed.Fragment = ""
+				valid = true
+			}
+		}
 	case SourceLinkedIn:
 		valid = host == "www.linkedin.com" && (strings.Contains(parsed.Path, "/posts/") || strings.Contains(parsed.Path, "/feed/update/"))
 	case SourceFacebook:

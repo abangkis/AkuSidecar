@@ -47,9 +47,11 @@ func (s *Store) CreateMediaRecaptureForReason(ctx context.Context, timelineID st
 	if targetURL == "" {
 		targetURL = strings.TrimSpace(item.SourceURL)
 	}
-	if !nativeSourceURL(source, targetURL) {
+	canonicalTargetURL, ok := domain.CanonicalSourceURL(source, targetURL)
+	if !ok {
 		return domain.MediaRecapture{}, errors.New("this item has no recapturable native post URL")
 	}
+	targetURL = canonicalTargetURL
 	foregroundAuthorized := mode == domain.MediaRecaptureForeground
 	var priorPayload map[string]any
 	if foregroundAuthorized {

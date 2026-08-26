@@ -276,6 +276,9 @@ func TestRepositorySidecarConfigLoads(t *testing.T) {
 	if len(cfg.Reasoning.Providers) == 0 || cfg.Reasoning.Provider == "" {
 		t.Fatalf("repository config did not resolve a provider: %+v", cfg.Reasoning)
 	}
+	if !filepath.IsAbs(cfg.MediaProvenance.C2PAToolPath) || !strings.Contains(filepath.ToSlash(cfg.MediaProvenance.C2PAToolPath), "/SharedTemp/AkuBrowser/shared-tools/c2patool/0.26.60/windows-x64/c2patool.exe") {
+		t.Fatalf("repository c2patool path=%q", cfg.MediaProvenance.C2PAToolPath)
+	}
 	gemini := cfg.Reasoning.Providers["gemini-flash-lite"]
 	if gemini.Evaluation.MaxOutputTokens != 8192 || gemini.SemanticEvent.MaxOutputTokens != 8192 || gemini.AIDetection.MaxOutputTokens != 4096 {
 		t.Fatalf("Gemini workload output budgets=%+v", gemini)

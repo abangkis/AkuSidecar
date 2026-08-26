@@ -49,8 +49,8 @@ type C2PAToolInspector struct {
 	client     *http.Client
 }
 
-func NewC2PAToolInspector() *C2PAToolInspector {
-	path := discoverExecutable()
+func NewC2PAToolInspector(configuredPath string) *C2PAToolInspector {
+	path := discoverExecutable(configuredPath)
 	return &C2PAToolInspector{
 		executable: path,
 		client: &http.Client{
@@ -259,7 +259,7 @@ func ParseC2PAToolOutput(output []byte) (Result, error) {
 	return result, nil
 }
 
-func discoverExecutable() string {
+func discoverExecutable(configuredPath string) string {
 	name := "c2patool"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
@@ -268,6 +268,15 @@ func discoverExecutable() string {
 		if info, err := os.Stat(explicit); err == nil && !info.IsDir() {
 			return explicit
 		}
+	}
+	if configured := strings.TrimSpace(configuredPath); configured != "" {
+		if info, err := os.Stat(configured); err == nil && !info.IsDir() {
+			return configured
+		}
+		// An explicit application config is authoritative. If its pinned shared
+		// tool is unavailable, degrade C2PA rather than executing an unapproved
+		// sibling or PATH binary.
+		return ""
 	}
 	if executable, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(executable), name)

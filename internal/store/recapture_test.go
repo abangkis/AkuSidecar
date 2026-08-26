@@ -21,6 +21,9 @@ func TestMediaRecaptureReplacesEvidenceWithoutCreatingTimelineItems(t *testing.T
 	if job.Status != "queued" || job.Payload["mode"] != "recapture_media" {
 		t.Fatalf("job=%+v", job)
 	}
+	if job.TargetURL != "https://x.com/example/status/12345" {
+		t.Fatalf("recapture target was not canonicalized: %q", job.TargetURL)
+	}
 	if job.Payload["sourceHydrationTimeoutMs"] != 12000 {
 		t.Fatalf("recapture hydration timeout=%v", job.Payload["sourceHydrationTimeoutMs"])
 	}
@@ -424,7 +427,7 @@ func insertUnavailableMediaFixture(t *testing.T, state *Store) (string, string) 
 		EvidenceKey: evidenceKey,
 		Author:      "Example",
 		Text:        "A sufficiently long post body for a deterministic unavailable-media fixture.",
-		Permalink:   "https://x.com/example/status/12345",
+		Permalink:   "https://x.com/example/status/12345/analytics?ref=timeline",
 		MediaRecovery: map[string]any{
 			"outcome":               "unavailable",
 			"attempts":              1,

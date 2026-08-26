@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1879,7 +1881,7 @@ func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessio
 	if err != nil || command == nil {
 		t.Fatalf("claim: %+v %v", command, err)
 	}
-	permalink := "https://x.com/example/status/" + strings.TrimPrefix(evidenceKey, "x:")
+	permalink := "https://x.com/example/status/" + fixtureXStatusID(evidenceKey)
 	if source == domain.SourceLinkedIn {
 		permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + strings.TrimPrefix(evidenceKey, "linkedin:")
 	} else if source == domain.SourceFacebook {
@@ -1891,6 +1893,12 @@ func completeActiveRun(t *testing.T, runtime *Engine, state *store.Store, sessio
 	if _, err := runtime.AcceptObservation(context.Background(), command.ID, run.ID, value); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func fixtureXStatusID(value string) string {
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(value))
+	return strconv.FormatUint(hash.Sum64(), 10)
 }
 
 func waitSession(t *testing.T, runtime *Engine, id string, predicate func(domain.Session) bool) domain.Session {

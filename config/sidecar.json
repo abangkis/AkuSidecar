@@ -12,6 +12,9 @@
   "database": {
     "path": "runtime/aku-sidecar.db"
   },
+  "mediaProvenance": {
+    "c2paToolPath": "../../SharedTemp/AkuBrowser/shared-tools/c2patool/0.26.60/windows-x64/c2patool.exe"
+  },
   "reasoning": {
     "activeProvider": "codex-app-server",
     "providers": {

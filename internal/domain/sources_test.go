@@ -155,6 +155,26 @@ func TestCanonicalSourceURLSupportsEveryRegisteredSource(t *testing.T) {
 	}
 }
 
+func TestCanonicalSourceURLRemovesXPostActionRoutes(t *testing.T) {
+	for _, raw := range []string{
+		"https://x.com/example/status/12345/analytics?ref=timeline#views",
+		"https://x.com/example/status/12345/photo/1",
+	} {
+		if got, ok := CanonicalSourceURL(SourceX, raw); !ok || got != "https://x.com/example/status/12345" {
+			t.Fatalf("CanonicalSourceURL(SourceX,%q)=%q,%v", raw, got, ok)
+		}
+	}
+	for _, raw := range []string{
+		"https://x.com/example/status/not-numeric/analytics",
+		"https://x.com/home/status/",
+		"https://attacker.example/example/status/12345/analytics",
+	} {
+		if got, ok := CanonicalSourceURL(SourceX, raw); ok || got != "" {
+			t.Fatalf("unsafe X URL admitted: %q -> %q", raw, got)
+		}
+	}
+}
+
 func TestInstagramPermalinkProvesNativeShortcodeIdentity(t *testing.T) {
 	for _, test := range []struct {
 		url  string

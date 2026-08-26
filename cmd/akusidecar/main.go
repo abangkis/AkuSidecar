@@ -138,7 +138,7 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
-	mediaInspector := mediaprovenance.NewC2PAToolInspector()
+	mediaInspector := mediaprovenance.NewC2PAToolInspector(cfg.MediaProvenance.C2PAToolPath)
 	runtime.SetMediaProvenanceInspector(mediaInspector)
 	if mediaInspector.Available() {
 		logger.Printf("C2PA image provenance ready executable=%s", mediaInspector.Executable())

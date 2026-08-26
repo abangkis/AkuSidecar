@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1257,7 +1259,7 @@ func completeHTTPTestRun(t *testing.T, runtime *engine.Engine, sessionID string,
 			if err != nil || command == nil {
 				t.Fatalf("claim command=%+v err=%v", command, err)
 			}
-			permalink := "https://x.com/example/status/" + platformID
+			permalink := "https://x.com/example/status/" + httpFixtureXStatusID(platformID)
 			if source == domain.SourceLinkedIn {
 				permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + platformID
 			}
@@ -1270,6 +1272,12 @@ func completeHTTPTestRun(t *testing.T, runtime *engine.Engine, sessionID string,
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("%s run did not become ready", source)
+}
+
+func httpFixtureXStatusID(value string) string {
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(value))
+	return strconv.FormatUint(hash.Sum64(), 10)
 }
 
 func waitHTTPTestSession(t *testing.T, runtime *engine.Engine, sessionID, status string) domain.Session {

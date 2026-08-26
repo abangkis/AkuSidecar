@@ -339,7 +339,7 @@ func runSemanticAcceptanceSession(t *testing.T, runtime *Engine, fixtures []sema
 			t.Fatalf("claim source=%s command=%+v err=%v", fixture.source, command, err)
 		}
 		published := "2026-07-17T00:00:00Z"
-		permalink := "https://x.com/example/status/" + strings.TrimPrefix(fixture.evidenceKey, "x:")
+		permalink := "https://x.com/example/status/" + fixtureXStatusID(fixture.evidenceKey)
 		if fixture.source == domain.SourceLinkedIn {
 			permalink = "https://www.linkedin.com/feed/update/urn:li:activity:" + strings.TrimPrefix(fixture.evidenceKey, "linkedin:")
 		}

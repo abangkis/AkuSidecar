@@ -20,17 +20,18 @@ import (
 )
 
 type Config struct {
-	Version             int              `json:"version"`
-	Deployment          DeploymentConfig `json:"deployment,omitempty"`
-	Server              ServerConfig     `json:"server"`
-	Database            DatabaseConfig   `json:"database"`
-	Reasoning           ReasoningConfig  `json:"reasoning"`
-	Capture             CaptureConfig    `json:"capture"`
-	Preference          PreferenceConfig `json:"preference"`
-	Bridge              BridgeConfig     `json:"bridge"`
-	Root                string           `json:"-"`
-	Dev                 bool             `json:"-"`
-	RuntimeControlToken string           `json:"-"`
+	Version             int                   `json:"version"`
+	Deployment          DeploymentConfig      `json:"deployment,omitempty"`
+	Server              ServerConfig          `json:"server"`
+	Database            DatabaseConfig        `json:"database"`
+	MediaProvenance     MediaProvenanceConfig `json:"mediaProvenance,omitempty"`
+	Reasoning           ReasoningConfig       `json:"reasoning"`
+	Capture             CaptureConfig         `json:"capture"`
+	Preference          PreferenceConfig      `json:"preference"`
+	Bridge              BridgeConfig          `json:"bridge"`
+	Root                string                `json:"-"`
+	Dev                 bool                  `json:"-"`
+	RuntimeControlToken string                `json:"-"`
 }
 
 type DeploymentConfig struct {
@@ -68,6 +69,10 @@ func (s ServerConfig) HostPort() string {
 
 type DatabaseConfig struct {
 	Path string `json:"path"`
+}
+
+type MediaProvenanceConfig struct {
+	C2PAToolPath string `json:"c2paToolPath,omitempty"`
 }
 
 type ReasoningConfig struct {
@@ -524,6 +529,9 @@ func Load(options Options) (Config, error) {
 	}
 	if !filepath.IsAbs(cfg.Database.Path) {
 		cfg.Database.Path = filepath.Join(cfg.Root, cfg.Database.Path)
+	}
+	if path := strings.TrimSpace(cfg.MediaProvenance.C2PAToolPath); path != "" && !filepath.IsAbs(path) {
+		cfg.MediaProvenance.C2PAToolPath = filepath.Clean(filepath.Join(cfg.Root, path))
 	}
 	if err := cfg.Reasoning.Select(cfg.Reasoning.ActiveProvider); err != nil {
 		return Config{}, err

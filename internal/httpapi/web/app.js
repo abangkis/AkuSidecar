@@ -4974,7 +4974,13 @@ function safeSourceUrl(value, source) {
   if (!descriptor) return null;
   const trustedHost = (descriptor.nativeHosts ?? []).includes(url.hostname);
   const nativePath = (descriptor.nativePathTokens ?? []).some((token) => url.pathname.includes(token));
-  return trustedHost && nativePath ? url.href : null;
+  if (!trustedHost || !nativePath) return null;
+  if (source === "x") {
+    const match = url.pathname.match(/^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/);
+    if (!match) return null;
+    return `https://x.com/${match[1]}/status/${match[2]}`;
+  }
+  return url.href;
 }
 
 function buildMediaRecaptureButton(entry) {
