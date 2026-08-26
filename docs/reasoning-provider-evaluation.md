@@ -24,6 +24,14 @@ completed-run telemetry and quality gates for Codex, Ollama, Gemini, Groq, and
 any other accepted provider. Do not copy one endpoint's budget into another
 without endpoint-specific evidence.
 
+Prompt compatibility changes follow the composable-prompt contract in
+[`composable-prompts.md`](composable-prompts.md). The current Gemini
+Candidate Evaluation overlay is scoped to that workload only. Its initial
+seven-candidate bounded live gate passed the complete local response schema;
+the first subsequent scheduler batch also completed with four effective X
+assessments inside the schema bounds. Additional normal batches are still
+required before treating it as reliable.
+
 ## Boundaries
 
 - `reasoning.activeProvider` remains unchanged until a candidate passes the

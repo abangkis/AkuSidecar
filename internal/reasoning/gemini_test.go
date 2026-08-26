@@ -164,8 +164,13 @@ func TestGeminiCandidateEvaluationChunksSevenCandidatesAndAggregatesTelemetry(t 
 	if err != nil {
 		t.Fatalf("analysis error: %v", err)
 	}
-	if got := *calls; fmt.Sprint(got) != "[6 1]" {
+	if got := calls.sizes; fmt.Sprint(got) != "[6 1]" {
 		t.Fatalf("candidate chunk sizes=%v, want [6 1]", got)
+	}
+	for index, prompt := range calls.prompts {
+		if got := strings.Count(prompt, "Gemini Candidate Evaluation compatibility guidance:"); got != 1 {
+			t.Fatalf("chunk %d overlay count=%d, want 1", index+1, got)
+		}
 	}
 	if len(result.Items) != 7 || len(result.CandidateAssessments) != 7 {
 		t.Fatalf("merged result cardinality items=%d assessments=%d", len(result.Items), len(result.CandidateAssessments))
@@ -205,15 +210,20 @@ func TestGeminiCandidateEvaluationChunkFailureDoesNotReturnPartialSuccess(t *tes
 	if telemetry.Status != "failed" || telemetry.InputTokens == nil || *telemetry.InputTokens != 10 {
 		t.Fatalf("failure telemetry=%+v", telemetry)
 	}
-	if got := fmt.Sprint(*calls); got != "[6 1]" {
+	if got := fmt.Sprint(calls.sizes); got != "[6 1]" {
 		t.Fatalf("candidate chunk sizes=%s, want [6 1]", got)
 	}
 }
 
-func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, *[]int) {
+type geminiChunkCapture struct {
+	mu      sync.Mutex
+	sizes   []int
+	prompts []string
+}
+
+func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, *geminiChunkCapture) {
 	t.Helper()
-	var mu sync.Mutex
-	calls := []int{}
+	calls := &geminiChunkCapture{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("x-goog-api-key"); got != "gemini-test-key" {
 			t.Errorf("API key header=%q", got)
@@ -232,10 +242,11 @@ func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, 
 			t.Fatalf("decode payload: %v", err)
 		}
 		size := strings.Count(payload.Input, `"alias"`)
-		mu.Lock()
-		calls = append(calls, size)
-		callNumber := len(calls)
-		mu.Unlock()
+		calls.mu.Lock()
+		calls.sizes = append(calls.sizes, size)
+		calls.prompts = append(calls.prompts, payload.Input)
+		callNumber := len(calls.sizes)
+		calls.mu.Unlock()
 		if failCall == callNumber {
 			http.Error(w, "provider rejected candidate batch", http.StatusBadRequest)
 			return
@@ -259,7 +270,7 @@ func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, 
 		_, _ = fmt.Fprintf(w, `{"id":"interaction-%d","model":"gemini-3.5-flash-lite","status":"completed","output_text":%s,"usage":{"total_input_tokens":%d,"total_output_tokens":%d,"total_thought_tokens":%d}}`, callNumber, encoded, 10*callNumber, 3*callNumber, 2*callNumber)
 	}))
 	t.Cleanup(server.Close)
-	return server, &calls
+	return server, calls
 }
 
 func geminiEvaluationChunkOutput(callNumber, size int) map[string]any {

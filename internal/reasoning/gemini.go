@@ -156,7 +156,7 @@ func (g *Gemini) AnalyzeWithModel(ctx context.Context, run domain.Run, observati
 		}
 		chunkObservation := compact
 		chunkObservation.Candidates = append([]evaluationCandidate(nil), compact.Candidates[start:end]...)
-		request := buildEvaluationRequestFromCompact(run, observation, chunkObservation, evidenceKeys[start:end], knowledge)
+		request := buildEvaluationRequestFromCompactForProvider(promptProviderGemini, run, observation, chunkObservation, evidenceKeys[start:end], knowledge)
 		schema, err := exactCandidateCountSchema(g.resultSchema, len(request.evidenceKeys))
 		if err != nil {
 			wrapped := fmt.Errorf("Gemini candidate evaluation chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
