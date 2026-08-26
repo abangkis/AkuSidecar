@@ -48,6 +48,13 @@ func TestBuildArgsOmitsExtensionWhenUnset(t *testing.T) {
 	}
 }
 
+func TestLaunchOptionsCarryIndependentWindowIcon(t *testing.T) {
+	options := LaunchOptions{ExtensionPath: "C:\\bridge", IconPath: "C:\\bridge\\icons\\icon-128.png"}
+	if options.IconPath == "" || options.IconPath == options.ExtensionPath {
+		t.Fatalf("window icon path must be an explicit asset: %+v", options)
+	}
+}
+
 func TestDiscoverAcceptsExistingExplicitCandidate(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, executableName())

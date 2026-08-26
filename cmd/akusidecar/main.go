@@ -276,12 +276,20 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	window, err := appshell.Launch(context.Background(), appshell.LaunchOptions{
 		Executable:    result.Executable,
 		ExtensionPath: options.BridgeExtensionPath,
+		IconPath:      appShellIconPath(options.BridgeExtensionPath),
 		UserDataDir:   browserProfilePath(options, cfg),
 		URL:           target,
 	})
 	fatal(logger, err)
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
 	return window
+}
+
+func appShellIconPath(extensionPath string) string {
+	if value := strings.TrimSpace(extensionPath); value != "" {
+		return filepath.Join(value, "icons", "icon-128.png")
+	}
+	return ""
 }
 
 func browserProfilePath(options config.Options, cfg config.Config) string {

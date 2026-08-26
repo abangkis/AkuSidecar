@@ -820,15 +820,43 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if err != nil {
 		return result, err
 	}
+	vacuumed := false
 	if count, err := deleted.RowsAffected(); err == nil {
 		result.RemovedSessions += int(count)
 	}
 	_ = s.cleanupOrphanSemanticEvents(ctx)
 	_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
-	result.DatabaseBytes = s.databaseFootprint()
-	for result.DatabaseBytes > result.LimitBytes {
+	effectiveBytes, err := s.databaseEffectiveFootprint(ctx)
+	if err != nil {
+		return result, err
+	}
+	// SQLite keeps deleted pages in the database freelist until VACUUM. Reclaim
+	// those pages before deciding that durable history must be removed; using
+	// the allocated file size here can otherwise prune every terminal session
+	// while the file remains unchanged.
+	if effectiveBytes <= result.LimitBytes && s.databaseFootprint() > result.LimitBytes {
+		if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+			return result, fmt.Errorf("reclaim database freelist before retention: %w", err)
+		}
+		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+		vacuumed = true
+	}
+	for effectiveBytes > result.LimitBytes {
+		protectedVisibleID, protectedErr := s.latestVisibleTimelineSessionID(ctx)
+		if protectedErr != nil {
+			return result, protectedErr
+		}
 		var id string
-		err := s.db.QueryRowContext(ctx, `SELECT id FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL ORDER BY completed_at LIMIT 1`).Scan(&id)
+		err := s.db.QueryRowContext(ctx, `
+			SELECT s.id
+			FROM sessions s
+			LEFT JOIN auto_update_batches b ON b.session_id=s.id
+			WHERE s.status IN ('completed','partial','failed','cancelled')
+			  AND s.completed_at IS NOT NULL
+			  AND COALESCE(b.state,'visible')<>'prepared'
+			  AND (?='' OR s.id<>?)
+			ORDER BY s.completed_at
+			LIMIT 1`, protectedVisibleID, protectedVisibleID).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			break
 		}
@@ -841,7 +869,10 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 		result.RemovedSessions++
 		_ = s.cleanupOrphanSemanticEvents(ctx)
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
-		result.DatabaseBytes = s.databaseFootprint()
+		effectiveBytes, err = s.databaseEffectiveFootprint(ctx)
+		if err != nil {
+			return result, err
+		}
 	}
 	if result.RemovedSessions > 0 {
 		if _, err := s.db.ExecContext(ctx, `
@@ -850,7 +881,7 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 			return result, err
 		}
 	}
-	if result.RemovedSessions > 0 {
+	if result.RemovedSessions > 0 && !vacuumed {
 		_, _ = s.db.ExecContext(ctx, `VACUUM`)
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
 	}
@@ -869,4 +900,45 @@ func (s *Store) databaseFootprint() int64 {
 		}
 	}
 	return total
+}
+
+func (s *Store) databaseEffectiveFootprint(ctx context.Context) (int64, error) {
+	var pageCount, freePages, pageSize int64
+	for _, value := range []struct {
+		query  string
+		target *int64
+	}{
+		{query: `PRAGMA page_count`, target: &pageCount},
+		{query: `PRAGMA freelist_count`, target: &freePages},
+		{query: `PRAGMA page_size`, target: &pageSize},
+	} {
+		if err := s.db.QueryRowContext(ctx, value.query).Scan(value.target); err != nil {
+			return 0, fmt.Errorf("measure effective database footprint: %w", err)
+		}
+	}
+	if freePages > pageCount {
+		freePages = pageCount
+	}
+	return (pageCount - freePages) * pageSize, nil
+}
+
+func (s *Store) latestVisibleTimelineSessionID(ctx context.Context) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT s.id
+		FROM sessions s
+		LEFT JOIN auto_update_batches b ON b.session_id=s.id
+		WHERE s.status IN ('completed','partial')
+		  AND s.completed_at IS NOT NULL
+		  AND (b.state IS NULL OR b.state='visible')
+		  AND EXISTS (SELECT 1 FROM timeline_items t WHERE t.session_id=s.id)
+		ORDER BY COALESCE(b.revealed_at,s.completed_at) DESC,s.id DESC
+		LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("identify protected visible timeline session: %w", err)
+	}
+	return id, nil
 }

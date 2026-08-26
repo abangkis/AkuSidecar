@@ -29,6 +29,17 @@ func TestBrowserProfilePathKeepsLegacyFallback(t *testing.T) {
 	}
 }
 
+func TestAppShellIconPathUsesAkuBridgeAsset(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "AkuBridge")
+	want := filepath.Join(root, "icons", "icon-128.png")
+	if got := appShellIconPath("  " + root + "  "); got != want {
+		t.Fatalf("appShellIconPath=%q want=%q", got, want)
+	}
+	if got := appShellIconPath("  "); got != "" {
+		t.Fatalf("empty extension path produced icon path %q", got)
+	}
+}
+
 func TestExistingInstanceDetectsHealthySidecar(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/health" {

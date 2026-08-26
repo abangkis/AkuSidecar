@@ -55,6 +55,7 @@ func (e *DiscoveryError) Error() string {
 type LaunchOptions struct {
 	Executable    string
 	ExtensionPath string
+	IconPath      string
 	UserDataDir   string
 	URL           string
 	ExtraArgs     []string
@@ -63,6 +64,7 @@ type LaunchOptions struct {
 type Window struct {
 	command *exec.Cmd
 	owner   processOwnership
+	icon    windowIcon
 	done    chan error
 }
 
@@ -88,6 +90,7 @@ func (w *Window) Terminate() {
 }
 
 func (w *Window) release() {
+	w.icon.close()
 	w.owner.close()
 }
 
@@ -209,7 +212,14 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		owner.close()
 		return nil, err
 	}
-	window := &Window{command: command, owner: owner, done: make(chan error, 1)}
+	icon, err := applyWindowIcon(command.Process.Pid, options.IconPath)
+	if err != nil {
+		owner.terminate()
+		_ = command.Wait()
+		owner.close()
+		return nil, err
+	}
+	window := &Window{command: command, owner: owner, icon: icon, done: make(chan error, 1)}
 	go func() {
 		err := command.Wait()
 		window.release()

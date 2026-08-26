@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -276,6 +278,108 @@ func TestSemanticRetentionRemovesExpiredTerminalHistory(t *testing.T) {
 	_ = state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=?`, session.ID).Scan(&sessions)
 	if sessions != 0 {
 		t.Fatalf("expired session remains: %d", sessions)
+	}
+}
+
+func TestRetentionReclaimsFreelistWithoutDeletingHistory(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	session, _ := insertSemanticTimelineFixture(t, state, "new_event")
+
+	if _, err := state.db.ExecContext(ctx, `CREATE TABLE retention_padding(payload BLOB)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO retention_padding(payload) VALUES(zeroblob(6291456))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `DELETE FROM retention_padding`); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = state.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+
+	settings, _ := state.GetSettings(ctx)
+	settings.KnowledgeStorageLimitMB = 2
+	if state.databaseFootprint() <= int64(settings.KnowledgeStorageLimitMB)*1024*1024 {
+		t.Fatal("fixture did not leave an allocated freelist above the retention limit")
+	}
+	effective, err := state.databaseEffectiveFootprint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective > int64(settings.KnowledgeStorageLimitMB)*1024*1024 {
+		t.Fatalf("fixture effective bytes=%d still exceed limit", effective)
+	}
+
+	result, err := state.EnforceRetention(ctx, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RemovedSessions != 0 {
+		t.Fatalf("freelist reclamation removed %d session(s)", result.RemovedSessions)
+	}
+	var retained int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=?`, session.ID).Scan(&retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained != 1 {
+		t.Fatal("visible history was deleted while reclaimable free pages were available")
+	}
+	if result.DatabaseBytes > result.LimitBytes {
+		t.Fatalf("reclaimed database bytes=%d exceed limit=%d", result.DatabaseBytes, result.LimitBytes)
+	}
+}
+
+func TestStorageRetentionPreservesLatestVisibleAndPreparedSessions(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	settings, _ := state.GetSettings(ctx)
+
+	oldSession, err := createVisibleUpdateSession(state, ctx, "bulky old session", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCompleted := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339Nano)
+	largeCoverage := `{"padding":"` + strings.Repeat("x", 4*1024*1024) + `"}`
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at=?,coverage_json=? WHERE id=?`, oldCompleted, largeCoverage, oldSession.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	visibleSession, _ := insertSemanticTimelineFixture(t, state, "new_event")
+	preparedSession, err := createPreparedUpdateSession(state, ctx, "prepared unread session", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='completed',completed_at=? WHERE id=?`, preparedAt, preparedSession.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE auto_update_batches SET state='prepared',prepared_at=?,expires_at=? WHERE session_id=?`, preparedAt, time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), preparedSession.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	settings.KnowledgeStorageLimitMB = 2
+	result, err := state.EnforceRetention(ctx, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RemovedSessions != 1 {
+		t.Fatalf("removed sessions=%d want=1", result.RemovedSessions)
+	}
+	for _, test := range []struct {
+		id   string
+		want int
+	}{
+		{id: oldSession.ID, want: 0},
+		{id: visibleSession.ID, want: 1},
+		{id: preparedSession.ID, want: 1},
+	} {
+		var count int
+		if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=?`, test.id).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != test.want {
+			t.Fatalf("session %s count=%d want=%d", test.id, count, test.want)
+		}
 	}
 }
 
