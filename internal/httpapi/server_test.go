@@ -52,7 +52,7 @@ func TestSessionProgressProjectionKeepsOnlyPollingState(t *testing.T) {
 func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"onboarding-source-options", "Grant access or Sign in action below", "source-settings-group"},
-		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourceReadyForOnboarding", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness"},
+		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourceReadyForOnboarding", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness", "function configureNativePostLink", "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_NATIVE_POST_OPENED"},
 		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".onboarding-source-access", "white-space: nowrap"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)

@@ -38,7 +38,7 @@ var expectedBridgeActions = []string{
 	"report_capture_quality", "acquire_missing_media", "recapture_missing_media",
 	"cache_passive_media_evidence", "lookup_passive_media_evidence", "observe_response_media_evidence", "extract_source_semantics",
 	"report_frontier", "manage_source_tab_lifecycle", "manage_capture_window",
-	"release_capture_surface", "preserve_working_tab", "report_source_events", "reload_self",
+	"open_native_reader_window", "release_capture_surface", "preserve_working_tab", "report_source_events", "reload_self",
 }
 
 type Engine struct {

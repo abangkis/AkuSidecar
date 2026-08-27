@@ -24,6 +24,7 @@ const AI_HIDE_CONFIRMATION_PHRASE = "HIDE STRONG AI SIGNALS";
 const AI_DEEP_POLL_INTERVAL_MS = 5000;
 const ONBOARDING_LEARNING_INTERVAL_MS = 7000;
 const PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS = 2500;
+const NATIVE_POST_OPEN_TIMEOUT_MS = 10000;
 const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
 const BRIDGE_CONTEXT_RECOVERY_KEY = "akuBridgeContextRecoveryAt";
 const BRIDGE_TOKEN_RECOVERY_KEY = "akuBridgeTokenRecoveryAt";
@@ -555,6 +556,49 @@ function openSourceFromSettings(source) {
     type: "AKU_BROWSER_OPEN_SOURCE",
     source,
   }, endpoint);
+}
+
+function configureNativePostLink(link, href, source) {
+  link.href = href;
+  link.rel = "noopener noreferrer";
+  link.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    event.preventDefault();
+    openNativePostInReaderWindow(href, source).catch(showError);
+  });
+}
+
+function openNativePostInReaderWindow(url, source) {
+  if (!state.bootstrap?.bridge?.compatible) {
+    return Promise.reject(new Error("AkuBridge is not ready to open this native post."));
+  }
+  const requestId = `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => finish(
+      reject,
+      new Error("AkuBridge timed out while opening the native post."),
+    ), NATIVE_POST_OPEN_TIMEOUT_MS);
+    function finish(callback, value) {
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onResult);
+      callback(value);
+    }
+    function onResult(event) {
+      if (event.source !== window || event.origin !== endpoint || event.data?.requestId !== requestId) return;
+      if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPENED") {
+        finish(resolve, event.data);
+      } else if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPEN_FAILED") {
+        finish(reject, new Error(event.data.message || "AkuBridge could not open the native post."));
+      }
+    }
+    window.addEventListener("message", onResult);
+    window.postMessage({
+      type: "AKU_BROWSER_OPEN_NATIVE_POST",
+      requestId,
+      source,
+      url,
+    }, endpoint);
+  });
 }
 
 function setSourceSessionStatus(source, observation) {
@@ -2273,9 +2317,7 @@ function buildCalibrationCard(sample) {
   const calibrationSourceUrl = safeSourceUrl(candidate.sourceUrl, sample.source);
   if (calibrationSourceUrl) {
     const link = document.createElement("a");
-    link.href = calibrationSourceUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
+    configureNativePostLink(link, calibrationSourceUrl, sample.source);
     link.textContent = "Open source entry";
     card.append(link);
   }
@@ -2772,9 +2814,7 @@ function buildInboxPreferenceDecision(decision) {
   const sourceUrl = safeSourceUrl(decision.sourceUrl, decision.source);
   if (sourceUrl) {
     const link = document.createElement("a");
-    link.href = sourceUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
+    configureNativePostLink(link, sourceUrl, decision.source);
     link.textContent = "Open source";
     copy.append(link);
   }
@@ -3426,9 +3466,7 @@ function buildInboxFlowItem(item, source, runId, onChanged) {
   const sourceUrl = safeSourceUrl(item.sourceUrl, source);
   if (sourceUrl) {
     const link = document.createElement("a");
-    link.href = sourceUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
+    configureNativePostLink(link, sourceUrl, source);
     link.textContent = "Open source";
     actions.append(link);
   }
@@ -4610,9 +4648,7 @@ function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, playIn
     control.setAttribute("aria-label", `Play ${sourceLabel(source)} video in AkuBrowser`);
     control.addEventListener("click", playInline);
   } else if (nativePostUrl) {
-    control.href = nativePostUrl;
-    control.target = "_blank";
-    control.rel = "noopener noreferrer";
+    configureNativePostLink(control, nativePostUrl, source);
     control.setAttribute("aria-label", `Open ${sourceLabel(source)} native post to play video`);
   } else {
     control.disabled = true;
@@ -4959,9 +4995,7 @@ function buildSourceLink(entry) {
   if (!href) return null;
   const link = document.createElement("a");
   link.className = "source-link";
-  link.href = href;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
+  configureNativePostLink(link, href, entry.source || entry.item?.source);
   link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
   return link;
 }
