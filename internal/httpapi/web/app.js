@@ -10,6 +10,7 @@ import {
 import { classifyPostFreshness } from "./post-freshness.js";
 import { sourcePermissionReadyForOnboarding } from "./onboarding-source-readiness.js";
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
+import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -1053,6 +1054,8 @@ function syncReasoningProviderSelection() {
   status.classList.toggle("is-warning", provider?.configured === false);
   if (!provider) {
     status.textContent = "No selectable reasoning provider is available.";
+  } else if (provider.configurationStatus === "development_fallback") {
+    status.textContent = `${provider.credentialName} is available only through the legacy development fallback. Save it through AkuBrowser before relying on this provider.`;
   } else if (provider.configured === false) {
     status.textContent = `${provider.credentialName || "Required credential"} is not available in AkuBrowser's secure credential store. Configure it before selecting this provider.`;
   } else if (provider.runtimeKind === "remote_api") {
@@ -1656,9 +1659,15 @@ function renderOnboardingProviderOptions() {
     description.textContent = copy.description || "";
     const status = document.createElement("small");
     status.className = "onboarding-provider-status";
-    status.textContent = entry.configured === false
-      ? "Setup required — " + (entry.credentialName || "credential") + " missing"
-      : "Ready";
+    if (entry.configurationStatus === "development_fallback") {
+      status.textContent = "Secure setup required — development fallback detected";
+    } else if (entry.configured === false) {
+      status.textContent = "Setup required — " + (entry.credentialName || "credential") + " missing";
+    } else if (entry.credentialName) {
+      status.textContent = "Key saved securely";
+    } else {
+      status.textContent = "Ready";
+    }
     card.append(heading, description, status);
     label.append(input, card);
     return label;
@@ -1666,9 +1675,11 @@ function renderOnboardingProviderOptions() {
   const choice = onboardingProviderEntries().find((entry) => entry.name === selected);
   const setup = $("#onboarding-provider-setup");
   const credentialSetup = $("#onboarding-provider-credential");
-  if (choice && choice.configured === false) {
-    $("#onboarding-provider-setup-text").textContent = ONBOARDING_PROVIDER_COPY[choice.name]?.setup
-      || "Configure the provider credential, then re-check availability.";
+  const requiresSecureCredential = providerRequiresSecureCredential(choice);
+  if (choice && (choice.configured === false || requiresSecureCredential)) {
+    $("#onboarding-provider-setup-text").textContent = choice.configurationStatus === "development_fallback"
+      ? "A development-only key was detected, but it is not stored securely for AkuBrowser. Paste the key below to save it in this operating system's credential store."
+      : ONBOARDING_PROVIDER_COPY[choice.name]?.setup || "Configure the provider credential, then re-check availability.";
     setup.classList.remove("hidden");
     credentialSetup.classList.toggle("hidden", !choice.credentialName);
     $("#onboarding-provider-credential-label").textContent = `${choice.label} API key`;
@@ -1681,7 +1692,7 @@ function renderOnboardingProviderOptions() {
     credentialSetup.classList.add("hidden");
     $("#onboarding-provider-secret").value = "";
   }
-  $("#onboarding-provider-confirm").disabled = !choice || choice.configured === false;
+  $("#onboarding-provider-confirm").disabled = !providerCanActivate(choice);
 }
 
 function renderBrowserConnection() {

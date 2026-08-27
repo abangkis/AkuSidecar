@@ -21,7 +21,18 @@ func (e *Engine) ReasoningProviders() []config.ProviderSummary {
 			continue
 		}
 		summaries[index].CredentialName = credentialRef
-		if _, err := store.Resolve(credentialRef); err != nil {
+		status := store.Status(credentialRef)
+		switch status.Source {
+		case credentials.SourceSecureStore:
+			summaries[index].Configured = true
+			summaries[index].ConfigurationStatus = "ready"
+		case credentials.SourceDevelopmentFallback:
+			summaries[index].Configured = true
+			summaries[index].ConfigurationStatus = "development_fallback"
+		case credentials.SourceUnavailable:
+			summaries[index].Configured = false
+			summaries[index].ConfigurationStatus = "credential_store_unavailable"
+		default:
 			summaries[index].Configured = false
 			summaries[index].ConfigurationStatus = "missing_credential"
 		}

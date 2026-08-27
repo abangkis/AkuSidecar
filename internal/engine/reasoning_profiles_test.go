@@ -144,6 +144,10 @@ func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 	if err := os.WriteFile(credentialPath, []byte(`{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.primary":"test-only-gemini-key"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	providers = runtime.ReasoningProviders()
+	if !providers[1].Configured || providers[1].ConfigurationStatus != "development_fallback" {
+		t.Fatalf("fallback providers=%+v", providers)
+	}
 	copySwapSchemas(t, root)
 	saved, err := runtime.SaveSettings(context.Background(), settings)
 	if err != nil || saved.ReasoningProvider != "gemini-flash-lite" {

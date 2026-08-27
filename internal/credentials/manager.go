@@ -10,6 +10,21 @@ import (
 
 const osStoreNamespace = "AkuBrowser"
 
+type Source string
+
+const (
+	SourceSecureStore         Source = "secure_store"
+	SourceDevelopmentFallback Source = "development_fallback"
+	SourceMissing             Source = "missing"
+	SourceUnavailable         Source = "unavailable"
+)
+
+type Status struct {
+	Available bool
+	Secure    bool
+	Source    Source
+}
+
 // Manager applies AkuSidecar's credential resolution policy to the portable
 // store contract. The OS store is authoritative; the ignored JSON store is a
 // development-only fallback for existing developer environments.
@@ -65,6 +80,38 @@ func (manager Manager) Resolve(reference string) (string, error) {
 func (manager Manager) Configured(reference string) bool {
 	value, err := manager.Resolve(reference)
 	return err == nil && value != ""
+}
+
+// Status reports where a credential can be resolved without exposing its
+// value. A development fallback remains usable by legacy dev runtimes, but is
+// deliberately not classified as secure onboarding configuration.
+func (manager Manager) Status(reference string) Status {
+	parsed, err := credentialstore.ParseReference(reference)
+	if err != nil {
+		return Status{Source: SourceUnavailable}
+	}
+	if manager.primary != nil {
+		value, getErr := manager.primary.Get(parsed)
+		if getErr == nil {
+			if strings.TrimSpace(value) == "" {
+				return Status{Source: SourceMissing}
+			}
+			return Status{Available: true, Secure: true, Source: SourceSecureStore}
+		}
+		if !errors.Is(getErr, credentialstore.ErrNotFound) {
+			return Status{Source: SourceUnavailable}
+		}
+	}
+	if manager.fallback != nil {
+		value, fallbackErr := manager.fallback.Resolve(parsed.String())
+		if fallbackErr == nil && strings.TrimSpace(value) != "" {
+			return Status{Available: true, Source: SourceDevelopmentFallback}
+		}
+	}
+	if manager.primary == nil && manager.primaryError != nil {
+		return Status{Source: SourceUnavailable}
+	}
+	return Status{Source: SourceMissing}
 }
 
 func (manager Manager) Put(reference, value string) error {

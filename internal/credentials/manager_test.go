@@ -51,6 +51,25 @@ func TestManagerFallsBackAfterSecureStoreMiss(t *testing.T) {
 	}
 }
 
+func TestManagerStatusDistinguishesSecureStoreFromDevelopmentFallback(t *testing.T) {
+	secure := NewManager(&memoryStore{values: map[credentialstore.Reference]string{"gemini.primary": "secure-key"}}, staticResolver("development-key"))
+	if status := secure.Status("gemini.primary"); !status.Available || !status.Secure || status.Source != SourceSecureStore {
+		t.Fatalf("secure status=%+v", status)
+	}
+
+	fallback := NewManager(&memoryStore{values: map[credentialstore.Reference]string{}}, staticResolver("development-key"))
+	if status := fallback.Status("gemini.primary"); !status.Available || status.Secure || status.Source != SourceDevelopmentFallback {
+		t.Fatalf("fallback status=%+v", status)
+	}
+}
+
+func TestManagerStatusReportsMissingCredential(t *testing.T) {
+	manager := NewManager(&memoryStore{values: map[credentialstore.Reference]string{}}, nil)
+	if status := manager.Status("gemini.primary"); status.Available || status.Secure || status.Source != SourceMissing {
+		t.Fatalf("missing status=%+v", status)
+	}
+}
+
 func TestManagerWritesOnlyToSecureStore(t *testing.T) {
 	store := &memoryStore{values: map[credentialstore.Reference]string{}}
 	manager := NewManager(store, nil)
