@@ -9,6 +9,7 @@ import {
 } from "./timeline-media-carousel.js";
 import { classifyPostFreshness } from "./post-freshness.js";
 import { sourcePermissionReadyForOnboarding } from "./onboarding-source-readiness.js";
+import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -395,11 +396,10 @@ async function bootstrap(options = {}) {
     renderSourceControls();
     $("#runtime-version").textContent = `${state.bootstrap.version} · ${state.bootstrap.runtime}`;
     $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
-    $("#provider-value").textContent = state.bootstrap.provider;
+    renderActiveReasoningProvider();
     $("#database-status").textContent = state.bootstrap.database?.status ?? "healthy";
     renderDeployment(state.bootstrap.deployment);
     setPill("#sidecar-status", "AkuSidecar ready", "ok");
-    setPill("#reasoning-status", state.bootstrap.provider, "neutral");
     renderBridge(state.bootstrap.bridge);
     renderSettings(state.bootstrap.settings);
     state.timelineBatches = state.bootstrap.timelineBatches ?? [];
@@ -1323,11 +1323,8 @@ async function persistSettings(settings, confirmationPhrase = "") {
   try {
     const previousProvider = state.bootstrap.settings?.reasoningProvider || state.bootstrap.provider;
     const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
-    state.bootstrap.settings = response.settings;
-    state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
-    state.bootstrap.reasoningRuntime = response.reasoningRuntime ?? state.bootstrap.reasoningRuntime;
-    state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
-    state.bootstrap.mediaProvenanceRuntime = response.mediaProvenanceRuntime ?? state.bootstrap.mediaProvenanceRuntime;
+    applyReasoningRuntimeResponse(state.bootstrap, response);
+    renderActiveReasoningProvider();
     renderSettings(response.settings);
     syncOnboardingLearning(shouldShowOnboardingLearning(state.session));
     status.textContent = response.settings.reasoningProvider !== previousProvider
@@ -1523,6 +1520,12 @@ function updateOnboardingSummary() {
   $("#onboarding-summary").textContent = readyCount
     ? selectedLabel + " · " + readyCount + " access-ready · continue to your first Timeline"
     : selectedLabel + " · grant access to at least one selected source; sign-in is checked when the update opens it";
+}
+
+function renderActiveReasoningProvider() {
+  const provider = state.bootstrap?.provider || state.bootstrap?.settings?.reasoningProvider || "unknown";
+  $("#provider-value").textContent = provider;
+  setPill("#reasoning-status", provider, "neutral");
 }
 
 function sourceReadyForOnboarding(source) {
@@ -1786,9 +1789,8 @@ async function confirmOnboardingProvider() {
     $("#onboarding-provider-error").textContent = "Activating the selected provider…";
     try {
       const response = await api("/api/settings", { method: "PUT", body: { settings: { ...state.bootstrap.settings, reasoningProvider: choice } } });
-      state.bootstrap.settings = response.settings;
-      state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
-      state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
+      applyReasoningRuntimeResponse(state.bootstrap, response);
+      renderActiveReasoningProvider();
     } catch (error) {
       $("#onboarding-provider-error").textContent = error.message;
       button.disabled = false;
