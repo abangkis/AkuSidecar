@@ -100,6 +100,9 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-source-access .source-open-button { flex: 0 0 auto; padding: 7px 9px; font-size: 0.72rem; }
 .onboarding-summary { margin-top: 16px; padding: 13px 15px; border-radius: 10px; background: var(--panel-strong); color: var(--muted); }
 .onboarding-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.browser-connection-actions { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px solid rgba(246, 200, 107, 0.34); border-radius: 10px; background: rgba(246, 200, 107, 0.055); }
+.browser-connection-actions small { max-width: 52ch; color: var(--muted); line-height: 1.5; }
+.browser-connection-actions .secondary-button { flex: 0 0 auto; white-space: nowrap; }
 
 .calibration-panel { width: min(100%, 760px); margin: 38px auto 0; }
 .calibration-shell { display: grid; gap: 18px; padding: clamp(22px, 5vw, 38px); border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }

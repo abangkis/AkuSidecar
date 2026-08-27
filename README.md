@@ -149,9 +149,18 @@ must be loaded unpacked once from `chrome://extensions` in that dedicated
 profile. Automated acceptance continues to use the pinned Chrome for Testing
 runtime with a fresh profile.
 
-Run `..\AkuSupervisor\scripts\setup-akubrowser-dev-profile.ps1` once to open
-the correct dedicated profile and extension-management page before starting
-the normal Supervisor development stack.
+When that dedicated profile has no Bridge registration, first-run onboarding
+stops at **Browser connection**. Its development-only **Open Chrome
+Extensions** action opens `chrome://extensions` in the same isolated profile;
+the developer enables Developer mode, chooses **Load unpacked**, and selects
+the AkuBridge source folder. No path is copied or stored by the UI. The page
+advances to Source Setup automatically after the Bridge heartbeat arrives.
+`..\AkuSupervisor\scripts\setup-akubrowser-dev-profile.ps1` remains a direct
+developer fallback for opening the same profile and management page.
+
+Packaged installed-app modes never expose this development escape. Their
+bundled Bridge is launcher-managed, so a missing or incompatible Bridge is an
+installation-integrity failure reserved for the installer repair flow.
 
 ## Build and test
 

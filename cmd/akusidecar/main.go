@@ -168,6 +168,7 @@ func main() {
 			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
 		shell = launchAppShell(logger, options, cfg, address.String())
+		server.SetOpenExtensionsAction(shell.OpenExtensionsPage)
 	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)

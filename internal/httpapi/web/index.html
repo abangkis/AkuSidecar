@@ -62,18 +62,30 @@
 
       <section id="onboarding-panel" class="onboarding-panel hidden" aria-labelledby="onboarding-heading">
         <div class="onboarding-card">
-          <p class="step-label">SOURCE SETUP</p>
-          <h2 id="onboarding-heading" tabindex="-1">Build your personal intelligence feed</h2>
-          <p class="onboarding-explanation">Choose the sources you trust. AkuBrowser checks each source separately: grant access when asked, then sign in if needed. Your first Timeline starts only after at least one selected source is ready.</p>
-          <form id="onboarding-form">
-            <div id="onboarding-source-options" class="onboarding-options"></div>
-            <div id="onboarding-summary" class="onboarding-summary">Choose at least one source feed, then make one selected source ready.</div>
-            <p id="onboarding-error" class="settings-detail" role="alert"></p>
-            <div class="onboarding-actions">
-              <button id="onboarding-cancel" class="secondary-button hidden" type="button">Cancel</button>
-              <button id="onboarding-finish" class="primary-button" type="submit">Continue when ready</button>
+          <section id="onboarding-browser-connection" class="browser-connection hidden" aria-labelledby="onboarding-browser-heading">
+            <p class="step-label">BROWSER CONNECTION</p>
+            <h2 id="onboarding-browser-heading" tabindex="-1">Connect AkuBridge first</h2>
+            <p id="onboarding-browser-copy" class="onboarding-explanation">AkuBrowser is waiting for its browser bridge.</p>
+            <div id="onboarding-browser-development-actions" class="browser-connection-actions hidden">
+              <button id="open-chrome-extensions" class="secondary-button" type="button">Open Chrome Extensions</button>
+              <small>Enable Developer mode, choose Load unpacked, then select your AkuBridge folder. AkuBrowser will continue automatically when the bridge connects.</small>
             </div>
-          </form>
+            <p id="onboarding-browser-status" class="settings-detail" role="status"></p>
+          </section>
+          <section id="onboarding-source-setup">
+            <p class="step-label">SOURCE SETUP</p>
+            <h2 id="onboarding-heading" tabindex="-1">Build your personal intelligence feed</h2>
+            <p class="onboarding-explanation">Choose the sources you trust and grant access when asked. Source tabs do not need to remain open: AkuBrowser opens them during the first update and asks you to sign in only if the saved session has expired.</p>
+            <form id="onboarding-form">
+              <div id="onboarding-source-options" class="onboarding-options"></div>
+              <div id="onboarding-summary" class="onboarding-summary">Choose at least one source feed, then make one selected source ready.</div>
+              <p id="onboarding-error" class="settings-detail" role="alert"></p>
+              <div class="onboarding-actions">
+                <button id="onboarding-cancel" class="secondary-button hidden" type="button">Cancel</button>
+                <button id="onboarding-finish" class="primary-button" type="submit">Continue when ready</button>
+              </div>
+            </form>
+          </section>
         </div>
       </section>
 

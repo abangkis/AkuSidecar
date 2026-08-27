@@ -93,10 +93,12 @@ func (identity ApplicationIdentity) validate() error {
 }
 
 type Window struct {
-	command *exec.Cmd
-	owner   processOwnership
-	icon    windowIcon
-	done    chan error
+	command     *exec.Cmd
+	owner       processOwnership
+	icon        windowIcon
+	done        chan error
+	executable  string
+	userDataDir string
 }
 
 func (w *Window) PID() int {
@@ -122,6 +124,29 @@ func (w *Window) Terminate() {
 		root = w.command.Process
 	}
 	w.owner.terminate(root)
+}
+
+// OpenExtensionsPage opens Chrome's extension management page in a separate
+// browser window that uses the same isolated AkuBrowser profile. This is a
+// development recovery action; Chrome Stable still requires the developer to
+// choose Load unpacked and select the extension directory themselves.
+func (w *Window) OpenExtensionsPage(ctx context.Context) error {
+	if w == nil || strings.TrimSpace(w.executable) == "" || strings.TrimSpace(w.userDataDir) == "" {
+		return errors.New("app shell browser is unavailable")
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	command := exec.Command(w.executable, buildInternalPageArgs(w.userDataDir, "chrome://extensions")...)
+	command.Stdin = nil
+	prepareCommand(command)
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("open Chrome Extensions: %w", err)
+	}
+	go func() { _ = command.Wait() }()
+	return nil
 }
 
 func (w *Window) release() {
@@ -257,7 +282,10 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		owner.close()
 		return nil, err
 	}
-	window := &Window{command: command, owner: owner, icon: icon, done: make(chan error, 1)}
+	window := &Window{
+		command: command, owner: owner, icon: icon, done: make(chan error, 1),
+		executable: options.Executable, userDataDir: options.UserDataDir,
+	}
 	go func() {
 		err := command.Wait()
 		window.release()
@@ -281,6 +309,16 @@ func buildArgs(options LaunchOptions) []string {
 	}
 	args = append(args, options.ExtraArgs...)
 	return args
+}
+
+func buildInternalPageArgs(userDataDir, page string) []string {
+	return []string{
+		"--user-data-dir=" + userDataDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--new-window",
+		page,
+	}
 }
 
 func boundedReason(err error) string {

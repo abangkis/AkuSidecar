@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"hash/fnv"
 	"io"
 	"log"
@@ -54,7 +55,7 @@ func TestSessionProgressProjectionKeepsOnlyPollingState(t *testing.T) {
 func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"onboarding-source-options", "Grant access or Sign in action below", "source-settings-group"},
-		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourceReadyForOnboarding", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness", "function configureNativePostLink", "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_NATIVE_POST_OPENED"},
+		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourcePermissionReadyForOnboarding", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness", "function configureNativePostLink", "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_NATIVE_POST_OPENED"},
 		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".onboarding-source-access", "white-space: nowrap"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
@@ -75,6 +76,94 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 		if strings.Contains(string(contents), "AKU_BROWSER_OPEN_BRIDGE_SETUP") || strings.Contains(string(contents), "Open AkuBrowser setup") {
 			t.Fatalf("%s must not expose the legacy global Bridge setup action", asset)
 		}
+	}
+}
+
+func TestOnboardingSessionObservationIsAdvisory(t *testing.T) {
+	contents, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(contents)
+	for _, forbidden := range []string{
+		`session?.state === "ready"`,
+		`session?.state === "login_required"`,
+		`sourceSessionProbeInFlight) {`,
+	} {
+		if strings.Contains(app, forbidden) {
+			t.Fatalf("onboarding must not gate on live source tabs: found %q", forbidden)
+		}
+	}
+}
+
+func TestOnboardingGatesSourceSetupOnDevelopmentBridgeConnection(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {
+			"onboarding-browser-connection",
+			"Connect AkuBridge first",
+			"open-chrome-extensions",
+			"Open Chrome Extensions",
+			"onboarding-source-setup",
+		},
+		"web/app.js": {
+			"function renderBrowserConnection",
+			"function openChromeExtensions",
+			"/api/app-shell/open-extensions",
+			"This installed AkuBrowser runtime needs repair",
+		},
+		"web/styles.css": {".browser-connection-actions"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing browser connection contract %q", asset, marker)
+			}
+		}
+		if strings.Contains(string(contents), `C:\WorkspaceCodex\AkuWorkspace\AkuBridge`) || strings.Contains(string(contents), "clipboard.writeText") {
+			t.Fatalf("%s must not hard-code or copy the development AkuBridge path", asset)
+		}
+	}
+}
+
+func TestOpenExtensionsActionIsDevelopmentOnlyAndAppShellOwned(t *testing.T) {
+	server := &Server{config: config.Config{
+		Dev:        true,
+		Deployment: config.DeploymentConfig{Mode: "development"},
+	}}
+	called := false
+	server.SetOpenExtensionsAction(func(context.Context) error {
+		called = true
+		return nil
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/app-shell/open-extensions", nil)
+	response := httptest.NewRecorder()
+	if err := server.route(response, request); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusAccepted || !called {
+		t.Fatalf("development action status=%d called=%v body=%s", response.Code, called, response.Body.String())
+	}
+
+	server.config.Deployment.Mode = "production-installed-app"
+	request = httptest.NewRequest(http.MethodPost, "/api/app-shell/open-extensions", nil)
+	response = httptest.NewRecorder()
+	err := server.route(response, request)
+	var apiErr apiError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
+		t.Fatalf("production action error=%v", err)
+	}
+
+	server.config.Deployment.Mode = "development"
+	server.SetOpenExtensionsAction(nil)
+	request = httptest.NewRequest(http.MethodPost, "/api/app-shell/open-extensions", nil)
+	response = httptest.NewRecorder()
+	err = server.route(response, request)
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict || apiErr.Code != "app_shell_action_unavailable" {
+		t.Fatalf("missing app-shell action error=%v", err)
 	}
 }
 

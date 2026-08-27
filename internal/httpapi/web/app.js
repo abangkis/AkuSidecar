@@ -8,6 +8,7 @@ import {
   timelineCarouselDotIndexes,
 } from "./timeline-media-carousel.js";
 import { classifyPostFreshness } from "./post-freshness.js";
+import { sourcePermissionReadyForOnboarding } from "./onboarding-source-readiness.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -271,6 +272,7 @@ $("#reset-timeline-batch-gap").addEventListener("click", resetTimelineBatchGap);
 $("#timeline-boundary-return-ms").addEventListener("input", () => applyTimelineBoundaryReturnDuration($("#timeline-boundary-return-ms").value));
 $("#reset-timeline-boundary-return").addEventListener("click", resetTimelineBoundaryReturnDuration);
 $("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
+$("#open-chrome-extensions").addEventListener("click", openChromeExtensions);
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
 $("#onboarding-cancel").addEventListener("click", () => setView("settings"));
 $("#calibration-previous").addEventListener("click", showPreviousCalibrationSample);
@@ -751,6 +753,7 @@ function renderBridge(bridge) {
   } else {
     setPill("#bridge-status", "AkuBridge reconnecting", "warning");
   }
+  renderBrowserConnection();
   syncRunButtons();
   renderSourceSettingsValues(state.bootstrap?.settings);
   updateOnboardingSummary();
@@ -1501,9 +1504,10 @@ function showOnboarding(editing) {
   $("#onboarding-panel").classList.remove("hidden");
   document.querySelector(".view-switch")?.classList.add("hidden");
   syncTimelineSidePaneVisibility();
+  renderBrowserConnection();
   updateOnboardingSummary();
   if (state.bootstrap?.bridge?.compatible) requestSourceSessionReadiness();
-  $("#onboarding-heading").focus();
+  (state.bootstrap?.bridge?.compatible ? $("#onboarding-heading") : $("#onboarding-browser-heading")).focus();
   window.scrollTo({ top: 0, behavior: editing ? "smooth" : "auto" });
   scheduleBackToTop();
 }
@@ -1517,34 +1521,31 @@ function updateOnboardingSummary() {
   const readyCount = activeSources.filter((source) => sourceReadyForOnboarding(source)).length;
   const selectedLabel = activeSources.length + " source feed" + (activeSources.length === 1 ? "" : "s") + " selected";
   $("#onboarding-summary").textContent = readyCount
-    ? selectedLabel + " · " + readyCount + " ready · continue to your first Timeline"
-    : selectedLabel + " · grant access and sign in to at least one selected source";
+    ? selectedLabel + " · " + readyCount + " access-ready · continue to your first Timeline"
+    : selectedLabel + " · grant access to at least one selected source; sign-in is checked when the update opens it";
 }
 
 function sourceReadyForOnboarding(source) {
   const access = bridgeSourceReadiness().find((entry) => entry.source === source);
   const session = state.sourceSessionReadiness?.[source];
-  return Boolean(access?.permissionGranted && access?.scriptRegistered && access?.ready && session?.state === "ready");
+  return sourcePermissionReadyForOnboarding({ access, session });
 }
 
 function onboardingReadinessGate(activeSources) {
   if (!state.bootstrap?.bridge?.compatible) {
     return { ready: false, message: "AkuBridge is still connecting. Keep this page open while source access is checked." };
   }
-  if (!bridgeSourceReadiness().length || state.sourceSessionProbeInFlight) {
-    return { ready: false, message: "AkuBrowser is still checking per-source access and sign-in status. Try Continue when ready again in a moment." };
+  if (!bridgeSourceReadiness().length) {
+    return { ready: false, message: "AkuBrowser is still checking per-source access. Try Continue when ready again in a moment." };
   }
   if (activeSources.some((source) => sourceReadyForOnboarding(source))) return { ready: true };
   const selected = activeSources.map((source) => {
     const access = bridgeSourceReadiness().find((entry) => entry.source === source);
-    const session = state.sourceSessionReadiness?.[source];
     if (!access || !access.permissionGranted) return sourceLabel(source) + " needs access permission";
     if (!access.scriptRegistered || !access.ready) return sourceLabel(source) + " capture is not ready";
-    if (session?.state === "login_required") return sourceLabel(source) + " needs sign-in";
-    if (session?.state === "ready") return sourceLabel(source) + " is ready";
-    return sourceLabel(source) + " session is not confirmed";
+    return sourceLabel(source) + " access is ready";
   });
-  return { ready: false, message: "Make at least one selected source ready before continuing: " + selected.join("; ") + "." };
+  return { ready: false, message: "Grant access to at least one selected source before continuing: " + selected.join("; ") + ". Sign-in will be checked when the update opens the source." };
 }
 
 async function saveOnboarding(event) {
@@ -1678,6 +1679,43 @@ function renderOnboardingProviderOptions() {
     $("#onboarding-provider-secret").value = "";
   }
   $("#onboarding-provider-confirm").disabled = !choice || choice.configured === false;
+}
+
+function renderBrowserConnection() {
+  const connection = $("#onboarding-browser-connection");
+  const sourceSetup = $("#onboarding-source-setup");
+  if (!connection || !sourceSetup) return;
+  const connected = state.bootstrap?.bridge?.compatible === true;
+  connection.classList.toggle("hidden", connected);
+  sourceSetup.classList.toggle("hidden", !connected);
+  $("#onboarding-panel").setAttribute("aria-labelledby", connected ? "onboarding-heading" : "onboarding-browser-heading");
+  if (connected) {
+    $("#onboarding-browser-status").textContent = "";
+    return;
+  }
+  const development = state.bootstrap?.deployment?.mode === "development";
+  $("#onboarding-browser-development-actions").classList.toggle("hidden", !development);
+  $("#onboarding-browser-copy").textContent = development
+    ? "AkuBridge is not connected to this dedicated development profile. Open Chrome Extensions and load it once before choosing source access."
+    : "AkuBridge is missing or incompatible. This installed AkuBrowser runtime needs repair before source setup can continue.";
+  $("#onboarding-browser-status").textContent = development
+    ? "Waiting for AkuBridge to connect…"
+    : "Close AkuBrowser and run the installer repair flow.";
+}
+
+async function openChromeExtensions() {
+  const button = $("#open-chrome-extensions");
+  const status = $("#onboarding-browser-status");
+  button.disabled = true;
+  status.textContent = "Opening Chrome Extensions in the AkuBrowser development profile…";
+  try {
+    await api("/api/app-shell/open-extensions", { method: "POST" });
+    status.textContent = "Chrome Extensions opened. Load AkuBridge there; this page will continue automatically when it connects.";
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function openOnboardingProviderDialog() {

@@ -39,6 +39,8 @@ type Server struct {
 	started           time.Time
 	shutdownRequested chan struct{}
 	shutdownOnce      sync.Once
+	appShellActionsMu sync.RWMutex
+	openExtensions    func(context.Context) error
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {
@@ -64,6 +66,24 @@ func (s *Server) ShutdownRequested() <-chan struct{} {
 
 func (s *Server) requestShutdown() {
 	s.shutdownOnce.Do(func() { close(s.shutdownRequested) })
+}
+
+// SetOpenExtensionsAction attaches the currently running app shell without
+// making AkuSupervisor or the browser page responsible for browser lifecycle.
+func (s *Server) SetOpenExtensionsAction(action func(context.Context) error) {
+	s.appShellActionsMu.Lock()
+	defer s.appShellActionsMu.Unlock()
+	s.openExtensions = action
+}
+
+func (s *Server) openExtensionsPage(ctx context.Context) error {
+	s.appShellActionsMu.RLock()
+	action := s.openExtensions
+	s.appShellActionsMu.RUnlock()
+	if action == nil {
+		return errors.New("app shell browser action is unavailable")
+	}
+	return action(ctx)
 }
 
 func (s *Server) Start() (net.Addr, error) {
@@ -124,6 +144,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		p = "/"
 	}
 	switch {
+	case r.Method == http.MethodPost && p == "/api/app-shell/open-extensions":
+		if !s.config.Dev || strings.TrimSpace(s.config.Deployment.Mode) != "development" {
+			return notFound("app-shell development action")
+		}
+		openCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := s.openExtensionsPage(openCtx); err != nil {
+			return apiError{Status: http.StatusConflict, Code: "app_shell_action_unavailable", Message: "AkuBrowser could not open Chrome Extensions in its development profile.", Details: map[string]any{"reason": err.Error()}}
+		}
+		return writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
 	case r.Method == http.MethodGet && p == "/api/diagnostics/export":
 		since := r.URL.Query().Get("since")
 		until := r.URL.Query().Get("until")

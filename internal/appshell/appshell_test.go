@@ -48,6 +48,25 @@ func TestBuildArgsOmitsExtensionWhenUnset(t *testing.T) {
 	}
 }
 
+func TestBuildInternalPageArgsUsesSameProfileAndSeparateWindow(t *testing.T) {
+	args := buildInternalPageArgs(`C:\AkuBrowser\profile`, "chrome://extensions")
+	expected := []string{
+		`--user-data-dir=C:\AkuBrowser\profile`,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--new-window",
+		"chrome://extensions",
+	}
+	if len(args) != len(expected) {
+		t.Fatalf("unexpected arg count %d: %v", len(args), args)
+	}
+	for index, value := range expected {
+		if args[index] != value {
+			t.Fatalf("arg[%d]=%q expected %q", index, args[index], value)
+		}
+	}
+}
+
 func TestLaunchOptionsCarryIndependentWindowIcon(t *testing.T) {
 	options := LaunchOptions{ExtensionPath: "C:\\bridge", IconPath: "C:\\bridge\\icons\\icon-128.png"}
 	if options.IconPath == "" || options.IconPath == options.ExtensionPath {
