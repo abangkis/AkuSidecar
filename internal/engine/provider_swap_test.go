@@ -28,7 +28,6 @@ func geminiTestProvider(name string) config.ProviderConfig {
 }
 
 var (
-
 	swapSchemaNames = []string{"acquisition-plan.schema.json", "reasoning-result.schema.json", "semantic-event-resolution.schema.json", "ai-deep-detection.schema.json"}
 )
 
@@ -71,12 +70,18 @@ func swapTestEngine(t *testing.T) (*Engine, *store.Store) {
 	}
 	t.Cleanup(func() { state.Close() })
 	cfg := config.Config{
-		Root:      root,
-		Server:    config.ServerConfig{Host: "127.0.0.1", Port: 11122},
-		Database:  config.DatabaseConfig{Path: filepath.Join(root, "sidecar.db")},
-		Bridge:    config.BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://mfeebfabkhmoaepbcdbbeefpobkedfmp"}},
-		Capture:   config.CaptureConfig{MaxAcquisitionRounds: 2},
-		Reasoning: config.ReasoningConfig{ActiveProvider: "deterministic"},
+		Root:     root,
+		Server:   config.ServerConfig{Host: "127.0.0.1", Port: 11122},
+		Database: config.DatabaseConfig{Path: filepath.Join(root, "sidecar.db")},
+		Bridge:   config.BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://mfeebfabkhmoaepbcdbbeefpobkedfmp"}},
+		Capture: config.CaptureConfig{
+			Profile:              "expanded",
+			Visibility:           "quiet",
+			OpenMissingSource:    true,
+			MaxAcquisitionRounds: 2,
+		},
+		Preference: config.PreferenceConfig{Mode: "promote_unused_budget"},
+		Reasoning:  config.ReasoningConfig{ActiveProvider: "deterministic"},
 	}
 	cfg.Reasoning.Providers = map[string]config.ProviderConfig{
 		"deterministic":     {},
@@ -169,6 +174,7 @@ func TestPlanProviderSwapMigratesUnknownProfiles(t *testing.T) {
 	if plan == nil {
 		t.Fatal("expected a swap plan")
 	}
+	defer plan.closeCandidate()
 	for name, profileID := range map[string]string{
 		"acquisition": current.ReasoningAcquisitionProfile,
 		"evaluation":  current.ReasoningEvaluationProfile,

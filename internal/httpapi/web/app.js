@@ -1731,9 +1731,9 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 
 // revokeSourceAccessViaBridge asks the extension to drop every optional
 // source host permission and unregister its capture scripts before a full
-// reset persists. Best-effort: the reset proceeds when the relay cannot
-// answer, and the staged profile wipe covers the remaining surface on the
-// next launch.
+// reset persists. The boolean result keeps the UI honest when the relay cannot
+// answer; the reset still proceeds because the staged profile wipe removes the
+// remaining permission surface on the next launch.
 function revokeSourceAccessViaBridge() {
   return new Promise((resolve) => {
     const requestId = `revoke-${Date.now()}`;
@@ -1859,13 +1859,20 @@ async function submitReset() {
       return;
     }
     const path = operation === "full" ? "/api/operations/full-reset" : "/api/operations/reset-learning";
+    let sourceAccessRevoked = false;
     if (operation === "full") {
       $("#reset-confirmation-status").textContent = "Revoking source access…";
-      await revokeSourceAccessViaBridge();
+      sourceAccessRevoked = await revokeSourceAccessViaBridge();
+      if (!sourceAccessRevoked) {
+        $("#reset-confirmation-status").textContent = "Bridge did not confirm source-access revocation. Continuing with the verified backup and staged browser-profile reset…";
+      }
     }
     const response = await api(path, { method: "POST", body: { confirmation: phrase } });
     if (operation === "full") {
-      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Source access revoked. The isolated browser profile resets on next launch. Returning to onboarding…`;
+      const accessStatus = sourceAccessRevoked
+        ? "Source access revoked."
+        : "Source-access revocation was not confirmed; the isolated browser-profile wipe will remove it on next launch.";
+      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. ${accessStatus} Returning to onboarding…`;
       state.settingsUnloadBypass = true;
       window.setTimeout(() => window.location.reload(), 350);
       return;

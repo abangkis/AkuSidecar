@@ -7,8 +7,8 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/config"
-	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
 
@@ -22,6 +22,18 @@ type providerSwapPlan struct {
 	cfgCopy       config.Config
 	eventResolver semanticengine.Resolver
 	aiResolver    aidetector.Resolver
+}
+
+// closeCandidate releases a replacement that was constructed successfully but
+// could not be committed. This matters for providers that own client pools or
+// subprocess lifecycle even before their first invocation.
+func (plan *providerSwapPlan) closeCandidate() {
+	if plan == nil || plan.candidate == nil {
+		return
+	}
+	if closer, ok := plan.candidate.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
 }
 
 // planProviderSwap constructs the replacement provider for target without

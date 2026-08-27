@@ -112,6 +112,24 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 	}
 }
 
+func TestFullResetReportsBridgeRevocationOutcomeHonestly(t *testing.T) {
+	contents, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := string(contents)
+	for _, marker := range []string{
+		"sourceAccessRevoked = await revokeSourceAccessViaBridge()",
+		"Source access revoked.",
+		"Source-access revocation was not confirmed",
+		"the isolated browser-profile wipe will remove it on next launch",
+	} {
+		if !strings.Contains(asset, marker) {
+			t.Fatalf("web/app.js is missing full-reset revocation outcome %q", marker)
+		}
+	}
+}
+
 func TestSettingsSourcesExposeSessionReadinessAndSignInCTA(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js": {

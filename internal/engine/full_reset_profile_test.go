@@ -97,3 +97,32 @@ func TestFullResetPreservesBridgeIdentityContract(t *testing.T) {
 		t.Fatal("engine FullReset must stage the profile wipe")
 	}
 }
+
+func TestFullResetRestoresConfiguredDefaultProviderInStoreAndRuntime(t *testing.T) {
+	runtime, state := swapTestEngine(t)
+	settings, err := state.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ReasoningProvider = "gemini-flash-lite"
+	if _, err := runtime.SaveSettings(context.Background(), settings); err != nil {
+		t.Fatalf("switch to Gemini before reset: %v", err)
+	}
+	if runtime.ProviderName() != "gemini-flash-lite" {
+		t.Fatalf("provider before reset=%s", runtime.ProviderName())
+	}
+
+	if _, err := runtime.FullReset(context.Background()); err != nil {
+		t.Fatalf("FullReset: %v", err)
+	}
+	if runtime.ProviderName() != "deterministic" {
+		t.Fatalf("runtime provider after reset=%s, want configured default deterministic", runtime.ProviderName())
+	}
+	persisted, err := state.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ReasoningProvider != "deterministic" {
+		t.Fatalf("persisted provider after reset=%s, want configured default deterministic", persisted.ReasoningProvider)
+	}
+}

@@ -169,6 +169,11 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 			return domain.Settings{}, err
 		}
 	}
+	defer func() {
+		if swap != nil {
+			swap.closeCandidate()
+		}
+	}()
 	if swap != nil {
 		if err := validateReasoningProfilesAgainst(swap.candidate, value); err != nil {
 			return domain.Settings{}, err
@@ -187,6 +192,7 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	}
 	if swap != nil {
 		swap.apply(e)
+		swap = nil
 	}
 	saved, err := e.store.GetSettings(ctx)
 	if err != nil {
@@ -2106,8 +2112,37 @@ func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 	defer e.operation.Unlock()
 	e.cancelDeepDetections()
 	defaults := domain.DefaultSettings(e.config.Capture.Profile, e.config.Capture.Visibility, e.config.Preference.Mode, e.config.Capture.OpenMissingSource)
+	target := strings.TrimSpace(e.config.Reasoning.ActiveProvider)
+	if target == "" {
+		target = e.ProviderName()
+	}
+	defaults.ReasoningProvider = target
 	defaults.ReasoningExecutablePath = e.ReasoningRuntime().ExecutablePath
-	return e.store.FullReset(ctx, defaults)
+	var swap *providerSwapPlan
+	var err error
+	if target != e.ProviderName() && len(e.config.Reasoning.Providers) > 0 {
+		if err := e.ensureIdleForProviderSwap(ctx); err != nil {
+			return store.FullResetResult{}, err
+		}
+		swap, err = e.planProviderSwap(ctx, target, &defaults)
+		if err != nil {
+			return store.FullResetResult{}, err
+		}
+	}
+	defer func() {
+		if swap != nil {
+			swap.closeCandidate()
+		}
+	}()
+	result, err := e.store.FullReset(ctx, defaults)
+	if err != nil {
+		return store.FullResetResult{}, err
+	}
+	if swap != nil {
+		swap.apply(e)
+		swap = nil
+	}
+	return result, nil
 }
 
 func (e *Engine) Shutdown() {
