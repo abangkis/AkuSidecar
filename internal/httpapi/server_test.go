@@ -172,7 +172,10 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 		"web/index.html": {
 			"onboarding-provider-dialog",
 			"Choose how AkuBrowser reasons",
+			"provider-selection-workspace",
 			"onboarding-provider-options",
+			"<aside id=\"onboarding-provider-setup\"",
+			"onboarding-provider-panel-label",
 			"onboarding-provider-recheck",
 			"onboarding-provider-secret",
 			"Save key",
@@ -188,9 +191,16 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"/api/reasoning/credentials",
 			"function saveOnboardingProviderCredential",
 			"Google may use that data to improve its products",
+			"has-provider-context",
+			"CODEX APP CONNECTION",
+			"LOCAL MODEL SETUP",
+			"ollama pull nemotron-3.5-lightning",
+			"ollama pull qwen3.8-27b",
 		},
 		"web/styles.css": {
 			".provider-selection-dialog",
+			".provider-selection-dialog.has-provider-context .provider-selection-workspace",
+			"grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr)",
 			".onboarding-provider-option",
 		},
 	} {

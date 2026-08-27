@@ -1602,22 +1602,27 @@ const ONBOARDING_PROVIDER_COPY = {
   "codex-app-server": {
     tag: "Default",
     description: "Local Codex App Server — the most compliant and reliable option. Reasoning runs through your signed-in Codex app and stays on its usage boundary.",
+    panelLabel: "CODEX APP CONNECTION",
+    setup: "AkuBrowser uses the Codex app session on this device.\n\nBefore continuing:\n• Keep the Codex app running\n• Sign in inside Codex\n• No API key is stored by AkuBrowser",
   },
   "gemini-flash-lite": {
     tag: "Free key",
     description: "Uses a free Google AI Studio key. Privacy notice: captured post text is sent to Google for reasoning, and on the free tier Google may use that data to improve its products.",
     setup: "Create a free Google AI Studio API key, paste it below, then save it securely on this device.",
+    ready: "Your Gemini API key is stored in this operating system's secure credential store. AkuBrowser never displays the saved key again.",
     credentialURL: "https://aistudio.google.com/apikey",
   },
   "ollama-nemotron": {
     tag: "Local",
     description: "Runs Nemotron 3.5 Lightning fully locally through Ollama. Nothing leaves this machine. Keep Ollama running with the model pulled.",
-    setup: "Install Ollama, run \"ollama pull nemotron-3.5-lightning\", keep Ollama running on 127.0.0.1:11434, then select Re-check availability.",
+    panelLabel: "LOCAL MODEL SETUP",
+    setup: "Run Ollama locally at 127.0.0.1:11434.\n\nPull this model once:\nollama pull nemotron-3.5-lightning\n\nKeep Ollama running while AkuBrowser is active. No API key is stored, and reasoning requests stay on this device.",
   },
   "ollama-qwen": {
     tag: "Local",
     description: "Runs Qwen 3.8 27B fully locally through Ollama. Nothing leaves this machine. Keep Ollama running with the model pulled.",
-    setup: "Install Ollama, run \"ollama pull qwen3.8-27b\", keep Ollama running on 127.0.0.1:11434, then select Re-check availability.",
+    panelLabel: "LOCAL MODEL SETUP",
+    setup: "Run Ollama locally at 127.0.0.1:11434.\n\nPull this model once:\nollama pull qwen3.8-27b\n\nKeep Ollama running while AkuBrowser is active. No API key is stored, and reasoning requests stay on this device.",
   },
 };
 
@@ -1676,17 +1681,29 @@ function renderOnboardingProviderOptions() {
   const setup = $("#onboarding-provider-setup");
   const credentialSetup = $("#onboarding-provider-credential");
   const requiresSecureCredential = providerRequiresSecureCredential(choice);
-  if (choice && (choice.configured === false || requiresSecureCredential)) {
+  const showCredentialSetup = Boolean(choice) && (choice.configured === false || requiresSecureCredential);
+  const copy = ONBOARDING_PROVIDER_COPY[choice?.name] || {};
+  $("#onboarding-provider-dialog").classList.toggle("has-provider-context", Boolean(choice));
+  if (choice) {
+    const panelLabel = showCredentialSetup
+      ? "SECURE KEY SETUP"
+      : choice.credentialName
+        ? "SECURE KEY READY"
+        : copy.panelLabel || "PROVIDER DETAILS";
+    $("#onboarding-provider-panel-label").textContent = panelLabel;
     $("#onboarding-provider-setup-text").textContent = choice.configurationStatus === "development_fallback"
       ? "A development-only key was detected, but it is not stored securely for AkuBrowser. Paste the key below to save it in this operating system's credential store."
-      : ONBOARDING_PROVIDER_COPY[choice.name]?.setup || "Configure the provider credential, then re-check availability.";
+      : showCredentialSetup
+        ? copy.setup || "Configure the provider credential, then refresh its status."
+        : copy.ready || copy.setup || "This provider is ready to use.";
     setup.classList.remove("hidden");
-    credentialSetup.classList.toggle("hidden", !choice.credentialName);
+    credentialSetup.classList.toggle("hidden", !showCredentialSetup || !choice.credentialName);
     $("#onboarding-provider-credential-label").textContent = `${choice.label} API key`;
     const credentialLink = $("#onboarding-provider-credential-link");
-    const credentialURL = ONBOARDING_PROVIDER_COPY[choice.name]?.credentialURL;
-    credentialLink.classList.toggle("hidden", !credentialURL);
+    const credentialURL = copy.credentialURL;
+    credentialLink.classList.toggle("hidden", !showCredentialSetup || !credentialURL);
     if (credentialURL) credentialLink.href = credentialURL;
+    $("#onboarding-provider-recheck").classList.toggle("hidden", !showCredentialSetup);
   } else {
     setup.classList.add("hidden");
     credentialSetup.classList.add("hidden");
@@ -1752,7 +1769,7 @@ async function recheckOnboardingProviders() {
     $("#onboarding-provider-error").textContent = error.message;
   } finally {
     button.disabled = false;
-    button.textContent = "Re-check availability";
+    button.textContent = "Refresh credential status";
   }
 }
 
