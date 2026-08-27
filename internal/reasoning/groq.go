@@ -33,7 +33,7 @@ type Groq struct {
 }
 
 func NewGroq(cfg config.Config) (*Groq, error) {
-	return newGroq(cfg, credentials.ForRoot(cfg.Root))
+	return newGroq(cfg, credentials.ForRuntime(cfg.Root, cfg.Dev))
 }
 
 func newGroq(cfg config.Config, resolver credentials.Resolver) (*Groq, error) {

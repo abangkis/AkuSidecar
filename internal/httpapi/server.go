@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -31,6 +32,7 @@ type Server struct {
 	config            config.Config
 	store             *store.Store
 	engine            *engine.Engine
+	credentials       credentials.Manager
 	http              *http.Server
 	listener          net.Listener
 	logger            *log.Logger
@@ -46,7 +48,8 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 	}
 	server := &Server{
 		config: cfg, store: state, engine: runtime, logger: logger,
-		started: time.Now(), shutdownRequested: make(chan struct{}),
+		credentials: credentials.ForRuntime(cfg.Root, cfg.Dev),
+		started:     time.Now(), shutdownRequested: make(chan struct{}),
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.api())
@@ -325,6 +328,39 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
+	case r.Method == http.MethodPut && p == "/api/reasoning/credentials":
+		var body struct {
+			Provider string `json:"provider"`
+			Secret   string `json:"secret"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		providerName := strings.TrimSpace(body.Provider)
+		provider, ok := s.config.Reasoning.Providers[providerName]
+		if !ok || provider.HideFromSettings {
+			return apiError{Status: http.StatusBadRequest, Code: "unknown_provider", Message: "The selected reasoning provider is unavailable."}
+		}
+		credentialRef := strings.TrimSpace(provider.CredentialRef)
+		if credentialRef == "" {
+			return apiError{Status: http.StatusBadRequest, Code: "credential_not_supported", Message: "The selected reasoning provider does not use an API credential."}
+		}
+		if err := s.credentials.Put(credentialRef, body.Secret); err != nil {
+			s.logger.Printf("secure credential write failed for ref %q: %v", credentialRef, err)
+			return apiError{Status: http.StatusInternalServerError, Code: "credential_store_failed", Message: "AkuBrowser could not save this credential securely."}
+		}
+		body.Secret = ""
+		providerSummaries := s.engine.ReasoningProviders()
+		for index := range providerSummaries {
+			if providerSummaries[index].Name == providerName {
+				providerSummaries[index].Configured = true
+				providerSummaries[index].ConfigurationStatus = "ready"
+			}
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{
+			"credential":         map[string]any{"provider": providerName, "reference": credentialRef, "configured": true},
+			"reasoningProviders": providerSummaries,
+		})
 	case r.Method == http.MethodPost && p == "/api/reasoning/runtime/discover":
 		runtime, err := s.engine.DiscoverReasoningExecutable(ctx)
 		if err != nil {

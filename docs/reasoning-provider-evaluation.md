@@ -44,8 +44,8 @@ required before treating it as reliable.
   SQLite, receipts, diagnostics, or assessment artifacts. Provider entries
   carry only a namespaced `credentialRef` such as `groq.primary` or
   `gemini.primary`. AkuSidecar resolves that reference at provider composition
-  time from the ignored centralized local store at
-  `runtime/config/credentials.local.json`.
+  time from the OS credential store. The ignored centralized file at
+  `runtime/config/credentials.local.json` is a development-only fallback.
 - OpenRouter development tooling uses `OPENROUTER_API_KEY`. The retired
   `OPENROUTER_CODEX_KEY` name is not part of the contract.
 - ZDR enforcement is a separate SDK/provider-routing experiment. The Nemotron
@@ -199,11 +199,10 @@ Initial bounded evidence:
   near-miss negative control both passed.
 
 No raw prompt, output, provider error body, or credential was retained. Gemini
-Flash Lite is selectable in Settings only when `gemini.primary` is populated
-in `runtime/config/credentials.local.json`. Saving the choice persists it in
-Sidecar state; the same Supervisor-managed application activates it after
-restart. No Supervisor service parameters or lifecycle responsibilities are
-added.
+Flash Lite is selectable only when `gemini.primary` resolves from the OS store
+or, in development, the ignored fallback file. Saving the choice persists it
+in Sidecar state without adding Supervisor service parameters or lifecycle
+responsibilities.
 
 ### Development runtime output-budget result — 2026-08-26
 

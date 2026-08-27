@@ -94,10 +94,16 @@ An explicit model-capacity failure retries the same model once through a fresh
 App Server process, inside the original invocation deadline. Cancellation,
 timeout, validation errors, and hidden model fallback are not retryable.
 
-Remote-provider credentials use one Sidecar-owned local store. The tracked
-provider configuration contains only namespaced references such as
-`gemini.primary` and `groq.primary`; raw keys belong only in the ignored
-`runtime/config/credentials.local.json` file:
+Remote-provider credentials use the provider-neutral Go contract in
+`credentialstore`. The tracked provider configuration contains only
+namespaced references such as `gemini.primary` and `groq.primary`; the product
+stores raw keys in the current user's OS credential store (Windows Credential
+Manager today). The public package has no dependency on Sidecar config,
+providers, HTTP, or UI so additional platform backends can be added or the
+contract extracted into a library later.
+
+Development builds retain the ignored `runtime/config/credentials.local.json`
+file only as a fallback for existing developer workflows:
 
 ```powershell
 New-Item -ItemType Directory -Force .\runtime\config | Out-Null
@@ -105,8 +111,8 @@ Copy-Item .\config\credentials.example.json .\runtime\config\credentials.local.j
 # Paste keys into credentialStore.values in the copied local file.
 ```
 
-AkuSidecar resolves one referenced value only when composing that provider.
-Settings reads the same store on demand, shows only reference availability,
+AkuSidecar checks the OS store first and resolves one referenced value only
+when composing that provider. The UI/API exposes only reference availability
 and never returns the secret. AkuSupervisor remains responsible only for the
 Sidecar process lifecycle and does not receive provider credentials.
 
@@ -224,22 +230,16 @@ UI or Go source and must not be used while an update is active.
 
 #### Clean E2E runbook
 
-Application state lives in two independent stores, and "empty database" alone
-is not "start from zero". Optional source host permissions, registered content
-scripts, and source logins persist in the isolated browser profile at
-`runtime\app-profile` and intentionally survive a database swap. A genuinely
-clean acceptance run is:
+Application state and browser state have separate ownership. The in-app **Full
+reset** creates and verifies a database backup, revokes every optional source
+permission through AkuBridge, and clears Sidecar data and settings. It never
+deletes the browser profile: the AkuBridge installation and existing website
+sign-ins remain available for the next onboarding cycle. If Bridge cannot
+confirm permission revocation, the operation stops before Sidecar state is
+changed.
 
-1. `aku-supervisor stop akusidecar2 --actor user --reason "clean run"`;
-2. move `runtime\aku-sidecar.db` (plus `-wal`/`-shm` and
-   `calibration-results.jsonl` if present) to a backup directory;
-3. delete `runtime\app-profile`;
-4. `aku-supervisor start akusidecar2 --actor user --reason "clean run"`.
-
-The in-app **Full reset** performs the equivalent from the product surface: it
-backs up and clears the database, revokes source access through the Bridge,
-and stages a browser-profile wipe that the next Sidecar start applies before
-launching Chromium (`pending_app_profile_reset` in `meta`).
+Deleting `runtime\app-profile` or `runtime\dev-chrome-profile` is an explicit
+developer-only destructive action and is not part of the product reset flow.
 
 #### App-shell shutdown and session restore
 
@@ -277,14 +277,15 @@ no Sidecar restart is required (`Engine.SaveSettings` constructs the
 replacement provider first and fails closed before persisting on any error;
 see `docs/provider-onboarding-plan.md`).
 
-Gemini and Groq require a namespaced credential in the ignored local store.
-Create `runtime/config/credentials.local.json` from
-`config/credentials.example.json` and fill `credentialStore.values`, for
-example `"gemini.primary": "YOUR-KEY"`. Gemini keys are issued at
-<https://aistudio.google.com/apikey>; on the free tier Google may use request
-data to improve its products, and AkuBrowser surfaces that notice during
-selection. Credential values are resolved in memory only and never enter
-tracked configuration, SQLite, or receipts.
+Gemini onboarding accepts the API key in the provider dialog and writes it to
+the OS credential store under its configured opaque reference. Gemini keys
+are issued at <https://aistudio.google.com/apikey>; on the free tier Google may
+use request data to improve its products, and AkuBrowser surfaces that notice
+during selection. Credential values are resolved in memory only and never
+enter tracked configuration, SQLite, responses, or receipts. Developers may
+still create `runtime/config/credentials.local.json` from
+`config/credentials.example.json`; that fallback is ignored outside
+development mode.
 
 ## Configuration
 

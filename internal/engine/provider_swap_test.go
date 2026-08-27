@@ -71,6 +71,7 @@ func swapTestEngine(t *testing.T) (*Engine, *store.Store) {
 	t.Cleanup(func() { state.Close() })
 	cfg := config.Config{
 		Root:     root,
+		Dev:      true,
 		Server:   config.ServerConfig{Host: "127.0.0.1", Port: 11122},
 		Database: config.DatabaseConfig{Path: filepath.Join(root, "sidecar.db")},
 		Bridge:   config.BridgeConfig{TrustedExtensionOrigins: []string{"chrome-extension://mfeebfabkhmoaepbcdbbeefpobkedfmp"}},

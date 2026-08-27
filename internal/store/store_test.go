@@ -1056,6 +1056,9 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	if _, err := state.db.ExecContext(ctx, `INSERT INTO content_identity_aliases(source,identity_fingerprint,canonical_evidence_key,canonical_platform_id,canonical_permalink,canonical_content_kind,canonical_published_at,ambiguous,first_seen_at,last_seen_at,last_run_id,seen_count) VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, domain.SourceLinkedIn, "identity-before-reset", "linkedin:pre-reset", "", "", "post", "", domain.Now(), domain.Now(), "run-before-reset", 2); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('pending_app_profile_reset',?)`, domain.Now()); err != nil {
+		t.Fatal(err)
+	}
 
 	defaults := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	reset, err := state.FullReset(ctx, defaults)
@@ -1077,6 +1080,10 @@ func TestOnboardingAndFullResetStartFromFreshGoState(t *testing.T) {
 	afterToken, err := state.BridgeToken(ctx)
 	if err != nil || afterToken != token {
 		t.Fatalf("bridge token changed: before=%q after=%q err=%v", token, afterToken, err)
+	}
+	pendingProfileWipe, err := state.PendingAppProfileReset(ctx)
+	if err != nil || pendingProfileWipe {
+		t.Fatalf("full reset retained legacy profile-wipe marker: pending=%v err=%v", pendingProfileWipe, err)
 	}
 	calibrationStatus, err = state.CalibrationFirstRunStatus(ctx)
 	if err != nil || calibrationStatus != "not_started" {

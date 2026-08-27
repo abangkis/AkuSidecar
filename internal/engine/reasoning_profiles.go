@@ -13,7 +13,7 @@ import (
 
 func (e *Engine) ReasoningProviders() []config.ProviderSummary {
 	summaries := e.config.Reasoning.ProviderSummary()
-	store := credentials.ForRoot(e.config.Root)
+	store := credentials.ForRuntime(e.config.Root, e.config.Dev)
 	for index := range summaries {
 		provider := e.config.Reasoning.Providers[summaries[index].Name]
 		credentialRef := provider.CredentialRef

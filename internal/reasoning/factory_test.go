@@ -105,6 +105,7 @@ func TestNewProviderRoutesGeminiEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Root = root
+	cfg.Dev = true
 
 	got, err := NewProvider(cfg)
 	if err != nil {

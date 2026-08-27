@@ -12,7 +12,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-func TestFullResetStagesAppProfileWipe(t *testing.T) {
+func TestFullResetDoesNotStageAppProfileWipe(t *testing.T) {
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
 	state, err := store.Open(t.TempDir()+"/sidecar.db", settings)
 	if err != nil {
@@ -36,23 +36,12 @@ func TestFullResetStagesAppProfileWipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pending {
-		t.Fatal("FullReset must stage the isolated browser profile wipe")
-	}
-
-	if err := state.ConsumePendingAppProfileReset(context.Background()); err != nil {
-		t.Fatalf("consume staged reset: %v", err)
-	}
-	pending, err = state.PendingAppProfileReset(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
 	if pending {
-		t.Fatal("consumed profile reset must stay cleared")
+		t.Fatal("FullReset must preserve the browser profile")
 	}
 }
 
-func TestFullResetStagedWipeSurvivesOnboardingCycle(t *testing.T) {
+func TestFullResetKeepsProfileWipeAbsentThroughOnboardingCycle(t *testing.T) {
 	settings := domain.DefaultSettings("standard", "quiet", "guarded_live", true)
 	state, err := store.Open(t.TempDir()+"/sidecar.db", settings)
 	if err != nil {
@@ -62,8 +51,7 @@ func TestFullResetStagedWipeSurvivesOnboardingCycle(t *testing.T) {
 	if _, err := state.FullReset(context.Background(), settings); err != nil {
 		t.Fatalf("FullReset: %v", err)
 	}
-	// Onboarding completes and resets again; the staged wipe marker must not
-	// be cleared by unrelated lifecycle writes in between.
+	// Onboarding writes must not introduce the retired profile-wipe marker.
 	if _, err := state.CompleteOnboarding(context.Background(), settings.ActiveSources); err != nil {
 		t.Fatalf("CompleteOnboarding: %v", err)
 	}
@@ -71,8 +59,8 @@ func TestFullResetStagedWipeSurvivesOnboardingCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pending {
-		t.Fatal("onboarding lifecycle must not clear the staged profile wipe")
+	if pending {
+		t.Fatal("onboarding lifecycle must not stage a profile wipe")
 	}
 }
 
@@ -93,8 +81,8 @@ func TestFullResetPreservesBridgeIdentityContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pending {
-		t.Fatal("engine FullReset must stage the profile wipe")
+	if pending {
+		t.Fatal("engine FullReset must preserve the browser profile")
 	}
 }
 

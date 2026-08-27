@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/credentialstore"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -83,6 +85,9 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"Choose how AkuBrowser reasons",
 			"onboarding-provider-options",
 			"onboarding-provider-recheck",
+			"onboarding-provider-secret",
+			"Save key",
+			"secure credential store",
 			"Keep Codex App Server",
 		},
 		"web/app.js": {
@@ -91,9 +96,9 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"function confirmOnboardingProvider",
 			"function skipOnboardingProvider",
 			"https://aistudio.google.com/apikey",
-			"gemini.primary",
+			"/api/reasoning/credentials",
+			"function saveOnboardingProviderCredential",
 			"Google may use that data to improve its products",
-			"credentials.local.json",
 		},
 		"web/styles.css": {
 			".provider-selection-dialog",
@@ -110,6 +115,77 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			}
 		}
 	}
+	contents, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(contents), "credentials.local.json") {
+		t.Fatal("product onboarding must not instruct users to edit the development credential file")
+	}
+}
+
+type httpCredentialStore struct {
+	values map[credentialstore.Reference]string
+}
+
+func (store *httpCredentialStore) Get(reference credentialstore.Reference) (string, error) {
+	value, ok := store.values[reference]
+	if !ok {
+		return "", credentialstore.ErrNotFound
+	}
+	return value, nil
+}
+
+func (store *httpCredentialStore) Put(reference credentialstore.Reference, value string) error {
+	store.values[reference] = value
+	return nil
+}
+
+func (store *httpCredentialStore) Delete(reference credentialstore.Reference) error {
+	delete(store.values, reference)
+	return nil
+}
+
+func TestReasoningCredentialWriteUsesConfiguredReferenceAndNeverEchoesSecret(t *testing.T) {
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Reasoning: config.ReasoningConfig{
+		ActiveProvider: "deterministic",
+		Providers: map[string]config.ProviderConfig{
+			"deterministic":     {},
+			"gemini-flash-lite": {CredentialRef: "gemini.primary"},
+		},
+	}}
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
+	server, err := New(cfg, state, runtime, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secureStore := &httpCredentialStore{values: map[credentialstore.Reference]string{}}
+	server.credentials = credentials.NewManager(secureStore, nil)
+
+	const secret = "test-only-secret-that-must-not-be-returned"
+	request := httptest.NewRequest(http.MethodPut, "/api/reasoning/credentials", strings.NewReader(`{"provider":"gemini-flash-lite","secret":"`+secret+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	if err := server.route(response, request); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if got := secureStore.values["gemini.primary"]; got != secret {
+		t.Fatalf("stored value=%q", got)
+	}
+	if strings.Contains(response.Body.String(), secret) {
+		t.Fatalf("response leaked credential: %s", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"reference":"gemini.primary"`) || !strings.Contains(response.Body.String(), `"configured":true`) {
+		t.Fatalf("response=%s", response.Body.String())
+	}
 }
 
 func TestFullResetReportsBridgeRevocationOutcomeHonestly(t *testing.T) {
@@ -120,12 +196,17 @@ func TestFullResetReportsBridgeRevocationOutcomeHonestly(t *testing.T) {
 	asset := string(contents)
 	for _, marker := range []string{
 		"sourceAccessRevoked = await revokeSourceAccessViaBridge()",
-		"Source access revoked.",
-		"Source-access revocation was not confirmed",
-		"the isolated browser-profile wipe will remove it on next launch",
+		"Full reset stopped because AkuBridge did not confirm source-access revocation",
+		"Source access revoked; browser profile preserved.",
+		"The browser profile, AkuBridge installation, and existing website sign-ins are preserved.",
 	} {
 		if !strings.Contains(asset, marker) {
 			t.Fatalf("web/app.js is missing full-reset revocation outcome %q", marker)
+		}
+	}
+	for _, retired := range []string{"staged browser-profile reset", "browser-profile wipe will remove it"} {
+		if strings.Contains(asset, retired) {
+			t.Fatalf("web/app.js retains retired profile-wipe copy %q", retired)
 		}
 	}
 }
@@ -803,8 +884,8 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !staged {
-		t.Fatal("full reset must stage the isolated browser profile wipe")
+	if staged {
+		t.Fatal("full reset must preserve the browser profile")
 	}
 }
 

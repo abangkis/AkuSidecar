@@ -8,13 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"github.com/abangkis/AkuSidecar/credentialstore"
 )
 
 const LocalStoreRelativePath = "runtime/config/credentials.local.json"
-
-var referencePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*\.[a-z][a-z0-9._-]*$`)
 
 // Resolver materializes a credential only at the provider composition
 // boundary. Implementations must not persist or log the returned value.
@@ -32,9 +31,8 @@ type credentialStore struct {
 	Values map[string]string `json:"values"`
 }
 
-// LocalStore is AkuSidecar's centralized, project-local credential boundary.
-// The ignored file is read on demand so Settings can observe credentials added
-// after startup without retaining or exposing the whole store.
+// LocalStore is AkuSidecar's development-only, project-local fallback. The
+// ignored file is read on demand without retaining or exposing the whole store.
 type LocalStore struct {
 	path string
 }
@@ -48,10 +46,11 @@ func AtPath(path string) LocalStore {
 }
 
 func (store LocalStore) Resolve(reference string) (string, error) {
-	reference = strings.TrimSpace(reference)
-	if !referencePattern.MatchString(reference) {
-		return "", fmt.Errorf("credential ref %q is malformed", reference)
+	parsed, err := credentialstore.ParseReference(reference)
+	if err != nil {
+		return "", err
 	}
+	reference = parsed.String()
 	data, err := os.ReadFile(store.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -78,7 +77,7 @@ func (store LocalStore) Resolve(reference string) (string, error) {
 		return "", fmt.Errorf("credential ref %q is unavailable: local credential store values are missing", reference)
 	}
 	for configuredRef := range document.CredentialStore.Values {
-		if !referencePattern.MatchString(strings.TrimSpace(configuredRef)) {
+		if _, err := credentialstore.ParseReference(configuredRef); err != nil {
 			return "", fmt.Errorf("local credential store contains malformed ref %q", configuredRef)
 		}
 	}
@@ -97,10 +96,11 @@ func ValidateReference(provider, reference string) error {
 	if reference == "" {
 		return fmt.Errorf("credential ref is required for provider %q", provider)
 	}
-	if !referencePattern.MatchString(reference) {
+	parsed, err := credentialstore.ParseReference(reference)
+	if err != nil {
 		return fmt.Errorf("credential ref %q is malformed for provider %q", reference, provider)
 	}
-	prefix := strings.SplitN(reference, ".", 2)[0]
+	prefix := strings.SplitN(parsed.String(), ".", 2)[0]
 	if prefix != provider {
 		return fmt.Errorf("credential ref %q has the wrong provider prefix for %q", reference, provider)
 	}

@@ -164,8 +164,8 @@ func main() {
 	}
 	var shell *appshell.Window
 	if options.AppShell {
-		if resetErr := resetAppProfileIfPending(state, browserProfilePath(options, cfg), logger); resetErr != nil {
-			logger.Printf("staged app profile reset failed; keeping the existing profile: %v", resetErr)
+		if resetErr := discardLegacyProfileResetMarker(state, logger); resetErr != nil {
+			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
 		shell = launchAppShell(logger, options, cfg, address.String())
 	}
@@ -338,26 +338,22 @@ func browserProfilePath(options config.Options, cfg config.Config) string {
 	return filepath.Join(cfg.Root, "runtime", "app-profile")
 }
 
-// resetAppProfileIfPending applies the isolated-browser-profile wipe staged by
-// a full reset. Chromium must not be running for this to be safe, so it runs
-// before the app shell launches; the marker is consumed only after a
-// successful removal so a failed wipe is retried on the next start.
-func resetAppProfileIfPending(state *store.Store, profilePath string, logger *log.Logger) error {
+// discardLegacyProfileResetMarker retires the pre-0.8 full-reset behavior.
+// Browser profiles contain the product's Bridge installation and must never
+// be deleted as part of application-data reset.
+func discardLegacyProfileResetMarker(state *store.Store, logger *log.Logger) error {
 	ctx := context.Background()
 	pending, err := state.PendingAppProfileReset(ctx)
 	if err != nil {
-		return fmt.Errorf("read staged profile reset: %w", err)
+		return fmt.Errorf("read legacy profile reset marker: %w", err)
 	}
 	if !pending {
 		return nil
 	}
-	if err := os.RemoveAll(profilePath); err != nil {
-		return fmt.Errorf("remove staged browser profile %s: %w", profilePath, err)
-	}
 	if err := state.ConsumePendingAppProfileReset(ctx); err != nil {
-		return fmt.Errorf("clear staged profile reset marker: %w", err)
+		return fmt.Errorf("clear legacy profile reset marker: %w", err)
 	}
-	logger.Printf("staged app profile reset applied path=%s", profilePath)
+	logger.Printf("legacy app profile reset marker discarded; browser profile preserved")
 	return nil
 }
 

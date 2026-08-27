@@ -41,6 +41,15 @@
           <div id="onboarding-provider-setup" class="onboarding-provider-setup hidden">
             <p class="step-label">SETUP REQUIRED</p>
             <p id="onboarding-provider-setup-text" class="settings-detail"></p>
+            <div id="onboarding-provider-credential" class="onboarding-provider-credential hidden">
+              <a id="onboarding-provider-credential-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Create a key in Google AI Studio ↗</a>
+              <label id="onboarding-provider-credential-label" for="onboarding-provider-secret">Provider API key</label>
+              <div class="onboarding-provider-credential-control">
+                <input id="onboarding-provider-secret" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key" />
+                <button id="onboarding-provider-save-credential" class="primary-button" type="button">Save key</button>
+              </div>
+              <small>The key is saved in your operating system's secure credential store and is never displayed again.</small>
+            </div>
             <button id="onboarding-provider-recheck" class="secondary-button" type="button">Re-check availability</button>
           </div>
           <p id="onboarding-provider-error" class="settings-detail" role="alert"></p>

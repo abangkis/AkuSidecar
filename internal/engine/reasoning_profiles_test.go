@@ -123,7 +123,7 @@ func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Providers: map[string]config.ProviderConfig{
+	cfg := config.Config{Root: root, Dev: true, Reasoning: config.ReasoningConfig{Providers: map[string]config.ProviderConfig{
 		"codex-app-server":  {},
 		"gemini-flash-lite": geminiTestProvider("gemini-flash-lite"),
 	}}}

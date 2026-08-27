@@ -289,7 +289,9 @@ $("#reset-confirmation-submit").addEventListener("click", submitReset);
 $("#onboarding-provider-confirm").addEventListener("click", confirmOnboardingProvider);
 $("#onboarding-provider-skip").addEventListener("click", skipOnboardingProvider);
 $("#onboarding-provider-recheck").addEventListener("click", recheckOnboardingProviders);
+$("#onboarding-provider-save-credential").addEventListener("click", saveOnboardingProviderCredential);
 $("#onboarding-provider-dialog").addEventListener("close", () => {
+  $("#onboarding-provider-secret").value = "";
   state.pendingOnboardingSources = null;
 });
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
@@ -1049,9 +1051,9 @@ function syncReasoningProviderSelection() {
   if (!provider) {
     status.textContent = "No selectable reasoning provider is available.";
   } else if (provider.configured === false) {
-    status.textContent = `${provider.credentialName || "Required credential"} is not available in AkuSidecar's local credential store. Configure it before selecting this provider.`;
+    status.textContent = `${provider.credentialName || "Required credential"} is not available in AkuBrowser's secure credential store. Configure it before selecting this provider.`;
   } else if (provider.runtimeKind === "remote_api") {
-    status.textContent = `${provider.credentialName} is available in AkuSidecar's local credential store. The secret value is never shown.`;
+    status.textContent = `${provider.credentialName} is available in AkuBrowser's secure credential store. The secret value is never shown.`;
   } else if (provider.runtimeKind === "executable") {
     status.textContent = "Uses the validated local executable shown below.";
   } else {
@@ -1597,7 +1599,8 @@ const ONBOARDING_PROVIDER_COPY = {
   "gemini-flash-lite": {
     tag: "Free key",
     description: "Uses a free Google AI Studio key. Privacy notice: captured post text is sent to Google for reasoning, and on the free tier Google may use that data to improve its products.",
-    setup: "Create an API key at https://aistudio.google.com/apikey, then add it to the local credential store file runtime\\config\\credentials.local.json next to AkuSidecar as:\n{\"schemaVersion\":1,\"credentialStore\":{\"type\":\"inline\",\"values\":{\"gemini.primary\":\"YOUR-KEY\"}}}\nSave the file and select Re-check availability. The key never appears in AkuBrowser.",
+    setup: "Create a free Google AI Studio API key, paste it below, then save it securely on this device.",
+    credentialURL: "https://aistudio.google.com/apikey",
   },
   "ollama-nemotron": {
     tag: "Local",
@@ -1631,6 +1634,7 @@ function renderOnboardingProviderOptions() {
     input.value = entry.name;
     input.checked = entry.name === selected;
     input.addEventListener("change", () => {
+      $("#onboarding-provider-secret").value = "";
       state.onboardingProviderChoice = entry.name;
       renderOnboardingProviderOptions();
     });
@@ -1657,14 +1661,23 @@ function renderOnboardingProviderOptions() {
   }));
   const choice = onboardingProviderEntries().find((entry) => entry.name === selected);
   const setup = $("#onboarding-provider-setup");
+  const credentialSetup = $("#onboarding-provider-credential");
   if (choice && choice.configured === false) {
     $("#onboarding-provider-setup-text").textContent = ONBOARDING_PROVIDER_COPY[choice.name]?.setup
       || "Configure the provider credential, then re-check availability.";
     setup.classList.remove("hidden");
+    credentialSetup.classList.toggle("hidden", !choice.credentialName);
+    $("#onboarding-provider-credential-label").textContent = `${choice.label} API key`;
+    const credentialLink = $("#onboarding-provider-credential-link");
+    const credentialURL = ONBOARDING_PROVIDER_COPY[choice.name]?.credentialURL;
+    credentialLink.classList.toggle("hidden", !credentialURL);
+    if (credentialURL) credentialLink.href = credentialURL;
   } else {
     setup.classList.add("hidden");
+    credentialSetup.classList.add("hidden");
+    $("#onboarding-provider-secret").value = "";
   }
-  $("#onboarding-provider-confirm").disabled = !choice;
+  $("#onboarding-provider-confirm").disabled = !choice || choice.configured === false;
 }
 
 function openOnboardingProviderDialog() {
@@ -1688,6 +1701,35 @@ async function recheckOnboardingProviders() {
   } finally {
     button.disabled = false;
     button.textContent = "Re-check availability";
+  }
+}
+
+async function saveOnboardingProviderCredential() {
+  const choice = onboardingProviderEntries().find((entry) => entry.name === state.onboardingProviderChoice);
+  const input = $("#onboarding-provider-secret");
+  const button = $("#onboarding-provider-save-credential");
+  const secret = input.value.trim();
+  if (!choice?.credentialName || !secret) {
+    $("#onboarding-provider-error").textContent = "Paste the API key before saving.";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Saving…";
+  $("#onboarding-provider-error").textContent = "Saving the key securely on this device…";
+  try {
+    const response = await api("/api/reasoning/credentials", {
+      method: "PUT",
+      body: { provider: choice.name, secret },
+    });
+    state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
+    $("#onboarding-provider-error").textContent = "API key saved. You can now use this provider.";
+    renderOnboardingProviderOptions();
+  } catch (error) {
+    $("#onboarding-provider-error").textContent = error.message;
+  } finally {
+    input.value = "";
+    button.disabled = false;
+    button.textContent = "Save key";
   }
 }
 
@@ -1723,6 +1765,7 @@ async function confirmOnboardingProvider() {
 function skipOnboardingProvider() {
   const sources = state.pendingOnboardingSources;
   state.pendingOnboardingSources = null;
+  $("#onboarding-provider-secret").value = "";
   $("#onboarding-provider-dialog").close();
   void completeOnboarding(sources || [], true);
 }
@@ -1731,9 +1774,8 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 
 // revokeSourceAccessViaBridge asks the extension to drop every optional
 // source host permission and unregister its capture scripts before a full
-// reset persists. The boolean result keeps the UI honest when the relay cannot
-// answer; the reset still proceeds because the staged profile wipe removes the
-// remaining permission surface on the next launch.
+// reset persists. Full reset fails closed when the Bridge cannot confirm it;
+// the browser profile and the Bridge installation are always preserved.
 function revokeSourceAccessViaBridge() {
   return new Promise((resolve) => {
     const requestId = `revoke-${Date.now()}`;
@@ -1778,7 +1820,7 @@ function openResetDialog(operation) {
   $("#reset-confirmation-impact").textContent = aiHide
     ? "AI detection can be wrong. Only direct evidence and Deep-confirmed strong signals will be hidden. Posts remain stored locally and can be restored by disabling Hide."
     : full
-      ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings, revoke source access, and reset the isolated browser profile on next launch. The live Bridge identity remains valid."
+      ? "AkuBrowser will first revoke all optional source permissions, then create and verify a local SQLite backup before erasing Timeline, runs, learning data, onboarding, and local settings. The browser profile, AkuBridge installation, and existing website sign-ins are preserved."
       : "AkuBrowser will erase calibration, More/Less feedback, and the fitted preference model. Timeline, source setup, and runtime settings remain.";
   $("#reset-confirmation-phrase").textContent = aiHide ? AI_HIDE_CONFIRMATION_PHRASE : full ? "RESET AKUBROWSER" : "RESET LEARNING";
   $("#reset-confirmation-submit").textContent = aiHide ? "Activate Hide" : full ? "Confirm full reset" : "Confirm reset";
@@ -1864,15 +1906,12 @@ async function submitReset() {
       $("#reset-confirmation-status").textContent = "Revoking source access…";
       sourceAccessRevoked = await revokeSourceAccessViaBridge();
       if (!sourceAccessRevoked) {
-        $("#reset-confirmation-status").textContent = "Bridge did not confirm source-access revocation. Continuing with the verified backup and staged browser-profile reset…";
+        throw new Error("Full reset stopped because AkuBridge did not confirm source-access revocation. The browser profile and application data were left unchanged.");
       }
     }
     const response = await api(path, { method: "POST", body: { confirmation: phrase } });
     if (operation === "full") {
-      const accessStatus = sourceAccessRevoked
-        ? "Source access revoked."
-        : "Source-access revocation was not confirmed; the isolated browser-profile wipe will remove it on next launch.";
-      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. ${accessStatus} Returning to onboarding…`;
+      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Source access revoked; browser profile preserved. Returning to onboarding…`;
       state.settingsUnloadBypass = true;
       window.setTimeout(() => window.location.reload(), 350);
       return;

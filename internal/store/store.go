@@ -1750,7 +1750,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts','auto_update_usage_limit_pause');`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts','auto_update_usage_limit_pause','pending_app_profile_reset');`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=NULL,last_attempt_at=NULL,last_success_at=NULL,last_error='' WHERE id=1`); err != nil {
@@ -1766,13 +1766,6 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('last_full_reset',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
-		return FullResetResult{}, err
-	}
-	// The isolated browser profile cannot be deleted while Chromium is
-	// running, so the reset is staged and consumed by the next app-shell
-	// launch. Pairing it with the revoked source grants keeps "start from
-	// zero" honest across both state stores.
-	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('pending_app_profile_reset',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
 		return FullResetResult{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -1792,8 +1785,8 @@ func (s *Store) requireIdle(ctx context.Context) error {
 	return nil
 }
 
-// PendingAppProfileReset reports whether a full reset staged an
-// isolated-browser-profile wipe.
+// PendingAppProfileReset reports a legacy pre-0.8 profile-wipe marker. New
+// resets never create one; startup consumes it without deleting the profile.
 func (s *Store) PendingAppProfileReset(ctx context.Context) (bool, error) {
 	var value string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='pending_app_profile_reset'`).Scan(&value)
@@ -1806,9 +1799,7 @@ func (s *Store) PendingAppProfileReset(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// ConsumePendingAppProfileReset clears the staged browser-profile reset
-// marker. Callers apply the wipe before consuming so a failed removal is
-// retried on the next start.
+// ConsumePendingAppProfileReset clears a legacy profile-wipe marker.
 func (s *Store) ConsumePendingAppProfileReset(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM meta WHERE key='pending_app_profile_reset'`)
 	return err

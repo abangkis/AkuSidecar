@@ -38,7 +38,7 @@ type Gemini struct {
 }
 
 func NewGemini(cfg config.Config) (*Gemini, error) {
-	return newGemini(cfg, credentials.ForRoot(cfg.Root))
+	return newGemini(cfg, credentials.ForRuntime(cfg.Root, cfg.Dev))
 }
 
 func newGemini(cfg config.Config, resolver credentials.Resolver) (*Gemini, error) {

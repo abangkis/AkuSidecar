@@ -680,6 +680,13 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-provider-status { font-weight: 600; }
 .onboarding-provider-setup { margin-top: 16px; padding: 13px 15px; border: 1px dashed var(--line-strong); border-radius: 11px; display: grid; gap: 9px; justify-items: start; }
 .onboarding-provider-setup .settings-detail { white-space: pre-wrap; word-break: break-word; }
+.onboarding-provider-credential { display: grid; width: 100%; gap: 7px; }
+.onboarding-provider-credential > label { color: var(--text); font-size: 0.78rem; font-weight: 700; }
+.onboarding-provider-credential > a { color: var(--accent); font-size: 0.78rem; font-weight: 700; }
+.onboarding-provider-credential > small { color: var(--muted); line-height: 1.4; }
+.onboarding-provider-credential-control { display: flex; width: 100%; gap: 8px; }
+.onboarding-provider-credential-control input { min-width: 0; flex: 1; padding: 10px 11px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel-raised); color: var(--text); }
+.onboarding-provider-credential-control button { flex: 0 0 auto; }
 .onboarding-provider-setup + #onboarding-provider-error { margin-top: 8px; }
 .provider-selection-card .onboarding-actions { justify-content: flex-end; }
 

@@ -1,17 +1,14 @@
 # Provider selection during onboarding
 
-Status: implemented, 27 August 2026. Stages 1–4 complete in AkuSidecar
-(engine idle swap, onboarding dialog, tests, docs). Product contract updated
-in AkuBrowser. Live E2E acceptance (dialog → Gemini selection with a real
-key → first update on Gemini) remains open until the user provisions
-`gemini.primary`.
+Status: implementation extended, 27 August 2026. Stages 1–4 are complete and
+Stage 5 adds product-owned secure credential entry. Live E2E acceptance
+(dialog → save Gemini key → selection → first update on Gemini) remains open.
 
 ## Problem
 
 The first-run flow never asks which reasoning provider the user wants. The
 provider select exists only in Settings, is disabled with "credential missing"
-for Gemini/Ollama until someone hand-edits
-`runtime/config/credentials.local.json`, and a provider switch requires a
+for Gemini until a developer hand-edits a local JSON file, and a provider switch requires a
 Sidecar restart to take effect. The first onboarding update therefore always
 runs on the checked-in default (Codex App Server) even when the user wants a
 different provider, and the "Gemini · credential missing" wall appears with no
@@ -92,11 +89,12 @@ New `internal/engine/provider_swap.go`:
   - Cards render from `state.bootstrap.reasoningProviders` with static
     per-provider copy keyed by name (Codex default/reliability; Gemini free
     key + Google data-use privacy warning; Ollama local/keep-model-running).
-  - Unconfigured provider: inline setup instructions naming the exact local
-    store path (`AkuSidecar\runtime\config\credentials.local.json`), the JSON
-    shape from `config/credentials.example.json`, the AI Studio key URL for
-    Gemini, and a Re-check button that refreshes
-    `reasoningProviders` via `GET /api/settings`.
+  - Unconfigured remote provider: inline password input and save action. The
+    browser sends the value once to the loopback Sidecar endpoint, which maps
+    the selected provider to its configured credential reference and writes
+    the secret to the OS credential store. The response contains only the
+    provider, reference, and configured state. Re-check remains available for
+    endpoint-style providers and development fallback changes.
   - Confirm: `PUT /api/settings` with the unchanged settings plus the chosen
     `reasoningProvider` (engine hot-swaps), then continue into
     `PUT /api/onboarding` and the existing first-update flow.
@@ -120,10 +118,25 @@ New `internal/engine/provider_swap.go`:
 - AkuSidecar README: credential setup walkthrough for Gemini/Ollama in the
   development lane, and the idle-swap behavior note.
 
+### Stage 5 — Portable secure credential boundary (Go)
+
+- Public `credentialstore` package: validated opaque `Reference`, provider-
+  neutral `Store` (`Get`/`Put`/`Delete`), typed missing/unavailable errors.
+- Windows backend: current-user Windows Credential Manager using generic
+  credentials scoped under the `AkuBrowser` namespace.
+- Internal Sidecar manager: OS store first; ignored JSON is a development-only
+  read fallback and is never a production credential source.
+- `PUT /api/reasoning/credentials`: narrow same-origin loopback mutation that
+  accepts a provider name, derives its declared reference server-side, writes
+  the secret, clears the request field, and never echoes the value.
+- Future macOS Keychain/Linux Secret Service implementations can satisfy the
+  same public contract without changing provider or UI code.
+
 ## Non-goals
 
-- No UI for writing credential values: the local credential store remains a
-  user-managed file; the dialog only detects and instructs.
+- No secret reveal, export, diagnostics, SQLite persistence, or tracked-config
+  storage. Credential deletion/rotation controls in Settings remain separate
+  follow-up work.
 - No change to Groq visibility, provider configs, model catalogs, or the
   composable-prompt contract.
 - No automatic Sidecar restart flow; the swap happens in-process when idle.
