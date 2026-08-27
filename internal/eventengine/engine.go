@@ -30,6 +30,12 @@ func New(state *store.Store, resolver Resolver) *Engine {
 	return &Engine{store: state, resolver: resolver}
 }
 
+// SetResolver replaces the structured resolver during an idle provider swap.
+// A nil value restores the local fast path; local-only state is untouched.
+func (e *Engine) SetResolver(resolver Resolver) {
+	e.resolver = resolver
+}
+
 func (e *Engine) ProcessSession(ctx context.Context, sessionID string, settings domain.Settings) (domain.EventResolutionSummary, error) {
 	return e.processSession(ctx, sessionID, settings, false)
 }

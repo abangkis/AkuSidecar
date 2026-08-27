@@ -159,7 +159,21 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	}
 	value.ReasoningProfilesByProvider = profilesByProvider
 	value.Normalize()
-	if err := e.validateReasoningProfiles(value); err != nil {
+	var swap *providerSwapPlan
+	if strings.TrimSpace(value.ReasoningProvider) != current.ReasoningProvider {
+		if err := e.ensureIdleForProviderSwap(ctx); err != nil {
+			return domain.Settings{}, err
+		}
+		swap, err = e.planProviderSwap(ctx, value.ReasoningProvider, &value)
+		if err != nil {
+			return domain.Settings{}, err
+		}
+	}
+	if swap != nil {
+		if err := validateReasoningProfilesAgainst(swap.candidate, value); err != nil {
+			return domain.Settings{}, err
+		}
+	} else if err := e.validateReasoningProfiles(value); err != nil {
 		return domain.Settings{}, err
 	}
 	if err := e.store.SaveSettings(ctx, value); err != nil {
@@ -170,6 +184,9 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	}
 	if executableRuntime != nil {
 		executableRuntime.UseExecutable(resolvedExecutable)
+	}
+	if swap != nil {
+		swap.apply(e)
 	}
 	saved, err := e.store.GetSettings(ctx)
 	if err != nil {

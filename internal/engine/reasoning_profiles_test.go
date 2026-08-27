@@ -125,7 +125,7 @@ func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 	defer state.Close()
 	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Providers: map[string]config.ProviderConfig{
 		"codex-app-server":  {},
-		"gemini-flash-lite": {CredentialRef: "gemini.primary"},
+		"gemini-flash-lite": geminiTestProvider("gemini-flash-lite"),
 	}}}
 	runtime := New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
 	providers := runtime.ReasoningProviders()
@@ -144,9 +144,13 @@ func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 	if err := os.WriteFile(credentialPath, []byte(`{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.primary":"test-only-gemini-key"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	copySwapSchemas(t, root)
 	saved, err := runtime.SaveSettings(context.Background(), settings)
 	if err != nil || saved.ReasoningProvider != "gemini-flash-lite" {
 		t.Fatalf("saved=%+v err=%v", saved, err)
+	}
+	if runtime.ProviderName() != "gemini-flash-lite" {
+		t.Fatalf("active provider after selection=%s", runtime.ProviderName())
 	}
 }
 

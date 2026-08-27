@@ -286,6 +286,12 @@ $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
 $("#reset-confirmation-submit").addEventListener("click", submitReset);
+$("#onboarding-provider-confirm").addEventListener("click", confirmOnboardingProvider);
+$("#onboarding-provider-skip").addEventListener("click", skipOnboardingProvider);
+$("#onboarding-provider-recheck").addEventListener("click", recheckOnboardingProviders);
+$("#onboarding-provider-dialog").addEventListener("close", () => {
+  state.pendingOnboardingSources = null;
+});
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
 $("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
 $("#back-to-top").addEventListener("click", returnToTop);
@@ -1320,7 +1326,7 @@ async function persistSettings(settings, confirmationPhrase = "") {
     renderSettings(response.settings);
     syncOnboardingLearning(shouldShowOnboardingLearning(state.session));
     status.textContent = response.settings.reasoningProvider !== previousProvider
-      ? "Saved · restart AkuSidecar to activate the selected reasoning provider."
+      ? "Saved · the selected reasoning provider is now active."
       : `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
     await refreshTimeline();
     return response.settings;
@@ -1555,7 +1561,14 @@ async function saveOnboarding(event) {
       renderSourceSessionReadiness();
       return;
     }
+    state.pendingOnboardingSources = activeSources;
+    openOnboardingProviderDialog();
+    return;
   }
+  await completeOnboarding(activeSources, false);
+}
+
+async function completeOnboarding(activeSources, firstCompletion) {
   const button = $("#onboarding-finish");
   button.disabled = true;
   $("#onboarding-error").textContent = "Saving source profile…";
@@ -1566,6 +1579,7 @@ async function saveOnboarding(event) {
     state.bootstrap.calibration = response.calibration;
     renderSettings(response.settings);
     $("#onboarding-error").textContent = "";
+    state.pendingOnboardingSources = null;
     setView(firstCompletion ? "timeline" : "settings");
     if (firstCompletion) await startVisibleUpdate();
   } catch (error) {
@@ -1573,6 +1587,144 @@ async function saveOnboarding(event) {
   } finally {
     button.disabled = false;
   }
+}
+
+const ONBOARDING_PROVIDER_COPY = {
+  "codex-app-server": {
+    tag: "Default",
+    description: "Local Codex App Server — the most compliant and reliable option. Reasoning runs through your signed-in Codex app and stays on its usage boundary.",
+  },
+  "gemini-flash-lite": {
+    tag: "Free key",
+    description: "Uses a free Google AI Studio key. Privacy notice: captured post text is sent to Google for reasoning, and on the free tier Google may use that data to improve its products.",
+    setup: "Create an API key at https://aistudio.google.com/apikey, then add it to the local credential store file runtime\\config\\credentials.local.json next to AkuSidecar as:\n{\"schemaVersion\":1,\"credentialStore\":{\"type\":\"inline\",\"values\":{\"gemini.primary\":\"YOUR-KEY\"}}}\nSave the file and select Re-check availability. The key never appears in AkuBrowser.",
+  },
+  "ollama-nemotron": {
+    tag: "Local",
+    description: "Runs Nemotron 3.5 Lightning fully locally through Ollama. Nothing leaves this machine. Keep Ollama running with the model pulled.",
+    setup: "Install Ollama, run \"ollama pull nemotron-3.5-lightning\", keep Ollama running on 127.0.0.1:11434, then select Re-check availability.",
+  },
+  "ollama-qwen": {
+    tag: "Local",
+    description: "Runs Qwen 3.8 27B fully locally through Ollama. Nothing leaves this machine. Keep Ollama running with the model pulled.",
+    setup: "Install Ollama, run \"ollama pull qwen3.8-27b\", keep Ollama running on 127.0.0.1:11434, then select Re-check availability.",
+  },
+};
+
+function onboardingProviderEntries() {
+  return (state.bootstrap?.reasoningProviders || []).slice().sort((a, b) => {
+    const order = { "codex-app-server": 0, "gemini-flash-lite": 1, "ollama-nemotron": 2, "ollama-qwen": 3 };
+    return (order[a.name] ?? 9) - (order[b.name] ?? 9);
+  });
+}
+
+function renderOnboardingProviderOptions() {
+  const container = $("#onboarding-provider-options");
+  const selected = state.onboardingProviderChoice;
+  container.replaceChildren(...onboardingProviderEntries().map((entry) => {
+    const copy = ONBOARDING_PROVIDER_COPY[entry.name] || { tag: entry.runtimeKind, description: "" };
+    const label = document.createElement("label");
+    label.className = "onboarding-provider-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "onboarding-reasoning-provider";
+    input.value = entry.name;
+    input.checked = entry.name === selected;
+    input.addEventListener("change", () => {
+      state.onboardingProviderChoice = entry.name;
+      renderOnboardingProviderOptions();
+    });
+    const card = document.createElement("span");
+    card.className = "onboarding-provider-card";
+    const heading = document.createElement("span");
+    heading.className = "onboarding-provider-heading";
+    const strong = document.createElement("strong");
+    strong.textContent = entry.label;
+    const tag = document.createElement("small");
+    tag.textContent = copy.tag || "";
+    heading.append(strong, tag);
+    const description = document.createElement("small");
+    description.className = "onboarding-provider-description";
+    description.textContent = copy.description || "";
+    const status = document.createElement("small");
+    status.className = "onboarding-provider-status";
+    status.textContent = entry.configured === false
+      ? "Setup required — " + (entry.credentialName || "credential") + " missing"
+      : "Ready";
+    card.append(heading, description, status);
+    label.append(input, card);
+    return label;
+  }));
+  const choice = onboardingProviderEntries().find((entry) => entry.name === selected);
+  const setup = $("#onboarding-provider-setup");
+  if (choice && choice.configured === false) {
+    $("#onboarding-provider-setup-text").textContent = ONBOARDING_PROVIDER_COPY[choice.name]?.setup
+      || "Configure the provider credential, then re-check availability.";
+    setup.classList.remove("hidden");
+  } else {
+    setup.classList.add("hidden");
+  }
+  $("#onboarding-provider-confirm").disabled = !choice;
+}
+
+function openOnboardingProviderDialog() {
+  state.onboardingProviderChoice = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider || "codex-app-server";
+  renderOnboardingProviderOptions();
+  $("#onboarding-provider-error").textContent = "";
+  $("#onboarding-provider-dialog").showModal();
+  $("#onboarding-provider-title").focus();
+}
+
+async function recheckOnboardingProviders() {
+  const button = $("#onboarding-provider-recheck");
+  button.disabled = true;
+  button.textContent = "Checking…";
+  try {
+    const response = await api("/api/settings");
+    state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
+    renderOnboardingProviderOptions();
+  } catch (error) {
+    $("#onboarding-provider-error").textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Re-check availability";
+  }
+}
+
+async function confirmOnboardingProvider() {
+  const choice = state.onboardingProviderChoice;
+  if (!choice) return;
+  const sources = state.pendingOnboardingSources;
+  if (!sources) {
+    $("#onboarding-provider-dialog").close();
+    return;
+  }
+  const button = $("#onboarding-provider-confirm");
+  const activeProvider = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider;
+  if (choice !== activeProvider) {
+    button.disabled = true;
+    $("#onboarding-provider-error").textContent = "Activating the selected provider…";
+    try {
+      const response = await api("/api/settings", { method: "PUT", body: { settings: { ...state.bootstrap.settings, reasoningProvider: choice } } });
+      state.bootstrap.settings = response.settings;
+      state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
+      state.bootstrap.reasoningProcesses = response.reasoningProcesses ?? state.bootstrap.reasoningProcesses;
+    } catch (error) {
+      $("#onboarding-provider-error").textContent = error.message;
+      button.disabled = false;
+      return;
+    }
+  }
+  state.pendingOnboardingSources = null;
+  $("#onboarding-provider-dialog").close();
+  await completeOnboarding(sources, true);
+}
+
+function skipOnboardingProvider() {
+  const sources = state.pendingOnboardingSources;
+  state.pendingOnboardingSources = null;
+  $("#onboarding-provider-dialog").close();
+  void completeOnboarding(sources || [], true);
 }
 
 function openResetDialog(operation) {

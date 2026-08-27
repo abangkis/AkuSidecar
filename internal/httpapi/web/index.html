@@ -32,6 +32,25 @@
 
       <section id="provider-notice" class="notice hidden" role="status"></section>
 
+      <dialog id="onboarding-provider-dialog" class="provider-selection-dialog" aria-labelledby="onboarding-provider-title">
+        <div class="provider-selection-card">
+          <p class="step-label">REASONING PROVIDER</p>
+          <h2 id="onboarding-provider-title" tabindex="-1">Choose how AkuBrowser reasons</h2>
+          <p class="onboarding-explanation">Updates, semantic comparisons, and AI review all use this backend. You can change it later in Settings; the switch applies when no update is running.</p>
+          <div id="onboarding-provider-options" class="onboarding-provider-options" role="radiogroup" aria-label="Reasoning provider"></div>
+          <div id="onboarding-provider-setup" class="onboarding-provider-setup hidden">
+            <p class="step-label">SETUP REQUIRED</p>
+            <p id="onboarding-provider-setup-text" class="settings-detail"></p>
+            <button id="onboarding-provider-recheck" class="secondary-button" type="button">Re-check availability</button>
+          </div>
+          <p id="onboarding-provider-error" class="settings-detail" role="alert"></p>
+          <div class="onboarding-actions">
+            <button id="onboarding-provider-skip" class="secondary-button" type="button">Keep Codex App Server</button>
+            <button id="onboarding-provider-confirm" class="primary-button" type="button" disabled>Use selected provider</button>
+          </div>
+        </div>
+      </dialog>
+
       <section id="onboarding-panel" class="onboarding-panel hidden" aria-labelledby="onboarding-heading">
         <div class="onboarding-card">
           <p class="step-label">SOURCE SETUP</p>
@@ -391,7 +410,7 @@
             <p class="settings-group-note">The active inference backend is replaceable behind schema-bound process contracts. AI Fast Detection stays local and deterministic.</p>
             <div class="settings-card reasoning-processes-card">
               <label class="settings-row" for="reasoning-provider">
-                <span class="settings-copy"><strong>Reasoning provider</strong><small>Choose the inference backend used by every reasoning process. The switch applies after the sidecar restarts.</small></span>
+                <span class="settings-copy"><strong>Reasoning provider</strong><small>Choose the inference backend used by every reasoning process. The switch applies when no update is running; no restart is needed.</small></span>
                 <span class="reasoning-provider-control">
                   <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select" aria-describedby="reasoning-provider-status"></select>
                   <small id="reasoning-provider-status" class="reasoning-provider-status" aria-live="polite"></small>

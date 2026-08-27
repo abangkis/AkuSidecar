@@ -142,7 +142,14 @@ func (e *Engine) reasoningModel(profileID string, fallback config.ModelConfig) c
 }
 
 func (e *Engine) validateReasoningProfiles(settings domain.Settings) error {
-	catalog, ok := e.provider.(reasoning.ProfileProvider)
+	return validateReasoningProfilesAgainst(e.provider, settings)
+}
+
+// validateReasoningProfilesAgainst checks profile resolvability against an
+// explicit provider, so a pending provider swap validates against the
+// candidate catalog instead of the active one.
+func validateReasoningProfilesAgainst(provider reasoning.Provider, settings domain.Settings) error {
+	catalog, ok := provider.(reasoning.ProfileProvider)
 	if !ok {
 		return nil
 	}

@@ -239,6 +239,26 @@ Normal workspace operation is owned by AkuSupervisor. Its canonical service
 profile starts `runtime\dev\aku-sidecar.exe` directly with the strict Sidecar
 configuration and `--dev` during development.
 
+### Reasoning provider selection
+
+First-run onboarding asks the user to choose a reasoning provider after source
+readiness and before the first bounded update: Codex App Server (default),
+Gemini Flash Lite (free Google key with a Google data-use notice), or a local
+Ollama model. Providers can also be switched later from Settings; the switch
+takes effect immediately when no update or Deep Detection work is active —
+no Sidecar restart is required (`Engine.SaveSettings` constructs the
+replacement provider first and fails closed before persisting on any error;
+see `docs/provider-onboarding-plan.md`).
+
+Gemini and Groq require a namespaced credential in the ignored local store.
+Create `runtime/config/credentials.local.json` from
+`config/credentials.example.json` and fill `credentialStore.values`, for
+example `"gemini.primary": "YOUR-KEY"`. Gemini keys are issued at
+<https://aistudio.google.com/apikey>; on the free tier Google may use request
+data to improve its products, and AkuBrowser surfaces that notice during
+selection. Credential values are resolved in memory only and never enter
+tracked configuration, SQLite, or receipts.
+
 ## Configuration
 
 `config/sidecar.json` is strict and versioned. Unknown properties fail startup.

@@ -76,6 +76,42 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	}
 }
 
+func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {
+			"onboarding-provider-dialog",
+			"Choose how AkuBrowser reasons",
+			"onboarding-provider-options",
+			"onboarding-provider-recheck",
+			"Keep Codex App Server",
+		},
+		"web/app.js": {
+			"ONBOARDING_PROVIDER_COPY",
+			"function openOnboardingProviderDialog",
+			"function confirmOnboardingProvider",
+			"function skipOnboardingProvider",
+			"https://aistudio.google.com/apikey",
+			"gemini.primary",
+			"Google may use that data to improve its products",
+			"credentials.local.json",
+		},
+		"web/styles.css": {
+			".provider-selection-dialog",
+			".onboarding-provider-option",
+		},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing onboarding provider contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestSettingsSourcesExposeSessionReadinessAndSignInCTA(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js": {
@@ -207,8 +243,8 @@ func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *
 
 func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "Reasoning provider", "Choose the inference backend used by every reasoning process", "applies after the sidecar restarts"},
-		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = activeProvider", "syncReasoningProviderSelection", "credential missing", "restart AkuSidecar to activate", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B"},
+		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "Reasoning provider", "Choose the inference backend used by every reasoning process", "the switch applies when no update is running"},
+		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = activeProvider", "syncReasoningProviderSelection", "credential missing", "the selected reasoning provider is now active", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B"},
 		"web/styles.css": {".reasoning-executable-row[hidden]", ".reasoning-provider-status.is-warning"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
