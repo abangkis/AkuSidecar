@@ -19,6 +19,13 @@ import (
 
 const probeTimeout = 5 * time.Second
 
+// gracefulTerminateTimeout bounds how long terminate() waits for the app
+// shell to exit on its own after a close request before the hard kill
+// becomes the fallback. A clean Chromium exit writes exit_type=Normal, which
+// keeps the next launch from restoring the previous session as if after a
+// crash.
+const gracefulTerminateTimeout = 8 * time.Second
+
 var versionPattern = regexp.MustCompile(`\d+\.\d+\.\d+(\.\d+)?`)
 
 type Candidate struct {
@@ -110,7 +117,11 @@ func (w *Window) Terminate() {
 	if w == nil {
 		return
 	}
-	w.owner.terminate()
+	var root *os.Process
+	if w.command != nil {
+		root = w.command.Process
+	}
+	w.owner.terminate(root)
 }
 
 func (w *Window) release() {
@@ -241,7 +252,7 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 	}
 	icon, err := applyWindowIcon(command.Process.Pid, options.IconPath, options.UserDataDir, options.Identity)
 	if err != nil {
-		owner.terminate()
+		owner.terminate(command.Process)
 		_ = command.Wait()
 		owner.close()
 		return nil, err

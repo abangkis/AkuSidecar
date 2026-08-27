@@ -164,6 +164,9 @@ func main() {
 	}
 	var shell *appshell.Window
 	if options.AppShell {
+		if resetErr := resetAppProfileIfPending(state, browserProfilePath(options, cfg), logger); resetErr != nil {
+			logger.Printf("staged app profile reset failed; keeping the existing profile: %v", resetErr)
+		}
 		shell = launchAppShell(logger, options, cfg, address.String())
 	}
 	signals := make(chan os.Signal, 1)
@@ -333,6 +336,29 @@ func browserProfilePath(options config.Options, cfg config.Config) string {
 		return profilePath
 	}
 	return filepath.Join(cfg.Root, "runtime", "app-profile")
+}
+
+// resetAppProfileIfPending applies the isolated-browser-profile wipe staged by
+// a full reset. Chromium must not be running for this to be safe, so it runs
+// before the app shell launches; the marker is consumed only after a
+// successful removal so a failed wipe is retried on the next start.
+func resetAppProfileIfPending(state *store.Store, profilePath string, logger *log.Logger) error {
+	ctx := context.Background()
+	pending, err := state.PendingAppProfileReset(ctx)
+	if err != nil {
+		return fmt.Errorf("read staged profile reset: %w", err)
+	}
+	if !pending {
+		return nil
+	}
+	if err := os.RemoveAll(profilePath); err != nil {
+		return fmt.Errorf("remove staged browser profile %s: %w", profilePath, err)
+	}
+	if err := state.ConsumePendingAppProfileReset(ctx); err != nil {
+		return fmt.Errorf("clear staged profile reset marker: %w", err)
+	}
+	logger.Printf("staged app profile reset applied path=%s", profilePath)
+	return nil
 }
 
 func fatal(logger *log.Logger, err error) {

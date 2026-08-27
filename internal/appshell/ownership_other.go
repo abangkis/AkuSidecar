@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 func executableName() string {
@@ -58,10 +59,31 @@ func (o *processOwnership) attach(command *exec.Cmd) error {
 	return nil
 }
 
-func (o *processOwnership) terminate() {
-	if o.pid > 0 {
-		_ = syscall.Kill(-o.pid, syscall.SIGKILL)
+// terminate mirrors the Windows contract: request a normal exit first and
+// keep the hard kill as the bounded fallback so owned trees never leak.
+func (o *processOwnership) terminate(root *os.Process) {
+	if o.pid <= 0 {
+		return
 	}
+	_ = syscall.Kill(-o.pid, syscall.SIGTERM)
+	if rootExited(root, gracefulTerminateTimeout) {
+		return
+	}
+	_ = syscall.Kill(-o.pid, syscall.SIGKILL)
+}
+
+func rootExited(root *os.Process, timeout time.Duration) bool {
+	if root == nil {
+		return true
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(root.Pid, syscall.Signal(0)); err != nil {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
 }
 
 func (o processOwnership) close() {}

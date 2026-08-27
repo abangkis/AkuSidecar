@@ -1768,6 +1768,13 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('last_full_reset',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
 		return FullResetResult{}, err
 	}
+	// The isolated browser profile cannot be deleted while Chromium is
+	// running, so the reset is staged and consumed by the next app-shell
+	// launch. Pairing it with the revoked source grants keeps "start from
+	// zero" honest across both state stores.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('pending_app_profile_reset',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, now); err != nil {
+		return FullResetResult{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return FullResetResult{}, err
 	}
@@ -1783,6 +1790,28 @@ func (s *Store) requireIdle(ctx context.Context) error {
 		return errors.New("reset is unavailable while an update is running")
 	}
 	return nil
+}
+
+// PendingAppProfileReset reports whether a full reset staged an
+// isolated-browser-profile wipe.
+func (s *Store) PendingAppProfileReset(ctx context.Context) (bool, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='pending_app_profile_reset'`).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ConsumePendingAppProfileReset clears the staged browser-profile reset
+// marker. Callers apply the wipe before consuming so a failed removal is
+// retried on the next start.
+func (s *Store) ConsumePendingAppProfileReset(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM meta WHERE key='pending_app_profile_reset'`)
+	return err
 }
 
 func (s *Store) createVerifiedBackup(ctx context.Context) (string, error) {

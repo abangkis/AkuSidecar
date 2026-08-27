@@ -1727,6 +1727,36 @@ function skipOnboardingProvider() {
   void completeOnboarding(sources || [], true);
 }
 
+const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
+
+// revokeSourceAccessViaBridge asks the extension to drop every optional
+// source host permission and unregister its capture scripts before a full
+// reset persists. Best-effort: the reset proceeds when the relay cannot
+// answer, and the staged profile wipe covers the remaining surface on the
+// next launch.
+function revokeSourceAccessViaBridge() {
+  return new Promise((resolve) => {
+    const requestId = `revoke-${Date.now()}`;
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("message", listener);
+      window.clearTimeout(timer);
+      resolve(value);
+    };
+    const listener = (event) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (data?.type === "AKU_BROWSER_REVOKE_SOURCE_ACCESS_RESULT" && data.requestId === requestId) return finish(true);
+      if (data?.type === "AKU_BROWSER_REVOKE_SOURCE_ACCESS_FAILED" && data.requestId === requestId) return finish(false);
+    };
+    const timer = window.setTimeout(() => finish(false), REVOKE_SOURCE_ACCESS_TIMEOUT_MS);
+    window.addEventListener("message", listener);
+    window.postMessage({ type: "AKU_BROWSER_REVOKE_SOURCE_ACCESS", requestId }, window.location.origin);
+  });
+}
+
 function openResetDialog(operation) {
   if (state.session) {
     $("#runtime-settings-status").textContent = operation === "ai-hide"
@@ -1748,7 +1778,7 @@ function openResetDialog(operation) {
   $("#reset-confirmation-impact").textContent = aiHide
     ? "AI detection can be wrong. Only direct evidence and Deep-confirmed strong signals will be hidden. Posts remain stored locally and can be restored by disabling Hide."
     : full
-      ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings. The live Bridge identity remains valid."
+      ? "AkuBrowser will first create and verify a local SQLite backup, then erase Timeline, runs, learning data, onboarding, and local settings, revoke source access, and reset the isolated browser profile on next launch. The live Bridge identity remains valid."
       : "AkuBrowser will erase calibration, More/Less feedback, and the fitted preference model. Timeline, source setup, and runtime settings remain.";
   $("#reset-confirmation-phrase").textContent = aiHide ? AI_HIDE_CONFIRMATION_PHRASE : full ? "RESET AKUBROWSER" : "RESET LEARNING";
   $("#reset-confirmation-submit").textContent = aiHide ? "Activate Hide" : full ? "Confirm full reset" : "Confirm reset";
@@ -1829,9 +1859,13 @@ async function submitReset() {
       return;
     }
     const path = operation === "full" ? "/api/operations/full-reset" : "/api/operations/reset-learning";
+    if (operation === "full") {
+      $("#reset-confirmation-status").textContent = "Revoking source access…";
+      await revokeSourceAccessViaBridge();
+    }
     const response = await api(path, { method: "POST", body: { confirmation: phrase } });
     if (operation === "full") {
-      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Returning to onboarding…`;
+      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Source access revoked. The isolated browser profile resets on next launch. Returning to onboarding…`;
       state.settingsUnloadBypass = true;
       window.setTimeout(() => window.location.reload(), 350);
       return;

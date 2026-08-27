@@ -781,6 +781,13 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if reset["operation"] != "full_reset" || reset["onboarding"].(map[string]any)["status"] != "not_started" {
 		t.Fatalf("reset=%+v", reset)
 	}
+	staged, err := state.PendingAppProfileReset(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !staged {
+		t.Fatal("full reset must stage the isolated browser profile wipe")
+	}
 }
 
 func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {

@@ -208,8 +208,8 @@ already running, use the explicit rebuild/restart command from AkuSidecar:
 ```
 
 The command first builds `aku-sidecar.next.exe`, refuses to interrupt an active
-session or other runtime-owned background work, waits up to 15 minutes by
-default for update readiness, asks AkuSupervisor to stop the registered
+session or other runtime-owned background work, waits up to 15 minutes by default
+for update readiness, asks AkuSupervisor to stop the registered
 service, atomically promotes the candidate to `aku-sidecar.exe`, and asks
 AkuSupervisor to start it again.
 Every development build writes an adjacent
@@ -221,6 +221,33 @@ version.
 Use `build-dev.ps1` alone when only a stopped binary needs to be built.
 Restarting the service directly through AkuSupervisor never rebuilds embedded
 UI or Go source and must not be used while an update is active.
+
+#### Clean E2E runbook
+
+Application state lives in two independent stores, and "empty database" alone
+is not "start from zero". Optional source host permissions, registered content
+scripts, and source logins persist in the isolated browser profile at
+`runtime\app-profile` and intentionally survive a database swap. A genuinely
+clean acceptance run is:
+
+1. `aku-supervisor stop akusidecar2 --actor user --reason "clean run"`;
+2. move `runtime\aku-sidecar.db` (plus `-wal`/`-shm` and
+   `calibration-results.jsonl` if present) to a backup directory;
+3. delete `runtime\app-profile`;
+4. `aku-supervisor start akusidecar2 --actor user --reason "clean run"`.
+
+The in-app **Full reset** performs the equivalent from the product surface: it
+backs up and clears the database, revokes source access through the Bridge,
+and stages a browser-profile wipe that the next Sidecar start applies before
+launching Chromium (`pending_app_profile_reset` in `meta`).
+
+#### App-shell shutdown and session restore
+
+The app shell is asked to close normally first (top-level windows of processes
+inside the ownership Job Object receive `WM_CLOSE`); the Job Object kill
+remains only as a bounded fallback. A clean Chromium exit records
+`exit_type: Normal`, so the next launch does not restore the previous
+session's tabs as crash recovery.
 
 For an isolated direct development run, derive the exact origin from the same
 registry rather than copying an ID into another file:
