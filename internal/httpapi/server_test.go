@@ -177,6 +177,7 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"<aside id=\"onboarding-provider-setup\"",
 			"onboarding-provider-panel-label",
 			"onboarding-provider-recheck",
+			"onboarding-provider-check-status",
 			"onboarding-provider-secret",
 			"Save key",
 			"secure credential store",
@@ -195,13 +196,19 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"CODEX APP CONNECTION",
 			"LOCAL MODEL SETUP",
 			"ollama pull nemotron-3.5-lightning",
-			"ollama pull qwen3.8-27b",
+			"ollama pull qwen3.8:27b",
+			"/api/reasoning/providers/readiness",
+			"providerReadinessCheckedAt",
+			"Ready",
+			"Unavailable",
 		},
 		"web/styles.css": {
 			".provider-selection-dialog",
 			".provider-selection-dialog.has-provider-context .provider-selection-workspace",
 			"grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr)",
 			".onboarding-provider-option",
+			"max-height: min(calc(100dvh - 40px), 900px)",
+			"@media (max-height: 820px)",
 		},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
@@ -441,8 +448,8 @@ func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *
 
 func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "Reasoning provider", "Choose the inference backend used by every reasoning process", "the switch applies when no update is running"},
-		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = activeProvider", "syncReasoningProviderSelection", "credential missing", "the selected reasoning provider is now active", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B"},
+		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "reasoning-provider-readiness-refresh", "Reasoning provider", "Choose the inference backend used by every reasoning process", "the switch applies when no update is running"},
+		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = selected", "syncReasoningProviderSelection", "credential missing", "the selected reasoning provider is now active", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B", "availabilityRequired"},
 		"web/styles.css": {".reasoning-executable-row[hidden]", ".reasoning-provider-status.is-warning"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)

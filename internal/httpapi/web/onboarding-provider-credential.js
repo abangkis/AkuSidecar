@@ -3,5 +3,9 @@ export function providerRequiresSecureCredential(provider) {
 }
 
 export function providerCanActivate(provider) {
-  return Boolean(provider) && provider.configured !== false && !providerRequiresSecureCredential(provider);
+  if (!provider || provider.configured === false || providerRequiresSecureCredential(provider)) return false;
+  if (provider.availabilityRequired) {
+    return provider.availabilityChecked === true && provider.available === true;
+  }
+  return true;
 }

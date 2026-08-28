@@ -18,7 +18,7 @@ import (
 func geminiTestProvider(name string) config.ProviderConfig {
 	return config.ProviderConfig{
 		Endpoint:      "https://generativelanguage.googleapis.com/v1",
-		CredentialRef: "gemini.primary",
+		CredentialRef: "gemini.test",
 		TimeoutMS:     30000,
 		Planning:      config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", MaxOutputTokens: 512},
 		Evaluation:    config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", MaxOutputTokens: 8192, Assurance: "provider_strict"},
@@ -57,7 +57,7 @@ func swapTestEngine(t *testing.T) (*Engine, *store.Store) {
 	if err := os.MkdirAll(credentialDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	credentialBody := `{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.primary":"test-key"}}}`
+	credentialBody := `{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.test":"test-key"}}}`
 	if err := os.WriteFile(filepath.Join(credentialDir, "credentials.local.json"), []byte(credentialBody), 0o600); err != nil {
 		t.Fatal(err)
 	}

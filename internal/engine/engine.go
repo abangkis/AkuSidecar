@@ -116,6 +116,9 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 		if !provider.Configured {
 			return domain.Settings{}, fmt.Errorf("%s is not configured: set %s before selecting it", provider.Label, provider.CredentialName)
 		}
+		if err := e.ensureReasoningProviderReady(ctx, target); err != nil {
+			return domain.Settings{}, err
+		}
 	}
 	var executableRuntime reasoning.ExecutableRuntime
 	var resolvedExecutable string
@@ -213,6 +216,25 @@ func (e *Engine) Onboarding(ctx context.Context) (domain.OnboardingState, error)
 func (e *Engine) CompleteOnboarding(ctx context.Context, sources []domain.Source) (domain.OnboardingState, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	current, err := e.store.Onboarding(ctx)
+	if err != nil {
+		return domain.OnboardingState{}, err
+	}
+	if current.Status == "not_started" && len(e.config.Reasoning.Providers) > 0 {
+		settings, err := e.store.GetSettings(ctx)
+		if err != nil {
+			return domain.OnboardingState{}, err
+		}
+		providerName := strings.TrimSpace(settings.ReasoningProvider)
+		if providerName == "" {
+			providerName = strings.TrimSpace(e.config.Reasoning.ActiveProvider)
+		}
+		if providerName != "" {
+			if err := e.ensureReasoningProviderReady(ctx, providerName); err != nil {
+				return domain.OnboardingState{}, err
+			}
+		}
+	}
 	return e.store.CompleteOnboarding(ctx, sources)
 }
 

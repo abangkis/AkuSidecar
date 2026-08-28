@@ -1,8 +1,10 @@
 # Provider selection during onboarding
 
-Status: implementation extended, 27 August 2026. Stages 1–4 are complete and
-Stage 5 adds product-owned secure credential entry. Live E2E acceptance
-(dialog → save Gemini key → selection → first update on Gemini) remains open.
+Status: implementation extended, 27 August 2026. Stages 1–5 are complete.
+Live E2E acceptance passed for dialog → save Gemini key → selection → first
+update on Gemini. Stage 6 implements cost-free local-runtime readiness gates
+for Codex App Server and Ollama; live acceptance for those two paths remains
+open.
 
 ## Problem
 
@@ -81,7 +83,7 @@ New `internal/engine/provider_swap.go`:
 
 - `index.html`: new `<dialog id="onboarding-provider-dialog">` beside the
   reset-confirmation dialog: provider cards container, description/privacy
-  slot, setup-instructions slot, Re-check availability button, primary
+  slot, setup-instructions slot, Check availability button, primary
   confirm, and a "Keep Codex App Server" secondary action.
 - `app.js`:
   - `saveOnboarding` first-completion path: after `onboardingReadinessGate`
@@ -131,6 +133,22 @@ New `internal/engine/provider_swap.go`:
   the secret, clears the request field, and never echoes the value.
 - Future macOS Keychain/Linux Secret Service implementations can satisfy the
   same public contract without changing provider or UI code.
+
+### Stage 6 — Local provider readiness gate
+
+- Provider summaries distinguish credential/configuration readiness from
+  runtime availability. Codex and Ollama require an explicit availability
+  check before activation; remote API providers are never called by this
+  check.
+- `GET /api/reasoning/providers/readiness` performs cost-free local probes:
+  Codex validates the App Server executable and completes its non-generative
+  initialize handshake (no thread, turn, or token), while Ollama reads
+  `/api/tags` and confirms the selected SDK-owned provider model is installed.
+- Provider switching and first-run onboarding enforce the same readiness rule
+  server-side, so a direct API call cannot bypass the disabled UI action.
+- The dialog shows typed unavailable/model-missing guidance and keeps a local
+  re-check action beside the selected provider. Settings reflects the same
+  result without treating `configured` as proof that a local process is alive.
 
 ## Non-goals
 

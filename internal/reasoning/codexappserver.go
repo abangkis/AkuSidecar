@@ -131,6 +131,19 @@ func newCodexTransport(cfg codexappserver.Config, poolSize int) (interface {
 
 func (c *CodexAppServer) Name() string { return "codex-app-server" }
 
+// Preflight starts the App Server and completes only its initialize handshake.
+// The SDK deliberately creates no thread or turn, so this validates the local
+// runtime and signed-in session without consuming inference tokens.
+func (c *CodexAppServer) Preflight(ctx context.Context) error {
+	c.lifeMu.RLock()
+	defer c.lifeMu.RUnlock()
+	preflight, ok := c.adapter.(interface{ Preflight(context.Context) error })
+	if !ok {
+		return errors.New("Codex App Server adapter does not expose preflight")
+	}
+	return preflight.Preflight(ctx)
+}
+
 func (c *CodexAppServer) ExecutablePath() string {
 	c.exeMu.Lock()
 	defer c.exeMu.Unlock()

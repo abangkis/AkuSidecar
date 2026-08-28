@@ -129,19 +129,19 @@ func TestGeminiProviderReadinessAndSelectionRequireCredential(t *testing.T) {
 	}}}
 	runtime := New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
 	providers := runtime.ReasoningProviders()
-	if len(providers) != 2 || providers[1].Name != "gemini-flash-lite" || providers[1].Configured || providers[1].ConfigurationStatus != "missing_credential" || providers[1].CredentialName != "gemini.primary" {
+	if len(providers) != 2 || providers[1].Name != "gemini-flash-lite" || providers[1].Configured || providers[1].ConfigurationStatus != "missing_credential" || providers[1].CredentialName != "gemini.test" {
 		t.Fatalf("providers=%+v", providers)
 	}
 
 	settings.ReasoningProvider = "gemini-flash-lite"
-	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil || !strings.Contains(err.Error(), "gemini.primary") {
+	if _, err := runtime.SaveSettings(context.Background(), settings); err == nil || !strings.Contains(err.Error(), "gemini.test") {
 		t.Fatalf("missing credential selection error=%v", err)
 	}
 	credentialPath := filepath.Join(root, "runtime", "config", "credentials.local.json")
 	if err := os.MkdirAll(filepath.Dir(credentialPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(credentialPath, []byte(`{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.primary":"test-only-gemini-key"}}}`), 0o600); err != nil {
+	if err := os.WriteFile(credentialPath, []byte(`{"schemaVersion":1,"credentialStore":{"type":"inline","values":{"gemini.test":"test-only-gemini-key"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	providers = runtime.ReasoningProviders()

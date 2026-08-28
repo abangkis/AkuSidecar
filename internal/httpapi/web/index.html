@@ -51,7 +51,10 @@
                 </div>
                 <small>The key is saved in your operating system's secure credential store and is never displayed again.</small>
               </div>
-              <button id="onboarding-provider-recheck" class="secondary-button" type="button">Refresh credential status</button>
+              <div class="provider-check-row">
+                <button id="onboarding-provider-recheck" class="secondary-button" type="button">Refresh credential status</button>
+                <small id="onboarding-provider-check-status" class="provider-check-status" role="status" aria-live="polite">Not checked</small>
+              </div>
             </aside>
           </div>
           <p id="onboarding-provider-error" class="settings-detail" role="alert"></p>
@@ -435,7 +438,10 @@
               <label class="settings-row" for="reasoning-provider">
                 <span class="settings-copy"><strong>Reasoning provider</strong><small>Choose the inference backend used by every reasoning process. The switch applies when no update is running; no restart is needed.</small></span>
                 <span class="reasoning-provider-control">
-                  <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select" aria-describedby="reasoning-provider-status"></select>
+                  <span class="reasoning-provider-select-row">
+                    <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select" aria-describedby="reasoning-provider-status"></select>
+                    <button id="reasoning-provider-readiness-refresh" class="secondary-button" type="button">Check availability</button>
+                  </span>
                   <small id="reasoning-provider-status" class="reasoning-provider-status" aria-live="polite"></small>
                 </span>
               </label>

@@ -611,6 +611,8 @@ h3 { letter-spacing: -0.02em; }
 .reasoning-executable-row { grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr); }
 .reasoning-executable-row[hidden] { display: none; }
 .reasoning-provider-control { display: grid; gap: 6px; }
+.reasoning-provider-select-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.reasoning-provider-select-row button { padding: 9px 10px; white-space: nowrap; }
 .reasoning-provider-status { color: var(--quiet); line-height: 1.4; }
 .reasoning-provider-status.is-warning { color: var(--amber); }
 .reasoning-executable-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; }
@@ -667,7 +669,7 @@ h3 { letter-spacing: -0.02em; }
 .reset-confirmation-label + input { width: 100%; margin-top: 9px; padding: 11px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel-raised); color: var(--text); }
 .reset-confirmation-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 
-.provider-selection-dialog { width: min(94vw, 680px); max-width: none; max-height: min(90dvh, 820px); padding: 0; overflow: auto; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--panel); color: var(--text); }
+.provider-selection-dialog { width: min(94vw, 680px); max-width: none; max-height: min(calc(100dvh - 40px), 900px); padding: 0; overflow: auto; scrollbar-gutter: stable; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--panel); color: var(--text); }
 .provider-selection-dialog.has-provider-context { width: min(96vw, 1020px); }
 .provider-selection-dialog::backdrop { background: rgba(0,0,0,0.78); backdrop-filter: blur(4px); }
 .provider-selection-card { padding: 26px; }
@@ -693,7 +695,26 @@ h3 { letter-spacing: -0.02em; }
 .onboarding-provider-credential-control { display: flex; width: 100%; gap: 8px; }
 .onboarding-provider-credential-control input { min-width: 0; flex: 1; padding: 10px 11px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel-raised); color: var(--text); }
 .onboarding-provider-credential-control button { flex: 0 0 auto; }
+.provider-check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; width: 100%; }
+.provider-check-status { display: inline-flex; align-items: center; min-height: 2.15rem; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--muted); font-size: 0.76rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
+.provider-check-status::before { width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; content: ""; opacity: 0.72; }
+.provider-check-status.is-ready { border-color: color-mix(in srgb, var(--accent) 38%, var(--line-strong)); color: var(--accent); }
+.provider-check-status.is-unavailable { border-color: color-mix(in srgb, var(--amber) 42%, var(--line-strong)); color: var(--amber); }
+.provider-check-status.is-checking::before { animation: provider-check-pulse 900ms ease-in-out infinite alternate; }
+.provider-check-status.is-error { color: var(--danger); }
+@keyframes provider-check-pulse { to { opacity: 0.25; transform: scale(0.72); } }
+@media (prefers-reduced-motion: reduce) { .provider-check-status.is-checking::before { animation: none; } }
 .provider-selection-card .onboarding-actions { justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .provider-selection-card { padding: 20px 22px 18px; }
+  .provider-selection-card h2 { margin-bottom: 7px; }
+  .provider-selection-card .onboarding-explanation { margin-bottom: 12px; line-height: 1.42; }
+  .onboarding-provider-options { gap: 7px; margin-top: 8px; }
+  .onboarding-provider-card { gap: 3px; padding: 10px 13px; }
+  .onboarding-provider-setup { gap: 9px; margin-top: 8px; padding: 14px; }
+  .provider-selection-card .onboarding-actions { margin-top: 12px; padding-top: 12px; }
+}
 
 @media (max-width: 760px) {
   .shell { width: min(100% - 24px, 680px); padding-top: 28px; }

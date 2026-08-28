@@ -271,12 +271,17 @@ func (r *ReasoningConfig) Select(providerName string) error {
 }
 
 type ProviderSummary struct {
-	Name                string `json:"name"`
-	Label               string `json:"label"`
-	RuntimeKind         string `json:"runtimeKind"`
-	Configured          bool   `json:"configured"`
-	ConfigurationStatus string `json:"configurationStatus"`
-	CredentialName      string `json:"credentialName,omitempty"`
+	Name                 string `json:"name"`
+	Label                string `json:"label"`
+	RuntimeKind          string `json:"runtimeKind"`
+	Configured           bool   `json:"configured"`
+	ConfigurationStatus  string `json:"configurationStatus"`
+	CredentialName       string `json:"credentialName,omitempty"`
+	AvailabilityRequired bool   `json:"availabilityRequired"`
+	AvailabilityChecked  bool   `json:"availabilityChecked"`
+	Available            bool   `json:"available"`
+	AvailabilityStatus   string `json:"availabilityStatus"`
+	AvailabilityMessage  string `json:"availabilityMessage,omitempty"`
 }
 
 // IsOllamaProvider reports whether the provider name routes to the Ollama
@@ -340,9 +345,12 @@ func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 		if r.Providers[name].HideFromSettings {
 			continue
 		}
+		runtimeKind := ProviderRuntimeKind(name)
+		requiresAvailability := runtimeKind == "executable" || runtimeKind == "local_endpoint"
 		summaries = append(summaries, ProviderSummary{
-			Name: name, Label: ProviderLabel(name), RuntimeKind: ProviderRuntimeKind(name),
+			Name: name, Label: ProviderLabel(name), RuntimeKind: runtimeKind,
 			Configured: true, ConfigurationStatus: "ready",
+			AvailabilityRequired: requiresAvailability, AvailabilityStatus: "unchecked",
 		})
 	}
 	return summaries

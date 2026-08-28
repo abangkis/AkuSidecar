@@ -26,6 +26,29 @@ test("securely stored credential permits provider activation", () => {
   assert.equal(providerCanActivate(provider), true);
 });
 
-test("credential-free local provider remains selectable", () => {
-  assert.equal(providerCanActivate({ configured: true, configurationStatus: "ready" }), true);
+test("local provider waits for a successful availability probe", () => {
+  assert.equal(providerCanActivate({
+    configured: true,
+    configurationStatus: "ready",
+    availabilityRequired: true,
+    availabilityChecked: false,
+    available: false,
+  }), false);
+  assert.equal(providerCanActivate({
+    configured: true,
+    configurationStatus: "ready",
+    availabilityRequired: true,
+    availabilityChecked: true,
+    available: true,
+  }), true);
+});
+
+test("failed local readiness blocks provider activation", () => {
+  assert.equal(providerCanActivate({
+    configured: true,
+    configurationStatus: "ready",
+    availabilityRequired: true,
+    availabilityChecked: true,
+    available: false,
+  }), false);
 });

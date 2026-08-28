@@ -55,3 +55,9 @@ type ExecutableRuntime interface {
 	DiscoverExecutable(context.Context, string) (string, error)
 	UseExecutable(string)
 }
+
+// ReadinessProvider performs a provider-owned, non-generative preflight. It
+// must not start a model turn or consume inference tokens.
+type ReadinessProvider interface {
+	Preflight(context.Context) error
+}

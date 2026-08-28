@@ -358,6 +358,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
+	case r.Method == http.MethodGet && p == "/api/reasoning/providers/readiness":
+		providers, err := s.engine.ReasoningProviderReadiness(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"reasoningProviders": providers})
 	case r.Method == http.MethodPut && p == "/api/reasoning/credentials":
 		var body struct {
 			Provider string `json:"provider"`
