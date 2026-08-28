@@ -1,10 +1,10 @@
 # Provider selection during onboarding
 
-Status: implementation extended, 27 August 2026. Stages 1–5 are complete.
-Live E2E acceptance passed for dialog → save Gemini key → selection → first
-update on Gemini. Stage 6 implements cost-free local-runtime readiness gates
-for Codex App Server and Ollama; live acceptance for those two paths remains
-open.
+Status: complete, 28 August 2026. Stages 1–6 are complete. Live E2E acceptance
+passed for dialog → save Gemini key → selection → first update on Gemini, and
+for the local-provider readiness flow covering Codex App Server plus unavailable
+Ollama runtimes. The dialog exposes the checked result beside its action and
+fits the accepted development window without requiring incidental scrolling.
 
 ## Problem
 

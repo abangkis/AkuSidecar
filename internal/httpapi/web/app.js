@@ -228,6 +228,10 @@ $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
 $("#source-access-setup-button").addEventListener("click", openSourceAccessSettings);
+$("#timeline-calibration-continue").addEventListener("click", () => {
+  const calibration = state.bootstrap?.calibration?.active;
+  if (calibration) showCalibration(calibration);
+});
 $("#timeline-prepared-button").addEventListener("click", () => revealPreparedBatch("latest"));
 $("#done-button").addEventListener("click", handleFinishLineAction);
 $("#retry-button").addEventListener("click", () => {
@@ -509,6 +513,9 @@ function setView(view) {
   $("#session-view-button").classList.toggle("selected", timeline);
   $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
+  $("#session-view-button").setAttribute("aria-current", timeline ? "page" : "false");
+  $("#inbox-view-button").setAttribute("aria-current", inbox ? "page" : "false");
+  $("#settings-view-button").setAttribute("aria-current", settings ? "page" : "false");
   ({ timeline: $("#timeline-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
   if (inbox) {
     syncInboxSubView();
@@ -2562,13 +2569,38 @@ function syncRunButtons() {
   $("#timeline-runner-button").title = canRetryBootstrap ? "Retry restoring the Timeline and active check." : reason;
   $("#timeline-prepared-button").title = preparedReason;
   $("#done-button").title = prepared > 0 ? preparedReason : reason;
-  const showGuidance = Boolean(reason) && !Boolean(state.session && !terminalStatuses.has(state.session.status));
+  const showCalibrationProgress = renderTimelineCalibrationProgress();
+  const showGuidance = Boolean(reason) && !showCalibrationProgress && !Boolean(state.session && !terminalStatuses.has(state.session.status));
   $("#timeline-runner-status").textContent = reason;
   $("#timeline-runner-guidance").classList.toggle("hidden", !showGuidance);
   $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || !sourceAccessNeedsAttention());
   for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled;
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
+}
+
+function renderTimelineCalibrationProgress() {
+  const calibration = state.bootstrap?.calibration?.active;
+  const panel = $("#timeline-calibration-progress");
+  if (!calibration) {
+    panel.classList.add("hidden");
+    return false;
+  }
+  const samples = Array.isArray(calibration.samples) ? calibration.samples : [];
+  const total = samples.length;
+  const resolved = samples.filter((sample) => sample.label || sample.issueCode).length;
+  const remaining = Math.max(0, total - resolved);
+  const progress = total ? Math.round((resolved / total) * 100) : 0;
+  const track = $("#timeline-calibration-progress-track");
+  panel.classList.remove("hidden");
+  panel.classList.toggle("is-preparing", total === 0);
+  $("#timeline-calibration-progress-label").textContent = total
+    ? `${resolved} of ${total} reviewed · ${remaining} left`
+    : "Preparing calibration samples";
+  $("#timeline-calibration-progress-bar").style.width = `${progress}%`;
+  track.setAttribute("aria-valuenow", String(progress));
+  track.setAttribute("aria-valuetext", total ? `${resolved} of ${total} calibration samples reviewed` : "Preparing calibration samples");
+  return true;
 }
 
 function preparedBatchDisabledReason(prepared) {

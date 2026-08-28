@@ -23,7 +23,7 @@
             <span id="reasoning-status" class="status-pill status-neutral">Reasoning config</span>
           </div>
           <nav class="view-switch hidden" aria-label="AkuBrowser view">
-            <button id="session-view-button" class="view-button selected" type="button">Timeline</button>
+            <button id="session-view-button" class="view-button selected" type="button" aria-current="page">Timeline</button>
             <button id="inbox-view-button" class="view-button" type="button">Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
@@ -128,8 +128,9 @@
       <section id="settings-panel" class="settings-panel hidden" aria-labelledby="settings-heading">
           <div class="section-heading">
             <div>
-              <p class="step-label">RUNTIME CONFIGURATION</p>
-              <h2 id="settings-heading" tabindex="-1">Browser behavior</h2>
+              <p class="step-label">AKUBROWSER SETTINGS</p>
+              <h2 id="settings-heading" tabindex="-1">Settings</h2>
+              <p class="review-guidance">Personalization, source access, automation, and local reasoning controls for this device.</p>
             </div>
             <div class="settings-heading-actions">
               <span id="settings-dirty-indicator" class="settings-dirty-indicator hidden" role="status">Unsaved changes</span>
@@ -524,11 +525,11 @@
         <div id="inbox-ledger-view">
           <div class="section-heading">
             <div>
-              <p class="step-label">BOUNDED RUN LEDGER</p>
+              <p class="step-label">CHECK HISTORY</p>
               <h2 id="inbox-heading" tabindex="-1">Update Inbox</h2>
               <p id="inbox-meta" class="review-guidance">Loading recent checks...</p>
             </div>
-            <button id="inbox-refresh-button" class="text-button" type="button">Refresh</button>
+            <button id="inbox-refresh-button" class="secondary-button" type="button">Refresh</button>
           </div>
           <div id="inbox-sessions" class="inbox-sessions"></div>
         </div>
@@ -570,6 +571,16 @@
               <small id="timeline-runner-status" class="timeline-runner-status" role="status"></small>
               <button id="source-access-setup-button" class="text-button hidden" type="button">Review source access</button>
             </div>
+            <section id="timeline-calibration-progress" class="timeline-calibration-progress hidden" aria-live="polite">
+              <div class="timeline-calibration-progress-heading">
+                <span>
+                  <strong>Calibration in progress</strong>
+                  <small id="timeline-calibration-progress-label">Preparing calibration samples</small>
+                </span>
+                <button id="timeline-calibration-continue" class="text-button" type="button">Continue</button>
+              </div>
+              <div id="timeline-calibration-progress-track" class="timeline-calibration-progress-track" role="progressbar" aria-label="Calibration completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="timeline-calibration-progress-bar"></span></div>
+            </section>
           </div>
         </div>
 

@@ -446,6 +446,69 @@ func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *
 	}
 }
 
+func TestEmbeddedTimelineCalibrationBlockerExposesProgress(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {
+			"timeline-calibration-progress",
+			"timeline-calibration-progress-label",
+			"Calibration completion",
+			"timeline-calibration-continue",
+		},
+		"web/app.js": {
+			"function renderTimelineCalibrationProgress",
+			"calibration samples reviewed",
+			"showCalibrationProgress",
+		},
+		"web/styles.css": {
+			".timeline-calibration-progress",
+			".timeline-calibration-progress-track",
+			"calibration-preparing",
+		},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing Timeline calibration progress contract %q", asset, marker)
+			}
+		}
+	}
+}
+
+func TestEmbeddedPrimaryViewsShareClearNavigationAndHeaders(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {
+			"aria-current=\"page\"",
+			"AKUBROWSER SETTINGS",
+			"Personalization, source access, automation, and local reasoning controls",
+			"CHECK HISTORY",
+		},
+		"web/app.js": {
+			"setAttribute(\"aria-current\", timeline ? \"page\" : \"false\")",
+			"setAttribute(\"aria-current\", inbox ? \"page\" : \"false\")",
+			"setAttribute(\"aria-current\", settings ? \"page\" : \"false\")",
+		},
+		"web/styles.css": {
+			".timeline-heading-row, .section-heading",
+			".settings-panel > .section-heading",
+			".inbox-session:hover",
+			".settings-row:focus-within",
+		},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing primary-view redesign contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "reasoning-provider-readiness-refresh", "Reasoning provider", "Choose the inference backend used by every reasoning process", "the switch applies when no update is running"},
