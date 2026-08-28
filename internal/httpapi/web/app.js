@@ -8,7 +8,10 @@ import {
   timelineCarouselDotIndexes,
 } from "./timeline-media-carousel.js";
 import { classifyPostFreshness } from "./post-freshness.js";
-import { sourcePermissionReadyForOnboarding } from "./onboarding-source-readiness.js";
+import {
+  sourceAccessReadinessState,
+  sourcePermissionReadyForOnboarding,
+} from "./onboarding-source-readiness.js";
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
 
@@ -688,13 +691,17 @@ function renderOnboardingSourceReadiness() {
     const button = document.querySelector(`[data-onboarding-source-open="${descriptor.id}"]`);
     if (!accessStatus || !sessionStatus || !button) continue;
     const access = accessBySource.get(descriptor.id);
+    const accessState = sourceAccessReadinessState(access);
     accessStatus.className = "source-readiness-status";
-    if (!access) {
+    if (accessState === "checking") {
       accessStatus.textContent = "Access: checking";
-    } else if (!access.permissionGranted) {
+    } else if (accessState === "permission_not_granted") {
       accessStatus.textContent = "Access: permission required";
       accessStatus.classList.add("source-readiness-warning");
-    } else if (!access.scriptRegistered || !access.ready) {
+    } else if (accessState === "registration_missing") {
+      accessStatus.textContent = "Access: capture registration missing";
+      accessStatus.classList.add("source-readiness-warning");
+    } else if (accessState === "capture_not_ready") {
       accessStatus.textContent = "Access: capture not ready";
       accessStatus.classList.add("source-readiness-warning");
     } else {
@@ -1140,13 +1147,17 @@ function renderSourceSettingsValues(settings) {
     if (status) {
       const current = readiness.get(source.id);
       status.className = "source-readiness-status";
-      if (!current) {
+      const accessState = sourceAccessReadinessState(current);
+      if (accessState === "checking") {
         status.textContent = "Checking access";
-      } else if (current.ready) {
+      } else if (accessState === "ready") {
         status.textContent = "Ready";
         status.classList.add("source-readiness-ready");
-      } else if (!current.permissionGranted) {
+      } else if (accessState === "permission_not_granted") {
         status.textContent = "Chrome permission needed";
+        status.classList.add("source-readiness-warning");
+      } else if (accessState === "registration_missing") {
+        status.textContent = "Capture registration missing";
         status.classList.add("source-readiness-warning");
       } else {
         status.textContent = "Capture script not ready";

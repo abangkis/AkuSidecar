@@ -21,7 +21,7 @@ import (
 
 const (
 	ExpectedBridgeVersion       = "0.8.0"
-	ExpectedBridgeRevision      = "source-adapters-v106"
+	ExpectedBridgeRevision      = "source-adapters-v107"
 	ExpectedBridgeID            = "aku-bridge-chrome-mv3-v0"
 	BridgeProtocolMajor         = 2
 	BridgeProtocolMinor         = 0
@@ -532,7 +532,7 @@ func (e *Engine) grantedActiveSources(settings domain.Settings) []domain.Source 
 }
 
 func noGrantedActiveSourceError() error {
-	return errors.New("No active source is ready in AkuBridge. Open AkuBridge setup, enable at least one active source, accept Chrome's permission prompt, and let its capture script register.")
+	return errors.New("No active source is ready in AkuBridge. Open AkuBrowser Settings, use each source's Grant access or Sign in action, accept Chrome's permission prompt, and let its capture script register.")
 }
 
 func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {

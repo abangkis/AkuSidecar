@@ -55,7 +55,7 @@ func TestSessionProgressProjectionKeepsOnlyPollingState(t *testing.T) {
 func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"onboarding-source-options", "Grant access or Sign in action below", "source-settings-group"},
-		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourcePermissionReadyForOnboarding", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness", "function configureNativePostLink", "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_NATIVE_POST_OPENED"},
+		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourcePermissionReadyForOnboarding", "sourceAccessReadinessState", "Access: permission required", "Access: capture registration missing", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness", "function configureNativePostLink", "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_NATIVE_POST_OPENED"},
 		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".onboarding-source-access", "white-space: nowrap"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
@@ -75,6 +75,49 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 		}
 		if strings.Contains(string(contents), "AKU_BROWSER_OPEN_BRIDGE_SETUP") || strings.Contains(string(contents), "Open AkuBrowser setup") {
 			t.Fatalf("%s must not expose the legacy global Bridge setup action", asset)
+		}
+	}
+}
+
+func TestEmbeddedFailureStateMatrixStaysSidecarOwned(t *testing.T) {
+	appPayload, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPayload, err := embeddedAssets.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		"sourceAccessReadinessState",
+		"permission_not_granted",
+		"registration_missing",
+		"Access: capture registration missing",
+		"login_required: \"Session: sign-in required\"",
+		"availabilityMessage",
+		"Unavailable",
+		"function renderBrowserConnection",
+		"Waiting for AkuBridge to reconnect",
+		"AkuSidecar offline",
+		"RUN STOPPED",
+		"failure-manual-bundle-download",
+		"Start-AkuBrowser.ps1",
+	} {
+		if !strings.Contains(string(appPayload), marker) && !strings.Contains(string(indexPayload), marker) {
+			t.Fatalf("Sidecar failure-state contract is missing %q", marker)
+		}
+	}
+	for _, asset := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "web/app.js", data: appPayload},
+		{name: "web/index.html", data: indexPayload},
+	} {
+		for _, forbidden := range []string{"setup.html", "AKU_BROWSER_OPEN_BRIDGE_SETUP", "AKU_BRIDGE_OPEN_SETUP"} {
+			if strings.Contains(string(asset.data), forbidden) {
+				t.Fatalf("%s must not invoke legacy setup surface %q", asset.name, forbidden)
+			}
 		}
 	}
 }
