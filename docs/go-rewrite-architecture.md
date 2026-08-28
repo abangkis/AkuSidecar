@@ -1,6 +1,6 @@
 # AkuSidecar Go boundary
 
-Status: active runtime contract for `0.8.0`.
+Status: active runtime contract for `0.9.0`.
 
 AkuSidecar was rewritten in place as one Go application. Tag `pre-refactor-2026-07-15` is the complete Node rollback boundary. The active line has no Node runtime, npm toolchain, historical migration chain, or API compatibility layer.
 
