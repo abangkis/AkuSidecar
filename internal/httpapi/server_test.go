@@ -554,9 +554,9 @@ func TestEmbeddedPrimaryViewsShareClearNavigationAndHeaders(t *testing.T) {
 
 func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "reasoning-provider-readiness-refresh", "Reasoning provider", "Choose the inference backend used by every reasoning process", "the switch applies when no update is running"},
-		"web/app.js":     {"state.bootstrap?.reasoningProviders", "reasoningProviderSelect.value = selected", "syncReasoningProviderSelection", "credential missing", "the selected reasoning provider is now active", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B", "availabilityRequired"},
-		"web/styles.css": {".reasoning-executable-row[hidden]", ".reasoning-provider-status.is-warning"},
+		"web/index.html": {"reasoning-provider", "name=\"reasoningProvider\"", "reasoning-provider-status", "Reasoning provider", "Choose the inference backend used by every reasoning process", "the switch applies when no update is running"},
+		"web/app.js":     {"state.bootstrap?.reasoningProviders", "function beginSettingsProviderSelection", "function openSettingsProviderDialog", "function activateSettingsReasoningProvider", "AkuBrowser checks any stored credential before asking for a new key", "credential missing", "Provider changed", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B", "availabilityRequired"},
+		"web/styles.css": {".reasoning-executable-row[hidden]", ".provider-selection-dialog.provider-switch-mode", ".reasoning-provider-control { display: grid; justify-self: end; width: min(100%, 260px); min-width: 0;"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -567,6 +567,13 @@ func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 				t.Fatalf("%s is missing reasoning provider selection contract %q", asset, marker)
 			}
 		}
+	}
+	indexContents, err := embeddedAssets.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(indexContents), "reasoning-provider-readiness-refresh") {
+		t.Fatal("Settings must not expose provider readiness controls until the user chooses a different provider")
 	}
 }
 

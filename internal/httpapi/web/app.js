@@ -93,6 +93,7 @@ const state = {
   providerReadinessInFlight: false,
   providerReadinessCheckedAt: "",
   providerReadinessCheckError: "",
+  providerDialogMode: "onboarding",
   passiveMediaEnrichmentTimer: null,
   passiveMediaEnrichmentActive: false,
   passiveMediaEvidenceAttempts: new Map(),
@@ -270,8 +271,7 @@ settingsForm.addEventListener("click", (event) => {
   if (event.target.closest("button")) queueMicrotask(refreshSettingsDirtyState);
 });
 $("#detect-reasoning-executable").addEventListener("click", detectReasoningExecutable);
-$("#reasoning-provider-readiness-refresh").addEventListener("click", refreshReasoningProviderReadiness);
-$("#reasoning-provider").addEventListener("change", syncReasoningProviderSelection);
+$("#reasoning-provider").addEventListener("change", beginSettingsProviderSelection);
 $("#bounded-load-profile").addEventListener("change", () => syncLoadProfileSettings(true));
 $("#semantic-event-mode").addEventListener("change", syncSemanticEventSettings);
 $("#ai-detection-enabled").addEventListener("change", syncAIDetectionSettings);
@@ -309,6 +309,7 @@ $("#onboarding-provider-save-credential").addEventListener("click", saveOnboardi
 $("#onboarding-provider-dialog").addEventListener("close", () => {
   $("#onboarding-provider-secret").value = "";
   state.pendingOnboardingSources = null;
+  renderReasoningProviderControl(state.bootstrap?.settings);
 });
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
 $("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
@@ -1051,32 +1052,32 @@ function openAutoUpdateSettings() {
 }
 
 function syncReasoningProviderSelection() {
-  const selected = $("#reasoning-provider")?.value;
-  const provider = (state.bootstrap?.reasoningProviders || []).find((entry) => entry.name === selected);
+  const active = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider;
+  const provider = (state.bootstrap?.reasoningProviders || []).find((entry) => entry.name === active);
   const status = $("#reasoning-provider-status");
   const executableRow = document.querySelector(".reasoning-executable-row");
   if (executableRow) executableRow.hidden = provider?.runtimeKind !== "executable";
   if (!status) return;
-  status.classList.toggle("is-warning", provider?.configured === false || (provider?.availabilityRequired && provider?.availabilityChecked && !provider?.available));
+  status.classList.remove("is-warning");
   if (!provider) {
-    status.textContent = "No selectable reasoning provider is available.";
-  } else if (provider.configurationStatus === "development_fallback") {
-    status.textContent = `${provider.credentialName} is available only through the legacy development fallback. Save it through AkuBrowser before relying on this provider.`;
-  } else if (provider.configured === false) {
-    status.textContent = `${provider.credentialName || "Required credential"} is not available in AkuBrowser's secure credential store. Configure it before selecting this provider.`;
-  } else if (provider.availabilityRequired && !provider.availabilityChecked) {
-    status.textContent = "Local runtime availability has not been checked yet. AkuBrowser will verify it before activation.";
-  } else if (provider.availabilityRequired && !provider.available) {
-    status.textContent = provider.availabilityMessage || "The required local runtime is unavailable.";
-  } else if (provider.availabilityRequired) {
-    status.textContent = provider.availabilityMessage || "The required local runtime is available.";
-  } else if (provider.runtimeKind === "remote_api") {
-    status.textContent = `${provider.credentialName} is available in AkuBrowser's secure credential store. The secret value is never shown.`;
-  } else if (provider.runtimeKind === "executable") {
-    status.textContent = "Uses the validated local executable shown below.";
+    status.textContent = "No active reasoning provider is available.";
   } else {
-    status.textContent = "Provider configuration is ready.";
+    status.textContent = `Active · ${provider.label}`;
   }
+}
+
+function beginSettingsProviderSelection() {
+  const select = $("#reasoning-provider");
+  const target = select?.value;
+  const active = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider;
+  if (select && active) select.value = active;
+  syncReasoningProviderSelection();
+  if (!target || target === active) return;
+  if (state.session) {
+    $("#runtime-settings-status").textContent = "Reasoning provider cannot be changed while an update is running.";
+    return;
+  }
+  openSettingsProviderDialog(target);
 }
 
 function handleAutoUpdateTimelineAction() {
@@ -1360,11 +1361,10 @@ async function persistSettings(settings, confirmationPhrase = "") {
   }
 }
 
-function renderReasoningProviderControl(settings, preserveSelection = false) {
+function renderReasoningProviderControl(settings) {
   const reasoningProviders = state.bootstrap?.reasoningProviders || [];
   const reasoningProviderSelect = $("#reasoning-provider");
   if (!reasoningProviderSelect) return;
-  const previousSelection = preserveSelection ? reasoningProviderSelect.value : "";
   const activeProvider = settings?.reasoningProvider || state.bootstrap?.provider;
   reasoningProviderSelect.replaceChildren(...reasoningProviders.map((entry) => {
     const option = document.createElement("option");
@@ -1376,11 +1376,9 @@ function renderReasoningProviderControl(settings, preserveSelection = false) {
     } else {
       option.textContent = entry.label;
     }
-    option.disabled = entry.configured === false || (entry.availabilityRequired && entry.availabilityChecked && !entry.available);
     return option;
   }));
-  const selected = previousSelection || activeProvider;
-  if (reasoningProviders.some((entry) => entry.name === selected)) reasoningProviderSelect.value = selected;
+  if (reasoningProviders.some((entry) => entry.name === activeProvider)) reasoningProviderSelect.value = activeProvider;
   syncReasoningProviderSelection();
 }
 
@@ -1709,7 +1707,7 @@ function renderOnboardingProviderOptions() {
     } else if (entry.configured === false) {
       status.textContent = "Setup required — " + (entry.credentialName || "credential") + " missing";
     } else if (entry.availabilityRequired && !entry.availabilityChecked) {
-      status.textContent = "Checking availability…";
+      status.textContent = "Availability check required";
     } else if (entry.availabilityRequired && !entry.available) {
       status.textContent = `Unavailable — ${entry.availabilityMessage || "local runtime not ready"}`;
     } else if (entry.availabilityRequired) {
@@ -1729,7 +1727,9 @@ function renderOnboardingProviderOptions() {
   const requiresSecureCredential = providerRequiresSecureCredential(choice);
   const showCredentialSetup = Boolean(choice) && (choice.configured === false || requiresSecureCredential);
   const copy = ONBOARDING_PROVIDER_COPY[choice?.name] || {};
+  const settingsMode = state.providerDialogMode === "settings";
   $("#onboarding-provider-dialog").classList.toggle("has-provider-context", Boolean(choice));
+  $("#onboarding-provider-dialog").classList.toggle("provider-switch-mode", settingsMode);
   if (choice) {
     const panelLabel = showCredentialSetup
       ? "SECURE KEY SETUP"
@@ -1758,9 +1758,13 @@ function renderOnboardingProviderOptions() {
     credentialSetup.classList.add("hidden");
     $("#onboarding-provider-secret").value = "";
   }
-  $("#onboarding-provider-confirm").disabled = !providerCanActivate(choice);
+  const confirm = $("#onboarding-provider-confirm");
+  confirm.textContent = settingsMode && choice ? `Switch to ${choice.label}` : "Use selected provider";
+  confirm.disabled = !providerCanActivate(choice);
   const codex = onboardingProviderEntries().find((entry) => entry.name === "codex-app-server");
-  $("#onboarding-provider-skip").disabled = !providerCanActivate(codex);
+  const skip = $("#onboarding-provider-skip");
+  skip.textContent = settingsMode ? "Cancel" : "Keep Codex App Server";
+  skip.disabled = settingsMode ? false : !providerCanActivate(codex);
 }
 
 function renderBrowserConnection() {
@@ -1806,7 +1810,6 @@ async function refreshReasoningProviderReadiness() {
     syncProviderReadinessFeedback();
     return false;
   }
-  const settingsButton = $("#reasoning-provider-readiness-refresh");
   state.providerReadinessInFlight = true;
   state.providerReadinessCheckError = "";
   syncProviderReadinessFeedback();
@@ -1814,7 +1817,7 @@ async function refreshReasoningProviderReadiness() {
     const response = await api("/api/reasoning/providers/readiness");
     state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
     state.providerReadinessCheckedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    renderReasoningProviderControl(state.bootstrap.settings, true);
+    renderReasoningProviderControl(state.bootstrap.settings);
     if ($("#onboarding-provider-dialog")?.open) renderOnboardingProviderOptions();
     return true;
   } catch (error) {
@@ -1827,7 +1830,6 @@ async function refreshReasoningProviderReadiness() {
     return false;
   } finally {
     state.providerReadinessInFlight = false;
-    settingsButton.disabled = false;
     syncProviderReadinessFeedback();
   }
 }
@@ -1835,11 +1837,6 @@ async function refreshReasoningProviderReadiness() {
 function syncProviderReadinessFeedback(choice) {
   const selected = choice || onboardingProviderEntries().find((entry) => entry.name === state.onboardingProviderChoice);
   const onboardingButton = $("#onboarding-provider-recheck");
-  const settingsButton = $("#reasoning-provider-readiness-refresh");
-  if (settingsButton) {
-    settingsButton.disabled = state.providerReadinessInFlight;
-    settingsButton.textContent = state.providerReadinessInFlight ? "Checking…" : "Check availability";
-  }
   if (onboardingButton) {
     onboardingButton.disabled = state.providerReadinessInFlight;
     onboardingButton.textContent = state.providerReadinessInFlight
@@ -1877,9 +1874,27 @@ function syncProviderReadinessFeedback(choice) {
 }
 
 function openOnboardingProviderDialog() {
+  state.providerDialogMode = "onboarding";
   state.onboardingProviderChoice = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider || "codex-app-server";
+  $("#onboarding-provider-title").textContent = "Choose how AkuBrowser reasons";
+  $("#onboarding-provider-explanation").textContent = "Updates, semantic comparisons, and AI review all use this backend. You can change it later in Settings; the switch applies when no update is running.";
   renderOnboardingProviderOptions();
   $("#onboarding-provider-error").textContent = "";
+  $("#onboarding-provider-dialog").showModal();
+  $("#onboarding-provider-title").focus();
+  void recheckOnboardingProviders();
+}
+
+function openSettingsProviderDialog(target) {
+  const choice = onboardingProviderEntries().find((entry) => entry.name === target);
+  if (!choice) return;
+  state.providerDialogMode = "settings";
+  state.onboardingProviderChoice = target;
+  state.providerReadinessCheckError = "";
+  $("#onboarding-provider-title").textContent = `Switch to ${choice.label}`;
+  $("#onboarding-provider-explanation").textContent = "Your current provider remains active until this setup is complete. AkuBrowser checks any stored credential before asking for a new key.";
+  $("#onboarding-provider-error").textContent = "";
+  renderOnboardingProviderOptions();
   $("#onboarding-provider-dialog").showModal();
   $("#onboarding-provider-title").focus();
   void recheckOnboardingProviders();
@@ -1923,6 +1938,10 @@ async function confirmOnboardingProvider() {
   const choice = state.onboardingProviderChoice;
   if (!choice) return;
   const sources = state.pendingOnboardingSources;
+  if (state.providerDialogMode === "settings") {
+    await activateSettingsReasoningProvider(choice);
+    return;
+  }
   if (!sources) {
     $("#onboarding-provider-dialog").close();
     return;
@@ -1947,7 +1966,37 @@ async function confirmOnboardingProvider() {
   await completeOnboarding(sources, true);
 }
 
+async function activateSettingsReasoningProvider(choice) {
+  const button = $("#onboarding-provider-confirm");
+  const provider = onboardingProviderEntries().find((entry) => entry.name === choice);
+  if (!providerCanActivate(provider)) return;
+  button.disabled = true;
+  $("#onboarding-provider-error").textContent = "Activating the selected provider…";
+  try {
+    const response = await api("/api/settings", {
+      method: "PUT",
+      body: { settings: { ...state.bootstrap.settings, reasoningProvider: choice } },
+    });
+    applyReasoningRuntimeResponse(state.bootstrap, response);
+    renderActiveReasoningProvider();
+    renderReasoningProviderControl(response.settings);
+    renderReasoningProcesses(response.reasoningProcesses ?? []);
+    const baseline = JSON.parse(settingsDirty.getBaselineKey() || "{}");
+    settingsDirty.setBaseline({ ...baseline, reasoningProvider: choice });
+    settingsDirty.refresh();
+    $("#runtime-settings-status").textContent = `Provider changed · ${provider.label} is now active.`;
+    $("#onboarding-provider-dialog").close();
+  } catch (error) {
+    $("#onboarding-provider-error").textContent = error.message;
+    button.disabled = false;
+  }
+}
+
 function skipOnboardingProvider() {
+  if (state.providerDialogMode === "settings") {
+    $("#onboarding-provider-dialog").close();
+    return;
+  }
   const sources = state.pendingOnboardingSources;
   const codex = onboardingProviderEntries().find((entry) => entry.name === "codex-app-server");
   if (!providerCanActivate(codex)) {

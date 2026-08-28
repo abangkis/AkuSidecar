@@ -36,7 +36,7 @@
         <div class="provider-selection-card">
           <p class="step-label">REASONING PROVIDER</p>
           <h2 id="onboarding-provider-title" tabindex="-1">Choose how AkuBrowser reasons</h2>
-          <p class="onboarding-explanation">Updates, semantic comparisons, and AI review all use this backend. You can change it later in Settings; the switch applies when no update is running.</p>
+          <p id="onboarding-provider-explanation" class="onboarding-explanation">Updates, semantic comparisons, and AI review all use this backend. You can change it later in Settings; the switch applies when no update is running.</p>
           <div class="provider-selection-workspace">
             <div id="onboarding-provider-options" class="onboarding-provider-options" role="radiogroup" aria-label="Reasoning provider"></div>
             <aside id="onboarding-provider-setup" class="onboarding-provider-setup hidden" aria-label="Selected provider details">
@@ -439,10 +439,7 @@
               <label class="settings-row" for="reasoning-provider">
                 <span class="settings-copy"><strong>Reasoning provider</strong><small>Choose the inference backend used by every reasoning process. The switch applies when no update is running; no restart is needed.</small></span>
                 <span class="reasoning-provider-control">
-                  <span class="reasoning-provider-select-row">
-                    <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select" aria-describedby="reasoning-provider-status"></select>
-                    <button id="reasoning-provider-readiness-refresh" class="secondary-button" type="button">Check availability</button>
-                  </span>
+                  <select id="reasoning-provider" name="reasoningProvider" class="reasoning-profile-select" aria-describedby="reasoning-provider-status"></select>
                   <small id="reasoning-provider-status" class="reasoning-provider-status" aria-live="polite"></small>
                 </span>
               </label>
