@@ -15,14 +15,27 @@ test("Library exposes a compact accessible filter disclosure", () => {
 });
 
 test("Library storage summary and Spring Cleaning remain read-only and review-only", () => {
+  assert.match(index, /id="library-tabs"[^>]+role="tablist"/);
+  assert.match(index, /id="library-saved-tab"[^>]+role="tab"[^>]+aria-selected="true"[^>]+aria-controls="library-saved-view"/);
+  assert.match(index, /id="library-cleaning-tab"[^>]+role="tab"[^>]+aria-selected="false"[^>]+aria-controls="library-cleaning-view"/);
+  assert.match(index, /id="library-saved-view"[^>]+role="tabpanel"/);
+  assert.match(index, /id="library-cleaning-view"[^>]+class="library-tabpanel hidden"[^>]+role="tabpanel"[^>]+[^>]*hidden/);
   assert.match(index, /id="library-storage-summary"[^>]+role="status"/);
   assert.match(index, /id="library-spring-cleaning-heading">Spring Cleaning<\/h3>/);
   assert.match(index, /Nothing is removed automatically/);
   assert.match(app, /buildLibraryStorageRequestPath\(\)/);
   assert.match(app, /async function loadLibraryStorage\(\)/);
+  assert.match(app, /function setLibraryTab\(tab, focus = false\)/);
+  assert.match(app, /function handleLibraryTabKeydown\(event\)/);
+  assert.match(app, /function maybeLoadLibraryStorage\(\)/);
+  const libraryLoaderStart = app.indexOf("async function loadLibrary({ append = false } = {})");
+  const storageLoaderStart = app.indexOf("async function loadLibraryStorage()");
+  assert.ok(libraryLoaderStart >= 0 && storageLoaderStart > libraryLoaderStart);
+  assert.doesNotMatch(app.slice(libraryLoaderStart, storageLoaderStart), /loadLibraryStorage/);
   assert.match(app, /reclaimableBytes/);
   assert.match(app, /review_full_copy/);
   assert.match(app, /selectLibraryItem\(recommendation\.id/);
+  assert.match(app, /function reviewLibraryStorageRecommendation\(recommendation\)[\s\S]*setLibraryTab\(LIBRARY_TAB_SAVED\)[\s\S]*requestAnimationFrame/);
   assert.match(styles, /\.library-storage-breakdown \{[^}]*grid-template-columns/);
   assert.match(styles, /\.library-storage-recommendations \{[^}]*grid-template-columns/);
 });

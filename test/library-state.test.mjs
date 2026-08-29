@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   LIBRARY_MAX_QUERY,
+  LIBRARY_TAB_CLEANING,
+  LIBRARY_TAB_SAVED,
   LIBRARY_STORAGE_MAX_LIMIT,
   buildLibraryForgetPath,
   buildLibraryReleasePath,
@@ -18,6 +20,7 @@ import {
   libraryHasFullContent,
   mergeLibraryPage,
   normalizeLibraryStorageReport,
+  normalizeLibraryTab,
   normalizeLibraryFilters,
 } from "../internal/httpapi/web/library-state.js";
 
@@ -52,6 +55,12 @@ test("Library storage requests stay bounded and preserve an empty recommendation
   assert.equal(formatLibraryStorageBytes(0), "0 B");
   assert.equal(formatLibraryStorageBytes(1024), "1.00 KB");
   assert.equal(formatLibraryStorageBytes(-1), "Unknown");
+});
+
+test("Library opens saved memories first and accepts only the cleaning tab", () => {
+  assert.equal(normalizeLibraryTab(), LIBRARY_TAB_SAVED);
+  assert.equal(normalizeLibraryTab("unknown"), LIBRARY_TAB_SAVED);
+  assert.equal(normalizeLibraryTab(LIBRARY_TAB_CLEANING), LIBRARY_TAB_CLEANING);
 });
 
 test("Library page merging is append-idempotent and cursor-driven", () => {

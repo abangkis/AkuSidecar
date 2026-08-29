@@ -27,7 +27,10 @@ import {
   libraryReleaseConfirmation,
   libraryRemoveConfirmation,
   mergeLibraryPage,
+  LIBRARY_TAB_CLEANING,
+  LIBRARY_TAB_SAVED,
   normalizeLibraryStorageReport,
+  normalizeLibraryTab,
   normalizeLibraryFilters,
 } from "./library-state.js";
 import { buildTimelineKeepPath, timelineKeepConfirmation } from "./timeline-memory-state.js";
@@ -81,6 +84,7 @@ const state = {
   currentView: "timeline",
   library: {
     filters: normalizeLibraryFilters(),
+    activeTab: LIBRARY_TAB_SAVED,
     items: [],
     nextCursor: "",
     selectedId: "",
@@ -269,6 +273,11 @@ function recoverInvalidBridgeToken(code) {
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#library-view-button").addEventListener("click", () => setView("library"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
+$("#library-saved-tab").addEventListener("click", () => setLibraryTab(LIBRARY_TAB_SAVED));
+$("#library-cleaning-tab").addEventListener("click", () => setLibraryTab(LIBRARY_TAB_CLEANING));
+for (const tab of document.querySelectorAll("#library-tabs [role=\"tab\"]")) {
+  tab.addEventListener("keydown", handleLibraryTabKeydown);
+}
 $("#settings-view-button").addEventListener("click", () => {
   setView("settings");
   requestSourceSessionReadiness();
@@ -585,7 +594,11 @@ function setView(view) {
   $("#inbox-view-button").setAttribute("aria-current", inbox ? "page" : "false");
   $("#settings-view-button").setAttribute("aria-current", settings ? "page" : "false");
   ({ timeline: $("#timeline-heading"), library: $("#library-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
-  if (library) loadLibrary();
+  if (library) {
+    renderLibraryTabs();
+    loadLibrary();
+    maybeLoadLibraryStorage();
+  }
   if (inbox) {
     syncInboxSubView();
     if (state.inboxSubView === "usage") loadAggregateModelUsage();
@@ -596,6 +609,65 @@ function setView(view) {
 
 function onboardingRequiresSetup() {
   return state.bootstrap?.onboarding?.status === "not_started";
+}
+
+function setLibraryTab(tab, focus = false) {
+  state.library.activeTab = normalizeLibraryTab(tab);
+  renderLibraryTabs();
+  maybeLoadLibraryStorage();
+  if (focus) {
+    const activeTab = state.library.activeTab === LIBRARY_TAB_CLEANING
+      ? $("#library-cleaning-tab")
+      : $("#library-saved-tab");
+    activeTab?.focus();
+  }
+}
+
+function renderLibraryTabs() {
+  const activeTab = normalizeLibraryTab(state.library.activeTab);
+  state.library.activeTab = activeTab;
+  const cleaning = activeTab === LIBRARY_TAB_CLEANING;
+  const tabs = [
+    [$("#library-saved-tab"), !cleaning],
+    [$("#library-cleaning-tab"), cleaning],
+  ];
+  for (const [tab, selected] of tabs) {
+    if (!tab) continue;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    tab.classList.toggle("selected", selected);
+  }
+  const panels = [
+    [$("#library-saved-view"), !cleaning],
+    [$("#library-cleaning-view"), cleaning],
+  ];
+  for (const [panel, selected] of panels) {
+    if (!panel) continue;
+    panel.classList.toggle("hidden", !selected);
+    panel.hidden = !selected;
+  }
+}
+
+function maybeLoadLibraryStorage() {
+  if (state.currentView !== "library" || state.library.activeTab !== LIBRARY_TAB_CLEANING) return;
+  const storage = state.library.storage;
+  if (!storage.loading && !storage.usage) void loadLibraryStorage();
+}
+
+function handleLibraryTabKeydown(event) {
+  const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
+  if (!keys.includes(event.key)) return;
+  const tabs = [...document.querySelectorAll("#library-tabs [role=\"tab\"]")];
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0 || !tabs.length) return;
+  event.preventDefault();
+  const nextIndex = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? tabs.length - 1
+      : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  const next = tabs[nextIndex];
+  setLibraryTab(next.id === "library-cleaning-tab" ? LIBRARY_TAB_CLEANING : LIBRARY_TAB_SAVED, true);
 }
 
 function syncInboxSubView() {
@@ -701,11 +773,11 @@ function resetLibraryStorage() {
 
 function invalidateLibraryStorage() {
   resetLibraryStorage();
+  maybeLoadLibraryStorage();
 }
 
 function reloadLibraryStorage() {
   invalidateLibraryStorage();
-  void loadLibraryStorage();
 }
 
 function submitLibrarySearch(event) {
@@ -738,7 +810,6 @@ function loadMoreLibrary() {
 
 async function loadLibrary({ append = false } = {}) {
   if (append && (state.library.loading || !state.library.nextCursor)) return;
-  if (!append && !state.library.storage.loading && !state.library.storage.usage) void loadLibraryStorage();
   if (!append && state.library.loading) state.library.controller?.abort();
   const requestID = state.library.requestID + 1;
   state.library.requestID = requestID;
@@ -827,6 +898,7 @@ function libraryMutationErrorMessage(error, action) {
 }
 
 function renderLibrary() {
+  renderLibraryTabs();
   renderLibraryStorage();
   const results = $("#library-results");
   const loadMore = $("#library-load-more");
@@ -979,16 +1051,22 @@ function buildLibraryStorageRecommendation(recommendation) {
   review.className = "secondary-button library-storage-review";
   review.dataset.reviewAction = recommendation.reviewAction || "review_full_copy";
   review.textContent = "Review";
-  review.addEventListener("click", () => selectLibraryItem(recommendation.id, {
+  review.addEventListener("click", () => reviewLibraryStorageRecommendation(recommendation));
+  article.append(identity, detail, reason, review);
+  return article;
+}
+
+function reviewLibraryStorageRecommendation(recommendation) {
+  setLibraryTab(LIBRARY_TAB_SAVED);
+  selectLibraryItem(recommendation.id, {
     id: recommendation.id,
     source: recommendation.source,
     title: recommendation.title,
     author: recommendation.author,
     retentionTier: "full_copy",
     updatedAt: recommendation.updatedAt,
-  }));
-  article.append(identity, detail, reason, review);
-  return article;
+  });
+  window.requestAnimationFrame(() => $("#library-detail-heading")?.focus());
 }
 
 function libraryStateMessage(message, error = false) {

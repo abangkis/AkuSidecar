@@ -3,8 +3,14 @@ export const LIBRARY_MAX_LIMIT = 50;
 export const LIBRARY_MAX_QUERY = 200;
 export const LIBRARY_STORAGE_DEFAULT_LIMIT = 6;
 export const LIBRARY_STORAGE_MAX_LIMIT = 12;
+export const LIBRARY_TAB_SAVED = "saved";
+export const LIBRARY_TAB_CLEANING = "cleaning";
 
 const allowedTiers = new Set(["recall", "full_copy"]);
+
+export function normalizeLibraryTab(value) {
+  return value === LIBRARY_TAB_CLEANING ? LIBRARY_TAB_CLEANING : LIBRARY_TAB_SAVED;
+}
 
 export function normalizeLibraryFilters(input = {}) {
   const query = Array.from(String(input.query ?? "").trim()).slice(0, LIBRARY_MAX_QUERY).join("");
