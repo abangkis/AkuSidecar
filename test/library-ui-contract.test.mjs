@@ -22,6 +22,9 @@ test("Library storage summary and Spring Cleaning remain read-only and review-on
   assert.match(index, /id="library-saved-view"[^>]+role="tabpanel"/);
   assert.match(index, /id="library-cleaning-view"[^>]+class="library-tabpanel hidden"[^>]+role="tabpanel"[^>]+[^>]*hidden/);
   assert.match(index, /id="library-storage-summary"[^>]+role="status"/);
+  assert.match(index, /id="library-saved-pressure-heading">Saved backlog<\/h3>/);
+  assert.match(index, /id="library-saved-pressure-summary"[^>]+role="status"/);
+  assert.match(index, /id="library-saved-recommendations"[^>]+role="list"/);
   assert.match(index, /id="library-spring-cleaning-heading">Spring Cleaning<\/h3>/);
   assert.match(index, /Nothing is removed automatically/);
   assert.match(app, /buildLibraryStorageRequestPath\(\)/);
@@ -37,6 +40,12 @@ test("Library storage summary and Spring Cleaning remain read-only and review-on
   assert.match(app, /review_full_copy/);
   assert.match(app, /selectLibraryItem\(recommendation\.id/);
   assert.match(app, /function reviewLibraryStorageRecommendation\(recommendation\)[\s\S]*setLibraryTab\(LIBRARY_TAB_LIBRARY\)[\s\S]*requestAnimationFrame/);
+  assert.match(app, /function buildLibrarySavedPressure\(pressure\)/);
+  assert.match(app, /\["Local-copy Saved", formatLibraryStorageCount\(pressure\.localCopyItems\)\]/);
+  assert.match(app, /\["Source-dependent Saved", formatLibraryStorageCount\(pressure\.sourceDependentItems\)\]/);
+  assert.match(app, /function buildLibrarySavedRecommendation\(recommendation\)/);
+  assert.match(app, /function reviewSavedRecommendation\(recommendation\)[\s\S]*setLibraryTab\(LIBRARY_TAB_SAVED\)[\s\S]*requestAnimationFrame/);
+  assert.match(app, /review\.dataset\.reviewAction = recommendation\.reviewAction \|\| "review_saved"/);
   assert.match(styles, /\.library-storage-breakdown \{[^}]*grid-template-columns/);
   assert.match(styles, /\.library-storage-recommendations \{[^}]*grid-template-columns/);
 });

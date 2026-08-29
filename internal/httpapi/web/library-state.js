@@ -68,6 +68,8 @@ export function normalizeLibraryStorageReport(input = {}) {
   return {
     usage: input?.usage && typeof input.usage === "object" ? input.usage : null,
     recommendations: Array.isArray(input?.recommendations) ? input.recommendations : [],
+    savedPressure: input?.savedPressure && typeof input.savedPressure === "object" ? input.savedPressure : null,
+    savedRecommendations: Array.isArray(input?.savedRecommendations) ? input.savedRecommendations : [],
   };
 }
 

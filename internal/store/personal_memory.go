@@ -1208,6 +1208,10 @@ func (s *Store) MemoryStorageRecommendations(ctx context.Context, limit int) ([]
 		SELECT id,source,title,author,content_bytes,updated_at
 		FROM memory_items
 		WHERE lifecycle_state='active' AND retention_tier='full_copy' AND content_bytes > 0
+		  AND NOT EXISTS (
+			SELECT 1 FROM memory_retention_claims c
+			WHERE c.memory_item_id=memory_items.id AND c.claim_kind='saved' AND c.resolved_at IS NULL
+		  )
 		ORDER BY content_bytes DESC, updated_at DESC, id DESC
 		LIMIT ?`, limit)
 	if err != nil {
@@ -1234,6 +1238,70 @@ func (s *Store) MemoryStorageRecommendations(ctx context.Context, limit int) ([]
 	return recommendations, nil
 }
 
+// MemorySavedPressure returns only facts about active, current Saved
+// membership. It does not estimate pressure or derive a warning threshold.
+func (s *Store) MemorySavedPressure(ctx context.Context) (domain.MemorySavedPressure, error) {
+	var pressure domain.MemorySavedPressure
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+		  COUNT(*),
+		  COALESCE(SUM(CASE WHEN mi.retention_tier='full_copy' AND mi.content_bytes > 0 THEN 1 ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN mi.retention_tier='full_copy' AND mi.content_bytes > 0 THEN 0 ELSE 1 END),0),
+		  COALESCE(SUM(mi.content_bytes),0),
+		  COALESCE(MIN(c.claimed_at),'')
+		FROM memory_retention_claims c
+		JOIN memory_items mi ON mi.id=c.memory_item_id
+		WHERE c.claim_kind='saved' AND c.resolved_at IS NULL AND mi.lifecycle_state='active'
+	`).Scan(
+		&pressure.ActiveItems, &pressure.LocalCopyItems, &pressure.SourceDependentItems,
+		&pressure.ContentBytes, &pressure.OldestClaimedAt,
+	); err != nil {
+		return domain.MemorySavedPressure{}, fmt.Errorf("inspect Saved backlog: %w", err)
+	}
+	return pressure, nil
+}
+
+// MemorySavedRecommendations returns current Saved items in strict FIFO
+// order. The claim timestamp is the current claimed_at, not action history.
+func (s *Store) MemorySavedRecommendations(ctx context.Context, limit int) ([]domain.MemorySavedRecommendation, error) {
+	if limit == 0 {
+		limit = MemoryStorageRecommendationDefaultLimit
+	}
+	if limit < 1 || limit > MemoryStorageRecommendationMaxLimit {
+		return nil, ErrMemoryStorageRecommendationLimit
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT mi.id,mi.source,mi.title,mi.author,c.claimed_at,mi.retention_tier,mi.content_bytes
+		FROM memory_retention_claims c
+		JOIN memory_items mi ON mi.id=c.memory_item_id
+		WHERE c.claim_kind='saved' AND c.resolved_at IS NULL AND mi.lifecycle_state='active'
+		ORDER BY c.claimed_at ASC, mi.id ASC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("inspect Saved review recommendations: %w", err)
+	}
+	defer rows.Close()
+	recommendations := make([]domain.MemorySavedRecommendation, 0, limit)
+	for rows.Next() {
+		var recommendation domain.MemorySavedRecommendation
+		if err := rows.Scan(
+			&recommendation.ID, &recommendation.Source, &recommendation.Title,
+			&recommendation.Author, &recommendation.SavedAt, &recommendation.RetentionTier,
+			&recommendation.ContentBytes,
+		); err != nil {
+			return nil, fmt.Errorf("read Saved review recommendation: %w", err)
+		}
+		recommendation.SourceDependent = recommendation.RetentionTier != domain.MemoryTierFullCopy || recommendation.ContentBytes <= 0
+		recommendation.ReasonCode = "oldest_saved"
+		recommendation.ReviewAction = "review_saved"
+		recommendations = append(recommendations, recommendation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Saved review recommendations: %w", err)
+	}
+	return recommendations, nil
+}
+
 // MemoryStorageReport returns the usage estimate and recommendations from
 // the same local store, without mutation or provider access.
 func (s *Store) MemoryStorageReport(ctx context.Context, limit int) (domain.MemoryStorageReport, error) {
@@ -1245,7 +1313,18 @@ func (s *Store) MemoryStorageReport(ctx context.Context, limit int) (domain.Memo
 	if err != nil {
 		return domain.MemoryStorageReport{}, err
 	}
-	return domain.MemoryStorageReport{Usage: usage, Recommendations: recommendations}, nil
+	savedPressure, err := s.MemorySavedPressure(ctx)
+	if err != nil {
+		return domain.MemoryStorageReport{}, err
+	}
+	savedRecommendations, err := s.MemorySavedRecommendations(ctx, limit)
+	if err != nil {
+		return domain.MemoryStorageReport{}, err
+	}
+	return domain.MemoryStorageReport{
+		Usage: usage, Recommendations: recommendations,
+		SavedPressure: savedPressure, SavedRecommendations: savedRecommendations,
+	}, nil
 }
 
 func (s *Store) ListMemoryItems(ctx context.Context, includeTombstones bool, limit int) ([]domain.MemoryItem, error) {

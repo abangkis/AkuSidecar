@@ -52,12 +52,25 @@ test("Library query state is bounded and encoded without leaking cursor state", 
   assert.equal(libraryFilterKey(filters), libraryFilterKey({ ...filters }));
 });
 
-test("Library storage requests stay bounded and preserve an empty recommendation list", () => {
+test("Library storage requests stay bounded and preserve empty recommendation lists", () => {
   assert.equal(buildLibraryStorageRequestPath(), "/api/library/storage");
   assert.equal(buildLibraryStorageRequestPath(12), "/api/library/storage?limit=12");
   assert.equal(buildLibraryStorageRequestPath(999), `/api/library/storage?limit=${LIBRARY_STORAGE_MAX_LIMIT}`);
   const report = normalizeLibraryStorageReport({ usage: { logicalBytes: 2048 }, recommendations: null });
-  assert.deepEqual(report, { usage: { logicalBytes: 2048 }, recommendations: [] });
+  assert.deepEqual(report, {
+    usage: { logicalBytes: 2048 },
+    recommendations: [],
+    savedPressure: null,
+    savedRecommendations: [],
+  });
+  const populated = normalizeLibraryStorageReport({
+    usage: { logicalBytes: 2048 },
+    recommendations: [],
+    savedPressure: { activeItems: 2, localCopyItems: 1, sourceDependentItems: 1, contentBytes: 12 },
+    savedRecommendations: [{ id: "saved-1", reviewAction: "review_saved" }],
+  });
+  assert.deepEqual(populated.savedPressure, { activeItems: 2, localCopyItems: 1, sourceDependentItems: 1, contentBytes: 12 });
+  assert.deepEqual(populated.savedRecommendations, [{ id: "saved-1", reviewAction: "review_saved" }]);
   assert.equal(formatLibraryStorageBytes(0), "0 B");
   assert.equal(formatLibraryStorageBytes(1024), "1.00 KB");
   assert.equal(formatLibraryStorageBytes(-1), "Unknown");

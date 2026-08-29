@@ -217,11 +217,39 @@ type MemoryStorageRecommendation struct {
 	ReviewAction     string `json:"reviewAction"`
 }
 
+// MemorySavedPressure is a read-only snapshot of current Saved membership.
+// Every value is computed from active rows and current, unresolved claims;
+// there is intentionally no derived score, threshold, or capacity status.
+type MemorySavedPressure struct {
+	ActiveItems          int    `json:"activeItems"`
+	LocalCopyItems       int    `json:"localCopyItems"`
+	SourceDependentItems int    `json:"sourceDependentItems"`
+	ContentBytes         int64  `json:"contentBytes"`
+	OldestClaimedAt      string `json:"oldestClaimedAt"`
+}
+
+// MemorySavedRecommendation is a bounded, read-only FIFO review suggestion
+// for one current Saved item. It carries no text, provenance, or audit data.
+type MemorySavedRecommendation struct {
+	ID              string     `json:"id"`
+	Source          Source     `json:"source"`
+	Title           string     `json:"title,omitempty"`
+	Author          string     `json:"author,omitempty"`
+	SavedAt         string     `json:"savedAt"`
+	RetentionTier   MemoryTier `json:"retentionTier"`
+	ContentBytes    int64      `json:"contentBytes"`
+	SourceDependent bool       `json:"sourceDependent"`
+	ReasonCode      string     `json:"reasonCode"`
+	ReviewAction    string     `json:"reviewAction"`
+}
+
 // MemoryStorageReport combines the logical usage estimate with bounded,
 // provider-free review suggestions for the Library storage surface.
 type MemoryStorageReport struct {
-	Usage           MemoryStorageUsage            `json:"usage"`
-	Recommendations []MemoryStorageRecommendation `json:"recommendations"`
+	Usage                MemoryStorageUsage            `json:"usage"`
+	Recommendations      []MemoryStorageRecommendation `json:"recommendations"`
+	SavedPressure        MemorySavedPressure           `json:"savedPressure"`
+	SavedRecommendations []MemorySavedRecommendation   `json:"savedRecommendations"`
 }
 
 // MemoryStorage is kept as a descriptive alias for callers that prefer a

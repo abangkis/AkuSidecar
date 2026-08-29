@@ -103,6 +103,8 @@ const state = {
     storage: {
       usage: null,
       recommendations: [],
+      savedPressure: null,
+      savedRecommendations: [],
       loading: false,
       error: null,
       requestID: 0,
@@ -791,6 +793,8 @@ function resetLibraryStorage() {
   storage.error = null;
   storage.usage = null;
   storage.recommendations = [];
+  storage.savedPressure = null;
+  storage.savedRecommendations = [];
 }
 
 function invalidateLibraryStorage() {
@@ -885,6 +889,8 @@ async function loadLibraryStorage() {
     const report = normalizeLibraryStorageReport(response);
     storage.usage = report.usage;
     storage.recommendations = report.recommendations;
+    storage.savedPressure = report.savedPressure;
+    storage.savedRecommendations = report.savedRecommendations;
   } catch (error) {
     if (requestID !== storage.requestID || error?.name === "AbortError") return;
     storage.error = error;
@@ -980,9 +986,13 @@ function renderLibraryStorage() {
   const summary = $("#library-storage-summary");
   const recommendations = $("#library-storage-recommendations");
   if (!summary || !recommendations) return;
+  const savedSummary = $("#library-saved-pressure-summary");
+  const savedRecommendations = $("#library-saved-recommendations");
   const storage = state.library.storage;
   summary.replaceChildren();
   recommendations.replaceChildren();
+  savedSummary?.replaceChildren();
+  savedRecommendations?.replaceChildren();
   if (storage.loading && !storage.usage) {
     summary.append(libraryStateMessage("Loading local storage summary…"));
   } else if (storage.error && !storage.usage) {
@@ -1016,6 +1026,49 @@ function renderLibraryStorage() {
   } else {
     recommendations.append(...storage.recommendations.map(buildLibraryStorageRecommendation));
   }
+  if (savedSummary && savedRecommendations) {
+    if (storage.loading && !storage.savedPressure) {
+      savedSummary.append(libraryStateMessage("Loading Saved backlog snapshot…"));
+    } else if (storage.error && !storage.savedPressure) {
+      savedSummary.append(libraryStateMessage("Saved backlog snapshot is unavailable while storage summary is offline.", true));
+    } else if (storage.savedPressure) {
+      savedSummary.append(buildLibrarySavedPressure(storage.savedPressure));
+    } else {
+      savedSummary.append(libraryStateMessage("Saved backlog snapshot is not available yet."));
+    }
+    if (!storage.savedRecommendations.length) {
+      const empty = document.createElement("p");
+      empty.className = "library-storage-empty";
+      empty.textContent = storage.savedPressure
+        ? "No active Saved items need review."
+        : "Saved review recommendations will appear when the backlog snapshot loads.";
+      savedRecommendations.append(empty);
+    } else {
+      savedRecommendations.append(...storage.savedRecommendations.map(buildLibrarySavedRecommendation));
+    }
+  }
+}
+
+function buildLibrarySavedPressure(pressure) {
+  const fragment = document.createDocumentFragment();
+  const metrics = document.createElement("div");
+  metrics.className = "library-saved-pressure-breakdown";
+  for (const [label, value] of [
+    ["Saved items", formatLibraryStorageCount(pressure.activeItems)],
+    ["Local-copy Saved", formatLibraryStorageCount(pressure.localCopyItems)],
+    ["Source-dependent Saved", formatLibraryStorageCount(pressure.sourceDependentItems)],
+    ["Saved content", formatLibraryStorageBytes(pressure.contentBytes)],
+  ]) {
+    metrics.append(libraryStorageMetric(label, value));
+  }
+  const oldest = document.createElement("p");
+  oldest.className = "library-storage-counts";
+  const oldestAt = String(pressure.oldestClaimedAt ?? "").trim();
+  oldest.textContent = oldestAt
+    ? `Oldest Saved: ${formatDate(oldestAt) || oldestAt}`
+    : "Oldest Saved: none";
+  fragment.append(metrics, oldest);
+  return fragment;
 }
 
 function buildLibraryStorageUsage(usage) {
@@ -1098,6 +1151,49 @@ function reviewLibraryStorageRecommendation(recommendation) {
     author: recommendation.author,
     retentionTier: "full_copy",
     updatedAt: recommendation.updatedAt,
+  });
+  window.requestAnimationFrame(() => $("#library-detail-heading")?.focus());
+}
+
+function buildLibrarySavedRecommendation(recommendation) {
+  const article = document.createElement("article");
+  article.className = "library-saved-recommendation";
+  article.setAttribute("role", "listitem");
+  const identity = document.createElement("div");
+  identity.className = "library-storage-recommendation-identity";
+  const title = document.createElement("strong");
+  title.textContent = recommendation.title || "Untitled memory";
+  const source = document.createElement("span");
+  source.textContent = sourceLabel(recommendation.source);
+  identity.append(title, source);
+  const detail = document.createElement("p");
+  const savedAt = String(recommendation.savedAt ?? "").trim();
+  const tier = recommendation.sourceDependent ? "Source-dependent Saved" : "Local-copy Saved";
+  detail.textContent = `${tier} · Saved ${formatDate(savedAt) || savedAt || "unknown"} · ${formatLibraryStorageBytes(recommendation.contentBytes)} retained`;
+  const reason = document.createElement("p");
+  reason.className = "library-storage-recommendation-reason";
+  reason.textContent = "Oldest active Saved item. Review it in Saved.";
+  const review = document.createElement("button");
+  review.type = "button";
+  review.className = "secondary-button library-storage-review";
+  review.dataset.reviewAction = recommendation.reviewAction || "review_saved";
+  review.textContent = "Review";
+  review.addEventListener("click", () => reviewSavedRecommendation(recommendation));
+  article.append(identity, detail, reason, review);
+  return article;
+}
+
+function reviewSavedRecommendation(recommendation) {
+  setLibraryTab(LIBRARY_TAB_SAVED);
+  selectLibraryItem(recommendation.id, {
+    id: recommendation.id,
+    source: recommendation.source,
+    title: recommendation.title,
+    author: recommendation.author,
+    saved: true,
+    retentionTier: recommendation.retentionTier,
+    permanentKeep: false,
+    updatedAt: recommendation.savedAt,
   });
   window.requestAnimationFrame(() => $("#library-detail-heading")?.focus());
 }
