@@ -75,7 +75,10 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 			insideCooldown := parseErr == nil && !previousTime.Before(cutoff)
 			contentChanged := contentFingerprint != previous.contentFingerprint &&
 				legacyContinuityContentFingerprint(block) != previous.contentFingerprint
-			changed := contentChanged || contextFingerprint != previous.contextFingerprint || materialEngagementChange(previous.engagementScore, engagementScore)
+			// Engagement counters are retained for continuity telemetry, but their
+			// volatility alone must not turn an otherwise stable native post into a
+			// resurfaced change. Content and context remain the material signals.
+			changed := contentChanged || contextFingerprint != previous.contextFingerprint
 			switch {
 			case changed:
 				decision.Status = "resurfaced_changed"
@@ -366,18 +369,4 @@ func parseContinuityEngagementCount(value string) int64 {
 		return 0
 	}
 	return int64(math.Round(number * multiplier))
-}
-
-func materialEngagementChange(previous, current int64) bool {
-	delta := current - previous
-	if delta < 0 {
-		delta = -delta
-	}
-	if delta < 10 {
-		return false
-	}
-	if previous == 0 {
-		return current >= 10
-	}
-	return float64(delta)/float64(previous) >= 0.25
 }
