@@ -24,6 +24,7 @@
           </div>
           <nav class="view-switch hidden" aria-label="AkuBrowser view">
             <button id="session-view-button" class="view-button selected" type="button" aria-current="page">Timeline</button>
+            <button id="library-view-button" class="view-button" type="button" aria-current="false">Library</button>
             <button id="inbox-view-button" class="view-button" type="button">Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
@@ -549,6 +550,52 @@
             </div>
           </div>
           <div id="model-usage-total"></div>
+        </div>
+      </section>
+
+      <section id="library-panel" class="library-panel hidden" aria-labelledby="library-heading">
+        <div class="section-heading library-heading">
+          <div>
+            <p class="step-label">PERSONAL MEMORY LIBRARY</p>
+            <h2 id="library-heading" tabindex="-1">Your local recall history</h2>
+            <p id="library-meta" class="review-guidance">Search memories kept on this device. Library reads never call a provider.</p>
+          </div>
+          <button id="library-refresh-button" class="secondary-button" type="button">Refresh</button>
+        </div>
+
+        <form id="library-search-form" class="library-search-form" role="search" aria-labelledby="library-search-label">
+          <label id="library-search-label" class="library-query-field" for="library-query">
+            <span>Search local memories</span>
+            <input id="library-query" type="search" maxlength="200" autocomplete="off" spellcheck="false" placeholder="Search title, summary, author, tags, or kept text" enterkeyhint="search" />
+          </label>
+          <div class="library-filters" aria-label="Library filters">
+            <label for="library-source">Source<select id="library-source"><option value="">All sources</option></select></label>
+            <label for="library-tier">Tier<select id="library-tier"><option value="">All tiers</option><option value="recall">Recall stub</option><option value="full_copy">Full copy kept</option></select></label>
+            <label for="library-published-from">Published from<input id="library-published-from" type="date" /></label>
+            <label for="library-published-to">Published to<input id="library-published-to" type="date" /></label>
+          </div>
+          <div class="library-search-actions">
+            <button class="primary-button" type="submit">Search</button>
+            <button id="library-clear-button" class="text-button" type="button">Clear filters</button>
+          </div>
+        </form>
+
+        <p id="library-status" class="library-status" role="status" aria-live="polite"></p>
+        <div id="library-layout" class="library-layout">
+          <div class="library-results-column">
+            <div id="library-results" class="library-results" role="list" aria-label="Personal Memory Library results"></div>
+            <button id="library-load-more" class="secondary-button library-load-more hidden" type="button">Load more</button>
+          </div>
+          <aside id="library-detail" class="library-detail hidden" aria-labelledby="library-detail-heading">
+            <header>
+              <div>
+                <p class="step-label">SELECTED MEMORY</p>
+                <h3 id="library-detail-heading" tabindex="-1">Choose a memory</h3>
+              </div>
+              <button id="library-detail-close" class="text-button" type="button" aria-label="Close memory detail">Close</button>
+            </header>
+            <div id="library-detail-content" class="library-detail-content"></div>
+          </aside>
         </div>
       </section>
 

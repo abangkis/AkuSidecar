@@ -14,6 +14,13 @@ import {
 } from "./onboarding-source-readiness.js";
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
+import {
+  buildLibraryRequestPath,
+  formatLibraryTier,
+  libraryHasFullContent,
+  mergeLibraryPage,
+  normalizeLibraryFilters,
+} from "./library-state.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -62,6 +69,22 @@ const state = {
   pollInFlight: false,
   sessionProgress: { sessionId: null, value: 0 },
   currentView: "timeline",
+  library: {
+    filters: normalizeLibraryFilters(),
+    items: [],
+    nextCursor: "",
+    selectedId: "",
+    selectedItem: null,
+    loading: false,
+    loadingMore: false,
+    error: null,
+    detailLoading: false,
+    detailError: null,
+    requestID: 0,
+    detailRequestID: 0,
+    controller: null,
+    detailFocusTarget: null,
+  },
   inboxSubView: "checks",
   modelUsageHelpSequence: 0,
   media: [],
@@ -220,6 +243,7 @@ function recoverInvalidBridgeToken(code) {
 }
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
+$("#library-view-button").addEventListener("click", () => setView("library"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
 $("#settings-view-button").addEventListener("click", () => {
   setView("settings");
@@ -227,6 +251,11 @@ $("#settings-view-button").addEventListener("click", () => {
   void refreshReasoningProviderReadiness();
 });
 $("#inbox-refresh-button").addEventListener("click", loadInbox);
+$("#library-search-form").addEventListener("submit", submitLibrarySearch);
+$("#library-clear-button").addEventListener("click", clearLibrarySearch);
+$("#library-refresh-button").addEventListener("click", refreshLibrary);
+$("#library-load-more").addEventListener("click", loadMoreLibrary);
+$("#library-detail-close").addEventListener("click", closeLibraryDetail);
 $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
@@ -408,6 +437,8 @@ async function bootstrap(options = {}) {
     state.session = state.bootstrap.activeSession;
     state.bootstrapLoading = false;
     renderSourceControls();
+    renderLibrarySourceOptions();
+    renderLibrary();
     $("#runtime-version").textContent = `${state.bootstrap.version} · ${state.bootstrap.runtime}`;
     $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
     renderActiveReasoningProvider();
@@ -489,6 +520,7 @@ function setView(view) {
     $("#calibration-panel").classList.add("hidden");
     $("#settings-panel").classList.add("hidden");
     $("#inbox-panel").classList.add("hidden");
+    $("#library-panel").classList.add("hidden");
     $("#timeline-panel").classList.remove("hidden");
     document.querySelector(".view-switch")?.classList.add("hidden");
     return;
@@ -504,6 +536,7 @@ function setView(view) {
   state.currentView = view;
   state.onboardingEditing = false;
   const timeline = view === "timeline";
+  const library = view === "library";
   const inbox = view === "inbox";
   const settings = view === "settings";
   $("#onboarding-panel").classList.add("hidden");
@@ -511,16 +544,20 @@ function setView(view) {
   document.querySelector(".view-switch")?.classList.remove("hidden");
   $("#settings-panel").classList.toggle("hidden", !settings);
   $("#inbox-panel").classList.toggle("hidden", !inbox);
+  $("#library-panel").classList.toggle("hidden", !library);
   $("#timeline-panel").classList.toggle("hidden", !timeline);
   if (!timeline) closeTimelineSidePane();
   syncTimelineSidePaneVisibility();
   $("#session-view-button").classList.toggle("selected", timeline);
+  $("#library-view-button").classList.toggle("selected", library);
   $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
   $("#session-view-button").setAttribute("aria-current", timeline ? "page" : "false");
+  $("#library-view-button").setAttribute("aria-current", library ? "page" : "false");
   $("#inbox-view-button").setAttribute("aria-current", inbox ? "page" : "false");
   $("#settings-view-button").setAttribute("aria-current", settings ? "page" : "false");
-  ({ timeline: $("#timeline-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
+  ({ timeline: $("#timeline-heading"), library: $("#library-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
+  if (library) loadLibrary();
   if (inbox) {
     syncInboxSubView();
     if (state.inboxSubView === "usage") loadAggregateModelUsage();
@@ -550,6 +587,397 @@ function setInboxSubView(view) {
     $("#inbox-heading")?.focus();
   }
   scheduleBackToTop();
+}
+
+function renderLibrarySourceOptions() {
+  const select = $("#library-source");
+  if (!select) return;
+  const current = state.library.filters.source || select.value;
+  select.replaceChildren(new Option("All sources", ""));
+  for (const descriptor of sourceDescriptors()) {
+    const option = new Option(descriptor.displayName, descriptor.id);
+    select.append(option);
+  }
+  select.value = [...select.options].some((option) => option.value === current) ? current : "";
+}
+
+function readLibraryFilters() {
+  return normalizeLibraryFilters({
+    query: $("#library-query").value,
+    source: $("#library-source").value,
+    tier: $("#library-tier").value,
+    publishedFrom: $("#library-published-from").value,
+    publishedTo: $("#library-published-to").value,
+  });
+}
+
+function resetLibraryList() {
+  state.library.controller?.abort();
+  state.library.controller = null;
+  state.library.requestID += 1;
+  state.library.loading = false;
+  state.library.loadingMore = false;
+  state.library.items = [];
+  state.library.nextCursor = "";
+  state.library.error = null;
+  state.library.detailRequestID += 1;
+  state.library.detailLoading = false;
+  state.library.detailError = null;
+  state.library.selectedId = "";
+  state.library.selectedItem = null;
+  state.library.detailFocusTarget = null;
+  renderLibraryDetail();
+}
+
+function submitLibrarySearch(event) {
+  event?.preventDefault();
+  state.library.filters = readLibraryFilters();
+  resetLibraryList();
+  void loadLibrary();
+}
+
+function clearLibrarySearch() {
+  $("#library-query").value = "";
+  $("#library-source").value = "";
+  $("#library-tier").value = "";
+  $("#library-published-from").value = "";
+  $("#library-published-to").value = "";
+  submitLibrarySearch();
+}
+
+function refreshLibrary() {
+  resetLibraryList();
+  void loadLibrary();
+}
+
+function loadMoreLibrary() {
+  if (state.library.loading || !state.library.nextCursor) return;
+  void loadLibrary({ append: true });
+}
+
+async function loadLibrary({ append = false } = {}) {
+  if (append && (state.library.loading || !state.library.nextCursor)) return;
+  if (!append && state.library.loading) state.library.controller?.abort();
+  const requestID = state.library.requestID + 1;
+  state.library.requestID = requestID;
+  const controller = new AbortController();
+  state.library.controller = controller;
+  state.library.loading = true;
+  state.library.loadingMore = append;
+  state.library.error = null;
+  renderLibrary();
+  try {
+    const response = await api(buildLibraryRequestPath(
+      state.library.filters,
+      append ? state.library.nextCursor : "",
+    ), { signal: controller.signal });
+    if (requestID !== state.library.requestID) return;
+    const merged = mergeLibraryPage(state.library.items, response, append);
+    state.library.items = merged.items;
+    state.library.nextCursor = merged.nextCursor;
+    if (state.library.selectedId) {
+      const selected = state.library.items.find((item) => item.id === state.library.selectedId);
+      if (!selected) closeLibraryDetail();
+    }
+  } catch (error) {
+    if (requestID !== state.library.requestID || error?.name === "AbortError") return;
+    state.library.error = error;
+  } finally {
+    if (requestID !== state.library.requestID) return;
+    state.library.loading = false;
+    state.library.loadingMore = false;
+    state.library.controller = null;
+    renderLibrary();
+  }
+}
+
+function libraryErrorMessage(error) {
+  if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
+    return "AkuSidecar is offline. Start the local runtime, then refresh Library.";
+  }
+  if (error?.code === "invalid_memory_library_query") {
+    return "Those Library filters are not valid. Clear the filters and try again.";
+  }
+  return "Library could not be loaded. Refresh and try again.";
+}
+
+function renderLibrary() {
+  const results = $("#library-results");
+  const loadMore = $("#library-load-more");
+  const status = $("#library-status");
+  const meta = $("#library-meta");
+  if (!results || !loadMore || !status || !meta) return;
+
+  results.replaceChildren();
+  status.className = "library-status";
+  if (state.library.loading && !state.library.loadingMore) {
+    status.textContent = "Loading local memories…";
+  } else if (state.library.loadingMore) {
+    status.textContent = "Loading more local memories…";
+  } else if (state.library.error) {
+    status.classList.add("library-status-error");
+    status.textContent = libraryErrorMessage(state.library.error);
+  } else if (state.library.items.length) {
+    status.textContent = `${state.library.items.length} memor${state.library.items.length === 1 ? "y" : "ies"}${state.library.nextCursor ? " · more available" : ""}`;
+  } else {
+    status.textContent = "";
+  }
+  meta.textContent = state.library.error && !state.library.items.length
+    ? "Library is read-only and local. No provider was contacted."
+    : "Search memories kept on this device. Library reads never call a provider.";
+
+  if (state.library.loading && !state.library.items.length) {
+    results.append(libraryStateMessage("Loading local memories…"));
+  } else if (state.library.error && !state.library.items.length) {
+    results.append(libraryStateMessage(libraryErrorMessage(state.library.error), true));
+  } else if (!state.library.items.length) {
+    results.append(libraryStateMessage("No local memories match these filters. Try a broader search or run a Timeline check first."));
+  } else {
+    results.append(...state.library.items.map(buildLibraryCard));
+  }
+  loadMore.classList.toggle("hidden", !state.library.nextCursor);
+  loadMore.disabled = state.library.loading;
+  loadMore.textContent = state.library.loadingMore ? "Loading…" : "Load more";
+}
+
+function libraryStateMessage(message, error = false) {
+  const element = document.createElement("p");
+  element.className = `library-state${error ? " library-state-error" : ""}`;
+  if (error) element.setAttribute("role", "alert");
+  element.textContent = message;
+  return element;
+}
+
+function buildLibraryCard(item) {
+  const article = document.createElement("article");
+  article.className = "library-card-shell";
+  article.setAttribute("role", "listitem");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "library-card";
+  button.classList.toggle("selected", state.library.selectedId === item.id);
+  button.setAttribute("aria-pressed", String(state.library.selectedId === item.id));
+  button.setAttribute("aria-label", `Open memory: ${item.title || "Untitled memory"}`);
+  button.addEventListener("click", () => selectLibraryItem(item.id));
+
+  const header = document.createElement("div");
+  header.className = "library-card-header";
+  header.append(buildSourceIcon(item.source));
+  const identity = document.createElement("span");
+  identity.className = "library-card-identity";
+  const title = document.createElement("strong");
+  title.textContent = item.title || "Untitled memory";
+  const source = document.createElement("span");
+  source.textContent = sourceLabel(item.source);
+  identity.append(title, source);
+  const tier = document.createElement("span");
+  tier.className = "library-tier-badge";
+  tier.textContent = formatLibraryTier(item.retentionTier);
+  header.append(identity, tier);
+
+  const summary = document.createElement("p");
+  summary.className = "library-card-summary";
+  summary.textContent = item.summary || "No summary was captured for this recall stub.";
+
+  const metadata = document.createElement("div");
+  metadata.className = "library-card-metadata";
+  if (item.author) metadata.append(libraryMetaChip("Author", item.author));
+  const date = formatDate(item.publishedAt || item.updatedAt);
+  if (date) metadata.append(libraryMetaChip("Published", date));
+  if (Array.isArray(item.tags)) {
+    for (const tag of item.tags.slice(0, 6)) metadata.append(libraryMetaChip("Tag", tag));
+  }
+  button.append(header, summary, metadata);
+  article.append(button);
+  return article;
+}
+
+function libraryMetaChip(label, value) {
+  const chip = document.createElement("span");
+  chip.className = "library-meta-chip";
+  chip.textContent = `${label}: ${value}`;
+  return chip;
+}
+
+function selectLibraryItem(id) {
+  const item = state.library.items.find((entry) => entry.id === id);
+  if (!item) return;
+  if (document.activeElement?.closest?.(".library-card")) state.library.detailFocusTarget = document.activeElement;
+  state.library.selectedId = id;
+  state.library.selectedItem = item;
+  state.library.detailRequestID += 1;
+  const detailRequestID = state.library.detailRequestID;
+  state.library.detailLoading = true;
+  state.library.detailError = null;
+  renderLibrary();
+  renderLibraryDetail();
+  void (async () => {
+    try {
+      const response = await api(`/api/library/items/${encodeURIComponent(id)}`);
+      if (detailRequestID !== state.library.detailRequestID || state.library.selectedId !== id) return;
+      if (!response?.item || response.item.id !== id) throw new Error("Library detail was unavailable.");
+      state.library.selectedItem = response.item;
+    } catch (error) {
+      if (detailRequestID !== state.library.detailRequestID || state.library.selectedId !== id) return;
+      state.library.detailError = error;
+    } finally {
+      if (detailRequestID !== state.library.detailRequestID || state.library.selectedId !== id) return;
+      state.library.detailLoading = false;
+      renderLibraryDetail();
+    }
+  })();
+}
+
+function closeLibraryDetail() {
+  const target = state.library.detailFocusTarget;
+  state.library.detailRequestID += 1;
+  state.library.selectedId = "";
+  state.library.selectedItem = null;
+  state.library.detailLoading = false;
+  state.library.detailError = null;
+  state.library.detailFocusTarget = null;
+  renderLibraryDetail();
+  target?.focus?.();
+  renderLibrary();
+}
+
+function renderLibraryDetail() {
+  const detail = $("#library-detail");
+  const heading = $("#library-detail-heading");
+  const content = $("#library-detail-content");
+  if (!detail || !heading || !content) return;
+  const item = state.library.selectedItem;
+  detail.classList.toggle("hidden", !item || !state.library.selectedId);
+  if (!item || !state.library.selectedId) {
+    heading.textContent = "Choose a memory";
+    content.replaceChildren();
+    return;
+  }
+  heading.textContent = item.title || "Untitled memory";
+  content.replaceChildren();
+  if (state.library.detailLoading) {
+    content.append(libraryStateMessage("Loading memory details…"));
+    return;
+  }
+  if (state.library.detailError) {
+    content.append(libraryStateMessage("This memory detail could not be loaded. Try selecting it again.", true));
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "secondary-button library-detail-retry";
+    retry.textContent = "Retry details";
+    retry.addEventListener("click", () => selectLibraryItem(item.id));
+    content.append(retry);
+    return;
+  }
+  content.append(buildLibraryDetail(item));
+}
+
+function buildLibraryDetail(item) {
+  const fragment = document.createDocumentFragment();
+  const metadata = document.createElement("dl");
+  metadata.className = "library-detail-metadata";
+  appendLibraryDetailField(metadata, "Source", sourceLabel(item.source));
+  appendLibraryDetailField(metadata, "Tier", formatLibraryTier(item.retentionTier));
+  if (item.author) appendLibraryDetailField(metadata, "Author", item.author);
+  if (item.publishedAt) appendLibraryDetailField(metadata, "Published", formatDate(item.publishedAt) || item.publishedAt);
+  if (item.updatedAt) appendLibraryDetailField(metadata, "Updated", formatDate(item.updatedAt) || item.updatedAt);
+  fragment.append(metadata);
+
+  if (item.summary) {
+    const summary = document.createElement("p");
+    summary.className = "library-detail-summary";
+    summary.textContent = item.summary;
+    fragment.append(summary);
+  }
+
+  const sourceURL = safeSourceUrl(item.canonicalPermalink, item.source);
+  if (sourceURL) {
+    const source = document.createElement("p");
+    source.className = "library-detail-source";
+    const link = document.createElement("a");
+    link.className = "source-link";
+    configureNativePostLink(link, sourceURL, item.source);
+    link.textContent = "Open source entry";
+    source.append(link);
+    fragment.append(source);
+  }
+
+  appendLibraryLabels(fragment, "Tags", item.tags);
+  appendLibraryLabels(fragment, "Facets", item.facets);
+  appendLibraryMediaMetadata(fragment, item.media);
+
+  const fullCopy = document.createElement("section");
+  fullCopy.className = "library-detail-copy";
+  const copyHeading = document.createElement("h4");
+  copyHeading.textContent = libraryHasFullContent(item) ? "Kept full text" : "Recall stub only";
+  fullCopy.append(copyHeading);
+  const copy = document.createElement("pre");
+  copy.className = "library-detail-full-content";
+  copy.textContent = libraryHasFullContent(item)
+    ? item.fullContent
+    : "Only the bounded recall metadata is stored for this item.";
+  fullCopy.append(copy);
+  fragment.append(fullCopy);
+  return fragment;
+}
+
+function appendLibraryDetailField(list, label, value) {
+  const wrapper = document.createElement("div");
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.textContent = value;
+  wrapper.append(term, description);
+  list.append(wrapper);
+}
+
+function appendLibraryLabels(fragment, label, values) {
+  if (!Array.isArray(values) || !values.length) return;
+  const section = document.createElement("section");
+  section.className = "library-detail-labels";
+  const heading = document.createElement("h4");
+  heading.textContent = label;
+  const list = document.createElement("div");
+  list.className = "library-label-list";
+  for (const value of values.slice(0, 12)) {
+    const chip = document.createElement("span");
+    chip.textContent = String(value);
+    list.append(chip);
+  }
+  section.append(heading, list);
+  fragment.append(section);
+}
+
+function appendLibraryMediaMetadata(fragment, values) {
+  if (!Array.isArray(values) || !values.length) return;
+  const section = document.createElement("section");
+  section.className = "library-detail-media";
+  const heading = document.createElement("h4");
+  heading.textContent = "Media metadata";
+  const note = document.createElement("p");
+  note.textContent = "Metadata references only; no binary media is stored or loaded here.";
+  const list = document.createElement("ul");
+  for (const value of values.slice(0, 16)) {
+    const entry = document.createElement("li");
+    const kind = document.createElement("strong");
+    kind.textContent = value.kind || "Media";
+    entry.append(kind);
+    const copy = [value.title, value.altText].filter(Boolean).join(" · ");
+    if (copy) entry.append(document.createTextNode(` · ${copy}`));
+    const href = safeMediaUrl(value.url);
+    if (href) {
+      const link = document.createElement("a");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open reference";
+      link.setAttribute("aria-label", `Open ${value.kind || "media"} metadata reference`);
+      entry.append(document.createTextNode(" · "), link);
+    }
+    list.append(entry);
+  }
+  section.append(heading, note, list);
+  fragment.append(section);
 }
 
 function pingBridge() {
@@ -1537,6 +1965,7 @@ function showOnboarding(editing) {
   $("#onboarding-error").textContent = "";
   $("#settings-panel").classList.add("hidden");
   $("#inbox-panel").classList.add("hidden");
+  $("#library-panel").classList.add("hidden");
   $("#timeline-panel").classList.add("hidden");
   $("#calibration-panel").classList.add("hidden");
   $("#onboarding-panel").classList.remove("hidden");
@@ -2753,6 +3182,7 @@ function showCalibration(calibration) {
   $("#onboarding-panel").classList.add("hidden");
   $("#settings-panel").classList.add("hidden");
   $("#inbox-panel").classList.add("hidden");
+  $("#library-panel").classList.add("hidden");
   $("#timeline-panel").classList.add("hidden");
   $("#calibration-panel").classList.remove("hidden");
   document.querySelector(".view-switch")?.classList.add("hidden");

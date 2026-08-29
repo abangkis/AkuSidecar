@@ -79,6 +79,73 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	}
 }
 
+func TestEmbeddedLibraryReadOnlySurfaceContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {
+			"library-view-button",
+			"id=\"library-panel\"",
+			"library-search-form",
+			"role=\"search\"",
+			"library-source",
+			"library-tier",
+			"library-published-from",
+			"library-published-to",
+			"library-load-more",
+			"library-detail",
+			"aria-live=\"polite\"",
+		},
+		"web/app.js": {
+			"library-state.js",
+			"function loadLibrary",
+			"function submitLibrarySearch",
+			"function loadMoreLibrary",
+			"buildLibraryRequestPath",
+			"/api/library/items/",
+			"Library reads never call a provider",
+			"sidecar_unavailable",
+		},
+		"web/library-state.js": {
+			"LIBRARY_MAX_QUERY = 200",
+			"buildLibraryRequestPath",
+			"mergeLibraryPage",
+		},
+		"web/styles.css": {
+			".library-panel",
+			".library-search-form",
+			".library-layout",
+			".library-detail",
+			"@media (max-width: 760px)",
+		},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing read-only Library UI contract %q", asset, marker)
+			}
+		}
+	}
+	indexContents, err := embeddedAssets.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexContents)
+	start := strings.Index(index, `<section id="library-panel"`)
+	if start < 0 {
+		t.Fatal("embedded Library panel is missing")
+	}
+	end := strings.Index(index[start:], `</section>`)
+	if end < 0 {
+		t.Fatal("embedded Library panel is incomplete")
+	}
+	libraryPanel := index[start : start+end]
+	if strings.Contains(libraryPanel, `method="POST"`) || strings.Contains(libraryPanel, `method="PUT"`) || strings.Contains(libraryPanel, `method="DELETE"`) {
+		t.Fatal("Library panel must remain read-only")
+	}
+}
+
 func TestEmbeddedFailureStateMatrixStaysSidecarOwned(t *testing.T) {
 	appPayload, err := embeddedAssets.ReadFile("web/app.js")
 	if err != nil {
