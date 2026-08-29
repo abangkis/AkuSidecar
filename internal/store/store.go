@@ -1649,7 +1649,51 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 	if err := s.attachEffectivePreferenceDecision(ctx, items); err != nil {
 		return nil, err
 	}
+	if err := s.attachTimelineMemoryProjections(ctx, items); err != nil {
+		return nil, err
+	}
 	return items, nil
+}
+
+// attachTimelineMemoryProjections restores only the retention tier for a
+// Timeline item. The lookup is intentionally best-effort for an item that has
+// no valid memory identity yet; Timeline reads must remain useful for neutral
+// or media-only entries that were never kept. Full text never crosses this
+// projection boundary.
+func (s *Store) attachTimelineMemoryProjections(ctx context.Context, items []domain.TimelineItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin Timeline memory projection: %w", err)
+	}
+	defer tx.Rollback()
+	for index := range items {
+		normalized, normalizeErr := normalizeMemoryInput(routineMoreMemoryInput(items[index]))
+		if normalizeErr != nil {
+			continue
+		}
+		memoryID, resolveErr := resolveMemoryIdentity(ctx, tx, normalized.Identity)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve Timeline memory projection: %w", resolveErr)
+		}
+		if memoryID == "" {
+			continue
+		}
+		memory, memoryErr := memoryItemByQueryer(ctx, tx, memoryID)
+		if errors.Is(memoryErr, ErrMemoryNotFound) {
+			continue
+		}
+		if memoryErr != nil {
+			return fmt.Errorf("read Timeline memory projection: %w", memoryErr)
+		}
+		if memory.LifecycleState != domain.MemoryStateActive {
+			continue
+		}
+		items[index].PersonalMemory = &domain.TimelineMemoryProjection{RetentionTier: memory.RetentionTier}
+	}
+	return nil
 }
 
 func (s *Store) attachEffectivePreferenceDecision(ctx context.Context, items []domain.TimelineItem) error {

@@ -630,6 +630,19 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			items = append(items, publicLibraryItem(item, false))
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/release-full-copy"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/release-full-copy")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("library item")
+		}
+		item, err := s.engine.ReleaseLibraryItem(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) || errors.Is(err, store.ErrMemoryTombstoned) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"released": true, "id": id, "retentionTier": item.RetentionTier})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/forget-permanently"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/forget-permanently")
 		if id == "" || strings.Contains(id, "/") {
@@ -713,6 +726,28 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/keep-full-copy"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/keep-full-copy")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("timeline item")
+		}
+		item, alreadyKept, err := s.engine.KeepTimelineFullCopy(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("timeline item")
+		}
+		if errors.Is(err, store.ErrMemoryTombstoned) {
+			return apiError{Status: http.StatusConflict, Code: "memory_tombstoned", Message: "This Timeline item was permanently forgotten, so a full copy cannot be kept."}
+		}
+		if errors.Is(err, store.ErrTimelineMemoryTextUnavailable) {
+			return apiError{Status: http.StatusConflict, Code: "timeline_memory_text_unavailable", Message: "The source text is unavailable for this Timeline item, so no full copy was kept."}
+		}
+		if errors.Is(err, store.ErrTimelineMemoryNotEligible) {
+			return apiError{Status: http.StatusConflict, Code: "timeline_memory_not_eligible", Message: "Only a final Timeline item from a completed update can be kept as a full copy."}
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"kept": true, "alreadyKept": alreadyKept, "retentionTier": item.RetentionTier})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/feedback"):
 		id := path.Base(strings.TrimSuffix(p, "/feedback"))
 		var value domain.Feedback

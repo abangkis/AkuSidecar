@@ -360,6 +360,9 @@ h3 { letter-spacing: -0.02em; }
 .feedback-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .feedback-button { padding: 5px 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.72rem; }
 .feedback-button.selected { border-color: var(--accent); background: rgba(183, 242, 108, 0.12); color: var(--accent); }
+.timeline-memory-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.memory-keep-button { border-color: rgba(183, 242, 108, 0.38); }
+.timeline-memory-action-status { color: var(--quiet); font-size: 0.68rem; }
 .semantic-correction-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; color: var(--quiet); font-size: 0.7rem; }
 .event-correction-button, .event-suggestion-editor button { padding: 4px 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 0.7rem; }
 .event-suggestion-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
@@ -440,6 +443,7 @@ h3 { letter-spacing: -0.02em; }
 .library-detail-actions .secondary-button, .library-detail-actions .danger-button { justify-self: start; }
 .library-detail-action-note-danger { color: var(--danger) !important; }
 .library-detail-forget { margin-top: 2px; }
+.library-detail-release { border-color: rgba(183, 242, 108, 0.38); }
 .library-detail-action-error { color: var(--danger) !important; }
 .inbox-panel { padding-top: 30px; }
 .inbox-sessions { display: grid; gap: 12px; }

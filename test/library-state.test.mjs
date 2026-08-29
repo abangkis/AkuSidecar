@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import {
   LIBRARY_MAX_QUERY,
   buildLibraryForgetPath,
+  buildLibraryReleasePath,
   buildLibraryRemovePath,
   buildLibraryRequestPath,
   formatLibraryTier,
   libraryFilterKey,
   libraryForgetConfirmation,
+  libraryReleaseConfirmation,
   libraryRemoveConfirmation,
   libraryHasFullContent,
   mergeLibraryPage,
@@ -64,8 +66,10 @@ test("Library tier and detail helpers preserve the read-only payload boundary", 
 test("Library Remove and Forget use distinct narrow actions and confirmations", () => {
   assert.equal(buildLibraryRemovePath("memory/one"), "/api/library/items/memory%2Fone");
   assert.equal(buildLibraryForgetPath("memory/one"), "/api/library/items/memory%2Fone/forget-permanently");
+  assert.equal(buildLibraryReleasePath("memory/one"), "/api/library/items/memory%2Fone/release-full-copy");
   assert.equal(buildLibraryRemovePath(""), "");
   assert.equal(buildLibraryForgetPath(""), "");
+  assert.equal(buildLibraryReleasePath(""), "");
   const removeConfirmation = libraryRemoveConfirmation({ title: "A private marker" });
   assert.match(removeConfirmation, /A private marker/);
   assert.match(removeConfirmation, /local Library copy/);
@@ -77,4 +81,8 @@ test("Library Remove and Forget use distinct narrow actions and confirmations", 
   assert.match(forgetConfirmation, /blocks automatic recapture/);
   assert.match(forgetConfirmation, /cannot be undone/);
   assert.notEqual(removeConfirmation, forgetConfirmation);
+  const releaseConfirmation = libraryReleaseConfirmation({ title: "A private marker" });
+  assert.match(releaseConfirmation, /stored text/);
+  assert.match(releaseConfirmation, /recall metadata/);
+  assert.notEqual(releaseConfirmation, removeConfirmation);
 });

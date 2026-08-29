@@ -48,6 +48,11 @@ export function buildLibraryForgetPath(id) {
   return normalized ? `/api/library/items/${encodeURIComponent(normalized)}/forget-permanently` : "";
 }
 
+export function buildLibraryReleasePath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/library/items/${encodeURIComponent(normalized)}/release-full-copy` : "";
+}
+
 export function libraryRemoveConfirmation(item = {}) {
   const title = String(item?.title ?? "").trim() || "this memory";
   return `Remove “${title}” from Personal Memory on this device? This deletes the local Library copy. A later More may add it again.`;
@@ -56,6 +61,11 @@ export function libraryRemoveConfirmation(item = {}) {
 export function libraryForgetConfirmation(item = {}) {
   const title = String(item?.title ?? "").trim() || "this memory";
   return `Forget “${title}” permanently? This deletes the local Library copy and blocks automatic recapture of the same source item. This cannot be undone without a reset.`;
+}
+
+export function libraryReleaseConfirmation(item = {}) {
+  const title = String(item?.title ?? "").trim() || "this memory";
+  return `Release the full copy for “${title}”? This permanently removes the stored text from this device and keeps only its recall metadata.`;
 }
 
 export function libraryFilterKey(filters = {}) {

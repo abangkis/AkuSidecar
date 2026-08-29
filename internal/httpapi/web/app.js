@@ -16,15 +16,18 @@ import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
 import {
   buildLibraryForgetPath,
+  buildLibraryReleasePath,
   buildLibraryRemovePath,
   buildLibraryRequestPath,
   formatLibraryTier,
   libraryHasFullContent,
   libraryForgetConfirmation,
+  libraryReleaseConfirmation,
   libraryRemoveConfirmation,
   mergeLibraryPage,
   normalizeLibraryFilters,
 } from "./library-state.js";
+import { buildTimelineKeepPath, timelineKeepConfirmation } from "./timeline-memory-state.js";
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -119,6 +122,7 @@ const state = {
   sidePaneItems: [],
   sidePaneFrame: null,
   timelineItems: [],
+  timelineKeepInFlight: new Set(),
   timelineBatches: [],
   sourceSessionReadiness: {},
   sourceSessionProbeInFlight: false,
@@ -719,9 +723,9 @@ function libraryMutationErrorMessage(error, action) {
   if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
     return "AkuSidecar is offline. Start the local runtime, then try this Library action again.";
   }
-  return action === "forget"
-    ? "Library could not forget this memory permanently. Try again."
-    : "Library could not remove this local memory. Try again.";
+  if (action === "forget") return "Library could not forget this memory permanently. Try again.";
+  if (action === "release") return "Library could not release the full copy. Try again.";
+  return "Library could not remove this local memory. Try again.";
 }
 
 function renderLibrary() {
@@ -949,6 +953,17 @@ function buildLibraryDetail(item) {
   actions.className = "library-detail-actions";
   const actionHeading = document.createElement("h4");
   actionHeading.textContent = "Memory actions";
+  const releaseNote = document.createElement("p");
+  releaseNote.className = "library-detail-action-note";
+  releaseNote.id = "library-release-note";
+  releaseNote.textContent = "Release removes only the stored full text. The searchable recall metadata and identity stay in Library.";
+  const release = document.createElement("button");
+  release.type = "button";
+  release.className = "secondary-button library-detail-release";
+  release.textContent = state.library.mutationLoading && state.library.mutationAction === "release" ? "Releasing…" : "Release full copy";
+  release.disabled = state.library.mutationLoading || item.retentionTier !== "full_copy";
+  release.setAttribute("aria-describedby", releaseNote.id);
+  release.addEventListener("click", () => releaseLibraryItem(item));
   const removeNote = document.createElement("p");
   removeNote.className = "library-detail-action-note";
   removeNote.id = "library-remove-note";
@@ -971,7 +986,9 @@ function buildLibraryDetail(item) {
   forget.disabled = state.library.mutationLoading;
   forget.setAttribute("aria-describedby", forgetNote.id);
   forget.addEventListener("click", () => forgetLibraryItem(item));
-  actions.append(actionHeading, removeNote, remove, forgetNote, forget);
+  actions.append(actionHeading);
+  if (item.retentionTier === "full_copy") actions.append(releaseNote, release);
+  actions.append(removeNote, remove, forgetNote, forget);
   if (state.library.mutationError) {
     const error = document.createElement("p");
     error.className = "library-detail-action-error";
@@ -985,6 +1002,10 @@ function buildLibraryDetail(item) {
 
 function removeLibraryItem(item) {
   return mutateLibraryItem(item, "remove");
+}
+
+function releaseLibraryItem(item) {
+  return mutateLibraryItem(item, "release");
 }
 
 function forgetLibraryItem(item) {
@@ -1002,6 +1023,15 @@ async function mutateLibraryItem(item, action) {
       failure: "Library did not confirm the permanent forget.",
       notice: "Memory forgotten permanently. Automatic recapture for this source item is suppressed.",
     }
+    : action === "release"
+      ? {
+        method: "POST",
+        path: buildLibraryReleasePath,
+        confirm: libraryReleaseConfirmation,
+        acknowledged: (response) => response?.released === true && response?.retentionTier === "recall",
+        failure: "Library did not confirm the full-copy release.",
+        notice: "Full copy released. Recall metadata remains in Library.",
+      }
     : {
       method: "DELETE",
       path: buildLibraryRemovePath,
@@ -1020,13 +1050,23 @@ async function mutateLibraryItem(item, action) {
   try {
     const response = await api(config.path(item.id), { method: config.method });
     if (!config.acknowledged(response) || response.id !== item.id) throw new Error(config.failure);
-    state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
     state.library.notice = config.notice;
-    state.library.selectedId = "";
-    state.library.selectedItem = null;
-    state.library.detailRequestID += 1;
-    state.library.detailLoading = false;
-    state.library.detailError = null;
+    if (action === "release") {
+      state.library.items = state.library.items.map((entry) => entry.id === item.id
+        ? { ...entry, retentionTier: response.retentionTier }
+        : entry);
+      if (state.library.selectedItem?.id === item.id) {
+        const { fullContent: _releasedContent, ...withoutFullContent } = state.library.selectedItem;
+        state.library.selectedItem = { ...withoutFullContent, retentionTier: response.retentionTier };
+      }
+    } else {
+      state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
+      state.library.selectedId = "";
+      state.library.selectedItem = null;
+      state.library.detailRequestID += 1;
+      state.library.detailLoading = false;
+      state.library.detailError = null;
+    }
   } catch (error) {
     state.library.mutationError = error;
   } finally {
@@ -5931,8 +5971,61 @@ function buildActions(entry) {
   feedback.append(more, less);
   if (link) actions.append(link);
   actions.append(feedback);
+  actions.append(buildTimelineKeepAction(entry));
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
+}
+
+function buildTimelineKeepAction(entry) {
+  const container = document.createElement("div");
+  container.className = "timeline-memory-actions";
+  const keep = document.createElement("button");
+  keep.type = "button";
+  keep.className = "feedback-button memory-keep-button";
+  const status = document.createElement("small");
+  status.className = "timeline-memory-action-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  const hasText = Boolean(String(entry?.evidence?.text ?? "").trim());
+  const render = () => {
+    const kept = entry?.personalMemory?.retentionTier === "full_copy";
+    const busy = state.timelineKeepInFlight.has(entry.id);
+    keep.textContent = kept ? "Full copy kept" : busy ? "Keeping…" : "Keep full copy";
+    keep.disabled = kept || busy || !hasText;
+    keep.classList.toggle("selected", kept);
+    keep.setAttribute("aria-pressed", String(kept));
+    keep.title = !hasText && !kept
+      ? "The source text is unavailable, so this item cannot be kept yet."
+      : kept
+        ? "This Timeline item is already retained as a full copy."
+        : "Keep the bounded source text locally.";
+  };
+  render();
+  keep.addEventListener("click", async () => {
+    if (!entry?.id || state.timelineKeepInFlight.has(entry.id) || entry?.personalMemory?.retentionTier === "full_copy") return;
+    if (!window.confirm(timelineKeepConfirmation(entry))) return;
+    state.timelineKeepInFlight.add(entry.id);
+    status.textContent = "";
+    render();
+    try {
+      const response = await api(buildTimelineKeepPath(entry.id), { method: "POST" });
+      if (response?.kept !== true || response?.retentionTier !== "full_copy") {
+        throw new Error("AkuSidecar did not confirm the full-copy action.");
+      }
+      entry.personalMemory = { retentionTier: response.retentionTier };
+      status.textContent = response.alreadyKept === true
+        ? "Already kept locally as a full copy."
+        : "Full copy kept locally.";
+    } catch (error) {
+      status.textContent = "Could not keep this full copy. Try again.";
+      showError(error);
+    } finally {
+      state.timelineKeepInFlight.delete(entry.id);
+      render();
+    }
+  });
+  container.append(keep, status);
+  return container;
 }
 
 function buildSemanticCorrectionActions(entry) {

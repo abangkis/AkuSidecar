@@ -33,8 +33,10 @@ const (
 )
 
 var (
-	ErrMemoryNotFound   = errors.New("personal memory item not found")
-	ErrMemoryTombstoned = errors.New("personal memory item is tombstoned")
+	ErrMemoryNotFound                = errors.New("personal memory item not found")
+	ErrMemoryTombstoned              = errors.New("personal memory item is tombstoned")
+	ErrTimelineMemoryNotEligible     = errors.New("Timeline item is not eligible for a full copy")
+	ErrTimelineMemoryTextUnavailable = errors.New("Timeline source text is unavailable for a full copy")
 )
 
 const memoryTombstoneKeyMeta = "memory_tombstone_key_v1"
@@ -264,43 +266,57 @@ func (s *Store) KeepMemoryFullCopy(ctx context.Context, id string, input domain.
 	if strings.TrimSpace(id) == "" {
 		return domain.MemoryItem{}, ErrMemoryNotFound
 	}
-	if len([]byte(input.Content)) > maxMemoryContentBytes {
-		return domain.MemoryItem{}, fmt.Errorf("memory full copy exceeds %d bytes", maxMemoryContentBytes)
-	}
-	if strings.TrimSpace(input.Content) == "" && len(input.Media) == 0 {
-		return domain.MemoryItem{}, errors.New("memory full copy requires text or media metadata")
-	}
-	_, mediaJSON, err := normalizeMemoryMedia(input.Media)
-	if err != nil {
-		return domain.MemoryItem{}, err
-	}
 	now := memoryNow(s)
-	capturedAt := strings.TrimSpace(input.CapturedAt)
-	if capturedAt == "" {
-		capturedAt = now
-	}
-	if len([]rune(input.Reason)) > maxMemoryReasonRunes {
-		return domain.MemoryItem{}, fmt.Errorf("memory reason cannot exceed %d characters", maxMemoryReasonRunes)
-	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("begin memory full-copy transaction: %w", err)
 	}
 	defer tx.Rollback()
-	stored, err := memoryStoredByID(ctx, tx, id)
-	if err != nil {
+	if err := s.keepMemoryFullCopyTx(ctx, tx, id, input, now); err != nil {
 		return domain.MemoryItem{}, err
 	}
+	if err := tx.Commit(); err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("commit memory full copy: %w", err)
+	}
+	return s.MemoryItem(ctx, id)
+}
+
+// keepMemoryFullCopyTx applies the bounded content transition inside a
+// caller-owned transaction. It is shared by the direct store primitive and
+// the authoritative Timeline Keep path so identity creation and full-copy
+// retention cannot commit separately.
+func (s *Store) keepMemoryFullCopyTx(ctx context.Context, tx *sql.Tx, id string, input domain.MemoryFullCopyInput, now string) error {
+	if len([]byte(input.Content)) > maxMemoryContentBytes {
+		return fmt.Errorf("memory full copy exceeds %d bytes", maxMemoryContentBytes)
+	}
+	if strings.TrimSpace(input.Content) == "" && len(input.Media) == 0 {
+		return errors.New("memory full copy requires text or media metadata")
+	}
+	_, mediaJSON, err := normalizeMemoryMedia(input.Media)
+	if err != nil {
+		return err
+	}
+	capturedAt := strings.TrimSpace(input.CapturedAt)
+	if capturedAt == "" {
+		capturedAt = now
+	}
+	if len([]rune(input.Reason)) > maxMemoryReasonRunes {
+		return fmt.Errorf("memory reason cannot exceed %d characters", maxMemoryReasonRunes)
+	}
+	stored, err := memoryStoredByID(ctx, tx, id)
+	if err != nil {
+		return err
+	}
 	if stored.item.LifecycleState == domain.MemoryStateTombstone {
-		return domain.MemoryItem{}, fmt.Errorf("%w: %s", ErrMemoryTombstoned, id)
+		return fmt.Errorf("%w: %s", ErrMemoryTombstoned, id)
 	}
 	if len(input.Media) == 0 {
 		mediaJSON = stored.mediaJSON
 	}
 	version := 1
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0)+1 FROM memory_content_versions WHERE memory_item_id=?`, id).Scan(&version); err != nil {
-		return domain.MemoryItem{}, fmt.Errorf("read memory content version: %w", err)
+		return fmt.Errorf("read memory content version: %w", err)
 	}
 	// Keep exactly one active payload. Older versions remain as bounded audit
 	// metadata, but their text is released before the new copy is committed.
@@ -308,7 +324,7 @@ func (s *Store) KeepMemoryFullCopy(ctx context.Context, id string, input domain.
 		UPDATE memory_content_versions
 		SET content='',content_bytes=0,released_at=?
 		WHERE memory_item_id=? AND released_at IS NULL`, now, id); err != nil {
-		return domain.MemoryItem{}, fmt.Errorf("release previous memory content version: %w", err)
+		return fmt.Errorf("release previous memory content version: %w", err)
 	}
 	versionID := domain.NewID("memory_content")
 	contentFingerprint := memoryContentFingerprint(input.Content)
@@ -320,13 +336,13 @@ func (s *Store) KeepMemoryFullCopy(ctx context.Context, id string, input domain.
 		) VALUES(?,?,?,?,?,?,?,?,?,NULL)`,
 		versionID, id, version, input.Content, contentFingerprint, mediaJSON,
 		contentBytes, capturedAt, now); err != nil {
-		return domain.MemoryItem{}, fmt.Errorf("insert memory content version: %w", err)
+		return fmt.Errorf("insert memory content version: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE memory_items
 		SET retention_tier='full_copy',full_content_version_id=?,content_bytes=?,media_metadata_json=?,updated_at=?
 		WHERE id=? AND lifecycle_state='active'`, versionID, contentBytes, mediaJSON, now, id); err != nil {
-		return domain.MemoryItem{}, fmt.Errorf("update memory full-copy state: %w", err)
+		return fmt.Errorf("update memory full-copy state: %w", err)
 	}
 	detail := map[string]any{"contentBytes": contentBytes, "version": version}
 	if input.Reason != "" {
@@ -334,15 +350,181 @@ func (s *Store) KeepMemoryFullCopy(ctx context.Context, id string, input domain.
 		detail["reason"] = input.Reason
 	}
 	if err := recordMemoryActionTx(ctx, tx, id, domain.MemoryActionKeepFullCopy, detail, now); err != nil {
-		return domain.MemoryItem{}, err
+		return err
 	}
 	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
-		return domain.MemoryItem{}, err
+		return err
+	}
+	return nil
+}
+
+// KeepTimelineFullCopy is the authoritative Timeline action. The caller may
+// supply only a Timeline id: this method reloads the final persisted item and
+// its captured evidence, derives bounded metadata and text locally, and
+// commits identity creation plus full-copy retention in one transaction.
+// alreadyKept is true when an existing full copy was left untouched.
+func (s *Store) KeepTimelineFullCopy(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
+	if strings.TrimSpace(timelineID) == "" {
+		return domain.MemoryItem{}, false, sql.ErrNoRows
+	}
+	tombstoneKey, err := s.memoryTombstoneKey(ctx)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	now := memoryNow(s)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("begin Timeline full-copy transaction: %w", err)
+	}
+	defer tx.Rollback()
+	timelineItem, err := timelineItemForFullCopyTx(ctx, tx, timelineID)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	content := timelineItem.Evidence.Text
+	memoryInput := timelineKeepMemoryInput(timelineItem)
+	normalized, err := normalizeMemoryInput(memoryInput)
+	if err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("prepare Timeline full-copy identity: %w", err)
+	}
+	normalized.IdentityDigest = memoryIdentityDigest(tombstoneKey, normalized.Identity)
+	if tombstoneID, err := tombstonedMemoryID(ctx, tx, tombstoneKey, normalized.Identity); err != nil {
+		return domain.MemoryItem{}, false, err
+	} else if tombstoneID != "" {
+		return domain.MemoryItem{}, false, fmt.Errorf("%w: %s", ErrMemoryTombstoned, tombstoneID)
+	}
+	memoryID, err := resolveMemoryIdentity(ctx, tx, normalized.Identity)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	if memoryID != "" {
+		stored, storedErr := memoryStoredByID(ctx, tx, memoryID)
+		if storedErr != nil {
+			return domain.MemoryItem{}, false, storedErr
+		}
+		if stored.item.LifecycleState == domain.MemoryStateTombstone {
+			return domain.MemoryItem{}, false, fmt.Errorf("%w: %s", ErrMemoryTombstoned, memoryID)
+		}
+		if stored.item.RetentionTier == domain.MemoryTierFullCopy {
+			if err := tx.Commit(); err != nil {
+				return domain.MemoryItem{}, false, fmt.Errorf("commit idempotent Timeline full-copy action: %w", err)
+			}
+			item, itemErr := s.MemoryItem(ctx, memoryID)
+			return item, true, itemErr
+		}
+	}
+	memoryID, err = s.upsertMemoryRecallStubTx(ctx, tx, tombstoneKey, normalized)
+	if err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("create Timeline memory before full copy: %w", err)
+	}
+	if err := s.keepMemoryFullCopyTx(ctx, tx, memoryID, domain.MemoryFullCopyInput{
+		Content: content, Media: memoryInput.Media, CapturedAt: timelineItem.CreatedAt,
+		Reason: "timeline_keep_full_copy",
+	}, now); err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("keep Timeline full copy: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return domain.MemoryItem{}, fmt.Errorf("commit memory full copy: %w", err)
+		return domain.MemoryItem{}, false, fmt.Errorf("commit Timeline full copy: %w", err)
 	}
-	return s.MemoryItem(ctx, id)
+	item, err := s.MemoryItem(ctx, memoryID)
+	return item, false, err
+}
+
+// timelineItemForFullCopyTx reads the final, persisted Timeline row and its
+// evidence using the caller's transaction. It intentionally does not invoke
+// an adapter or provider, and it treats missing/blank source text as an
+// actionable local eligibility failure.
+func timelineItemForFullCopyTx(ctx context.Context, tx *sql.Tx, timelineID string) (domain.TimelineItem, error) {
+	var item domain.TimelineItem
+	var itemRaw, assessmentRaw, coverageRaw, sessionStatus string
+	err := tx.QueryRowContext(ctx, `
+		SELECT t.id,t.session_id,t.run_id,t.source,t.evidence_key,t.rank,
+		  t.item_json,t.assessment_json,t.coverage_json,t.created_at,s.status
+		FROM timeline_items t JOIN sessions s ON s.id=t.session_id
+		WHERE t.id=?`, timelineID).Scan(
+		&item.ID, &item.SessionID, &item.RunID, &item.Source, &item.EvidenceKey,
+		&item.Rank, &itemRaw, &assessmentRaw, &coverageRaw, &item.CreatedAt, &sessionStatus)
+	if err != nil {
+		return domain.TimelineItem{}, err
+	}
+	if sessionStatus != "completed" && sessionStatus != "partial" {
+		return domain.TimelineItem{}, ErrTimelineMemoryNotEligible
+	}
+	decodeJSON(itemRaw, &item.Item)
+	decodeJSON(assessmentRaw, &item.Assessment)
+	decodeJSON(coverageRaw, &item.Coverage)
+	rows, err := tx.QueryContext(ctx, `SELECT observation_json FROM observations WHERE run_id=? ORDER BY created_at`, item.RunID)
+	if err != nil {
+		return domain.TimelineItem{}, fmt.Errorf("read Timeline evidence: %w", err)
+	}
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			rows.Close()
+			return domain.TimelineItem{}, err
+		}
+		var observation domain.Observation
+		if err := json.Unmarshal([]byte(raw), &observation); err != nil {
+			rows.Close()
+			return domain.TimelineItem{}, fmt.Errorf("decode Timeline evidence: %w", err)
+		}
+		for _, snapshot := range observation.Snapshots {
+			for _, block := range snapshot.Blocks {
+				if block.EvidenceKey == item.EvidenceKey {
+					copy := block
+					item.Evidence = &copy
+					break
+				}
+			}
+			if item.Evidence != nil {
+				break
+			}
+		}
+		if item.Evidence != nil {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return domain.TimelineItem{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return domain.TimelineItem{}, err
+	}
+	var overrideRaw string
+	if err := tx.QueryRowContext(ctx, `SELECT evidence_json FROM timeline_evidence_overrides WHERE timeline_id=?`, item.ID).Scan(&overrideRaw); err == nil {
+		var override domain.Block
+		decodeJSON(overrideRaw, &override)
+		item.Evidence = &override
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return domain.TimelineItem{}, fmt.Errorf("read Timeline evidence override: %w", err)
+	}
+	if item.Evidence == nil || strings.TrimSpace(item.Evidence.Text) == "" {
+		return domain.TimelineItem{}, ErrTimelineMemoryTextUnavailable
+	}
+	return item, nil
+}
+
+func timelineKeepMemoryInput(item domain.TimelineItem) domain.MemoryItemInput {
+	input := routineMoreMemoryInput(item)
+	source := input.Identity.Source
+	if source == "" {
+		source = item.Source
+	}
+	evidenceKey := input.Identity.CanonicalEvidenceKey
+	input.Reason = "timeline_keep_full_copy"
+	input.Provenance = []domain.MemoryProvenance{{
+		ProvenanceKind:       "manual",
+		Source:               source,
+		CanonicalEvidenceKey: evidenceKey,
+		SourceURL:            input.Identity.CanonicalPermalink,
+		CaptureContext: map[string]any{
+			"surface": "timeline", "action": "keep_full_copy", "timelineId": item.ID,
+			"sessionId": item.SessionID, "runId": item.RunID,
+		},
+		Reason: "timeline_keep_full_copy",
+	}}
+	return input
 }
 
 // KeepFullCopy is a short alias for callers using the UI action name.

@@ -367,6 +367,140 @@ func TestRoutineLessRetractionTracksSharedTimelineProvenance(t *testing.T) {
 	}
 }
 
+func TestTimelineKeepFullCopyUsesAuthoritativeEvidenceAndReleaseRestoresRecall(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	fixture := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1030")
+
+	kept, alreadyKept, err := state.KeepTimelineFullCopy(ctx, fixture.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alreadyKept || kept.RetentionTier != domain.MemoryTierFullCopy || kept.FullContent == nil || *kept.FullContent != fixture.Item.Evidence.Text {
+		t.Fatalf("authoritative Keep=%+v already=%v", kept, alreadyKept)
+	}
+	var feedbacks, keepActions, manualProvenance int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM feedback_events WHERE timeline_id=?`, fixture.Item.ID).Scan(&feedbacks); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_actions WHERE memory_item_id=? AND action='keep_full_copy'`, kept.ID).Scan(&keepActions); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_provenance WHERE memory_item_id=? AND provenance_kind='manual' AND reason='timeline_keep_full_copy'`, kept.ID).Scan(&manualProvenance); err != nil {
+		t.Fatal(err)
+	}
+	if feedbacks != 0 || keepActions != 1 || manualProvenance != 1 {
+		t.Fatalf("Keep wrote unexpected audit feedback=%d keepActions=%d manual=%d", feedbacks, keepActions, manualProvenance)
+	}
+	projected, err := state.TimelineItem(ctx, fixture.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.PersonalMemory == nil || projected.PersonalMemory.RetentionTier != domain.MemoryTierFullCopy {
+		t.Fatalf("Timeline did not restore full-copy projection=%+v", projected.PersonalMemory)
+	}
+
+	repeated, alreadyKept, err := state.KeepTimelineFullCopy(ctx, fixture.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !alreadyKept || repeated.ID != kept.ID || repeated.FullContent == nil || *repeated.FullContent != *kept.FullContent {
+		t.Fatalf("idempotent Keep=%+v already=%v original=%+v", repeated, alreadyKept, kept)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_actions WHERE memory_item_id=? AND action='keep_full_copy'`, kept.ID).Scan(&keepActions); err != nil {
+		t.Fatal(err)
+	}
+	if keepActions != 1 {
+		t.Fatalf("idempotent Keep duplicated action count=%d", keepActions)
+	}
+
+	if _, err := state.AddFeedback(ctx, fixture.Item.ID, domain.Feedback{Direction: "less", Reason: stringPointer("not_interested")}); err != nil {
+		t.Fatal(err)
+	}
+	lessKept, err := state.MemoryItem(ctx, kept.ID)
+	if err != nil || lessKept.RetentionTier != domain.MemoryTierFullCopy || lessKept.FullContent == nil {
+		t.Fatalf("Less downgraded explicitly kept copy=%+v err=%v", lessKept, err)
+	}
+
+	released, err := state.ReleaseMemoryFullCopy(ctx, kept.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.RetentionTier != domain.MemoryTierRecall || released.FullContent != nil || released.ContentBytes != 0 {
+		t.Fatalf("Release did not downgrade full copy=%+v", released)
+	}
+	projected, err = state.TimelineItem(ctx, fixture.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.PersonalMemory == nil || projected.PersonalMemory.RetentionTier != domain.MemoryTierRecall {
+		t.Fatalf("Timeline did not restore released recall projection=%+v", projected.PersonalMemory)
+	}
+
+	if err := state.RemoveMemory(ctx, kept.ID); err != nil {
+		t.Fatal(err)
+	}
+	recreated, alreadyKept, err := state.KeepTimelineFullCopy(ctx, fixture.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alreadyKept || recreated.ID == kept.ID || recreated.RetentionTier != domain.MemoryTierFullCopy {
+		t.Fatalf("Keep after ordinary Remove=%+v already=%v previous=%s", recreated, alreadyKept, kept.ID)
+	}
+}
+
+func TestTimelineKeepFullCopyRejectsNonFinalBlankAndForgottenEvidence(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	nonFinal := createRoutineMemoryTimelineFixture(t, state, ctx, "running", "x:routine-memory:1040")
+	if _, _, err := state.KeepTimelineFullCopy(ctx, nonFinal.Item.ID); !errors.Is(err, ErrTimelineMemoryNotEligible) {
+		t.Fatalf("non-final Keep err=%v", err)
+	}
+	if items, err := state.ListMemoryItems(ctx, false, 10); err != nil || len(items) != 0 {
+		t.Fatalf("non-final Keep created memory items=%+v err=%v", items, err)
+	}
+	if err := state.CancelSession(ctx, nonFinal.Session.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	blank := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1041")
+	var observationRaw string
+	if err := state.db.QueryRowContext(ctx, `SELECT observation_json FROM observations WHERE run_id=? LIMIT 1`, blank.Item.RunID).Scan(&observationRaw); err != nil {
+		t.Fatal(err)
+	}
+	var observation domain.Observation
+	if err := json.Unmarshal([]byte(observationRaw), &observation); err != nil {
+		t.Fatal(err)
+	}
+	observation.Snapshots[0].Blocks[0].Text = "   "
+	updatedObservation, err := json.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE observations SET observation_json=? WHERE run_id=?`, string(updatedObservation), blank.Item.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := state.KeepTimelineFullCopy(ctx, blank.Item.ID); !errors.Is(err, ErrTimelineMemoryTextUnavailable) {
+		t.Fatalf("blank-text Keep err=%v", err)
+	}
+
+	forgotten := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1042")
+	if _, err := state.AddFeedback(ctx, forgotten.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("forgotten fixture projection=%+v err=%v", items, err)
+	}
+	forgottenID := items[0].ID
+	if _, err := state.ForgetMemory(ctx, forgottenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := state.KeepTimelineFullCopy(ctx, forgotten.Item.ID); !errors.Is(err, ErrMemoryTombstoned) {
+		t.Fatalf("forgotten Keep err=%v", err)
+	}
+}
+
 func TestRoutineMoreSkipsNonFinalButIgnoresClientOrigin(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

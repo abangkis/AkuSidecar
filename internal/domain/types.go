@@ -1359,20 +1359,29 @@ type ReasoningTelemetry struct {
 }
 
 type TimelineItem struct {
-	ID            string                 `json:"id"`
-	SessionID     string                 `json:"sessionId"`
-	RunID         string                 `json:"runId"`
-	Source        Source                 `json:"source"`
-	EvidenceKey   string                 `json:"evidenceKey"`
-	Rank          int                    `json:"rank"`
-	Item          ReasonedItem           `json:"item"`
-	Assessment    CandidateAssessment    `json:"assessment"`
-	Evidence      *Block                 `json:"evidence,omitempty"`
-	SemanticEvent *TimelineSemanticEvent `json:"semanticEvent,omitempty"`
-	AIDetection   *TimelineAIDetection   `json:"aiDetection,omitempty"`
-	Feedback      *Feedback              `json:"feedback,omitempty"`
-	Coverage      map[string]any         `json:"coverage"`
-	CreatedAt     string                 `json:"createdAt"`
+	ID             string                    `json:"id"`
+	SessionID      string                    `json:"sessionId"`
+	RunID          string                    `json:"runId"`
+	Source         Source                    `json:"source"`
+	EvidenceKey    string                    `json:"evidenceKey"`
+	Rank           int                       `json:"rank"`
+	Item           ReasonedItem              `json:"item"`
+	Assessment     CandidateAssessment       `json:"assessment"`
+	Evidence       *Block                    `json:"evidence,omitempty"`
+	SemanticEvent  *TimelineSemanticEvent    `json:"semanticEvent,omitempty"`
+	AIDetection    *TimelineAIDetection      `json:"aiDetection,omitempty"`
+	Feedback       *Feedback                 `json:"feedback,omitempty"`
+	PersonalMemory *TimelineMemoryProjection `json:"personalMemory,omitempty"`
+	Coverage       map[string]any            `json:"coverage"`
+	CreatedAt      string                    `json:"createdAt"`
+}
+
+// TimelineMemoryProjection is a deliberately small read projection. It lets
+// the Timeline restore whether the user has kept a full copy without exposing
+// memory ids, provenance, audit rows, or retained text through the Timeline
+// response.
+type TimelineMemoryProjection struct {
+	RetentionTier MemoryTier `json:"retentionTier"`
 }
 
 type AIAssessment struct {
