@@ -265,6 +265,10 @@ $("#settings-view-button").addEventListener("click", () => {
 });
 $("#inbox-refresh-button").addEventListener("click", loadInbox);
 $("#library-search-form").addEventListener("submit", submitLibrarySearch);
+$("#library-filters-toggle").addEventListener("click", toggleLibraryFilters);
+for (const field of [$("#library-source"), $("#library-tier"), $("#library-published-from"), $("#library-published-to")]) {
+  field?.addEventListener("change", syncLibraryFilterToggle);
+}
 $("#library-clear-button").addEventListener("click", clearLibrarySearch);
 $("#library-refresh-button").addEventListener("click", refreshLibrary);
 $("#library-load-more").addEventListener("click", loadMoreLibrary);
@@ -612,6 +616,32 @@ function renderLibrarySourceOptions() {
     select.append(option);
   }
   select.value = [...select.options].some((option) => option.value === current) ? current : "";
+  syncLibraryFilterToggle();
+}
+
+function toggleLibraryFilters() {
+  const toggle = $("#library-filters-toggle");
+  const fields = $("#library-filter-fields");
+  if (!toggle || !fields) return;
+  const expanded = toggle.getAttribute("aria-expanded") !== "true";
+  fields.classList.toggle("hidden", !expanded);
+  toggle.setAttribute("aria-expanded", String(expanded));
+  syncLibraryFilterToggle();
+}
+
+function syncLibraryFilterToggle() {
+  const toggle = $("#library-filters-toggle");
+  const fields = $("#library-filter-fields");
+  if (!toggle || !fields) return;
+  const activeCount = [
+    $("#library-source")?.value,
+    $("#library-tier")?.value,
+    $("#library-published-from")?.value,
+    $("#library-published-to")?.value,
+  ].filter(Boolean).length;
+  toggle.textContent = activeCount ? `Filters (${activeCount})` : "Filters";
+  toggle.classList.toggle("has-active-filters", activeCount > 0);
+  toggle.setAttribute("aria-expanded", String(!fields.classList.contains("hidden")));
 }
 
 function readLibraryFilters() {
@@ -660,6 +690,7 @@ function clearLibrarySearch() {
   $("#library-tier").value = "";
   $("#library-published-from").value = "";
   $("#library-published-to").value = "";
+  syncLibraryFilterToggle();
   submitLibrarySearch();
 }
 
@@ -733,7 +764,10 @@ function renderLibrary() {
   const loadMore = $("#library-load-more");
   const status = $("#library-status");
   const meta = $("#library-meta");
+  const layout = $("#library-layout");
   if (!results || !loadMore || !status || !meta) return;
+
+  layout?.classList.toggle("has-selection", Boolean(state.library.selectedId));
 
   results.replaceChildren();
   status.className = "library-status";
@@ -5941,6 +5975,10 @@ function buildActions(entry) {
   const actions = document.createElement("div");
   actions.className = "result-actions";
   const link = buildSourceLink(entry);
+  const primary = document.createElement("div");
+  primary.className = "timeline-primary-actions";
+  if (link) primary.append(link);
+  primary.append(buildTimelineKeepAction(entry));
   const feedback = document.createElement("div");
   feedback.className = "feedback-actions";
   const more = feedbackButton("More like this");
@@ -5969,9 +6007,7 @@ function buildActions(entry) {
     renderDirection();
   });
   feedback.append(more, less);
-  if (link) actions.append(link);
-  actions.append(feedback);
-  actions.append(buildTimelineKeepAction(entry));
+  actions.append(primary, feedback);
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
 }
@@ -5982,18 +6018,22 @@ function buildTimelineKeepAction(entry) {
   const keep = document.createElement("button");
   keep.type = "button";
   keep.className = "feedback-button memory-keep-button";
+  keep.setAttribute("aria-label", "Keep full copy locally");
   const status = document.createElement("small");
   status.className = "timeline-memory-action-status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
+  let statusTimer = null;
   const hasText = Boolean(String(entry?.evidence?.text ?? "").trim());
   const render = () => {
     const kept = entry?.personalMemory?.retentionTier === "full_copy";
     const busy = state.timelineKeepInFlight.has(entry.id);
-    keep.textContent = kept ? "Full copy kept" : busy ? "Keeping…" : "Keep full copy";
+    keep.textContent = kept ? "✓ Kept" : busy ? "Keeping…" : "Keep";
     keep.disabled = kept || busy || !hasText;
     keep.classList.toggle("selected", kept);
+    keep.classList.toggle("is-kept", kept);
     keep.setAttribute("aria-pressed", String(kept));
+    keep.setAttribute("aria-label", kept ? "Full copy kept locally" : "Keep full copy locally");
     keep.title = !hasText && !kept
       ? "The source text is unavailable, so this item cannot be kept yet."
       : kept
@@ -6016,7 +6056,12 @@ function buildTimelineKeepAction(entry) {
       status.textContent = response.alreadyKept === true
         ? "Already kept locally as a full copy."
         : "Full copy kept locally.";
+      window.clearTimeout(statusTimer);
+      statusTimer = window.setTimeout(() => {
+        status.textContent = "";
+      }, 3500);
     } catch (error) {
+      window.clearTimeout(statusTimer);
       status.textContent = "Could not keep this full copy. Try again.";
       showError(error);
     } finally {

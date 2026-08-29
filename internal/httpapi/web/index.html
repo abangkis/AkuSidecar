@@ -564,19 +564,26 @@
         </div>
 
         <form id="library-search-form" class="library-search-form" role="search" aria-labelledby="library-search-label">
-          <label id="library-search-label" class="library-query-field" for="library-query">
-            <span>Search local memories</span>
-            <input id="library-query" type="search" maxlength="200" autocomplete="off" spellcheck="false" placeholder="Search title, summary, author, tags, or kept text" enterkeyhint="search" />
-          </label>
-          <div class="library-filters" aria-label="Library filters">
-            <label for="library-source">Source<select id="library-source"><option value="">All sources</option></select></label>
-            <label for="library-tier">Tier<select id="library-tier"><option value="">All tiers</option><option value="recall">Recall stub</option><option value="full_copy">Full copy kept</option></select></label>
-            <label for="library-published-from">Published from<input id="library-published-from" type="date" /></label>
-            <label for="library-published-to">Published to<input id="library-published-to" type="date" /></label>
+          <div class="library-search-toolbar">
+            <label id="library-search-label" class="library-query-field" for="library-query">
+              <span>Search local memories</span>
+              <input id="library-query" type="search" maxlength="200" autocomplete="off" spellcheck="false" placeholder="Search title, summary, author, tags, or kept text" enterkeyhint="search" />
+            </label>
+            <div class="library-search-actions">
+              <button class="primary-button" type="submit">Search</button>
+              <button id="library-filters-toggle" class="secondary-button library-filters-toggle" type="button" aria-expanded="false" aria-controls="library-filter-fields">Filters</button>
+            </div>
           </div>
-          <div class="library-search-actions">
-            <button class="primary-button" type="submit">Search</button>
-            <button id="library-clear-button" class="text-button" type="button">Clear filters</button>
+          <div id="library-filter-fields" class="library-filter-fields hidden" aria-label="Advanced Library filters">
+            <div class="library-filters">
+              <label for="library-source">Source<select id="library-source"><option value="">All sources</option></select></label>
+              <label for="library-tier">Tier<select id="library-tier"><option value="">All tiers</option><option value="recall">Recall stub</option><option value="full_copy">Full copy kept</option></select></label>
+              <label for="library-published-from">Published from<input id="library-published-from" type="date" /></label>
+              <label for="library-published-to">Published to<input id="library-published-to" type="date" /></label>
+            </div>
+            <div class="library-filter-actions">
+              <button id="library-clear-button" class="text-button" type="button">Clear filters</button>
+            </div>
           </div>
         </form>
 
