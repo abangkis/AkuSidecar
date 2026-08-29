@@ -128,15 +128,30 @@ func (s *Store) UpsertMemoryRecallStub(ctx context.Context, input domain.MemoryI
 	}
 	defer tx.Rollback()
 
-	if tombstoneID, err := tombstonedMemoryID(ctx, tx, tombstoneKey, normalized.Identity); err != nil {
+	memoryID, err := s.upsertMemoryRecallStubTx(ctx, tx, tombstoneKey, normalized)
+	if err != nil {
 		return domain.MemoryItem{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("commit memory recall stub: %w", err)
+	}
+	return s.MemoryItem(ctx, memoryID)
+}
+
+// upsertMemoryRecallStubTx applies a normalized recall-stub projection inside
+// a caller-owned transaction. Keeping this boundary internal lets routine
+// Timeline feedback commit its canonical preference event and memory
+// projection atomically without opening a nested SQLite transaction.
+func (s *Store) upsertMemoryRecallStubTx(ctx context.Context, tx *sql.Tx, tombstoneKey []byte, normalized normalizedMemoryInput) (string, error) {
+	if tombstoneID, err := tombstonedMemoryID(ctx, tx, tombstoneKey, normalized.Identity); err != nil {
+		return "", err
 	} else if tombstoneID != "" {
-		return domain.MemoryItem{}, fmt.Errorf("%w: %s", ErrMemoryTombstoned, tombstoneID)
+		return "", fmt.Errorf("%w: %s", ErrMemoryTombstoned, tombstoneID)
 	}
 
 	memoryID, err := resolveMemoryIdentity(ctx, tx, normalized.Identity)
 	if err != nil {
-		return domain.MemoryItem{}, err
+		return "", err
 	}
 	now := memoryNow(s)
 	created := false
@@ -160,40 +175,37 @@ func (s *Store) UpsertMemoryRecallStub(ctx context.Context, input domain.MemoryI
 			string(tagsJSON), string(facetsJSON), string(mediaJSON), domain.MemoryTierRecall,
 			normalized.Reason, now, now)
 		if err != nil {
-			return domain.MemoryItem{}, fmt.Errorf("insert memory recall stub: %w", err)
+			return "", fmt.Errorf("insert memory recall stub: %w", err)
 		}
 	} else {
 		stored, err := memoryStoredByID(ctx, tx, memoryID)
 		if err != nil {
-			return domain.MemoryItem{}, err
+			return "", err
 		}
 		if stored.item.LifecycleState == domain.MemoryStateTombstone {
-			return domain.MemoryItem{}, fmt.Errorf("%w: %s", ErrMemoryTombstoned, memoryID)
+			return "", fmt.Errorf("%w: %s", ErrMemoryTombstoned, memoryID)
 		}
 		if err := updateMemoryStub(ctx, tx, stored, normalized, now); err != nil {
-			return domain.MemoryItem{}, err
+			return "", err
 		}
 	}
 
 	if err := upsertMemoryAliases(ctx, tx, memoryID, normalized.Identity, now); err != nil {
-		return domain.MemoryItem{}, err
+		return "", err
 	}
 	if created {
 		if err := recordMemoryActionTx(ctx, tx, memoryID, domain.MemoryActionCreateStub, nil, now); err != nil {
-			return domain.MemoryItem{}, err
+			return "", err
 		}
 	} else if err := recordMemoryActionTx(ctx, tx, memoryID, domain.MemoryActionUpdateStub, nil, now); err != nil {
-		return domain.MemoryItem{}, err
+		return "", err
 	}
 	for _, provenance := range normalized.Provenance {
 		if err := recordMemoryProvenanceTx(ctx, tx, memoryID, provenance, now); err != nil {
-			return domain.MemoryItem{}, err
+			return "", err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return domain.MemoryItem{}, fmt.Errorf("commit memory recall stub: %w", err)
-	}
-	return s.MemoryItem(ctx, memoryID)
+	return memoryID, nil
 }
 
 // CreateMemoryRecallStub is the explicit create/update entry point used by
@@ -720,6 +732,167 @@ func normalizeMemoryInput(input domain.MemoryItemInput) (normalizedMemoryInput, 
 		TagsProvided: input.Tags != nil, FacetsProvided: input.Facets != nil, MediaProvided: input.Media != nil,
 		Reason: strings.TrimSpace(input.Reason), Provenance: input.Provenance,
 	}, nil
+}
+
+// routineMoreMemoryInput is the narrow projection from a final visible
+// Timeline item into Personal Memory. It deliberately copies only bounded
+// recall metadata; full source text remains outside this path and can only be
+// retained through the explicit KeepMemoryFullCopy action.
+func routineMoreMemoryInput(item domain.TimelineItem) domain.MemoryItemInput {
+	source := item.Source
+	if source == "" {
+		source = item.Item.Source
+	}
+	block := item.Evidence
+	evidenceKey := strings.TrimSpace(item.EvidenceKey)
+	if evidenceKey == "" {
+		evidenceKey = strings.TrimSpace(item.Item.EvidenceKey)
+	}
+	permalink := ""
+	platformID := ""
+	author := strings.TrimSpace(item.Item.Author)
+	text := ""
+	var publishedAt *string
+	var media []domain.MemoryMediaReference
+	if block != nil {
+		evidenceKey = firstMemoryString(evidenceKey, block.EvidenceKey)
+		permalink = strings.TrimSpace(block.Permalink)
+		platformID = strings.TrimSpace(block.PlatformID)
+		author = firstMemoryString(author, block.Author)
+		text = strings.TrimSpace(block.Text)
+		publishedAt = block.PublishedAt
+		media = timelineMemoryMedia(block.Media)
+	}
+	permalink = firstMemoryString(permalink, item.Item.SourceURL)
+	if canonical, ok := domain.CanonicalSourceURL(source, permalink); ok {
+		permalink = canonical
+	} else {
+		// A malformed or non-native source URL must not make the explicit
+		// preference action fail; retain the durable evidence key instead.
+		permalink = ""
+	}
+	if publishedAt == nil {
+		publishedAt = item.Item.PublishedAt
+	}
+	var publishedCopy *string
+	if publishedAt != nil {
+		value := boundedMemoryText(*publishedAt, 100)
+		if value != "" {
+			publishedCopy = &value
+		}
+	}
+	contentFingerprint := ""
+	if text != "" {
+		contentFingerprint = memoryContentFingerprint(text)
+	}
+	title := boundedMemoryText(item.Item.WhatChanged, maxMemoryTitleRunes)
+	summary := boundedMemoryText(item.Item.WhyItMatters, maxMemorySummaryRunes)
+	if summary == "" {
+		summary = boundedMemoryText(text, maxMemorySummaryRunes)
+	}
+	return domain.MemoryItemInput{
+		Identity: domain.MemoryIdentity{
+			Source:               source,
+			CanonicalEvidenceKey: boundedMemoryText(evidenceKey, maxMemoryIdentityRunes),
+			CanonicalPermalink:   permalink,
+			CanonicalPlatformID:  boundedMemoryText(platformID, maxMemoryIdentityRunes),
+			ContentFingerprint:   contentFingerprint,
+		},
+		Title:       title,
+		Summary:     summary,
+		Author:      boundedMemoryText(author, maxMemoryAuthorRunes),
+		PublishedAt: publishedCopy,
+		Tags:        boundedMemoryLabels(item.Assessment.TopicTags),
+		Facets:      boundedMemoryLabels(item.Assessment.TopicFacets),
+		Media:       media,
+		Reason:      "routine_more",
+		Provenance: []domain.MemoryProvenance{{
+			ProvenanceKind:       "explicit_feedback",
+			Source:               source,
+			CanonicalEvidenceKey: boundedMemoryText(evidenceKey, maxMemoryIdentityRunes),
+			SourceURL:            permalink,
+			CaptureContext: map[string]any{
+				"surface":    "timeline",
+				"feedback":   "more",
+				"timelineId": item.ID,
+				"sessionId":  item.SessionID,
+				"runId":      item.RunID,
+			},
+			Reason: "routine_more",
+		}},
+	}
+}
+
+func firstMemoryString(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func boundedMemoryText(value string, maxRunes int) string {
+	value = strings.TrimSpace(value)
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return string(runes)
+}
+
+func boundedMemoryLabels(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	if len(values) > maxMemoryTagCount {
+		values = values[:maxMemoryTagCount]
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = boundedMemoryText(value, maxMemoryTagRunes); value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func timelineMemoryMedia(values []map[string]any) []domain.MemoryMediaReference {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]domain.MemoryMediaReference, 0, len(values))
+	for _, raw := range values {
+		kind := boundedMemoryText(stringValue(raw, "kind"), maxMemoryMediaFieldRunes)
+		if kind == "" {
+			continue
+		}
+		mediaURL := firstMemoryString(
+			stringValue(raw, "url"), stringValue(raw, "posterUrl"),
+			stringValue(raw, "imageUrl"), stringValue(raw, "thumbnailUrl"),
+		)
+		if mediaURL != "" {
+			parsed, err := url.Parse(mediaURL)
+			if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+				// Keep only the media kind when an adapter supplied an unsafe
+				// pointer; this path never stores a binary or local-file ref.
+				mediaURL = ""
+			}
+		}
+		result = append(result, domain.MemoryMediaReference{
+			Kind:    kind,
+			URL:     boundedMemoryText(mediaURL, maxMemoryMediaURLRunes),
+			Title:   boundedMemoryText(firstMemoryString(stringValue(raw, "title"), stringValue(raw, "caption")), maxMemoryMediaFieldRunes),
+			AltText: boundedMemoryText(firstMemoryString(stringValue(raw, "altText"), stringValue(raw, "alt")), maxMemoryMediaFieldRunes),
+		})
+		if len(result) == maxMemoryMediaReferences {
+			break
+		}
+	}
+	return result
 }
 
 func mergeMemoryIdentity(primary, fallback domain.MemoryIdentity) domain.MemoryIdentity {

@@ -1689,11 +1689,18 @@ func (s *Store) attachEffectivePreferenceDecision(ctx context.Context, items []d
 }
 
 func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain.Feedback) (domain.Feedback, error) {
-	var sessionID, runID, evidenceKey string
-	err := s.db.QueryRowContext(ctx, `SELECT session_id,run_id,evidence_key FROM timeline_items WHERE id=?`, timelineID).Scan(&sessionID, &runID, &evidenceKey)
+	var sessionID, runID, evidenceKey, sessionStatus string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT t.session_id,t.run_id,t.evidence_key,s.status
+		FROM timeline_items t JOIN sessions s ON s.id=t.session_id
+		WHERE t.id=?`, timelineID).Scan(&sessionID, &runID, &evidenceKey, &sessionStatus)
 	if err != nil {
 		return domain.Feedback{}, err
 	}
+	// AddFeedback is the authoritative routine Timeline action. Origin is
+	// normalized below so a stale or forged client hint cannot suppress the
+	// guaranteed recall projection. Calibration and selection corrections use
+	// their distinct canonical store paths and never call AddFeedback.
 	input.ID = domain.NewID("feedback")
 	input.TimelineID = timelineID
 	input.SessionID = sessionID
@@ -1704,8 +1711,51 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 	if err = input.Validate(); err != nil {
 		return domain.Feedback{}, err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, input.ID, input.TimelineID, input.SessionID, input.RunID, input.EvidenceKey, input.Direction, input.Reason, input.CreatedAt)
-	return input, err
+
+	// A Timeline row only becomes a Personal Memory candidate once it belongs
+	// to a terminal, visible session. ComposeSession already removes
+	// non-survivors; the existence check above therefore forms the survivor
+	// boundary while the terminal status prevents projection during capture or
+	// reasoning.
+	projectMemory := input.Direction == "more" &&
+		(sessionStatus == "completed" || sessionStatus == "partial")
+	var normalized normalizedMemoryInput
+	var tombstoneKey []byte
+	if projectMemory {
+		item, itemErr := s.TimelineItem(ctx, timelineID)
+		if itemErr != nil {
+			return domain.Feedback{}, itemErr
+		}
+		memoryInput := routineMoreMemoryInput(item)
+		normalized, err = normalizeMemoryInput(memoryInput)
+		if err != nil {
+			return domain.Feedback{}, fmt.Errorf("prepare routine More memory projection: %w", err)
+		}
+		tombstoneKey, err = s.memoryTombstoneKey(ctx)
+		if err != nil {
+			return domain.Feedback{}, err
+		}
+		normalized.IdentityDigest = memoryIdentityDigest(tombstoneKey, normalized.Identity)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Feedback{}, fmt.Errorf("begin feedback transaction: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, input.ID, input.TimelineID, input.SessionID, input.RunID, input.EvidenceKey, input.Direction, input.Reason, input.CreatedAt); err != nil {
+		return domain.Feedback{}, err
+	}
+	if projectMemory {
+		if _, err = s.upsertMemoryRecallStubTx(ctx, tx, tombstoneKey, normalized); err != nil {
+			// The feedback row and projection intentionally roll back together.
+			return domain.Feedback{}, fmt.Errorf("project routine More memory: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return domain.Feedback{}, fmt.Errorf("commit feedback transaction: %w", err)
+	}
+	return input, nil
 }
 
 func (s *Store) CancelSession(ctx context.Context, id string) error {

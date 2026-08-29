@@ -702,6 +702,13 @@ func TestCalibrationSessionReflectsSnapshotLiveInfluence(t *testing.T) {
 	if !completed.LiveInfluence || completed.Snapshot == nil || !completed.Snapshot.LiveInfluence {
 		t.Fatalf("completed calibration must expose snapshot influence: %+v", completed)
 	}
+	var memoryCount int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_items`).Scan(&memoryCount); err != nil {
+		t.Fatal(err)
+	}
+	if memoryCount != 0 {
+		t.Fatalf("calibration unexpectedly projected personal memory: %d", memoryCount)
+	}
 }
 
 func TestSessionCommandAndObservationLifecycle(t *testing.T) {

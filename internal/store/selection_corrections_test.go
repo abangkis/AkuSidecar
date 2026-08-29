@@ -71,6 +71,13 @@ func TestSelectionCorrectionRestoresEvaluatedCandidateAndIsUndoable(t *testing.T
 	if len(signals) != 1 || signals[0].Direction != "more" || signals[0].Origin != "selection_correction" {
 		t.Fatalf("signals=%+v", signals)
 	}
+	var memoryCount int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_items`).Scan(&memoryCount); err != nil {
+		t.Fatal(err)
+	}
+	if memoryCount != 0 {
+		t.Fatalf("selection correction unexpectedly projected personal memory: %d", memoryCount)
+	}
 	trace, err := state.InboxRunTrace(ctx, run.ID, "selected", 10, 0)
 	if err != nil {
 		t.Fatal(err)
