@@ -964,6 +964,18 @@ func (e *Engine) InboxRunTrace(ctx context.Context, runID, stage string, limit, 
 	return e.store.InboxRunTrace(ctx, runID, stage, limit, offset)
 }
 
+func (e *Engine) VisionEvaluationJobs(ctx context.Context, runID string) ([]domain.VisionEvaluationJob, error) {
+	run, err := e.store.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	return e.store.ListVisionEvaluations(ctx, runID, run.Source)
+}
+
+func (e *Engine) RetryVisionEvaluation(ctx context.Context, jobID string) error {
+	return e.store.RetryVisionEvaluation(ctx, jobID)
+}
+
 func (e *Engine) RecordCaptureSurfaceEvent(ctx context.Context, value domain.CaptureSurfaceEvent) (domain.CaptureSurfaceEvent, error) {
 	return e.store.RecordCaptureSurfaceEvent(ctx, value)
 }
@@ -1388,6 +1400,26 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		return fmt.Errorf("classify resurfaced content: %w", err)
 	}
 	merged = filterResurfacedObservation(merged, continuity)
+	// Instagram media-only candidates are admitted by the capture contract but
+	// are never sent to the text-only reasoning provider. Persist them in the
+	// Sidecar-owned bounded vision lane first; mixed observations continue with
+	// their text-bearing candidates below.
+	visionObservation, visionInputs := splitVisionLaneCandidates(merged)
+	if len(visionInputs) > 0 {
+		descriptor, _ := domain.SourceByID(run.Source)
+		if _, err := e.store.EnqueueVisionEvaluations(ctx, run, visionInputs, descriptor.VisionQueueLimit); err != nil {
+			return fmt.Errorf("enqueue media-only vision candidates: %w", err)
+		}
+		visionSummary, err := e.store.VisionEvaluationSummary(ctx, run.ID, run.Source)
+		if err != nil {
+			return fmt.Errorf("read media-only vision queue: %w", err)
+		}
+		merged.Coverage["visionEvaluation"] = visionEvaluationCoverage(visionSummary)
+		if err := e.store.SetRunCoverageField(ctx, runID, "visionEvaluation", merged.Coverage["visionEvaluation"]); err != nil {
+			return fmt.Errorf("save media-only vision queue receipt: %w", err)
+		}
+		merged = visionObservation
+	}
 	if observationCandidateCount(merged) == 0 {
 		skipped := skippedResurfaceCount(continuity)
 		if _, exists := merged.Coverage["acquisitionPlanning"]; !exists {
@@ -1403,8 +1435,12 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 				return fmt.Errorf("save continuity bypass receipt: %w", err)
 			}
 		}
+		summary := fmt.Sprintf("%d unchanged resurfaced item%s skipped before reasoning inside the configured cooldown.", skipped, map[bool]string{true: "", false: "s"}[skipped == 1])
+		if len(visionInputs) > 0 {
+			summary = fmt.Sprintf("%d Instagram media-only candidate%s held for bounded vision evaluation; no text-bearing candidate entered reasoning.", len(visionInputs), map[bool]string{true: "", false: "s"}[len(visionInputs) == 1])
+		}
 		result := domain.ReasoningResult{
-			Summary: fmt.Sprintf("%d unchanged resurfaced item%s skipped before reasoning inside the configured cooldown.", skipped, map[bool]string{true: "", false: "s"}[skipped == 1]),
+			Summary: summary,
 			Items:   []domain.ReasonedItem{}, CandidateAssessments: []domain.CandidateAssessment{}, Limitations: []string{},
 		}
 		addedStarted := time.Now()
@@ -1579,6 +1615,33 @@ func bindReasoningSourceURLs(observation domain.Observation, result *domain.Reas
 		} else {
 			item.SourceURLKind = "native_post"
 		}
+	}
+}
+
+func splitVisionLaneCandidates(observation domain.Observation) (domain.Observation, []domain.VisionEvaluationInput) {
+	result := observation
+	result.Snapshots = make([]domain.Snapshot, len(observation.Snapshots))
+	inputs := []domain.VisionEvaluationInput{}
+	for snapshotIndex, snapshot := range observation.Snapshots {
+		result.Snapshots[snapshotIndex] = snapshot
+		result.Snapshots[snapshotIndex].Blocks = make([]domain.Block, 0, len(snapshot.Blocks))
+		for _, block := range snapshot.Blocks {
+			if domain.MediaOnlyVisionRequired(observation.Source, block) {
+				inputs = append(inputs, domain.VisionEvaluationInput{EvidenceKey: block.EvidenceKey, Candidate: block})
+				continue
+			}
+			result.Snapshots[snapshotIndex].Blocks = append(result.Snapshots[snapshotIndex].Blocks, block)
+		}
+	}
+	return result, inputs
+}
+
+func visionEvaluationCoverage(value domain.InboxVisionEvaluation) map[string]any {
+	return map[string]any{
+		"policy": value.Policy, "available": value.Available, "availability": value.Availability,
+		"capacity": value.Capacity, "active": value.Active, "pending": value.Pending,
+		"deferred": value.Deferred, "evaluating": value.Evaluating, "retrying": value.Retrying,
+		"ready": value.Ready, "failed": value.Failed,
 	}
 }
 

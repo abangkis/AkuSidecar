@@ -3515,6 +3515,9 @@ function buildInboxRun(run, sessionStatus = "") {
   if (run.mediaAcquisition) {
     card.append(buildMediaAcquisitionTelemetry(run.mediaAcquisition));
   }
+  if (run.visionEvaluation) {
+    card.append(buildVisionEvaluationTelemetry(run.visionEvaluation));
+  }
   if (run.captureSurface?.length) {
     card.append(buildCaptureSurfaceTelemetry(run.captureSurface));
   }
@@ -3527,6 +3530,58 @@ function buildInboxRun(run, sessionStatus = "") {
     }
   }));
   return card;
+}
+
+function buildVisionEvaluationTelemetry(value) {
+  const details = document.createElement("details");
+  details.className = "vision-evaluation-telemetry";
+  const summary = document.createElement("summary");
+  const title = document.createElement("strong");
+  title.textContent = "Instagram media-only lane";
+  const availability = document.createElement("span");
+  availability.textContent = value.available
+    ? `${value.ready || 0} ready · ${value.pending || 0} pending`
+    : `${value.pending || 0} pending · ${value.deferred || 0} deferred · vision unavailable`;
+  summary.append(title, availability);
+  const body = document.createElement("div");
+  body.className = "vision-evaluation-body";
+  const note = document.createElement("p");
+  note.className = "capture-candidate-note";
+  note.textContent = value.availability || "Media-only entries are held until a pixel-capable evaluator is available.";
+  body.append(note);
+  const list = document.createElement("ol");
+  list.className = "vision-evaluation-jobs";
+  for (const job of value.jobs || []) {
+    const row = document.createElement("li");
+    const label = document.createElement("strong");
+    label.textContent = `${humanize(job.status)} · ${job.canonicalIdentity || job.evidenceKey}`;
+    const meta = document.createElement("span");
+    meta.textContent = [job.attemptCount ? `${job.attemptCount} attempt${job.attemptCount === 1 ? "" : "s"}` : null, job.lastError || job.reason].filter(Boolean).join(" · ");
+    row.append(label, meta);
+    if (job.status === "failed") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "vision-evaluation-retry";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", async () => {
+        retry.disabled = true;
+        retry.textContent = "Queued…";
+        try {
+          await api(`/api/vision-evaluations/${encodeURIComponent(job.id)}/retry`, { method: "POST" });
+          await loadInbox();
+        } catch (error) {
+          showError(error);
+          retry.disabled = false;
+          retry.textContent = "Retry";
+        }
+      });
+      row.append(retry);
+    }
+    list.append(row);
+  }
+  if (list.children.length) body.append(list);
+  details.append(summary, body);
+  return details;
 }
 
 function inboxRunCaptureReliabilityNotice(run) {

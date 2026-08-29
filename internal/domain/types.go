@@ -808,6 +808,52 @@ type InboxRun struct {
 	AcquisitionPlanning  *InboxAcquisitionPlanning `json:"acquisitionPlanning,omitempty"`
 	IdentityResolution   *InboxIdentityResolution  `json:"identityResolution,omitempty"`
 	CapturePerformance   *InboxCapturePerformance  `json:"capturePerformance,omitempty"`
+	VisionEvaluation     *InboxVisionEvaluation    `json:"visionEvaluation,omitempty"`
+}
+
+// VisionEvaluationJob is the durable state of a media-only candidate in the
+// source-specific bounded vision lane. CandidateJSON is deliberately kept as
+// captured evidence, not model output; it lets a later vision-capable
+// evaluator replay the exact bounded input without re-reading the source.
+type VisionEvaluationJob struct {
+	ID                string         `json:"id"`
+	RunID             string         `json:"runId"`
+	SessionID         string         `json:"sessionId"`
+	Source            Source         `json:"source"`
+	EvidenceKey       string         `json:"evidenceKey"`
+	CanonicalIdentity string         `json:"canonicalIdentity"`
+	MediaFingerprint  string         `json:"mediaFingerprint"`
+	Status            string         `json:"status"`
+	Reason            string         `json:"reason,omitempty"`
+	AttemptCount      int            `json:"attemptCount"`
+	QueuePosition     int            `json:"queuePosition,omitempty"`
+	QueuedAt          string         `json:"queuedAt"`
+	NextAttemptAt     string         `json:"nextAttemptAt,omitempty"`
+	LastError         string         `json:"lastError,omitempty"`
+	Candidate         map[string]any `json:"candidate,omitempty"`
+	CreatedAt         string         `json:"createdAt"`
+	StartedAt         string         `json:"startedAt,omitempty"`
+	CompletedAt       string         `json:"completedAt,omitempty"`
+}
+
+type InboxVisionEvaluation struct {
+	Policy       string                `json:"policy"`
+	Available    bool                  `json:"available"`
+	Availability string                `json:"availability,omitempty"`
+	Capacity     int                   `json:"capacity"`
+	Active       int                   `json:"active"`
+	Pending      int                   `json:"pending"`
+	Deferred     int                   `json:"deferred"`
+	Evaluating   int                   `json:"evaluating"`
+	Retrying     int                   `json:"retrying"`
+	Ready        int                   `json:"ready"`
+	Failed       int                   `json:"failed"`
+	Jobs         []VisionEvaluationJob `json:"jobs"`
+}
+
+type VisionEvaluationInput struct {
+	EvidenceKey string `json:"evidenceKey"`
+	Candidate   Block  `json:"candidate"`
 }
 
 type InboxCapturePerformance struct {

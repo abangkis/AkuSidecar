@@ -249,6 +249,13 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 	}
 	entry.CapturePerformance = inboxCapturePerformance(observations)
 	entry.AcquisitionPlanning = inboxAcquisitionPlanning(run.Coverage["acquisitionPlanning"])
+	if descriptor, ok := domain.SourceByID(run.Source); ok && descriptor.MediaOnlyEvaluationPolicy == "bounded_vision" {
+		vision, visionErr := s.VisionEvaluationSummary(ctx, run.ID, run.Source)
+		if visionErr != nil {
+			return domain.InboxRun{}, visionErr
+		}
+		entry.VisionEvaluation = &vision
+	}
 	evidence := map[string]bool{}
 	for _, snapshot := range capture.ReconcileSnapshots(run.Source, allSnapshots) {
 		for _, block := range snapshot.Blocks {

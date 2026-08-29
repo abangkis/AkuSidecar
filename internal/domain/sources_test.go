@@ -35,6 +35,9 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	if descriptor, ok := SourceByID(SourceInstagram); !ok || !descriptor.DefaultActive || descriptor.FollowUpPlanningPolicy != "local_frontier" || descriptor.MediaEvidenceAdapterVersion != "instagram-structured-carousel-v2" || descriptor.PlaybackRecoveryCapability != "native_post_recapture" {
 		t.Fatalf("Instagram must be available and preselected as a local-frontier source: %+v ok=%v", descriptor, ok)
 	}
+	if descriptor, ok := SourceByID(SourceInstagram); !ok || descriptor.MediaOnlyEvaluationPolicy != "bounded_vision" || descriptor.VisionQueueLimit != 8 {
+		t.Fatalf("Instagram media-only vision policy drifted: %+v", descriptor)
+	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.PassiveMediaCapability != "x_response" || descriptor.MediaEvidenceAdapterVersion != "x-response-evidence-v2" {
 		t.Fatalf("X media capability drifted: %+v", descriptor)
 	}
@@ -55,6 +58,22 @@ func TestSourceRegistryOwnsGenericProductAndBridgeContracts(t *testing.T) {
 	}
 	if descriptor, _ := SourceByID(SourceX); descriptor.FollowUpPlanningPolicy != "guarded_request_frontier" {
 		t.Fatalf("X guarded request-frontier policy drifted: %+v", descriptor)
+	}
+}
+
+func TestMediaOnlyVisionPolicyRequiresTrustedMediaAndOnlyAppliesToInstagram(t *testing.T) {
+	block := Block{Text: "", Media: []map[string]any{{"kind": "image", "url": "https://instagram.example.fbcdn.net/poster.jpg"}}}
+	if !MediaOnlyVisionRequired(SourceInstagram, block) {
+		t.Fatal("trusted Instagram media-only post must enter the bounded vision lane")
+	}
+	if MediaOnlyVisionRequired(SourceFacebook, block) {
+		t.Fatal("media-only exception must remain source-specific")
+	}
+	if MediaOnlyVisionRequired(SourceInstagram, Block{Media: []map[string]any{{"kind": "image", "url": "https://evil.example/poster.jpg"}}}) {
+		t.Fatal("untrusted media must not enter the vision lane")
+	}
+	if MediaOnlyVisionRequired(SourceInstagram, Block{Text: "caption", Media: block.Media}) {
+		t.Fatal("text-bearing Instagram posts remain on the normal lane")
 	}
 }
 

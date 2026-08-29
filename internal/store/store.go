@@ -121,6 +121,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			if err := migrateSchema9To10(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 9 to 10: %w", err)
 			}
+			version = "10"
+		}
+		if version == "10" {
+			if err := migrateSchema10To11(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 10 to 11: %w", err)
+			}
 			version = schemaVersion
 		}
 		if version != schemaVersion {
@@ -243,6 +249,44 @@ func migrateSchema9To10(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='10' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema10To11(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS vision_evaluation_jobs (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  evidence_key TEXT NOT NULL,
+  canonical_identity TEXT NOT NULL,
+  media_fingerprint TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','deferred','evaluating','retry_wait','ready','failed')),
+  reason TEXT NOT NULL DEFAULT '',
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0 AND attempt_count <= 2),
+  queued_at TEXT NOT NULL,
+  next_attempt_at TEXT,
+  last_error TEXT NOT NULL DEFAULT '',
+  candidate_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(source,canonical_identity,media_fingerprint)
+);
+CREATE INDEX IF NOT EXISTS vision_evaluation_queue_order ON vision_evaluation_jobs(source,status,queued_at,id);
+CREATE INDEX IF NOT EXISTS vision_evaluation_run ON vision_evaluation_jobs(run_id,created_at);`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='11' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()

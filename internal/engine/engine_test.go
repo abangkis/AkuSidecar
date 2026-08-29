@@ -767,6 +767,27 @@ func TestValidateObservationAcceptsNativeMediaOnlyEvidence(t *testing.T) {
 	}
 }
 
+func TestInstagramMediaOnlyCandidatesAreHeldOutsideTextReasoningLane(t *testing.T) {
+	observation := domain.Observation{Source: domain.SourceInstagram, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{
+		{EvidenceKey: "instagram:p:visual", PlatformID: "instagram:p:visual", Text: "", Media: []map[string]any{{"kind": "image", "url": "https://instagram.example.fbcdn.net/visual.jpg"}}},
+		{EvidenceKey: "instagram:p:caption", PlatformID: "instagram:p:caption", Text: "A real caption stays in the normal reasoning lane.", Media: []map[string]any{{"kind": "image", "url": "https://instagram.example.fbcdn.net/caption.jpg"}}},
+	}}}, Coverage: map[string]any{"captureMethod": "instagram_structured_feed_json"}}
+	filtered, held := splitVisionLaneCandidates(observation)
+	if len(held) != 1 || held[0].EvidenceKey != "instagram:p:visual" {
+		t.Fatalf("held=%+v", held)
+	}
+	if len(filtered.Snapshots[0].Blocks) != 1 || filtered.Snapshots[0].Blocks[0].EvidenceKey != "instagram:p:caption" {
+		t.Fatalf("filtered=%+v", filtered.Snapshots[0].Blocks)
+	}
+
+	other := observation
+	other.Source = domain.SourceFacebook
+	filtered, held = splitVisionLaneCandidates(other)
+	if len(held) != 0 || len(filtered.Snapshots[0].Blocks) != 2 {
+		t.Fatalf("generic source changed: held=%+v blocks=%+v", held, filtered.Snapshots[0].Blocks)
+	}
+}
+
 func TestValidateObservationRejectsIdentityOnlyBlock(t *testing.T) {
 	observation := domain.Observation{
 		Source: domain.SourceFacebook,

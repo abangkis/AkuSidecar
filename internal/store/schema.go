@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 10
+const SchemaVersion = 11
 
-const schemaVersion = "10"
+const schemaVersion = "11"
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -365,6 +365,36 @@ CREATE TABLE IF NOT EXISTS media_recaptures (
 
 CREATE UNIQUE INDEX IF NOT EXISTS media_recaptures_one_active
   ON media_recaptures(timeline_id) WHERE status IN ('queued','claimed');
+
+-- Media-only social posts are held here until a pixel-capable evaluator is
+-- available. The queue is source-scoped and intentionally independent from
+-- Inbox presentation: Inbox only projects these durable states.
+CREATE TABLE IF NOT EXISTS vision_evaluation_jobs (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  source TEXT NOT NULL REFERENCES source_definitions(id),
+  evidence_key TEXT NOT NULL,
+  canonical_identity TEXT NOT NULL,
+  media_fingerprint TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','deferred','evaluating','retry_wait','ready','failed')),
+  reason TEXT NOT NULL DEFAULT '',
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0 AND attempt_count <= 2),
+  queued_at TEXT NOT NULL,
+  next_attempt_at TEXT,
+  last_error TEXT NOT NULL DEFAULT '',
+  candidate_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(source,canonical_identity,media_fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS vision_evaluation_queue_order
+  ON vision_evaluation_jobs(source,status,queued_at,id);
+CREATE INDEX IF NOT EXISTS vision_evaluation_run
+  ON vision_evaluation_jobs(run_id,created_at);
 
 CREATE TABLE IF NOT EXISTS timeline_evidence_overrides (
   timeline_id TEXT PRIMARY KEY REFERENCES timeline_items(id) ON DELETE CASCADE,

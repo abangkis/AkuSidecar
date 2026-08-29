@@ -10,33 +10,38 @@ import (
 // facts live here; orchestration, selection, preference learning, semantic
 // resolution, and presentation consume the descriptor generically.
 type SourceDescriptor struct {
-	ID                          Source                   `json:"id"`
-	DisplayName                 string                   `json:"displayName"`
-	ShortLabel                  string                   `json:"shortLabel"`
-	IconText                    string                   `json:"iconText"`
-	IconBackground              string                   `json:"iconBackground"`
-	IconForeground              string                   `json:"iconForeground"`
-	OnboardingDescription       string                   `json:"onboardingDescription"`
-	PresentationStyle           string                   `json:"presentationStyle"`
-	SocialContextPlacement      string                   `json:"socialContextPlacement"`
-	DefaultActive               bool                     `json:"defaultActive"`
-	AdapterVersion              string                   `json:"adapterVersion"`
-	MediaEvidenceAdapterVersion string                   `json:"mediaEvidenceAdapterVersion,omitempty"`
-	ContinuationOverlapRequired bool                     `json:"continuationOverlapRequired,omitempty"`
-	FollowUpPlanningPolicy      string                   `json:"followUpPlanningPolicy,omitempty"`
-	FrontierRequiresComplete    bool                     `json:"frontierRequiresComplete,omitempty"`
-	InitialRoundCandidateTarget int                      `json:"initialRoundCandidateTarget,omitempty"`
-	NativeHosts                 []string                 `json:"nativeHosts"`
-	NativePathTokens            []string                 `json:"nativePathTokens"`
-	IdentityFormat              string                   `json:"identityFormat,omitempty"`
-	AvatarFallback              string                   `json:"avatarFallback"`
-	PassiveMediaCapability      string                   `json:"passiveMediaCapability,omitempty"`
-	PlaybackRecoveryCapability  string                   `json:"playbackRecoveryCapability,omitempty"`
-	TrustedMediaHostSuffixes    []string                 `json:"trustedMediaHostSuffixes,omitempty"`
-	HydrationTimeoutDefaultMS   int                      `json:"hydrationTimeoutDefaultMs"`
-	HydrationTimeoutMinMS       int                      `json:"hydrationTimeoutMinMs"`
-	HydrationTimeoutMaxMS       int                      `json:"hydrationTimeoutMaxMs"`
-	EngagementMetrics           []SourceEngagementMetric `json:"engagementMetrics"`
+	ID                          Source   `json:"id"`
+	DisplayName                 string   `json:"displayName"`
+	ShortLabel                  string   `json:"shortLabel"`
+	IconText                    string   `json:"iconText"`
+	IconBackground              string   `json:"iconBackground"`
+	IconForeground              string   `json:"iconForeground"`
+	OnboardingDescription       string   `json:"onboardingDescription"`
+	PresentationStyle           string   `json:"presentationStyle"`
+	SocialContextPlacement      string   `json:"socialContextPlacement"`
+	DefaultActive               bool     `json:"defaultActive"`
+	AdapterVersion              string   `json:"adapterVersion"`
+	MediaEvidenceAdapterVersion string   `json:"mediaEvidenceAdapterVersion,omitempty"`
+	ContinuationOverlapRequired bool     `json:"continuationOverlapRequired,omitempty"`
+	FollowUpPlanningPolicy      string   `json:"followUpPlanningPolicy,omitempty"`
+	FrontierRequiresComplete    bool     `json:"frontierRequiresComplete,omitempty"`
+	InitialRoundCandidateTarget int      `json:"initialRoundCandidateTarget,omitempty"`
+	NativeHosts                 []string `json:"nativeHosts"`
+	NativePathTokens            []string `json:"nativePathTokens"`
+	IdentityFormat              string   `json:"identityFormat,omitempty"`
+	AvatarFallback              string   `json:"avatarFallback"`
+	PassiveMediaCapability      string   `json:"passiveMediaCapability,omitempty"`
+	// MediaOnlyEvaluationPolicy declares a source-specific exception for
+	// posts whose only evidence is validated media. Such candidates must pass
+	// through the bounded vision lane before normal reasoning/selection.
+	MediaOnlyEvaluationPolicy  string                   `json:"mediaOnlyEvaluationPolicy,omitempty"`
+	VisionQueueLimit           int                      `json:"visionQueueLimit,omitempty"`
+	PlaybackRecoveryCapability string                   `json:"playbackRecoveryCapability,omitempty"`
+	TrustedMediaHostSuffixes   []string                 `json:"trustedMediaHostSuffixes,omitempty"`
+	HydrationTimeoutDefaultMS  int                      `json:"hydrationTimeoutDefaultMs"`
+	HydrationTimeoutMinMS      int                      `json:"hydrationTimeoutMinMs"`
+	HydrationTimeoutMaxMS      int                      `json:"hydrationTimeoutMaxMs"`
+	EngagementMetrics          []SourceEngagementMetric `json:"engagementMetrics"`
 }
 
 type SourceEngagementMetric struct {
@@ -48,7 +53,7 @@ var sourceRegistry = []SourceDescriptor{
 	{ID: SourceX, DisplayName: "X", ShortLabel: "X", IconText: "X", IconBackground: "#e7e9ea", IconForeground: "#0f1419", OnboardingDescription: "Your home timeline", PresentationStyle: "compact", SocialContextPlacement: "content", DefaultActive: true, AdapterVersion: "x-dom-v22", MediaEvidenceAdapterVersion: "x-response-evidence-v2", FollowUpPlanningPolicy: "guarded_request_frontier", NativeHosts: []string{"x.com"}, NativePathTokens: []string{"/status/"}, IdentityFormat: "display_handle", AvatarFallback: "source_icon", PassiveMediaCapability: "x_response", TrustedMediaHostSuffixes: []string{"pbs.twimg.com"}, HydrationTimeoutDefaultMS: 12000, HydrationTimeoutMinMS: 7000, HydrationTimeoutMaxMS: 17000, EngagementMetrics: []SourceEngagementMetric{{Key: "reply", Icon: "\u25cb"}, {Key: "repost", Icon: "\u21bb"}, {Key: "like", Icon: "\u2661"}, {Key: "view", Icon: "\u25a5"}}},
 	{ID: SourceLinkedIn, DisplayName: "LinkedIn", ShortLabel: "in", IconText: "in", IconBackground: "#0a66c2", IconForeground: "#ffffff", OnboardingDescription: "Your professional feed", PresentationStyle: "professional", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "linkedin-dom-v20", MediaEvidenceAdapterVersion: "linkedin-main-world-video-v1", PlaybackRecoveryCapability: "native_post_recapture", ContinuationOverlapRequired: true, FollowUpPlanningPolicy: "local_frontier", FrontierRequiresComplete: true, InitialRoundCandidateTarget: 1, NativeHosts: []string{"www.linkedin.com"}, NativePathTokens: []string{"/posts/", "/feed/update/"}, AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"media.licdn.com", "dms.licdn.com"}, HydrationTimeoutDefaultMS: 18000, HydrationTimeoutMinMS: 13000, HydrationTimeoutMaxMS: 23000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
 	{ID: SourceFacebook, DisplayName: "Facebook", ShortLabel: "f", IconText: "f", IconBackground: "#0866ff", IconForeground: "#ffffff", OnboardingDescription: "Your Home Feed", PresentationStyle: "social", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "facebook-dom-v19", MediaEvidenceAdapterVersion: "facebook-structured-video-v1", PlaybackRecoveryCapability: "native_post_recapture", FollowUpPlanningPolicy: "local_frontier", NativeHosts: []string{"facebook.com", "www.facebook.com", "m.facebook.com"}, NativePathTokens: []string{"/posts/", "/permalink/", "/story.php", "/photo", "/watch/", "/video.php", "/videos/", "/reel/"}, AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"fbcdn.net", "fbsbx.com"}, HydrationTimeoutDefaultMS: 25000, HydrationTimeoutMinMS: 20000, HydrationTimeoutMaxMS: 30000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\U0001f44d"}, {Key: "comment", Icon: "\U0001f4ac"}, {Key: "repost", Icon: "\u21bb"}}},
-	{ID: SourceInstagram, DisplayName: "Instagram", ShortLabel: "ig", IconText: "ig", IconBackground: "#e1306c", IconForeground: "#ffffff", OnboardingDescription: "Your Instagram home feed", PresentationStyle: "social", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "instagram-dom-v6", MediaEvidenceAdapterVersion: "instagram-structured-carousel-v2", PlaybackRecoveryCapability: "native_post_recapture", FollowUpPlanningPolicy: "local_frontier", NativeHosts: []string{"instagram.com", "www.instagram.com"}, NativePathTokens: []string{"/p/", "/reel/", "/tv/"}, IdentityFormat: "username", AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"fbcdn.net", "cdninstagram.com"}, HydrationTimeoutDefaultMS: 15000, HydrationTimeoutMinMS: 10000, HydrationTimeoutMaxMS: 20000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\u2661"}, {Key: "comment", Icon: "\U0001f4ac"}}},
+	{ID: SourceInstagram, DisplayName: "Instagram", ShortLabel: "ig", IconText: "ig", IconBackground: "#e1306c", IconForeground: "#ffffff", OnboardingDescription: "Your Instagram home feed", PresentationStyle: "social", SocialContextPlacement: "above", DefaultActive: true, AdapterVersion: "instagram-dom-v6", MediaEvidenceAdapterVersion: "instagram-structured-carousel-v2", MediaOnlyEvaluationPolicy: "bounded_vision", VisionQueueLimit: 8, PlaybackRecoveryCapability: "native_post_recapture", FollowUpPlanningPolicy: "local_frontier", NativeHosts: []string{"instagram.com", "www.instagram.com"}, NativePathTokens: []string{"/p/", "/reel/", "/tv/"}, IdentityFormat: "username", AvatarFallback: "initials", TrustedMediaHostSuffixes: []string{"fbcdn.net", "cdninstagram.com"}, HydrationTimeoutDefaultMS: 15000, HydrationTimeoutMinMS: 10000, HydrationTimeoutMaxMS: 20000, EngagementMetrics: []SourceEngagementMetric{{Key: "like", Icon: "\u2661"}, {Key: "comment", Icon: "\U0001f4ac"}}},
 }
 
 func Sources() []SourceDescriptor {
@@ -144,4 +149,44 @@ func CanonicalInlinePlaybackURL(source Source, raw string) (string, bool) {
 func SupportsPlaybackErrorRecapture(source Source) bool {
 	descriptor, ok := SourceByID(source)
 	return ok && descriptor.PlaybackRecoveryCapability == "native_post_recapture"
+}
+
+// MediaOnlyVisionRequired is the source-policy gate for the bounded lane. It
+// deliberately requires an empty authored text field and at least one
+// source-trusted media URL; arbitrary attachments or hostile URLs do not
+// bypass the normal evidence contract.
+func MediaOnlyVisionRequired(source Source, block Block) bool {
+	descriptor, ok := SourceByID(source)
+	if !ok || descriptor.MediaOnlyEvaluationPolicy != "bounded_vision" || strings.TrimSpace(block.Text) != "" {
+		return false
+	}
+	for _, media := range block.Media {
+		if ValidatedMediaURL(source, media) {
+			return true
+		}
+	}
+	return false
+}
+
+func ValidatedMediaURL(source Source, media map[string]any) bool {
+	raw, _ := media["url"].(string)
+	if strings.TrimSpace(raw) == "" {
+		raw, _ = media["posterUrl"].(string)
+	}
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Port() != "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	descriptor, ok := SourceByID(source)
+	if !ok {
+		return false
+	}
+	for _, suffix := range descriptor.TrustedMediaHostSuffixes {
+		suffix = strings.ToLower(strings.TrimSpace(suffix))
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return true
+		}
+	}
+	return false
 }
