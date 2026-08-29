@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   LIBRARY_MAX_QUERY,
+  LIBRARY_STORAGE_MAX_LIMIT,
   buildLibraryForgetPath,
   buildLibraryReleasePath,
   buildLibraryRemovePath,
   buildLibraryRequestPath,
+  buildLibraryStorageRequestPath,
+  formatLibraryStorageBytes,
   formatLibraryTier,
   libraryFilterKey,
   libraryForgetConfirmation,
@@ -14,6 +17,7 @@ import {
   libraryRemoveConfirmation,
   libraryHasFullContent,
   mergeLibraryPage,
+  normalizeLibraryStorageReport,
   normalizeLibraryFilters,
 } from "../internal/httpapi/web/library-state.js";
 
@@ -37,6 +41,17 @@ test("Library query state is bounded and encoded without leaking cursor state", 
   assert.match(path, /tier=full_copy/);
   assert.match(path, /cursor=cursor%2B%2F%3D/);
   assert.equal(libraryFilterKey(filters), libraryFilterKey({ ...filters }));
+});
+
+test("Library storage requests stay bounded and preserve an empty recommendation list", () => {
+  assert.equal(buildLibraryStorageRequestPath(), "/api/library/storage");
+  assert.equal(buildLibraryStorageRequestPath(12), "/api/library/storage?limit=12");
+  assert.equal(buildLibraryStorageRequestPath(999), `/api/library/storage?limit=${LIBRARY_STORAGE_MAX_LIMIT}`);
+  const report = normalizeLibraryStorageReport({ usage: { logicalBytes: 2048 }, recommendations: null });
+  assert.deepEqual(report, { usage: { logicalBytes: 2048 }, recommendations: [] });
+  assert.equal(formatLibraryStorageBytes(0), "0 B");
+  assert.equal(formatLibraryStorageBytes(1024), "1.00 KB");
+  assert.equal(formatLibraryStorageBytes(-1), "Unknown");
 });
 
 test("Library page merging is append-idempotent and cursor-driven", () => {

@@ -19,12 +19,15 @@ import {
   buildLibraryReleasePath,
   buildLibraryRemovePath,
   buildLibraryRequestPath,
+  buildLibraryStorageRequestPath,
   formatLibraryTier,
+  formatLibraryStorageBytes,
   libraryHasFullContent,
   libraryForgetConfirmation,
   libraryReleaseConfirmation,
   libraryRemoveConfirmation,
   mergeLibraryPage,
+  normalizeLibraryStorageReport,
   normalizeLibraryFilters,
 } from "./library-state.js";
 import { buildTimelineKeepPath, timelineKeepConfirmation } from "./timeline-memory-state.js";
@@ -85,6 +88,14 @@ const state = {
     loading: false,
     loadingMore: false,
     error: null,
+    storage: {
+      usage: null,
+      recommendations: [],
+      loading: false,
+      error: null,
+      requestID: 0,
+      controller: null,
+    },
     detailLoading: false,
     detailError: null,
     mutationLoading: false,
@@ -677,6 +688,26 @@ function resetLibraryList() {
   renderLibraryDetail();
 }
 
+function resetLibraryStorage() {
+  const storage = state.library.storage;
+  storage.controller?.abort();
+  storage.controller = null;
+  storage.requestID += 1;
+  storage.loading = false;
+  storage.error = null;
+  storage.usage = null;
+  storage.recommendations = [];
+}
+
+function invalidateLibraryStorage() {
+  resetLibraryStorage();
+}
+
+function reloadLibraryStorage() {
+  invalidateLibraryStorage();
+  void loadLibraryStorage();
+}
+
 function submitLibrarySearch(event) {
   event?.preventDefault();
   state.library.filters = readLibraryFilters();
@@ -696,6 +727,7 @@ function clearLibrarySearch() {
 
 function refreshLibrary() {
   resetLibraryList();
+  reloadLibraryStorage();
   void loadLibrary();
 }
 
@@ -706,6 +738,7 @@ function loadMoreLibrary() {
 
 async function loadLibrary({ append = false } = {}) {
   if (append && (state.library.loading || !state.library.nextCursor)) return;
+  if (!append && !state.library.storage.loading && !state.library.storage.usage) void loadLibraryStorage();
   if (!append && state.library.loading) state.library.controller?.abort();
   const requestID = state.library.requestID + 1;
   state.library.requestID = requestID;
@@ -740,6 +773,33 @@ async function loadLibrary({ append = false } = {}) {
   }
 }
 
+async function loadLibraryStorage() {
+  const storage = state.library.storage;
+  if (storage.loading) return;
+  const requestID = storage.requestID + 1;
+  storage.requestID = requestID;
+  const controller = new AbortController();
+  storage.controller = controller;
+  storage.loading = true;
+  storage.error = null;
+  renderLibraryStorage();
+  try {
+    const response = await api(buildLibraryStorageRequestPath(), { signal: controller.signal });
+    if (requestID !== storage.requestID) return;
+    const report = normalizeLibraryStorageReport(response);
+    storage.usage = report.usage;
+    storage.recommendations = report.recommendations;
+  } catch (error) {
+    if (requestID !== storage.requestID || error?.name === "AbortError") return;
+    storage.error = error;
+  } finally {
+    if (requestID !== storage.requestID) return;
+    storage.loading = false;
+    storage.controller = null;
+    renderLibraryStorage();
+  }
+}
+
 function libraryErrorMessage(error) {
   if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
     return "AkuSidecar is offline. Start the local runtime, then refresh Library.";
@@ -748,6 +808,13 @@ function libraryErrorMessage(error) {
     return "Those Library filters are not valid. Clear the filters and try again.";
   }
   return "Library could not be loaded. Refresh and try again.";
+}
+
+function libraryStorageErrorMessage(error) {
+  if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
+    return "Local storage summary is unavailable while AkuSidecar is offline.";
+  }
+  return "Local storage summary could not be loaded. Library search still works; refresh to try again.";
 }
 
 function libraryMutationErrorMessage(error, action) {
@@ -760,6 +827,7 @@ function libraryMutationErrorMessage(error, action) {
 }
 
 function renderLibrary() {
+  renderLibraryStorage();
   const results = $("#library-results");
   const loadMore = $("#library-load-more");
   const status = $("#library-status");
@@ -801,6 +869,126 @@ function renderLibrary() {
   loadMore.classList.toggle("hidden", !state.library.nextCursor);
   loadMore.disabled = state.library.loading;
   loadMore.textContent = state.library.loadingMore ? "Loading…" : "Load more";
+}
+
+function renderLibraryStorage() {
+  const summary = $("#library-storage-summary");
+  const recommendations = $("#library-storage-recommendations");
+  if (!summary || !recommendations) return;
+  const storage = state.library.storage;
+  summary.replaceChildren();
+  recommendations.replaceChildren();
+  if (storage.loading && !storage.usage) {
+    summary.append(libraryStateMessage("Loading local storage summary…"));
+  } else if (storage.error && !storage.usage) {
+    const error = libraryStateMessage(libraryStorageErrorMessage(storage.error), true);
+    summary.append(error);
+  } else if (storage.usage) {
+    summary.append(buildLibraryStorageUsage(storage.usage));
+  } else {
+    summary.append(libraryStateMessage("Local storage summary is not available yet."));
+  }
+  if (storage.error && storage.usage) {
+    const error = document.createElement("p");
+    error.className = "library-storage-error";
+    error.setAttribute("role", "alert");
+    error.textContent = libraryStorageErrorMessage(storage.error);
+    summary.append(error);
+  }
+  if (storage.loading && storage.usage) {
+    const loading = document.createElement("p");
+    loading.className = "library-storage-loading";
+    loading.textContent = "Refreshing local storage summary…";
+    summary.append(loading);
+  }
+  if (!storage.recommendations.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-storage-empty";
+    empty.textContent = storage.usage
+      ? "No full copies with positive content bytes are queued for review."
+      : "Recommendations will appear when the local storage summary loads.";
+    recommendations.append(empty);
+  } else {
+    recommendations.append(...storage.recommendations.map(buildLibraryStorageRecommendation));
+  }
+}
+
+function buildLibraryStorageUsage(usage) {
+  const fragment = document.createDocumentFragment();
+  const total = document.createElement("div");
+  total.className = "library-storage-total";
+  const totalLabel = document.createElement("span");
+  totalLabel.textContent = "Logical storage";
+  const totalValue = document.createElement("strong");
+  totalValue.textContent = formatLibraryStorageBytes(usage.logicalBytes);
+  total.append(totalLabel, totalValue);
+  const note = document.createElement("p");
+  note.className = "library-storage-note";
+  note.textContent = "Estimate of local content and metadata; this is not the physical SQLite or WAL file size. Nothing is removed automatically.";
+  const breakdown = document.createElement("div");
+  breakdown.className = "library-storage-breakdown";
+  for (const [label, value] of [
+    ["Content", usage.contentBytes],
+    ["Metadata", usage.metadataBytes],
+    ["Provenance", usage.provenanceBytes],
+    ["Actions", usage.actionBytes],
+  ]) {
+    breakdown.append(libraryStorageMetric(label, formatLibraryStorageBytes(value)));
+  }
+  const counts = document.createElement("p");
+  counts.className = "library-storage-counts";
+  counts.textContent = `Items: ${formatLibraryStorageCount(usage.activeItems)} active · ${formatLibraryStorageCount(usage.recallItems)} recall stubs · ${formatLibraryStorageCount(usage.fullCopyItems)} full copies · ${formatLibraryStorageCount(usage.tombstones)} tombstones`;
+  fragment.append(total, note, breakdown, counts);
+  return fragment;
+}
+
+function formatLibraryStorageCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? String(count) : "unknown";
+}
+
+function libraryStorageMetric(label, value) {
+  const metric = document.createElement("span");
+  metric.className = "library-storage-metric";
+  const metricLabel = document.createElement("small");
+  metricLabel.textContent = label;
+  const metricValue = document.createElement("strong");
+  metricValue.textContent = value;
+  metric.append(metricLabel, metricValue);
+  return metric;
+}
+
+function buildLibraryStorageRecommendation(recommendation) {
+  const article = document.createElement("article");
+  article.className = "library-storage-recommendation";
+  article.setAttribute("role", "listitem");
+  const identity = document.createElement("div");
+  identity.className = "library-storage-recommendation-identity";
+  const title = document.createElement("strong");
+  title.textContent = recommendation.title || "Untitled memory";
+  const source = document.createElement("span");
+  source.textContent = sourceLabel(recommendation.source);
+  identity.append(title, source);
+  const detail = document.createElement("p");
+  detail.textContent = `Full copy · ${formatLibraryStorageBytes(recommendation.reclaimableBytes)} reclaimable content · updated ${formatDate(recommendation.updatedAt) || recommendation.updatedAt || "unknown"}`;
+  const reason = document.createElement("p");
+  reason.className = "library-storage-recommendation-reason";
+  reason.textContent = "Largest retained full-copy payload. Review it before deciding what to keep.";
+  const review = document.createElement("button");
+  review.type = "button";
+  review.className = "secondary-button library-storage-review";
+  review.dataset.reviewAction = recommendation.reviewAction || "review_full_copy";
+  review.textContent = "Review";
+  review.addEventListener("click", () => selectLibraryItem(recommendation.id, {
+    id: recommendation.id,
+    source: recommendation.source,
+    title: recommendation.title,
+    author: recommendation.author,
+    retentionTier: "full_copy",
+    updatedAt: recommendation.updatedAt,
+  }));
+  article.append(identity, detail, reason, review);
+  return article;
 }
 
 function libraryStateMessage(message, error = false) {
@@ -862,8 +1050,9 @@ function libraryMetaChip(label, value) {
   return chip;
 }
 
-function selectLibraryItem(id) {
-  const item = state.library.items.find((entry) => entry.id === id);
+function selectLibraryItem(id, fallbackItem = null) {
+  const item = state.library.items.find((entry) => entry.id === id)
+    || (fallbackItem?.id === id ? fallbackItem : null);
   if (!item) return;
   if (document.activeElement?.closest?.(".library-card")) state.library.detailFocusTarget = document.activeElement;
   state.library.selectedId = id;
@@ -1101,6 +1290,7 @@ async function mutateLibraryItem(item, action) {
       state.library.detailLoading = false;
       state.library.detailError = null;
     }
+    reloadLibraryStorage();
   } catch (error) {
     state.library.mutationError = error;
   } finally {
@@ -3957,6 +4147,7 @@ function buildInboxPreferenceDecision(decision) {
           method: "POST",
           body: { direction, reason: direction === "less" ? "not_interested" : null },
         });
+        invalidateLibraryStorage();
         decision.direction = direction;
         decision.origin = "routine";
         decision.updatedAt = new Date().toISOString();
@@ -6053,6 +6244,7 @@ function buildTimelineKeepAction(entry) {
         throw new Error("AkuSidecar did not confirm the full-copy action.");
       }
       entry.personalMemory = { retentionTier: response.retentionTier };
+      invalidateLibraryStorage();
       status.textContent = response.alreadyKept === true
         ? "Already kept locally as a full copy."
         : "Full copy kept locally.";
@@ -6360,6 +6552,7 @@ async function sendFeedback(id, direction, reason) {
       method: "POST",
       body: { direction, reason },
     });
+    invalidateLibraryStorage();
     return response.feedback;
   } catch (error) {
     showError(error);

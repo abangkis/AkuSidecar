@@ -117,6 +117,106 @@ func TestLibraryReadOnlyHTTPListDetailAndPrivacy(t *testing.T) {
 	}
 }
 
+func TestLibraryStorageHTTPIsBoundedReadOnlyAndPrivacySafe(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+
+	request := httptest.NewRequest(http.MethodGet, "/api/library/storage", nil)
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("empty storage status=%d body=%s", response.Code, response.Body.String())
+	}
+	var empty struct {
+		Usage           domain.MemoryStorageUsage    `json:"usage"`
+		Recommendations []map[string]json.RawMessage `json:"recommendations"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty.Usage.ActiveItems != 0 || len(empty.Recommendations) != 0 || empty.Recommendations == nil {
+		t.Fatalf("empty storage=%+v", empty)
+	}
+
+	larger, err := state.CreateMemoryRecallStub(ctx, libraryHTTPInput("2401"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	smaller, err := state.CreateMemoryRecallStub(ctx, libraryHTTPInput("2402"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.KeepMemoryFullCopy(ctx, larger.ID, domain.MemoryFullCopyInput{Content: strings.Repeat("l", 48)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.KeepMemoryFullCopy(ctx, smaller.ID, domain.MemoryFullCopyInput{Content: strings.Repeat("s", 12)}); err != nil {
+		t.Fatal(err)
+	}
+	tombstone, err := state.CreateMemoryRecallStub(ctx, libraryHTTPInput("2403"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.KeepMemoryFullCopy(ctx, tombstone.ID, domain.MemoryFullCopyInput{Content: strings.Repeat("x", 96)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.DeleteMemory(ctx, tombstone.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/library/storage?limit=1", nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("storage status=%d body=%s", response.Code, response.Body.String())
+	}
+	var report struct {
+		Usage           domain.MemoryStorageUsage    `json:"usage"`
+		Recommendations []map[string]json.RawMessage `json:"recommendations"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Usage.Tombstones != 1 || report.Usage.FullCopyItems != 2 || len(report.Recommendations) != 1 {
+		t.Fatalf("storage report=%+v", report)
+	}
+	var recommendationID string
+	if err := json.Unmarshal(report.Recommendations[0]["id"], &recommendationID); err != nil || recommendationID != larger.ID {
+		t.Fatalf("recommendation=%v err=%v", report.Recommendations[0], err)
+	}
+	for field := range report.Recommendations[0] {
+		switch field {
+		case "id", "source", "title", "author", "contentBytes", "reclaimableBytes", "updatedAt", "reasonCode", "reviewAction":
+		default:
+			t.Fatalf("recommendation exposed private field %q: %s", field, response.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"provenance", "identityDigest", "tombstone", "fullContent", "contentFingerprint", "canonicalPermalink"} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("storage response exposed forbidden value %q: %s", forbidden, response.Body.String())
+		}
+	}
+
+	for _, test := range []struct {
+		name   string
+		method string
+		path   string
+		want   int
+	}{
+		{name: "too many recommendations", method: http.MethodGet, path: "/api/library/storage?limit=13", want: http.StatusBadRequest},
+		{name: "invalid limit", method: http.MethodGet, path: "/api/library/storage?limit=nope", want: http.StatusBadRequest},
+		{name: "mutation method", method: http.MethodPost, path: "/api/library/storage", want: http.StatusNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.path, nil)
+			response := httptest.NewRecorder()
+			server.api().ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestLibraryHTTPBoundsAndReadOnlyBoundary(t *testing.T) {
 	server, _ := openLibraryHTTPFixture(t)
 	for _, test := range []struct {

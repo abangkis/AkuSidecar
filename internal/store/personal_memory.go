@@ -17,26 +17,29 @@ import (
 )
 
 const (
-	maxMemoryTitleRunes       = 300
-	maxMemorySummaryRunes     = 4000
-	maxMemoryAuthorRunes      = 300
-	maxMemoryReasonRunes      = 500
-	maxMemoryIdentityRunes    = 2000
-	maxMemoryTagRunes         = 120
-	maxMemoryTagCount         = 32
-	maxMemoryMediaReferences  = 16
-	maxMemoryMediaFieldRunes  = 300
-	maxMemoryMediaURLRunes    = 2048
-	maxMemoryContentBytes     = 4 * 1024 * 1024
-	maxMemoryContextJSONBytes = 16 * 1024
-	maxMemoryActionJSONBytes  = 16 * 1024
+	maxMemoryTitleRunes                     = 300
+	maxMemorySummaryRunes                   = 4000
+	maxMemoryAuthorRunes                    = 300
+	maxMemoryReasonRunes                    = 500
+	maxMemoryIdentityRunes                  = 2000
+	maxMemoryTagRunes                       = 120
+	maxMemoryTagCount                       = 32
+	maxMemoryMediaReferences                = 16
+	maxMemoryMediaFieldRunes                = 300
+	maxMemoryMediaURLRunes                  = 2048
+	maxMemoryContentBytes                   = 4 * 1024 * 1024
+	maxMemoryContextJSONBytes               = 16 * 1024
+	maxMemoryActionJSONBytes                = 16 * 1024
+	MemoryStorageRecommendationDefaultLimit = 6
+	MemoryStorageRecommendationMaxLimit     = 12
 )
 
 var (
-	ErrMemoryNotFound                = errors.New("personal memory item not found")
-	ErrMemoryTombstoned              = errors.New("personal memory item is tombstoned")
-	ErrTimelineMemoryNotEligible     = errors.New("Timeline item is not eligible for a full copy")
-	ErrTimelineMemoryTextUnavailable = errors.New("Timeline source text is unavailable for a full copy")
+	ErrMemoryNotFound                   = errors.New("personal memory item not found")
+	ErrMemoryTombstoned                 = errors.New("personal memory item is tombstoned")
+	ErrMemoryStorageRecommendationLimit = errors.New("memory storage recommendation limit must be between 1 and 12")
+	ErrTimelineMemoryNotEligible        = errors.New("Timeline item is not eligible for a full copy")
+	ErrTimelineMemoryTextUnavailable    = errors.New("Timeline source text is unavailable for a full copy")
 )
 
 const memoryTombstoneKeyMeta = "memory_tombstone_key_v1"
@@ -852,6 +855,61 @@ func (s *Store) MemoryStorageUsage(ctx context.Context) (domain.MemoryStorageUsa
 
 func (s *Store) MemoryStorage(ctx context.Context) (domain.MemoryStorageUsage, error) {
 	return s.MemoryStorageUsage(ctx)
+}
+
+// MemoryStorageRecommendations returns bounded, deterministic review
+// suggestions for active full-copy items with positive content bytes. The
+// ranking describes reclaimable content only; it does not infer staleness,
+// duplication, or deletion safety.
+func (s *Store) MemoryStorageRecommendations(ctx context.Context, limit int) ([]domain.MemoryStorageRecommendation, error) {
+	if limit == 0 {
+		limit = MemoryStorageRecommendationDefaultLimit
+	}
+	if limit < 1 || limit > MemoryStorageRecommendationMaxLimit {
+		return nil, ErrMemoryStorageRecommendationLimit
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id,source,title,author,content_bytes,updated_at
+		FROM memory_items
+		WHERE lifecycle_state='active' AND retention_tier='full_copy' AND content_bytes > 0
+		ORDER BY content_bytes DESC, updated_at DESC, id DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("inspect memory storage recommendations: %w", err)
+	}
+	defer rows.Close()
+	recommendations := make([]domain.MemoryStorageRecommendation, 0, limit)
+	for rows.Next() {
+		var recommendation domain.MemoryStorageRecommendation
+		if err := rows.Scan(
+			&recommendation.ID, &recommendation.Source, &recommendation.Title,
+			&recommendation.Author, &recommendation.ContentBytes, &recommendation.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("read memory storage recommendation: %w", err)
+		}
+		recommendation.ReclaimableBytes = recommendation.ContentBytes
+		recommendation.ReasonCode = "largest_full_copy"
+		recommendation.ReviewAction = "review_full_copy"
+		recommendations = append(recommendations, recommendation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memory storage recommendations: %w", err)
+	}
+	return recommendations, nil
+}
+
+// MemoryStorageReport returns the usage estimate and recommendations from
+// the same local store, without mutation or provider access.
+func (s *Store) MemoryStorageReport(ctx context.Context, limit int) (domain.MemoryStorageReport, error) {
+	usage, err := s.MemoryStorageUsage(ctx)
+	if err != nil {
+		return domain.MemoryStorageReport{}, err
+	}
+	recommendations, err := s.MemoryStorageRecommendations(ctx, limit)
+	if err != nil {
+		return domain.MemoryStorageReport{}, err
+	}
+	return domain.MemoryStorageReport{Usage: usage, Recommendations: recommendations}, nil
 }
 
 func (s *Store) ListMemoryItems(ctx context.Context, includeTombstones bool, limit int) ([]domain.MemoryItem, error) {

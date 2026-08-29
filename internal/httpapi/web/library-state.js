@@ -1,6 +1,8 @@
 export const LIBRARY_DEFAULT_LIMIT = 24;
 export const LIBRARY_MAX_LIMIT = 50;
 export const LIBRARY_MAX_QUERY = 200;
+export const LIBRARY_STORAGE_DEFAULT_LIMIT = 6;
+export const LIBRARY_STORAGE_MAX_LIMIT = 12;
 
 const allowedTiers = new Set(["recall", "full_copy"]);
 
@@ -36,6 +38,40 @@ export function buildLibraryRequestPath(filters = {}, cursor = "") {
   const nextCursor = String(cursor ?? "").trim();
   if (nextCursor) params.set("cursor", nextCursor);
   return `/api/library/items?${params.toString()}`;
+}
+
+export function buildLibraryStorageRequestPath(limit = LIBRARY_STORAGE_DEFAULT_LIMIT) {
+  const parsedLimit = Number.parseInt(limit, 10);
+  const normalized = Number.isFinite(parsedLimit)
+    ? Math.min(LIBRARY_STORAGE_MAX_LIMIT, Math.max(1, parsedLimit))
+    : LIBRARY_STORAGE_DEFAULT_LIMIT;
+  return normalized === LIBRARY_STORAGE_DEFAULT_LIMIT
+    ? "/api/library/storage"
+    : `/api/library/storage?limit=${normalized}`;
+}
+
+export function normalizeLibraryStorageReport(input = {}) {
+  return {
+    usage: input?.usage && typeof input.usage === "object" ? input.usage : null,
+    recommendations: Array.isArray(input?.recommendations) ? input.recommendations : [],
+  };
+}
+
+export function formatLibraryStorageBytes(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return "Unknown";
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "Unknown";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let amount = bytes;
+  let unit = "B";
+  for (const nextUnit of units) {
+    amount /= 1024;
+    unit = nextUnit;
+    if (amount < 1024 || nextUnit === units[units.length - 1]) break;
+  }
+  const precision = amount >= 100 ? 0 : amount >= 10 ? 1 : 2;
+  return `${amount.toFixed(precision)} ${unit}`;
 }
 
 export function buildLibraryRemovePath(id) {

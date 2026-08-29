@@ -630,6 +630,19 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			items = append(items, publicLibraryItem(item, false))
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+	case r.Method == http.MethodGet && p == "/api/library/storage":
+		limit, err := parseLibraryStorageLimit(r.URL.Query())
+		if err != nil {
+			return err
+		}
+		report, err := s.engine.LibraryStorage(ctx, limit)
+		if errors.Is(err, store.ErrMemoryStorageRecommendationLimit) {
+			return badRequest(err.Error())
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, report)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/release-full-copy"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/release-full-copy")
 		if id == "" || strings.Contains(id, "/") {

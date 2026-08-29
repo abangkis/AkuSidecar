@@ -199,6 +199,29 @@ type MemoryStorageUsage struct {
 	LogicalBytes    int64 `json:"logicalBytes"`
 }
 
+// MemoryStorageRecommendation is a bounded, read-only review suggestion for
+// an active full-copy item. It intentionally carries only the fields needed
+// to decide whether to open the existing Library detail; it is not a claim
+// that the item is stale, unused, duplicated, or safe to delete.
+type MemoryStorageRecommendation struct {
+	ID               string `json:"id"`
+	Source           Source `json:"source"`
+	Title            string `json:"title,omitempty"`
+	Author           string `json:"author,omitempty"`
+	ContentBytes     int64  `json:"contentBytes"`
+	ReclaimableBytes int64  `json:"reclaimableBytes"`
+	UpdatedAt        string `json:"updatedAt"`
+	ReasonCode       string `json:"reasonCode"`
+	ReviewAction     string `json:"reviewAction"`
+}
+
+// MemoryStorageReport combines the logical usage estimate with bounded,
+// provider-free review suggestions for the Library storage surface.
+type MemoryStorageReport struct {
+	Usage           MemoryStorageUsage            `json:"usage"`
+	Recommendations []MemoryStorageRecommendation `json:"recommendations"`
+}
+
 // MemoryStorage is kept as a descriptive alias for callers that prefer a
 // shorter return type name.
 type MemoryStorage = MemoryStorageUsage

@@ -950,6 +950,9 @@ func (e *Engine) Library(ctx context.Context, query domain.MemoryLibraryQuery) (
 func (e *Engine) LibraryItem(ctx context.Context, id string) (domain.MemoryItem, error) {
 	return e.store.MemoryLibraryItem(ctx, id)
 }
+func (e *Engine) LibraryStorage(ctx context.Context, limit int) (domain.MemoryStorageReport, error) {
+	return e.store.MemoryStorageReport(ctx, limit)
+}
 func (e *Engine) KeepTimelineFullCopy(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
 	return e.store.KeepTimelineFullCopy(ctx, timelineID)
 }

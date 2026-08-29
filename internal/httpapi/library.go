@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	libraryHTTPMaxLimit  = 50
-	libraryHTTPMaxCursor = 512
+	libraryHTTPMaxLimit                      = 50
+	libraryHTTPMaxCursor                     = 512
+	libraryStorageDefaultRecommendationLimit = 6
+	libraryStorageMaxRecommendationLimit     = 12
 )
 
 // libraryItemView is the public read-only Library projection. Internal
@@ -81,4 +83,20 @@ func parseLibraryQuery(values url.Values) (domain.MemoryLibraryQuery, error) {
 		return domain.MemoryLibraryQuery{}, badRequest("library cursor is too long")
 	}
 	return query, nil
+}
+
+func parseLibraryStorageLimit(values url.Values) (int, error) {
+	limit := libraryStorageDefaultRecommendationLimit
+	rawLimit, present := values["limit"]
+	if !present {
+		return limit, nil
+	}
+	if len(rawLimit) != 1 || strings.TrimSpace(rawLimit[0]) == "" {
+		return 0, badRequest("storage recommendation limit must be an integer between 1 and 12")
+	}
+	parsed, err := strconv.Atoi(rawLimit[0])
+	if err != nil || parsed < 1 || parsed > libraryStorageMaxRecommendationLimit {
+		return 0, badRequest("storage recommendation limit must be between 1 and 12")
+	}
+	return parsed, nil
 }
