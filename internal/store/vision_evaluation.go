@@ -138,6 +138,7 @@ func (s *Store) ListVisionEvaluations(ctx context.Context, runID string, source 
 			value.Candidate = map[string]any{}
 			raw, _ := json.Marshal(candidate)
 			_ = json.Unmarshal(raw, &value.Candidate)
+			value.ManualLabel = manualMediaReviewLabel(candidate)
 		}
 		result = append(result, value)
 	}
@@ -156,7 +157,7 @@ func (s *Store) VisionEvaluationSummary(ctx context.Context, runID string, sourc
 	if err != nil {
 		return domain.InboxVisionEvaluation{}, err
 	}
-	value := domain.InboxVisionEvaluation{Policy: "bounded_vision", Available: false, Availability: "no pixel-capable provider transport is registered; metadata-only reasoning is not used as vision", Capacity: sourceVisionQueueLimit(source), Jobs: jobs}
+	value := domain.InboxVisionEvaluation{Policy: "manual_review", Available: false, Availability: "Generated locally from trusted media metadata. No image is sent to an AI provider.", Capacity: sourceVisionQueueLimit(source), Jobs: jobs}
 	queuePosition := 0
 	for index := range value.Jobs {
 		status := value.Jobs[index].Status
@@ -183,6 +184,31 @@ func (s *Store) VisionEvaluationSummary(ctx context.Context, runID string, sourc
 		}
 	}
 	return value, nil
+}
+
+func manualMediaReviewLabel(candidate domain.Block) string {
+	images, videos := 0, 0
+	for _, media := range candidate.Media {
+		kind, _ := media["kind"].(string)
+		switch strings.ToLower(strings.TrimSpace(kind)) {
+		case "image":
+			images++
+		case "video":
+			videos++
+		}
+	}
+	switch {
+	case images > 0 && videos > 0:
+		return "Manual review · image and video post"
+	case videos > 0:
+		return "Manual review · video post"
+	case images > 1:
+		return fmt.Sprintf("Manual review · %d-image carousel", images)
+	case images == 1:
+		return "Manual review · image post"
+	default:
+		return "Manual review · media-only post"
+	}
 }
 
 // ClaimNextVisionEvaluation is the future evaluator's FIFO claim boundary.

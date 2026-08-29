@@ -831,6 +831,7 @@ type VisionEvaluationJob struct {
 	NextAttemptAt     string         `json:"nextAttemptAt,omitempty"`
 	LastError         string         `json:"lastError,omitempty"`
 	Candidate         map[string]any `json:"candidate,omitempty"`
+	ManualLabel       string         `json:"manualLabel"`
 	CreatedAt         string         `json:"createdAt"`
 	StartedAt         string         `json:"startedAt,omitempty"`
 	CompletedAt       string         `json:"completedAt,omitempty"`

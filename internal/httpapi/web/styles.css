@@ -499,7 +499,6 @@ h3 { letter-spacing: -0.02em; }
 .vision-evaluation-jobs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; align-items: center; }
 .vision-evaluation-jobs strong { color: var(--text); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vision-evaluation-jobs span { grid-column: 1; }
-.vision-evaluation-retry { grid-column: 2; grid-row: 1 / span 2; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--text); padding: 4px 9px; cursor: pointer; }
 .acquisition-identity-telemetry { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.018); }
 .acquisition-identity-telemetry > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; cursor: pointer; color: var(--muted); font-size: 0.72rem; list-style: none; }
 .acquisition-identity-telemetry > summary::-webkit-details-marker { display: none; }

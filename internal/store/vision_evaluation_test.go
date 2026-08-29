@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,13 @@ func TestVisionEvaluationQueueIsBoundedFIFOAndDeduplicated(t *testing.T) {
 	}
 	if len(jobs) != 2 || jobs[0].Status != "pending" || jobs[1].Status != "deferred" {
 		t.Fatalf("bounded jobs=%+v", jobs)
+	}
+	if jobs[0].ManualLabel != "Manual review · image post" {
+		t.Fatalf("local manual label=%q", jobs[0].ManualLabel)
+	}
+	summary, err := state.VisionEvaluationSummary(ctx, run.ID, run.Source)
+	if err != nil || summary.Policy != "manual_review" || summary.Available || !strings.Contains(summary.Availability, "No image is sent") {
+		t.Fatalf("manual review summary=%+v err=%v", summary, err)
 	}
 	jobs, err = state.EnqueueVisionEvaluations(ctx, run, []domain.VisionEvaluationInput{inputs[0]}, 1)
 	if err != nil || len(jobs) != 2 {
