@@ -947,6 +947,9 @@ func (e *Engine) Timeline(ctx context.Context, limit, offset int) ([]domain.Time
 func (e *Engine) Library(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
 	return e.store.ListMemoryLibrary(ctx, query)
 }
+func (e *Engine) SavedLibrary(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
+	return e.store.ListSavedMemory(ctx, query)
+}
 func (e *Engine) LibraryItem(ctx context.Context, id string) (domain.MemoryItem, error) {
 	return e.store.MemoryLibraryItem(ctx, id)
 }
@@ -955,6 +958,15 @@ func (e *Engine) LibraryStorage(ctx context.Context, limit int) (domain.MemorySt
 }
 func (e *Engine) KeepTimelineFullCopy(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
 	return e.store.KeepTimelineFullCopy(ctx, timelineID)
+}
+func (e *Engine) ReadLaterTimeline(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
+	return e.store.ReadLaterTimeline(ctx, timelineID)
+}
+func (e *Engine) KeepMemoryInLibrary(ctx context.Context, id string) (domain.MemoryItem, error) {
+	return e.store.KeepMemoryInLibrary(ctx, id)
+}
+func (e *Engine) DoneSavedMemory(ctx context.Context, id string) (domain.MemoryItem, error) {
+	return e.store.DoneSavedMemory(ctx, id)
 }
 func (e *Engine) ReleaseLibraryItem(ctx context.Context, id string) (domain.MemoryItem, error) {
 	return e.store.ReleaseMemoryFullCopy(ctx, id)

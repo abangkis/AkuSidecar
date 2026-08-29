@@ -1,3 +1,15 @@
+export function buildTimelineReadLaterPath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/timeline/${encodeURIComponent(normalized)}/read-later` : "";
+}
+
+export function timelineReadLaterConfirmation(item = {}) {
+  const title = String(item?.item?.whatChanged ?? item?.item?.whyItMatters ?? "this Timeline item").trim() || "this Timeline item";
+  return `Read later “${title}”? This keeps the best locally available text or source reference in Saved.`;
+}
+
+// Compatibility helpers for clients that have not yet adopted Read later.
+// The embedded Timeline UI never renders this legacy action.
 export function buildTimelineKeepPath(id) {
   const normalized = String(id ?? "").trim();
   return normalized ? `/api/timeline/${encodeURIComponent(normalized)}/keep-full-copy` : "";

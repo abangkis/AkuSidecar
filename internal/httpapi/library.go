@@ -32,6 +32,8 @@ type libraryItemView struct {
 	Facets               []string                      `json:"facets,omitempty"`
 	Media                []domain.MemoryMediaReference `json:"media,omitempty"`
 	RetentionTier        domain.MemoryTier             `json:"retentionTier"`
+	Saved                bool                          `json:"saved"`
+	PermanentKeep        bool                          `json:"permanentKeep"`
 	FullContent          *string                       `json:"fullContent,omitempty"`
 	CreatedAt            string                        `json:"createdAt"`
 	UpdatedAt            string                        `json:"updatedAt"`
@@ -46,6 +48,7 @@ func publicLibraryItem(item domain.MemoryItem, includeFullContent bool) libraryI
 		Title:                item.Title, Summary: item.Summary, Author: item.Author,
 		PublishedAt: item.PublishedAt, Tags: item.Tags, Facets: item.Facets,
 		Media: item.Media, RetentionTier: item.RetentionTier,
+		Saved: item.Saved, PermanentKeep: item.PermanentKeep,
 		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 	}
 	if includeFullContent {
@@ -59,6 +62,7 @@ func parseLibraryQuery(values url.Values) (domain.MemoryLibraryQuery, error) {
 		Query:         values.Get("query"),
 		Source:        domain.Source(values.Get("source")),
 		Tier:          domain.MemoryTier(values.Get("tier")),
+		SavedOnly:     values.Get("saved") == "true" || values.Get("savedOnly") == "true",
 		PublishedFrom: values.Get("publishedFrom"),
 		PublishedTo:   values.Get("publishedTo"),
 		Cursor:        values.Get("cursor"),

@@ -630,6 +630,24 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			items = append(items, publicLibraryItem(item, false))
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+	case r.Method == http.MethodGet && p == "/api/library/saved":
+		query, err := parseLibraryQuery(r.URL.Query())
+		if err != nil {
+			return err
+		}
+		query.SavedOnly = true
+		result, err := s.engine.SavedLibrary(ctx, query)
+		if err != nil {
+			if errors.Is(err, store.ErrMemoryLibraryQuery) {
+				return badRequest(err.Error())
+			}
+			return err
+		}
+		items := make([]libraryItemView, 0, len(result.Items))
+		for _, item := range result.Items {
+			items = append(items, publicLibraryItem(item, false))
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
 	case r.Method == http.MethodGet && p == "/api/library/storage":
 		limit, err := parseLibraryStorageLimit(r.URL.Query())
 		if err != nil {
@@ -656,6 +674,41 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"released": true, "id": id, "retentionTier": item.RetentionTier})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/keep-in-library"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/keep-in-library")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("library item")
+		}
+		item, err := s.engine.KeepMemoryInLibrary(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) || errors.Is(err, store.ErrMemoryNotSaved) {
+			return notFound("library item")
+		}
+		if errors.Is(err, store.ErrSavedMemoryTextUnavailable) {
+			return apiError{Status: http.StatusConflict, Code: "saved_memory_text_unavailable", Message: "The saved source text is unavailable, so it cannot be kept as a full copy."}
+		}
+		if errors.Is(err, store.ErrMemoryTombstoned) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"kept": true, "id": id, "saved": item.Saved, "permanentKeep": item.PermanentKeep, "retentionTier": item.RetentionTier})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/done"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/done")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("library item")
+		}
+		item, err := s.engine.DoneSavedMemory(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+			return notFound("library item")
+		}
+		if errors.Is(err, store.ErrMemoryTombstoned) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"done": true, "id": id, "saved": item.Saved, "permanentKeep": item.PermanentKeep, "retentionTier": item.RetentionTier})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/forget-permanently"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/forget-permanently")
 		if id == "" || strings.Contains(id, "/") {
@@ -740,6 +793,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/keep-full-copy"):
+		// Legacy API compatibility. The embedded UI exposes Read later, while
+		// older clients may finish an already-issued Keep request.
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/keep-full-copy")
 		if id == "" || strings.Contains(id, "/") {
 			return notFound("timeline item")
@@ -761,6 +816,25 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"kept": true, "alreadyKept": alreadyKept, "retentionTier": item.RetentionTier})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/read-later"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/read-later")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("timeline item")
+		}
+		item, alreadySaved, err := s.engine.ReadLaterTimeline(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("timeline item")
+		}
+		if errors.Is(err, store.ErrMemoryTombstoned) {
+			return apiError{Status: http.StatusConflict, Code: "memory_tombstoned", Message: "This Timeline item was permanently forgotten, so it cannot be Saved."}
+		}
+		if errors.Is(err, store.ErrTimelineMemoryNotEligible) {
+			return apiError{Status: http.StatusConflict, Code: "timeline_memory_not_eligible", Message: "Only a final Timeline item from a completed update can be Saved for later."}
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"saved": true, "alreadySaved": alreadySaved, "retentionTier": item.RetentionTier, "permanentKeep": item.PermanentKeep})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/feedback"):
 		id := path.Base(strings.TrimSuffix(p, "/feedback"))
 		var value domain.Feedback

@@ -142,6 +142,8 @@ type MemoryItem struct {
 	Facets               []string               `json:"facets,omitempty"`
 	Media                []MemoryMediaReference `json:"media,omitempty"`
 	RetentionTier        MemoryTier             `json:"retentionTier"`
+	Saved                bool                   `json:"saved"`
+	PermanentKeep        bool                   `json:"permanentKeep"`
 	LifecycleState       MemoryLifecycleState   `json:"lifecycleState"`
 	FullContentVersionID string                 `json:"fullContentVersionId,omitempty"`
 	ContentBytes         int64                  `json:"contentBytes"`
@@ -234,6 +236,7 @@ type MemoryLibraryQuery struct {
 	Query         string     `json:"query,omitempty"`
 	Source        Source     `json:"source,omitempty"`
 	Tier          MemoryTier `json:"tier,omitempty"`
+	SavedOnly     bool       `json:"savedOnly,omitempty"`
 	PublishedFrom string     `json:"publishedFrom,omitempty"`
 	PublishedTo   string     `json:"publishedTo,omitempty"`
 	Limit         int        `json:"limit,omitempty"`

@@ -1382,6 +1382,8 @@ type TimelineItem struct {
 // response.
 type TimelineMemoryProjection struct {
 	RetentionTier MemoryTier `json:"retentionTier"`
+	Saved         bool       `json:"saved"`
+	PermanentKeep bool       `json:"permanentKeep"`
 }
 
 type AIAssessment struct {

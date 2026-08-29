@@ -4,12 +4,15 @@ export const LIBRARY_MAX_QUERY = 200;
 export const LIBRARY_STORAGE_DEFAULT_LIMIT = 6;
 export const LIBRARY_STORAGE_MAX_LIMIT = 12;
 export const LIBRARY_TAB_SAVED = "saved";
+export const LIBRARY_TAB_LIBRARY = "library";
 export const LIBRARY_TAB_CLEANING = "cleaning";
 
 const allowedTiers = new Set(["recall", "full_copy"]);
 
 export function normalizeLibraryTab(value) {
-  return value === LIBRARY_TAB_CLEANING ? LIBRARY_TAB_CLEANING : LIBRARY_TAB_SAVED;
+  if (value === LIBRARY_TAB_CLEANING) return LIBRARY_TAB_CLEANING;
+  if (value === LIBRARY_TAB_LIBRARY) return LIBRARY_TAB_LIBRARY;
+  return LIBRARY_TAB_SAVED;
 }
 
 export function normalizeLibraryFilters(input = {}) {
@@ -32,18 +35,23 @@ export function normalizeLibraryFilters(input = {}) {
   };
 }
 
-export function buildLibraryRequestPath(filters = {}, cursor = "") {
+export function buildLibraryRequestPath(filters = {}, cursor = "", savedOnly = false) {
   const normalized = normalizeLibraryFilters(filters);
   const params = new URLSearchParams();
   if (normalized.query) params.set("query", normalized.query);
   if (normalized.source) params.set("source", normalized.source);
   if (normalized.tier) params.set("tier", normalized.tier);
+  if (savedOnly) params.set("saved", "true");
   if (normalized.publishedFrom) params.set("publishedFrom", normalized.publishedFrom);
   if (normalized.publishedTo) params.set("publishedTo", normalized.publishedTo);
   params.set("limit", String(normalized.limit));
   const nextCursor = String(cursor ?? "").trim();
   if (nextCursor) params.set("cursor", nextCursor);
   return `/api/library/items?${params.toString()}`;
+}
+
+export function buildSavedLibraryRequestPath(filters = {}, cursor = "") {
+  return buildLibraryRequestPath(filters, cursor, true);
 }
 
 export function buildLibraryStorageRequestPath(limit = LIBRARY_STORAGE_DEFAULT_LIMIT) {
@@ -93,6 +101,26 @@ export function buildLibraryForgetPath(id) {
 export function buildLibraryReleasePath(id) {
   const normalized = String(id ?? "").trim();
   return normalized ? `/api/library/items/${encodeURIComponent(normalized)}/release-full-copy` : "";
+}
+
+export function buildLibraryKeepPath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/library/items/${encodeURIComponent(normalized)}/keep-in-library` : "";
+}
+
+export function buildLibraryDonePath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/library/items/${encodeURIComponent(normalized)}/done` : "";
+}
+
+export function libraryKeepConfirmation(item = {}) {
+  const title = String(item?.title ?? "").trim() || "this memory";
+  return `Keep “${title}” in Library? This keeps the locally available full copy after it leaves Saved.`;
+}
+
+export function libraryDoneConfirmation(item = {}) {
+  const title = String(item?.title ?? "").trim() || "this memory";
+  return `Done reading “${title}”? It will leave Saved; any permanent Library copy stays available.`;
 }
 
 export function libraryRemoveConfirmation(item = {}) {

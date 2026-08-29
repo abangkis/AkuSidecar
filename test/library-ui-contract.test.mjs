@@ -17,6 +17,7 @@ test("Library exposes a compact accessible filter disclosure", () => {
 test("Library storage summary and Spring Cleaning remain read-only and review-only", () => {
   assert.match(index, /id="library-tabs"[^>]+role="tablist"/);
   assert.match(index, /id="library-saved-tab"[^>]+role="tab"[^>]+aria-selected="true"[^>]+aria-controls="library-saved-view"/);
+  assert.match(index, /id="library-library-tab"[^>]+role="tab"[^>]+aria-selected="false"[^>]+aria-controls="library-saved-view"/);
   assert.match(index, /id="library-cleaning-tab"[^>]+role="tab"[^>]+aria-selected="false"[^>]+aria-controls="library-cleaning-view"/);
   assert.match(index, /id="library-saved-view"[^>]+role="tabpanel"/);
   assert.match(index, /id="library-cleaning-view"[^>]+class="library-tabpanel hidden"[^>]+role="tabpanel"[^>]+[^>]*hidden/);
@@ -35,14 +36,14 @@ test("Library storage summary and Spring Cleaning remain read-only and review-on
   assert.match(app, /reclaimableBytes/);
   assert.match(app, /review_full_copy/);
   assert.match(app, /selectLibraryItem\(recommendation\.id/);
-  assert.match(app, /function reviewLibraryStorageRecommendation\(recommendation\)[\s\S]*setLibraryTab\(LIBRARY_TAB_SAVED\)[\s\S]*requestAnimationFrame/);
+  assert.match(app, /function reviewLibraryStorageRecommendation\(recommendation\)[\s\S]*setLibraryTab\(LIBRARY_TAB_LIBRARY\)[\s\S]*requestAnimationFrame/);
   assert.match(styles, /\.library-storage-breakdown \{[^}]*grid-template-columns/);
   assert.match(styles, /\.library-storage-recommendations \{[^}]*grid-template-columns/);
 });
 
 test("Library storage state invalidates after memory lifecycle success", () => {
   assert.match(app, /function invalidateLibraryStorage\(\) \{\s*resetLibraryStorage\(\);/);
-  assert.match(app, /entry\.personalMemory = \{ retentionTier: response\.retentionTier \};\s*invalidateLibraryStorage\(\);/);
+  assert.match(app, /entry\.personalMemory = \{\s*retentionTier: response\.retentionTier,\s*saved: true,\s*permanentKeep: response\.permanentKeep === true,\s*\};\s*invalidateLibraryStorage\(\);/);
   assert.match(app, /async function sendFeedback\(id, direction, reason\)[\s\S]*invalidateLibraryStorage\(\);/);
   assert.match(app, /state\.library\.detailError = null;\s*}\s*reloadLibraryStorage\(\);/);
   assert.match(app, /function refreshLibrary\(\)[\s\S]*reloadLibraryStorage\(\);/);
@@ -61,8 +62,10 @@ test("Library switches between full-width grid and adaptive master-detail", () =
 test("Timeline actions keep primary, preference, and provenance controls distinct", () => {
   assert.match(app, /primary\.className = "timeline-primary-actions"/);
   assert.match(app, /actions\.append\(primary, feedback\)/);
-  assert.match(app, /keep\.className = "feedback-button memory-keep-button"/);
-  assert.match(app, /keep\.textContent = kept \? "✓ Kept" : busy \? "Keeping…" : "Keep"/);
+  assert.match(app, /save\.className = "feedback-button memory-read-later-button"/);
+  assert.match(app, /save\.textContent = saved \? "Saved" : busy \? "Adding…" : "Read later"/);
+  assert.match(app, /buildTimelineReadLaterPath\(entry\.id\)/);
+  assert.doesNotMatch(app, /keep\.className = "feedback-button memory-keep-button"/);
   assert.match(app, /statusTimer = window\.setTimeout\(\(\) => \{/);
   assert.match(styles, /\.semantic-correction-actions \{[^}]*grid-column: 1 \/ -1/);
 });

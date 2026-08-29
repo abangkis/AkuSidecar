@@ -27,6 +27,7 @@ func TestPersonalMemorySchemaContract(t *testing.T) {
 		"memory_content_versions":  {"id", "memory_item_id", "version", "content", "content_fingerprint", "media_metadata_json", "content_bytes", "captured_at", "created_at", "released_at"},
 		"memory_provenance":        {"id", "memory_item_id", "provenance_kind", "source", "canonical_evidence_key", "source_url", "capture_context_json", "reason", "created_at"},
 		"memory_actions":           {"id", "memory_item_id", "action", "detail_json", "created_at"},
+		"memory_retention_claims":  {"memory_item_id", "claim_kind", "claimed_at", "resolved_at"},
 		"memory_search_fts":        {"memory_item_id", "title", "summary", "author", "tags", "facets", "full_content"},
 	}
 	for table, want := range wantColumns {
@@ -52,7 +53,7 @@ func TestPersonalMemorySchemaContract(t *testing.T) {
 			t.Fatalf("%s columns=%v want=%v", table, got, want)
 		}
 	}
-	for _, table := range []string{"memory_items", "memory_identity_aliases", "memory_tombstone_aliases", "memory_content_versions", "memory_provenance", "memory_actions"} {
+	for _, table := range []string{"memory_items", "memory_identity_aliases", "memory_tombstone_aliases", "memory_content_versions", "memory_provenance", "memory_actions", "memory_retention_claims"} {
 		rows, err := state.db.QueryContext(ctx, `PRAGMA foreign_key_list(`+table+`)`)
 		if err != nil {
 			t.Fatal(err)
@@ -76,7 +77,7 @@ func TestPersonalMemorySchemaContract(t *testing.T) {
 	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "13" || SchemaVersion != 13 {
+	if version != "14" || SchemaVersion != 14 {
 		t.Fatalf("schema version=%q constant=%d", version, SchemaVersion)
 	}
 	indexes := map[string]bool{}
@@ -101,6 +102,7 @@ func TestPersonalMemorySchemaContract(t *testing.T) {
 		"memory_tombstone_aliases_lookup", "memory_tombstone_aliases_item",
 		"memory_content_versions_item_created", "memory_content_versions_active", "memory_provenance_item_created",
 		"memory_actions_item_created", "memory_actions_action_created",
+		"memory_retention_claims_active", "memory_retention_claims_item",
 	} {
 		if !indexes[name] {
 			t.Errorf("missing memory index %s", name)
@@ -134,11 +136,11 @@ func TestSchema11MigratesPersonalMemoryFoundation(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "13" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "14" {
 		t.Fatalf("migrated schema version=%q err=%v", version, err)
 	}
 	var count int
-	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('memory_items','memory_identity_aliases','memory_tombstone_aliases','memory_content_versions','memory_provenance','memory_actions')`).Scan(&count); err != nil || count != 6 {
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('memory_items','memory_identity_aliases','memory_tombstone_aliases','memory_content_versions','memory_provenance','memory_actions','memory_retention_claims')`).Scan(&count); err != nil || count != 7 {
 		t.Fatalf("memory tables=%d err=%v", count, err)
 	}
 	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_search_fts'`).Scan(&count); err != nil || count != 1 {

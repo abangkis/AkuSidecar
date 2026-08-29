@@ -40,6 +40,8 @@ var (
 	ErrMemoryStorageRecommendationLimit = errors.New("memory storage recommendation limit must be between 1 and 12")
 	ErrTimelineMemoryNotEligible        = errors.New("Timeline item is not eligible for a full copy")
 	ErrTimelineMemoryTextUnavailable    = errors.New("Timeline source text is unavailable for a full copy")
+	ErrSavedMemoryTextUnavailable       = errors.New("Saved item text is unavailable for a permanent Library copy")
+	ErrMemoryNotSaved                   = errors.New("personal memory item is not currently Saved")
 )
 
 const memoryTombstoneKeyMeta = "memory_tombstone_key_v1"
@@ -355,10 +357,72 @@ func (s *Store) keepMemoryFullCopyTx(ctx context.Context, tx *sql.Tx, id string,
 	if err := recordMemoryActionTx(ctx, tx, id, domain.MemoryActionKeepFullCopy, detail, now); err != nil {
 		return err
 	}
+	if _, err := setMemoryClaimTx(ctx, tx, id, memoryClaimKeep, now); err != nil {
+		return err
+	}
 	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
 		return err
 	}
 	return nil
+}
+
+// saveMemoryContentForLaterTx stores the best text already present in the
+// persisted Timeline evidence. It deliberately creates only a temporary
+// full-copy payload: permanent ownership is a separate Keep claim applied by
+// KeepMemoryInLibrary. This path never contacts a provider or media adapter.
+func (s *Store) saveMemoryContentForLaterTx(ctx context.Context, tx *sql.Tx, id string, input domain.MemoryFullCopyInput, now string) error {
+	if strings.TrimSpace(input.Content) == "" {
+		return nil
+	}
+	if len([]byte(input.Content)) > maxMemoryContentBytes {
+		return fmt.Errorf("memory full copy exceeds %d bytes", maxMemoryContentBytes)
+	}
+	_, mediaJSON, err := normalizeMemoryMedia(input.Media)
+	if err != nil {
+		return err
+	}
+	stored, err := memoryStoredByID(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if stored.item.LifecycleState == domain.MemoryStateTombstone {
+		return fmt.Errorf("%w: %s", ErrMemoryTombstoned, id)
+	}
+	if len(input.Media) == 0 {
+		mediaJSON = stored.mediaJSON
+	}
+	version := 1
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0)+1 FROM memory_content_versions WHERE memory_item_id=?`, id).Scan(&version); err != nil {
+		return fmt.Errorf("read memory content version: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE memory_content_versions
+		SET content='',content_bytes=0,released_at=?
+		WHERE memory_item_id=? AND released_at IS NULL`, now, id); err != nil {
+		return fmt.Errorf("release previous memory content version: %w", err)
+	}
+	versionID := domain.NewID("memory_content")
+	contentBytes := int64(len([]byte(input.Content)))
+	capturedAt := strings.TrimSpace(input.CapturedAt)
+	if capturedAt == "" {
+		capturedAt = now
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO memory_content_versions(
+		  id,memory_item_id,version,content,content_fingerprint,media_metadata_json,
+		  content_bytes,captured_at,created_at,released_at
+		) VALUES(?,?,?,?,?,?,?,?,?,NULL)`,
+		versionID, id, version, input.Content, memoryContentFingerprint(input.Content), mediaJSON,
+		contentBytes, capturedAt, now); err != nil {
+		return fmt.Errorf("insert memory read-later content version: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE memory_items
+		SET retention_tier='full_copy',full_content_version_id=?,content_bytes=?,media_metadata_json=?,updated_at=?
+		WHERE id=? AND lifecycle_state='active'`, versionID, contentBytes, mediaJSON, now, id); err != nil {
+		return fmt.Errorf("update memory read-later state: %w", err)
+	}
+	return syncMemorySearchIndexTx(ctx, tx, id)
 }
 
 // KeepTimelineFullCopy is the authoritative Timeline action. The caller may
@@ -409,6 +473,9 @@ func (s *Store) KeepTimelineFullCopy(ctx context.Context, timelineID string) (do
 			return domain.MemoryItem{}, false, fmt.Errorf("%w: %s", ErrMemoryTombstoned, memoryID)
 		}
 		if stored.item.RetentionTier == domain.MemoryTierFullCopy {
+			if _, err := setMemoryClaimTx(ctx, tx, memoryID, memoryClaimKeep, now); err != nil {
+				return domain.MemoryItem{}, false, err
+			}
 			if err := tx.Commit(); err != nil {
 				return domain.MemoryItem{}, false, fmt.Errorf("commit idempotent Timeline full-copy action: %w", err)
 			}
@@ -433,11 +500,242 @@ func (s *Store) KeepTimelineFullCopy(ctx context.Context, timelineID string) (do
 	return item, false, err
 }
 
+// ReadLaterTimeline creates or reactivates the current Saved membership for
+// a final Timeline item. It copies only text already persisted in Timeline
+// evidence; missing text remains a truthful source-dependent recall item.
+// The boolean reports whether the membership was already active.
+func (s *Store) ReadLaterTimeline(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
+	if strings.TrimSpace(timelineID) == "" {
+		return domain.MemoryItem{}, false, sql.ErrNoRows
+	}
+	tombstoneKey, err := s.memoryTombstoneKey(ctx)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	now := memoryNow(s)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("begin Timeline Read later transaction: %w", err)
+	}
+	defer tx.Rollback()
+	timelineItem, err := timelineItemForReadLaterTx(ctx, tx, timelineID)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	normalized, err := normalizeMemoryInput(timelineReadLaterMemoryInput(timelineItem))
+	if err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("prepare Timeline Read later identity: %w", err)
+	}
+	normalized.IdentityDigest = memoryIdentityDigest(tombstoneKey, normalized.Identity)
+	if tombstoneID, err := tombstonedMemoryID(ctx, tx, tombstoneKey, normalized.Identity); err != nil {
+		return domain.MemoryItem{}, false, err
+	} else if tombstoneID != "" {
+		return domain.MemoryItem{}, false, fmt.Errorf("%w: %s", ErrMemoryTombstoned, tombstoneID)
+	}
+	memoryID, err := resolveMemoryIdentity(ctx, tx, normalized.Identity)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	if memoryID != "" {
+		alreadySaved, claimErr := memoryClaimStateTx(ctx, tx, memoryID, memoryClaimSaved)
+		if claimErr != nil {
+			return domain.MemoryItem{}, false, claimErr
+		}
+		if alreadySaved {
+			if err := tx.Commit(); err != nil {
+				return domain.MemoryItem{}, false, fmt.Errorf("commit idempotent Timeline Read later action: %w", err)
+			}
+			item, itemErr := s.MemoryItem(ctx, memoryID)
+			return item, true, itemErr
+		}
+	}
+	memoryID, err = s.upsertMemoryRecallStubTx(ctx, tx, tombstoneKey, normalized)
+	if err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("create Timeline Saved item: %w", err)
+	}
+	stored, err := memoryStoredByID(ctx, tx, memoryID)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	if stored.item.RetentionTier != domain.MemoryTierFullCopy && timelineItem.Evidence != nil {
+		if err := s.saveMemoryContentForLaterTx(ctx, tx, memoryID, domain.MemoryFullCopyInput{
+			Content: timelineItem.Evidence.Text, Media: normalized.Media, CapturedAt: timelineItem.CreatedAt,
+		}, now); err != nil {
+			return domain.MemoryItem{}, false, fmt.Errorf("store Timeline Read later text: %w", err)
+		}
+	}
+	if _, err := setMemoryClaimTx(ctx, tx, memoryID, memoryClaimSaved, now); err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	if err := recordMemoryActionTx(ctx, tx, memoryID, domain.MemoryActionReadLater, map[string]any{"timelineId": timelineID}, now); err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.MemoryItem{}, false, fmt.Errorf("commit Timeline Read later action: %w", err)
+	}
+	item, err := s.MemoryItem(ctx, memoryID)
+	return item, false, err
+}
+
+// SaveTimelineForLater is a compatibility-friendly alias for ReadLaterTimeline.
+func (s *Store) SaveTimelineForLater(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
+	return s.ReadLaterTimeline(ctx, timelineID)
+}
+
+// KeepMemoryInLibrary converts the current Saved attention claim into
+// independent permanent full-copy ownership. Existing content is reused; no
+// second content version is created.
+func (s *Store) KeepMemoryInLibrary(ctx context.Context, id string) (domain.MemoryItem, error) {
+	if strings.TrimSpace(id) == "" {
+		return domain.MemoryItem{}, ErrMemoryNotFound
+	}
+	now := memoryNow(s)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("begin Saved Keep transaction: %w", err)
+	}
+	defer tx.Rollback()
+	stored, err := memoryStoredByID(ctx, tx, id)
+	if err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if stored.item.LifecycleState == domain.MemoryStateTombstone {
+		return domain.MemoryItem{}, fmt.Errorf("%w: %s", ErrMemoryTombstoned, id)
+	}
+	savedActive, err := memoryClaimStateTx(ctx, tx, id, memoryClaimSaved)
+	if err != nil {
+		return domain.MemoryItem{}, err
+	}
+	keepActive, err := memoryClaimStateTx(ctx, tx, id, memoryClaimKeep)
+	if err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if !savedActive && !keepActive {
+		return domain.MemoryItem{}, ErrMemoryNotSaved
+	}
+	if !keepActive {
+		if stored.item.RetentionTier != domain.MemoryTierFullCopy || !memoryHasActiveTextTx(ctx, tx, stored) {
+			return domain.MemoryItem{}, ErrSavedMemoryTextUnavailable
+		}
+		if _, err := setMemoryClaimTx(ctx, tx, id, memoryClaimKeep, now); err != nil {
+			return domain.MemoryItem{}, err
+		}
+		if err := recordMemoryActionTx(ctx, tx, id, domain.MemoryActionKeepFullCopy, map[string]any{"surface": "saved"}, now); err != nil {
+			return domain.MemoryItem{}, err
+		}
+	}
+	if savedActive {
+		if _, err := resolveMemoryClaimTx(ctx, tx, id, memoryClaimSaved, now); err != nil {
+			return domain.MemoryItem{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE memory_items SET updated_at=? WHERE id=? AND lifecycle_state='active'`, now, id); err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("commit Saved Keep action: %w", err)
+	}
+	return s.MemoryItem(ctx, id)
+}
+
+func (s *Store) KeepSavedMemory(ctx context.Context, id string) (domain.MemoryItem, error) {
+	return s.KeepMemoryInLibrary(ctx, id)
+}
+
+// DoneSavedMemory resolves only the current Saved claim. Without independent
+// Keep ownership, temporary Read later text is released and the item remains
+// an ordinary searchable recall stub.
+func (s *Store) DoneSavedMemory(ctx context.Context, id string) (domain.MemoryItem, error) {
+	if strings.TrimSpace(id) == "" {
+		return domain.MemoryItem{}, ErrMemoryNotFound
+	}
+	now := memoryNow(s)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("begin Saved Done transaction: %w", err)
+	}
+	defer tx.Rollback()
+	stored, err := memoryStoredByID(ctx, tx, id)
+	if err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if stored.item.LifecycleState == domain.MemoryStateTombstone {
+		return domain.MemoryItem{}, fmt.Errorf("%w: %s", ErrMemoryTombstoned, id)
+	}
+	savedActive, err := memoryClaimStateTx(ctx, tx, id, memoryClaimSaved)
+	if err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if !savedActive {
+		if err := tx.Commit(); err != nil {
+			return domain.MemoryItem{}, err
+		}
+		return s.MemoryItem(ctx, id)
+	}
+	if _, err := resolveMemoryClaimTx(ctx, tx, id, memoryClaimSaved, now); err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if err := recordMemoryActionTx(ctx, tx, id, domain.MemoryActionMarkRead, map[string]any{"surface": "saved"}, now); err != nil {
+		return domain.MemoryItem{}, err
+	}
+	keepActive, err := memoryClaimStateTx(ctx, tx, id, memoryClaimKeep)
+	if err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if !keepActive && (stored.item.RetentionTier == domain.MemoryTierFullCopy || stored.item.ContentBytes > 0) {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE memory_content_versions SET content='',content_bytes=0,released_at=?
+			WHERE memory_item_id=? AND released_at IS NULL`, now, id); err != nil {
+			return domain.MemoryItem{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE memory_items SET retention_tier='recall',full_content_version_id='',content_bytes=0,updated_at=?
+			WHERE id=? AND lifecycle_state='active'`, now, id); err != nil {
+			return domain.MemoryItem{}, err
+		}
+	} else if _, err := tx.ExecContext(ctx, `UPDATE memory_items SET updated_at=? WHERE id=? AND lifecycle_state='active'`, now, id); err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
+		return domain.MemoryItem{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("commit Saved Done action: %w", err)
+	}
+	return s.MemoryItem(ctx, id)
+}
+
+func (s *Store) MarkSavedMemoryDone(ctx context.Context, id string) (domain.MemoryItem, error) {
+	return s.DoneSavedMemory(ctx, id)
+}
+
+func memoryHasActiveTextTx(ctx context.Context, tx *sql.Tx, stored memoryStoredRow) bool {
+	if stored.item.RetentionTier != domain.MemoryTierFullCopy || stored.item.ContentBytes <= 0 || stored.item.FullContentVersionID == "" {
+		return false
+	}
+	var content string
+	err := tx.QueryRowContext(ctx, `
+		SELECT content FROM memory_content_versions
+		WHERE id=? AND memory_item_id=? AND released_at IS NULL`, stored.item.FullContentVersionID, stored.item.ID).Scan(&content)
+	return err == nil && strings.TrimSpace(content) != ""
+}
+
 // timelineItemForFullCopyTx reads the final, persisted Timeline row and its
 // evidence using the caller's transaction. It intentionally does not invoke
 // an adapter or provider, and it treats missing/blank source text as an
 // actionable local eligibility failure.
 func timelineItemForFullCopyTx(ctx context.Context, tx *sql.Tx, timelineID string) (domain.TimelineItem, error) {
+	return timelineItemForRetentionTx(ctx, tx, timelineID, true)
+}
+
+func timelineItemForReadLaterTx(ctx context.Context, tx *sql.Tx, timelineID string) (domain.TimelineItem, error) {
+	return timelineItemForRetentionTx(ctx, tx, timelineID, false)
+}
+
+func timelineItemForRetentionTx(ctx context.Context, tx *sql.Tx, timelineID string, requireText bool) (domain.TimelineItem, error) {
 	var item domain.TimelineItem
 	var itemRaw, assessmentRaw, coverageRaw, sessionStatus string
 	err := tx.QueryRowContext(ctx, `
@@ -502,7 +800,7 @@ func timelineItemForFullCopyTx(ctx context.Context, tx *sql.Tx, timelineID strin
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return domain.TimelineItem{}, fmt.Errorf("read Timeline evidence override: %w", err)
 	}
-	if item.Evidence == nil || strings.TrimSpace(item.Evidence.Text) == "" {
+	if requireText && (item.Evidence == nil || strings.TrimSpace(item.Evidence.Text) == "") {
 		return domain.TimelineItem{}, ErrTimelineMemoryTextUnavailable
 	}
 	return item, nil
@@ -526,6 +824,28 @@ func timelineKeepMemoryInput(item domain.TimelineItem) domain.MemoryItemInput {
 			"sessionId": item.SessionID, "runId": item.RunID,
 		},
 		Reason: "timeline_keep_full_copy",
+	}}
+	return input
+}
+
+func timelineReadLaterMemoryInput(item domain.TimelineItem) domain.MemoryItemInput {
+	input := routineMoreMemoryInput(item)
+	source := input.Identity.Source
+	if source == "" {
+		source = item.Source
+	}
+	evidenceKey := input.Identity.CanonicalEvidenceKey
+	input.Reason = "timeline_read_later"
+	input.Provenance = []domain.MemoryProvenance{{
+		ProvenanceKind:       "manual",
+		Source:               source,
+		CanonicalEvidenceKey: evidenceKey,
+		SourceURL:            input.Identity.CanonicalPermalink,
+		CaptureContext: map[string]any{
+			"surface": "timeline", "action": "read_later", "timelineId": item.ID,
+			"sessionId": item.SessionID, "runId": item.RunID,
+		},
+		Reason: "timeline_read_later",
 	}}
 	return input
 }
@@ -556,6 +876,9 @@ func (s *Store) ReleaseMemoryFullCopy(ctx context.Context, id string) (domain.Me
 	}
 	if stored.item.LifecycleState == domain.MemoryStateTombstone {
 		return domain.MemoryItem{}, fmt.Errorf("%w: %s", ErrMemoryTombstoned, id)
+	}
+	if _, err := resolveMemoryClaimTx(ctx, tx, id, memoryClaimKeep, now); err != nil {
+		return domain.MemoryItem{}, err
 	}
 	if stored.item.RetentionTier == domain.MemoryTierFullCopy || stored.item.ContentBytes > 0 {
 		if _, err := tx.ExecContext(ctx, `
@@ -687,6 +1010,7 @@ func (s *Store) RemoveMemory(ctx context.Context, id string) error {
 		label     string
 	}{
 		{`DELETE FROM memory_search_fts WHERE memory_item_id=?`, "search index"},
+		{`DELETE FROM memory_retention_claims WHERE memory_item_id=?`, "retention claims"},
 		{`DELETE FROM memory_actions WHERE memory_item_id=?`, "actions"},
 		{`DELETE FROM memory_provenance WHERE memory_item_id=?`, "provenance"},
 		{`DELETE FROM memory_content_versions WHERE memory_item_id=?`, "content versions"},
@@ -749,6 +1073,9 @@ func (s *Store) DeleteMemory(ctx context.Context, id string, _ ...string) (domai
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM memory_identity_aliases WHERE memory_item_id=?`, id); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("delete memory aliases: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM memory_retention_claims WHERE memory_item_id=?`, id); err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("delete memory retention claims: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM memory_provenance WHERE memory_item_id=?`, id); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("delete memory provenance: %w", err)
@@ -837,6 +1164,15 @@ func (s *Store) MemoryStorageUsage(ctx context.Context) (domain.MemoryStorageUsa
 		return domain.MemoryStorageUsage{}, fmt.Errorf("inspect memory tombstone alias storage: %w", err)
 	}
 	usage.MetadataBytes += tombstoneAliasBytes
+	var retentionClaimBytes int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(
+		  length(CAST(memory_item_id AS BLOB)) + length(CAST(claim_kind AS BLOB)) +
+		  length(CAST(claimed_at AS BLOB)) + COALESCE(length(CAST(resolved_at AS BLOB)),0)
+		),0) FROM memory_retention_claims`).Scan(&retentionClaimBytes); err != nil {
+		return domain.MemoryStorageUsage{}, fmt.Errorf("inspect memory retention-claim storage: %w", err)
+	}
+	usage.MetadataBytes += retentionClaimBytes
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(
 		  length(CAST(memory_item_id AS BLOB)) + length(CAST(provenance_kind AS BLOB)) +
@@ -1169,6 +1505,12 @@ func retractRoutineMoreMemoryTx(ctx context.Context, tx *sql.Tx, item domain.Tim
 			routineMoreIDs = append(routineMoreIDs, id)
 			continue
 		}
+		// Read later is represented by current Saved membership, not by a
+		// historical provenance row. Once Done resolves that claim, the
+		// provenance must not make Less preserve the item forever.
+		if kind == "manual" && reason == "timeline_read_later" && memoryProvenanceHasTimeline(captureContext, item.ID) {
+			continue
+		}
 		remainingProvenance = true
 	}
 	if err := provenanceRows.Err(); err != nil {
@@ -1202,14 +1544,22 @@ func retractRoutineMoreMemoryTx(ctx context.Context, tx *sql.Tx, item domain.Tim
 	// The current routine provenance is gone even when another retention or
 	// provenance source keeps the item alive. Return after this point only
 	// once all preservation rules have been evaluated.
-	if stored.item.RetentionTier == domain.MemoryTierFullCopy || remainingProvenance {
+	savedActive, err := memoryClaimStateTx(ctx, tx, memoryID, memoryClaimSaved)
+	if err != nil {
+		return false, err
+	}
+	keepActive, err := memoryClaimStateTx(ctx, tx, memoryID, memoryClaimKeep)
+	if err != nil {
+		return false, err
+	}
+	if savedActive || keepActive || remainingProvenance {
 		return true, nil
 	}
 
 	var independentAction string
 	err = tx.QueryRowContext(ctx, `
 		SELECT action FROM memory_actions
-		WHERE memory_item_id=? AND action IN ('import','read_later','mark_read')
+		WHERE memory_item_id=? AND action IN ('import')
 		LIMIT 1`, memoryID).Scan(&independentAction)
 	if err == nil {
 		return true, nil
@@ -1227,6 +1577,7 @@ func retractRoutineMoreMemoryTx(ctx context.Context, tx *sql.Tx, item domain.Tim
 	}{
 		{`DELETE FROM memory_search_fts WHERE memory_item_id=?`, "search index"},
 		{`DELETE FROM memory_actions WHERE memory_item_id=?`, "actions"},
+		{`DELETE FROM memory_retention_claims WHERE memory_item_id=?`, "retention claims"},
 		{`DELETE FROM memory_provenance WHERE memory_item_id=?`, "provenance"},
 		{`DELETE FROM memory_content_versions WHERE memory_item_id=?`, "content versions"},
 		{`DELETE FROM memory_identity_aliases WHERE memory_item_id=?`, "identity aliases"},
@@ -1638,7 +1989,63 @@ func memoryItemByQueryer(ctx context.Context, q memoryRowQueryer, id string) (do
 			return domain.MemoryItem{}, fmt.Errorf("read memory full content: %w", err)
 		}
 	}
+	if item.LifecycleState == domain.MemoryStateActive {
+		if err := q.QueryRowContext(ctx, `
+			SELECT
+			  EXISTS(SELECT 1 FROM memory_retention_claims WHERE memory_item_id=? AND claim_kind='saved' AND resolved_at IS NULL),
+			  EXISTS(SELECT 1 FROM memory_retention_claims WHERE memory_item_id=? AND claim_kind='keep' AND resolved_at IS NULL)`, item.ID, item.ID).Scan(&item.Saved, &item.PermanentKeep); err != nil {
+			return domain.MemoryItem{}, fmt.Errorf("read memory retention claims: %w", err)
+		}
+	}
 	return item, nil
+}
+
+const (
+	memoryClaimSaved = "saved"
+	memoryClaimKeep  = "keep"
+)
+
+func memoryClaimStateTx(ctx context.Context, tx *sql.Tx, itemID, claimKind string) (bool, error) {
+	var active bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM memory_retention_claims
+			WHERE memory_item_id=? AND claim_kind=? AND resolved_at IS NULL
+		)`, itemID, claimKind).Scan(&active); err != nil {
+		return false, fmt.Errorf("read memory %s claim: %w", claimKind, err)
+	}
+	return active, nil
+}
+
+func setMemoryClaimTx(ctx context.Context, tx *sql.Tx, itemID, claimKind, now string) (bool, error) {
+	active, err := memoryClaimStateTx(ctx, tx, itemID, claimKind)
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO memory_retention_claims(memory_item_id,claim_kind,claimed_at,resolved_at)
+		VALUES(?,?,?,NULL)
+		ON CONFLICT(memory_item_id,claim_kind) DO UPDATE SET
+		  claimed_at=excluded.claimed_at,resolved_at=NULL`, itemID, claimKind, now); err != nil {
+		return false, fmt.Errorf("set memory %s claim: %w", claimKind, err)
+	}
+	return active, nil
+}
+
+func resolveMemoryClaimTx(ctx context.Context, tx *sql.Tx, itemID, claimKind, now string) (bool, error) {
+	active, err := memoryClaimStateTx(ctx, tx, itemID, claimKind)
+	if err != nil {
+		return false, err
+	}
+	if !active {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE memory_retention_claims SET resolved_at=?
+		WHERE memory_item_id=? AND claim_kind=? AND resolved_at IS NULL`, now, itemID, claimKind); err != nil {
+		return false, fmt.Errorf("resolve memory %s claim: %w", claimKind, err)
+	}
+	return true, nil
 }
 
 func recordMemoryProvenanceTx(ctx context.Context, tx *sql.Tx, itemID string, value domain.MemoryProvenance, now string) error {

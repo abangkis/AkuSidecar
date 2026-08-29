@@ -16,24 +16,32 @@ import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
 import {
   buildLibraryForgetPath,
+  buildLibraryKeepPath,
+  buildLibraryDonePath,
   buildLibraryReleasePath,
   buildLibraryRemovePath,
   buildLibraryRequestPath,
+  buildSavedLibraryRequestPath,
   buildLibraryStorageRequestPath,
   formatLibraryTier,
   formatLibraryStorageBytes,
   libraryHasFullContent,
   libraryForgetConfirmation,
+  libraryKeepConfirmation,
+  libraryDoneConfirmation,
   libraryReleaseConfirmation,
   libraryRemoveConfirmation,
   mergeLibraryPage,
   LIBRARY_TAB_CLEANING,
+  LIBRARY_TAB_LIBRARY,
   LIBRARY_TAB_SAVED,
   normalizeLibraryStorageReport,
   normalizeLibraryTab,
   normalizeLibraryFilters,
 } from "./library-state.js";
-import { buildTimelineKeepPath, timelineKeepConfirmation } from "./timeline-memory-state.js";
+import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
+// The embedded Timeline action is Read later. Existing Library detail keeps
+// its independent full-copy Release/Remove/Forget semantics.
 
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
@@ -137,7 +145,7 @@ const state = {
   sidePaneItems: [],
   sidePaneFrame: null,
   timelineItems: [],
-  timelineKeepInFlight: new Set(),
+  timelineReadLaterInFlight: new Set(),
   timelineBatches: [],
   sourceSessionReadiness: {},
   sourceSessionProbeInFlight: false,
@@ -274,6 +282,7 @@ $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#library-view-button").addEventListener("click", () => setView("library"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
 $("#library-saved-tab").addEventListener("click", () => setLibraryTab(LIBRARY_TAB_SAVED));
+$("#library-library-tab")?.addEventListener("click", () => setLibraryTab(LIBRARY_TAB_LIBRARY));
 $("#library-cleaning-tab").addEventListener("click", () => setLibraryTab(LIBRARY_TAB_CLEANING));
 for (const tab of document.querySelectorAll("#library-tabs [role=\"tab\"]")) {
   tab.addEventListener("keydown", handleLibraryTabKeydown);
@@ -613,12 +622,18 @@ function onboardingRequiresSetup() {
 
 function setLibraryTab(tab, focus = false) {
   state.library.activeTab = normalizeLibraryTab(tab);
+  if (state.currentView === "library") {
+    resetLibraryList();
+    void loadLibrary();
+  }
   renderLibraryTabs();
   maybeLoadLibraryStorage();
   if (focus) {
     const activeTab = state.library.activeTab === LIBRARY_TAB_CLEANING
       ? $("#library-cleaning-tab")
-      : $("#library-saved-tab");
+      : state.library.activeTab === LIBRARY_TAB_LIBRARY
+        ? $("#library-library-tab")
+        : $("#library-saved-tab");
     activeTab?.focus();
   }
 }
@@ -628,7 +643,8 @@ function renderLibraryTabs() {
   state.library.activeTab = activeTab;
   const cleaning = activeTab === LIBRARY_TAB_CLEANING;
   const tabs = [
-    [$("#library-saved-tab"), !cleaning],
+    [$("#library-saved-tab"), activeTab === LIBRARY_TAB_SAVED],
+    [$("#library-library-tab"), activeTab === LIBRARY_TAB_LIBRARY],
     [$("#library-cleaning-tab"), cleaning],
   ];
   for (const [tab, selected] of tabs) {
@@ -646,6 +662,10 @@ function renderLibraryTabs() {
     panel.classList.toggle("hidden", !selected);
     panel.hidden = !selected;
   }
+  $("#library-saved-view")?.setAttribute(
+    "aria-labelledby",
+    activeTab === LIBRARY_TAB_LIBRARY ? "library-library-tab" : "library-saved-tab",
+  );
 }
 
 function maybeLoadLibraryStorage() {
@@ -667,7 +687,9 @@ function handleLibraryTabKeydown(event) {
       ? tabs.length - 1
       : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
   const next = tabs[nextIndex];
-  setLibraryTab(next.id === "library-cleaning-tab" ? LIBRARY_TAB_CLEANING : LIBRARY_TAB_SAVED, true);
+  setLibraryTab(next.id === "library-cleaning-tab"
+    ? LIBRARY_TAB_CLEANING
+    : next.id === "library-library-tab" ? LIBRARY_TAB_LIBRARY : LIBRARY_TAB_SAVED, true);
 }
 
 function syncInboxSubView() {
@@ -820,10 +842,13 @@ async function loadLibrary({ append = false } = {}) {
   state.library.error = null;
   renderLibrary();
   try {
-    const response = await api(buildLibraryRequestPath(
+    const requestPath = state.library.activeTab === LIBRARY_TAB_SAVED
+      ? buildSavedLibraryRequestPath(state.library.filters, append ? state.library.nextCursor : "")
+      : buildLibraryRequestPath(
       state.library.filters,
       append ? state.library.nextCursor : "",
-    ), { signal: controller.signal });
+    );
+    const response = await api(requestPath, { signal: controller.signal });
     if (requestID !== state.library.requestID) return;
     const merged = mergeLibraryPage(state.library.items, response, append);
     state.library.items = merged.items;
@@ -878,7 +903,9 @@ function libraryErrorMessage(error) {
   if (error?.code === "invalid_memory_library_query") {
     return "Those Library filters are not valid. Clear the filters and try again.";
   }
-  return "Library could not be loaded. Refresh and try again.";
+    return state.library.activeTab === LIBRARY_TAB_SAVED
+      ? "Saved could not be loaded. Refresh and try again."
+      : "Library could not be loaded. Refresh and try again.";
 }
 
 function libraryStorageErrorMessage(error) {
@@ -894,6 +921,8 @@ function libraryMutationErrorMessage(error, action) {
   }
   if (action === "forget") return "Library could not forget this memory permanently. Try again.";
   if (action === "release") return "Library could not release the full copy. Try again.";
+  if (action === "keep") return "This item could not be kept in Library. A local full copy may be unavailable.";
+  if (action === "done") return "This Saved item could not be marked Done. Try again.";
   return "Library could not remove this local memory. Try again.";
 }
 
@@ -926,15 +955,19 @@ function renderLibrary() {
     status.textContent = "";
   }
   meta.textContent = state.library.error && !state.library.items.length
-    ? "Library is read-only and local. No provider was contacted."
-    : "Search memories kept on this device. Library reads never call a provider.";
+    ? "This local view is read-only. No provider was contacted."
+    : state.library.activeTab === LIBRARY_TAB_SAVED
+      ? "Items currently Saved for later. Saved reads never call a provider."
+      : "Search memories kept on this device. Library reads never call a provider.";
 
   if (state.library.loading && !state.library.items.length) {
     results.append(libraryStateMessage("Loading local memories…"));
   } else if (state.library.error && !state.library.items.length) {
     results.append(libraryStateMessage(libraryErrorMessage(state.library.error), true));
   } else if (!state.library.items.length) {
-    results.append(libraryStateMessage("No local memories match these filters. Try a broader search or run a Timeline check first."));
+    results.append(libraryStateMessage(state.library.activeTab === LIBRARY_TAB_SAVED
+      ? "Nothing is currently Saved for later. Choose Read later on a Timeline item to add one."
+      : "No local memories match these filters. Try a broader search or run a Timeline check first."));
   } else {
     results.append(...state.library.items.map(buildLibraryCard));
   }
@@ -1057,7 +1090,7 @@ function buildLibraryStorageRecommendation(recommendation) {
 }
 
 function reviewLibraryStorageRecommendation(recommendation) {
-  setLibraryTab(LIBRARY_TAB_SAVED);
+  setLibraryTab(LIBRARY_TAB_LIBRARY);
   selectLibraryItem(recommendation.id, {
     id: recommendation.id,
     source: recommendation.source,
@@ -1237,6 +1270,32 @@ function buildLibraryDetail(item) {
   appendLibraryLabels(fragment, "Facets", item.facets);
   appendLibraryMediaMetadata(fragment, item.media);
 
+  if (item.saved) {
+    const savedActions = document.createElement("section");
+    savedActions.className = "library-saved-actions";
+    const savedHeading = document.createElement("h4");
+    savedHeading.textContent = "Saved for later";
+    const savedNote = document.createElement("p");
+    savedNote.className = "library-detail-action-note";
+    savedNote.textContent = "Choose what happens after reading: keep the local copy in Library, or mark it Done.";
+    const keep = document.createElement("button");
+    keep.type = "button";
+    keep.className = "primary-button library-detail-keep";
+    keep.textContent = state.library.mutationLoading && state.library.mutationAction === "keep"
+      ? "Keeping…" : "Keep in Library";
+    keep.disabled = state.library.mutationLoading;
+    keep.addEventListener("click", () => keepSavedItem(item));
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "secondary-button library-detail-done";
+    done.textContent = state.library.mutationLoading && state.library.mutationAction === "done"
+      ? "Finishing…" : "Done";
+    done.disabled = state.library.mutationLoading;
+    done.addEventListener("click", () => doneSavedItem(item));
+    savedActions.append(savedHeading, savedNote, keep, done);
+    fragment.append(savedActions);
+  }
+
   const fullCopy = document.createElement("section");
   fullCopy.className = "library-detail-copy";
   const copyHeading = document.createElement("h4");
@@ -1257,12 +1316,14 @@ function buildLibraryDetail(item) {
   const releaseNote = document.createElement("p");
   releaseNote.className = "library-detail-action-note";
   releaseNote.id = "library-release-note";
-  releaseNote.textContent = "Release removes only the stored full text. The searchable recall metadata and identity stay in Library.";
+  releaseNote.textContent = item.saved
+    ? "Choose Keep in Library or Done before changing the stored copy for this Saved item."
+    : "Release removes only the stored full text. The searchable recall metadata and identity stay in Library.";
   const release = document.createElement("button");
   release.type = "button";
   release.className = "secondary-button library-detail-release";
   release.textContent = state.library.mutationLoading && state.library.mutationAction === "release" ? "Releasing…" : "Release full copy";
-  release.disabled = state.library.mutationLoading || item.retentionTier !== "full_copy";
+  release.disabled = state.library.mutationLoading || item.retentionTier !== "full_copy" || item.saved;
   release.setAttribute("aria-describedby", releaseNote.id);
   release.addEventListener("click", () => releaseLibraryItem(item));
   const removeNote = document.createElement("p");
@@ -1313,9 +1374,35 @@ function forgetLibraryItem(item) {
   return mutateLibraryItem(item, "forget");
 }
 
+function keepSavedItem(item) {
+  return mutateLibraryItem(item, "keep");
+}
+
+function doneSavedItem(item) {
+  return mutateLibraryItem(item, "done");
+}
+
 async function mutateLibraryItem(item, action) {
   if (!item?.id || state.library.mutationLoading) return;
-  const config = action === "forget"
+  const config = action === "keep"
+    ? {
+      method: "POST",
+      path: buildLibraryKeepPath,
+      confirm: libraryKeepConfirmation,
+      acknowledged: (response) => response?.kept === true && response?.saved === false && response?.permanentKeep === true,
+      failure: "Library did not confirm keeping this item.",
+      notice: "Kept in Library. It is no longer in Saved.",
+    }
+    : action === "done"
+      ? {
+        method: "POST",
+        path: buildLibraryDonePath,
+        confirm: libraryDoneConfirmation,
+        acknowledged: (response) => response?.done === true && response?.saved === false,
+        failure: "Library did not confirm that this item is Done.",
+        notice: "Done. The item is no longer in Saved.",
+      }
+    : action === "forget"
     ? {
       method: "POST",
       path: buildLibraryForgetPath,
@@ -1341,7 +1428,7 @@ async function mutateLibraryItem(item, action) {
       failure: "Library did not confirm the local removal.",
       notice: "Memory removed locally. A future More can add it again.",
     };
-  if (!window.confirm(config.confirm(item))) return;
+  if (config.confirm && !window.confirm(config.confirm(item))) return;
   state.library.mutationLoading = true;
   state.library.mutationAction = action;
   state.library.mutationError = null;
@@ -1354,11 +1441,34 @@ async function mutateLibraryItem(item, action) {
     state.library.notice = config.notice;
     if (action === "release") {
       state.library.items = state.library.items.map((entry) => entry.id === item.id
-        ? { ...entry, retentionTier: response.retentionTier }
+        ? { ...entry, retentionTier: response.retentionTier, permanentKeep: false }
         : entry);
       if (state.library.selectedItem?.id === item.id) {
         const { fullContent: _releasedContent, ...withoutFullContent } = state.library.selectedItem;
-        state.library.selectedItem = { ...withoutFullContent, retentionTier: response.retentionTier };
+        state.library.selectedItem = { ...withoutFullContent, retentionTier: response.retentionTier, permanentKeep: false };
+      }
+    } else if (action === "keep" || action === "done") {
+      if (state.library.activeTab === LIBRARY_TAB_SAVED) {
+        state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
+        state.library.selectedId = "";
+        state.library.selectedItem = null;
+        state.library.detailRequestID += 1;
+        state.library.detailLoading = false;
+        state.library.detailError = null;
+      } else {
+        state.library.items = state.library.items.map((entry) => entry.id === item.id
+          ? { ...entry, saved: false, permanentKeep: response.permanentKeep, retentionTier: response.retentionTier }
+          : entry);
+        if (state.library.selectedItem?.id === item.id) {
+          const { fullContent: _staleContent, ...withoutFullContent } = state.library.selectedItem;
+          state.library.selectedItem = {
+            ...withoutFullContent,
+            saved: false,
+            permanentKeep: response.permanentKeep,
+            retentionTier: response.retentionTier,
+          };
+          if (action === "keep" && libraryHasFullContent(item)) state.library.selectedItem.fullContent = item.fullContent;
+        }
       }
     } else {
       state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
@@ -6247,7 +6357,7 @@ function buildActions(entry) {
   const primary = document.createElement("div");
   primary.className = "timeline-primary-actions";
   if (link) primary.append(link);
-  primary.append(buildTimelineKeepAction(entry));
+  primary.append(buildTimelineReadLaterAction(entry));
   const feedback = document.createElement("div");
   feedback.className = "feedback-actions";
   const more = feedbackButton("More like this");
@@ -6281,13 +6391,13 @@ function buildActions(entry) {
   return actions;
 }
 
-function buildTimelineKeepAction(entry) {
+function buildTimelineReadLaterAction(entry) {
   const container = document.createElement("div");
   container.className = "timeline-memory-actions";
-  const keep = document.createElement("button");
-  keep.type = "button";
-  keep.className = "feedback-button memory-keep-button";
-  keep.setAttribute("aria-label", "Keep full copy locally");
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "feedback-button memory-read-later-button";
+  save.setAttribute("aria-label", "Read later");
   const status = document.createElement("small");
   status.className = "timeline-memory-action-status";
   status.setAttribute("role", "status");
@@ -6295,51 +6405,53 @@ function buildTimelineKeepAction(entry) {
   let statusTimer = null;
   const hasText = Boolean(String(entry?.evidence?.text ?? "").trim());
   const render = () => {
-    const kept = entry?.personalMemory?.retentionTier === "full_copy";
-    const busy = state.timelineKeepInFlight.has(entry.id);
-    keep.textContent = kept ? "✓ Kept" : busy ? "Keeping…" : "Keep";
-    keep.disabled = kept || busy || !hasText;
-    keep.classList.toggle("selected", kept);
-    keep.classList.toggle("is-kept", kept);
-    keep.setAttribute("aria-pressed", String(kept));
-    keep.setAttribute("aria-label", kept ? "Full copy kept locally" : "Keep full copy locally");
-    keep.title = !hasText && !kept
-      ? "The source text is unavailable, so this item cannot be kept yet."
-      : kept
-        ? "This Timeline item is already retained as a full copy."
-        : "Keep the bounded source text locally.";
+    const saved = entry?.personalMemory?.saved === true;
+    const busy = state.timelineReadLaterInFlight.has(entry.id);
+    save.textContent = saved ? "Saved" : busy ? "Adding…" : "Read later";
+    save.disabled = saved || busy;
+    save.classList.toggle("selected", saved);
+    save.classList.toggle("is-saved", saved);
+    save.setAttribute("aria-pressed", String(saved));
+    save.setAttribute("aria-label", saved ? "Saved" : "Read later");
+    save.title = saved
+      ? "This Timeline item is already Saved for later."
+      : hasText
+        ? "Keep the best locally available text in Saved."
+        : "Keep a source reference in Saved; the source text is unavailable locally.";
   };
   render();
-  keep.addEventListener("click", async () => {
-    if (!entry?.id || state.timelineKeepInFlight.has(entry.id) || entry?.personalMemory?.retentionTier === "full_copy") return;
-    if (!window.confirm(timelineKeepConfirmation(entry))) return;
-    state.timelineKeepInFlight.add(entry.id);
+  save.addEventListener("click", async () => {
+    if (!entry?.id || state.timelineReadLaterInFlight.has(entry.id) || entry?.personalMemory?.saved === true) return;
+    if (!window.confirm(timelineReadLaterConfirmation(entry))) return;
+    state.timelineReadLaterInFlight.add(entry.id);
     status.textContent = "";
     render();
     try {
-      const response = await api(buildTimelineKeepPath(entry.id), { method: "POST" });
-      if (response?.kept !== true || response?.retentionTier !== "full_copy") {
-        throw new Error("AkuSidecar did not confirm the full-copy action.");
+      const response = await api(buildTimelineReadLaterPath(entry.id), { method: "POST" });
+      if (response?.saved !== true) {
+        throw new Error("AkuSidecar did not confirm the Saved action.");
       }
-      entry.personalMemory = { retentionTier: response.retentionTier };
+      entry.personalMemory = {
+        retentionTier: response.retentionTier,
+        saved: true,
+        permanentKeep: response.permanentKeep === true,
+      };
       invalidateLibraryStorage();
-      status.textContent = response.alreadyKept === true
-        ? "Already kept locally as a full copy."
-        : "Full copy kept locally.";
+      status.textContent = response.alreadySaved === true ? "Already Saved for later." : "Saved for later.";
       window.clearTimeout(statusTimer);
       statusTimer = window.setTimeout(() => {
         status.textContent = "";
       }, 3500);
     } catch (error) {
       window.clearTimeout(statusTimer);
-      status.textContent = "Could not keep this full copy. Try again.";
+      status.textContent = "Could not add this item to Saved. Try again.";
       showError(error);
     } finally {
-      state.timelineKeepInFlight.delete(entry.id);
+      state.timelineReadLaterInFlight.delete(entry.id);
       render();
     }
   });
-  container.append(keep, status);
+  container.append(save, status);
   return container;
 }
 

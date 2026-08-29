@@ -132,3 +132,23 @@ func TestMemoryStorageReportReturnsEmptyRecommendations(t *testing.T) {
 		t.Fatalf("empty report recommendations=%#v", report.Recommendations)
 	}
 }
+
+func TestMemoryStorageUsageIncludesRetentionClaimMetadata(t *testing.T) {
+	state := openTestStore(t)
+	const memoryID = "memory-claim"
+	const claimKind = "saved"
+	const claimedAt = "2026-08-30T00:00:00Z"
+	if _, err := state.db.Exec(`
+		INSERT INTO memory_retention_claims(memory_item_id,claim_kind,claimed_at,resolved_at)
+		VALUES(?,?,?,NULL)`, memoryID, claimKind, claimedAt); err != nil {
+		t.Fatal(err)
+	}
+	usage, err := state.MemoryStorageUsage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := int64(len(memoryID) + len(claimKind) + len(claimedAt))
+	if usage.MetadataBytes != want || usage.LogicalBytes != want {
+		t.Fatalf("retention claim usage=%+v want metadata/logical=%d", usage, want)
+	}
+}

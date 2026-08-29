@@ -256,6 +256,7 @@ func memorySearchTerms(query string) ([]string, error) {
 func memoryLibraryQueryKey(query domain.MemoryLibraryQuery, searchQuery string) string {
 	value := strings.Join([]string{
 		searchQuery,
+		fmt.Sprintf("saved:%t", query.SavedOnly),
 		string(query.Source), string(query.Tier), query.PublishedFrom, query.PublishedTo,
 	}, "\x00")
 	sum := sha256.Sum256([]byte(value))
@@ -362,6 +363,17 @@ func (s *Store) ListMemoryLibrary(ctx context.Context, input domain.MemoryLibrar
 	return result, nil
 }
 
+// ListSavedMemory is the current Read later membership listing. It filters by
+// the materialized Saved claim and never derives state from action history.
+func (s *Store) ListSavedMemory(ctx context.Context, input domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
+	input.SavedOnly = true
+	return s.ListMemoryLibrary(ctx, input)
+}
+
+func (s *Store) ListSavedLibrary(ctx context.Context, input domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
+	return s.ListSavedMemory(ctx, input)
+}
+
 // SearchMemoryLibrary is a descriptive alias for ListMemoryLibrary.
 func (s *Store) SearchMemoryLibrary(ctx context.Context, input domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
 	return s.ListMemoryLibrary(ctx, input)
@@ -387,6 +399,12 @@ func (s *Store) queryMemoryLibraryRows(ctx context.Context, q memoryLibraryQuery
 	if query.Tier != "" {
 		where = append(where, "mi.retention_tier=?")
 		args = append(args, query.Tier)
+	}
+	if query.SavedOnly {
+		where = append(where, `EXISTS (
+			SELECT 1 FROM memory_retention_claims c
+			WHERE c.memory_item_id=mi.id AND c.claim_kind='saved' AND c.resolved_at IS NULL
+		)`)
 	}
 	if query.PublishedFrom != "" {
 		where = append(where, "julianday(mi.published_at)>=julianday(?)")

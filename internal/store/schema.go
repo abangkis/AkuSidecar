@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 13
+const SchemaVersion = 14
 
-const schemaVersion = "13"
+const schemaVersion = "14"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -119,6 +119,43 @@ CREATE INDEX IF NOT EXISTS memory_actions_item_created
   ON memory_actions(memory_item_id, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS memory_actions_action_created
   ON memory_actions(action, created_at DESC, id DESC);
+`
+
+// memoryRetentionSchemaSQL materializes current retention state separately
+// from the append-only memory_actions audit. A resolved claim remains as a
+// compact state row so repeated Read later/Done/Keep calls are idempotent,
+// while action history is never consulted as current ownership.
+const memoryRetentionSchemaSQL = `
+CREATE TABLE IF NOT EXISTS memory_retention_claims (
+  memory_item_id TEXT NOT NULL,
+  claim_kind TEXT NOT NULL CHECK (claim_kind IN ('saved','keep')),
+  claimed_at TEXT NOT NULL,
+  resolved_at TEXT,
+  PRIMARY KEY(memory_item_id, claim_kind)
+);
+
+CREATE INDEX IF NOT EXISTS memory_retention_claims_active
+  ON memory_retention_claims(claim_kind, resolved_at, claimed_at DESC, memory_item_id);
+CREATE INDEX IF NOT EXISTS memory_retention_claims_item
+  ON memory_retention_claims(memory_item_id, claim_kind, resolved_at);
+`
+
+// memoryRetentionMigrationSQL intentionally omits IF NOT EXISTS. A v13
+// database must not silently accept an object with the wrong retention-claim
+// definition; the enclosing transaction must fail and preserve schema_version=13.
+const memoryRetentionMigrationSQL = `
+CREATE TABLE memory_retention_claims (
+  memory_item_id TEXT NOT NULL,
+  claim_kind TEXT NOT NULL CHECK (claim_kind IN ('saved','keep')),
+  claimed_at TEXT NOT NULL,
+  resolved_at TEXT,
+  PRIMARY KEY(memory_item_id, claim_kind)
+);
+
+CREATE INDEX memory_retention_claims_active
+  ON memory_retention_claims(claim_kind, resolved_at, claimed_at DESC, memory_item_id);
+CREATE INDEX memory_retention_claims_item
+  ON memory_retention_claims(memory_item_id, claim_kind, resolved_at);
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory
@@ -772,4 +809,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-` + memorySchemaSQL + memorySearchSchemaSQL
+` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL
