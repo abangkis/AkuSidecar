@@ -1,8 +1,125 @@
 package store
 
-const SchemaVersion = 11
+const SchemaVersion = 12
 
-const schemaVersion = "11"
+const schemaVersion = "12"
+
+// memorySchemaSQL is deliberately kept separate from the operational schema.
+// Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
+// retention and Full Reset therefore cannot accidentally orphan or resurrect
+// a memory through an operational cascade.
+const memorySchemaSQL = `
+CREATE TABLE IF NOT EXISTS memory_items (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL DEFAULT '',
+  identity_digest TEXT NOT NULL DEFAULT '',
+  canonical_evidence_key TEXT NOT NULL DEFAULT '',
+  canonical_permalink TEXT NOT NULL DEFAULT '',
+  canonical_platform_id TEXT NOT NULL DEFAULT '',
+  content_fingerprint TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL DEFAULT '',
+  published_at TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  facets_json TEXT NOT NULL DEFAULT '[]',
+  media_metadata_json TEXT NOT NULL DEFAULT '[]',
+  retention_tier TEXT NOT NULL CHECK (retention_tier IN ('recall','full_copy')),
+  lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('active','tombstone')),
+  full_content_version_id TEXT NOT NULL DEFAULT '',
+  content_bytes INTEGER NOT NULL DEFAULT 0 CHECK (content_bytes >= 0),
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS memory_items_identity_digest
+  ON memory_items(identity_digest);
+CREATE INDEX IF NOT EXISTS memory_items_lifecycle_updated
+  ON memory_items(lifecycle_state, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS memory_items_source_updated
+  ON memory_items(source, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS memory_identity_aliases (
+  source TEXT NOT NULL,
+  alias_kind TEXT NOT NULL CHECK (alias_kind IN ('canonical_evidence_key','canonical_permalink','canonical_platform_id','content_fingerprint')),
+  alias_value TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  UNIQUE(source, alias_kind, alias_value, memory_item_id)
+);
+
+CREATE INDEX IF NOT EXISTS memory_identity_aliases_lookup
+  ON memory_identity_aliases(source, alias_kind, alias_value);
+CREATE UNIQUE INDEX IF NOT EXISTS memory_identity_aliases_strong_unique
+  ON memory_identity_aliases(source, alias_kind, alias_value)
+  WHERE alias_kind IN ('canonical_evidence_key','canonical_permalink','canonical_platform_id');
+CREATE INDEX IF NOT EXISTS memory_identity_aliases_item
+  ON memory_identity_aliases(memory_item_id, alias_kind);
+
+-- Deleted-memory suppression keeps only keyed per-alias digests. Raw source,
+-- URL, evidence key, and content are deliberately absent from this table.
+CREATE TABLE IF NOT EXISTS memory_tombstone_aliases (
+  memory_item_id TEXT NOT NULL,
+  alias_kind TEXT NOT NULL CHECK (alias_kind IN ('canonical_evidence_key','canonical_permalink','canonical_platform_id','content_fingerprint')),
+  alias_digest TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(memory_item_id, alias_kind, alias_digest)
+);
+
+CREATE INDEX IF NOT EXISTS memory_tombstone_aliases_lookup
+  ON memory_tombstone_aliases(alias_kind, alias_digest);
+CREATE INDEX IF NOT EXISTS memory_tombstone_aliases_item
+  ON memory_tombstone_aliases(memory_item_id, alias_kind);
+
+CREATE TABLE IF NOT EXISTS memory_content_versions (
+  id TEXT PRIMARY KEY,
+  memory_item_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (version >= 1),
+  content TEXT NOT NULL DEFAULT '',
+  content_fingerprint TEXT NOT NULL DEFAULT '',
+  media_metadata_json TEXT NOT NULL DEFAULT '[]',
+  content_bytes INTEGER NOT NULL DEFAULT 0 CHECK (content_bytes >= 0),
+  captured_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  released_at TEXT,
+  UNIQUE(memory_item_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS memory_content_versions_item_created
+  ON memory_content_versions(memory_item_id, created_at DESC, version DESC);
+CREATE INDEX IF NOT EXISTS memory_content_versions_active
+  ON memory_content_versions(memory_item_id, released_at, version DESC);
+
+CREATE TABLE IF NOT EXISTS memory_provenance (
+  id TEXT PRIMARY KEY,
+  memory_item_id TEXT NOT NULL,
+  provenance_kind TEXT NOT NULL CHECK (provenance_kind IN ('captured','explicit_feedback','imported','manual','unknown')),
+  source TEXT NOT NULL DEFAULT '',
+  canonical_evidence_key TEXT NOT NULL DEFAULT '',
+  source_url TEXT NOT NULL DEFAULT '',
+  capture_context_json TEXT NOT NULL DEFAULT '{}',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS memory_provenance_item_created
+  ON memory_provenance(memory_item_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS memory_actions (
+  id TEXT PRIMARY KEY,
+  memory_item_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('create_stub','update_stub','keep_full_copy','release_full_copy','read_later','mark_read','import','delete')),
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS memory_actions_item_created
+  ON memory_actions(memory_item_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS memory_actions_action_created
+  ON memory_actions(action, created_at DESC, id DESC);
+`
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -621,4 +738,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-`
+` + memorySchemaSQL
