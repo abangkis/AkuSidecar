@@ -203,6 +203,27 @@ type MemoryStorageUsage struct {
 // shorter return type name.
 type MemoryStorage = MemoryStorageUsage
 
+// MemoryLibraryQuery is the bounded, provider-free read contract for the
+// local Personal Memory Library. PublishedAt filters accept RFC3339
+// timestamps or YYYY-MM-DD date-only values; date-only upper bounds include
+// the entire day.
+type MemoryLibraryQuery struct {
+	Query         string     `json:"query,omitempty"`
+	Source        Source     `json:"source,omitempty"`
+	Tier          MemoryTier `json:"tier,omitempty"`
+	PublishedFrom string     `json:"publishedFrom,omitempty"`
+	PublishedTo   string     `json:"publishedTo,omitempty"`
+	Limit         int        `json:"limit,omitempty"`
+	Cursor        string     `json:"cursor,omitempty"`
+}
+
+// MemoryLibraryResult contains only active memory items. NextCursor is an
+// opaque keyset cursor; an empty value means the result is exhausted.
+type MemoryLibraryResult struct {
+	Items      []MemoryItem `json:"items"`
+	NextCursor string       `json:"nextCursor,omitempty"`
+}
+
 func (value MemoryProvenance) NormalizedKind() string {
 	kind := strings.ToLower(strings.TrimSpace(value.ProvenanceKind))
 	switch kind {

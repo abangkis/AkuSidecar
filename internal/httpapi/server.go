@@ -613,6 +613,36 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+	case r.Method == http.MethodGet && p == "/api/library/items":
+		query, err := parseLibraryQuery(r.URL.Query())
+		if err != nil {
+			return err
+		}
+		result, err := s.engine.Library(ctx, query)
+		if err != nil {
+			if errors.Is(err, store.ErrMemoryLibraryQuery) {
+				return badRequest(err.Error())
+			}
+			return err
+		}
+		items := make([]libraryItemView, 0, len(result.Items))
+		for _, item := range result.Items {
+			items = append(items, publicLibraryItem(item, false))
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/library/items/"):
+		id := path.Base(p)
+		if id == "" || id == "items" {
+			return notFound("library item")
+		}
+		item, err := s.engine.LibraryItem(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"item": publicLibraryItem(item, true)})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/auto-update/batches/") && strings.HasSuffix(p, "/reveal"):
 		id := path.Base(strings.TrimSuffix(p, "/reveal"))
 		var body struct {

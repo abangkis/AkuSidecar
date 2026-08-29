@@ -205,6 +205,9 @@ func (s *Store) upsertMemoryRecallStubTx(ctx context.Context, tx *sql.Tx, tombst
 			return "", err
 		}
 	}
+	if err := syncMemorySearchIndexTx(ctx, tx, memoryID); err != nil {
+		return "", err
+	}
 	return memoryID, nil
 }
 
@@ -333,6 +336,9 @@ func (s *Store) KeepMemoryFullCopy(ctx context.Context, id string, input domain.
 	if err := recordMemoryActionTx(ctx, tx, id, domain.MemoryActionKeepFullCopy, detail, now); err != nil {
 		return domain.MemoryItem{}, err
 	}
+	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
+		return domain.MemoryItem{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("commit memory full copy: %w", err)
 	}
@@ -382,6 +388,9 @@ func (s *Store) ReleaseMemoryFullCopy(ctx context.Context, id string) (domain.Me
 		if err := recordMemoryActionTx(ctx, tx, id, domain.MemoryActionReleaseFullCopy, nil, now); err != nil {
 			return domain.MemoryItem{}, err
 		}
+	}
+	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
+		return domain.MemoryItem{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("commit memory release: %w", err)
@@ -534,6 +543,9 @@ func (s *Store) DeleteMemory(ctx context.Context, id string, _ ...string) (domai
 		  identity_digest=?,updated_at=?
 		WHERE id=?`, digest, now, id); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("write memory tombstone: %w", err)
+	}
+	if err := syncMemorySearchIndexTx(ctx, tx, id); err != nil {
+		return domain.MemoryItem{}, err
 	}
 	// Delete action details intentionally remain empty: an arbitrary user
 	// reason must not become a covert URL/content retention channel.

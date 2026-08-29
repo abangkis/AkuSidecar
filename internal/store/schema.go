@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 12
+const SchemaVersion = 13
 
-const schemaVersion = "12"
+const schemaVersion = "13"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -119,6 +119,40 @@ CREATE INDEX IF NOT EXISTS memory_actions_item_created
   ON memory_actions(memory_item_id, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS memory_actions_action_created
   ON memory_actions(action, created_at DESC, id DESC);
+`
+
+// memorySearchSchemaSQL is a local FTS5 index over active Personal Memory
+// fields. It intentionally stores the item id as an unindexed lookup value;
+// lifecycle state and public filtering remain authoritative in memory_items.
+// The index is rebuilt transactionally on every memory lifecycle mutation.
+const memorySearchSchemaSQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_search_fts USING fts5(
+  memory_item_id UNINDEXED,
+  title,
+  summary,
+  author,
+  tags,
+  facets,
+  full_content,
+  tokenize='unicode61'
+);
+`
+
+// memorySearchMigrationSQL intentionally omits IF NOT EXISTS. A v12
+// database must not silently accept an object with the wrong definition under
+// the canonical FTS name; the enclosing transaction must fail and preserve
+// schema_version=12 instead.
+const memorySearchMigrationSQL = `
+CREATE VIRTUAL TABLE memory_search_fts USING fts5(
+  memory_item_id UNINDEXED,
+  title,
+  summary,
+  author,
+  tags,
+  facets,
+  full_content,
+  tokenize='unicode61'
+);
 `
 
 const schemaSQL = `
@@ -738,4 +772,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-` + memorySchemaSQL
+` + memorySchemaSQL + memorySearchSchemaSQL

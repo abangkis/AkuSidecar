@@ -944,6 +944,12 @@ func (e *Engine) Run(ctx context.Context, id string) (domain.Run, error) {
 func (e *Engine) Timeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
 	return e.store.ListTimeline(ctx, limit, offset)
 }
+func (e *Engine) Library(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
+	return e.store.ListMemoryLibrary(ctx, query)
+}
+func (e *Engine) LibraryItem(ctx context.Context, id string) (domain.MemoryItem, error) {
+	return e.store.MemoryLibraryItem(ctx, id)
+}
 func (e *Engine) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckSummary, error) {
 	return e.store.LatestTimelineCheck(ctx)
 }
