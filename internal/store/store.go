@@ -1743,14 +1743,18 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 	// reasoning.
 	projectMemory := input.Direction == "more" &&
 		(sessionStatus == "completed" || sessionStatus == "partial")
+	retractMemory := false
+	var timelineItem domain.TimelineItem
+	if projectMemory || (input.Direction == "less" && (sessionStatus == "completed" || sessionStatus == "partial")) {
+		timelineItem, err = s.TimelineItem(ctx, timelineID)
+		if err != nil {
+			return domain.Feedback{}, err
+		}
+	}
 	var normalized normalizedMemoryInput
 	var tombstoneKey []byte
 	if projectMemory {
-		item, itemErr := s.TimelineItem(ctx, timelineID)
-		if itemErr != nil {
-			return domain.Feedback{}, itemErr
-		}
-		memoryInput := routineMoreMemoryInput(item)
+		memoryInput := routineMoreMemoryInput(timelineItem)
 		normalized, err = normalizeMemoryInput(memoryInput)
 		if err != nil {
 			return domain.Feedback{}, fmt.Errorf("prepare routine More memory projection: %w", err)
@@ -1767,6 +1771,18 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 		return domain.Feedback{}, fmt.Errorf("begin feedback transaction: %w", err)
 	}
 	defer tx.Rollback()
+	if input.Direction == "less" && timelineItem.ID != "" {
+		var previousDirection string
+		err = tx.QueryRowContext(ctx, `
+			SELECT direction FROM feedback_events
+			WHERE timeline_id=? ORDER BY created_at DESC,id DESC LIMIT 1`, timelineID).Scan(&previousDirection)
+		if errors.Is(err, sql.ErrNoRows) {
+			previousDirection = ""
+		} else if err != nil {
+			return domain.Feedback{}, fmt.Errorf("read previous routine feedback: %w", err)
+		}
+		retractMemory = previousDirection == "more"
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, input.ID, input.TimelineID, input.SessionID, input.RunID, input.EvidenceKey, input.Direction, input.Reason, input.CreatedAt); err != nil {
 		return domain.Feedback{}, err
 	}
@@ -1774,6 +1790,11 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 		if _, err = s.upsertMemoryRecallStubTx(ctx, tx, tombstoneKey, normalized); err != nil {
 			// The feedback row and projection intentionally roll back together.
 			return domain.Feedback{}, fmt.Errorf("project routine More memory: %w", err)
+		}
+	}
+	if retractMemory {
+		if _, err := retractRoutineMoreMemoryTx(ctx, tx, timelineItem); err != nil {
+			return domain.Feedback{}, fmt.Errorf("retract routine More memory: %w", err)
 		}
 	}
 	if err = tx.Commit(); err != nil {

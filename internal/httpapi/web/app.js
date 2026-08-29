@@ -15,9 +15,13 @@ import {
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
 import {
+  buildLibraryForgetPath,
+  buildLibraryRemovePath,
   buildLibraryRequestPath,
   formatLibraryTier,
   libraryHasFullContent,
+  libraryForgetConfirmation,
+  libraryRemoveConfirmation,
   mergeLibraryPage,
   normalizeLibraryFilters,
 } from "./library-state.js";
@@ -80,6 +84,11 @@ const state = {
     error: null,
     detailLoading: false,
     detailError: null,
+    mutationLoading: false,
+    mutationError: null,
+    mutationAction: "",
+    mutationErrorAction: "",
+    notice: "",
     requestID: 0,
     detailRequestID: 0,
     controller: null,
@@ -623,6 +632,11 @@ function resetLibraryList() {
   state.library.detailRequestID += 1;
   state.library.detailLoading = false;
   state.library.detailError = null;
+  state.library.mutationLoading = false;
+  state.library.mutationError = null;
+  state.library.mutationAction = "";
+  state.library.mutationErrorAction = "";
+  state.library.notice = "";
   state.library.selectedId = "";
   state.library.selectedItem = null;
   state.library.detailFocusTarget = null;
@@ -701,6 +715,15 @@ function libraryErrorMessage(error) {
   return "Library could not be loaded. Refresh and try again.";
 }
 
+function libraryMutationErrorMessage(error, action) {
+  if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
+    return "AkuSidecar is offline. Start the local runtime, then try this Library action again.";
+  }
+  return action === "forget"
+    ? "Library could not forget this memory permanently. Try again."
+    : "Library could not remove this local memory. Try again.";
+}
+
 function renderLibrary() {
   const results = $("#library-results");
   const loadMore = $("#library-load-more");
@@ -717,6 +740,8 @@ function renderLibrary() {
   } else if (state.library.error) {
     status.classList.add("library-status-error");
     status.textContent = libraryErrorMessage(state.library.error);
+  } else if (state.library.notice) {
+    status.textContent = state.library.notice;
   } else if (state.library.items.length) {
     status.textContent = `${state.library.items.length} memor${state.library.items.length === 1 ? "y" : "ies"}${state.library.nextCursor ? " · more available" : ""}`;
   } else {
@@ -848,6 +873,7 @@ function renderLibraryDetail() {
   if (!detail || !heading || !content) return;
   const item = state.library.selectedItem;
   detail.classList.toggle("hidden", !item || !state.library.selectedId);
+  detail.setAttribute("aria-busy", String(Boolean(state.library.mutationLoading)));
   if (!item || !state.library.selectedId) {
     heading.textContent = "Choose a memory";
     content.replaceChildren();
@@ -918,7 +944,97 @@ function buildLibraryDetail(item) {
     : "Only the bounded recall metadata is stored for this item.";
   fullCopy.append(copy);
   fragment.append(fullCopy);
+
+  const actions = document.createElement("section");
+  actions.className = "library-detail-actions";
+  const actionHeading = document.createElement("h4");
+  actionHeading.textContent = "Memory actions";
+  const removeNote = document.createElement("p");
+  removeNote.className = "library-detail-action-note";
+  removeNote.id = "library-remove-note";
+  removeNote.textContent = "Remove deletes only this local Library copy. A later More may add the source item again.";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "secondary-button";
+  remove.textContent = state.library.mutationLoading && state.library.mutationAction === "remove" ? "Removing…" : "Remove from Library";
+  remove.disabled = state.library.mutationLoading;
+  remove.setAttribute("aria-describedby", removeNote.id);
+  remove.addEventListener("click", () => removeLibraryItem(item));
+  const forgetNote = document.createElement("p");
+  forgetNote.className = "library-detail-action-note library-detail-action-note-danger";
+  forgetNote.id = "library-forget-note";
+  forgetNote.textContent = "Forget permanently also blocks automatic recapture of the same source item until a reset.";
+  const forget = document.createElement("button");
+  forget.type = "button";
+  forget.className = "danger-button library-detail-forget";
+  forget.textContent = state.library.mutationLoading && state.library.mutationAction === "forget" ? "Forgetting…" : "Forget permanently";
+  forget.disabled = state.library.mutationLoading;
+  forget.setAttribute("aria-describedby", forgetNote.id);
+  forget.addEventListener("click", () => forgetLibraryItem(item));
+  actions.append(actionHeading, removeNote, remove, forgetNote, forget);
+  if (state.library.mutationError) {
+    const error = document.createElement("p");
+    error.className = "library-detail-action-error";
+    error.setAttribute("role", "alert");
+    error.textContent = libraryMutationErrorMessage(state.library.mutationError, state.library.mutationErrorAction);
+    actions.append(error);
+  }
+  fragment.append(actions);
   return fragment;
+}
+
+function removeLibraryItem(item) {
+  return mutateLibraryItem(item, "remove");
+}
+
+function forgetLibraryItem(item) {
+  return mutateLibraryItem(item, "forget");
+}
+
+async function mutateLibraryItem(item, action) {
+  if (!item?.id || state.library.mutationLoading) return;
+  const config = action === "forget"
+    ? {
+      method: "POST",
+      path: buildLibraryForgetPath,
+      confirm: libraryForgetConfirmation,
+      acknowledged: (response) => response?.forgotten === true,
+      failure: "Library did not confirm the permanent forget.",
+      notice: "Memory forgotten permanently. Automatic recapture for this source item is suppressed.",
+    }
+    : {
+      method: "DELETE",
+      path: buildLibraryRemovePath,
+      confirm: libraryRemoveConfirmation,
+      acknowledged: (response) => response?.removed === true,
+      failure: "Library did not confirm the local removal.",
+      notice: "Memory removed locally. A future More can add it again.",
+    };
+  if (!window.confirm(config.confirm(item))) return;
+  state.library.mutationLoading = true;
+  state.library.mutationAction = action;
+  state.library.mutationError = null;
+  state.library.mutationErrorAction = action;
+  state.library.notice = "";
+  renderLibraryDetail();
+  try {
+    const response = await api(config.path(item.id), { method: config.method });
+    if (!config.acknowledged(response) || response.id !== item.id) throw new Error(config.failure);
+    state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
+    state.library.notice = config.notice;
+    state.library.selectedId = "";
+    state.library.selectedItem = null;
+    state.library.detailRequestID += 1;
+    state.library.detailLoading = false;
+    state.library.detailError = null;
+  } catch (error) {
+    state.library.mutationError = error;
+  } finally {
+    state.library.mutationLoading = false;
+    state.library.mutationAction = "";
+    renderLibraryDetail();
+    renderLibrary();
+  }
 }
 
 function appendLibraryDetailField(list, label, value) {

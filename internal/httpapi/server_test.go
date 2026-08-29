@@ -79,7 +79,7 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 	}
 }
 
-func TestEmbeddedLibraryReadOnlySurfaceContract(t *testing.T) {
+func TestEmbeddedLibrarySurfaceContract(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {
 			"library-view-button",
@@ -100,13 +100,24 @@ func TestEmbeddedLibraryReadOnlySurfaceContract(t *testing.T) {
 			"function submitLibrarySearch",
 			"function loadMoreLibrary",
 			"buildLibraryRequestPath",
+			"buildLibraryRemovePath",
+			"buildLibraryForgetPath",
+			"libraryRemoveConfirmation",
+			"libraryForgetConfirmation",
 			"/api/library/items/",
+			"method: \"DELETE\"",
+			"method: \"POST\"",
+			"Remove from Library",
+			"Forget permanently",
 			"Library reads never call a provider",
 			"sidecar_unavailable",
 		},
 		"web/library-state.js": {
 			"LIBRARY_MAX_QUERY = 200",
 			"buildLibraryRequestPath",
+			"buildLibraryRemovePath",
+			"buildLibraryForgetPath",
+			"/forget-permanently",
 			"mergeLibraryPage",
 		},
 		"web/styles.css": {
@@ -127,6 +138,13 @@ func TestEmbeddedLibraryReadOnlySurfaceContract(t *testing.T) {
 			}
 		}
 	}
+	appContents, err := embeddedAssets.ReadFile("web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(appContents), "buildLibraryDeletePath") || strings.Contains(string(appContents), "libraryDeleteConfirmation") || strings.Contains(string(appContents), "deleteLibraryItem") {
+		t.Fatal("Library UI must distinguish local Remove from permanent Forget")
+	}
 	indexContents, err := embeddedAssets.ReadFile("web/index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -141,8 +159,8 @@ func TestEmbeddedLibraryReadOnlySurfaceContract(t *testing.T) {
 		t.Fatal("embedded Library panel is incomplete")
 	}
 	libraryPanel := index[start : start+end]
-	if strings.Contains(libraryPanel, `method="POST"`) || strings.Contains(libraryPanel, `method="PUT"`) || strings.Contains(libraryPanel, `method="DELETE"`) {
-		t.Fatal("Library panel must remain read-only")
+	if strings.Contains(libraryPanel, `method="POST"`) || strings.Contains(libraryPanel, `method="PUT"`) {
+		t.Fatal("Library panel must not embed broad form mutations")
 	}
 }
 

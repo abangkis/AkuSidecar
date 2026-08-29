@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -144,5 +145,120 @@ func TestLibraryHTTPBoundsAndReadOnlyBoundary(t *testing.T) {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, test.want, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestLibraryHTTPForgetPermanentlyTombstonesAndSuppressesRecapture(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	input := libraryHTTPInput("2302")
+	item, err := state.CreateMemoryRecallStub(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/library/items/"+item.ID+"/forget-permanently", nil)
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("forget status=%d body=%s", response.Code, response.Body.String())
+	}
+	var forgotten struct {
+		Forgotten bool   `json:"forgotten"`
+		ID        string `json:"id"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&forgotten); err != nil {
+		t.Fatal(err)
+	}
+	if !forgotten.Forgotten || forgotten.ID != item.ID {
+		t.Fatalf("forget response=%+v", forgotten)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/library/items?query=HTTP+Library&limit=10", nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	var listed struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("forgotten item still searchable status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 0 {
+		t.Fatalf("forgotten item still searchable body=%v", listed.Items)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/library/items/"+item.ID, nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("forgotten detail status=%d body=%s", response.Code, response.Body.String())
+	}
+	if _, err := state.CreateMemoryRecallStub(ctx, input); !errors.Is(err, store.ErrMemoryTombstoned) {
+		t.Fatalf("forgotten item was recaptured err=%v", err)
+	}
+}
+
+func TestLibraryHTTPRemovePhysicallyClearsAndAllowsRecapture(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	input := libraryHTTPInput("2303")
+	item, err := state.CreateMemoryRecallStub(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/library/items/"+item.ID, nil)
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("remove status=%d body=%s", response.Code, response.Body.String())
+	}
+	var removed struct {
+		Removed bool   `json:"removed"`
+		ID      string `json:"id"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&removed); err != nil {
+		t.Fatal(err)
+	}
+	if !removed.Removed || removed.ID != item.ID {
+		t.Fatalf("remove response=%+v", removed)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/library/items?query=HTTP+Library&limit=10", nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("removed item search status=%d body=%s", response.Code, response.Body.String())
+	}
+	var listed struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 0 {
+		t.Fatalf("removed item still searchable body=%v", listed.Items)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/library/items/"+item.ID, nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("removed detail status=%d body=%s", response.Code, response.Body.String())
+	}
+	recreated, err := state.CreateMemoryRecallStub(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recreated.ID == item.ID {
+		t.Fatalf("physical removal reused item id=%q", recreated.ID)
+	}
+	usage, err := state.MemoryStorage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.Tombstones != 0 {
+		t.Fatalf("ordinary remove created tombstones=%d", usage.Tombstones)
 	}
 }

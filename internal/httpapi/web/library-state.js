@@ -38,6 +38,26 @@ export function buildLibraryRequestPath(filters = {}, cursor = "") {
   return `/api/library/items?${params.toString()}`;
 }
 
+export function buildLibraryRemovePath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/library/items/${encodeURIComponent(normalized)}` : "";
+}
+
+export function buildLibraryForgetPath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/library/items/${encodeURIComponent(normalized)}/forget-permanently` : "";
+}
+
+export function libraryRemoveConfirmation(item = {}) {
+  const title = String(item?.title ?? "").trim() || "this memory";
+  return `Remove “${title}” from Personal Memory on this device? This deletes the local Library copy. A later More may add it again.`;
+}
+
+export function libraryForgetConfirmation(item = {}) {
+  const title = String(item?.title ?? "").trim() || "this memory";
+  return `Forget “${title}” permanently? This deletes the local Library copy and blocks automatic recapture of the same source item. This cannot be undone without a reset.`;
+}
+
 export function libraryFilterKey(filters = {}) {
   const normalized = normalizeLibraryFilters(filters);
   return JSON.stringify(normalized);

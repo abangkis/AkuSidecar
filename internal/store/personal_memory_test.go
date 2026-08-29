@@ -368,6 +368,63 @@ func TestMemoryDeleteClearsPrivacyAndLeavesOpaqueTombstone(t *testing.T) {
 	}
 }
 
+func TestMemoryRemovePhysicallyClearsAndAllowsRecapture(t *testing.T) {
+	state := openTestStore(t)
+	ctx := context.Background()
+	input := memoryStubInput()
+	item, err := state.CreateMemoryRecallStub(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.RecordMemoryProvenance(ctx, domain.MemoryProvenance{
+		MemoryItemID: item.ID, ProvenanceKind: "captured", Source: domain.SourceX,
+		SourceURL: item.CanonicalPermalink, Reason: "local removal fixture",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.KeepMemoryFullCopy(ctx, item.ID, domain.MemoryFullCopyInput{Content: "local content to remove"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.RemoveMemory(ctx, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.MemoryItem(ctx, item.ID); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("removed memory still readable: %v", err)
+	}
+	var active, search, actions, provenance, aliases, versions, tombstones int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_items WHERE id=?`, item.ID).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_search_fts WHERE memory_item_id=?`, item.ID).Scan(&search); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_actions WHERE memory_item_id=?`, item.ID).Scan(&actions); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_provenance WHERE memory_item_id=?`, item.ID).Scan(&provenance); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_identity_aliases WHERE memory_item_id=?`, item.ID).Scan(&aliases); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_content_versions WHERE memory_item_id=?`, item.ID).Scan(&versions); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_tombstone_aliases WHERE memory_item_id=?`, item.ID).Scan(&tombstones); err != nil {
+		t.Fatal(err)
+	}
+	if active != 0 || search != 0 || actions != 0 || provenance != 0 || aliases != 0 || versions != 0 || tombstones != 0 {
+		t.Fatalf("physical removal left rows item=%d search=%d actions=%d provenance=%d aliases=%d versions=%d tombstones=%d", active, search, actions, provenance, aliases, versions, tombstones)
+	}
+	recreated, err := state.CreateMemoryRecallStub(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recreated.ID == item.ID {
+		t.Fatalf("physical removal reused deleted item id=%q", recreated.ID)
+	}
+}
+
 func TestMemorySurvivesOperationalDeletionAndFullResetRemovesIt(t *testing.T) {
 	ctx := context.Background()
 	clock := &mutableStoreClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}

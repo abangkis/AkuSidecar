@@ -477,9 +477,52 @@ func (s *Store) RecordMemoryAction(ctx context.Context, value domain.MemoryActio
 	return value, nil
 }
 
+// RemoveMemory physically removes an active local Library item and all of its
+// search, content, provenance, action, and identity rows. It deliberately
+// writes no tombstone: this is the ordinary local removal path, so a later
+// routine More may recapture the same source identity.
+func (s *Store) RemoveMemory(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrMemoryNotFound
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin memory removal transaction: %w", err)
+	}
+	defer tx.Rollback()
+	stored, err := memoryStoredByID(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if stored.item.LifecycleState != domain.MemoryStateActive {
+		return ErrMemoryNotFound
+	}
+	for _, removal := range []struct {
+		statement string
+		label     string
+	}{
+		{`DELETE FROM memory_search_fts WHERE memory_item_id=?`, "search index"},
+		{`DELETE FROM memory_actions WHERE memory_item_id=?`, "actions"},
+		{`DELETE FROM memory_provenance WHERE memory_item_id=?`, "provenance"},
+		{`DELETE FROM memory_content_versions WHERE memory_item_id=?`, "content versions"},
+		{`DELETE FROM memory_identity_aliases WHERE memory_item_id=?`, "identity aliases"},
+		{`DELETE FROM memory_tombstone_aliases WHERE memory_item_id=?`, "tombstone aliases"},
+		{`DELETE FROM memory_items WHERE id=? AND lifecycle_state='active'`, "memory item"},
+	} {
+		if _, err := tx.ExecContext(ctx, removal.statement, id); err != nil {
+			return fmt.Errorf("remove memory %s: %w", removal.label, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit memory removal: %w", err)
+	}
+	return nil
+}
+
 // DeleteMemory replaces all user-identifying content and provenance with an
-// opaque tombstone. The tombstone id/digest allow the store to reject an
-// accidental recapture without retaining a URL, text, author, or provenance.
+// opaque tombstone. This is the permanent Forget path: the tombstone
+// id/digest allow the store to reject an accidental recapture without
+// retaining a URL, text, author, or provenance.
 func (s *Store) DeleteMemory(ctx context.Context, id string, _ ...string) (domain.MemoryItem, error) {
 	if strings.TrimSpace(id) == "" {
 		return domain.MemoryItem{}, ErrMemoryNotFound
@@ -556,6 +599,13 @@ func (s *Store) DeleteMemory(ctx context.Context, id string, _ ...string) (domai
 		return domain.MemoryItem{}, fmt.Errorf("commit memory tombstone: %w", err)
 	}
 	return s.MemoryItem(ctx, id)
+}
+
+// ForgetMemory is the explicit permanent Library deletion operation. Keep
+// DeleteMemory as the compatibility-level tombstone primitive for existing
+// store callers.
+func (s *Store) ForgetMemory(ctx context.Context, id string) (domain.MemoryItem, error) {
+	return s.DeleteMemory(ctx, id)
 }
 
 func (s *Store) DeleteMemoryItem(ctx context.Context, id string, reason ...string) (domain.MemoryItem, error) {
@@ -833,6 +883,129 @@ func routineMoreMemoryInput(item domain.TimelineItem) domain.MemoryItemInput {
 			Reason: "routine_more",
 		}},
 	}
+}
+
+// retractRoutineMoreMemoryTx removes a recall stub that exists solely because
+// this Timeline item previously received routine More. It deliberately does
+// not use DeleteMemory: Less is a preference correction, not a user request
+// to suppress the source forever. A later More can therefore recreate the
+// item. Any full copy, independent provenance, or independent retention
+// action keeps the memory alive.
+func retractRoutineMoreMemoryTx(ctx context.Context, tx *sql.Tx, item domain.TimelineItem) (bool, error) {
+	normalized, err := normalizeMemoryInput(routineMoreMemoryInput(item))
+	if err != nil {
+		return false, fmt.Errorf("prepare routine Less memory retraction: %w", err)
+	}
+	memoryID, err := resolveMemoryIdentity(ctx, tx, normalized.Identity)
+	if err != nil {
+		return false, err
+	}
+	if memoryID == "" {
+		return false, nil
+	}
+	stored, err := memoryStoredByID(ctx, tx, memoryID)
+	if err != nil {
+		return false, err
+	}
+	if stored.item.LifecycleState != domain.MemoryStateActive {
+		return false, nil
+	}
+
+	provenanceRows, err := tx.QueryContext(ctx, `
+		SELECT id,provenance_kind,capture_context_json,reason
+		FROM memory_provenance WHERE memory_item_id=?`, memoryID)
+	if err != nil {
+		return false, fmt.Errorf("read memory provenance for routine Less: %w", err)
+	}
+	var routineMoreIDs []string
+	remainingProvenance := false
+	for provenanceRows.Next() {
+		var id, kind, captureContext, reason string
+		if err := provenanceRows.Scan(&id, &kind, &captureContext, &reason); err != nil {
+			provenanceRows.Close()
+			return false, err
+		}
+		if kind == "explicit_feedback" && reason == "routine_more" && memoryProvenanceHasTimeline(captureContext, item.ID) {
+			routineMoreIDs = append(routineMoreIDs, id)
+			continue
+		}
+		remainingProvenance = true
+	}
+	if err := provenanceRows.Err(); err != nil {
+		provenanceRows.Close()
+		return false, err
+	}
+	if err := provenanceRows.Close(); err != nil {
+		return false, err
+	}
+	if len(routineMoreIDs) == 0 {
+		return false, nil
+	}
+
+	// Remove every routine More provenance row owned by this Timeline before
+	// deciding whether the shared memory still has an independent reason to
+	// live. A canonical identity may be shared by several Timeline rows, so a
+	// different Timeline's routine More remains in remainingProvenance and
+	// protects the recall stub until that Timeline is also changed to Less.
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(routineMoreIDs)), ",")
+	args := make([]any, 0, len(routineMoreIDs)+1)
+	args = append(args, memoryID)
+	for _, provenanceID := range routineMoreIDs {
+		args = append(args, provenanceID)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM memory_provenance
+		WHERE memory_item_id=? AND id IN (`+placeholders+`)`, args...); err != nil {
+		return false, fmt.Errorf("remove routine More provenance: %w", err)
+	}
+
+	// The current routine provenance is gone even when another retention or
+	// provenance source keeps the item alive. Return after this point only
+	// once all preservation rules have been evaluated.
+	if stored.item.RetentionTier == domain.MemoryTierFullCopy || remainingProvenance {
+		return true, nil
+	}
+
+	var independentAction string
+	err = tx.QueryRowContext(ctx, `
+		SELECT action FROM memory_actions
+		WHERE memory_item_id=? AND action IN ('import','read_later','mark_read')
+		LIMIT 1`, memoryID).Scan(&independentAction)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read memory actions for routine Less: %w", err)
+	}
+
+	// This is a true retraction, so remove the searchable row and all durable
+	// rows for the stub. No tombstone alias is written; the source identity is
+	// intentionally eligible for a future routine More projection.
+	for _, removal := range []struct {
+		statement string
+		label     string
+	}{
+		{`DELETE FROM memory_search_fts WHERE memory_item_id=?`, "search index"},
+		{`DELETE FROM memory_actions WHERE memory_item_id=?`, "actions"},
+		{`DELETE FROM memory_provenance WHERE memory_item_id=?`, "provenance"},
+		{`DELETE FROM memory_content_versions WHERE memory_item_id=?`, "content versions"},
+		{`DELETE FROM memory_identity_aliases WHERE memory_item_id=?`, "identity aliases"},
+		{`DELETE FROM memory_items WHERE id=? AND lifecycle_state='active'`, "memory item"},
+	} {
+		if _, err := tx.ExecContext(ctx, removal.statement, memoryID); err != nil {
+			return false, fmt.Errorf("remove routine More %s: %w", removal.label, err)
+		}
+	}
+	return true, nil
+}
+
+func memoryProvenanceHasTimeline(raw, timelineID string) bool {
+	var context map[string]any
+	if err := json.Unmarshal([]byte(raw), &context); err != nil {
+		return false
+	}
+	value, ok := context["timelineId"].(string)
+	return ok && value == timelineID
 }
 
 func firstMemoryString(values ...string) string {

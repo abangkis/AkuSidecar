@@ -164,9 +164,19 @@ func TestRoutineMoreProjectsFinalTimelineSurvivorAndIsIdempotent(t *testing.T) {
 	if _, err := state.db.ExecContext(ctx, `UPDATE feedback_events SET created_at=CASE id WHEN ? THEN '2026-08-29T10:00:00.000000001Z' WHEN ? THEN '2026-08-29T10:00:00.000000002Z' WHEN ? THEN '2026-08-29T10:00:00.000000003Z' END WHERE id IN (?,?,?)`, first.ID, repeat.ID, less.ID, first.ID, repeat.ID, less.ID); err != nil {
 		t.Fatal(err)
 	}
-	retained, err := state.MemoryItem(ctx, memory.ID)
-	if err != nil || retained.LifecycleState != domain.MemoryStateActive {
-		t.Fatalf("Less removed memory=%+v err=%v", retained, err)
+	if _, err := state.MemoryItem(ctx, memory.ID); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("Less did not retract the routine More stub: %v", err)
+	}
+	items, err = state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("retracted memory remains listed: items=%+v err=%v", items, err)
+	}
+	var tombstones int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_tombstone_aliases`).Scan(&tombstones); err != nil {
+		t.Fatal(err)
+	}
+	if tombstones != 0 {
+		t.Fatalf("routine Less created permanent tombstones=%d", tombstones)
 	}
 	signals, err := state.PreferenceSignals(ctx)
 	if err != nil {
@@ -174,6 +184,186 @@ func TestRoutineMoreProjectsFinalTimelineSurvivorAndIsIdempotent(t *testing.T) {
 	}
 	if len(signals) != 1 || signals[0].Direction != "less" || signals[0].Origin != "routine" {
 		t.Fatalf("preference authority=%+v", signals)
+	}
+	if _, err := state.AddFeedback(ctx, fixture.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err = state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 1 || items[0].ID == memory.ID {
+		t.Fatalf("later More did not recreate a fresh recall stub: items=%+v err=%v", items, err)
+	}
+}
+
+func TestRoutineLessPreservesFullCopyAndIndependentMemory(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	fullCopyFixture := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1010")
+	if _, err := state.AddFeedback(ctx, fullCopyFixture.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("full-copy fixture memories=%+v err=%v", items, err)
+	}
+	fullCopyID := items[0].ID
+	if _, err := state.KeepMemoryFullCopy(ctx, fullCopyID, domain.MemoryFullCopyInput{Content: "keep this full copy"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddFeedback(ctx, fullCopyFixture.Item.ID, domain.Feedback{Direction: "less", Reason: stringPointer("not_interested")}); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := state.MemoryItem(ctx, fullCopyID)
+	if err != nil || kept.LifecycleState != domain.MemoryStateActive || kept.RetentionTier != domain.MemoryTierFullCopy || kept.FullContent == nil || *kept.FullContent != "keep this full copy" {
+		t.Fatalf("Less removed full copy=%+v err=%v", kept, err)
+	}
+	var provenance int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_provenance WHERE memory_item_id=?`, fullCopyID).Scan(&provenance); err != nil {
+		t.Fatal(err)
+	}
+	if provenance != 0 {
+		t.Fatalf("Less left routine More provenance on full copy=%d", provenance)
+	}
+
+	independentFixture := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1011")
+	if _, err := state.AddFeedback(ctx, independentFixture.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err = state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("independent fixture memories=%+v err=%v", items, err)
+	}
+	var independentID string
+	for _, item := range items {
+		if item.CanonicalEvidenceKey == independentFixture.Item.EvidenceKey {
+			independentID = item.ID
+		}
+	}
+	if independentID == "" {
+		t.Fatalf("independent fixture memory not found: %+v", items)
+	}
+	if _, err := state.RecordMemoryProvenance(ctx, domain.MemoryProvenance{
+		MemoryItemID: independentID, ProvenanceKind: "captured", Source: domain.SourceX,
+		CanonicalEvidenceKey: independentFixture.Item.EvidenceKey, SourceURL: independentFixture.Item.Item.SourceURL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddFeedback(ctx, independentFixture.Item.ID, domain.Feedback{Direction: "less", Reason: stringPointer("not_interested")}); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := state.MemoryItem(ctx, independentID)
+	if err != nil || retained.LifecycleState != domain.MemoryStateActive || retained.RetentionTier != domain.MemoryTierRecall {
+		t.Fatalf("Less removed independently retained memory=%+v err=%v", retained, err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_provenance WHERE memory_item_id=?`, independentID).Scan(&provenance); err != nil {
+		t.Fatal(err)
+	}
+	if provenance != 1 {
+		t.Fatalf("Less removed independent provenance=%d", provenance)
+	}
+}
+
+func TestRoutineLessRetractionTracksSharedTimelineProvenance(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	first := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1020")
+	second := createRoutineMemoryTimelineFixture(t, state, ctx, "completed", "x:routine-memory:1021")
+
+	// Make two distinct Timeline rows resolve to one canonical memory without
+	// changing their Timeline identity. This mirrors a source record that is
+	// surfaced in more than one final update.
+	itemRaw, err := json.Marshal(first.Item.Item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assessmentRaw, err := json.Marshal(first.Item.Assessment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `
+		UPDATE timeline_items
+		SET evidence_key=?,item_json=?,assessment_json=?
+		WHERE id=?`, first.Item.EvidenceKey, string(itemRaw), string(assessmentRaw), second.Item.ID); err != nil {
+		t.Fatal(err)
+	}
+	second.Item, err = state.TimelineItem(ctx, second.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Item.EvidenceKey != first.Item.EvidenceKey {
+		t.Fatalf("shared Timeline evidence key=%q want %q", second.Item.EvidenceKey, first.Item.EvidenceKey)
+	}
+
+	if _, err := state.AddFeedback(ctx, first.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("first shared memory projection=%+v err=%v", items, err)
+	}
+	memoryID := items[0].ID
+	if _, err := state.AddFeedback(ctx, second.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err = state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 1 || items[0].ID != memoryID {
+		t.Fatalf("shared memory was not reused=%+v err=%v", items, err)
+	}
+	var provenance int
+	if err := state.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM memory_provenance
+		WHERE memory_item_id=? AND provenance_kind='explicit_feedback' AND reason='routine_more'`, memoryID).Scan(&provenance); err != nil {
+		t.Fatal(err)
+	}
+	if provenance != 2 {
+		t.Fatalf("shared routine More provenance=%d want 2", provenance)
+	}
+
+	if _, err := state.AddFeedback(ctx, first.Item.ID, domain.Feedback{Direction: "less", Reason: stringPointer("not_interested")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.MemoryItem(ctx, memoryID); err != nil {
+		t.Fatalf("Less on first Timeline removed shared memory: %v", err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_provenance WHERE memory_item_id=?`, memoryID).Scan(&provenance); err != nil {
+		t.Fatal(err)
+	}
+	if provenance != 1 {
+		t.Fatalf("first Less removed wrong provenance count=%d want 1", provenance)
+	}
+	var remainingTimeline string
+	if err := state.db.QueryRowContext(ctx, `
+		SELECT json_extract(capture_context_json,'$.timelineId')
+		FROM memory_provenance WHERE memory_item_id=? LIMIT 1`, memoryID).Scan(&remainingTimeline); err != nil {
+		t.Fatal(err)
+	}
+	if remainingTimeline != second.Item.ID {
+		t.Fatalf("remaining provenance belongs to %q want %q", remainingTimeline, second.Item.ID)
+	}
+
+	if _, err := state.AddFeedback(ctx, second.Item.ID, domain.Feedback{Direction: "less", Reason: stringPointer("not_interested")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.MemoryItem(ctx, memoryID); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("Less on second Timeline did not remove final shared stub: %v", err)
+	}
+	items, err = state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("shared memory remains listed after both Less actions=%+v err=%v", items, err)
+	}
+	var tombstones int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_tombstone_aliases`).Scan(&tombstones); err != nil {
+		t.Fatal(err)
+	}
+	if tombstones != 0 {
+		t.Fatalf("shared routine Less created permanent tombstones=%d", tombstones)
+	}
+
+	if _, err := state.AddFeedback(ctx, first.Item.ID, domain.Feedback{Direction: "more"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err = state.ListMemoryItems(ctx, false, 10)
+	if err != nil || len(items) != 1 || items[0].ID == memoryID {
+		t.Fatalf("later More did not recreate shared recall stub=%+v err=%v", items, err)
 	}
 }
 
@@ -222,8 +412,8 @@ func TestRoutineMoreSkipsNonFinalButIgnoresClientOrigin(t *testing.T) {
 	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_items`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("Less changed memory count=%d", count)
+	if count != 1 {
+		t.Fatalf("Less did not retract the routine More memory count=%d", count)
 	}
 }
 

@@ -630,6 +630,32 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			items = append(items, publicLibraryItem(item, false))
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/forget-permanently"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/forget-permanently")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("library item")
+		}
+		_, err := s.engine.ForgetLibraryItem(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"forgotten": true, "id": id})
+	case r.Method == http.MethodDelete && strings.HasPrefix(p, "/api/library/items/"):
+		id := strings.TrimPrefix(p, "/api/library/items/")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("library item")
+		}
+		err := s.engine.RemoveLibraryItem(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"removed": true, "id": id})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/library/items/"):
 		id := path.Base(p)
 		if id == "" || id == "items" {
