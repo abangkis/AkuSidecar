@@ -40,6 +40,10 @@ import {
   normalizeLibraryFilters,
 } from "./library-state.js";
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
+import {
+  buildTimelineContentContextPath,
+  CONTENT_CONTEXT_MAX_LIMIT,
+} from "./timeline-content-context-state.js";
 // The embedded Timeline action is Read later. Existing Library detail keeps
 // its independent full-copy Release/Remove/Forget semantics.
 
@@ -148,6 +152,7 @@ const state = {
   sidePaneFrame: null,
   timelineItems: [],
   timelineReadLaterInFlight: new Set(),
+  timelineContentContext: new Map(),
   timelineBatches: [],
   sourceSessionReadiness: {},
   sourceSessionProbeInFlight: false,
@@ -5215,6 +5220,9 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
   for (const timelineID of state.expandedAIFeedbackOptions) {
     if (!retainedIDs.has(timelineID)) state.expandedAIFeedbackOptions.delete(timelineID);
   }
+  for (const timelineID of state.timelineContentContext.keys()) {
+    if (!retainedIDs.has(timelineID)) state.timelineContentContext.delete(timelineID);
+  }
   schedulePassiveMediaEnrichment(allItems);
   const routed = routeAIDetectedItems(items);
   items = routed.inline;
@@ -6482,9 +6490,101 @@ function buildActions(entry) {
     renderDirection();
   });
   feedback.append(more, less);
-  actions.append(primary, feedback);
+  actions.append(primary, feedback, buildTimelineContentContextAction(entry));
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
+}
+
+function buildTimelineContentContextAction(entry) {
+  const container = document.createElement("section");
+  container.className = "timeline-content-context";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary-button timeline-content-context-button";
+  button.textContent = "Find related context";
+  button.setAttribute("aria-expanded", "false");
+  const panel = document.createElement("div");
+  panel.className = "timeline-content-context-panel hidden";
+  panel.setAttribute("role", "status");
+  panel.setAttribute("aria-live", "polite");
+  container.append(button, panel);
+
+  const renderMatch = (match) => {
+    const item = match?.item || {};
+    const article = document.createElement("article");
+    article.className = "timeline-content-context-match";
+    const title = document.createElement("strong");
+    const titleText = String(item.title || item.summary || item.canonicalPermalink || "Untitled local memory").trim();
+    const sourceURL = safeSourceUrl(item.canonicalPermalink, item.source);
+    if (sourceURL) {
+      const link = document.createElement("a");
+      link.href = sourceURL;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = titleText;
+      title.append(link);
+    } else {
+      title.textContent = titleText;
+    }
+    const meta = document.createElement("small");
+    const date = item.publishedAt || item.updatedAt;
+    meta.textContent = [sourceLabel(item.source), date ? formatDate(date) : ""].filter(Boolean).join(" · ");
+    const reason = document.createElement("span");
+    reason.className = "timeline-content-context-reason";
+    reason.textContent = String(match?.matchReason || "Matches a local lexical memory field");
+    article.append(title, meta, reason);
+    return article;
+  };
+
+  const render = () => {
+    const current = state.timelineContentContext.get(entry?.id) || { status: "idle", matches: [] };
+    button.disabled = current.status === "loading";
+    button.textContent = current.status === "loading"
+      ? "Finding context…"
+      : current.status === "success" ? "Refresh related context" : "Find related context";
+    button.setAttribute("aria-expanded", String(current.status !== "idle"));
+    panel.replaceChildren();
+    panel.classList.toggle("hidden", current.status === "idle");
+    if (current.status === "loading") {
+      panel.textContent = "Searching local Personal Memory…";
+      return;
+    }
+    if (current.status === "error") {
+      panel.setAttribute("role", "alert");
+      panel.textContent = current.message || "Related local context could not be loaded.";
+      return;
+    }
+    panel.setAttribute("role", "status");
+    const matches = Array.isArray(current.matches) ? current.matches.slice(0, CONTENT_CONTEXT_MAX_LIMIT) : [];
+    if (!matches.length) {
+      panel.textContent = "No related local context found.";
+      return;
+    }
+    const heading = document.createElement("strong");
+    heading.textContent = "Related local context";
+    const list = document.createElement("div");
+    list.className = "timeline-content-context-list";
+    list.append(...matches.map(renderMatch));
+    panel.append(heading, list);
+  };
+
+  render();
+  button.addEventListener("click", async () => {
+    if (!entry?.id || state.timelineContentContext.get(entry.id)?.status === "loading") return;
+    state.timelineContentContext.set(entry.id, { status: "loading", matches: [] });
+    render();
+    try {
+      const payload = await api(buildTimelineContentContextPath(entry.id));
+      state.timelineContentContext.set(entry.id, {
+        status: "success",
+        matches: Array.isArray(payload?.matches) ? payload.matches : [],
+      });
+    } catch (error) {
+      state.timelineContentContext.set(entry.id, { status: "error", message: error.message || String(error), matches: [] });
+    }
+    render();
+  });
+  return container;
 }
 
 function buildTimelineReadLaterAction(entry) {

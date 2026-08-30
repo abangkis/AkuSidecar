@@ -944,6 +944,9 @@ func (e *Engine) Run(ctx context.Context, id string) (domain.Run, error) {
 func (e *Engine) Timeline(ctx context.Context, limit, offset int) ([]domain.TimelineItem, error) {
 	return e.store.ListTimeline(ctx, limit, offset)
 }
+func (e *Engine) ContentContext(ctx context.Context, timelineID string, limit int) (domain.ContentContextResult, error) {
+	return e.store.ContentContext(ctx, timelineID, limit)
+}
 func (e *Engine) Library(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
 	return e.store.ListMemoryLibrary(ctx, query)
 }

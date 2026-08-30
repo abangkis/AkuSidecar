@@ -613,6 +613,30 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/content-context"):
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/content-context")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("timeline item")
+		}
+		limit, err := parseContentContextLimit(r.URL.Query())
+		if err != nil {
+			return err
+		}
+		result, err := s.engine.ContentContext(ctx, id, limit)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("timeline item")
+		}
+		if errors.Is(err, store.ErrContentContextNotEligible) {
+			return apiError{Status: http.StatusConflict, Code: "timeline_content_context_not_eligible", Message: "Only a final visible Timeline item can find related local context."}
+		}
+		if err != nil {
+			return err
+		}
+		matches := make([]contentContextMatchView, 0, len(result.Matches))
+		for _, match := range result.Matches {
+			matches = append(matches, publicContentContextMatch(match))
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches})
 	case r.Method == http.MethodGet && p == "/api/library/items":
 		query, err := parseLibraryQuery(r.URL.Query())
 		if err != nil {
