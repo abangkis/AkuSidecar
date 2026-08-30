@@ -124,6 +124,30 @@ func (e *Engine) RemoveLivingTopicMember(ctx context.Context, topicID, memoryID 
 	return e.store.LivingTopicDetail(ctx, topicID)
 }
 
+func (e *Engine) MoveLivingTopicMember(ctx context.Context, fromTopicID, toTopicID, memoryID string) (domain.LivingTopicMembershipMove, error) {
+	e.operation.Lock()
+	move, err := e.store.MoveLivingTopicMember(ctx, fromTopicID, toTopicID, memoryID)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopicMembershipMove{}, err
+	}
+	e.launchLivingTopicUnderstanding(move.FromTopicID, "evidence_moved_out")
+	e.launchLivingTopicUnderstanding(move.ToTopicID, "evidence_moved_in")
+	return move, nil
+}
+
+func (e *Engine) UndoLivingTopicMemberMove(ctx context.Context, moveID string) (domain.LivingTopicMembershipMove, error) {
+	e.operation.Lock()
+	move, err := e.store.UndoLivingTopicMemberMove(ctx, moveID)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopicMembershipMove{}, err
+	}
+	e.launchLivingTopicUnderstanding(move.FromTopicID, "evidence_move_undone")
+	e.launchLivingTopicUnderstanding(move.ToTopicID, "evidence_move_undone")
+	return move, nil
+}
+
 // RequestLivingTopicUnderstanding schedules a secondary refresh. It never
 // blocks the caller on provider inference; the durable worker coalesces pending
 // changes and publishes a snapshot only for a material semantic delta.

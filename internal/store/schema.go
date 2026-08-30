@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 20
+const SchemaVersion = 21
 
-const schemaVersion = "20"
+const schemaVersion = "21"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -242,11 +242,32 @@ CREATE TABLE IF NOT EXISTS living_topic_memberships (
   reason TEXT NOT NULL DEFAULT '',
   new_evidence INTEGER NOT NULL DEFAULT 0 CHECK (new_evidence IN (0,1)),
   new_evidence_at TEXT,
+  move_id TEXT,
   PRIMARY KEY(topic_id,memory_item_id)
 );
 
 CREATE INDEX IF NOT EXISTS living_topic_memberships_memory
   ON living_topic_memberships(memory_item_id,topic_id);
+
+CREATE TABLE IF NOT EXISTS living_topic_membership_moves (
+  id TEXT PRIMARY KEY,
+  memory_item_id TEXT NOT NULL,
+  from_topic_id TEXT NOT NULL,
+  to_topic_id TEXT NOT NULL,
+  source_origin TEXT NOT NULL,
+  source_match_mode TEXT NOT NULL,
+  source_confidence REAL NOT NULL CHECK (source_confidence >= 0 AND source_confidence <= 1),
+  source_reason TEXT NOT NULL DEFAULT '',
+  source_added_at TEXT NOT NULL,
+  source_new_evidence INTEGER NOT NULL DEFAULT 0 CHECK (source_new_evidence IN (0,1)),
+  source_new_evidence_at TEXT,
+  source_move_id TEXT,
+  target_preexisted INTEGER NOT NULL DEFAULT 0 CHECK (target_preexisted IN (0,1)),
+  created_at TEXT NOT NULL,
+  undone_at TEXT
+);
+CREATE INDEX IF NOT EXISTS living_topic_membership_moves_memory_created
+  ON living_topic_membership_moves(memory_item_id,created_at DESC,id DESC);
 
 CREATE TABLE IF NOT EXISTS living_topic_feedback_events (
   id TEXT PRIMARY KEY,
@@ -516,6 +537,33 @@ const livingTopicsNewEvidenceMigrationSQL = `
 ALTER TABLE living_topics ADD COLUMN evidence_seen_at TEXT;
 ALTER TABLE living_topic_memberships ADD COLUMN new_evidence INTEGER NOT NULL DEFAULT 0 CHECK (new_evidence IN (0,1));
 ALTER TABLE living_topic_memberships ADD COLUMN new_evidence_at TEXT;
+`
+
+// The v20-to-v21 migration makes cross-topic corrections reversible without
+// changing Personal Memory ownership. A move receipt preserves the exact
+// source membership while move_id prevents Undo from deleting a target the
+// user subsequently claimed independently.
+const livingTopicsMembershipMoveMigrationSQL = `
+ALTER TABLE living_topic_memberships ADD COLUMN move_id TEXT;
+CREATE TABLE living_topic_membership_moves (
+  id TEXT PRIMARY KEY,
+  memory_item_id TEXT NOT NULL,
+  from_topic_id TEXT NOT NULL,
+  to_topic_id TEXT NOT NULL,
+  source_origin TEXT NOT NULL,
+  source_match_mode TEXT NOT NULL,
+  source_confidence REAL NOT NULL CHECK (source_confidence >= 0 AND source_confidence <= 1),
+  source_reason TEXT NOT NULL DEFAULT '',
+  source_added_at TEXT NOT NULL,
+  source_new_evidence INTEGER NOT NULL DEFAULT 0 CHECK (source_new_evidence IN (0,1)),
+  source_new_evidence_at TEXT,
+  source_move_id TEXT,
+  target_preexisted INTEGER NOT NULL DEFAULT 0 CHECK (target_preexisted IN (0,1)),
+  created_at TEXT NOT NULL,
+  undone_at TEXT
+);
+CREATE INDEX living_topic_membership_moves_memory_created
+  ON living_topic_membership_moves(memory_item_id,created_at DESC,id DESC);
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory

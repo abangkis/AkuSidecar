@@ -41,7 +41,9 @@ import {
 } from "./library-state.js";
 import {
   buildLivingTopicMemberPath,
+  buildLivingTopicMemberMovePath,
   buildLivingTopicMembersPath,
+  buildLivingTopicMoveUndoPath,
   buildLivingTopicActivationPath,
   buildLivingTopicCandidateActionPath,
   buildLivingTopicNotificationsPath,
@@ -172,6 +174,7 @@ const state = {
     activationPollTopicId: "",
     notificationLoading: false,
     acknowledgingTopicId: "",
+    lastMove: null,
   },
   livingTopicNotifications: normalizeLivingTopicNotifications(),
   inboxSubView: "checks",
@@ -941,6 +944,53 @@ async function removeLivingTopicMember(memoryItemId) {
   }
 }
 
+async function moveLivingTopicMember(memoryItemId, toTopicId) {
+  const topicsState = state.livingTopics;
+  const fromTopicId = topicsState.selectedId;
+  const path = buildLivingTopicMemberMovePath(fromTopicId, memoryItemId);
+  if (!path || !toTopicId || topicsState.mutationLoading) return;
+  const fromName = topicsState.topics.find((topic) => topic.id === fromTopicId)?.name || "the source topic";
+  const toName = topicsState.topics.find((topic) => topic.id === toTopicId)?.name || "the destination topic";
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  resetLivingTopicSnapshotStatus();
+  renderLivingTopics();
+  try {
+    const response = await api(path, { method: "POST", body: { toTopicId } });
+    topicsState.lastMove = { ...response.move, fromName, toName };
+    topicsState.detail = await api(buildLivingTopicPath(fromTopicId));
+    await refreshLivingTopicListProjection();
+    scheduleLivingTopicUnderstandingPoll(fromTopicId);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function undoLivingTopicMemberMove() {
+  const topicsState = state.livingTopics;
+  const move = topicsState.lastMove;
+  const path = buildLivingTopicMoveUndoPath(move?.id);
+  if (!path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    await api(path, { method: "POST" });
+    topicsState.lastMove = null;
+    topicsState.detail = await api(buildLivingTopicPath(topicsState.selectedId));
+    await refreshLivingTopicListProjection();
+    scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
 async function requestLivingTopicActivation() {
   const topicsState = state.livingTopics;
   const path = buildLivingTopicActivationPath(topicsState.selectedId);
@@ -1200,6 +1250,7 @@ function renderLivingTopicDetail() {
     const membershipByID = new Map((detail.memberships || []).map((membership) => [membership.memoryItemId, membership]));
     members.replaceChildren(...detail.members.map((item) => buildLivingTopicEvidenceCard(item, "Remove", () => removeLivingTopicMember(item.id), false, membershipByID.get(item.id))));
   }
+  renderLivingTopicMoveStatus();
 
   const available = topicsState.candidates.filter((item) => !memberIDs.has(item.id));
   const candidates = $("#living-topic-candidates");
@@ -1296,14 +1347,61 @@ function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = fals
       : "Added by you · positive routing example";
     copy.append(routing);
   }
+  const actions = document.createElement("div");
+  actions.className = "living-topic-evidence-actions";
+  if (membership) {
+    const destinations = state.livingTopics.topics.filter((topic) => topic.id !== state.livingTopics.selectedId);
+    const select = document.createElement("select");
+    select.className = "living-topic-move-select";
+    select.setAttribute("aria-label", `Move ${title.textContent} to another Living Topic`);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = destinations.length ? "Move to…" : "No other topic";
+    select.append(placeholder, ...destinations.map((topic) => {
+      const option = document.createElement("option");
+      option.value = topic.id;
+      option.textContent = topic.name;
+      return option;
+    }));
+    select.disabled = disabled || state.livingTopics.mutationLoading || !destinations.length;
+    const move = document.createElement("button");
+    move.type = "button";
+    move.className = "secondary-button living-topic-move-button";
+    move.textContent = "Move";
+    move.disabled = true;
+    select.addEventListener("change", () => { move.disabled = !select.value || state.livingTopics.mutationLoading; });
+    move.addEventListener("click", () => void moveLivingTopicMember(item.id, select.value));
+    actions.append(select, move);
+  }
   const button = document.createElement("button");
   button.type = "button";
   button.className = "text-button";
   button.textContent = actionLabel;
   button.disabled = disabled || state.livingTopics.mutationLoading;
   button.addEventListener("click", action);
-  card.append(copy, button);
+  actions.append(button);
+  card.append(copy, actions);
   return card;
+}
+
+function renderLivingTopicMoveStatus() {
+  const status = $("#living-topic-move-status");
+  const move = state.livingTopics.lastMove;
+  if (!status) return;
+  const appliesToSelectedTopic = move
+    && [move.fromTopicId, move.toTopicId].includes(state.livingTopics.selectedId);
+  status.replaceChildren();
+  status.classList.toggle("hidden", !appliesToSelectedTopic);
+  if (!appliesToSelectedTopic) return;
+  const copy = document.createElement("span");
+  copy.textContent = `Moved evidence from ${move.fromName} to ${move.toName}. Both topic understandings are refreshing.`;
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "text-button";
+  undo.textContent = state.livingTopics.mutationLoading ? "Undoing…" : "Undo";
+  undo.disabled = state.livingTopics.mutationLoading;
+  undo.addEventListener("click", () => void undoLivingTopicMemberMove());
+  status.append(copy, undo);
 }
 
 function buildLivingTopicSuggestionCard(candidate) {
@@ -1366,14 +1464,20 @@ function renderLivingTopicSnapshots(detail) {
     container.replaceChildren(empty);
     return;
   }
-  if (detail.topic?.understandingStatus === "insufficient_evidence") {
+  const current = detail.snapshots[0];
+  if (!current?.isCurrent) {
     const empty = document.createElement("p");
     empty.className = "library-state";
-    empty.textContent = "There is not enough current evidence to publish an understanding. Earlier versions remain available for audit only.";
-    container.replaceChildren(empty, buildLivingTopicUnderstandingHistory(detail.snapshots, evidenceByID, "Previous understanding history"));
+    if (["pending", "running"].includes(detail.topic?.understandingStatus)) {
+      empty.textContent = "Current evidence changed. A new supported understanding is being prepared; earlier versions are historical only.";
+    } else if (detail.topic?.understandingStatus === "insufficient_evidence") {
+      empty.textContent = "There is not enough current evidence to publish an understanding. Earlier versions remain available for audit only.";
+    } else {
+      empty.textContent = "No snapshot is fully supported by the current topic evidence. Earlier versions remain available for audit only.";
+    }
+    container.replaceChildren(empty, buildLivingTopicUnderstandingHistory(detail.snapshots, evidenceByID, "Historical understanding"));
     return;
   }
-  const current = detail.snapshots[0];
   const nodes = [buildCurrentLivingTopicUnderstanding(current, detail, evidenceByID)];
   if (detail.snapshots.length > 1) {
     nodes.push(buildLivingTopicUnderstandingHistory(detail.snapshots.slice(1), evidenceByID, "Understanding history"));
@@ -1448,7 +1552,12 @@ function buildLivingTopicHistoryEntry(snapshot, evidenceByID) {
   const label = document.createElement("strong");
   label.textContent = `Understanding from ${formatDate(snapshot.createdAt)}`;
   const delta = document.createElement("small");
-  delta.textContent = `${snapshot.deltas?.length || 0} material change${snapshot.deltas?.length === 1 ? "" : "s"}`;
+  const availability = snapshot.evidenceAvailability === "available"
+    ? `${snapshot.activeEvidenceCount || 0} evidence still active`
+    : snapshot.evidenceAvailability === "partial"
+      ? `${snapshot.activeEvidenceCount || 0} evidence still active · partial`
+      : "source evidence no longer active in this topic";
+  delta.textContent = `${snapshot.deltas?.length || 0} material change${snapshot.deltas?.length === 1 ? "" : "s"} · ${availability}`;
   summary.append(label, delta);
   const body = document.createElement("div");
   const overview = document.createElement("p");
@@ -7573,6 +7682,31 @@ function renderTimelineContentContextMatch(match, timelineID) {
   return article;
 }
 
+function renderTimelineContentContextTopicInsight(insight) {
+  const article = document.createElement("article");
+  article.className = "timeline-content-context-topic-insight";
+  const title = document.createElement("strong");
+  title.textContent = insight?.topicName || "Living Topic";
+  const overview = document.createElement("p");
+  overview.textContent = insight?.overview || "No current overview.";
+  const claims = document.createElement("ul");
+  claims.className = "timeline-content-context-topic-claims";
+  for (const claim of (insight?.claims || []).slice(0, 3)) {
+    const item = document.createElement("li");
+    item.textContent = claim.text;
+    claims.append(item);
+  }
+  const meta = document.createElement("small");
+  meta.textContent = `Current understanding · ${insight?.evidenceCount || 0} active evidence · v${insight?.snapshotVersion || 1}`;
+  const reason = document.createElement("span");
+  reason.className = "timeline-content-context-reason";
+  reason.textContent = String(insight?.matchReason || "Matches a current Living Topic understanding");
+  article.append(title, overview);
+  if (claims.childElementCount) article.append(claims);
+  article.append(meta, reason);
+  return article;
+}
+
 function renderTimelineContentContextDrawer() {
   const body = $("#timeline-content-context-body");
   if (!body) return;
@@ -7589,16 +7723,27 @@ function renderTimelineContentContextDrawer() {
     return;
   }
   const matches = Array.isArray(current.matches) ? current.matches.slice(0, CONTENT_CONTEXT_MAX_LIMIT) : [];
-  if (!matches.length) {
+  const topicInsights = Array.isArray(current.topicInsights) ? current.topicInsights.slice(0, 2) : [];
+  if (!matches.length && !topicInsights.length) {
     body.textContent = "No related local context found.";
     return;
   }
-  const heading = document.createElement("strong");
-  heading.textContent = "Related local context";
-  const list = document.createElement("div");
-  list.className = "timeline-content-context-list";
-  list.append(...matches.map((match) => renderTimelineContentContextMatch(match, state.timelineContentContextActiveID)));
-  body.append(heading, list);
+  if (topicInsights.length) {
+    const topicHeading = document.createElement("strong");
+    topicHeading.textContent = "Current Living Topic understanding";
+    const topicList = document.createElement("div");
+    topicList.className = "timeline-content-context-topic-list";
+    topicList.append(...topicInsights.map(renderTimelineContentContextTopicInsight));
+    body.append(topicHeading, topicList);
+  }
+  if (matches.length) {
+    const heading = document.createElement("strong");
+    heading.textContent = "Related local context";
+    const list = document.createElement("div");
+    list.className = "timeline-content-context-list";
+    list.append(...matches.map((match) => renderTimelineContentContextMatch(match, state.timelineContentContextActiveID)));
+    body.append(heading, list);
+  }
 }
 
 function contentContextDrawerMotionDuration() {
@@ -7676,12 +7821,13 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
   const current = state.timelineContentContext.get(entry.id);
   revealTimelineContentContextDrawer({ focus });
   if (current?.status === "success" || current?.status === "loading") return;
-  state.timelineContentContext.set(entry.id, { status: "loading", matches: [], feedbackDirty: false });
+  state.timelineContentContext.set(entry.id, { status: "loading", matches: [], topicInsights: [], feedbackDirty: false });
   renderTimelineContentContextDrawer();
   void api(buildTimelineContentContextPath(entry.id)).then((payload) => {
     state.timelineContentContext.set(entry.id, {
       status: "success",
       matches: Array.isArray(payload?.matches) ? payload.matches : [],
+      topicInsights: Array.isArray(payload?.topicInsights) ? payload.topicInsights : [],
       feedbackDirty: false,
     });
     if (state.timelineContentContextActiveID === entry.id) renderTimelineContentContextDrawer();
@@ -7690,6 +7836,7 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
       status: "error",
       message: error.message || String(error),
       matches: [],
+      topicInsights: [],
       feedbackDirty: false,
     });
     if (state.timelineContentContextActiveID === entry.id) renderTimelineContentContextDrawer();

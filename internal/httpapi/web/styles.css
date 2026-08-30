@@ -405,6 +405,12 @@ h3 { letter-spacing: -0.02em; }
 .timeline-content-context-feedback-status { color: var(--quiet); font-size: 0.7rem; }
 .timeline-content-context-match.is-feedback-relevant .timeline-content-context-feedback-status { color: var(--accent); }
 .timeline-content-context-feedback-undo { padding: 3px 4px; font-size: 0.7rem; }
+.timeline-content-context-topic-list { display: grid; gap: 8px; margin-bottom: 5px; }
+.timeline-content-context-topic-insight { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(183, 242, 108, 0.28); border-radius: 10px; background: rgba(183, 242, 108, 0.045); }
+.timeline-content-context-topic-insight > strong { color: var(--accent); font-size: 0.86rem; }
+.timeline-content-context-topic-insight > p { margin: 0; color: var(--text); line-height: 1.45; }
+.timeline-content-context-topic-insight > small { color: var(--quiet); }
+.timeline-content-context-topic-claims { display: grid; gap: 5px; margin: 0; padding-left: 17px; color: var(--muted); }
 .library-saved-actions { display: grid; gap: 8px; margin: 16px 0; padding: 14px; border: 1px solid rgba(183, 242, 108, 0.2); border-radius: 12px; background: rgba(183, 242, 108, 0.045); }
 .library-saved-actions h4 { margin: 0; }
 .library-saved-actions .library-detail-action-note { margin: 0; }
@@ -580,6 +586,10 @@ h3 { letter-spacing: -0.02em; }
 .living-topic-evidence-card strong { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 0.78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .living-topic-evidence-card small { overflow: hidden; color: var(--quiet); font-size: 0.65rem; text-overflow: ellipsis; white-space: nowrap; }
 .living-topic-evidence-card .living-topic-routing-meta { color: var(--accent-soft); white-space: normal; }
+.living-topic-evidence-actions { display: flex !important; grid-template-columns: none; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px !important; }
+.living-topic-move-select { width: min(180px, 34vw); min-height: 34px; padding: 6px 28px 6px 8px; font-size: 0.7rem; }
+.living-topic-move-button { min-height: 34px; padding: 6px 9px; font-size: 0.7rem; }
+.living-topic-move-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 9px; padding: 9px 11px; border: 1px solid rgba(183, 242, 108, 0.32); border-radius: 9px; background: rgba(183, 242, 108, 0.06); color: var(--muted); font-size: 0.72rem; }
 .living-topic-suggestion-card { align-items: flex-start; border-color: rgba(183,242,108,0.22); background: rgba(183,242,108,0.035); }
 .living-topic-suggestion-card.reviewed { opacity: 0.68; border-style: dashed; }
 .living-topic-candidate-actions { display: flex !important; grid-auto-flow: column; align-items: center; gap: 6px !important; flex: 0 0 auto; }

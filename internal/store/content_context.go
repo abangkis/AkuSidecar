@@ -70,7 +70,7 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 		return domain.ContentContextResult{}, fmt.Errorf("commit content context read snapshot: %w", err)
 	}
 	if len(query.Terms) == 0 {
-		return domain.ContentContextResult{Matches: []domain.ContentContextMatch{}}, nil
+		return domain.ContentContextResult{Matches: []domain.ContentContextMatch{}, TopicInsights: []domain.ContentContextTopicInsight{}}, nil
 	}
 
 	items, err := s.searchMemoryContextCandidates(ctx, query.Terms, contentContextEngine.CandidatePool)
@@ -94,7 +94,68 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 			candidates[index].FeedbackID = state.ID
 		}
 	}
-	return domain.ContentContextResult{Matches: contentContextEngine.Match(query, candidates, limit)}, nil
+	topicInsights, err := s.livingTopicContentContextInsights(ctx, query, limit)
+	if err != nil {
+		return domain.ContentContextResult{}, err
+	}
+	return domain.ContentContextResult{Matches: contentContextEngine.Match(query, candidates, limit), TopicInsights: topicInsights}, nil
+}
+
+func (s *Store) livingTopicContentContextInsights(ctx context.Context, query contentcontext.Query, limit int) ([]domain.ContentContextTopicInsight, error) {
+	topics, err := s.ListLivingTopics(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]domain.ContentContextTopicInsight)
+	candidates := make([]contentcontext.Candidate, 0, len(topics))
+	for _, topic := range topics {
+		snapshot := topic.LatestSnapshot
+		if snapshot == nil || !snapshot.IsCurrent || snapshot.ActiveEvidenceCount < 1 {
+			continue
+		}
+		if !contentcontext.TopicIdentityMatches(query, topic.Name, topic.Aliases) {
+			continue
+		}
+		claims := make([]domain.LivingTopicClaim, 0, 3)
+		claimText := make([]string, 0, 3)
+		for _, claim := range snapshot.Claims {
+			if claim.Assessment != "supported" {
+				continue
+			}
+			claims = append(claims, claim)
+			claimText = append(claimText, claim.Text)
+			if len(claims) == 3 {
+				break
+			}
+		}
+		if len(claims) == 0 {
+			continue
+		}
+		byID[topic.ID] = domain.ContentContextTopicInsight{
+			TopicID: topic.ID, TopicName: topic.Name, Overview: snapshot.Overview, Claims: claims,
+			SnapshotVersion: snapshot.Version, UpdatedAt: snapshot.CreatedAt,
+			EvidenceCount: snapshot.ActiveEvidenceCount,
+		}
+		candidates = append(candidates, contentcontext.Candidate{Item: domain.MemoryItem{
+			ID: topic.ID, Title: topic.Name, Summary: strings.Join(append([]string{snapshot.Overview, topic.Description}, claimText...), " "),
+			Tags: topic.Aliases, Facets: []string{topic.Name}, LifecycleState: domain.MemoryStateActive, UpdatedAt: snapshot.CreatedAt,
+		}})
+	}
+	if len(candidates) == 0 {
+		return []domain.ContentContextTopicInsight{}, nil
+	}
+	topicLimit := limit
+	if topicLimit > 2 {
+		topicLimit = 2
+	}
+	matches := contentContextEngine.Match(query, candidates, topicLimit)
+	result := make([]domain.ContentContextTopicInsight, 0, len(matches))
+	for _, match := range matches {
+		insight := byID[match.Item.ID]
+		insight.MatchReason = match.MatchReason
+		result = append(result, insight)
+	}
+	return result, nil
 }
 
 // AddContentContextFeedback records an explicit relationship decision only for

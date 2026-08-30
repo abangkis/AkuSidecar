@@ -37,7 +37,22 @@ type ContentContextMatch struct {
 }
 
 type ContentContextResult struct {
-	Matches []ContentContextMatch `json:"matches"`
+	Matches       []ContentContextMatch        `json:"matches"`
+	TopicInsights []ContentContextTopicInsight `json:"topicInsights"`
+}
+
+// ContentContextTopicInsight is a read-only projection of a Living Topic's
+// current, source-supported understanding. Historical snapshots are never
+// eligible for Timeline Related Context.
+type ContentContextTopicInsight struct {
+	TopicID         string             `json:"topicId"`
+	TopicName       string             `json:"topicName"`
+	Overview        string             `json:"overview"`
+	Claims          []LivingTopicClaim `json:"claims"`
+	SnapshotVersion int                `json:"snapshotVersion"`
+	UpdatedAt       string             `json:"updatedAt"`
+	EvidenceCount   int                `json:"evidenceCount"`
+	MatchReason     string             `json:"matchReason"`
 }
 
 type ContentContextFeedbackVerdict string

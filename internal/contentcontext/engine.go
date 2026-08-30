@@ -204,6 +204,45 @@ func (e Engine) Match(query Query, candidates []Candidate, limit int) []domain.C
 	return result
 }
 
+// TopicIdentityMatches adds a precision gate for synthesized topic knowledge.
+// A multi-token topic must match at least two identity tokens from its name or
+// one alias. This keeps a broad parent such as "Codex" eligible while stopping
+// the narrower "Codex Reset" from matching a Codex post that never discusses
+// resets. Normal Memory matches keep their existing field-based policy.
+func TopicIdentityMatches(query Query, name string, aliases []string) bool {
+	queryTerms := make(map[string]bool, len(query.Terms))
+	for _, term := range uniqueTerms(query.Terms) {
+		queryTerms[term] = true
+	}
+	identities := append([]string{name}, aliases...)
+	for _, identity := range identities {
+		tokens := uniqueTerms(tokenize(identity))
+		meaningful := make([]string, 0, len(tokens))
+		for _, token := range tokens {
+			if !genericTerms[token] && !stopWords[token] {
+				meaningful = append(meaningful, token)
+			}
+		}
+		if len(meaningful) == 0 {
+			continue
+		}
+		required := 1
+		if len(meaningful) > 1 {
+			required = 2
+		}
+		matched := 0
+		for _, token := range meaningful {
+			if queryTerms[token] {
+				matched++
+			}
+		}
+		if matched >= required {
+			return true
+		}
+	}
+	return false
+}
+
 type rankedMatch struct {
 	match    domain.ContentContextMatch
 	strength int

@@ -53,6 +53,27 @@ type LivingTopicMembership struct {
 	Confidence   float64 `json:"confidence"`
 	Reason       string  `json:"reason"`
 	AddedAt      string  `json:"addedAt"`
+	MoveID       string  `json:"moveId,omitempty"`
+}
+
+// LivingTopicMembershipMove is a reversible correction receipt. It preserves
+// membership provenance but never owns or copies the underlying Memory item.
+type LivingTopicMembershipMove struct {
+	ID                  string  `json:"id"`
+	MemoryItemID        string  `json:"memoryItemId"`
+	FromTopicID         string  `json:"fromTopicId"`
+	ToTopicID           string  `json:"toTopicId"`
+	SourceOrigin        string  `json:"sourceOrigin"`
+	SourceMatchMode     string  `json:"sourceMatchMode"`
+	SourceConfidence    float64 `json:"sourceConfidence"`
+	SourceReason        string  `json:"sourceReason"`
+	SourceAddedAt       string  `json:"sourceAddedAt"`
+	SourceNewEvidence   bool    `json:"sourceNewEvidence"`
+	SourceNewEvidenceAt string  `json:"sourceNewEvidenceAt,omitempty"`
+	SourceMoveID        string  `json:"sourceMoveId,omitempty"`
+	TargetPreexisted    bool    `json:"targetPreexisted"`
+	CreatedAt           string  `json:"createdAt"`
+	UndoneAt            string  `json:"undoneAt,omitempty"`
 }
 
 type LivingTopicRoutingFeedback struct {
@@ -124,22 +145,25 @@ type LivingTopicDelta struct {
 }
 
 type LivingTopicSnapshot struct {
-	ID                 string             `json:"id"`
-	TopicID            string             `json:"topicId"`
-	Version            int                `json:"version"`
-	Status             string             `json:"status"`
-	Overview           string             `json:"overview"`
-	Claims             []LivingTopicClaim `json:"claims"`
-	Deltas             []LivingTopicDelta `json:"deltas"`
-	EvidenceIDs        []string           `json:"evidenceIds"`
-	InputDigest        string             `json:"-"`
-	Provider           string             `json:"provider"`
-	Model              string             `json:"model"`
-	Effort             string             `json:"effort"`
-	DurationMS         int64              `json:"durationMs"`
-	Usage              ModelUsage         `json:"usage"`
-	PreviousSnapshotID string             `json:"previousSnapshotId,omitempty"`
-	CreatedAt          string             `json:"createdAt"`
+	ID                   string             `json:"id"`
+	TopicID              string             `json:"topicId"`
+	Version              int                `json:"version"`
+	Status               string             `json:"status"`
+	Overview             string             `json:"overview"`
+	Claims               []LivingTopicClaim `json:"claims"`
+	Deltas               []LivingTopicDelta `json:"deltas"`
+	EvidenceIDs          []string           `json:"evidenceIds"`
+	InputDigest          string             `json:"-"`
+	Provider             string             `json:"provider"`
+	Model                string             `json:"model"`
+	Effort               string             `json:"effort"`
+	DurationMS           int64              `json:"durationMs"`
+	Usage                ModelUsage         `json:"usage"`
+	PreviousSnapshotID   string             `json:"previousSnapshotId,omitempty"`
+	CreatedAt            string             `json:"createdAt"`
+	IsCurrent            bool               `json:"isCurrent"`
+	ActiveEvidenceCount  int                `json:"activeEvidenceCount"`
+	EvidenceAvailability string             `json:"evidenceAvailability"`
 }
 
 type LivingTopicDetail struct {

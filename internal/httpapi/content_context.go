@@ -36,3 +36,22 @@ func publicContentContextMatch(match domain.ContentContextMatch) contentContextM
 		Feedback:    match.Feedback,
 	}
 }
+
+type contentContextTopicInsightView struct {
+	TopicID         string                    `json:"topicId"`
+	TopicName       string                    `json:"topicName"`
+	Overview        string                    `json:"overview"`
+	Claims          []domain.LivingTopicClaim `json:"claims"`
+	SnapshotVersion int                       `json:"snapshotVersion"`
+	UpdatedAt       string                    `json:"updatedAt"`
+	EvidenceCount   int                       `json:"evidenceCount"`
+	MatchReason     string                    `json:"matchReason"`
+}
+
+func publicContentContextTopicInsight(value domain.ContentContextTopicInsight) contentContextTopicInsightView {
+	return contentContextTopicInsightView{
+		TopicID: value.TopicID, TopicName: value.TopicName, Overview: value.Overview, Claims: value.Claims,
+		SnapshotVersion: value.SnapshotVersion, UpdatedAt: value.UpdatedAt,
+		EvidenceCount: value.EvidenceCount, MatchReason: value.MatchReason,
+	}
+}

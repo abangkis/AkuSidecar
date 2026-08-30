@@ -27,7 +27,7 @@ func TestSchema15MigratesLivingTopicsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "20" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var count int
@@ -86,7 +86,7 @@ func TestSchema16MigratesLivingTopicRoutingAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "20" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var count int
@@ -114,7 +114,7 @@ func TestSchema17MigratesAutomaticUnderstandingAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "20" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var count int
@@ -169,7 +169,7 @@ func TestSchema18MigratesTopicActivationAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "20" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	topic, err := state.LivingTopic(t.Context(), "topic-existing")
@@ -234,7 +234,7 @@ func TestSchema19MigratesLivingTopicNotificationsWithoutInventingUnreadEvidence(
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "20" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	topic, err := state.LivingTopic(t.Context(), "topic-existing")
@@ -270,6 +270,73 @@ func TestSchema19NotificationMigrationFailurePreservesVersion(t *testing.T) {
 	var version string
 	if err := check.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "19" {
 		t.Fatalf("failed migration version=%q err=%v", version, err)
+	}
+}
+
+func TestSchema20MigratesReversibleLivingTopicMovesAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema20.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := `CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO meta(key,value) VALUES('schema_version','20'); ` +
+		livingTopicsMigrationSQL + livingTopicsRoutingMigrationSQL + livingTopicsUnderstandingMigrationSQL + livingTopicsActivationMigrationSQL + livingTopicsNewEvidenceMigrationSQL
+	if _, err := db.Exec(setup); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version string
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+		t.Fatalf("version=%q err=%v", version, err)
+	}
+	var tableCount, columnCount int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='living_topic_membership_moves'`).Scan(&tableCount); err != nil || tableCount != 1 {
+		t.Fatalf("move table count=%d err=%v", tableCount, err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('living_topic_memberships') WHERE name='move_id'`).Scan(&columnCount); err != nil || columnCount != 1 {
+		t.Fatalf("move_id column count=%d err=%v", columnCount, err)
+	}
+}
+
+func TestSchema20MoveMigrationFailurePreservesVersionAndMembershipShape(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema20-conflict.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := `CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO meta(key,value) VALUES('schema_version','20'); ` +
+		livingTopicsMigrationSQL + livingTopicsRoutingMigrationSQL + livingTopicsUnderstandingMigrationSQL + livingTopicsActivationMigrationSQL + livingTopicsNewEvidenceMigrationSQL +
+		` CREATE TABLE living_topic_membership_moves(existing TEXT);`
+	if _, err := db.Exec(setup); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true)); err == nil {
+		t.Fatal("conflicting move table must fail migration")
+	}
+	check, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer check.Close()
+	var version string
+	if err := check.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "20" {
+		t.Fatalf("failed migration version=%q err=%v", version, err)
+	}
+	var columnCount int
+	if err := check.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('living_topic_memberships') WHERE name='move_id'`).Scan(&columnCount); err != nil || columnCount != 0 {
+		t.Fatalf("rolled-back move_id column count=%d err=%v", columnCount, err)
 	}
 }
 

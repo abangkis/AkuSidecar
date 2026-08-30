@@ -186,7 +186,12 @@ func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic,
 		return domain.LivingTopic{}, err
 	}
 	if err == nil {
-		topic.LatestSnapshot = &latest
+		memberIDs, memberErr := s.activeLivingTopicMemberIDs(ctx, topic.ID)
+		if memberErr != nil {
+			return domain.LivingTopic{}, memberErr
+		}
+		annotated := annotateLivingTopicSnapshots(topic, []domain.LivingTopicSnapshot{latest}, memberIDs)
+		topic.LatestSnapshot = &annotated[0]
 	}
 	return topic, nil
 }
@@ -303,7 +308,7 @@ func (s *Store) AddLivingTopicMember(ctx context.Context, topicID, memoryID stri
 		if _, err := tx.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, now, topicID); err != nil {
 			return domain.LivingTopicDetail{}, err
 		}
-	} else if _, err := tx.ExecContext(ctx, `UPDATE living_topic_memberships SET origin='manual',match_mode='manual',confidence=1,reason='Added by user' WHERE topic_id=? AND memory_item_id=?`, topicID, memoryID); err != nil {
+	} else if _, err := tx.ExecContext(ctx, `UPDATE living_topic_memberships SET origin='manual',match_mode='manual',confidence=1,reason='Added by user',move_id=NULL WHERE topic_id=? AND memory_item_id=?`, topicID, memoryID); err != nil {
 		return domain.LivingTopicDetail{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO living_topic_feedback_events(id,topic_id,memory_item_id,verdict,created_at) VALUES(?,?,?,'include',?)`, domain.NewID("topic_feedback"), topicID, memoryID, memoryNow(s)); err != nil {
@@ -349,7 +354,7 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 		return domain.LivingTopicDetail{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.memory_item_id,m.origin,m.match_mode,m.confidence,m.reason,m.added_at FROM living_topic_memberships m
+		SELECT m.memory_item_id,m.origin,m.match_mode,m.confidence,m.reason,m.added_at,COALESCE(m.move_id,'') FROM living_topic_memberships m
 		JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
 		WHERE m.topic_id=? ORDER BY m.added_at ASC,m.memory_item_id ASC LIMIT ?`, id, LivingTopicMaxMembers)
 	if err != nil {
@@ -359,7 +364,7 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 	memberships := make([]domain.LivingTopicMembership, 0)
 	for rows.Next() {
 		var membership domain.LivingTopicMembership
-		if err := rows.Scan(&membership.MemoryItemID, &membership.Origin, &membership.MatchMode, &membership.Confidence, &membership.Reason, &membership.AddedAt); err != nil {
+		if err := rows.Scan(&membership.MemoryItemID, &membership.Origin, &membership.MatchMode, &membership.Confidence, &membership.Reason, &membership.AddedAt, &membership.MoveID); err != nil {
 			rows.Close()
 			return domain.LivingTopicDetail{}, err
 		}
@@ -381,11 +386,69 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 	if err != nil {
 		return domain.LivingTopicDetail{}, err
 	}
+	memberSet := make(map[string]struct{}, len(memberIDs))
+	for _, memoryID := range memberIDs {
+		memberSet[memoryID] = struct{}{}
+	}
+	snapshots = annotateLivingTopicSnapshots(topic, snapshots, memberSet)
+	if len(snapshots) > 0 {
+		topic.LatestSnapshot = &snapshots[0]
+	}
 	candidates, err := s.LivingTopicCandidates(ctx, id, topic.CriteriaRevision, 20)
 	if err != nil {
 		return domain.LivingTopicDetail{}, err
 	}
 	return domain.LivingTopicDetail{Topic: topic, Members: members, Memberships: memberships, Candidates: candidates, Snapshots: snapshots}, nil
+}
+
+func (s *Store) activeLivingTopicMemberIDs(ctx context.Context, topicID string) (map[string]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.memory_item_id FROM living_topic_memberships m
+		JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
+		WHERE m.topic_id=?`, strings.TrimSpace(topicID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		values[id] = struct{}{}
+	}
+	return values, rows.Err()
+}
+
+func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.LivingTopicSnapshot, activeMemberIDs map[string]struct{}) []domain.LivingTopicSnapshot {
+	for index := range snapshots {
+		uniqueEvidence := make(map[string]struct{}, len(snapshots[index].EvidenceIDs))
+		activeCount := 0
+		for _, evidenceID := range snapshots[index].EvidenceIDs {
+			if _, seen := uniqueEvidence[evidenceID]; seen {
+				continue
+			}
+			uniqueEvidence[evidenceID] = struct{}{}
+			if _, active := activeMemberIDs[evidenceID]; active {
+				activeCount++
+			}
+		}
+		snapshots[index].ActiveEvidenceCount = activeCount
+		switch {
+		case len(uniqueEvidence) > 0 && activeCount == len(uniqueEvidence):
+			snapshots[index].EvidenceAvailability = "available"
+		case activeCount > 0:
+			snapshots[index].EvidenceAvailability = "partial"
+		default:
+			snapshots[index].EvidenceAvailability = "unavailable"
+		}
+		snapshots[index].IsCurrent = index == 0 &&
+			topic.UnderstandingStatus == "current" &&
+			snapshots[index].InputDigest == topic.UnderstandingInputDigest &&
+			activeCount > 0
+	}
+	return snapshots
 }
 
 func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.LivingTopicSnapshot) (domain.LivingTopicSnapshot, error) {

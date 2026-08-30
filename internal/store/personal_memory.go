@@ -1011,6 +1011,7 @@ func (s *Store) RemoveMemory(ctx context.Context, id string) error {
 	}{
 		{`DELETE FROM memory_search_fts WHERE memory_item_id=?`, "search index"},
 		{`DELETE FROM living_topic_candidate_evaluations WHERE memory_item_id=?`, "living topic candidates"},
+		{`DELETE FROM living_topic_membership_moves WHERE memory_item_id=?`, "living topic move receipts"},
 		{`DELETE FROM living_topic_memberships WHERE memory_item_id=?`, "living topic memberships"},
 		{`DELETE FROM memory_retention_claims WHERE memory_item_id=?`, "retention claims"},
 		{`DELETE FROM memory_actions WHERE memory_item_id=?`, "actions"},
@@ -1078,6 +1079,9 @@ func (s *Store) DeleteMemory(ctx context.Context, id string, _ ...string) (domai
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM living_topic_memberships WHERE memory_item_id=?`, id); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("delete living topic memberships: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM living_topic_membership_moves WHERE memory_item_id=?`, id); err != nil {
+		return domain.MemoryItem{}, fmt.Errorf("delete living topic move receipts: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM living_topic_candidate_evaluations WHERE memory_item_id=?`, id); err != nil {
 		return domain.MemoryItem{}, fmt.Errorf("delete living topic candidates: %w", err)

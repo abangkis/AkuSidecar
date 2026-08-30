@@ -169,3 +169,19 @@ func TestMatchAppliesPairwiseFeedbackWithoutAdmittingWeakCandidates(t *testing.T
 		t.Fatalf("feedback projection=%+v", result[0].Feedback)
 	}
 }
+
+func TestTopicIdentityMatchesRejectsNarrowSiblingOnOneSharedToken(t *testing.T) {
+	query := Query{Terms: []string{"codex", "chatgpt", "repository", "tunnel"}, Anchors: []string{"codex", "chatgpt"}}
+	if !TopicIdentityMatches(query, "Codex", nil) {
+		t.Fatal("single-token parent topic should match its substantive identity")
+	}
+	if TopicIdentityMatches(query, "Codex Reset", nil) {
+		t.Fatal("multi-token sibling must not match when reset is absent")
+	}
+	if !TopicIdentityMatches(query, "Codex Usage Limits", []string{"Codex"}) {
+		t.Fatal("an explicit single-token alias should preserve a broader match")
+	}
+	if !TopicIdentityMatches(Query{Terms: []string{"gpt", "astra", "capabilities"}}, "OpenAI GPT Astra", nil) {
+		t.Fatal("two topic identity tokens should admit a focused multi-token topic")
+	}
+}

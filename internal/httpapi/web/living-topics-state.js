@@ -35,6 +35,16 @@ export function buildLivingTopicMemberPath(id, memoryItemId) {
   return base && memory ? `${base}/${encodeURIComponent(memory)}` : "";
 }
 
+export function buildLivingTopicMemberMovePath(id, memoryItemId) {
+  const base = buildLivingTopicMemberPath(id, memoryItemId);
+  return base ? `${base}/move` : "";
+}
+
+export function buildLivingTopicMoveUndoPath(moveId) {
+  const value = String(moveId ?? "").trim();
+  return value ? `/api/living-topic-moves/${encodeURIComponent(value)}/undo` : "";
+}
+
 export function buildLivingTopicSnapshotsPath(id) {
   const base = buildLivingTopicPath(id);
   return base ? `${base}/snapshots` : "";

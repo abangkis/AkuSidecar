@@ -142,6 +142,61 @@ func TestContentContextRequiresFinalVisibleTimelineAndBoundsLimit(t *testing.T) 
 	}
 }
 
+func TestContentContextSurfacesOnlyCurrentSupportedLivingTopicKnowledge(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID := insertContentContextTimelineFixture(t, state, false)
+	topic, err := state.CreateLivingTopic(ctx, "Quantum Systems")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := state.CreateMemoryRecallStub(ctx, libraryInput("topic-insight", domain.SourceLinkedIn, "Quantum systems evidence", "A supported research result", "2026-08-29T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
+		TopicID: topic.ID, Status: "ready", Overview: "Quantum systems research has a source-backed result.",
+		Claims: []domain.LivingTopicClaim{
+			{Text: "The quantum systems result is supported.", Assessment: "supported", EvidenceIDs: []string{evidence.ID}},
+			{Text: "A second claim remains uncertain.", Assessment: "uncertain", EvidenceIDs: []string{evidence.ID}},
+		},
+		EvidenceIDs: []string{evidence.ID}, InputDigest: "topic-insight-digest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE living_topics SET understanding_status='current',understanding_input_digest=? WHERE id=?`, snapshot.InputDigest, topic.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := state.ContentContext(ctx, timelineID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.TopicInsights) != 1 {
+		t.Fatalf("topic insights=%+v", result.TopicInsights)
+	}
+	insight := result.TopicInsights[0]
+	if insight.TopicID != topic.ID || insight.TopicName != topic.Name || insight.EvidenceCount != 1 || insight.SnapshotVersion != snapshot.Version || insight.MatchReason == "" {
+		t.Fatalf("topic insight=%+v", insight)
+	}
+	if len(insight.Claims) != 1 || insight.Claims[0].Assessment != "supported" {
+		t.Fatalf("only supported claims should be projected: %+v", insight.Claims)
+	}
+	if _, err := state.RemoveLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err = state.ContentContext(ctx, timelineID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.TopicInsights) != 0 {
+		t.Fatalf("historical topic knowledge leaked into Related Context: %+v", result.TopicInsights)
+	}
+}
+
 func TestContentContextFeedbackIsPairwiseAppendOnlyAndUndoable(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

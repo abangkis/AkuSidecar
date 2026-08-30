@@ -166,3 +166,50 @@ func TestLivingTopicsHTTPNewEvidenceNotificationAndAcknowledgment(t *testing.T) 
 		t.Fatalf("cleared notifications status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestLivingTopicsHTTPMoveAndUndo(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	from, err := state.CreateLivingTopic(ctx, "Codex Reset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	to, err := state.CreateLivingTopic(ctx, "Codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := state.CreateMemoryRecallStub(ctx, libraryHTTPInput("2305"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddLivingTopicMember(ctx, from.ID, item.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/living-topics/"+from.ID+"/members/"+item.ID+"/move", strings.NewReader(`{"toTopicId":"`+to.ID+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Move domain.LivingTopicMembershipMove `json:"move"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Move.ID == "" || payload.Move.FromTopicID != from.ID || payload.Move.ToTopicID != to.ID || payload.Move.MemoryItemID != item.ID {
+		t.Fatalf("move payload=%+v", payload.Move)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/living-topic-moves/"+payload.Move.ID+"/undo", nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"undoneAt":`) {
+		t.Fatalf("undo status=%d body=%s", response.Code, response.Body.String())
+	}
+	detail, err := state.LivingTopicDetail(ctx, from.ID)
+	if err != nil || len(detail.Members) != 1 || detail.Members[0].ID != item.ID {
+		t.Fatalf("restored detail=%+v err=%v", detail, err)
+	}
+}

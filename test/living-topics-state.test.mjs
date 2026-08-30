@@ -10,7 +10,9 @@ import {
   buildLivingTopicCandidateActionPath,
   buildLivingTopicNotificationsPath,
   buildLivingTopicMemberPath,
+  buildLivingTopicMemberMovePath,
   buildLivingTopicMembersPath,
+  buildLivingTopicMoveUndoPath,
   buildLivingTopicPath,
   buildLivingTopicSnapshotsPath,
   buildLivingTopicSeenPath,
@@ -27,6 +29,8 @@ test("Living Topics paths are explicit and encoded", () => {
   assert.equal(buildLivingTopicPath("topic/one"), "/api/living-topics/topic%2Fone");
   assert.equal(buildLivingTopicMembersPath("topic/one"), "/api/living-topics/topic%2Fone/members");
   assert.equal(buildLivingTopicMemberPath("topic/one", "memory/two"), "/api/living-topics/topic%2Fone/members/memory%2Ftwo");
+  assert.equal(buildLivingTopicMemberMovePath("topic/one", "memory/two"), "/api/living-topics/topic%2Fone/members/memory%2Ftwo/move");
+  assert.equal(buildLivingTopicMoveUndoPath("move/three"), "/api/living-topic-moves/move%2Fthree/undo");
   assert.equal(buildLivingTopicSnapshotsPath("topic/one"), "/api/living-topics/topic%2Fone/snapshots");
   assert.equal(buildLivingTopicActivationPath("topic/one"), "/api/living-topics/topic%2Fone/activation");
   assert.equal(buildLivingTopicNotificationsPath(), "/api/living-topics/notifications");
@@ -34,6 +38,7 @@ test("Living Topics paths are explicit and encoded", () => {
   assert.equal(buildLivingTopicCandidateActionPath("topic/one", "memory/two", "accept"), "/api/living-topics/topic%2Fone/candidates/memory%2Ftwo/accept");
   assert.equal(buildLivingTopicCandidateActionPath("topic/one", "memory/two", "unknown"), "");
   assert.equal(buildLivingTopicPath(""), "");
+  assert.equal(buildLivingTopicMoveUndoPath(""), "");
 });
 
 test("Living Topics notification state is bounded and truthful", () => {

@@ -31,6 +31,9 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "No related local context found.",
     "timeline-content-context-reason",
     "timeline-content-context-feedback",
+    "renderTimelineContentContextTopicInsight",
+    "Current Living Topic understanding",
+    "topicInsights",
     "submitTimelineContentContextFeedback",
     "buildTimelineContentContextFeedbackPath",
     "buildContentContextFeedbackUndoPath",
@@ -60,6 +63,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(styles, /\.timeline-content-context/);
   assert.match(styles, /\.timeline-content-context-match\.is-feedback-not-relevant/);
   assert.match(styles, /\.timeline-content-context-feedback/);
+  assert.match(styles, /\.timeline-content-context-topic-insight/);
   assert.match(styles, /\.timeline-content-context-tab/);
   assert.match(styles, /\.timeline-content-context-anchor \{[^}]*position: relative/);
   assert.match(styles, /\.timeline-content-context-tab \{[^}]*border-left: 0;[^}]*border-radius: 0 11px 11px 0;[^}]*writing-mode: vertical-rl/);

@@ -27,11 +27,14 @@ test("Living Topics activates local evidence and maintains understanding automat
   assert.match(index, /id="living-topic-excludes"[^>]*maxlength="1200"/);
   assert.match(index, /id="living-topic-activation-button"[^>]*>Scan again<\/button>/);
   assert.match(index, /id="living-topic-suggestions"/);
+  assert.match(index, /id="living-topic-move-status"[^>]*role="status"/);
 });
 
 test("Living Topics UI exposes bounded membership and automatic understanding state", () => {
   assert.match(app, /async function addLivingTopicMember\(memoryItemId\)/);
   assert.match(app, /async function removeLivingTopicMember\(memoryItemId\)/);
+  assert.match(app, /async function moveLivingTopicMember\(memoryItemId, toTopicId\)/);
+  assert.match(app, /async function undoLivingTopicMemberMove\(\)/);
   assert.match(app, /async function createLivingTopicSnapshot\(event\)/);
   assert.match(app, /function scheduleLivingTopicUnderstandingPoll\(topicId, announce = false\)/);
   assert.match(app, /async function requestLivingTopicActivation\(\)/);
@@ -50,8 +53,11 @@ test("Living Topics UI exposes bounded membership and automatic understanding st
   assert.match(app, /Uncertainty and conflicts/);
   assert.match(app, /detail\.members\.length >= 20/);
   assert.match(app, /membership\.origin === "automatic"/);
+  assert.match(app, /No snapshot is fully supported by the current topic evidence/);
+  assert.match(app, /snapshot\.evidenceAvailability === "available"/);
   assert.match(styles, /\.living-topics-layout \{[^}]*grid-template-columns/);
   assert.match(styles, /\.living-topic-snapshot-card \{/);
+  assert.match(styles, /\.living-topic-move-status \{/);
   assert.match(styles, /\.view-notification-badge, \.living-topic-new-badge \{/);
   assert.match(styles, /\.living-topics-layout \{ grid-template-columns: 1fr; \}/);
 });

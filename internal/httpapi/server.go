@@ -636,7 +636,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		for _, match := range result.Matches {
 			matches = append(matches, publicContentContextMatch(match))
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches})
+		topicInsights := make([]contentContextTopicInsightView, 0, len(result.TopicInsights))
+		for _, insight := range result.TopicInsights {
+			topicInsights = append(topicInsights, publicContentContextTopicInsight(insight))
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches, "topicInsights": topicInsights})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/content-context-feedback"):
 		id := path.Base(strings.TrimSuffix(p, "/content-context-feedback"))
 		var body domain.ContentContextFeedbackInput
@@ -692,6 +696,25 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"topic": topic})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/living-topic-moves/") && strings.HasSuffix(p, "/undo"):
+		moveID := path.Base(strings.TrimSuffix(p, "/undo"))
+		if err := requireEmptyBody(r); err != nil {
+			return err
+		}
+		move, err := s.engine.UndoLivingTopicMemberMove(ctx, moveID)
+		if errors.Is(err, store.ErrLivingTopicMoveNotFound) {
+			return notFound("living topic move")
+		}
+		if errors.Is(err, store.ErrLivingTopicMoveNotCurrent) || errors.Is(err, store.ErrLivingTopicMoveSourceConflict) || errors.Is(err, store.ErrLivingTopicMemberMax) {
+			return conflict(err.Error())
+		}
+		if errors.Is(err, store.ErrMemoryNotFound) {
+			return notFound("library item")
+		}
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"move": move})
 	case strings.HasPrefix(p, "/api/living-topics/"):
 		parts := strings.Split(strings.Trim(strings.TrimPrefix(p, "/api/living-topics/"), "/"), "/")
 		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet {
@@ -755,6 +778,31 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
+		}
+		if len(parts) == 4 && parts[0] != "" && parts[1] == "members" && parts[2] != "" && parts[3] == "move" && r.Method == http.MethodPost {
+			var body struct {
+				ToTopicID string `json:"toTopicId"`
+			}
+			if err := readJSON(r, &body); err != nil {
+				return err
+			}
+			move, err := s.engine.MoveLivingTopicMember(ctx, parts[0], body.ToTopicID, parts[2])
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if errors.Is(err, store.ErrLivingTopicMoveNotFound) {
+				return notFound("living topic membership")
+			}
+			if errors.Is(err, store.ErrMemoryNotFound) {
+				return notFound("library item")
+			}
+			if errors.Is(err, store.ErrLivingTopicMemberMax) || errors.Is(err, store.ErrLivingTopicMoveSameTopic) {
+				return conflict(err.Error())
+			}
+			if err != nil {
+				return badRequest(err.Error())
+			}
+			return writeJSON(w, http.StatusOK, map[string]any{"move": move})
 		}
 		if len(parts) == 2 && parts[0] != "" && parts[1] == "snapshots" && r.Method == http.MethodPost {
 			if err := requireEmptyBody(r); err != nil {
