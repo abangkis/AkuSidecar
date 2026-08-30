@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   LIVING_TOPIC_MAX_MEMBERS,
   LIVING_TOPIC_MAX_NAME,
+  LIVING_TOPIC_TAB_EVIDENCE,
+  LIVING_TOPIC_TAB_SNAPSHOT,
   buildLivingTopicMemberPath,
   buildLivingTopicMembersPath,
   buildLivingTopicPath,
@@ -11,6 +13,7 @@ import {
   buildLivingTopicsPath,
   livingTopicStatusLabel,
   normalizeLivingTopicName,
+  normalizeLivingTopicTab,
 } from "../internal/httpapi/web/living-topics-state.js";
 
 test("Living Topics paths are explicit and encoded", () => {
@@ -20,6 +23,12 @@ test("Living Topics paths are explicit and encoded", () => {
   assert.equal(buildLivingTopicMemberPath("topic/one", "memory/two"), "/api/living-topics/topic%2Fone/members/memory%2Ftwo");
   assert.equal(buildLivingTopicSnapshotsPath("topic/one"), "/api/living-topics/topic%2Fone/snapshots");
   assert.equal(buildLivingTopicPath(""), "");
+});
+
+test("Living Topics defaults to Snapshot and bounds detail tabs", () => {
+  assert.equal(normalizeLivingTopicTab(), LIVING_TOPIC_TAB_SNAPSHOT);
+  assert.equal(normalizeLivingTopicTab("unknown"), LIVING_TOPIC_TAB_SNAPSHOT);
+  assert.equal(normalizeLivingTopicTab(LIVING_TOPIC_TAB_EVIDENCE), LIVING_TOPIC_TAB_EVIDENCE);
 });
 
 test("Living Topics UI preserves bounded thin-slice semantics", () => {

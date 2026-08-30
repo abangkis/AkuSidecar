@@ -152,6 +152,27 @@ func TestProjectGeminiSchemaLeavesFullSchemaUnchanged(t *testing.T) {
 	}
 }
 
+func TestProjectGeminiSchemaRemovesLivingTopicUniqueItemsOnlyOnWire(t *testing.T) {
+	root := filepathRoot(t)
+	schema, err := readSchema(root + `/schemas/living-topic-snapshot.schema.json`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := schemaJSON(schema)
+	projected, err := projectGeminiSchema(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedRaw, _ := schemaJSON(projected)
+	if strings.Contains(string(projectedRaw), `"uniqueItems"`) {
+		t.Fatalf("Gemini wire schema retained uniqueItems: %s", projectedRaw)
+	}
+	after, _ := schemaJSON(schema)
+	if string(after) != string(before) || !strings.Contains(string(after), `"uniqueItems"`) {
+		t.Fatal("complete Living Topics schema was mutated")
+	}
+}
+
 func TestGeminiCandidateEvaluationChunksSevenCandidatesAndAggregatesTelemetry(t *testing.T) {
 	server, calls := geminiEvaluationChunkServer(t, 0)
 	provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))

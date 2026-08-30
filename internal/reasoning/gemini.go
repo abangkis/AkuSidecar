@@ -284,6 +284,10 @@ func (g *Gemini) invoke(ctx context.Context, profileID inference.ProfileID, prom
 
 var geminiUnsupportedWireKeywords = map[string]bool{
 	"$schema": true, "pattern": true, "minLength": true, "maxLength": true,
+	// Interactions v1 rejects uniqueItems even though AkuSidecar uses it to
+	// keep Living Topic evidence citations duplicate-free. Preserve and
+	// enforce the complete schema locally after generation.
+	"uniqueItems": true,
 	// Gemini documents maxItems support, but its Interactions v1 endpoint
 	// rejects the Semantic Event schema when decisions.maxItems is 20. The
 	// complete Sidecar schema still enforces the exact candidate count locally.

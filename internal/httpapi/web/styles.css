@@ -557,9 +557,16 @@ h3 { letter-spacing: -0.02em; }
 .living-topic-detail > header { padding: 17px 18px 14px; border-bottom: 1px solid var(--line); }
 .living-topic-detail h3, .living-topic-detail h4, .living-topic-detail h5 { margin: 0; }
 .living-topic-detail h3 { font-size: 1.14rem; line-height: 1.3; }
+.living-topic-detail-tabs { display: flex; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: rgba(10,14,12,0.32); }
+.living-topic-detail-tab { padding: 8px 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: 0.72rem; font-weight: 750; }
+.living-topic-detail-tab:hover { color: var(--text); }
+.living-topic-detail-tab:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
+.living-topic-detail-tab[aria-selected="true"] { border-color: rgba(183,242,108,0.34); background: rgba(183,242,108,0.09); color: var(--accent); }
+.living-topic-detail-tabpanel { min-width: 0; }
 .living-topic-rename-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 15px 18px; }
 .living-topic-rename-form label { grid-column: 1 / -1; }
-.living-topic-evidence-section, .living-topic-snapshot-section { display: grid; gap: 12px; padding: 17px 18px; border-top: 1px solid var(--line); }
+.living-topic-evidence-section, .living-topic-snapshot-section { display: grid; gap: 12px; padding: 17px 18px; }
+.living-topic-evidence-section { border-top: 1px solid var(--line); }
 .living-topic-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .living-topic-members, .living-topic-candidates, .living-topic-snapshots { display: grid; gap: 8px; }
 .living-topic-evidence-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.025); }
@@ -569,6 +576,12 @@ h3 { letter-spacing: -0.02em; }
 .living-topic-evidence-search-form { display: grid; gap: 7px; padding-top: 3px; }
 .living-topic-evidence-search-form > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .living-topic-snapshot-section > .review-guidance { margin: -3px 0 0; font-size: 0.72rem; line-height: 1.45; }
+.living-topic-snapshot-section form { margin: 0; }
+.living-topic-snapshot-status { min-height: 1.1rem; margin: -2px 0 0; color: var(--quiet); font-size: 0.72rem; line-height: 1.45; }
+.living-topic-snapshot-status:empty { display: none; }
+.living-topic-snapshot-status[data-kind="working"] { color: var(--muted); }
+.living-topic-snapshot-status[data-kind="success"] { color: var(--accent); }
+.living-topic-snapshot-status[data-kind="error"] { color: var(--danger); }
 .living-topic-snapshot-card { display: grid; gap: 11px; padding: 14px 15px; border: 1px solid rgba(183,242,108,0.2); border-radius: 11px; background: rgba(8,11,9,0.26); }
 .living-topic-snapshot-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .living-topic-snapshot-card > header small { color: var(--quiet); font-size: 0.64rem; text-align: right; }

@@ -45,8 +45,11 @@ import {
   buildLivingTopicPath,
   buildLivingTopicsPath,
   buildLivingTopicSnapshotsPath,
+  LIVING_TOPIC_TAB_EVIDENCE,
+  LIVING_TOPIC_TAB_SNAPSHOT,
   livingTopicStatusLabel,
   normalizeLivingTopicName,
+  normalizeLivingTopicTab,
 } from "./living-topics-state.js";
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
 import {
@@ -151,11 +154,14 @@ const state = {
     selectedId: "",
     detail: null,
     candidates: [],
+    candidatesLoaded: false,
+    activeTab: LIVING_TOPIC_TAB_SNAPSHOT,
     loading: false,
     detailLoading: false,
     candidatesLoading: false,
     mutationLoading: false,
     error: null,
+    snapshotStatus: { kind: "idle", message: "", snapshotId: "" },
   },
   inboxSubView: "checks",
   modelUsageHelpSequence: 0,
@@ -332,6 +338,11 @@ $("#library-cleaning-tab").addEventListener("click", () => setLibraryTab(LIBRARY
 for (const tab of document.querySelectorAll("#library-tabs [role=\"tab\"]")) {
   tab.addEventListener("keydown", handleLibraryTabKeydown);
 }
+$("#living-topic-snapshot-tab").addEventListener("click", () => setLivingTopicDetailTab(LIVING_TOPIC_TAB_SNAPSHOT));
+$("#living-topic-evidence-tab").addEventListener("click", () => setLivingTopicDetailTab(LIVING_TOPIC_TAB_EVIDENCE));
+for (const tab of document.querySelectorAll("#living-topic-detail-tabs [role=\"tab\"]")) {
+  tab.addEventListener("keydown", handleLivingTopicDetailTabKeydown);
+}
 $("#settings-view-button").addEventListener("click", () => {
   setView("settings");
   requestSourceSessionReadiness();
@@ -351,7 +362,7 @@ $("#topics-refresh-button").addEventListener("click", () => loadLivingTopics(tru
 $("#living-topic-create-form").addEventListener("submit", createLivingTopic);
 $("#living-topic-rename-form").addEventListener("submit", renameLivingTopic);
 $("#living-topic-evidence-search-form").addEventListener("submit", searchLivingTopicEvidence);
-$("#living-topic-snapshot-button").addEventListener("click", createLivingTopicSnapshot);
+$("#living-topic-snapshot-form").addEventListener("submit", createLivingTopicSnapshot);
 $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
@@ -700,6 +711,7 @@ async function loadLivingTopics(force = false) {
     if (topicsState.selectedId && !topicsState.topics.some((topic) => topic.id === topicsState.selectedId)) {
       topicsState.selectedId = "";
       topicsState.detail = null;
+      resetLivingTopicSnapshotStatus();
     }
     const target = topicsState.selectedId || topicsState.topics[0]?.id || "";
     if (target) await loadLivingTopicDetail(target, { skipListRender: true });
@@ -715,13 +727,21 @@ async function loadLivingTopicDetail(id, options = {}) {
   const topicsState = state.livingTopics;
   const path = buildLivingTopicPath(id);
   if (!path || topicsState.detailLoading) return;
+  if (topicsState.selectedId !== id) {
+    resetLivingTopicSnapshotStatus();
+    topicsState.activeTab = LIVING_TOPIC_TAB_SNAPSHOT;
+    topicsState.candidates = [];
+    topicsState.candidatesLoaded = false;
+  }
   topicsState.selectedId = id;
   topicsState.detailLoading = true;
   topicsState.error = null;
   renderLivingTopics();
   try {
     topicsState.detail = await api(path);
-    await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
+    if (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE) {
+      await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
+    }
   } catch (error) {
     topicsState.error = error;
   } finally {
@@ -741,6 +761,10 @@ async function createLivingTopic(event) {
   try {
     const response = await api(buildLivingTopicsPath(), { method: "POST", body: { name } });
     $("#living-topic-create-name").value = "";
+    resetLivingTopicSnapshotStatus();
+    topicsState.activeTab = LIVING_TOPIC_TAB_SNAPSHOT;
+    topicsState.candidates = [];
+    topicsState.candidatesLoaded = false;
     topicsState.selectedId = response.topic.id;
     topicsState.detail = null;
     await loadLivingTopics(true);
@@ -786,6 +810,7 @@ async function loadLivingTopicCandidates(query = "") {
     const path = buildLibraryRequestPath({ query, limit: 12 });
     const response = await api(path);
     topicsState.candidates = Array.isArray(response?.items) ? response.items : [];
+    topicsState.candidatesLoaded = true;
   } catch (error) {
     topicsState.error = error;
   } finally {
@@ -800,6 +825,7 @@ async function addLivingTopicMember(memoryItemId) {
   if (!path || topicsState.mutationLoading) return;
   topicsState.mutationLoading = true;
   topicsState.error = null;
+  resetLivingTopicSnapshotStatus();
   renderLivingTopics();
   try {
     topicsState.detail = await api(path, { method: "POST", body: { memoryItemId } });
@@ -818,6 +844,7 @@ async function removeLivingTopicMember(memoryItemId) {
   if (!path || topicsState.mutationLoading) return;
   topicsState.mutationLoading = true;
   topicsState.error = null;
+  resetLivingTopicSnapshotStatus();
   renderLivingTopics();
   try {
     topicsState.detail = await api(path, { method: "DELETE" });
@@ -830,22 +857,50 @@ async function removeLivingTopicMember(memoryItemId) {
   }
 }
 
-async function createLivingTopicSnapshot() {
+function resetLivingTopicSnapshotStatus() {
+  state.livingTopics.snapshotStatus = { kind: "idle", message: "", snapshotId: "" };
+}
+
+async function createLivingTopicSnapshot(event) {
+  event?.preventDefault?.();
   const topicsState = state.livingTopics;
   const path = buildLivingTopicSnapshotsPath(topicsState.selectedId);
-  if (!path || topicsState.mutationLoading) return;
+  if (topicsState.mutationLoading) return;
+  if (!path) {
+    topicsState.snapshotStatus = { kind: "error", message: "Select a topic before creating a snapshot.", snapshotId: "" };
+    renderLivingTopics();
+    return;
+  }
   topicsState.mutationLoading = true;
   topicsState.error = null;
+  topicsState.snapshotStatus = { kind: "working", message: "Creating a source-backed snapshot…", snapshotId: "" };
   renderLivingTopics();
   try {
-    await api(path, { method: "POST" });
+    const response = await api(path, { method: "POST" });
+    const snapshot = response?.snapshot;
+    if (!snapshot?.id || !Number.isFinite(Number(snapshot.version))) {
+      throw new Error("AkuSidecar returned an incomplete snapshot result.");
+    }
     topicsState.detail = await api(buildLivingTopicPath(topicsState.selectedId));
     await refreshLivingTopicListProjection();
+    topicsState.snapshotStatus = {
+      kind: "success",
+      message: `Snapshot ${snapshot.version} created.`,
+      snapshotId: snapshot.id,
+    };
   } catch (error) {
-    topicsState.error = error;
+    topicsState.snapshotStatus = {
+      kind: "error",
+      message: `Snapshot could not be created: ${error?.message || "Unknown error"}`,
+      snapshotId: "",
+    };
   } finally {
     topicsState.mutationLoading = false;
     renderLivingTopics();
+    const snapshotId = topicsState.snapshotStatus.snapshotId;
+    if (snapshotId) {
+      requestAnimationFrame(() => document.querySelector(`[data-snapshot-id="${CSS.escape(snapshotId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    }
   }
 }
 
@@ -896,11 +951,18 @@ function renderLivingTopicDetail() {
   panel.classList.toggle("hidden", !detail);
   if (!detail) return;
   const topic = detail.topic;
+  renderLivingTopicDetailTabs();
   $("#living-topic-detail-heading").textContent = topic.name;
   $("#living-topic-rename-name").value = topic.name;
   $("#living-topic-rename-form").querySelector("button").disabled = topicsState.mutationLoading;
   $("#living-topic-member-count").textContent = `${detail.members.length} / 20`;
-  $("#living-topic-snapshot-button").disabled = topicsState.mutationLoading;
+  const snapshotButton = $("#living-topic-snapshot-button");
+  snapshotButton.disabled = topicsState.mutationLoading;
+  snapshotButton.textContent = topicsState.snapshotStatus.kind === "working" ? "Creating…" : "Create snapshot";
+  snapshotButton.setAttribute("aria-busy", topicsState.snapshotStatus.kind === "working" ? "true" : "false");
+  const snapshotStatus = $("#living-topic-snapshot-status");
+  snapshotStatus.textContent = topicsState.snapshotStatus.message;
+  snapshotStatus.dataset.kind = topicsState.snapshotStatus.kind;
 
   const members = $("#living-topic-members");
   if (!detail.members.length) {
@@ -929,6 +991,48 @@ function renderLivingTopicDetail() {
     candidates.replaceChildren(...available.map((item) => buildLivingTopicEvidenceCard(item, "Add", () => addLivingTopicMember(item.id), detail.members.length >= 20)));
   }
   renderLivingTopicSnapshots(detail);
+}
+
+function setLivingTopicDetailTab(tab, focus = false) {
+  const topicsState = state.livingTopics;
+  topicsState.activeTab = normalizeLivingTopicTab(tab);
+  renderLivingTopicDetailTabs();
+  if (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE && !topicsState.candidatesLoaded && !topicsState.candidatesLoading) {
+    void loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
+  }
+  if (focus) {
+    (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE ? $("#living-topic-evidence-tab") : $("#living-topic-snapshot-tab"))?.focus();
+  }
+}
+
+function renderLivingTopicDetailTabs() {
+  const activeTab = normalizeLivingTopicTab(state.livingTopics.activeTab);
+  state.livingTopics.activeTab = activeTab;
+  const evidence = activeTab === LIVING_TOPIC_TAB_EVIDENCE;
+  const tabs = [
+    [$("#living-topic-snapshot-tab"), !evidence],
+    [$("#living-topic-evidence-tab"), evidence],
+  ];
+  for (const [tab, selected] of tabs) {
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  const panels = [
+    [$("#living-topic-snapshot-panel"), !evidence],
+    [$("#living-topic-evidence-panel"), evidence],
+  ];
+  for (const [panel, selected] of panels) {
+    panel.classList.toggle("hidden", !selected);
+    panel.hidden = !selected;
+  }
+}
+
+function handleLivingTopicDetailTabKeydown(event) {
+  if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const evidence = event.key === "End"
+    || ((event.key === "ArrowRight" || event.key === "ArrowLeft") && event.currentTarget.id === "living-topic-snapshot-tab");
+  setLivingTopicDetailTab(evidence ? LIVING_TOPIC_TAB_EVIDENCE : LIVING_TOPIC_TAB_SNAPSHOT, true);
 }
 
 function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = false) {
@@ -964,6 +1068,7 @@ function renderLivingTopicSnapshots(detail) {
   container.replaceChildren(...detail.snapshots.map((snapshot) => {
     const card = document.createElement("article");
     card.className = "living-topic-snapshot-card";
+    card.dataset.snapshotId = snapshot.id;
     const header = document.createElement("header");
     const label = document.createElement("strong");
     label.textContent = `Snapshot ${snapshot.version} · ${livingTopicStatusLabel(snapshot.status)}`;

@@ -1,5 +1,11 @@
 export const LIVING_TOPIC_MAX_NAME = 120;
 export const LIVING_TOPIC_MAX_MEMBERS = 20;
+export const LIVING_TOPIC_TAB_SNAPSHOT = "snapshot";
+export const LIVING_TOPIC_TAB_EVIDENCE = "evidence";
+
+export function normalizeLivingTopicTab(value) {
+  return value === LIVING_TOPIC_TAB_EVIDENCE ? LIVING_TOPIC_TAB_EVIDENCE : LIVING_TOPIC_TAB_SNAPSHOT;
+}
 
 export function normalizeLivingTopicName(value) {
   return Array.from(String(value ?? "").trim()).slice(0, LIVING_TOPIC_MAX_NAME).join("");

@@ -687,42 +687,52 @@
                 <h3 id="living-topic-detail-heading" tabindex="-1">Choose a topic</h3>
               </div>
             </header>
-            <form id="living-topic-rename-form" class="living-topic-rename-form">
-              <label for="living-topic-rename-name">Topic name</label>
-              <input id="living-topic-rename-name" maxlength="120" required autocomplete="off" />
-              <button class="secondary-button" type="submit">Rename</button>
-            </form>
+            <div id="living-topic-detail-tabs" class="living-topic-detail-tabs" role="tablist" aria-label="Selected topic views">
+              <button id="living-topic-snapshot-tab" class="living-topic-detail-tab" type="button" role="tab" aria-selected="true" aria-controls="living-topic-snapshot-panel">Snapshot</button>
+              <button id="living-topic-evidence-tab" class="living-topic-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="living-topic-evidence-panel" tabindex="-1">Manage evidence</button>
+            </div>
 
-            <section class="living-topic-evidence-section" aria-labelledby="living-topic-evidence-heading">
-              <div class="living-topic-section-heading">
-                <div>
-                  <p class="step-label">EXPLICIT MEMBERSHIP</p>
-                  <h4 id="living-topic-evidence-heading">Topic evidence</h4>
-                </div>
-                <span id="living-topic-member-count" class="library-storage-read-only">0 / 20</span>
-              </div>
-              <div id="living-topic-members" class="living-topic-members" role="list"></div>
-              <form id="living-topic-evidence-search-form" class="living-topic-evidence-search-form" role="search">
-                <label for="living-topic-evidence-query">Find Library evidence</label>
-                <div>
-                  <input id="living-topic-evidence-query" type="search" maxlength="200" autocomplete="off" placeholder="Search local Memory" />
-                  <button class="secondary-button" type="submit">Search</button>
-                </div>
-              </form>
-              <div id="living-topic-candidates" class="living-topic-candidates" role="list" aria-label="Available Library evidence"></div>
-            </section>
-
-            <section class="living-topic-snapshot-section" aria-labelledby="living-topic-snapshot-heading">
+            <section id="living-topic-snapshot-panel" class="living-topic-detail-tabpanel living-topic-snapshot-section" role="tabpanel" aria-labelledby="living-topic-snapshot-tab">
               <div class="living-topic-section-heading">
                 <div>
                   <p class="step-label">ON DEMAND ONLY</p>
                   <h4 id="living-topic-snapshot-heading">Understanding snapshots</h4>
                 </div>
-                <button id="living-topic-snapshot-button" class="primary-button" type="button">Create snapshot</button>
+                <form id="living-topic-snapshot-form">
+                  <button id="living-topic-snapshot-button" class="primary-button" type="submit">Create snapshot</button>
+                </form>
               </div>
               <p class="review-guidance">Uses only current topic evidence. Repeating with unchanged evidence records a truthful no-change snapshot without calling the provider.</p>
+              <p id="living-topic-snapshot-status" class="living-topic-snapshot-status" role="status" aria-live="polite"></p>
               <div id="living-topic-snapshots" class="living-topic-snapshots"></div>
             </section>
+
+            <div id="living-topic-evidence-panel" class="living-topic-detail-tabpanel hidden" role="tabpanel" aria-labelledby="living-topic-evidence-tab" hidden>
+              <form id="living-topic-rename-form" class="living-topic-rename-form">
+                <label for="living-topic-rename-name">Topic name</label>
+                <input id="living-topic-rename-name" maxlength="120" required autocomplete="off" />
+                <button class="secondary-button" type="submit">Rename</button>
+              </form>
+
+              <section class="living-topic-evidence-section" aria-labelledby="living-topic-evidence-heading">
+                <div class="living-topic-section-heading">
+                  <div>
+                    <p class="step-label">EXPLICIT MEMBERSHIP</p>
+                    <h4 id="living-topic-evidence-heading">Topic evidence</h4>
+                  </div>
+                  <span id="living-topic-member-count" class="library-storage-read-only">0 / 20</span>
+                </div>
+                <div id="living-topic-members" class="living-topic-members" role="list"></div>
+                <form id="living-topic-evidence-search-form" class="living-topic-evidence-search-form" role="search">
+                  <label for="living-topic-evidence-query">Find Library evidence</label>
+                  <div>
+                    <input id="living-topic-evidence-query" type="search" maxlength="200" autocomplete="off" placeholder="Search local Memory" />
+                    <button class="secondary-button" type="submit">Search</button>
+                  </div>
+                </form>
+                <div id="living-topic-candidates" class="living-topic-candidates" role="list" aria-label="Available Library evidence"></div>
+              </section>
+            </div>
           </article>
         </div>
       </section>

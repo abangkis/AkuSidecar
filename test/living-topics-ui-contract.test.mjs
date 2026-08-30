@@ -12,14 +12,23 @@ test("Living Topics thin slice is visibly manual and on demand", () => {
   assert.match(index, /Nothing is monitored in the background/);
   assert.match(index, /id="living-topic-create-form"/);
   assert.match(index, /id="living-topic-evidence-search-form"/);
-  assert.match(index, /id="living-topic-snapshot-button"[^>]*>Create snapshot<\/button>/);
+  assert.match(index, /id="living-topic-detail-tabs"[^>]*role="tablist"/);
+  assert.match(index, /id="living-topic-snapshot-tab"[^>]*aria-selected="true"[^>]*>Snapshot<\/button>/);
+  assert.match(index, /id="living-topic-evidence-tab"[^>]*>Manage evidence<\/button>/);
+  assert.ok(index.indexOf('id="living-topic-snapshot-panel"') < index.indexOf('id="living-topic-evidence-panel"'));
+  assert.match(index, /id="living-topic-snapshot-form"/);
+  assert.match(index, /id="living-topic-snapshot-button"[^>]*type="submit"[^>]*>Create snapshot<\/button>/);
+  assert.match(index, /id="living-topic-snapshot-status"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(index, /Repeating with unchanged evidence records a truthful no-change snapshot without calling the provider/);
 });
 
 test("Living Topics UI exposes bounded membership and explicit mutations", () => {
   assert.match(app, /async function addLivingTopicMember\(memoryItemId\)/);
   assert.match(app, /async function removeLivingTopicMember\(memoryItemId\)/);
-  assert.match(app, /async function createLivingTopicSnapshot\(\)/);
+  assert.match(app, /async function createLivingTopicSnapshot\(event\)/);
+  assert.match(app, /Snapshot could not be created:/);
+  assert.match(app, /Snapshot \$\{snapshot\.version\} created\./);
+  assert.match(app, /card\.dataset\.snapshotId = snapshot\.id/);
   assert.match(app, /detail\.members\.length >= 20/);
   assert.match(styles, /\.living-topics-layout \{[^}]*grid-template-columns/);
   assert.match(styles, /\.living-topic-snapshot-card \{/);
