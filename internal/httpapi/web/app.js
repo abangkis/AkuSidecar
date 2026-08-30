@@ -42,7 +42,9 @@ import {
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
 import {
   backToTopBoundaryBottom,
+  buildContentContextFeedbackUndoPath,
   buildTimelineContentContextPath,
+  buildTimelineContentContextFeedbackPath,
   contentContextDrawerMode,
   contentContextRailPlacement,
   contentContextTabFits,
@@ -162,6 +164,7 @@ const state = {
   timelineItems: [],
   timelineReadLaterInFlight: new Set(),
   timelineContentContext: new Map(),
+  timelineContentContextFeedbackInFlight: new Set(),
   timelineContentContextActiveID: "",
   timelineContentContextDrawerOpen: false,
   timelineContentContextPositionFrame: null,
@@ -6634,7 +6637,39 @@ function syncTimelineContentContextTabs() {
   }
 }
 
-function renderTimelineContentContextMatch(match) {
+function timelineContentContextFeedbackKey(timelineID, memoryItemID) {
+  return `${String(timelineID || "")}\n${String(memoryItemID || "")}`;
+}
+
+async function submitTimelineContentContextFeedback(timelineID, match, verdict) {
+  const memoryItemID = String(match?.item?.id || "").trim();
+  const current = state.timelineContentContext.get(timelineID);
+  if (!timelineID || !memoryItemID || !current) return;
+  const key = timelineContentContextFeedbackKey(timelineID, memoryItemID);
+  if (state.timelineContentContextFeedbackInFlight.has(key)) return;
+  state.timelineContentContextFeedbackInFlight.add(key);
+  current.feedbackDirty = true;
+  renderTimelineContentContextDrawer();
+  try {
+    const payload = verdict === "clear"
+      ? await api(buildContentContextFeedbackUndoPath(match?.feedback?.id), { method: "POST" })
+      : await api(buildTimelineContentContextFeedbackPath(timelineID), {
+        method: "POST",
+        body: { memoryItemId: memoryItemID, verdict },
+      });
+    const feedback = payload?.feedback;
+    match.feedback = feedback?.verdict === "clear"
+      ? null
+      : { id: String(feedback?.id || ""), verdict: String(feedback?.verdict || "") };
+  } catch (error) {
+    showError(error);
+  } finally {
+    state.timelineContentContextFeedbackInFlight.delete(key);
+    if (state.timelineContentContextActiveID === timelineID) renderTimelineContentContextDrawer();
+  }
+}
+
+function renderTimelineContentContextMatch(match, timelineID) {
   const item = match?.item || {};
   const article = document.createElement("article");
   article.className = "timeline-content-context-match";
@@ -6657,7 +6692,38 @@ function renderTimelineContentContextMatch(match) {
   const reason = document.createElement("span");
   reason.className = "timeline-content-context-reason";
   reason.textContent = String(match?.matchReason || "Matches a local lexical memory field");
-  article.append(title, meta, reason);
+  const feedback = document.createElement("div");
+  feedback.className = "timeline-content-context-feedback";
+  const verdict = String(match?.feedback?.verdict || "");
+  article.classList.toggle("is-feedback-not-relevant", verdict === "not_relevant");
+  article.classList.toggle("is-feedback-relevant", verdict === "relevant");
+  const key = timelineContentContextFeedbackKey(timelineID, item.id);
+  const busy = state.timelineContentContextFeedbackInFlight.has(key);
+  if (verdict === "relevant" || verdict === "not_relevant") {
+    const status = document.createElement("span");
+    status.className = "timeline-content-context-feedback-status";
+    status.setAttribute("role", "status");
+    status.textContent = verdict === "relevant" ? "Marked relevant" : "Marked not relevant";
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.className = "text-button timeline-content-context-feedback-undo";
+    undo.textContent = busy ? "Undoing…" : "Undo";
+    undo.disabled = busy || !match?.feedback?.id;
+    undo.addEventListener("click", () => void submitTimelineContentContextFeedback(timelineID, match, "clear"));
+    feedback.append(status, undo);
+  } else {
+    for (const [label, value] of [["Relevant", "relevant"], ["Not relevant", "not_relevant"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "feedback-button timeline-content-context-feedback-button";
+      button.textContent = label;
+      button.disabled = busy;
+      button.setAttribute("aria-label", `Mark this related context as ${label.toLowerCase()}`);
+      button.addEventListener("click", () => void submitTimelineContentContextFeedback(timelineID, match, value));
+      feedback.append(button);
+    }
+  }
+  article.append(title, meta, reason, feedback);
   return article;
 }
 
@@ -6685,7 +6751,7 @@ function renderTimelineContentContextDrawer() {
   heading.textContent = "Related local context";
   const list = document.createElement("div");
   list.className = "timeline-content-context-list";
-  list.append(...matches.map(renderTimelineContentContextMatch));
+  list.append(...matches.map((match) => renderTimelineContentContextMatch(match, state.timelineContentContextActiveID)));
   body.append(heading, list);
 }
 
@@ -6717,6 +6783,8 @@ function revealTimelineContentContextDrawer({ focus = true } = {}) {
 function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = true } = {}) {
   const drawer = $("#timeline-content-context-drawer");
   const activeID = state.timelineContentContextActiveID;
+  const activeContext = state.timelineContentContext.get(activeID);
+  if (activeContext?.feedbackDirty) state.timelineContentContext.delete(activeID);
   state.timelineContentContextDrawerOpen = false;
   if (clearActive) state.timelineContentContextActiveID = "";
   syncTimelineContentContextTabs();
@@ -6754,16 +6822,21 @@ function timelineContentContextFocusIsInsideDrawer() {
 
 function openTimelineContentContext(entry, { focus = true } = {}) {
   if (!entry?.id || state.currentView !== "timeline") return;
+  const previousID = state.timelineContentContextActiveID;
+  if (previousID && previousID !== entry.id && state.timelineContentContext.get(previousID)?.feedbackDirty) {
+    state.timelineContentContext.delete(previousID);
+  }
   state.timelineContentContextActiveID = entry.id;
   const current = state.timelineContentContext.get(entry.id);
   revealTimelineContentContextDrawer({ focus });
   if (current?.status === "success" || current?.status === "loading") return;
-  state.timelineContentContext.set(entry.id, { status: "loading", matches: [] });
+  state.timelineContentContext.set(entry.id, { status: "loading", matches: [], feedbackDirty: false });
   renderTimelineContentContextDrawer();
   void api(buildTimelineContentContextPath(entry.id)).then((payload) => {
     state.timelineContentContext.set(entry.id, {
       status: "success",
       matches: Array.isArray(payload?.matches) ? payload.matches : [],
+      feedbackDirty: false,
     });
     if (state.timelineContentContextActiveID === entry.id) renderTimelineContentContextDrawer();
   }).catch((error) => {
@@ -6771,6 +6844,7 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
       status: "error",
       message: error.message || String(error),
       matches: [],
+      feedbackDirty: false,
     });
     if (state.timelineContentContextActiveID === entry.id) renderTimelineContentContextDrawer();
   });

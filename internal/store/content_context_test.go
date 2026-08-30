@@ -141,3 +141,83 @@ func TestContentContextRequiresFinalVisibleTimelineAndBoundsLimit(t *testing.T) 
 		}
 	}
 }
+
+func TestContentContextFeedbackIsPairwiseAppendOnlyAndUndoable(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID := insertContentContextTimelineFixture(t, state, false)
+	matched, err := state.CreateMemoryRecallStub(ctx, libraryInput("feedback-match", domain.SourceX, "Quantum research notes", "Local context for systems", "2026-08-02T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	negative, err := state.AddContentContextFeedback(ctx, timelineID, domain.ContentContextFeedbackInput{
+		MemoryItemID: matched.ID,
+		Verdict:      domain.ContentContextFeedbackNotRelevant,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if negative.EngineVersion != domain.ContentContextEngineVersion || negative.ResultRank != 1 || negative.MatchReason == "" {
+		t.Fatalf("negative feedback=%+v", negative)
+	}
+	result, err := state.ContentContext(ctx, timelineID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Matches) != 0 {
+		t.Fatalf("negative pair must be suppressed on the next retrieval: %+v", result.Matches)
+	}
+	if _, err := state.AddContentContextFeedback(ctx, timelineID, domain.ContentContextFeedbackInput{
+		MemoryItemID: "memory-not-surfaced",
+		Verdict:      domain.ContentContextFeedbackRelevant,
+	}); err == nil {
+		t.Fatal("feedback for a non-surfaced pair must fail closed")
+	}
+
+	cleared, err := state.UndoContentContextFeedback(ctx, negative.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Verdict != domain.ContentContextFeedbackClear || cleared.SupersedesID != negative.ID {
+		t.Fatalf("clear feedback=%+v", cleared)
+	}
+	result, err = state.ContentContext(ctx, timelineID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Matches) != 1 || result.Matches[0].Item.ID != matched.ID || result.Matches[0].Feedback != nil {
+		t.Fatalf("cleared pair did not return without active feedback: %+v", result.Matches)
+	}
+
+	positive, err := state.AddContentContextFeedback(ctx, timelineID, domain.ContentContextFeedbackInput{
+		MemoryItemID: matched.ID,
+		Verdict:      domain.ContentContextFeedbackRelevant,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = state.ContentContext(ctx, timelineID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Matches) != 1 || result.Matches[0].Feedback == nil || result.Matches[0].Feedback.ID != positive.ID || result.Matches[0].Feedback.Verdict != domain.ContentContextFeedbackRelevant {
+		t.Fatalf("positive feedback projection=%+v", result.Matches)
+	}
+	if _, err := state.UndoContentContextFeedback(ctx, negative.ID); !errors.Is(err, ErrContentContextFeedbackNotCurrent) {
+		t.Fatalf("stale feedback undo error=%v", err)
+	}
+	var rows int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_context_feedback_events`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 3 {
+		t.Fatalf("append-only feedback rows=%d want=3", rows)
+	}
+	if err := state.ResetLearning(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_context_feedback_events`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("reset learning feedback rows=%d err=%v", rows, err)
+	}
+}

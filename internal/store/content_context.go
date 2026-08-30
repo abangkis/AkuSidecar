@@ -19,6 +19,8 @@ const (
 
 var ErrContentContextNotEligible = errors.New("Timeline item is not a final visible item")
 
+var ErrContentContextFeedbackNotCurrent = errors.New("only the current content context feedback decision can be cleared")
+
 var contentContextEngine = contentcontext.NewEngine()
 
 // ContentContext reads one final Timeline item and searches only the local
@@ -82,7 +84,189 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 		}
 		candidates = append(candidates, candidate)
 	}
+	feedback, err := s.latestContentContextFeedbackStates(ctx, contentContextKey(timeline), candidates)
+	if err != nil {
+		return domain.ContentContextResult{}, err
+	}
+	for index := range candidates {
+		if state, ok := feedback[candidates[index].Item.ID]; ok {
+			candidates[index].Feedback = state.Verdict
+			candidates[index].FeedbackID = state.ID
+		}
+	}
 	return domain.ContentContextResult{Matches: contentContextEngine.Match(query, candidates, limit)}, nil
+}
+
+// AddContentContextFeedback records an explicit relationship decision only for
+// a match the current engine can reproduce. The server derives rank, reason,
+// context identity, and engine version; clients cannot author learning data.
+func (s *Store) AddContentContextFeedback(ctx context.Context, timelineID string, input domain.ContentContextFeedbackInput) (domain.ContentContextFeedbackEvent, error) {
+	if err := input.Validate(); err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	timelineID = strings.TrimSpace(timelineID)
+	input.MemoryItemID = strings.TrimSpace(input.MemoryItemID)
+	result, err := s.ContentContext(ctx, timelineID, contentContextMaxLimit)
+	if err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	resultRank := 0
+	matchReason := ""
+	for index, match := range result.Matches {
+		if match.Item.ID == input.MemoryItemID {
+			resultRank = index + 1
+			matchReason = match.MatchReason
+			break
+		}
+	}
+	if resultRank == 0 {
+		return domain.ContentContextFeedbackEvent{}, errors.New("feedback requires a currently surfaced related context match")
+	}
+	timeline, err := s.TimelineItem(ctx, timelineID)
+	if err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	value := domain.ContentContextFeedbackEvent{
+		ID:            domain.NewID("content_context_feedback"),
+		TimelineID:    timeline.ID,
+		ContextKey:    contentContextKey(timeline),
+		MemoryItemID:  input.MemoryItemID,
+		Verdict:       input.Verdict,
+		EngineVersion: domain.ContentContextEngineVersion,
+		ResultRank:    resultRank,
+		MatchReason:   matchReason,
+		CreatedAt:     domain.Now(),
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	defer tx.Rollback()
+	var latest domain.ContentContextFeedbackEvent
+	err = tx.QueryRowContext(ctx, `
+		SELECT id,timeline_id,context_key,memory_item_id,verdict,engine_version,result_rank,match_reason,COALESCE(supersedes_id,''),created_at
+		FROM content_context_feedback_events
+		WHERE context_key=? AND memory_item_id=?
+		ORDER BY rowid DESC LIMIT 1`, value.ContextKey, value.MemoryItemID).
+		Scan(&latest.ID, &latest.TimelineID, &latest.ContextKey, &latest.MemoryItemID, &latest.Verdict,
+			&latest.EngineVersion, &latest.ResultRank, &latest.MatchReason, &latest.SupersedesID, &latest.CreatedAt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	if err == nil && latest.Verdict == value.Verdict {
+		if err := tx.Commit(); err != nil {
+			return domain.ContentContextFeedbackEvent{}, err
+		}
+		return latest, nil
+	}
+	if err == nil {
+		value.SupersedesID = latest.ID
+	}
+	var supersedes any
+	if value.SupersedesID != "" {
+		supersedes = value.SupersedesID
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO content_context_feedback_events(
+		  id,timeline_id,context_key,memory_item_id,verdict,engine_version,result_rank,match_reason,supersedes_id,created_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?)`, value.ID, value.TimelineID, value.ContextKey, value.MemoryItemID,
+		value.Verdict, value.EngineVersion, value.ResultRank, value.MatchReason, supersedes, value.CreatedAt); err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	return value, nil
+}
+
+func (s *Store) UndoContentContextFeedback(ctx context.Context, id string) (domain.ContentContextFeedbackEvent, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	defer tx.Rollback()
+	var prior domain.ContentContextFeedbackEvent
+	err = tx.QueryRowContext(ctx, `
+		SELECT id,timeline_id,context_key,memory_item_id,verdict,engine_version,result_rank,match_reason,COALESCE(supersedes_id,''),created_at
+		FROM content_context_feedback_events WHERE id=? AND verdict<>'clear'`, strings.TrimSpace(id)).
+		Scan(&prior.ID, &prior.TimelineID, &prior.ContextKey, &prior.MemoryItemID, &prior.Verdict,
+			&prior.EngineVersion, &prior.ResultRank, &prior.MatchReason, &prior.SupersedesID, &prior.CreatedAt)
+	if err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	var latestID string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id FROM content_context_feedback_events
+		WHERE context_key=? AND memory_item_id=?
+		ORDER BY rowid DESC LIMIT 1`, prior.ContextKey, prior.MemoryItemID).Scan(&latestID); err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	if latestID != prior.ID {
+		return domain.ContentContextFeedbackEvent{}, ErrContentContextFeedbackNotCurrent
+	}
+	value := prior
+	value.ID = domain.NewID("content_context_feedback")
+	value.Verdict = domain.ContentContextFeedbackClear
+	value.SupersedesID = prior.ID
+	value.CreatedAt = domain.Now()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO content_context_feedback_events(
+		  id,timeline_id,context_key,memory_item_id,verdict,engine_version,result_rank,match_reason,supersedes_id,created_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?)`, value.ID, value.TimelineID, value.ContextKey, value.MemoryItemID,
+		value.Verdict, value.EngineVersion, value.ResultRank, value.MatchReason, value.SupersedesID, value.CreatedAt); err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ContentContextFeedbackEvent{}, err
+	}
+	return value, nil
+}
+
+func (s *Store) latestContentContextFeedbackStates(ctx context.Context, contextKey string, candidates []contentcontext.Candidate) (map[string]domain.ContentContextFeedbackState, error) {
+	result := make(map[string]domain.ContentContextFeedbackState)
+	if contextKey == "" || len(candidates) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, 0, len(candidates))
+	args := make([]any, 0, len(candidates)+1)
+	args = append(args, contextKey)
+	for _, candidate := range candidates {
+		placeholders = append(placeholders, "?")
+		args = append(args, candidate.Item.ID)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT event.memory_item_id,event.id,event.verdict
+		FROM content_context_feedback_events event
+		JOIN (
+		  SELECT memory_item_id,MAX(rowid) AS latest_rowid
+		  FROM content_context_feedback_events
+		  WHERE context_key=? AND memory_item_id IN (`+strings.Join(placeholders, ",")+`)
+		  GROUP BY memory_item_id
+		) latest ON latest.latest_rowid=event.rowid`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read content context feedback state: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var memoryID string
+		var state domain.ContentContextFeedbackState
+		if err := rows.Scan(&memoryID, &state.ID, &state.Verdict); err != nil {
+			return nil, err
+		}
+		if state.Verdict.ValidDecision() {
+			result[memoryID] = state
+		}
+	}
+	return result, rows.Err()
+}
+
+func contentContextKey(timeline domain.TimelineItem) string {
+	source := strings.TrimSpace(string(timeline.Source))
+	evidenceKey := strings.TrimSpace(timeline.EvidenceKey)
+	if evidenceKey == "" {
+		evidenceKey = strings.TrimSpace(timeline.ID)
+	}
+	return source + "|" + evidenceKey
 }
 
 // searchMemoryContextCandidates uses the existing FTS5 index with a bounded

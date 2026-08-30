@@ -637,6 +637,33 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			matches = append(matches, publicContentContextMatch(match))
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/content-context-feedback"):
+		id := path.Base(strings.TrimSuffix(p, "/content-context-feedback"))
+		var body domain.ContentContextFeedbackInput
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		feedback, err := s.engine.AddContentContextFeedback(ctx, id, body)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("Timeline item or related context")
+		}
+		if errors.Is(err, store.ErrContentContextNotEligible) {
+			return apiError{Status: http.StatusConflict, Code: "timeline_content_context_not_eligible", Message: "Only a final visible Timeline item can receive related context feedback."}
+		}
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/content-context-feedback/") && strings.HasSuffix(p, "/undo"):
+		id := path.Base(strings.TrimSuffix(p, "/undo"))
+		feedback, err := s.engine.UndoContentContextFeedback(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("content context feedback")
+		}
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
 	case r.Method == http.MethodGet && p == "/api/library/items":
 		query, err := parseLibraryQuery(r.URL.Query())
 		if err != nil {

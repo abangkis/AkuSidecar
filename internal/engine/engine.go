@@ -947,6 +947,14 @@ func (e *Engine) Timeline(ctx context.Context, limit, offset int) ([]domain.Time
 func (e *Engine) ContentContext(ctx context.Context, timelineID string, limit int) (domain.ContentContextResult, error) {
 	return e.store.ContentContext(ctx, timelineID, limit)
 }
+
+func (e *Engine) AddContentContextFeedback(ctx context.Context, timelineID string, input domain.ContentContextFeedbackInput) (domain.ContentContextFeedbackEvent, error) {
+	return e.store.AddContentContextFeedback(ctx, timelineID, input)
+}
+
+func (e *Engine) UndoContentContextFeedback(ctx context.Context, id string) (domain.ContentContextFeedbackEvent, error) {
+	return e.store.UndoContentContextFeedback(ctx, id)
+}
 func (e *Engine) Library(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
 	return e.store.ListMemoryLibrary(ctx, query)
 }

@@ -30,6 +30,12 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "Searching local Personal Memory",
     "No related local context found.",
     "timeline-content-context-reason",
+    "timeline-content-context-feedback",
+    "submitTimelineContentContextFeedback",
+    "buildTimelineContentContextFeedbackPath",
+    "buildContentContextFeedbackUndoPath",
+    "Marked not relevant",
+    "Undo",
     "buildTimelineContentContextPath(entry.id)",
   ]) assert.match(app, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `app missing ${marker}`);
   assert.match(state, /CONTENT_CONTEXT_DEFAULT_LIMIT = 3/);
@@ -52,6 +58,8 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /tab\.setAttribute\("aria-controls", "timeline-content-context-drawer"\)/);
   assert.doesNotMatch(index, /Find related context/);
   assert.match(styles, /\.timeline-content-context/);
+  assert.match(styles, /\.timeline-content-context-match\.is-feedback-not-relevant/);
+  assert.match(styles, /\.timeline-content-context-feedback/);
   assert.match(styles, /\.timeline-content-context-tab/);
   assert.match(styles, /\.timeline-content-context-anchor \{[^}]*position: relative/);
   assert.match(styles, /\.timeline-content-context-tab \{[^}]*border-left: 0;[^}]*border-radius: 0 11px 11px 0;[^}]*writing-mode: vertical-rl/);
@@ -79,4 +87,6 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?closeTimelineContentContextDrawer\(\{[\s\S]*?clearActive: true/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?revealTimelineContentContextDrawer\(/);
   assert.doesNotMatch(app, /api\([^)]*content-context[^)]*,\s*\{\s*method:\s*["']POST/i);
+  assert.match(app, /body:\s*\{ memoryItemId: memoryItemID, verdict \}/);
+  assert.match(app, /activeContext\?\.feedbackDirty/);
 });

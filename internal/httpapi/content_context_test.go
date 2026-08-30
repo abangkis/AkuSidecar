@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -123,5 +124,36 @@ func TestContentContextHTTPReturnsBoundedPublicMatchReasonAndProjection(t *testi
 		if _, exists := payload.Matches[0].Item[forbidden]; exists {
 			t.Fatalf("context item exposed private field %q: %s", forbidden, response.Body.String())
 		}
+	}
+
+	feedbackRequest := httptest.NewRequest(http.MethodPost, "/api/timeline/timeline-http-content-context/content-context-feedback", strings.NewReader(`{"memoryItemId":"`+memory.ID+`","verdict":"not_relevant"}`))
+	feedbackRequest.Header.Set("Content-Type", "application/json")
+	feedbackResponse := httptest.NewRecorder()
+	server.api().ServeHTTP(feedbackResponse, feedbackRequest)
+	if feedbackResponse.Code != http.StatusCreated {
+		t.Fatalf("feedback status=%d body=%s", feedbackResponse.Code, feedbackResponse.Body.String())
+	}
+	var feedbackPayload struct {
+		Feedback domain.ContentContextFeedbackEvent `json:"feedback"`
+	}
+	if err := json.NewDecoder(feedbackResponse.Body).Decode(&feedbackPayload); err != nil {
+		t.Fatal(err)
+	}
+	if feedbackPayload.Feedback.ID == "" || feedbackPayload.Feedback.Verdict != domain.ContentContextFeedbackNotRelevant || feedbackPayload.Feedback.ResultRank != 1 {
+		t.Fatalf("feedback=%+v", feedbackPayload.Feedback)
+	}
+
+	suppressedRequest := httptest.NewRequest(http.MethodGet, "/api/timeline/timeline-http-content-context/content-context?limit=5", nil)
+	suppressedResponse := httptest.NewRecorder()
+	server.api().ServeHTTP(suppressedResponse, suppressedRequest)
+	if suppressedResponse.Code != http.StatusOK || !strings.Contains(suppressedResponse.Body.String(), `"matches":[]`) {
+		t.Fatalf("suppressed status=%d body=%s", suppressedResponse.Code, suppressedResponse.Body.String())
+	}
+
+	undoRequest := httptest.NewRequest(http.MethodPost, "/api/content-context-feedback/"+feedbackPayload.Feedback.ID+"/undo", nil)
+	undoResponse := httptest.NewRecorder()
+	server.api().ServeHTTP(undoResponse, undoRequest)
+	if undoResponse.Code != http.StatusOK || !strings.Contains(undoResponse.Body.String(), `"verdict":"clear"`) {
+		t.Fatalf("undo status=%d body=%s", undoResponse.Code, undoResponse.Body.String())
 	}
 }

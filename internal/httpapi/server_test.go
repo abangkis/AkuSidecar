@@ -609,6 +609,24 @@ func TestEmbeddedContentContextUpScrollModeSettingContract(t *testing.T) {
 	}
 }
 
+func TestEmbeddedContentContextFeedbackContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/app.js":                            {"submitTimelineContentContextFeedback", "Marked not relevant", "feedbackDirty", "buildContentContextFeedbackUndoPath"},
+		"web/styles.css":                        {"is-feedback-not-relevant", "timeline-content-context-feedback-status"},
+		"web/timeline-content-context-state.js": {"buildTimelineContentContextFeedbackPath", "buildContentContextFeedbackUndoPath"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing content context feedback contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js":                     {"timeline-media-carousel.js", "function buildTimelineMediaCarousel", "timelineCarouselIndexes", "Previous post image", "Next post image", "openMedia(imageMedia.map"},

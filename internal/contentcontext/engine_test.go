@@ -152,3 +152,20 @@ func TestMatchIsBoundedAndUsesBM25OnlyAsTieBreaker(t *testing.T) {
 		t.Fatalf("bounded ranking=%+v", result)
 	}
 }
+
+func TestMatchAppliesPairwiseFeedbackWithoutAdmittingWeakCandidates(t *testing.T) {
+	engine := NewEngine()
+	query := Query{Terms: []string{"gyroscope", "stabilization"}, Anchors: []string{"gyroscope", "stabilization"}}
+	result := engine.Match(query, []Candidate{
+		{Item: testMemory("negative", "Gyroscope stabilization", "guide"), BM25: -100, Feedback: domain.ContentContextFeedbackNotRelevant, FeedbackID: "feedback-negative"},
+		{Item: testMemory("positive", "Gyroscope stabilization", "guide"), BM25: 100, Feedback: domain.ContentContextFeedbackRelevant, FeedbackID: "feedback-positive"},
+		{Item: testMemory("neutral", "Gyroscope stabilization", "guide"), BM25: -50},
+		{Item: testMemory("weak", "Unrelated camera", "general notes"), Feedback: domain.ContentContextFeedbackRelevant, FeedbackID: "feedback-weak"},
+	}, 5)
+	if len(result) != 2 || result[0].Item.ID != "positive" || result[1].Item.ID != "neutral" {
+		t.Fatalf("feedback ranking=%+v", result)
+	}
+	if result[0].Feedback == nil || result[0].Feedback.ID != "feedback-positive" || result[0].Feedback.Verdict != domain.ContentContextFeedbackRelevant {
+		t.Fatalf("feedback projection=%+v", result[0].Feedback)
+	}
+}

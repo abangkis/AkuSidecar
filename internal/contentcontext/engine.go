@@ -24,8 +24,10 @@ const (
 // Candidate is a local FTS candidate. BM25 is only a stable ordering hint; it
 // is never sufficient to admit a weak lexical match.
 type Candidate struct {
-	Item domain.MemoryItem
-	BM25 float64
+	Item       domain.MemoryItem
+	BM25       float64
+	Feedback   domain.ContentContextFeedbackVerdict
+	FeedbackID string
 }
 
 // Query is the bounded feature set extracted from one Timeline item. Terms
@@ -153,14 +155,27 @@ func (e Engine) Match(query Query, candidates []Candidate, limit int) []domain.C
 		if candidate.Item.LifecycleState != "" && candidate.Item.LifecycleState != domain.MemoryStateActive {
 			continue
 		}
+		if candidate.Feedback == domain.ContentContextFeedbackNotRelevant {
+			continue
+		}
 		signals := scoreCandidate(queryTerms, queryAnchors, queryPhrases, candidate.Item)
 		if !signals.admitted {
 			continue
+		}
+		if candidate.Feedback == domain.ContentContextFeedbackRelevant {
+			// Explicit pairwise feedback is stronger than lexical tie-breaking,
+			// but it never admits a candidate that the current engine rejects.
+			signals.strength += 1000
+		}
+		var feedback *domain.ContentContextFeedbackState
+		if candidate.Feedback.ValidDecision() && candidate.FeedbackID != "" {
+			feedback = &domain.ContentContextFeedbackState{ID: candidate.FeedbackID, Verdict: candidate.Feedback}
 		}
 		accepted = append(accepted, rankedMatch{
 			match: domain.ContentContextMatch{
 				Item:        candidate.Item,
 				MatchReason: signals.reason,
+				Feedback:    feedback,
 			},
 			strength: signals.strength,
 			bm25:     candidate.BM25,

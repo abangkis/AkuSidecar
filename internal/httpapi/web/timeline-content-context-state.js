@@ -113,3 +113,13 @@ export function buildTimelineContentContextPath(id, limit = CONTENT_CONTEXT_DEFA
   const bounded = Math.min(CONTENT_CONTEXT_MAX_LIMIT, Math.max(CONTENT_CONTEXT_MIN_LIMIT, Number.parseInt(limit, 10) || CONTENT_CONTEXT_DEFAULT_LIMIT));
   return `/api/timeline/${encodeURIComponent(normalized)}/content-context?limit=${bounded}`;
 }
+
+export function buildTimelineContentContextFeedbackPath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/timeline/${encodeURIComponent(normalized)}/content-context-feedback` : "";
+}
+
+export function buildContentContextFeedbackUndoPath(id) {
+  const normalized = String(id ?? "").trim();
+  return normalized ? `/api/content-context-feedback/${encodeURIComponent(normalized)}/undo` : "";
+}

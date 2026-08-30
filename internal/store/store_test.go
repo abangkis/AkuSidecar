@@ -237,7 +237,7 @@ func TestFreshSchemaContainsOnlyNewTables(t *testing.T) {
 		}
 		names = append(names, name)
 	}
-	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_continuity", "content_continuity_occurrences", "content_identity_aliases", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "memory_actions", "memory_content_versions", "memory_identity_aliases", "memory_items", "memory_provenance", "memory_retention_claims", "memory_search_fts", "memory_search_fts_config", "memory_search_fts_content", "memory_search_fts_data", "memory_search_fts_docsize", "memory_search_fts_idx", "memory_tombstone_aliases", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_deltas", "semantic_event_reports", "semantic_events", "semantic_novelty_constraints", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items", "vision_evaluation_jobs"}
+	want := []string{"ai_assessments", "ai_detection_jobs", "ai_feedback_events", "auto_update_batches", "auto_update_state", "bridge_commands", "calibration_profile_snapshots", "calibration_samples", "calibration_sessions", "candidate_assessments", "capture_surface_events", "content_context_feedback_events", "content_continuity", "content_continuity_occurrences", "content_identity_aliases", "event_resolution_diagnostics", "event_resolution_invocations", "feedback_events", "knowledge_events", "media_provenance_assessments", "media_recaptures", "memory_actions", "memory_content_versions", "memory_identity_aliases", "memory_items", "memory_provenance", "memory_retention_claims", "memory_search_fts", "memory_search_fts_config", "memory_search_fts_content", "memory_search_fts_data", "memory_search_fts_docsize", "memory_search_fts_idx", "memory_tombstone_aliases", "meta", "observations", "preference_learning_ledger", "preference_model", "reasoning_invocations", "run_stage_timings", "runs", "selection_corrections", "semantic_event_constraints", "semantic_event_corrections", "semantic_event_deltas", "semantic_event_reports", "semantic_events", "semantic_novelty_constraints", "sessions", "settings", "source_definitions", "timeline_evidence_overrides", "timeline_items", "vision_evaluation_jobs"}
 	if len(names) != len(want) {
 		t.Fatalf("tables=%v", names)
 	}
@@ -584,7 +584,7 @@ func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "14" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "15" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var receiptColumn int
@@ -648,7 +648,7 @@ func TestSchema9MigratesSemanticSignalReceiptColumn(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "14" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "15" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var receiptColumn int

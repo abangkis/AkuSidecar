@@ -16,7 +16,9 @@ import {
   CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
   CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
   contentContextReadingExitLine,
+  buildContentContextFeedbackUndoPath,
   buildTimelineContentContextPath,
+  buildTimelineContentContextFeedbackPath,
 } from "../internal/httpapi/web/timeline-content-context-state.js";
 
 test("Content Context stays explicit, encoded, and bounded", () => {
@@ -31,6 +33,14 @@ test("Content Context stays explicit, encoded, and bounded", () => {
     "/api/timeline/timeline%2Fone/content-context?limit=5",
   );
   assert.equal(buildTimelineContentContextPath(""), "");
+  assert.equal(
+    buildTimelineContentContextFeedbackPath("timeline/one"),
+    "/api/timeline/timeline%2Fone/content-context-feedback",
+  );
+  assert.equal(
+    buildContentContextFeedbackUndoPath("feedback/one"),
+    "/api/content-context-feedback/feedback%2Fone/undo",
+  );
 });
 
 test("Content Context uses an item anchor to choose the responsive drawer mode", () => {

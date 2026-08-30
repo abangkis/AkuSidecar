@@ -24,13 +24,15 @@ func parseContentContextLimit(values url.Values) (int, error) {
 }
 
 type contentContextMatchView struct {
-	Item        libraryItemView `json:"item"`
-	MatchReason string          `json:"matchReason"`
+	Item        libraryItemView                     `json:"item"`
+	MatchReason string                              `json:"matchReason"`
+	Feedback    *domain.ContentContextFeedbackState `json:"feedback,omitempty"`
 }
 
 func publicContentContextMatch(match domain.ContentContextMatch) contentContextMatchView {
 	return contentContextMatchView{
 		Item:        publicLibraryItem(match.Item, false),
 		MatchReason: match.MatchReason,
+		Feedback:    match.Feedback,
 	}
 }

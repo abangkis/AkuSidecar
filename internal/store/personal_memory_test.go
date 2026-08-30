@@ -77,7 +77,7 @@ func TestPersonalMemorySchemaContract(t *testing.T) {
 	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "14" || SchemaVersion != 14 {
+	if version != "15" || SchemaVersion != 15 {
 		t.Fatalf("schema version=%q constant=%d", version, SchemaVersion)
 	}
 	indexes := map[string]bool{}
@@ -136,7 +136,7 @@ func TestSchema11MigratesPersonalMemoryFoundation(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "14" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "15" {
 		t.Fatalf("migrated schema version=%q err=%v", version, err)
 	}
 	var count int

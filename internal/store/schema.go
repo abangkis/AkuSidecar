@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 14
+const SchemaVersion = 15
 
-const schemaVersion = "14"
+const schemaVersion = "15"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -156,6 +156,52 @@ CREATE INDEX memory_retention_claims_active
   ON memory_retention_claims(claim_kind, resolved_at, claimed_at DESC, memory_item_id);
 CREATE INDEX memory_retention_claims_item
   ON memory_retention_claims(memory_item_id, claim_kind, resolved_at);
+`
+
+// contentContextFeedbackSchemaSQL stores append-only, pairwise relevance
+// decisions. It deliberately does not foreign-key Timeline or Memory rows:
+// feedback is learning/audit evidence, while current retrieval still requires
+// both authoritative objects to exist and remain eligible.
+const contentContextFeedbackSchemaSQL = `
+CREATE TABLE IF NOT EXISTS content_context_feedback_events (
+  id TEXT PRIMARY KEY,
+  timeline_id TEXT NOT NULL,
+  context_key TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('relevant','not_relevant','clear')),
+  engine_version TEXT NOT NULL,
+  result_rank INTEGER NOT NULL CHECK (result_rank >= 1 AND result_rank <= 5),
+  match_reason TEXT NOT NULL DEFAULT '',
+  supersedes_id TEXT REFERENCES content_context_feedback_events(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS content_context_feedback_pair_created
+  ON content_context_feedback_events(context_key,memory_item_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS content_context_feedback_timeline_created
+  ON content_context_feedback_events(timeline_id,created_at DESC,id DESC);
+`
+
+// The v14-to-v15 migration intentionally omits IF NOT EXISTS so a conflicting
+// object cannot be accepted while advancing the schema marker.
+const contentContextFeedbackMigrationSQL = `
+CREATE TABLE content_context_feedback_events (
+  id TEXT PRIMARY KEY,
+  timeline_id TEXT NOT NULL,
+  context_key TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('relevant','not_relevant','clear')),
+  engine_version TEXT NOT NULL,
+  result_rank INTEGER NOT NULL CHECK (result_rank >= 1 AND result_rank <= 5),
+  match_reason TEXT NOT NULL DEFAULT '',
+  supersedes_id TEXT REFERENCES content_context_feedback_events(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX content_context_feedback_pair_created
+  ON content_context_feedback_events(context_key,memory_item_id,created_at DESC,id DESC);
+CREATE INDEX content_context_feedback_timeline_created
+  ON content_context_feedback_events(timeline_id,created_at DESC,id DESC);
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory
@@ -809,4 +855,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL
+` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL
