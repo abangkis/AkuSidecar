@@ -40,6 +40,9 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.doesNotMatch(app, /timeline-content-context-panel/);
   assert.doesNotMatch(app, /buildTimelineContentContextAction|timeline-content-context-trigger|Find related context/);
   assert.match(app, /const active = candidates\.find\(\(\{ element \}\) => element\.dataset\.timelineId === state\.timelineContentContextActiveID\);[\s\S]*state\.timelineContentContextActiveID = "";/);
+  assert.match(app, /if \(active\) return active\.element;/);
+  assert.match(app, /return \(candidates\.find\(\(\{ rect \}\) => rect\.top >= 0\) \|\| candidates\[0\]\)\.element;/);
+  assert.doesNotMatch(app, /if \(active\) return active;/);
   assert.match(app, /syncBackToTopPosition\(top\);\r?\n    syncTimelineContentContextTab\(\);/);
   assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTab\(\);/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?scheduleTimelineContentContextPosition\(\)/);

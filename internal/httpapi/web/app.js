@@ -6545,11 +6545,11 @@ function timelineContentContextVisibleAnchor() {
     .filter(({ rect }) => rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight);
   if (state.timelineContentContextActiveID) {
     const active = candidates.find(({ element }) => element.dataset.timelineId === state.timelineContentContextActiveID);
-    if (active) return active;
+    if (active) return active.element;
     state.timelineContentContextActiveID = "";
   }
   if (!candidates.length) return null;
-  return candidates.find(({ rect }) => rect.top >= 0) || candidates[0];
+  return (candidates.find(({ rect }) => rect.top >= 0) || candidates[0]).element;
 }
 
 function hideTimelineContentContextTab({ retract = true } = {}) {
