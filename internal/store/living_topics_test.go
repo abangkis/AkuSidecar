@@ -43,6 +43,9 @@ func TestLivingTopicManualMembershipAndAppendOnlySnapshots(t *testing.T) {
 	if err != nil || noChange.Version != 2 || noChange.PreviousSnapshotID != ready.ID {
 		t.Fatalf("snapshot=%+v err=%v", noChange, err)
 	}
+	if err := state.SaveLivingTopicCandidateDecision(ctx, topic, first, domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: 0.8, Mode: "llm", Reason: "Candidate receipt to scrub"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := state.RemoveMemory(ctx, first.ID); err != nil {
 		t.Fatal(err)
@@ -53,6 +56,10 @@ func TestLivingTopicManualMembershipAndAppendOnlySnapshots(t *testing.T) {
 	}
 	if _, err := state.AddLivingTopicMember(ctx, topic.ID, first.ID); !errors.Is(err, ErrMemoryNotFound) {
 		t.Fatalf("removed member err=%v", err)
+	}
+	var candidateRows int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM living_topic_candidate_evaluations WHERE memory_item_id=?`, first.ID).Scan(&candidateRows); err != nil || candidateRows != 0 {
+		t.Fatalf("removed item retained candidate receipts: count=%d err=%v", candidateRows, err)
 	}
 }
 
@@ -152,5 +159,85 @@ func TestAutomaticLivingTopicMembershipCreatesOnlyRecallEvidence(t *testing.T) {
 	}
 	if detail.Memberships[0].Origin != "automatic" || detail.Memberships[0].MatchMode != "deterministic" {
 		t.Fatalf("membership=%+v", detail.Memberships[0])
+	}
+}
+
+func TestLivingTopicActivationCandidatesSupportAcceptRejectAndUndo(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	item, err := state.CreateMemoryRecallStub(ctx, libraryInput("topic-candidate", domain.SourceX, "Codex usage reset announced", "Tibo shared reset timing", "2026-08-30T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	topic, err := state.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: "Codex Reset", Description: "Track Codex reset announcements", Aliases: []string{"Codex reset"}, IncludeCriteria: "Reset dates and quota announcements", ExcludeCriteria: "Generic Codex coding tips"})
+	if err != nil || topic.CriteriaRevision != 1 || len(topic.Aliases) != 1 {
+		t.Fatalf("topic=%+v err=%v", topic, err)
+	}
+	if err := state.SaveLivingTopicCandidateDecision(ctx, topic, item, domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: 0.86, Mode: "llm", Reason: "Central claim is a Codex reset announcement"}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := state.LivingTopicDetail(ctx, topic.ID)
+	if err != nil || len(detail.Candidates) != 1 || detail.Candidates[0].Status != "suggested" {
+		t.Fatalf("suggestions=%+v err=%v", detail.Candidates, err)
+	}
+	detail, err = state.ReviewLivingTopicCandidate(ctx, topic.ID, item.ID, "accept")
+	if err != nil || len(detail.Members) != 1 || detail.Candidates[0].Status != "accepted" || detail.Memberships[0].MatchMode != "candidate_accept" {
+		t.Fatalf("accepted detail=%+v err=%v", detail, err)
+	}
+	detail, err = state.ReviewLivingTopicCandidate(ctx, topic.ID, item.ID, "undo")
+	if err != nil || len(detail.Members) != 0 || detail.Candidates[0].Status != "suggested" {
+		t.Fatalf("undo detail=%+v err=%v", detail, err)
+	}
+	detail, err = state.ReviewLivingTopicCandidate(ctx, topic.ID, item.ID, "reject")
+	if err != nil || detail.Candidates[0].Status != "rejected" {
+		t.Fatalf("rejected detail=%+v err=%v", detail, err)
+	}
+	updated, changed, err := state.UpdateLivingTopicRoutingCriteria(ctx, topic.ID, domain.LivingTopicCriteriaInput{Name: topic.Name, Description: topic.Description, Aliases: topic.Aliases, IncludeCriteria: topic.IncludeCriteria, ExcludeCriteria: "Exclude all reset rumors without a date"})
+	if err != nil || !changed || updated.CriteriaRevision != 2 || updated.RoutingStatus != "pending" {
+		t.Fatalf("updated=%+v changed=%v err=%v", updated, changed, err)
+	}
+	detail, err = state.LivingTopicDetail(ctx, topic.ID)
+	if err != nil || len(detail.Candidates) != 0 {
+		t.Fatalf("new revision candidates=%+v err=%v", detail.Candidates, err)
+	}
+}
+
+func TestCandidateReviewPreservesIndependentManualMembership(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	item, err := state.CreateMemoryRecallStub(ctx, libraryInput("topic-candidate-manual", domain.SourceX, "Codex reset window", "A confirmed quota reset window", "2026-08-30T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	topic, err := state.CreateLivingTopic(ctx, "Codex Reset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveLivingTopicCandidateDecision(ctx, topic, item, domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: 0.9, Mode: "llm", Reason: "Reset window matches"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddLivingTopicMember(ctx, topic.ID, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.ReviewLivingTopicCandidate(ctx, topic.ID, item.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := state.ReviewLivingTopicCandidate(ctx, topic.ID, item.ID, "reject")
+	if err != nil || len(detail.Members) != 1 || len(detail.Memberships) != 1 || detail.Memberships[0].MatchMode != "manual" {
+		t.Fatalf("manual membership was not preserved: detail=%+v err=%v", detail, err)
+	}
+	if _, err := state.ReviewLivingTopicCandidate(ctx, topic.ID, item.ID, "undo"); err != nil {
+		t.Fatal(err)
+	}
+	examples, err := state.LivingTopicFeedbackExamples(ctx, 3)
+	if err != nil || len(examples) != 0 {
+		t.Fatalf("clear feedback must neutralize the pair: examples=%+v err=%v", examples, err)
+	}
+	if _, err := state.ForgetMemory(ctx, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	var candidateRows int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM living_topic_candidate_evaluations WHERE memory_item_id=?`, item.ID).Scan(&candidateRows); err != nil || candidateRows != 0 {
+		t.Fatalf("forgotten item retained candidate receipts: count=%d err=%v", candidateRows, err)
 	}
 }

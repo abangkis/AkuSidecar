@@ -15,6 +15,9 @@ import (
 const (
 	LivingTopicMaxNameRunes        = 120
 	LivingTopicMaxDescriptionRunes = 1200
+	LivingTopicMaxCriteriaRunes    = 1200
+	LivingTopicMaxAliases          = 12
+	LivingTopicMaxAliasRunes       = 80
 	LivingTopicMaxMembers          = 20
 	LivingTopicMaxHistory          = 20
 )
@@ -23,6 +26,8 @@ var (
 	ErrLivingTopicNotFound    = errors.New("living topic not found")
 	ErrLivingTopicName        = errors.New("living topic name must contain between 1 and 120 characters")
 	ErrLivingTopicDescription = errors.New("living topic description cannot exceed 1200 characters")
+	ErrLivingTopicCriteria    = errors.New("living topic include/exclude criteria cannot exceed 1200 characters")
+	ErrLivingTopicAliases     = errors.New("living topic aliases require at most 12 unique values of 1-80 characters")
 	ErrLivingTopicMemberMax   = errors.New("living topic already contains 20 Memory items")
 )
 
@@ -34,22 +39,59 @@ func normalizeLivingTopicName(value string) (string, error) {
 	return value, nil
 }
 
+func normalizeLivingTopicCriteria(input domain.LivingTopicCriteriaInput) (domain.LivingTopicCriteriaInput, error) {
+	name, err := normalizeLivingTopicName(input.Name)
+	if err != nil {
+		return domain.LivingTopicCriteriaInput{}, err
+	}
+	input.Name = name
+	input.Description = strings.TrimSpace(input.Description)
+	input.IncludeCriteria = strings.TrimSpace(input.IncludeCriteria)
+	input.ExcludeCriteria = strings.TrimSpace(input.ExcludeCriteria)
+	if utf8.RuneCountInString(input.Description) > LivingTopicMaxDescriptionRunes {
+		return domain.LivingTopicCriteriaInput{}, ErrLivingTopicDescription
+	}
+	if utf8.RuneCountInString(input.IncludeCriteria) > LivingTopicMaxCriteriaRunes || utf8.RuneCountInString(input.ExcludeCriteria) > LivingTopicMaxCriteriaRunes {
+		return domain.LivingTopicCriteriaInput{}, ErrLivingTopicCriteria
+	}
+	seen := map[string]bool{}
+	aliases := make([]string, 0, len(input.Aliases))
+	for _, alias := range input.Aliases {
+		alias = strings.TrimSpace(alias)
+		if alias == "" || utf8.RuneCountInString(alias) > LivingTopicMaxAliasRunes {
+			return domain.LivingTopicCriteriaInput{}, ErrLivingTopicAliases
+		}
+		key := strings.ToLower(alias)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		aliases = append(aliases, alias)
+	}
+	if len(aliases) > LivingTopicMaxAliases {
+		return domain.LivingTopicCriteriaInput{}, ErrLivingTopicAliases
+	}
+	input.Aliases = aliases
+	return input, nil
+}
+
 func (s *Store) CreateLivingTopic(ctx context.Context, name string) (domain.LivingTopic, error) {
 	return s.CreateLivingTopicWithCriteria(ctx, name, "")
 }
 
 func (s *Store) CreateLivingTopicWithCriteria(ctx context.Context, name, description string) (domain.LivingTopic, error) {
-	name, err := normalizeLivingTopicName(name)
+	return s.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: name, Description: description})
+}
+
+func (s *Store) CreateLivingTopicWithRoutingCriteria(ctx context.Context, input domain.LivingTopicCriteriaInput) (domain.LivingTopic, error) {
+	input, err := normalizeLivingTopicCriteria(input)
 	if err != nil {
 		return domain.LivingTopic{}, err
 	}
-	description = strings.TrimSpace(description)
-	if utf8.RuneCountInString(description) > LivingTopicMaxDescriptionRunes {
-		return domain.LivingTopic{}, ErrLivingTopicDescription
-	}
+	aliases, _ := json.Marshal(input.Aliases)
 	now := memoryNow(s)
 	id := domain.NewID("topic")
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO living_topics(id,name,description,created_at,updated_at) VALUES(?,?,?,?,?)`, id, name, description, now, now); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO living_topics(id,name,description,aliases_json,include_criteria,exclude_criteria,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`, id, input.Name, input.Description, string(aliases), input.IncludeCriteria, input.ExcludeCriteria, now, now); err != nil {
 		return domain.LivingTopic{}, fmt.Errorf("create living topic: %w", err)
 	}
 	return s.LivingTopic(ctx, id)
@@ -64,42 +106,72 @@ func (s *Store) RenameLivingTopic(ctx context.Context, id, name string) (domain.
 }
 
 func (s *Store) UpdateLivingTopicCriteria(ctx context.Context, id, name, description string) (domain.LivingTopic, error) {
-	name, err := normalizeLivingTopicName(name)
+	current, err := s.LivingTopic(ctx, id)
 	if err != nil {
 		return domain.LivingTopic{}, err
 	}
-	description = strings.TrimSpace(description)
-	if utf8.RuneCountInString(description) > LivingTopicMaxDescriptionRunes {
-		return domain.LivingTopic{}, ErrLivingTopicDescription
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE living_topics SET name=?,description=?,updated_at=? WHERE id=?`, name, description, memoryNow(s), strings.TrimSpace(id))
+	topic, _, err := s.UpdateLivingTopicRoutingCriteria(ctx, id, domain.LivingTopicCriteriaInput{Name: name, Description: description, Aliases: current.Aliases, IncludeCriteria: current.IncludeCriteria, ExcludeCriteria: current.ExcludeCriteria})
+	return topic, err
+}
+
+func (s *Store) UpdateLivingTopicRoutingCriteria(ctx context.Context, id string, input domain.LivingTopicCriteriaInput) (domain.LivingTopic, bool, error) {
+	input, err := normalizeLivingTopicCriteria(input)
 	if err != nil {
-		return domain.LivingTopic{}, fmt.Errorf("rename living topic: %w", err)
+		return domain.LivingTopic{}, false, err
+	}
+	current, err := s.LivingTopic(ctx, id)
+	if err != nil {
+		return domain.LivingTopic{}, false, err
+	}
+	aliases, _ := json.Marshal(input.Aliases)
+	currentAliases, _ := json.Marshal(current.Aliases)
+	changed := current.Name != input.Name || current.Description != input.Description || string(currentAliases) != string(aliases) || current.IncludeCriteria != input.IncludeCriteria || current.ExcludeCriteria != input.ExcludeCriteria
+	if !changed {
+		return current, false, nil
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE living_topics SET name=?,description=?,aliases_json=?,include_criteria=?,exclude_criteria=?,criteria_revision=criteria_revision+1,routing_status='pending',routing_last_error='',updated_at=? WHERE id=?`, input.Name, input.Description, string(aliases), input.IncludeCriteria, input.ExcludeCriteria, memoryNow(s), strings.TrimSpace(id))
+	if err != nil {
+		return domain.LivingTopic{}, false, fmt.Errorf("update living topic criteria: %w", err)
 	}
 	if count, _ := result.RowsAffected(); count == 0 {
-		return domain.LivingTopic{}, ErrLivingTopicNotFound
+		return domain.LivingTopic{}, false, ErrLivingTopicNotFound
 	}
-	return s.LivingTopic(ctx, id)
+	updated, err := s.LivingTopic(ctx, id)
+	return updated, true, err
 }
 
 func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic, error) {
 	var topic domain.LivingTopic
+	var aliases string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT t.id,t.name,t.description,t.understanding_status,t.understanding_input_digest,
+		SELECT t.id,t.name,t.description,t.criteria_revision,t.aliases_json,t.include_criteria,t.exclude_criteria,
+		       t.routing_status,COALESCE(t.routing_checked_at,''),t.routing_last_error,
+		       t.understanding_status,t.understanding_input_digest,
 		       COALESCE(t.understanding_checked_at,''),t.understanding_trigger,t.understanding_last_error,
 		       t.created_at,t.updated_at,
 		       (SELECT COUNT(*) FROM living_topic_memberships m
 		        JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
-		        WHERE m.topic_id=t.id)
+		        WHERE m.topic_id=t.id),
+		       (SELECT COUNT(*) FROM living_topic_candidate_evaluations c
+		        JOIN memory_items i ON i.id=c.memory_item_id AND i.lifecycle_state='active'
+		        WHERE c.topic_id=t.id AND c.criteria_revision=t.criteria_revision AND c.status='suggested')
 		FROM living_topics t WHERE t.id=?`, strings.TrimSpace(id)).Scan(
-		&topic.ID, &topic.Name, &topic.Description, &topic.UnderstandingStatus, &topic.UnderstandingInputDigest,
+		&topic.ID, &topic.Name, &topic.Description, &topic.CriteriaRevision, &aliases, &topic.IncludeCriteria, &topic.ExcludeCriteria,
+		&topic.RoutingStatus, &topic.RoutingCheckedAt, &topic.RoutingLastError,
+		&topic.UnderstandingStatus, &topic.UnderstandingInputDigest,
 		&topic.UnderstandingCheckedAt, &topic.UnderstandingTrigger, &topic.UnderstandingLastError,
-		&topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount)
+		&topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount, &topic.SuggestedCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.LivingTopic{}, ErrLivingTopicNotFound
 	}
 	if err != nil {
 		return domain.LivingTopic{}, fmt.Errorf("read living topic: %w", err)
+	}
+	if err := json.Unmarshal([]byte(aliases), &topic.Aliases); err != nil {
+		return domain.LivingTopic{}, fmt.Errorf("decode living topic aliases: %w", err)
+	}
+	if topic.Aliases == nil {
+		topic.Aliases = []string{}
 	}
 	latest, err := s.LatestPublishedLivingTopicSnapshot(ctx, topic.ID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -259,7 +331,11 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 	if err != nil {
 		return domain.LivingTopicDetail{}, err
 	}
-	return domain.LivingTopicDetail{Topic: topic, Members: members, Memberships: memberships, Snapshots: snapshots}, nil
+	candidates, err := s.LivingTopicCandidates(ctx, id, topic.CriteriaRevision, 20)
+	if err != nil {
+		return domain.LivingTopicDetail{}, err
+	}
+	return domain.LivingTopicDetail{Topic: topic, Members: members, Memberships: memberships, Candidates: candidates, Snapshots: snapshots}, nil
 }
 
 func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.LivingTopicSnapshot) (domain.LivingTopicSnapshot, error) {

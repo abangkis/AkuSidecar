@@ -8,7 +8,15 @@ type LivingTopic struct {
 	ID                       string               `json:"id"`
 	Name                     string               `json:"name"`
 	Description              string               `json:"description"`
+	CriteriaRevision         int                  `json:"criteriaRevision"`
+	Aliases                  []string             `json:"aliases"`
+	IncludeCriteria          string               `json:"includeCriteria"`
+	ExcludeCriteria          string               `json:"excludeCriteria"`
 	MemberCount              int                  `json:"memberCount"`
+	SuggestedCount           int                  `json:"suggestedCount"`
+	RoutingStatus            string               `json:"routingStatus"`
+	RoutingCheckedAt         string               `json:"routingCheckedAt,omitempty"`
+	RoutingLastError         string               `json:"routingLastError,omitempty"`
 	LatestSnapshot           *LivingTopicSnapshot `json:"latestSnapshot,omitempty"`
 	UnderstandingStatus      string               `json:"understandingStatus"`
 	UnderstandingCheckedAt   string               `json:"understandingCheckedAt,omitempty"`
@@ -17,6 +25,14 @@ type LivingTopic struct {
 	UnderstandingInputDigest string               `json:"-"`
 	CreatedAt                string               `json:"createdAt"`
 	UpdatedAt                string               `json:"updatedAt"`
+}
+
+type LivingTopicCriteriaInput struct {
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	Aliases         []string `json:"aliases"`
+	IncludeCriteria string   `json:"includeCriteria"`
+	ExcludeCriteria string   `json:"excludeCriteria"`
 }
 
 // LivingTopicMembership keeps automatic routing explainable without changing
@@ -55,6 +71,29 @@ type LivingTopicRoutingJob struct {
 	ID         string `json:"id"`
 	SessionID  string `json:"sessionId"`
 	TimelineID string `json:"timelineId"`
+}
+
+type LivingTopicActivationJob struct {
+	ID               string `json:"id"`
+	TopicID          string `json:"topicId"`
+	CriteriaRevision int    `json:"criteriaRevision"`
+	Trigger          string `json:"trigger"`
+}
+
+// LivingTopicCandidate is a bounded, local-only suggestion. It does not
+// become topic evidence until the user accepts it.
+type LivingTopicCandidate struct {
+	TopicID          string     `json:"topicId"`
+	MemoryItemID     string     `json:"memoryItemId"`
+	CriteriaRevision int        `json:"criteriaRevision"`
+	Status           string     `json:"status"`
+	MatchMode        string     `json:"matchMode"`
+	Confidence       float64    `json:"confidence"`
+	Reason           string     `json:"reason"`
+	CreatedAt        string     `json:"createdAt"`
+	UpdatedAt        string     `json:"updatedAt"`
+	ReviewedAt       string     `json:"reviewedAt,omitempty"`
+	Item             MemoryItem `json:"item"`
 }
 
 type LivingTopicUnderstandingJob struct {
@@ -98,6 +137,7 @@ type LivingTopicDetail struct {
 	Topic       LivingTopic             `json:"topic"`
 	Members     []MemoryItem            `json:"members"`
 	Memberships []LivingTopicMembership `json:"memberships"`
+	Candidates  []LivingTopicCandidate  `json:"candidates"`
 	Snapshots   []LivingTopicSnapshot   `json:"snapshots"`
 }
 

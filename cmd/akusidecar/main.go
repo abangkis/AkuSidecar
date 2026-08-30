@@ -157,6 +157,9 @@ func main() {
 	if err := runtime.ResumeLivingTopicRouting(context.Background()); err != nil {
 		logger.Printf("Living Topics routing resume degraded safely: %v", err)
 	}
+	if err := runtime.ResumeLivingTopicActivation(context.Background()); err != nil {
+		logger.Printf("Living Topics activation resume degraded safely: %v", err)
+	}
 	if err := runtime.ResumeLivingTopicUnderstanding(context.Background()); err != nil {
 		logger.Printf("Living Topics understanding resume degraded safely: %v", err)
 	}

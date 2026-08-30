@@ -6,10 +6,10 @@ const index = readFileSync(new URL("../internal/httpapi/web/index.html", import.
 const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
 
-test("Living Topics routes final posts and maintains understanding automatically", () => {
+test("Living Topics activates local evidence and maintains understanding automatically", () => {
   assert.match(index, /id="topics-view-button"[^>]*>Living Topics<\/button>/);
-  assert.match(index, /LIVING TOPICS · THIN SLICE/);
-  assert.match(index, /Final, non-duplicate Timeline posts are sorted asynchronously/);
+  assert.match(index, /LIVING TOPICS · FULL STAGE 1/);
+  assert.match(index, /bounded local activation scan proposes older Library evidence for review/);
   assert.match(index, /id="living-topic-create-form"/);
   assert.match(index, /id="living-topic-evidence-search-form"/);
   assert.match(index, /id="living-topic-detail-tabs"[^>]*role="tablist"/);
@@ -22,7 +22,11 @@ test("Living Topics routes final posts and maintains understanding automatically
   assert.match(index, /Updates automatically after topic evidence changes/);
   assert.match(index, /new history version is published only when the understanding changes materially/);
   assert.match(index, /id="living-topic-description"[^>]*maxlength="1200"/);
-  assert.match(index, /Manual add\/remove actions become positive or negative examples/);
+  assert.match(index, /id="living-topic-aliases"[^>]*maxlength="960"/);
+  assert.match(index, /id="living-topic-includes"[^>]*maxlength="1200"/);
+  assert.match(index, /id="living-topic-excludes"[^>]*maxlength="1200"/);
+  assert.match(index, /id="living-topic-activation-button"[^>]*>Scan again<\/button>/);
+  assert.match(index, /id="living-topic-suggestions"/);
 });
 
 test("Living Topics UI exposes bounded membership and automatic understanding state", () => {
@@ -30,6 +34,11 @@ test("Living Topics UI exposes bounded membership and automatic understanding st
   assert.match(app, /async function removeLivingTopicMember\(memoryItemId\)/);
   assert.match(app, /async function createLivingTopicSnapshot\(event\)/);
   assert.match(app, /function scheduleLivingTopicUnderstandingPoll\(topicId, announce = false\)/);
+  assert.match(app, /async function requestLivingTopicActivation\(\)/);
+  assert.match(app, /async function reviewLivingTopicCandidate\(memoryItemId, action\)/);
+  assert.match(app, /function scheduleLivingTopicActivationPoll\(topicId\)/);
+  assert.match(app, /\[\["Accept", "accept"\], \["Reject", "reject"\]\]/);
+  assert.match(app, /undo\.textContent = "Undo"/);
   assert.match(app, /Understanding could not be refreshed:/);
   assert.match(app, /Current understanding is up to date\./);
   assert.match(app, /card\.dataset\.snapshotId = snapshot\.id/);

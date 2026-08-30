@@ -672,13 +672,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusOK, map[string]any{"topics": topics})
 	case r.Method == http.MethodPost && p == "/api/living-topics":
 		var body struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
+			Name            string   `json:"name"`
+			Description     string   `json:"description"`
+			Aliases         []string `json:"aliases"`
+			IncludeCriteria string   `json:"includeCriteria"`
+			ExcludeCriteria string   `json:"excludeCriteria"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			return err
 		}
-		topic, err := s.engine.CreateLivingTopicWithCriteria(ctx, body.Name, body.Description)
+		topic, err := s.engine.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: body.Name, Description: body.Description, Aliases: body.Aliases, IncludeCriteria: body.IncludeCriteria, ExcludeCriteria: body.ExcludeCriteria})
 		if err != nil {
 			return badRequest(err.Error())
 		}
@@ -697,13 +700,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodPatch {
 			var body struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
+				Name            string   `json:"name"`
+				Description     string   `json:"description"`
+				Aliases         []string `json:"aliases"`
+				IncludeCriteria string   `json:"includeCriteria"`
+				ExcludeCriteria string   `json:"excludeCriteria"`
 			}
 			if err := readJSON(r, &body); err != nil {
 				return err
 			}
-			topic, err := s.engine.UpdateLivingTopicCriteria(ctx, parts[0], body.Name, body.Description)
+			topic, err := s.engine.UpdateLivingTopicRoutingCriteria(ctx, parts[0], domain.LivingTopicCriteriaInput{Name: body.Name, Description: body.Description, Aliases: body.Aliases, IncludeCriteria: body.IncludeCriteria, ExcludeCriteria: body.ExcludeCriteria})
 			if errors.Is(err, store.ErrLivingTopicNotFound) {
 				return notFound("living topic")
 			}
@@ -756,6 +762,45 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 				return conflict(err.Error())
 			}
 			return writeJSON(w, http.StatusAccepted, map[string]any{"detail": publicLivingTopicDetail(detail)})
+		}
+		if len(parts) == 2 && parts[0] != "" && parts[1] == "activation" && r.Method == http.MethodPost {
+			if err := requireEmptyBody(r); err != nil {
+				return err
+			}
+			detail, err := s.engine.RequestLivingTopicActivation(ctx, parts[0], "rescan_now")
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if err != nil {
+				return conflict(err.Error())
+			}
+			return writeJSON(w, http.StatusAccepted, map[string]any{"detail": publicLivingTopicDetail(detail)})
+		}
+		if len(parts) == 4 && parts[0] != "" && parts[1] == "candidates" && parts[2] != "" && r.Method == http.MethodPost {
+			if err := requireEmptyBody(r); err != nil {
+				return err
+			}
+			action := parts[3]
+			if action != "accept" && action != "reject" && action != "undo" {
+				return notFound("living topic candidate action")
+			}
+			detail, err := s.engine.ReviewLivingTopicCandidate(ctx, parts[0], parts[2], action)
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if errors.Is(err, store.ErrLivingTopicCandidateNotFound) {
+				return notFound("living topic candidate")
+			}
+			if errors.Is(err, store.ErrMemoryNotFound) {
+				return notFound("library item")
+			}
+			if errors.Is(err, store.ErrLivingTopicMemberMax) || errors.Is(err, store.ErrLivingTopicCandidateReview) {
+				return conflict(err.Error())
+			}
+			if err != nil {
+				return badRequest(err.Error())
+			}
+			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
 		}
 		return notFound("living topic route")
 	case r.Method == http.MethodGet && p == "/api/library/items":

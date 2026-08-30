@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 18
+const SchemaVersion = 19
 
-const schemaVersion = "18"
+const schemaVersion = "19"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -212,6 +212,13 @@ CREATE TABLE IF NOT EXISTS living_topics (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  criteria_revision INTEGER NOT NULL DEFAULT 1 CHECK (criteria_revision >= 1),
+  aliases_json TEXT NOT NULL DEFAULT '[]',
+  include_criteria TEXT NOT NULL DEFAULT '',
+  exclude_criteria TEXT NOT NULL DEFAULT '',
+  routing_status TEXT NOT NULL DEFAULT 'idle' CHECK (routing_status IN ('idle','pending','running','current','failed')),
+  routing_checked_at TEXT,
+  routing_last_error TEXT NOT NULL DEFAULT '',
   understanding_status TEXT NOT NULL DEFAULT 'idle' CHECK (understanding_status IN ('idle','pending','running','current','insufficient_evidence','failed')),
   understanding_input_digest TEXT NOT NULL DEFAULT '',
   understanding_checked_at TEXT,
@@ -242,7 +249,7 @@ CREATE TABLE IF NOT EXISTS living_topic_feedback_events (
   id TEXT PRIMARY KEY,
   topic_id TEXT NOT NULL,
   memory_item_id TEXT NOT NULL,
-  verdict TEXT NOT NULL CHECK (verdict IN ('include','exclude')),
+  verdict TEXT NOT NULL CHECK (verdict IN ('include','exclude','clear')),
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS living_topic_feedback_pair_created
@@ -262,6 +269,41 @@ CREATE TABLE IF NOT EXISTS living_topic_routing_jobs (
 );
 CREATE INDEX IF NOT EXISTS living_topic_routing_queue
   ON living_topic_routing_jobs(status,queued_at,id);
+
+CREATE TABLE IF NOT EXISTS living_topic_activation_jobs (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  criteria_revision INTEGER NOT NULL CHECK (criteria_revision >= 1),
+  status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed')),
+  trigger TEXT NOT NULL DEFAULT '',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  last_error TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(topic_id,criteria_revision)
+);
+CREATE INDEX IF NOT EXISTS living_topic_activation_queue
+  ON living_topic_activation_jobs(status,queued_at,id);
+
+CREATE TABLE IF NOT EXISTS living_topic_candidate_evaluations (
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  criteria_revision INTEGER NOT NULL CHECK (criteria_revision >= 1),
+  status TEXT NOT NULL CHECK (status IN ('suggested','accepted','rejected','not_matched')),
+  engine_version TEXT NOT NULL,
+  match_mode TEXT NOT NULL DEFAULT '',
+  confidence REAL NOT NULL DEFAULT 0 CHECK (confidence >= 0 AND confidence <= 1),
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  PRIMARY KEY(topic_id,memory_item_id,criteria_revision)
+);
+CREATE INDEX IF NOT EXISTS living_topic_candidates_topic_status
+  ON living_topic_candidate_evaluations(topic_id,criteria_revision,status,confidence DESC,updated_at DESC,memory_item_id);
+CREATE INDEX IF NOT EXISTS living_topic_candidates_memory
+  ON living_topic_candidate_evaluations(memory_item_id,topic_id,criteria_revision);
 
 CREATE TABLE IF NOT EXISTS living_topic_snapshots (
   id TEXT PRIMARY KEY,
@@ -403,6 +445,65 @@ UPDATE living_topics SET
   understanding_input_digest=COALESCE((SELECT s.input_digest FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id ORDER BY s.version DESC LIMIT 1),''),
   understanding_checked_at=(SELECT s.created_at FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id ORDER BY s.version DESC LIMIT 1),
   understanding_trigger=CASE WHEN EXISTS (SELECT 1 FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id) THEN 'migration' ELSE '' END;
+`
+
+// The v18-to-v19 migration adds bounded local topic activation and a
+// per-criteria-revision candidate ledger. Feedback is rebuilt transactionally
+// so Undo can append a neutral clear event without rewriting history.
+const livingTopicsActivationMigrationSQL = `
+ALTER TABLE living_topics ADD COLUMN criteria_revision INTEGER NOT NULL DEFAULT 1 CHECK (criteria_revision >= 1);
+ALTER TABLE living_topics ADD COLUMN aliases_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE living_topics ADD COLUMN include_criteria TEXT NOT NULL DEFAULT '';
+ALTER TABLE living_topics ADD COLUMN exclude_criteria TEXT NOT NULL DEFAULT '';
+ALTER TABLE living_topics ADD COLUMN routing_status TEXT NOT NULL DEFAULT 'idle' CHECK (routing_status IN ('idle','pending','running','current','failed'));
+ALTER TABLE living_topics ADD COLUMN routing_checked_at TEXT;
+ALTER TABLE living_topics ADD COLUMN routing_last_error TEXT NOT NULL DEFAULT '';
+DROP INDEX living_topic_feedback_pair_created;
+ALTER TABLE living_topic_feedback_events RENAME TO living_topic_feedback_events_v18;
+CREATE TABLE living_topic_feedback_events (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('include','exclude','clear')),
+  created_at TEXT NOT NULL
+);
+INSERT INTO living_topic_feedback_events(id,topic_id,memory_item_id,verdict,created_at)
+ SELECT id,topic_id,memory_item_id,verdict,created_at FROM living_topic_feedback_events_v18;
+DROP TABLE living_topic_feedback_events_v18;
+CREATE INDEX living_topic_feedback_pair_created ON living_topic_feedback_events(topic_id,memory_item_id,created_at DESC,id DESC);
+CREATE TABLE living_topic_activation_jobs (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  criteria_revision INTEGER NOT NULL CHECK (criteria_revision >= 1),
+  status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed')),
+  trigger TEXT NOT NULL DEFAULT '',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  last_error TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(topic_id,criteria_revision)
+);
+CREATE INDEX living_topic_activation_queue ON living_topic_activation_jobs(status,queued_at,id);
+CREATE TABLE living_topic_candidate_evaluations (
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  criteria_revision INTEGER NOT NULL CHECK (criteria_revision >= 1),
+  status TEXT NOT NULL CHECK (status IN ('suggested','accepted','rejected','not_matched')),
+  engine_version TEXT NOT NULL,
+  match_mode TEXT NOT NULL DEFAULT '',
+  confidence REAL NOT NULL DEFAULT 0 CHECK (confidence >= 0 AND confidence <= 1),
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  PRIMARY KEY(topic_id,memory_item_id,criteria_revision)
+);
+CREATE INDEX living_topic_candidates_topic_status ON living_topic_candidate_evaluations(topic_id,criteria_revision,status,confidence DESC,updated_at DESC,memory_item_id);
+CREATE INDEX living_topic_candidates_memory ON living_topic_candidate_evaluations(memory_item_id,topic_id,criteria_revision);
+INSERT INTO living_topic_activation_jobs(id,topic_id,criteria_revision,status,trigger,queued_at)
+ SELECT 'topic_activation_' || lower(hex(randomblob(16))),id,criteria_revision,'pending','migration',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM living_topics;
+UPDATE living_topics SET routing_status='pending' WHERE EXISTS (SELECT 1 FROM living_topic_activation_jobs j WHERE j.topic_id=living_topics.id);
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory

@@ -566,10 +566,11 @@ h3 { letter-spacing: -0.02em; }
 .living-topic-rename-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 15px 18px; }
 .living-topic-rename-form label { grid-column: 1 / -1; }
 .living-topic-rename-form textarea, .living-topic-rename-form > small { grid-column: 1 / -1; }
+.living-topic-rename-form > input:not(#living-topic-rename-name) { grid-column: 1 / -1; }
 .living-topic-rename-form textarea { resize: vertical; line-height: 1.45; }
 .living-topic-rename-form > small { color: var(--quiet); font-size: 0.68rem; line-height: 1.45; }
-.living-topic-evidence-section, .living-topic-snapshot-section { display: grid; gap: 12px; padding: 17px 18px; }
-.living-topic-evidence-section { border-top: 1px solid var(--line); }
+.living-topic-evidence-section, .living-topic-snapshot-section, .living-topic-suggestions-section { display: grid; gap: 12px; padding: 17px 18px; }
+.living-topic-evidence-section, .living-topic-suggestions-section { border-top: 1px solid var(--line); }
 .living-topic-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .living-topic-members, .living-topic-candidates, .living-topic-snapshots { display: grid; gap: 8px; }
 .living-topic-evidence-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.025); }
@@ -577,6 +578,10 @@ h3 { letter-spacing: -0.02em; }
 .living-topic-evidence-card strong { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 0.78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .living-topic-evidence-card small { overflow: hidden; color: var(--quiet); font-size: 0.65rem; text-overflow: ellipsis; white-space: nowrap; }
 .living-topic-evidence-card .living-topic-routing-meta { color: var(--accent-soft); white-space: normal; }
+.living-topic-suggestion-card { align-items: flex-start; border-color: rgba(183,242,108,0.22); background: rgba(183,242,108,0.035); }
+.living-topic-suggestion-card.reviewed { opacity: 0.68; border-style: dashed; }
+.living-topic-candidate-actions { display: flex !important; grid-auto-flow: column; align-items: center; gap: 6px !important; flex: 0 0 auto; }
+.living-topic-candidate-actions .secondary-button, .living-topic-candidate-actions .text-button { min-height: 32px; padding: 6px 9px; }
 .living-topic-evidence-search-form { display: grid; gap: 7px; padding-top: 3px; }
 .living-topic-evidence-search-form > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .living-topic-snapshot-section > .review-guidance { margin: -3px 0 0; font-size: 0.72rem; line-height: 1.45; }

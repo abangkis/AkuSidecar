@@ -134,9 +134,9 @@ Use only the supplied evidence. Return "insufficient_evidence" when the evidence
 
 Deltas compare the current understanding with the previous snapshot: new, updated, contradicted, or resolved. Emit a delta only for a material semantic change. New evidence that merely repeats or corroborates an existing claim is not a delta. Do not emit a delta solely because wording or citations changed. When there is no previous snapshot, return an empty deltas array because the result is the baseline understanding.
 
-Topic name: %s
+Topic criteria: %s
 Previous snapshot: %s
-Current evidence: %s`, mustJSON(topic.Name), mustJSON(previousProjection), mustJSON(refs))
+Current evidence: %s`, mustJSON(map[string]any{"name": topic.Name, "description": topic.Description, "aliases": topic.Aliases, "include": topic.IncludeCriteria, "exclude": topic.ExcludeCriteria}), mustJSON(previousProjection), mustJSON(refs))
 	model := r.ModelForProfile(profileID)
 	raw, usage, duration, err := r.invoker.InvokeStructured(ctx, ExecutionProfile, prompt, r.schema, model)
 	if err != nil {
@@ -157,6 +157,9 @@ type routingTopicReference struct {
 	Alias       string                    `json:"alias"`
 	Name        string                    `json:"name"`
 	Description string                    `json:"description,omitempty"`
+	Aliases     []string                  `json:"aliases,omitempty"`
+	Include     string                    `json:"include,omitempty"`
+	Exclude     string                    `json:"exclude,omitempty"`
 	Positive    []routingExampleReference `json:"positiveExamples,omitempty"`
 	Negative    []routingExampleReference `json:"negativeExamples,omitempty"`
 }
@@ -182,7 +185,7 @@ func (r *StructuredResolver) RouteWithProfile(ctx context.Context, item domain.T
 	for index, topic := range topics {
 		alias := fmt.Sprintf("topic_%03d", index+1)
 		aliases[alias] = topic.ID
-		ref := routingTopicReference{Alias: alias, Name: bounded(topic.Name, 120), Description: bounded(topic.Description, 1200)}
+		ref := routingTopicReference{Alias: alias, Name: bounded(topic.Name, 120), Description: bounded(topic.Description, 1200), Aliases: boundedStrings(topic.Aliases, 12, 80), Include: bounded(topic.IncludeCriteria, 1200), Exclude: bounded(topic.ExcludeCriteria, 1200)}
 		for _, example := range examples {
 			if example.TopicID != topic.ID {
 				continue

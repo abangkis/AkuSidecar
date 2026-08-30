@@ -80,7 +80,7 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	}
 
 	empty, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "initial")
-	if empty != nil || outcome != "insufficient_evidence" || resolver.calls != 0 {
+	if empty != nil || (outcome != "insufficient_evidence" && outcome != "no_change") || resolver.calls != 0 {
 		t.Fatalf("empty=%+v outcome=%s calls=%d", empty, outcome, resolver.calls)
 	}
 	item, err := state.CreateMemoryRecallStub(ctx, livingTopicMemoryInput("Preview one"))
@@ -163,6 +163,32 @@ func TestDeterministicLivingTopicScoreLearnsFromNegativeExamples(t *testing.T) {
 	}
 	if corrected >= base || corrected >= 0.70 {
 		t.Fatalf("negative correction did not lower automatic confidence: base=%f corrected=%f", base, corrected)
+	}
+}
+
+func TestLivingTopicActivationProposesWithoutChangingMembership(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := testEngine(t)
+	topic, err := state.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: "Codex Reset", Aliases: []string{"Codex quota reset"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := livingTopicMemoryInput("Codex Reset")
+	input.Summary = "Codex quota reset"
+	item, err := state.CreateMemoryRecallStub(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runtime.activateLivingTopic(ctx, domain.LivingTopicActivationJob{TopicID: topic.ID, CriteriaRevision: topic.CriteriaRevision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := state.LivingTopicDetail(ctx, topic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["scanned"] != 1 || result["suggested"] != 1 || len(detail.Members) != 0 || len(detail.Candidates) != 1 || detail.Candidates[0].MemoryItemID != item.ID || detail.Candidates[0].Status != "suggested" {
+		t.Fatalf("result=%+v detail=%+v", result, detail)
 	}
 }
 

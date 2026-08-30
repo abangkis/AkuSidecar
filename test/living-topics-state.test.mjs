@@ -6,6 +6,8 @@ import {
   LIVING_TOPIC_MAX_NAME,
   LIVING_TOPIC_TAB_EVIDENCE,
   LIVING_TOPIC_TAB_SNAPSHOT,
+  buildLivingTopicActivationPath,
+  buildLivingTopicCandidateActionPath,
   buildLivingTopicMemberPath,
   buildLivingTopicMembersPath,
   buildLivingTopicPath,
@@ -23,6 +25,9 @@ test("Living Topics paths are explicit and encoded", () => {
   assert.equal(buildLivingTopicMembersPath("topic/one"), "/api/living-topics/topic%2Fone/members");
   assert.equal(buildLivingTopicMemberPath("topic/one", "memory/two"), "/api/living-topics/topic%2Fone/members/memory%2Ftwo");
   assert.equal(buildLivingTopicSnapshotsPath("topic/one"), "/api/living-topics/topic%2Fone/snapshots");
+  assert.equal(buildLivingTopicActivationPath("topic/one"), "/api/living-topics/topic%2Fone/activation");
+  assert.equal(buildLivingTopicCandidateActionPath("topic/one", "memory/two", "accept"), "/api/living-topics/topic%2Fone/candidates/memory%2Ftwo/accept");
+  assert.equal(buildLivingTopicCandidateActionPath("topic/one", "memory/two", "unknown"), "");
   assert.equal(buildLivingTopicPath(""), "");
 });
 
@@ -32,7 +37,7 @@ test("Living Topics defaults to Understanding and bounds detail tabs", () => {
   assert.equal(normalizeLivingTopicTab(LIVING_TOPIC_TAB_EVIDENCE), LIVING_TOPIC_TAB_EVIDENCE);
 });
 
-test("Living Topics UI preserves bounded thin-slice semantics", () => {
+test("Living Topics UI preserves bounded Full Stage 1 semantics", () => {
   assert.equal(LIVING_TOPIC_MAX_NAME, 120);
   assert.equal(LIVING_TOPIC_MAX_MEMBERS, 20);
   assert.equal(Array.from(normalizeLivingTopicName(" x".repeat(200))).length, 120);

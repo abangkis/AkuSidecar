@@ -115,7 +115,7 @@ func (s *Store) LivingTopicFeedbackExamples(ctx context.Context, limitPerVerdict
 		), bounded AS (
 		 SELECT topic_id,memory_item_id,verdict,
 		 ROW_NUMBER() OVER (PARTITION BY topic_id,verdict ORDER BY created_at DESC,sequence DESC) verdict_rank
-		 FROM latest WHERE pair_rank=1
+		 FROM latest WHERE pair_rank=1 AND verdict IN ('include','exclude')
 		)
 		SELECT topic_id,memory_item_id,verdict FROM bounded WHERE verdict_rank<=?`, limitPerVerdict)
 	if err != nil {

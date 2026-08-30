@@ -662,9 +662,9 @@
       <section id="topics-panel" class="topics-panel hidden" aria-labelledby="topics-heading">
         <div class="section-heading topics-heading">
           <div>
-            <p class="step-label">LIVING TOPICS · THIN SLICE</p>
+            <p class="step-label">LIVING TOPICS · FULL STAGE 1</p>
             <h2 id="topics-heading" tabindex="-1">Understanding that keeps up with new evidence</h2>
-            <p class="review-guidance">Final, non-duplicate Timeline posts are sorted asynchronously using topic criteria and your corrections. Current understanding refreshes automatically after evidence changes.</p>
+            <p class="review-guidance">New posts route automatically, while a bounded local activation scan proposes older Library evidence for review. Current understanding refreshes after accepted evidence changes.</p>
           </div>
           <button id="topics-refresh-button" class="secondary-button" type="button">Refresh</button>
         </div>
@@ -711,11 +711,29 @@
               <form id="living-topic-rename-form" class="living-topic-rename-form">
                 <label for="living-topic-rename-name">Topic name</label>
                 <input id="living-topic-rename-name" maxlength="120" required autocomplete="off" />
-                <label for="living-topic-description">Routing criteria</label>
-                <textarea id="living-topic-description" maxlength="1200" rows="4" placeholder="Describe what belongs in this topic, important boundaries, and what should be excluded."></textarea>
-                <small>Used by the local deterministic matcher and bounded semantic classifier. Manual add/remove actions become positive or negative examples.</small>
+                <label for="living-topic-description">Topic purpose</label>
+                <textarea id="living-topic-description" maxlength="1200" rows="3" placeholder="Describe what this topic helps you understand."></textarea>
+                <label for="living-topic-aliases">Aliases</label>
+                <input id="living-topic-aliases" maxlength="960" autocomplete="off" placeholder="Comma-separated names, products, or codenames" />
+                <label for="living-topic-includes">Include when</label>
+                <textarea id="living-topic-includes" maxlength="1200" rows="3" placeholder="Claims, events, or boundaries that belong in this topic."></textarea>
+                <label for="living-topic-excludes">Exclude when</label>
+                <textarea id="living-topic-excludes" maxlength="1200" rows="3" placeholder="Nearby subjects that must stay out of this topic."></textarea>
+                <small>Purpose, aliases, includes, excludes, and your reviews guide both the deterministic shortlist and bounded semantic classifier.</small>
                 <button class="secondary-button" type="submit">Save criteria</button>
               </form>
+
+              <section class="living-topic-suggestions-section" aria-labelledby="living-topic-suggestions-heading">
+                <div class="living-topic-section-heading">
+                  <div>
+                    <p class="step-label">BOUNDED LOCAL ACTIVATION</p>
+                    <h4 id="living-topic-suggestions-heading">Suggested evidence</h4>
+                  </div>
+                  <button id="living-topic-activation-button" class="secondary-button" type="button">Scan again</button>
+                </div>
+                <p id="living-topic-routing-status" class="living-topic-snapshot-status" role="status" aria-live="polite"></p>
+                <div id="living-topic-suggestions" class="living-topic-candidates" role="list" aria-label="Suggested topic evidence"></div>
+              </section>
 
               <section class="living-topic-evidence-section" aria-labelledby="living-topic-evidence-heading">
                 <div class="living-topic-section-heading">

@@ -36,6 +36,18 @@ export function buildLivingTopicSnapshotsPath(id) {
   return base ? `${base}/snapshots` : "";
 }
 
+export function buildLivingTopicActivationPath(id) {
+  const base = buildLivingTopicPath(id);
+  return base ? `${base}/activation` : "";
+}
+
+export function buildLivingTopicCandidateActionPath(id, memoryItemId, action) {
+  const base = buildLivingTopicPath(id);
+  const memory = String(memoryItemId ?? "").trim();
+  const normalizedAction = ["accept", "reject", "undo"].includes(action) ? action : "";
+  return base && memory && normalizedAction ? `${base}/candidates/${encodeURIComponent(memory)}/${normalizedAction}` : "";
+}
+
 export function livingTopicStatusLabel(status) {
   if (status === "ready") return "Current understanding";
   if (status === "no_change") return "No evidence changed";
@@ -47,7 +59,7 @@ export function livingTopicUnderstandingLabel(status) {
   if (status === "pending") return "Refresh queued";
   if (status === "running") return "Updating understanding";
   if (status === "current") return "Understanding current";
-  if (status === "insufficient_evidence") return "Building understanding";
+  if (status === "insufficient_evidence") return "Needs evidence";
   if (status === "failed") return "Refresh needs attention";
   return "Waiting for evidence";
 }

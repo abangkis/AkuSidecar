@@ -30,9 +30,19 @@ func (e *Engine) CreateLivingTopic(ctx context.Context, name string) (domain.Liv
 }
 
 func (e *Engine) CreateLivingTopicWithCriteria(ctx context.Context, name, description string) (domain.LivingTopic, error) {
+	return e.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: name, Description: description})
+}
+
+func (e *Engine) CreateLivingTopicWithRoutingCriteria(ctx context.Context, input domain.LivingTopicCriteriaInput) (domain.LivingTopic, error) {
 	e.operation.Lock()
-	defer e.operation.Unlock()
-	return e.store.CreateLivingTopicWithCriteria(ctx, name, description)
+	topic, err := e.store.CreateLivingTopicWithRoutingCriteria(ctx, input)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopic{}, err
+	}
+	e.launchLivingTopicActivation(topic.ID, "topic_created")
+	e.launchLivingTopicUnderstanding(topic.ID, "topic_created")
+	return e.store.LivingTopic(ctx, topic.ID)
 }
 
 func (e *Engine) RenameLivingTopic(ctx context.Context, id, name string) (domain.LivingTopic, error) {
@@ -44,14 +54,44 @@ func (e *Engine) RenameLivingTopic(ctx context.Context, id, name string) (domain
 }
 
 func (e *Engine) UpdateLivingTopicCriteria(ctx context.Context, id, name, description string) (domain.LivingTopic, error) {
+	current, err := e.store.LivingTopic(ctx, id)
+	if err != nil {
+		return domain.LivingTopic{}, err
+	}
+	return e.UpdateLivingTopicRoutingCriteria(ctx, id, domain.LivingTopicCriteriaInput{Name: name, Description: description, Aliases: current.Aliases, IncludeCriteria: current.IncludeCriteria, ExcludeCriteria: current.ExcludeCriteria})
+}
+
+func (e *Engine) UpdateLivingTopicRoutingCriteria(ctx context.Context, id string, input domain.LivingTopicCriteriaInput) (domain.LivingTopic, error) {
 	e.operation.Lock()
-	_, err := e.store.UpdateLivingTopicCriteria(ctx, id, name, description)
+	_, changed, err := e.store.UpdateLivingTopicRoutingCriteria(ctx, id, input)
 	e.operation.Unlock()
 	if err != nil {
 		return domain.LivingTopic{}, err
 	}
-	e.launchLivingTopicUnderstanding(id, "criteria_changed")
+	if changed {
+		e.launchLivingTopicActivation(id, "criteria_changed")
+		e.launchLivingTopicUnderstanding(id, "criteria_changed")
+	}
 	return e.store.LivingTopic(ctx, id)
+}
+
+func (e *Engine) ReviewLivingTopicCandidate(ctx context.Context, topicID, memoryID, action string) (domain.LivingTopicDetail, error) {
+	e.operation.Lock()
+	_, err := e.store.ReviewLivingTopicCandidate(ctx, topicID, memoryID, action)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopicDetail{}, err
+	}
+	e.launchLivingTopicUnderstanding(topicID, "candidate_"+action)
+	return e.store.LivingTopicDetail(ctx, topicID)
+}
+
+func (e *Engine) RequestLivingTopicActivation(ctx context.Context, topicID, trigger string) (domain.LivingTopicDetail, error) {
+	if _, err := e.store.QueueLivingTopicActivation(ctx, topicID, trigger); err != nil {
+		return domain.LivingTopicDetail{}, err
+	}
+	e.launchLivingTopicActivation("", "")
+	return e.store.LivingTopicDetail(ctx, topicID)
 }
 
 func (e *Engine) AddLivingTopicMember(ctx context.Context, topicID, memoryID string) (domain.LivingTopicDetail, error) {
@@ -173,10 +213,13 @@ func livingTopicInputDigest(topic domain.LivingTopic, items []domain.MemoryItem)
 	sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
 	sort.Strings(ids)
 	raw, err := json.Marshal(struct {
-		Name        string       `json:"name"`
-		Description string       `json:"description"`
-		Evidence    []digestItem `json:"evidence"`
-	}{Name: topic.Name, Description: topic.Description, Evidence: values})
+		Name            string       `json:"name"`
+		Description     string       `json:"description"`
+		Aliases         []string     `json:"aliases"`
+		IncludeCriteria string       `json:"includeCriteria"`
+		ExcludeCriteria string       `json:"excludeCriteria"`
+		Evidence        []digestItem `json:"evidence"`
+	}{Name: topic.Name, Description: topic.Description, Aliases: topic.Aliases, IncludeCriteria: topic.IncludeCriteria, ExcludeCriteria: topic.ExcludeCriteria, Evidence: values})
 	if err != nil {
 		return "", nil, err
 	}
@@ -255,6 +298,142 @@ func (e *Engine) ResumeLivingTopicRouting(ctx context.Context) error {
 	}
 	e.launchLivingTopicRouting("")
 	return nil
+}
+
+func (e *Engine) ResumeLivingTopicActivation(ctx context.Context) error {
+	if err := e.store.ResetRunningLivingTopicActivations(ctx); err != nil {
+		return err
+	}
+	e.launchLivingTopicActivation("", "")
+	return nil
+}
+
+func (e *Engine) launchLivingTopicActivation(topicID, trigger string) {
+	if topicID != "" {
+		if _, err := e.store.QueueLivingTopicActivation(context.Background(), topicID, trigger); err != nil {
+			e.logger.Printf("Living Topics activation queue degraded safely for topic %s: %v", topicID, err)
+			return
+		}
+	}
+	const key = "living-topics-activation"
+	e.mu.Lock()
+	if _, active := e.active[key]; active {
+		e.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	e.active[key] = cancel
+	e.mu.Unlock()
+	go func() {
+		defer func() {
+			e.mu.Lock()
+			delete(e.active, key)
+			shuttingDown := e.shuttingDown
+			e.mu.Unlock()
+			if !shuttingDown {
+				if pending, err := e.store.HasPendingLivingTopicActivation(context.Background()); err == nil && pending {
+					e.launchLivingTopicActivation("", "")
+				}
+			}
+		}()
+		for {
+			job, err := e.store.ClaimLivingTopicActivation(ctx)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					e.logger.Printf("Living Topics activation claim degraded safely: %v", err)
+				}
+				return
+			}
+			if job == nil {
+				return
+			}
+			result, activationErr := e.activateLivingTopic(ctx, *job)
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return
+			}
+			if finishErr := e.store.FinishLivingTopicActivation(context.Background(), *job, result, activationErr); finishErr != nil {
+				e.logger.Printf("Living Topics activation job %s could not persist: %v", job.ID, finishErr)
+			}
+			if activationErr != nil {
+				e.logger.Printf("Living Topics activation for topic %s degraded safely: %v", job.TopicID, activationErr)
+			}
+		}
+	}()
+}
+
+func (e *Engine) activateLivingTopic(ctx context.Context, job domain.LivingTopicActivationJob) (map[string]int, error) {
+	result := map[string]int{"scanned": 0, "shortlisted": 0, "suggested": 0}
+	topic, err := e.store.LivingTopic(ctx, job.TopicID)
+	if err != nil {
+		return result, err
+	}
+	if topic.CriteriaRevision != job.CriteriaRevision {
+		result["stale"] = 1
+		return result, nil
+	}
+	items, err := e.store.LivingTopicActivationItems(ctx, topic.ID, store.LivingTopicActivationScanLimit)
+	if err != nil {
+		return result, err
+	}
+	result["scanned"] = len(items)
+	storedExamples, err := e.store.LivingTopicFeedbackExamples(ctx, 3)
+	if err != nil {
+		return result, err
+	}
+	examples := make([]domain.LivingTopicRoutingExample, 0, len(storedExamples))
+	for _, value := range storedExamples {
+		examples = append(examples, domain.LivingTopicRoutingExample{TopicID: value.TopicID, Verdict: value.Verdict, Item: value.Item})
+	}
+	type scoredItem struct {
+		item   domain.MemoryItem
+		score  float64
+		reason string
+	}
+	shortlist := make([]scoredItem, 0)
+	for _, item := range items {
+		timeline := livingTopicTimelineFromMemory(item)
+		score, reason := deterministicLivingTopicScore(timeline, topic, examples)
+		if score > 0 {
+			shortlist = append(shortlist, scoredItem{item: item, score: score, reason: reason})
+		}
+	}
+	sort.SliceStable(shortlist, func(i, j int) bool { return shortlist[i].score > shortlist[j].score })
+	if len(shortlist) > store.LivingTopicActivationShortlist {
+		shortlist = shortlist[:store.LivingTopicActivationShortlist]
+	}
+	result["shortlisted"] = len(shortlist)
+	for _, candidate := range shortlist {
+		decision := domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: candidate.score >= 0.70, Confidence: candidate.score, Mode: "deterministic", Reason: candidate.reason}
+		if !decision.Match {
+			if router, ok := e.topics.(livingtopics.Router); ok {
+				settings, settingsErr := e.store.GetSettings(ctx)
+				if settingsErr != nil {
+					return result, settingsErr
+				}
+				values, _, _, routeErr := router.RouteWithProfile(ctx, livingTopicTimelineFromMemory(candidate.item), []domain.LivingTopic{topic}, examples, settings.ReasoningEvaluationProfile)
+				if routeErr != nil {
+					e.logger.Printf("Living Topics activation semantic routing degraded to local score for topic %s item %s: %v", topic.ID, candidate.item.ID, routeErr)
+				} else if len(values) == 1 {
+					decision = values[0]
+				}
+			}
+		}
+		if err := e.store.SaveLivingTopicCandidateDecision(ctx, topic, candidate.item, decision); err != nil {
+			return result, err
+		}
+		if decision.Match && decision.Confidence >= 0.65 {
+			result["suggested"]++
+		}
+	}
+	return result, nil
+}
+
+func livingTopicTimelineFromMemory(item domain.MemoryItem) domain.TimelineItem {
+	return domain.TimelineItem{
+		Source: item.Source, EvidenceKey: item.CanonicalEvidenceKey,
+		Item:       domain.ReasonedItem{WhatChanged: item.Title, WhyItMatters: item.Summary, Source: item.Source, SourceURL: item.CanonicalPermalink, EvidenceKey: item.CanonicalEvidenceKey, Author: item.Author, PublishedAt: item.PublishedAt},
+		Assessment: domain.CandidateAssessment{EvidenceKey: item.CanonicalEvidenceKey, TopicTags: item.Tags, TopicFacets: item.Facets},
+	}
 }
 
 func (e *Engine) launchLivingTopicRouting(sessionID string) {
@@ -379,8 +558,10 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 
 func deterministicLivingTopicScore(item domain.TimelineItem, topic domain.LivingTopic, examples []domain.LivingTopicRoutingExample) (float64, string) {
 	postTokens := livingTopicTokens(strings.Join([]string{item.Item.WhatChanged, item.Item.WhyItMatters, strings.Join(item.Assessment.TopicTags, " "), strings.Join(item.Assessment.TopicFacets, " ")}, " "))
-	criteriaTokens := livingTopicTokens(topic.Name + " " + topic.Description)
+	criteriaTokens := livingTopicTokens(strings.Join([]string{topic.Name, strings.Join(topic.Aliases, " "), topic.Description, topic.IncludeCriteria}, " "))
+	excludeTokens := livingTopicTokens(topic.ExcludeCriteria)
 	base := tokenCoverage(postTokens, criteriaTokens)
+	excluded := tokenCoverage(postTokens, excludeTokens)
 	positive, negative := 0.0, 0.0
 	for _, example := range examples {
 		if example.TopicID != topic.ID {
@@ -395,14 +576,14 @@ func deterministicLivingTopicScore(item domain.TimelineItem, topic domain.Living
 			negative = overlap
 		}
 	}
-	score := base + 0.25*positive - 0.40*negative
+	score := base + 0.25*positive - 0.40*negative - 0.75*excluded
 	if score < 0 {
 		score = 0
 	}
 	if score > 1 {
 		score = 1
 	}
-	return score, fmt.Sprintf("Criteria token coverage %.2f; positive similarity %.2f; negative similarity %.2f", base, positive, negative)
+	return score, fmt.Sprintf("Criteria token coverage %.2f; exclusion coverage %.2f; positive similarity %.2f; negative similarity %.2f", base, excluded, positive, negative)
 }
 
 func livingTopicTokens(value string) map[string]bool {

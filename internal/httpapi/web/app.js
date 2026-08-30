@@ -42,6 +42,8 @@ import {
 import {
   buildLivingTopicMemberPath,
   buildLivingTopicMembersPath,
+  buildLivingTopicActivationPath,
+  buildLivingTopicCandidateActionPath,
   buildLivingTopicPath,
   buildLivingTopicsPath,
   buildLivingTopicSnapshotsPath,
@@ -164,6 +166,7 @@ const state = {
     error: null,
     snapshotStatus: { kind: "idle", message: "", snapshotId: "" },
     understandingPollTopicId: "",
+    activationPollTopicId: "",
   },
   inboxSubView: "checks",
   modelUsageHelpSequence: 0,
@@ -365,6 +368,7 @@ $("#living-topic-create-form").addEventListener("submit", createLivingTopic);
 $("#living-topic-rename-form").addEventListener("submit", renameLivingTopic);
 $("#living-topic-evidence-search-form").addEventListener("submit", searchLivingTopicEvidence);
 $("#living-topic-snapshot-form").addEventListener("submit", createLivingTopicSnapshot);
+$("#living-topic-activation-button").addEventListener("click", requestLivingTopicActivation);
 $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
@@ -744,6 +748,9 @@ async function loadLivingTopicDetail(id, options = {}) {
     if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) {
       scheduleLivingTopicUnderstandingPoll(id);
     }
+    if (["pending", "running"].includes(topicsState.detail?.topic?.routingStatus)) {
+      scheduleLivingTopicActivationPoll(id);
+    }
     if (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE) {
       await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
     }
@@ -786,13 +793,16 @@ async function renameLivingTopic(event) {
   const topicsState = state.livingTopics;
   const name = normalizeLivingTopicName($("#living-topic-rename-name").value);
   const description = $("#living-topic-description").value.trim();
+  const aliases = $("#living-topic-aliases").value.split(",").map((value) => value.trim()).filter(Boolean);
+  const includeCriteria = $("#living-topic-includes").value.trim();
+  const excludeCriteria = $("#living-topic-excludes").value.trim();
   const path = buildLivingTopicPath(topicsState.selectedId);
   if (!name || !path || topicsState.mutationLoading) return;
   topicsState.mutationLoading = true;
   topicsState.error = null;
   renderLivingTopics();
   try {
-    await api(path, { method: "PATCH", body: { name, description } });
+    await api(path, { method: "PATCH", body: { name, description, aliases, includeCriteria, excludeCriteria } });
     await loadLivingTopics(true);
   } catch (error) {
     topicsState.error = error;
@@ -855,6 +865,46 @@ async function removeLivingTopicMember(memoryItemId) {
   renderLivingTopics();
   try {
     topicsState.detail = await api(path, { method: "DELETE" });
+    await refreshLivingTopicListProjection();
+    if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function requestLivingTopicActivation() {
+  const topicsState = state.livingTopics;
+  const path = buildLivingTopicActivationPath(topicsState.selectedId);
+  if (!path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    const response = await api(path, { method: "POST" });
+    topicsState.detail = response.detail;
+    await refreshLivingTopicListProjection();
+    scheduleLivingTopicActivationPoll(topicsState.selectedId);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function reviewLivingTopicCandidate(memoryItemId, action) {
+  const topicsState = state.livingTopics;
+  const path = buildLivingTopicCandidateActionPath(topicsState.selectedId, memoryItemId, action);
+  if (!path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  resetLivingTopicSnapshotStatus();
+  renderLivingTopics();
+  try {
+    topicsState.detail = await api(path, { method: "POST" });
     await refreshLivingTopicListProjection();
     if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
   } catch (error) {
@@ -945,6 +995,39 @@ function scheduleLivingTopicUnderstandingPoll(topicId, announce = false) {
   window.setTimeout(poll, 500);
 }
 
+function scheduleLivingTopicActivationPoll(topicId) {
+  const topicsState = state.livingTopics;
+  if (!topicId || topicsState.activationPollTopicId === topicId) return;
+  topicsState.activationPollTopicId = topicId;
+  let attempts = 0;
+  const poll = async () => {
+    if (topicsState.selectedId !== topicId || attempts >= 120) {
+      topicsState.activationPollTopicId = "";
+      return;
+    }
+    attempts += 1;
+    try {
+      const detail = await api(buildLivingTopicPath(topicId));
+      if (topicsState.selectedId !== topicId) return;
+      topicsState.detail = detail;
+      await refreshLivingTopicListProjection();
+      if (!["pending", "running"].includes(detail?.topic?.routingStatus)) {
+        topicsState.activationPollTopicId = "";
+        renderLivingTopics();
+        return;
+      }
+      renderLivingTopics();
+    } catch (error) {
+      topicsState.activationPollTopicId = "";
+      topicsState.error = error;
+      renderLivingTopics();
+      return;
+    }
+    window.setTimeout(poll, 1000);
+  };
+  window.setTimeout(poll, 500);
+}
+
 async function refreshLivingTopicListProjection() {
   const response = await api(buildLivingTopicsPath());
   state.livingTopics.topics = Array.isArray(response?.topics) ? response.topics : [];
@@ -976,7 +1059,7 @@ function renderLivingTopics() {
       const name = document.createElement("strong");
       name.textContent = topic.name;
       const meta = document.createElement("small");
-      meta.textContent = `${topic.memberCount || 0} evidence · ${livingTopicUnderstandingLabel(topic.understandingStatus)}`;
+      meta.textContent = `${topic.memberCount || 0} evidence${topic.suggestedCount ? ` · ${topic.suggestedCount} suggested` : ""} · ${livingTopicUnderstandingLabel(topic.understandingStatus)}`;
       button.append(name, meta);
       button.addEventListener("click", () => loadLivingTopicDetail(topic.id));
       return button;
@@ -996,6 +1079,9 @@ function renderLivingTopicDetail() {
   $("#living-topic-detail-heading").textContent = topic.name;
   $("#living-topic-rename-name").value = topic.name;
   $("#living-topic-description").value = topic.description || "";
+  $("#living-topic-aliases").value = (topic.aliases || []).join(", ");
+  $("#living-topic-includes").value = topic.includeCriteria || "";
+  $("#living-topic-excludes").value = topic.excludeCriteria || "";
   $("#living-topic-rename-form").querySelector("button").disabled = topicsState.mutationLoading;
   $("#living-topic-member-count").textContent = `${detail.members.length} / 20`;
   const snapshotButton = $("#living-topic-snapshot-button");
@@ -1006,6 +1092,32 @@ function renderLivingTopicDetail() {
   const snapshotStatus = $("#living-topic-snapshot-status");
   snapshotStatus.textContent = topicsState.snapshotStatus.message || livingTopicUnderstandingSummary(topic);
   snapshotStatus.dataset.kind = topicsState.snapshotStatus.kind !== "idle" ? topicsState.snapshotStatus.kind : (topic.understandingStatus === "failed" ? "error" : understandingBusy ? "working" : "success");
+
+  const activationButton = $("#living-topic-activation-button");
+  const activationBusy = ["pending", "running"].includes(topic.routingStatus);
+  activationButton.disabled = topicsState.mutationLoading || activationBusy;
+  activationButton.textContent = activationBusy ? "Scanning…" : "Scan again";
+  activationButton.setAttribute("aria-busy", activationBusy ? "true" : "false");
+  const routingStatus = $("#living-topic-routing-status");
+  routingStatus.textContent = livingTopicRoutingSummary(topic);
+  routingStatus.dataset.kind = topic.routingStatus === "failed" ? "error" : activationBusy ? "working" : "success";
+  const suggestions = $("#living-topic-suggestions");
+  const memberIDs = new Set(detail.members.map((item) => item.id));
+  const suggested = (detail.candidates || []).filter((candidate) => candidate.status === "suggested" && !memberIDs.has(candidate.memoryItemId));
+  const reviewed = (detail.candidates || []).filter((candidate) => candidate.status === "accepted" || candidate.status === "rejected");
+  if (activationBusy && !suggested.length && !reviewed.length) {
+    const loading = document.createElement("p");
+    loading.className = "library-state";
+    loading.textContent = "Scanning recent local evidence without changing topic membership…";
+    suggestions.replaceChildren(loading);
+  } else if (!suggested.length && !reviewed.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-state";
+    empty.textContent = "No local suggestions for the current criteria revision.";
+    suggestions.replaceChildren(empty);
+  } else {
+    suggestions.replaceChildren(...suggested.map(buildLivingTopicSuggestionCard), ...reviewed.map(buildLivingTopicReviewedCandidateCard));
+  }
 
   const members = $("#living-topic-members");
   if (!detail.members.length) {
@@ -1018,7 +1130,6 @@ function renderLivingTopicDetail() {
     members.replaceChildren(...detail.members.map((item) => buildLivingTopicEvidenceCard(item, "Remove", () => removeLivingTopicMember(item.id), false, membershipByID.get(item.id))));
   }
 
-  const memberIDs = new Set(detail.members.map((item) => item.id));
   const available = topicsState.candidates.filter((item) => !memberIDs.has(item.id));
   const candidates = $("#living-topic-candidates");
   if (topicsState.candidatesLoading) {
@@ -1044,6 +1155,14 @@ function livingTopicUnderstandingSummary(topic) {
   if (topic.understandingStatus === "insufficient_evidence") return "More evidence is needed before a useful understanding can be published.";
   if (topic.understandingStatus === "current" && topic.understandingCheckedAt) return `Evidence last evaluated ${formatDate(topic.understandingCheckedAt)}.`;
   return "Understanding will build automatically when evidence enters this topic.";
+}
+
+function livingTopicRoutingSummary(topic) {
+  if (topic.routingStatus === "pending") return `Criteria revision ${topic.criteriaRevision || 1} is queued for a bounded local scan.`;
+  if (topic.routingStatus === "running") return "Evaluating a bounded shortlist of recent local evidence…";
+  if (topic.routingStatus === "failed") return topic.routingLastError || "The last local activation scan failed. Scan again to retry.";
+  if (topic.routingStatus === "current" && topic.routingCheckedAt) return `Local evidence last evaluated ${formatDate(topic.routingCheckedAt)} · criteria revision ${topic.criteriaRevision || 1}.`;
+  return "A bounded local scan starts when the topic is created or its criteria change.";
 }
 
 function setLivingTopicDetailTab(tab, focus = false) {
@@ -1113,6 +1232,54 @@ function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = fals
   button.disabled = disabled || state.livingTopics.mutationLoading;
   button.addEventListener("click", action);
   card.append(copy, button);
+  return card;
+}
+
+function buildLivingTopicSuggestionCard(candidate) {
+  const card = document.createElement("article");
+  card.className = "living-topic-evidence-card living-topic-suggestion-card";
+  card.setAttribute("role", "listitem");
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = candidate.item?.title || candidate.item?.summary || "Untitled Memory";
+  const meta = document.createElement("small");
+  meta.textContent = [sourceLabel(candidate.item?.source), candidate.item?.author, candidate.item?.publishedAt ? formatDate(candidate.item.publishedAt) : null].filter(Boolean).join(" · ");
+  const reason = document.createElement("small");
+  reason.className = "living-topic-routing-meta";
+  reason.textContent = `${candidate.matchMode === "llm" ? "Semantic" : "Local"} suggestion · ${Math.round((candidate.confidence || 0) * 100)}%${candidate.reason ? ` · ${candidate.reason}` : ""}`;
+  copy.append(title, meta, reason);
+  const actions = document.createElement("div");
+  actions.className = "living-topic-candidate-actions";
+  for (const [label, action] of [["Accept", "accept"], ["Reject", "reject"]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = action === "accept" ? "secondary-button" : "text-button";
+    button.textContent = label;
+    button.disabled = state.livingTopics.mutationLoading;
+    button.addEventListener("click", () => reviewLivingTopicCandidate(candidate.memoryItemId, action));
+    actions.append(button);
+  }
+  card.append(copy, actions);
+  return card;
+}
+
+function buildLivingTopicReviewedCandidateCard(candidate) {
+  const card = document.createElement("article");
+  card.className = "living-topic-evidence-card living-topic-suggestion-card reviewed";
+  card.setAttribute("role", "listitem");
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = candidate.item?.title || candidate.item?.summary || "Untitled Memory";
+  const meta = document.createElement("small");
+  meta.textContent = candidate.status === "accepted" ? "Accepted into this topic" : "Rejected from this topic";
+  copy.append(title, meta);
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "text-button";
+  undo.textContent = "Undo";
+  undo.disabled = state.livingTopics.mutationLoading;
+  undo.addEventListener("click", () => reviewLivingTopicCandidate(candidate.memoryItemId, "undo"));
+  card.append(copy, undo);
   return card;
 }
 
