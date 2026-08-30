@@ -39,6 +39,15 @@ import {
   normalizeLibraryTab,
   normalizeLibraryFilters,
 } from "./library-state.js";
+import {
+  buildLivingTopicMemberPath,
+  buildLivingTopicMembersPath,
+  buildLivingTopicPath,
+  buildLivingTopicsPath,
+  buildLivingTopicSnapshotsPath,
+  livingTopicStatusLabel,
+  normalizeLivingTopicName,
+} from "./living-topics-state.js";
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
 import {
   backToTopBoundaryBottom,
@@ -136,6 +145,17 @@ const state = {
     detailRequestID: 0,
     controller: null,
     detailFocusTarget: null,
+  },
+  livingTopics: {
+    topics: [],
+    selectedId: "",
+    detail: null,
+    candidates: [],
+    loading: false,
+    detailLoading: false,
+    candidatesLoading: false,
+    mutationLoading: false,
+    error: null,
   },
   inboxSubView: "checks",
   modelUsageHelpSequence: 0,
@@ -304,6 +324,7 @@ function recoverInvalidBridgeToken(code) {
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#library-view-button").addEventListener("click", () => setView("library"));
+$("#topics-view-button").addEventListener("click", () => setView("topics"));
 $("#inbox-view-button").addEventListener("click", () => setView("inbox"));
 $("#library-saved-tab").addEventListener("click", () => setLibraryTab(LIBRARY_TAB_SAVED));
 $("#library-library-tab")?.addEventListener("click", () => setLibraryTab(LIBRARY_TAB_LIBRARY));
@@ -326,6 +347,11 @@ $("#library-clear-button").addEventListener("click", clearLibrarySearch);
 $("#library-refresh-button").addEventListener("click", refreshLibrary);
 $("#library-load-more").addEventListener("click", loadMoreLibrary);
 $("#library-detail-close").addEventListener("click", closeLibraryDetail);
+$("#topics-refresh-button").addEventListener("click", () => loadLivingTopics(true));
+$("#living-topic-create-form").addEventListener("submit", createLivingTopic);
+$("#living-topic-rename-form").addEventListener("submit", renameLivingTopic);
+$("#living-topic-evidence-search-form").addEventListener("submit", searchLivingTopicEvidence);
+$("#living-topic-snapshot-button").addEventListener("click", createLivingTopicSnapshot);
 $("#model-usage-back").addEventListener("click", () => setInboxSubView("checks"));
 $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
@@ -600,6 +626,7 @@ function setView(view) {
     $("#settings-panel").classList.add("hidden");
     $("#inbox-panel").classList.add("hidden");
     $("#library-panel").classList.add("hidden");
+    $("#topics-panel").classList.add("hidden");
     $("#timeline-panel").classList.remove("hidden");
     document.querySelector(".view-switch")?.classList.add("hidden");
     return;
@@ -616,6 +643,7 @@ function setView(view) {
   state.onboardingEditing = false;
   const timeline = view === "timeline";
   const library = view === "library";
+  const topics = view === "topics";
   const inbox = view === "inbox";
   const settings = view === "settings";
   $("#onboarding-panel").classList.add("hidden");
@@ -624,6 +652,7 @@ function setView(view) {
   $("#settings-panel").classList.toggle("hidden", !settings);
   $("#inbox-panel").classList.toggle("hidden", !inbox);
   $("#library-panel").classList.toggle("hidden", !library);
+  $("#topics-panel").classList.toggle("hidden", !topics);
   $("#timeline-panel").classList.toggle("hidden", !timeline);
   if (!timeline) {
     closeTimelineSidePane();
@@ -632,18 +661,21 @@ function setView(view) {
   syncTimelineSidePaneVisibility();
   $("#session-view-button").classList.toggle("selected", timeline);
   $("#library-view-button").classList.toggle("selected", library);
+  $("#topics-view-button").classList.toggle("selected", topics);
   $("#inbox-view-button").classList.toggle("selected", inbox);
   $("#settings-view-button").classList.toggle("selected", settings);
   $("#session-view-button").setAttribute("aria-current", timeline ? "page" : "false");
   $("#library-view-button").setAttribute("aria-current", library ? "page" : "false");
+  $("#topics-view-button").setAttribute("aria-current", topics ? "page" : "false");
   $("#inbox-view-button").setAttribute("aria-current", inbox ? "page" : "false");
   $("#settings-view-button").setAttribute("aria-current", settings ? "page" : "false");
-  ({ timeline: $("#timeline-heading"), library: $("#library-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
+  ({ timeline: $("#timeline-heading"), library: $("#library-heading"), topics: $("#topics-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
   if (library) {
     renderLibraryTabs();
     loadLibrary();
     maybeLoadLibraryStorage();
   }
+  if (topics) void loadLivingTopics(false);
   if (inbox) {
     syncInboxSubView();
     if (state.inboxSubView === "usage") loadAggregateModelUsage();
@@ -654,6 +686,323 @@ function setView(view) {
 
 function onboardingRequiresSetup() {
   return state.bootstrap?.onboarding?.status === "not_started";
+}
+
+async function loadLivingTopics(force = false) {
+  const topicsState = state.livingTopics;
+  if (topicsState.loading || (!force && topicsState.topics.length && topicsState.detail)) return;
+  topicsState.loading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    const response = await api(buildLivingTopicsPath());
+    topicsState.topics = Array.isArray(response?.topics) ? response.topics : [];
+    if (topicsState.selectedId && !topicsState.topics.some((topic) => topic.id === topicsState.selectedId)) {
+      topicsState.selectedId = "";
+      topicsState.detail = null;
+    }
+    const target = topicsState.selectedId || topicsState.topics[0]?.id || "";
+    if (target) await loadLivingTopicDetail(target, { skipListRender: true });
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.loading = false;
+    renderLivingTopics();
+  }
+}
+
+async function loadLivingTopicDetail(id, options = {}) {
+  const topicsState = state.livingTopics;
+  const path = buildLivingTopicPath(id);
+  if (!path || topicsState.detailLoading) return;
+  topicsState.selectedId = id;
+  topicsState.detailLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    topicsState.detail = await api(path);
+    await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.detailLoading = false;
+    if (!options.skipListRender) renderLivingTopics();
+  }
+}
+
+async function createLivingTopic(event) {
+  event.preventDefault();
+  const topicsState = state.livingTopics;
+  const name = normalizeLivingTopicName($("#living-topic-create-name").value);
+  if (!name || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    const response = await api(buildLivingTopicsPath(), { method: "POST", body: { name } });
+    $("#living-topic-create-name").value = "";
+    topicsState.selectedId = response.topic.id;
+    topicsState.detail = null;
+    await loadLivingTopics(true);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function renameLivingTopic(event) {
+  event.preventDefault();
+  const topicsState = state.livingTopics;
+  const name = normalizeLivingTopicName($("#living-topic-rename-name").value);
+  const path = buildLivingTopicPath(topicsState.selectedId);
+  if (!name || !path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    await api(path, { method: "PATCH", body: { name } });
+    await loadLivingTopics(true);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function searchLivingTopicEvidence(event) {
+  event?.preventDefault?.();
+  await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
+}
+
+async function loadLivingTopicCandidates(query = "") {
+  const topicsState = state.livingTopics;
+  if (!topicsState.selectedId || topicsState.candidatesLoading) return;
+  topicsState.candidatesLoading = true;
+  renderLivingTopics();
+  try {
+    const path = buildLibraryRequestPath({ query, limit: 12 });
+    const response = await api(path);
+    topicsState.candidates = Array.isArray(response?.items) ? response.items : [];
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.candidatesLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function addLivingTopicMember(memoryItemId) {
+  const topicsState = state.livingTopics;
+  const path = buildLivingTopicMembersPath(topicsState.selectedId);
+  if (!path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    topicsState.detail = await api(path, { method: "POST", body: { memoryItemId } });
+    await refreshLivingTopicListProjection();
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function removeLivingTopicMember(memoryItemId) {
+  const topicsState = state.livingTopics;
+  const path = buildLivingTopicMemberPath(topicsState.selectedId, memoryItemId);
+  if (!path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    topicsState.detail = await api(path, { method: "DELETE" });
+    await refreshLivingTopicListProjection();
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function createLivingTopicSnapshot() {
+  const topicsState = state.livingTopics;
+  const path = buildLivingTopicSnapshotsPath(topicsState.selectedId);
+  if (!path || topicsState.mutationLoading) return;
+  topicsState.mutationLoading = true;
+  topicsState.error = null;
+  renderLivingTopics();
+  try {
+    await api(path, { method: "POST" });
+    topicsState.detail = await api(buildLivingTopicPath(topicsState.selectedId));
+    await refreshLivingTopicListProjection();
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.mutationLoading = false;
+    renderLivingTopics();
+  }
+}
+
+async function refreshLivingTopicListProjection() {
+  const response = await api(buildLivingTopicsPath());
+  state.livingTopics.topics = Array.isArray(response?.topics) ? response.topics : [];
+}
+
+function renderLivingTopics() {
+  const topicsState = state.livingTopics;
+  const status = $("#living-topics-status");
+  if (topicsState.error) status.textContent = topicsState.error.message || "Living Topics could not be loaded.";
+  else if (topicsState.loading) status.textContent = "Loading local topics…";
+  else if (topicsState.detailLoading) status.textContent = "Loading selected topic…";
+  else if (topicsState.mutationLoading) status.textContent = "Applying explicit topic action…";
+  else status.textContent = topicsState.topics.length ? `${topicsState.topics.length} local topic${topicsState.topics.length === 1 ? "" : "s"}` : "No topics yet. Create one to begin.";
+
+  $("#living-topic-create-form").querySelector("button").disabled = topicsState.mutationLoading;
+  const list = $("#living-topics-list");
+  if (!topicsState.topics.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-state";
+    empty.textContent = "Create a topic manually. AkuBrowser will not infer one from your Library.";
+    list.replaceChildren(empty);
+  } else {
+    list.replaceChildren(...topicsState.topics.map((topic) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "living-topic-list-item";
+      button.classList.toggle("selected", topic.id === topicsState.selectedId);
+      button.setAttribute("aria-current", topic.id === topicsState.selectedId ? "true" : "false");
+      const name = document.createElement("strong");
+      name.textContent = topic.name;
+      const meta = document.createElement("small");
+      meta.textContent = `${topic.memberCount || 0} evidence · ${topic.latestSnapshot ? livingTopicStatusLabel(topic.latestSnapshot.status) : "No snapshot"}`;
+      button.append(name, meta);
+      button.addEventListener("click", () => loadLivingTopicDetail(topic.id));
+      return button;
+    }));
+  }
+  renderLivingTopicDetail();
+}
+
+function renderLivingTopicDetail() {
+  const topicsState = state.livingTopics;
+  const panel = $("#living-topic-detail");
+  const detail = topicsState.detail;
+  panel.classList.toggle("hidden", !detail);
+  if (!detail) return;
+  const topic = detail.topic;
+  $("#living-topic-detail-heading").textContent = topic.name;
+  $("#living-topic-rename-name").value = topic.name;
+  $("#living-topic-rename-form").querySelector("button").disabled = topicsState.mutationLoading;
+  $("#living-topic-member-count").textContent = `${detail.members.length} / 20`;
+  $("#living-topic-snapshot-button").disabled = topicsState.mutationLoading;
+
+  const members = $("#living-topic-members");
+  if (!detail.members.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-state";
+    empty.textContent = "No evidence attached. Search the local Library below.";
+    members.replaceChildren(empty);
+  } else {
+    members.replaceChildren(...detail.members.map((item) => buildLivingTopicEvidenceCard(item, "Remove", () => removeLivingTopicMember(item.id))));
+  }
+
+  const memberIDs = new Set(detail.members.map((item) => item.id));
+  const available = topicsState.candidates.filter((item) => !memberIDs.has(item.id));
+  const candidates = $("#living-topic-candidates");
+  if (topicsState.candidatesLoading) {
+    const loading = document.createElement("p");
+    loading.className = "library-state";
+    loading.textContent = "Searching local Memory…";
+    candidates.replaceChildren(loading);
+  } else if (!available.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-state";
+    empty.textContent = "No additional Library evidence matches this search.";
+    candidates.replaceChildren(empty);
+  } else {
+    candidates.replaceChildren(...available.map((item) => buildLivingTopicEvidenceCard(item, "Add", () => addLivingTopicMember(item.id), detail.members.length >= 20)));
+  }
+  renderLivingTopicSnapshots(detail);
+}
+
+function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = false) {
+  const card = document.createElement("article");
+  card.className = "living-topic-evidence-card";
+  card.setAttribute("role", "listitem");
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = item.title || item.summary || "Untitled Memory";
+  const meta = document.createElement("small");
+  meta.textContent = [sourceLabel(item.source), item.author, item.publishedAt ? formatDate(item.publishedAt) : null].filter(Boolean).join(" · ");
+  copy.append(title, meta);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "text-button";
+  button.textContent = actionLabel;
+  button.disabled = disabled || state.livingTopics.mutationLoading;
+  button.addEventListener("click", action);
+  card.append(copy, button);
+  return card;
+}
+
+function renderLivingTopicSnapshots(detail) {
+  const container = $("#living-topic-snapshots");
+  const evidenceByID = new Map(detail.members.map((item) => [item.id, item]));
+  if (!detail.snapshots.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-state";
+    empty.textContent = "No snapshot yet. Creation is always an explicit action.";
+    container.replaceChildren(empty);
+    return;
+  }
+  container.replaceChildren(...detail.snapshots.map((snapshot) => {
+    const card = document.createElement("article");
+    card.className = "living-topic-snapshot-card";
+    const header = document.createElement("header");
+    const label = document.createElement("strong");
+    label.textContent = `Snapshot ${snapshot.version} · ${livingTopicStatusLabel(snapshot.status)}`;
+    const meta = document.createElement("small");
+    meta.textContent = [formatDate(snapshot.createdAt), snapshot.provider && snapshot.provider !== "local-deterministic" ? `${snapshot.provider} · ${snapshot.model || "model"}` : "Local deterministic"].filter(Boolean).join(" · ");
+    header.append(label, meta);
+    const overview = document.createElement("p");
+    overview.textContent = snapshot.overview || "No overview was produced.";
+    card.append(header, overview);
+    if (snapshot.claims?.length) {
+      const heading = document.createElement("h5");
+      heading.textContent = "Current claims";
+      card.append(heading, buildLivingTopicStatementList(snapshot.claims, evidenceByID, "assessment"));
+    }
+    if (snapshot.deltas?.length) {
+      const heading = document.createElement("h5");
+      heading.textContent = "What changed";
+      card.append(heading, buildLivingTopicStatementList(snapshot.deltas, evidenceByID, "kind"));
+    }
+    return card;
+  }));
+}
+
+function buildLivingTopicStatementList(values, evidenceByID, labelField) {
+  const list = document.createElement("ul");
+  list.className = "living-topic-statements";
+  for (const value of values) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    label.className = "living-topic-statement-label";
+    label.textContent = String(value[labelField] || "evidence").replaceAll("_", " ");
+    const text = document.createElement("p");
+    text.textContent = value.text;
+    const citations = document.createElement("small");
+    citations.textContent = `Sources: ${(value.evidenceIds || []).map((id) => evidenceByID.get(id)?.title || id).join(" · ")}`;
+    item.append(label, text, citations);
+    list.append(item);
+  }
+  return list;
 }
 
 function setLibraryTab(tab, focus = false) {

@@ -28,7 +28,7 @@ func geminiTestProvider(name string) config.ProviderConfig {
 }
 
 var (
-	swapSchemaNames = []string{"acquisition-plan.schema.json", "reasoning-result.schema.json", "semantic-event-resolution.schema.json", "ai-deep-detection.schema.json"}
+	swapSchemaNames = []string{"acquisition-plan.schema.json", "reasoning-result.schema.json", "semantic-event-resolution.schema.json", "ai-deep-detection.schema.json", "living-topic-snapshot.schema.json"}
 )
 
 // copySwapSchemas stages the tracked workload schemas beneath root so eager

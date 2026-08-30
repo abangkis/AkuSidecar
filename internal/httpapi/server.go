@@ -664,6 +664,98 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodGet && p == "/api/living-topics":
+		topics, err := s.engine.LivingTopics(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"topics": topics})
+	case r.Method == http.MethodPost && p == "/api/living-topics":
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		topic, err := s.engine.CreateLivingTopic(ctx, body.Name)
+		if err != nil {
+			return badRequest(err.Error())
+		}
+		return writeJSON(w, http.StatusCreated, map[string]any{"topic": topic})
+	case strings.HasPrefix(p, "/api/living-topics/"):
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(p, "/api/living-topics/"), "/"), "/")
+		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet {
+			detail, err := s.engine.LivingTopic(ctx, parts[0])
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if err != nil {
+				return err
+			}
+			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
+		}
+		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodPatch {
+			var body struct {
+				Name string `json:"name"`
+			}
+			if err := readJSON(r, &body); err != nil {
+				return err
+			}
+			topic, err := s.engine.RenameLivingTopic(ctx, parts[0], body.Name)
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if err != nil {
+				return badRequest(err.Error())
+			}
+			return writeJSON(w, http.StatusOK, map[string]any{"topic": topic})
+		}
+		if len(parts) == 2 && parts[0] != "" && parts[1] == "members" && r.Method == http.MethodPost {
+			var body struct {
+				MemoryItemID string `json:"memoryItemId"`
+			}
+			if err := readJSON(r, &body); err != nil {
+				return err
+			}
+			detail, err := s.engine.AddLivingTopicMember(ctx, parts[0], body.MemoryItemID)
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if errors.Is(err, store.ErrMemoryNotFound) {
+				return notFound("library item")
+			}
+			if errors.Is(err, store.ErrLivingTopicMemberMax) {
+				return conflict(err.Error())
+			}
+			if err != nil {
+				return badRequest(err.Error())
+			}
+			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
+		}
+		if len(parts) == 3 && parts[0] != "" && parts[1] == "members" && parts[2] != "" && r.Method == http.MethodDelete {
+			detail, err := s.engine.RemoveLivingTopicMember(ctx, parts[0], parts[2])
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if err != nil {
+				return err
+			}
+			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
+		}
+		if len(parts) == 2 && parts[0] != "" && parts[1] == "snapshots" && r.Method == http.MethodPost {
+			if err := requireEmptyBody(r); err != nil {
+				return err
+			}
+			snapshot, err := s.engine.CreateLivingTopicSnapshot(ctx, parts[0])
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if err != nil {
+				return conflict(err.Error())
+			}
+			return writeJSON(w, http.StatusCreated, map[string]any{"snapshot": snapshot})
+		}
+		return notFound("living topic route")
 	case r.Method == http.MethodGet && p == "/api/library/items":
 		query, err := parseLibraryQuery(r.URL.Query())
 		if err != nil {

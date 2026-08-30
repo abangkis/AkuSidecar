@@ -151,6 +151,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			if err := migrateSchema14To15(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 14 to 15: %w", err)
 			}
+			version = "15"
+		}
+		if version == "15" {
+			if err := migrateSchema15To16(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 15 to 16: %w", err)
+			}
 			version = schemaVersion
 		}
 		if version != schemaVersion {
@@ -388,6 +394,21 @@ func migrateSchema14To15(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='15' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema15To16(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, livingTopicsMigrationSQL); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='16' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -2015,7 +2036,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM memory_search_fts; DELETE FROM memory_retention_claims; DELETE FROM memory_actions; DELETE FROM memory_provenance; DELETE FROM memory_content_versions; DELETE FROM memory_tombstone_aliases; DELETE FROM memory_identity_aliases; DELETE FROM memory_items; DELETE FROM content_context_feedback_events; DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts','auto_update_usage_limit_pause','pending_app_profile_reset','memory_tombstone_key_v1');`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM living_topic_snapshots; DELETE FROM living_topic_memberships; DELETE FROM living_topics; DELETE FROM memory_search_fts; DELETE FROM memory_retention_claims; DELETE FROM memory_actions; DELETE FROM memory_provenance; DELETE FROM memory_content_versions; DELETE FROM memory_tombstone_aliases; DELETE FROM memory_identity_aliases; DELETE FROM memory_items; DELETE FROM content_context_feedback_events; DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_queue_vacancy_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts','auto_update_usage_limit_pause','pending_app_profile_reset','memory_tombstone_key_v1');`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE auto_update_state SET last_ui_access_at=NULL,last_attempt_at=NULL,last_success_at=NULL,last_error='' WHERE id=1`); err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/httpapi"
+	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -149,6 +150,9 @@ func main() {
 		aiResolver, err := aidetector.NewStructuredResolver(cfg.Root, structured, cfg.Reasoning.AIDetection)
 		fatal(logger, err)
 		runtime.SetAIDeepResolver(aiResolver)
+		topicResolver, err := livingtopics.NewStructuredResolver(cfg.Root, structured, cfg.Reasoning.Evaluation)
+		fatal(logger, err)
+		runtime.SetLivingTopicsResolver(topicResolver)
 	}
 	server, err := httpapi.New(cfg, state, runtime, logger)
 	fatal(logger, err)

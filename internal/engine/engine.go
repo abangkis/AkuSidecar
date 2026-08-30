@@ -13,6 +13,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
+	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/selection"
@@ -61,6 +62,7 @@ type Engine struct {
 	aiFast        aidetector.FastDetector
 	aiDeep        aidetector.Resolver
 	mediaOrigin   mediaprovenance.Inspector
+	topics        livingtopics.Resolver
 	autoCancel    context.CancelFunc
 	autoWake      chan struct{}
 }
@@ -74,7 +76,8 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	}
 	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, pending: map[string]bool{}, cancelled: map[string]bool{}, bridgeOrigins: map[string]time.Time{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
 }
-func (e *Engine) SetAIDeepResolver(value aidetector.Resolver) { e.aiDeep = value }
+func (e *Engine) SetAIDeepResolver(value aidetector.Resolver)         { e.aiDeep = value }
+func (e *Engine) SetLivingTopicsResolver(value livingtopics.Resolver) { e.topics = value }
 func (e *Engine) SetMediaProvenanceInspector(value mediaprovenance.Inspector) {
 	e.mediaOrigin = value
 }

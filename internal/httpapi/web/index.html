@@ -25,6 +25,7 @@
           <nav class="view-switch hidden" aria-label="AkuBrowser view">
             <button id="session-view-button" class="view-button selected" type="button" aria-current="page">Timeline</button>
             <button id="library-view-button" class="view-button" type="button" aria-current="false">Library</button>
+            <button id="topics-view-button" class="view-button" type="button" aria-current="false">Topics</button>
             <button id="inbox-view-button" class="view-button" type="button">Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
@@ -655,6 +656,74 @@
               <div id="library-storage-recommendations" class="library-storage-recommendations" role="list" aria-label="Read-only storage review recommendations"></div>
             </section>
           </section>
+        </div>
+      </section>
+
+      <section id="topics-panel" class="topics-panel hidden" aria-labelledby="topics-heading">
+        <div class="section-heading topics-heading">
+          <div>
+            <p class="step-label">LIVING TOPICS · THIN SLICE</p>
+            <h2 id="topics-heading" tabindex="-1">Build understanding from selected evidence</h2>
+            <p class="review-guidance">Topics change only when you add evidence or explicitly create a snapshot. Nothing is monitored in the background.</p>
+          </div>
+          <button id="topics-refresh-button" class="secondary-button" type="button">Refresh</button>
+        </div>
+
+        <form id="living-topic-create-form" class="living-topic-create-form">
+          <label for="living-topic-create-name">New topic</label>
+          <input id="living-topic-create-name" maxlength="120" required autocomplete="off" placeholder="e.g. OpenAI GPT Astra" />
+          <button class="primary-button" type="submit">Create topic</button>
+        </form>
+        <p id="living-topics-status" class="library-status" role="status" aria-live="polite"></p>
+
+        <div class="living-topics-layout">
+          <aside class="living-topics-list-column" aria-label="Living Topics">
+            <div id="living-topics-list" class="living-topics-list" role="list"></div>
+          </aside>
+          <article id="living-topic-detail" class="living-topic-detail hidden" aria-labelledby="living-topic-detail-heading">
+            <header>
+              <div>
+                <p class="step-label">SELECTED TOPIC</p>
+                <h3 id="living-topic-detail-heading" tabindex="-1">Choose a topic</h3>
+              </div>
+            </header>
+            <form id="living-topic-rename-form" class="living-topic-rename-form">
+              <label for="living-topic-rename-name">Topic name</label>
+              <input id="living-topic-rename-name" maxlength="120" required autocomplete="off" />
+              <button class="secondary-button" type="submit">Rename</button>
+            </form>
+
+            <section class="living-topic-evidence-section" aria-labelledby="living-topic-evidence-heading">
+              <div class="living-topic-section-heading">
+                <div>
+                  <p class="step-label">EXPLICIT MEMBERSHIP</p>
+                  <h4 id="living-topic-evidence-heading">Topic evidence</h4>
+                </div>
+                <span id="living-topic-member-count" class="library-storage-read-only">0 / 20</span>
+              </div>
+              <div id="living-topic-members" class="living-topic-members" role="list"></div>
+              <form id="living-topic-evidence-search-form" class="living-topic-evidence-search-form" role="search">
+                <label for="living-topic-evidence-query">Find Library evidence</label>
+                <div>
+                  <input id="living-topic-evidence-query" type="search" maxlength="200" autocomplete="off" placeholder="Search local Memory" />
+                  <button class="secondary-button" type="submit">Search</button>
+                </div>
+              </form>
+              <div id="living-topic-candidates" class="living-topic-candidates" role="list" aria-label="Available Library evidence"></div>
+            </section>
+
+            <section class="living-topic-snapshot-section" aria-labelledby="living-topic-snapshot-heading">
+              <div class="living-topic-section-heading">
+                <div>
+                  <p class="step-label">ON DEMAND ONLY</p>
+                  <h4 id="living-topic-snapshot-heading">Understanding snapshots</h4>
+                </div>
+                <button id="living-topic-snapshot-button" class="primary-button" type="button">Create snapshot</button>
+              </div>
+              <p class="review-guidance">Uses only current topic evidence. Repeating with unchanged evidence records a truthful no-change snapshot without calling the provider.</p>
+              <div id="living-topic-snapshots" class="living-topic-snapshots"></div>
+            </section>
+          </article>
         </div>
       </section>
 

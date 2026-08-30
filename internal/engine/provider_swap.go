@@ -9,6 +9,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
+	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
 
@@ -17,11 +18,12 @@ import (
 // bad target fails the settings save; apply happens after persistence under
 // the caller's operation lock.
 type providerSwapPlan struct {
-	target        string
-	candidate     reasoning.Provider
-	cfgCopy       config.Config
-	eventResolver semanticengine.Resolver
-	aiResolver    aidetector.Resolver
+	target         string
+	candidate      reasoning.Provider
+	cfgCopy        config.Config
+	eventResolver  semanticengine.Resolver
+	aiResolver     aidetector.Resolver
+	topicsResolver livingtopics.Resolver
 }
 
 // closeCandidate releases a replacement that was constructed successfully but
@@ -90,6 +92,10 @@ func (e *Engine) planProviderSwap(ctx context.Context, target string, settings *
 		if err != nil {
 			return nil, fmt.Errorf("construct AI Deep resolver for %q: %w", target, err)
 		}
+		plan.topicsResolver, err = livingtopics.NewStructuredResolver(cfgCopy.Root, structured, cfgCopy.Reasoning.Evaluation)
+		if err != nil {
+			return nil, fmt.Errorf("construct Living Topics resolver for %q: %w", target, err)
+		}
 	}
 	return plan, nil
 }
@@ -120,6 +126,7 @@ func (plan *providerSwapPlan) apply(e *Engine) {
 		e.events.SetResolver(plan.eventResolver)
 	}
 	e.aiDeep = plan.aiResolver
+	e.topics = plan.topicsResolver
 	e.logger.Printf("reasoning provider switched %s -> %s", previous, plan.candidate.Name())
 	select {
 	case e.autoWake <- struct{}{}:

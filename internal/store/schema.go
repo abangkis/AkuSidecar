@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 15
+const SchemaVersion = 16
 
-const schemaVersion = "15"
+const schemaVersion = "16"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -202,6 +202,93 @@ CREATE INDEX content_context_feedback_pair_created
   ON content_context_feedback_events(context_key,memory_item_id,created_at DESC,id DESC);
 CREATE INDEX content_context_feedback_timeline_created
   ON content_context_feedback_events(timeline_id,created_at DESC,id DESC);
+`
+
+// livingTopicsSchemaSQL stores the bounded manual topic, membership, and
+// append-only snapshot boundary. It never references operational session,
+// run, Timeline, preference, or knowledge-event tables.
+const livingTopicsSchemaSQL = `
+CREATE TABLE IF NOT EXISTS living_topics (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS living_topics_updated
+  ON living_topics(updated_at DESC,id DESC);
+
+CREATE TABLE IF NOT EXISTS living_topic_memberships (
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  added_at TEXT NOT NULL,
+  PRIMARY KEY(topic_id,memory_item_id)
+);
+
+CREATE INDEX IF NOT EXISTS living_topic_memberships_memory
+  ON living_topic_memberships(memory_item_id,topic_id);
+
+CREATE TABLE IF NOT EXISTS living_topic_snapshots (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (version >= 1),
+  status TEXT NOT NULL CHECK (status IN ('ready','insufficient_evidence','no_change')),
+  overview TEXT NOT NULL DEFAULT '',
+  claims_json TEXT NOT NULL DEFAULT '[]',
+  deltas_json TEXT NOT NULL DEFAULT '[]',
+  evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+  input_digest TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  previous_snapshot_id TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(topic_id,version)
+);
+
+CREATE INDEX IF NOT EXISTS living_topic_snapshots_topic_created
+  ON living_topic_snapshots(topic_id,created_at DESC,id DESC);
+`
+
+// A v15 database must fail closed when any canonical object already exists
+// with an incompatible definition.
+const livingTopicsMigrationSQL = `
+CREATE TABLE living_topics (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX living_topics_updated ON living_topics(updated_at DESC,id DESC);
+CREATE TABLE living_topic_memberships (
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  added_at TEXT NOT NULL,
+  PRIMARY KEY(topic_id,memory_item_id)
+);
+CREATE INDEX living_topic_memberships_memory ON living_topic_memberships(memory_item_id,topic_id);
+CREATE TABLE living_topic_snapshots (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (version >= 1),
+  status TEXT NOT NULL CHECK (status IN ('ready','insufficient_evidence','no_change')),
+  overview TEXT NOT NULL DEFAULT '',
+  claims_json TEXT NOT NULL DEFAULT '[]',
+  deltas_json TEXT NOT NULL DEFAULT '[]',
+  evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+  input_digest TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  previous_snapshot_id TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(topic_id,version)
+);
+CREATE INDEX living_topic_snapshots_topic_created ON living_topic_snapshots(topic_id,created_at DESC,id DESC);
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory
@@ -855,4 +942,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL
+` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL + livingTopicsSchemaSQL
