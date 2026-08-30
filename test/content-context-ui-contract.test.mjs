@@ -20,6 +20,8 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "syncTimelineContentContextTabs",
     "contentContextRailPlacement",
     "contentContextTabFits",
+    "contentContextPostPassedReadingExitLine",
+    "timelineContentContextOverlapsBackToTop",
     "backToTopBoundaryBottom",
     "aria-controls",
     "Searching local Personal Memory",
@@ -31,9 +33,12 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(state, /CONTENT_CONTEXT_MAX_LIMIT = 5/);
   assert.match(state, /function backToTopBoundaryBottom/);
   assert.match(state, /function contentContextTabFits/);
+  assert.match(state, /CONTENT_CONTEXT_READING_EXIT_RATIO = 0\.2/);
+  assert.match(state, /function contentContextPostPassedReadingExitLine/);
   assert.doesNotMatch(index, /id="timeline-content-context-tab"/);
   assert.match(app, /function buildTimelineContentContextAnchor/);
   assert.match(app, /const viewportWidth = document\.documentElement\.clientWidth \|\| window\.innerWidth;/);
+  assert.match(app, /const safeRightBoundary = viewportWidth - 16;/);
   assert.match(app, /--timeline-content-context-document-left", `\$\{window\.scrollX \+ postRect\.right\}px`/);
   assert.match(app, /--timeline-content-context-document-top", `\$\{window\.scrollY \+ postRect\.top\}px`/);
   assert.match(app, /--timeline-content-context-width", `\$\{width\}px`/);
@@ -56,10 +61,14 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /const item = buildTimelineItem\(entry, \{ contentContext: false \}\)/);
   assert.match(app, /if \(expanded && state\.timelineContentContextActiveID === entry\.id\)[\s\S]*closeTimelineContentContextDrawer\(\{ clearActive: true, focusTrigger: false \}\)/);
   assert.match(app, /report\.classList\.toggle\("hidden", expanded\)/);
-  assert.match(app, /syncBackToTopPosition\(top\);\r?\n    syncTimelineContentContextTabs\(\);/);
+  assert.match(app, /function timelineContentContextOverlapsBackToTop\([\s\S]*timelineContentContextDrawerOverlapsBackToTop/);
+  assert.match(app, /scheduleTimelineContentContextPosition\(\);\r?\n  scheduleBackToTop\(\);/);
+  assert.match(app, /syncTimelineContentContextTabs\(\);\r?\n  scheduleBackToTop\(\);/);
+  assert.match(app, /function syncBackToTopNow\(\)[\s\S]*syncBackToTopPosition\(top\);[\s\S]*syncTimelineContentContextTabs\(\);/);
   assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTabs\(\);/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?scheduleTimelineContentContextPosition\(\)/);
-  assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?closeTimelineContentContextDrawer\(/);
+  assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?contentContextPostPassedReadingExitLine/);
+  assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?closeTimelineContentContextDrawer\(\{[\s\S]*?clearActive: true/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?revealTimelineContentContextDrawer\(/);
   assert.doesNotMatch(app, /api\([^)]*content-context[^)]*,\s*\{\s*method:\s*["']POST/i);
 });

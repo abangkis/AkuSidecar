@@ -4,6 +4,20 @@ export const CONTENT_CONTEXT_MAX_LIMIT = 5;
 export const CONTENT_CONTEXT_RAIL_MIN_GUTTER = 280;
 export const CONTENT_CONTEXT_RAIL_MAX_WIDTH = 420;
 export const CONTENT_CONTEXT_TAB_DEFAULT_WIDTH = 42;
+export const CONTENT_CONTEXT_READING_EXIT_RATIO = 0.2;
+
+export function contentContextReadingExitLine({ viewportHeight = 0 } = {}) {
+  const height = Number(viewportHeight);
+  if (!Number.isFinite(height) || height <= 0) return Number.NaN;
+  return height * CONTENT_CONTEXT_READING_EXIT_RATIO;
+}
+
+export function contentContextPostPassedReadingExitLine({ postBottom = 0, viewportHeight = 0 } = {}) {
+  const bottom = Number(postBottom);
+  const line = contentContextReadingExitLine({ viewportHeight });
+  if (!Number.isFinite(bottom) || !Number.isFinite(line)) return false;
+  return bottom <= line;
+}
 
 export function backToTopBoundaryBottom({ lineY = 0, viewportHeight = 0, restBottom = 0 } = {}) {
   const line = Number(lineY);
