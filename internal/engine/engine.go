@@ -679,6 +679,7 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		if settings.AIDetectionEnabled && !onboardingFastPath {
 			e.launchMediaProvenance(sessionID)
 		}
+		e.launchLivingTopicRouting(sessionID)
 		return nil, nil
 	}
 	settings, err := e.store.GetSettings(ctx)
@@ -2095,6 +2096,7 @@ func (e *Engine) CorrectSelection(ctx context.Context, runID, candidateRef strin
 		e.launchDeepDetectionItems(item.SessionID, []domain.TimelineItem{item})
 		e.launchMediaProvenanceItems([]domain.TimelineItem{item})
 	}
+	e.launchLivingTopicRouting(item.SessionID)
 	return correction, item, nil
 }
 

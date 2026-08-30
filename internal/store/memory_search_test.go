@@ -224,7 +224,7 @@ func TestSchema12MigrationBackfillsMemorySearchIndex(t *testing.T) {
 		t.Fatalf("migration search=%+v err=%v", result, err)
 	}
 	var version string
-	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "16" {
+	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "17" {
 		t.Fatalf("migration version=%q err=%v", version, err)
 	}
 }

@@ -154,6 +154,9 @@ func main() {
 		fatal(logger, err)
 		runtime.SetLivingTopicsResolver(topicResolver)
 	}
+	if err := runtime.ResumeLivingTopicRouting(context.Background()); err != nil {
+		logger.Printf("Living Topics routing resume degraded safely: %v", err)
+	}
 	server, err := httpapi.New(cfg, state, runtime, logger)
 	fatal(logger, err)
 	resumed, err := runtime.ResumePendingReasoning(context.Background())

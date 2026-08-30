@@ -22,7 +22,7 @@ func TestLivingTopicsHTTPManualWorkflowAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/api/living-topics", strings.NewReader(`{"name":"GPT Astra"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/living-topics", strings.NewReader(`{"name":"GPT Astra","description":"Track releases and capabilities"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	server.api().ServeHTTP(response, request)
@@ -52,14 +52,14 @@ func TestLivingTopicsHTTPManualWorkflowAndPrivacy(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("member status=%d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "private full text") || strings.Contains(response.Body.String(), "fullContent") {
+	if strings.Contains(response.Body.String(), "private full text") || strings.Contains(response.Body.String(), "fullContent") || !strings.Contains(response.Body.String(), `"origin":"manual"`) {
 		t.Fatalf("topic detail exposed retained content: %s", response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/living-topics/"+created.Topic.ID, nil)
 	response = httptest.NewRecorder()
 	server.api().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"memberCount":1`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"memberCount":1`) || !strings.Contains(response.Body.String(), `"description":"Track releases and capabilities"`) {
 		t.Fatalf("detail status=%d body=%s", response.Code, response.Body.String())
 	}
 

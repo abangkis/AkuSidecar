@@ -71,3 +71,24 @@ func TestResolverInsufficientEvidenceDropsStatements(t *testing.T) {
 		t.Fatalf("value=%+v", value)
 	}
 }
+
+func TestRouterUsesCriteriaAndFeedbackWithoutExposingTopicIDs(t *testing.T) {
+	invoker := &fakeInvoker{raw: `{"decisions":[{"topicAlias":"topic_001","match":true,"confidence":0.91,"reason":"The central claim is about Astra capabilities."}]}`}
+	resolver, err := NewStructuredResolver("../..", invoker, config.ModelConfig{Model: "fallback", Effort: "medium"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	topic := domain.LivingTopic{ID: "private-topic-id", Name: "GPT Astra", Description: "Track capabilities and releases; exclude generic AI news."}
+	item := domain.TimelineItem{Item: domain.ReasonedItem{WhatChanged: "Astra gained agent coordination", WhyItMatters: "A new capability was demonstrated"}}
+	example := domain.LivingTopicRoutingExample{TopicID: topic.ID, Verdict: "exclude", Item: domain.MemoryItem{Title: "Generic AI funding"}}
+	decisions, _, _, err := resolver.RouteWithProfile(context.Background(), item, []domain.LivingTopic{topic}, []domain.LivingTopicRoutingExample{example}, "luna_high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decisions) != 1 || !decisions[0].Match || decisions[0].TopicID != topic.ID || decisions[0].Mode != "llm" {
+		t.Fatalf("decisions=%+v", decisions)
+	}
+	if invoker.profile != RoutingExecutionProfile || strings.Contains(invoker.prompt, topic.ID) || !strings.Contains(invoker.prompt, "negativeExamples") {
+		t.Fatalf("profile=%q prompt=%s", invoker.profile, invoker.prompt)
+	}
+}

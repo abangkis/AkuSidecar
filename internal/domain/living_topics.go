@@ -1,15 +1,55 @@
 package domain
 
-// LivingTopic is a manually named, user-owned view over selected Personal
-// Memory evidence. Membership is intentionally independent from Saved, Keep,
-// preference learning, Timeline selection, and Content Context feedback.
+// LivingTopic is a manually named, user-owned view over criteria-routed and
+// explicitly selected Personal Memory evidence. Membership is intentionally
+// independent from Saved, Keep, preference learning, Timeline selection, and
+// Content Context feedback.
 type LivingTopic struct {
 	ID             string               `json:"id"`
 	Name           string               `json:"name"`
+	Description    string               `json:"description"`
 	MemberCount    int                  `json:"memberCount"`
 	LatestSnapshot *LivingTopicSnapshot `json:"latestSnapshot,omitempty"`
 	CreatedAt      string               `json:"createdAt"`
 	UpdatedAt      string               `json:"updatedAt"`
+}
+
+// LivingTopicMembership keeps automatic routing explainable without changing
+// the Personal Memory item contract used by Library and snapshots.
+type LivingTopicMembership struct {
+	MemoryItemID string  `json:"memoryItemId"`
+	Origin       string  `json:"origin"`
+	MatchMode    string  `json:"matchMode"`
+	Confidence   float64 `json:"confidence"`
+	Reason       string  `json:"reason"`
+	AddedAt      string  `json:"addedAt"`
+}
+
+type LivingTopicRoutingFeedback struct {
+	TopicID      string `json:"topicId"`
+	MemoryItemID string `json:"memoryItemId"`
+	Verdict      string `json:"verdict"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+type LivingTopicRoutingDecision struct {
+	TopicID    string  `json:"topicId"`
+	Match      bool    `json:"match"`
+	Confidence float64 `json:"confidence"`
+	Mode       string  `json:"mode"`
+	Reason     string  `json:"reason"`
+}
+
+type LivingTopicRoutingExample struct {
+	TopicID string     `json:"topicId"`
+	Verdict string     `json:"verdict"`
+	Item    MemoryItem `json:"item"`
+}
+
+type LivingTopicRoutingJob struct {
+	ID         string `json:"id"`
+	SessionID  string `json:"sessionId"`
+	TimelineID string `json:"timelineId"`
 }
 
 type LivingTopicClaim struct {
@@ -44,9 +84,10 @@ type LivingTopicSnapshot struct {
 }
 
 type LivingTopicDetail struct {
-	Topic     LivingTopic           `json:"topic"`
-	Members   []MemoryItem          `json:"members"`
-	Snapshots []LivingTopicSnapshot `json:"snapshots"`
+	Topic       LivingTopic             `json:"topic"`
+	Members     []MemoryItem            `json:"members"`
+	Memberships []LivingTopicMembership `json:"memberships"`
+	Snapshots   []LivingTopicSnapshot   `json:"snapshots"`
 }
 
 type LivingTopicSnapshotResult struct {

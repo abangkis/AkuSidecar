@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/livingtopics"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 func (e *Engine) LivingTopics(ctx context.Context) ([]domain.LivingTopic, error) {
@@ -23,15 +26,25 @@ func (e *Engine) LivingTopic(ctx context.Context, id string) (domain.LivingTopic
 }
 
 func (e *Engine) CreateLivingTopic(ctx context.Context, name string) (domain.LivingTopic, error) {
+	return e.CreateLivingTopicWithCriteria(ctx, name, "")
+}
+
+func (e *Engine) CreateLivingTopicWithCriteria(ctx context.Context, name, description string) (domain.LivingTopic, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
-	return e.store.CreateLivingTopic(ctx, name)
+	return e.store.CreateLivingTopicWithCriteria(ctx, name, description)
 }
 
 func (e *Engine) RenameLivingTopic(ctx context.Context, id, name string) (domain.LivingTopic, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	return e.store.RenameLivingTopic(ctx, id, name)
+}
+
+func (e *Engine) UpdateLivingTopicCriteria(ctx context.Context, id, name, description string) (domain.LivingTopic, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	return e.store.UpdateLivingTopicCriteria(ctx, id, name, description)
 }
 
 func (e *Engine) AddLivingTopicMember(ctx context.Context, topicID, memoryID string) (domain.LivingTopicDetail, error) {
@@ -152,4 +165,189 @@ func livingTopicInputDigest(items []domain.MemoryItem) (string, []string, error)
 	}
 	sum := sha256.Sum256(raw)
 	return strings.ToLower(hex.EncodeToString(sum[:])), ids, nil
+}
+
+func (e *Engine) ResumeLivingTopicRouting(ctx context.Context) error {
+	if err := e.store.ResetRunningLivingTopicRouting(ctx); err != nil {
+		return err
+	}
+	e.launchLivingTopicRouting("")
+	return nil
+}
+
+func (e *Engine) launchLivingTopicRouting(sessionID string) {
+	if sessionID != "" {
+		if _, err := e.store.QueueLivingTopicRouting(context.Background(), sessionID); err != nil {
+			e.logger.Printf("Living Topics routing queue degraded safely for session %s: %v", sessionID, err)
+			return
+		}
+	}
+	const key = "living-topics-routing"
+	e.mu.Lock()
+	if _, active := e.active[key]; active {
+		e.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	e.active[key] = cancel
+	e.mu.Unlock()
+	go func() {
+		defer func() {
+			e.mu.Lock()
+			delete(e.active, key)
+			shuttingDown := e.shuttingDown
+			e.mu.Unlock()
+			if !shuttingDown {
+				if pending, err := e.store.HasPendingLivingTopicRouting(context.Background()); err == nil && pending {
+					e.launchLivingTopicRouting("")
+				}
+			}
+		}()
+		for {
+			job, err := e.store.ClaimLivingTopicRouting(ctx)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					e.logger.Printf("Living Topics routing claim degraded safely: %v", err)
+				}
+				return
+			}
+			if job == nil {
+				return
+			}
+			decisions, routeErr := e.routeLivingTopicItem(ctx, job.TimelineID)
+			if finishErr := e.store.FinishLivingTopicRouting(context.Background(), job.ID, decisions, routeErr); finishErr != nil {
+				e.logger.Printf("Living Topics routing job %s could not persist: %v", job.ID, finishErr)
+			}
+			if routeErr != nil {
+				e.logger.Printf("Living Topics routing job %s degraded safely: %v", job.ID, routeErr)
+			}
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return
+			}
+		}
+	}()
+}
+
+func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([]domain.LivingTopicRoutingDecision, error) {
+	item, err := e.store.LivingTopicRoutingItem(ctx, timelineID)
+	if err != nil {
+		return nil, err
+	}
+	topics, err := e.store.ListLivingTopics(ctx)
+	if err != nil || len(topics) == 0 {
+		return nil, err
+	}
+	storedExamples, err := e.store.LivingTopicFeedbackExamples(ctx, 3)
+	if err != nil {
+		return nil, err
+	}
+	examples := make([]domain.LivingTopicRoutingExample, 0, len(storedExamples))
+	for _, value := range storedExamples {
+		examples = append(examples, domain.LivingTopicRoutingExample{TopicID: value.TopicID, Verdict: value.Verdict, Item: value.Item})
+	}
+	decisions := make([]domain.LivingTopicRoutingDecision, 0, len(topics))
+	remaining := make([]domain.LivingTopic, 0, len(topics))
+	for _, topic := range topics {
+		score, reason := deterministicLivingTopicScore(item, topic, examples)
+		if score >= 0.70 {
+			decisions = append(decisions, domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: score, Mode: "deterministic", Reason: reason})
+		} else {
+			remaining = append(remaining, topic)
+		}
+	}
+	if router, ok := e.topics.(livingtopics.Router); ok && len(remaining) > 0 {
+		settings, settingsErr := e.store.GetSettings(ctx)
+		if settingsErr != nil {
+			return nil, settingsErr
+		}
+		llm, _, _, routeErr := router.RouteWithProfile(ctx, item, remaining, examples, settings.ReasoningEvaluationProfile)
+		if routeErr != nil {
+			e.logger.Printf("Living Topics semantic routing degraded to deterministic for Timeline %s: %v", timelineID, routeErr)
+		} else {
+			decisions = append(decisions, llm...)
+		}
+	}
+	for _, decision := range decisions {
+		if !decision.Match || decision.Confidence < 0.65 {
+			continue
+		}
+		if err := e.store.AddAutomaticLivingTopicMember(ctx, decision.TopicID, item, decision); err != nil && !errors.Is(err, store.ErrLivingTopicMemberMax) {
+			return decisions, err
+		}
+	}
+	return decisions, nil
+}
+
+func deterministicLivingTopicScore(item domain.TimelineItem, topic domain.LivingTopic, examples []domain.LivingTopicRoutingExample) (float64, string) {
+	postTokens := livingTopicTokens(strings.Join([]string{item.Item.WhatChanged, item.Item.WhyItMatters, strings.Join(item.Assessment.TopicTags, " "), strings.Join(item.Assessment.TopicFacets, " ")}, " "))
+	criteriaTokens := livingTopicTokens(topic.Name + " " + topic.Description)
+	base := tokenCoverage(postTokens, criteriaTokens)
+	positive, negative := 0.0, 0.0
+	for _, example := range examples {
+		if example.TopicID != topic.ID {
+			continue
+		}
+		tokens := livingTopicTokens(example.Item.Title + " " + example.Item.Summary + " " + strings.Join(example.Item.Tags, " ") + " " + strings.Join(example.Item.Facets, " "))
+		overlap := tokenJaccard(postTokens, tokens)
+		if example.Verdict == "include" && overlap > positive {
+			positive = overlap
+		}
+		if example.Verdict == "exclude" && overlap > negative {
+			negative = overlap
+		}
+	}
+	score := base + 0.25*positive - 0.40*negative
+	if score < 0 {
+		score = 0
+	}
+	if score > 1 {
+		score = 1
+	}
+	return score, fmt.Sprintf("Criteria token coverage %.2f; positive similarity %.2f; negative similarity %.2f", base, positive, negative)
+}
+
+func livingTopicTokens(value string) map[string]bool {
+	value = strings.ToLower(strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return ' '
+	}, value))
+	stop := map[string]bool{"the": true, "and": true, "for": true, "with": true, "from": true, "that": true, "this": true, "yang": true, "dan": true, "untuk": true, "dari": true, "dengan": true, "atau": true}
+	result := map[string]bool{}
+	for _, token := range strings.Fields(value) {
+		if len([]rune(token)) >= 3 && !stop[token] {
+			result[token] = true
+		}
+	}
+	return result
+}
+func tokenCoverage(post, criteria map[string]bool) float64 {
+	if len(criteria) == 0 {
+		return 0
+	}
+	hits := 0
+	for token := range criteria {
+		if post[token] {
+			hits++
+		}
+	}
+	return float64(hits) / float64(len(criteria))
+}
+func tokenJaccard(left, right map[string]bool) float64 {
+	if len(left) == 0 || len(right) == 0 {
+		return 0
+	}
+	intersection := 0
+	union := map[string]bool{}
+	for token := range left {
+		union[token] = true
+	}
+	for token := range right {
+		if left[token] {
+			intersection++
+		}
+		union[token] = true
+	}
+	return float64(intersection) / float64(len(union))
 }

@@ -672,12 +672,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusOK, map[string]any{"topics": topics})
 	case r.Method == http.MethodPost && p == "/api/living-topics":
 		var body struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			return err
 		}
-		topic, err := s.engine.CreateLivingTopic(ctx, body.Name)
+		topic, err := s.engine.CreateLivingTopicWithCriteria(ctx, body.Name, body.Description)
 		if err != nil {
 			return badRequest(err.Error())
 		}
@@ -696,12 +697,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodPatch {
 			var body struct {
-				Name string `json:"name"`
+				Name        string `json:"name"`
+				Description string `json:"description"`
 			}
 			if err := readJSON(r, &body); err != nil {
 				return err
 			}
-			topic, err := s.engine.RenameLivingTopic(ctx, parts[0], body.Name)
+			topic, err := s.engine.UpdateLivingTopicCriteria(ctx, parts[0], body.Name, body.Description)
 			if errors.Is(err, store.ErrLivingTopicNotFound) {
 				return notFound("living topic")
 			}

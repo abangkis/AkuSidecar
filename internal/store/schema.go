@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 16
+const SchemaVersion = 17
 
-const schemaVersion = "16"
+const schemaVersion = "17"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -211,6 +211,7 @@ const livingTopicsSchemaSQL = `
 CREATE TABLE IF NOT EXISTS living_topics (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -222,11 +223,40 @@ CREATE TABLE IF NOT EXISTS living_topic_memberships (
   topic_id TEXT NOT NULL,
   memory_item_id TEXT NOT NULL,
   added_at TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT 'manual' CHECK (origin IN ('manual','automatic')),
+  match_mode TEXT NOT NULL DEFAULT 'manual',
+  confidence REAL NOT NULL DEFAULT 1 CHECK (confidence >= 0 AND confidence <= 1),
+  reason TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(topic_id,memory_item_id)
 );
 
 CREATE INDEX IF NOT EXISTS living_topic_memberships_memory
   ON living_topic_memberships(memory_item_id,topic_id);
+
+CREATE TABLE IF NOT EXISTS living_topic_feedback_events (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('include','exclude')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS living_topic_feedback_pair_created
+  ON living_topic_feedback_events(topic_id,memory_item_id,created_at DESC,id DESC);
+
+CREATE TABLE IF NOT EXISTS living_topic_routing_jobs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  timeline_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed')),
+  engine_version TEXT NOT NULL,
+  result_json TEXT NOT NULL DEFAULT '[]',
+  last_error TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS living_topic_routing_queue
+  ON living_topic_routing_jobs(status,queued_at,id);
 
 CREATE TABLE IF NOT EXISTS living_topic_snapshots (
   id TEXT PRIMARY KEY,
@@ -289,6 +319,35 @@ CREATE TABLE living_topic_snapshots (
   UNIQUE(topic_id,version)
 );
 CREATE INDEX living_topic_snapshots_topic_created ON living_topic_snapshots(topic_id,created_at DESC,id DESC);
+`
+
+const livingTopicsRoutingMigrationSQL = `
+ALTER TABLE living_topics ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE living_topic_memberships ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual' CHECK (origin IN ('manual','automatic'));
+ALTER TABLE living_topic_memberships ADD COLUMN match_mode TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE living_topic_memberships ADD COLUMN confidence REAL NOT NULL DEFAULT 1 CHECK (confidence >= 0 AND confidence <= 1);
+ALTER TABLE living_topic_memberships ADD COLUMN reason TEXT NOT NULL DEFAULT '';
+CREATE TABLE living_topic_feedback_events (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  memory_item_id TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('include','exclude')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX living_topic_feedback_pair_created ON living_topic_feedback_events(topic_id,memory_item_id,created_at DESC,id DESC);
+CREATE TABLE living_topic_routing_jobs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  timeline_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed')),
+  engine_version TEXT NOT NULL,
+  result_json TEXT NOT NULL DEFAULT '[]',
+  last_error TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX living_topic_routing_queue ON living_topic_routing_jobs(status,queued_at,id);
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory

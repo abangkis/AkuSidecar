@@ -27,7 +27,7 @@ func TestSchema14MigratesContentContextFeedbackAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "16" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "17" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var table int

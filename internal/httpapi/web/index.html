@@ -25,7 +25,7 @@
           <nav class="view-switch hidden" aria-label="AkuBrowser view">
             <button id="session-view-button" class="view-button selected" type="button" aria-current="page">Timeline</button>
             <button id="library-view-button" class="view-button" type="button" aria-current="false">Library</button>
-            <button id="topics-view-button" class="view-button" type="button" aria-current="false">Topics</button>
+            <button id="topics-view-button" class="view-button" type="button" aria-current="false">Living Topics</button>
             <button id="inbox-view-button" class="view-button" type="button">Inbox</button>
             <button id="settings-view-button" class="view-button" type="button">Settings</button>
           </nav>
@@ -663,8 +663,8 @@
         <div class="section-heading topics-heading">
           <div>
             <p class="step-label">LIVING TOPICS · THIN SLICE</p>
-            <h2 id="topics-heading" tabindex="-1">Build understanding from selected evidence</h2>
-            <p class="review-guidance">Topics change only when you add evidence or explicitly create a snapshot. Nothing is monitored in the background.</p>
+            <h2 id="topics-heading" tabindex="-1">Understanding that keeps up with new evidence</h2>
+            <p class="review-guidance">Final, non-duplicate Timeline posts are sorted asynchronously using topic criteria and your corrections. Snapshots remain explicit and on demand.</p>
           </div>
           <button id="topics-refresh-button" class="secondary-button" type="button">Refresh</button>
         </div>
@@ -711,13 +711,16 @@
               <form id="living-topic-rename-form" class="living-topic-rename-form">
                 <label for="living-topic-rename-name">Topic name</label>
                 <input id="living-topic-rename-name" maxlength="120" required autocomplete="off" />
-                <button class="secondary-button" type="submit">Rename</button>
+                <label for="living-topic-description">Routing criteria</label>
+                <textarea id="living-topic-description" maxlength="1200" rows="4" placeholder="Describe what belongs in this topic, important boundaries, and what should be excluded."></textarea>
+                <small>Used by the local deterministic matcher and bounded semantic classifier. Manual add/remove actions become positive or negative examples.</small>
+                <button class="secondary-button" type="submit">Save criteria</button>
               </form>
 
               <section class="living-topic-evidence-section" aria-labelledby="living-topic-evidence-heading">
                 <div class="living-topic-section-heading">
                   <div>
-                    <p class="step-label">EXPLICIT MEMBERSHIP</p>
+                    <p class="step-label">ROUTED + EXPLICIT MEMBERSHIP</p>
                     <h4 id="living-topic-evidence-heading">Topic evidence</h4>
                   </div>
                   <span id="living-topic-member-count" class="library-storage-read-only">0 / 20</span>

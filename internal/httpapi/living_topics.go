@@ -9,9 +9,10 @@ import (
 )
 
 type livingTopicDetailView struct {
-	Topic     domain.LivingTopic           `json:"topic"`
-	Members   []libraryItemView            `json:"members"`
-	Snapshots []domain.LivingTopicSnapshot `json:"snapshots"`
+	Topic       domain.LivingTopic             `json:"topic"`
+	Members     []libraryItemView              `json:"members"`
+	Memberships []domain.LivingTopicMembership `json:"memberships"`
+	Snapshots   []domain.LivingTopicSnapshot   `json:"snapshots"`
 }
 
 func publicLivingTopicDetail(value domain.LivingTopicDetail) livingTopicDetailView {
@@ -22,7 +23,10 @@ func publicLivingTopicDetail(value domain.LivingTopicDetail) livingTopicDetailVi
 	if value.Snapshots == nil {
 		value.Snapshots = []domain.LivingTopicSnapshot{}
 	}
-	return livingTopicDetailView{Topic: value.Topic, Members: members, Snapshots: value.Snapshots}
+	if value.Memberships == nil {
+		value.Memberships = []domain.LivingTopicMembership{}
+	}
+	return livingTopicDetailView{Topic: value.Topic, Members: members, Memberships: value.Memberships, Snapshots: value.Snapshots}
 }
 
 func requireEmptyBody(r *http.Request) error {

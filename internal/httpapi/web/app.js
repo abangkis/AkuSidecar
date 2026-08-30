@@ -780,13 +780,14 @@ async function renameLivingTopic(event) {
   event.preventDefault();
   const topicsState = state.livingTopics;
   const name = normalizeLivingTopicName($("#living-topic-rename-name").value);
+  const description = $("#living-topic-description").value.trim();
   const path = buildLivingTopicPath(topicsState.selectedId);
   if (!name || !path || topicsState.mutationLoading) return;
   topicsState.mutationLoading = true;
   topicsState.error = null;
   renderLivingTopics();
   try {
-    await api(path, { method: "PATCH", body: { name } });
+    await api(path, { method: "PATCH", body: { name, description } });
     await loadLivingTopics(true);
   } catch (error) {
     topicsState.error = error;
@@ -923,7 +924,7 @@ function renderLivingTopics() {
   if (!topicsState.topics.length) {
     const empty = document.createElement("p");
     empty.className = "library-state";
-    empty.textContent = "Create a topic manually. AkuBrowser will not infer one from your Library.";
+    empty.textContent = "Create a Living Topic and describe what belongs. New final Timeline posts can then be routed automatically.";
     list.replaceChildren(empty);
   } else {
     list.replaceChildren(...topicsState.topics.map((topic) => {
@@ -954,6 +955,7 @@ function renderLivingTopicDetail() {
   renderLivingTopicDetailTabs();
   $("#living-topic-detail-heading").textContent = topic.name;
   $("#living-topic-rename-name").value = topic.name;
+  $("#living-topic-description").value = topic.description || "";
   $("#living-topic-rename-form").querySelector("button").disabled = topicsState.mutationLoading;
   $("#living-topic-member-count").textContent = `${detail.members.length} / 20`;
   const snapshotButton = $("#living-topic-snapshot-button");
@@ -971,7 +973,8 @@ function renderLivingTopicDetail() {
     empty.textContent = "No evidence attached. Search the local Library below.";
     members.replaceChildren(empty);
   } else {
-    members.replaceChildren(...detail.members.map((item) => buildLivingTopicEvidenceCard(item, "Remove", () => removeLivingTopicMember(item.id))));
+    const membershipByID = new Map((detail.memberships || []).map((membership) => [membership.memoryItemId, membership]));
+    members.replaceChildren(...detail.members.map((item) => buildLivingTopicEvidenceCard(item, "Remove", () => removeLivingTopicMember(item.id), false, membershipByID.get(item.id))));
   }
 
   const memberIDs = new Set(detail.members.map((item) => item.id));
@@ -1035,7 +1038,7 @@ function handleLivingTopicDetailTabKeydown(event) {
   setLivingTopicDetailTab(evidence ? LIVING_TOPIC_TAB_EVIDENCE : LIVING_TOPIC_TAB_SNAPSHOT, true);
 }
 
-function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = false) {
+function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = false, membership = null) {
   const card = document.createElement("article");
   card.className = "living-topic-evidence-card";
   card.setAttribute("role", "listitem");
@@ -1045,6 +1048,14 @@ function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = fals
   const meta = document.createElement("small");
   meta.textContent = [sourceLabel(item.source), item.author, item.publishedAt ? formatDate(item.publishedAt) : null].filter(Boolean).join(" · ");
   copy.append(title, meta);
+  if (membership) {
+    const routing = document.createElement("small");
+    routing.className = "living-topic-routing-meta";
+    routing.textContent = membership.origin === "automatic"
+      ? `Auto · ${Math.round((membership.confidence || 0) * 100)}% · ${membership.matchMode || "hybrid"}${membership.reason ? ` · ${membership.reason}` : ""}`
+      : "Added by you · positive routing example";
+    copy.append(routing);
+  }
   const button = document.createElement("button");
   button.type = "button";
   button.className = "text-button";

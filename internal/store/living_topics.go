@@ -13,15 +13,17 @@ import (
 )
 
 const (
-	LivingTopicMaxNameRunes = 120
-	LivingTopicMaxMembers   = 20
-	LivingTopicMaxHistory   = 20
+	LivingTopicMaxNameRunes        = 120
+	LivingTopicMaxDescriptionRunes = 1200
+	LivingTopicMaxMembers          = 20
+	LivingTopicMaxHistory          = 20
 )
 
 var (
-	ErrLivingTopicNotFound  = errors.New("living topic not found")
-	ErrLivingTopicName      = errors.New("living topic name must contain between 1 and 120 characters")
-	ErrLivingTopicMemberMax = errors.New("living topic already contains 20 Memory items")
+	ErrLivingTopicNotFound    = errors.New("living topic not found")
+	ErrLivingTopicName        = errors.New("living topic name must contain between 1 and 120 characters")
+	ErrLivingTopicDescription = errors.New("living topic description cannot exceed 1200 characters")
+	ErrLivingTopicMemberMax   = errors.New("living topic already contains 20 Memory items")
 )
 
 func normalizeLivingTopicName(value string) (string, error) {
@@ -33,24 +35,44 @@ func normalizeLivingTopicName(value string) (string, error) {
 }
 
 func (s *Store) CreateLivingTopic(ctx context.Context, name string) (domain.LivingTopic, error) {
+	return s.CreateLivingTopicWithCriteria(ctx, name, "")
+}
+
+func (s *Store) CreateLivingTopicWithCriteria(ctx context.Context, name, description string) (domain.LivingTopic, error) {
 	name, err := normalizeLivingTopicName(name)
 	if err != nil {
 		return domain.LivingTopic{}, err
 	}
+	description = strings.TrimSpace(description)
+	if utf8.RuneCountInString(description) > LivingTopicMaxDescriptionRunes {
+		return domain.LivingTopic{}, ErrLivingTopicDescription
+	}
 	now := memoryNow(s)
 	id := domain.NewID("topic")
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO living_topics(id,name,created_at,updated_at) VALUES(?,?,?,?)`, id, name, now, now); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO living_topics(id,name,description,created_at,updated_at) VALUES(?,?,?,?,?)`, id, name, description, now, now); err != nil {
 		return domain.LivingTopic{}, fmt.Errorf("create living topic: %w", err)
 	}
 	return s.LivingTopic(ctx, id)
 }
 
 func (s *Store) RenameLivingTopic(ctx context.Context, id, name string) (domain.LivingTopic, error) {
+	current, err := s.LivingTopic(ctx, id)
+	if err != nil {
+		return domain.LivingTopic{}, err
+	}
+	return s.UpdateLivingTopicCriteria(ctx, id, name, current.Description)
+}
+
+func (s *Store) UpdateLivingTopicCriteria(ctx context.Context, id, name, description string) (domain.LivingTopic, error) {
 	name, err := normalizeLivingTopicName(name)
 	if err != nil {
 		return domain.LivingTopic{}, err
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE living_topics SET name=?,updated_at=? WHERE id=?`, name, memoryNow(s), strings.TrimSpace(id))
+	description = strings.TrimSpace(description)
+	if utf8.RuneCountInString(description) > LivingTopicMaxDescriptionRunes {
+		return domain.LivingTopic{}, ErrLivingTopicDescription
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE living_topics SET name=?,description=?,updated_at=? WHERE id=?`, name, description, memoryNow(s), strings.TrimSpace(id))
 	if err != nil {
 		return domain.LivingTopic{}, fmt.Errorf("rename living topic: %w", err)
 	}
@@ -63,12 +85,12 @@ func (s *Store) RenameLivingTopic(ctx context.Context, id, name string) (domain.
 func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic, error) {
 	var topic domain.LivingTopic
 	err := s.db.QueryRowContext(ctx, `
-		SELECT t.id,t.name,t.created_at,t.updated_at,
+		SELECT t.id,t.name,t.description,t.created_at,t.updated_at,
 		       (SELECT COUNT(*) FROM living_topic_memberships m
 		        JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
 		        WHERE m.topic_id=t.id)
 		FROM living_topics t WHERE t.id=?`, strings.TrimSpace(id)).Scan(
-		&topic.ID, &topic.Name, &topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount)
+		&topic.ID, &topic.Name, &topic.Description, &topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.LivingTopic{}, ErrLivingTopicNotFound
 	}
@@ -149,12 +171,17 @@ func (s *Store) AddLivingTopicMember(ctx context.Context, topicID, memoryID stri
 			return domain.LivingTopicDetail{}, ErrLivingTopicMemberMax
 		}
 		now := memoryNow(s)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO living_topic_memberships(topic_id,memory_item_id,added_at) VALUES(?,?,?)`, topicID, memoryID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO living_topic_memberships(topic_id,memory_item_id,added_at,origin,match_mode,confidence,reason) VALUES(?,?,?,'manual','manual',1,'Added by user')`, topicID, memoryID, now); err != nil {
 			return domain.LivingTopicDetail{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, now, topicID); err != nil {
 			return domain.LivingTopicDetail{}, err
 		}
+	} else if _, err := tx.ExecContext(ctx, `UPDATE living_topic_memberships SET origin='manual',match_mode='manual',confidence=1,reason='Added by user' WHERE topic_id=? AND memory_item_id=?`, topicID, memoryID); err != nil {
+		return domain.LivingTopicDetail{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO living_topic_feedback_events(id,topic_id,memory_item_id,verdict,created_at) VALUES(?,?,?,'include',?)`, domain.NewID("topic_feedback"), topicID, memoryID, memoryNow(s)); err != nil {
+		return domain.LivingTopicDetail{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.LivingTopicDetail{}, err
@@ -176,7 +203,11 @@ func (s *Store) RemoveLivingTopicMember(ctx context.Context, topicID, memoryID s
 		return domain.LivingTopicDetail{}, err
 	}
 	if removed, _ := result.RowsAffected(); removed > 0 {
-		if _, err := tx.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, memoryNow(s), strings.TrimSpace(topicID)); err != nil {
+		now := memoryNow(s)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO living_topic_feedback_events(id,topic_id,memory_item_id,verdict,created_at) VALUES(?,?,?,'exclude',?)`, domain.NewID("topic_feedback"), strings.TrimSpace(topicID), strings.TrimSpace(memoryID), now); err != nil {
+			return domain.LivingTopicDetail{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, now, strings.TrimSpace(topicID)); err != nil {
 			return domain.LivingTopicDetail{}, err
 		}
 	}
@@ -192,20 +223,22 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 		return domain.LivingTopicDetail{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.memory_item_id FROM living_topic_memberships m
+		SELECT m.memory_item_id,m.origin,m.match_mode,m.confidence,m.reason,m.added_at FROM living_topic_memberships m
 		JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
 		WHERE m.topic_id=? ORDER BY m.added_at ASC,m.memory_item_id ASC LIMIT ?`, id, LivingTopicMaxMembers)
 	if err != nil {
 		return domain.LivingTopicDetail{}, err
 	}
 	var memberIDs []string
+	memberships := make([]domain.LivingTopicMembership, 0)
 	for rows.Next() {
-		var memoryID string
-		if err := rows.Scan(&memoryID); err != nil {
+		var membership domain.LivingTopicMembership
+		if err := rows.Scan(&membership.MemoryItemID, &membership.Origin, &membership.MatchMode, &membership.Confidence, &membership.Reason, &membership.AddedAt); err != nil {
 			rows.Close()
 			return domain.LivingTopicDetail{}, err
 		}
-		memberIDs = append(memberIDs, memoryID)
+		memberIDs = append(memberIDs, membership.MemoryItemID)
+		memberships = append(memberships, membership)
 	}
 	if err := rows.Close(); err != nil {
 		return domain.LivingTopicDetail{}, err
@@ -222,7 +255,7 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 	if err != nil {
 		return domain.LivingTopicDetail{}, err
 	}
-	return domain.LivingTopicDetail{Topic: topic, Members: members, Snapshots: snapshots}, nil
+	return domain.LivingTopicDetail{Topic: topic, Members: members, Memberships: memberships, Snapshots: snapshots}, nil
 }
 
 func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.LivingTopicSnapshot) (domain.LivingTopicSnapshot, error) {
