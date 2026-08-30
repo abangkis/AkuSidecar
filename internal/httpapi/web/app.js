@@ -6746,6 +6746,9 @@ function syncTimelineContentContextPosition() {
   });
   drawer.classList.remove("is-rail", "is-overlay", "is-sheet");
   drawer.classList.add(`is-${mode}`);
+  drawer.style.removeProperty("--timeline-content-context-document-left");
+  drawer.style.removeProperty("--timeline-content-context-document-top");
+  drawer.style.removeProperty("--timeline-content-context-rail-height");
   drawer.style.setProperty("--timeline-content-context-top", `${Math.round(top)}px`);
   drawer.style.setProperty("--timeline-content-context-max-height", `${Math.max(80, Math.round(viewportBottom - top))}px`);
   if (mode === "sheet") {
@@ -6772,6 +6775,17 @@ function syncTimelineContentContextPosition() {
   const width = railPlacement?.width
     ?? Math.min(360, Math.max(240, viewportWidth - 32));
   const right = railPlacement?.right ?? 16;
+  if (mode === "rail") {
+    drawer.style.removeProperty("--timeline-content-context-right");
+    drawer.style.setProperty("--timeline-content-context-document-left", `${window.scrollX + postRect.right}px`);
+    drawer.style.setProperty("--timeline-content-context-document-top", `${window.scrollY + postRect.top}px`);
+    drawer.style.setProperty(
+      "--timeline-content-context-rail-height",
+      `${Math.max(120, Math.min(postRect.height, window.innerHeight - 32))}px`,
+    );
+    drawer.style.setProperty("--timeline-content-context-width", `${width}px`);
+    return;
+  }
   drawer.style.setProperty("--timeline-content-context-right", `${right}px`);
   drawer.style.setProperty("--timeline-content-context-width", `${width}px`);
 }
@@ -6785,28 +6799,7 @@ function scheduleTimelineContentContextPosition() {
 }
 
 function handleTimelineContentContextScroll() {
-  const currentY = window.scrollY;
-  const delta = currentY - state.timelineContentContextLastScrollY;
-  state.timelineContentContextLastScrollY = currentY;
-  if (!state.timelineContentContextActiveID) {
-    syncTimelineContentContextTabs();
-    return;
-  }
-  if (delta < -2 && state.timelineContentContextDrawerOpen) {
-    closeTimelineContentContextDrawer({ clearActive: false, focusTrigger: timelineContentContextFocusIsInsideDrawer() });
-    return;
-  }
-  const anchor = timelineContentContextAnchor(state.timelineContentContextActiveID);
-  const rect = anchor?.getBoundingClientRect();
-  const anchorVisible = rect && rect.bottom > 0 && rect.top < window.innerHeight;
-  if (state.timelineContentContextDrawerOpen && !anchorVisible) {
-    closeTimelineContentContextDrawer({ clearActive: false, focusTrigger: timelineContentContextFocusIsInsideDrawer() });
-    return;
-  }
-  if (delta > 2 && !state.timelineContentContextDrawerOpen && anchorVisible) {
-    revealTimelineContentContextDrawer({ focus: false });
-    return;
-  }
+  state.timelineContentContextLastScrollY = window.scrollY;
   syncTimelineContentContextTabs();
 }
 
