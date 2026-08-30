@@ -108,6 +108,13 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	if nonMaterial != nil || outcome != "no_change" || resolver.calls != 2 {
 		t.Fatalf("nonMaterial=%+v outcome=%s calls=%d", nonMaterial, outcome, resolver.calls)
 	}
+	current, err := state.LivingTopicDetail(ctx, topic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current.Snapshots) != 1 || !current.Snapshots[0].IsCurrent || current.Snapshots[0].InputDigest == current.Topic.UnderstandingInputDigest {
+		t.Fatalf("semantic no-change must retain the latest material snapshot as current: detail=%+v", current)
+	}
 	if _, err := state.UpsertMemoryRecallStub(ctx, livingTopicMemoryInput("Preview three")); err != nil {
 		t.Fatal(err)
 	}

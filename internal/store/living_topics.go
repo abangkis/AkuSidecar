@@ -443,9 +443,13 @@ func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.L
 		default:
 			snapshots[index].EvidenceAvailability = "unavailable"
 		}
+		// The topic digest records the newest evaluated input, while the
+		// snapshot digest records the input that produced the latest material
+		// publication. They intentionally diverge after a successful semantic
+		// no-change evaluation. In that case the published snapshot remains the
+		// current understanding as long as it still has active topic evidence.
 		snapshots[index].IsCurrent = index == 0 &&
 			topic.UnderstandingStatus == "current" &&
-			snapshots[index].InputDigest == topic.UnderstandingInputDigest &&
 			activeCount > 0
 	}
 	return snapshots
