@@ -44,9 +44,9 @@ import {
   backToTopBoundaryBottom,
   buildTimelineContentContextPath,
   contentContextDrawerMode,
-  contentContextTabPlacement,
+  contentContextRailPlacement,
+  contentContextTabFits,
   CONTENT_CONTEXT_MAX_LIMIT,
-  CONTENT_CONTEXT_TAB_DEFAULT_HEIGHT,
   CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
 } from "./timeline-content-context-state.js";
 // The embedded Timeline action is Read later. Existing Library detail keeps
@@ -163,7 +163,6 @@ const state = {
   timelineContentContextPositionFrame: null,
   timelineContentContextCloseTimer: null,
   timelineContentContextLastScrollY: window.scrollY,
-  timelineContentContextTabHideTimer: null,
   timelineBatches: [],
   sourceSessionReadiness: {},
   sourceSessionProbeInFlight: false,
@@ -406,11 +405,6 @@ $("#onboarding-provider-dialog").addEventListener("close", () => {
 });
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
 $("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
-$("#timeline-content-context-tab").addEventListener("click", () => {
-  const id = $("#timeline-content-context-tab").dataset.timelineId || "";
-  const entry = state.timelineItems.find((candidate) => candidate.id === id);
-  if (entry) toggleTimelineContentContext(entry);
-});
 $("#timeline-content-context-close").addEventListener("click", () => closeTimelineContentContextDrawer());
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !state.timelineContentContextDrawerOpen) return;
@@ -435,7 +429,7 @@ window.addEventListener("resize", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
   scheduleTimelineContentContextPosition();
-  syncTimelineContentContextTab();
+  syncTimelineContentContextTabs();
 }, { passive: true });
 window.addEventListener("beforeunload", (event) => {
   if (!settingsDirty.isDirty() || state.settingsUnloadBypass) return;
@@ -3300,7 +3294,7 @@ function scheduleBackToTop() {
     const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
     $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
     syncBackToTopPosition(top);
-    syncTimelineContentContextTab();
+    syncTimelineContentContextTabs();
   });
 }
 
@@ -5298,7 +5292,7 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
         : "AkuBrowser will place evaluated, source-backed items here after the next bounded check.";
     empty.append(title, detail);
     container.append(empty);
-    syncTimelineContentContextTab();
+    syncTimelineContentContextTabs();
     scheduleBackToTop();
     scheduleTimelineContentContextPosition();
     return;
@@ -5347,7 +5341,7 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
     container.append(rendered);
     observeTimelineItem(rendered, entry.id);
   }
-  syncTimelineContentContextTab();
+  syncTimelineContentContextTabs();
   scheduleBackToTop();
   scheduleTimelineContentContextPosition();
 }
@@ -5596,19 +5590,20 @@ function populateTimelineSidePane() {
     return;
   }
   for (const entry of state.sidePaneItems) {
-    const item = buildTimelineItem(entry);
+    const item = buildTimelineItem(entry, { contentContext: false });
     item.classList.add("timeline-side-pane-card");
     item.dataset.timelineId = entry.id;
     container.append(item);
   }
 }
 
-function buildTimelineItem(entry) {
-  if (entry.semanticEvent?.relation === "duplicate_report") return buildCollapsedDuplicate(entry);
-  return buildExpandedTimelineItem(entry);
+function buildTimelineItem(entry, { contentContext = true } = {}) {
+  if (entry.semanticEvent?.relation === "duplicate_report") return buildCollapsedDuplicate(entry, { contentContext });
+  const item = buildExpandedTimelineItem(entry);
+  return contentContext ? buildTimelineContentContextAnchor(entry, item) : item;
 }
 
-function buildCollapsedDuplicate(entry) {
+function buildCollapsedDuplicate(entry, { contentContext = true } = {}) {
   const container = document.createElement("article");
   container.className = "presentable-item semantic-duplicate-item";
   const summary = document.createElement("div");
@@ -5627,13 +5622,19 @@ function buildCollapsedDuplicate(entry) {
   toggle.className = "secondary-button semantic-duplicate-toggle";
   toggle.textContent = "Show report";
   toggle.setAttribute("aria-expanded", "false");
-  const report = buildExpandedTimelineItem(entry);
+  const expandedReport = buildExpandedTimelineItem(entry);
+  const report = contentContext ? buildTimelineContentContextAnchor(entry, expandedReport) : expandedReport;
   report.classList.add("semantic-duplicate-report", "hidden");
   toggle.addEventListener("click", () => {
     const expanded = toggle.getAttribute("aria-expanded") === "true";
+    if (expanded && state.timelineContentContextActiveID === entry.id) {
+      closeTimelineContentContextDrawer({ clearActive: true, focusTrigger: false });
+    }
     toggle.setAttribute("aria-expanded", String(!expanded));
     toggle.textContent = expanded ? "Show report" : "Hide report";
     report.classList.toggle("hidden", expanded);
+    container.classList.toggle("is-report-expanded", !expanded);
+    syncTimelineContentContextTabs();
   });
   summary.append(copy, toggle);
   container.append(summary, report);
@@ -6534,89 +6535,46 @@ function buildActions(entry) {
 }
 
 function timelineContentContextAnchor(id) {
+  const trigger = timelineContentContextTrigger(id);
+  if (trigger && !trigger.closest(".semantic-duplicate-report.hidden")) {
+    return trigger.closest(".timeline-content-context-anchor");
+  }
   const candidates = [...document.querySelectorAll("#result-items > [data-timeline-id]")]
     .filter((element) => element.dataset.timelineId === String(id));
   return candidates[0] || null;
 }
 
-function timelineContentContextVisibleAnchor() {
-  const candidates = [...document.querySelectorAll("#result-items > [data-timeline-id]")]
-    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-    .filter(({ rect }) => rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight);
-  if (state.timelineContentContextActiveID) {
-    const active = candidates.find(({ element }) => element.dataset.timelineId === state.timelineContentContextActiveID);
-    if (active) return active.element;
-    state.timelineContentContextActiveID = "";
-  }
-  if (!candidates.length) return null;
-  return (candidates.find(({ rect }) => rect.top >= 0) || candidates[0]).element;
+function timelineContentContextTrigger(id) {
+  return [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")]
+    .find((element) => element.dataset.timelineContentContextId === String(id)) || null;
 }
 
-function hideTimelineContentContextTab({ retract = true } = {}) {
-  const tab = $("#timeline-content-context-tab");
-  if (!tab) return;
-  if (state.timelineContentContextTabHideTimer !== null) {
-    window.clearTimeout(state.timelineContentContextTabHideTimer);
-    state.timelineContentContextTabHideTimer = null;
-  }
-  tab.classList.remove("is-visible");
-  tab.classList.toggle("is-retracting", retract);
-  const finish = () => {
-    state.timelineContentContextTabHideTimer = null;
-    if (!tab.classList.contains("is-visible")) {
-      tab.classList.add("hidden");
-      tab.classList.remove("is-retracting");
-    }
-  };
-  const duration = contentContextDrawerMotionDuration();
-  if (duration === 0) finish();
-  else state.timelineContentContextTabHideTimer = window.setTimeout(finish, duration);
-}
-
-function syncTimelineContentContextTab() {
-  const tab = $("#timeline-content-context-tab");
-  if (!tab) return;
-  const drawerOpen = state.timelineContentContextDrawerOpen;
-  tab.setAttribute("aria-expanded", String(drawerOpen));
-  tab.setAttribute("aria-label", "Related context");
-  tab.title = drawerOpen ? "Close related context" : "Related context from local Personal Memory";
-  if (state.currentView !== "timeline" || drawerOpen) {
-    hideTimelineContentContextTab({ retract: false });
-    return;
-  }
-  const anchor = timelineContentContextVisibleAnchor();
-  if (!anchor) {
-    tab.dataset.timelineId = "";
-    hideTimelineContentContextTab();
-    return;
-  }
-  const postRect = anchor.getBoundingClientRect();
+function syncTimelineContentContextTabs() {
+  const tabs = [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")];
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const backToTop = $("#back-to-top");
   const backRect = backToTop && !backToTop.classList.contains("hidden") ? backToTop.getBoundingClientRect() : null;
-  tab.classList.remove("hidden", "is-retracting");
-  const tabRect = tab.getBoundingClientRect();
-  const placement = contentContextTabPlacement({
-    postRight: postRect.right,
-    boundaryLeft: backRect ? backRect.left : window.innerWidth,
-    viewportWidth: window.innerWidth,
-    postTop: postRect.top,
-    viewportHeight: window.innerHeight,
-    tabWidth: tabRect.width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
-    tabHeight: tabRect.height || CONTENT_CONTEXT_TAB_DEFAULT_HEIGHT,
-  });
-  if (!placement) {
-    tab.dataset.timelineId = "";
-    hideTimelineContentContextTab();
-    return;
+  for (const tab of tabs) {
+    const id = tab.dataset.timelineContentContextId || "";
+    const active = state.timelineContentContextDrawerOpen && state.timelineContentContextActiveID === id;
+    const anchor = tab.closest(".timeline-content-context-anchor");
+    const concealedReport = Boolean(tab.closest(".semantic-duplicate-report.hidden"));
+    const postRect = anchor?.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    const fits = state.currentView === "timeline"
+      && !concealedReport
+      && postRect
+      && contentContextTabFits({
+        postRight: postRect.right,
+        boundaryLeft: backRect ? backRect.left : viewportWidth,
+        viewportWidth,
+        tabWidth: tabRect.width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
+      });
+    tab.setAttribute("aria-expanded", String(active));
+    tab.title = active ? "Close related context" : "Related context from local Personal Memory";
+    tab.classList.toggle("is-visible", Boolean(fits));
+    tab.classList.toggle("is-retracting", !fits);
   }
-  tab.dataset.timelineId = anchor.dataset.timelineId || "";
-  tab.style.setProperty("--timeline-content-context-tab-right", `${Math.round(placement.right)}px`);
-  tab.style.setProperty("--timeline-content-context-tab-top", `${Math.round(placement.top)}px`);
-  if (state.timelineContentContextTabHideTimer !== null) {
-    window.clearTimeout(state.timelineContentContextTabHideTimer);
-    state.timelineContentContextTabHideTimer = null;
-  }
-  tab.classList.add("is-visible");
 }
 
 function renderTimelineContentContextMatch(match) {
@@ -6689,7 +6647,7 @@ function revealTimelineContentContextDrawer({ focus = true } = {}) {
   drawer.classList.remove("hidden", "is-closing", "is-retracting");
   drawer.setAttribute("aria-hidden", "false");
   renderTimelineContentContextDrawer();
-  syncTimelineContentContextTab();
+  syncTimelineContentContextTabs();
   scheduleTimelineContentContextPosition();
   window.requestAnimationFrame(() => {
     if (!state.timelineContentContextDrawerOpen) return;
@@ -6703,7 +6661,7 @@ function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = 
   const activeID = state.timelineContentContextActiveID;
   state.timelineContentContextDrawerOpen = false;
   if (clearActive) state.timelineContentContextActiveID = "";
-  syncTimelineContentContextTab();
+  syncTimelineContentContextTabs();
   if (!drawer) return;
   drawer.setAttribute("aria-hidden", "true");
   drawer.classList.remove("is-open");
@@ -6721,7 +6679,7 @@ function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = 
   if (duration === 0) finish();
   else state.timelineContentContextCloseTimer = window.setTimeout(finish, duration);
   if (focusTrigger) {
-    const trigger = $("#timeline-content-context-tab");
+    const trigger = timelineContentContextTrigger(activeID);
     if (trigger && trigger.classList.contains("is-visible")) trigger.focus({ preventScroll: true });
     else $("#timeline-heading")?.focus({ preventScroll: true });
   }
@@ -6773,16 +6731,17 @@ function syncTimelineContentContextPosition() {
     return;
   }
   const postRect = anchor.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const backToTop = $("#back-to-top");
   const backRect = backToTop && !backToTop.classList.contains("hidden") ? backToTop.getBoundingClientRect() : null;
   const viewportBottom = backRect ? Math.max(72, backRect.top - 16) : window.innerHeight - 16;
   const top = Math.max(16, Math.min(postRect.top, viewportBottom - 120));
   const safeRightBoundary = backRect
-    ? Math.min(window.innerWidth - 16, backRect.left - 16)
-    : window.innerWidth - 16;
+    ? Math.min(viewportWidth - 16, backRect.left - 16)
+    : viewportWidth - 16;
   const rightGutter = Math.max(0, safeRightBoundary - postRect.right);
   const mode = contentContextDrawerMode({
-    viewportWidth: window.innerWidth,
+    viewportWidth,
     rightGutter,
   });
   drawer.classList.remove("is-rail", "is-overlay", "is-sheet");
@@ -6803,14 +6762,18 @@ function syncTimelineContentContextPosition() {
     return;
   }
   drawer.style.removeProperty("--timeline-content-context-sheet-bottom");
-  const width = mode === "rail"
-    ? Math.min(360, Math.max(240, rightGutter - 16))
-    : Math.min(360, Math.max(240, window.innerWidth - 32));
-  const right = mode === "rail"
-    ? Math.max(16, window.innerWidth - safeRightBoundary)
-    : 16;
-  drawer.style.setProperty("--timeline-content-context-right", `${Math.round(right)}px`);
-  drawer.style.setProperty("--timeline-content-context-width", `${Math.round(width)}px`);
+  const railPlacement = mode === "rail"
+    ? contentContextRailPlacement({
+      postRight: postRect.right,
+      safeBoundary: safeRightBoundary,
+      viewportWidth,
+    })
+    : null;
+  const width = railPlacement?.width
+    ?? Math.min(360, Math.max(240, viewportWidth - 32));
+  const right = railPlacement?.right ?? 16;
+  drawer.style.setProperty("--timeline-content-context-right", `${right}px`);
+  drawer.style.setProperty("--timeline-content-context-width", `${width}px`);
 }
 
 function scheduleTimelineContentContextPosition() {
@@ -6826,7 +6789,7 @@ function handleTimelineContentContextScroll() {
   const delta = currentY - state.timelineContentContextLastScrollY;
   state.timelineContentContextLastScrollY = currentY;
   if (!state.timelineContentContextActiveID) {
-    syncTimelineContentContextTab();
+    syncTimelineContentContextTabs();
     return;
   }
   if (delta < -2 && state.timelineContentContextDrawerOpen) {
@@ -6844,7 +6807,7 @@ function handleTimelineContentContextScroll() {
     revealTimelineContentContextDrawer({ focus: false });
     return;
   }
-  syncTimelineContentContextTab();
+  syncTimelineContentContextTabs();
 }
 
 function buildTimelineReadLaterAction(entry) {
@@ -6909,6 +6872,23 @@ function buildTimelineReadLaterAction(entry) {
   });
   container.append(save, status);
   return container;
+}
+
+function buildTimelineContentContextAnchor(entry, item) {
+  const anchor = document.createElement("div");
+  anchor.className = "timeline-content-context-anchor";
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.className = "timeline-content-context-tab";
+  tab.dataset.timelineContentContextId = entry.id;
+  tab.setAttribute("aria-controls", "timeline-content-context-drawer");
+  tab.setAttribute("aria-expanded", "false");
+  tab.setAttribute("aria-label", "Related context");
+  tab.title = "Related context from local Personal Memory";
+  tab.textContent = "Related context";
+  tab.addEventListener("click", () => toggleTimelineContentContext(entry));
+  anchor.append(item, tab);
+  return anchor;
 }
 
 function buildSemanticCorrectionActions(entry) {

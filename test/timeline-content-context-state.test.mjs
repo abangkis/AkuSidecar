@@ -5,7 +5,8 @@ import {
   backToTopBoundaryBottom,
   CONTENT_CONTEXT_DEFAULT_LIMIT,
   CONTENT_CONTEXT_MAX_LIMIT,
-  contentContextTabPlacement,
+  contentContextRailPlacement,
+  contentContextTabFits,
   contentContextDrawerMode,
   buildTimelineContentContextPath,
 } from "../internal/httpapi/web/timeline-content-context-state.js";
@@ -26,8 +27,32 @@ test("Content Context stays explicit, encoded, and bounded", () => {
 
 test("Content Context uses an item anchor to choose the responsive drawer mode", () => {
   assert.equal(contentContextDrawerMode({ viewportWidth: 1440, rightGutter: 360 }), "rail");
+  assert.equal(contentContextDrawerMode({ viewportWidth: 1280, rightGutter: 311.5 }), "rail");
   assert.equal(contentContextDrawerMode({ viewportWidth: 1024, rightGutter: 160 }), "overlay");
   assert.equal(contentContextDrawerMode({ viewportWidth: 760, rightGutter: 500 }), "sheet");
+});
+
+test("Related context rail mirrors AI Signals and attaches to the post edge", () => {
+  assert.deepEqual(contentContextRailPlacement({
+    postRight: 760,
+    safeBoundary: 1160,
+    viewportWidth: 1200,
+  }), { width: 400, right: 40 });
+  assert.deepEqual(contentContextRailPlacement({
+    postRight: 620,
+    safeBoundary: 1160,
+    viewportWidth: 1200,
+  }), { width: 420, right: 160 });
+  assert.deepEqual(contentContextRailPlacement({
+    postRight: 952.5,
+    safeBoundary: 1249,
+    viewportWidth: 1265,
+  }), { width: 296.5, right: 16 });
+  assert.equal(contentContextRailPlacement({
+    postRight: 900,
+    safeBoundary: 1100,
+    viewportWidth: 1200,
+  }), null);
 });
 
 test("Back to top boundary aligns its base with the marker line", () => {
@@ -35,19 +60,11 @@ test("Back to top boundary aligns its base with the marker line", () => {
   assert.equal(backToTopBoundaryBottom({ lineY: 790, viewportHeight: 800, restBottom: 20 }), 20);
 });
 
-test("Related context tab placement hides when the back-to-top gap is unsafe", () => {
-  assert.deepEqual(
-    contentContextTabPlacement({
-      postRight: 900, boundaryLeft: 950, viewportWidth: 1200, postTop: 120, viewportHeight: 800,
-      tabWidth: 42, tabHeight: 126, gap: 12, viewportPadding: 12,
-    }),
-    null,
-  );
-  const placement = contentContextTabPlacement({
-    postRight: 760, boundaryLeft: 1160, viewportWidth: 1200, postTop: 120, viewportHeight: 800,
-    tabWidth: 42, tabHeight: 126, gap: 12, viewportPadding: 12,
-  });
-  assert.equal(placement.availableWidth, 400);
-  assert.equal(placement.right, 386);
-  assert.equal(placement.top, 183);
+test("Per-post Related context tabs hide when the back-to-top gap is unsafe", () => {
+  assert.equal(contentContextTabFits({
+    postRight: 900, boundaryLeft: 950, viewportWidth: 1200, tabWidth: 42, gap: 12, viewportPadding: 12,
+  }), false);
+  assert.equal(contentContextTabFits({
+    postRight: 760, boundaryLeft: 1160, viewportWidth: 1200, tabWidth: 42, gap: 12, viewportPadding: 12,
+  }), true);
 });

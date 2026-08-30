@@ -17,8 +17,9 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "openTimelineContentContext",
     "closeTimelineContentContextDrawer",
     "handleTimelineContentContextScroll",
-    "syncTimelineContentContextTab",
-    "contentContextTabPlacement",
+    "syncTimelineContentContextTabs",
+    "contentContextRailPlacement",
+    "contentContextTabFits",
     "backToTopBoundaryBottom",
     "aria-controls",
     "Searching local Personal Memory",
@@ -29,22 +30,33 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(state, /CONTENT_CONTEXT_DEFAULT_LIMIT = 3/);
   assert.match(state, /CONTENT_CONTEXT_MAX_LIMIT = 5/);
   assert.match(state, /function backToTopBoundaryBottom/);
-  assert.match(state, /function contentContextTabPlacement/);
-  assert.match(index, /id="timeline-content-context-tab"[^>]*aria-controls="timeline-content-context-drawer"[^>]*aria-expanded="false"[^>]*>\s*Related context/);
+  assert.match(state, /function contentContextTabFits/);
+  assert.doesNotMatch(index, /id="timeline-content-context-tab"/);
+  assert.match(app, /function buildTimelineContentContextAnchor/);
+  assert.match(app, /const viewportWidth = document\.documentElement\.clientWidth \|\| window\.innerWidth;/);
+  assert.match(app, /--timeline-content-context-right", `\$\{right\}px`/);
+  assert.match(app, /--timeline-content-context-width", `\$\{width\}px`/);
+  assert.match(app, /tab\.dataset\.timelineContentContextId = entry\.id/);
+  assert.match(app, /tab\.setAttribute\("aria-controls", "timeline-content-context-drawer"\)/);
   assert.doesNotMatch(index, /Find related context/);
   assert.match(styles, /\.timeline-content-context/);
   assert.match(styles, /\.timeline-content-context-tab/);
+  assert.match(styles, /\.timeline-content-context-anchor \{[^}]*position: relative/);
+  assert.match(styles, /\.timeline-content-context-tab \{[^}]*border-left: 0;[^}]*border-radius: 0 11px 11px 0;[^}]*writing-mode: vertical-rl/);
+  assert.match(styles, /\.timeline-content-context-tab \{[^}]*top: 0;/);
+  assert.doesNotMatch(styles, /\.timeline-content-context-tab(?:\.is-visible|\.is-retracting)? \{[^}]*rotate\(180deg\)/);
+  assert.match(styles, /\.timeline-side-pane-toggle \{[^}]*rotate\(180deg\)/);
+  assert.match(styles, /\.timeline-content-context-drawer\.is-rail \{[^}]*bottom: 18px;[^}]*border-left: 0;[^}]*border-radius: 0 16px 16px 0;/);
   assert.match(styles, /\.timeline-content-context-drawer/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(styles, /\.timeline-content-context-drawer[^}]*transition:[^}]*\btop\b/i);
   assert.doesNotMatch(app, /timeline-content-context-panel/);
-  assert.doesNotMatch(app, /buildTimelineContentContextAction|timeline-content-context-trigger|Find related context/);
-  assert.match(app, /const active = candidates\.find\(\(\{ element \}\) => element\.dataset\.timelineId === state\.timelineContentContextActiveID\);[\s\S]*state\.timelineContentContextActiveID = "";/);
-  assert.match(app, /if \(active\) return active\.element;/);
-  assert.match(app, /return \(candidates\.find\(\(\{ rect \}\) => rect\.top >= 0\) \|\| candidates\[0\]\)\.element;/);
-  assert.doesNotMatch(app, /if \(active\) return active;/);
-  assert.match(app, /syncBackToTopPosition\(top\);\r?\n    syncTimelineContentContextTab\(\);/);
-  assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTab\(\);/);
+  assert.doesNotMatch(app, /Find related context/);
+  assert.match(app, /const item = buildTimelineItem\(entry, \{ contentContext: false \}\)/);
+  assert.match(app, /if \(expanded && state\.timelineContentContextActiveID === entry\.id\)[\s\S]*closeTimelineContentContextDrawer\(\{ clearActive: true, focusTrigger: false \}\)/);
+  assert.match(app, /report\.classList\.toggle\("hidden", expanded\)/);
+  assert.match(app, /syncBackToTopPosition\(top\);\r?\n    syncTimelineContentContextTabs\(\);/);
+  assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTabs\(\);/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?scheduleTimelineContentContextPosition\(\)/);
   assert.doesNotMatch(app, /api\([^)]*content-context[^)]*,\s*\{\s*method:\s*["']POST/i);
 });
