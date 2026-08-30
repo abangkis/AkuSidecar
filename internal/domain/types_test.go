@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -139,6 +140,37 @@ func TestPostFreshnessStyleDefaultsAndStaysBounded(t *testing.T) {
 	value.PostFreshnessStyle = "background"
 	if err := value.Validate(); err == nil {
 		t.Fatal("unsupported post freshness style must be rejected")
+	}
+}
+
+func TestContentContextUpScrollModeDefaultsSerializesAndStaysBounded(t *testing.T) {
+	value := DefaultSettings("standard", "quiet", "promote_unused_budget", true)
+	if value.ContentContextUpScrollMode != DefaultContentContextUpScrollMode {
+		t.Fatalf("content context upward scroll default=%q", value.ContentContextUpScrollMode)
+	}
+	value.ContentContextUpScrollMode = ""
+	value.Normalize()
+	if value.ContentContextUpScrollMode != ContentContextUpScrollModeCloseOffscreen {
+		t.Fatalf("missing content context upward scroll mode normalized to %q", value.ContentContextUpScrollMode)
+	}
+	value.ContentContextUpScrollMode = ContentContextUpScrollModePreserve
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	value.ContentContextUpScrollMode = "invalid"
+	if err := value.Validate(); err == nil {
+		t.Fatal("unsupported content context upward scroll mode must be rejected")
+	}
+	encoded, err := json.Marshal(DefaultSettings("standard", "quiet", "promote_unused_budget", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["contentContextUpScrollMode"] != string(ContentContextUpScrollModeCloseOffscreen) {
+		t.Fatalf("serialized content context upward scroll mode=%v", wire["contentContextUpScrollMode"])
 	}
 }
 

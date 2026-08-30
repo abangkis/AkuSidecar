@@ -591,6 +591,24 @@ func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) 
 	}
 }
 
+func TestEmbeddedContentContextUpScrollModeSettingContract(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html":                        {"id=\"content-context-up-scroll-mode\"", "value=\"close_offscreen\"", "value=\"preserve\""},
+		"web/app.js":                            {"settings.contentContextUpScrollMode || \"close_offscreen\"", "contentContextUpScrollMode: $(\"#content-context-up-scroll-mode\").value", "contentContextShouldCloseOnScroll"},
+		"web/timeline-content-context-state.js": {"CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT", "contentContextPostPassedViewportBottom", "contentContextShouldCloseOnScroll"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing content context upward scroll mode contract %q", asset, marker)
+			}
+		}
+	}
+}
+
 func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/app.js":                     {"timeline-media-carousel.js", "function buildTimelineMediaCarousel", "timelineCarouselIndexes", "Previous post image", "Next post image", "openMedia(imageMedia.map"},
@@ -810,7 +828,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		t.Fatalf("reasoning providers=%+v", bootstrap["reasoningProviders"])
 	}
 	bootstrapSettings := bootstrap["settings"].(map[string]any)
-	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["showLearningPanel"] != true || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "drawer" || bootstrapSettings["aiDetectionEnabled"] != true || bootstrapSettings["resurfaceMode"] != "smart" || bootstrapSettings["resurfaceCooldownDays"] != float64(7) {
+	if bootstrapSettings["timelineBoundaryCueMode"] != "follow" || bootstrapSettings["timelineBoundaryReturnMs"] != float64(350) || bootstrapSettings["showLearningPanel"] != true || bootstrapSettings["semanticEventMergeThreshold"] != .92 || bootstrapSettings["aiDetectionPresentation"] != "drawer" || bootstrapSettings["aiDetectionEnabled"] != true || bootstrapSettings["resurfaceMode"] != "smart" || bootstrapSettings["resurfaceCooldownDays"] != float64(7) || bootstrapSettings["contentContextUpScrollMode"] != "close_offscreen" {
 		t.Fatalf("timeline boundary cue settings=%+v", bootstrapSettings)
 	}
 	if bootstrapSettings["reasoningAcquisitionProfile"] != "luna_high" || bootstrapSettings["reasoningEvaluationProfile"] != "luna_high" || bootstrapSettings["reasoningSemanticProfile"] != "luna_high" || bootstrapSettings["reasoningAiDeepProfile"] != "luna_high" {

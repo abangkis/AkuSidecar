@@ -47,6 +47,9 @@ import {
   contentContextRailPlacement,
   contentContextTabFits,
   contentContextPostPassedReadingExitLine,
+  contentContextPostPassedViewportBottom,
+  contentContextShouldCloseOnScroll,
+  CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
   CONTENT_CONTEXT_MAX_LIMIT,
   CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
 } from "./timeline-content-context-state.js";
@@ -1934,6 +1937,7 @@ function renderSettings(settings) {
   $("#stream-width").value = settings.streamWidth || "social";
   $("#single-image-fit").value = settings.singleImageFit || "cover";
   $("#post-freshness-style").value = settings.postFreshnessStyle || "header_shade";
+  $("#content-context-up-scroll-mode").value = settings.contentContextUpScrollMode || "close_offscreen";
   $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
   $("#timeline-boundary-follow").checked = settings.timelineBoundaryCueMode !== "static";
   $("#timeline-boundary-return-ms").value = settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
@@ -2389,6 +2393,7 @@ function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
     streamWidth: $("#stream-width").value,
     singleImageFit: $("#single-image-fit").value,
     postFreshnessStyle: $("#post-freshness-style").value,
+    contentContextUpScrollMode: $("#content-context-up-scroll-mode").value || "close_offscreen",
     timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
     timelineBoundaryCueMode: $("#timeline-boundary-follow").checked ? "follow" : "static",
     timelineBoundaryReturnMs: Number.parseInt($("#timeline-boundary-return-ms").value, 10),
@@ -6857,14 +6862,24 @@ function scheduleTimelineContentContextPosition() {
 }
 
 function handleTimelineContentContextScroll() {
-  state.timelineContentContextLastScrollY = window.scrollY;
+  const scrollY = window.scrollY;
+  const previousScrollY = state.timelineContentContextLastScrollY;
+  state.timelineContentContextLastScrollY = scrollY;
   if (state.timelineContentContextDrawerOpen && state.timelineContentContextActiveID) {
     const anchor = timelineContentContextAnchor(state.timelineContentContextActiveID);
     const postRect = anchor?.getBoundingClientRect();
-    if (!postRect || contentContextPostPassedReadingExitLine({
+    const passedReadingExitLine = postRect && contentContextPostPassedReadingExitLine({
       postBottom: postRect.bottom,
       viewportHeight: window.innerHeight,
-    })) {
+    });
+    if (!postRect || contentContextShouldCloseOnScroll({
+      previousScrollY,
+      scrollY,
+      postTop: postRect.top,
+      postBottom: postRect.bottom,
+      viewportHeight: window.innerHeight,
+      upScrollMode: state.bootstrap?.settings?.contentContextUpScrollMode || CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
+    }) || (scrollY > previousScrollY && passedReadingExitLine)) {
       closeTimelineContentContextDrawer({
         clearActive: true,
         focusTrigger: timelineContentContextFocusIsInsideDrawer(),

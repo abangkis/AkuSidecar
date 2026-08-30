@@ -21,6 +21,9 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "contentContextRailPlacement",
     "contentContextTabFits",
     "contentContextPostPassedReadingExitLine",
+    "contentContextPostPassedViewportBottom",
+    "contentContextShouldCloseOnScroll",
+    "contentContextUpScrollMode",
     "timelineContentContextOverlapsBackToTop",
     "backToTopBoundaryBottom",
     "aria-controls",
@@ -35,6 +38,9 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(state, /function contentContextTabFits/);
   assert.match(state, /CONTENT_CONTEXT_READING_EXIT_RATIO = 0\.2/);
   assert.match(state, /function contentContextPostPassedReadingExitLine/);
+  assert.match(state, /function contentContextPostPassedViewportBottom/);
+  assert.match(state, /function contentContextShouldCloseOnScroll/);
+  assert.match(index, /id="content-context-up-scroll-mode"/);
   assert.doesNotMatch(index, /id="timeline-content-context-tab"/);
   assert.match(app, /function buildTimelineContentContextAnchor/);
   assert.match(app, /const viewportWidth = document\.documentElement\.clientWidth \|\| window\.innerWidth;/);
@@ -68,6 +74,8 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTabs\(\);/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?scheduleTimelineContentContextPosition\(\)/);
   assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?contentContextPostPassedReadingExitLine/);
+  assert.match(app, /contentContextShouldCloseOnScroll/);
+  assert.match(app, /contentContextUpScrollMode/);
   assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?closeTimelineContentContextDrawer\(\{[\s\S]*?clearActive: true/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?revealTimelineContentContextDrawer\(/);
   assert.doesNotMatch(app, /api\([^)]*content-context[^)]*,\s*\{\s*method:\s*["']POST/i);

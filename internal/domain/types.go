@@ -59,43 +59,44 @@ func (s Source) Valid() bool {
 }
 
 type Settings struct {
-	LoadProfile                 string         `json:"loadProfile"`
-	CaptureVisibility           string         `json:"captureVisibility"`
-	OpenMissingSource           bool           `json:"openMissingSource"`
-	ActiveSources               []Source       `json:"activeSources"`
-	SourceHydrationTimeoutMS    map[Source]int `json:"sourceHydrationTimeoutMs"`
-	SourceWaitMode              string         `json:"sourceWaitMode"`
-	TimelineCapacity            int            `json:"timelineCapacity"`
-	MaxItemsPerSource           int            `json:"maxItemsPerSource"`
-	MaxItemsTotal               int            `json:"maxItemsTotal"`
-	MaxScrolls                  int            `json:"maxScrolls"`
-	QualityRetrySettleMS        int            `json:"qualityRetrySettleMs"`
-	PreferenceEligibilityMode   string         `json:"preferenceEligibilityMode"`
-	CalibrationEnabled          bool           `json:"calibrationEnabled"`
-	CalibrationBatchSize        int            `json:"calibrationBatchSize"`
-	DefaultPresentation         string         `json:"defaultPresentation"`
-	StreamWidth                 string         `json:"streamWidth"`
-	SingleImageFit              string         `json:"singleImageFit"`
-	PostFreshnessStyle          string         `json:"postFreshnessStyle"`
-	TimelineBatchGapPX          int            `json:"timelineBatchGapPx"`
-	TimelineBoundaryCueMode     string         `json:"timelineBoundaryCueMode"`
-	TimelineBoundaryReturnMS    int            `json:"timelineBoundaryReturnMs"`
-	ShowLearningPanel           bool           `json:"showLearningPanel"`
-	SemanticEventMode           string         `json:"semanticEventMode"`
-	SemanticEventShortlist      int            `json:"semanticEventShortlist"`
-	SemanticEventMergeThreshold float64        `json:"semanticEventMergeThreshold"`
-	KnowledgeRetentionDays      int            `json:"knowledgeRetentionDays"`
-	KnowledgeStorageLimitMB     int            `json:"knowledgeStorageLimitMb"`
-	AIDetectionPresentation     string         `json:"aiDetectionPresentation"`
-	AIDetectionEnabled          bool           `json:"aiDetectionEnabled"`
-	ResurfaceMode               string         `json:"resurfaceMode"`
-	ResurfaceCooldownDays       int            `json:"resurfaceCooldownDays"`
-	ReasoningProvider           string         `json:"reasoningProvider"`
-	ReasoningExecutablePath     string         `json:"reasoningExecutablePath"`
-	ReasoningAcquisitionProfile string         `json:"reasoningAcquisitionProfile"`
-	ReasoningEvaluationProfile  string         `json:"reasoningEvaluationProfile"`
-	ReasoningSemanticProfile    string         `json:"reasoningSemanticProfile"`
-	ReasoningAIDeepProfile      string         `json:"reasoningAiDeepProfile"`
+	LoadProfile                 string                     `json:"loadProfile"`
+	CaptureVisibility           string                     `json:"captureVisibility"`
+	OpenMissingSource           bool                       `json:"openMissingSource"`
+	ActiveSources               []Source                   `json:"activeSources"`
+	SourceHydrationTimeoutMS    map[Source]int             `json:"sourceHydrationTimeoutMs"`
+	SourceWaitMode              string                     `json:"sourceWaitMode"`
+	TimelineCapacity            int                        `json:"timelineCapacity"`
+	MaxItemsPerSource           int                        `json:"maxItemsPerSource"`
+	MaxItemsTotal               int                        `json:"maxItemsTotal"`
+	MaxScrolls                  int                        `json:"maxScrolls"`
+	QualityRetrySettleMS        int                        `json:"qualityRetrySettleMs"`
+	PreferenceEligibilityMode   string                     `json:"preferenceEligibilityMode"`
+	CalibrationEnabled          bool                       `json:"calibrationEnabled"`
+	CalibrationBatchSize        int                        `json:"calibrationBatchSize"`
+	DefaultPresentation         string                     `json:"defaultPresentation"`
+	StreamWidth                 string                     `json:"streamWidth"`
+	SingleImageFit              string                     `json:"singleImageFit"`
+	PostFreshnessStyle          string                     `json:"postFreshnessStyle"`
+	ContentContextUpScrollMode  ContentContextUpScrollMode `json:"contentContextUpScrollMode"`
+	TimelineBatchGapPX          int                        `json:"timelineBatchGapPx"`
+	TimelineBoundaryCueMode     string                     `json:"timelineBoundaryCueMode"`
+	TimelineBoundaryReturnMS    int                        `json:"timelineBoundaryReturnMs"`
+	ShowLearningPanel           bool                       `json:"showLearningPanel"`
+	SemanticEventMode           string                     `json:"semanticEventMode"`
+	SemanticEventShortlist      int                        `json:"semanticEventShortlist"`
+	SemanticEventMergeThreshold float64                    `json:"semanticEventMergeThreshold"`
+	KnowledgeRetentionDays      int                        `json:"knowledgeRetentionDays"`
+	KnowledgeStorageLimitMB     int                        `json:"knowledgeStorageLimitMb"`
+	AIDetectionPresentation     string                     `json:"aiDetectionPresentation"`
+	AIDetectionEnabled          bool                       `json:"aiDetectionEnabled"`
+	ResurfaceMode               string                     `json:"resurfaceMode"`
+	ResurfaceCooldownDays       int                        `json:"resurfaceCooldownDays"`
+	ReasoningProvider           string                     `json:"reasoningProvider"`
+	ReasoningExecutablePath     string                     `json:"reasoningExecutablePath"`
+	ReasoningAcquisitionProfile string                     `json:"reasoningAcquisitionProfile"`
+	ReasoningEvaluationProfile  string                     `json:"reasoningEvaluationProfile"`
+	ReasoningSemanticProfile    string                     `json:"reasoningSemanticProfile"`
+	ReasoningAIDeepProfile      string                     `json:"reasoningAiDeepProfile"`
 	// ReasoningProfilesByProvider keeps each backend's selections independent.
 	// The four top-level fields above remain the active provider projection for
 	// backwards-compatible API and runtime consumers.
@@ -169,6 +170,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 		StreamWidth:                 "social",
 		SingleImageFit:              "cover",
 		PostFreshnessStyle:          "header_shade",
+		ContentContextUpScrollMode:  DefaultContentContextUpScrollMode,
 		TimelineBatchGapPX:          DefaultTimelineBatchGapPX,
 		TimelineBoundaryCueMode:     DefaultTimelineBoundaryCueMode,
 		TimelineBoundaryReturnMS:    DefaultTimelineBoundaryReturnMS,
@@ -250,6 +252,9 @@ func (s *Settings) Normalize() {
 		case "card_tint":
 			s.PostFreshnessStyle = "border_shade"
 		}
+	}
+	if s.ContentContextUpScrollMode == "" {
+		s.ContentContextUpScrollMode = DefaultContentContextUpScrollMode
 	}
 	if s.TimelineBatchGapPX == 0 {
 		s.TimelineBatchGapPX = DefaultTimelineBatchGapPX
@@ -346,6 +351,9 @@ func (s Settings) Validate() error {
 	}
 	if s.PostFreshnessStyle != "header_shade" && s.PostFreshnessStyle != "border_shade" && s.PostFreshnessStyle != "off" {
 		return fmt.Errorf("unsupported post freshness style %q", s.PostFreshnessStyle)
+	}
+	if !s.ContentContextUpScrollMode.Valid() {
+		return fmt.Errorf("unsupported content context upward scroll mode %q", s.ContentContextUpScrollMode)
 	}
 	if s.TimelineBatchGapPX < 16 || s.TimelineBatchGapPX > 80 {
 		return errors.New("timelineBatchGapPx must be between 16 and 80")

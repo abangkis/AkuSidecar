@@ -5,6 +5,15 @@ export const CONTENT_CONTEXT_RAIL_MIN_GUTTER = 280;
 export const CONTENT_CONTEXT_RAIL_MAX_WIDTH = 420;
 export const CONTENT_CONTEXT_TAB_DEFAULT_WIDTH = 42;
 export const CONTENT_CONTEXT_READING_EXIT_RATIO = 0.2;
+export const CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN = "close_offscreen";
+export const CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE = "preserve";
+export const CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT = CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN;
+
+export function normalizeContentContextUpScrollMode(value) {
+  return value === CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE
+    ? CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE
+    : CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT;
+}
 
 export function contentContextReadingExitLine({ viewportHeight = 0 } = {}) {
   const height = Number(viewportHeight);
@@ -17,6 +26,36 @@ export function contentContextPostPassedReadingExitLine({ postBottom = 0, viewpo
   const line = contentContextReadingExitLine({ viewportHeight });
   if (!Number.isFinite(bottom) || !Number.isFinite(line)) return false;
   return bottom <= line;
+}
+
+export function contentContextPostPassedViewportBottom({ postTop = 0, viewportHeight = 0 } = {}) {
+  const top = Number(postTop);
+  const viewport = Number(viewportHeight);
+  if (!Number.isFinite(top) || !Number.isFinite(viewport) || viewport <= 0) return false;
+  return top >= viewport;
+}
+
+// Downward movement keeps the existing 20% reading exit rule. Upward movement
+// has a separate offscreen rule and can be configured to preserve the active
+// drawer state while its post is below the viewport.
+export function contentContextShouldCloseOnScroll({
+  previousScrollY = 0,
+  scrollY = 0,
+  postTop = 0,
+  postBottom = 0,
+  viewportHeight = 0,
+  upScrollMode = CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
+} = {}) {
+  const previous = Number(previousScrollY);
+  const current = Number(scrollY);
+  if (!Number.isFinite(previous) || !Number.isFinite(current)) return false;
+  if (current > previous) {
+    return contentContextPostPassedReadingExitLine({ postBottom, viewportHeight });
+  }
+  if (current < previous && normalizeContentContextUpScrollMode(upScrollMode) === CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN) {
+    return contentContextPostPassedViewportBottom({ postTop, viewportHeight });
+  }
+  return false;
 }
 
 export function backToTopBoundaryBottom({ lineY = 0, viewportHeight = 0, restBottom = 0 } = {}) {

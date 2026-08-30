@@ -304,6 +304,13 @@
                   <option value="off">Off — timestamp only</option>
                 </select>
               </label>
+              <label class="settings-row" for="content-context-up-scroll-mode">
+                <span class="settings-copy"><strong>Related context on upward scroll</strong><small>Close the active context when its post leaves below the viewport, or preserve the open state so it returns with the post.</small></span>
+                <select id="content-context-up-scroll-mode" name="contentContextUpScrollMode">
+                  <option value="close_offscreen">Close when offscreen — recommended</option>
+                  <option value="preserve">Preserve open state</option>
+                </select>
+              </label>
               <div class="settings-row">
                 <label class="settings-copy" for="timeline-batch-gap"><strong>Earlier-check spacing</strong><small>Controls the quiet visual gap before retained items from an earlier check.</small></label>
                 <span class="settings-inline-control">

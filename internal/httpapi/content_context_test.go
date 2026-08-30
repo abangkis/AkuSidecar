@@ -116,7 +116,7 @@ func TestContentContextHTTPReturnsBoundedPublicMatchReasonAndProjection(t *testi
 	if returnedID != memory.ID || returnedTitle != memoryInput.Title || reason == "" {
 		t.Fatalf("match id=%q title=%q reason=%q", returnedID, returnedTitle, reason)
 	}
-	if reason != "Matches title, summary, tags, retained text" {
+	if reason != "Shared phrase \"quantum research\"; supported by title, tags." {
 		t.Fatalf("unexpected deterministic reason=%q", reason)
 	}
 	for _, forbidden := range []string{"fullContent", "provenance", "actions", "identityDigest", "contentFingerprint", "lifecycleState", "fullContentVersionId", "contentBytes", "reason"} {

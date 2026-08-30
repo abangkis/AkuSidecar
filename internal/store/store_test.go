@@ -91,6 +91,34 @@ func TestSettingsPersistPostFreshnessStyle(t *testing.T) {
 	}
 }
 
+func TestSettingsBackfillMissingContentContextUpScrollMode(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	var raw string
+	if err := state.db.QueryRowContext(ctx, `SELECT value_json FROM settings WHERE key='runtime'`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+		t.Fatal(err)
+	}
+	delete(wire, "contentContextUpScrollMode")
+	legacy, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE settings SET value_json=? WHERE key='runtime'`, string(legacy)); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.ContentContextUpScrollMode != domain.DefaultContentContextUpScrollMode {
+		t.Fatalf("missing content context upward scroll mode=%q", settings.ContentContextUpScrollMode)
+	}
+}
+
 func TestExistingDefaultSourceProfileAdoptsInstagramOnlyOnce(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "sidecar.db")

@@ -10,6 +10,11 @@ import {
   contentContextTabFits,
   contentContextDrawerMode,
   contentContextPostPassedReadingExitLine,
+  contentContextPostPassedViewportBottom,
+  contentContextShouldCloseOnScroll,
+  CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN,
+  CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
+  CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
   contentContextReadingExitLine,
   buildTimelineContentContextPath,
 } from "../internal/httpapi/web/timeline-content-context-state.js";
@@ -75,6 +80,29 @@ test("Related context closes at the active post's 20% reading exit line", () => 
   assert.equal(contentContextPostPassedReadingExitLine({ postBottom: 161, viewportHeight: 800 }), false);
   assert.equal(contentContextPostPassedReadingExitLine({ postBottom: 480, viewportHeight: 800 }), false);
   assert.equal(contentContextPostPassedReadingExitLine({ postBottom: 80, viewportHeight: 0 }), false);
+});
+
+test("Related context closes when scrolling up past the viewport by default", () => {
+  assert.equal(CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT, CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN);
+  assert.equal(contentContextPostPassedViewportBottom({ postTop: 800, viewportHeight: 800 }), true);
+  assert.equal(contentContextPostPassedViewportBottom({ postTop: 799, viewportHeight: 800 }), false);
+  assert.equal(contentContextShouldCloseOnScroll({
+    previousScrollY: 400, scrollY: 300, postTop: 800, postBottom: 1200, viewportHeight: 800,
+  }), true);
+  assert.equal(contentContextShouldCloseOnScroll({
+    previousScrollY: 400, scrollY: 300, postTop: 799, postBottom: 1199, viewportHeight: 800,
+  }), false);
+});
+
+test("Preserve mode keeps an offscreen drawer open while downward exit remains unchanged", () => {
+  assert.equal(contentContextShouldCloseOnScroll({
+    previousScrollY: 400, scrollY: 300, postTop: 900, postBottom: 1200, viewportHeight: 800,
+    upScrollMode: CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
+  }), false);
+  assert.equal(contentContextShouldCloseOnScroll({
+    previousScrollY: 300, scrollY: 400, postTop: -200, postBottom: 160, viewportHeight: 800,
+    upScrollMode: CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
+  }), true);
 });
 
 test("Per-post Related context tabs hide when the back-to-top gap is unsafe", () => {

@@ -102,7 +102,7 @@ func TestContentContextSearchesLocalFTSExcludesCurrentIdentityAndDoesNotWrite(t 
 			t.Fatalf("current Timeline identity leaked into context matches: %+v", result.Matches)
 		}
 	}
-	if result.Matches[0].MatchReason != "Matches title, summary, author, tags, facets" {
+	if result.Matches[0].MatchReason != "Shared topics: quantum; supported by title." {
 		t.Fatalf("context reason=%q", result.Matches[0].MatchReason)
 	}
 	var afterActions, afterProvenance, afterItems int
