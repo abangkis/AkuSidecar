@@ -41,9 +41,13 @@ import {
 } from "./library-state.js";
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
 import {
+  backToTopBoundaryBottom,
   buildTimelineContentContextPath,
   contentContextDrawerMode,
+  contentContextTabPlacement,
   CONTENT_CONTEXT_MAX_LIMIT,
+  CONTENT_CONTEXT_TAB_DEFAULT_HEIGHT,
+  CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
 } from "./timeline-content-context-state.js";
 // The embedded Timeline action is Read later. Existing Library detail keeps
 // its independent full-copy Release/Remove/Forget semantics.
@@ -159,6 +163,7 @@ const state = {
   timelineContentContextPositionFrame: null,
   timelineContentContextCloseTimer: null,
   timelineContentContextLastScrollY: window.scrollY,
+  timelineContentContextTabHideTimer: null,
   timelineBatches: [],
   sourceSessionReadiness: {},
   sourceSessionProbeInFlight: false,
@@ -401,6 +406,11 @@ $("#onboarding-provider-dialog").addEventListener("close", () => {
 });
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
 $("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
+$("#timeline-content-context-tab").addEventListener("click", () => {
+  const id = $("#timeline-content-context-tab").dataset.timelineId || "";
+  const entry = state.timelineItems.find((candidate) => candidate.id === id);
+  if (entry) toggleTimelineContentContext(entry);
+});
 $("#timeline-content-context-close").addEventListener("click", () => closeTimelineContentContextDrawer());
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !state.timelineContentContextDrawerOpen) return;
@@ -425,6 +435,7 @@ window.addEventListener("resize", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
   scheduleTimelineContentContextPosition();
+  syncTimelineContentContextTab();
 }, { passive: true });
 window.addEventListener("beforeunload", (event) => {
   if (!settingsDirty.isDirty() || state.settingsUnloadBypass) return;
@@ -3289,6 +3300,7 @@ function scheduleBackToTop() {
     const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
     $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
     syncBackToTopPosition(top);
+    syncTimelineContentContextTab();
   });
 }
 
@@ -3349,7 +3361,7 @@ function syncBackToTopBoundaryPosition(top, buttonHeight) {
 
   state.backToTopBoundary = marker;
   button.classList.add("is-following-boundary");
-  const bottom = Math.max(restBottom, window.innerHeight - lineY - buttonHeight / 2);
+  const bottom = backToTopBoundaryBottom({ lineY, viewportHeight: window.innerHeight, restBottom });
   button.style.setProperty("--back-to-top-bottom", `${Math.round(bottom)}px`);
 }
 
@@ -5286,7 +5298,7 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
         : "AkuBrowser will place evaluated, source-backed items here after the next bounded check.";
     empty.append(title, detail);
     container.append(empty);
-    syncTimelineContentContextTriggers();
+    syncTimelineContentContextTab();
     scheduleBackToTop();
     scheduleTimelineContentContextPosition();
     return;
@@ -5335,7 +5347,7 @@ function renderTimeline(items, latestCheck, timelineBatches = null, highlightSes
     container.append(rendered);
     observeTimelineItem(rendered, entry.id);
   }
-  syncTimelineContentContextTriggers();
+  syncTimelineContentContextTab();
   scheduleBackToTop();
   scheduleTimelineContentContextPosition();
 }
@@ -5658,7 +5670,7 @@ function buildExpandedTimelineItem(entry) {
     layout = layout === "source" ? "brief" : "source";
     render();
   });
-  toolbar.append(signalSlot, label, toggle, buildTimelineContentContextAction(entry));
+  toolbar.append(signalSlot, label, toggle);
   container.append(toolbar);
   container.append(ai.details);
   container.append(brief, source, actions);
@@ -6521,43 +6533,90 @@ function buildActions(entry) {
   return actions;
 }
 
-function buildTimelineContentContextAction(entry) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "secondary-button timeline-content-context-trigger";
-  button.dataset.contentContextTriggerId = entry?.id || "";
-  button.textContent = "Find related context";
-  button.setAttribute("aria-expanded", "false");
-  button.setAttribute("aria-controls", "timeline-content-context-drawer");
-  button.setAttribute("aria-label", "Find related context");
-  button.title = "Find related context in local Personal Memory";
-  button.addEventListener("click", () => toggleTimelineContentContext(entry));
-  return button;
-}
-
-function timelineContentContextTriggers(id = "") {
-  return [...document.querySelectorAll("[data-content-context-trigger-id]")]
-    .filter((trigger) => !id || trigger.dataset.contentContextTriggerId === String(id));
-}
-
-function syncTimelineContentContextTriggers() {
-  const activeID = state.timelineContentContextActiveID;
-  const drawerOpen = state.timelineContentContextDrawerOpen;
-  for (const trigger of timelineContentContextTriggers()) {
-    const active = trigger.dataset.contentContextTriggerId === activeID;
-    const expanded = active && drawerOpen;
-    trigger.setAttribute("aria-expanded", String(expanded));
-    trigger.classList.toggle("is-active", active);
-    trigger.textContent = expanded ? "Close context" : "Find related context";
-    trigger.setAttribute("aria-label", expanded ? "Close related context" : "Find related context");
-    trigger.title = expanded ? "Close related local context" : "Find related context in local Personal Memory";
-  }
-}
-
 function timelineContentContextAnchor(id) {
-  const candidates = [...document.querySelectorAll("[data-timeline-id]")]
+  const candidates = [...document.querySelectorAll("#result-items > [data-timeline-id]")]
     .filter((element) => element.dataset.timelineId === String(id));
-  return candidates.find((element) => !element.classList.contains("timeline-side-pane-card")) || null;
+  return candidates[0] || null;
+}
+
+function timelineContentContextVisibleAnchor() {
+  const candidates = [...document.querySelectorAll("#result-items > [data-timeline-id]")]
+    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight);
+  if (state.timelineContentContextActiveID) {
+    const active = candidates.find(({ element }) => element.dataset.timelineId === state.timelineContentContextActiveID);
+    if (active) return active;
+    state.timelineContentContextActiveID = "";
+  }
+  if (!candidates.length) return null;
+  return candidates.find(({ rect }) => rect.top >= 0) || candidates[0];
+}
+
+function hideTimelineContentContextTab({ retract = true } = {}) {
+  const tab = $("#timeline-content-context-tab");
+  if (!tab) return;
+  if (state.timelineContentContextTabHideTimer !== null) {
+    window.clearTimeout(state.timelineContentContextTabHideTimer);
+    state.timelineContentContextTabHideTimer = null;
+  }
+  tab.classList.remove("is-visible");
+  tab.classList.toggle("is-retracting", retract);
+  const finish = () => {
+    state.timelineContentContextTabHideTimer = null;
+    if (!tab.classList.contains("is-visible")) {
+      tab.classList.add("hidden");
+      tab.classList.remove("is-retracting");
+    }
+  };
+  const duration = contentContextDrawerMotionDuration();
+  if (duration === 0) finish();
+  else state.timelineContentContextTabHideTimer = window.setTimeout(finish, duration);
+}
+
+function syncTimelineContentContextTab() {
+  const tab = $("#timeline-content-context-tab");
+  if (!tab) return;
+  const drawerOpen = state.timelineContentContextDrawerOpen;
+  tab.setAttribute("aria-expanded", String(drawerOpen));
+  tab.setAttribute("aria-label", "Related context");
+  tab.title = drawerOpen ? "Close related context" : "Related context from local Personal Memory";
+  if (state.currentView !== "timeline" || drawerOpen) {
+    hideTimelineContentContextTab({ retract: false });
+    return;
+  }
+  const anchor = timelineContentContextVisibleAnchor();
+  if (!anchor) {
+    tab.dataset.timelineId = "";
+    hideTimelineContentContextTab();
+    return;
+  }
+  const postRect = anchor.getBoundingClientRect();
+  const backToTop = $("#back-to-top");
+  const backRect = backToTop && !backToTop.classList.contains("hidden") ? backToTop.getBoundingClientRect() : null;
+  tab.classList.remove("hidden", "is-retracting");
+  const tabRect = tab.getBoundingClientRect();
+  const placement = contentContextTabPlacement({
+    postRight: postRect.right,
+    boundaryLeft: backRect ? backRect.left : window.innerWidth,
+    viewportWidth: window.innerWidth,
+    postTop: postRect.top,
+    viewportHeight: window.innerHeight,
+    tabWidth: tabRect.width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
+    tabHeight: tabRect.height || CONTENT_CONTEXT_TAB_DEFAULT_HEIGHT,
+  });
+  if (!placement) {
+    tab.dataset.timelineId = "";
+    hideTimelineContentContextTab();
+    return;
+  }
+  tab.dataset.timelineId = anchor.dataset.timelineId || "";
+  tab.style.setProperty("--timeline-content-context-tab-right", `${Math.round(placement.right)}px`);
+  tab.style.setProperty("--timeline-content-context-tab-top", `${Math.round(placement.top)}px`);
+  if (state.timelineContentContextTabHideTimer !== null) {
+    window.clearTimeout(state.timelineContentContextTabHideTimer);
+    state.timelineContentContextTabHideTimer = null;
+  }
+  tab.classList.add("is-visible");
 }
 
 function renderTimelineContentContextMatch(match) {
@@ -6630,7 +6689,7 @@ function revealTimelineContentContextDrawer({ focus = true } = {}) {
   drawer.classList.remove("hidden", "is-closing", "is-retracting");
   drawer.setAttribute("aria-hidden", "false");
   renderTimelineContentContextDrawer();
-  syncTimelineContentContextTriggers();
+  syncTimelineContentContextTab();
   scheduleTimelineContentContextPosition();
   window.requestAnimationFrame(() => {
     if (!state.timelineContentContextDrawerOpen) return;
@@ -6644,7 +6703,7 @@ function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = 
   const activeID = state.timelineContentContextActiveID;
   state.timelineContentContextDrawerOpen = false;
   if (clearActive) state.timelineContentContextActiveID = "";
-  syncTimelineContentContextTriggers();
+  syncTimelineContentContextTab();
   if (!drawer) return;
   drawer.setAttribute("aria-hidden", "true");
   drawer.classList.remove("is-open");
@@ -6661,7 +6720,11 @@ function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = 
   const duration = contentContextDrawerMotionDuration();
   if (duration === 0) finish();
   else state.timelineContentContextCloseTimer = window.setTimeout(finish, duration);
-  if (focusTrigger && activeID) timelineContentContextTriggers(activeID)[0]?.focus({ preventScroll: true });
+  if (focusTrigger) {
+    const trigger = $("#timeline-content-context-tab");
+    if (trigger && trigger.classList.contains("is-visible")) trigger.focus({ preventScroll: true });
+    else $("#timeline-heading")?.focus({ preventScroll: true });
+  }
 }
 
 function timelineContentContextFocusIsInsideDrawer() {
@@ -6714,9 +6777,13 @@ function syncTimelineContentContextPosition() {
   const backRect = backToTop && !backToTop.classList.contains("hidden") ? backToTop.getBoundingClientRect() : null;
   const viewportBottom = backRect ? Math.max(72, backRect.top - 16) : window.innerHeight - 16;
   const top = Math.max(16, Math.min(postRect.top, viewportBottom - 120));
+  const safeRightBoundary = backRect
+    ? Math.min(window.innerWidth - 16, backRect.left - 16)
+    : window.innerWidth - 16;
+  const rightGutter = Math.max(0, safeRightBoundary - postRect.right);
   const mode = contentContextDrawerMode({
     viewportWidth: window.innerWidth,
-    rightGutter: window.innerWidth - postRect.right,
+    rightGutter,
   });
   drawer.classList.remove("is-rail", "is-overlay", "is-sheet");
   drawer.classList.add(`is-${mode}`);
@@ -6736,12 +6803,11 @@ function syncTimelineContentContextPosition() {
     return;
   }
   drawer.style.removeProperty("--timeline-content-context-sheet-bottom");
-  const rightGutter = Math.max(0, window.innerWidth - postRect.right);
   const width = mode === "rail"
-    ? Math.min(360, Math.max(240, rightGutter - 32))
+    ? Math.min(360, Math.max(240, rightGutter - 16))
     : Math.min(360, Math.max(240, window.innerWidth - 32));
   const right = mode === "rail"
-    ? Math.max(16, window.innerWidth - postRect.right - width - 16)
+    ? Math.max(16, window.innerWidth - safeRightBoundary)
     : 16;
   drawer.style.setProperty("--timeline-content-context-right", `${Math.round(right)}px`);
   drawer.style.setProperty("--timeline-content-context-width", `${Math.round(width)}px`);
@@ -6759,7 +6825,10 @@ function handleTimelineContentContextScroll() {
   const currentY = window.scrollY;
   const delta = currentY - state.timelineContentContextLastScrollY;
   state.timelineContentContextLastScrollY = currentY;
-  if (!state.timelineContentContextActiveID) return;
+  if (!state.timelineContentContextActiveID) {
+    syncTimelineContentContextTab();
+    return;
+  }
   if (delta < -2 && state.timelineContentContextDrawerOpen) {
     closeTimelineContentContextDrawer({ clearActive: false, focusTrigger: timelineContentContextFocusIsInsideDrawer() });
     return;
@@ -6775,6 +6844,7 @@ function handleTimelineContentContextScroll() {
     revealTimelineContentContextDrawer({ focus: false });
     return;
   }
+  syncTimelineContentContextTab();
 }
 
 function buildTimelineReadLaterAction(entry) {
