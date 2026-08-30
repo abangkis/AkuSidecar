@@ -1,12 +1,91 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
+
+func TestSchema21AddsLivingTopicModelUsageLedger(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema21.db")
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		DROP TABLE living_topic_model_invocations;
+		UPDATE meta SET value='21' WHERE key='schema_version';
+		INSERT INTO living_topic_snapshots(id,topic_id,version,status,input_digest,provider,model,effort,duration_ms,usage_json,created_at)
+		VALUES('snapshot-cost','topic-cost',1,'ready','digest','structured-inference','gemini-test','high',500,'{"inputTokens":120,"cachedInputTokens":20,"outputTokens":30,"reasoningOutputTokens":40,"modelDescriptorVersion":"catalog-1","modelMaturity":"stable"}','2026-08-30T00:00:00Z');
+	`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err = Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var version string
+	var tables int
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+		t.Fatalf("version=%q err=%v", version, err)
+	}
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='living_topic_model_invocations'`).Scan(&tables); err != nil || tables != 1 {
+		t.Fatalf("usage ledger=%d err=%v", tables, err)
+	}
+	var input, output int64
+	if err := state.db.QueryRow(`SELECT input_tokens,output_tokens FROM living_topic_model_invocations WHERE id='topic_snapshot_usage:snapshot-cost'`).Scan(&input, &output); err != nil || input != 120 || output != 30 {
+		t.Fatalf("backfilled usage input=%d output=%d err=%v", input, output, err)
+	}
+}
+
+func TestSchema21LivingTopicModelUsageConflictPreservesVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema21-conflict.db")
+	state, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DROP TABLE living_topic_model_invocations; CREATE TABLE living_topic_model_invocations(existing TEXT); UPDATE meta SET value='21' WHERE key='schema_version'`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path, domain.DefaultSettings("standard", "quiet", "guarded_live", true)); err == nil {
+		t.Fatal("conflicting model usage ledger must fail migration")
+	}
+	check, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer check.Close()
+	var version string
+	if err := check.QueryRowContext(context.Background(), `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+		t.Fatalf("failed migration version=%q err=%v", version, err)
+	}
+}
 
 func TestSchema15MigratesLivingTopicsAtomically(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema15.db")
@@ -27,7 +106,7 @@ func TestSchema15MigratesLivingTopicsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var count int
@@ -86,7 +165,7 @@ func TestSchema16MigratesLivingTopicRoutingAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var count int
@@ -114,7 +193,7 @@ func TestSchema17MigratesAutomaticUnderstandingAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var count int
@@ -169,7 +248,7 @@ func TestSchema18MigratesTopicActivationAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	topic, err := state.LivingTopic(t.Context(), "topic-existing")
@@ -234,7 +313,7 @@ func TestSchema19MigratesLivingTopicNotificationsWithoutInventingUnreadEvidence(
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	topic, err := state.LivingTopic(t.Context(), "topic-existing")
@@ -294,7 +373,7 @@ func TestSchema20MigratesReversibleLivingTopicMovesAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var tableCount, columnCount int

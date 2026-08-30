@@ -542,11 +542,11 @@ func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
 	}
 }
 
-func TestEmbeddedMediaViewerStartsFittedSupportsZoomAndClosesCleanly(t *testing.T) {
+func TestEmbeddedMediaViewerUsesSnapPresetsAndKeepsManualZoom(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {"method=\"dialog\"", "media-viewer-zoom", "aria-pressed=\"false\"", "media-viewer-canvas", "type=\"submit\""},
-		"web/app.js":     {"function setMediaZoom", "setMediaZoom(false)", "mediaZoomed", "Fit image to container", "Zoom image to full size"},
-		"web/styles.css": {".media-viewer[open]", ".media-viewer:not([open])", ".media-viewer-canvas", ".media-viewer.is-zoomed", "overflow: hidden", "max-width: none"},
+		"web/index.html": {"method=\"dialog\"", "media-viewer-zoom-out", "media-viewer-scale", "media-viewer-zoom-in", "media-viewer-surface", "type=\"submit\""},
+		"web/app.js":     {"function snapMediaZoom", "function adjustMediaZoom", "function applyMediaZoom", "Snap image to fit", "Snap image to actual size", "deltaY"},
+		"web/styles.css": {".media-viewer[open]", ".media-viewer:not([open])", ".media-viewer-canvas", ".media-viewer-surface", "overflow: auto", "max-width: none"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -1318,7 +1318,7 @@ func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || payload.Usage.Scope != "aggregate" || payload.Usage.WindowDays != 30 || payload.Usage.SessionCount != 0 || len(payload.Usage.Categories) != 4 {
+	if response.StatusCode != http.StatusOK || payload.Usage.Scope != "aggregate" || payload.Usage.WindowDays != 30 || payload.Usage.SessionCount != 0 || len(payload.Usage.Categories) != 6 {
 		t.Fatalf("usage=%+v status=%d", payload.Usage, response.StatusCode)
 	}
 
@@ -1341,7 +1341,7 @@ func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {
 
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"model-usage-view", "model-usage-window", "model-usage-back"},
-		"web/app.js":     {"function buildSessionModelUsage", "function buildModelUsageHelp", "function modelUsageCategoryProfile", "Mixed models", "Configured model pending", "function loadAggregateModelUsage", "Input already includes cached input", "/api/model-usage?windowDays=", "function buildCaptureCandidateTelemetry", "Capture candidates", "Counts are per snapshot observations"},
+		"web/app.js":     {"function buildSessionModelUsage", "function buildModelUsageHelp", "function modelUsageCategoryProfile", "Mixed models", "Configured model pending", "function loadAggregateModelUsage", "Input already includes cached input", "Living Topic routing or understanding", "/api/model-usage?windowDays=", "function buildCaptureCandidateTelemetry", "Capture candidates", "Counts are per snapshot observations", "function snapMediaZoom", "function adjustMediaZoom"},
 		"web/styles.css": {".model-usage-help-button", ".model-usage-totals", ".model-usage-category", ".capture-candidate-telemetry", ".capture-candidate-snapshots"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)

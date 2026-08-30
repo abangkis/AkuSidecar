@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -188,6 +189,7 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID s
 		return nil, "", digest, err
 	}
 	result, usage, duration, err := e.topics.ResolveWithProfile(ctx, detail.Topic, detail.Members, previousPtr, settings.ReasoningEvaluationProfile)
+	e.recordLivingTopicModelInvocation("living_topic_understanding", topicID, settings.ReasoningEvaluationProfile, usage, duration, err)
 	if err != nil {
 		return nil, "", digest, fmt.Errorf("refresh Living Topic understanding: %w", err)
 	}
@@ -442,7 +444,8 @@ func (e *Engine) activateLivingTopic(ctx context.Context, job domain.LivingTopic
 				if settingsErr != nil {
 					return result, settingsErr
 				}
-				values, _, _, routeErr := router.RouteWithProfile(ctx, livingTopicTimelineFromMemory(candidate.item), []domain.LivingTopic{topic}, examples, settings.ReasoningEvaluationProfile)
+				values, usage, duration, routeErr := router.RouteWithProfile(ctx, livingTopicTimelineFromMemory(candidate.item), []domain.LivingTopic{topic}, examples, settings.ReasoningEvaluationProfile)
+				e.recordLivingTopicModelInvocation("living_topic_routing", job.ID+":"+candidate.item.ID, settings.ReasoningEvaluationProfile, usage, duration, routeErr)
 				if routeErr != nil {
 					e.logger.Printf("Living Topics activation semantic routing degraded to local score for topic %s item %s: %v", topic.ID, candidate.item.ID, routeErr)
 				} else if len(values) == 1 {
@@ -565,7 +568,8 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 		if settingsErr != nil {
 			return nil, nil, settingsErr
 		}
-		llm, _, _, routeErr := router.RouteWithProfile(ctx, item, remaining, examples, settings.ReasoningEvaluationProfile)
+		llm, usage, duration, routeErr := router.RouteWithProfile(ctx, item, remaining, examples, settings.ReasoningEvaluationProfile)
+		e.recordLivingTopicModelInvocation("living_topic_routing", timelineID, settings.ReasoningEvaluationProfile, usage, duration, routeErr)
 		if routeErr != nil {
 			e.logger.Printf("Living Topics semantic routing degraded to deterministic for Timeline %s: %v", timelineID, routeErr)
 		} else {
@@ -586,6 +590,20 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 		}
 	}
 	return decisions, changedTopics, nil
+}
+
+func (e *Engine) recordLivingTopicModelInvocation(category, ownerID, profile string, usage domain.ModelUsage, duration time.Duration, invocationErr error) {
+	if e.topics == nil {
+		return
+	}
+	model := e.topics.ModelForProfile(profile)
+	status := "completed"
+	if invocationErr != nil {
+		status = "failed"
+	}
+	if err := e.store.RecordLivingTopicModelInvocation(context.Background(), category, ownerID, status, e.topics.Name(), model.DisplayModel(), model.DisplayEffort(), duration, usage); err != nil {
+		e.logger.Printf("Living Topics model usage receipt degraded safely for %s %s: %v", category, ownerID, err)
+	}
 }
 
 func deterministicLivingTopicScore(item domain.TimelineItem, topic domain.LivingTopic, examples []domain.LivingTopicRoutingExample) (float64, string) {

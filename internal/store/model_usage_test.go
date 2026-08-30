@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -85,8 +86,41 @@ func TestModelUsageProjectsEveryReasoningCategoryWithoutDoubleCountingBreakouts(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aggregate.SessionCount != 1 || aggregate.Usage.Input == nil || *aggregate.Usage.Input != 600 || aggregate.DurationMS != report.DurationMS {
+	if aggregate.SessionCount != 1 || len(aggregate.Categories) != 6 || aggregate.Usage.Input == nil || *aggregate.Usage.Input != 600 || aggregate.DurationMS != report.DurationMS {
 		t.Fatalf("aggregate=%+v", aggregate)
+	}
+}
+
+func TestAggregateModelUsageIncludesAsynchronousLivingTopicReceipts(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	if err := state.RecordLivingTopicModelInvocation(ctx, "living_topic_routing", "timeline-1", "completed", "gemini", "gemini-test", "low", 250*time.Millisecond, domain.ModelUsage{
+		Input: tokenPointer(80), CachedInput: tokenPointer(20), Output: tokenPointer(10), ReasoningOutput: tokenPointer(0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.RecordLivingTopicModelInvocation(ctx, "living_topic_understanding", "topic-1", "completed", "gemini", "gemini-test", "low", 500*time.Millisecond, domain.ModelUsage{
+		Input: tokenPointer(120), CachedInput: tokenPointer(40), Output: tokenPointer(30), ReasoningOutput: tokenPointer(0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := state.AggregateModelUsage(ctx, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Categories) != 6 || report.Usage.Input == nil || *report.Usage.Input != 200 || report.Usage.Output == nil || *report.Usage.Output != 40 || report.DurationMS != 750 {
+		t.Fatalf("report=%+v", report)
+	}
+	for _, categoryID := range []string{"living_topic_routing", "living_topic_understanding"} {
+		found := false
+		for _, category := range report.Categories {
+			if category.ID == categoryID {
+				found = category.InvocationCount == 1 && category.UsageCoverage == "complete"
+			}
+		}
+		if !found {
+			t.Fatalf("missing accounted category %s: %+v", categoryID, report.Categories)
+		}
 	}
 }
 

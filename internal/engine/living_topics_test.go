@@ -74,7 +74,7 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	runtime, state := testEngine(t)
 	resolver := &fakeLivingTopicResolver{}
 	runtime.SetLivingTopicsResolver(resolver)
-	topic, err := runtime.CreateLivingTopic(ctx, "GPT Astra")
+	topic, err := state.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: "GPT Astra"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +123,19 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	if third == nil || outcome != "updated" || third.Version != 2 || resolver.calls != 3 || len(third.Deltas) != 1 || third.Deltas[0].Kind != "updated" {
 		t.Fatalf("third=%+v outcome=%s calls=%d", third, outcome, resolver.calls)
 	}
+	usage, err := state.AggregateModelUsage(ctx, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, category := range usage.Categories {
+		if category.ID == "living_topic_understanding" {
+			if category.InvocationCount != 3 || category.Usage.Input == nil || *category.Usage.Input != 30 {
+				t.Fatalf("understanding usage=%+v", category)
+			}
+			return
+		}
+	}
+	t.Fatal("Living Topic understanding usage category is missing")
 }
 
 func TestManualMembershipQueuesAutomaticUnderstanding(t *testing.T) {

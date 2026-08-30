@@ -966,14 +966,19 @@
       <form method="dialog" class="media-viewer-toolbar">
         <span id="media-viewer-count"></span>
         <div class="media-viewer-toolbar-actions">
-          <button id="media-viewer-zoom" type="button" aria-label="Zoom image to full size" aria-pressed="false">Zoom</button>
+          <button id="media-viewer-zoom-out" type="button" aria-label="Zoom out">−</button>
+          <output id="media-viewer-scale" class="media-viewer-scale" aria-live="polite">100%</output>
+          <button id="media-viewer-zoom-in" type="button" aria-label="Zoom in">+</button>
+          <button id="media-viewer-zoom" type="button" aria-label="Snap image to actual size">Zoom</button>
           <button id="media-viewer-close" type="submit" aria-label="Close image viewer">Close</button>
         </div>
       </form>
       <div class="media-viewer-stage">
         <button id="media-viewer-previous" type="button" aria-label="Previous image">‹</button>
         <div id="media-viewer-canvas" class="media-viewer-canvas">
-          <img id="media-viewer-image" alt="" />
+          <div id="media-viewer-surface" class="media-viewer-surface">
+            <img id="media-viewer-image" alt="" />
+          </div>
         </div>
         <button id="media-viewer-next" type="button" aria-label="Next image">›</button>
       </div>

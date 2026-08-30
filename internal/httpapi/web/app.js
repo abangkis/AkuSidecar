@@ -182,7 +182,9 @@ const state = {
   modelUsageHelpSequence: 0,
   media: [],
   mediaIndex: 0,
-  mediaZoomed: false,
+  mediaZoomPreset: "fit",
+  mediaZoomFactor: 1,
+  mediaZoomManual: false,
   onboardingEditing: false,
   calibration: null,
   calibrationOrdinal: 0,
@@ -472,13 +474,32 @@ document.addEventListener("keydown", (event) => {
   closeTimelineContentContextDrawer();
 });
 $("#back-to-top").addEventListener("click", returnToTop);
-$("#media-viewer-zoom").addEventListener("click", () => setMediaZoom(!state.mediaZoomed));
+$("#media-viewer-zoom").addEventListener("click", () => snapMediaZoom(state.mediaZoomPreset === "fit" ? "zoom" : "fit"));
+$("#media-viewer-zoom-out").addEventListener("click", () => adjustMediaZoom(1 / 1.2));
+$("#media-viewer-zoom-in").addEventListener("click", () => adjustMediaZoom(1.2));
 $("#media-viewer-previous").addEventListener("click", () => moveMedia(-1));
 $("#media-viewer-next").addEventListener("click", () => moveMedia(1));
-$("#media-viewer").addEventListener("keydown", (event) => {
-  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+$("#media-viewer-image").addEventListener("load", () => snapMediaZoom(state.mediaZoomPreset));
+$("#media-viewer-canvas").addEventListener("wheel", (event) => {
+  if (!$("#media-viewer").open) return;
   event.preventDefault();
-  moveMedia(event.key === "ArrowLeft" ? -1 : 1);
+  const rect = $("#media-viewer-canvas").getBoundingClientRect();
+  adjustMediaZoom(event.deltaY < 0 ? 1.12 : 1 / 1.12, { x: event.clientX - rect.left, y: event.clientY - rect.top });
+}, { passive: false });
+$("#media-viewer").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    moveMedia(event.key === "ArrowLeft" ? -1 : 1);
+  } else if (event.key === "+" || event.key === "=") {
+    event.preventDefault();
+    adjustMediaZoom(1.2);
+  } else if (event.key === "-" || event.key === "_") {
+    event.preventDefault();
+    adjustMediaZoom(1 / 1.2);
+  } else if (event.key === "0") {
+    event.preventDefault();
+    snapMediaZoom("fit");
+  }
 });
 window.addEventListener("scroll", () => {
   scheduleBackToTop();
@@ -490,6 +511,10 @@ window.addEventListener("resize", () => {
   scheduleTimelineSidePanePosition();
   scheduleTimelineContentContextPosition();
   syncTimelineContentContextTabs();
+  if ($("#media-viewer").open) {
+    if (state.mediaZoomManual) applyMediaZoom(state.mediaZoomFactor);
+    else snapMediaZoom(state.mediaZoomPreset);
+  }
 }, { passive: true });
 window.addEventListener("beforeunload", (event) => {
   if (!settingsDirty.isDirty() || state.settingsUnloadBypass) return;
@@ -4366,11 +4391,14 @@ function timelineContentContextOverlapsBackToTop(button) {
 }
 
 function syncBackToTopPosition(top) {
-  const candidates = state.currentView === "timeline"
-    ? [$("#result-panel"), document.querySelector(".timeline-heading-row")]
-    : state.currentView === "inbox"
-      ? [$("#inbox-panel")]
-      : [$("#settings-panel")];
+  const anchorsByView = {
+    timeline: [$("#result-panel"), document.querySelector(".timeline-heading-row")],
+    inbox: [$("#inbox-panel")],
+    library: [$("#library-panel")],
+    topics: [$("#topics-panel")],
+    settings: [$("#settings-panel")],
+  };
+  const candidates = anchorsByView[state.currentView] ?? [$("#timeline-panel")];
   const anchor = candidates.find((element) => {
     if (!element || element.classList.contains("hidden")) return false;
     const rect = element.getBoundingClientRect();
@@ -5287,7 +5315,7 @@ function buildModelUsageHelp() {
   popover.className = "model-usage-help-popover";
   popover.id = `model-usage-help-${++state.modelUsageHelpSequence}`;
   popover.setAttribute("role", "tooltip");
-  popover.textContent = "Input already includes cached input, so cached input is shown as a breakout and is not added again. Reasoning output is also a breakout. Failed invocations may still use tokens. Unavailable means the provider did not report usage, not zero. AI Deep Detection may update after the Timeline is published.";
+  popover.textContent = "Input already includes cached input, so cached input is shown as a breakout and is not added again. Reasoning output is also a breakout. Failed invocations may still use tokens. Unavailable means the provider did not report usage, not zero. AI Deep Detection and Living Topic routing or understanding may update asynchronously. Library search, Memory storage, and deterministic related context do not invoke a provider.";
   button.setAttribute("aria-controls", popover.id);
   button.setAttribute("aria-describedby", popover.id);
   button.addEventListener("click", () => {
@@ -8400,10 +8428,12 @@ async function sendFeedback(id, direction, reason) {
 function openMedia(media, index) {
   state.media = media;
   state.mediaIndex = index;
-  setMediaZoom(false);
-  renderMedia();
+  state.mediaZoomPreset = "fit";
+  state.mediaZoomFactor = 1;
+  state.mediaZoomManual = false;
   const viewer = $("#media-viewer");
   viewer.showModal();
+  renderMedia();
   viewer.focus({ preventScroll: true });
 }
 
@@ -8414,22 +8444,77 @@ function moveMedia(delta) {
 }
 
 function renderMedia() {
-  $("#media-viewer-image").src = state.media[state.mediaIndex] ?? "";
+  state.mediaZoomManual = false;
+  const image = $("#media-viewer-image");
+  image.removeAttribute("style");
+  $("#media-viewer-surface").removeAttribute("style");
+  image.src = state.media[state.mediaIndex] ?? "";
   $("#media-viewer-canvas").scrollTo(0, 0);
   $("#media-viewer-count").textContent = `${state.mediaIndex + 1} of ${state.media.length}`;
   $("#media-viewer-previous").disabled = state.media.length < 2 || state.mediaIndex === 0;
   $("#media-viewer-next").disabled = state.media.length < 2 || state.mediaIndex === state.media.length - 1;
 }
 
-function setMediaZoom(zoomed) {
-  state.mediaZoomed = zoomed;
-  const viewer = $("#media-viewer");
+function mediaZoomMetrics() {
+  const canvas = $("#media-viewer-canvas");
+  const image = $("#media-viewer-image");
+  if (!canvas.clientWidth || !canvas.clientHeight || !image.naturalWidth || !image.naturalHeight) return null;
+  const fitScale = Math.min(canvas.clientWidth / image.naturalWidth, canvas.clientHeight / image.naturalHeight);
+  return {
+    canvas,
+    image,
+    surface: $("#media-viewer-surface"),
+    fitScale,
+    fitWidth: image.naturalWidth * fitScale,
+    fitHeight: image.naturalHeight * fitScale,
+  };
+}
+
+function applyMediaZoom(factor, focalPoint = null) {
+  const metrics = mediaZoomMetrics();
+  if (!metrics) return;
+  const { canvas, image, surface, fitScale, fitWidth, fitHeight } = metrics;
+  const bounded = Math.min(12, Math.max(0.1, factor));
+  const focusX = focalPoint?.x ?? canvas.clientWidth / 2;
+  const focusY = focalPoint?.y ?? canvas.clientHeight / 2;
+  const oldWidth = Math.max(canvas.scrollWidth, canvas.clientWidth);
+  const oldHeight = Math.max(canvas.scrollHeight, canvas.clientHeight);
+  const ratioX = (canvas.scrollLeft + focusX) / oldWidth;
+  const ratioY = (canvas.scrollTop + focusY) / oldHeight;
+  const width = fitWidth * bounded;
+  const height = fitHeight * bounded;
+  image.style.width = `${width}px`;
+  image.style.height = `${height}px`;
+  surface.style.width = `${Math.max(canvas.clientWidth, width)}px`;
+  surface.style.height = `${Math.max(canvas.clientHeight, height)}px`;
+  state.mediaZoomFactor = bounded;
+  $("#media-viewer-scale").textContent = `${Math.round(fitScale * bounded * 100)}%`;
+  canvas.scrollLeft = ratioX * Math.max(canvas.scrollWidth, canvas.clientWidth) - focusX;
+  canvas.scrollTop = ratioY * Math.max(canvas.scrollHeight, canvas.clientHeight) - focusY;
+}
+
+function syncMediaZoomPresetControl() {
   const button = $("#media-viewer-zoom");
-  viewer.classList.toggle("is-zoomed", zoomed);
-  button.textContent = zoomed ? "Fit" : "Zoom";
-  button.setAttribute("aria-pressed", String(zoomed));
-  button.setAttribute("aria-label", zoomed ? "Fit image to container" : "Zoom image to full size");
-  button.title = zoomed ? "Fit image to container" : "Zoom image to full size";
+  const target = state.mediaZoomPreset === "fit" ? "zoom" : "fit";
+  button.textContent = target === "fit" ? "Fit" : "Zoom";
+  button.setAttribute("aria-label", target === "fit" ? "Snap image to fit" : "Snap image to actual size");
+  button.title = target === "fit" ? "Snap image to fit" : "Snap image to actual size";
+}
+
+function snapMediaZoom(preset) {
+  const metrics = mediaZoomMetrics();
+  state.mediaZoomPreset = preset === "zoom" ? "zoom" : "fit";
+  state.mediaZoomManual = false;
+  syncMediaZoomPresetControl();
+  if (!metrics) return;
+  const target = state.mediaZoomPreset === "zoom" ? 1 / metrics.fitScale : 1;
+  applyMediaZoom(target);
+}
+
+function adjustMediaZoom(multiplier, focalPoint = null) {
+  if (!mediaZoomMetrics()) return;
+  state.mediaZoomManual = true;
+  applyMediaZoom(state.mediaZoomFactor * multiplier, focalPoint);
 }
 
 function showSessionFailure(session) {

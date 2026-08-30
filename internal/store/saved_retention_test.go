@@ -59,7 +59,7 @@ func TestSchema13MigrationMaterializesLegacyFullCopyAsKeep(t *testing.T) {
 		t.Fatalf("legacy full copy state=%+v", item)
 	}
 	var version string
-	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "21" {
+	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var claims int

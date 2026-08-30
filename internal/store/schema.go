@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 21
+const SchemaVersion = 22
 
-const schemaVersion = "21"
+const schemaVersion = "22"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -369,6 +369,30 @@ CREATE INDEX IF NOT EXISTS living_topic_understanding_queue
   ON living_topic_understanding_jobs(status,queued_at,id);
 CREATE INDEX IF NOT EXISTS living_topic_understanding_topic
   ON living_topic_understanding_jobs(topic_id,queued_at DESC,id DESC);
+
+CREATE TABLE IF NOT EXISTS living_topic_model_invocations (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN ('living_topic_routing','living_topic_understanding')),
+  owner_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('completed','failed')),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  model_descriptor_version TEXT NOT NULL DEFAULT '',
+  model_maturity TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  caller_latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (caller_latency_ms >= 0),
+  queue_wait_ms INTEGER NOT NULL DEFAULT 0 CHECK (queue_wait_ms >= 0),
+  provider_execution_ms INTEGER NOT NULL DEFAULT 0 CHECK (provider_execution_ms >= 0),
+  response_total_ms INTEGER NOT NULL DEFAULT 0 CHECK (response_total_ms >= 0),
+  input_tokens INTEGER,
+  cached_input_tokens INTEGER,
+  output_tokens INTEGER,
+  reasoning_output_tokens INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS living_topic_model_invocations_category_created
+  ON living_topic_model_invocations(category,created_at,id);
 `
 
 // A v15 database must fail closed when any canonical object already exists
@@ -469,6 +493,52 @@ UPDATE living_topics SET
   understanding_input_digest=COALESCE((SELECT s.input_digest FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id ORDER BY s.version DESC LIMIT 1),''),
   understanding_checked_at=(SELECT s.created_at FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id ORDER BY s.version DESC LIMIT 1),
   understanding_trigger=CASE WHEN EXISTS (SELECT 1 FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id) THEN 'migration' ELSE '' END;
+`
+
+// Schema 22 adds a content-free invocation ledger for asynchronous Living
+// Topic routing and understanding. Historical calls whose receipts were not
+// retained remain unknown instead of being reconstructed as zero usage.
+const livingTopicsModelUsageMigrationSQL = `
+CREATE TABLE living_topic_model_invocations (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN ('living_topic_routing','living_topic_understanding')),
+  owner_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('completed','failed')),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  model_descriptor_version TEXT NOT NULL DEFAULT '',
+  model_maturity TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  caller_latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (caller_latency_ms >= 0),
+  queue_wait_ms INTEGER NOT NULL DEFAULT 0 CHECK (queue_wait_ms >= 0),
+  provider_execution_ms INTEGER NOT NULL DEFAULT 0 CHECK (provider_execution_ms >= 0),
+  response_total_ms INTEGER NOT NULL DEFAULT 0 CHECK (response_total_ms >= 0),
+  input_tokens INTEGER,
+  cached_input_tokens INTEGER,
+  output_tokens INTEGER,
+  reasoning_output_tokens INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX living_topic_model_invocations_category_created
+  ON living_topic_model_invocations(category,created_at,id);
+INSERT INTO living_topic_model_invocations(
+  id,category,owner_id,status,provider,model,model_descriptor_version,model_maturity,effort,
+  duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,
+  input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at
+)
+SELECT
+  'topic_snapshot_usage:' || id,'living_topic_understanding',topic_id,'completed',provider,model,
+  COALESCE(json_extract(usage_json,'$.modelDescriptorVersion'),''),
+  COALESCE(json_extract(usage_json,'$.modelMaturity'),''),effort,
+  duration_ms,COALESCE(json_extract(usage_json,'$.callerLatencyMs'),duration_ms),
+  COALESCE(json_extract(usage_json,'$.queueWaitMs'),0),
+  COALESCE(json_extract(usage_json,'$.providerExecutionMs'),0),
+  COALESCE(json_extract(usage_json,'$.responseTotalMs'),0),
+  json_extract(usage_json,'$.inputTokens'),json_extract(usage_json,'$.cachedInputTokens'),
+  json_extract(usage_json,'$.outputTokens'),json_extract(usage_json,'$.reasoningOutputTokens'),created_at
+FROM living_topic_snapshots
+WHERE provider<>'' AND model<>'';
 `
 
 // The v18-to-v19 migration adds bounded local topic activation and a

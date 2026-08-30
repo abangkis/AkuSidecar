@@ -20,13 +20,20 @@ type usageAccumulator struct {
 	durationMS  int64
 }
 
-func modelUsageCategories() []domain.ModelUsageCategory {
-	return []domain.ModelUsageCategory{
+func modelUsageCategories(includeLivingTopics bool) []domain.ModelUsageCategory {
+	categories := []domain.ModelUsageCategory{
 		{ID: "acquisition_planning", Label: "Acquisition planning", Execution: "in-run", Entries: []domain.ModelUsageEntry{}},
 		{ID: "candidate_evaluation", Label: "Candidate evaluation", Execution: "in-run", Entries: []domain.ModelUsageEntry{}},
 		{ID: "semantic_event_resolution", Label: "Semantic event resolution", Execution: "in-run", Entries: []domain.ModelUsageEntry{}},
 		{ID: "ai_deep_detection", Label: "AI Deep Detection", Execution: "async", Entries: []domain.ModelUsageEntry{}},
 	}
+	if includeLivingTopics {
+		categories = append(categories,
+			domain.ModelUsageCategory{ID: "living_topic_routing", Label: "Living Topic routing", Execution: "async", Entries: []domain.ModelUsageEntry{}},
+			domain.ModelUsageCategory{ID: "living_topic_understanding", Label: "Living Topic understanding", Execution: "async", Entries: []domain.ModelUsageEntry{}},
+		)
+	}
+	return categories
 }
 
 func nullableToken(value sql.NullInt64) *int64 {
@@ -156,6 +163,10 @@ func categoryNote(categoryID, status string) string {
 		return "The local semantic path was sufficient; no model resolver was invoked."
 	case "ai_deep_detection":
 		return "Deep Detection was disabled, skipped for onboarding, or had no retained post to review."
+	case "living_topic_routing":
+		return "Every eligible item was routed deterministically, or no Living Topic needed semantic routing."
+	case "living_topic_understanding":
+		return "No topic evidence change required provider-backed understanding in this window."
 	default:
 		return "No model invocation was required."
 	}
@@ -204,7 +215,7 @@ func (s *Store) SessionModelUsage(ctx context.Context, sessionID string) (domain
 	if err := s.db.QueryRowContext(ctx, `SELECT status,created_at FROM sessions WHERE id=?`, sessionID).Scan(&sessionStatus, &createdAt); err != nil {
 		return domain.ModelUsageReport{}, err
 	}
-	categories := modelUsageCategories()
+	categories := modelUsageCategories(false)
 	byID := map[string]*domain.ModelUsageCategory{}
 	for index := range categories {
 		byID[categories[index].ID] = &categories[index]
@@ -396,7 +407,7 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 		return domain.ModelUsageReport{}, err
 	}
 
-	categories := modelUsageCategories()
+	categories := modelUsageCategories(true)
 	byID := map[string]*domain.ModelUsageCategory{}
 	for index := range categories {
 		byID[categories[index].ID] = &categories[index]
@@ -488,10 +499,40 @@ func (s *Store) AggregateModelUsage(ctx context.Context, windowDays int) (domain
 		return domain.ModelUsageReport{}, err
 	}
 
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT id,category,status,provider,model,model_descriptor_version,model_maturity,effort,duration_ms,caller_latency_ms,queue_wait_ms,provider_execution_ms,response_total_ms,
+		       input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,created_at
+		FROM living_topic_model_invocations
+		WHERE created_at>=? ORDER BY created_at,id`, fromValue)
+	if err != nil {
+		return domain.ModelUsageReport{}, err
+	}
+	for rows.Next() {
+		var id, categoryID, invocationStatus, provider, model, descriptorVersion, maturity, effort, invocationAt string
+		var duration, callerLatency, queueWait, providerExecution, responseTotal int64
+		var input, cached, output, reasoning sql.NullInt64
+		if err := rows.Scan(&id, &categoryID, &invocationStatus, &provider, &model, &descriptorVersion, &maturity, &effort, &duration, &callerLatency, &queueWait, &providerExecution, &responseTotal, &input, &cached, &output, &reasoning, &invocationAt); err != nil {
+			rows.Close()
+			return domain.ModelUsageReport{}, err
+		}
+		if category := byID[categoryID]; category != nil {
+			category.Entries = append(category.Entries,
+				usageEntry(id, categoryID, "", invocationStatus, provider, model, descriptorVersion, maturity, effort, duration, callerLatency, queueWait, providerExecution, responseTotal, input, cached, output, reasoning, invocationAt))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return domain.ModelUsageReport{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return domain.ModelUsageReport{}, err
+	}
+
 	reportAccumulator := usageAccumulator{}
 	for index := range categories {
 		categories[index].Entries = aggregateModelUsageEntries(categories[index].Entries)
 		finalizeCategory(&categories[index], status)
+		status = mergeUsageStatus(status, categories[index].Status)
 		for _, entry := range categories[index].Entries {
 			reportAccumulator.add(entry)
 		}
