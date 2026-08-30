@@ -117,6 +117,85 @@ func TestLibraryReadOnlyHTTPListDetailAndPrivacy(t *testing.T) {
 	}
 }
 
+func TestLibrarySearchCanIncludeCurrentLivingTopicKnowledge(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	topic, err := state.CreateLivingTopic(ctx, "OpenAI GPT Astra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceInput := libraryHTTPInput("2304")
+	evidenceInput.Title = "GPT Astra orchestration evidence"
+	evidenceInput.Summary = "Academic agent coordination details"
+	evidence, err := state.CreateMemoryRecallStub(ctx, evidenceInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
+		t.Fatal(err)
+	}
+	digest := "http-library-topic-knowledge"
+	snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
+		TopicID: topic.ID, Status: "ready", InputDigest: digest,
+		Overview: "GPT Astra has source-backed orchestration capabilities.",
+		Claims: []domain.LivingTopicClaim{
+			{Text: "Academic agent coordination is supported.", Assessment: "supported", EvidenceIDs: []string{evidence.ID}},
+			{Text: "A release date remains uncertain.", Assessment: "uncertain", EvidenceIDs: []string{evidence.ID}},
+		},
+		EvidenceIDs: []string{evidence.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.QueueLivingTopicUnderstanding(ctx, topic.ID, "http_test"); err != nil {
+		t.Fatal(err)
+	}
+	job, err := state.ClaimLivingTopicUnderstanding(ctx)
+	if err != nil || job == nil {
+		t.Fatalf("understanding job=%+v err=%v", job, err)
+	}
+	if err := state.FinishLivingTopicUnderstanding(ctx, *job, "published", digest, snapshot.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/library/items?query=agent+coordination&limit=10&includeTopicKnowledge=true", nil)
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		TopicKnowledge []libraryTopicKnowledgeView `json:"topicKnowledge"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.TopicKnowledge) != 1 {
+		t.Fatalf("topic knowledge=%+v", payload.TopicKnowledge)
+	}
+	knowledge := payload.TopicKnowledge[0]
+	if knowledge.TopicID != topic.ID || knowledge.TopicName != topic.Name || knowledge.SnapshotVersion != snapshot.Version || knowledge.EvidenceCount != 1 || knowledge.MatchReason == "" {
+		t.Fatalf("knowledge=%+v", knowledge)
+	}
+	if len(knowledge.Claims) != 1 || knowledge.Claims[0].Assessment != "supported" {
+		t.Fatalf("supported claims=%+v", knowledge.Claims)
+	}
+	knowledgeJSON, err := json.Marshal(knowledge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(knowledgeJSON), evidence.ID) || strings.Contains(string(knowledgeJSON), "release date remains uncertain") {
+		t.Fatalf("Library topic knowledge exposed evidence ids or uncertain claims: %s", knowledgeJSON)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/library/items?query=agent+coordination&limit=10", nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "topicKnowledge") {
+		t.Fatalf("topic knowledge must remain opt-in to the Library surface: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestLibraryStorageHTTPIsBoundedReadOnlyAndPrivacySafe(t *testing.T) {
 	server, state := openLibraryHTTPFixture(t)
 	ctx := context.Background()

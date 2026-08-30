@@ -50,6 +50,11 @@ test("Library query state is bounded and encoded without leaking cursor state", 
   assert.match(path, /tier=full_copy/);
   assert.match(path, /cursor=cursor%2B%2F%3D/);
   assert.equal(libraryFilterKey(filters), libraryFilterKey({ ...filters }));
+
+  const knowledgePath = buildLibraryRequestPath({ query: "agent coordination" }, "", false, true);
+  assert.match(knowledgePath, /includeTopicKnowledge=true/);
+  assert.doesNotMatch(buildLibraryRequestPath({}, "", false, true), /includeTopicKnowledge/);
+  assert.doesNotMatch(buildLibraryRequestPath({ query: "agent coordination" }, "", true, true), /includeTopicKnowledge/);
 });
 
 test("Library storage requests stay bounded and preserve empty recommendation lists", () => {

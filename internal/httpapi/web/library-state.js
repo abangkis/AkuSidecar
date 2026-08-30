@@ -35,13 +35,14 @@ export function normalizeLibraryFilters(input = {}) {
   };
 }
 
-export function buildLibraryRequestPath(filters = {}, cursor = "", savedOnly = false) {
+export function buildLibraryRequestPath(filters = {}, cursor = "", savedOnly = false, includeTopicKnowledge = false) {
   const normalized = normalizeLibraryFilters(filters);
   const params = new URLSearchParams();
   if (normalized.query) params.set("query", normalized.query);
   if (normalized.source) params.set("source", normalized.source);
   if (normalized.tier) params.set("tier", normalized.tier);
   if (savedOnly) params.set("saved", "true");
+  if (includeTopicKnowledge && !savedOnly && normalized.query) params.set("includeTopicKnowledge", "true");
   if (normalized.publishedFrom) params.set("publishedFrom", normalized.publishedFrom);
   if (normalized.publishedTo) params.set("publishedTo", normalized.publishedTo);
   params.set("limit", String(normalized.limit));

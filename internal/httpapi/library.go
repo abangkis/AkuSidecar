@@ -11,6 +11,7 @@ import (
 const (
 	libraryHTTPMaxLimit                      = 50
 	libraryHTTPMaxCursor                     = 512
+	libraryTopicKnowledgeLimit               = 3
 	libraryStorageDefaultRecommendationLimit = 6
 	libraryStorageMaxRecommendationLimit     = 12
 )
@@ -37,6 +38,43 @@ type libraryItemView struct {
 	FullContent          *string                       `json:"fullContent,omitempty"`
 	CreatedAt            string                        `json:"createdAt"`
 	UpdatedAt            string                        `json:"updatedAt"`
+}
+
+type libraryTopicClaimView struct {
+	Text       string `json:"text"`
+	Assessment string `json:"assessment"`
+}
+
+// libraryTopicKnowledgeView exposes only the current supported understanding
+// needed for Library discovery. Evidence ids and historical snapshot payloads
+// stay behind the Living Topics detail boundary.
+type libraryTopicKnowledgeView struct {
+	TopicID         string                  `json:"topicId"`
+	TopicName       string                  `json:"topicName"`
+	Overview        string                  `json:"overview"`
+	Claims          []libraryTopicClaimView `json:"claims"`
+	SnapshotVersion int                     `json:"snapshotVersion"`
+	UpdatedAt       string                  `json:"updatedAt"`
+	EvidenceCount   int                     `json:"evidenceCount"`
+	MatchReason     string                  `json:"matchReason"`
+}
+
+func publicLibraryTopicKnowledge(value domain.ContentContextTopicInsight) libraryTopicKnowledgeView {
+	claims := make([]libraryTopicClaimView, 0, len(value.Claims))
+	for _, claim := range value.Claims {
+		if claim.Assessment == "supported" {
+			claims = append(claims, libraryTopicClaimView{Text: claim.Text, Assessment: claim.Assessment})
+		}
+	}
+	return libraryTopicKnowledgeView{
+		TopicID: value.TopicID, TopicName: value.TopicName, Overview: value.Overview, Claims: claims,
+		SnapshotVersion: value.SnapshotVersion, UpdatedAt: value.UpdatedAt,
+		EvidenceCount: value.EvidenceCount, MatchReason: value.MatchReason,
+	}
+}
+
+func libraryTopicKnowledgeRequested(values url.Values) bool {
+	return values.Get("includeTopicKnowledge") == "true"
 }
 
 func publicLibraryItem(item domain.MemoryItem, includeFullContent bool) libraryItemView {

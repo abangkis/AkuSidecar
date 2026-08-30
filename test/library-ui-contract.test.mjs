@@ -14,6 +14,19 @@ test("Library exposes a compact accessible filter disclosure", () => {
   assert.match(app, /toggle\.setAttribute\("aria-expanded", String\(!fields\.classList\.contains\("hidden"\)\)\)/);
 });
 
+test("Library search surfaces current Living Topic knowledge separately", () => {
+  assert.match(index, /id="library-topic-knowledge"[^>]*aria-labelledby="library-topic-knowledge-heading"/);
+  assert.match(index, /id="library-topic-knowledge-results"[^>]*role="list"/);
+  assert.match(index, /Only current supported understanding is searched/);
+  assert.match(app, /topicKnowledge: \[\]/);
+  assert.match(app, /buildLibraryRequestPath\([\s\S]*?false,\s*true,\s*\)/);
+  assert.match(app, /function renderLibraryTopicKnowledge\(\)/);
+  assert.match(app, /function buildLibraryTopicKnowledgeCard\(knowledge\)/);
+  assert.match(app, /knowledge\.claims\.slice\(0, 3\)/);
+  assert.match(styles, /\.library-topic-knowledge \{/);
+  assert.match(styles, /\.library-topic-knowledge-results \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+});
+
 test("Library storage summary and Spring Cleaning remain read-only and review-only", () => {
   assert.match(index, /id="library-tabs"[^>]+role="tablist"/);
   assert.match(index, /id="library-saved-tab"[^>]+role="tab"[^>]+aria-selected="true"[^>]+aria-controls="library-saved-view"/);

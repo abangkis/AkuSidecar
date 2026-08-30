@@ -604,6 +604,17 @@
         </form>
 
         <p id="library-status" class="library-status" role="status" aria-live="polite"></p>
+        <section id="library-topic-knowledge" class="library-topic-knowledge hidden" aria-labelledby="library-topic-knowledge-heading">
+          <div class="library-topic-knowledge-heading">
+            <div>
+              <p class="step-label">CURRENT LIVING TOPIC KNOWLEDGE</p>
+              <h3 id="library-topic-knowledge-heading">What your topics already understand</h3>
+            </div>
+            <span class="library-storage-read-only">Read-only</span>
+          </div>
+          <p class="review-guidance">Only current supported understanding is searched. Topic knowledge may span sources; Library filters apply to individual Memory results.</p>
+          <div id="library-topic-knowledge-results" class="library-topic-knowledge-results" role="list" aria-label="Matching current Living Topic knowledge"></div>
+        </section>
         <div id="library-layout" class="library-layout">
           <div class="library-results-column">
             <div id="library-results" class="library-results" role="list" aria-label="Personal Memory Library results"></div>
@@ -746,7 +757,7 @@
                 <div id="living-topic-move-status" class="living-topic-move-status hidden" role="status" aria-live="polite"></div>
                 <div id="living-topic-members" class="living-topic-members" role="list"></div>
                 <form id="living-topic-evidence-search-form" class="living-topic-evidence-search-form" role="search">
-                  <label for="living-topic-evidence-query">Find Library evidence</label>
+                  <label for="living-topic-evidence-query">Add existing Memory</label>
                   <div>
                     <input id="living-topic-evidence-query" type="search" maxlength="200" autocomplete="off" placeholder="Search local Memory" />
                     <button class="secondary-button" type="submit">Search</button>

@@ -136,6 +136,31 @@ func (e Engine) Extract(item domain.TimelineItem) Query {
 	return Query{Terms: terms, Anchors: anchors, Phrases: phrases}
 }
 
+// ExtractSearch builds a bounded relevance query from an explicit user-authored
+// Library search. Unlike Timeline extraction, every non-generic search term may
+// act as an anchor because the user deliberately supplied it. This keeps the
+// read path provider-free while allowing short topic identities such as "AI".
+func (e Engine) ExtractSearch(value string) Query {
+	terms := uniqueTerms(tokenize(value))
+	if len(terms) > MaxQueryTerms {
+		terms = terms[:MaxQueryTerms]
+	}
+	anchors := make([]string, 0, len(terms))
+	for _, term := range terms {
+		if structuredAnchorTerm(term) {
+			anchors = append(anchors, term)
+		}
+	}
+	phrases := make([]string, 0, 6)
+	for index := 0; index+1 < len(terms) && len(phrases) < 6; index++ {
+		pair := []string{terms[index], terms[index+1]}
+		if phraseContainsAnchor(pair, anchors) {
+			phrases = append(phrases, strings.Join(pair, " "))
+		}
+	}
+	return Query{Terms: terms, Anchors: anchors, Phrases: phrases}
+}
+
 // Match applies the precision-first admission policy and returns at most the
 // caller's requested limit. Weak generic-token overlaps are intentionally
 // omitted, so an empty result is a valid and useful outcome.

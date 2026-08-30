@@ -889,7 +889,22 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		for _, item := range result.Items {
 			items = append(items, publicLibraryItem(item, false))
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+		payload := map[string]any{"items": items, "nextCursor": result.NextCursor}
+		if libraryTopicKnowledgeRequested(r.URL.Query()) && strings.TrimSpace(query.Query) != "" && query.Cursor == "" && !query.SavedOnly {
+			insights, err := s.engine.LibraryTopicKnowledge(ctx, query.Query, libraryTopicKnowledgeLimit)
+			if err != nil {
+				if errors.Is(err, store.ErrMemoryLibraryQuery) {
+					return badRequest(err.Error())
+				}
+				return err
+			}
+			knowledge := make([]libraryTopicKnowledgeView, 0, len(insights))
+			for _, insight := range insights {
+				knowledge = append(knowledge, publicLibraryTopicKnowledge(insight))
+			}
+			payload["topicKnowledge"] = knowledge
+		}
+		return writeJSON(w, http.StatusOK, payload)
 	case r.Method == http.MethodGet && p == "/api/library/saved":
 		query, err := parseLibraryQuery(r.URL.Query())
 		if err != nil {

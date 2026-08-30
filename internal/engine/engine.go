@@ -962,6 +962,9 @@ func (e *Engine) UndoContentContextFeedback(ctx context.Context, id string) (dom
 func (e *Engine) Library(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
 	return e.store.ListMemoryLibrary(ctx, query)
 }
+func (e *Engine) LibraryTopicKnowledge(ctx context.Context, query string, limit int) ([]domain.ContentContextTopicInsight, error) {
+	return e.store.SearchLivingTopicKnowledge(ctx, query, limit)
+}
 func (e *Engine) SavedLibrary(ctx context.Context, query domain.MemoryLibraryQuery) (domain.MemoryLibraryResult, error) {
 	return e.store.ListSavedMemory(ctx, query)
 }

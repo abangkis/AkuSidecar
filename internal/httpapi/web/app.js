@@ -129,6 +129,7 @@ const state = {
     filters: normalizeLibraryFilters(),
     activeTab: LIBRARY_TAB_SAVED,
     items: [],
+    topicKnowledge: [],
     nextCursor: "",
     selectedId: "",
     selectedItem: null,
@@ -1262,7 +1263,7 @@ function renderLivingTopicDetail() {
   } else if (!available.length) {
     const empty = document.createElement("p");
     empty.className = "library-state";
-    empty.textContent = "No additional Library evidence matches this search.";
+    empty.textContent = "No additional local Memory evidence matches this search.";
     candidates.replaceChildren(empty);
   } else {
     candidates.replaceChildren(...available.map((item) => buildLivingTopicEvidenceCard(item, "Add", () => addLivingTopicMember(item.id), detail.members.length >= 20)));
@@ -1757,6 +1758,7 @@ function resetLibraryList() {
   state.library.loading = false;
   state.library.loadingMore = false;
   state.library.items = [];
+  state.library.topicKnowledge = [];
   state.library.nextCursor = "";
   state.library.error = null;
   state.library.detailRequestID += 1;
@@ -1838,14 +1840,21 @@ async function loadLibrary({ append = false } = {}) {
     const requestPath = state.library.activeTab === LIBRARY_TAB_SAVED
       ? buildSavedLibraryRequestPath(state.library.filters, append ? state.library.nextCursor : "")
       : buildLibraryRequestPath(
-      state.library.filters,
-      append ? state.library.nextCursor : "",
-    );
+        state.library.filters,
+        append ? state.library.nextCursor : "",
+        false,
+        true,
+      );
     const response = await api(requestPath, { signal: controller.signal });
     if (requestID !== state.library.requestID) return;
     const merged = mergeLibraryPage(state.library.items, response, append);
     state.library.items = merged.items;
     state.library.nextCursor = merged.nextCursor;
+    if (!append) {
+      state.library.topicKnowledge = state.library.activeTab === LIBRARY_TAB_LIBRARY && Array.isArray(response?.topicKnowledge)
+        ? response.topicKnowledge.slice(0, 3)
+        : [];
+    }
     if (state.library.selectedId) {
       const selected = state.library.items.find((item) => item.id === state.library.selectedId);
       if (!selected) closeLibraryDetail();
@@ -1930,6 +1939,7 @@ function renderLibrary() {
   const meta = $("#library-meta");
   const layout = $("#library-layout");
   if (!results || !loadMore || !status || !meta) return;
+  renderLibraryTopicKnowledge();
 
   layout?.classList.toggle("has-selection", Boolean(state.library.selectedId));
 
@@ -1944,8 +1954,11 @@ function renderLibrary() {
     status.textContent = libraryErrorMessage(state.library.error);
   } else if (state.library.notice) {
     status.textContent = state.library.notice;
-  } else if (state.library.items.length) {
-    status.textContent = `${state.library.items.length} memor${state.library.items.length === 1 ? "y" : "ies"}${state.library.nextCursor ? " · more available" : ""}`;
+  } else if (state.library.items.length || state.library.topicKnowledge.length) {
+    const parts = [];
+    if (state.library.topicKnowledge.length) parts.push(`${state.library.topicKnowledge.length} topic understanding${state.library.topicKnowledge.length === 1 ? "" : "s"}`);
+    if (state.library.items.length) parts.push(`${state.library.items.length} memor${state.library.items.length === 1 ? "y" : "ies"}${state.library.nextCursor ? " · more available" : ""}`);
+    status.textContent = parts.join(" · ");
   } else {
     status.textContent = "";
   }
@@ -1953,7 +1966,7 @@ function renderLibrary() {
     ? "This local view is read-only. No provider was contacted."
     : state.library.activeTab === LIBRARY_TAB_SAVED
       ? "Items currently Saved for later. Saved reads never call a provider."
-      : "Search memories kept on this device. Library reads never call a provider.";
+      : "Search local memories and current Living Topic knowledge. Library reads never call a provider.";
 
   if (state.library.loading && !state.library.items.length) {
     results.append(libraryStateMessage("Loading local memories…"));
@@ -1962,13 +1975,64 @@ function renderLibrary() {
   } else if (!state.library.items.length) {
     results.append(libraryStateMessage(state.library.activeTab === LIBRARY_TAB_SAVED
       ? "Nothing is currently Saved for later. Choose Read later on a Timeline item to add one."
-      : "No local memories match these filters. Try a broader search or run a Timeline check first."));
+      : state.library.topicKnowledge.length
+        ? "No individual Memory items match these filters. Current Living Topic knowledge is shown above."
+        : "No local memories or current topic knowledge match these filters. Try a broader search or run a Timeline check first."));
   } else {
     results.append(...state.library.items.map(buildLibraryCard));
   }
   loadMore.classList.toggle("hidden", !state.library.nextCursor);
   loadMore.disabled = state.library.loading;
   loadMore.textContent = state.library.loadingMore ? "Loading…" : "Load more";
+}
+
+function renderLibraryTopicKnowledge() {
+  const section = $("#library-topic-knowledge");
+  const results = $("#library-topic-knowledge-results");
+  if (!section || !results) return;
+  const visible = state.library.activeTab === LIBRARY_TAB_LIBRARY
+    && Boolean(state.library.filters.query)
+    && state.library.topicKnowledge.length > 0;
+  section.classList.toggle("hidden", !visible);
+  if (!visible) {
+    results.replaceChildren();
+    return;
+  }
+  results.replaceChildren(...state.library.topicKnowledge.map(buildLibraryTopicKnowledgeCard));
+}
+
+function buildLibraryTopicKnowledgeCard(knowledge) {
+  const card = document.createElement("article");
+  card.className = "library-topic-knowledge-card";
+  card.setAttribute("role", "listitem");
+  const header = document.createElement("header");
+  const title = document.createElement("strong");
+  title.textContent = knowledge?.topicName || "Living Topic";
+  const current = document.createElement("span");
+  current.textContent = "Current";
+  header.append(title, current);
+  const overview = document.createElement("p");
+  overview.textContent = knowledge?.overview || "Current supported understanding.";
+  const claims = document.createElement("ul");
+  for (const claim of Array.isArray(knowledge?.claims) ? knowledge.claims.slice(0, 3) : []) {
+    const item = document.createElement("li");
+    item.textContent = claim?.text || "";
+    if (item.textContent) claims.append(item);
+  }
+  const meta = document.createElement("small");
+  meta.className = "library-topic-knowledge-meta";
+  meta.textContent = [
+    `${Number(knowledge?.evidenceCount || 0)} active evidence`,
+    knowledge?.snapshotVersion ? `snapshot ${knowledge.snapshotVersion}` : null,
+    knowledge?.updatedAt ? `updated ${formatDate(knowledge.updatedAt)}` : null,
+  ].filter(Boolean).join(" · ");
+  const reason = document.createElement("small");
+  reason.className = "library-topic-knowledge-reason";
+  reason.textContent = knowledge?.matchReason || "Matched current Living Topic understanding.";
+  card.append(header, overview);
+  if (claims.children.length) card.append(claims);
+  card.append(meta, reason);
+  return card;
 }
 
 function renderLibraryStorage() {

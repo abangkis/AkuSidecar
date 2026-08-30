@@ -197,6 +197,75 @@ func TestContentContextSurfacesOnlyCurrentSupportedLivingTopicKnowledge(t *testi
 	}
 }
 
+func TestLibrarySearchUsesCurrentSupportedLivingTopicKnowledgeReadOnly(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	topic, err := state.CreateLivingTopic(ctx, "OpenAI GPT Astra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := state.CreateMemoryRecallStub(ctx, libraryInput("library-topic-knowledge", domain.SourceX, "GPT Astra evidence", "Agent coordination details", "2026-08-30T00:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
+		TopicID: topic.ID, Status: "ready", Overview: "The current evidence describes advanced orchestration capabilities.",
+		Claims: []domain.LivingTopicClaim{
+			{Text: "Academic agent coordination is supported by the current evidence.", Assessment: "supported", EvidenceIDs: []string{evidence.ID}},
+			{Text: "A release date remains uncertain.", Assessment: "uncertain", EvidenceIDs: []string{evidence.ID}},
+		},
+		EvidenceIDs: []string{evidence.ID}, InputDigest: "library-topic-knowledge-digest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE living_topics SET understanding_status='current',understanding_input_digest=? WHERE id=?`, snapshot.InputDigest, topic.ID); err != nil {
+		t.Fatal(err)
+	}
+	var beforeActions, beforeSnapshots int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_actions`).Scan(&beforeActions); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_snapshots`).Scan(&beforeSnapshots); err != nil {
+		t.Fatal(err)
+	}
+
+	insights, err := state.SearchLivingTopicKnowledge(ctx, "agent coordination", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(insights) != 1 || insights[0].TopicID != topic.ID || insights[0].SnapshotVersion != snapshot.Version || insights[0].MatchReason == "" {
+		t.Fatalf("topic knowledge=%+v", insights)
+	}
+	if len(insights[0].Claims) != 1 || insights[0].Claims[0].Assessment != "supported" {
+		t.Fatalf("only supported claims should be searchable: %+v", insights[0].Claims)
+	}
+	var afterActions, afterSnapshots int
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_actions`).Scan(&afterActions); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_snapshots`).Scan(&afterSnapshots); err != nil {
+		t.Fatal(err)
+	}
+	if beforeActions != afterActions || beforeSnapshots != afterSnapshots {
+		t.Fatalf("Library topic search wrote state: actions %d->%d snapshots %d->%d", beforeActions, afterActions, beforeSnapshots, afterSnapshots)
+	}
+
+	if _, err := state.RemoveLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
+		t.Fatal(err)
+	}
+	insights, err = state.SearchLivingTopicKnowledge(ctx, "agent coordination", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(insights) != 0 {
+		t.Fatalf("historical topic knowledge leaked into Library search: %+v", insights)
+	}
+}
+
 func TestContentContextFeedbackIsPairwiseAppendOnlyAndUndoable(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

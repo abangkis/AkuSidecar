@@ -43,6 +43,28 @@ func TestExtractIsBoundedAndIncludesStrongPhraseFeatures(t *testing.T) {
 	}
 }
 
+func TestExtractSearchTreatsExplicitTermsAsBoundedAnchors(t *testing.T) {
+	query := NewEngine().ExtractSearch("What do I know about Codex reset and AI?")
+	if len(query.Terms) == 0 || len(query.Terms) > MaxQueryTerms {
+		t.Fatalf("query terms=%v", query.Terms)
+	}
+	for _, expected := range []string{"codex", "reset", "ai"} {
+		found := false
+		for _, anchor := range query.Anchors {
+			if anchor == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("explicit search anchor %q missing from %v", expected, query.Anchors)
+		}
+	}
+	if len(NewEngine().ExtractSearch("the latest update").Anchors) != 0 {
+		t.Fatal("generic-only search must not produce topic knowledge anchors")
+	}
+}
+
 func TestMatchRejectsGenericOnlyRecordsAndAdmitsTwoMeaningfulOverlaps(t *testing.T) {
 	engine := NewEngine()
 	query := engine.Extract(testTimeline())

@@ -102,6 +102,32 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 }
 
 func (s *Store) livingTopicContentContextInsights(ctx context.Context, query contentcontext.Query, limit int) ([]domain.ContentContextTopicInsight, error) {
+	return s.matchLivingTopicKnowledge(ctx, query, limit, true)
+}
+
+// SearchLivingTopicKnowledge applies the same precision-first local relevance
+// engine to an explicit Library query. Only current, source-supported topic
+// understanding is eligible; the read never invokes a provider or mutates
+// membership, feedback, snapshots, or Personal Memory.
+func (s *Store) SearchLivingTopicKnowledge(ctx context.Context, rawQuery string, limit int) ([]domain.ContentContextTopicInsight, error) {
+	if limit < contentContextMinLimit || limit > contentContextMaxLimit {
+		return nil, fmt.Errorf("Living Topic knowledge limit must be between %d and %d", contentContextMinLimit, contentContextMaxLimit)
+	}
+	runes := []rune(strings.TrimSpace(rawQuery))
+	if len(runes) == 0 {
+		return []domain.ContentContextTopicInsight{}, nil
+	}
+	if len(runes) > memoryLibraryMaxQuery {
+		return nil, fmt.Errorf("%w: query cannot exceed %d characters", ErrMemoryLibraryQuery, memoryLibraryMaxQuery)
+	}
+	query := contentContextEngine.ExtractSearch(string(runes))
+	if len(query.Terms) == 0 || len(query.Anchors) == 0 {
+		return []domain.ContentContextTopicInsight{}, nil
+	}
+	return s.matchLivingTopicKnowledge(ctx, query, limit, false)
+}
+
+func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcontext.Query, limit int, requireIdentity bool) ([]domain.ContentContextTopicInsight, error) {
 	topics, err := s.ListLivingTopics(ctx)
 	if err != nil {
 		return nil, err
@@ -113,7 +139,7 @@ func (s *Store) livingTopicContentContextInsights(ctx context.Context, query con
 		if snapshot == nil || !snapshot.IsCurrent || snapshot.ActiveEvidenceCount < 1 {
 			continue
 		}
-		if !contentcontext.TopicIdentityMatches(query, topic.Name, topic.Aliases) {
+		if requireIdentity && !contentcontext.TopicIdentityMatches(query, topic.Name, topic.Aliases) {
 			continue
 		}
 		claims := make([]domain.LivingTopicClaim, 0, 3)
