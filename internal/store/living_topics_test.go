@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -159,6 +160,57 @@ func TestAutomaticLivingTopicMembershipCreatesOnlyRecallEvidence(t *testing.T) {
 	}
 	if detail.Memberships[0].Origin != "automatic" || detail.Memberships[0].MatchMode != "deterministic" {
 		t.Fatalf("membership=%+v", detail.Memberships[0])
+	}
+	if detail.Topic.NewEvidenceCount != 1 || detail.Topic.NewEvidenceAt == "" {
+		t.Fatalf("automatic evidence did not create a durable notification: %+v", detail.Topic)
+	}
+	if added, err := state.AddAutomaticLivingTopicMember(ctx, topic.ID, item, decision); err != nil || added {
+		t.Fatalf("duplicate route added=%v err=%v", added, err)
+	}
+	summary, err := state.LivingTopicNotificationSummary(ctx)
+	if err != nil || summary.NewEvidenceCount != 1 || summary.TopicsWithNewEvidence != 1 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+	acknowledged, err := state.AcknowledgeLivingTopicEvidence(ctx, topic.ID, detail.Topic.NewEvidenceAt)
+	if err != nil || acknowledged.NewEvidenceCount != 0 || acknowledged.EvidenceSeenAt == "" {
+		t.Fatalf("acknowledged=%+v err=%v", acknowledged, err)
+	}
+	summary, err = state.LivingTopicNotificationSummary(ctx)
+	if err != nil || summary.NewEvidenceCount != 0 || summary.TopicsWithNewEvidence != 0 {
+		t.Fatalf("acknowledged summary=%+v err=%v", summary, err)
+	}
+}
+
+func TestLivingTopicAcknowledgmentPreservesEvidenceThatArrivedAfterVisibleProjection(t *testing.T) {
+	ctx := context.Background()
+	clock := &mutableStoreClock{now: time.Date(2026, time.August, 30, 10, 0, 0, 0, time.UTC)}
+	state := openTestStoreWithClock(t, clock)
+	topic, err := state.CreateLivingTopic(ctx, "Codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := func(id string) domain.TimelineItem {
+		return domain.TimelineItem{
+			ID: id, SessionID: "session-" + id, RunID: "run-" + id,
+			Source: domain.SourceX, EvidenceKey: "x:" + id,
+			Item: domain.ReasonedItem{Source: domain.SourceX, EvidenceKey: "x:" + id, WhatChanged: "Codex update " + id, SourceURL: "https://x.com/example/status/" + id},
+		}
+	}
+	decision := domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: 0.9, Mode: "deterministic", Reason: "criteria matched"}
+	if added, err := state.AddAutomaticLivingTopicMember(ctx, topic.ID, item("first"), decision); err != nil || !added {
+		t.Fatalf("first added=%v err=%v", added, err)
+	}
+	visible, err := state.LivingTopic(ctx, topic.ID)
+	if err != nil || visible.NewEvidenceCount != 1 {
+		t.Fatalf("visible=%+v err=%v", visible, err)
+	}
+	clock.now = clock.now.Add(time.Minute)
+	if added, err := state.AddAutomaticLivingTopicMember(ctx, topic.ID, item("second"), decision); err != nil || !added {
+		t.Fatalf("second added=%v err=%v", added, err)
+	}
+	acknowledged, err := state.AcknowledgeLivingTopicEvidence(ctx, topic.ID, visible.NewEvidenceAt)
+	if err != nil || acknowledged.NewEvidenceCount != 1 || acknowledged.NewEvidenceAt == visible.NewEvidenceAt {
+		t.Fatalf("later evidence was incorrectly acknowledged: topic=%+v err=%v", acknowledged, err)
 	}
 }
 

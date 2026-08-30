@@ -122,3 +122,47 @@ func TestLivingTopicsHTTPActivationCriteriaAndCandidateReview(t *testing.T) {
 	}
 
 }
+
+func TestLivingTopicsHTTPNewEvidenceNotificationAndAcknowledgment(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	topic, err := state.CreateLivingTopic(ctx, "Codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := domain.TimelineItem{
+		ID: "timeline-new-topic-evidence", SessionID: "session-new-topic-evidence", RunID: "run-new-topic-evidence",
+		Source: domain.SourceX, EvidenceKey: "x:new-topic-evidence",
+		Item: domain.ReasonedItem{Source: domain.SourceX, EvidenceKey: "x:new-topic-evidence", WhatChanged: "Codex added a new capability", WhyItMatters: "The topic understanding should refresh", SourceURL: "https://x.com/example/status/2304", Author: "Example"},
+	}
+	decision := domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: 0.9, Mode: "deterministic", Reason: "Codex criteria matched"}
+	if added, err := state.AddAutomaticLivingTopicMember(ctx, topic.ID, item, decision); err != nil || !added {
+		t.Fatalf("added=%v err=%v", added, err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/living-topics/notifications", nil)
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"newEvidenceCount":1`) || !strings.Contains(response.Body.String(), `"topicsWithNewEvidence":1`) {
+		t.Fatalf("notifications status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	detail, err := state.LivingTopicDetail(ctx, topic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/living-topics/"+topic.ID+"/seen", strings.NewReader(`{"seenThrough":"`+detail.Topic.NewEvidenceAt+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"newEvidenceCount":0`) || !strings.Contains(response.Body.String(), `"evidenceSeenAt":`) {
+		t.Fatalf("seen status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/living-topics/notifications", nil)
+	response = httptest.NewRecorder()
+	server.api().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"newEvidenceCount":0`) {
+		t.Fatalf("cleared notifications status=%d body=%s", response.Code, response.Body.String())
+	}
+}

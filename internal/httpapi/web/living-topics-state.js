@@ -15,6 +15,10 @@ export function buildLivingTopicsPath() {
   return "/api/living-topics";
 }
 
+export function buildLivingTopicNotificationsPath() {
+  return "/api/living-topics/notifications";
+}
+
 export function buildLivingTopicPath(id) {
   const value = String(id ?? "").trim();
   return value ? `/api/living-topics/${encodeURIComponent(value)}` : "";
@@ -39,6 +43,21 @@ export function buildLivingTopicSnapshotsPath(id) {
 export function buildLivingTopicActivationPath(id) {
   const base = buildLivingTopicPath(id);
   return base ? `${base}/activation` : "";
+}
+
+export function buildLivingTopicSeenPath(id) {
+  const base = buildLivingTopicPath(id);
+  return base ? `${base}/seen` : "";
+}
+
+export function normalizeLivingTopicNotifications(value) {
+  const count = Math.max(0, Math.trunc(Number(value?.newEvidenceCount) || 0));
+  const topics = Math.max(0, Math.trunc(Number(value?.topicsWithNewEvidence) || 0));
+  return {
+    newEvidenceCount: count,
+    topicsWithNewEvidence: topics,
+    latestEvidenceAt: String(value?.latestEvidenceAt || ""),
+  };
 }
 
 export function buildLivingTopicCandidateActionPath(id, memoryItemId, action) {

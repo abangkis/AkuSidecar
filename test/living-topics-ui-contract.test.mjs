@@ -7,7 +7,7 @@ const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.u
 const styles = readFileSync(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
 
 test("Living Topics activates local evidence and maintains understanding automatically", () => {
-  assert.match(index, /id="topics-view-button"[^>]*>Living Topics<\/button>/);
+  assert.match(index, /id="topics-view-button"[^>]*>.*Living Topics.*id="living-topics-nav-badge"/);
   assert.match(index, /LIVING TOPICS · FULL STAGE 1/);
   assert.match(index, /bounded local activation scan proposes older Library evidence for review/);
   assert.match(index, /id="living-topic-create-form"/);
@@ -37,6 +37,10 @@ test("Living Topics UI exposes bounded membership and automatic understanding st
   assert.match(app, /async function requestLivingTopicActivation\(\)/);
   assert.match(app, /async function reviewLivingTopicCandidate\(memoryItemId, action\)/);
   assert.match(app, /function scheduleLivingTopicActivationPoll\(topicId\)/);
+  assert.match(app, /async function refreshLivingTopicNotificationProjection\(\)/);
+  assert.match(app, /async function selectLivingTopic\(id\)/);
+  assert.match(app, /buildLivingTopicSeenPath\(id\)/);
+  assert.match(app, /fresh\.textContent = topic\.newEvidenceCount > 1 \? `New \$\{topic\.newEvidenceCount\}` : "New"/);
   assert.match(app, /\[\["Accept", "accept"\], \["Reject", "reject"\]\]/);
   assert.match(app, /undo\.textContent = "Undo"/);
   assert.match(app, /Understanding could not be refreshed:/);
@@ -48,5 +52,6 @@ test("Living Topics UI exposes bounded membership and automatic understanding st
   assert.match(app, /membership\.origin === "automatic"/);
   assert.match(styles, /\.living-topics-layout \{[^}]*grid-template-columns/);
   assert.match(styles, /\.living-topic-snapshot-card \{/);
+  assert.match(styles, /\.view-notification-badge, \.living-topic-new-badge \{/);
   assert.match(styles, /\.living-topics-layout \{ grid-template-columns: 1fr; \}/);
 });

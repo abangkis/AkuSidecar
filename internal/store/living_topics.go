@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -146,6 +147,12 @@ func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic,
 	err := s.db.QueryRowContext(ctx, `
 		SELECT t.id,t.name,t.description,t.criteria_revision,t.aliases_json,t.include_criteria,t.exclude_criteria,
 		       t.routing_status,COALESCE(t.routing_checked_at,''),t.routing_last_error,
+		       (SELECT COUNT(*) FROM living_topic_memberships n
+		        JOIN memory_items ni ON ni.id=n.memory_item_id AND ni.lifecycle_state='active'
+		        WHERE n.topic_id=t.id AND n.new_evidence=1),
+		       COALESCE((SELECT MAX(n.new_evidence_at) FROM living_topic_memberships n
+		        JOIN memory_items ni ON ni.id=n.memory_item_id AND ni.lifecycle_state='active'
+		        WHERE n.topic_id=t.id AND n.new_evidence=1),''),COALESCE(t.evidence_seen_at,''),
 		       t.understanding_status,t.understanding_input_digest,
 		       COALESCE(t.understanding_checked_at,''),t.understanding_trigger,t.understanding_last_error,
 		       t.created_at,t.updated_at,
@@ -158,6 +165,7 @@ func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic,
 		FROM living_topics t WHERE t.id=?`, strings.TrimSpace(id)).Scan(
 		&topic.ID, &topic.Name, &topic.Description, &topic.CriteriaRevision, &aliases, &topic.IncludeCriteria, &topic.ExcludeCriteria,
 		&topic.RoutingStatus, &topic.RoutingCheckedAt, &topic.RoutingLastError,
+		&topic.NewEvidenceCount, &topic.NewEvidenceAt, &topic.EvidenceSeenAt,
 		&topic.UnderstandingStatus, &topic.UnderstandingInputDigest,
 		&topic.UnderstandingCheckedAt, &topic.UnderstandingTrigger, &topic.UnderstandingLastError,
 		&topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount, &topic.SuggestedCount)
@@ -181,6 +189,48 @@ func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic,
 		topic.LatestSnapshot = &latest
 	}
 	return topic, nil
+}
+
+func (s *Store) LivingTopicNotificationSummary(ctx context.Context) (domain.LivingTopicNotificationSummary, error) {
+	var value domain.LivingTopicNotificationSummary
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),COUNT(DISTINCT m.topic_id),COALESCE(MAX(m.new_evidence_at),'')
+		FROM living_topic_memberships m
+		JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
+		WHERE m.new_evidence=1`).Scan(&value.NewEvidenceCount, &value.TopicsWithNewEvidence, &value.LatestEvidenceAt); err != nil {
+		return domain.LivingTopicNotificationSummary{}, fmt.Errorf("read Living Topics notification summary: %w", err)
+	}
+	return value, nil
+}
+
+func (s *Store) AcknowledgeLivingTopicEvidence(ctx context.Context, id, seenThrough string) (domain.LivingTopic, error) {
+	id = strings.TrimSpace(id)
+	seenThrough = strings.TrimSpace(seenThrough)
+	if _, err := s.LivingTopic(ctx, id); err != nil {
+		return domain.LivingTopic{}, err
+	}
+	if seenThrough == "" {
+		return domain.LivingTopic{}, errors.New("Living Topic acknowledgment requires the newest visible evidence time")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, seenThrough); err != nil {
+		return domain.LivingTopic{}, errors.New("Living Topic acknowledgment requires a valid evidence timestamp")
+	}
+	now := memoryNow(s)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.LivingTopic{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE living_topic_memberships SET new_evidence=0 WHERE topic_id=? AND new_evidence=1 AND new_evidence_at<=?`, id, seenThrough); err != nil {
+		return domain.LivingTopic{}, fmt.Errorf("acknowledge Living Topic memberships: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE living_topics SET evidence_seen_at=? WHERE id=?`, now, id); err != nil {
+		return domain.LivingTopic{}, fmt.Errorf("acknowledge Living Topic evidence: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.LivingTopic{}, err
+	}
+	return s.LivingTopic(ctx, id)
 }
 
 func (s *Store) ListLivingTopics(ctx context.Context) ([]domain.LivingTopic, error) {

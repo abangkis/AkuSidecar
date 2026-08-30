@@ -175,6 +175,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			if err := migrateSchema18To19(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 18 to 19: %w", err)
 			}
+			version = "19"
+		}
+		if version == "19" {
+			if err := migrateSchema19To20(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 19 to 20: %w", err)
+			}
 			version = schemaVersion
 		}
 		if version != schemaVersion {
@@ -472,6 +478,21 @@ func migrateSchema18To19(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='19' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema19To20(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, livingTopicsNewEvidenceMigrationSQL); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='20' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()

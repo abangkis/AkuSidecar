@@ -149,6 +149,7 @@ func (s *Store) LivingTopicFeedbackExamples(ctx context.Context, limitPerVerdict
 }
 
 func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID string, item domain.TimelineItem, decision domain.LivingTopicRoutingDecision) (bool, error) {
+	topicID = strings.TrimSpace(topicID)
 	input := routineMoreMemoryInput(item)
 	input.Reason = "living_topic_automatic"
 	input.Provenance = []domain.MemoryProvenance{{
@@ -176,22 +177,27 @@ func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID strin
 		}
 		memoryID = memory.ID
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=? AND memory_item_id=?`, topicID, memoryID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=? AND memory_item_id=?`, topicID, memoryID).Scan(&exists); err != nil {
 		return false, err
 	}
 	if exists > 0 {
 		return false, nil
 	}
 	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=?`, topicID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=?`, topicID).Scan(&count); err != nil {
 		return false, err
 	}
 	if count >= LivingTopicMaxMembers {
 		return false, ErrLivingTopicMemberMax
 	}
 	var latestVerdict string
-	err = s.db.QueryRowContext(ctx, `SELECT verdict FROM living_topic_feedback_events WHERE topic_id=? AND memory_item_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1`, topicID, memoryID).Scan(&latestVerdict)
+	err = tx.QueryRowContext(ctx, `SELECT verdict FROM living_topic_feedback_events WHERE topic_id=? AND memory_item_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1`, topicID, memoryID).Scan(&latestVerdict)
 	if err == nil && latestVerdict == "exclude" {
 		return false, nil
 	}
@@ -199,10 +205,10 @@ func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID strin
 		return false, err
 	}
 	now := memoryNow(s)
-	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO living_topic_memberships(topic_id,memory_item_id,added_at,origin,match_mode,confidence,reason)
-		VALUES(?,?,?,'automatic',?,?,?)
-		ON CONFLICT(topic_id,memory_item_id) DO NOTHING`, topicID, memoryID, now, decision.Mode, decision.Confidence, decision.Reason)
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO living_topic_memberships(topic_id,memory_item_id,added_at,origin,match_mode,confidence,reason,new_evidence,new_evidence_at)
+		VALUES(?,?,?,'automatic',?,?,?,1,?)
+		ON CONFLICT(topic_id,memory_item_id) DO NOTHING`, topicID, memoryID, now, decision.Mode, decision.Confidence, decision.Reason, now)
 	if err != nil {
 		return false, err
 	}
@@ -210,6 +216,15 @@ func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID strin
 	if added == 0 {
 		return false, nil
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, now, topicID)
-	return true, err
+	topicResult, err := tx.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, now, topicID)
+	if err != nil {
+		return false, err
+	}
+	if count, _ := topicResult.RowsAffected(); count != 1 {
+		return false, ErrLivingTopicNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }

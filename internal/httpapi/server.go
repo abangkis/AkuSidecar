@@ -670,6 +670,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"topics": topics})
+	case r.Method == http.MethodGet && p == "/api/living-topics/notifications":
+		summary, err := s.engine.LivingTopicNotifications(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"notifications": summary})
 	case r.Method == http.MethodPost && p == "/api/living-topics":
 		var body struct {
 			Name            string   `json:"name"`
@@ -775,6 +781,22 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 				return conflict(err.Error())
 			}
 			return writeJSON(w, http.StatusAccepted, map[string]any{"detail": publicLivingTopicDetail(detail)})
+		}
+		if len(parts) == 2 && parts[0] != "" && parts[1] == "seen" && r.Method == http.MethodPost {
+			var body struct {
+				SeenThrough string `json:"seenThrough"`
+			}
+			if err := readJSON(r, &body); err != nil {
+				return err
+			}
+			topic, err := s.engine.AcknowledgeLivingTopicEvidence(ctx, parts[0], body.SeenThrough)
+			if errors.Is(err, store.ErrLivingTopicNotFound) {
+				return notFound("living topic")
+			}
+			if err != nil {
+				return badRequest(err.Error())
+			}
+			return writeJSON(w, http.StatusOK, map[string]any{"topic": topic})
 		}
 		if len(parts) == 4 && parts[0] != "" && parts[1] == "candidates" && parts[2] != "" && r.Method == http.MethodPost {
 			if err := requireEmptyBody(r); err != nil {

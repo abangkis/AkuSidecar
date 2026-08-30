@@ -21,8 +21,16 @@ func (e *Engine) LivingTopics(ctx context.Context) ([]domain.LivingTopic, error)
 	return e.store.ListLivingTopics(ctx)
 }
 
+func (e *Engine) LivingTopicNotifications(ctx context.Context) (domain.LivingTopicNotificationSummary, error) {
+	return e.store.LivingTopicNotificationSummary(ctx)
+}
+
 func (e *Engine) LivingTopic(ctx context.Context, id string) (domain.LivingTopicDetail, error) {
 	return e.store.LivingTopicDetail(ctx, id)
+}
+
+func (e *Engine) AcknowledgeLivingTopicEvidence(ctx context.Context, id, seenThrough string) (domain.LivingTopic, error) {
+	return e.store.AcknowledgeLivingTopicEvidence(ctx, id, seenThrough)
 }
 
 func (e *Engine) CreateLivingTopic(ctx context.Context, name string) (domain.LivingTopic, error) {

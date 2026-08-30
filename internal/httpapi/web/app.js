@@ -44,13 +44,16 @@ import {
   buildLivingTopicMembersPath,
   buildLivingTopicActivationPath,
   buildLivingTopicCandidateActionPath,
+  buildLivingTopicNotificationsPath,
   buildLivingTopicPath,
+  buildLivingTopicSeenPath,
   buildLivingTopicsPath,
   buildLivingTopicSnapshotsPath,
   LIVING_TOPIC_TAB_EVIDENCE,
   LIVING_TOPIC_TAB_SNAPSHOT,
   livingTopicStatusLabel,
   livingTopicUnderstandingLabel,
+  normalizeLivingTopicNotifications,
   normalizeLivingTopicName,
   normalizeLivingTopicTab,
 } from "./living-topics-state.js";
@@ -167,7 +170,10 @@ const state = {
     snapshotStatus: { kind: "idle", message: "", snapshotId: "" },
     understandingPollTopicId: "",
     activationPollTopicId: "",
+    notificationLoading: false,
+    acknowledgingTopicId: "",
   },
+  livingTopicNotifications: normalizeLivingTopicNotifications(),
   inboxSubView: "checks",
   modelUsageHelpSequence: 0,
   media: [],
@@ -583,6 +589,7 @@ async function bootstrap(options = {}) {
     bridgeActionLoop();
     setInterval(pingBridge, 30_000);
     setInterval(pollAutoUpdate, 15_000);
+    void refreshLivingTopicNotificationProjection();
     if (state.session) startPolling();
   } catch (error) {
     if (attempt !== state.bootstrapAttempt) return;
@@ -633,6 +640,7 @@ async function pollAutoUpdate() {
   } catch (error) {
     console.warn("Auto Update status refresh deferred.", error);
   }
+  void refreshLivingTopicNotificationProjection();
 }
 
 function setView(view) {
@@ -692,7 +700,7 @@ function setView(view) {
     loadLibrary();
     maybeLoadLibraryStorage();
   }
-  if (topics) void loadLivingTopics(false);
+  if (topics) void loadLivingTopics(true);
   if (inbox) {
     syncInboxSubView();
     if (state.inboxSubView === "usage") loadAggregateModelUsage();
@@ -714,6 +722,7 @@ async function loadLivingTopics(force = false) {
   try {
     const response = await api(buildLivingTopicsPath());
     topicsState.topics = Array.isArray(response?.topics) ? response.topics : [];
+    updateLivingTopicNotificationFromTopics(topicsState.topics);
     if (topicsState.selectedId && !topicsState.topics.some((topic) => topic.id === topicsState.selectedId)) {
       topicsState.selectedId = "";
       topicsState.detail = null;
@@ -725,6 +734,63 @@ async function loadLivingTopics(force = false) {
     topicsState.error = error;
   } finally {
     topicsState.loading = false;
+    renderLivingTopics();
+  }
+}
+
+async function refreshLivingTopicNotificationProjection() {
+  const topicsState = state.livingTopics;
+  if (!state.bootstrap || topicsState.notificationLoading) return;
+  topicsState.notificationLoading = true;
+  try {
+    const response = await api(buildLivingTopicNotificationsPath());
+    state.livingTopicNotifications = normalizeLivingTopicNotifications(response?.notifications);
+    renderLivingTopicNotificationBadge();
+  } catch (error) {
+    console.warn("Living Topics notification refresh deferred.", error);
+  } finally {
+    topicsState.notificationLoading = false;
+  }
+}
+
+function updateLivingTopicNotificationFromTopics(topics) {
+  const values = Array.isArray(topics) ? topics : [];
+  const active = values.filter((topic) => Number(topic?.newEvidenceCount) > 0);
+  state.livingTopicNotifications = normalizeLivingTopicNotifications({
+    newEvidenceCount: active.reduce((total, topic) => total + Number(topic.newEvidenceCount || 0), 0),
+    topicsWithNewEvidence: active.length,
+    latestEvidenceAt: active.map((topic) => topic.newEvidenceAt || "").sort().at(-1) || "",
+  });
+  renderLivingTopicNotificationBadge();
+}
+
+function renderLivingTopicNotificationBadge() {
+  const summary = normalizeLivingTopicNotifications(state.livingTopicNotifications);
+  const badge = $("#living-topics-nav-badge");
+  const button = $("#topics-view-button");
+  const count = summary.newEvidenceCount;
+  badge.classList.toggle("hidden", count === 0);
+  badge.textContent = count > 99 ? "99+" : String(count);
+  badge.setAttribute("aria-label", count ? `${count} new Living Topics evidence item${count === 1 ? "" : "s"}` : "No new Living Topics evidence");
+  button.setAttribute("aria-label", count ? `Living Topics, ${count} new evidence item${count === 1 ? "" : "s"}` : "Living Topics");
+}
+
+async function selectLivingTopic(id) {
+  const topicsState = state.livingTopics;
+  await loadLivingTopicDetail(id);
+  const topic = topicsState.topics.find((value) => value.id === id);
+  if (topicsState.error || !topic?.newEvidenceCount || topicsState.detail?.topic?.id !== id || topicsState.acknowledgingTopicId) return;
+  topicsState.acknowledgingTopicId = id;
+  try {
+    const response = await api(buildLivingTopicSeenPath(id), { method: "POST", body: { seenThrough: topic.newEvidenceAt } });
+    if (!response?.topic?.id) throw new Error("AkuSidecar returned an incomplete Living Topic acknowledgment.");
+    topicsState.topics = topicsState.topics.map((value) => value.id === id ? response.topic : value);
+    if (topicsState.detail?.topic?.id === id) topicsState.detail.topic = response.topic;
+    updateLivingTopicNotificationFromTopics(topicsState.topics);
+  } catch (error) {
+    topicsState.error = error;
+  } finally {
+    topicsState.acknowledgingTopicId = "";
     renderLivingTopics();
   }
 }
@@ -1031,6 +1097,7 @@ function scheduleLivingTopicActivationPoll(topicId) {
 async function refreshLivingTopicListProjection() {
   const response = await api(buildLivingTopicsPath());
   state.livingTopics.topics = Array.isArray(response?.topics) ? response.topics : [];
+  updateLivingTopicNotificationFromTopics(state.livingTopics.topics);
 }
 
 function renderLivingTopics() {
@@ -1058,10 +1125,14 @@ function renderLivingTopics() {
       button.setAttribute("aria-current", topic.id === topicsState.selectedId ? "true" : "false");
       const name = document.createElement("strong");
       name.textContent = topic.name;
+      const fresh = document.createElement("span");
+      fresh.className = "living-topic-new-badge";
+      fresh.textContent = topic.newEvidenceCount > 1 ? `New ${topic.newEvidenceCount}` : "New";
+      fresh.classList.toggle("hidden", !topic.newEvidenceCount);
       const meta = document.createElement("small");
       meta.textContent = `${topic.memberCount || 0} evidence${topic.suggestedCount ? ` · ${topic.suggestedCount} suggested` : ""} · ${livingTopicUnderstandingLabel(topic.understandingStatus)}`;
-      button.append(name, meta);
-      button.addEventListener("click", () => loadLivingTopicDetail(topic.id));
+      button.append(name, fresh, meta);
+      button.addEventListener("click", () => selectLivingTopic(topic.id));
       return button;
     }));
   }

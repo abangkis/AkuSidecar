@@ -8,14 +8,17 @@ import {
   LIVING_TOPIC_TAB_SNAPSHOT,
   buildLivingTopicActivationPath,
   buildLivingTopicCandidateActionPath,
+  buildLivingTopicNotificationsPath,
   buildLivingTopicMemberPath,
   buildLivingTopicMembersPath,
   buildLivingTopicPath,
   buildLivingTopicSnapshotsPath,
+  buildLivingTopicSeenPath,
   buildLivingTopicsPath,
   livingTopicStatusLabel,
   livingTopicUnderstandingLabel,
   normalizeLivingTopicName,
+  normalizeLivingTopicNotifications,
   normalizeLivingTopicTab,
 } from "../internal/httpapi/web/living-topics-state.js";
 
@@ -26,9 +29,24 @@ test("Living Topics paths are explicit and encoded", () => {
   assert.equal(buildLivingTopicMemberPath("topic/one", "memory/two"), "/api/living-topics/topic%2Fone/members/memory%2Ftwo");
   assert.equal(buildLivingTopicSnapshotsPath("topic/one"), "/api/living-topics/topic%2Fone/snapshots");
   assert.equal(buildLivingTopicActivationPath("topic/one"), "/api/living-topics/topic%2Fone/activation");
+  assert.equal(buildLivingTopicNotificationsPath(), "/api/living-topics/notifications");
+  assert.equal(buildLivingTopicSeenPath("topic/one"), "/api/living-topics/topic%2Fone/seen");
   assert.equal(buildLivingTopicCandidateActionPath("topic/one", "memory/two", "accept"), "/api/living-topics/topic%2Fone/candidates/memory%2Ftwo/accept");
   assert.equal(buildLivingTopicCandidateActionPath("topic/one", "memory/two", "unknown"), "");
   assert.equal(buildLivingTopicPath(""), "");
+});
+
+test("Living Topics notification state is bounded and truthful", () => {
+  assert.deepEqual(normalizeLivingTopicNotifications({ newEvidenceCount: 3.8, topicsWithNewEvidence: 2, latestEvidenceAt: "2026-08-30T00:00:00Z" }), {
+    newEvidenceCount: 3,
+    topicsWithNewEvidence: 2,
+    latestEvidenceAt: "2026-08-30T00:00:00Z",
+  });
+  assert.deepEqual(normalizeLivingTopicNotifications({ newEvidenceCount: -4, topicsWithNewEvidence: "invalid" }), {
+    newEvidenceCount: 0,
+    topicsWithNewEvidence: 0,
+    latestEvidenceAt: "",
+  });
 });
 
 test("Living Topics defaults to Understanding and bounds detail tabs", () => {

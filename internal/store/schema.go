@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 19
+const SchemaVersion = 20
 
-const schemaVersion = "19"
+const schemaVersion = "20"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS living_topics (
   routing_status TEXT NOT NULL DEFAULT 'idle' CHECK (routing_status IN ('idle','pending','running','current','failed')),
   routing_checked_at TEXT,
   routing_last_error TEXT NOT NULL DEFAULT '',
+  evidence_seen_at TEXT,
   understanding_status TEXT NOT NULL DEFAULT 'idle' CHECK (understanding_status IN ('idle','pending','running','current','insufficient_evidence','failed')),
   understanding_input_digest TEXT NOT NULL DEFAULT '',
   understanding_checked_at TEXT,
@@ -239,6 +240,8 @@ CREATE TABLE IF NOT EXISTS living_topic_memberships (
   match_mode TEXT NOT NULL DEFAULT 'manual',
   confidence REAL NOT NULL DEFAULT 1 CHECK (confidence >= 0 AND confidence <= 1),
   reason TEXT NOT NULL DEFAULT '',
+  new_evidence INTEGER NOT NULL DEFAULT 0 CHECK (new_evidence IN (0,1)),
+  new_evidence_at TEXT,
   PRIMARY KEY(topic_id,memory_item_id)
 );
 
@@ -504,6 +507,15 @@ CREATE INDEX living_topic_candidates_memory ON living_topic_candidate_evaluation
 INSERT INTO living_topic_activation_jobs(id,topic_id,criteria_revision,status,trigger,queued_at)
  SELECT 'topic_activation_' || lower(hex(randomblob(16))),id,criteria_revision,'pending','migration',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM living_topics;
 UPDATE living_topics SET routing_status='pending' WHERE EXISTS (SELECT 1 FROM living_topic_activation_jobs j WHERE j.topic_id=living_topics.id);
+`
+
+// The v19-to-v20 migration adds durable in-app notification state. Existing
+// topic evidence is treated as already seen; only later automatic membership
+// receives an unread marker.
+const livingTopicsNewEvidenceMigrationSQL = `
+ALTER TABLE living_topics ADD COLUMN evidence_seen_at TEXT;
+ALTER TABLE living_topic_memberships ADD COLUMN new_evidence INTEGER NOT NULL DEFAULT 0 CHECK (new_evidence IN (0,1));
+ALTER TABLE living_topic_memberships ADD COLUMN new_evidence_at TEXT;
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory

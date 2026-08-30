@@ -17,6 +17,9 @@ type LivingTopic struct {
 	RoutingStatus            string               `json:"routingStatus"`
 	RoutingCheckedAt         string               `json:"routingCheckedAt,omitempty"`
 	RoutingLastError         string               `json:"routingLastError,omitempty"`
+	NewEvidenceCount         int                  `json:"newEvidenceCount"`
+	NewEvidenceAt            string               `json:"newEvidenceAt,omitempty"`
+	EvidenceSeenAt           string               `json:"evidenceSeenAt,omitempty"`
 	LatestSnapshot           *LivingTopicSnapshot `json:"latestSnapshot,omitempty"`
 	UnderstandingStatus      string               `json:"understandingStatus"`
 	UnderstandingCheckedAt   string               `json:"understandingCheckedAt,omitempty"`
@@ -25,6 +28,12 @@ type LivingTopic struct {
 	UnderstandingInputDigest string               `json:"-"`
 	CreatedAt                string               `json:"createdAt"`
 	UpdatedAt                string               `json:"updatedAt"`
+}
+
+type LivingTopicNotificationSummary struct {
+	NewEvidenceCount      int    `json:"newEvidenceCount"`
+	TopicsWithNewEvidence int    `json:"topicsWithNewEvidence"`
+	LatestEvidenceAt      string `json:"latestEvidenceAt,omitempty"`
 }
 
 type LivingTopicCriteriaInput struct {
