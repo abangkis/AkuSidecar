@@ -664,7 +664,7 @@
           <div>
             <p class="step-label">LIVING TOPICS · THIN SLICE</p>
             <h2 id="topics-heading" tabindex="-1">Understanding that keeps up with new evidence</h2>
-            <p class="review-guidance">Final, non-duplicate Timeline posts are sorted asynchronously using topic criteria and your corrections. Snapshots remain explicit and on demand.</p>
+            <p class="review-guidance">Final, non-duplicate Timeline posts are sorted asynchronously using topic criteria and your corrections. Current understanding refreshes automatically after evidence changes.</p>
           </div>
           <button id="topics-refresh-button" class="secondary-button" type="button">Refresh</button>
         </div>
@@ -688,21 +688,21 @@
               </div>
             </header>
             <div id="living-topic-detail-tabs" class="living-topic-detail-tabs" role="tablist" aria-label="Selected topic views">
-              <button id="living-topic-snapshot-tab" class="living-topic-detail-tab" type="button" role="tab" aria-selected="true" aria-controls="living-topic-snapshot-panel">Snapshot</button>
+              <button id="living-topic-snapshot-tab" class="living-topic-detail-tab" type="button" role="tab" aria-selected="true" aria-controls="living-topic-snapshot-panel">Understanding</button>
               <button id="living-topic-evidence-tab" class="living-topic-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="living-topic-evidence-panel" tabindex="-1">Manage evidence</button>
             </div>
 
             <section id="living-topic-snapshot-panel" class="living-topic-detail-tabpanel living-topic-snapshot-section" role="tabpanel" aria-labelledby="living-topic-snapshot-tab">
               <div class="living-topic-section-heading">
                 <div>
-                  <p class="step-label">ON DEMAND ONLY</p>
-                  <h4 id="living-topic-snapshot-heading">Understanding snapshots</h4>
+                  <p class="step-label">AUTOMATIC · SOURCE-BACKED</p>
+                  <h4 id="living-topic-snapshot-heading">Current understanding</h4>
                 </div>
                 <form id="living-topic-snapshot-form">
-                  <button id="living-topic-snapshot-button" class="primary-button" type="submit">Create snapshot</button>
+                  <button id="living-topic-snapshot-button" class="secondary-button" type="submit">Refresh now</button>
                 </form>
               </div>
-              <p class="review-guidance">Uses only current topic evidence. Repeating with unchanged evidence records a truthful no-change snapshot without calling the provider.</p>
+              <p class="review-guidance">Updates automatically after topic evidence changes. Evidence is coalesced, and a new history version is published only when the understanding changes materially.</p>
               <p id="living-topic-snapshot-status" class="living-topic-snapshot-status" role="status" aria-live="polite"></p>
               <div id="living-topic-snapshots" class="living-topic-snapshots"></div>
             </section>

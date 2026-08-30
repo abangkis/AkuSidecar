@@ -748,14 +748,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			if err := requireEmptyBody(r); err != nil {
 				return err
 			}
-			snapshot, err := s.engine.CreateLivingTopicSnapshot(ctx, parts[0])
+			detail, err := s.engine.RequestLivingTopicUnderstanding(ctx, parts[0], "refresh_now")
 			if errors.Is(err, store.ErrLivingTopicNotFound) {
 				return notFound("living topic")
 			}
 			if err != nil {
 				return conflict(err.Error())
 			}
-			return writeJSON(w, http.StatusCreated, map[string]any{"snapshot": snapshot})
+			return writeJSON(w, http.StatusAccepted, map[string]any{"detail": publicLivingTopicDetail(detail)})
 		}
 		return notFound("living topic route")
 	case r.Method == http.MethodGet && p == "/api/library/items":

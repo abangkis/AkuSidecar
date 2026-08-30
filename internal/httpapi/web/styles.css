@@ -588,15 +588,42 @@ h3 { letter-spacing: -0.02em; }
 .living-topic-snapshot-status[data-kind="error"] { color: var(--danger); }
 .living-topic-snapshot-card { display: grid; gap: 11px; padding: 14px 15px; border: 1px solid rgba(183,242,108,0.2); border-radius: 11px; background: rgba(8,11,9,0.26); }
 .living-topic-snapshot-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.living-topic-snapshot-card > header > div { display: grid; gap: 4px; }
 .living-topic-snapshot-card > header small { color: var(--quiet); font-size: 0.64rem; text-align: right; }
 .living-topic-snapshot-card > p { margin: 0; color: var(--muted); line-height: 1.52; }
 .living-topic-snapshot-card h5 { color: var(--accent); font-size: 0.69rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.living-topic-current-understanding { gap: 14px; padding: 17px; background: linear-gradient(145deg, rgba(17,24,20,0.88), rgba(9,13,11,0.78)); }
+.living-topic-current-understanding > header small { text-align: left; }
+.living-topic-understanding-badge { flex: 0 0 auto; padding: 5px 8px; border: 1px solid rgba(183,242,108,0.3); border-radius: 999px; color: var(--accent); font-size: 0.62rem; font-weight: 800; }
+.living-topic-understanding-overview { max-width: 72ch; color: var(--text) !important; font-size: 0.91rem; line-height: 1.58 !important; }
 .living-topic-statements { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .living-topic-statements li { display: grid; gap: 4px; padding: 10px 11px; border-left: 2px solid rgba(183,242,108,0.42); background: rgba(255,255,255,0.02); }
 .living-topic-statements p, .living-topic-statements small { margin: 0; }
 .living-topic-statements p { color: var(--text); font-size: 0.78rem; line-height: 1.45; }
 .living-topic-statements small { color: var(--quiet); font-size: 0.63rem; line-height: 1.35; }
 .living-topic-statement-label { color: var(--accent); font-size: 0.62rem; font-weight: 800; text-transform: uppercase; }
+.living-topic-evidence-health { margin-top: 2px !important; color: var(--accent-soft) !important; }
+.living-topic-citations, .living-topic-generation-details, .living-topic-understanding-history, .living-topic-history-entry { min-width: 0; }
+.living-topic-citations > summary, .living-topic-generation-details > summary, .living-topic-understanding-history > summary, .living-topic-history-entry > summary { cursor: pointer; list-style: none; }
+.living-topic-citations > summary::-webkit-details-marker, .living-topic-generation-details > summary::-webkit-details-marker, .living-topic-understanding-history > summary::-webkit-details-marker, .living-topic-history-entry > summary::-webkit-details-marker { display: none; }
+.living-topic-citations > summary { color: var(--muted); font-size: 0.64rem; font-weight: 700; }
+.living-topic-citations > summary::after, .living-topic-generation-details > summary::after { content: " +"; color: var(--accent); }
+.living-topic-citations[open] > summary::after, .living-topic-generation-details[open] > summary::after { content: " −"; }
+.living-topic-citations ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 16px; color: var(--quiet); font-size: 0.63rem; line-height: 1.4; }
+.living-topic-generation-details { padding-top: 3px; border-top: 1px solid rgba(255,255,255,0.05); }
+.living-topic-generation-details > summary { color: var(--quiet); font-size: 0.64rem; }
+.living-topic-generation-details > small { display: block; margin-top: 6px; color: var(--quiet); font-size: 0.62rem; }
+.living-topic-understanding-history { border: 1px solid var(--line); border-radius: 10px; background: rgba(8,11,9,0.18); }
+.living-topic-understanding-history > summary { padding: 11px 13px; color: var(--muted); font-size: 0.72rem; font-weight: 750; }
+.living-topic-understanding-history > summary::after { content: "View"; float: right; color: var(--accent); font-size: 0.64rem; }
+.living-topic-understanding-history[open] > summary::after { content: "Hide"; }
+.living-topic-understanding-history > div { display: grid; gap: 8px; padding: 0 10px 10px; }
+.living-topic-history-entry { border-top: 1px solid var(--line); }
+.living-topic-history-entry > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 3px; }
+.living-topic-history-entry > summary strong { color: var(--text); font-size: 0.72rem; }
+.living-topic-history-entry > summary small { color: var(--quiet); font-size: 0.62rem; }
+.living-topic-history-entry > div { display: grid; gap: 8px; padding: 0 3px 10px; }
+.living-topic-history-entry > div > p { margin: 0; color: var(--muted); font-size: 0.74rem; line-height: 1.45; }
 .inbox-panel { padding-top: 30px; }
 .inbox-sessions { display: grid; gap: 12px; }
 .inbox-session { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, rgba(23,29,26,0.92), rgba(15,20,18,0.92)); box-shadow: 0 10px 28px rgba(2,8,5,0.12); transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease; }

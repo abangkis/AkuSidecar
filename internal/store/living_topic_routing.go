@@ -148,14 +148,7 @@ func (s *Store) LivingTopicFeedbackExamples(ctx context.Context, limitPerVerdict
 	return values, nil
 }
 
-func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID string, item domain.TimelineItem, decision domain.LivingTopicRoutingDecision) error {
-	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=?`, topicID).Scan(&count); err != nil {
-		return err
-	}
-	if count >= LivingTopicMaxMembers {
-		return ErrLivingTopicMemberMax
-	}
+func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID string, item domain.TimelineItem, decision domain.LivingTopicRoutingDecision) (bool, error) {
 	input := routineMoreMemoryInput(item)
 	input.Reason = "living_topic_automatic"
 	input.Provenance = []domain.MemoryProvenance{{
@@ -165,40 +158,58 @@ func (s *Store) AddAutomaticLivingTopicMember(ctx context.Context, topicID strin
 	}}
 	normalized, err := normalizeMemoryInput(input)
 	if err != nil {
-		return err
+		return false, err
 	}
 	lookup, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return err
+		return false, err
 	}
 	memoryID, resolveErr := resolveMemoryIdentity(ctx, lookup, normalized.Identity)
 	_ = lookup.Rollback()
 	if resolveErr != nil {
-		return resolveErr
+		return false, resolveErr
 	}
 	if memoryID == "" {
 		memory, createErr := s.UpsertMemoryRecallStub(ctx, input)
 		if createErr != nil {
-			return createErr
+			return false, createErr
 		}
 		memoryID = memory.ID
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=? AND memory_item_id=?`, topicID, memoryID).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists > 0 {
+		return false, nil
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM living_topic_memberships WHERE topic_id=?`, topicID).Scan(&count); err != nil {
+		return false, err
+	}
+	if count >= LivingTopicMaxMembers {
+		return false, ErrLivingTopicMemberMax
 	}
 	var latestVerdict string
 	err = s.db.QueryRowContext(ctx, `SELECT verdict FROM living_topic_feedback_events WHERE topic_id=? AND memory_item_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1`, topicID, memoryID).Scan(&latestVerdict)
 	if err == nil && latestVerdict == "exclude" {
-		return nil
+		return false, nil
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return false, err
 	}
 	now := memoryNow(s)
-	_, err = s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO living_topic_memberships(topic_id,memory_item_id,added_at,origin,match_mode,confidence,reason)
 		VALUES(?,?,?,'automatic',?,?,?)
 		ON CONFLICT(topic_id,memory_item_id) DO NOTHING`, topicID, memoryID, now, decision.Mode, decision.Confidence, decision.Reason)
 	if err != nil {
-		return err
+		return false, err
+	}
+	added, _ := result.RowsAffected()
+	if added == 0 {
+		return false, nil
 	}
 	_, err = s.db.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, now, topicID)
-	return err
+	return true, err
 }

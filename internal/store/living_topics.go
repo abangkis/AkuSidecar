@@ -85,19 +85,23 @@ func (s *Store) UpdateLivingTopicCriteria(ctx context.Context, id, name, descrip
 func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic, error) {
 	var topic domain.LivingTopic
 	err := s.db.QueryRowContext(ctx, `
-		SELECT t.id,t.name,t.description,t.created_at,t.updated_at,
+		SELECT t.id,t.name,t.description,t.understanding_status,t.understanding_input_digest,
+		       COALESCE(t.understanding_checked_at,''),t.understanding_trigger,t.understanding_last_error,
+		       t.created_at,t.updated_at,
 		       (SELECT COUNT(*) FROM living_topic_memberships m
 		        JOIN memory_items i ON i.id=m.memory_item_id AND i.lifecycle_state='active'
 		        WHERE m.topic_id=t.id)
 		FROM living_topics t WHERE t.id=?`, strings.TrimSpace(id)).Scan(
-		&topic.ID, &topic.Name, &topic.Description, &topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount)
+		&topic.ID, &topic.Name, &topic.Description, &topic.UnderstandingStatus, &topic.UnderstandingInputDigest,
+		&topic.UnderstandingCheckedAt, &topic.UnderstandingTrigger, &topic.UnderstandingLastError,
+		&topic.CreatedAt, &topic.UpdatedAt, &topic.MemberCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.LivingTopic{}, ErrLivingTopicNotFound
 	}
 	if err != nil {
 		return domain.LivingTopic{}, fmt.Errorf("read living topic: %w", err)
 	}
-	latest, err := s.LatestLivingTopicSnapshot(ctx, topic.ID)
+	latest, err := s.LatestPublishedLivingTopicSnapshot(ctx, topic.ID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return domain.LivingTopic{}, err
 	}
@@ -335,6 +339,16 @@ func (s *Store) LatestLivingTopicSnapshot(ctx context.Context, topicID string) (
 		FROM living_topic_snapshots WHERE topic_id=? ORDER BY version DESC LIMIT 1`, topicID))
 }
 
+// LatestPublishedLivingTopicSnapshot excludes earlier no-change and
+// insufficient-evidence receipts. New automatic evaluations publish a version
+// only when the source-backed understanding changes materially.
+func (s *Store) LatestPublishedLivingTopicSnapshot(ctx context.Context, topicID string) (domain.LivingTopicSnapshot, error) {
+	return scanLivingTopicSnapshot(s.db.QueryRowContext(ctx, `
+		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,input_digest,
+		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' ORDER BY version DESC LIMIT 1`, topicID))
+}
+
 func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit int) ([]domain.LivingTopicSnapshot, error) {
 	if limit < 1 || limit > LivingTopicMaxHistory {
 		limit = LivingTopicMaxHistory
@@ -342,7 +356,7 @@ func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,input_digest,
 		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		FROM living_topic_snapshots WHERE topic_id=? ORDER BY version DESC LIMIT ?`, topicID, limit)
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' ORDER BY version DESC LIMIT ?`, topicID, limit)
 	if err != nil {
 		return nil, err
 	}

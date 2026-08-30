@@ -10,7 +10,10 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-type fakeLivingTopicResolver struct{ calls, routeCalls int }
+type fakeLivingTopicResolver struct {
+	calls, routeCalls int
+	noDelta           bool
+}
 
 func (f *fakeLivingTopicResolver) Name() string { return "topic-fixture" }
 func (f *fakeLivingTopicResolver) ModelForProfile(string) config.ModelConfig {
@@ -31,7 +34,7 @@ func (f *fakeLivingTopicResolver) ResolveWithProfile(_ context.Context, _ domain
 	deltas := []domain.LivingTopicDelta{}
 	if previous == nil {
 		deltas = append(deltas, domain.LivingTopicDelta{Kind: "new", Text: "A source was attached.", EvidenceIDs: []string{evidence[0].ID}})
-	} else {
+	} else if !f.noDelta {
 		deltas = append(deltas, domain.LivingTopicDelta{Kind: "updated", Text: "The evidence changed.", EvidenceIDs: []string{evidence[0].ID}})
 	}
 	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Text: "A preview exists.", Assessment: "supported", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
@@ -42,7 +45,31 @@ func livingTopicMemoryInput(title string) domain.MemoryItemInput {
 	return domain.MemoryItemInput{Identity: domain.MemoryIdentity{Source: domain.SourceX, CanonicalEvidenceKey: "x:living-topic-engine", CanonicalPermalink: "https://x.com/example/status/1", CanonicalPlatformID: "1", ContentFingerprint: "living-topic-engine-fingerprint"}, Title: title, Summary: "A source-backed summary", PublishedAt: &publishedAt}
 }
 
-func TestLivingTopicSnapshotsAreExplicitBoundedAndNoChangeAware(t *testing.T) {
+func processLivingTopicUnderstanding(t *testing.T, runtime *Engine, state *store.Store, topicID, trigger string) (*domain.LivingTopicSnapshot, string) {
+	t.Helper()
+	if _, err := state.QueueLivingTopicUnderstanding(context.Background(), topicID, trigger); err != nil {
+		t.Fatal(err)
+	}
+	job, err := state.ClaimLivingTopicUnderstanding(context.Background())
+	if err != nil || job == nil {
+		t.Fatalf("job=%+v err=%v", job, err)
+	}
+	snapshot, outcome, digest, err := runtime.evaluateLivingTopicUnderstanding(context.Background(), topicID)
+	if finishErr := state.FinishLivingTopicUnderstanding(context.Background(), *job, outcome, digest, func() string {
+		if snapshot != nil {
+			return snapshot.ID
+		}
+		return ""
+	}(), err); finishErr != nil {
+		t.Fatal(finishErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot, outcome
+}
+
+func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	ctx := context.Background()
 	runtime, state := testEngine(t)
 	resolver := &fakeLivingTopicResolver{}
@@ -52,34 +79,77 @@ func TestLivingTopicSnapshotsAreExplicitBoundedAndNoChangeAware(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	empty, err := runtime.CreateLivingTopicSnapshot(ctx, topic.ID)
-	if err != nil || empty.Status != "insufficient_evidence" || resolver.calls != 0 {
-		t.Fatalf("empty=%+v calls=%d err=%v", empty, resolver.calls, err)
+	empty, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "initial")
+	if empty != nil || outcome != "insufficient_evidence" || resolver.calls != 0 {
+		t.Fatalf("empty=%+v outcome=%s calls=%d", empty, outcome, resolver.calls)
 	}
 	item, err := state.CreateMemoryRecallStub(ctx, livingTopicMemoryInput("Preview one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddLivingTopicMember(ctx, topic.ID, item.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	first, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "evidence_added")
+	if first == nil || outcome != "updated" || first.Status != "ready" || first.Version != 1 || resolver.calls != 1 || len(first.Deltas) != 0 {
+		t.Fatalf("first=%+v outcome=%s calls=%d", first, outcome, resolver.calls)
+	}
+	second, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "refresh_now")
+	if second != nil || outcome != "no_change" || resolver.calls != 1 {
+		t.Fatalf("second=%+v outcome=%s calls=%d", second, outcome, resolver.calls)
+	}
+
+	if _, err := state.UpsertMemoryRecallStub(ctx, livingTopicMemoryInput("Preview two")); err != nil {
+		t.Fatal(err)
+	}
+	resolver.noDelta = true
+	nonMaterial, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "evidence_updated")
+	if nonMaterial != nil || outcome != "no_change" || resolver.calls != 2 {
+		t.Fatalf("nonMaterial=%+v outcome=%s calls=%d", nonMaterial, outcome, resolver.calls)
+	}
+	if _, err := state.UpsertMemoryRecallStub(ctx, livingTopicMemoryInput("Preview three")); err != nil {
+		t.Fatal(err)
+	}
+	resolver.noDelta = false
+	third, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "evidence_updated")
+	if third == nil || outcome != "updated" || third.Version != 2 || resolver.calls != 3 || len(third.Deltas) != 1 || third.Deltas[0].Kind != "updated" {
+		t.Fatalf("third=%+v outcome=%s calls=%d", third, outcome, resolver.calls)
+	}
+}
+
+func TestManualMembershipQueuesAutomaticUnderstanding(t *testing.T) {
+	ctx := context.Background()
+	runtime, state := testEngine(t)
+	resolver := &fakeLivingTopicResolver{}
+	runtime.SetLivingTopicsResolver(resolver)
+	topic, err := runtime.CreateLivingTopic(ctx, "GPT Astra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := state.CreateMemoryRecallStub(ctx, livingTopicMemoryInput("Automatic baseline"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runtime.AddLivingTopicMember(ctx, topic.ID, item.ID); err != nil {
 		t.Fatal(err)
 	}
-
-	first, err := runtime.CreateLivingTopicSnapshot(ctx, topic.ID)
-	if err != nil || first.Status != "ready" || first.Version != 2 || resolver.calls != 1 {
-		t.Fatalf("first=%+v calls=%d err=%v", first, resolver.calls, err)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		detail, detailErr := state.LivingTopicDetail(ctx, topic.ID)
+		if detailErr != nil {
+			t.Fatal(detailErr)
+		}
+		if detail.Topic.UnderstandingStatus == "current" && len(detail.Snapshots) == 1 {
+			if resolver.calls != 1 || len(detail.Snapshots[0].Deltas) != 0 {
+				t.Fatalf("detail=%+v calls=%d", detail, resolver.calls)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	second, err := runtime.CreateLivingTopicSnapshot(ctx, topic.ID)
-	if err != nil || second.Status != "no_change" || second.Version != 3 || resolver.calls != 1 || len(second.Claims) != 1 {
-		t.Fatalf("second=%+v calls=%d err=%v", second, resolver.calls, err)
-	}
-
-	if _, err := state.UpsertMemoryRecallStub(ctx, livingTopicMemoryInput("Preview two")); err != nil {
-		t.Fatal(err)
-	}
-	third, err := runtime.CreateLivingTopicSnapshot(ctx, topic.ID)
-	if err != nil || third.Status != "ready" || third.Version != 4 || resolver.calls != 2 || len(third.Deltas) != 1 || third.Deltas[0].Kind != "updated" {
-		t.Fatalf("third=%+v calls=%d err=%v", third, resolver.calls, err)
-	}
+	detail, _ := state.LivingTopicDetail(ctx, topic.ID)
+	t.Fatalf("automatic understanding did not finish: %+v", detail.Topic)
 }
 
 func TestDeterministicLivingTopicScoreLearnsFromNegativeExamples(t *testing.T) {
@@ -131,8 +201,8 @@ func TestLivingTopicSemanticRouterProjectsFinalTimelineItemAsRecallOnly(t *testi
 	if err := state.FinalizeSession(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	decisions, err := runtime.routeLivingTopicItem(ctx, item.ID)
-	if err != nil || len(decisions) != 1 || resolver.routeCalls != 1 {
+	decisions, changedTopics, err := runtime.routeLivingTopicItem(ctx, item.ID)
+	if err != nil || len(decisions) != 1 || len(changedTopics) != 1 || resolver.routeCalls != 1 {
 		t.Fatalf("decisions=%+v calls=%d err=%v", decisions, resolver.routeCalls, err)
 	}
 	detail, err := state.LivingTopicDetail(ctx, topic.ID)

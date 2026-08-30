@@ -41,8 +41,8 @@ func TestLivingTopicsHTTPManualWorkflowAndPrivacy(t *testing.T) {
 	request = httptest.NewRequest(http.MethodPost, "/api/living-topics/"+created.Topic.ID+"/snapshots", nil)
 	response = httptest.NewRecorder()
 	server.api().ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"status":"insufficient_evidence"`) {
-		t.Fatalf("empty snapshot status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusAccepted || !strings.Contains(response.Body.String(), `"understandingStatus":`) {
+		t.Fatalf("understanding refresh status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodPost, "/api/living-topics/"+created.Topic.ID+"/members", strings.NewReader(`{"memoryItemId":"`+item.ID+`"}`))

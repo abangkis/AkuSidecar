@@ -36,99 +36,108 @@ func (e *Engine) CreateLivingTopicWithCriteria(ctx context.Context, name, descri
 }
 
 func (e *Engine) RenameLivingTopic(ctx context.Context, id, name string) (domain.LivingTopic, error) {
-	e.operation.Lock()
-	defer e.operation.Unlock()
-	return e.store.RenameLivingTopic(ctx, id, name)
+	current, err := e.store.LivingTopic(ctx, id)
+	if err != nil {
+		return domain.LivingTopic{}, err
+	}
+	return e.UpdateLivingTopicCriteria(ctx, id, name, current.Description)
 }
 
 func (e *Engine) UpdateLivingTopicCriteria(ctx context.Context, id, name, description string) (domain.LivingTopic, error) {
 	e.operation.Lock()
-	defer e.operation.Unlock()
-	return e.store.UpdateLivingTopicCriteria(ctx, id, name, description)
+	_, err := e.store.UpdateLivingTopicCriteria(ctx, id, name, description)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopic{}, err
+	}
+	e.launchLivingTopicUnderstanding(id, "criteria_changed")
+	return e.store.LivingTopic(ctx, id)
 }
 
 func (e *Engine) AddLivingTopicMember(ctx context.Context, topicID, memoryID string) (domain.LivingTopicDetail, error) {
 	e.operation.Lock()
-	defer e.operation.Unlock()
-	return e.store.AddLivingTopicMember(ctx, topicID, memoryID)
+	_, err := e.store.AddLivingTopicMember(ctx, topicID, memoryID)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopicDetail{}, err
+	}
+	e.launchLivingTopicUnderstanding(topicID, "evidence_added")
+	return e.store.LivingTopicDetail(ctx, topicID)
 }
 
 func (e *Engine) RemoveLivingTopicMember(ctx context.Context, topicID, memoryID string) (domain.LivingTopicDetail, error) {
 	e.operation.Lock()
-	defer e.operation.Unlock()
-	return e.store.RemoveLivingTopicMember(ctx, topicID, memoryID)
+	_, err := e.store.RemoveLivingTopicMember(ctx, topicID, memoryID)
+	e.operation.Unlock()
+	if err != nil {
+		return domain.LivingTopicDetail{}, err
+	}
+	e.launchLivingTopicUnderstanding(topicID, "evidence_removed")
+	return e.store.LivingTopicDetail(ctx, topicID)
 }
 
-func (e *Engine) CreateLivingTopicSnapshot(ctx context.Context, topicID string) (domain.LivingTopicSnapshot, error) {
-	e.operation.Lock()
-	defer e.operation.Unlock()
-	if active, err := e.store.ActiveSession(ctx); err != nil {
-		return domain.LivingTopicSnapshot{}, err
-	} else if active != nil {
-		return domain.LivingTopicSnapshot{}, errors.New("finish the active update before creating a Living Topic snapshot")
+// RequestLivingTopicUnderstanding schedules a secondary refresh. It never
+// blocks the caller on provider inference; the durable worker coalesces pending
+// changes and publishes a snapshot only for a material semantic delta.
+func (e *Engine) RequestLivingTopicUnderstanding(ctx context.Context, topicID, trigger string) (domain.LivingTopicDetail, error) {
+	if _, err := e.store.QueueLivingTopicUnderstanding(ctx, topicID, trigger); err != nil {
+		return domain.LivingTopicDetail{}, err
 	}
+	e.launchLivingTopicUnderstanding("", "")
+	return e.store.LivingTopicDetail(ctx, topicID)
+}
+
+func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID string) (*domain.LivingTopicSnapshot, string, string, error) {
 	detail, err := e.store.LivingTopicDetail(ctx, topicID)
 	if err != nil {
-		return domain.LivingTopicSnapshot{}, err
+		return nil, "", "", err
 	}
-	digest, evidenceIDs, err := livingTopicInputDigest(detail.Members)
+	digest, evidenceIDs, err := livingTopicInputDigest(detail.Topic, detail.Members)
 	if err != nil {
-		return domain.LivingTopicSnapshot{}, err
+		return nil, "", "", err
 	}
-	previous, err := e.store.LatestLivingTopicSnapshot(ctx, topicID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return domain.LivingTopicSnapshot{}, err
-	}
-	var previousPtr *domain.LivingTopicSnapshot
-	if err == nil {
-		previousPtr = &previous
-	}
-	base := domain.LivingTopicSnapshot{TopicID: topicID, EvidenceIDs: evidenceIDs, InputDigest: digest, Claims: []domain.LivingTopicClaim{}, Deltas: []domain.LivingTopicDelta{}}
-	if previousPtr != nil {
-		base.PreviousSnapshotID = previousPtr.ID
+	if detail.Topic.UnderstandingCheckedAt != "" && detail.Topic.UnderstandingInputDigest == digest {
+		return nil, "no_change", digest, nil
 	}
 	if len(detail.Members) == 0 {
-		base.Status = "insufficient_evidence"
-		base.Overview = "Add Library evidence before creating a topic snapshot."
-		base.Provider, base.Model, base.Effort = "local-deterministic", "none", "none"
-		return e.store.SaveLivingTopicSnapshot(ctx, base)
+		return nil, "insufficient_evidence", digest, nil
 	}
-	if previousPtr != nil && previousPtr.InputDigest == digest {
-		base.Status = "no_change"
-		base.Overview = "No evidence changed since the previous snapshot."
-		base.Claims = append([]domain.LivingTopicClaim(nil), previousPtr.Claims...)
-		base.Provider, base.Model, base.Effort = "local-deterministic", "none", "none"
-		return e.store.SaveLivingTopicSnapshot(ctx, base)
+	var previousPtr *domain.LivingTopicSnapshot
+	if previous, previousErr := e.store.LatestPublishedLivingTopicSnapshot(ctx, topicID); previousErr == nil {
+		previousPtr = &previous
+	} else if !errors.Is(previousErr, sql.ErrNoRows) {
+		return nil, "", digest, previousErr
 	}
 	if e.topics == nil {
-		return domain.LivingTopicSnapshot{}, errors.New("the selected reasoning provider does not support Living Topic snapshots")
+		return nil, "", digest, errors.New("the selected reasoning provider does not support Living Topic understanding")
 	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
-		return domain.LivingTopicSnapshot{}, err
+		return nil, "", digest, err
 	}
-	key := "living-topic:" + topicID
-	invokeCtx, cancel := context.WithCancel(ctx)
-	e.mu.Lock()
-	if e.shuttingDown {
-		e.mu.Unlock()
-		cancel()
-		return domain.LivingTopicSnapshot{}, errors.New("AkuSidecar is shutting down")
-	}
-	e.active[key] = cancel
-	e.mu.Unlock()
-	defer func() {
-		cancel()
-		e.mu.Lock()
-		delete(e.active, key)
-		e.mu.Unlock()
-	}()
-	result, usage, duration, err := e.topics.ResolveWithProfile(invokeCtx, detail.Topic, detail.Members, previousPtr, settings.ReasoningEvaluationProfile)
+	result, usage, duration, err := e.topics.ResolveWithProfile(ctx, detail.Topic, detail.Members, previousPtr, settings.ReasoningEvaluationProfile)
 	if err != nil {
-		return domain.LivingTopicSnapshot{}, fmt.Errorf("create Living Topic snapshot: %w", err)
+		return nil, "", digest, fmt.Errorf("refresh Living Topic understanding: %w", err)
+	}
+	if result.Status == "insufficient_evidence" {
+		return nil, "insufficient_evidence", digest, nil
+	}
+	if previousPtr != nil && len(result.Deltas) == 0 {
+		return nil, "no_change", digest, nil
+	}
+	if previousPtr == nil {
+		// The first published understanding is the baseline, not a list of
+		// changes from an imaginary earlier version.
+		result.Deltas = []domain.LivingTopicDelta{}
+	}
+	base := domain.LivingTopicSnapshot{
+		TopicID: topicID, Status: result.Status, Overview: result.Overview, Claims: result.Claims, Deltas: result.Deltas,
+		EvidenceIDs: evidenceIDs, InputDigest: digest,
+	}
+	if previousPtr != nil {
+		base.PreviousSnapshotID = previousPtr.ID
 	}
 	model := e.topics.ModelForProfile(settings.ReasoningEvaluationProfile)
-	base.Status, base.Overview, base.Claims, base.Deltas = result.Status, result.Overview, result.Claims, result.Deltas
 	base.Provider, base.Model, base.Effort = e.topics.Name(), model.DisplayModel(), model.DisplayEffort()
 	if usage.ProviderModel != "" {
 		base.Model = usage.ProviderModel
@@ -137,10 +146,14 @@ func (e *Engine) CreateLivingTopicSnapshot(ctx context.Context, topicID string) 
 		base.Effort = usage.NativeReasoning
 	}
 	base.DurationMS, base.Usage = duration.Milliseconds(), usage
-	return e.store.SaveLivingTopicSnapshot(ctx, base)
+	saved, err := e.store.SaveLivingTopicSnapshot(ctx, base)
+	if err != nil {
+		return nil, "", digest, err
+	}
+	return &saved, "updated", digest, nil
 }
 
-func livingTopicInputDigest(items []domain.MemoryItem) (string, []string, error) {
+func livingTopicInputDigest(topic domain.LivingTopic, items []domain.MemoryItem) (string, []string, error) {
 	type digestItem struct {
 		ID, UpdatedAt, Title, Summary, Author, FullContent string
 		Source                                             domain.Source
@@ -159,12 +172,81 @@ func livingTopicInputDigest(items []domain.MemoryItem) (string, []string, error)
 	}
 	sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
 	sort.Strings(ids)
-	raw, err := json.Marshal(values)
+	raw, err := json.Marshal(struct {
+		Name        string       `json:"name"`
+		Description string       `json:"description"`
+		Evidence    []digestItem `json:"evidence"`
+	}{Name: topic.Name, Description: topic.Description, Evidence: values})
 	if err != nil {
 		return "", nil, err
 	}
 	sum := sha256.Sum256(raw)
 	return strings.ToLower(hex.EncodeToString(sum[:])), ids, nil
+}
+
+func (e *Engine) ResumeLivingTopicUnderstanding(ctx context.Context) error {
+	if err := e.store.ResetRunningLivingTopicUnderstanding(ctx); err != nil {
+		return err
+	}
+	e.launchLivingTopicUnderstanding("", "")
+	return nil
+}
+
+func (e *Engine) launchLivingTopicUnderstanding(topicID, trigger string) {
+	if topicID != "" {
+		if _, err := e.store.QueueLivingTopicUnderstanding(context.Background(), topicID, trigger); err != nil {
+			e.logger.Printf("Living Topics understanding queue degraded safely for topic %s: %v", topicID, err)
+			return
+		}
+	}
+	const key = "living-topics-understanding"
+	e.mu.Lock()
+	if _, active := e.active[key]; active {
+		e.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	e.active[key] = cancel
+	e.mu.Unlock()
+	go func() {
+		defer func() {
+			e.mu.Lock()
+			delete(e.active, key)
+			shuttingDown := e.shuttingDown
+			e.mu.Unlock()
+			if !shuttingDown {
+				if pending, err := e.store.HasPendingLivingTopicUnderstanding(context.Background()); err == nil && pending {
+					e.launchLivingTopicUnderstanding("", "")
+				}
+			}
+		}()
+		for {
+			job, err := e.store.ClaimLivingTopicUnderstanding(ctx)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					e.logger.Printf("Living Topics understanding claim degraded safely: %v", err)
+				}
+				return
+			}
+			if job == nil {
+				return
+			}
+			snapshot, outcome, digest, refreshErr := e.evaluateLivingTopicUnderstanding(ctx, job.TopicID)
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return
+			}
+			snapshotID := ""
+			if snapshot != nil {
+				snapshotID = snapshot.ID
+			}
+			if finishErr := e.store.FinishLivingTopicUnderstanding(context.Background(), *job, outcome, digest, snapshotID, refreshErr); finishErr != nil {
+				e.logger.Printf("Living Topics understanding job %s could not persist: %v", job.ID, finishErr)
+			}
+			if refreshErr != nil {
+				e.logger.Printf("Living Topics understanding for topic %s degraded safely: %v", job.TopicID, refreshErr)
+			}
+		}
+	}()
 }
 
 func (e *Engine) ResumeLivingTopicRouting(ctx context.Context) error {
@@ -192,12 +274,21 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 	e.active[key] = cancel
 	e.mu.Unlock()
 	go func() {
+		dirtyTopics := map[string]bool{}
 		defer func() {
+			for topicID := range dirtyTopics {
+				if _, err := e.store.QueueLivingTopicUnderstanding(context.Background(), topicID, "routed_evidence_batch"); err != nil {
+					e.logger.Printf("Living Topics understanding queue degraded safely for routed topic %s: %v", topicID, err)
+				}
+			}
 			e.mu.Lock()
 			delete(e.active, key)
 			shuttingDown := e.shuttingDown
 			e.mu.Unlock()
 			if !shuttingDown {
+				if len(dirtyTopics) > 0 {
+					e.launchLivingTopicUnderstanding("", "")
+				}
 				if pending, err := e.store.HasPendingLivingTopicRouting(context.Background()); err == nil && pending {
 					e.launchLivingTopicRouting("")
 				}
@@ -214,7 +305,10 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 			if job == nil {
 				return
 			}
-			decisions, routeErr := e.routeLivingTopicItem(ctx, job.TimelineID)
+			decisions, changedTopics, routeErr := e.routeLivingTopicItem(ctx, job.TimelineID)
+			for _, topicID := range changedTopics {
+				dirtyTopics[topicID] = true
+			}
 			if finishErr := e.store.FinishLivingTopicRouting(context.Background(), job.ID, decisions, routeErr); finishErr != nil {
 				e.logger.Printf("Living Topics routing job %s could not persist: %v", job.ID, finishErr)
 			}
@@ -228,18 +322,18 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 	}()
 }
 
-func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([]domain.LivingTopicRoutingDecision, error) {
+func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([]domain.LivingTopicRoutingDecision, []string, error) {
 	item, err := e.store.LivingTopicRoutingItem(ctx, timelineID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	topics, err := e.store.ListLivingTopics(ctx)
 	if err != nil || len(topics) == 0 {
-		return nil, err
+		return nil, nil, err
 	}
 	storedExamples, err := e.store.LivingTopicFeedbackExamples(ctx, 3)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	examples := make([]domain.LivingTopicRoutingExample, 0, len(storedExamples))
 	for _, value := range storedExamples {
@@ -258,7 +352,7 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 	if router, ok := e.topics.(livingtopics.Router); ok && len(remaining) > 0 {
 		settings, settingsErr := e.store.GetSettings(ctx)
 		if settingsErr != nil {
-			return nil, settingsErr
+			return nil, nil, settingsErr
 		}
 		llm, _, _, routeErr := router.RouteWithProfile(ctx, item, remaining, examples, settings.ReasoningEvaluationProfile)
 		if routeErr != nil {
@@ -267,15 +361,20 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 			decisions = append(decisions, llm...)
 		}
 	}
+	changedTopics := make([]string, 0)
 	for _, decision := range decisions {
 		if !decision.Match || decision.Confidence < 0.65 {
 			continue
 		}
-		if err := e.store.AddAutomaticLivingTopicMember(ctx, decision.TopicID, item, decision); err != nil && !errors.Is(err, store.ErrLivingTopicMemberMax) {
-			return decisions, err
+		added, addErr := e.store.AddAutomaticLivingTopicMember(ctx, decision.TopicID, item, decision)
+		if addErr != nil && !errors.Is(addErr, store.ErrLivingTopicMemberMax) {
+			return decisions, changedTopics, addErr
+		}
+		if added {
+			changedTopics = append(changedTopics, decision.TopicID)
 		}
 	}
-	return decisions, nil
+	return decisions, changedTopics, nil
 }
 
 func deterministicLivingTopicScore(item domain.TimelineItem, topic domain.LivingTopic, examples []domain.LivingTopicRoutingExample) (float64, string) {

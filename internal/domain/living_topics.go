@@ -5,13 +5,18 @@ package domain
 // independent from Saved, Keep, preference learning, Timeline selection, and
 // Content Context feedback.
 type LivingTopic struct {
-	ID             string               `json:"id"`
-	Name           string               `json:"name"`
-	Description    string               `json:"description"`
-	MemberCount    int                  `json:"memberCount"`
-	LatestSnapshot *LivingTopicSnapshot `json:"latestSnapshot,omitempty"`
-	CreatedAt      string               `json:"createdAt"`
-	UpdatedAt      string               `json:"updatedAt"`
+	ID                       string               `json:"id"`
+	Name                     string               `json:"name"`
+	Description              string               `json:"description"`
+	MemberCount              int                  `json:"memberCount"`
+	LatestSnapshot           *LivingTopicSnapshot `json:"latestSnapshot,omitempty"`
+	UnderstandingStatus      string               `json:"understandingStatus"`
+	UnderstandingCheckedAt   string               `json:"understandingCheckedAt,omitempty"`
+	UnderstandingTrigger     string               `json:"understandingTrigger,omitempty"`
+	UnderstandingLastError   string               `json:"understandingLastError,omitempty"`
+	UnderstandingInputDigest string               `json:"-"`
+	CreatedAt                string               `json:"createdAt"`
+	UpdatedAt                string               `json:"updatedAt"`
 }
 
 // LivingTopicMembership keeps automatic routing explainable without changing
@@ -50,6 +55,12 @@ type LivingTopicRoutingJob struct {
 	ID         string `json:"id"`
 	SessionID  string `json:"sessionId"`
 	TimelineID string `json:"timelineId"`
+}
+
+type LivingTopicUnderstandingJob struct {
+	ID      string `json:"id"`
+	TopicID string `json:"topicId"`
+	Trigger string `json:"trigger"`
 }
 
 type LivingTopicClaim struct {

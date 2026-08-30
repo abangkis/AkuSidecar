@@ -37,8 +37,17 @@ export function buildLivingTopicSnapshotsPath(id) {
 }
 
 export function livingTopicStatusLabel(status) {
-  if (status === "ready") return "Snapshot ready";
+  if (status === "ready") return "Current understanding";
   if (status === "no_change") return "No evidence changed";
   if (status === "insufficient_evidence") return "More evidence needed";
-  return "Snapshot status unknown";
+  return "Understanding status unknown";
+}
+
+export function livingTopicUnderstandingLabel(status) {
+  if (status === "pending") return "Refresh queued";
+  if (status === "running") return "Updating understanding";
+  if (status === "current") return "Understanding current";
+  if (status === "insufficient_evidence") return "Building understanding";
+  if (status === "failed") return "Refresh needs attention";
+  return "Waiting for evidence";
 }

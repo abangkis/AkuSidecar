@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 17
+const SchemaVersion = 18
 
-const schemaVersion = "17"
+const schemaVersion = "18"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -212,6 +212,11 @@ CREATE TABLE IF NOT EXISTS living_topics (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  understanding_status TEXT NOT NULL DEFAULT 'idle' CHECK (understanding_status IN ('idle','pending','running','current','insufficient_evidence','failed')),
+  understanding_input_digest TEXT NOT NULL DEFAULT '',
+  understanding_checked_at TEXT,
+  understanding_trigger TEXT NOT NULL DEFAULT '',
+  understanding_last_error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -280,6 +285,24 @@ CREATE TABLE IF NOT EXISTS living_topic_snapshots (
 
 CREATE INDEX IF NOT EXISTS living_topic_snapshots_topic_created
   ON living_topic_snapshots(topic_id,created_at DESC,id DESC);
+
+CREATE TABLE IF NOT EXISTS living_topic_understanding_jobs (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed')),
+  trigger TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL DEFAULT '',
+  input_digest TEXT NOT NULL DEFAULT '',
+  snapshot_id TEXT,
+  last_error TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS living_topic_understanding_queue
+  ON living_topic_understanding_jobs(status,queued_at,id);
+CREATE INDEX IF NOT EXISTS living_topic_understanding_topic
+  ON living_topic_understanding_jobs(topic_id,queued_at DESC,id DESC);
 `
 
 // A v15 database must fail closed when any canonical object already exists
@@ -348,6 +371,38 @@ CREATE TABLE living_topic_routing_jobs (
   completed_at TEXT
 );
 CREATE INDEX living_topic_routing_queue ON living_topic_routing_jobs(status,queued_at,id);
+`
+
+const livingTopicsUnderstandingMigrationSQL = `
+ALTER TABLE living_topics ADD COLUMN understanding_status TEXT NOT NULL DEFAULT 'idle' CHECK (understanding_status IN ('idle','pending','running','current','insufficient_evidence','failed'));
+ALTER TABLE living_topics ADD COLUMN understanding_input_digest TEXT NOT NULL DEFAULT '';
+ALTER TABLE living_topics ADD COLUMN understanding_checked_at TEXT;
+ALTER TABLE living_topics ADD COLUMN understanding_trigger TEXT NOT NULL DEFAULT '';
+ALTER TABLE living_topics ADD COLUMN understanding_last_error TEXT NOT NULL DEFAULT '';
+CREATE TABLE living_topic_understanding_jobs (
+  id TEXT PRIMARY KEY,
+  topic_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','running','completed','failed')),
+  trigger TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL DEFAULT '',
+  input_digest TEXT NOT NULL DEFAULT '',
+  snapshot_id TEXT,
+  last_error TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX living_topic_understanding_queue ON living_topic_understanding_jobs(status,queued_at,id);
+CREATE INDEX living_topic_understanding_topic ON living_topic_understanding_jobs(topic_id,queued_at DESC,id DESC);
+UPDATE living_topics SET
+  understanding_status=CASE
+    WHEN EXISTS (SELECT 1 FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id AND s.status IN ('ready','no_change')) THEN 'current'
+    WHEN EXISTS (SELECT 1 FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id AND s.status='insufficient_evidence') THEN 'insufficient_evidence'
+    ELSE 'idle'
+  END,
+  understanding_input_digest=COALESCE((SELECT s.input_digest FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id ORDER BY s.version DESC LIMIT 1),''),
+  understanding_checked_at=(SELECT s.created_at FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id ORDER BY s.version DESC LIMIT 1),
+  understanding_trigger=CASE WHEN EXISTS (SELECT 1 FROM living_topic_snapshots s WHERE s.topic_id=living_topics.id) THEN 'migration' ELSE '' END;
 `
 
 // memorySearchSchemaSQL is a local FTS5 index over active Personal Memory
