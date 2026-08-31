@@ -7,6 +7,8 @@ import {
   CONTENT_CONTEXT_MAX_LIMIT,
   CONTENT_CONTEXT_READING_EXIT_RATIO,
   contentContextRailPlacement,
+  contentContextDrawerHeightLimits,
+  contentContextCanExpand,
   contentContextTabFits,
   contentContextDrawerMode,
   contentContextPostPassedReadingExitLine,
@@ -77,6 +79,27 @@ test("Related context rail mirrors AI Signals and attaches to the post edge", ()
     safeBoundary: 1100,
     viewportWidth: 1200,
   }), null);
+});
+
+test("Related context defaults to post height and offers 180px expansion room", () => {
+  assert.deepEqual(contentContextDrawerHeightLimits({ postHeight: 420, viewportAvailable: 700 }), {
+    defaultHeight: 420,
+    expandedHeight: 700,
+    hasExpandRoom: true,
+  });
+  assert.deepEqual(contentContextDrawerHeightLimits({ postHeight: 540, viewportAvailable: 700 }), {
+    defaultHeight: 540,
+    expandedHeight: 700,
+    hasExpandRoom: false,
+  });
+  assert.deepEqual(contentContextDrawerHeightLimits({ postHeight: 900, viewportAvailable: 700 }), {
+    defaultHeight: 700,
+    expandedHeight: 700,
+    hasExpandRoom: false,
+  });
+  assert.equal(contentContextCanExpand({ contentHeight: 560, defaultHeight: 420, expandedHeight: 700 }), true);
+  assert.equal(contentContextCanExpand({ contentHeight: 400, defaultHeight: 420, expandedHeight: 700 }), false);
+  assert.equal(contentContextCanExpand({ contentHeight: 700, defaultHeight: 540, expandedHeight: 700 }), false);
 });
 
 test("Back to top boundary aligns its base with the marker line", () => {

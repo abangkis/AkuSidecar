@@ -14,11 +14,14 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "Related context",
     "timeline-content-context-drawer",
     "timeline-content-context-close",
+    "timeline-content-context-expand",
     "openTimelineContentContext",
     "closeTimelineContentContextDrawer",
     "handleTimelineContentContextScroll",
     "syncTimelineContentContextTabs",
     "contentContextRailPlacement",
+    "contentContextDrawerHeightLimits",
+    "contentContextCanExpand",
     "contentContextTabFits",
     "contentContextPostPassedReadingExitLine",
     "contentContextPostPassedViewportBottom",
@@ -50,6 +53,8 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(state, /function contentContextPostPassedReadingExitLine/);
   assert.match(state, /function contentContextPostPassedViewportBottom/);
   assert.match(state, /function contentContextShouldCloseOnScroll/);
+  assert.match(state, /function contentContextDrawerHeightLimits/);
+  assert.match(state, /function contentContextCanExpand/);
   assert.match(state, /function selectContentContextViewportID/);
   assert.match(index, /id="content-context-up-scroll-mode"/);
   assert.doesNotMatch(index, /id="timeline-content-context-tab"/);
@@ -68,6 +73,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(styles, /\.timeline-content-context-match\.is-feedback-not-relevant/);
   assert.match(styles, /\.timeline-content-context-feedback/);
   assert.match(styles, /\.timeline-content-context-topic-insight/);
+  assert.match(styles, /\.timeline-content-context-expand-actions/);
   assert.match(styles, /\.timeline-content-context-tab/);
   assert.match(styles, /\.timeline-content-context-anchor \{[^}]*position: relative/);
   assert.match(styles, /\.timeline-content-context-tab \{[^}]*border-left: 0;[^}]*border-radius: 0 11px 11px 0;[^}]*writing-mode: vertical-rl/);
@@ -98,4 +104,6 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.doesNotMatch(app, /api\([^)]*content-context[^)]*,\s*\{\s*method:\s*["']POST/i);
   assert.match(app, /body:\s*\{ memoryItemId: memoryItemID, verdict \}/);
   assert.match(app, /activeContext\?\.feedbackDirty/);
+  assert.match(app, /Collapse context/);
+  assert.match(app, /hasOverflow/);
 });

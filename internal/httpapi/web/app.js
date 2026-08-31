@@ -67,6 +67,8 @@ import {
   buildTimelineContentContextFeedbackPath,
   contentContextDrawerMode,
   contentContextRailPlacement,
+  contentContextDrawerHeightLimits,
+  contentContextCanExpand,
   contentContextTabFits,
   contentContextPostPassedReadingExitLine,
   contentContextPostPassedViewportBottom,
@@ -211,6 +213,7 @@ const state = {
   timelineContentContextFeedbackInFlight: new Set(),
   timelineContentContextActiveID: "",
   timelineContentContextViewportID: "",
+  timelineContentContextExpanded: false,
   timelineContentContextDrawerOpen: false,
   timelineContentContextPositionFrame: null,
   timelineContentContextCloseTimer: null,
@@ -470,6 +473,10 @@ $("#onboarding-provider-dialog").addEventListener("close", () => {
 $("#timeline-side-pane-toggle").addEventListener("click", openTimelineSidePane);
 $("#timeline-side-pane-close").addEventListener("click", closeTimelineSidePane);
 $("#timeline-content-context-close").addEventListener("click", () => closeTimelineContentContextDrawer());
+$("#timeline-content-context-expand").addEventListener("click", () => {
+  state.timelineContentContextExpanded = !state.timelineContentContextExpanded;
+  scheduleTimelineContentContextPosition();
+});
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !state.timelineContentContextDrawerOpen) return;
   event.preventDefault();
@@ -7890,6 +7897,9 @@ function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = 
   const activeContext = state.timelineContentContext.get(activeID);
   if (activeContext?.feedbackDirty) state.timelineContentContext.delete(activeID);
   state.timelineContentContextDrawerOpen = false;
+  state.timelineContentContextExpanded = false;
+  $("#timeline-content-context-expand-actions")?.classList.add("hidden");
+  $("#timeline-content-context-expand")?.setAttribute("aria-expanded", "false");
   if (clearActive) state.timelineContentContextActiveID = "";
   syncTimelineContentContextTabs();
   if (!drawer) {
@@ -7927,6 +7937,7 @@ function timelineContentContextFocusIsInsideDrawer() {
 function openTimelineContentContext(entry, { focus = true } = {}) {
   if (!entry?.id || state.currentView !== "timeline") return;
   const previousID = state.timelineContentContextActiveID;
+  if (previousID !== entry.id) state.timelineContentContextExpanded = false;
   if (previousID && previousID !== entry.id && state.timelineContentContext.get(previousID)?.feedbackDirty) {
     state.timelineContentContext.delete(previousID);
   }
@@ -7943,7 +7954,10 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
       topicInsights: Array.isArray(payload?.topicInsights) ? payload.topicInsights : [],
       feedbackDirty: false,
     });
-    if (state.timelineContentContextActiveID === entry.id) renderTimelineContentContextDrawer();
+    if (state.timelineContentContextActiveID === entry.id) {
+      renderTimelineContentContextDrawer();
+      scheduleTimelineContentContextPosition();
+    }
   }).catch((error) => {
     state.timelineContentContext.set(entry.id, {
       status: "error",
@@ -7952,7 +7966,10 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
       topicInsights: [],
       feedbackDirty: false,
     });
-    if (state.timelineContentContextActiveID === entry.id) renderTimelineContentContextDrawer();
+    if (state.timelineContentContextActiveID === entry.id) {
+      renderTimelineContentContextDrawer();
+      scheduleTimelineContentContextPosition();
+    }
   });
 }
 
@@ -7962,6 +7979,29 @@ function toggleTimelineContentContext(entry) {
     return;
   }
   openTimelineContentContext(entry);
+}
+
+function syncTimelineContentContextExpandAction({ defaultHeight, expandedHeight, hasExpandRoom }) {
+  const drawer = $("#timeline-content-context-drawer");
+  const actions = $("#timeline-content-context-expand-actions");
+  const button = $("#timeline-content-context-expand");
+  if (!drawer || !actions || !button) return;
+  const actionHeight = actions.classList.contains("hidden") ? 0 : actions.offsetHeight;
+  const contentHeight = Math.max(0, drawer.scrollHeight - actionHeight);
+  const hasOverflow = contentHeight > defaultHeight + 1;
+  const available = hasExpandRoom && hasOverflow && contentContextCanExpand({
+    contentHeight,
+    defaultHeight,
+    expandedHeight,
+  });
+  if (!available) state.timelineContentContextExpanded = false;
+  actions.classList.toggle("hidden", !available);
+  button.textContent = state.timelineContentContextExpanded ? "Collapse context" : "Expand context";
+  button.setAttribute("aria-expanded", String(state.timelineContentContextExpanded));
+  drawer.style.setProperty(
+    "--timeline-content-context-rail-height",
+    `${Math.round(state.timelineContentContextExpanded && available ? expandedHeight : defaultHeight)}px`,
+  );
 }
 
 function syncTimelineContentContextPosition() {
@@ -7986,6 +8026,11 @@ function syncTimelineContentContextPosition() {
   });
   drawer.classList.remove("is-rail", "is-overlay", "is-sheet");
   drawer.classList.add(`is-${mode}`);
+  if (mode !== "rail") {
+    state.timelineContentContextExpanded = false;
+    $("#timeline-content-context-expand-actions")?.classList.add("hidden");
+    $("#timeline-content-context-expand")?.setAttribute("aria-expanded", "false");
+  }
   drawer.style.removeProperty("--timeline-content-context-document-left");
   drawer.style.removeProperty("--timeline-content-context-document-top");
   drawer.style.removeProperty("--timeline-content-context-rail-height");
@@ -8020,11 +8065,19 @@ function syncTimelineContentContextPosition() {
     drawer.style.removeProperty("--timeline-content-context-right");
     drawer.style.setProperty("--timeline-content-context-document-left", `${window.scrollX + postRect.right}px`);
     drawer.style.setProperty("--timeline-content-context-document-top", `${window.scrollY + postRect.top}px`);
-    drawer.style.setProperty(
-      "--timeline-content-context-rail-height",
-      `${Math.max(120, Math.round(viewportBottom - top))}px`,
-    );
+    const heightLimits = contentContextDrawerHeightLimits({
+      postHeight: postRect.height,
+      viewportAvailable: viewportBottom - postRect.top,
+    });
+    const targetHeight = state.timelineContentContextExpanded
+      ? heightLimits?.expandedHeight
+      : heightLimits?.defaultHeight;
+    drawer.style.setProperty("--timeline-content-context-rail-height", `${Math.round(targetHeight || 120)}px`);
     drawer.style.setProperty("--timeline-content-context-width", `${width}px`);
+    window.requestAnimationFrame(() => {
+      if (!state.timelineContentContextDrawerOpen || !heightLimits) return;
+      syncTimelineContentContextExpandAction(heightLimits);
+    });
     syncBackToTopNow();
     return;
   }

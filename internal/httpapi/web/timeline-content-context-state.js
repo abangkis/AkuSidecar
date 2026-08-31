@@ -8,6 +8,7 @@ export const CONTENT_CONTEXT_READING_EXIT_RATIO = 0.2;
 export const CONTENT_CONTEXT_TRIGGER_ENTRY_RATIO = 0.8;
 export const CONTENT_CONTEXT_TRIGGER_HYSTERESIS = 16;
 export const CONTENT_CONTEXT_TRIGGER_MIN_DRAWER_HEIGHT = 320;
+export const CONTENT_CONTEXT_MIN_EXPAND_ROOM = 180;
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN = "close_offscreen";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE = "preserve";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT = CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN;
@@ -155,6 +156,38 @@ export function contentContextRailPlacement({
     width,
     right: Math.max(0, viewport - (rightEdge + width)),
   };
+}
+
+export function contentContextDrawerHeightLimits({
+  postHeight = 0,
+  viewportAvailable = 0,
+  minimumHeight = 120,
+  minimumExpandRoom = CONTENT_CONTEXT_MIN_EXPAND_ROOM,
+} = {}) {
+  const values = [postHeight, viewportAvailable, minimumHeight, minimumExpandRoom].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return null;
+  const [post, available, minimum, expandRoom] = values;
+  const safeAvailable = Math.max(0, available);
+  const floor = Math.max(0, minimum);
+  const defaultHeight = Math.max(floor, Math.min(Math.max(0, post), safeAvailable));
+  const expandedHeight = Math.max(defaultHeight, safeAvailable);
+  return {
+    defaultHeight,
+    expandedHeight,
+    hasExpandRoom: expandedHeight - defaultHeight >= Math.max(0, expandRoom),
+  };
+}
+
+export function contentContextCanExpand({
+  contentHeight = 0,
+  defaultHeight = 0,
+  expandedHeight = 0,
+  minimumExpandRoom = CONTENT_CONTEXT_MIN_EXPAND_ROOM,
+} = {}) {
+  const values = [contentHeight, defaultHeight, expandedHeight, minimumExpandRoom].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return false;
+  const [content, baseline, expanded, minimum] = values;
+  return content > baseline + 1 && expanded - baseline >= Math.max(0, minimum);
 }
 
 export function buildTimelineContentContextPath(id, limit = CONTENT_CONTEXT_DEFAULT_LIMIT) {
