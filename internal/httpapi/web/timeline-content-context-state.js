@@ -5,6 +5,10 @@ export const CONTENT_CONTEXT_RAIL_MIN_GUTTER = 280;
 export const CONTENT_CONTEXT_RAIL_MAX_WIDTH = 420;
 export const CONTENT_CONTEXT_TAB_DEFAULT_WIDTH = 42;
 export const CONTENT_CONTEXT_READING_EXIT_RATIO = 0.2;
+export const CONTENT_CONTEXT_TRIGGER_ENTRY_RATIO = 0.8;
+export const CONTENT_CONTEXT_TRIGGER_HYSTERESIS = 16;
+export const CONTENT_CONTEXT_TRIGGER_MIN_DRAWER_HEIGHT = 320;
+export const CONTENT_CONTEXT_VIEWPORT_PADDING = 16;
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN = "close_offscreen";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE = "preserve";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT = CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN;
@@ -33,6 +37,66 @@ export function contentContextPostPassedViewportBottom({ postTop = 0, viewportHe
   const viewport = Number(viewportHeight);
   if (!Number.isFinite(top) || !Number.isFinite(viewport) || viewport <= 0) return false;
   return top >= viewport;
+}
+
+// Only one rendered post owns the viewport-scoped trigger at a time. Prefer
+// the post crossing the reading line, then the next substantially visible
+// post. A small hysteresis band keeps the trigger from flickering at a card
+// boundary while the user makes fine scroll adjustments.
+export function selectContentContextViewportID({
+  candidates = [],
+  viewportHeight = 0,
+  previousID = "",
+  hysteresis = CONTENT_CONTEXT_TRIGGER_HYSTERESIS,
+} = {}) {
+  const viewport = Number(viewportHeight);
+  const tolerance = Math.max(0, Number(hysteresis) || 0);
+  if (!Number.isFinite(viewport) || viewport <= 0 || !Array.isArray(candidates)) return "";
+  const readingLine = contentContextReadingExitLine({ viewportHeight: viewport });
+  const entryLine = Math.min(
+    viewport * CONTENT_CONTEXT_TRIGGER_ENTRY_RATIO,
+    viewport - CONTENT_CONTEXT_TRIGGER_MIN_DRAWER_HEIGHT,
+  );
+  const eligible = candidates
+    .map((candidate, index) => ({
+      id: String(candidate?.id || ""),
+      top: Number(candidate?.top),
+      bottom: Number(candidate?.bottom),
+      eligible: candidate?.eligible !== false,
+      index,
+    }))
+    .filter((candidate) => candidate.id
+      && candidate.eligible
+      && Number.isFinite(candidate.top)
+      && Number.isFinite(candidate.bottom)
+      && candidate.bottom > 0
+      && candidate.top < viewport);
+  const previous = eligible.find((candidate) => candidate.id === String(previousID || ""));
+  if (previous
+    && previous.top <= readingLine + tolerance
+    && previous.bottom > readingLine) {
+    return previous.id;
+  }
+  const crossing = eligible.find((candidate) => candidate.top <= readingLine && candidate.bottom > readingLine);
+  if (crossing) return crossing.id;
+  const upcoming = eligible
+    .filter((candidate) => candidate.top > readingLine && candidate.top < entryLine)
+    .sort((left, right) => left.top - right.top || left.index - right.index)[0];
+  return upcoming?.id || "";
+}
+
+export function contentContextViewportTriggerTop({
+  postTop = 0,
+  postBottom = 0,
+  tabHeight = 0,
+  viewportPadding = CONTENT_CONTEXT_VIEWPORT_PADDING,
+} = {}) {
+  const values = [postTop, postBottom, tabHeight, viewportPadding].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return null;
+  const [top, bottom, height, padding] = values;
+  const safePadding = Math.max(0, padding);
+  const latestTop = bottom - Math.max(0, height);
+  return Math.max(top, Math.min(Math.max(safePadding, top), latestTop));
 }
 
 // Downward movement keeps the existing 20% reading exit rule. Upward movement

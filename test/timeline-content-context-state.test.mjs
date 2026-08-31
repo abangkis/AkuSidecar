@@ -12,6 +12,8 @@ import {
   contentContextPostPassedReadingExitLine,
   contentContextPostPassedViewportBottom,
   contentContextShouldCloseOnScroll,
+  selectContentContextViewportID,
+  contentContextViewportTriggerTop,
   CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN,
   CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
   CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
@@ -122,4 +124,54 @@ test("Per-post Related context tabs hide when the back-to-top gap is unsafe", ()
   assert.equal(contentContextTabFits({
     postRight: 760, boundaryLeft: 1160, viewportWidth: 1200, tabWidth: 42, gap: 12, viewportPadding: 12,
   }), true);
+});
+
+test("Related context exposes only the post at the viewport reading line", () => {
+  const candidates = [
+    { id: "first", top: -180, bottom: 140 },
+    { id: "second", top: 156, bottom: 620 },
+    { id: "third", top: 640, bottom: 1040 },
+  ];
+  assert.equal(selectContentContextViewportID({ candidates, viewportHeight: 800 }), "second");
+  assert.equal(selectContentContextViewportID({
+    candidates: [
+      { id: "first", top: -180, bottom: 161 },
+      { id: "second", top: 167, bottom: 620 },
+    ],
+    viewportHeight: 800,
+    previousID: "first",
+  }), "first");
+  assert.equal(selectContentContextViewportID({
+    candidates: [
+      { id: "first", top: -180, bottom: 140 },
+      { id: "second", top: 167, bottom: 620 },
+    ],
+    viewportHeight: 800,
+    previousID: "first",
+  }), "second");
+});
+
+test("Related context waits until an upcoming post substantially enters the viewport", () => {
+  assert.equal(selectContentContextViewportID({
+    candidates: [{ id: "late", top: 700, bottom: 1100 }],
+    viewportHeight: 800,
+  }), "");
+  assert.equal(selectContentContextViewportID({
+    candidates: [{ id: "ready", top: 460, bottom: 1020 }],
+    viewportHeight: 800,
+  }), "ready");
+  assert.equal(selectContentContextViewportID({
+    candidates: [{ id: "too-little-drawer-room", top: 500, bottom: 1020 }],
+    viewportHeight: 720,
+  }), "");
+  assert.equal(selectContentContextViewportID({
+    candidates: [{ id: "hidden-duplicate", top: 200, bottom: 500, eligible: false }],
+    viewportHeight: 800,
+  }), "");
+});
+
+test("Viewport-scoped trigger stays within its owning post", () => {
+  assert.equal(contentContextViewportTriggerTop({ postTop: 220, postBottom: 800, tabHeight: 90 }), 220);
+  assert.equal(contentContextViewportTriggerTop({ postTop: -700, postBottom: 260, tabHeight: 90 }), 16);
+  assert.equal(contentContextViewportTriggerTop({ postTop: -700, postBottom: 80, tabHeight: 90 }), -10);
 });
