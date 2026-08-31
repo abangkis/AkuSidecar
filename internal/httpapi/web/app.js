@@ -71,7 +71,6 @@ import {
   contentContextPostPassedReadingExitLine,
   contentContextPostPassedViewportBottom,
   selectContentContextViewportID,
-  contentContextViewportTriggerTop,
   contentContextShouldCloseOnScroll,
   CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
   CONTENT_CONTEXT_MAX_LIMIT,
@@ -7703,19 +7702,6 @@ function syncTimelineContentContextTabs() {
     tab.title = active ? "Close related context" : "Related context from local Personal Memory";
     tab.classList.toggle("is-visible", Boolean(fits));
     tab.classList.toggle("is-retracting", !fits);
-    if (fits && postRect) {
-      const viewportTop = contentContextViewportTriggerTop({
-        postTop: postRect.top,
-        postBottom: postRect.bottom,
-        tabHeight: tabRect.height,
-      });
-      tab.style.setProperty(
-        "--timeline-content-context-tab-top",
-        `${Math.max(0, Math.round((viewportTop ?? postRect.top) - postRect.top))}px`,
-      );
-    } else {
-      tab.style.removeProperty("--timeline-content-context-tab-top");
-    }
   }
 }
 
@@ -8000,7 +7986,8 @@ function syncTimelineContentContextPosition() {
   });
   drawer.classList.remove("is-rail", "is-overlay", "is-sheet");
   drawer.classList.add(`is-${mode}`);
-  drawer.style.removeProperty("--timeline-content-context-rail-left");
+  drawer.style.removeProperty("--timeline-content-context-document-left");
+  drawer.style.removeProperty("--timeline-content-context-document-top");
   drawer.style.removeProperty("--timeline-content-context-rail-height");
   drawer.style.setProperty("--timeline-content-context-top", `${Math.round(top)}px`);
   drawer.style.setProperty("--timeline-content-context-max-height", `${Math.max(80, Math.round(viewportBottom - top))}px`);
@@ -8031,7 +8018,8 @@ function syncTimelineContentContextPosition() {
   const right = railPlacement?.right ?? 16;
   if (mode === "rail") {
     drawer.style.removeProperty("--timeline-content-context-right");
-    drawer.style.setProperty("--timeline-content-context-rail-left", `${postRect.right}px`);
+    drawer.style.setProperty("--timeline-content-context-document-left", `${window.scrollX + postRect.right}px`);
+    drawer.style.setProperty("--timeline-content-context-document-top", `${window.scrollY + postRect.top}px`);
     drawer.style.setProperty(
       "--timeline-content-context-rail-height",
       `${Math.max(120, Math.round(viewportBottom - top))}px`,

@@ -24,7 +24,6 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "contentContextPostPassedViewportBottom",
     "contentContextShouldCloseOnScroll",
     "selectContentContextViewportID",
-    "contentContextViewportTriggerTop",
     "contentContextUpScrollMode",
     "timelineContentContextOverlapsBackToTop",
     "backToTopBoundaryBottom",
@@ -52,14 +51,13 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(state, /function contentContextPostPassedViewportBottom/);
   assert.match(state, /function contentContextShouldCloseOnScroll/);
   assert.match(state, /function selectContentContextViewportID/);
-  assert.match(state, /function contentContextViewportTriggerTop/);
   assert.match(index, /id="content-context-up-scroll-mode"/);
   assert.doesNotMatch(index, /id="timeline-content-context-tab"/);
   assert.match(app, /function buildTimelineContentContextAnchor/);
   assert.match(app, /const viewportWidth = document\.documentElement\.clientWidth \|\| window\.innerWidth;/);
   assert.match(app, /const safeRightBoundary = viewportWidth - 16;/);
-  assert.match(app, /--timeline-content-context-rail-left", `\$\{postRect\.right\}px`/);
-  assert.match(app, /--timeline-content-context-tab-top/);
+  assert.match(app, /--timeline-content-context-document-left", `\$\{window\.scrollX \+ postRect\.right\}px`/);
+  assert.match(app, /--timeline-content-context-document-top", `\$\{window\.scrollY \+ postRect\.top\}px`/);
   assert.match(app, /--timeline-content-context-width", `\$\{width\}px`/);
   assert.match(app, /tab\.dataset\.timelineContentContextId = entry\.id/);
   assert.match(app, /id === visibleID/);
@@ -73,10 +71,10 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(styles, /\.timeline-content-context-tab/);
   assert.match(styles, /\.timeline-content-context-anchor \{[^}]*position: relative/);
   assert.match(styles, /\.timeline-content-context-tab \{[^}]*border-left: 0;[^}]*border-radius: 0 11px 11px 0;[^}]*writing-mode: vertical-rl/);
-  assert.match(styles, /\.timeline-content-context-tab \{[^}]*top: var\(--timeline-content-context-tab-top, 0\);/);
+  assert.match(styles, /\.timeline-content-context-tab \{[^}]*top: 0;/);
   assert.doesNotMatch(styles, /\.timeline-content-context-tab(?:\.is-visible|\.is-retracting)? \{[^}]*rotate\(180deg\)/);
   assert.match(styles, /\.timeline-side-pane-toggle \{[^}]*rotate\(180deg\)/);
-  assert.match(styles, /\.timeline-content-context-drawer\.is-rail \{[^}]*position: fixed;[^}]*right: auto;[^}]*bottom: auto;[^}]*left: var\(--timeline-content-context-rail-left[^}]*border-left: 0;[^}]*border-radius: 0 16px 16px 0;/);
+  assert.match(styles, /\.timeline-content-context-drawer\.is-rail \{[^}]*position: absolute;[^}]*right: auto;[^}]*bottom: auto;[^}]*left: var\(--timeline-content-context-document-left[^}]*border-left: 0;[^}]*border-radius: 0 16px 16px 0;/);
   assert.match(styles, /\.timeline-content-context-drawer/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(styles, /\.timeline-content-context-drawer[^}]*transition:[^}]*\btop\b/i);

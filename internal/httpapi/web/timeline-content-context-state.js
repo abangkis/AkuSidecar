@@ -8,7 +8,6 @@ export const CONTENT_CONTEXT_READING_EXIT_RATIO = 0.2;
 export const CONTENT_CONTEXT_TRIGGER_ENTRY_RATIO = 0.8;
 export const CONTENT_CONTEXT_TRIGGER_HYSTERESIS = 16;
 export const CONTENT_CONTEXT_TRIGGER_MIN_DRAWER_HEIGHT = 320;
-export const CONTENT_CONTEXT_VIEWPORT_PADDING = 16;
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN = "close_offscreen";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE = "preserve";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT = CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN;
@@ -70,6 +69,7 @@ export function selectContentContextViewportID({
       && Number.isFinite(candidate.top)
       && Number.isFinite(candidate.bottom)
       && candidate.bottom > 0
+      && candidate.top >= 0
       && candidate.top < viewport);
   const previous = eligible.find((candidate) => candidate.id === String(previousID || ""));
   if (previous
@@ -83,20 +83,6 @@ export function selectContentContextViewportID({
     .filter((candidate) => candidate.top > readingLine && candidate.top < entryLine)
     .sort((left, right) => left.top - right.top || left.index - right.index)[0];
   return upcoming?.id || "";
-}
-
-export function contentContextViewportTriggerTop({
-  postTop = 0,
-  postBottom = 0,
-  tabHeight = 0,
-  viewportPadding = CONTENT_CONTEXT_VIEWPORT_PADDING,
-} = {}) {
-  const values = [postTop, postBottom, tabHeight, viewportPadding].map(Number);
-  if (values.some((value) => !Number.isFinite(value))) return null;
-  const [top, bottom, height, padding] = values;
-  const safePadding = Math.max(0, padding);
-  const latestTop = bottom - Math.max(0, height);
-  return Math.max(top, Math.min(Math.max(safePadding, top), latestTop));
 }
 
 // Downward movement keeps the existing 20% reading exit rule. Upward movement

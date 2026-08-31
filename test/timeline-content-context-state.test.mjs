@@ -13,7 +13,6 @@ import {
   contentContextPostPassedViewportBottom,
   contentContextShouldCloseOnScroll,
   selectContentContextViewportID,
-  contentContextViewportTriggerTop,
   CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN,
   CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
   CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
@@ -135,7 +134,7 @@ test("Related context exposes only the post at the viewport reading line", () =>
   assert.equal(selectContentContextViewportID({ candidates, viewportHeight: 800 }), "second");
   assert.equal(selectContentContextViewportID({
     candidates: [
-      { id: "first", top: -180, bottom: 161 },
+      { id: "first", top: 0, bottom: 161 },
       { id: "second", top: 167, bottom: 620 },
     ],
     viewportHeight: 800,
@@ -170,8 +169,9 @@ test("Related context waits until an upcoming post substantially enters the view
   }), "");
 });
 
-test("Viewport-scoped trigger stays within its owning post", () => {
-  assert.equal(contentContextViewportTriggerTop({ postTop: 220, postBottom: 800, tabHeight: 90 }), 220);
-  assert.equal(contentContextViewportTriggerTop({ postTop: -700, postBottom: 260, tabHeight: 90 }), 16);
-  assert.equal(contentContextViewportTriggerTop({ postTop: -700, postBottom: 80, tabHeight: 90 }), -10);
+test("Viewport selection does not move an offscreen post trigger", () => {
+  assert.equal(selectContentContextViewportID({
+    candidates: [{ id: "offscreen-anchor", top: -20, bottom: 500 }],
+    viewportHeight: 800,
+  }), "");
 });
