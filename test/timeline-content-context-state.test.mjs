@@ -93,8 +93,8 @@ test("Related context defaults to post height and offers 180px expansion room", 
     hasExpandRoom: false,
   });
   assert.deepEqual(contentContextDrawerHeightLimits({ postHeight: 900, viewportAvailable: 700 }), {
-    defaultHeight: 700,
-    expandedHeight: 700,
+    defaultHeight: 900,
+    expandedHeight: 900,
     hasExpandRoom: false,
   });
   assert.equal(contentContextCanExpand({ contentHeight: 560, defaultHeight: 420, expandedHeight: 700 }), true);

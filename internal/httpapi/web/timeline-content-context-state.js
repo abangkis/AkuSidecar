@@ -169,7 +169,7 @@ export function contentContextDrawerHeightLimits({
   const [post, available, minimum, expandRoom] = values;
   const safeAvailable = Math.max(0, available);
   const floor = Math.max(0, minimum);
-  const defaultHeight = Math.max(floor, Math.min(Math.max(0, post), safeAvailable));
+  const defaultHeight = Math.max(floor, Math.max(0, post));
   const expandedHeight = Math.max(defaultHeight, safeAvailable);
   return {
     defaultHeight,
