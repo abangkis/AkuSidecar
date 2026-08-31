@@ -214,6 +214,7 @@ const state = {
   timelineContentContextActiveID: "",
   timelineContentContextViewportID: "",
   timelineContentContextExpanded: false,
+  timelineContentContextObservedAnchor: null,
   timelineContentContextDrawerOpen: false,
   timelineContentContextPositionFrame: null,
   timelineContentContextCloseTimer: null,
@@ -543,6 +544,11 @@ const timelineSidePaneLayoutObserver = new ResizeObserver(scheduleTimelineSidePa
 for (const element of [$(".timeline-heading-row"), $("#processing-panel"), $("#result-items")]) {
   if (element) timelineSidePaneLayoutObserver.observe(element);
 }
+const timelineContentContextAnchorResizeObserver = new ResizeObserver((entries) => {
+  if (!state.timelineContentContextDrawerOpen) return;
+  if (!entries.some((entry) => entry.target === state.timelineContentContextObservedAnchor)) return;
+  scheduleTimelineContentContextPosition();
+});
 document.addEventListener("visibilitychange", () => {
   syncOnboardingLearningTimer();
   if (document.visibilityState === "visible") {
@@ -7897,6 +7903,7 @@ function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = 
   const activeContext = state.timelineContentContext.get(activeID);
   if (activeContext?.feedbackDirty) state.timelineContentContext.delete(activeID);
   state.timelineContentContextDrawerOpen = false;
+  observeTimelineContentContextAnchor(null);
   state.timelineContentContextExpanded = false;
   $("#timeline-content-context-expand-actions")?.classList.add("hidden");
   $("#timeline-content-context-expand")?.setAttribute("aria-expanded", "false");
@@ -7981,6 +7988,13 @@ function toggleTimelineContentContext(entry) {
   openTimelineContentContext(entry);
 }
 
+function observeTimelineContentContextAnchor(anchor) {
+  if (state.timelineContentContextObservedAnchor === anchor) return;
+  timelineContentContextAnchorResizeObserver.disconnect();
+  state.timelineContentContextObservedAnchor = anchor || null;
+  if (anchor) timelineContentContextAnchorResizeObserver.observe(anchor);
+}
+
 function syncTimelineContentContextExpandAction({ defaultHeight, expandedHeight, hasExpandRoom }) {
   const drawer = $("#timeline-content-context-drawer");
   const actions = $("#timeline-content-context-expand-actions");
@@ -8012,6 +8026,7 @@ function syncTimelineContentContextPosition() {
     closeTimelineContentContextDrawer({ clearActive: true, focusTrigger: false });
     return;
   }
+  observeTimelineContentContextAnchor(anchor);
   const postRect = anchor.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const backToTop = $("#back-to-top");

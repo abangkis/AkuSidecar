@@ -19,6 +19,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "closeTimelineContentContextDrawer",
     "handleTimelineContentContextScroll",
     "syncTimelineContentContextTabs",
+    "observeTimelineContentContextAnchor",
     "contentContextRailPlacement",
     "contentContextDrawerHeightLimits",
     "contentContextCanExpand",
@@ -106,4 +107,8 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /activeContext\?\.feedbackDirty/);
   assert.match(app, /Collapse context/);
   assert.match(app, /hasOverflow/);
+  assert.match(app, /timelineContentContextAnchorResizeObserver = new ResizeObserver/);
+  assert.match(app, /timelineContentContextAnchorResizeObserver\.disconnect\(\)/);
+  assert.match(app, /observeTimelineContentContextAnchor\(anchor\);/);
+  assert.match(app, /observeTimelineContentContextAnchor\(null\);/);
 });
