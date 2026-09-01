@@ -33,3 +33,20 @@ export function timelineCarouselDotIndexes(count, index, maximumVisible = 7) {
   const start = Math.max(0, Math.min(total - visible, current - Math.floor(visible / 2)));
   return Array.from({ length: visible }, (_, offset) => start + offset);
 }
+
+export function mediaViewerCanPan({ scrollWidth = 0, scrollHeight = 0, clientWidth = 0, clientHeight = 0 } = {}) {
+  const values = [scrollWidth, scrollHeight, clientWidth, clientHeight].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return false;
+  const [width, height, viewportWidth, viewportHeight] = values;
+  return width > viewportWidth + 1 || height > viewportHeight + 1;
+}
+
+export function mediaViewerPanPosition({ startLeft = 0, startTop = 0, startX = 0, startY = 0, x = 0, y = 0 } = {}) {
+  const values = [startLeft, startTop, startX, startY, x, y].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return null;
+  const [left, top, originX, originY, currentX, currentY] = values;
+  return {
+    left: left - (currentX - originX),
+    top: top - (currentY - originY),
+  };
+}

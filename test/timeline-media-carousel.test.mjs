@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import {
   MAX_TIMELINE_MEDIA,
   boundedTimelineMedia,
+  mediaViewerCanPan,
+  mediaViewerPanPosition,
   moveTimelineCarouselIndex,
   normalizeTimelineCarouselIndex,
   shouldUseTimelineCarousel,
@@ -54,6 +56,30 @@ test("carousel swipe capture stays on horizontal viewport movement and preserves
   assert.ok(pointerDownStart >= 0 && pointerMoveStart > pointerDownStart && pointerUpStart > pointerMoveStart);
   assert.doesNotMatch(appSource.slice(pointerDownStart, pointerMoveStart), /setPointerCapture/);
   assert.match(appSource.slice(pointerMoveStart, pointerUpStart), /viewport\.setPointerCapture\?\.\(event\.pointerId\)/);
+});
+
+test("media viewer pans only when zoomed content exceeds its canvas", () => {
+  assert.equal(mediaViewerCanPan({ scrollWidth: 900, scrollHeight: 600, clientWidth: 600, clientHeight: 600 }), true);
+  assert.equal(mediaViewerCanPan({ scrollWidth: 600, scrollHeight: 900, clientWidth: 600, clientHeight: 600 }), true);
+  assert.equal(mediaViewerCanPan({ scrollWidth: 600, scrollHeight: 600, clientWidth: 600, clientHeight: 600 }), false);
+  assert.deepEqual(mediaViewerPanPosition({
+    startLeft: 240,
+    startTop: 180,
+    startX: 500,
+    startY: 400,
+    x: 420,
+    y: 460,
+  }), { left: 320, top: 120 });
+});
+
+test("media viewer uses pointer capture for click-and-drag panning", async () => {
+  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /\$\("#media-viewer-canvas"\)\.addEventListener\("pointerdown", beginMediaPan\)/);
+  assert.match(appSource, /canvas\.setPointerCapture\?\.\(event\.pointerId\)/);
+  assert.match(appSource, /mediaPanStartedOnScrollbar\(event, canvas\)/);
+  assert.match(styleSource, /\.media-viewer-canvas\.is-pannable \{ cursor: grab; touch-action: none; \}/);
 });
 
 test("media viewer arrows use bounded timeline navigation at both ends", async () => {

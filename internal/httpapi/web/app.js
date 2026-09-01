@@ -2,6 +2,8 @@ import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import {
   boundedTimelineMedia,
+  mediaViewerCanPan,
+  mediaViewerPanPosition,
   moveTimelineCarouselIndex,
   normalizeTimelineCarouselIndex,
   shouldUseTimelineCarousel,
@@ -188,6 +190,11 @@ const state = {
   mediaZoomPreset: "fit",
   mediaZoomFactor: 1,
   mediaZoomManual: false,
+  mediaPanPointerId: null,
+  mediaPanStartX: 0,
+  mediaPanStartY: 0,
+  mediaPanStartLeft: 0,
+  mediaPanStartTop: 0,
   onboardingEditing: false,
   calibration: null,
   calibrationOrdinal: 0,
@@ -496,6 +503,10 @@ $("#media-viewer-canvas").addEventListener("wheel", (event) => {
   const rect = $("#media-viewer-canvas").getBoundingClientRect();
   adjustMediaZoom(event.deltaY < 0 ? 1.12 : 1 / 1.12, { x: event.clientX - rect.left, y: event.clientY - rect.top });
 }, { passive: false });
+$("#media-viewer-canvas").addEventListener("pointerdown", beginMediaPan);
+$("#media-viewer-canvas").addEventListener("pointermove", moveMediaPan);
+$("#media-viewer-canvas").addEventListener("pointerup", endMediaPan);
+$("#media-viewer-canvas").addEventListener("pointercancel", endMediaPan);
 $("#media-viewer").addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
@@ -8533,12 +8544,14 @@ function moveMedia(delta) {
 }
 
 function renderMedia() {
+  endMediaPan();
   state.mediaZoomManual = false;
   const image = $("#media-viewer-image");
   image.removeAttribute("style");
   $("#media-viewer-surface").removeAttribute("style");
   image.src = state.media[state.mediaIndex] ?? "";
   $("#media-viewer-canvas").scrollTo(0, 0);
+  syncMediaPanAffordance();
   $("#media-viewer-count").textContent = `${state.mediaIndex + 1} of ${state.media.length}`;
   $("#media-viewer-previous").disabled = state.media.length < 2 || state.mediaIndex === 0;
   $("#media-viewer-next").disabled = state.media.length < 2 || state.mediaIndex === state.media.length - 1;
@@ -8580,6 +8593,64 @@ function applyMediaZoom(factor, focalPoint = null) {
   $("#media-viewer-scale").textContent = `${Math.round(fitScale * bounded * 100)}%`;
   canvas.scrollLeft = ratioX * Math.max(canvas.scrollWidth, canvas.clientWidth) - focusX;
   canvas.scrollTop = ratioY * Math.max(canvas.scrollHeight, canvas.clientHeight) - focusY;
+  syncMediaPanAffordance();
+}
+
+function syncMediaPanAffordance() {
+  const canvas = $("#media-viewer-canvas");
+  const pannable = mediaViewerCanPan(canvas);
+  canvas.classList.toggle("is-pannable", pannable);
+  if (!pannable && state.mediaPanPointerId !== null) endMediaPan();
+}
+
+function mediaPanStartedOnScrollbar(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const verticalGutter = Math.max(0, canvas.offsetWidth - canvas.clientWidth);
+  const horizontalGutter = Math.max(0, canvas.offsetHeight - canvas.clientHeight);
+  return (verticalGutter > 0 && event.clientX >= rect.right - verticalGutter)
+    || (horizontalGutter > 0 && event.clientY >= rect.bottom - horizontalGutter);
+}
+
+function beginMediaPan(event) {
+  const canvas = $("#media-viewer-canvas");
+  if (!$("#media-viewer").open || event.button !== 0 || !event.isPrimary) return;
+  if (!mediaViewerCanPan(canvas) || mediaPanStartedOnScrollbar(event, canvas)) return;
+  state.mediaPanPointerId = event.pointerId;
+  state.mediaPanStartX = event.clientX;
+  state.mediaPanStartY = event.clientY;
+  state.mediaPanStartLeft = canvas.scrollLeft;
+  state.mediaPanStartTop = canvas.scrollTop;
+  canvas.classList.add("is-panning");
+  canvas.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function moveMediaPan(event) {
+  if (state.mediaPanPointerId !== event.pointerId) return;
+  const canvas = $("#media-viewer-canvas");
+  const position = mediaViewerPanPosition({
+    startLeft: state.mediaPanStartLeft,
+    startTop: state.mediaPanStartTop,
+    startX: state.mediaPanStartX,
+    startY: state.mediaPanStartY,
+    x: event.clientX,
+    y: event.clientY,
+  });
+  if (!position) return;
+  canvas.scrollLeft = position.left;
+  canvas.scrollTop = position.top;
+  event.preventDefault();
+}
+
+function endMediaPan(event = null) {
+  if (event && state.mediaPanPointerId !== event.pointerId) return;
+  const canvas = $("#media-viewer-canvas");
+  const pointerId = state.mediaPanPointerId;
+  if (pointerId !== null && canvas.hasPointerCapture?.(pointerId)) {
+    canvas.releasePointerCapture?.(pointerId);
+  }
+  state.mediaPanPointerId = null;
+  canvas.classList.remove("is-panning");
 }
 
 function syncMediaZoomPresetControl() {
