@@ -89,6 +89,7 @@ type evidenceReference struct {
 
 type structuredClaim struct {
 	Key             string   `json:"key"`
+	MaterialValue   string   `json:"materialValue"`
 	Text            string   `json:"text"`
 	Assessment      string   `json:"assessment"`
 	Centrality      string   `json:"centrality"`
@@ -97,10 +98,11 @@ type structuredClaim struct {
 }
 
 type structuredEvidenceRole struct {
-	EvidenceAlias string `json:"evidenceAlias"`
-	Role          string `json:"role"`
-	Subtopic      string `json:"subtopic"`
-	SourceCluster string `json:"sourceCluster"`
+	EvidenceAlias  string `json:"evidenceAlias"`
+	Role           string `json:"role"`
+	Subtopic       string `json:"subtopic"`
+	SourceCluster  string `json:"sourceCluster"`
+	EpistemicClass string `json:"epistemicClass"`
 }
 
 type structuredDelta struct {
@@ -142,7 +144,9 @@ Use only the supplied evidence and the declared topic scope. "Whole topic" means
 
 First classify every evidence item relative to this topic as core, supporting, peripheral, or undetermined. Assign a concise observed subtopic and a stable source/event cluster label. Correlated reports do not become more central merely because they are numerous. Author or platform diversity is only an anti-duplication signal; a primary source may outweigh derivative reports. Long text must not dominate short central evidence.
 
-Then produce a fresh claim projection. Do not assume or reconstruct any previous snapshot. Give each claim a concise normalized key based on its stable subject and predicate, not wording, evidence aliases, dates, status, or centrality. Classify every claim as central or secondary and as supported, mixed, uncertain, or unavailable. Every claim must cite supplied evidence aliases. A central claim cannot be supported only by peripheral evidence. The overview must represent only central, supported claims; put ecosystem metrics, side effects, and incidental observations in secondary claims unless the topic criteria explicitly make them central. Keep unknowns and coverage gaps explicit. Return an empty deltas array; the host compares this fresh projection with the prior current projection after validation.
+Then produce a fresh claim projection. Do not assume or reconstruct any previous snapshot. Give each claim a concise normalized key based on its stable subject and predicate, not wording, evidence aliases, dates, status, or centrality. Also return materialValue: a terse normalized factual value that changes only when the claim's meaning changes, never for prose rewrites. Classify every claim as central or secondary and as supported, mixed, uncertain, or unavailable. Every claim must cite supplied evidence aliases.
+
+Classify each evidence item's epistemicClass as primary (firsthand statement, direct artifact, or direct observation), attributed_secondary (a named source or inspectable primary artifact is clearly cited), unattributed (secondary assertion without inspectable attribution), or speculative (rumor, prediction, inference, or hedged claim). Repetition and platform/author diversity do not upgrade epistemic quality. A claim supported only by unattributed or speculative evidence must be uncertain, not supported. A central claim cannot be supported only by peripheral evidence. The overview must represent only central, supported claims; put ecosystem metrics, side effects, and incidental observations in secondary claims unless the topic criteria explicitly make them central. Keep unknowns and coverage gaps explicit. Return an empty deltas array; the host compares this fresh projection with the prior current projection after validation.
 
 Topic criteria: %s
 Current evidence: %s`, mustJSON(map[string]any{"name": topic.Name, "description": topic.Description, "aliases": topic.Aliases, "include": topic.IncludeCriteria, "exclude": topic.ExcludeCriteria}), mustJSON(refs))
@@ -268,13 +272,13 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 		if err != nil {
 			return domain.LivingTopicSnapshotResult{}, err
 		}
-		key, centrality, subtopic := strings.TrimSpace(claim.Key), strings.TrimSpace(claim.Centrality), strings.TrimSpace(claim.Subtopic)
+		key, materialValue, centrality, subtopic := strings.TrimSpace(claim.Key), strings.TrimSpace(claim.MaterialValue), strings.TrimSpace(claim.Centrality), strings.TrimSpace(claim.Subtopic)
 		key = strings.ToLower(key)
-		if key == "" || seenClaimKeys[key] || utf8.RuneCountInString(key) > 120 || (centrality != "central" && centrality != "secondary") || subtopic == "" || utf8.RuneCountInString(subtopic) > 120 {
+		if key == "" || materialValue == "" || seenClaimKeys[key] || utf8.RuneCountInString(key) > 120 || utf8.RuneCountInString(materialValue) > 500 || (centrality != "central" && centrality != "secondary") || subtopic == "" || utf8.RuneCountInString(subtopic) > 120 {
 			return domain.LivingTopicSnapshotResult{}, fmt.Errorf("Living Topics snapshot returned invalid claim scope")
 		}
 		seenClaimKeys[key] = true
-		result.Claims = append(result.Claims, domain.LivingTopicClaim{Key: key, Text: text, Assessment: claim.Assessment, Centrality: centrality, Subtopic: subtopic, EvidenceIDs: ids})
+		result.Claims = append(result.Claims, domain.LivingTopicClaim{Key: key, MaterialValue: strings.ToLower(materialValue), Text: text, Assessment: claim.Assessment, Centrality: centrality, Subtopic: subtopic, EvidenceIDs: ids})
 	}
 	for _, delta := range value.Deltas {
 		text := strings.TrimSpace(delta.Text)
@@ -296,7 +300,7 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 	seenRoles := map[string]bool{}
 	for _, role := range value.EvidenceRoles {
 		id, ok := aliases[role.EvidenceAlias]
-		if !ok || seenRoles[id] || (role.Role != "core" && role.Role != "supporting" && role.Role != "peripheral" && role.Role != "undetermined") {
+		if !ok || seenRoles[id] || (role.Role != "core" && role.Role != "supporting" && role.Role != "peripheral" && role.Role != "undetermined") || (role.EpistemicClass != "primary" && role.EpistemicClass != "attributed_secondary" && role.EpistemicClass != "unattributed" && role.EpistemicClass != "speculative") {
 			return domain.LivingTopicSnapshotResult{}, fmt.Errorf("Living Topics snapshot returned invalid evidence role")
 		}
 		subtopic, cluster := strings.TrimSpace(role.Subtopic), strings.TrimSpace(role.SourceCluster)
@@ -304,15 +308,30 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 			return domain.LivingTopicSnapshotResult{}, fmt.Errorf("Living Topics snapshot returned invalid evidence classification")
 		}
 		seenRoles[id] = true
-		result.EvidenceRoles = append(result.EvidenceRoles, domain.LivingTopicEvidenceRole{MemoryItemID: id, Role: role.Role, Subtopic: subtopic, SourceCluster: cluster})
+		result.EvidenceRoles = append(result.EvidenceRoles, domain.LivingTopicEvidenceRole{MemoryItemID: id, Role: role.Role, Subtopic: subtopic, SourceCluster: cluster, EpistemicClass: role.EpistemicClass})
 	}
 	result.CoverageState = value.CoverageState
 	centralSupported := false
 	roles := map[string]string{}
+	epistemic := map[string]string{}
 	for _, role := range result.EvidenceRoles {
 		roles[role.MemoryItemID] = role.Role
+		epistemic[role.MemoryItemID] = role.EpistemicClass
 	}
-	for _, claim := range result.Claims {
+	for index := range result.Claims {
+		claim := &result.Claims[index]
+		if claim.Assessment == "supported" {
+			reliable := false
+			for _, id := range claim.EvidenceIDs {
+				if epistemic[id] == "primary" || epistemic[id] == "attributed_secondary" {
+					reliable = true
+					break
+				}
+			}
+			if !reliable {
+				claim.Assessment = "uncertain"
+			}
+		}
 		if claim.Centrality != "central" || claim.Assessment != "supported" {
 			continue
 		}
@@ -329,7 +348,7 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 		centralSupported = true
 	}
 	if value.Status == "ready" && !centralSupported {
-		return domain.LivingTopicSnapshotResult{}, fmt.Errorf("Living Topics snapshot requires a central supported claim")
+		return domain.LivingTopicSnapshotResult{Status: "insufficient_evidence", Overview: "Current evidence is not reliable enough to support a central claim.", Claims: []domain.LivingTopicClaim{}, Deltas: []domain.LivingTopicDelta{}}, nil
 	}
 	return result, nil
 }

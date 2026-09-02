@@ -235,11 +235,18 @@ func (e Engine) Match(query Query, candidates []Candidate, limit int) []domain.C
 // the narrower "Codex Reset" from matching a Codex post that never discusses
 // resets. Normal Memory matches keep their existing field-based policy.
 func TopicIdentityMatches(query Query, name string, aliases []string) bool {
+	return TopicIdentitySpecificity(query, name, aliases) > 0
+}
+
+// TopicIdentitySpecificity distinguishes an exact topic identity from a
+// shared parent token. Complete identities outrank partial sibling matches.
+func TopicIdentitySpecificity(query Query, name string, aliases []string) int {
 	queryTerms := make(map[string]bool, len(query.Terms))
 	for _, term := range uniqueTerms(query.Terms) {
 		queryTerms[term] = true
 	}
 	identities := append([]string{name}, aliases...)
+	best := 0
 	for _, identity := range identities {
 		tokens := uniqueTerms(tokenize(identity))
 		meaningful := make([]string, 0, len(tokens))
@@ -261,11 +268,16 @@ func TopicIdentityMatches(query Query, name string, aliases []string) bool {
 				matched++
 			}
 		}
-		if matched >= required {
-			return true
+		if matched == len(meaningful) {
+			score := 100 + matched
+			if score > best {
+				best = score
+			}
+		} else if matched >= required && matched > best {
+			best = matched
 		}
 	}
-	return false
+	return best
 }
 
 type rankedMatch struct {

@@ -1557,9 +1557,11 @@ function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
   const label = document.createElement("strong");
   label.textContent = "Current understanding";
   const meta = document.createElement("small");
-  const sources = new Set(detail.members.map(livingTopicSourceOrigin).filter(Boolean));
-  const coverage = snapshot.coverageState ? ` · ${humanize(snapshot.coverageState)} coverage` : "";
-  meta.textContent = `${detail.members.length} evidence · ${sources.size} independent origin${sources.size === 1 ? "" : "s"}${coverage} · updated ${formatDate(snapshot.createdAt)}`;
+  const independentSources = Number(snapshot.independentSourceCount) || new Set(detail.members.map(livingTopicSourceOrigin).filter(Boolean)).size;
+  const coverage = snapshot.coverageState ? `${humanize(snapshot.coverageState)} topic coverage` : "Topic coverage unknown";
+  const diversity = snapshot.sourceDiversityState ? humanize(snapshot.sourceDiversityState) : "source diversity unknown";
+  const platformDetail = snapshot.sourceDiversityState === "single_platform" ? ` · ${snapshot.sourcePlatformCount || 1} platform only` : "";
+  meta.textContent = `${detail.members.length} evidence · ${independentSources} independent source${independentSources === 1 ? "" : "s"} · ${coverage} · ${diversity}${platformDetail} · updated ${formatDate(snapshot.createdAt)}`;
   identity.append(label, meta);
   const badge = document.createElement("span");
   badge.className = "living-topic-understanding-badge";

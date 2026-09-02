@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 23
+const SchemaVersion = 24
 
-const schemaVersion = "23"
+const schemaVersion = "24"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -343,6 +343,10 @@ CREATE TABLE IF NOT EXISTS living_topic_snapshots (
   contract_version TEXT NOT NULL DEFAULT 'legacy-v1',
   material_change INTEGER NOT NULL DEFAULT 1 CHECK (material_change IN (0,1)),
   coverage_state TEXT NOT NULL DEFAULT 'legacy',
+  source_diversity_state TEXT NOT NULL DEFAULT 'unknown' CHECK (source_diversity_state IN ('unknown','single_platform','limited','diverse')),
+  source_platform_count INTEGER NOT NULL DEFAULT 0 CHECK (source_platform_count >= 0),
+  independent_source_count INTEGER NOT NULL DEFAULT 0 CHECK (independent_source_count >= 0),
+  independent_cluster_count INTEGER NOT NULL DEFAULT 0 CHECK (independent_cluster_count >= 0),
   provider TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL DEFAULT '',
   effort TEXT NOT NULL DEFAULT '',

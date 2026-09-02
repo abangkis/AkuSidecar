@@ -133,22 +133,24 @@ type LivingTopicUnderstandingJob struct {
 }
 
 type LivingTopicClaim struct {
-	Key         string   `json:"key,omitempty"`
-	Text        string   `json:"text"`
-	Assessment  string   `json:"assessment"`
-	Centrality  string   `json:"centrality,omitempty"`
-	Subtopic    string   `json:"subtopic,omitempty"`
-	EvidenceIDs []string `json:"evidenceIds"`
+	Key           string   `json:"key,omitempty"`
+	MaterialValue string   `json:"materialValue,omitempty"`
+	Text          string   `json:"text"`
+	Assessment    string   `json:"assessment"`
+	Centrality    string   `json:"centrality,omitempty"`
+	Subtopic      string   `json:"subtopic,omitempty"`
+	EvidenceIDs   []string `json:"evidenceIds"`
 }
 
 // LivingTopicEvidenceRole is topic-relative. Membership answers whether an
 // item belongs to a topic; this role answers how much that item may shape the
 // topic's current understanding.
 type LivingTopicEvidenceRole struct {
-	MemoryItemID  string `json:"memoryItemId"`
-	Role          string `json:"role"`
-	Subtopic      string `json:"subtopic,omitempty"`
-	SourceCluster string `json:"sourceCluster,omitempty"`
+	MemoryItemID   string `json:"memoryItemId"`
+	Role           string `json:"role"`
+	Subtopic       string `json:"subtopic,omitempty"`
+	SourceCluster  string `json:"sourceCluster,omitempty"`
+	EpistemicClass string `json:"epistemicClass,omitempty"`
 }
 
 type LivingTopicDelta struct {
@@ -158,29 +160,33 @@ type LivingTopicDelta struct {
 }
 
 type LivingTopicSnapshot struct {
-	ID                   string                    `json:"id"`
-	TopicID              string                    `json:"topicId"`
-	Version              int                       `json:"version"`
-	Status               string                    `json:"status"`
-	Overview             string                    `json:"overview"`
-	Claims               []LivingTopicClaim        `json:"claims"`
-	Deltas               []LivingTopicDelta        `json:"deltas"`
-	EvidenceIDs          []string                  `json:"evidenceIds"`
-	EvidenceRoles        []LivingTopicEvidenceRole `json:"evidenceRoles,omitempty"`
-	InputDigest          string                    `json:"-"`
-	ContractVersion      string                    `json:"contractVersion,omitempty"`
-	MaterialChange       bool                      `json:"materialChange"`
-	CoverageState        string                    `json:"coverageState,omitempty"`
-	Provider             string                    `json:"provider"`
-	Model                string                    `json:"model"`
-	Effort               string                    `json:"effort"`
-	DurationMS           int64                     `json:"durationMs"`
-	Usage                ModelUsage                `json:"usage"`
-	PreviousSnapshotID   string                    `json:"previousSnapshotId,omitempty"`
-	CreatedAt            string                    `json:"createdAt"`
-	IsCurrent            bool                      `json:"isCurrent"`
-	ActiveEvidenceCount  int                       `json:"activeEvidenceCount"`
-	EvidenceAvailability string                    `json:"evidenceAvailability"`
+	ID                      string                    `json:"id"`
+	TopicID                 string                    `json:"topicId"`
+	Version                 int                       `json:"version"`
+	Status                  string                    `json:"status"`
+	Overview                string                    `json:"overview"`
+	Claims                  []LivingTopicClaim        `json:"claims"`
+	Deltas                  []LivingTopicDelta        `json:"deltas"`
+	EvidenceIDs             []string                  `json:"evidenceIds"`
+	EvidenceRoles           []LivingTopicEvidenceRole `json:"evidenceRoles,omitempty"`
+	InputDigest             string                    `json:"-"`
+	ContractVersion         string                    `json:"contractVersion,omitempty"`
+	MaterialChange          bool                      `json:"materialChange"`
+	CoverageState           string                    `json:"coverageState,omitempty"`
+	SourceDiversityState    string                    `json:"sourceDiversityState,omitempty"`
+	SourcePlatformCount     int                       `json:"sourcePlatformCount"`
+	IndependentSourceCount  int                       `json:"independentSourceCount"`
+	IndependentClusterCount int                       `json:"independentClusterCount"`
+	Provider                string                    `json:"provider"`
+	Model                   string                    `json:"model"`
+	Effort                  string                    `json:"effort"`
+	DurationMS              int64                     `json:"durationMs"`
+	Usage                   ModelUsage                `json:"usage"`
+	PreviousSnapshotID      string                    `json:"previousSnapshotId,omitempty"`
+	CreatedAt               string                    `json:"createdAt"`
+	IsCurrent               bool                      `json:"isCurrent"`
+	ActiveEvidenceCount     int                       `json:"activeEvidenceCount"`
+	EvidenceAvailability    string                    `json:"evidenceAvailability"`
 }
 
 type LivingTopicDetail struct {

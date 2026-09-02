@@ -11,6 +11,7 @@
         "type": "object",
         "properties": {
           "key": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "materialValue": { "type": "string", "minLength": 1, "maxLength": 500 },
           "text": { "type": "string", "minLength": 1, "maxLength": 500 },
           "assessment": { "type": "string", "enum": ["supported", "mixed", "uncertain", "unavailable"] },
           "centrality": { "type": "string", "enum": ["central", "secondary"] },
@@ -23,7 +24,7 @@
             "items": { "type": "string", "pattern": "^evidence_[0-9]{3}$" }
           }
         },
-        "required": ["key", "text", "assessment", "centrality", "subtopic", "evidenceAliases"],
+        "required": ["key", "materialValue", "text", "assessment", "centrality", "subtopic", "evidenceAliases"],
         "additionalProperties": false
       }
     },
@@ -57,9 +58,10 @@
           "evidenceAlias": { "type": "string", "pattern": "^evidence_[0-9]{3}$" },
           "role": { "type": "string", "enum": ["core", "supporting", "peripheral", "undetermined"] },
           "subtopic": { "type": "string", "minLength": 1, "maxLength": 120 },
-          "sourceCluster": { "type": "string", "minLength": 1, "maxLength": 120 }
+          "sourceCluster": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "epistemicClass": { "type": "string", "enum": ["primary", "attributed_secondary", "unattributed", "speculative"] }
         },
-        "required": ["evidenceAlias", "role", "subtopic", "sourceCluster"],
+        "required": ["evidenceAlias", "role", "subtopic", "sourceCluster", "epistemicClass"],
         "additionalProperties": false
       }
     },

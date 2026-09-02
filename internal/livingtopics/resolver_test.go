@@ -29,7 +29,7 @@ func (f *fakeInvoker) ResolveProfile(id string) (config.ModelConfig, bool) {
 }
 
 func TestResolverMapsBoundedAliasesAndUsesDedicatedProfile(t *testing.T) {
-	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"A useful update.","claims":[{"key":"project-preview","text":"The project shipped a preview.","assessment":"supported","centrality":"central","subtopic":"release","evidenceAliases":["evidence_001"]}],"deltas":[],"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"primary-release"}],"coverageState":"focused"}`}
+	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"A useful update.","claims":[{"key":"project-preview","materialValue":"preview shipped","text":"The project shipped a preview.","assessment":"supported","centrality":"central","subtopic":"release","evidenceAliases":["evidence_001"]}],"deltas":[],"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"primary-release","epistemicClass":"primary"}],"coverageState":"focused"}`}
 	resolver, err := NewStructuredResolver("../..", invoker, config.ModelConfig{Model: "fallback", Effort: "medium"})
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestResolverMapsBoundedAliasesAndUsesDedicatedProfile(t *testing.T) {
 }
 
 func TestResolverRejectsUnknownEvidenceAlias(t *testing.T) {
-	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"Update.","claims":[{"key":"claim","text":"Claim.","assessment":"supported","centrality":"central","subtopic":"release","evidenceAliases":["evidence_999"]}],"deltas":[],"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"release"}],"coverageState":"focused"}`}
+	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"Update.","claims":[{"key":"claim","materialValue":"claim","text":"Claim.","assessment":"supported","centrality":"central","subtopic":"release","evidenceAliases":["evidence_999"]}],"deltas":[],"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"release","epistemicClass":"primary"}],"coverageState":"focused"}`}
 	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: []byte(`{}`)}
 	_, _, _, err := resolver.ResolveWithProfile(context.Background(), domain.LivingTopic{Name: "Topic"}, []domain.MemoryItem{{ID: "memory", Title: "Evidence"}}, nil, "")
 	if err == nil || !strings.Contains(err.Error(), "unknown evidence alias") {
@@ -69,6 +69,13 @@ func TestResolverInsufficientEvidenceDropsStatements(t *testing.T) {
 	}
 	if len(value.Claims) != 0 || len(value.Deltas) != 0 {
 		t.Fatalf("value=%+v", value)
+	}
+}
+
+func TestValidationDowngradesUnsupportedEpistemicConfidence(t *testing.T) {
+	value, err := validateStructuredResult(structuredResult{Status: "ready", Overview: "Rumor.", Claims: []structuredClaim{{Key: "release", MaterialValue: "release next week", Text: "A release is expected next week.", Assessment: "supported", Centrality: "central", Subtopic: "release", EvidenceAliases: []string{"evidence_001"}}}, EvidenceRoles: []structuredEvidenceRole{{EvidenceAlias: "evidence_001", Role: "core", Subtopic: "release", SourceCluster: "rumor", EpistemicClass: "speculative"}}, CoverageState: "focused"}, map[string]string{"evidence_001": "memory"})
+	if err != nil || value.Status != "insufficient_evidence" || len(value.Claims) != 0 {
+		t.Fatalf("a topic with no central reliable claim must degrade safely, value=%+v err=%v", value, err)
 	}
 }
 

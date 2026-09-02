@@ -39,17 +39,41 @@ func (f *fakeLivingTopicResolver) ResolveWithProfile(_ context.Context, _ domain
 		deltas = append(deltas, domain.LivingTopicDelta{Kind: "updated", Text: "The evidence changed.", EvidenceIDs: []string{evidence[0].ID}})
 	}
 	claimText := "A preview exists."
+	materialValue := "preview exists"
 	if f.noDelta {
 		claimText = "A preview is available."
 	}
 	if strings.Contains(evidence[0].Title, "three") && !f.noDelta {
 		claimText = "A changed preview exists."
+		materialValue = "changed preview exists"
 	}
 	claimKey := "preview-availability"
 	if strings.Contains(evidence[0].Title, "three") && !f.noDelta {
 		claimKey = "preview-capability"
 	}
-	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Key: claimKey, Text: claimText, Assessment: "supported", Centrality: "central", Subtopic: "preview", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas, EvidenceRoles: []domain.LivingTopicEvidenceRole{{MemoryItemID: evidence[0].ID, Role: "core", Subtopic: "preview", SourceCluster: "preview-source"}}, CoverageState: "focused"}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
+	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Key: claimKey, MaterialValue: materialValue, Text: claimText, Assessment: "supported", Centrality: "central", Subtopic: "preview", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas, EvidenceRoles: []domain.LivingTopicEvidenceRole{{MemoryItemID: evidence[0].ID, Role: "core", Subtopic: "preview", SourceCluster: "preview-source", EpistemicClass: "primary"}}, CoverageState: "focused"}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
+}
+
+func TestLivingTopicClaimReconciliationKeepsStableIdentityAcrossRewording(t *testing.T) {
+	previous := []domain.LivingTopicClaim{{Key: "codex-open-source-updates", MaterialValue: "named tunnel support added", Text: "The repository added Named Tunnel support.", Assessment: "supported", Centrality: "central", Subtopic: "open source", EvidenceIDs: []string{"a"}}}
+	current := []domain.LivingTopicClaim{{Key: "repository-tunnel-feature", MaterialValue: "named tunnel support added", Text: "Named Tunnel support is now available in the repository.", Assessment: "supported", Centrality: "central", Subtopic: "open source", EvidenceIDs: []string{"a", "b"}}}
+	reconciled := reconcileLivingTopicClaimKeys(previous, current)
+	if reconciled[0].Key != previous[0].Key || livingTopicClaimsMateriallyChanged(previous, reconciled) {
+		t.Fatalf("reconciled=%+v", reconciled)
+	}
+	reconciled[0].MaterialValue = "named tunnel support removed"
+	if !livingTopicClaimsMateriallyChanged(previous, reconciled) {
+		t.Fatal("a changed material value must publish history")
+	}
+}
+
+func TestLivingTopicSourceDiversitySeparatesPlatformFromIndependentSources(t *testing.T) {
+	items := []domain.MemoryItem{{Source: domain.SourceX, Author: "OpenAI"}, {Source: domain.SourceX, Author: "Developer"}}
+	roles := []domain.LivingTopicEvidenceRole{{SourceCluster: "official-release"}, {SourceCluster: "independent-test"}}
+	state, platforms, sources, clusters := livingTopicSourceDiversity(items, roles)
+	if state != "single_platform" || platforms != 1 || sources != 2 || clusters != 2 {
+		t.Fatalf("state=%s platforms=%d sources=%d clusters=%d", state, platforms, sources, clusters)
+	}
 }
 
 func livingTopicMemoryInput(title string) domain.MemoryItemInput {
@@ -132,7 +156,7 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	}
 	resolver.noDelta = false
 	third, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "evidence_updated")
-	if third == nil || outcome != "updated" || third.Version != 4 || resolver.calls != 4 || len(third.Deltas) != 2 || third.Deltas[0].Kind != "new" {
+	if third == nil || outcome != "updated" || third.Version != 4 || resolver.calls != 4 || len(third.Deltas) != 1 || third.Deltas[0].Kind != "updated" {
 		t.Fatalf("third=%+v outcome=%s calls=%d", third, outcome, resolver.calls)
 	}
 	usage, err := state.AggregateModelUsage(ctx, 30)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -263,6 +264,44 @@ func TestLibrarySearchUsesCurrentSupportedLivingTopicKnowledgeReadOnly(t *testin
 	}
 	if len(insights) != 0 {
 		t.Fatalf("historical topic knowledge leaked into Library search: %+v", insights)
+	}
+}
+
+func TestLibrarySearchSuppressesLessSpecificLivingTopicSibling(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	parent, _ := state.CreateLivingTopic(ctx, "Codex")
+	sibling, _ := state.CreateLivingTopic(ctx, "Codex Reset")
+	for index, topic := range []domain.LivingTopic{parent, sibling} {
+		input := libraryInput(fmt.Sprintf("sibling-%d", index), domain.SourceX, topic.Name+" evidence", "Codex reset performance schedule", "2026-08-30T00:00:00Z")
+		item, err := state.CreateMemoryRecallStub(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.AddLivingTopicMember(ctx, topic.ID, item.ID); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{TopicID: topic.ID, Status: "ready", Overview: topic.Name + " current knowledge.", Claims: []domain.LivingTopicClaim{{Text: "Codex reset performance schedule is tracked.", Assessment: "supported", Centrality: "central", EvidenceIDs: []string{item.ID}}}, EvidenceIDs: []string{item.ID}, InputDigest: fmt.Sprintf("digest-%d", index)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `UPDATE living_topics SET understanding_status='current',understanding_input_digest=? WHERE id=?`, snapshot.InputDigest, topic.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insights, err := state.SearchLivingTopicKnowledge(ctx, "Codex reset schedule", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(insights) != 1 || insights[0].TopicID != sibling.ID {
+		t.Fatalf("reset query=%+v", insights)
+	}
+	insights, err = state.SearchLivingTopicKnowledge(ctx, "Codex performance", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(insights) != 1 || insights[0].TopicID != parent.ID {
+		t.Fatalf("performance query=%+v", insights)
 	}
 }
 

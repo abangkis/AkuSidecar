@@ -207,3 +207,14 @@ func TestTopicIdentityMatchesRejectsNarrowSiblingOnOneSharedToken(t *testing.T) 
 		t.Fatal("two topic identity tokens should admit a focused multi-token topic")
 	}
 }
+
+func TestTopicIdentitySpecificityPrefersTheMostSpecificSibling(t *testing.T) {
+	query := Query{Terms: []string{"codex", "reset", "schedule"}}
+	if TopicIdentitySpecificity(query, "Codex Reset", nil) <= TopicIdentitySpecificity(query, "Codex", nil) {
+		t.Fatal("the complete sibling identity should outrank its broad parent")
+	}
+	query = Query{Terms: []string{"codex", "performance"}}
+	if TopicIdentitySpecificity(query, "Codex", nil) <= TopicIdentitySpecificity(query, "Codex Reset", nil) {
+		t.Fatal("the broad topic should win when the sibling qualifier is absent")
+	}
+}

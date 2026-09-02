@@ -199,6 +199,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			if err := migrateSchema22To23(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 22 to 23: %w", err)
 			}
+			version = "23"
+		}
+		if version == "23" {
+			if err := migrateSchema23To24(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 23 to 24: %w", err)
+			}
 			version = schemaVersion
 		}
 		if version != schemaVersion {
@@ -573,6 +579,47 @@ func migrateSchema22To23(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='23' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema23To24(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	columns := []struct{ name, definition string }{
+		{"source_diversity_state", "TEXT NOT NULL DEFAULT 'unknown' CHECK (source_diversity_state IN ('unknown','single_platform','limited','diverse'))"},
+		{"source_platform_count", "INTEGER NOT NULL DEFAULT 0 CHECK (source_platform_count >= 0)"},
+		{"independent_source_count", "INTEGER NOT NULL DEFAULT 0 CHECK (independent_source_count >= 0)"},
+		{"independent_cluster_count", "INTEGER NOT NULL DEFAULT 0 CHECK (independent_cluster_count >= 0)"},
+	}
+	for _, column := range columns {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('living_topic_snapshots') WHERE name=?`, column.name).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE living_topic_snapshots ADD COLUMN %s %s", column.name, column.definition)); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE living_topics
+		SET understanding_status='pending', understanding_input_digest='', understanding_trigger='migration_rebaseline_v3', understanding_last_error=''
+		WHERE EXISTS (SELECT 1 FROM living_topic_memberships m WHERE m.topic_id=living_topics.id);
+		INSERT INTO living_topic_understanding_jobs(id,topic_id,status,trigger,queued_at)
+		SELECT 'topic_understanding_rebaseline_v3:' || t.id,t.id,'pending','migration_rebaseline_v3',strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		FROM living_topics t
+		WHERE EXISTS (SELECT 1 FROM living_topic_memberships m WHERE m.topic_id=t.id)
+		  AND NOT EXISTS (SELECT 1 FROM living_topic_understanding_jobs j WHERE j.topic_id=t.id AND j.status IN ('pending','running'))
+		ON CONFLICT(id) DO NOTHING`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='24' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -18,7 +18,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-const livingTopicUnderstandingContractVersion = "current-projection-v2"
+const livingTopicUnderstandingContractVersion = "current-projection-v3"
 
 func (e *Engine) LivingTopics(ctx context.Context) ([]domain.LivingTopic, error) {
 	return e.store.ListLivingTopics(ctx)
@@ -171,7 +171,7 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, 
 	if err != nil {
 		return nil, "", "", err
 	}
-	forced := trigger == "refresh_now" || trigger == "migration_rebaseline"
+	forced := trigger == "refresh_now" || strings.HasPrefix(trigger, "migration_rebaseline")
 	if !forced && detail.Topic.UnderstandingCheckedAt != "" && detail.Topic.UnderstandingInputDigest == digest {
 		return nil, "no_change", digest, nil
 	}
@@ -201,13 +201,18 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, 
 	if result.Status == "insufficient_evidence" {
 		return nil, "insufficient_evidence", digest, nil
 	}
+	if previousPtr != nil && previousPtr.ContractVersion == livingTopicUnderstandingContractVersion {
+		result.Claims = reconcileLivingTopicClaimKeys(previousPtr.Claims, result.Claims)
+	}
 	material := previousPtr != nil && previousPtr.ContractVersion == livingTopicUnderstandingContractVersion && livingTopicClaimsMateriallyChanged(previousPtr.Claims, result.Claims)
 	result.Deltas = livingTopicClaimDeltas(previousPtr, result.Claims, material)
 	result.Overview = livingTopicCentralOverview(result.Claims)
+	diversityState, platformCount, sourceCount, clusterCount := livingTopicSourceDiversity(detail.Members, result.EvidenceRoles)
 	base := domain.LivingTopicSnapshot{
 		TopicID: topicID, Status: result.Status, Overview: result.Overview, Claims: result.Claims, Deltas: result.Deltas,
 		EvidenceIDs: evidenceIDs, EvidenceRoles: result.EvidenceRoles, InputDigest: digest,
 		ContractVersion: livingTopicUnderstandingContractVersion, MaterialChange: material, CoverageState: result.CoverageState,
+		SourceDiversityState: diversityState, SourcePlatformCount: platformCount, IndependentSourceCount: sourceCount, IndependentClusterCount: clusterCount,
 	}
 	if previousPtr != nil {
 		base.PreviousSnapshotID = previousPtr.ID
@@ -259,7 +264,7 @@ func livingTopicClaimKeys(claims []domain.LivingTopicClaim) []string {
 	keys := make([]string, 0, len(claims))
 	for _, claim := range claims {
 		key := strings.ToLower(strings.TrimSpace(claim.Key))
-		keys = append(keys, strings.Join([]string{key, claim.Centrality, claim.Assessment, strings.ToLower(strings.TrimSpace(claim.Subtopic))}, "|"))
+		keys = append(keys, strings.Join([]string{key, strings.ToLower(strings.TrimSpace(claim.MaterialValue)), claim.Centrality, claim.Assessment, strings.ToLower(strings.TrimSpace(claim.Subtopic))}, "|"))
 	}
 	sort.Strings(keys)
 	return keys
@@ -279,7 +284,7 @@ func livingTopicClaimDeltas(previous *domain.LivingTopicSnapshot, current []doma
 		old, exists := prior[key]
 		if !exists {
 			deltas = append(deltas, domain.LivingTopicDelta{Kind: "new", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
-		} else if old.Assessment != claim.Assessment || old.Centrality != claim.Centrality || old.Subtopic != claim.Subtopic {
+		} else if old.Assessment != claim.Assessment || old.Centrality != claim.Centrality || old.Subtopic != claim.Subtopic || old.MaterialValue != claim.MaterialValue {
 			deltas = append(deltas, domain.LivingTopicDelta{Kind: "updated", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
 		}
 		delete(prior, key)
@@ -294,6 +299,75 @@ func livingTopicClaimDeltas(previous *domain.LivingTopicSnapshot, current []doma
 		}
 	}
 	return deltas
+}
+
+func reconcileLivingTopicClaimKeys(previous, current []domain.LivingTopicClaim) []domain.LivingTopicClaim {
+	priorByKey := make(map[string]domain.LivingTopicClaim, len(previous))
+	used := map[string]bool{}
+	for _, claim := range previous {
+		priorByKey[strings.ToLower(strings.TrimSpace(claim.Key))] = claim
+	}
+	for index := range current {
+		key := strings.ToLower(strings.TrimSpace(current[index].Key))
+		if _, exists := priorByKey[key]; exists {
+			used[key] = true
+			continue
+		}
+		bestKey, bestScore := "", 0.0
+		for priorKey, prior := range priorByKey {
+			if used[priorKey] || !strings.EqualFold(strings.TrimSpace(prior.Subtopic), strings.TrimSpace(current[index].Subtopic)) {
+				continue
+			}
+			textScore := tokenJaccard(livingTopicTokens(prior.MaterialValue+" "+prior.Text), livingTopicTokens(current[index].MaterialValue+" "+current[index].Text))
+			evidenceScore := stringSetJaccard(prior.EvidenceIDs, current[index].EvidenceIDs)
+			score := 0.65*textScore + 0.35*evidenceScore
+			if (textScore >= 0.70 || (textScore >= 0.45 && evidenceScore > 0)) && score > bestScore {
+				bestKey, bestScore = priorKey, score
+			}
+		}
+		if bestKey != "" {
+			current[index].Key = bestKey
+			used[bestKey] = true
+		}
+	}
+	return current
+}
+
+func stringSetJaccard(left, right []string) float64 {
+	a, b := map[string]bool{}, map[string]bool{}
+	for _, value := range left {
+		a[value] = true
+	}
+	for _, value := range right {
+		b[value] = true
+	}
+	return tokenJaccard(a, b)
+}
+
+func livingTopicSourceDiversity(items []domain.MemoryItem, roles []domain.LivingTopicEvidenceRole) (string, int, int, int) {
+	platforms, sources, clusters := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, item := range items {
+		platform := strings.ToLower(strings.TrimSpace(string(item.Source)))
+		if platform != "" {
+			platforms[platform] = true
+		}
+		author := strings.ToLower(strings.TrimSpace(item.Author))
+		if platform != "" || author != "" {
+			sources[platform+"|"+author] = true
+		}
+	}
+	for _, role := range roles {
+		if cluster := strings.ToLower(strings.TrimSpace(role.SourceCluster)); cluster != "" {
+			clusters[cluster] = true
+		}
+	}
+	state := "limited"
+	if len(platforms) <= 1 {
+		state = "single_platform"
+	} else if len(platforms) >= 3 && len(clusters) >= 3 {
+		state = "diverse"
+	}
+	return state, len(platforms), len(sources), len(clusters)
 }
 
 func livingTopicInputDigest(topic domain.LivingTopic, items []domain.MemoryItem) (string, []string, error) {

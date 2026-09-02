@@ -133,23 +133,30 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 		return nil, err
 	}
 	byID := make(map[string]domain.ContentContextTopicInsight)
+	identityScores := make(map[string]int)
 	candidates := make([]contentcontext.Candidate, 0, len(topics))
 	for _, topic := range topics {
 		snapshot := topic.LatestSnapshot
 		if snapshot == nil || !snapshot.IsCurrent || snapshot.ActiveEvidenceCount < 1 {
 			continue
 		}
-		if requireIdentity && !contentcontext.TopicIdentityMatches(query, topic.Name, topic.Aliases) {
+		identityScore := contentcontext.TopicIdentitySpecificity(query, topic.Name, topic.Aliases)
+		if requireIdentity && identityScore == 0 {
 			continue
 		}
 		claims := make([]domain.LivingTopicClaim, 0, 3)
 		claimText := make([]string, 0, 3)
-		for _, claim := range snapshot.Claims {
-			if claim.Assessment != "supported" {
-				continue
+		for _, centrality := range []string{"central", "secondary"} {
+			for _, claim := range snapshot.Claims {
+				if claim.Assessment != "supported" || (centrality == "central" && claim.Centrality != "" && claim.Centrality != "central") || (centrality == "secondary" && claim.Centrality != "secondary") {
+					continue
+				}
+				claims = append(claims, claim)
+				claimText = append(claimText, claim.Text)
+				if len(claims) == 3 {
+					break
+				}
 			}
-			claims = append(claims, claim)
-			claimText = append(claimText, claim.Text)
 			if len(claims) == 3 {
 				break
 			}
@@ -162,6 +169,7 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 			SnapshotVersion: snapshot.Version, UpdatedAt: snapshot.CreatedAt,
 			EvidenceCount: snapshot.ActiveEvidenceCount,
 		}
+		identityScores[topic.ID] = identityScore
 		candidates = append(candidates, contentcontext.Candidate{Item: domain.MemoryItem{
 			ID: topic.ID, Title: topic.Name, Summary: strings.Join(append([]string{snapshot.Overview, topic.Description}, claimText...), " "),
 			Tags: topic.Aliases, Facets: []string{topic.Name}, LifecycleState: domain.MemoryStateActive, UpdatedAt: snapshot.CreatedAt,
@@ -174,12 +182,24 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 	if topicLimit > 2 {
 		topicLimit = 2
 	}
-	matches := contentContextEngine.Match(query, candidates, topicLimit)
+	matches := contentContextEngine.Match(query, candidates, len(candidates))
+	maxIdentity := 0
+	for _, match := range matches {
+		if identityScores[match.Item.ID] > maxIdentity {
+			maxIdentity = identityScores[match.Item.ID]
+		}
+	}
 	result := make([]domain.ContentContextTopicInsight, 0, len(matches))
 	for _, match := range matches {
+		if maxIdentity >= 100 && identityScores[match.Item.ID] != maxIdentity {
+			continue
+		}
 		insight := byID[match.Item.ID]
 		insight.MatchReason = match.MatchReason
 		result = append(result, insight)
+		if len(result) == topicLimit {
+			break
+		}
 	}
 	return result, nil
 }
