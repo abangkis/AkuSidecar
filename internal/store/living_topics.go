@@ -391,7 +391,7 @@ func (s *Store) LivingTopicDetail(ctx context.Context, id string) (domain.Living
 		memberSet[memoryID] = struct{}{}
 	}
 	snapshots = annotateLivingTopicSnapshots(topic, snapshots, memberSet)
-	if len(snapshots) > 0 {
+	if len(snapshots) > 0 && snapshots[0].IsCurrent {
 		topic.LatestSnapshot = &snapshots[0]
 	}
 	candidates, err := s.LivingTopicCandidates(ctx, id, topic.CriteriaRevision, 20)
@@ -443,19 +443,23 @@ func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.L
 		default:
 			snapshots[index].EvidenceAvailability = "unavailable"
 		}
-		// The topic digest records the newest evaluated input, while the
-		// snapshot digest records the input that produced the latest material
-		// publication. They intentionally diverge after a successful semantic
-		// no-change evaluation. In that case the published snapshot remains the
-		// current understanding as long as it still has active topic evidence.
 		snapshots[index].IsCurrent = index == 0 &&
 			topic.UnderstandingStatus == "current" &&
+			snapshots[index].ContractVersion == "current-projection-v2" &&
+			snapshots[index].InputDigest == topic.UnderstandingInputDigest &&
 			activeCount > 0
 	}
 	return snapshots
 }
 
 func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.LivingTopicSnapshot) (domain.LivingTopicSnapshot, error) {
+	if strings.TrimSpace(value.ContractVersion) == "" {
+		value.ContractVersion = "current-projection-v2"
+		value.MaterialChange = true
+	}
+	if strings.TrimSpace(value.CoverageState) == "" {
+		value.CoverageState = "legacy"
+	}
 	if err := validateLivingTopicSnapshot(value); err != nil {
 		return domain.LivingTopicSnapshot{}, err
 	}
@@ -483,13 +487,15 @@ func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.Living
 	claims, _ := json.Marshal(value.Claims)
 	deltas, _ := json.Marshal(value.Deltas)
 	evidence, _ := json.Marshal(value.EvidenceIDs)
+	evidenceRoles, _ := json.Marshal(value.EvidenceRoles)
 	usage, _ := json.Marshal(value.Usage)
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO living_topic_snapshots(
-		 id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,input_digest,
-		 provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		value.ID, value.TopicID, value.Version, value.Status, value.Overview, string(claims), string(deltas), string(evidence), value.InputDigest,
+		 id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,
+		 contract_version,material_change,coverage_state,provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		value.ID, value.TopicID, value.Version, value.Status, value.Overview, string(claims), string(deltas), string(evidence), string(evidenceRoles), value.InputDigest,
+		value.ContractVersion, value.MaterialChange, value.CoverageState,
 		value.Provider, value.Model, value.Effort, value.DurationMS, string(usage), nullableText(value.PreviousSnapshotID), value.CreatedAt); err != nil {
 		return domain.LivingTopicSnapshot{}, fmt.Errorf("save living topic snapshot: %w", err)
 	}
@@ -527,7 +533,7 @@ func nullableText(value string) any {
 
 func (s *Store) LatestLivingTopicSnapshot(ctx context.Context, topicID string) (domain.LivingTopicSnapshot, error) {
 	return scanLivingTopicSnapshot(s.db.QueryRowContext(ctx, `
-		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,input_digest,
+		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,
 		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
 		FROM living_topic_snapshots WHERE topic_id=? ORDER BY version DESC LIMIT 1`, topicID))
 }
@@ -537,9 +543,9 @@ func (s *Store) LatestLivingTopicSnapshot(ctx context.Context, topicID string) (
 // only when the source-backed understanding changes materially.
 func (s *Store) LatestPublishedLivingTopicSnapshot(ctx context.Context, topicID string) (domain.LivingTopicSnapshot, error) {
 	return scanLivingTopicSnapshot(s.db.QueryRowContext(ctx, `
-		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,input_digest,
+		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,
 		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' ORDER BY version DESC LIMIT 1`, topicID))
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v2' ORDER BY version DESC LIMIT 1`, topicID))
 }
 
 func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit int) ([]domain.LivingTopicSnapshot, error) {
@@ -547,9 +553,9 @@ func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit 
 		limit = LivingTopicMaxHistory
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,input_digest,
+		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,
 		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' ORDER BY version DESC LIMIT ?`, topicID, limit)
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND (contract_version='legacy-v1' OR (contract_version='current-projection-v2' AND material_change=1) OR id=(SELECT id FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v2' ORDER BY version DESC LIMIT 1)) ORDER BY version DESC LIMIT ?`, topicID, topicID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -569,9 +575,9 @@ type livingTopicScanner interface{ Scan(...any) error }
 
 func scanLivingTopicSnapshot(row livingTopicScanner) (domain.LivingTopicSnapshot, error) {
 	var value domain.LivingTopicSnapshot
-	var claims, deltas, evidence, usage string
+	var claims, deltas, evidence, evidenceRoles, usage string
 	var previous sql.NullString
-	err := row.Scan(&value.ID, &value.TopicID, &value.Version, &value.Status, &value.Overview, &claims, &deltas, &evidence, &value.InputDigest,
+	err := row.Scan(&value.ID, &value.TopicID, &value.Version, &value.Status, &value.Overview, &claims, &deltas, &evidence, &evidenceRoles, &value.InputDigest, &value.ContractVersion, &value.MaterialChange, &value.CoverageState,
 		&value.Provider, &value.Model, &value.Effort, &value.DurationMS, &usage, &previous, &value.CreatedAt)
 	if err != nil {
 		return domain.LivingTopicSnapshot{}, err
@@ -583,6 +589,9 @@ func scanLivingTopicSnapshot(row livingTopicScanner) (domain.LivingTopicSnapshot
 		return domain.LivingTopicSnapshot{}, err
 	}
 	if err := json.Unmarshal([]byte(evidence), &value.EvidenceIDs); err != nil {
+		return domain.LivingTopicSnapshot{}, err
+	}
+	if err := json.Unmarshal([]byte(evidenceRoles), &value.EvidenceRoles); err != nil {
 		return domain.LivingTopicSnapshot{}, err
 	}
 	if err := json.Unmarshal([]byte(usage), &value.Usage); err != nil {
@@ -599,6 +608,9 @@ func scanLivingTopicSnapshot(row livingTopicScanner) (domain.LivingTopicSnapshot
 	}
 	if value.EvidenceIDs == nil {
 		value.EvidenceIDs = []string{}
+	}
+	if value.EvidenceRoles == nil {
+		value.EvidenceRoles = []domain.LivingTopicEvidenceRole{}
 	}
 	return value, nil
 }

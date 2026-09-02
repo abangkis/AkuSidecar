@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 22
+const SchemaVersion = 23
 
-const schemaVersion = "22"
+const schemaVersion = "23"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -338,7 +338,11 @@ CREATE TABLE IF NOT EXISTS living_topic_snapshots (
   claims_json TEXT NOT NULL DEFAULT '[]',
   deltas_json TEXT NOT NULL DEFAULT '[]',
   evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+  evidence_roles_json TEXT NOT NULL DEFAULT '[]',
   input_digest TEXT NOT NULL,
+  contract_version TEXT NOT NULL DEFAULT 'legacy-v1',
+  material_change INTEGER NOT NULL DEFAULT 1 CHECK (material_change IN (0,1)),
+  coverage_state TEXT NOT NULL DEFAULT 'legacy',
   provider TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL DEFAULT '',
   effort TEXT NOT NULL DEFAULT '',
@@ -539,6 +543,22 @@ SELECT
   json_extract(usage_json,'$.outputTokens'),json_extract(usage_json,'$.reasoningOutputTokens'),created_at
 FROM living_topic_snapshots
 WHERE provider<>'' AND model<>'';
+`
+
+// Schema 23 separates the replaceable current projection from material
+// history without rewriting legacy snapshots. Every successful V2 evaluation
+// is retained as an auditable projection; only material_change rows appear in
+// semantic history. Existing topics are lazily rebaselined from active
+// evidence and legacy prose is never used as synthesis input.
+const livingTopicsCurrentProjectionMigrationSQL = `
+UPDATE living_topics SET understanding_status='pending',understanding_input_digest='',understanding_trigger='migration_rebaseline',understanding_last_error='';
+INSERT INTO living_topic_understanding_jobs(id,topic_id,status,trigger,queued_at)
+SELECT 'topic_understanding_rebaseline:' || id,id,'pending','migration_rebaseline',strftime('%Y-%m-%dT%H:%M:%fZ','now')
+FROM living_topics
+WHERE NOT EXISTS (
+  SELECT 1 FROM living_topic_understanding_jobs j
+  WHERE j.topic_id=living_topics.id AND j.status IN ('pending','running')
+);
 `
 
 // The v18-to-v19 migration adds bounded local topic activation and a

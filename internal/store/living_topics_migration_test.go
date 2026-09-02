@@ -25,6 +25,7 @@ func TestSchema21AddsLivingTopicModelUsageLedger(t *testing.T) {
 	if _, err := db.Exec(`
 		DROP TABLE living_topic_model_invocations;
 		UPDATE meta SET value='21' WHERE key='schema_version';
+		INSERT INTO living_topics(id,name,created_at,updated_at) VALUES('topic-cost','Codex','2026-08-30T00:00:00Z','2026-08-30T00:00:00Z');
 		INSERT INTO living_topic_snapshots(id,topic_id,version,status,input_digest,provider,model,effort,duration_ms,usage_json,created_at)
 		VALUES('snapshot-cost','topic-cost',1,'ready','digest','structured-inference','gemini-test','high',500,'{"inputTokens":120,"cachedInputTokens":20,"outputTokens":30,"reasoningOutputTokens":40,"modelDescriptorVersion":"catalog-1","modelMaturity":"stable"}','2026-08-30T00:00:00Z');
 	`); err != nil {
@@ -41,7 +42,7 @@ func TestSchema21AddsLivingTopicModelUsageLedger(t *testing.T) {
 	defer state.Close()
 	var version string
 	var tables int
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	if err := state.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='living_topic_model_invocations'`).Scan(&tables); err != nil || tables != 1 {
@@ -50,6 +51,17 @@ func TestSchema21AddsLivingTopicModelUsageLedger(t *testing.T) {
 	var input, output int64
 	if err := state.db.QueryRow(`SELECT input_tokens,output_tokens FROM living_topic_model_invocations WHERE id='topic_snapshot_usage:snapshot-cost'`).Scan(&input, &output); err != nil || input != 120 || output != 30 {
 		t.Fatalf("backfilled usage input=%d output=%d err=%v", input, output, err)
+	}
+	var contract, understandingStatus string
+	if err := state.db.QueryRow(`SELECT contract_version FROM living_topic_snapshots WHERE id='snapshot-cost'`).Scan(&contract); err != nil || contract != "legacy-v1" {
+		t.Fatalf("legacy contract=%q err=%v", contract, err)
+	}
+	if err := state.db.QueryRow(`SELECT understanding_status FROM living_topics WHERE id='topic-cost'`).Scan(&understandingStatus); err != nil || understandingStatus != "pending" {
+		t.Fatalf("rebaseline status=%q err=%v", understandingStatus, err)
+	}
+	var pending int
+	if err := state.db.QueryRow(`SELECT COUNT(*) FROM living_topic_understanding_jobs WHERE topic_id='topic-cost' AND status='pending' AND trigger='migration_rebaseline'`).Scan(&pending); err != nil || pending != 1 {
+		t.Fatalf("rebaseline jobs=%d err=%v", pending, err)
 	}
 }
 
@@ -106,7 +118,7 @@ func TestSchema15MigratesLivingTopicsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var count int
@@ -165,7 +177,7 @@ func TestSchema16MigratesLivingTopicRoutingAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var count int
@@ -193,7 +205,7 @@ func TestSchema17MigratesAutomaticUnderstandingAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var count int
@@ -248,7 +260,7 @@ func TestSchema18MigratesTopicActivationAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	topic, err := state.LivingTopic(t.Context(), "topic-existing")
@@ -313,7 +325,7 @@ func TestSchema19MigratesLivingTopicNotificationsWithoutInventingUnreadEvidence(
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	topic, err := state.LivingTopic(t.Context(), "topic-existing")
@@ -373,7 +385,7 @@ func TestSchema20MigratesReversibleLivingTopicMovesAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
 	var tableCount, columnCount int

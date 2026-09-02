@@ -193,6 +193,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			if err := migrateSchema21To22(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 21 to 22: %w", err)
 			}
+			version = "22"
+		}
+		if version == "22" {
+			if err := migrateSchema22To23(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 22 to 23: %w", err)
+			}
 			version = schemaVersion
 		}
 		if version != schemaVersion {
@@ -535,6 +541,38 @@ func migrateSchema21To22(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='22' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema22To23(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	columns := []struct{ name, definition string }{
+		{"evidence_roles_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"contract_version", "TEXT NOT NULL DEFAULT 'legacy-v1'"},
+		{"material_change", "INTEGER NOT NULL DEFAULT 1 CHECK (material_change IN (0,1))"},
+		{"coverage_state", "TEXT NOT NULL DEFAULT 'legacy'"},
+	}
+	for _, column := range columns {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('living_topic_snapshots') WHERE name=?`, column.name).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE living_topic_snapshots ADD COLUMN %s %s", column.name, column.definition)); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, livingTopicsCurrentProjectionMigrationSQL); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='23' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()

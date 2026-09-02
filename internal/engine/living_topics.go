@@ -18,6 +18,8 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
+const livingTopicUnderstandingContractVersion = "current-projection-v2"
+
 func (e *Engine) LivingTopics(ctx context.Context) ([]domain.LivingTopic, error) {
 	return e.store.ListLivingTopics(ctx)
 }
@@ -160,7 +162,7 @@ func (e *Engine) RequestLivingTopicUnderstanding(ctx context.Context, topicID, t
 	return e.store.LivingTopicDetail(ctx, topicID)
 }
 
-func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID string) (*domain.LivingTopicSnapshot, string, string, error) {
+func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, trigger string) (*domain.LivingTopicSnapshot, string, string, error) {
 	detail, err := e.store.LivingTopicDetail(ctx, topicID)
 	if err != nil {
 		return nil, "", "", err
@@ -169,7 +171,8 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID s
 	if err != nil {
 		return nil, "", "", err
 	}
-	if detail.Topic.UnderstandingCheckedAt != "" && detail.Topic.UnderstandingInputDigest == digest {
+	forced := trigger == "refresh_now" || trigger == "migration_rebaseline"
+	if !forced && detail.Topic.UnderstandingCheckedAt != "" && detail.Topic.UnderstandingInputDigest == digest {
 		return nil, "no_change", digest, nil
 	}
 	if len(detail.Members) == 0 {
@@ -188,7 +191,9 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID s
 	if err != nil {
 		return nil, "", digest, err
 	}
-	result, usage, duration, err := e.topics.ResolveWithProfile(ctx, detail.Topic, detail.Members, previousPtr, settings.ReasoningEvaluationProfile)
+	// The previous projection is intentionally excluded from synthesis. It is
+	// used only after validation to classify the semantic delta.
+	result, usage, duration, err := e.topics.ResolveWithProfile(ctx, detail.Topic, detail.Members, nil, settings.ReasoningEvaluationProfile)
 	e.recordLivingTopicModelInvocation("living_topic_understanding", topicID, settings.ReasoningEvaluationProfile, usage, duration, err)
 	if err != nil {
 		return nil, "", digest, fmt.Errorf("refresh Living Topic understanding: %w", err)
@@ -196,17 +201,13 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID s
 	if result.Status == "insufficient_evidence" {
 		return nil, "insufficient_evidence", digest, nil
 	}
-	if previousPtr != nil && len(result.Deltas) == 0 {
-		return nil, "no_change", digest, nil
-	}
-	if previousPtr == nil {
-		// The first published understanding is the baseline, not a list of
-		// changes from an imaginary earlier version.
-		result.Deltas = []domain.LivingTopicDelta{}
-	}
+	material := previousPtr != nil && previousPtr.ContractVersion == livingTopicUnderstandingContractVersion && livingTopicClaimsMateriallyChanged(previousPtr.Claims, result.Claims)
+	result.Deltas = livingTopicClaimDeltas(previousPtr, result.Claims, material)
+	result.Overview = livingTopicCentralOverview(result.Claims)
 	base := domain.LivingTopicSnapshot{
 		TopicID: topicID, Status: result.Status, Overview: result.Overview, Claims: result.Claims, Deltas: result.Deltas,
-		EvidenceIDs: evidenceIDs, InputDigest: digest,
+		EvidenceIDs: evidenceIDs, EvidenceRoles: result.EvidenceRoles, InputDigest: digest,
+		ContractVersion: livingTopicUnderstandingContractVersion, MaterialChange: material, CoverageState: result.CoverageState,
 	}
 	if previousPtr != nil {
 		base.PreviousSnapshotID = previousPtr.ID
@@ -224,7 +225,75 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID s
 	if err != nil {
 		return nil, "", digest, err
 	}
-	return &saved, "updated", digest, nil
+	if material {
+		return &saved, "updated", digest, nil
+	}
+	if previousPtr == nil {
+		return &saved, "updated", digest, nil
+	}
+	return &saved, "refreshed_no_material_change", digest, nil
+}
+
+func livingTopicCentralOverview(claims []domain.LivingTopicClaim) string {
+	parts := make([]string, 0, 3)
+	for _, claim := range claims {
+		if claim.Centrality == "central" && claim.Assessment == "supported" {
+			parts = append(parts, strings.TrimSpace(claim.Text))
+			if len(parts) == 3 {
+				break
+			}
+		}
+	}
+	overview := []rune(strings.Join(parts, " "))
+	if len(overview) > 1200 {
+		overview = overview[:1200]
+	}
+	return strings.TrimSpace(string(overview))
+}
+
+func livingTopicClaimsMateriallyChanged(previous, current []domain.LivingTopicClaim) bool {
+	return strings.Join(livingTopicClaimKeys(previous), "\n") != strings.Join(livingTopicClaimKeys(current), "\n")
+}
+
+func livingTopicClaimKeys(claims []domain.LivingTopicClaim) []string {
+	keys := make([]string, 0, len(claims))
+	for _, claim := range claims {
+		key := strings.ToLower(strings.TrimSpace(claim.Key))
+		keys = append(keys, strings.Join([]string{key, claim.Centrality, claim.Assessment, strings.ToLower(strings.TrimSpace(claim.Subtopic))}, "|"))
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func livingTopicClaimDeltas(previous *domain.LivingTopicSnapshot, current []domain.LivingTopicClaim, material bool) []domain.LivingTopicDelta {
+	if previous == nil || previous.ContractVersion != livingTopicUnderstandingContractVersion || !material {
+		return []domain.LivingTopicDelta{}
+	}
+	prior := map[string]domain.LivingTopicClaim{}
+	for _, claim := range previous.Claims {
+		prior[strings.ToLower(strings.TrimSpace(claim.Key))] = claim
+	}
+	deltas := make([]domain.LivingTopicDelta, 0, 8)
+	for _, claim := range current {
+		key := strings.ToLower(strings.TrimSpace(claim.Key))
+		old, exists := prior[key]
+		if !exists {
+			deltas = append(deltas, domain.LivingTopicDelta{Kind: "new", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
+		} else if old.Assessment != claim.Assessment || old.Centrality != claim.Centrality || old.Subtopic != claim.Subtopic {
+			deltas = append(deltas, domain.LivingTopicDelta{Kind: "updated", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
+		}
+		delete(prior, key)
+		if len(deltas) == 8 {
+			return deltas
+		}
+	}
+	for _, claim := range prior {
+		deltas = append(deltas, domain.LivingTopicDelta{Kind: "resolved", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
+		if len(deltas) == 8 {
+			break
+		}
+	}
+	return deltas
 }
 
 func livingTopicInputDigest(topic domain.LivingTopic, items []domain.MemoryItem) (string, []string, error) {
@@ -247,13 +316,15 @@ func livingTopicInputDigest(topic domain.LivingTopic, items []domain.MemoryItem)
 	sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
 	sort.Strings(ids)
 	raw, err := json.Marshal(struct {
-		Name            string       `json:"name"`
-		Description     string       `json:"description"`
-		Aliases         []string     `json:"aliases"`
-		IncludeCriteria string       `json:"includeCriteria"`
-		ExcludeCriteria string       `json:"excludeCriteria"`
-		Evidence        []digestItem `json:"evidence"`
-	}{Name: topic.Name, Description: topic.Description, Aliases: topic.Aliases, IncludeCriteria: topic.IncludeCriteria, ExcludeCriteria: topic.ExcludeCriteria, Evidence: values})
+		ContractVersion  string       `json:"contractVersion"`
+		CriteriaRevision int          `json:"criteriaRevision"`
+		Name             string       `json:"name"`
+		Description      string       `json:"description"`
+		Aliases          []string     `json:"aliases"`
+		IncludeCriteria  string       `json:"includeCriteria"`
+		ExcludeCriteria  string       `json:"excludeCriteria"`
+		Evidence         []digestItem `json:"evidence"`
+	}{ContractVersion: livingTopicUnderstandingContractVersion, CriteriaRevision: topic.CriteriaRevision, Name: topic.Name, Description: topic.Description, Aliases: topic.Aliases, IncludeCriteria: topic.IncludeCriteria, ExcludeCriteria: topic.ExcludeCriteria, Evidence: values})
 	if err != nil {
 		return "", nil, err
 	}
@@ -308,7 +379,7 @@ func (e *Engine) launchLivingTopicUnderstanding(topicID, trigger string) {
 			if job == nil {
 				return
 			}
-			snapshot, outcome, digest, refreshErr := e.evaluateLivingTopicUnderstanding(ctx, job.TopicID)
+			snapshot, outcome, digest, refreshErr := e.evaluateLivingTopicUnderstanding(ctx, job.TopicID, job.Trigger)
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return
 			}

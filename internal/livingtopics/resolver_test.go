@@ -29,7 +29,7 @@ func (f *fakeInvoker) ResolveProfile(id string) (config.ModelConfig, bool) {
 }
 
 func TestResolverMapsBoundedAliasesAndUsesDedicatedProfile(t *testing.T) {
-	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"A useful update.","claims":[{"text":"The project shipped a preview.","assessment":"supported","evidenceAliases":["evidence_001"]}],"deltas":[{"kind":"new","text":"A preview is now available.","evidenceAliases":["evidence_001"]}]}`}
+	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"A useful update.","claims":[{"key":"project-preview","text":"The project shipped a preview.","assessment":"supported","centrality":"central","subtopic":"release","evidenceAliases":["evidence_001"]}],"deltas":[],"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"primary-release"}],"coverageState":"focused"}`}
 	resolver, err := NewStructuredResolver("../..", invoker, config.ModelConfig{Model: "fallback", Effort: "medium"})
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestResolverMapsBoundedAliasesAndUsesDedicatedProfile(t *testing.T) {
 }
 
 func TestResolverRejectsUnknownEvidenceAlias(t *testing.T) {
-	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"Update.","claims":[{"text":"Claim.","assessment":"supported","evidenceAliases":["evidence_999"]}],"deltas":[]}`}
+	invoker := &fakeInvoker{raw: `{"status":"ready","overview":"Update.","claims":[{"key":"claim","text":"Claim.","assessment":"supported","centrality":"central","subtopic":"release","evidenceAliases":["evidence_999"]}],"deltas":[],"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"release"}],"coverageState":"focused"}`}
 	resolver := &StructuredResolver{invoker: invoker, model: config.ModelConfig{Model: "test"}, schema: []byte(`{}`)}
 	_, _, _, err := resolver.ResolveWithProfile(context.Background(), domain.LivingTopic{Name: "Topic"}, []domain.MemoryItem{{ID: "memory", Title: "Evidence"}}, nil, "")
 	if err == nil || !strings.Contains(err.Error(), "unknown evidence alias") {

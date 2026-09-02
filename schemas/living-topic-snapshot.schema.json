@@ -10,8 +10,11 @@
       "items": {
         "type": "object",
         "properties": {
+          "key": { "type": "string", "minLength": 1, "maxLength": 120 },
           "text": { "type": "string", "minLength": 1, "maxLength": 500 },
-          "assessment": { "type": "string", "enum": ["supported", "mixed", "uncertain"] },
+          "assessment": { "type": "string", "enum": ["supported", "mixed", "uncertain", "unavailable"] },
+          "centrality": { "type": "string", "enum": ["central", "secondary"] },
+          "subtopic": { "type": "string", "minLength": 1, "maxLength": 120 },
           "evidenceAliases": {
             "type": "array",
             "minItems": 1,
@@ -20,7 +23,7 @@
             "items": { "type": "string", "pattern": "^evidence_[0-9]{3}$" }
           }
         },
-        "required": ["text", "assessment", "evidenceAliases"],
+        "required": ["key", "text", "assessment", "centrality", "subtopic", "evidenceAliases"],
         "additionalProperties": false
       }
     },
@@ -43,8 +46,25 @@
         "required": ["kind", "text", "evidenceAliases"],
         "additionalProperties": false
       }
-    }
+    },
+    "evidenceRoles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidenceAlias": { "type": "string", "pattern": "^evidence_[0-9]{3}$" },
+          "role": { "type": "string", "enum": ["core", "supporting", "peripheral", "undetermined"] },
+          "subtopic": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "sourceCluster": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "required": ["evidenceAlias", "role", "subtopic", "sourceCluster"],
+        "additionalProperties": false
+      }
+    },
+    "coverageState": { "type": "string", "enum": ["focused", "partial", "sparse"] }
   },
-  "required": ["status", "overview", "claims", "deltas"],
+  "required": ["status", "overview", "claims", "deltas", "evidenceRoles", "coverageState"],
   "additionalProperties": false
 }

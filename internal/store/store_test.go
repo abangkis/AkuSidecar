@@ -584,7 +584,7 @@ func TestSchema7MigratesTimingColumnsAtomically(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var receiptColumn int
@@ -648,7 +648,7 @@ func TestSchema9MigratesSemanticSignalReceiptColumn(t *testing.T) {
 	}
 	defer state.Close()
 	var version string
-	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "22" {
+	if err := state.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "23" {
 		t.Fatalf("schema version=%q err=%v", version, err)
 	}
 	var receiptColumn int

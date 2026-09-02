@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,7 +38,18 @@ func (f *fakeLivingTopicResolver) ResolveWithProfile(_ context.Context, _ domain
 	} else if !f.noDelta {
 		deltas = append(deltas, domain.LivingTopicDelta{Kind: "updated", Text: "The evidence changed.", EvidenceIDs: []string{evidence[0].ID}})
 	}
-	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Text: "A preview exists.", Assessment: "supported", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
+	claimText := "A preview exists."
+	if f.noDelta {
+		claimText = "A preview is available."
+	}
+	if strings.Contains(evidence[0].Title, "three") && !f.noDelta {
+		claimText = "A changed preview exists."
+	}
+	claimKey := "preview-availability"
+	if strings.Contains(evidence[0].Title, "three") && !f.noDelta {
+		claimKey = "preview-capability"
+	}
+	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Key: claimKey, Text: claimText, Assessment: "supported", Centrality: "central", Subtopic: "preview", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas, EvidenceRoles: []domain.LivingTopicEvidenceRole{{MemoryItemID: evidence[0].ID, Role: "core", Subtopic: "preview", SourceCluster: "preview-source"}}, CoverageState: "focused"}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
 }
 
 func livingTopicMemoryInput(title string) domain.MemoryItemInput {
@@ -54,7 +66,7 @@ func processLivingTopicUnderstanding(t *testing.T, runtime *Engine, state *store
 	if err != nil || job == nil {
 		t.Fatalf("job=%+v err=%v", job, err)
 	}
-	snapshot, outcome, digest, err := runtime.evaluateLivingTopicUnderstanding(context.Background(), topicID)
+	snapshot, outcome, digest, err := runtime.evaluateLivingTopicUnderstanding(context.Background(), topicID, trigger)
 	if finishErr := state.FinishLivingTopicUnderstanding(context.Background(), *job, outcome, digest, func() string {
 		if snapshot != nil {
 			return snapshot.ID
@@ -96,7 +108,7 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 		t.Fatalf("first=%+v outcome=%s calls=%d", first, outcome, resolver.calls)
 	}
 	second, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "refresh_now")
-	if second != nil || outcome != "no_change" || resolver.calls != 1 {
+	if second == nil || outcome != "refreshed_no_material_change" || resolver.calls != 2 {
 		t.Fatalf("second=%+v outcome=%s calls=%d", second, outcome, resolver.calls)
 	}
 
@@ -105,22 +117,22 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	}
 	resolver.noDelta = true
 	nonMaterial, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "evidence_updated")
-	if nonMaterial != nil || outcome != "no_change" || resolver.calls != 2 {
+	if nonMaterial == nil || outcome != "refreshed_no_material_change" || resolver.calls != 3 {
 		t.Fatalf("nonMaterial=%+v outcome=%s calls=%d", nonMaterial, outcome, resolver.calls)
 	}
 	current, err := state.LivingTopicDetail(ctx, topic.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(current.Snapshots) != 1 || !current.Snapshots[0].IsCurrent || current.Snapshots[0].InputDigest == current.Topic.UnderstandingInputDigest {
-		t.Fatalf("semantic no-change must retain the latest material snapshot as current: detail=%+v", current)
+	if len(current.Snapshots) != 1 || !current.Snapshots[0].IsCurrent || current.Snapshots[0].InputDigest != current.Topic.UnderstandingInputDigest {
+		t.Fatalf("semantic no-change must replace the current projection without adding history: detail=%+v", current)
 	}
 	if _, err := state.UpsertMemoryRecallStub(ctx, livingTopicMemoryInput("Preview three")); err != nil {
 		t.Fatal(err)
 	}
 	resolver.noDelta = false
 	third, outcome := processLivingTopicUnderstanding(t, runtime, state, topic.ID, "evidence_updated")
-	if third == nil || outcome != "updated" || third.Version != 2 || resolver.calls != 3 || len(third.Deltas) != 1 || third.Deltas[0].Kind != "updated" {
+	if third == nil || outcome != "updated" || third.Version != 4 || resolver.calls != 4 || len(third.Deltas) != 2 || third.Deltas[0].Kind != "new" {
 		t.Fatalf("third=%+v outcome=%s calls=%d", third, outcome, resolver.calls)
 	}
 	usage, err := state.AggregateModelUsage(ctx, 30)
@@ -129,7 +141,7 @@ func TestLivingTopicUnderstandingPublishesOnlyMaterialVersions(t *testing.T) {
 	}
 	for _, category := range usage.Categories {
 		if category.ID == "living_topic_understanding" {
-			if category.InvocationCount != 3 || category.Usage.Input == nil || *category.Usage.Input != 30 {
+			if category.InvocationCount != 4 || category.Usage.Input == nil || *category.Usage.Input != 40 {
 				t.Fatalf("understanding usage=%+v", category)
 			}
 			return

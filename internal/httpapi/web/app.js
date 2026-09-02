@@ -1558,7 +1558,8 @@ function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
   label.textContent = "Current understanding";
   const meta = document.createElement("small");
   const sources = new Set(detail.members.map(livingTopicSourceOrigin).filter(Boolean));
-  meta.textContent = `${detail.members.length} evidence · ${sources.size} source${sources.size === 1 ? "" : "s"} · updated ${formatDate(snapshot.createdAt)}`;
+  const coverage = snapshot.coverageState ? ` · ${humanize(snapshot.coverageState)} coverage` : "";
+  meta.textContent = `${detail.members.length} evidence · ${sources.size} independent origin${sources.size === 1 ? "" : "s"}${coverage} · updated ${formatDate(snapshot.createdAt)}`;
   identity.append(label, meta);
   const badge = document.createElement("span");
   badge.className = "living-topic-understanding-badge";
@@ -1569,12 +1570,18 @@ function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
   overview.textContent = snapshot.overview || "No overview was produced.";
   card.append(header, overview);
 
-  const supported = (snapshot.claims || []).filter((claim) => claim.assessment === "supported");
+  const supported = (snapshot.claims || []).filter((claim) => claim.assessment === "supported" && claim.centrality !== "secondary");
+  const secondary = (snapshot.claims || []).filter((claim) => claim.assessment === "supported" && claim.centrality === "secondary");
   const uncertain = (snapshot.claims || []).filter((claim) => claim.assessment !== "supported");
   if (supported.length) {
     const heading = document.createElement("h5");
     heading.textContent = "What we currently understand";
     card.append(heading, buildLivingTopicStatementList(supported, evidenceByID, "assessment"));
+  }
+  if (secondary.length) {
+    const heading = document.createElement("h5");
+    heading.textContent = "Supporting and peripheral observations";
+    card.append(heading, buildLivingTopicStatementList(secondary, evidenceByID, "centrality"));
   }
   if (uncertain.length) {
     const heading = document.createElement("h5");
