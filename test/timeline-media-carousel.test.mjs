@@ -27,6 +27,40 @@ test("timeline media remains bounded without discarding the fifth through twenti
   assert.equal(bounded[19].index, 19);
 });
 
+test("timeline deterministically collapses persisted X URL variants", () => {
+  const media = boundedTimelineMedia([
+    {
+      displayUrl: "https://pbs.twimg.com/media/example?format=jpg&name=small",
+      width: 516,
+      height: 344,
+    },
+    {
+      displayUrl: "https://pbs.twimg.com/media/example.jpg",
+      width: 1_200,
+      height: 800,
+    },
+    {
+      displayUrl: "https://pbs.twimg.com/media/distinct.jpg",
+      width: 1_200,
+      height: 800,
+    },
+  ], undefined, "x");
+
+  assert.deepEqual(media.map((value) => value.displayUrl), [
+    "https://pbs.twimg.com/media/example.jpg",
+    "https://pbs.twimg.com/media/distinct.jpg",
+  ]);
+});
+
+test("timeline never applies X media identity to another source", () => {
+  const media = boundedTimelineMedia([
+    { displayUrl: "https://pbs.twimg.com/media/example.jpg" },
+    { displayUrl: "https://pbs.twimg.com/media/example?format=jpg&name=small" },
+  ], undefined, "linkedin");
+
+  assert.equal(media.length, 2);
+});
+
 test("carousel navigation stops at the first and last slide", () => {
   assert.equal(normalizeTimelineCarouselIndex(-5, 8), 0);
   assert.equal(moveTimelineCarouselIndex(0, -1, 8), 0);

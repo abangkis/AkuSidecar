@@ -1,11 +1,43 @@
 export const MAX_TIMELINE_MEDIA = 20;
 export const TIMELINE_CAROUSEL_THRESHOLD = 5;
 
-export function boundedTimelineMedia(values, maximum = MAX_TIMELINE_MEDIA) {
+export function boundedTimelineMedia(values, maximum = MAX_TIMELINE_MEDIA, source = "") {
   const limit = Number.isFinite(Number(maximum))
     ? Math.max(1, Math.min(MAX_TIMELINE_MEDIA, Math.trunc(Number(maximum))))
     : MAX_TIMELINE_MEDIA;
-  return (Array.isArray(values) ? values : []).slice(0, limit);
+  const media = [];
+  const seen = new Map();
+  for (const value of Array.isArray(values) ? values : []) {
+    const identity = timelineMediaIdentity(value, source);
+    const previousIndex = identity ? seen.get(identity) : undefined;
+    if (previousIndex !== undefined) {
+      if (mediaArea(value) > mediaArea(media[previousIndex])) media[previousIndex] = value;
+      continue;
+    }
+    if (identity) seen.set(identity, media.length);
+    media.push(value);
+    if (media.length >= limit) break;
+  }
+  return media;
+}
+
+function timelineMediaIdentity(value, source) {
+  const rawURL = value?.displayUrl || value?.posterUrl || value?.url;
+  if (typeof rawURL !== "string" || source !== "x") return null;
+  try {
+    const url = new URL(rawURL);
+    if (url.hostname.toLowerCase() !== "pbs.twimg.com") return null;
+    const match = url.pathname.match(/^\/media\/([^/]+?)(?:\.(?:jpe?g|png|gif|webp|avif))?$/i);
+    return match ? `x:pbs-media:${match[1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function mediaArea(value) {
+  const width = Number(value?.width) || 0;
+  const height = Number(value?.height) || 0;
+  return width * height;
 }
 
 export function shouldUseTimelineCarousel(values) {

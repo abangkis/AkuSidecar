@@ -7254,7 +7254,7 @@ function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry 
         ? safePlaybackUrl(value.playbackUrl, source)
         : null,
     }))
-    .filter((value) => value.displayUrl));
+    .filter((value) => value.displayUrl), undefined, source);
   if (!media.length) return null;
   const isVideoMedia = (value) => value.kind === "video" || (contentKind === "video" && media.length === 1);
   const imageMedia = media.filter((value) => !isVideoMedia(value));
