@@ -51,7 +51,7 @@ func (f *fakeLivingTopicResolver) ResolveWithProfile(_ context.Context, _ domain
 	if strings.Contains(evidence[0].Title, "three") && !f.noDelta {
 		claimKey = "preview-capability"
 	}
-	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Key: claimKey, MaterialValue: materialValue, Text: claimText, Assessment: "supported", Centrality: "central", Subtopic: "preview", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas, EvidenceRoles: []domain.LivingTopicEvidenceRole{{MemoryItemID: evidence[0].ID, Role: "core", Subtopic: "preview", SourceCluster: "preview-source", EpistemicClass: "primary"}}, CoverageState: "focused"}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
+	return domain.LivingTopicSnapshotResult{Status: "ready", Overview: "Evidence-backed understanding.", Claims: []domain.LivingTopicClaim{{Key: claimKey, TemporalStatus: "current", EventStatus: "unknown", MaterialValue: materialValue, Text: claimText, Assessment: "supported", Centrality: "central", Subtopic: "preview", EvidenceIDs: []string{evidence[0].ID}}}, Deltas: deltas, EvidenceRoles: []domain.LivingTopicEvidenceRole{{MemoryItemID: evidence[0].ID, Role: "core", Subtopic: "preview", SourceCluster: "preview-source", EpistemicClass: "primary"}}, CoverageState: "focused"}, domain.ModelUsage{Input: &input}, 9 * time.Millisecond, nil
 }
 
 func TestLivingTopicClaimReconciliationKeepsStableIdentityAcrossRewording(t *testing.T) {

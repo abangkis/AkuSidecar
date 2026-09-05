@@ -1,5 +1,5 @@
 export const LIVING_TOPIC_MAX_NAME = 120;
-export const LIVING_TOPIC_MAX_MEMBERS = 20;
+export const LIVING_TOPIC_MAX_MEMBERS = 30;
 export const LIVING_TOPIC_TAB_SNAPSHOT = "snapshot";
 export const LIVING_TOPIC_TAB_EVIDENCE = "evidence";
 
@@ -78,7 +78,7 @@ export function buildLivingTopicCandidateActionPath(id, memoryItemId, action) {
 }
 
 export function livingTopicStatusLabel(status) {
-  if (status === "ready") return "Current understanding";
+  if (status === "ready") return "Based on local evidence";
   if (status === "no_change") return "No evidence changed";
   if (status === "insufficient_evidence") return "More evidence needed";
   return "Understanding status unknown";
@@ -87,8 +87,29 @@ export function livingTopicStatusLabel(status) {
 export function livingTopicUnderstandingLabel(status) {
   if (status === "pending") return "Refresh queued";
   if (status === "running") return "Updating understanding";
-  if (status === "current") return "Understanding current";
+  if (status === "current") return "Evidence evaluated";
   if (status === "insufficient_evidence") return "Needs evidence";
   if (status === "failed") return "Refresh needs attention";
   return "Waiting for evidence";
+}
+
+export function livingTopicClaimGroups(claims = []) {
+  const groups = { current: [], secondary: [], uncertain: [], historical: [] };
+  for (const claim of claims) {
+    if (claim.temporalStatus === "historical") groups.historical.push(claim);
+    else if (claim.temporalStatus !== "current" || claim.assessment !== "supported") groups.uncertain.push(claim);
+    else if (claim.centrality === "secondary") groups.secondary.push(claim);
+    else groups.current.push(claim);
+  }
+  return groups;
+}
+
+export function livingTopicStatementLabel(value, field) {
+  if (field === "kind") {
+    if (value.kind === "removed" || value.kind === "resolved") return "No longer in projection";
+    return String(value.kind || "change").replaceAll("_", " ");
+  }
+  const status = value.temporalStatus === "historical" ? "Historical" : value.temporalStatus === "current" ? "Latest known" : "Current applicability unknown";
+  const lifecycle = ["announced", "ongoing", "completed", "cancelled"].includes(value.eventStatus) ? ` · ${value.eventStatus}` : "";
+  return `${status} · ${value.assessment || "unknown"}${lifecycle}`;
 }

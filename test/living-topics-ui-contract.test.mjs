@@ -47,11 +47,13 @@ test("Living Topics UI exposes bounded membership and automatic understanding st
   assert.match(app, /\[\["Accept", "accept"\], \["Reject", "reject"\]\]/);
   assert.match(app, /undo\.textContent = "Undo"/);
   assert.match(app, /Understanding could not be refreshed:/);
-  assert.match(app, /Current understanding is up to date\./);
+  assert.match(app, /Available topic evidence has been evaluated\./);
   assert.match(app, /card\.dataset\.snapshotId = snapshot\.id/);
   assert.match(app, /What changed since the previous understanding/);
-  assert.match(app, /Uncertainty and conflicts/);
-  assert.match(app, /detail\.members\.length >= 20/);
+  assert.match(app, /Uncertainty, conflicts, and unknown applicability/);
+  assert.match(app, /detail\.members\.length >= LIVING_TOPIC_MAX_MEMBERS/);
+  assert.match(app, /Latest dated source in this snapshot/);
+  assert.match(app, /Historical context/);
   assert.match(app, /membership\.origin === "automatic"/);
   assert.match(app, /No snapshot is fully supported by the current topic evidence/);
   assert.match(app, /snapshot\.evidenceAvailability === "available"/);

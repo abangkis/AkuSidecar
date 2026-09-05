@@ -18,6 +18,8 @@ import {
   buildLivingTopicSeenPath,
   buildLivingTopicsPath,
   livingTopicStatusLabel,
+  livingTopicClaimGroups,
+  livingTopicStatementLabel,
   livingTopicUnderstandingLabel,
   normalizeLivingTopicName,
   normalizeLivingTopicNotifications,
@@ -62,12 +64,23 @@ test("Living Topics defaults to Understanding and bounds detail tabs", () => {
 
 test("Living Topics UI preserves bounded Full Stage 1 semantics", () => {
   assert.equal(LIVING_TOPIC_MAX_NAME, 120);
-  assert.equal(LIVING_TOPIC_MAX_MEMBERS, 20);
+  assert.equal(LIVING_TOPIC_MAX_MEMBERS, 30);
   assert.equal(Array.from(normalizeLivingTopicName(" x".repeat(200))).length, 120);
-  assert.equal(livingTopicStatusLabel("ready"), "Current understanding");
+  assert.equal(livingTopicStatusLabel("ready"), "Based on local evidence");
   assert.equal(livingTopicStatusLabel("no_change"), "No evidence changed");
   assert.equal(livingTopicStatusLabel("insufficient_evidence"), "More evidence needed");
   assert.equal(livingTopicUnderstandingLabel("pending"), "Refresh queued");
   assert.equal(livingTopicUnderstandingLabel("running"), "Updating understanding");
-  assert.equal(livingTopicUnderstandingLabel("current"), "Understanding current");
+  assert.equal(livingTopicUnderstandingLabel("current"), "Evidence evaluated");
+});
+
+test("completed rollout leads latest state while old resets and uncertain banked credits stay distinct", () => {
+  const old = { temporalStatus: "historical", eventStatus: "completed", assessment: "supported", centrality: "central", text: "Milestone reset" };
+  const rollout = { temporalStatus: "current", eventStatus: "completed", assessment: "supported", centrality: "central", text: "Rollout complete" };
+  const credits = { temporalStatus: "current", eventStatus: "unknown", assessment: "uncertain", centrality: "central", text: "Credit validity unconfirmed" };
+  const legacy = { assessment: "supported", centrality: "central", text: "Old snapshot without time metadata" };
+  assert.deepEqual(livingTopicClaimGroups([old, credits, rollout, legacy]), { current: [rollout], secondary: [], uncertain: [credits, legacy], historical: [old] });
+  assert.equal(livingTopicStatementLabel(rollout, "assessment"), "Latest known · supported · completed");
+  assert.equal(livingTopicStatementLabel({ kind: "resolved" }, "kind"), "No longer in projection");
+  assert.equal(livingTopicStatementLabel({ kind: "removed" }, "kind"), "No longer in projection");
 });

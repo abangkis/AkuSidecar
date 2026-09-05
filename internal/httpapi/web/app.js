@@ -43,6 +43,9 @@ import {
 } from "./library-state.js";
 import {
   buildLivingTopicMemberPath,
+  LIVING_TOPIC_MAX_MEMBERS,
+  livingTopicClaimGroups,
+  livingTopicStatementLabel,
   buildLivingTopicMemberMovePath,
   buildLivingTopicMembersPath,
   buildLivingTopicMoveUndoPath,
@@ -1146,7 +1149,7 @@ function scheduleLivingTopicUnderstandingPoll(topicId, announce = false) {
         if (announce) {
           topicsState.snapshotStatus = understanding === "failed"
             ? { kind: "error", message: detail.topic.understandingLastError || "Automatic understanding refresh failed.", snapshotId: "" }
-            : { kind: "success", message: understanding === "insufficient_evidence" ? "More evidence is needed to build a useful understanding." : "Current understanding is up to date.", snapshotId: detail.topic.latestSnapshot?.id || "" };
+            : { kind: "success", message: understanding === "insufficient_evidence" ? "More evidence is needed to build a useful understanding." : "Available topic evidence has been evaluated.", snapshotId: detail.topic.latestSnapshot?.id || "" };
         }
         renderLivingTopics();
         return;
@@ -1256,7 +1259,7 @@ function renderLivingTopicDetail() {
   $("#living-topic-includes").value = topic.includeCriteria || "";
   $("#living-topic-excludes").value = topic.excludeCriteria || "";
   $("#living-topic-rename-form").querySelector("button").disabled = topicsState.mutationLoading;
-  $("#living-topic-member-count").textContent = `${detail.members.length} / 20`;
+  $("#living-topic-member-count").textContent = `${detail.members.length} / ${LIVING_TOPIC_MAX_MEMBERS}`;
   const snapshotButton = $("#living-topic-snapshot-button");
   const understandingBusy = ["pending", "running"].includes(topic.understandingStatus);
   snapshotButton.disabled = topicsState.mutationLoading || understandingBusy;
@@ -1317,7 +1320,7 @@ function renderLivingTopicDetail() {
     empty.textContent = "No additional local Memory evidence matches this search.";
     candidates.replaceChildren(empty);
   } else {
-    candidates.replaceChildren(...available.map((item) => buildLivingTopicEvidenceCard(item, "Add", () => addLivingTopicMember(item.id), detail.members.length >= 20)));
+    candidates.replaceChildren(...available.map((item) => buildLivingTopicEvidenceCard(item, "Add", () => addLivingTopicMember(item.id), detail.members.length >= LIVING_TOPIC_MAX_MEMBERS)));
   }
   renderLivingTopicSnapshots(detail);
 }
@@ -1555,13 +1558,13 @@ function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
   const header = document.createElement("header");
   const identity = document.createElement("div");
   const label = document.createElement("strong");
-  label.textContent = "Current understanding";
+  label.textContent = "Latest understanding";
   const meta = document.createElement("small");
   const independentSources = Number(snapshot.independentSourceCount) || new Set(detail.members.map(livingTopicSourceOrigin).filter(Boolean)).size;
   const coverage = snapshot.coverageState ? `${humanize(snapshot.coverageState)} topic coverage` : "Topic coverage unknown";
   const diversity = snapshot.sourceDiversityState ? humanize(snapshot.sourceDiversityState) : "source diversity unknown";
   const platformDetail = snapshot.sourceDiversityState === "single_platform" ? ` · ${snapshot.sourcePlatformCount || 1} platform only` : "";
-  meta.textContent = `${detail.members.length} evidence · ${independentSources} independent source${independentSources === 1 ? "" : "s"} · ${coverage} · ${diversity}${platformDetail} · updated ${formatDate(snapshot.createdAt)}`;
+  meta.textContent = `${detail.members.length} evidence · ${independentSources} independent source${independentSources === 1 ? "" : "s"} · ${coverage} · ${diversity}${platformDetail}`;
   identity.append(label, meta);
   const badge = document.createElement("span");
   badge.className = "living-topic-understanding-badge";
@@ -1572,12 +1575,15 @@ function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
   overview.textContent = snapshot.overview || "No overview was produced.";
   card.append(header, overview);
 
-  const supported = (snapshot.claims || []).filter((claim) => claim.assessment === "supported" && claim.centrality !== "secondary");
-  const secondary = (snapshot.claims || []).filter((claim) => claim.assessment === "supported" && claim.centrality === "secondary");
-  const uncertain = (snapshot.claims || []).filter((claim) => claim.assessment !== "supported");
+  const timing = document.createElement("p");
+  timing.className = "library-state";
+  timing.textContent = `Evaluated ${formatDate(snapshot.createdAt)} · Latest dated source in this snapshot: ${snapshot.evidenceAsOf ? formatDate(snapshot.evidenceAsOf) : "unknown"}. Newer developments may be missing from local evidence.`;
+  card.append(timing);
+
+  const { current: supported, secondary, uncertain, historical } = livingTopicClaimGroups(snapshot.claims);
   if (supported.length) {
     const heading = document.createElement("h5");
-    heading.textContent = "What we currently understand";
+    heading.textContent = "Latest known state";
     card.append(heading, buildLivingTopicStatementList(supported, evidenceByID, "assessment"));
   }
   if (secondary.length) {
@@ -1587,13 +1593,18 @@ function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
   }
   if (uncertain.length) {
     const heading = document.createElement("h5");
-    heading.textContent = "Uncertainty and conflicts";
+    heading.textContent = "Uncertainty, conflicts, and unknown applicability";
     card.append(heading, buildLivingTopicStatementList(uncertain, evidenceByID, "assessment"));
   }
   if (snapshot.previousSnapshotId && snapshot.deltas?.length) {
     const heading = document.createElement("h5");
     heading.textContent = "What changed since the previous understanding";
     card.append(heading, buildLivingTopicStatementList(snapshot.deltas, evidenceByID, "kind"));
+  }
+  if (historical.length) {
+    const heading = document.createElement("h5");
+    heading.textContent = "Historical context";
+    card.append(heading, buildLivingTopicStatementList(historical, evidenceByID, "assessment"));
   }
   const technical = document.createElement("details");
   technical.className = "living-topic-generation-details";
@@ -1636,7 +1647,7 @@ function buildLivingTopicStatementList(values, evidenceByID, labelField) {
     const item = document.createElement("li");
     const label = document.createElement("span");
     label.className = "living-topic-statement-label";
-    label.textContent = String(value[labelField] || "evidence").replaceAll("_", " ");
+    label.textContent = livingTopicStatementLabel(value, labelField);
     const text = document.createElement("p");
     text.textContent = value.text;
     const evidence = (value.evidenceIds || []).map((id) => evidenceByID.get(id)).filter(Boolean);

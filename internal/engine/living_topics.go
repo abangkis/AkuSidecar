@@ -18,7 +18,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-const livingTopicUnderstandingContractVersion = "current-projection-v3"
+const livingTopicUnderstandingContractVersion = "current-projection-v4"
 
 func (e *Engine) LivingTopics(ctx context.Context) ([]domain.LivingTopic, error) {
 	return e.store.ListLivingTopics(ctx)
@@ -193,6 +193,7 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, 
 	}
 	// The previous projection is intentionally excluded from synthesis. It is
 	// used only after validation to classify the semantic delta.
+	sortLivingTopicEvidence(detail.Members)
 	result, usage, duration, err := e.topics.ResolveWithProfile(ctx, detail.Topic, detail.Members, nil, settings.ReasoningEvaluationProfile)
 	e.recordLivingTopicModelInvocation("living_topic_understanding", topicID, settings.ReasoningEvaluationProfile, usage, duration, err)
 	if err != nil {
@@ -201,6 +202,7 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, 
 	if result.Status == "insufficient_evidence" {
 		return nil, "insufficient_evidence", digest, nil
 	}
+	evidenceAsOf := annotateLivingTopicClaimTimes(result.Claims, detail.Members)
 	if previousPtr != nil && previousPtr.ContractVersion == livingTopicUnderstandingContractVersion {
 		result.Claims = reconcileLivingTopicClaimKeys(previousPtr.Claims, result.Claims)
 	}
@@ -212,6 +214,7 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, 
 		TopicID: topicID, Status: result.Status, Overview: result.Overview, Claims: result.Claims, Deltas: result.Deltas,
 		EvidenceIDs: evidenceIDs, EvidenceRoles: result.EvidenceRoles, InputDigest: digest,
 		ContractVersion: livingTopicUnderstandingContractVersion, MaterialChange: material, CoverageState: result.CoverageState,
+		EvidenceAsOf:         evidenceAsOf,
 		SourceDiversityState: diversityState, SourcePlatformCount: platformCount, IndependentSourceCount: sourceCount, IndependentClusterCount: clusterCount,
 	}
 	if previousPtr != nil {
@@ -242,18 +245,107 @@ func (e *Engine) evaluateLivingTopicUnderstanding(ctx context.Context, topicID, 
 func livingTopicCentralOverview(claims []domain.LivingTopicClaim) string {
 	parts := make([]string, 0, 3)
 	for _, claim := range claims {
-		if claim.Centrality == "central" && claim.Assessment == "supported" {
+		if claim.Centrality == "central" && claim.Assessment == "supported" && claim.TemporalStatus == "current" {
 			parts = append(parts, strings.TrimSpace(claim.Text))
 			if len(parts) == 3 {
 				break
 			}
 		}
 	}
+	if len(parts) == 0 {
+		return "The available evidence does not establish a supported latest state. Review the uncertainties and historical context below."
+	}
 	overview := []rune(strings.Join(parts, " "))
 	if len(overview) > 1200 {
 		overview = overview[:1200]
 	}
 	return strings.TrimSpace(string(overview))
+}
+
+// Publication time describes the supplied source, not when an event happened
+// or proof that no newer information exists. Missing dates remain unknown.
+func livingTopicPublishedTime(item domain.MemoryItem) time.Time {
+	if item.PublishedAt == nil {
+		return time.Time{}
+	}
+	value, _ := time.Parse(time.RFC3339Nano, *item.PublishedAt)
+	return value
+}
+
+func sortLivingTopicEvidence(items []domain.MemoryItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := livingTopicPublishedTime(items[i]), livingTopicPublishedTime(items[j])
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return items[i].ID < items[j].ID
+	})
+}
+
+func annotateLivingTopicClaimTimes(claims []domain.LivingTopicClaim, items []domain.MemoryItem) string {
+	dates := make(map[string]time.Time, len(items))
+	var newest time.Time
+	for _, item := range items {
+		date := livingTopicPublishedTime(item)
+		dates[item.ID] = date
+		if date.After(newest) {
+			newest = date
+		}
+	}
+	for i := range claims {
+		claims[i].LatestEvidenceAt = ""
+		var latest time.Time
+		for _, id := range claims[i].EvidenceIDs {
+			if dates[id].After(latest) {
+				latest = dates[id]
+			}
+		}
+		if !latest.IsZero() {
+			claims[i].LatestEvidenceAt = latest.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	priority := func(status string) int {
+		switch status {
+		case "current":
+			return 0
+		case "historical":
+			return 2
+		default:
+			return 1
+		}
+	}
+	sort.SliceStable(claims, func(i, j int) bool {
+		if a, b := priority(claims[i].TemporalStatus), priority(claims[j].TemporalStatus); a != b {
+			return a < b
+		}
+		a, _ := time.Parse(time.RFC3339Nano, claims[i].LatestEvidenceAt)
+		b, _ := time.Parse(time.RFC3339Nano, claims[j].LatestEvidenceAt)
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		terminal := func(status string) bool { return status == "completed" || status == "cancelled" }
+		if terminal(claims[i].EventStatus) != terminal(claims[j].EventStatus) {
+			return terminal(claims[i].EventStatus)
+		}
+		return claims[i].Key < claims[j].Key
+	})
+	if newest.IsZero() {
+		return ""
+	}
+	return newest.UTC().Format(time.RFC3339Nano)
+}
+
+func (e *Engine) livingTopicWithRoutingContext(ctx context.Context, topic domain.LivingTopic) (domain.LivingTopic, error) {
+	detail, err := e.store.LivingTopicDetail(ctx, topic.ID)
+	if err != nil {
+		return topic, err
+	}
+	sortLivingTopicEvidence(detail.Members)
+	if len(detail.Members) > 5 {
+		detail.Members = detail.Members[:5]
+	}
+	topic.RoutingContext = detail.Members
+	return topic, nil
 }
 
 func livingTopicClaimsMateriallyChanged(previous, current []domain.LivingTopicClaim) bool {
@@ -264,7 +356,7 @@ func livingTopicClaimKeys(claims []domain.LivingTopicClaim) []string {
 	keys := make([]string, 0, len(claims))
 	for _, claim := range claims {
 		key := strings.ToLower(strings.TrimSpace(claim.Key))
-		keys = append(keys, strings.Join([]string{key, strings.ToLower(strings.TrimSpace(claim.MaterialValue)), claim.Centrality, claim.Assessment, strings.ToLower(strings.TrimSpace(claim.Subtopic))}, "|"))
+		keys = append(keys, strings.Join([]string{key, strings.ToLower(strings.TrimSpace(claim.MaterialValue)), claim.Centrality, claim.Assessment, strings.ToLower(strings.TrimSpace(claim.Subtopic)), claim.TemporalStatus, claim.EventStatus}, "|"))
 	}
 	sort.Strings(keys)
 	return keys
@@ -284,7 +376,7 @@ func livingTopicClaimDeltas(previous *domain.LivingTopicSnapshot, current []doma
 		old, exists := prior[key]
 		if !exists {
 			deltas = append(deltas, domain.LivingTopicDelta{Kind: "new", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
-		} else if old.Assessment != claim.Assessment || old.Centrality != claim.Centrality || old.Subtopic != claim.Subtopic || old.MaterialValue != claim.MaterialValue {
+		} else if old.Assessment != claim.Assessment || old.Centrality != claim.Centrality || old.Subtopic != claim.Subtopic || old.MaterialValue != claim.MaterialValue || old.TemporalStatus != claim.TemporalStatus || old.EventStatus != claim.EventStatus {
 			deltas = append(deltas, domain.LivingTopicDelta{Kind: "updated", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
 		}
 		delete(prior, key)
@@ -292,8 +384,14 @@ func livingTopicClaimDeltas(previous *domain.LivingTopicSnapshot, current []doma
 			return deltas
 		}
 	}
-	for _, claim := range prior {
-		deltas = append(deltas, domain.LivingTopicDelta{Kind: "resolved", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
+	priorKeys := make([]string, 0, len(prior))
+	for key := range prior {
+		priorKeys = append(priorKeys, key)
+	}
+	sort.Strings(priorKeys)
+	for _, key := range priorKeys {
+		claim := prior[key]
+		deltas = append(deltas, domain.LivingTopicDelta{Kind: "removed", Text: claim.Text, EvidenceIDs: claim.EvidenceIDs})
 		if len(deltas) == 8 {
 			break
 		}
@@ -550,6 +648,10 @@ func (e *Engine) activateLivingTopic(ctx context.Context, job domain.LivingTopic
 		result["stale"] = 1
 		return result, nil
 	}
+	topic, err = e.livingTopicWithRoutingContext(ctx, topic)
+	if err != nil {
+		return result, err
+	}
 	items, err := e.store.LivingTopicActivationItems(ctx, topic.ID, store.LivingTopicActivationScanLimit)
 	if err != nil {
 		return result, err
@@ -705,6 +807,10 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 		if score >= 0.70 {
 			decisions = append(decisions, domain.LivingTopicRoutingDecision{TopicID: topic.ID, Match: true, Confidence: score, Mode: "deterministic", Reason: reason})
 		} else {
+			topic, err = e.livingTopicWithRoutingContext(ctx, topic)
+			if err != nil {
+				return nil, nil, err
+			}
 			remaining = append(remaining, topic)
 		}
 	}

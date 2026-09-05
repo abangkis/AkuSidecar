@@ -205,6 +205,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 			if err := migrateSchema23To24(ctx, s.db); err != nil {
 				return fmt.Errorf("migrate schema 23 to 24: %w", err)
 			}
+			version = "24"
+		}
+		if version == "24" {
+			if err := migrateSchema24To25(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema 24 to 25: %w", err)
+			}
 			version = schemaVersion
 		}
 		if version != schemaVersion {
@@ -620,6 +626,41 @@ func migrateSchema23To24(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value='24' WHERE key='schema_version'`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// V4 stores publication coverage separately from evaluation time. Previous
+// snapshots are immutable; pending work is coalesced into one rebaseline.
+func migrateSchema24To25(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('living_topic_snapshots') WHERE name='evidence_as_of'`).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE living_topic_snapshots ADD COLUMN evidence_as_of TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE living_topic_understanding_jobs SET trigger='migration_rebaseline_v4'
+		WHERE status='pending';
+		UPDATE living_topics
+		SET understanding_status='pending',understanding_input_digest='',understanding_trigger='migration_rebaseline_v4',understanding_last_error=''
+		WHERE EXISTS (SELECT 1 FROM living_topic_memberships m WHERE m.topic_id=living_topics.id);
+		INSERT INTO living_topic_understanding_jobs(id,topic_id,status,trigger,queued_at)
+		SELECT 'topic_understanding_rebaseline_v4:' || t.id,t.id,'pending','migration_rebaseline_v4',strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		FROM living_topics t
+		WHERE EXISTS (SELECT 1 FROM living_topic_memberships m WHERE m.topic_id=t.id)
+		  AND NOT EXISTS (SELECT 1 FROM living_topic_understanding_jobs j WHERE j.topic_id=t.id AND j.status IN ('pending','running'))
+		ON CONFLICT(id) DO NOTHING;
+		UPDATE meta SET value='25' WHERE key='schema_version'`); err != nil {
 		return err
 	}
 	return tx.Commit()

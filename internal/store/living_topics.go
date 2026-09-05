@@ -19,7 +19,7 @@ const (
 	LivingTopicMaxCriteriaRunes    = 1200
 	LivingTopicMaxAliases          = 12
 	LivingTopicMaxAliasRunes       = 80
-	LivingTopicMaxMembers          = 20
+	LivingTopicMaxMembers          = 30
 	LivingTopicMaxHistory          = 20
 )
 
@@ -29,7 +29,7 @@ var (
 	ErrLivingTopicDescription = errors.New("living topic description cannot exceed 1200 characters")
 	ErrLivingTopicCriteria    = errors.New("living topic include/exclude criteria cannot exceed 1200 characters")
 	ErrLivingTopicAliases     = errors.New("living topic aliases require at most 12 unique values of 1-80 characters")
-	ErrLivingTopicMemberMax   = errors.New("living topic already contains 20 Memory items")
+	ErrLivingTopicMemberMax   = errors.New("living topic already contains 30 Memory items")
 )
 
 func normalizeLivingTopicName(value string) (string, error) {
@@ -445,7 +445,7 @@ func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.L
 		}
 		snapshots[index].IsCurrent = index == 0 &&
 			topic.UnderstandingStatus == "current" &&
-			snapshots[index].ContractVersion == "current-projection-v3" &&
+			snapshots[index].ContractVersion == "current-projection-v4" &&
 			snapshots[index].InputDigest == topic.UnderstandingInputDigest &&
 			activeCount > 0
 	}
@@ -454,7 +454,7 @@ func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.L
 
 func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.LivingTopicSnapshot) (domain.LivingTopicSnapshot, error) {
 	if strings.TrimSpace(value.ContractVersion) == "" {
-		value.ContractVersion = "current-projection-v3"
+		value.ContractVersion = "current-projection-v4"
 		value.MaterialChange = true
 	}
 	if strings.TrimSpace(value.CoverageState) == "" {
@@ -495,11 +495,11 @@ func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.Living
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO living_topic_snapshots(
 		 id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,
-		 contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at,evidence_as_of
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		value.ID, value.TopicID, value.Version, value.Status, value.Overview, string(claims), string(deltas), string(evidence), string(evidenceRoles), value.InputDigest,
 		value.ContractVersion, value.MaterialChange, value.CoverageState, value.SourceDiversityState, value.SourcePlatformCount, value.IndependentSourceCount, value.IndependentClusterCount,
-		value.Provider, value.Model, value.Effort, value.DurationMS, string(usage), nullableText(value.PreviousSnapshotID), value.CreatedAt); err != nil {
+		value.Provider, value.Model, value.Effort, value.DurationMS, string(usage), nullableText(value.PreviousSnapshotID), value.CreatedAt, value.EvidenceAsOf); err != nil {
 		return domain.LivingTopicSnapshot{}, fmt.Errorf("save living topic snapshot: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE living_topics SET updated_at=? WHERE id=?`, value.CreatedAt, value.TopicID); err != nil {
@@ -540,7 +540,7 @@ func nullableText(value string) any {
 func (s *Store) LatestLivingTopicSnapshot(ctx context.Context, topicID string) (domain.LivingTopicSnapshot, error) {
 	return scanLivingTopicSnapshot(s.db.QueryRowContext(ctx, `
 		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,
-		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
+		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at,evidence_as_of
 		FROM living_topic_snapshots WHERE topic_id=? ORDER BY version DESC LIMIT 1`, topicID))
 }
 
@@ -550,8 +550,8 @@ func (s *Store) LatestLivingTopicSnapshot(ctx context.Context, topicID string) (
 func (s *Store) LatestPublishedLivingTopicSnapshot(ctx context.Context, topicID string) (domain.LivingTopicSnapshot, error) {
 	return scanLivingTopicSnapshot(s.db.QueryRowContext(ctx, `
 		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,
-		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v3' ORDER BY version DESC LIMIT 1`, topicID))
+		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at,evidence_as_of
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v4' ORDER BY version DESC LIMIT 1`, topicID))
 }
 
 func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit int) ([]domain.LivingTopicSnapshot, error) {
@@ -560,8 +560,8 @@ func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit 
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,
-		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at
-		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND (contract_version='legacy-v1' OR (contract_version IN ('current-projection-v2','current-projection-v3') AND material_change=1) OR id=(SELECT id FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v3' ORDER BY version DESC LIMIT 1)) ORDER BY version DESC LIMIT ?`, topicID, topicID, limit)
+		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at,evidence_as_of
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND (contract_version='legacy-v1' OR (contract_version IN ('current-projection-v2','current-projection-v3','current-projection-v4') AND material_change=1) OR version IN (SELECT MAX(version) FROM living_topic_snapshots WHERE topic_id=? AND status='ready' GROUP BY contract_version)) ORDER BY version DESC LIMIT ?`, topicID, topicID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +584,7 @@ func scanLivingTopicSnapshot(row livingTopicScanner) (domain.LivingTopicSnapshot
 	var claims, deltas, evidence, evidenceRoles, usage string
 	var previous sql.NullString
 	err := row.Scan(&value.ID, &value.TopicID, &value.Version, &value.Status, &value.Overview, &claims, &deltas, &evidence, &evidenceRoles, &value.InputDigest, &value.ContractVersion, &value.MaterialChange, &value.CoverageState, &value.SourceDiversityState, &value.SourcePlatformCount, &value.IndependentSourceCount, &value.IndependentClusterCount,
-		&value.Provider, &value.Model, &value.Effort, &value.DurationMS, &usage, &previous, &value.CreatedAt)
+		&value.Provider, &value.Model, &value.Effort, &value.DurationMS, &usage, &previous, &value.CreatedAt, &value.EvidenceAsOf)
 	if err != nil {
 		return domain.LivingTopicSnapshot{}, err
 	}

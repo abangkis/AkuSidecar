@@ -16,15 +16,17 @@
           "assessment": { "type": "string", "enum": ["supported", "mixed", "uncertain", "unavailable"] },
           "centrality": { "type": "string", "enum": ["central", "secondary"] },
           "subtopic": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "temporalStatus": { "type": "string", "enum": ["current", "historical", "unknown"] },
+          "eventStatus": { "type": "string", "enum": ["announced", "ongoing", "completed", "cancelled", "unknown"] },
           "evidenceAliases": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 20,
+            "maxItems": 30,
             "uniqueItems": true,
             "items": { "type": "string", "pattern": "^evidence_[0-9]{3}$" }
           }
         },
-        "required": ["key", "materialValue", "text", "assessment", "centrality", "subtopic", "evidenceAliases"],
+        "required": ["key", "materialValue", "text", "assessment", "centrality", "subtopic", "temporalStatus", "eventStatus", "evidenceAliases"],
         "additionalProperties": false
       }
     },
@@ -34,12 +36,12 @@
       "items": {
         "type": "object",
         "properties": {
-          "kind": { "type": "string", "enum": ["new", "updated", "contradicted", "resolved"] },
+          "kind": { "type": "string", "enum": ["new", "updated", "contradicted", "removed"] },
           "text": { "type": "string", "minLength": 1, "maxLength": 500 },
           "evidenceAliases": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 20,
+            "maxItems": 30,
             "uniqueItems": true,
             "items": { "type": "string", "pattern": "^evidence_[0-9]{3}$" }
           }
@@ -51,7 +53,7 @@
     "evidenceRoles": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 20,
+      "maxItems": 30,
       "items": {
         "type": "object",
         "properties": {

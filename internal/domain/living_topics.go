@@ -28,6 +28,10 @@ type LivingTopic struct {
 	UnderstandingInputDigest string               `json:"-"`
 	CreatedAt                string               `json:"createdAt"`
 	UpdatedAt                string               `json:"updatedAt"`
+	// RoutingContext is host-populated with a bounded, newest-first selection
+	// of attached evidence. It is an internal resolver input and must never be
+	// serialized as part of the public topic contract.
+	RoutingContext []MemoryItem `json:"-"`
 }
 
 type LivingTopicNotificationSummary struct {
@@ -133,13 +137,16 @@ type LivingTopicUnderstandingJob struct {
 }
 
 type LivingTopicClaim struct {
-	Key           string   `json:"key,omitempty"`
-	MaterialValue string   `json:"materialValue,omitempty"`
-	Text          string   `json:"text"`
-	Assessment    string   `json:"assessment"`
-	Centrality    string   `json:"centrality,omitempty"`
-	Subtopic      string   `json:"subtopic,omitempty"`
-	EvidenceIDs   []string `json:"evidenceIds"`
+	Key              string   `json:"key,omitempty"`
+	MaterialValue    string   `json:"materialValue,omitempty"`
+	Text             string   `json:"text"`
+	Assessment       string   `json:"assessment"`
+	Centrality       string   `json:"centrality,omitempty"`
+	Subtopic         string   `json:"subtopic,omitempty"`
+	TemporalStatus   string   `json:"temporalStatus"`
+	EventStatus      string   `json:"eventStatus"`
+	LatestEvidenceAt string   `json:"latestEvidenceAt,omitempty"`
+	EvidenceIDs      []string `json:"evidenceIds"`
 }
 
 // LivingTopicEvidenceRole is topic-relative. Membership answers whether an
@@ -187,6 +194,7 @@ type LivingTopicSnapshot struct {
 	IsCurrent               bool                      `json:"isCurrent"`
 	ActiveEvidenceCount     int                       `json:"activeEvidenceCount"`
 	EvidenceAvailability    string                    `json:"evidenceAvailability"`
+	EvidenceAsOf            string                    `json:"evidenceAsOf,omitempty"`
 }
 
 type LivingTopicDetail struct {

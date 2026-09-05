@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 24
+const SchemaVersion = 25
 
-const schemaVersion = "24"
+const schemaVersion = "25"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -339,6 +339,7 @@ CREATE TABLE IF NOT EXISTS living_topic_snapshots (
   deltas_json TEXT NOT NULL DEFAULT '[]',
   evidence_ids_json TEXT NOT NULL DEFAULT '[]',
   evidence_roles_json TEXT NOT NULL DEFAULT '[]',
+  evidence_as_of TEXT NOT NULL DEFAULT '',
   input_digest TEXT NOT NULL,
   contract_version TEXT NOT NULL DEFAULT 'legacy-v1',
   material_change INTEGER NOT NULL DEFAULT 1 CHECK (material_change IN (0,1)),
