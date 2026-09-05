@@ -18,7 +18,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-const livingTopicUnderstandingContractVersion = "current-projection-v4"
+const livingTopicUnderstandingContractVersion = "current-projection-v5"
 
 func (e *Engine) LivingTopics(ctx context.Context) ([]domain.LivingTopic, error) {
 	return e.store.ListLivingTopics(ctx)

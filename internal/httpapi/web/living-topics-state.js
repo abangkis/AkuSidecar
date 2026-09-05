@@ -85,6 +85,7 @@ export function livingTopicStatusLabel(status) {
 }
 
 export function livingTopicUnderstandingLabel(status) {
+  if (status === "needs_refresh") return "Refresh needed";
   if (status === "pending") return "Refresh queued";
   if (status === "running") return "Updating understanding";
   if (status === "current") return "Evidence evaluated";

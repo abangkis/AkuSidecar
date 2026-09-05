@@ -11,6 +11,9 @@
         "type": "object",
         "properties": {
           "key": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "lifecycleSubject": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "lifecycleEvidenceAlias": { "type": "string", "anyOf": [{ "type": "string", "maxLength": 0 }, { "type": "string", "pattern": "^evidence_[0-9]{3}$" }] },
+          "lifecycleEvidenceQuote": { "type": "string", "maxLength": 460 },
           "materialValue": { "type": "string", "minLength": 1, "maxLength": 500 },
           "text": { "type": "string", "minLength": 1, "maxLength": 500 },
           "assessment": { "type": "string", "enum": ["supported", "mixed", "uncertain", "unavailable"] },
@@ -26,7 +29,7 @@
             "items": { "type": "string", "pattern": "^evidence_[0-9]{3}$" }
           }
         },
-        "required": ["key", "materialValue", "text", "assessment", "centrality", "subtopic", "temporalStatus", "eventStatus", "evidenceAliases"],
+        "required": ["key", "lifecycleSubject", "lifecycleEvidenceAlias", "lifecycleEvidenceQuote", "materialValue", "text", "assessment", "centrality", "subtopic", "temporalStatus", "eventStatus", "evidenceAliases"],
         "additionalProperties": false
       }
     },

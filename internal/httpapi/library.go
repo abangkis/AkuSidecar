@@ -41,8 +41,11 @@ type libraryItemView struct {
 }
 
 type libraryTopicClaimView struct {
-	Text       string `json:"text"`
-	Assessment string `json:"assessment"`
+	Text             string `json:"text"`
+	Assessment       string `json:"assessment"`
+	TemporalStatus   string `json:"temporalStatus"`
+	EventStatus      string `json:"eventStatus"`
+	LatestEvidenceAt string `json:"latestEvidenceAt,omitempty"`
 }
 
 // libraryTopicKnowledgeView exposes only the current supported understanding
@@ -54,21 +57,27 @@ type libraryTopicKnowledgeView struct {
 	Overview        string                  `json:"overview"`
 	Claims          []libraryTopicClaimView `json:"claims"`
 	SnapshotVersion int                     `json:"snapshotVersion"`
-	UpdatedAt       string                  `json:"updatedAt"`
-	EvidenceCount   int                     `json:"evidenceCount"`
-	MatchReason     string                  `json:"matchReason"`
+	// UpdatedAt is snapshot regeneration time; EvidenceAsOf is the newest
+	// publication time represented by the supplied evidence.
+	UpdatedAt     string `json:"updatedAt"`
+	EvidenceAsOf  string `json:"evidenceAsOf,omitempty"`
+	EvidenceCount int    `json:"evidenceCount"`
+	MatchReason   string `json:"matchReason"`
 }
 
 func publicLibraryTopicKnowledge(value domain.ContentContextTopicInsight) libraryTopicKnowledgeView {
 	claims := make([]libraryTopicClaimView, 0, len(value.Claims))
 	for _, claim := range value.Claims {
-		if claim.Assessment == "supported" {
-			claims = append(claims, libraryTopicClaimView{Text: claim.Text, Assessment: claim.Assessment})
+		if claim.Assessment == "supported" && claim.TemporalStatus == "current" {
+			claims = append(claims, libraryTopicClaimView{
+				Text: claim.Text, Assessment: claim.Assessment, TemporalStatus: claim.TemporalStatus,
+				EventStatus: claim.EventStatus, LatestEvidenceAt: claim.LatestEvidenceAt,
+			})
 		}
 	}
 	return libraryTopicKnowledgeView{
 		TopicID: value.TopicID, TopicName: value.TopicName, Overview: value.Overview, Claims: claims,
-		SnapshotVersion: value.SnapshotVersion, UpdatedAt: value.UpdatedAt,
+		SnapshotVersion: value.SnapshotVersion, UpdatedAt: value.UpdatedAt, EvidenceAsOf: value.EvidenceAsOf,
 		EvidenceCount: value.EvidenceCount, MatchReason: value.MatchReason,
 	}
 }

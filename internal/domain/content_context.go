@@ -50,9 +50,12 @@ type ContentContextTopicInsight struct {
 	Overview        string             `json:"overview"`
 	Claims          []LivingTopicClaim `json:"claims"`
 	SnapshotVersion int                `json:"snapshotVersion"`
-	UpdatedAt       string             `json:"updatedAt"`
-	EvidenceCount   int                `json:"evidenceCount"`
-	MatchReason     string             `json:"matchReason"`
+	// UpdatedAt is the snapshot regeneration time. EvidenceAsOf is the
+	// newest publication time represented by the snapshot's supplied evidence.
+	UpdatedAt     string `json:"updatedAt"`
+	EvidenceAsOf  string `json:"evidenceAsOf,omitempty"`
+	EvidenceCount int    `json:"evidenceCount"`
+	MatchReason   string `json:"matchReason"`
 }
 
 type ContentContextFeedbackVerdict string

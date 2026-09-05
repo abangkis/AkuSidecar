@@ -161,10 +161,14 @@ func TestContentContextSurfacesOnlyCurrentSupportedLivingTopicKnowledge(t *testi
 	snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
 		TopicID: topic.ID, Status: "ready", Overview: "Quantum systems research has a source-backed result.",
 		Claims: []domain.LivingTopicClaim{
-			{Text: "The quantum systems result is supported.", Assessment: "supported", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The quantum systems result is supported.", Assessment: "supported", TemporalStatus: "current", EventStatus: "ongoing", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The earlier quantum systems result was completed.", Assessment: "supported", TemporalStatus: "historical", EventStatus: "completed", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The timing of a quantum systems result is unknown.", Assessment: "supported", TemporalStatus: "unknown", EventStatus: "unknown", EvidenceIDs: []string{evidence.ID}},
+			{Text: "A legacy quantum systems claim has no temporal classification.", Assessment: "supported", EventStatus: "ongoing", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The current quantum systems follow-up completed.", Assessment: "supported", TemporalStatus: "current", EventStatus: "completed", EvidenceIDs: []string{evidence.ID}},
 			{Text: "A second claim remains uncertain.", Assessment: "uncertain", EvidenceIDs: []string{evidence.ID}},
 		},
-		EvidenceIDs: []string{evidence.ID}, InputDigest: "topic-insight-digest",
+		EvidenceIDs: []string{evidence.ID}, InputDigest: "topic-insight-digest", CreatedAt: "2026-09-05T10:00:00Z", EvidenceAsOf: "2026-08-29T00:00:00Z",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,11 +184,11 @@ func TestContentContextSurfacesOnlyCurrentSupportedLivingTopicKnowledge(t *testi
 		t.Fatalf("topic insights=%+v", result.TopicInsights)
 	}
 	insight := result.TopicInsights[0]
-	if insight.TopicID != topic.ID || insight.TopicName != topic.Name || insight.EvidenceCount != 1 || insight.SnapshotVersion != snapshot.Version || insight.MatchReason == "" {
+	if insight.TopicID != topic.ID || insight.TopicName != topic.Name || insight.EvidenceCount != 1 || insight.SnapshotVersion != snapshot.Version || insight.UpdatedAt != snapshot.CreatedAt || insight.EvidenceAsOf != snapshot.EvidenceAsOf || insight.MatchReason == "" {
 		t.Fatalf("topic insight=%+v", insight)
 	}
-	if len(insight.Claims) != 1 || insight.Claims[0].Assessment != "supported" {
-		t.Fatalf("only supported claims should be projected: %+v", insight.Claims)
+	if len(insight.Claims) != 2 || insight.Claims[0].Assessment != "supported" || insight.Claims[0].TemporalStatus != "current" || insight.Claims[1].EventStatus != "completed" {
+		t.Fatalf("only current supported claims should be projected, including completed events: %+v", insight.Claims)
 	}
 	if _, err := state.RemoveLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
 		t.Fatal(err)
@@ -215,10 +219,13 @@ func TestLibrarySearchUsesCurrentSupportedLivingTopicKnowledgeReadOnly(t *testin
 	snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
 		TopicID: topic.ID, Status: "ready", Overview: "The current evidence describes advanced orchestration capabilities.",
 		Claims: []domain.LivingTopicClaim{
-			{Text: "Academic agent coordination is supported by the current evidence.", Assessment: "supported", EvidenceIDs: []string{evidence.ID}},
+			{Text: "Academic agent coordination is supported by the current evidence.", Assessment: "supported", TemporalStatus: "current", EventStatus: "ongoing", EvidenceIDs: []string{evidence.ID}},
+			{Text: "An earlier agent coordination release was completed.", Assessment: "supported", TemporalStatus: "historical", EventStatus: "completed", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The timing of another agent coordination release is unknown.", Assessment: "supported", TemporalStatus: "unknown", EventStatus: "unknown", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The current agent coordination follow-up completed.", Assessment: "supported", TemporalStatus: "current", EventStatus: "completed", EvidenceIDs: []string{evidence.ID}},
 			{Text: "A release date remains uncertain.", Assessment: "uncertain", EvidenceIDs: []string{evidence.ID}},
 		},
-		EvidenceIDs: []string{evidence.ID}, InputDigest: "library-topic-knowledge-digest",
+		EvidenceIDs: []string{evidence.ID}, InputDigest: "library-topic-knowledge-digest", CreatedAt: "2026-09-05T10:00:00Z", EvidenceAsOf: "2026-08-30T00:00:00Z",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -238,11 +245,11 @@ func TestLibrarySearchUsesCurrentSupportedLivingTopicKnowledgeReadOnly(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(insights) != 1 || insights[0].TopicID != topic.ID || insights[0].SnapshotVersion != snapshot.Version || insights[0].MatchReason == "" {
+	if len(insights) != 1 || insights[0].TopicID != topic.ID || insights[0].SnapshotVersion != snapshot.Version || insights[0].UpdatedAt != snapshot.CreatedAt || insights[0].EvidenceAsOf != snapshot.EvidenceAsOf || insights[0].MatchReason == "" {
 		t.Fatalf("topic knowledge=%+v", insights)
 	}
-	if len(insights[0].Claims) != 1 || insights[0].Claims[0].Assessment != "supported" {
-		t.Fatalf("only supported claims should be searchable: %+v", insights[0].Claims)
+	if len(insights[0].Claims) != 2 || insights[0].Claims[0].TemporalStatus != "current" || insights[0].Claims[1].EventStatus != "completed" {
+		t.Fatalf("only current supported claims should be searchable, including completed events: %+v", insights[0].Claims)
 	}
 	var afterActions, afterSnapshots int
 	if err := state.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_actions`).Scan(&afterActions); err != nil {
@@ -281,7 +288,7 @@ func TestLibrarySearchSuppressesLessSpecificLivingTopicSibling(t *testing.T) {
 		if _, err := state.AddLivingTopicMember(ctx, topic.ID, item.ID); err != nil {
 			t.Fatal(err)
 		}
-		snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{TopicID: topic.ID, Status: "ready", Overview: topic.Name + " current knowledge.", Claims: []domain.LivingTopicClaim{{Text: "Codex reset performance schedule is tracked.", Assessment: "supported", Centrality: "central", EvidenceIDs: []string{item.ID}}}, EvidenceIDs: []string{item.ID}, InputDigest: fmt.Sprintf("digest-%d", index)})
+		snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{TopicID: topic.ID, Status: "ready", Overview: topic.Name + " current knowledge.", Claims: []domain.LivingTopicClaim{{Text: "Codex reset performance schedule is tracked.", Assessment: "supported", Centrality: "central", TemporalStatus: "current", EventStatus: "ongoing", EvidenceIDs: []string{item.ID}}}, EvidenceIDs: []string{item.ID}, InputDigest: fmt.Sprintf("digest-%d", index)})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -2080,12 +2080,15 @@ function buildLibraryTopicKnowledgeCard(knowledge) {
   const title = document.createElement("strong");
   title.textContent = knowledge?.topicName || "Living Topic";
   const current = document.createElement("span");
-  current.textContent = "Current";
+  current.textContent = "Current supported";
   header.append(title, current);
   const overview = document.createElement("p");
   overview.textContent = knowledge?.overview || "Current supported understanding.";
   const claims = document.createElement("ul");
-  for (const claim of Array.isArray(knowledge?.claims) ? knowledge.claims.slice(0, 3) : []) {
+  const topicClaims = (Array.isArray(knowledge?.claims) ? knowledge.claims : [])
+    .filter((claim) => claim?.assessment === "supported" && claim?.temporalStatus === "current")
+    .slice(0, 3);
+  for (const claim of topicClaims) {
     const item = document.createElement("li");
     item.textContent = claim?.text || "";
     if (item.textContent) claims.append(item);
@@ -2095,7 +2098,8 @@ function buildLibraryTopicKnowledgeCard(knowledge) {
   meta.textContent = [
     `${Number(knowledge?.evidenceCount || 0)} active evidence`,
     knowledge?.snapshotVersion ? `snapshot ${knowledge.snapshotVersion}` : null,
-    knowledge?.updatedAt ? `updated ${formatDate(knowledge.updatedAt)}` : null,
+    knowledge?.evidenceAsOf ? `evidence through ${formatDate(knowledge.evidenceAsOf)}` : "evidence date unknown",
+    knowledge?.updatedAt ? `regenerated ${formatDate(knowledge.updatedAt)}` : null,
   ].filter(Boolean).join(" · ");
   const reason = document.createElement("small");
   reason.className = "library-topic-knowledge-reason";
@@ -7848,13 +7852,21 @@ function renderTimelineContentContextTopicInsight(insight) {
   overview.textContent = insight?.overview || "No current overview.";
   const claims = document.createElement("ul");
   claims.className = "timeline-content-context-topic-claims";
-  for (const claim of (insight?.claims || []).slice(0, 3)) {
+  for (const claim of (insight?.claims || [])
+    .filter((claim) => claim?.assessment === "supported" && claim?.temporalStatus === "current")
+    .slice(0, 3)) {
     const item = document.createElement("li");
     item.textContent = claim.text;
     claims.append(item);
   }
   const meta = document.createElement("small");
-  meta.textContent = `Current understanding · ${insight?.evidenceCount || 0} active evidence · v${insight?.snapshotVersion || 1}`;
+  meta.textContent = [
+    "Current supported understanding",
+    `${insight?.evidenceCount || 0} active evidence`,
+    `v${insight?.snapshotVersion || 1}`,
+    insight?.evidenceAsOf ? `evidence through ${formatDate(insight.evidenceAsOf)}` : "evidence date unknown",
+    insight?.updatedAt ? `regenerated ${formatDate(insight.updatedAt)}` : null,
+  ].filter(Boolean).join(" · ");
   const reason = document.createElement("span");
   reason.className = "timeline-content-context-reason";
   reason.textContent = String(insight?.matchReason || "Matches a current Living Topic understanding");

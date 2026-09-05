@@ -185,6 +185,12 @@ func (s *Store) LivingTopic(ctx context.Context, id string) (domain.LivingTopic,
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return domain.LivingTopic{}, err
 	}
+	if errors.Is(err, sql.ErrNoRows) && topic.UnderstandingStatus == "current" {
+		// An older contract cannot inherit the current proof requirements.
+		// This is a read-only presentation state; refresh remains explicit or
+		// driven by the next ordinary evidence/criteria change.
+		topic.UnderstandingStatus = "needs_refresh"
+	}
 	if err == nil {
 		memberIDs, memberErr := s.activeLivingTopicMemberIDs(ctx, topic.ID)
 		if memberErr != nil {
@@ -445,7 +451,7 @@ func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.L
 		}
 		snapshots[index].IsCurrent = index == 0 &&
 			topic.UnderstandingStatus == "current" &&
-			snapshots[index].ContractVersion == "current-projection-v4" &&
+			snapshots[index].ContractVersion == "current-projection-v5" &&
 			snapshots[index].InputDigest == topic.UnderstandingInputDigest &&
 			activeCount > 0
 	}
@@ -454,7 +460,7 @@ func annotateLivingTopicSnapshots(topic domain.LivingTopic, snapshots []domain.L
 
 func (s *Store) SaveLivingTopicSnapshot(ctx context.Context, value domain.LivingTopicSnapshot) (domain.LivingTopicSnapshot, error) {
 	if strings.TrimSpace(value.ContractVersion) == "" {
-		value.ContractVersion = "current-projection-v4"
+		value.ContractVersion = "current-projection-v5"
 		value.MaterialChange = true
 	}
 	if strings.TrimSpace(value.CoverageState) == "" {
@@ -551,7 +557,7 @@ func (s *Store) LatestPublishedLivingTopicSnapshot(ctx context.Context, topicID 
 	return scanLivingTopicSnapshot(s.db.QueryRowContext(ctx, `
 		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,
 		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at,evidence_as_of
-		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v4' ORDER BY version DESC LIMIT 1`, topicID))
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND contract_version='current-projection-v5' ORDER BY version DESC LIMIT 1`, topicID))
 }
 
 func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit int) ([]domain.LivingTopicSnapshot, error) {
@@ -561,7 +567,7 @@ func (s *Store) LivingTopicSnapshots(ctx context.Context, topicID string, limit 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,topic_id,version,status,overview,claims_json,deltas_json,evidence_ids_json,evidence_roles_json,input_digest,contract_version,material_change,coverage_state,source_diversity_state,source_platform_count,independent_source_count,independent_cluster_count,
 		       provider,model,effort,duration_ms,usage_json,previous_snapshot_id,created_at,evidence_as_of
-		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND (contract_version='legacy-v1' OR (contract_version IN ('current-projection-v2','current-projection-v3','current-projection-v4') AND material_change=1) OR version IN (SELECT MAX(version) FROM living_topic_snapshots WHERE topic_id=? AND status='ready' GROUP BY contract_version)) ORDER BY version DESC LIMIT ?`, topicID, topicID, limit)
+		FROM living_topic_snapshots WHERE topic_id=? AND status='ready' AND (contract_version='legacy-v1' OR (contract_version IN ('current-projection-v2','current-projection-v3','current-projection-v4','current-projection-v5') AND material_change=1) OR version IN (SELECT MAX(version) FROM living_topic_snapshots WHERE topic_id=? AND status='ready' GROUP BY contract_version)) ORDER BY version DESC LIMIT ?`, topicID, topicID, limit)
 	if err != nil {
 		return nil, err
 	}

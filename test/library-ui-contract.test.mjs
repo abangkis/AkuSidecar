@@ -22,7 +22,9 @@ test("Library search surfaces current Living Topic knowledge separately", () => 
   assert.match(app, /buildLibraryRequestPath\([\s\S]*?false,\s*true,\s*\)/);
   assert.match(app, /function renderLibraryTopicKnowledge\(\)/);
   assert.match(app, /function buildLibraryTopicKnowledgeCard\(knowledge\)/);
-  assert.match(app, /knowledge\.claims\.slice\(0, 3\)/);
+  assert.match(app, /knowledge\?\.claims[\s\S]*?temporalStatus === "current"[\s\S]*?slice\(0, 3\)/);
+  assert.match(app, /knowledge\?\.evidenceAsOf \? `evidence through/);
+  assert.match(app, /regenerated \$\{formatDate\(knowledge\.updatedAt\)\}/);
   assert.match(styles, /\.library-topic-knowledge \{/);
   assert.match(styles, /\.library-topic-knowledge-results \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
 });

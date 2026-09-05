@@ -1,5 +1,9 @@
 # Living Topics Current Projection V4
 
+The temporal foundation below is retained by
+[lifecycle proof V5](living-topics-lifecycle-proof-v5.md), which adds stricter
+terminal-status evidence requirements and supersedes V4 current authority.
+
 V4 separates the latest state supported by local evidence from historical facts.
 It does not claim that local capture covers every development in the world.
 
@@ -15,6 +19,12 @@ It does not claim that local capture covers every development in the world.
 - The overview includes only current, central, supported claims. Historical
   evidence remains visible below the latest state and uncertainties. With no
   supported latest state, the overview explicitly says so.
+- Library Search and Timeline Related Context use only current, supported
+  claims from a current projection. Historical and temporally unknown claims
+  remain available on the topic page, but cannot supply current topic matches
+  or insights. A completed event remains eligible when it is the latest known
+  supported state. Evidence publication time is distinct from snapshot
+  regeneration time; regenerating a projection does not make its evidence newer.
 - Temporal and event-status transitions create material deltas. Claim removal
   is `removed`; legacy `resolved` is presented as no longer in the projection.
   Neither label means the event completed. New corroboration alone need not

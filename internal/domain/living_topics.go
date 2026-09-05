@@ -101,6 +101,15 @@ type LivingTopicRoutingExample struct {
 	Item    MemoryItem `json:"item"`
 }
 
+// LivingTopicLifecycleProof records the bounded source excerpt that allowed
+// the host to retain a terminal lifecycle status. The excerpt is checked
+// against the supplied retained source text before it is copied here; it is
+// not a semantic entailment or a replacement for source review.
+type LivingTopicLifecycleProof struct {
+	EvidenceID string `json:"evidenceId"`
+	Quote      string `json:"quote"`
+}
+
 type LivingTopicRoutingJob struct {
 	ID         string `json:"id"`
 	SessionID  string `json:"sessionId"`
@@ -137,16 +146,18 @@ type LivingTopicUnderstandingJob struct {
 }
 
 type LivingTopicClaim struct {
-	Key              string   `json:"key,omitempty"`
-	MaterialValue    string   `json:"materialValue,omitempty"`
-	Text             string   `json:"text"`
-	Assessment       string   `json:"assessment"`
-	Centrality       string   `json:"centrality,omitempty"`
-	Subtopic         string   `json:"subtopic,omitempty"`
-	TemporalStatus   string   `json:"temporalStatus"`
-	EventStatus      string   `json:"eventStatus"`
-	LatestEvidenceAt string   `json:"latestEvidenceAt,omitempty"`
-	EvidenceIDs      []string `json:"evidenceIds"`
+	Key              string                     `json:"key,omitempty"`
+	MaterialValue    string                     `json:"materialValue,omitempty"`
+	Text             string                     `json:"text"`
+	Assessment       string                     `json:"assessment"`
+	Centrality       string                     `json:"centrality,omitempty"`
+	Subtopic         string                     `json:"subtopic,omitempty"`
+	LifecycleSubject string                     `json:"lifecycleSubject,omitempty"`
+	TemporalStatus   string                     `json:"temporalStatus"`
+	EventStatus      string                     `json:"eventStatus"`
+	LifecycleProof   *LivingTopicLifecycleProof `json:"lifecycleProof,omitempty"`
+	LatestEvidenceAt string                     `json:"latestEvidenceAt,omitempty"`
+	EvidenceIDs      []string                   `json:"evidenceIds"`
 }
 
 // LivingTopicEvidenceRole is topic-relative. Membership answers whether an

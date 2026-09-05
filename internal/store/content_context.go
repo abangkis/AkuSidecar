@@ -148,7 +148,7 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 		claimText := make([]string, 0, 3)
 		for _, centrality := range []string{"central", "secondary"} {
 			for _, claim := range snapshot.Claims {
-				if claim.Assessment != "supported" || (centrality == "central" && claim.Centrality != "" && claim.Centrality != "central") || (centrality == "secondary" && claim.Centrality != "secondary") {
+				if !livingTopicKnowledgeClaimEligible(claim) || (centrality == "central" && claim.Centrality != "" && claim.Centrality != "central") || (centrality == "secondary" && claim.Centrality != "secondary") {
 					continue
 				}
 				claims = append(claims, claim)
@@ -166,13 +166,14 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 		}
 		byID[topic.ID] = domain.ContentContextTopicInsight{
 			TopicID: topic.ID, TopicName: topic.Name, Overview: snapshot.Overview, Claims: claims,
-			SnapshotVersion: snapshot.Version, UpdatedAt: snapshot.CreatedAt,
+			SnapshotVersion: snapshot.Version, UpdatedAt: snapshot.CreatedAt, EvidenceAsOf: snapshot.EvidenceAsOf,
 			EvidenceCount: snapshot.ActiveEvidenceCount,
 		}
+		evidenceAsOf := strings.TrimSpace(snapshot.EvidenceAsOf)
 		identityScores[topic.ID] = identityScore
 		candidates = append(candidates, contentcontext.Candidate{Item: domain.MemoryItem{
 			ID: topic.ID, Title: topic.Name, Summary: strings.Join(append([]string{snapshot.Overview, topic.Description}, claimText...), " "),
-			Tags: topic.Aliases, Facets: []string{topic.Name}, LifecycleState: domain.MemoryStateActive, UpdatedAt: snapshot.CreatedAt,
+			Tags: topic.Aliases, Facets: []string{topic.Name}, LifecycleState: domain.MemoryStateActive, UpdatedAt: evidenceAsOf,
 		}})
 	}
 	if len(candidates) == 0 {
@@ -202,6 +203,12 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 		}
 	}
 	return result, nil
+}
+
+// Current topic knowledge requires explicit temporal applicability. This also
+// fails closed for legacy snapshots whose claims have no temporal metadata.
+func livingTopicKnowledgeClaimEligible(claim domain.LivingTopicClaim) bool {
+	return claim.Assessment == "supported" && claim.TemporalStatus == "current"
 }
 
 // AddContentContextFeedback records an explicit relationship decision only for

@@ -137,9 +137,13 @@ func TestLibrarySearchCanIncludeCurrentLivingTopicKnowledge(t *testing.T) {
 	digest := "http-library-topic-knowledge"
 	snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
 		TopicID: topic.ID, Status: "ready", InputDigest: digest,
-		Overview: "GPT Astra has source-backed orchestration capabilities.",
+		Overview:  "GPT Astra has source-backed orchestration capabilities.",
+		CreatedAt: "2026-09-05T10:00:00Z", EvidenceAsOf: "2026-08-30T00:00:00Z",
 		Claims: []domain.LivingTopicClaim{
-			{Text: "Academic agent coordination is supported.", Assessment: "supported", EvidenceIDs: []string{evidence.ID}},
+			{Text: "Academic agent coordination is supported.", Assessment: "supported", TemporalStatus: "current", EventStatus: "ongoing", EvidenceIDs: []string{evidence.ID}},
+			{Text: "An earlier agent coordination release was completed.", Assessment: "supported", TemporalStatus: "historical", EventStatus: "completed", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The timing of another agent coordination release is unknown.", Assessment: "supported", TemporalStatus: "unknown", EventStatus: "unknown", EvidenceIDs: []string{evidence.ID}},
+			{Text: "The current agent coordination follow-up completed.", Assessment: "supported", TemporalStatus: "current", EventStatus: "completed", EvidenceIDs: []string{evidence.ID}},
 			{Text: "A release date remains uncertain.", Assessment: "uncertain", EvidenceIDs: []string{evidence.ID}},
 		},
 		EvidenceIDs: []string{evidence.ID},
@@ -174,11 +178,11 @@ func TestLibrarySearchCanIncludeCurrentLivingTopicKnowledge(t *testing.T) {
 		t.Fatalf("topic knowledge=%+v", payload.TopicKnowledge)
 	}
 	knowledge := payload.TopicKnowledge[0]
-	if knowledge.TopicID != topic.ID || knowledge.TopicName != topic.Name || knowledge.SnapshotVersion != snapshot.Version || knowledge.EvidenceCount != 1 || knowledge.MatchReason == "" {
+	if knowledge.TopicID != topic.ID || knowledge.TopicName != topic.Name || knowledge.SnapshotVersion != snapshot.Version || knowledge.UpdatedAt != snapshot.CreatedAt || knowledge.EvidenceAsOf != snapshot.EvidenceAsOf || knowledge.EvidenceCount != 1 || knowledge.MatchReason == "" {
 		t.Fatalf("knowledge=%+v", knowledge)
 	}
-	if len(knowledge.Claims) != 1 || knowledge.Claims[0].Assessment != "supported" {
-		t.Fatalf("supported claims=%+v", knowledge.Claims)
+	if len(knowledge.Claims) != 2 || knowledge.Claims[0].Assessment != "supported" || knowledge.Claims[0].TemporalStatus != "current" || knowledge.Claims[1].EventStatus != "completed" {
+		t.Fatalf("current supported claims=%+v", knowledge.Claims)
 	}
 	knowledgeJSON, err := json.Marshal(knowledge)
 	if err != nil {

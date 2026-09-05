@@ -46,6 +46,9 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "Undo",
     "buildTimelineContentContextPath(entry.id)",
   ]) assert.match(app, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `app missing ${marker}`);
+  assert.match(app, /Current supported understanding/);
+  assert.match(app, /insight\?\.evidenceAsOf \? `evidence through/);
+  assert.match(app, /claim\?\.temporalStatus === "current"/);
   assert.match(state, /CONTENT_CONTEXT_DEFAULT_LIMIT = 3/);
   assert.match(state, /CONTENT_CONTEXT_MAX_LIMIT = 5/);
   assert.match(state, /function backToTopBoundaryBottom/);

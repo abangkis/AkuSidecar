@@ -44,6 +44,7 @@ type contentContextTopicInsightView struct {
 	Claims          []domain.LivingTopicClaim `json:"claims"`
 	SnapshotVersion int                       `json:"snapshotVersion"`
 	UpdatedAt       string                    `json:"updatedAt"`
+	EvidenceAsOf    string                    `json:"evidenceAsOf,omitempty"`
 	EvidenceCount   int                       `json:"evidenceCount"`
 	MatchReason     string                    `json:"matchReason"`
 }
@@ -51,7 +52,7 @@ type contentContextTopicInsightView struct {
 func publicContentContextTopicInsight(value domain.ContentContextTopicInsight) contentContextTopicInsightView {
 	return contentContextTopicInsightView{
 		TopicID: value.TopicID, TopicName: value.TopicName, Overview: value.Overview, Claims: value.Claims,
-		SnapshotVersion: value.SnapshotVersion, UpdatedAt: value.UpdatedAt,
+		SnapshotVersion: value.SnapshotVersion, UpdatedAt: value.UpdatedAt, EvidenceAsOf: value.EvidenceAsOf,
 		EvidenceCount: value.EvidenceCount, MatchReason: value.MatchReason,
 	}
 }

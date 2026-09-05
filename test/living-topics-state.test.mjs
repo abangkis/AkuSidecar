@@ -72,6 +72,7 @@ test("Living Topics UI preserves bounded Full Stage 1 semantics", () => {
   assert.equal(livingTopicUnderstandingLabel("pending"), "Refresh queued");
   assert.equal(livingTopicUnderstandingLabel("running"), "Updating understanding");
   assert.equal(livingTopicUnderstandingLabel("current"), "Evidence evaluated");
+  assert.equal(livingTopicUnderstandingLabel("needs_refresh"), "Refresh needed");
 });
 
 test("completed rollout leads latest state while old resets and uncertain banked credits stay distinct", () => {

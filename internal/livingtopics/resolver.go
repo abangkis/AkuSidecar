@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -88,15 +89,18 @@ type evidenceReference struct {
 }
 
 type structuredClaim struct {
-	Key             string   `json:"key"`
-	MaterialValue   string   `json:"materialValue"`
-	Text            string   `json:"text"`
-	Assessment      string   `json:"assessment"`
-	Centrality      string   `json:"centrality"`
-	Subtopic        string   `json:"subtopic"`
-	TemporalStatus  string   `json:"temporalStatus"`
-	EventStatus     string   `json:"eventStatus"`
-	EvidenceAliases []string `json:"evidenceAliases"`
+	Key                    string   `json:"key"`
+	LifecycleSubject       string   `json:"lifecycleSubject"`
+	LifecycleEvidenceAlias string   `json:"lifecycleEvidenceAlias"`
+	LifecycleEvidenceQuote string   `json:"lifecycleEvidenceQuote"`
+	MaterialValue          string   `json:"materialValue"`
+	Text                   string   `json:"text"`
+	Assessment             string   `json:"assessment"`
+	Centrality             string   `json:"centrality"`
+	Subtopic               string   `json:"subtopic"`
+	TemporalStatus         string   `json:"temporalStatus"`
+	EventStatus            string   `json:"eventStatus"`
+	EvidenceAliases        []string `json:"evidenceAliases"`
 }
 
 type structuredEvidenceRole struct {
@@ -127,6 +131,7 @@ func (r *StructuredResolver) ResolveWithProfile(ctx context.Context, topic domai
 		return domain.LivingTopicSnapshotResult{}, domain.ModelUsage{}, 0, fmt.Errorf("Living Topics snapshot supports at most 30 evidence items")
 	}
 	aliases := make(map[string]string, len(evidence))
+	retainedByAlias := make(map[string]string, len(evidence))
 	refs := make([]evidenceReference, 0, len(evidence))
 	for index, item := range evidence {
 		alias := fmt.Sprintf("evidence_%03d", index+1)
@@ -135,6 +140,7 @@ func (r *StructuredResolver) ResolveWithProfile(ctx context.Context, topic domai
 		if item.FullContent != nil {
 			retained = bounded(*item.FullContent, 4000)
 		}
+		retainedByAlias[alias] = retained
 		refs = append(refs, evidenceReference{
 			Alias: alias, Source: item.Source, Title: bounded(item.Title, 300), Summary: bounded(item.Summary, 1200),
 			Author: bounded(item.Author, 300), PublishedAt: boundedOptional(item.PublishedAt, 80),
@@ -151,7 +157,7 @@ Evaluation time (UTC): %s. A supplied publishedAt is a publication timestamp onl
 
 First classify every evidence item relative to this topic as core, supporting, peripheral, or undetermined. This is relevance and scope, separate from epistemic quality. Assign a concise observed subtopic and a stable source/event cluster label. Correlated reports do not become more central merely because they are numerous. Author or platform diversity is only an anti-duplication signal; a primary source may outweigh derivative reports. Long text must not dominate short central evidence. A relevant update that is uncertain because its source is weak remains central when it is central to the declared topic; do not demote it to peripheral solely for being uncertain.
 
-Then produce a fresh claim projection. Do not assume or reconstruct any previous snapshot. Each claim must have one concrete lifecycle subject: split a completed rollout from reset issuance and from credit redemption or expiry; these can have different statuses even in the same source. Lead the latest state with the outcome or closure rather than restating its earlier rationale as if the original condition still persists. Give each claim a concise normalized key based on its stable subject and predicate, not wording, evidence aliases, dates, status, or centrality. Also return materialValue: a terse normalized factual value that changes only when the claim's meaning changes, never for prose rewrites. Classify every claim as central or secondary and as supported, mixed, uncertain, or unavailable. Every claim must cite supplied evidence aliases.
+	Then produce a fresh claim projection. Do not assume or reconstruct any previous snapshot. Each claim must have exactly one concrete lifecycle subject in lifecycleSubject: split a completed rollout from reset issuance and from credit redemption or expiry; these can have different statuses even in the same source. For eventStatus completed or cancelled, also return exactly one lifecycleEvidenceAlias and a lifecycleEvidenceQuote copied verbatim from that source's retainedText, and ensure the quote itself explicitly supports the stated terminal status without future or negated wording. Leave both proof fields empty for nonterminal claims. Never use a title or summary as terminal proof. Lead the latest state with the outcome or closure rather than restating its earlier rationale as if the original condition still persists. Give each claim a concise normalized key based on its stable subject and predicate, not wording, evidence aliases, dates, status, or centrality. Also return materialValue: a terse normalized factual value that changes only when the claim's meaning changes, never for prose rewrites. Classify every claim as central or secondary and as supported, mixed, uncertain, or unavailable. Every claim must cite supplied evidence aliases.
 
 Do not present source-relative words such as today, tomorrow, soon, or upcoming as relative to the evaluation date. Attribute them to the dated source (for example, "In the post published on September 5, the author announced a final reset") without inventing the event date, timezone, or expiry cutoff. If a relative deadline cannot be resolved from the supplied evidence, say its exact cutoff is unknown. Evergreen policies or communication practices have eventStatus unknown unless they actually describe a lifecycle event.
 
@@ -170,7 +176,7 @@ Current evidence: %s`, time.Now().UTC().Format(time.RFC3339), mustJSON(map[strin
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		return domain.LivingTopicSnapshotResult{}, usage, duration, fmt.Errorf("decode Living Topics snapshot: %w", err)
 	}
-	result, err := validateStructuredResult(decoded, aliases)
+	result, err := validateStructuredResultWithEvidence(decoded, aliases, retainedByAlias)
 	if err != nil {
 		return domain.LivingTopicSnapshotResult{}, usage, duration, err
 	}
@@ -273,6 +279,10 @@ Living Topics: %s`, mustJSON(post), mustJSON(refs))
 }
 
 func validateStructuredResult(value structuredResult, aliases map[string]string) (domain.LivingTopicSnapshotResult, error) {
+	return validateStructuredResultWithEvidence(value, aliases, nil)
+}
+
+func validateStructuredResultWithEvidence(value structuredResult, aliases map[string]string, retainedByAlias map[string]string) (domain.LivingTopicSnapshotResult, error) {
 	value.Status = strings.TrimSpace(value.Status)
 	value.Overview = strings.TrimSpace(value.Overview)
 	if value.Status != "ready" && value.Status != "insufficient_evidence" {
@@ -292,6 +302,7 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 	}
 	result := domain.LivingTopicSnapshotResult{Status: value.Status, Overview: value.Overview, Claims: make([]domain.LivingTopicClaim, 0, len(value.Claims)), Deltas: make([]domain.LivingTopicDelta, 0, len(value.Deltas))}
 	seenClaimKeys := map[string]bool{}
+	lifecycleProofDowngraded := false
 	for _, claim := range value.Claims {
 		text := strings.TrimSpace(claim.Text)
 		if text == "" || utf8.RuneCountInString(text) > 500 || (claim.Assessment != "supported" && claim.Assessment != "mixed" && claim.Assessment != "uncertain" && claim.Assessment != "unavailable") {
@@ -303,12 +314,39 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 		}
 		key, materialValue, centrality, subtopic := strings.TrimSpace(claim.Key), strings.TrimSpace(claim.MaterialValue), strings.TrimSpace(claim.Centrality), strings.TrimSpace(claim.Subtopic)
 		key = strings.ToLower(key)
+		subject := strings.TrimSpace(claim.LifecycleSubject)
 		temporalStatus, eventStatus := strings.TrimSpace(claim.TemporalStatus), strings.TrimSpace(claim.EventStatus)
-		if key == "" || materialValue == "" || seenClaimKeys[key] || utf8.RuneCountInString(key) > 120 || utf8.RuneCountInString(materialValue) > 500 || (centrality != "central" && centrality != "secondary") || subtopic == "" || utf8.RuneCountInString(subtopic) > 120 || !validTemporalStatus(temporalStatus) || !validEventStatus(eventStatus) {
+		subjectInvalid := !validLifecycleSubject(subject)
+		if key == "" || materialValue == "" || seenClaimKeys[key] || utf8.RuneCountInString(key) > 120 || utf8.RuneCountInString(materialValue) > 500 || (centrality != "central" && centrality != "secondary") || subtopic == "" || utf8.RuneCountInString(subtopic) > 120 || (subjectInvalid && eventStatus != "completed" && eventStatus != "cancelled") || !validTemporalStatus(temporalStatus) || !validEventStatus(eventStatus) {
 			return domain.LivingTopicSnapshotResult{}, fmt.Errorf("Living Topics snapshot returned invalid claim scope")
 		}
 		seenClaimKeys[key] = true
-		result.Claims = append(result.Claims, domain.LivingTopicClaim{Key: key, MaterialValue: strings.ToLower(materialValue), Text: text, Assessment: claim.Assessment, Centrality: centrality, Subtopic: subtopic, TemporalStatus: temporalStatus, EventStatus: eventStatus, EvidenceIDs: ids})
+		var proof *domain.LivingTopicLifecycleProof
+		if eventStatus == "completed" || eventStatus == "cancelled" {
+			if !validLifecycleSubject(subject) || !validTerminalProof(claim, ids, aliases, retainedByAlias) {
+				lifecycleProofDowngraded = true
+				claim.Assessment = "uncertain"
+				temporalStatus = "unknown"
+				eventStatus = "unknown"
+				materialValue = "unknown"
+				text = "The lifecycle state is unknown from the supplied evidence."
+				if !validLifecycleSubject(subject) {
+					subject = "unknown lifecycle subject"
+				}
+			} else {
+				text = "Source statement: \"" + strings.TrimSpace(claim.LifecycleEvidenceQuote) + "\""
+				materialValue = strings.ToLower(subject + " " + eventStatus)
+				proof = &domain.LivingTopicLifecycleProof{EvidenceID: aliases[strings.TrimSpace(claim.LifecycleEvidenceAlias)], Quote: strings.TrimSpace(claim.LifecycleEvidenceQuote)}
+			}
+		} else if explicitTerminalAssertion(claim) {
+			lifecycleProofDowngraded = true
+			claim.Assessment = "uncertain"
+			temporalStatus = "unknown"
+			eventStatus = "unknown"
+			materialValue = "unknown"
+			text = "The lifecycle state is unknown from the supplied evidence."
+		}
+		result.Claims = append(result.Claims, domain.LivingTopicClaim{Key: key, MaterialValue: strings.ToLower(materialValue), Text: text, Assessment: claim.Assessment, Centrality: centrality, Subtopic: subtopic, LifecycleSubject: subject, TemporalStatus: temporalStatus, EventStatus: eventStatus, LifecycleProof: proof, EvidenceIDs: ids})
 	}
 	for _, delta := range value.Deltas {
 		text := strings.TrimSpace(delta.Text)
@@ -377,6 +415,12 @@ func validateStructuredResult(value structuredResult, aliases map[string]string)
 		}
 		centralSupported = true
 	}
+	if lifecycleProofDowngraded {
+		result.Overview = "Current evidence does not establish a terminal lifecycle state."
+	}
+	if value.Status == "ready" && !centralSupported && lifecycleProofDowngraded {
+		return result, nil
+	}
 	if value.Status == "ready" && !centralSupported {
 		return domain.LivingTopicSnapshotResult{Status: "insufficient_evidence", Overview: "Current evidence is not reliable enough to support a central claim.", Claims: []domain.LivingTopicClaim{}, Deltas: []domain.LivingTopicDelta{}}, nil
 	}
@@ -408,6 +452,119 @@ func validTemporalStatus(value string) bool {
 
 func validEventStatus(value string) bool {
 	return value == "announced" || value == "ongoing" || value == "completed" || value == "cancelled" || value == "unknown"
+}
+
+var lifecycleSubjectSeparatorPattern = regexp.MustCompile(`(?i)(?:\band\b|\bor\b|\bplus\b|\bas well as\b|\balong with\b|[;&]|/)`)
+var lifecycleMarkerPattern = regexp.MustCompile(`(?i)\b(?:rollout|launch(?:ing|ed)?|release|deployment|deploy(?:ed|ment)?|migration|reset|issuance|issue|redemption|redeem(?:ed)?|expiry|expiration|cancell?ation|cancell?ed|shutdown|upgrade|transfer|refund|payment)\b`)
+var lifecycleFuturePattern = regexp.MustCompile(`(?i)\b(?:will|would|may|might|could|plan(?:ned|s)?|expect(?:ed|s)?|schedul(?:ed|e|es|ing)|upcoming|soon|tomorrow|next|intend(?:ed|s)?|due)\b|\bset\s+to\b|\bto\s+be\b`)
+var lifecycleNegationPattern = regexp.MustCompile(`(?i)(?:\b(?:not|never|no|without|cannot|can't|won't|didn't|doesn't|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't)\b|\b(?:not|never)\s+(?:fully\s+)?(?:complete|completed|finish(?:ed)?|ship(?:ped)?|launch(?:ed)?|release(?:d)?|deploy(?:ed|ment)?|roll(?:ed)?\s+out|cancel(?:led|ed)?)\b)`)
+var lifecycleCompletedPattern = regexp.MustCompile(`(?i)\b(?:completed|finished|shipped|launched|released|deployed|migrated|rolled\s+out|delivered|concluded|closed|done)\b|\b(?:is|was|has\s+been|have\s+been|now|fully)\s+complete\b`)
+var lifecycleCancelledPattern = regexp.MustCompile(`(?i)\b(?:cancel(?:led|ed)|terminated|aborted|called\s+off|withdrawn|stopped)\b`)
+
+// validLifecycleSubject is intentionally lexical and conservative. It checks
+// that a claim names one bounded subject; it does not decide whether the
+// subject or quote semantically entails a lifecycle state.
+func validLifecycleSubject(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || utf8.RuneCountInString(value) > 160 || strings.ContainsAny(value, "\r\n") {
+		return false
+	}
+	markers := lifecycleMarkerPattern.FindAllStringIndex(value, -1)
+	if len(markers) < 2 {
+		return true
+	}
+	for index := 1; index < len(markers); index++ {
+		between := value[markers[index-1][1]:markers[index][0]]
+		if lifecycleSubjectSeparatorPattern.MatchString(between) {
+			return false
+		}
+	}
+	return true
+}
+
+func validTerminalProof(claim structuredClaim, ids []string, aliases map[string]string, retainedByAlias map[string]string) bool {
+	alias := strings.TrimSpace(claim.LifecycleEvidenceAlias)
+	quote := strings.TrimSpace(claim.LifecycleEvidenceQuote)
+	if alias == "" || quote == "" || utf8.RuneCountInString(quote) > 460 {
+		return false
+	}
+	evidenceID, ok := aliases[alias]
+	if !ok || !containsString(ids, evidenceID) {
+		return false
+	}
+	retained, ok := retainedByAlias[alias]
+	if !ok || retained == "" || !strings.Contains(retained, quote) {
+		return false
+	}
+	subject := strings.TrimSpace(claim.LifecycleSubject)
+	if subject == "" || !strings.Contains(strings.ToLower(quote), strings.ToLower(subject)) {
+		return false
+	}
+	context := strings.ReplaceAll(retainedQuoteContext(retained, quote), "’", "'")
+	if context == "" || strings.Contains(context, "?") || lifecycleFuturePattern.MatchString(context) || lifecycleNegationPattern.MatchString(context) {
+		return false
+	}
+	for _, field := range []string{subject, context} {
+		if hasMixedLifecycleAssertion(field) {
+			return false
+		}
+	}
+	switch claim.EventStatus {
+	case "completed":
+		return lifecycleCompletedPattern.MatchString(quote) && lifecycleCompletedPattern.MatchString(context)
+	case "cancelled":
+		return lifecycleCancelledPattern.MatchString(quote) && lifecycleCancelledPattern.MatchString(context)
+	default:
+		return false
+	}
+}
+
+func explicitTerminalAssertion(claim structuredClaim) bool {
+	for _, field := range []string{claim.Text, claim.MaterialValue} {
+		if lifecycleCompletedPattern.MatchString(field) || lifecycleCancelledPattern.MatchString(field) {
+			return true
+		}
+	}
+	return false
+}
+
+func retainedQuoteContext(retained, quote string) string {
+	index := strings.Index(retained, quote)
+	if index < 0 {
+		return ""
+	}
+	start := strings.LastIndexAny(retained[:index], ".!?;\n")
+	if start >= 0 {
+		start++
+	} else {
+		start = 0
+	}
+	endOffset := strings.IndexAny(retained[index+len(quote):], ".!?;\n")
+	end := len(retained)
+	if endOffset >= 0 {
+		end = index + len(quote) + endOffset + 1
+	}
+	return strings.TrimSpace(retained[start:end])
+}
+
+func hasMixedLifecycleAssertion(value string) bool {
+	markers := lifecycleMarkerPattern.FindAllStringIndex(value, -1)
+	for index := 1; index < len(markers); index++ {
+		between := value[markers[index-1][1]:markers[index][0]]
+		if lifecycleSubjectSeparatorPattern.MatchString(between) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func boundedOptional(value *string, limit int) *string {
