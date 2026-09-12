@@ -582,7 +582,7 @@ func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) 
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"data-post-freshness-style=\"header_shade\"", "id=\"post-freshness-style\"", "value=\"header_shade\"", "value=\"border_shade\"", "value=\"off\""},
 		"web/app.js":     {"post-freshness.js", "container.dataset.freshness = source.dataset.freshness", "item.dataset.freshness = result.key", "function applyPostFreshness", "function applyPostFreshnessStyle", "settings.postFreshnessStyle || \"header_shade\"", "postFreshnessStyle: $(\"#post-freshness-style\").value"},
-		"web/styles.css": {"data-freshness=\"current\"", "data-post-freshness-style=\"header_shade\"", "data-post-freshness-style=\"border_shade\"", "freshness-card-shell", "freshness-card-border", "source-layout-media-carousel-navigation"},
+		"web/styles.css": {"data-freshness=\"current\"", "data-post-freshness-style=\"header_shade\"", "data-post-freshness-style=\"border_shade\"", "--freshness-card-shell: #2c382b", "--freshness-card-shell: #1a201c", "--freshness-card-border: #647452", "color: #a3ae9c", "color: #c4d8b2", "source-layout-media-carousel-navigation", "background: #0d1218"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
