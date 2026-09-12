@@ -9,7 +9,7 @@ import {
   shouldUseTimelineCarousel,
   timelineCarouselDotIndexes,
 } from "./timeline-media-carousel.js";
-import { classifyPostFreshness } from "./post-freshness.js";
+import { classifyPostFreshness, postHeaderContext } from "./post-freshness.js";
 import {
   sourceAccessReadinessState,
   sourcePermissionReadyForOnboarding,
@@ -6812,6 +6812,7 @@ function buildExpandedTimelineItem(entry) {
   toggle.className = "presentation-toggle";
   const brief = buildBrief(entry);
   const source = buildSourceCard(entry);
+  container.dataset.freshness = source.dataset.freshness;
   const actions = buildActions(entry);
   let layout = entry.evidence && state.bootstrap?.settings?.defaultPresentation !== "brief" ? "source" : "brief";
   const render = () => {
@@ -7078,6 +7079,8 @@ function buildBrief(entry) {
   return brief;
 }
 
+const postHeaderContexts = new WeakMap();
+
 function buildSourceCard(entry) {
   const evidence = entry.evidence ?? {};
   const item = entry.item ?? {};
@@ -7093,8 +7096,13 @@ function buildSourceCard(entry) {
   author.textContent = parsed.displayName;
   const context = document.createElement("span");
   const presentation = evidence.presentation ?? {};
-  context.textContent = [presentation.connectionDegree, presentation.timestampText].filter(Boolean).join(" · ")
-    || parsed.secondary
+  const headerContext = {
+    publishedAt: evidence.publishedAt || item.publishedAt,
+    timestampText: presentation.timestampText,
+    connectionDegree: presentation.connectionDegree,
+    secondary: parsed.secondary,
+  };
+  context.textContent = postHeaderContext(headerContext)
     || formatDate(evidence.publishedAt || item.publishedAt);
   identity.append(author);
   if (presentation.headline) {
@@ -7109,6 +7117,7 @@ function buildSourceCard(entry) {
     publishedAt: evidence.publishedAt || item.publishedAt,
     timestampText: presentation.timestampText || parsed.secondary,
   });
+  postHeaderContexts.set(card, { context, value: headerContext });
 
   if (descriptor.socialContextPlacement === "above" && presentation.socialContext) {
     const social = document.createElement("div");
@@ -7172,12 +7181,22 @@ function applyPostFreshness(card, value) {
   card.dataset.freshness = result.key;
   if (Number.isFinite(result.referenceAt)) card.dataset.freshnessReferenceAt = String(result.referenceAt);
   else delete card.dataset.freshnessReferenceAt;
+  const item = card.closest(".presentable-item");
+  if (item) item.dataset.freshness = result.key;
 }
 
 function refreshVisiblePostFreshness() {
   const now = Date.now();
   for (const card of document.querySelectorAll(".source-layout-card[data-freshness]")) {
     applyPostFreshness(card, { referenceAt: Number(card.dataset.freshnessReferenceAt), now });
+    const header = postHeaderContexts.get(card);
+    if (header && Number.isFinite(Number(card.dataset.freshnessReferenceAt))) {
+      header.context.textContent = postHeaderContext({
+        ...header.value,
+        referenceAt: Number(card.dataset.freshnessReferenceAt),
+        now,
+      });
+    }
   }
 }
 

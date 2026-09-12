@@ -581,8 +581,8 @@ func TestEmbeddedSingleImageFitSettingDefaultsToCoverAndSupportsContain(t *testi
 func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) {
 	for asset, markers := range map[string][]string{
 		"web/index.html": {"data-post-freshness-style=\"header_shade\"", "id=\"post-freshness-style\"", "value=\"header_shade\"", "value=\"border_shade\"", "value=\"off\""},
-		"web/app.js":     {"post-freshness.js", "function applyPostFreshness", "function applyPostFreshnessStyle", "settings.postFreshnessStyle || \"header_shade\"", "postFreshnessStyle: $(\"#post-freshness-style\").value"},
-		"web/styles.css": {"data-freshness=\"current\"", "data-post-freshness-style=\"header_shade\"", "data-post-freshness-style=\"border_shade\"", "freshness-header-opacity"},
+		"web/app.js":     {"post-freshness.js", "container.dataset.freshness = source.dataset.freshness", "item.dataset.freshness = result.key", "function applyPostFreshness", "function applyPostFreshnessStyle", "settings.postFreshnessStyle || \"header_shade\"", "postFreshnessStyle: $(\"#post-freshness-style\").value"},
+		"web/styles.css": {"data-freshness=\"current\"", "data-post-freshness-style=\"header_shade\"", "data-post-freshness-style=\"border_shade\"", "freshness-card-shell", "freshness-card-border", "source-layout-media-carousel-navigation"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -592,6 +592,18 @@ func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) 
 			if !strings.Contains(string(contents), marker) {
 				t.Fatalf("%s is missing post freshness contract %q", asset, marker)
 			}
+		}
+	}
+}
+
+func TestEmbeddedWebAssetsDoNotContainMojibake(t *testing.T) {
+	for _, asset := range []string{"web/index.html", "web/app.js", "web/styles.css"} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(contents), "â") {
+			t.Fatalf("%s contains mojibake", asset)
 		}
 	}
 }
