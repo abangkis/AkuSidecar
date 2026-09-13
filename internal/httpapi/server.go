@@ -381,7 +381,18 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if credentialRef == "" {
 			return apiError{Status: http.StatusBadRequest, Code: "credential_not_supported", Message: "The selected reasoning provider does not use an API credential."}
 		}
-		if err := s.credentials.Put(credentialRef, body.Secret); err != nil {
+		secret := strings.TrimSpace(body.Secret)
+		if secret == "" {
+			return badRequest("credential value is required")
+		}
+		var validation reasoning.GeminiCredentialValidation
+		if config.IsGeminiProvider(providerName) {
+			validation = reasoning.ValidateGeminiCredential(ctx, provider.Endpoint, provider.Planning.StableModelID(), secret)
+			if validation.Status != reasoning.GeminiCredentialValid {
+				return apiError{Status: validation.HTTPStatus, Code: "gemini_" + validation.Status, Message: validation.Message, Details: map[string]any{"provider": providerName, "model": validation.Model, "validationStatus": validation.Status}}
+			}
+		}
+		if err := s.credentials.Put(credentialRef, secret); err != nil {
 			s.logger.Printf("secure credential write failed for ref %q: %v", credentialRef, err)
 			return apiError{Status: http.StatusInternalServerError, Code: "credential_store_failed", Message: "AkuBrowser could not save this credential securely."}
 		}
@@ -391,12 +402,22 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			if providerSummaries[index].Name == providerName {
 				providerSummaries[index].Configured = true
 				providerSummaries[index].ConfigurationStatus = "ready"
+				if config.IsGeminiProvider(providerName) {
+					providerSummaries[index].AvailabilityChecked = true
+					providerSummaries[index].Available = true
+					providerSummaries[index].AvailabilityStatus = reasoning.GeminiCredentialValid
+					providerSummaries[index].AvailabilityMessage = validation.Message
+				}
 			}
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{
+		response := map[string]any{
 			"credential":         map[string]any{"provider": providerName, "reference": credentialRef, "configured": true},
 			"reasoningProviders": providerSummaries,
-		})
+		}
+		if config.IsGeminiProvider(providerName) {
+			response["validation"] = map[string]any{"status": validation.Status, "model": validation.Model, "message": validation.Message}
+		}
+		return writeJSON(w, http.StatusOK, response)
 	case r.Method == http.MethodPost && p == "/api/reasoning/runtime/discover":
 		runtime, err := s.engine.DiscoverReasoningExecutable(ctx)
 		if err != nil {

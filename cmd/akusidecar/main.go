@@ -312,17 +312,31 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	}
 	identity, err := appShellIdentity(options, cfg)
 	fatal(logger, err)
+	profilePath := browserProfilePath(options, cfg)
+	startupLogPath := isolatedChromiumStartupLogPath(profilePath)
+	if startupLogPath != "" {
+		logger.Printf("isolated Chromium startup diagnostics enabled path=%s", startupLogPath)
+	}
 	window, err := appshell.Launch(context.Background(), appshell.LaunchOptions{
-		Executable:    result.Executable,
-		ExtensionPath: options.BridgeExtensionPath,
-		IconPath:      appShellIconPath(options.BridgeExtensionPath),
-		Identity:      identity,
-		UserDataDir:   browserProfilePath(options, cfg),
-		URL:           target,
+		Executable:     result.Executable,
+		ExtensionPath:  options.BridgeExtensionPath,
+		IconPath:       appShellIconPath(options.BridgeExtensionPath),
+		Identity:       identity,
+		UserDataDir:    profilePath,
+		URL:            target,
+		StartupLogPath: startupLogPath,
 	})
 	fatal(logger, err)
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
 	return window
+}
+
+func isolatedChromiumStartupLogPath(profilePath string) string {
+	if os.Getenv("AKUBROWSER_CHROMIUM_STARTUP_DIAGNOSTICS") != "1" ||
+		!strings.HasPrefix(os.Getenv("AKUBROWSER_ISOLATED_TEST_CREDENTIAL_NAMESPACE"), "AkuBrowserTest-") {
+		return ""
+	}
+	return filepath.Join(profilePath, "chrome-startup.log")
 }
 
 func appShellIdentity(options config.Options, cfg config.Config) (appshell.ApplicationIdentity, error) {

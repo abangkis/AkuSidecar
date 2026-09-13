@@ -12,6 +12,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	sdkollama "github.com/abangkis/ai4u-inference-sdk-go/providers/ollama"
@@ -28,10 +29,10 @@ type ollamaReadinessSnapshot struct {
 	message string
 }
 
-// ReasoningProviderReadiness performs cost-free local readiness checks for
-// providers whose runtime must exist before activation. Remote API providers
-// remain governed by their credential status and are never called by this
-// endpoint.
+// ReasoningProviderReadiness performs cost-free readiness checks for providers
+// whose runtime must exist before activation. Gemini additionally receives a
+// bounded, non-generative model-metadata probe so a stored key is not treated
+// as usable solely because it exists.
 func (e *Engine) ReasoningProviderReadiness(ctx context.Context) ([]config.ProviderSummary, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
@@ -106,6 +107,20 @@ func (e *Engine) probeReasoningProvider(ctx context.Context, summary config.Prov
 		summary.Available = true
 		summary.AvailabilityStatus = "model_ready"
 		summary.AvailabilityMessage = fmt.Sprintf("Ollama is running and model %s is installed.", expectedModel)
+	}
+	if summary.RuntimeKind == "remote_api" && config.IsGeminiProvider(summary.Name) {
+		credentialRef := strings.TrimSpace(provider.CredentialRef)
+		apiKey, err := credentials.ForRuntime(e.config.Root, e.config.Dev).Resolve(credentialRef)
+		summary.AvailabilityChecked = true
+		if err != nil {
+			summary.AvailabilityStatus = "credential_unavailable"
+			summary.AvailabilityMessage = "Gemini's stored credential could not be read. Save the key again, then check availability."
+			return summary
+		}
+		validation := reasoning.ValidateGeminiCredential(ctx, provider.Endpoint, provider.Planning.StableModelID(), apiKey)
+		summary.AvailabilityStatus = validation.Status
+		summary.AvailabilityMessage = validation.Message
+		summary.Available = validation.Status == reasoning.GeminiCredentialValid
 	}
 	return summary
 }

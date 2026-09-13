@@ -260,7 +260,7 @@ func TestGeminiProviderRequiresCanonicalCredentialReference(t *testing.T) {
 		"gemini-flash-lite": provider,
 	}}
 	summaries := reasoning.ProviderSummary()
-	if len(summaries) != 2 || summaries[1].Name != "gemini-flash-lite" || summaries[1].RuntimeKind != "remote_api" || !summaries[1].Configured {
+	if len(summaries) != 2 || summaries[1].Name != "gemini-flash-lite" || summaries[1].RuntimeKind != "remote_api" || !summaries[1].Configured || !summaries[1].AvailabilityRequired {
 		t.Fatalf("Gemini provider summary=%+v", summaries)
 	}
 	provider.CredentialRef = "groq.primary"

@@ -22,6 +22,23 @@ func TestBrowserProfilePathPrefersExplicitInstalledAppPath(t *testing.T) {
 	}
 }
 
+func TestChromiumStartupLogIsRestrictedToIsolatedTestNamespace(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "browser-profile")
+	t.Setenv("AKUBROWSER_CHROMIUM_STARTUP_DIAGNOSTICS", "1")
+	t.Setenv("AKUBROWSER_ISOLATED_TEST_CREDENTIAL_NAMESPACE", "")
+	if got := isolatedChromiumStartupLogPath(profile); got != "" {
+		t.Fatalf("production profile unexpectedly enabled diagnostics: %q", got)
+	}
+	t.Setenv("AKUBROWSER_ISOLATED_TEST_CREDENTIAL_NAMESPACE", "AkuBrowserTest-f842094d1f035547")
+	if want, got := filepath.Join(profile, "chrome-startup.log"), isolatedChromiumStartupLogPath(profile); got != want {
+		t.Fatalf("isolated diagnostic path=%q, want %q", got, want)
+	}
+	t.Setenv("AKUBROWSER_CHROMIUM_STARTUP_DIAGNOSTICS", "")
+	if got := isolatedChromiumStartupLogPath(profile); got != "" {
+		t.Fatalf("diagnostics remained active without opt-in: %q", got)
+	}
+}
+
 func TestDatabaseDecisionRequiredOnlyForInstalledApplication(t *testing.T) {
 	for _, mode := range []string{"", "development", "development-supervised", "production-runtime", "production-installed-app"} {
 		if got := requiresDatabaseDecision(config.DeploymentConfig{Mode: mode}); got != (mode == "production-installed-app") {

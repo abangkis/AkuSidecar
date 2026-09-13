@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +17,19 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
-func geminiTestProvider(name string) config.ProviderConfig {
+func geminiTestProvider(t *testing.T, name string) config.ProviderConfig {
+	t.Helper()
+	readinessServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models/gemini-3.5-flash-lite" || (r.Header.Get("x-goog-api-key") != "test-key" && r.Header.Get("x-goog-api-key") != "test-only-gemini-key") {
+			http.Error(w, "unexpected readiness request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"models/gemini-3.5-flash-lite"}`)
+	}))
+	t.Cleanup(readinessServer.Close)
 	return config.ProviderConfig{
-		Endpoint:      "https://generativelanguage.googleapis.com/v1",
+		Endpoint:      readinessServer.URL,
 		CredentialRef: "gemini.test",
 		TimeoutMS:     30000,
 		Planning:      config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", MaxOutputTokens: 512},
@@ -86,7 +98,7 @@ func swapTestEngine(t *testing.T) (*Engine, *store.Store) {
 	}
 	cfg.Reasoning.Providers = map[string]config.ProviderConfig{
 		"deterministic":     {},
-		"gemini-flash-lite": geminiTestProvider("gemini-flash-lite"),
+		"gemini-flash-lite": geminiTestProvider(t, "gemini-flash-lite"),
 	}
 	runtime := New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
 	runtime.RecordHeartbeat(ExpectedHeartbeat())

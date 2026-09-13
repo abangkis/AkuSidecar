@@ -26,6 +26,7 @@ func TestBuildArgsIncludesCoreSwitches(t *testing.T) {
 		"--disable-background-mode",
 		"--disable-component-update",
 		"--disable-session-crashed-bubble",
+		"--disable-infobars",
 		"--load-extension=C:\\bridge",
 		"--window-size=1200,800",
 	}
@@ -48,12 +49,35 @@ func TestBuildArgsOmitsExtensionWhenUnset(t *testing.T) {
 	}
 }
 
+func TestBuildArgsAddsStartupLoggingOnlyWhenRequested(t *testing.T) {
+	path := `C:\TestProfile\chrome-startup.log`
+	args := buildArgs(LaunchOptions{URL: "http://127.0.0.1:1/", UserDataDir: "p", StartupLogPath: path})
+	foundEnable, foundPath := false, false
+	for _, value := range args {
+		if value == "--enable-logging" {
+			foundEnable = true
+		}
+		if value == "--log-file="+path {
+			foundPath = true
+		}
+	}
+	if !foundEnable || !foundPath {
+		t.Fatalf("startup diagnostic switches absent: %v", args)
+	}
+	for _, value := range buildArgs(LaunchOptions{URL: "http://127.0.0.1:1/", UserDataDir: "p"}) {
+		if value == "--enable-logging" || len(value) >= 11 && value[:11] == "--log-file=" {
+			t.Fatalf("startup logging leaked into normal launch: %v", value)
+		}
+	}
+}
+
 func TestBuildInternalPageArgsUsesSameProfileAndSeparateWindow(t *testing.T) {
 	args := buildInternalPageArgs(`C:\AkuBrowser\profile`, "chrome://extensions")
 	expected := []string{
 		`--user-data-dir=C:\AkuBrowser\profile`,
 		"--no-first-run",
 		"--no-default-browser-check",
+		"--disable-infobars",
 		"--new-window",
 		"chrome://extensions",
 	}

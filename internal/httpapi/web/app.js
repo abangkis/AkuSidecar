@@ -11,6 +11,7 @@ import {
 } from "./timeline-media-carousel.js";
 import { classifyPostFreshness, postHeaderContext } from "./post-freshness.js";
 import {
+  failedSourceSessionObservations,
   sourceAccessReadinessState,
   sourcePermissionReadyForOnboarding,
 } from "./onboarding-source-readiness.js";
@@ -108,6 +109,7 @@ const BRIDGE_TOKEN_RECOVERY_KEY = "akuBridgeTokenRecoveryAt";
 const BRIDGE_CONTEXT_RECOVERY_WINDOW_MS = 30000;
 const BOOTSTRAP_TIMEOUT_MS = 45000;
 const BOOTSTRAP_RETRY_MS = 3000;
+const SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE = "Source session check timed out. Return to AkuBrowser or open the source again to retry.";
 const LOAD_PROFILE_PRESETS = {
   standard: { timelineCapacity: 12, maxItemsPerSource: 5, maxItemsTotal: 10, maxScrolls: 2 },
   expanded: { timelineCapacity: 24, maxItemsPerSource: 10, maxItemsTotal: 20, maxScrolls: 4 },
@@ -232,6 +234,7 @@ const state = {
   timelineBatches: [],
   sourceSessionReadiness: {},
   sourceSessionProbeInFlight: false,
+  sourceSessionProbeTimer: null,
   providerReadinessInFlight: false,
   providerReadinessCheckedAt: "",
   providerReadinessCheckError: "",
@@ -286,11 +289,17 @@ window.addEventListener("message", (event) => {
       ? event.data.sessions
       : {};
     state.sourceSessionProbeInFlight = false;
+    clearTimeout(state.sourceSessionProbeTimer);
+    state.sourceSessionProbeTimer = null;
+    if ($("#onboarding-error").textContent === SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE) $("#onboarding-error").textContent = "";
     renderSourceSessionReadiness();
     updateOnboardingSummary();
   }
   if (event.data.type === "AKU_BROWSER_SOURCE_SESSIONS_FAILED") {
     state.sourceSessionProbeInFlight = false;
+    clearTimeout(state.sourceSessionProbeTimer);
+    state.sourceSessionProbeTimer = null;
+    if ($("#onboarding-error").textContent === SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE) $("#onboarding-error").textContent = "";
     renderSourceSessionError(event.data.message);
     updateOnboardingSummary();
   }
@@ -568,8 +577,10 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     schedulePassiveMediaEnrichment();
     recordUIActivity(true);
+    refreshBridgeAfterUserReturn();
   }
 });
+window.addEventListener("focus", refreshBridgeAfterUserReturn);
 
 function installUIActivityTracking() {
   if (state.uiActivityTrackingInstalled) return;
@@ -596,6 +607,7 @@ function recordUIActivity(force) {
 }
 
 async function bootstrap(options = {}) {
+  window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "restoring" }));
   clearTimeout(state.bootstrapRetryTimer);
   state.bootstrapRetryTimer = null;
   state.bootstrapController?.abort();
@@ -614,6 +626,7 @@ async function bootstrap(options = {}) {
       throw new Error("AkuBrowser could not restore the authoritative onboarding state. Waiting for AkuSidecar to recover.");
     }
     clearNotice();
+    window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "rendering" }));
     state.bootstrap = restored;
     state.bootstrapError = null;
     state.releasedCaptureSources.clear();
@@ -643,6 +656,8 @@ async function bootstrap(options = {}) {
     } else {
       setView(state.currentView);
     }
+    $("#startup-recovery").hidden = true;
+    window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "ready" }));
     pingBridge();
     bridgeActionLoop();
     setInterval(pingBridge, 30_000);
@@ -655,6 +670,8 @@ async function bootstrap(options = {}) {
       ? new Error("AkuSidecar did not finish restoring within 45 seconds. Retry the connection while the active check continues in the background.")
       : error;
     state.bootstrapError = failure;
+    $("#startup-recovery-heading").textContent = "AkuBrowser is still connecting";
+    $("#startup-recovery-detail").textContent = "The interface is retrying automatically. You can reload this page if it remains here; you do not need to download Chrome.";
     showError(failure);
     syncRunButtons();
     state.bootstrapRetryTimer = setTimeout(() => bootstrap(), BOOTSTRAP_RETRY_MS);
@@ -2780,9 +2797,26 @@ function pingBridge() {
   }, endpoint);
 }
 
+let lastBridgeReturnRefreshAt = 0;
+function refreshBridgeAfterUserReturn() {
+  if (!state.bootstrap?.bridgeToken || document.visibilityState !== "visible") return;
+  const now = Date.now();
+  if (now - lastBridgeReturnRefreshAt < 1_000) return;
+  lastBridgeReturnRefreshAt = now;
+  pingBridge();
+  requestSourceSessionReadiness();
+}
+
 function requestSourceSessionReadiness() {
   if (!state.bootstrap?.bridge?.compatible || state.sourceSessionProbeInFlight) return;
   state.sourceSessionProbeInFlight = true;
+  state.sourceSessionProbeTimer = window.setTimeout(() => {
+    state.sourceSessionProbeInFlight = false;
+    state.sourceSessionProbeTimer = null;
+    if (!$("#onboarding-panel").classList.contains("hidden")) $("#onboarding-error").textContent = SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE;
+    renderSourceSessionError(SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE);
+    updateOnboardingSummary();
+  }, 8_000);
   renderSourceSessionReadiness();
   window.postMessage({
     type: "AKU_BROWSER_PROBE_SOURCE_SESSIONS",
@@ -2857,14 +2891,18 @@ function setSourceSessionStatus(source, observation) {
 
 function renderSourceSessionError(message, source = null) {
   const detail = String(message || "Source session status is unavailable.").slice(0, 160);
+  const observedAt = new Date().toISOString();
   if (source) {
     setSourceSessionStatus(source, {
       source,
       state: "unknown",
-      observedAt: new Date().toISOString(),
-      tabCount: 0,
+      observedAt,
       detail,
     });
+  } else {
+    state.sourceSessionReadiness = failedSourceSessionObservations(
+      sourceDescriptors().map((descriptor) => descriptor.id), detail, observedAt,
+    );
   }
   renderSourceSessionReadiness();
 }
@@ -3867,11 +3905,13 @@ const ONBOARDING_PROVIDER_COPY = {
     setup: "AkuBrowser uses the Codex app session on this device.\n\nBefore continuing:\n• Keep the Codex app running\n• Sign in inside Codex\n• No API key is stored by AkuBrowser",
   },
   "gemini-flash-lite": {
-    tag: "Free key",
-    description: "Uses a free Google AI Studio key. Privacy notice: captured post text is sent to Google for reasoning, and on the free tier Google may use that data to improve its products.",
-    setup: "Create a free Google AI Studio API key, paste it below, then save it securely on this device.",
-    ready: "Your Gemini API key is stored in this operating system's secure credential store. AkuBrowser never displays the saved key again.",
+    tag: "Google API key",
+    description: "Uses a Google AI Studio API key. Free-tier access and limits depend on the selected model and project tier; on the free tier Google may use that data to improve its products.",
+    setup: "Get a key in Google AI Studio: sign in with Google, create or select a project, create or copy the API key, then return here. Paste it below and validate it before continuing. Limits vary by model and project tier; check the current quota link below rather than relying on a universal request allowance.",
+    ready: "Gemini accepted your API key for the configured model's metadata check, and AkuBrowser stored it in this operating system's secure credential store. Actual generation and current quota are checked when you use the provider. AkuBrowser never displays the saved key again.",
     credentialURL: "https://aistudio.google.com/apikey",
+    quotaURL: "https://ai.google.dev/gemini-api/docs/rate-limits",
+    pricingURL: "https://ai.google.dev/gemini-api/docs/pricing",
   },
   "ollama-nemotron": {
     tag: "Local",
@@ -3973,12 +4013,22 @@ function renderOnboardingProviderOptions() {
     const credentialURL = copy.credentialURL;
     credentialLink.classList.toggle("hidden", !showCredentialSetup || !credentialURL);
     if (credentialURL) credentialLink.href = credentialURL;
+    const quotaLink = $("#onboarding-provider-quota-link");
+    const quotaURL = copy.quotaURL;
+    quotaLink.classList.toggle("hidden", !choice || !quotaURL);
+    if (quotaURL) quotaLink.href = quotaURL;
+    const pricingLink = $("#onboarding-provider-pricing-link");
+    const pricingURL = copy.pricingURL;
+    pricingLink.classList.toggle("hidden", !choice || !pricingURL);
+    if (pricingURL) pricingLink.href = pricingURL;
     const recheck = $("#onboarding-provider-recheck");
     recheck.classList.toggle("hidden", !showCredentialSetup && !choice.availabilityRequired);
     syncProviderReadinessFeedback(choice);
   } else {
     setup.classList.add("hidden");
     credentialSetup.classList.add("hidden");
+    $("#onboarding-provider-quota-link").classList.add("hidden");
+    $("#onboarding-provider-pricing-link").classList.add("hidden");
     $("#onboarding-provider-secret").value = "";
   }
   const confirm = $("#onboarding-provider-confirm");
@@ -4146,7 +4196,11 @@ async function saveOnboardingProviderCredential() {
       body: { provider: choice.name, secret },
     });
     state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
-    $("#onboarding-provider-error").textContent = "API key saved. You can now use this provider.";
+    const validation = response.validation;
+    $("#onboarding-provider-error").textContent = validation?.status === "valid"
+      ? `Gemini accepted the key for ${validation.model || choice.label} metadata; it is saved securely. Actual generation and quota are checked when used.`
+      : "API key saved securely. Check provider availability before continuing.";
+    state.providerReadinessCheckedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     renderOnboardingProviderOptions();
   } catch (error) {
     $("#onboarding-provider-error").textContent = error.message;

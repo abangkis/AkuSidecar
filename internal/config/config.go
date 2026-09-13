@@ -346,7 +346,7 @@ func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 			continue
 		}
 		runtimeKind := ProviderRuntimeKind(name)
-		requiresAvailability := runtimeKind == "executable" || runtimeKind == "local_endpoint"
+		requiresAvailability := runtimeKind == "executable" || runtimeKind == "local_endpoint" || IsGeminiProvider(name)
 		summaries = append(summaries, ProviderSummary{
 			Name: name, Label: ProviderLabel(name), RuntimeKind: runtimeKind,
 			Configured: true, ConfigurationStatus: "ready",

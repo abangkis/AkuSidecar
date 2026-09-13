@@ -12,3 +12,12 @@ export function sourceAccessReadinessState(access) {
   if (!access.ready) return "capture_not_ready";
   return "ready";
 }
+
+export function failedSourceSessionObservations(sources, detail, observedAt) {
+  return Object.fromEntries(sources.map((source) => [source, {
+    source,
+    state: "unknown",
+    observedAt,
+    detail,
+  }]));
+}

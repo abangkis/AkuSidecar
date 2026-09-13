@@ -32,6 +32,12 @@
         </div>
       </header>
 
+      <section id="startup-recovery" class="startup-recovery" role="status" aria-live="polite">
+        <strong id="startup-recovery-heading">Preparing AkuBrowser…</strong>
+        <p id="startup-recovery-detail">If this message remains, the interface has not finished loading. Reload the page or close and reopen AkuBrowser; you do not need to download Chrome.</p>
+        <a href="/">Reload interface</a>
+      </section>
+
       <section id="provider-notice" class="notice hidden" role="status"></section>
 
       <dialog id="onboarding-provider-dialog" class="provider-selection-dialog" aria-labelledby="onboarding-provider-title">
@@ -45,14 +51,16 @@
               <p id="onboarding-provider-panel-label" class="step-label">PROVIDER DETAILS</p>
               <p id="onboarding-provider-setup-text" class="settings-detail"></p>
               <div id="onboarding-provider-credential" class="onboarding-provider-credential hidden">
-                <a id="onboarding-provider-credential-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Create a key in Google AI Studio ↗</a>
+                <a id="onboarding-provider-credential-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Create a key in Google AI Studio ↗</a>
                 <label id="onboarding-provider-credential-label" for="onboarding-provider-secret">Provider API key</label>
                 <div class="onboarding-provider-credential-control">
                   <input id="onboarding-provider-secret" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key" />
                   <button id="onboarding-provider-save-credential" class="primary-button" type="button">Save key</button>
                 </div>
-                <small>The key is saved in your operating system's secure credential store and is never displayed again.</small>
+                <small>Your progress stays in this dialog while Google AI Studio opens in a new tab. The key is validated before it is saved in your operating system's secure credential store and is never displayed again.</small>
               </div>
+              <a id="onboarding-provider-quota-link" class="hidden" href="https://ai.google.dev/gemini-api/docs/rate-limits" target="_blank" rel="noopener noreferrer">Check current Gemini quota and rate limits ↗</a>
+              <a id="onboarding-provider-pricing-link" class="hidden" href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Read current Gemini pricing and free-tier details ↗</a>
               <div class="provider-check-row">
                 <button id="onboarding-provider-recheck" class="secondary-button" type="button">Refresh credential status</button>
                 <small id="onboarding-provider-check-status" class="provider-check-status" role="status" aria-live="polite">Not checked</small>
@@ -82,7 +90,7 @@
           <section id="onboarding-source-setup">
             <p class="step-label">SOURCE SETUP</p>
             <h2 id="onboarding-heading" tabindex="-1">Build your personal intelligence feed</h2>
-            <p class="onboarding-explanation">Choose the sources you trust and grant access when asked. Source tabs do not need to remain open: AkuBrowser opens them during the first update and asks you to sign in only if the saved session has expired.</p>
+            <p class="onboarding-explanation">AkuBrowser uses a separate browser profile: sign-ins from your usual Chrome are not copied. For each source you select, grant Bridge access and sign in inside the source tab when prompted—these are separate steps. AkuBrowser keeps those sign-ins in its profile across normal restarts and updates, so source tabs do not need to remain open.</p>
             <form id="onboarding-form">
               <div id="onboarding-source-options" class="onboarding-options"></div>
               <div id="onboarding-summary" class="onboarding-summary">Choose at least one source feed, then make one selected source ready.</div>
@@ -1002,6 +1010,7 @@
       </form>
     </dialog>
 
+    <script src="/startup-watchdog.js?runtime=release-0.9.0"></script>
     <script type="module" src="/app.js?runtime=release-0.9.0"></script>
   </body>
 </html>

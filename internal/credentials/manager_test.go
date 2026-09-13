@@ -12,6 +12,33 @@ type memoryStore struct {
 	values map[credentialstore.Reference]string
 }
 
+func TestRuntimeCredentialNamespaceDefaultsToProduction(t *testing.T) {
+	t.Setenv(isolatedTestNamespaceEnv, "")
+	namespace, err := runtimeCredentialNamespace()
+	if err != nil || namespace != osStoreNamespace {
+		t.Fatalf("namespace=%q error=%v", namespace, err)
+	}
+}
+
+func TestRuntimeCredentialNamespaceAcceptsOnlyIsolatedTestNames(t *testing.T) {
+	const testNamespace = "AkuBrowserTest-0123456789abcdef"
+	t.Setenv(isolatedTestNamespaceEnv, testNamespace)
+	namespace, err := runtimeCredentialNamespace()
+	if err != nil || namespace != testNamespace {
+		t.Fatalf("namespace=%q error=%v", namespace, err)
+	}
+	for _, value := range []string{"AkuBrowser", "AkuBrowserTest-../personal", "AkuBrowserTest-short"} {
+		t.Setenv(isolatedTestNamespaceEnv, value)
+		if _, err := runtimeCredentialNamespace(); err == nil {
+			t.Fatalf("unsafe namespace %q was accepted", value)
+		}
+		manager := ForRuntime("", false)
+		if manager.primary != nil || manager.primaryError == nil {
+			t.Fatalf("invalid namespace %q reached OS credential store", value)
+		}
+	}
+}
+
 func (store *memoryStore) Get(reference credentialstore.Reference) (string, error) {
 	value, ok := store.values[reference]
 	if !ok {

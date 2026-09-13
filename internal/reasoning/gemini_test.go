@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -67,6 +68,57 @@ func geminiTestServer(t *testing.T, output string) *httptest.Server {
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+func TestValidateGeminiCredentialClassifiesKeyModelAndQuotaFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{name: "valid", status: http.StatusOK, body: `{"name":"models/gemini-3.5-flash-lite"}`, want: GeminiCredentialValid},
+		{name: "wrong model metadata", status: http.StatusOK, body: `{"name":"models/another-model"}`, want: GeminiCredentialInvalidResponse},
+		{name: "invalid key", status: http.StatusBadRequest, body: `{"error":{"status":"INVALID_ARGUMENT","message":"API key not valid. Please pass a valid API key."}}`, want: GeminiCredentialInvalidKey},
+		{name: "model unavailable", status: http.StatusForbidden, body: `{"error":{"status":"PERMISSION_DENIED","message":"Model is not available to this project."}}`, want: GeminiCredentialModelUnavailable},
+		{name: "missing model", status: http.StatusNotFound, body: `{"error":{"status":"NOT_FOUND","message":"models/gemini-3.5-flash-lite was not found"}}`, want: GeminiCredentialModelUnavailable},
+		{name: "quota exhausted", status: http.StatusTooManyRequests, body: `{"error":{"status":"RESOURCE_EXHAUSTED","message":"Quota exceeded"}}`, want: GeminiCredentialQuotaExhausted},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1/models/gemini-3.5-flash-lite" {
+					t.Errorf("path=%q", r.URL.Path)
+				}
+				if r.URL.RawQuery != "" || r.Header.Get("x-goog-api-key") != "test-key" {
+					t.Errorf("query=%q key=%q", r.URL.RawQuery, r.Header.Get("x-goog-api-key"))
+				}
+				w.WriteHeader(test.status)
+				_, _ = fmt.Fprint(w, test.body)
+			}))
+			defer server.Close()
+			result := ValidateGeminiCredential(context.Background(), server.URL+"/v1", "gemini-3.5-flash-lite", " test-key ")
+			if result.Status != test.want {
+				t.Fatalf("validation=%+v want status %q", result, test.want)
+			}
+			if test.want == GeminiCredentialValid && (!result.ModelChecked || result.HTTPStatus != http.StatusOK) {
+				t.Fatalf("successful validation=%+v", result)
+			}
+		})
+	}
+}
+
+func TestValidateGeminiCredentialIsBoundedByContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	result := ValidateGeminiCredential(ctx, server.URL, "gemini-3.5-flash-lite", "test-key")
+	if result.Status != GeminiCredentialTimeout {
+		t.Fatalf("validation=%+v", result)
+	}
 }
 
 func geminiTestConfig(t *testing.T, endpoint string) config.Config {

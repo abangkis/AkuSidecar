@@ -347,6 +347,8 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"onboarding-provider-recheck",
 			"onboarding-provider-check-status",
 			"onboarding-provider-secret",
+			"onboarding-provider-quota-link",
+			"onboarding-provider-pricing-link",
 			"Save key",
 			"secure credential store",
 			"Keep Codex App Server",
@@ -357,8 +359,13 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"function confirmOnboardingProvider",
 			"function skipOnboardingProvider",
 			"https://aistudio.google.com/apikey",
+			"https://ai.google.dev/gemini-api/docs/rate-limits",
+			"https://ai.google.dev/gemini-api/docs/pricing",
 			"/api/reasoning/credentials",
 			"function saveOnboardingProviderCredential",
+			"universal request allowance",
+			"configured model's metadata check",
+			"Actual generation and current quota are checked when you use the provider",
 			"Google may use that data to improve its products",
 			"has-provider-context",
 			"CODEX APP CONNECTION",
@@ -430,9 +437,19 @@ func TestReasoningCredentialWriteUsesConfiguredReferenceAndNeverEchoesSecret(t *
 		ActiveProvider: "deterministic",
 		Providers: map[string]config.ProviderConfig{
 			"deterministic":     {},
-			"gemini-flash-lite": {CredentialRef: "gemini.primary"},
+			"gemini-flash-lite": {Endpoint: "http://placeholder.invalid/v1", CredentialRef: "gemini.primary", Planning: config.ModelConfig{ModelID: "gemini-3.5-flash-lite"}},
 		},
 	}}
+	validationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models/gemini-3.5-flash-lite" || r.Header.Get("x-goog-api-key") != "test-only-secret-that-must-not-be-returned" {
+			http.Error(w, "unexpected validation request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"name":"models/gemini-3.5-flash-lite"}`)
+	}))
+	defer validationServer.Close()
+	cfg.Reasoning.Providers["gemini-flash-lite"] = config.ProviderConfig{Endpoint: validationServer.URL + "/v1", CredentialRef: "gemini.primary", Planning: config.ModelConfig{ModelID: "gemini-3.5-flash-lite"}}
 	runtime := engine.New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
 	server, err := New(cfg, state, runtime, log.New(io.Discard, "", 0))
 	if err != nil {
@@ -459,6 +476,47 @@ func TestReasoningCredentialWriteUsesConfiguredReferenceAndNeverEchoesSecret(t *
 	}
 	if !strings.Contains(response.Body.String(), `"reference":"gemini.primary"`) || !strings.Contains(response.Body.String(), `"configured":true`) {
 		t.Fatalf("response=%s", response.Body.String())
+	}
+}
+
+func TestReasoningCredentialWriteRejectsInvalidGeminiKeyBeforeStorage(t *testing.T) {
+	validationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-goog-api-key") != "invalid-key" {
+			t.Errorf("validation key=%q", r.Header.Get("x-goog-api-key"))
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"status":"INVALID_ARGUMENT","message":"API key not valid"}}`)
+	}))
+	defer validationServer.Close()
+	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	cfg := config.Config{Reasoning: config.ReasoningConfig{
+		ActiveProvider: "deterministic",
+		Providers: map[string]config.ProviderConfig{
+			"deterministic":     {},
+			"gemini-flash-lite": {Endpoint: validationServer.URL + "/v1", CredentialRef: "gemini.primary", Planning: config.ModelConfig{ModelID: "gemini-3.5-flash-lite"}},
+		},
+	}}
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0))
+	server, err := New(cfg, state, runtime, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secureStore := &httpCredentialStore{values: map[credentialstore.Reference]string{}}
+	server.credentials = credentials.NewManager(secureStore, nil)
+	request := httptest.NewRequest(http.MethodPut, "/api/reasoning/credentials", strings.NewReader(`{"provider":"gemini-flash-lite","secret":"invalid-key"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	err = server.route(response, request)
+	var apiErr apiError
+	if !errors.As(err, &apiErr) || apiErr.Code != "gemini_invalid_key" || apiErr.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("validation error=%v", err)
+	}
+	if _, stored := secureStore.values["gemini.primary"]; stored {
+		t.Fatal("invalid Gemini key was stored")
 	}
 }
 
@@ -604,6 +662,25 @@ func TestEmbeddedWebAssetsDoNotContainMojibake(t *testing.T) {
 		}
 		if strings.Contains(string(contents), "â") {
 			t.Fatalf("%s contains mojibake", asset)
+		}
+	}
+}
+
+func TestStartupRecoveryAndIsolatedProfileGuidanceAreEmbedded(t *testing.T) {
+	for asset, markers := range map[string][]string{
+		"web/index.html": {`id="startup-recovery"`, `href="/">Reload interface`, `src="/startup-watchdog.js`, "you do not need to download Chrome", "sign-ins from your usual Chrome are not copied", "grant Bridge access and sign in"},
+		"web/app.js":     {`$("#startup-recovery").hidden = true`, `$("#startup-recovery-heading").textContent = "AkuBrowser is still connecting"`, `window.addEventListener("focus", refreshBridgeAfterUserReturn)`, `function refreshBridgeAfterUserReturn()`, `Source session check timed out. Return to AkuBrowser or open the source again to retry.`},
+		"web/startup-watchdog.js": {`No ready confirmation arrived within 60 seconds.`, `window.addEventListener("error", onError, true)`},
+		"web/styles.css": {".startup-recovery[hidden] { display: none; }"},
+	} {
+		contents, err := embeddedAssets.ReadFile(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if !strings.Contains(string(contents), marker) {
+				t.Fatalf("%s is missing startup or login guidance contract %q", asset, marker)
+			}
 		}
 	}
 }

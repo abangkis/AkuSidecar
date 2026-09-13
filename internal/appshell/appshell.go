@@ -60,13 +60,14 @@ func (e *DiscoveryError) Error() string {
 }
 
 type LaunchOptions struct {
-	Executable    string
-	ExtensionPath string
-	IconPath      string
-	Identity      ApplicationIdentity
-	UserDataDir   string
-	URL           string
-	ExtraArgs     []string
+	Executable     string
+	ExtensionPath  string
+	IconPath       string
+	Identity       ApplicationIdentity
+	UserDataDir    string
+	URL            string
+	StartupLogPath string
+	ExtraArgs      []string
 }
 
 type ApplicationIdentity struct {
@@ -303,9 +304,16 @@ func buildArgs(options LaunchOptions) []string {
 		"--disable-background-mode",
 		"--disable-component-update",
 		"--disable-session-crashed-bubble",
+		// Chrome for Testing supports suppressing informational infobars;
+		// interactive permission prompts remain available. See Chromium's
+		// docs/chrome_for_testing/README.md, User Interface & Infobars.
+		"--disable-infobars",
 	}
 	if value := strings.TrimSpace(options.ExtensionPath); value != "" {
 		args = append(args, "--load-extension="+value)
+	}
+	if value := strings.TrimSpace(options.StartupLogPath); value != "" {
+		args = append(args, "--enable-logging", "--log-file="+value)
 	}
 	args = append(args, options.ExtraArgs...)
 	return args
@@ -316,6 +324,7 @@ func buildInternalPageArgs(userDataDir, page string) []string {
 		"--user-data-dir=" + userDataDir,
 		"--no-first-run",
 		"--no-default-browser-check",
+		"--disable-infobars",
 		"--new-window",
 		page,
 	}

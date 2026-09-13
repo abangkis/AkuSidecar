@@ -3,12 +3,17 @@ package credentials
 import (
 	"errors"
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/credentialstore"
 )
 
 const osStoreNamespace = "AkuBrowser"
+const isolatedTestNamespaceEnv = "AKUBROWSER_ISOLATED_TEST_CREDENTIAL_NAMESPACE"
+
+var isolatedTestNamespacePattern = regexp.MustCompile(`^AkuBrowserTest-[a-f0-9]{16,32}$`)
 
 type Source string
 
@@ -35,13 +40,28 @@ type Manager struct {
 }
 
 func ForRuntime(root string, development bool) Manager {
-	primary, err := credentialstore.OpenOS(osStoreNamespace)
+	namespace, err := runtimeCredentialNamespace()
+	if err != nil {
+		return Manager{primaryError: err}
+	}
+	primary, err := credentialstore.OpenOS(namespace)
 	manager := Manager{primary: primary, primaryError: err}
 	if development {
 		local := ForRoot(root)
 		manager.fallback = local
 	}
 	return manager
+}
+
+func runtimeCredentialNamespace() (string, error) {
+	value := strings.TrimSpace(os.Getenv(isolatedTestNamespaceEnv))
+	if value == "" {
+		return osStoreNamespace, nil
+	}
+	if !isolatedTestNamespacePattern.MatchString(value) {
+		return "", fmt.Errorf("invalid isolated test credential namespace")
+	}
+	return value, nil
 }
 
 // NewManager exposes dependency injection without binding callers to a

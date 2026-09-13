@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  failedSourceSessionObservations,
   sourceAccessReadinessState,
   sourcePermissionReadyForOnboarding,
 } from "../internal/httpapi/web/onboarding-source-readiness.js";
@@ -38,4 +39,14 @@ test("Sidecar keeps permission, registration, and capture failures distinct", ()
   assert.equal(sourceAccessReadinessState({ ...readyAccess, scriptRegistered: false }), "registration_missing");
   assert.equal(sourceAccessReadinessState({ ...readyAccess, ready: false }), "capture_not_ready");
   assert.equal(sourceAccessReadinessState(readyAccess), "ready");
+});
+
+test("failed global session probe replaces stale ready observations with unknown", () => {
+  const observedAt = "2026-09-13T08:00:00.000Z";
+  const sessions = failedSourceSessionObservations(["x", "instagram"], "Probe timed out.", observedAt);
+  assert.deepEqual(sessions, {
+    x: { source: "x", state: "unknown", observedAt, detail: "Probe timed out." },
+    instagram: { source: "instagram", state: "unknown", observedAt, detail: "Probe timed out." },
+  });
+  assert.equal("tabCount" in sessions.x, false, "unknown must not invent a zero-tab observation");
 });

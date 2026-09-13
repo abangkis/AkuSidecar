@@ -3,7 +3,11 @@ package reasoning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +20,114 @@ import (
 )
 
 const geminiDefaultEndpoint = "https://generativelanguage.googleapis.com/v1"
+
+const geminiCredentialValidationTimeout = 6 * time.Second
+
+const (
+	GeminiCredentialValid               = "valid"
+	GeminiCredentialInvalidKey          = "invalid_key"
+	GeminiCredentialModelUnavailable    = "model_unavailable"
+	GeminiCredentialQuotaExhausted      = "quota_exhausted"
+	GeminiCredentialEndpointUnreachable = "endpoint_unreachable"
+	GeminiCredentialTimeout             = "timeout"
+	GeminiCredentialInvalidResponse     = "invalid_response"
+	GeminiCredentialEndpointInvalid     = "endpoint_invalid"
+)
+
+// GeminiCredentialValidation is the bounded, non-generative result of
+// checking a key against the configured model metadata endpoint. It never
+// contains the credential or an upstream response body.
+type GeminiCredentialValidation struct {
+	Status       string
+	Message      string
+	HTTPStatus   int
+	Model        string
+	ModelChecked bool
+}
+
+// ValidateGeminiCredential checks authentication and model access without
+// starting a model turn. The API key is sent only in the documented header;
+// redirects are not followed so a configured endpoint cannot forward it to a
+// different host.
+func ValidateGeminiCredential(ctx context.Context, endpoint, model, apiKey string) GeminiCredentialValidation {
+	model = strings.TrimSpace(model)
+	apiKey = strings.TrimSpace(apiKey)
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		endpoint = geminiDefaultEndpoint
+	}
+	if apiKey == "" {
+		return GeminiCredentialValidation{Status: GeminiCredentialInvalidKey, Message: "Paste a Gemini API key before validating it.", HTTPStatus: http.StatusUnprocessableEntity, Model: model}
+	}
+	base, err := url.Parse(endpoint)
+	if err != nil || base.Scheme == "" || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") || model == "" {
+		return GeminiCredentialValidation{Status: GeminiCredentialEndpointInvalid, Message: "The configured Gemini API endpoint or model is invalid.", HTTPStatus: http.StatusBadGateway, Model: model}
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/models/" + url.PathEscape(model)
+	base.RawQuery = ""
+	base.Fragment = ""
+
+	probeCtx, cancel := context.WithTimeout(ctx, geminiCredentialValidationTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, base.String(), nil)
+	if err != nil {
+		return GeminiCredentialValidation{Status: GeminiCredentialEndpointInvalid, Message: "The configured Gemini API endpoint is invalid.", HTTPStatus: http.StatusBadGateway, Model: model}
+	}
+	request.Header.Set("x-goog-api-key", apiKey)
+	request.Header.Set("Accept", "application/json")
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(request)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
+			return GeminiCredentialValidation{Status: GeminiCredentialTimeout, Message: "Gemini API validation timed out. Check your connection, then try again.", HTTPStatus: http.StatusGatewayTimeout, Model: model}
+		}
+		return GeminiCredentialValidation{Status: GeminiCredentialEndpointUnreachable, Message: "AkuBrowser could not reach the Gemini API. Check your connection, then try again.", HTTPStatus: http.StatusServiceUnavailable, Model: model}
+	}
+	defer response.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+	if readErr != nil {
+		return GeminiCredentialValidation{Status: GeminiCredentialEndpointUnreachable, Message: "AkuBrowser could not read the Gemini API response. Check your connection, then try again.", HTTPStatus: http.StatusServiceUnavailable, Model: model}
+	}
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.Name) != "models/"+model {
+			return GeminiCredentialValidation{Status: GeminiCredentialInvalidResponse, Message: "Gemini returned an unexpected response while validating this key.", HTTPStatus: http.StatusBadGateway, Model: model}
+		}
+		return GeminiCredentialValidation{Status: GeminiCredentialValid, Message: fmt.Sprintf("Gemini accepted this key for model metadata %s. Generation and current quota are not tested by this check.", model), HTTPStatus: http.StatusOK, Model: model, ModelChecked: true}
+	}
+
+	apiStatus, apiMessage := parseGeminiAPIError(body)
+	lowerMessage := strings.ToLower(strings.TrimSpace(apiMessage + " " + apiStatus))
+	if response.StatusCode == http.StatusTooManyRequests || strings.Contains(lowerMessage, "resource_exhausted") || strings.Contains(lowerMessage, "quota exceeded") || strings.Contains(lowerMessage, "rate limit") {
+		return GeminiCredentialValidation{Status: GeminiCredentialQuotaExhausted, Message: "Gemini returned a quota or rate-limit response for this project. Check current limits in Google AI Studio or wait for the limit to reset; you do not need to create another key based on this response.", HTTPStatus: http.StatusTooManyRequests, Model: model}
+	}
+	if response.StatusCode == http.StatusUnauthorized || geminiAPIKeyLooksInvalid(lowerMessage) {
+		return GeminiCredentialValidation{Status: GeminiCredentialInvalidKey, Message: "Gemini rejected this API key. Create or copy a valid key from Google AI Studio, then try again.", HTTPStatus: http.StatusUnprocessableEntity, Model: model}
+	}
+	if response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusBadRequest {
+		return GeminiCredentialValidation{Status: GeminiCredentialModelUnavailable, Message: fmt.Sprintf("Gemini could not access model %s for this project (HTTP %d). Check the selected project, model access, and API restrictions in Google AI Studio.", model, response.StatusCode), HTTPStatus: http.StatusUnprocessableEntity, Model: model}
+	}
+	return GeminiCredentialValidation{Status: GeminiCredentialInvalidResponse, Message: fmt.Sprintf("Gemini returned HTTP %d while validating this key. Try again later.", response.StatusCode), HTTPStatus: http.StatusBadGateway, Model: model}
+}
+
+func parseGeminiAPIError(body []byte) (status, message string) {
+	var payload struct {
+		Error struct {
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", ""
+	}
+	return payload.Error.Status, payload.Error.Message
+}
+
+func geminiAPIKeyLooksInvalid(message string) bool {
+	return strings.Contains(message, "api key") && (strings.Contains(message, "invalid") || strings.Contains(message, "not valid") || strings.Contains(message, "missing") || strings.Contains(message, "unauthenticated"))
+}
 
 // Gemini Interactions structured output currently rejects candidate-evaluation
 // requests with seven effective candidates, while the same shape succeeds for
