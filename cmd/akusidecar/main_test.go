@@ -22,6 +22,14 @@ func TestBrowserProfilePathPrefersExplicitInstalledAppPath(t *testing.T) {
 	}
 }
 
+func TestDatabaseDecisionRequiredOnlyForInstalledApplication(t *testing.T) {
+	for _, mode := range []string{"", "development", "development-supervised", "production-runtime", "production-installed-app"} {
+		if got := requiresDatabaseDecision(config.DeploymentConfig{Mode: mode}); got != (mode == "production-installed-app") {
+			t.Fatalf("mode %q guard=%v", mode, got)
+		}
+	}
+}
+
 func TestBrowserProfilePathKeepsLegacyFallback(t *testing.T) {
 	cfg := config.Config{Root: t.TempDir()}
 	want := filepath.Join(cfg.Root, "runtime", "app-profile")

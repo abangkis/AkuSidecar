@@ -29,6 +29,10 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
+func requiresDatabaseDecision(deployment config.DeploymentConfig) bool {
+	return deployment.Mode == "production-installed-app"
+}
+
 func main() {
 	logger := log.New(os.Stdout, "AkuSidecar ", log.LstdFlags|log.LUTC|log.Lmsgprefix)
 	options := config.ParseFlags()
@@ -46,12 +50,28 @@ func main() {
 		fatal(logger, json.NewEncoder(os.Stdout).Encode(probe))
 		return
 	}
+	if options.DatabaseInspect {
+		fatal(logger, json.NewEncoder(os.Stdout).Encode(store.InspectDatabase(cfg.Database.Path)))
+		return
+	}
 	if version, running := existingInstance(fmt.Sprintf("http://%s/api/health", cfg.Server.HostPort()), time.Second); running {
 		logger.Printf("another AkuSidecar instance version=%s is already serving this address; start cancelled to avoid a second instance", version)
 		os.Exit(5)
 	}
 	settings := domain.DefaultSettings(cfg.Capture.Profile, cfg.Capture.Visibility, cfg.Preference.Mode, cfg.Capture.OpenMissingSource)
 	settings.ReasoningProvider = cfg.Reasoning.ActiveProvider
+	if options.DatabaseAction != "" {
+		result, prepareErr := store.PrepareDatabaseExpected(cfg.Database.Path, options.DatabaseAction, options.DatabaseConfirm, options.DatabaseExpectedFingerprint, settings)
+		fatal(logger, prepareErr)
+		fatal(logger, json.NewEncoder(os.Stdout).Encode(result))
+		return
+	}
+	if requiresDatabaseDecision(cfg.Deployment) {
+		compatibility := store.InspectDatabase(cfg.Database.Path)
+		if compatibility.Status != "absent" && compatibility.Status != "current" {
+			fatal(logger, fmt.Errorf("database requires an explicit recovery decision (%s): %s; inspect with --database-inspect", compatibility.Status, compatibility.Reason))
+		}
+	}
 	state, err := store.Open(cfg.Database.Path, settings)
 	fatal(logger, err)
 	defer state.Close()

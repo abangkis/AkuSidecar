@@ -455,6 +455,10 @@ type BridgeConfig struct {
 }
 
 type Options struct {
+	DatabaseInspect             bool
+	DatabaseAction              string
+	DatabaseConfirm             bool
+	DatabaseExpectedFingerprint string
 	ConfigPath                  string
 	CodexPath                   string
 	DatabasePath                string
@@ -478,6 +482,10 @@ type Options struct {
 
 func ParseFlags() Options {
 	var options Options
+	flag.BoolVar(&options.DatabaseInspect, "database-inspect", false, "inspect existing database compatibility and exit without migration")
+	flag.StringVar(&options.DatabaseAction, "database-action", "", "prepare existing database: migrate or fresh")
+	flag.BoolVar(&options.DatabaseConfirm, "database-confirm", false, "confirm the selected database action and recoverable backup")
+	flag.StringVar(&options.DatabaseExpectedFingerprint, "database-expected-fingerprint", "", "fingerprint shown during the confirmed database inspection")
 	flag.StringVar(&options.ConfigPath, "config", "config/sidecar.json", "path to typed AkuSidecar configuration")
 	flag.StringVar(&options.CodexPath, "codex-path", "", "override Codex executable for this process")
 	flag.StringVar(&options.DatabasePath, "database", "", "override fresh SQLite database path")

@@ -105,113 +105,15 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		if err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
 			return fmt.Errorf("read schema version: %w", err)
 		}
-		if version == "7" {
-			if err := migrateSchema7To8(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 7 to 8: %w", err)
+		for version != schemaVersion {
+			migration, ok := schemaMigrations[version]
+			if !ok {
+				break
 			}
-			version = "8"
-		}
-		if version == "8" {
-			if err := migrateSchema8To9(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 8 to 9: %w", err)
+			if err := migration.run(ctx, s.db); err != nil {
+				return fmt.Errorf("migrate schema %s to %s: %w", version, migration.next, err)
 			}
-			version = "9"
-		}
-		if version == "9" {
-			if err := migrateSchema9To10(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 9 to 10: %w", err)
-			}
-			version = "10"
-		}
-		if version == "10" {
-			if err := migrateSchema10To11(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 10 to 11: %w", err)
-			}
-			version = "11"
-		}
-		if version == "11" {
-			if err := migrateSchema11To12(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 11 to 12: %w", err)
-			}
-			version = "12"
-		}
-		if version == "12" {
-			if err := migrateSchema12To13(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 12 to 13: %w", err)
-			}
-			version = "13"
-		}
-		if version == "13" {
-			if err := migrateSchema13To14(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 13 to 14: %w", err)
-			}
-			version = "14"
-		}
-		if version == "14" {
-			if err := migrateSchema14To15(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 14 to 15: %w", err)
-			}
-			version = "15"
-		}
-		if version == "15" {
-			if err := migrateSchema15To16(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 15 to 16: %w", err)
-			}
-			version = "16"
-		}
-		if version == "16" {
-			if err := migrateSchema16To17(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 16 to 17: %w", err)
-			}
-			version = "17"
-		}
-		if version == "17" {
-			if err := migrateSchema17To18(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 17 to 18: %w", err)
-			}
-			version = "18"
-		}
-		if version == "18" {
-			if err := migrateSchema18To19(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 18 to 19: %w", err)
-			}
-			version = "19"
-		}
-		if version == "19" {
-			if err := migrateSchema19To20(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 19 to 20: %w", err)
-			}
-			version = "20"
-		}
-		if version == "20" {
-			if err := migrateSchema20To21(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 20 to 21: %w", err)
-			}
-			version = "21"
-		}
-		if version == "21" {
-			if err := migrateSchema21To22(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 21 to 22: %w", err)
-			}
-			version = "22"
-		}
-		if version == "22" {
-			if err := migrateSchema22To23(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 22 to 23: %w", err)
-			}
-			version = "23"
-		}
-		if version == "23" {
-			if err := migrateSchema23To24(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 23 to 24: %w", err)
-			}
-			version = "24"
-		}
-		if version == "24" {
-			if err := migrateSchema24To25(ctx, s.db); err != nil {
-				return fmt.Errorf("migrate schema 24 to 25: %w", err)
-			}
-			version = schemaVersion
+			version = migration.next
 		}
 		if version != schemaVersion {
 			return fmt.Errorf("database schema %s is incompatible with required schema %s; start with a fresh database", version, schemaVersion)
