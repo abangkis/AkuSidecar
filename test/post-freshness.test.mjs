@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import {
+  POST_FRESHNESS_CATEGORIES,
   classifyPostFreshness,
   compactPostAge,
   postHeaderContext,
@@ -22,6 +23,11 @@ test("post freshness uses the agreed category boundaries", () => {
   assert.equal(classifyPostFreshness({ referenceAt: now - 6 * hour, now }).key, "today");
   assert.equal(classifyPostFreshness({ referenceAt: now - day, now }).key, "today");
   assert.equal(classifyPostFreshness({ referenceAt: now - day - 1, now }).key, "older");
+  assert.equal(classifyPostFreshness({ referenceAt: now - 3 * day + 1, now }).key, "older");
+  assert.equal(classifyPostFreshness({ referenceAt: now - 3 * day, now }).key, "older_3d");
+  assert.equal(classifyPostFreshness({ referenceAt: now - 6 * day + 1, now }).key, "older_3d");
+  assert.equal(classifyPostFreshness({ referenceAt: now - 6 * day, now }).key, "older_6d");
+  assert.deepEqual(POST_FRESHNESS_CATEGORIES.slice(-4), ["older", "older_3d", "older_6d", "unknown"]);
 });
 
 test("absolute publication time takes priority over relative source text", () => {
@@ -40,6 +46,8 @@ test("relative adapter timestamps support compact and verbose forms", () => {
   assert.equal(classifyPostFreshness({ timestampText: "3h • Edited", now }).key, "recent");
   assert.equal(classifyPostFreshness({ timestampText: "15 hours", now }).key, "today");
   assert.equal(classifyPostFreshness({ timestampText: "2d", now }).key, "older");
+  assert.equal(classifyPostFreshness({ timestampText: "4d", now }).key, "older_3d");
+  assert.equal(classifyPostFreshness({ timestampText: "7d", now }).key, "older_6d");
 });
 
 test("missing or implausibly future timestamps remain unknown", () => {

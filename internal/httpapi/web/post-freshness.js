@@ -10,6 +10,8 @@ export const POST_FRESHNESS_CATEGORIES = Object.freeze([
   "recent",
   "today",
   "older",
+  "older_3d",
+  "older_6d",
   "unknown",
 ]);
 
@@ -78,5 +80,8 @@ export function classifyPostFreshness({ publishedAt, timestampText, referenceAt,
   else if (ageMs < HOUR_MS) key = "fresh";
   else if (ageMs < 6 * HOUR_MS) key = "recent";
   else if (ageMs <= DAY_MS) key = "today";
+  else if (ageMs < 3 * DAY_MS) key = "older";
+  else if (ageMs < 6 * DAY_MS) key = "older_3d";
+  else key = "older_6d";
   return { key, referenceAt: referenceMs };
 }
