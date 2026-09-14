@@ -16,7 +16,7 @@ import {
   sourcePermissionReadyForOnboarding,
 } from "./onboarding-source-readiness.js";
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
-import { providerCanActivate, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
+import { providerCanActivate, providerReadinessFeedback, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
 import {
   buildLibraryForgetPath,
   buildLibraryKeepPath,
@@ -4131,18 +4131,9 @@ function syncProviderReadinessFeedback(choice) {
     status.classList.add("is-error");
   } else {
     const checkedSuffix = state.providerReadinessCheckedAt ? ` · ${state.providerReadinessCheckedAt}` : "";
-    if (selected?.availabilityRequired && selected.availabilityChecked) {
-      status.textContent = `${selected.available ? "Ready" : "Unavailable"}${checkedSuffix}`;
-      status.classList.add(selected.available ? "is-ready" : "is-unavailable");
-    } else if (selected?.credentialName && selected.configured !== false) {
-      status.textContent = `Key saved${checkedSuffix}`;
-      status.classList.add("is-ready");
-    } else if (selected?.credentialName) {
-      status.textContent = `Key required${checkedSuffix}`;
-      status.classList.add("is-unavailable");
-    } else {
-      status.textContent = `Not checked${checkedSuffix}`;
-    }
+    const feedback = providerReadinessFeedback(selected);
+    status.textContent = `${feedback.label}${checkedSuffix}`;
+    if (feedback.className) status.classList.add(feedback.className);
   }
 }
 
