@@ -195,12 +195,12 @@ func main() {
 	if resumed > 0 {
 		logger.Printf("resumed_reasoning_runs=%d from_durable_capture=true", resumed)
 	}
-	var shell *appshell.Window
+	var shell *appshell.Session
 	if options.AppShell {
 		if resetErr := discardLegacyProfileResetMarker(state, logger); resetErr != nil {
 			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
-		shell = launchAppShell(logger, options, cfg, address.String())
+		shell = launchAppShell(logger, options, cfg, address.String(), server)
 		server.SetOpenExtensionsAction(shell.OpenExtensionsPage)
 	}
 	signals := make(chan os.Signal, 1)
@@ -212,6 +212,7 @@ func main() {
 		logger.Printf("app shell window closed")
 	}
 	shutdownStarted := time.Now()
+	shell.Cancel() // Stop accepting/relaunching windows as soon as shutdown wins.
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()
 	shell.Terminate()
@@ -290,7 +291,7 @@ func discoverChromium(options config.Options) int {
 	return 0
 }
 
-func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string) *appshell.Window {
+func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) *appshell.Session {
 	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
 	cancel()
@@ -317,7 +318,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	if startupLogPath != "" {
 		logger.Printf("isolated Chromium startup diagnostics enabled path=%s", startupLogPath)
 	}
-	window, err := appshell.Launch(context.Background(), appshell.LaunchOptions{
+	window, err := appshell.LaunchSession(context.Background(), appshell.LaunchOptions{
 		Executable:     result.Executable,
 		ExtensionPath:  options.BridgeExtensionPath,
 		IconPath:       appShellIconPath(options.BridgeExtensionPath),
@@ -325,7 +326,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		UserDataDir:    profilePath,
 		URL:            target,
 		StartupLogPath: startupLogPath,
-	})
+	}, server.SetAppShellStartup, func(err error) { logger.Printf("app shell recovery: %v", err) })
 	fatal(logger, err)
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
 	return window

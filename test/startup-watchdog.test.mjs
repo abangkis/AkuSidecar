@@ -4,30 +4,69 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const source = readFileSync(new URL("../internal/httpapi/web/startup-watchdog.js", import.meta.url), "utf8");
-function fixture() {
+function fixture(hash = "") {
   const elements = Object.fromEntries(["startup-recovery", "startup-recovery-heading", "startup-recovery-detail"]
     .map((id) => [id, { hidden: false, textContent: "" }]));
   const listeners = new Map();
   let timeout;
   let cleared = false;
+  const frames = [];
+  const requests = [];
+  const replacements = [];
   const window = {
     addEventListener: (name, handler) => listeners.set(name, handler),
     removeEventListener: (name) => listeners.delete(name),
   };
   vm.runInNewContext(source, {
     window,
+    location: { hash, pathname: "/", search: "" },
+    history: { state: null, replaceState: (...args) => replacements.push(args) },
+    requestAnimationFrame: (callback) => frames.push(callback),
+    fetch: (...args) => { requests.push(args); return Promise.resolve({ status: 204 }); },
     document: { getElementById: (id) => elements[id] },
     setTimeout: (handler, ms) => { assert.equal(ms, 60_000); timeout = handler; return 1; },
     clearTimeout: () => { cleared = true; },
   });
   return {
-    elements, window, listeners,
+    elements, window, listeners, requests, replacements,
+    frame: () => frames.shift()?.(),
     send: (name, event) => listeners.get(name)?.(event),
     timeout: () => timeout(),
     cleared: () => cleared,
     text: () => elements["startup-recovery-detail"].textContent,
   };
 }
+
+test("native acknowledgement waits for ready and two frames and strips fragment", () => {
+  const token = "a".repeat(64);
+  const app = fixture(`#aku-startup=${token}`);
+  assert.equal(app.replacements[0][2], "/");
+  app.send("aku-startup-stage", { detail: "restoring" });
+  app.frame();
+  assert.equal(app.requests.length, 0);
+  app.send("aku-startup-stage", { detail: "ready" });
+  assert.equal(app.requests.length, 0);
+  app.frame();
+  assert.equal(app.requests.length, 0);
+  app.frame();
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.requests[0][0], "/api/app-shell/startup-ready");
+  assert.equal(app.requests[0][1].headers["X-Aku-Startup-Token"], token);
+  assert.equal(app.requests[0][1].method, "POST");
+  app.send("aku-startup-stage", { detail: "ready" });
+  app.frame(); app.frame();
+  assert.equal(app.requests.length, 1);
+});
+
+test("ordinary tabs and malformed fragments cannot acknowledge native startup", () => {
+  for (const fragment of ["", "#other", "#aku-startup=bad"]) {
+    const app = fixture(fragment);
+    app.send("aku-startup-stage", { detail: "ready" });
+    app.frame(); app.frame();
+    assert.equal(app.requests.length, 0);
+    assert.equal(app.replacements.length, 0);
+  }
+});
 
 test("missing module readiness yields bounded recovery without any app code", () => {
   const app = fixture();

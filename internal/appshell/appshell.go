@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,8 @@ const probeTimeout = 5 * time.Second
 const gracefulTerminateTimeout = 8 * time.Second
 
 var versionPattern = regexp.MustCompile(`\d+\.\d+\.\d+(\.\d+)?`)
+
+var errCleanupUnverified = errors.New("app shell cleanup could not be verified")
 
 type Candidate struct {
 	Path   string `json:"path"`
@@ -68,6 +71,7 @@ type LaunchOptions struct {
 	URL            string
 	StartupLogPath string
 	ExtraArgs      []string
+	Startup        *Startup
 }
 
 type ApplicationIdentity struct {
@@ -94,12 +98,16 @@ func (identity ApplicationIdentity) validate() error {
 }
 
 type Window struct {
+	ownershipMu sync.Mutex
+	closed      chan struct{}
+	cleanupErr  error
 	command     *exec.Cmd
 	owner       processOwnership
 	icon        windowIcon
 	done        chan error
 	executable  string
 	userDataDir string
+	startup     *Startup
 }
 
 func (w *Window) PID() int {
@@ -119,6 +127,14 @@ func (w *Window) Done() <-chan error {
 func (w *Window) Terminate() {
 	if w == nil {
 		return
+	}
+	w.startup.Stop()
+	w.ownershipMu.Lock()
+	defer w.ownershipMu.Unlock()
+	select {
+	case <-w.closed:
+		return
+	default:
 	}
 	var root *os.Process
 	if w.command != nil {
@@ -151,8 +167,25 @@ func (w *Window) OpenExtensionsPage(ctx context.Context) error {
 }
 
 func (w *Window) release() {
+	w.ownershipMu.Lock()
+	defer w.ownershipMu.Unlock()
+	w.startup.Stop()
 	w.icon.close()
+	w.cleanupErr = w.owner.drain()
 	w.owner.close()
+	close(w.closed)
+}
+
+// CloseForRetry only permits profile reuse after root wait and owned-tree
+// cleanup have both completed. A timeout/error must never trigger relaunch.
+func (w *Window) CloseForRetry(ctx context.Context) error {
+	w.Terminate()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.closed:
+		return w.cleanupErr
+	}
 }
 
 func Discover(ctx context.Context, explicit string) (Result, error) {
@@ -250,6 +283,9 @@ func validateCandidate(ctx context.Context, candidate Candidate) (string, error)
 }
 
 func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(options.Executable) == "" {
 		return nil, errors.New("app shell executable is required")
 	}
@@ -273,18 +309,25 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 	}
 	if err := owner.attach(command); err != nil {
 		_ = command.Process.Kill()
+		_ = command.Wait()
 		owner.close()
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errCleanupUnverified, err)
 	}
 	icon, err := applyWindowIcon(command.Process.Pid, options.IconPath, options.UserDataDir, options.Identity)
 	if err != nil {
 		owner.terminate(command.Process)
 		_ = command.Wait()
+		cleanupErr := owner.drain()
 		owner.close()
+		if cleanupErr != nil {
+			return nil, fmt.Errorf("%w: initialization: %v; cleanup: %v", errCleanupUnverified, err, cleanupErr)
+		}
 		return nil, err
 	}
 	window := &Window{
+		closed:  make(chan struct{}),
 		command: command, owner: owner, icon: icon, done: make(chan error, 1),
+		startup:    options.Startup,
 		executable: options.Executable, userDataDir: options.UserDataDir,
 	}
 	go func() {

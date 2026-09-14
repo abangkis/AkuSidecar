@@ -217,6 +217,35 @@ func (o *processOwnership) close() {
 	}
 }
 
+func (o *processOwnership) drain() error {
+	if o.job == 0 {
+		return nil
+	}
+	// Root wait has completed. Kill any remaining owned helpers, matching the
+	// old KILL_ON_JOB_CLOSE behavior, then verify zero active processes before
+	// the handle is released and a replacement may use this profile.
+	if err := windows.TerminateJobObject(o.job, 1); err != nil {
+		return fmt.Errorf("stop remaining app shell processes: %w", err)
+	}
+	var accounting struct {
+		TotalUser, TotalKernel, PeriodUser, PeriodKernel                 int64
+		PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses uint32
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if err := windows.QueryInformationJobObject(o.job, 1, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil); err != nil {
+			return fmt.Errorf("verify app shell cleanup: %w", err)
+		}
+		if accounting.ActiveProcesses == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("app shell process tree did not finish cleanup")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 type windowIcon struct {
 	handles []windows.Handle
 }

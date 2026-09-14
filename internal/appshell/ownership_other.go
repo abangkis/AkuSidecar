@@ -88,6 +88,12 @@ func rootExited(root *os.Process, timeout time.Duration) bool {
 
 func (o processOwnership) close() {}
 
+func (o processOwnership) drain() error {
+	// Native retry is Windows-only. Do not claim process-group exclusivity on
+	// other platforms without an equivalent verified cleanup implementation.
+	return errors.New("verified app-shell retry is only available on Windows")
+}
+
 type windowIcon struct{}
 
 func applyWindowIcon(int, string, string, ApplicationIdentity) (windowIcon, error) {

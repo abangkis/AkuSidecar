@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -41,6 +42,7 @@ type Server struct {
 	shutdownOnce      sync.Once
 	appShellActionsMu sync.RWMutex
 	openExtensions    func(context.Context) error
+	appShellStartup   *appshell.Startup
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {
@@ -144,6 +146,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		p = "/"
 	}
 	switch {
+	case r.Method == http.MethodPost && p == "/api/app-shell/startup-ready":
+		return s.acknowledgeAppShellStartup(w, r)
 	case r.Method == http.MethodPost && p == "/api/app-shell/open-extensions":
 		if !s.config.Dev || strings.TrimSpace(s.config.Deployment.Mode) != "development" {
 			return notFound("app-shell development action")
