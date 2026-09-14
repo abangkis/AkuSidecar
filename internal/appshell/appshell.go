@@ -72,6 +72,9 @@ type LaunchOptions struct {
 	StartupLogPath string
 	ExtraArgs      []string
 	Startup        *Startup
+	// The readiness handshake still runs when the native status is hidden.
+	SuppressStartupWindow bool
+	OnStartupReady        func()
 }
 
 type ApplicationIdentity struct {

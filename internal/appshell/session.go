@@ -33,10 +33,13 @@ func launchSession(ctx context.Context, options LaunchOptions, attach func(*Star
 	if err != nil {
 		return nil, err
 	}
+	startup.onReady = options.OnStartupReady
 	if attach != nil {
 		attach(startup)
 	}
-	show(startup)
+	if !options.SuppressStartupWindow {
+		show(startup)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Session{startup: startup, done: make(chan error, 1), cancel: cancel}
 	target := options.URL

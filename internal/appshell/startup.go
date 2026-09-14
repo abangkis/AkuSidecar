@@ -28,6 +28,7 @@ type Startup struct {
 	retrying     bool
 	retryFailed  bool
 	stopped      chan struct{}
+	onReady      func()
 }
 
 func NewStartup(target string) (*Startup, error) {
@@ -56,15 +57,20 @@ func (s *Startup) Acknowledge(r *http.Request) bool {
 		return false
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.finished || s.ready || r.Method != http.MethodPost || r.Header.Get("Origin") != s.origin ||
 		r.Host != s.origin[len("http://"):] || r.Header.Get("Sec-Fetch-Site") != "same-origin" ||
 		len(r.Header.Get("X-Aku-Startup-Token")) != 64 ||
 		subtle.ConstantTimeCompare([]byte(s.token), []byte(r.Header.Get("X-Aku-Startup-Token"))) != 1 {
+		s.mu.Unlock()
 		return false
 	}
 	s.ready = true
 	s.token = ""
+	onReady := s.onReady
+	s.mu.Unlock()
+	if onReady != nil {
+		onReady()
+	}
 	return true
 }
 

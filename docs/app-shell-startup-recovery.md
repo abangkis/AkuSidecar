@@ -1,10 +1,20 @@
 # Native app-shell startup status
 
-The Windows app shell has a small native status window owned by AkuSidecar. It
-does not depend on Chromium loading HTML. After approximately one second it
-shows that the local HTTP service has started and that interface initialization
-has not yet been acknowledged. At 60 seconds without acknowledgement it offers
-recovery guidance in the same window. Keep waiting resets that reminder timer;
+The Windows installed app has a small native status window owned by AkuSidecar.
+It appears only for a fresh isolated browser profile or when the installed
+source tuple has changed. Development and routine launches with an acknowledged
+tuple do not show it. A per-profile marker records the release version and
+source-freeze fingerprint only after a valid interface-ready acknowledgement;
+it contains no browser session or capability. Missing, damaged, or unreadable
+markers leave recovery available. The readiness handshake continues on quiet
+launches. The marker is UI state, not proof of visible pixels or installation
+integrity, and deleting it causes recovery to reappear on the next launch.
+
+The status does not depend on Chromium loading HTML. After approximately one
+second on an eligible launch it shows that the local HTTP service has started
+and that interface initialization has not yet been acknowledged. At 60 seconds
+without acknowledgement it offers recovery guidance in the same window. Keep
+waiting resets that reminder timer;
 Copy diagnostics copies fixed startup state and elapsed time. Retry window is
 an explicit user action: it closes the existing owned Chromium tree, waits for
 root exit and verified zero active processes in its Windows Job Object, then
@@ -44,10 +54,11 @@ independent of privileged runtime control and grants no application-data access.
 It is not persisted or included in diagnostics or server request URLs.
 
 Acknowledgement changes the native message to "The interface reports ready";
-it does **not** close the native window. JavaScript and animation frames cannot
-prove that Chromium's compositor displayed pixels. The recovery window remains
-reachable until the user closes it with X or the shell exits. This adds one manually
-dismissed status window even to successful launches. A reload after the launch
+it does **not** close the native window on that one fresh/install-update launch.
+JavaScript and animation frames cannot prove that Chromium's compositor displayed
+pixels. The recovery window remains reachable until the user closes it with X or
+the shell exits. Subsequent launches of the same acknowledged tuple show no
+native status window. A reload after the launch
 fragment was removed cannot acknowledge that launch; if the UI becomes visible,
 the user can still close the status with X. The window does not determine the cause
 of a blank screen or repair it. If Windows cannot create the native window,

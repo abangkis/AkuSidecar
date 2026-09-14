@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,6 +53,53 @@ func TestBrowserProfilePathKeepsLegacyFallback(t *testing.T) {
 	want := filepath.Join(cfg.Root, "runtime", "app-profile")
 	if got := browserProfilePath(config.Options{}, cfg); got != want {
 		t.Fatalf("browserProfilePath=%q want=%q", got, want)
+	}
+}
+
+func TestStartupStatusOnlyForFreshOrUpdatedInstalledTuple(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "browser-profile")
+	installed := config.DeploymentConfig{Mode: "production-installed-app", ReleaseVersion: "0.9.0", SourceFreeze: "browser-a:sidecar-a:bridge-a"}
+	show, mark, err := startupStatusPolicy(config.DeploymentConfig{Mode: "development"}, profile)
+	if err != nil || show || mark != nil {
+		t.Fatalf("development should not show native status: show=%v mark=%v err=%v", show, mark != nil, err)
+	}
+	show, mark, err = startupStatusPolicy(installed, profile)
+	if err != nil || !show || mark == nil {
+		t.Fatalf("fresh profile must show recovery: show=%v mark=%v err=%v", show, mark != nil, err)
+	}
+	if _, err := os.Stat(filepath.Join(profile, startupReadyMarker)); !os.IsNotExist(err) {
+		t.Fatalf("marker created before interface acknowledgement: %v", err)
+	}
+	if err := mark(); err != nil {
+		t.Fatal(err)
+	}
+	show, mark, err = startupStatusPolicy(installed, profile)
+	if err != nil || show || mark != nil {
+		t.Fatalf("daily launch should stay quiet: show=%v mark=%v err=%v", show, mark != nil, err)
+	}
+	installed.SourceFreeze = "browser-b:sidecar-a:bridge-a"
+	show, mark, err = startupStatusPolicy(installed, profile)
+	if err != nil || !show || mark == nil {
+		t.Fatalf("updated tuple must show recovery once: show=%v mark=%v err=%v", show, mark != nil, err)
+	}
+	if err := mark(); err != nil {
+		t.Fatal(err)
+	}
+	show, _, err = startupStatusPolicy(installed, profile)
+	if err != nil || show {
+		t.Fatalf("updated tuple should stay quiet after acknowledgement: show=%v err=%v", show, err)
+	}
+	installed.ReleaseVersion = "0.9.1"
+	show, _, err = startupStatusPolicy(installed, profile)
+	if err != nil || !show {
+		t.Fatalf("new release version must show recovery: show=%v err=%v", show, err)
+	}
+}
+
+func TestStartupStatusMissingIdentityKeepsRecoveryAvailable(t *testing.T) {
+	show, mark, err := startupStatusPolicy(config.DeploymentConfig{Mode: "production-installed-app", ReleaseVersion: "0.9.0"}, t.TempDir())
+	if !show || mark != nil || err == nil {
+		t.Fatalf("missing source identity must not silently suppress recovery: show=%v mark=%v err=%v", show, mark != nil, err)
 	}
 }
 

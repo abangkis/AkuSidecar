@@ -314,18 +314,30 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	identity, err := appShellIdentity(options, cfg)
 	fatal(logger, err)
 	profilePath := browserProfilePath(options, cfg)
+	showStartupStatus, markStartupReady, statusErr := startupStatusPolicy(cfg.Deployment, profilePath)
+	if statusErr != nil {
+		logger.Printf("app shell startup status policy: %v", statusErr)
+	}
 	startupLogPath := isolatedChromiumStartupLogPath(profilePath)
 	if startupLogPath != "" {
 		logger.Printf("isolated Chromium startup diagnostics enabled path=%s", startupLogPath)
 	}
 	window, err := appshell.LaunchSession(context.Background(), appshell.LaunchOptions{
-		Executable:     result.Executable,
-		ExtensionPath:  options.BridgeExtensionPath,
-		IconPath:       appShellIconPath(options.BridgeExtensionPath),
-		Identity:       identity,
-		UserDataDir:    profilePath,
-		URL:            target,
-		StartupLogPath: startupLogPath,
+		Executable:            result.Executable,
+		ExtensionPath:         options.BridgeExtensionPath,
+		IconPath:              appShellIconPath(options.BridgeExtensionPath),
+		Identity:              identity,
+		UserDataDir:           profilePath,
+		URL:                   target,
+		StartupLogPath:        startupLogPath,
+		SuppressStartupWindow: !showStartupStatus,
+		OnStartupReady: func() {
+			if markStartupReady != nil {
+				if err := markStartupReady(); err != nil {
+					logger.Printf("app shell startup status marker: %v", err)
+				}
+			}
+		},
 	}, server.SetAppShellStartup, func(err error) { logger.Printf("app shell recovery: %v", err) })
 	fatal(logger, err)
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)

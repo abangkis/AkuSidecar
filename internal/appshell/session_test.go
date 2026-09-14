@@ -48,6 +48,39 @@ func sessionToken(target string) string {
 	return strings.TrimPrefix(u.Fragment, "aku-startup=")
 }
 
+func TestSessionCanSuppressNativeWindowWithoutDisablingReadyHandshake(t *testing.T) {
+	window := newFakeSessionWindow()
+	var shown, ready int
+	s, err := launchSession(context.Background(), LaunchOptions{
+		URL: "http://127.0.0.1:11122/", SuppressStartupWindow: true,
+		OnStartupReady: func() { ready++ },
+	}, nil, nil, func(_ context.Context, options LaunchOptions) (sessionWindow, error) {
+		if options.Startup != nil {
+			t.Fatal("startup capability leaked into the browser launch options")
+		}
+		return window, nil
+	}, func(*Startup) { shown++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Terminate()
+	if shown != 0 {
+		t.Fatal("native status was shown on a routine launch")
+	}
+	token := s.startup.token
+	invalid := startupRequest(token)
+	invalid.Header.Set("Origin", "https://example.com")
+	if s.startup.Acknowledge(invalid) || ready != 0 {
+		t.Fatal("invalid acknowledgement invoked the ready callback")
+	}
+	if !s.startup.Acknowledge(startupRequest(token)) || ready != 1 {
+		t.Fatalf("ready handshake failed with native status hidden: callbacks=%d", ready)
+	}
+	if s.startup.Acknowledge(startupRequest(token)) || ready != 1 {
+		t.Fatal("ready callback replayed")
+	}
+}
+
 func TestSessionRetryWaitsForCleanupAndResetsAcknowledgement(t *testing.T) {
 	old, replacement := newFakeSessionWindow(), newFakeSessionWindow()
 	closing, allowCleanup, newLaunch, allowLaunch := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
