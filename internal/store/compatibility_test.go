@@ -70,6 +70,9 @@ func TestPrepareFreshPreservesBytesAndProfile(t *testing.T) {
 	if _, e = os.Stat(filepath.Join(profile, "sentinel")); e != nil {
 		t.Fatal(e)
 	}
+	if stages, e := filepath.Glob(filepath.Join(dir, "database-preparation-*")); e != nil || len(stages) != 0 {
+		t.Fatalf("successful fresh start retained staging copies: %v %v", stages, e)
+	}
 }
 
 func TestPrepareRejectsOpenDatabase(t *testing.T) {
@@ -92,7 +95,8 @@ func TestPrepareMigrationStagesAndPreservesOriginal(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows offline preparation")
 	}
-	p := filepath.Join(t.TempDir(), "state.db")
+	dir := t.TempDir()
+	p := filepath.Join(dir, "state.db")
 	defaults := domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true)
 	s, err := Open(p, defaults)
 	if err != nil {
@@ -115,13 +119,17 @@ func TestPrepareMigrationStagesAndPreservesOriginal(t *testing.T) {
 	if current := InspectDatabase(p); current.Status != "current" {
 		t.Fatal(current)
 	}
+	if stages, e := filepath.Glob(filepath.Join(dir, "database-preparation-*")); e != nil || len(stages) != 0 {
+		t.Fatalf("successful migration retained staging copies: %v %v", stages, e)
+	}
 }
 
 func TestFailedMigrationLeavesOriginal(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows offline preparation")
 	}
-	p := filepath.Join(t.TempDir(), "state.db")
+	dir := t.TempDir()
+	p := filepath.Join(dir, "state.db")
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
 		t.Fatal(err)
@@ -138,6 +146,9 @@ func TestFailedMigrationLeavesOriginal(t *testing.T) {
 	after, _ := os.ReadFile(p)
 	if string(before) != string(after) {
 		t.Fatal("failed migration modified original")
+	}
+	if stages, e := filepath.Glob(filepath.Join(dir, "database-preparation-*")); e != nil || len(stages) != 1 {
+		t.Fatalf("failed migration should retain one diagnostic staging copy: %v %v", stages, e)
 	}
 }
 

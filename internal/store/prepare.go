@@ -62,7 +62,15 @@ func PrepareDatabaseExpected(path, action string, confirmed bool, expected strin
 	if err != nil {
 		return r, err
 	}
-	// Retain failed staging directories for diagnosis; originals remain untouched.
+	// Retain failed staging directories for diagnosis. Fresh cleanup is required
+	// before archiving; a migrated database is already active when its leftover
+	// staging directory can be removed, so that cleanup is best effort.
+	completed := false
+	defer func() {
+		if completed && action == "migrate" {
+			_ = os.RemoveAll(stage)
+		}
+	}()
 	for _, f := range locked {
 		if err = copyDatabaseFile(f, filepath.Join(stage, filepath.Base(f.Name()))); err != nil {
 			return r, err
@@ -91,6 +99,10 @@ func PrepareDatabaseExpected(path, action string, confirmed bool, expected strin
 		if check := InspectDatabase(stagedPath); check.Status != "current" {
 			return r, errors.New("staged migration verification failed")
 		}
+	} else if err = os.RemoveAll(stage); err != nil {
+		// A fresh start no longer needs the verified copy. Refuse to archive
+		// the original if that extra copy cannot be cleared first.
+		return r, fmt.Errorf("remove verified database staging copy: %w", err)
 	}
 	archive, err := os.MkdirTemp(filepath.Dir(path), "database-backup-")
 	if err != nil {
@@ -130,6 +142,7 @@ func PrepareDatabaseExpected(path, action string, confirmed bool, expected strin
 		r.Status = "absent"
 		r.DatabaseSchemaVersion = 0
 	}
+	completed = true
 	return r, nil
 }
 
