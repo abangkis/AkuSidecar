@@ -466,6 +466,7 @@ $("#timeline-boundary-return-ms").addEventListener("input", () => applyTimelineB
 $("#reset-timeline-boundary-return").addEventListener("click", resetTimelineBoundaryReturnDuration);
 $("#edit-onboarding-profile").addEventListener("click", () => showOnboarding(true));
 $("#open-chrome-extensions").addEventListener("click", openChromeExtensions);
+$("#bridge-reload").addEventListener("click", reloadIncompatibleBridge);
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
 $("#onboarding-cancel").addEventListener("click", () => setView("settings"));
 $("#calibration-previous").addEventListener("click", showPreviousCalibrationSample);
@@ -3011,6 +3012,11 @@ async function bridgeActionLoop() {
 
 function renderBridge(bridge) {
   if (state.bootstrap) state.bootstrap.bridge = bridge;
+  const bridgeRecoveryButton = $("#bridge-reload");
+  const development = state.bootstrap?.deployment?.mode === "development";
+  const focusPolicyMismatch = bridge?.state === "incompatible"
+    && bridge.reasons?.includes("bridge focus policy revision mismatch");
+  bridgeRecoveryButton.classList.toggle("hidden", !(development && focusPolicyMismatch));
   if (bridge?.compatible) {
     const readiness = bridgeSourceReadiness();
     const activeSources = state.bootstrap?.settings?.activeSources ?? [];
@@ -4074,6 +4080,51 @@ async function openChromeExtensions() {
     status.textContent = error.message;
   } finally {
     button.disabled = false;
+  }
+}
+
+async function reloadIncompatibleBridge() {
+  const button = $("#bridge-reload");
+  const idleLabel = "Reload AkuBridge";
+  button.disabled = true;
+  button.title = "Reload AkuBridge and verify the expected runtime revision";
+  button.textContent = "Reloading…";
+  try {
+    const request = await bridgeApi("/api/operations/bridge/actions/reload-self", {
+      method: "POST",
+      body: {
+        requestId: `bridge_recovery_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        actor: { actorType: "user", actorId: "bridge-recovery-ui" },
+        reason: "reload incompatible AkuBridge from the contextual recovery control",
+      },
+    });
+    const actionId = request?.action?.id;
+    if (!actionId) throw new Error("AkuSidecar did not return a Bridge reload action.");
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const result = await bridgeApi(`/api/operations/bridge/actions/${encodeURIComponent(actionId)}`);
+      if (result?.action?.status === "failed") {
+        throw new Error(result.action.message || "AkuBridge reload failed.");
+      }
+      if (result?.action?.status !== "completed") continue;
+      const health = await api("/api/bridge/health");
+      renderBridge(health.bridge);
+      if (!health.bridge?.compatible || health.bridge.actual?.buildId !== health.bridge.expected?.buildId) {
+        throw new Error("AkuBridge reloaded without the expected compatible runtime revision.");
+      }
+      button.textContent = "AkuBridge reloaded";
+      return;
+    }
+    throw new Error("AkuBridge reload timed out. Keep this AkuBrowser page open and try again.");
+  } catch (error) {
+    button.textContent = "Reload failed";
+    button.title = error.message;
+  } finally {
+    window.setTimeout(() => {
+      button.disabled = false;
+      button.textContent = idleLabel;
+    }, 1800);
   }
 }
 

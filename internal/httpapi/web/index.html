@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AkuBrowser</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.9.0" />
-    <link rel="stylesheet" href="/styles.css?runtime=release-0.9.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.9.1" />
+    <link rel="stylesheet" href="/styles.css?runtime=release-0.9.1" />
   </head>
   <body data-stream-width="social" data-single-image-fit="cover" data-post-freshness-style="header_shade">
     <main class="shell">
@@ -20,6 +20,7 @@
             <span id="deployment-status" class="status-pill status-neutral">Mode checking</span>
             <span id="sidecar-status" class="status-pill status-neutral">AkuSidecar checking</span>
             <span id="bridge-status" class="status-pill status-neutral">AkuBridge checking</span>
+            <button id="bridge-reload" class="status-recovery-action hidden" type="button" title="Reload AkuBridge and verify the expected runtime revision">Reload AkuBridge</button>
             <span id="reasoning-status" class="status-pill status-neutral">Reasoning config</span>
           </div>
           <nav class="view-switch hidden" aria-label="AkuBrowser view">
@@ -1010,7 +1011,7 @@
       </form>
     </dialog>
 
-    <script src="/startup-watchdog.js?runtime=release-0.9.0"></script>
-    <script type="module" src="/app.js?runtime=release-0.9.0"></script>
+    <script src="/startup-watchdog.js?runtime=release-0.9.1"></script>
+    <script type="module" src="/app.js?runtime=release-0.9.1"></script>
   </body>
 </html>

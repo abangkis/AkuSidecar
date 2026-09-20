@@ -270,16 +270,20 @@ func TestOnboardingGatesSourceSetupOnDevelopmentBridgeConnection(t *testing.T) {
 			"onboarding-browser-connection",
 			"Connect AkuBridge first",
 			"open-chrome-extensions",
+			"bridge-reload",
 			"Open Chrome Extensions",
 			"onboarding-source-setup",
 		},
 		"web/app.js": {
 			"function renderBrowserConnection",
 			"function openChromeExtensions",
+			"function reloadIncompatibleBridge",
+			"/api/operations/bridge/actions/reload-self",
+			`bridge.reasons?.includes("bridge focus policy revision mismatch")`,
 			"/api/app-shell/open-extensions",
 			"This installed AkuBrowser runtime needs repair",
 		},
-		"web/styles.css": {".browser-connection-actions"},
+		"web/styles.css": {".browser-connection-actions", ".status-recovery-action"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -668,10 +672,10 @@ func TestEmbeddedWebAssetsDoNotContainMojibake(t *testing.T) {
 
 func TestStartupRecoveryAndIsolatedProfileGuidanceAreEmbedded(t *testing.T) {
 	for asset, markers := range map[string][]string{
-		"web/index.html": {`id="startup-recovery"`, `href="/">Reload interface`, `src="/startup-watchdog.js`, "you do not need to download Chrome", "sign-ins from your usual Chrome are not copied", "grant Bridge access and sign in"},
-		"web/app.js":     {`$("#startup-recovery").hidden = true`, `$("#startup-recovery-heading").textContent = "AkuBrowser is still connecting"`, `window.addEventListener("focus", refreshBridgeAfterUserReturn)`, `function refreshBridgeAfterUserReturn()`, `Source session check timed out. Return to AkuBrowser or open the source again to retry.`},
+		"web/index.html":          {`id="startup-recovery"`, `href="/">Reload interface`, `src="/startup-watchdog.js`, "you do not need to download Chrome", "sign-ins from your usual Chrome are not copied", "grant Bridge access and sign in"},
+		"web/app.js":              {`$("#startup-recovery").hidden = true`, `$("#startup-recovery-heading").textContent = "AkuBrowser is still connecting"`, `window.addEventListener("focus", refreshBridgeAfterUserReturn)`, `function refreshBridgeAfterUserReturn()`, `Source session check timed out. Return to AkuBrowser or open the source again to retry.`},
 		"web/startup-watchdog.js": {`No ready confirmation arrived within 60 seconds.`, `window.addEventListener("error", onError, true)`},
-		"web/styles.css": {".startup-recovery[hidden] { display: none; }"},
+		"web/styles.css":          {".startup-recovery[hidden] { display: none; }"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {
@@ -1096,7 +1100,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	indexPayload, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.9.0"`) {
+	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.9.1"`) {
 		t.Fatal("AkuBrowser page does not declare its branded favicon")
 	}
 	response, err = client.Get("http://" + address.String() + "/favicon.svg")

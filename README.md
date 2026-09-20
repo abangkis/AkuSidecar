@@ -1,6 +1,6 @@
 # AkuSidecar
 
-Current stable release: **`0.9.0`**.
+Current stable release: **`0.9.1`**.
 
 AkuSidecar is the Go local runtime for AkuBrowser. It owns the loopback HTTP
 API, embedded browser UI, fresh SQLite state, bounded X, LinkedIn, Facebook, and Instagram session
@@ -41,7 +41,7 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.9.0` / `source-adapters-v108`
+- AkuBridge `0.9.1` / `source-adapters-v109`
 - AkuSupervisor is recommended for normal Windows development and daily
   lifecycle ownership; it is not part of the portable runtime or a macOS
   prerequisite
