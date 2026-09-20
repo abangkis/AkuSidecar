@@ -1126,6 +1126,7 @@ type BridgeHeartbeat struct {
 	ExtensionVersion             string              `json:"extensionVersion"`
 	RuntimeRevision              string              `json:"runtimeRevision"`
 	BuildID                      string              `json:"buildId"`
+	FocusPolicyRevision          string              `json:"focusPolicyRevision,omitempty"`
 	ProtocolMajor                int                 `json:"protocolMajor,omitempty"`
 	ProtocolMinor                int                 `json:"protocolMinor,omitempty"`
 	UpdateCapabilities           []string            `json:"updateCapabilities,omitempty"`

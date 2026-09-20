@@ -1461,6 +1461,12 @@ func TestBridgeCompatibilityUsesProtocolAndRequiredCapabilitySubsets(t *testing.
 	}
 
 	value = ExpectedHeartbeat()
+	value.FocusPolicyRevision = ""
+	status = runtime.RecordHeartbeat(value)
+	if status.Compatible || status.State != "incompatible" || !strings.Contains(strings.Join(status.Reasons, " | "), "focus policy revision") {
+		t.Fatalf("missing focus policy revision must fail closed: %+v", status)
+	}
+	value = ExpectedHeartbeat()
 	value.Actions = value.Actions[:len(value.Actions)-1]
 	status = runtime.RecordHeartbeat(value)
 	if status.Compatible || status.State != "incompatible" {

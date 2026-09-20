@@ -12,6 +12,7 @@ import (
 )
 
 const ExpectedBridgeBuildID = "aku-bridge-0.9.0-source-adapters-v108"
+const ExpectedBridgeFocusPolicyRevision = "mutable-focus-authority-v1"
 
 var ErrActionNotFound = errors.New("bridge action not found")
 var ErrActionConflict = errors.New("bridge action conflict")
