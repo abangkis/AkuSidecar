@@ -270,7 +270,11 @@ func TestCaptureSurfaceTelemetryPersistsUntilInboxReceipt(t *testing.T) {
 		Source:    runs[0].Source,
 		Event:     "release_requested",
 		Outcome:   "source_acquisition_closed",
-		Detail:    map[string]any{"isolation": "shared"},
+		Detail: map[string]any{
+			"isolation": "shared", "focusPolicyRevision": "quiet-containment-only-v2",
+			"focusPolicyMode": "background_containment_only", "focusedWriteAttempted": false,
+			"restorationSuppressed": true, "containmentApplied": true,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -288,6 +292,15 @@ func TestCaptureSurfaceTelemetryPersistsUntilInboxReceipt(t *testing.T) {
 	got := sessions[0].Runs[0].CaptureSurface
 	if len(got) != 1 || got[0].Event != "release_requested" || got[0].Outcome != "source_acquisition_closed" {
 		t.Fatalf("capture surface telemetry=%+v", got)
+	}
+	if got[0].Detail["focusPolicyRevision"] != "quiet-containment-only-v2" ||
+		got[0].Detail["focusPolicyMode"] != "background_containment_only" ||
+		got[0].Detail["focusedWriteAttempted"] != false || got[0].Detail["containmentApplied"] != true ||
+		got[0].Detail["restorationSuppressed"] != true {
+		t.Fatalf("focus policy evidence lost in Inbox receipt: %+v", got[0].Detail)
+	}
+	if sessions[0].Runs[0].StageDurationsMS == nil || sessions[0].Runs[0].CandidateDiagnostics == nil {
+		t.Fatal("existing duration and candidate evidence must remain available alongside focus telemetry")
 	}
 }
 

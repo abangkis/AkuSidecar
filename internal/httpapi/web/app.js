@@ -1,5 +1,6 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
+import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
   boundedTimelineMedia,
   mediaViewerCanPan,
@@ -3014,9 +3015,11 @@ function renderBridge(bridge) {
   if (state.bootstrap) state.bootstrap.bridge = bridge;
   const bridgeRecoveryButton = $("#bridge-reload");
   const development = state.bootstrap?.deployment?.mode === "development";
-  const focusPolicyMismatch = bridge?.state === "incompatible"
-    && bridge.reasons?.includes("bridge focus policy revision mismatch");
-  bridgeRecoveryButton.classList.toggle("hidden", !(development && focusPolicyMismatch));
+  const recovery = bridgeRecoveryState(bridge, development);
+  bridgeRecoveryButton.classList.toggle("hidden", !recovery.showReload);
+  bridgeRecoveryButton.title = recovery.detail || "Reload AkuBridge";
+  bridgeRecoveryButton.disabled = state.bridgeReloadInFlight === true || bridgeCaptureBusy(state.session);
+  if (bridgeCaptureBusy(state.session)) bridgeRecoveryButton.title = "Wait for the active capture to finish before reloading AkuBridge.";
   if (bridge?.compatible) {
     const readiness = bridgeSourceReadiness();
     const activeSources = state.bootstrap?.settings?.activeSources ?? [];
@@ -3038,6 +3041,8 @@ function renderBridge(bridge) {
   } else {
     setPill("#bridge-status", "AkuBridge reconnecting", "warning");
   }
+  if (recovery.label) setPill("#bridge-status", recovery.label, "warning");
+  $("#bridge-status").title = recovery.detail;
   renderBrowserConnection();
   syncRunButtons();
   renderSourceSettingsValues(state.bootstrap?.settings);
@@ -4084,18 +4089,21 @@ async function openChromeExtensions() {
 }
 
 async function reloadIncompatibleBridge() {
+  if (state.bridgeReloadInFlight) return;
+  state.bridgeReloadInFlight = true;
   const button = $("#bridge-reload");
   const idleLabel = "Reload AkuBridge";
   button.disabled = true;
   button.title = "Reload AkuBridge and verify the expected runtime revision";
   button.textContent = "Reloading…";
   try {
+    if (bridgeCaptureBusy(state.session)) throw new Error("Wait for the active capture to finish before reloading AkuBridge.");
     const request = await bridgeApi("/api/operations/bridge/actions/reload-self", {
       method: "POST",
       body: {
         requestId: `bridge_recovery_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         actor: { actorType: "user", actorId: "bridge-recovery-ui" },
-        reason: "reload incompatible AkuBridge from the contextual recovery control",
+        reason: "user requested reload of mismatched AkuBridge from the contextual recovery control",
       },
     });
     const actionId = request?.action?.id;
@@ -4110,7 +4118,7 @@ async function reloadIncompatibleBridge() {
       if (result?.action?.status !== "completed") continue;
       const health = await api("/api/bridge/health");
       renderBridge(health.bridge);
-      if (!health.bridge?.compatible || health.bridge.actual?.buildId !== health.bridge.expected?.buildId) {
+      if (!bridgeReloadVerified(health.bridge, result.action)) {
         throw new Error("AkuBridge reloaded without the expected compatible runtime revision.");
       }
       button.textContent = "AkuBridge reloaded";
@@ -4118,11 +4126,13 @@ async function reloadIncompatibleBridge() {
     }
     throw new Error("AkuBridge reload timed out. Keep this AkuBrowser page open and try again.");
   } catch (error) {
+    button.classList.remove("hidden");
     button.textContent = "Reload failed";
     button.title = error.message;
   } finally {
     window.setTimeout(() => {
-      button.disabled = false;
+      state.bridgeReloadInFlight = false;
+      button.disabled = bridgeCaptureBusy(state.session);
       button.textContent = idleLabel;
     }, 1800);
   }
@@ -6043,6 +6053,7 @@ function buildCaptureSurfaceTelemetry(events) {
     counts.set(event.event, (counts.get(event.event) || 0) + 1);
   }
   rollup.textContent = [
+    ...new Set(events.map((event) => event.detail?.focusPolicyRevision).filter(Boolean)),
     counts.get("created") ? `${counts.get("created")} created` : null,
     counts.get("reused") ? `${counts.get("reused")} reused` : null,
     counts.get("release_requested") ? `${counts.get("release_requested")} release requested` : null,
@@ -6072,6 +6083,8 @@ function buildCaptureSurfaceTelemetry(events) {
       humanize(event.outcome),
       event.detail?.isolation ? humanize(event.detail.isolation) : null,
       event.detail?.restored === true ? "working focus restored" : null,
+      event.detail?.containmentApplied === true ? "capture minimized; rendering may be throttled" : null,
+      event.detail?.focusedWriteAttempted === true ? "explicit foreground requested" : null,
       event.detail?.preservedUserTabs ? `${event.detail.preservedUserTabs} user tab preserved` : null,
     ].filter(Boolean).join(" \u00b7 ");
     copy.append(label, context);

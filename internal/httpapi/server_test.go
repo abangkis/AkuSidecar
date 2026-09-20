@@ -279,10 +279,11 @@ func TestOnboardingGatesSourceSetupOnDevelopmentBridgeConnection(t *testing.T) {
 			"function openChromeExtensions",
 			"function reloadIncompatibleBridge",
 			"/api/operations/bridge/actions/reload-self",
-			`bridge.reasons?.includes("bridge focus policy revision mismatch")`,
+			"bridgeRecoveryState(bridge, development)",
 			"/api/app-shell/open-extensions",
 			"This installed AkuBrowser runtime needs repair",
 		},
+		"web/bridge-recovery-state.js": {`bridge.reasons?.includes("bridge focus policy revision mismatch")`, "heartbeatObservedAt"},
 		"web/styles.css": {".browser-connection-actions", ".status-recovery-action"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
