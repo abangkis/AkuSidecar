@@ -2843,19 +2843,22 @@ function openSourceFromSettings(source) {
 
 function configureNativePostLink(link, href, source) {
   link.href = href;
+  link.dataset.akuNativePost = source;
   link.rel = "noopener noreferrer";
   link.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0) return;
     event.preventDefault();
-    openNativePostInReaderWindow(href, source).catch(showError);
+    const brokerRequestId = link.dataset.akuReaderRequest;
+    delete link.dataset.akuReaderRequest;
+    openNativePostInReaderWindow(href, source, brokerRequestId).catch(showError);
   });
 }
 
-function openNativePostInReaderWindow(url, source) {
+function openNativePostInReaderWindow(url, source, brokerRequestId = null) {
   if (!state.bootstrap?.bridge?.compatible) {
     return Promise.reject(new Error("AkuBridge is not ready to open this native post."));
   }
-  const requestId = `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => finish(
       reject,

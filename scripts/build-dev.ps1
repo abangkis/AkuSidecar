@@ -47,6 +47,15 @@ try {
         throw "Go build failed with exit code $LASTEXITCODE."
     }
 
+    & go build -trimpath -ldflags '-H=windowsgui' -o (Join-Path $runtimeDir 'aku-reader-broker.exe') .\cmd\aku-reader-broker
+    if ($LASTEXITCODE -ne 0) { throw 'Reader broker helper build failed.' }
+    $brokerDirectory = Join-Path $runtimeDir 'ui-reader-broker'
+    New-Item -ItemType Directory -Path $brokerDirectory -Force | Out-Null
+    foreach ($asset in @('manifest.json', 'content.js', 'service-worker.js')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "ui-reader-broker\$asset") -Destination (Join-Path $brokerDirectory $asset) -Force
+    }
+    & (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') -RuntimeDirectory $runtimeDir
+
     $domainSource = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\domain\types.go') -Raw
     if ($domainSource -notmatch 'ApplicationVersion\s*=\s*"([^"]+)"') {
         throw 'AkuSidecar ApplicationVersion could not be read for development provenance.'

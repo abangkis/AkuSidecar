@@ -22,6 +22,7 @@ type Session struct {
 	startup *Startup
 	done    chan error
 	cancel  context.CancelFunc
+	ctx     context.Context
 }
 
 func LaunchSession(ctx context.Context, options LaunchOptions, attach func(*Startup), report func(error)) (*Session, error) {
@@ -41,7 +42,7 @@ func launchSession(ctx context.Context, options LaunchOptions, attach func(*Star
 		show(startup)
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Session{startup: startup, done: make(chan error, 1), cancel: cancel}
+	s := &Session{startup: startup, done: make(chan error, 1), cancel: cancel, ctx: ctx}
 	target := options.URL
 	options.Startup = nil // The session, not an individual Chromium, owns status.
 	options.URL = startup.LaunchURL(target)

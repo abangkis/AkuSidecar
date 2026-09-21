@@ -6,16 +6,38 @@ import vm from "node:vm";
 const script = fs.readFileSync(new URL("../internal/httpapi/split_ui_bridge.js", import.meta.url), "utf8");
 const origin = "http://127.0.0.1:11122";
 function fixture(reply = { ok: true, result: {} }) {
-  const calls = [], messages = [];
+  const calls = [], messages = [], timers = [];
   let listener;
   const window = { addEventListener: (_event, fn) => { listener = fn; }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  vm.runInNewContext(script, { window, location: { origin }, fetch: async (url, options) => {
+  vm.runInNewContext(script, { window, location: { origin }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
     calls.push({ url, options });
     return { ok: true, json: async () => url === "/api/bootstrap"
       ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
   } });
-  return { calls, messages, send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
+  assert.equal(messages.shift().type, "AKU_BROWSER_READER_BROKER_PROBE");
+  return { calls, messages, timers, send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
 }
+
+test("native post fails visibly without broker readiness or trusted-click correlation", async () => {
+  const f = fixture();
+  const action = { type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId: "broker_" + "a".repeat(32), source: "x", url: "https://x.com/a/status/1" };
+  await f.send(action);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.messages.at(-1).type, "AKU_BROWSER_NATIVE_POST_OPEN_FAILED");
+  assert.match(f.messages.at(-1).message, /UI reader broker is not ready/);
+  await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" }, "https://foreign.example");
+  await f.send(action);
+  assert.equal(f.calls.length, 0);
+  await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" });
+  await f.send({ ...action, requestId: "native_post_programmatic" });
+  assert.equal(f.calls.length, 0);
+  await f.send(action);
+  assert.equal(f.calls.length, 2);
+  assert.equal(JSON.parse(f.calls[1].options.body).requestId, action.requestId);
+  const count = f.messages.length;
+  f.timers[0]();
+  assert.equal(f.messages.length, count, "readiness ends polling");
+});
 
 test("split UI keeps request correlation and sends only typed actions using current bootstrap authority", async () => {
   const f = fixture({ ok: true, result: { source: "x", state: "permission_required", url: "chrome-extension://capture/source-permission.html" } });

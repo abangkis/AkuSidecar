@@ -1,7 +1,16 @@
-// Windows-only server-injected adapter. No extension is installed in the UI
-// profile; all browser actions are typed requests to the capture process.
+// Windows-only server-injected adapter. The UI profile has no AkuBridge or
+// source permissions; ordinary browser actions remain typed requests to the
+// capture process. The separate UI reader broker handles only trusted clicks.
 (() => {
   const origin = location.origin;
+  let readerBrokerReady = false;
+  const readerBrokerDeadline = Date.now() + 5000;
+  // Bounded availability handshake; this grants no native activation authority.
+  const probeReaderBroker = () => {
+    if (readerBrokerReady) return;
+    window.postMessage({ type: "AKU_BROWSER_READER_BROKER_PROBE" }, origin);
+    if (Date.now() < readerBrokerDeadline) setTimeout(probeReaderBroker, 250);
+  };
   let bootstrapPromise;
   const bootstrap = () => bootstrapPromise ??= fetch("/api/bootstrap", { cache: "no-store" })
     .then(async (r) => { if (!r.ok) throw new Error("Capture transport bootstrap failed."); return r.json(); });
@@ -21,6 +30,10 @@
   window.addEventListener("message", async (event) => {
     if (event.source !== window || event.origin !== origin || !event.data) return;
     const message = event.data;
+    if (message.type === "AKU_BROWSER_READER_BROKER_READY") {
+      readerBrokerReady = true;
+      return;
+    }
     const operation = Object.hasOwn(operations, message.type) ? operations[message.type] : null;
     if (!operation) return;
     const correlation = {};
@@ -28,11 +41,15 @@
       if (typeof message[key] === "string") correlation[key] = message[key];
     }
     try {
+      if (operation[0] === "open_native_post" && (!readerBrokerReady || !/^broker_[0-9a-f]{32}$/.test(message.requestId ?? ""))) {
+        throw new Error("Open native post is unavailable: the UI reader broker is not ready or did not receive a trusted click. Restart AkuBrowser with its supported Chrome for Testing UI runtime.");
+      }
       const config = await bootstrap();
       const body = { type: operation[0] };
       for (const key of ["source", "url", "runId", "leaseId", "recaptureId", "actionId"]) {
         if (typeof message[key] === "string") body[key] = message[key];
       }
+      if (operation[0] === "open_native_post" && typeof message.requestId === "string") body.requestId = message.requestId;
       if (Array.isArray(message.candidateIds)) body.candidateIds = message.candidateIds;
       const response = await fetch("/api/split-capture/actions", {
         method: "POST", cache: "no-store", headers: {
@@ -54,4 +71,5 @@
       window.postMessage({ ...correlation, type: operation[2], message: String(error?.message ?? error) }, origin);
     }
   });
+  probeReaderBroker();
 })();

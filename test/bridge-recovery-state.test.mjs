@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "../internal/httpapi/web/bridge-recovery-state.js";
 
-const identity = { runtimeRevision: "source-adapters-v110", buildId: "aku-bridge-0.9.1-source-adapters-v110", focusPolicyRevision: "quiet-containment-only-v2" };
-const healthy = () => ({ state: "ready", compatible: true, expected: { ...identity }, actual: { ...identity, extensionVersion: "0.9.1" } });
-const drifted = () => ({ ...healthy(), state: "degraded", actual: { ...identity, runtimeRevision: "source-adapters-v108", buildId: "aku-bridge-0.9.1-source-adapters-v108" } });
+const identity = { runtimeRevision: "source-adapters-v111", buildId: "aku-bridge-0.9.2-source-adapters-v111", focusPolicyRevision: "quiet-containment-only-v2" };
+const healthy = () => ({ state: "ready", compatible: true, expected: { ...identity }, actual: { ...identity, extensionVersion: "0.9.2" } });
+const drifted = () => ({ ...healthy(), state: "degraded", actual: { ...identity, runtimeRevision: "source-adapters-v108", buildId: "aku-bridge-0.9.2-source-adapters-v108" } });
 const source = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
 const render = source.slice(source.indexOf("function renderBridge("), source.indexOf("function configureBackgroundBridge("));
 const reload = source.slice(source.indexOf("async function reloadIncompatibleBridge("), source.indexOf("async function refreshReasoningProviderReadiness("));
@@ -39,9 +39,9 @@ function fixture(health = healthy(), action = {}) {
 test("compatible degraded identity drift is visible with contextual development reload", () => {
   const app = fixture(); app.render(drifted());
   assert.equal(app.element("#bridge-reload").classList.contains("hidden"), false);
-  assert.match(app.element("#bridge-status").textContent, /revision mismatch.*v108.*v110/);
+  assert.match(app.element("#bridge-status").textContent, /revision mismatch.*v108.*v111/);
   assert.equal(app.element("#bridge-status").tone, "warning");
-  assert.match(app.element("#bridge-status").title, /Loaded build:.*v108; expected build:.*v110/);
+  assert.match(app.element("#bridge-status").title, /Loaded build:.*v108; expected build:.*v111/);
   assert.equal(app.requests.length, 0, "Rendering must never reload automatically");
 });
 

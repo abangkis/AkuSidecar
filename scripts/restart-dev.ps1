@@ -4,7 +4,8 @@ param(
     [ValidateRange(0, 3600)]
     [int] $WaitForIdleSeconds = 900,
     [ValidateRange(1, 10)]
-    [int] $PollSeconds = 2
+    [int] $PollSeconds = 2,
+    [switch] $ReplaceReaderBrokerRegistration
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,8 @@ $targetProvenance = "$target.runtime-state.json"
 $candidateProvenance = "$candidate.runtime-state.json"
 $supervisor = Join-Path $workspaceRoot 'AkuSupervisor\target\dev\aku-supervisor.exe'
 $experimentalCaptureSplitFlag = '--experimental-windows-capture-split'
+$uiChromiumPathFlag = '--ui-chromium-path'
+$pinnedUIChromium = Join-Path $repoRoot 'runtime\chromium\bin\chrome.exe'
 
 function Resolve-AkuSupervisorConfigPath {
     if ($env:AKU_SUPERVISOR_CONFIG) {
@@ -34,6 +37,7 @@ function Enable-ExperimentalWindowsCaptureSplit {
     if (-not (Test-Path -LiteralPath $ConfigurationPath -PathType Leaf)) {
         throw "AkuSupervisor configuration was not found: $ConfigurationPath"
     }
+    if (-not (Test-Path -LiteralPath $pinnedUIChromium -PathType Leaf)) { throw "Pinned Chrome for Testing UI executable is missing: $pinnedUIChromium" }
     $configuration = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
     $serviceProperty = $configuration.services.PSObject.Properties['akusidecar']
     if ($null -eq $serviceProperty) {
@@ -43,7 +47,15 @@ function Enable-ExperimentalWindowsCaptureSplit {
     $currentArguments = @($serviceProperty.Value.args | ForEach-Object { [string] $_ })
     $nextArguments = [Collections.Generic.List[string]]::new()
     $flagSeen = $false
+    $skipUIPathValue = $false
     foreach ($argument in $currentArguments) {
+        if ($skipUIPathValue) {
+            if ($argument.StartsWith('--')) { throw 'Existing --ui-chromium-path is missing its value; refusing to alter other browser arguments.' }
+            $skipUIPathValue = $false
+            continue
+        }
+        if ($argument -eq $uiChromiumPathFlag) { $skipUIPathValue = $true; continue }
+        if ($argument.StartsWith("$uiChromiumPathFlag=")) { continue }
         if ($argument -eq $experimentalCaptureSplitFlag) {
             if (-not $flagSeen) {
                 $nextArguments.Add($argument)
@@ -53,9 +65,12 @@ function Enable-ExperimentalWindowsCaptureSplit {
         }
         $nextArguments.Add($argument)
     }
+    if ($skipUIPathValue) { throw 'Existing --ui-chromium-path is missing its value.' }
     if (-not $flagSeen) {
         $nextArguments.Add($experimentalCaptureSplitFlag)
     }
+    $nextArguments.Add($uiChromiumPathFlag)
+    $nextArguments.Add($pinnedUIChromium)
 
     $nextArgumentArray = @($nextArguments)
     if (($currentArguments | ConvertTo-Json -Compress) -ne ($nextArgumentArray | ConvertTo-Json -Compress)) {
@@ -81,6 +96,8 @@ function Enable-ExperimentalWindowsCaptureSplit {
     if (@($verifiedArguments | Where-Object { $_ -eq $experimentalCaptureSplitFlag }).Count -ne 1) {
         throw "AkuSupervisor did not retain exactly one $experimentalCaptureSplitFlag argument."
     }
+    $uiIndex = [Array]::IndexOf($verifiedArguments, $uiChromiumPathFlag)
+    if ($uiIndex -lt 0 -or $uiIndex + 1 -ge $verifiedArguments.Count -or $verifiedArguments[$uiIndex + 1] -ne $pinnedUIChromium) { throw 'AkuSupervisor did not retain the pinned UI-only Chromium path.' }
     Write-Host 'AkuSidecar development restart will use the experimental Windows capture split.' -ForegroundColor Cyan
 }
 
@@ -94,6 +111,13 @@ Enable-ExperimentalWindowsCaptureSplit -ConfigurationPath $supervisorConfig
 & (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe'
 if ($LASTEXITCODE -ne 0) {
     throw "AkuSidecar candidate build failed."
+}
+& (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') `
+    -RuntimeDirectory $runtimeDir `
+    -Register `
+    -ReplaceExistingRegistration:$ReplaceReaderBrokerRegistration
+if ($LASTEXITCODE -ne 0) {
+    throw 'AkuBrowser reader broker registration failed.'
 }
 if (-not (Test-Path -LiteralPath $candidateProvenance -PathType Leaf)) {
     throw "AkuSidecar candidate provenance was not produced: $candidateProvenance"

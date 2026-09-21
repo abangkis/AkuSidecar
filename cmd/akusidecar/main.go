@@ -326,8 +326,19 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	profilePath := browserProfilePath(options, cfg)
 	var capture *appshell.Window
 	extensionPath := options.BridgeExtensionPath
+	uiResult := result
 	var uiArgs []string
 	if cfg.ExperimentalWindowsCaptureSplit {
+		sidecarExecutable, executableErr := os.Executable()
+		fatal(logger, executableErr)
+		uiDiscoveryCtx, cancelUIDiscovery := context.WithTimeout(context.Background(), 10*time.Second)
+		uiResult, err = appshell.DiscoverSplitUI(uiDiscoveryCtx, sidecarExecutable, options.UIChromiumPath)
+		cancelUIDiscovery()
+		fatal(logger, err)
+		uiBrokerPath := filepath.Join(filepath.Dir(sidecarExecutable), "ui-reader-broker")
+		if _, err := os.Stat(filepath.Join(uiBrokerPath, "manifest.json")); err != nil {
+			fatal(logger, fmt.Errorf("Windows split UI reader broker is not packaged: %w", err))
+		}
 		captureProfile, uiProfile, err := appshell.SplitProfilePaths(profilePath)
 		fatal(logger, err)
 		captureURL, err := server.SplitCaptureLaunchURL(target)
@@ -337,12 +348,18 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true,
 		})
 		fatal(logger, err)
+		containment, err := capture.StartCaptureContainment(logger)
+		fatal(logger, err)
+		if containment != nil {
+			server.SetSplitReaderPreparation(containment.PrepareReader)
+			server.SetSplitReaderBroker(containment.PrepareBrokerReader)
+		}
 		// Never copy or relocate the signed-in profile. The UI receives a
 		// separate directory and no AkuBridge extension.
 		profilePath = uiProfile
-		extensionPath = ""
-		uiArgs = []string{"--disable-extensions"}
-		logger.Printf("experimental_windows_capture_split capture_pid=%d", capture.PID())
+		extensionPath = uiBrokerPath
+		uiArgs = []string{"--disable-extensions-except=" + extensionPath, "--enable-features=LaunchWindowsNativeHostsDirectly"}
+		logger.Printf("experimental_windows_capture_split capture_pid=%d capture_executable=%q ui_executable=%q ui_version=%s", capture.PID(), result.Executable, uiResult.Executable, uiResult.Version)
 	}
 	showStartupStatus, markStartupReady, statusErr := startupStatusPolicy(cfg.Deployment, profilePath)
 	if statusErr != nil {
@@ -353,7 +370,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		logger.Printf("isolated Chromium startup diagnostics enabled path=%s", startupLogPath)
 	}
 	window, err := appshell.LaunchSession(context.Background(), appshell.LaunchOptions{
-		Executable:            result.Executable,
+		Executable:            uiResult.Executable,
 		ExtensionPath:         extensionPath,
 		IconPath:              appShellIconPath(options.BridgeExtensionPath),
 		Identity:              identity,
@@ -374,7 +391,14 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		capture.Terminate()
 		fatal(logger, err)
 	}
-	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
+	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", uiResult.Executable, uiResult.Version, window.PID(), target)
+	if cfg.ExperimentalWindowsCaptureSplit {
+		go func() {
+			if err := window.ServeReaderBroker(context.Background(), server.HandleReaderBroker); err != nil {
+				logger.Printf("reader_broker unavailable=%q", err.Error())
+			}
+		}()
+	}
 	return window, capture
 }
 

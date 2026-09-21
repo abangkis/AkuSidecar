@@ -284,7 +284,7 @@ func TestOnboardingGatesSourceSetupOnDevelopmentBridgeConnection(t *testing.T) {
 			"This installed AkuBrowser runtime needs repair",
 		},
 		"web/bridge-recovery-state.js": {`bridge.reasons?.includes("bridge focus policy revision mismatch")`, "heartbeatObservedAt"},
-		"web/styles.css": {".browser-connection-actions", ".status-recovery-action"},
+		"web/styles.css":               {".browser-connection-actions", ".status-recovery-action"},
 	} {
 		contents, err := embeddedAssets.ReadFile(asset)
 		if err != nil {

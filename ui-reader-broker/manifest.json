@@ -1,0 +1,11 @@
+{
+ "manifest_version": 3,
+ "name": "AkuBrowser UI Reader Broker",
+ "version": "1.0.1",
+ "description": "Explicit native-post activation for the isolated Windows AkuBrowser UI.",
+ "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsf7z+7dxUKtvRJxLj228FmV9uvTN/MrFk/udJm7iia3reTEIFIZyR8Pb/LfcBTbcNegBI1STiL6EHNglXMXZ5czBJ920gp4hl3wl500d7wR0Q9UJ4DItQ4DtSkGAh7P/omwlT5NiZRtZ67Z0C/oiPt8U4epClqhmkmgsEyedhbBJgE2ecADa17xLjJTkv1k85O2I3e8i5cY5UgPjOAngfNcddTvOx5oRPFEqMXCZZSN4lbLgDGTEtSHmPiSyM09tY+sSlwOOmC/buDMn0mYn/BrGXJ80anMiA1tjndBl7cqcEDR2SkDqxt/fgakkY/PXPHH4L3vd244nnarhZKY2gQIDAQAB",
+ "permissions": ["nativeMessaging"],
+ "host_permissions": ["http://127.0.0.1:11122/*", "http://localhost:11122/*"],
+ "background": {"service_worker": "service-worker.js"},
+ "content_scripts": [{"matches": ["http://127.0.0.1:11122/*", "http://localhost:11122/*"], "js": ["content.js"], "run_at": "document_start", "all_frames": false}]
+}

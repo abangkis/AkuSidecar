@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
 
 // This transport is instantiated only by the Windows app-shell feature gate.
@@ -34,6 +37,7 @@ type splitCaptureAction struct {
 	LeaseID      string   `json:"leaseId,omitempty"`
 	RecaptureID  string   `json:"recaptureId,omitempty"`
 	ActionID     string   `json:"actionId,omitempty"`
+	RequestID    string   `json:"requestId,omitempty"`
 	CandidateIDs []string `json:"candidateIds,omitempty"`
 }
 type splitActionResult struct {
@@ -42,17 +46,123 @@ type splitActionResult struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 }
 type pendingSplitAction struct {
-	action  splitCaptureAction
-	claimed bool
-	result  chan splitActionResult
+	action                   splitCaptureAction
+	claimed                  bool
+	result                   chan splitActionResult
+	readerPreparing          bool
+	readerForeground         func(context.Context) error
+	readerForegroundVerified bool
+	brokerReady              chan struct{}
+	brokerDone               chan error
+	brokerAttached           bool
+	brokerTarget             readerbroker.Target
 }
 type splitCaptureTransport struct {
-	mu      sync.Mutex
-	key     string
-	closed  bool
-	actions []*pendingSplitAction
-	wake    chan struct{}
-	done    chan struct{}
+	mu                  sync.Mutex
+	key                 string
+	closed              bool
+	actions             []*pendingSplitAction
+	wake                chan struct{}
+	done                chan struct{}
+	prepareReader       func(context.Context, string) (func(context.Context) error, error)
+	prepareBrokerReader func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+}
+
+func (s *Server) SetSplitReaderBroker(prepare func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)) {
+	if s.splitCapture == nil {
+		return
+	}
+	s.splitCapture.mu.Lock()
+	defer s.splitCapture.mu.Unlock()
+	s.splitCapture.prepareBrokerReader = prepare
+}
+
+// HandleReaderBroker is called only by the OS-authenticated native pipe server.
+// The collector has no route to this entry point and never receives a ticket.
+func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Request, activate func(readerbroker.Target) (readerbroker.Reply, error)) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	t := s.splitCapture
+	if t == nil {
+		return errors.New("reader broker disabled")
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	var entry *pendingSplitAction
+	for entry == nil {
+		t.mu.Lock()
+		for _, a := range t.actions {
+			if a.action.RequestID == req.RequestID && a.action.Type == "open_native_post" && a.action.Source == req.Source && a.action.URL == req.URL && a.brokerReady != nil && !a.brokerAttached {
+				a.brokerAttached = true
+				entry = a
+				break
+			}
+		}
+		closed := t.closed
+		t.mu.Unlock()
+		if closed {
+			return errors.New("reader broker stopped")
+		}
+		if entry != nil {
+			select {
+			case t.wake <- struct{}{}:
+			default:
+			}
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	var outcome error
+	defer func() {
+		select {
+		case entry.brokerDone <- outcome:
+		default:
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		outcome = ctx.Err()
+		return outcome
+	case <-entry.brokerReady:
+	}
+	t.mu.Lock()
+	target, verify := entry.brokerTarget, entry.readerForeground
+	entry.readerForeground = nil
+	t.mu.Unlock()
+	if target.HWND == 0 || verify == nil || time.Now().After(target.Expires) {
+		outcome = errors.New("reader binding unavailable or expired")
+		return outcome
+	}
+	result, err := activate(target)
+	if err != nil {
+		outcome = err
+	} else if !result.OK || !result.Readback {
+		outcome = errors.New("reader helper activation rejected")
+	} else {
+		outcome = verify(ctx)
+	}
+	s.logger.Printf("reader_broker action=%s applied=%t readback=%t verified=%t", entry.action.ID, result.Applied, result.Readback, outcome == nil)
+	if outcome == nil {
+		t.mu.Lock()
+		entry.readerForegroundVerified = true
+		t.mu.Unlock()
+	}
+	return outcome
+}
+
+// Called only after the separately owned Windows capture host is launched.
+func (s *Server) SetSplitReaderPreparation(prepare func(context.Context, string) (func(context.Context) error, error)) {
+	if s.splitCapture == nil {
+		return
+	}
+	s.splitCapture.mu.Lock()
+	defer s.splitCapture.mu.Unlock()
+	s.splitCapture.prepareReader = prepare
 }
 
 func newSplitCaptureTransport() *splitCaptureTransport {
@@ -153,6 +263,89 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 	if err := s.requireBridge(r); err != nil {
 		return err
 	}
+	if strings.HasPrefix(p, "/api/bridge/split-capture/reader/") && r.Method == http.MethodPost {
+		parts := strings.Split(strings.TrimPrefix(p, "/api/bridge/split-capture/reader/"), "/")
+		if len(parts) != 2 || (parts[0] != "prepare" && parts[0] != "foreground") {
+			return notFound("reader intent")
+		}
+		t.mu.Lock()
+		var entry *pendingSplitAction
+		for _, candidate := range t.actions {
+			if candidate.action.ID == parts[1] && candidate.claimed && candidate.action.Type == "open_native_post" {
+				entry = candidate
+				break
+			}
+		}
+		if t.closed || entry == nil || (t.prepareReader == nil && t.prepareBrokerReader == nil) {
+			t.mu.Unlock()
+			return notFound("active reader intent")
+		}
+		if parts[0] == "foreground" {
+			if entry.brokerReady != nil {
+				select {
+				case <-entry.brokerReady:
+					t.mu.Unlock()
+					return apiError{Status: 409, Code: "reader_intent_consumed", Message: "Reader intent was already requested."}
+				default:
+					close(entry.brokerReady)
+				}
+				t.mu.Unlock()
+				select {
+				case err := <-entry.brokerDone:
+					if err != nil {
+						return apiError{Status: 409, Code: "reader_broker_rejected", Message: err.Error()}
+					}
+					return writeJSON(w, 200, map[string]bool{"foreground": true})
+				case <-r.Context().Done():
+					return r.Context().Err()
+				case <-time.After(readerbroker.Lifetime):
+					return apiError{Status: 409, Code: "reader_broker_expired", Message: "The UI reader broker did not complete this click."}
+				}
+			}
+			foreground := entry.readerForeground
+			entry.readerForeground = nil // Consume before the native call; never replay.
+			t.mu.Unlock()
+			if foreground == nil {
+				s.logger.Printf("split_reader action=%s phase=foreground outcome=missing_intent", entry.action.ID)
+				return apiError{Status: 409, Code: "reader_intent_consumed", Message: "Reader foreground intent is not available."}
+			}
+			if err := foreground(r.Context()); err != nil {
+				s.logger.Printf("split_reader action=%s phase=foreground outcome=rejected error=%q", entry.action.ID, err.Error())
+				return apiError{Status: 409, Code: "reader_foreground_rejected", Message: err.Error()}
+			}
+			t.mu.Lock()
+			entry.readerForegroundVerified = true
+			t.mu.Unlock()
+			s.logger.Printf("split_reader action=%s phase=foreground outcome=accepted", entry.action.ID)
+			return writeJSON(w, 200, map[string]bool{"foreground": true})
+		}
+		if entry.readerPreparing {
+			t.mu.Unlock()
+			return apiError{Status: 409, Code: "reader_intent_consumed", Message: "Reader preparation was already claimed."}
+		}
+		entry.readerPreparing = true
+		prepare := t.prepareReader
+		prepareBroker := t.prepareBrokerReader
+		t.mu.Unlock()
+		var foreground func(context.Context) error
+		var target readerbroker.Target
+		var err error
+		if prepareBroker != nil {
+			target, foreground, err = prepareBroker(r.Context(), "AkuBrowser reader "+entry.action.ID)
+		} else {
+			foreground, err = prepare(r.Context(), "AkuBrowser reader "+entry.action.ID)
+		}
+		if err != nil {
+			s.logger.Printf("split_reader action=%s phase=prepare outcome=rejected error=%q", entry.action.ID, err.Error())
+			return apiError{Status: 409, Code: "reader_binding_rejected", Message: err.Error()}
+		}
+		t.mu.Lock()
+		entry.readerForeground = foreground
+		entry.brokerTarget = target
+		t.mu.Unlock()
+		s.logger.Printf("split_reader action=%s phase=prepare outcome=accepted", entry.action.ID)
+		return writeJSON(w, 200, map[string]bool{"prepared": true})
+	}
 	if p == "/api/split-capture/actions" && r.Method == http.MethodPost {
 		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
 			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
@@ -167,6 +360,20 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		a.ID = domain.NewID("split")
 		entry := &pendingSplitAction{action: a, result: make(chan splitActionResult, 1)}
 		t.mu.Lock()
+		if a.Type == "open_native_post" && t.prepareBrokerReader != nil {
+			if err := (readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}).Validate(); err != nil {
+				t.mu.Unlock()
+				return badRequest("Native reader requires an explicit UI broker click.")
+			}
+			for _, old := range t.actions {
+				if old.action.RequestID == a.RequestID {
+					t.mu.Unlock()
+					return badRequest("Reader click was already queued.")
+				}
+			}
+			entry.brokerReady = make(chan struct{})
+			entry.brokerDone = make(chan error, 1)
+		}
 		if t.closed || len(t.actions) >= splitActionLimit {
 			t.mu.Unlock()
 			return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture transport is unavailable or busy."}
@@ -187,7 +394,11 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		case t.wake <- struct{}{}:
 		default:
 		}
-		timer := time.NewTimer(splitActionTimeout)
+		timeout := splitActionTimeout
+		if entry.brokerReady != nil {
+			timeout = readerbroker.Lifetime
+		}
+		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		select {
 		case result := <-entry.result:
@@ -206,7 +417,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		for {
 			t.mu.Lock()
 			for _, entry := range t.actions {
-				if !entry.claimed {
+				if !entry.claimed && (entry.brokerReady == nil || entry.brokerAttached) {
 					entry.claimed = true
 					action := entry.action
 					t.mu.Unlock()
@@ -238,6 +449,18 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		defer t.mu.Unlock()
 		for _, entry := range t.actions {
 			if entry.action.ID == id && entry.claimed {
+				if entry.action.Type == "open_native_post" {
+					if result.OK && !entry.readerForegroundVerified {
+						// Deliver a terminal failure to the waiting UI, rather than
+						// rejecting this POST and leaving it waiting for a timeout.
+						result = splitActionResult{OK: false, Message: "Native reader foreground was not verified. Reload AkuBridge to load the current runtime, then retry Open native post."}
+					}
+					if result.OK {
+						s.logger.Printf("split_reader action=%s phase=result outcome=accepted", entry.action.ID)
+					} else {
+						s.logger.Printf("split_reader action=%s phase=result outcome=rejected error=%q", entry.action.ID, result.Message)
+					}
+				}
 				select {
 				case entry.result <- result:
 					w.WriteHeader(204)
@@ -258,6 +481,24 @@ func (s *Server) serveSplitCaptureAsset(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	switch r.URL.Path {
+	case "/split-reader-intent":
+		id := r.URL.Query().Get("id")
+		s.splitCapture.mu.Lock()
+		allowed := false
+		for _, entry := range s.splitCapture.actions {
+			if entry.claimed && entry.action.ID == id && entry.action.Type == "open_native_post" {
+				allowed = true
+				break
+			}
+		}
+		s.splitCapture.mu.Unlock()
+		if !allowed {
+			http.NotFound(w, r)
+			return true
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<!doctype html><html><head><title>"+html.EscapeString("AkuBrowser reader "+id)+"</title></head><body>Opening native post…</body></html>")
+		return true
 	case "/split-ui-bridge.js":
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write(splitUIBridge)

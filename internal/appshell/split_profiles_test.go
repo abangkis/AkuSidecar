@@ -19,7 +19,7 @@ func TestSplitProfilesKeepAuthenticatedDataInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if capture != path || ui != path+"-ui-split" {
+	if capture != path || ui != path+"-ui-split-cft" {
 		t.Fatalf("profiles capture=%s ui=%s", capture, ui)
 	}
 	if _, err := os.Stat(ui); !os.IsNotExist(err) {
@@ -41,7 +41,7 @@ func TestSplitProfileRejectsAlias(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(path, path+"-ui-split"); err != nil {
+	if err := os.Symlink(path, path+"-ui-split-cft"); err != nil {
 		t.Skip("symlink creation unavailable")
 	}
 	if _, _, err := SplitProfilePaths(path); err == nil {

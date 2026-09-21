@@ -113,6 +113,8 @@ type Window struct {
 	executable  string
 	userDataDir string
 	startup     *Startup
+	captureHost bool
+	containment CaptureContainment
 }
 
 func (w *Window) PID() int {
@@ -175,6 +177,9 @@ func (w *Window) release() {
 	w.ownershipMu.Lock()
 	defer w.ownershipMu.Unlock()
 	w.startup.Stop()
+	if w.containment != nil {
+		w.containment.Stop()
+	}
 	w.icon.close()
 	w.cleanupErr = w.owner.drain()
 	w.owner.close()
@@ -344,8 +349,9 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 	window := &Window{
 		closed:  make(chan struct{}),
 		command: command, owner: owner, icon: icon, done: make(chan error, 1),
-		startup:    options.Startup,
-		executable: options.Executable, userDataDir: options.UserDataDir,
+		startup:     options.Startup,
+		captureHost: options.StartMinimized,
+		executable:  options.Executable, userDataDir: options.UserDataDir,
 	}
 	go func() {
 		err := command.Wait()

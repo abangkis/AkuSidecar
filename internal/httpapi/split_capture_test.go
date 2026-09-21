@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http/httptest"
@@ -18,6 +19,140 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
+
+func TestSplitReaderForegroundRequiresAuthenticatedClaimedExplicitIntent(t *testing.T) {
+	s, token := splitTestServer(t)
+	prepared, foregrounded := 0, 0
+	s.SetSplitReaderPreparation(func(_ context.Context, marker string) (func(context.Context) error, error) {
+		prepared++
+		if marker != "AkuBrowser reader split_reader" {
+			t.Fatalf("marker=%q", marker)
+		}
+		return func(context.Context) error { foregrounded++; return nil }, nil
+	})
+	entry := &pendingSplitAction{action: splitCaptureAction{ID: "split_reader", Type: "open_native_post"}, claimed: true}
+	s.splitCapture.actions = []*pendingSplitAction{entry}
+	prepare := "/api/bridge/split-capture/reader/prepare/split_reader"
+	foreground := "/api/bridge/split-capture/reader/foreground/split_reader"
+	for _, credentials := range []struct{ token, key string }{{token, "stale"}, {"wrong", s.splitCapture.key}, {token, ""}} {
+		if w := splitRequest(s, credentials.token, credentials.key, "POST", prepare, "{}"); w.Code < 400 {
+			t.Fatal("unauthenticated preparation accepted")
+		}
+	}
+	if prepared != 0 {
+		t.Fatal("authentication failure reached native code")
+	}
+	for _, action := range []string{"dispatch", "open_source", "ping"} {
+		entry.action.Type = action
+		if w := splitRequest(s, token, s.splitCapture.key, "POST", prepare, "{}"); w.Code != 404 {
+			t.Fatalf("background action %s=%d", action, w.Code)
+		}
+	}
+	entry.action.Type = "open_native_post"
+	entry.claimed = false
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", prepare, "{}"); w.Code != 404 {
+		t.Fatal("unclaimed reader accepted")
+	}
+	entry.claimed = true
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", foreground, "{}"); w.Code != 409 {
+		t.Fatal("foreground before binding accepted")
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", prepare, "{}"); w.Code != 200 {
+		t.Fatalf("prepare=%d %s", w.Code, w.Body)
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", prepare, "{}"); w.Code != 409 {
+		t.Fatal("duplicate preparation accepted")
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", foreground, "{}"); w.Code != 200 {
+		t.Fatalf("foreground=%d %s", w.Code, w.Body)
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", foreground, "{}"); w.Code != 409 {
+		t.Fatal("foreground replay accepted")
+	}
+	if prepared != 1 || foregrounded != 1 {
+		t.Fatalf("prepared=%d foregrounded=%d", prepared, foregrounded)
+	}
+	s.splitCapture.actions = nil
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", foreground, "{}"); w.Code != 404 {
+		t.Fatal("expired action accepted")
+	}
+}
+
+func TestSplitReaderForegroundFailureIsVisibleAndConsumed(t *testing.T) {
+	s, token := splitTestServer(t)
+	s.SetSplitReaderPreparation(func(context.Context, string) (func(context.Context) error, error) { return nil, nil })
+	calls := 0
+	s.splitCapture.actions = []*pendingSplitAction{{action: splitCaptureAction{ID: "split_reader", Type: "open_native_post"}, claimed: true, readerForeground: func(context.Context) error { calls++; return errors.New("Windows refused foreground") }}}
+	path := "/api/bridge/split-capture/reader/foreground/split_reader"
+	w := splitRequest(s, token, s.splitCapture.key, "POST", path, "{}")
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "Windows refused foreground") {
+		t.Fatalf("failure=%d %s", w.Code, w.Body)
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", path, "{}"); w.Code != 409 || calls != 1 {
+		t.Fatal("failed foreground was replayed")
+	}
+}
+
+func TestSplitReaderMarkerPageRequiresActiveClaimAndDoesNotExposeSecrets(t *testing.T) {
+	s, _ := splitTestServer(t)
+	path := "http://127.0.0.1:11122/split-reader-intent?id=split_reader"
+	w := httptest.NewRecorder()
+	s.serveSplitCaptureAsset(w, httptest.NewRequest("GET", path, nil))
+	if w.Code != 404 {
+		t.Fatal("marker available without action")
+	}
+	s.splitCapture.actions = []*pendingSplitAction{{action: splitCaptureAction{ID: "split_reader", Type: "open_native_post"}, claimed: true}}
+	w = httptest.NewRecorder()
+	s.serveSplitCaptureAsset(w, httptest.NewRequest("GET", path, nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "<title>AkuBrowser reader split_reader</title>") || strings.Contains(w.Body.String(), s.splitCapture.key) {
+		t.Fatalf("marker page=%s", w.Body)
+	}
+}
+
+func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) {
+	for _, phase := range []string{"missing", "failed", "succeeded", "other_action"} {
+		t.Run(phase, func(t *testing.T) {
+			s, token := splitTestServer(t)
+			var logs strings.Builder
+			s.logger = log.New(&logs, "", 0)
+			s.SetSplitReaderPreparation(func(context.Context, string) (func(context.Context) error, error) { return nil, nil })
+			entry := &pendingSplitAction{action: splitCaptureAction{ID: "split_reader", Type: "open_native_post"}, claimed: true, result: make(chan splitActionResult, 1)}
+			other := &pendingSplitAction{action: splitCaptureAction{ID: "split_other", Type: "open_native_post"}, claimed: true}
+			s.splitCapture.actions = []*pendingSplitAction{entry, other}
+			if phase != "missing" {
+				target := entry
+				if phase == "other_action" {
+					target = other
+				}
+				target.readerForeground = func(context.Context) error {
+					if phase == "failed" {
+						return errors.New("native readback failed")
+					}
+					return nil
+				}
+				w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/reader/foreground/"+target.action.ID, "{}")
+				if (w.Code == 200) != (phase != "failed") {
+					t.Fatalf("foreground=%d %s", w.Code, w.Body)
+				}
+			}
+			w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/split_reader", `{"ok":true,"result":{"windowId":2}}`)
+			if w.Code != 204 {
+				t.Fatalf("result=%d %s", w.Code, w.Body)
+			}
+			select {
+			case result := <-entry.result:
+				if result.OK != (phase == "succeeded") {
+					t.Fatalf("result=%+v", result)
+				}
+				if !result.OK && (!strings.Contains(result.Message, "Reload AkuBridge") || result.Result != nil || !strings.Contains(logs.String(), "phase=result outcome=rejected")) {
+					t.Fatalf("failure not actionable or logged: %+v logs=%s", result, logs.String())
+				}
+			default:
+				t.Fatal("waiting UI did not receive terminal result immediately")
+			}
+		})
+	}
+}
 
 func splitTestServer(t *testing.T) (*Server, string) {
 	t.Helper()

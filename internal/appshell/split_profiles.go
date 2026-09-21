@@ -18,7 +18,9 @@ func SplitProfilePaths(capture string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	ui := path + "-ui-split"
+	// Keep CfT separate from the former branded-Chrome UI profile: a pinned
+	// CfT version can be older, and Chromium profiles cannot safely downgrade.
+	ui := path + "-ui-split-cft"
 	if info, err := os.Lstat(ui); err == nil {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return "", "", fmt.Errorf("UI profile must be an ordinary directory")

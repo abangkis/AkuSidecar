@@ -472,6 +472,7 @@ type Options struct {
 	AppShell                        bool
 	ExperimentalWindowsCaptureSplit bool
 	ChromiumPath                    string
+	UIChromiumPath                  string
 	BridgeExtensionPath             string
 	BrowserProfilePath              string
 	AppUserModelID                  string
@@ -500,6 +501,7 @@ func ParseFlags() Options {
 	flag.BoolVar(&options.AppShell, "app-shell", false, "open the embedded pinned-Chromium application window after startup")
 	flag.BoolVar(&options.ExperimentalWindowsCaptureSplit, "experimental-windows-capture-split", os.Getenv("AKUBROWSER_EXPERIMENTAL_WINDOWS_CAPTURE_SPLIT") == "1", "Windows-only experiment: separate UI and capture Chromium processes")
 	flag.StringVar(&options.ChromiumPath, "chromium-path", "", "override pinned-Chromium executable for this process")
+	flag.StringVar(&options.UIChromiumPath, "ui-chromium-path", "", "Windows capture split only: pinned Chrome for Testing UI executable; never changes the capture browser")
 	flag.StringVar(&options.BridgeExtensionPath, "bridge-extension-path", "", "unpacked AkuBridge extension directory loaded into the app shell")
 	flag.StringVar(&options.BrowserProfilePath, "browser-profile", "", "override the app-shell browser profile directory for this process")
 	flag.StringVar(&options.AppUserModelID, "app-user-model-id", "", "explicit Windows application identity for app-shell grouping and pinning")
@@ -535,6 +537,9 @@ func Load(options Options) (Config, error) {
 	cfg.Dev = options.Dev
 	cfg.RuntimeControlToken = options.RuntimeControlToken
 	cfg.ExperimentalWindowsCaptureSplit = windowsCaptureSplitEnabled(runtime.GOOS, options)
+	if strings.TrimSpace(options.UIChromiumPath) != "" && !cfg.ExperimentalWindowsCaptureSplit {
+		return Config{}, fmt.Errorf("ui-chromium-path requires the experimental Windows app-shell capture split")
+	}
 	if options.CodexPath != "" {
 		if entry, ok := cfg.Reasoning.Providers["codex-app-server"]; ok {
 			entry.Executable = options.CodexPath

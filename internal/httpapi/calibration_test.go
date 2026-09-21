@@ -116,9 +116,9 @@ func TestCalibrationEndpointsRoundTrip(t *testing.T) {
 	}
 	defer state.Close()
 	cfg := config.Config{
-		Root:      t.TempDir(),
-		Dev:       true,
-		Server:    config.ServerConfig{Host: "127.0.0.1", Port: 0},
+		Root:       t.TempDir(),
+		Dev:        true,
+		Server:     config.ServerConfig{Host: "127.0.0.1", Port: 0},
 		Capture:    config.CaptureConfig{Profile: "standard", Visibility: "quiet", OpenMissingSource: true, MaxAcquisitionRounds: 2},
 		Preference: config.PreferenceConfig{Mode: "promote_unused_budget"},
 		Reasoning: config.ReasoningConfig{
