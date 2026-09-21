@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ var allowedCaptureSurfaceEvents = map[string]bool{
 	"created": true, "reused": true, "release_requested": true,
 	"released": true, "preserved_user_owned": true,
 	"focus_intervention": true, "reconciled": true,
+	"native_trace": true,
 }
 
 func (s *Store) RecordCaptureSurfaceEvent(ctx context.Context, value domain.CaptureSurfaceEvent) (domain.CaptureSurfaceEvent, error) {
@@ -87,7 +89,26 @@ func (s *Store) CaptureSurfaceEvents(ctx context.Context, runID string) ([]domai
 		}
 		result = append(result, value)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Bridge timestamps use milliseconds; native samples use RFC3339Nano.
+	// Lexical SQL ordering puts .200100Z before .200Z despite being later.
+	sort.SliceStable(result, func(i, j int) bool {
+		a, aErr := time.Parse(time.RFC3339Nano, result[i].OccurredAt)
+		b, bErr := time.Parse(time.RFC3339Nano, result[j].OccurredAt)
+		if (aErr == nil) != (bErr == nil) {
+			return aErr == nil
+		}
+		if aErr != nil {
+			return result[i].OccurredAt < result[j].OccurredAt
+		}
+		if a.Equal(b) {
+			return result[i].ID < result[j].ID
+		}
+		return a.Before(b)
+	})
+	return result, nil
 }
 
 func captureNullableString(value string) any {

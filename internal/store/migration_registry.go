@@ -32,6 +32,7 @@ var schemaMigrations = map[string]struct {
 	"22": {next: "23", run: migrateSchema22To23},
 	"23": {next: "24", run: migrateSchema23To24},
 	"24": {next: "25", run: migrateSchema24To25},
+	"25": {next: "26", run: migrateSchema25To26},
 }
 
 func canMigrateSchema(version int) bool {

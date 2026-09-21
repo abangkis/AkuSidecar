@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 25
+const SchemaVersion = 26
 
-const schemaVersion = "25"
+const schemaVersion = "26"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -811,7 +811,7 @@ CREATE TABLE IF NOT EXISTS capture_surface_events (
   source TEXT REFERENCES source_definitions(id),
   event TEXT NOT NULL CHECK (event IN (
     'created','reused','release_requested','released',
-    'preserved_user_owned','focus_intervention','reconciled'
+    'preserved_user_owned','focus_intervention','reconciled','native_trace'
   )),
   outcome TEXT NOT NULL DEFAULT '',
   detail_json TEXT NOT NULL DEFAULT '{}',
