@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,6 +47,7 @@ type Server struct {
 	appShellStartup   *appshell.Startup
 	nativeTrace       nativetrace.Manager
 	appShellPID       func() int
+	splitCapture      *splitCaptureTransport
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {
@@ -57,6 +59,9 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 		config: cfg, store: state, engine: runtime, logger: logger,
 		credentials: credentials.ForRuntime(cfg.Root, cfg.Dev),
 		started:     time.Now(), shutdownRequested: make(chan struct{}),
+	}
+	if cfg.ExperimentalWindowsCaptureSplit && goruntime.GOOS == "windows" {
+		server.splitCapture = newSplitCaptureTransport()
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.api())
@@ -105,6 +110,9 @@ func (s *Server) Start() (net.Addr, error) {
 	return listener.Addr(), nil
 }
 func (s *Server) Stop(ctx context.Context) error {
+	if s.splitCapture != nil {
+		s.splitCapture.close()
+	}
 	s.nativeTrace.Stop()
 	if s.listener == nil {
 		return nil
@@ -146,6 +154,9 @@ func (e apiError) Error() string { return e.Message }
 func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	p := strings.TrimSuffix(r.URL.Path, "/")
+	if strings.HasPrefix(p, "/api/split-capture/") || strings.HasPrefix(p, "/api/bridge/split-capture/") {
+		return s.routeSplitCapture(w, r, p)
+	}
 	if p == "" {
 		p = "/"
 	}
@@ -1274,6 +1285,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err := s.requireBridge(r); err != nil {
 			return err
 		}
+		// The UI's legacy handshake may read capture readiness but cannot
+		// manufacture/refresh a capture-process heartbeat in split mode.
+		if s.splitCapture != nil && !s.splitCapture.authorized(r) {
+			return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.BridgeStatus()})
+		}
 		var body struct {
 			Capabilities domain.BridgeHeartbeat `json:"capabilities"`
 		}
@@ -1552,12 +1568,18 @@ func (s *Server) requireBridge(r *http.Request) error {
 	if !s.store.MatchesBridgeToken(r.Context(), r.Header.Get("X-Aku-Bridge-Token")) {
 		return apiError{Status: http.StatusUnauthorized, Code: "invalid_bridge_token", Message: "invalid Bridge token"}
 	}
+	if s.splitCapture != nil && splitCaptureOwnedRoute(r) && !s.splitCapture.authorized(r) {
+		return apiError{Status: http.StatusConflict, Code: "capture_instance_mismatch", Message: "This operation belongs to the active Windows capture process."}
+	}
 	return nil
 }
 
 func (s *Server) static(files http.FileSystem) http.Handler {
 	handler := http.FileServer(files)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.serveSplitCaptureAsset(w, r) {
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			s.writeError(w, notFound("route"))
 			return
@@ -1642,7 +1664,11 @@ func (s *Server) applyCORS(r *http.Request, w http.ResponseWriter) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Aku-Bridge-Token, X-Aku-Bridge-Id, X-Aku-Bridge-Contract")
+		headers := "Content-Type, X-Aku-Bridge-Token, X-Aku-Bridge-Id, X-Aku-Bridge-Contract"
+		if s.splitCapture != nil {
+			headers += ", X-Aku-Capture-Instance"
+		}
+		w.Header().Set("Access-Control-Allow-Headers", headers)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,18 +21,19 @@ import (
 )
 
 type Config struct {
-	Version             int                   `json:"version"`
-	Deployment          DeploymentConfig      `json:"deployment,omitempty"`
-	Server              ServerConfig          `json:"server"`
-	Database            DatabaseConfig        `json:"database"`
-	MediaProvenance     MediaProvenanceConfig `json:"mediaProvenance,omitempty"`
-	Reasoning           ReasoningConfig       `json:"reasoning"`
-	Capture             CaptureConfig         `json:"capture"`
-	Preference          PreferenceConfig      `json:"preference"`
-	Bridge              BridgeConfig          `json:"bridge"`
-	Root                string                `json:"-"`
-	Dev                 bool                  `json:"-"`
-	RuntimeControlToken string                `json:"-"`
+	Version                         int                   `json:"version"`
+	Deployment                      DeploymentConfig      `json:"deployment,omitempty"`
+	Server                          ServerConfig          `json:"server"`
+	Database                        DatabaseConfig        `json:"database"`
+	MediaProvenance                 MediaProvenanceConfig `json:"mediaProvenance,omitempty"`
+	Reasoning                       ReasoningConfig       `json:"reasoning"`
+	Capture                         CaptureConfig         `json:"capture"`
+	Preference                      PreferenceConfig      `json:"preference"`
+	Bridge                          BridgeConfig          `json:"bridge"`
+	Root                            string                `json:"-"`
+	Dev                             bool                  `json:"-"`
+	RuntimeControlToken             string                `json:"-"`
+	ExperimentalWindowsCaptureSplit bool                  `json:"-"`
 }
 
 type DeploymentConfig struct {
@@ -455,29 +457,30 @@ type BridgeConfig struct {
 }
 
 type Options struct {
-	DatabaseInspect             bool
-	DatabaseAction              string
-	DatabaseConfirm             bool
-	DatabaseExpectedFingerprint string
-	ConfigPath                  string
-	CodexPath                   string
-	DatabasePath                string
-	Provider                    string
-	Port                        int
-	Dev                         bool
-	DiscoverCodex               bool
-	DiscoverChromium            bool
-	AppShell                    bool
-	ChromiumPath                string
-	BridgeExtensionPath         string
-	BrowserProfilePath          string
-	AppUserModelID              string
-	AppRelaunchCommand          string
-	AppRelaunchDisplayName      string
-	RuntimeControlToken         string
-	RuntimeCandidateProbe       bool
-	RuntimeCandidateProbeSchema int
-	BridgeExtensionOrigin       string
+	DatabaseInspect                 bool
+	DatabaseAction                  string
+	DatabaseConfirm                 bool
+	DatabaseExpectedFingerprint     string
+	ConfigPath                      string
+	CodexPath                       string
+	DatabasePath                    string
+	Provider                        string
+	Port                            int
+	Dev                             bool
+	DiscoverCodex                   bool
+	DiscoverChromium                bool
+	AppShell                        bool
+	ExperimentalWindowsCaptureSplit bool
+	ChromiumPath                    string
+	BridgeExtensionPath             string
+	BrowserProfilePath              string
+	AppUserModelID                  string
+	AppRelaunchCommand              string
+	AppRelaunchDisplayName          string
+	RuntimeControlToken             string
+	RuntimeCandidateProbe           bool
+	RuntimeCandidateProbeSchema     int
+	BridgeExtensionOrigin           string
 }
 
 func ParseFlags() Options {
@@ -495,6 +498,7 @@ func ParseFlags() Options {
 	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
 	flag.BoolVar(&options.DiscoverChromium, "discover-chromium", false, "discover and validate a pinned-Chromium executable, print JSON, and exit")
 	flag.BoolVar(&options.AppShell, "app-shell", false, "open the embedded pinned-Chromium application window after startup")
+	flag.BoolVar(&options.ExperimentalWindowsCaptureSplit, "experimental-windows-capture-split", os.Getenv("AKUBROWSER_EXPERIMENTAL_WINDOWS_CAPTURE_SPLIT") == "1", "Windows-only experiment: separate UI and capture Chromium processes")
 	flag.StringVar(&options.ChromiumPath, "chromium-path", "", "override pinned-Chromium executable for this process")
 	flag.StringVar(&options.BridgeExtensionPath, "bridge-extension-path", "", "unpacked AkuBridge extension directory loaded into the app shell")
 	flag.StringVar(&options.BrowserProfilePath, "browser-profile", "", "override the app-shell browser profile directory for this process")
@@ -530,6 +534,7 @@ func Load(options Options) (Config, error) {
 	cfg.Root = filepath.Dir(filepath.Dir(absConfig))
 	cfg.Dev = options.Dev
 	cfg.RuntimeControlToken = options.RuntimeControlToken
+	cfg.ExperimentalWindowsCaptureSplit = windowsCaptureSplitEnabled(runtime.GOOS, options)
 	if options.CodexPath != "" {
 		if entry, ok := cfg.Reasoning.Providers["codex-app-server"]; ok {
 			entry.Executable = options.CodexPath
@@ -545,6 +550,9 @@ func Load(options Options) (Config, error) {
 	}
 	if options.Port != 0 {
 		cfg.Server.Port = options.Port
+	}
+	if cfg.ExperimentalWindowsCaptureSplit && cfg.Server.Port != 11122 {
+		return Config{}, fmt.Errorf("experimental Windows capture split requires the Bridge loopback port 11122")
 	}
 	if options.DatabasePath != "" {
 		cfg.Database.Path = options.DatabasePath

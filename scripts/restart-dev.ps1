@@ -16,10 +16,80 @@ $candidate = Join-Path $runtimeDir 'aku-sidecar.next.exe'
 $targetProvenance = "$target.runtime-state.json"
 $candidateProvenance = "$candidate.runtime-state.json"
 $supervisor = Join-Path $workspaceRoot 'AkuSupervisor\target\dev\aku-supervisor.exe'
+$experimentalCaptureSplitFlag = '--experimental-windows-capture-split'
+
+function Resolve-AkuSupervisorConfigPath {
+    if ($env:AKU_SUPERVISOR_CONFIG) {
+        return [IO.Path]::GetFullPath($env:AKU_SUPERVISOR_CONFIG)
+    }
+    if (-not $env:LOCALAPPDATA) {
+        throw 'LOCALAPPDATA is unavailable; set AKU_SUPERVISOR_CONFIG explicitly.'
+    }
+    return Join-Path $env:LOCALAPPDATA 'AkuSupervisor\services.json'
+}
+
+function Enable-ExperimentalWindowsCaptureSplit {
+    param([Parameter(Mandatory)] [string] $ConfigurationPath)
+
+    if (-not (Test-Path -LiteralPath $ConfigurationPath -PathType Leaf)) {
+        throw "AkuSupervisor configuration was not found: $ConfigurationPath"
+    }
+    $configuration = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
+    $serviceProperty = $configuration.services.PSObject.Properties['akusidecar']
+    if ($null -eq $serviceProperty) {
+        throw "AkuSupervisor configuration does not register service 'akusidecar': $ConfigurationPath"
+    }
+
+    $currentArguments = @($serviceProperty.Value.args | ForEach-Object { [string] $_ })
+    $nextArguments = [Collections.Generic.List[string]]::new()
+    $flagSeen = $false
+    foreach ($argument in $currentArguments) {
+        if ($argument -eq $experimentalCaptureSplitFlag) {
+            if (-not $flagSeen) {
+                $nextArguments.Add($argument)
+                $flagSeen = $true
+            }
+            continue
+        }
+        $nextArguments.Add($argument)
+    }
+    if (-not $flagSeen) {
+        $nextArguments.Add($experimentalCaptureSplitFlag)
+    }
+
+    $nextArgumentArray = @($nextArguments)
+    if (($currentArguments | ConvertTo-Json -Compress) -ne ($nextArgumentArray | ConvertTo-Json -Compress)) {
+        $serviceProperty.Value.args = $nextArgumentArray
+        $temporaryPath = "$ConfigurationPath.tmp-$PID"
+        try {
+            [IO.File]::WriteAllText(
+                $temporaryPath,
+                (($configuration | ConvertTo-Json -Depth 20) + "`n"),
+                [Text.UTF8Encoding]::new($false)
+            )
+            Move-Item -LiteralPath $temporaryPath -Destination $ConfigurationPath -Force
+        }
+        finally {
+            if (Test-Path -LiteralPath $temporaryPath) {
+                Remove-Item -LiteralPath $temporaryPath -Force
+            }
+        }
+    }
+
+    $verified = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
+    $verifiedArguments = @($verified.services.akusidecar.args | ForEach-Object { [string] $_ })
+    if (@($verifiedArguments | Where-Object { $_ -eq $experimentalCaptureSplitFlag }).Count -ne 1) {
+        throw "AkuSupervisor did not retain exactly one $experimentalCaptureSplitFlag argument."
+    }
+    Write-Host 'AkuSidecar development restart will use the experimental Windows capture split.' -ForegroundColor Cyan
+}
 
 if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
     throw "AkuSupervisor development executable was not found: $supervisor"
 }
+
+$supervisorConfig = Resolve-AkuSupervisorConfigPath
+Enable-ExperimentalWindowsCaptureSplit -ConfigurationPath $supervisorConfig
 
 & (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe'
 if ($LASTEXITCODE -ne 0) {

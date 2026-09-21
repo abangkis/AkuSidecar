@@ -75,6 +75,8 @@ type LaunchOptions struct {
 	// The readiness handshake still runs when the native status is hidden.
 	SuppressStartupWindow bool
 	OnStartupReady        func()
+	// Windows capture-host experiment only; Chromium still owns window showing.
+	StartMinimized bool
 }
 
 type ApplicationIdentity struct {
@@ -315,6 +317,18 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		_ = command.Wait()
 		owner.close()
 		return nil, fmt.Errorf("%w: %v", errCleanupUnverified, err)
+	}
+	if options.StartMinimized && runtime.GOOS == "windows" {
+		if err := owner.minimizeInitialWindow(ctx, command.Process.Pid); err != nil {
+			owner.terminate(command.Process)
+			_ = command.Wait()
+			cleanupErr := owner.drain()
+			owner.close()
+			if cleanupErr != nil {
+				return nil, fmt.Errorf("%w: minimize: %v; cleanup: %v", errCleanupUnverified, err, cleanupErr)
+			}
+			return nil, err
+		}
 	}
 	icon, err := applyWindowIcon(command.Process.Pid, options.IconPath, options.UserDataDir, options.Identity)
 	if err != nil {

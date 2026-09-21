@@ -196,13 +196,19 @@ func main() {
 		logger.Printf("resumed_reasoning_runs=%d from_durable_capture=true", resumed)
 	}
 	var shell *appshell.Session
+	var capture *appshell.Window
 	if options.AppShell {
 		if resetErr := discardLegacyProfileResetMarker(state, logger); resetErr != nil {
 			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
-		shell = launchAppShell(logger, options, cfg, address.String(), server)
-		server.SetOpenExtensionsAction(shell.OpenExtensionsPage)
-		server.SetAppShellPID(shell.PID)
+		shell, capture = launchAppShell(logger, options, cfg, address.String(), server)
+		if capture != nil {
+			server.SetOpenExtensionsAction(capture.OpenExtensionsPage)
+			server.SetAppShellPID(capture.PID)
+		} else {
+			server.SetOpenExtensionsAction(shell.OpenExtensionsPage)
+			server.SetAppShellPID(shell.PID)
+		}
 	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
@@ -211,12 +217,15 @@ func main() {
 	case <-server.ShutdownRequested():
 	case <-shell.Done():
 		logger.Printf("app shell window closed")
+	case <-capture.Done():
+		logger.Printf("experimental capture process exited; stopping paired UI")
 	}
 	shutdownStarted := time.Now()
 	shell.Cancel() // Stop accepting/relaunching windows as soon as shutdown wins.
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()
 	shell.Terminate()
+	capture.Terminate()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	if err := server.Stop(ctx); err != nil {
 		logger.Printf("HTTP shutdown degraded: %v", err)
@@ -292,7 +301,7 @@ func discoverChromium(options config.Options) int {
 	return 0
 }
 
-func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) *appshell.Session {
+func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) (*appshell.Session, *appshell.Window) {
 	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
 	cancel()
@@ -315,6 +324,26 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	identity, err := appShellIdentity(options, cfg)
 	fatal(logger, err)
 	profilePath := browserProfilePath(options, cfg)
+	var capture *appshell.Window
+	extensionPath := options.BridgeExtensionPath
+	var uiArgs []string
+	if cfg.ExperimentalWindowsCaptureSplit {
+		captureProfile, uiProfile, err := appshell.SplitProfilePaths(profilePath)
+		fatal(logger, err)
+		captureURL, err := server.SplitCaptureLaunchURL(target)
+		fatal(logger, err)
+		capture, err = appshell.Launch(context.Background(), appshell.LaunchOptions{
+			Executable: result.Executable, ExtensionPath: extensionPath,
+			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true,
+		})
+		fatal(logger, err)
+		// Never copy or relocate the signed-in profile. The UI receives a
+		// separate directory and no AkuBridge extension.
+		profilePath = uiProfile
+		extensionPath = ""
+		uiArgs = []string{"--disable-extensions"}
+		logger.Printf("experimental_windows_capture_split capture_pid=%d", capture.PID())
+	}
 	showStartupStatus, markStartupReady, statusErr := startupStatusPolicy(cfg.Deployment, profilePath)
 	if statusErr != nil {
 		logger.Printf("app shell startup status policy: %v", statusErr)
@@ -325,12 +354,13 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	}
 	window, err := appshell.LaunchSession(context.Background(), appshell.LaunchOptions{
 		Executable:            result.Executable,
-		ExtensionPath:         options.BridgeExtensionPath,
+		ExtensionPath:         extensionPath,
 		IconPath:              appShellIconPath(options.BridgeExtensionPath),
 		Identity:              identity,
 		UserDataDir:           profilePath,
 		URL:                   target,
 		StartupLogPath:        startupLogPath,
+		ExtraArgs:             uiArgs,
 		SuppressStartupWindow: !showStartupStatus,
 		OnStartupReady: func() {
 			if markStartupReady != nil {
@@ -340,9 +370,12 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			}
 		},
 	}, server.SetAppShellStartup, func(err error) { logger.Printf("app shell recovery: %v", err) })
-	fatal(logger, err)
+	if err != nil {
+		capture.Terminate()
+		fatal(logger, err)
+	}
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", result.Executable, result.Version, window.PID(), target)
-	return window
+	return window, capture
 }
 
 func isolatedChromiumStartupLogPath(profilePath string) string {
