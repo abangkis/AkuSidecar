@@ -687,13 +687,27 @@ controls without claiming that absence of a strong signal proves human origin.
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
-the age boundary makes terminal history eligible for trimming. Storage pressure
+the age boundary makes terminal operational history eligible for trimming. Schema
+27 keeps Timeline posts, displayed evidence, AI/media assessments, semantic
+reports, and user feedback independently of session/run retention. Historical
+origin IDs remain available, with explicit API flags when operational detail is
+no longer available. More/Less continues to update durable preference learning.
+Timeline and feedback have no automatic age eviction; Full Reset explicitly
+removes them. Storage pressure
 never shortens that lifetime: if expired history cannot reclaim enough space,
 retention reports pressure and keeps young history. Every retention runs a
 transactional database-health preflight and postflight. Existing disconnected
 data pauses retention and new updates until the user chooses **Back up and
 clean** or **Clean without backup**; **Later** leaves it pending. See
 [database maintenance](docs/database-maintenance.md) for the repair contract.
+
+Schema 28 adds finite-inbox observation without deletion. Visible cards receive
+an authoritative presentation timestamp, while prepared or expired hidden
+batches remain protected. Retention records bounded aggregate-only dry-run
+receipts for the 14-day protection window, 30-day routine expiry, 500-card
+preview boundary, and 10 MiB logical Timeline-card boundary. Current counters
+are available from `GET /api/timeline/storage`; no Timeline card is removed in
+observation mode.
 
 Unavailable X media first has a passive completion path. AkuBridge v60 can
 relay evidence from its DOM observers or from the bounded

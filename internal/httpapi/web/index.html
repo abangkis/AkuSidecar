@@ -491,6 +491,33 @@
           </fieldset>
 
           <fieldset class="settings-group">
+            <legend>Storage</legend>
+            <div class="settings-card settings-storage-card" aria-live="polite">
+              <div class="settings-storage-heading">
+                <span class="settings-copy"><strong>Local storage</strong><small id="settings-storage-database">Database size: loading…</small></span>
+                <span class="settings-storage-badge">Preview only</span>
+              </div>
+              <p id="settings-storage-status" class="settings-storage-status">Loading storage usage…</p>
+              <div class="settings-storage-metrics">
+                <div class="settings-storage-metric">
+                  <div><span>Timeline cards</span><strong id="settings-storage-items">—</strong></div>
+                  <div id="settings-storage-items-meter" class="settings-storage-meter" role="progressbar" aria-label="Timeline card limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+                </div>
+                <div class="settings-storage-metric">
+                  <div><span>Timeline logical size</span><strong id="settings-storage-bytes">—</strong></div>
+                  <div id="settings-storage-bytes-meter" class="settings-storage-meter" role="progressbar" aria-label="Timeline logical size limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+                </div>
+              </div>
+              <p id="settings-storage-protection" class="settings-storage-note">No Timeline cards are removed in preview mode.</p>
+              <details class="settings-storage-details">
+                <summary>Storage details</summary>
+                <dl id="settings-storage-detail-list"></dl>
+                <p>Timeline limits measure logical card payload, not the whole database. Database size includes other local data and SQLite overhead.</p>
+              </details>
+            </div>
+          </fieldset>
+
+          <fieldset class="settings-group">
             <legend>Fresh runtime boundary</legend>
             <div class="settings-card runtime-contract-card">
               <dl>

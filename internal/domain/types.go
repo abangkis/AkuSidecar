@@ -1368,21 +1368,25 @@ type ReasoningTelemetry struct {
 }
 
 type TimelineItem struct {
-	ID             string                    `json:"id"`
-	SessionID      string                    `json:"sessionId"`
-	RunID          string                    `json:"runId"`
-	Source         Source                    `json:"source"`
-	EvidenceKey    string                    `json:"evidenceKey"`
-	Rank           int                       `json:"rank"`
-	Item           ReasonedItem              `json:"item"`
-	Assessment     CandidateAssessment       `json:"assessment"`
-	Evidence       *Block                    `json:"evidence,omitempty"`
-	SemanticEvent  *TimelineSemanticEvent    `json:"semanticEvent,omitempty"`
-	AIDetection    *TimelineAIDetection      `json:"aiDetection,omitempty"`
-	Feedback       *Feedback                 `json:"feedback,omitempty"`
-	PersonalMemory *TimelineMemoryProjection `json:"personalMemory,omitempty"`
-	Coverage       map[string]any            `json:"coverage"`
-	CreatedAt      string                    `json:"createdAt"`
+	// IDs are historical provenance; availability reports whether operational
+	// detail can still be loaded, independently of this durable product row.
+	OriginSessionAvailable bool                      `json:"originSessionAvailable"`
+	OriginRunAvailable     bool                      `json:"originRunAvailable"`
+	ID                     string                    `json:"id"`
+	SessionID              string                    `json:"sessionId"`
+	RunID                  string                    `json:"runId"`
+	Source                 Source                    `json:"source"`
+	EvidenceKey            string                    `json:"evidenceKey"`
+	Rank                   int                       `json:"rank"`
+	Item                   ReasonedItem              `json:"item"`
+	Assessment             CandidateAssessment       `json:"assessment"`
+	Evidence               *Block                    `json:"evidence,omitempty"`
+	SemanticEvent          *TimelineSemanticEvent    `json:"semanticEvent,omitempty"`
+	AIDetection            *TimelineAIDetection      `json:"aiDetection,omitempty"`
+	Feedback               *Feedback                 `json:"feedback,omitempty"`
+	PersonalMemory         *TimelineMemoryProjection `json:"personalMemory,omitempty"`
+	Coverage               map[string]any            `json:"coverage"`
+	CreatedAt              string                    `json:"createdAt"`
 }
 
 // TimelineMemoryProjection is a deliberately small read projection. It lets
@@ -1869,11 +1873,44 @@ type EventCorrection struct {
 }
 
 type RetentionResult struct {
-	StoragePressure bool  `json:"storagePressure"`
-	RemovedSessions int   `json:"removedSessions"`
-	RemovedEvents   int   `json:"removedEvents"`
-	DatabaseBytes   int64 `json:"databaseBytes"`
-	LimitBytes      int64 `json:"limitBytes"`
+	StoragePressure bool                  `json:"storagePressure"`
+	RemovedSessions int                   `json:"removedSessions"`
+	RemovedEvents   int                   `json:"removedEvents"`
+	DatabaseBytes   int64                 `json:"databaseBytes"`
+	LimitBytes      int64                 `json:"limitBytes"`
+	Timeline        TimelineStorageStatus `json:"timeline"`
+}
+
+type TimelineRetentionPolicy struct {
+	ProtectionDays    int   `json:"protectionDays"`
+	RoutineExpiryDays int   `json:"routineExpiryDays"`
+	MaxItems          int   `json:"maxItems"`
+	MaxLogicalBytes   int64 `json:"maxLogicalBytes"`
+}
+
+// TimelineStorageStatus is aggregate-only. It never exposes card ids or
+// content, and observation mode never removes Timeline cards.
+type TimelineStorageStatus struct {
+	Mode                     string                  `json:"mode"`
+	EvaluatedAt              string                  `json:"evaluatedAt"`
+	ReceiptID                string                  `json:"receiptId,omitempty"`
+	Policy                   TimelineRetentionPolicy `json:"policy"`
+	DatabaseEffectiveBytes   int64                   `json:"databaseEffectiveBytes"`
+	DatabaseAllocatedBytes   int64                   `json:"databaseAllocatedBytes"`
+	TotalItems               int                     `json:"totalItems"`
+	LogicalBytes             int64                   `json:"logicalBytes"`
+	ProtectedItems           int                     `json:"protectedItems"`
+	EligibleItems            int                     `json:"eligibleItems"`
+	RoutineExpiredItems      int                     `json:"routineExpiredItems"`
+	HiddenItems              int                     `json:"hiddenItems"`
+	MissingPresentationItems int                     `json:"missingPresentationItems"`
+	OverItemLimit            bool                    `json:"overItemLimit"`
+	OverByteLimit            bool                    `json:"overByteLimit"`
+	ReclaimableItems         int                     `json:"reclaimableItems"`
+	ReclaimableBytes         int64                   `json:"reclaimableBytes"`
+	WouldRemoveItems         int                     `json:"wouldRemoveItems"`
+	WouldRemoveBytes         int64                   `json:"wouldRemoveBytes"`
+	NeedsAttention           bool                    `json:"needsAttention"`
 }
 
 type Feedback struct {

@@ -818,9 +818,6 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsBefore); err != nil {
 		return result, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_reports WHERE created_at<?`, cutoff); err != nil {
-		return result, err
-	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
 		return result, err
 	}
@@ -831,9 +828,6 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 		return result, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM content_identity_aliases WHERE last_seen_at<?`, cutoff); err != nil {
-		return result, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_feedback_events WHERE target_type<>'account' AND created_at<?`, cutoff); err != nil {
 		return result, err
 	}
 	deleted, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL AND completed_at<? AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=sessions.id AND b.state='prepared')`, cutoff)
@@ -856,6 +850,11 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsAfter); err != nil {
 		return result, err
 	}
+	timelineStatus, err := s.recordTimelineRetentionObservationTx(ctx, tx, s.Now())
+	if err != nil {
+		return result, fmt.Errorf("record Timeline retention observation: %w", err)
+	}
+	result.Timeline = timelineStatus
 	health, _, err = inspectDatabaseHealth(ctx, tx)
 	if err != nil {
 		return result, err
@@ -874,6 +873,7 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	// The storage boundary cannot shorten TTL. Report pressure if no expired
 	// operational data can reclaim enough space, preserving young history.
 	result.StoragePressure = effectiveBytes > result.LimitBytes
+	result.Timeline.DatabaseEffectiveBytes = effectiveBytes
 	if result.RemovedSessions > 0 || (effectiveBytes <= result.LimitBytes && s.databaseFootprint() > result.LimitBytes) {
 		if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
 			return result, err
@@ -882,6 +882,7 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	}
 	result.RemovedEvents = eventsBefore - eventsAfter
 	result.DatabaseBytes = s.databaseFootprint()
+	result.Timeline.DatabaseAllocatedBytes = result.DatabaseBytes
 	return result, nil
 }
 

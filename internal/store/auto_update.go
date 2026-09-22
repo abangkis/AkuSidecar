@@ -263,6 +263,13 @@ func (s *Store) RevealPreparedBatch(ctx context.Context, sessionID, presentation
 		WHERE id=?`, presentation, sessionID); err != nil {
 		return domain.PreparedBatch{}, err
 	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE timeline_items
+		SET origin_status=COALESCE((SELECT status FROM sessions WHERE id=?),origin_status),
+		    presentation=?,presented_at=?,batch_state='visible'
+		WHERE session_id=?`, sessionID, presentation, now, sessionID); err != nil {
+		return domain.PreparedBatch{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return domain.PreparedBatch{}, err
 	}

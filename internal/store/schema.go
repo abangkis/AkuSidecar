@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 26
+const SchemaVersion = 28
 
-const schemaVersion = "26"
+const schemaVersion = "28"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -920,25 +920,31 @@ CREATE TABLE IF NOT EXISTS candidate_assessments (
 
 CREATE TABLE IF NOT EXISTS timeline_items (
   id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
   source TEXT NOT NULL REFERENCES source_definitions(id),
   evidence_key TEXT NOT NULL,
   rank INTEGER NOT NULL CHECK (rank >= 0),
   item_json TEXT NOT NULL,
   assessment_json TEXT NOT NULL,
   coverage_json TEXT NOT NULL DEFAULT '{}',
+  origin_status TEXT NOT NULL DEFAULT 'unavailable',
+  presentation TEXT NOT NULL DEFAULT '',
+  presented_at TEXT,
+  batch_state TEXT NOT NULL DEFAULT '',
+  evidence_snapshot_json TEXT,
   created_at TEXT NOT NULL,
   UNIQUE(run_id, evidence_key)
 );
 
 CREATE INDEX IF NOT EXISTS timeline_session_rank ON timeline_items(session_id, rank);
 CREATE INDEX IF NOT EXISTS timeline_created ON timeline_items(created_at DESC);
+CREATE INDEX IF NOT EXISTS timeline_presented ON timeline_items(presented_at DESC);
 
 CREATE TABLE IF NOT EXISTS ai_assessments (
   id TEXT PRIMARY KEY,
   timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
   stage TEXT NOT NULL CHECK (stage IN ('fast','deep')),
   status TEXT NOT NULL CHECK (status IN ('strong_signals','insufficient_evidence','no_signal_detected','conflicting_evidence')),
   confidence_band TEXT NOT NULL CHECK (confidence_band IN ('low','medium','high')),
@@ -1009,7 +1015,7 @@ CREATE INDEX IF NOT EXISTS ai_detection_jobs_status_created ON ai_detection_jobs
 CREATE TABLE IF NOT EXISTS media_provenance_assessments (
   id TEXT PRIMARY KEY,
   timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
   source TEXT NOT NULL REFERENCES source_definitions(id),
   media_index INTEGER NOT NULL CHECK (media_index >= 0),
   media_kind TEXT NOT NULL CHECK (media_kind IN ('image')),
@@ -1134,8 +1140,8 @@ CREATE TABLE IF NOT EXISTS calibration_profile_snapshots (
 CREATE TABLE IF NOT EXISTS feedback_events (
   id TEXT PRIMARY KEY,
   timeline_id TEXT REFERENCES timeline_items(id) ON DELETE SET NULL,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
   evidence_key TEXT NOT NULL,
   direction TEXT NOT NULL CHECK (direction IN ('more','less')),
   reason TEXT CHECK (reason = 'not_interested' OR reason IS NULL),
@@ -1216,8 +1222,8 @@ CREATE TABLE IF NOT EXISTS semantic_event_reports (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
   timeline_id TEXT NOT NULL UNIQUE REFERENCES timeline_items(id) ON DELETE CASCADE,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
   evidence_key TEXT NOT NULL,
   source TEXT NOT NULL REFERENCES source_definitions(id),
   relation TEXT NOT NULL CHECK (relation IN ('new_event','duplicate_report','material_update','contradiction','new_consequence','context_only')),
@@ -1312,4 +1318,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL + livingTopicsSchemaSQL
+` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL + livingTopicsSchemaSQL + timelineLifecycleSQL + timelineRetentionSQL

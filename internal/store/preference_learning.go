@@ -29,9 +29,11 @@ func syncPreferenceLearningLedgerTx(ctx context.Context, tx *sql.Tx) error {
 		`INSERT INTO preference_learning_ledger(
 		   event_id,source,evidence_key,direction,reason,origin,created_at,assessment_json,active
 		 )
-		 SELECT f.id,a.source,f.evidence_key,f.direction,f.reason,'routine',f.created_at,a.assessment_json,1
+		 SELECT f.id,COALESCE(t.source,a.source),f.evidence_key,f.direction,f.reason,'routine',f.created_at,COALESCE(t.assessment_json,a.assessment_json),1
 		 FROM feedback_events f
-		 JOIN candidate_assessments a ON a.run_id=f.run_id AND a.evidence_key=f.evidence_key
+		 LEFT JOIN timeline_items t ON t.id=f.timeline_id
+		 LEFT JOIN candidate_assessments a ON a.run_id=f.run_id AND a.evidence_key=f.evidence_key
+		 WHERE t.id IS NOT NULL OR a.run_id IS NOT NULL
 		 ON CONFLICT(event_id) DO UPDATE SET
 		   source=excluded.source,evidence_key=excluded.evidence_key,direction=excluded.direction,
 		   reason=excluded.reason,created_at=excluded.created_at,

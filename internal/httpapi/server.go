@@ -263,6 +263,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"databaseHealth": health})
+	case r.Method == http.MethodGet && p == "/api/timeline/storage":
+		status, err := s.store.TimelineStorageStatus(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"timelineStorage": status})
 	case r.Method == http.MethodPost && p == "/api/database/cleanup":
 		var body store.DatabaseCleanupRequest
 		if err := readJSON(r, &body); err != nil {

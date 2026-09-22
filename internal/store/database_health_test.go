@@ -139,7 +139,7 @@ func TestDatabaseCleanupRejectsStaleAndUnconfirmedActions(t *testing.T) {
 	if _, err := s.CleanDatabase(ctx, DatabaseCleanupRequest{Fingerprint: h.Fingerprint}); err == nil {
 		t.Fatal("unconfirmed cleanup accepted")
 	}
-	if _, err := s.db.Exec(`UPDATE timeline_items SET coverage_json='{"changed":true}' WHERE id=?`, timeline); err != nil {
+	if _, err := s.db.Exec(`UPDATE runs SET status='failed' WHERE id=(SELECT run_id FROM timeline_items WHERE id=?)`, timeline); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CleanDatabase(ctx, DatabaseCleanupRequest{Confirmed: true, Fingerprint: h.Fingerprint}); !errors.Is(err, ErrDatabaseHealthChanged) {

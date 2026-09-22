@@ -37,6 +37,65 @@ protected. Storage pressure reclaims free pages but cannot delete a young sessio
 `RetentionResult.storagePressure` reports remaining pressure. The storage size
 still measures the whole database, not just event memory.
 
+## Durable Timeline ownership (schema 27)
+
+Timeline posts, More/Less feedback, AI assessments, media-provenance assessments,
+and semantic reports do not belong to an operational session or run. Their
+`session_id`/`run_id` values are historical provenance snapshots without parent
+foreign keys. AI feedback likewise remains durable. Missing operational parents
+are valid for these rows and are not cleanup targets. The Timeline API exposes
+`originSessionAvailable` and `originRunAvailable`; retained IDs do not promise
+that the original diagnostics still exist.
+
+Before a session is deleted, a database trigger snapshots its actual status,
+presentation order/time, and prepared-batch visibility onto its Timeline rows.
+Before a run is deleted, another trigger retains the bounded displayed evidence
+block from its observations. Raw observations, capture commands, invocations,
+calibration, and other operational children still cascade normally. Existing
+evidence overrides remain Timeline-owned. Unknown legacy origins stay
+`unavailable`; migration never fabricates a parent or a completed status.
+
+More/Less writes and preference learning use the retained Timeline assessment;
+the feedback and learning-ledger entry commit together. Completed/partial origin
+snapshots permit the same More/Keep/Read-later memory actions after retention.
+Missing legacy evidence is not reconstructed. Hidden expired batches remain
+hidden when their operational batch record disappears, and live prepared batches
+retain their existing protection and reveal behavior.
+
+Migration from 26 to 27 rebuilds the five affected tables on a reserved connection
+in one transaction, preserving data, extra columns, indexes, and trigger
+definitions. Foreign keys are disabled only on that migration connection outside
+the transaction and restored before normal operation; the migration checks that
+no new FK violations appeared. The schema marker and lifecycle triggers commit
+atomically. Existing unrelated damage stays available to the maintenance UI.
+Full Reset explicitly deletes durable Timeline rows; ordinary session retention
+does not. Durable Timeline/feedback currently have no automatic age eviction.
+
+## Finite-inbox observation (schema 28)
+
+Schema 28 records the moment a card actually enters the visible Timeline.
+User-triggered cards receive `presented_at` when their durable card is published;
+prepared automatic cards receive it only when their batch is revealed. Migration
+backfills visible schema-27 cards from batch reveal time, then session completion,
+then card creation time. Hidden prepared or expired batches remain unpresented
+and fail safe as protected.
+
+Every retention invocation now writes one bounded aggregate receipt in
+`timeline_retention_receipts`. At most 128 receipts are retained. Receipts contain
+no card ids or content and run in `observe` mode: **no Timeline card is deleted**.
+The canary policy protects cards for 14 days after presentation, starts routine
+expiry eligibility at 30 days, and previews soft boundaries of 500 cards and
+10 MiB of logical Timeline-card payload. Cards aged 14–30 days are candidates
+only when a soft boundary is exceeded. Hidden cards and visible cards without a
+valid presentation timestamp remain protected.
+
+`GET /api/timeline/storage` returns current aggregate usage and eligibility,
+including protected, eligible, routine-expired, hidden, and missing-presentation
+counts. It reports effective and allocated whole-database bytes separately from
+the Timeline logical payload. `wouldRemove*` is a dry-run estimate, not a cleanup
+promise, and `needsAttention` means eligible candidates are insufficient to get
+under the preview boundaries. The endpoint is read-only.
+
 ## User action and cleanup
 
 The UI opens a maintenance dialog once per issue fingerprint, with **Back up and
@@ -82,9 +141,10 @@ database may be cleaned without backup when explicitly authorized.
 
 ## Remaining lifecycle work
 
-This change closes the integrity gap and young-session storage eviction. It does
-not decouple Timeline/feedback from sessions, split durable versus operational
-storage budgets, add independent TTLs for transient payload classes, or add durable
-retention receipts. Those require separate lifecycle migrations and policy work;
-do not infer their completion from zero FK violations. A pristine health result
-means the inspected invariants hold, not recovery of already deleted parent data.
+These changes close the integrity gap, young-session storage eviction, Timeline
+and feedback operational ownership, and add finite-inbox measurement plus durable
+dry-run receipts. They do not activate Timeline deletion, split every durable
+category into a separately enforced budget, or add independent TTLs for every
+transient payload class. Do not infer those behaviors from zero FK violations or
+from a dry-run candidate count. A pristine health result means the inspected
+invariants hold, not recovery of already deleted parent data.

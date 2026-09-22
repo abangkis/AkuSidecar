@@ -271,7 +271,7 @@ func TestSemanticRetentionRemovesExpiredTerminalHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemovedSessions != 1 || result.RemovedEvents != 1 {
+	if result.RemovedSessions != 1 || result.RemovedEvents != 0 {
 		t.Fatalf("retention=%+v", result)
 	}
 	var sessions int

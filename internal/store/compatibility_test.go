@@ -12,7 +12,7 @@ import (
 
 func TestDatabaseCompatibilityClassification(t *testing.T) {
 	for _, tc := range []struct{ name, version, want string }{
-		{"supported-old", "7", "migratable"}, {"native-trace-upgrade", "25", "migratable"}, {"current", "26", "current"}, {"legacy", "5", "unsupported"}, {"future", "27", "newer"}, {"invalid", "bad", "unknown"},
+		{"supported-old", "7", "migratable"}, {"native-trace-upgrade", "25", "migratable"}, {"lifecycle-upgrade", "26", "migratable"}, {"retention-upgrade", "27", "migratable"}, {"current", "28", "current"}, {"legacy", "5", "unsupported"}, {"future", "29", "newer"}, {"invalid", "bad", "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := filepath.Join(t.TempDir(), "state.db")

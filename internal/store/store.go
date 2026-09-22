@@ -1465,13 +1465,21 @@ type ScoredAssessment struct {
 }
 
 func (s *Store) CompleteRun(ctx context.Context, run domain.Run, result domain.ReasoningResult, scored []ScoredAssessment, items []domain.TimelineItem, coverage map[string]any) error {
-	now := domain.Now()
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	coverageRaw, _ := json.Marshal(coverage)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	var delivery string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(json_extract(coverage_json,'$.delivery'),'visible') FROM sessions WHERE id=?`, run.SessionID).Scan(&delivery); err != nil {
+		return err
+	}
+	presentation, presentedAt, batchState := "", any(nil), "preparing"
+	if delivery != string(domain.UpdateDeliveryPrepared) {
+		presentation, presentedAt, batchState = "prepend", now, "visible"
+	}
 	byKey := map[string]ScoredAssessment{}
 	itemsByKey := map[string]domain.ReasonedItem{}
 	for _, item := range result.Items {
@@ -1496,7 +1504,7 @@ func (s *Store) CompleteRun(ctx context.Context, run domain.Run, result domain.R
 		assessment := byKey[item.EvidenceKey].Assessment
 		assessmentRaw, _ := json.Marshal(assessment)
 		itemCoverage, _ := json.Marshal(item.Coverage)
-		if _, err = tx.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, item.ID, item.SessionID, item.RunID, item.Source, item.EvidenceKey, item.Rank, string(itemRaw), string(assessmentRaw), string(itemCoverage), now); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,origin_status,presentation,presented_at,batch_state,created_at) VALUES(?,?,?,?,?,?,?,?,?,'running',?,?,?,?)`, item.ID, item.SessionID, item.RunID, item.Source, item.EvidenceKey, item.Rank, string(itemRaw), string(assessmentRaw), string(itemCoverage), presentation, presentedAt, batchState, now); err != nil {
 			return err
 		}
 	}
@@ -1568,6 +1576,14 @@ func (s *Store) FinalizeSession(ctx context.Context, sessionID string) error {
 	}
 	expiresAt := s.Now().UTC().Add(time.Duration(freshHours) * time.Hour).Format(time.RFC3339Nano)
 	if _, err = s.db.ExecContext(ctx, `UPDATE auto_update_batches SET state=CASE WHEN EXISTS (SELECT 1 FROM timeline_items t WHERE t.session_id=?) THEN 'prepared' ELSE 'expired' END,prepared_at=?,expires_at=? WHERE session_id=? AND state='preparing'`, sessionID, now, expiresAt, sessionID); err != nil {
+		return err
+	}
+	if _, err = s.db.ExecContext(ctx, `
+		UPDATE timeline_items
+		SET origin_status=?,presentation=COALESCE(NULLIF(presentation,''),'prepend'),presented_at=COALESCE(NULLIF(presented_at,''),?),batch_state='visible'
+		WHERE session_id=? AND NOT EXISTS (
+		  SELECT 1 FROM auto_update_batches b WHERE b.session_id=? AND b.state IN ('preparing','prepared','expired')
+		)`, status, now, sessionID, sessionID); err != nil {
 		return err
 	}
 	return nil
@@ -1774,17 +1790,17 @@ func (s *Store) TimelineItem(ctx context.Context, timelineID string) (domain.Tim
 
 const timelinePresentationOrderSQL = `
 	ORDER BY
-	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),'')='append' THEN 1 ELSE 0 END,
-	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),'')<>'append'
+	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),presentation)='append' THEN 1 ELSE 0 END,
+	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),presentation)<>'append'
 	    THEN COALESCE(
 	      (SELECT b.revealed_at FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),
-	      (SELECT s.completed_at FROM sessions s WHERE s.id=timeline_items.session_id)
+	      (SELECT s.completed_at FROM sessions s WHERE s.id=timeline_items.session_id),presented_at,created_at
 	    )
 	  END DESC,
-	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),'')='append'
+	  CASE WHEN COALESCE((SELECT json_extract(s.coverage_json,'$.timelinePresentation') FROM sessions s WHERE s.id=timeline_items.session_id),presentation)='append'
 	    THEN COALESCE(
 	      (SELECT b.revealed_at FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),
-	      (SELECT s.completed_at FROM sessions s WHERE s.id=timeline_items.session_id)
+	      (SELECT s.completed_at FROM sessions s WHERE s.id=timeline_items.session_id),presented_at,created_at
 	    )
 	  END ASC,
 	  rank`
@@ -1795,13 +1811,13 @@ func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.T
 		return nil, err
 	}
 	if settings.SemanticEventMode == "show_all" {
-		items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible')`+timelinePresentationOrderSQL+` LIMIT ? OFFSET ?`, limit, offset)
+		items, err := s.listItems(ctx, `WHERE COALESCE((SELECT state FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),batch_state) IN ('','visible')`+timelinePresentationOrderSQL+` LIMIT ? OFFSET ?`, limit, offset)
 		for index := range items {
 			items[index].SemanticEvent = nil
 		}
 		return items, err
 	}
-	items, err := s.listItems(ctx, `WHERE NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id AND b.state<>'visible')`+timelinePresentationOrderSQL+` LIMIT 1000`)
+	items, err := s.listItems(ctx, `WHERE COALESCE((SELECT state FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),batch_state) IN ('','visible')`+timelinePresentationOrderSQL+` LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}
@@ -1831,7 +1847,7 @@ func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.T
 }
 
 func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]domain.TimelineItem, error) {
-	query := `SELECT id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at FROM timeline_items ` + suffix
+	query := `SELECT id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at,COALESCE(evidence_snapshot_json,''),EXISTS(SELECT 1 FROM sessions s WHERE s.id=timeline_items.session_id),EXISTS(SELECT 1 FROM runs r WHERE r.id=timeline_items.run_id) FROM timeline_items ` + suffix
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -1840,13 +1856,18 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 	var items []domain.TimelineItem
 	for rows.Next() {
 		var item domain.TimelineItem
-		var itemRaw, assessmentRaw, coverageRaw string
-		if err := rows.Scan(&item.ID, &item.SessionID, &item.RunID, &item.Source, &item.EvidenceKey, &item.Rank, &itemRaw, &assessmentRaw, &coverageRaw, &item.CreatedAt); err != nil {
+		var itemRaw, assessmentRaw, coverageRaw, evidenceRaw string
+		if err := rows.Scan(&item.ID, &item.SessionID, &item.RunID, &item.Source, &item.EvidenceKey, &item.Rank, &itemRaw, &assessmentRaw, &coverageRaw, &item.CreatedAt, &evidenceRaw, &item.OriginSessionAvailable, &item.OriginRunAvailable); err != nil {
 			return nil, err
 		}
 		decodeJSON(itemRaw, &item.Item)
 		decodeJSON(assessmentRaw, &item.Assessment)
 		decodeJSON(coverageRaw, &item.Coverage)
+		if evidenceRaw != "" {
+			var evidence domain.Block
+			decodeJSON(evidenceRaw, &evidence)
+			item.Evidence = &evidence
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -2015,8 +2036,8 @@ func (s *Store) attachEffectivePreferenceDecision(ctx context.Context, items []d
 func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain.Feedback) (domain.Feedback, error) {
 	var sessionID, runID, evidenceKey, sessionStatus string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT t.session_id,t.run_id,t.evidence_key,s.status
-		FROM timeline_items t JOIN sessions s ON s.id=t.session_id
+		SELECT t.session_id,t.run_id,t.evidence_key,COALESCE(s.status,t.origin_status)
+		FROM timeline_items t LEFT JOIN sessions s ON s.id=t.session_id
 		WHERE t.id=?`, timelineID).Scan(&sessionID, &runID, &evidenceKey, &sessionStatus)
 	if err != nil {
 		return domain.Feedback{}, err
@@ -2085,6 +2106,9 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO feedback_events(id,timeline_id,session_id,run_id,evidence_key,direction,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, input.ID, input.TimelineID, input.SessionID, input.RunID, input.EvidenceKey, input.Direction, input.Reason, input.CreatedAt); err != nil {
 		return domain.Feedback{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO preference_learning_ledger(event_id,source,evidence_key,direction,reason,origin,created_at,assessment_json,active) SELECT ?,source,evidence_key,?,?,'routine',?,assessment_json,1 FROM timeline_items WHERE id=?`, input.ID, input.Direction, input.Reason, input.CreatedAt, timelineID); err != nil {
+		return domain.Feedback{}, fmt.Errorf("persist routine preference learning: %w", err)
 	}
 	if projectMemory {
 		if _, err = s.upsertMemoryRecallStubTx(ctx, tx, tombstoneKey, normalized); err != nil {
@@ -2214,7 +2238,7 @@ func (s *Store) FullReset(ctx context.Context, defaults domain.Settings) (FullRe
 		return FullResetResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM living_topic_activation_jobs; DELETE FROM living_topic_candidate_evaluations;`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM living_topic_activation_jobs; DELETE FROM living_topic_candidate_evaluations; DELETE FROM timeline_items; DELETE FROM timeline_retention_receipts;`); err != nil {
 		return FullResetResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM living_topic_model_invocations; DELETE FROM living_topic_understanding_jobs; DELETE FROM living_topic_routing_jobs; DELETE FROM living_topic_feedback_events; DELETE FROM living_topic_snapshots; DELETE FROM living_topic_membership_moves; DELETE FROM living_topic_memberships; DELETE FROM living_topics; DELETE FROM memory_search_fts; DELETE FROM memory_retention_claims; DELETE FROM memory_actions; DELETE FROM memory_provenance; DELETE FROM memory_content_versions; DELETE FROM memory_tombstone_aliases; DELETE FROM memory_identity_aliases; DELETE FROM memory_items; DELETE FROM content_context_feedback_events; DELETE FROM ai_feedback_events; DELETE FROM content_continuity_occurrences; DELETE FROM content_continuity; DELETE FROM content_identity_aliases; DELETE FROM sessions; DELETE FROM semantic_event_constraints; DELETE FROM semantic_events; DELETE FROM feedback_events; DELETE FROM preference_learning_ledger; DELETE FROM preference_model; DELETE FROM knowledge_events; DELETE FROM settings; DELETE FROM meta WHERE key IN ('calibration_first_run_status','preference_signal_reset_at','auto_update_budget_reset_day','auto_update_budget_reset_total','auto_update_budget_reset_automatic','auto_update_budget_reset_at','auto_update_scheduler_tick_at','auto_update_scheduler_receipts','auto_update_usage_limit_pause','pending_app_profile_reset','memory_tombstone_key_v1');`); err != nil {

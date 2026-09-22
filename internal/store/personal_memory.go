@@ -737,14 +737,14 @@ func timelineItemForReadLaterTx(ctx context.Context, tx *sql.Tx, timelineID stri
 
 func timelineItemForRetentionTx(ctx context.Context, tx *sql.Tx, timelineID string, requireText bool) (domain.TimelineItem, error) {
 	var item domain.TimelineItem
-	var itemRaw, assessmentRaw, coverageRaw, sessionStatus string
+	var itemRaw, assessmentRaw, coverageRaw, sessionStatus, evidenceRaw string
 	err := tx.QueryRowContext(ctx, `
 		SELECT t.id,t.session_id,t.run_id,t.source,t.evidence_key,t.rank,
-		  t.item_json,t.assessment_json,t.coverage_json,t.created_at,s.status
-		FROM timeline_items t JOIN sessions s ON s.id=t.session_id
+		  t.item_json,t.assessment_json,t.coverage_json,t.created_at,COALESCE(s.status,t.origin_status),COALESCE(t.evidence_snapshot_json,'')
+		FROM timeline_items t LEFT JOIN sessions s ON s.id=t.session_id
 		WHERE t.id=?`, timelineID).Scan(
 		&item.ID, &item.SessionID, &item.RunID, &item.Source, &item.EvidenceKey,
-		&item.Rank, &itemRaw, &assessmentRaw, &coverageRaw, &item.CreatedAt, &sessionStatus)
+		&item.Rank, &itemRaw, &assessmentRaw, &coverageRaw, &item.CreatedAt, &sessionStatus, &evidenceRaw)
 	if err != nil {
 		return domain.TimelineItem{}, err
 	}
@@ -754,6 +754,11 @@ func timelineItemForRetentionTx(ctx context.Context, tx *sql.Tx, timelineID stri
 	decodeJSON(itemRaw, &item.Item)
 	decodeJSON(assessmentRaw, &item.Assessment)
 	decodeJSON(coverageRaw, &item.Coverage)
+	if evidenceRaw != "" {
+		var evidence domain.Block
+		decodeJSON(evidenceRaw, &evidence)
+		item.Evidence = &evidence
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT observation_json FROM observations WHERE run_id=? ORDER BY created_at`, item.RunID)
 	if err != nil {
 		return domain.TimelineItem{}, fmt.Errorf("read Timeline evidence: %w", err)
