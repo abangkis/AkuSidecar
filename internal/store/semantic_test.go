@@ -329,7 +329,7 @@ func TestRetentionReclaimsFreelistWithoutDeletingHistory(t *testing.T) {
 	}
 }
 
-func TestStorageRetentionPreservesLatestVisibleAndPreparedSessions(t *testing.T) {
+func TestStorageRetentionPreservesUnexpiredVisibleAndPreparedSessions(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	settings, _ := state.GetSettings(ctx)
@@ -362,14 +362,14 @@ func TestStorageRetentionPreservesLatestVisibleAndPreparedSessions(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemovedSessions != 1 {
-		t.Fatalf("removed sessions=%d want=1", result.RemovedSessions)
+	if result.RemovedSessions != 0 || !result.StoragePressure {
+		t.Fatalf("storage pressure must preserve young sessions: %+v", result)
 	}
 	for _, test := range []struct {
 		id   string
 		want int
 	}{
-		{id: oldSession.ID, want: 0},
+		{id: oldSession.ID, want: 1},
 		{id: visibleSession.ID, want: 1},
 		{id: preparedSession.ID, want: 1},
 	} {

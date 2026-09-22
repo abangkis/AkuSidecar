@@ -1869,6 +1869,7 @@ type EventCorrection struct {
 }
 
 type RetentionResult struct {
+	StoragePressure bool  `json:"storagePressure"`
 	RemovedSessions int   `json:"removedSessions"`
 	RemovedEvents   int   `json:"removedEvents"`
 	DatabaseBytes   int64 `json:"databaseBytes"`

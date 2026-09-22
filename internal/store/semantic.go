@@ -791,102 +791,95 @@ func (s *Store) cleanupOrphanSemanticEvents(ctx context.Context) error {
 }
 
 func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) (domain.RetentionResult, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -settings.KnowledgeRetentionDays).Format(time.RFC3339Nano)
+	cutoff := s.Now().UTC().AddDate(0, 0, -settings.KnowledgeRetentionDays).Format(time.RFC3339Nano)
 	result := domain.RetentionResult{LimitBytes: int64(settings.KnowledgeStorageLimitMB) * 1024 * 1024}
-	if err := s.syncPreferenceLearningLedger(ctx); err != nil {
-		return result, fmt.Errorf("preserve preference learning before retention: %w", err)
-	}
-	var eventsBefore int
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsBefore)
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_event_reports WHERE created_at<?`, cutoff); err != nil {
-		return result, err
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
-		return result, err
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_novelty_constraints.evidence_key)`, cutoff); err != nil {
-		return result, err
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM content_continuity WHERE last_seen_at<?`, cutoff); err != nil {
-		return result, err
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM content_identity_aliases WHERE last_seen_at<?`, cutoff); err != nil {
-		return result, err
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM ai_feedback_events WHERE target_type<>'account' AND created_at<?`, cutoff); err != nil {
-		return result, err
-	}
-	deleted, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL AND completed_at<?`, cutoff)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return result, err
 	}
-	vacuumed := false
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value=value WHERE key='schema_version'`); err != nil {
+		return result, err
+	}
+	if err := requireForeignKeys(ctx, tx); err != nil {
+		return result, err
+	}
+	health, _, err := inspectDatabaseHealth(ctx, tx)
+	if err != nil {
+		return result, err
+	}
+	if health.Status != "healthy" {
+		return result, ErrDatabaseMaintenanceRequired
+	}
+	if err := syncPreferenceLearningLedgerTx(ctx, tx); err != nil {
+		return result, fmt.Errorf("preserve preference learning before retention: %w", err)
+	}
+	var eventsBefore int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsBefore); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_reports WHERE created_at<?`, cutoff); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_novelty_constraints.evidence_key)`, cutoff); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM content_continuity WHERE last_seen_at<?`, cutoff); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM content_identity_aliases WHERE last_seen_at<?`, cutoff); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_feedback_events WHERE target_type<>'account' AND created_at<?`, cutoff); err != nil {
+		return result, err
+	}
+	deleted, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL AND completed_at<? AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=sessions.id AND b.state='prepared')`, cutoff)
+	if err != nil {
+		return result, err
+	}
 	if count, err := deleted.RowsAffected(); err == nil {
 		result.RemovedSessions += int(count)
 	}
-	_ = s.cleanupOrphanSemanticEvents(ctx)
+	for _, statement := range []string{
+		`DELETE FROM content_identity_aliases WHERE NOT EXISTS (SELECT 1 FROM runs WHERE runs.id=content_identity_aliases.last_run_id)`,
+		`DELETE FROM content_continuity WHERE NOT EXISTS (SELECT 1 FROM runs WHERE runs.id=content_continuity.last_run_id)`,
+		`DELETE FROM semantic_events WHERE NOT EXISTS (SELECT 1 FROM semantic_event_reports r WHERE r.event_id=semantic_events.id) AND NOT EXISTS (SELECT 1 FROM semantic_event_constraints c WHERE c.event_id=semantic_events.id) AND NOT EXISTS (SELECT 1 FROM semantic_novelty_constraints n WHERE n.event_id=semantic_events.id) AND NOT EXISTS (SELECT 1 FROM semantic_event_corrections c WHERE c.undone_at IS NULL AND (c.from_event_id=semantic_events.id OR c.to_event_id=semantic_events.id))`,
+	} {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return result, err
+		}
+	}
+	var eventsAfter int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsAfter); err != nil {
+		return result, err
+	}
+	health, _, err = inspectDatabaseHealth(ctx, tx)
+	if err != nil {
+		return result, err
+	}
+	if health.Status != "healthy" {
+		return result, ErrDatabaseMaintenanceRequired
+	}
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
 	_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
 	effectiveBytes, err := s.databaseEffectiveFootprint(ctx)
 	if err != nil {
 		return result, err
 	}
-	// SQLite keeps deleted pages in the database freelist until VACUUM. Reclaim
-	// those pages before deciding that durable history must be removed; using
-	// the allocated file size here can otherwise prune every terminal session
-	// while the file remains unchanged.
-	if effectiveBytes <= result.LimitBytes && s.databaseFootprint() > result.LimitBytes {
+	// The storage boundary cannot shorten TTL. Report pressure if no expired
+	// operational data can reclaim enough space, preserving young history.
+	result.StoragePressure = effectiveBytes > result.LimitBytes
+	if result.RemovedSessions > 0 || (effectiveBytes <= result.LimitBytes && s.databaseFootprint() > result.LimitBytes) {
 		if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
-			return result, fmt.Errorf("reclaim database freelist before retention: %w", err)
+			return result, err
 		}
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
-		vacuumed = true
 	}
-	for effectiveBytes > result.LimitBytes {
-		protectedVisibleID, protectedErr := s.latestVisibleTimelineSessionID(ctx)
-		if protectedErr != nil {
-			return result, protectedErr
-		}
-		var id string
-		err := s.db.QueryRowContext(ctx, `
-			SELECT s.id
-			FROM sessions s
-			LEFT JOIN auto_update_batches b ON b.session_id=s.id
-			WHERE s.status IN ('completed','partial','failed','cancelled')
-			  AND s.completed_at IS NOT NULL
-			  AND COALESCE(b.state,'visible')<>'prepared'
-			  AND (?='' OR s.id<>?)
-			ORDER BY s.completed_at
-			LIMIT 1`, protectedVisibleID, protectedVisibleID).Scan(&id)
-		if errors.Is(err, sql.ErrNoRows) {
-			break
-		}
-		if err != nil {
-			return result, err
-		}
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id=?`, id); err != nil {
-			return result, err
-		}
-		result.RemovedSessions++
-		_ = s.cleanupOrphanSemanticEvents(ctx)
-		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
-		effectiveBytes, err = s.databaseEffectiveFootprint(ctx)
-		if err != nil {
-			return result, err
-		}
-	}
-	if result.RemovedSessions > 0 {
-		if _, err := s.db.ExecContext(ctx, `
-			DELETE FROM content_identity_aliases
-			WHERE NOT EXISTS (SELECT 1 FROM runs WHERE runs.id=content_identity_aliases.last_run_id)`); err != nil {
-			return result, err
-		}
-	}
-	if result.RemovedSessions > 0 && !vacuumed {
-		_, _ = s.db.ExecContext(ctx, `VACUUM`)
-		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
-	}
-	var eventsAfter int
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsAfter)
 	result.RemovedEvents = eventsBefore - eventsAfter
 	result.DatabaseBytes = s.databaseFootprint()
 	return result, nil

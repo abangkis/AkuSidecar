@@ -479,6 +479,10 @@ for (const button of document.querySelectorAll("[data-calibration-issue]")) {
 }
 $("#open-reset-learning").addEventListener("click", () => openResetDialog("learning"));
 $("#open-full-reset").addEventListener("click", () => openResetDialog("full"));
+$("#database-maintenance-later").addEventListener("click", () => $("#database-maintenance-dialog").close());
+$("#database-maintenance-clean").addEventListener("click", () => cleanDatabase(false));
+$("#database-maintenance-backup").addEventListener("click", () => cleanDatabase(true));
+$("#database-status").addEventListener("click", () => renderDatabaseHealth(state.bootstrap?.databaseHealth, true));
   $("#export-diagnostics").addEventListener("click", exportDiagnostics);
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
@@ -644,6 +648,7 @@ async function bootstrap(options = {}) {
     $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
     renderActiveReasoningProvider();
     $("#database-status").textContent = state.bootstrap.database?.status ?? "healthy";
+    renderDatabaseHealth(state.bootstrap.databaseHealth);
     renderDeployment(state.bootstrap.deployment);
     setPill("#sidecar-status", "AkuSidecar ready", "ok");
     renderBridge(state.bootstrap.bridge);
@@ -664,6 +669,7 @@ async function bootstrap(options = {}) {
     bridgeActionLoop();
     setInterval(pingBridge, 30_000);
     setInterval(pollAutoUpdate, 15_000);
+    databaseHealthPoller ??= setInterval(pollDatabaseHealth, 60_000);
     void refreshLivingTopicNotificationProjection();
     if (state.session) startPolling();
   } catch (error) {
@@ -718,6 +724,68 @@ async function pollAutoUpdate() {
     console.warn("Auto Update status refresh deferred.", error);
   }
   void refreshLivingTopicNotificationProjection();
+}
+
+const shownDatabaseIssues = new Set();
+let databaseCleanupBusy = false;
+let databaseHealthPoller = null;
+let databaseHealthPollInFlight = false;
+
+async function pollDatabaseHealth() {
+  if (!state.bootstrap || document.visibilityState !== "visible" || databaseCleanupBusy || databaseHealthPollInFlight) return;
+  databaseHealthPollInFlight = true;
+  try {
+    const { databaseHealth } = await api("/api/database/health");
+    renderDatabaseHealth(databaseHealth);
+  } catch (error) {
+    console.warn("Database health refresh deferred.", error);
+  } finally {
+    databaseHealthPollInFlight = false;
+  }
+}
+
+function renderDatabaseHealth(health, force = false) {
+  if (!health || !state.bootstrap) return;
+  state.bootstrap.databaseHealth = health;
+  const attention = health.status !== "healthy";
+  const status = $("#database-status");
+  status.textContent = attention ? "Cleanup required · review" : health.storagePressure ? "Storage pressure · young history retained" : "healthy";
+  status.title = attention ? "Review local database cleanup" : health.storagePressure ? "Database exceeds its storage boundary. Only expired history may be trimmed." : "Local database is healthy";
+  const dialog = $("#database-maintenance-dialog");
+  if (!attention) { if (dialog.open) dialog.close(); return; }
+  if (databaseCleanupBusy) return;
+  $("#database-maintenance-summary").textContent = `${health.orphanRows} disconnected rows across ${health.affectedTables.length} affected relationships.`;
+  $("#database-maintenance-status").textContent = health.repairable ? "Choose whether to keep a verified local backup before cleanup." : "This issue needs manual repair. Automatic cleanup is unavailable; your data has been left in place.";
+  $("#database-maintenance-clean").disabled = !health.repairable;
+  $("#database-maintenance-backup").disabled = !health.repairable;
+  const key = `aku-database-maintenance:${health.fingerprint}`;
+  let seen = shownDatabaseIssues.has(key);
+  try { seen ||= localStorage.getItem(key) === "seen"; } catch { /* In-memory deduplication remains available. */ }
+  if (force || !seen) {
+    shownDatabaseIssues.add(key);
+    try { localStorage.setItem(key, "seen"); } catch { /* Storage can be unavailable. */ }
+    if (!dialog.open) dialog.showModal();
+  }
+}
+
+async function cleanDatabase(backup) {
+  const health = state.bootstrap?.databaseHealth;
+  if (databaseCleanupBusy || !health?.repairable) return;
+  databaseCleanupBusy = true;
+  for (const id of ["clean", "backup", "later"]) $(`#database-maintenance-${id}`).disabled = true;
+  $("#database-maintenance-status").textContent = backup ? "Verifying backup and cleaning…" : "Cleaning disconnected data…";
+  try {
+    const result = await api("/api/database/cleanup", { method: "POST", body: { confirmed: true, fingerprint: health.fingerprint, backup } });
+    $("#database-maintenance-dialog").close();
+    await bootstrap();
+    if (result.backupPath) showNotice(`Cleanup complete. Backup: ${result.backupPath}`);
+    else showNotice(`Cleanup complete. Removed ${result.removedRows} rows without a backup.`);
+  } catch (error) {
+    $("#database-maintenance-status").textContent = error.message;
+  } finally {
+    databaseCleanupBusy = false;
+    for (const id of ["clean", "backup", "later"]) $(`#database-maintenance-${id}`).disabled = false;
+  }
 }
 
 function setView(view) {

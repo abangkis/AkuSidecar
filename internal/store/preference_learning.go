@@ -18,7 +18,13 @@ func (s *Store) syncPreferenceLearningLedger(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := syncPreferenceLearningLedgerTx(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+func syncPreferenceLearningLedgerTx(ctx context.Context, tx *sql.Tx) error {
 	statements := []string{
 		`INSERT INTO preference_learning_ledger(
 		   event_id,source,evidence_key,direction,reason,origin,created_at,assessment_json,active
@@ -67,7 +73,7 @@ func (s *Store) syncPreferenceLearningLedger(ctx context.Context) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 type PreferenceSignal struct {

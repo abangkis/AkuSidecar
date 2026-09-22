@@ -257,6 +257,26 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			s.requestShutdown()
 		}()
 		return nil
+	case r.Method == http.MethodGet && p == "/api/database/health":
+		health, err := s.store.DatabaseHealth(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"databaseHealth": health})
+	case r.Method == http.MethodPost && p == "/api/database/cleanup":
+		var body store.DatabaseCleanupRequest
+		if err := readJSON(r, &body); err != nil {
+			return err
+		}
+		result, err := s.engine.CleanDatabase(ctx, body)
+		if err != nil {
+			code := "database_cleanup_unavailable"
+			if errors.Is(err, store.ErrDatabaseHealthChanged) {
+				code = "database_health_changed"
+			}
+			return apiError{Status: http.StatusConflict, Code: code, Message: err.Error()}
+		}
+		return writeJSON(w, http.StatusOK, result)
 	case r.Method == http.MethodGet && p == "/api/bootstrap":
 		settings, err := s.store.GetSettings(ctx)
 		if err != nil {
@@ -294,7 +314,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": "healthy", "schemaVersion": store.SchemaVersion}, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+		health, err := s.store.DatabaseHealth(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": health.Status, "schemaVersion": store.SchemaVersion}, "databaseHealth": health, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {

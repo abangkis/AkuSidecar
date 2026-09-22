@@ -687,7 +687,13 @@ controls without claiming that absence of a strong signal proves human origin.
 The resolver shortlist is locked to 5, 10, or 15 event threads. Event memory
 uses paired age and storage boundaries: 30/60/90 days and
 100/200/300/400/500 MB or 1 GB. The defaults are 30 days and 100 MB; crossing
-either boundary trims the oldest terminal history and orphaned event threads.
+the age boundary makes terminal history eligible for trimming. Storage pressure
+never shortens that lifetime: if expired history cannot reclaim enough space,
+retention reports pressure and keeps young history. Every retention runs a
+transactional database-health preflight and postflight. Existing disconnected
+data pauses retention and new updates until the user chooses **Back up and
+clean** or **Clean without backup**; **Later** leaves it pending. See
+[database maintenance](docs/database-maintenance.md) for the repair contract.
 
 Unavailable X media first has a passive completion path. AkuBridge v60 can
 relay evidence from its DOM observers or from the bounded

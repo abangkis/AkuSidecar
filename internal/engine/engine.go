@@ -544,6 +544,9 @@ func noGrantedActiveSourceError() error {
 func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	if err := e.store.RequireHealthyDatabase(ctx); err != nil {
+		return domain.Session{}, err
+	}
 	if err := policy.Validate(); err != nil {
 		return domain.Session{}, err
 	}
@@ -2304,6 +2307,17 @@ func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 		swap = nil
 	}
 	return result, nil
+}
+
+func (e *Engine) CleanDatabase(ctx context.Context, request store.DatabaseCleanupRequest) (store.DatabaseCleanupResult, error) {
+	e.operation.Lock()
+	defer e.operation.Unlock()
+	if active, err := e.store.ActiveMediaRecapture(ctx); err != nil {
+		return store.DatabaseCleanupResult{}, err
+	} else if active {
+		return store.DatabaseCleanupResult{}, errors.New("finish the active media recapture before database cleanup")
+	}
+	return e.store.CleanDatabase(ctx, request)
 }
 
 func (e *Engine) Shutdown() {

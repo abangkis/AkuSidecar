@@ -379,7 +379,7 @@
                 </span>
               </div>
               <div class="settings-row">
-                <span class="settings-copy"><strong>Local event memory</strong><small>Trim when either the age or storage boundary is reached. This includes the SQLite database and its working files.</small></span>
+                <span class="settings-copy"><strong>Local event memory</strong><small>Only expired operational history is trimmed. The storage boundary includes the whole SQLite database; pressure never shortens retention. Database health is checked before and after trimming.</small></span>
                 <span class="paired-setting-control">
                   <label><span>Retention</span><select id="knowledge-retention-days" name="knowledgeRetentionDays" aria-label="Semantic event retention">
                     <option value="30">30 days</option>
@@ -497,7 +497,7 @@
                 <div><dt>Runtime</dt><dd id="runtime-version">—</dd></div>
                 <div><dt>Bridge contract</dt><dd id="bridge-contract">—</dd></div>
                 <div><dt>Reasoning</dt><dd id="provider-value">—</dd></div>
-                <div><dt>Database</dt><dd id="database-status">—</dd></div>
+                <div><dt>Database</dt><dd><button id="database-status" type="button" class="text-button">—</button></dd></div>
               </dl>
             </div>
           </fieldset>
@@ -993,6 +993,21 @@
           </div>
         </div>
         <button id="media-viewer-next" type="button" aria-label="Next image">›</button>
+      </div>
+    </dialog>
+
+    <dialog id="database-maintenance-dialog" class="reset-confirmation-dialog" aria-labelledby="database-maintenance-title">
+      <div class="reset-confirmation-card">
+        <p class="step-label">LOCAL DATABASE</p>
+        <h2 id="database-maintenance-title">Database cleanup required</h2>
+        <p id="database-maintenance-summary"></p>
+        <p>Updates and retention are paused. Cleanup permanently removes disconnected operational data. Personal Memory and retained learning are preserved.</p>
+        <p id="database-maintenance-status" class="settings-detail" role="alert"></p>
+        <div class="reset-confirmation-actions">
+          <button id="database-maintenance-later" class="secondary-button" type="button">Later</button>
+          <button id="database-maintenance-clean" class="danger-button" type="button">Clean without backup</button>
+          <button id="database-maintenance-backup" class="primary-button" type="button">Back up and clean</button>
+        </div>
       </div>
     </dialog>
 

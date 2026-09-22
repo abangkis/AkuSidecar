@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,14 +70,31 @@ func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
-	db, err := sql.Open("sqlite", path)
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	uriPath := filepath.ToSlash(absolutePath)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	dsn := (&url.URL{Scheme: "file", Path: uriPath}).String() + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	if err := requireForeignKeys(context.Background(), db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	store := &Store{db: db, path: path, clock: clock}
 	if err := store.initialize(defaults); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := requireForeignKeys(context.Background(), db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -181,6 +199,12 @@ func (s *Store) initialize(defaults domain.Settings) error {
 		return err
 	}
 	_, err = s.EnforceRetention(ctx, settings)
+	if errors.Is(err, ErrDatabaseMaintenanceRequired) {
+		// Keep the application available so the health endpoint and explicit
+		// cleanup action can guide the user through repair. New updates and
+		// retention remain blocked by their own health preflight.
+		return nil
+	}
 	return err
 }
 
