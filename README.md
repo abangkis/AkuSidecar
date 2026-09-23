@@ -1,6 +1,6 @@
 # AkuSidecar
 
-Current stable release: **`0.9.1`**.
+Current release candidate line: **`0.9.0`** (RC8 in preparation).
 
 AkuSidecar is the Go local runtime for AkuBrowser. It owns the loopback HTTP
 API, embedded browser UI, fresh SQLite state, bounded X, LinkedIn, Facebook, and Instagram session

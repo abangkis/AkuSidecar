@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ApplicationVersion              = "0.9.1"
+	ApplicationVersion              = "0.9.0"
 	BridgeContractVersion           = "aku-browser.bridge.v2"
 	SidecarUpdateProtocolVersion    = "aku-sidecar.software-update.v1"
 	DefaultTimelineBatchGapPX       = 36

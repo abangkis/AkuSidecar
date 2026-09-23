@@ -1101,7 +1101,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	indexPayload, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.9.1"`) {
+	if err != nil || !strings.Contains(string(indexPayload), `rel="icon" type="image/svg+xml" href="/favicon.svg?runtime=release-0.9.0-rc.8"`) {
 		t.Fatal("AkuBrowser page does not declare its branded favicon")
 	}
 	response, err = client.Get("http://" + address.String() + "/favicon.svg")
