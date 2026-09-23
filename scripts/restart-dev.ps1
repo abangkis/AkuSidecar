@@ -17,7 +17,8 @@ $candidate = Join-Path $runtimeDir 'aku-sidecar.next.exe'
 $targetProvenance = "$target.runtime-state.json"
 $candidateProvenance = "$candidate.runtime-state.json"
 $supervisor = Join-Path $workspaceRoot 'AkuSupervisor\target\dev\aku-supervisor.exe'
-$experimentalCaptureSplitFlag = '--experimental-windows-capture-split'
+$captureSplitFlag = '--windows-capture-split'
+$legacyCaptureSplitFlag = '--experimental-windows-capture-split'
 $uiChromiumPathFlag = '--ui-chromium-path'
 $pinnedUIChromium = Join-Path $repoRoot 'runtime\chromium\bin\chrome.exe'
 
@@ -31,7 +32,7 @@ function Resolve-AkuSupervisorConfigPath {
     return Join-Path $env:LOCALAPPDATA 'AkuSupervisor\services.json'
 }
 
-function Enable-ExperimentalWindowsCaptureSplit {
+function Enable-WindowsCaptureSplit {
     param([Parameter(Mandatory)] [string] $ConfigurationPath)
 
     if (-not (Test-Path -LiteralPath $ConfigurationPath -PathType Leaf)) {
@@ -56,7 +57,8 @@ function Enable-ExperimentalWindowsCaptureSplit {
         }
         if ($argument -eq $uiChromiumPathFlag) { $skipUIPathValue = $true; continue }
         if ($argument.StartsWith("$uiChromiumPathFlag=")) { continue }
-        if ($argument -eq $experimentalCaptureSplitFlag) {
+        if ($argument -eq $legacyCaptureSplitFlag) { continue }
+        if ($argument -eq $captureSplitFlag) {
             if (-not $flagSeen) {
                 $nextArguments.Add($argument)
                 $flagSeen = $true
@@ -67,7 +69,7 @@ function Enable-ExperimentalWindowsCaptureSplit {
     }
     if ($skipUIPathValue) { throw 'Existing --ui-chromium-path is missing its value.' }
     if (-not $flagSeen) {
-        $nextArguments.Add($experimentalCaptureSplitFlag)
+        $nextArguments.Add($captureSplitFlag)
     }
     $nextArguments.Add($uiChromiumPathFlag)
     $nextArguments.Add($pinnedUIChromium)
@@ -93,12 +95,12 @@ function Enable-ExperimentalWindowsCaptureSplit {
 
     $verified = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
     $verifiedArguments = @($verified.services.akusidecar.args | ForEach-Object { [string] $_ })
-    if (@($verifiedArguments | Where-Object { $_ -eq $experimentalCaptureSplitFlag }).Count -ne 1) {
-        throw "AkuSupervisor did not retain exactly one $experimentalCaptureSplitFlag argument."
+    if (@($verifiedArguments | Where-Object { $_ -eq $captureSplitFlag }).Count -ne 1 -or $verifiedArguments -contains $legacyCaptureSplitFlag) {
+        throw "AkuSupervisor did not retain exactly one $captureSplitFlag argument."
     }
     $uiIndex = [Array]::IndexOf($verifiedArguments, $uiChromiumPathFlag)
     if ($uiIndex -lt 0 -or $uiIndex + 1 -ge $verifiedArguments.Count -or $verifiedArguments[$uiIndex + 1] -ne $pinnedUIChromium) { throw 'AkuSupervisor did not retain the pinned UI-only Chromium path.' }
-    Write-Host 'AkuSidecar development restart will use the experimental Windows capture split.' -ForegroundColor Cyan
+    Write-Host 'AkuSidecar development restart will use the Windows capture split.' -ForegroundColor Cyan
 }
 
 if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
@@ -106,7 +108,7 @@ if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
 }
 
 $supervisorConfig = Resolve-AkuSupervisorConfigPath
-Enable-ExperimentalWindowsCaptureSplit -ConfigurationPath $supervisorConfig
+Enable-WindowsCaptureSplit -ConfigurationPath $supervisorConfig
 
 & (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe'
 if ($LASTEXITCODE -ne 0) {

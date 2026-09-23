@@ -60,7 +60,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 		credentials: credentials.ForRuntime(cfg.Root, cfg.Dev),
 		started:     time.Now(), shutdownRequested: make(chan struct{}),
 	}
-	if cfg.ExperimentalWindowsCaptureSplit && goruntime.GOOS == "windows" {
+	if cfg.WindowsCaptureSplit && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
 	}
 	mux := http.NewServeMux()

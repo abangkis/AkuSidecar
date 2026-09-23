@@ -1,6 +1,6 @@
 # Experimental Windows capture containment
 
-Enabled only with the existing Windows app-shell capture-split flag. The
+Enabled only with the Windows app-shell capture-split flag. The
 separate capture process owns a Job Object; ordinary app-shell launches and
 macOS/Linux do not start this monitor. The monitor stops before that job is
 released. No release schema or profile migration is involved.

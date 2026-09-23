@@ -21,19 +21,19 @@ import (
 )
 
 type Config struct {
-	Version                         int                   `json:"version"`
-	Deployment                      DeploymentConfig      `json:"deployment,omitempty"`
-	Server                          ServerConfig          `json:"server"`
-	Database                        DatabaseConfig        `json:"database"`
-	MediaProvenance                 MediaProvenanceConfig `json:"mediaProvenance,omitempty"`
-	Reasoning                       ReasoningConfig       `json:"reasoning"`
-	Capture                         CaptureConfig         `json:"capture"`
-	Preference                      PreferenceConfig      `json:"preference"`
-	Bridge                          BridgeConfig          `json:"bridge"`
-	Root                            string                `json:"-"`
-	Dev                             bool                  `json:"-"`
-	RuntimeControlToken             string                `json:"-"`
-	ExperimentalWindowsCaptureSplit bool                  `json:"-"`
+	Version             int                   `json:"version"`
+	Deployment          DeploymentConfig      `json:"deployment,omitempty"`
+	Server              ServerConfig          `json:"server"`
+	Database            DatabaseConfig        `json:"database"`
+	MediaProvenance     MediaProvenanceConfig `json:"mediaProvenance,omitempty"`
+	Reasoning           ReasoningConfig       `json:"reasoning"`
+	Capture             CaptureConfig         `json:"capture"`
+	Preference          PreferenceConfig      `json:"preference"`
+	Bridge              BridgeConfig          `json:"bridge"`
+	Root                string                `json:"-"`
+	Dev                 bool                  `json:"-"`
+	RuntimeControlToken string                `json:"-"`
+	WindowsCaptureSplit bool                  `json:"-"`
 }
 
 type DeploymentConfig struct {
@@ -471,6 +471,7 @@ type Options struct {
 	DiscoverChromium                bool
 	AppShell                        bool
 	ExperimentalWindowsCaptureSplit bool
+	WindowsCaptureSplit             bool
 	ChromiumPath                    string
 	UIChromiumPath                  string
 	BridgeExtensionPath             string
@@ -499,7 +500,8 @@ func ParseFlags() Options {
 	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
 	flag.BoolVar(&options.DiscoverChromium, "discover-chromium", false, "discover and validate a pinned-Chromium executable, print JSON, and exit")
 	flag.BoolVar(&options.AppShell, "app-shell", false, "open the embedded pinned-Chromium application window after startup")
-	flag.BoolVar(&options.ExperimentalWindowsCaptureSplit, "experimental-windows-capture-split", os.Getenv("AKUBROWSER_EXPERIMENTAL_WINDOWS_CAPTURE_SPLIT") == "1", "Windows-only experiment: separate UI and capture Chromium processes")
+	flag.BoolVar(&options.ExperimentalWindowsCaptureSplit, "experimental-windows-capture-split", os.Getenv("AKUBROWSER_EXPERIMENTAL_WINDOWS_CAPTURE_SPLIT") == "1", "compatibility alias for Windows capture split")
+	flag.BoolVar(&options.WindowsCaptureSplit, "windows-capture-split", false, "separate Windows app-shell UI and capture Chromium processes")
 	flag.StringVar(&options.ChromiumPath, "chromium-path", "", "override pinned-Chromium executable for this process")
 	flag.StringVar(&options.UIChromiumPath, "ui-chromium-path", "", "Windows capture split only: pinned Chrome for Testing UI executable; never changes the capture browser")
 	flag.StringVar(&options.BridgeExtensionPath, "bridge-extension-path", "", "unpacked AkuBridge extension directory loaded into the app shell")
@@ -536,9 +538,9 @@ func Load(options Options) (Config, error) {
 	cfg.Root = filepath.Dir(filepath.Dir(absConfig))
 	cfg.Dev = options.Dev
 	cfg.RuntimeControlToken = options.RuntimeControlToken
-	cfg.ExperimentalWindowsCaptureSplit = windowsCaptureSplitEnabled(runtime.GOOS, options)
-	if strings.TrimSpace(options.UIChromiumPath) != "" && !cfg.ExperimentalWindowsCaptureSplit {
-		return Config{}, fmt.Errorf("ui-chromium-path requires the experimental Windows app-shell capture split")
+	cfg.WindowsCaptureSplit = windowsCaptureSplitEnabled(runtime.GOOS, options)
+	if strings.TrimSpace(options.UIChromiumPath) != "" && !cfg.WindowsCaptureSplit {
+		return Config{}, fmt.Errorf("ui-chromium-path requires the Windows app-shell capture split")
 	}
 	if options.CodexPath != "" {
 		if entry, ok := cfg.Reasoning.Providers["codex-app-server"]; ok {
@@ -556,8 +558,8 @@ func Load(options Options) (Config, error) {
 	if options.Port != 0 {
 		cfg.Server.Port = options.Port
 	}
-	if cfg.ExperimentalWindowsCaptureSplit && cfg.Server.Port != 11122 {
-		return Config{}, fmt.Errorf("experimental Windows capture split requires the Bridge loopback port 11122")
+	if cfg.WindowsCaptureSplit && cfg.Server.Port != 11122 {
+		return Config{}, fmt.Errorf("Windows capture split requires the Bridge loopback port 11122")
 	}
 	if options.DatabasePath != "" {
 		cfg.Database.Path = options.DatabasePath

@@ -294,7 +294,7 @@ func splitTestServer(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = state.Close() })
-	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 11122}, ExperimentalWindowsCaptureSplit: true}
+	cfg := config.Config{Server: config.ServerConfig{Host: "127.0.0.1", Port: 11122}, WindowsCaptureSplit: true}
 	logger := log.New(io.Discard, "", 0)
 	e := engine.New(state, reasoning.Deterministic{}, cfg, logger)
 	s, err := New(cfg, state, e, logger)

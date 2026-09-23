@@ -328,7 +328,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	extensionPath := options.BridgeExtensionPath
 	uiResult := result
 	var uiArgs []string
-	if cfg.ExperimentalWindowsCaptureSplit {
+	if cfg.WindowsCaptureSplit {
 		sidecarExecutable, executableErr := os.Executable()
 		fatal(logger, executableErr)
 		uiDiscoveryCtx, cancelUIDiscovery := context.WithTimeout(context.Background(), 10*time.Second)
@@ -359,7 +359,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		profilePath = uiProfile
 		extensionPath = uiBrokerPath
 		uiArgs = []string{"--disable-extensions-except=" + extensionPath, "--enable-features=LaunchWindowsNativeHostsDirectly"}
-		logger.Printf("experimental_windows_capture_split capture_pid=%d capture_executable=%q ui_executable=%q ui_version=%s", capture.PID(), result.Executable, uiResult.Executable, uiResult.Version)
+		logger.Printf("windows_capture_split capture_pid=%d capture_executable=%q ui_executable=%q ui_version=%s", capture.PID(), result.Executable, uiResult.Executable, uiResult.Version)
 	}
 	showStartupStatus, markStartupReady, statusErr := startupStatusPolicy(cfg.Deployment, profilePath)
 	if statusErr != nil {
@@ -392,7 +392,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		fatal(logger, err)
 	}
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", uiResult.Executable, uiResult.Version, window.PID(), target)
-	if cfg.ExperimentalWindowsCaptureSplit {
+	if cfg.WindowsCaptureSplit {
 		go func() {
 			if err := window.ServeReaderBroker(context.Background(), server.HandleReaderBroker); err != nil {
 				logger.Printf("reader_broker unavailable=%q", err.Error())
