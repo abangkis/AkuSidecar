@@ -141,7 +141,12 @@ catch {
 }
 if ($inspection.status -notin @('absent', 'current', 'migratable')) {
     $candidateVersion = (Get-Content -LiteralPath $candidateProvenance -Raw | ConvertFrom-Json).version
-    throw "Refusing to stop AkuSidecar: candidate $candidateVersion cannot open the existing database (status: $($inspection.status); reason: $($inspection.reason)). The running runtime was left untouched."
+    $recovery = if ($inspection.status -eq 'newer') {
+        'This is the development database, not the installed-app database. Use a runtime matching its marker, or follow docs/dev-runtime-reinstall.md to archive it and start fresh before retrying.'
+    } else {
+        'Inspect the development database and resolve the reported compatibility status before retrying.'
+    }
+    throw "Refusing to stop AkuSidecar: candidate $candidateVersion cannot open the existing database (status: $($inspection.status); reason: $($inspection.reason)). $recovery The running runtime was left untouched."
 }
 
 & (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') `
