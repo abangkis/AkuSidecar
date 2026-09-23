@@ -692,22 +692,24 @@ the age boundary makes terminal operational history eligible for trimming. Schem
 reports, and user feedback independently of session/run retention. Historical
 origin IDs remain available, with explicit API flags when operational detail is
 no longer available. More/Less continues to update durable preference learning.
-Timeline and feedback have no automatic age eviction; Full Reset explicitly
-removes them. Storage pressure
-never shortens that lifetime: if expired history cannot reclaim enough space,
+Schema 29 gives semantic reports their own evidence snapshots and enables
+finite Timeline-card retention. Full Reset explicitly removes the durable
+records. Storage pressure
+never shortens the young-card protection window: if eligible history cannot reclaim enough space,
 retention reports pressure and keeps young history. Every retention runs a
 transactional database-health preflight and postflight. Existing disconnected
 data pauses retention and new updates until the user chooses **Back up and
 clean** or **Clean without backup**; **Later** leaves it pending. See
 [database maintenance](docs/database-maintenance.md) for the repair contract.
 
-Schema 28 adds finite-inbox observation without deletion. Visible cards receive
+Schema 28 added finite-inbox observation. Visible cards receive
 an authoritative presentation timestamp, while prepared or expired hidden
 batches remain protected. Retention records bounded aggregate-only dry-run
 receipts for the 14-day protection window, 30-day routine expiry, 500-card
-preview boundary, and 10 MiB logical Timeline-card boundary. Current counters
-are available from `GET /api/timeline/storage`; no Timeline card is removed in
-observation mode.
+soft boundary, and 10 MiB logical Timeline-card boundary. Schema 29 applies
+eligible deletion transactionally, retaining semantic history and in-flight
+processing cards. Current counters are available from
+`GET /api/timeline/storage`.
 
 Unavailable X media first has a passive completion path. AkuBridge v60 can
 relay evidence from its DOM observers or from the bounded

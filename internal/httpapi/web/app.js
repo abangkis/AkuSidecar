@@ -881,6 +881,7 @@ function renderSettingsStorage() {
     meter.setAttribute("aria-valuetext", label);
   };
   if (!usage) {
+    $("#settings-storage-mode").textContent = loading ? "Loading…" : "Unavailable";
     status.textContent = loading ? "Loading storage usage…" : "Storage usage unavailable";
     status.classList.remove("settings-storage-pressure");
     database.textContent = "Database size: unavailable";
@@ -888,7 +889,7 @@ function renderSettingsStorage() {
     $("#settings-storage-bytes").textContent = "—";
     setMeter("items", null, "Unavailable");
     setMeter("bytes", null, "Unavailable");
-    protection.textContent = error ? "Could not load storage usage. No Timeline cards are removed in preview mode." : "No Timeline cards are removed in preview mode.";
+    protection.textContent = error ? "Could not load storage usage." : "Storage usage is unavailable.";
     details.replaceChildren();
     return;
   }
@@ -901,13 +902,18 @@ function renderSettingsStorage() {
   setMeter("bytes", usage.bytePercent, `${formatLibraryStorageBytes(usage.logicalBytes)} of ${formatLibraryStorageBytes(usage.maxLogicalBytes)}`);
   const eligible = usage.eligible === null ? "unknown" : usage.eligible.toLocaleString();
   const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString() : "Unknown";
-  protection.textContent = `${count(usage.protectedItems)} protected · ${eligible} eligible. Preview only; no Timeline cards are removed.`;
+  protection.textContent = usage.active
+    ? `${count(usage.protectedItems)} protected · ${eligible} eligible. Eligible cards are trimmed during retention maintenance.`
+    : `${count(usage.protectedItems)} protected · ${eligible} eligible. Preview only; no Timeline cards are removed.`;
+  $("#settings-storage-mode").textContent = usage.active ? "Active retention" : "Preview only";
   const evaluated = usage.evaluatedAt ? new Date(usage.evaluatedAt) : null;
   details.replaceChildren(
     settingsStorageDetail("Policy", `${usage.policy?.protectionDays ?? "Unknown"} days protected · ${usage.policy?.routineExpiryDays ?? "Unknown"} days routine expiry`),
     settingsStorageDetail("Routine-expired", count(usage.routineExpiredItems)),
     settingsStorageDetail("Hidden", count(usage.hiddenItems)),
     settingsStorageDetail("Missing presentation time", count(usage.missingPresentationItems)),
+    settingsStorageDetail("Processing cards protected", count(usage.processingProtectedItems)),
+    settingsStorageDetail("Needs attention", usage.needsAttention === true ? "Yes" : usage.needsAttention === false ? "No" : "Unknown"),
     settingsStorageDetail("Potential reclaim", `${count(usage.reclaimableItems)} cards · ${formatLibraryStorageBytes(usage.reclaimableBytes)}`),
     settingsStorageDetail("Database allocated", formatLibraryStorageBytes(usage.databaseAllocatedBytes)),
     settingsStorageDetail("Evaluated", evaluated && !Number.isNaN(evaluated.getTime()) ? evaluated.toLocaleString() : "Unknown"),

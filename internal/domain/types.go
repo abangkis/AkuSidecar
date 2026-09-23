@@ -1889,8 +1889,11 @@ type TimelineRetentionPolicy struct {
 }
 
 // TimelineStorageStatus is aggregate-only. It never exposes card ids or
-// content, and observation mode never removes Timeline cards.
+// content. Totals describe the remaining projection; removed counts describe this operation.
 type TimelineStorageStatus struct {
+	ProcessingProtectedItems int                     `json:"processingProtectedItems"`
+	RemovedItems             int                     `json:"removedItems"`
+	RemovedBytes             int64                   `json:"removedBytes"`
 	Mode                     string                  `json:"mode"`
 	EvaluatedAt              string                  `json:"evaluatedAt"`
 	ReceiptID                string                  `json:"receiptId,omitempty"`

@@ -22,7 +22,7 @@ func TestTimelineStorageHTTPIsReadOnlyAndAggregateOnly(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.TimelineStorage.Mode != "observe" || body.TimelineStorage.Policy.MaxItems != 500 || body.TimelineStorage.Policy.MaxLogicalBytes != 10*1024*1024 {
+	if body.TimelineStorage.Mode != "active" || body.TimelineStorage.Policy.MaxItems != 500 || body.TimelineStorage.Policy.MaxLogicalBytes != 10*1024*1024 {
 		t.Fatalf("storage=%+v", body.TimelineStorage)
 	}
 	response = httptest.NewRecorder()

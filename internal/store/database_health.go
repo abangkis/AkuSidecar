@@ -67,10 +67,10 @@ var repairableRelations = map[string]string{
 	"timeline_evidence_overrides": "timeline_items media_recaptures", "calibration_sessions": "sessions",
 	"calibration_samples": "calibration_sessions runs", "calibration_profile_snapshots": "calibration_sessions",
 	"selection_corrections":  "timeline_items sessions runs",
-	"semantic_event_reports": "semantic_events timeline_items", "semantic_event_deltas": "semantic_events semantic_event_reports",
+	"semantic_event_reports": "semantic_events", "semantic_event_deltas": "semantic_events semantic_event_reports",
 	"semantic_event_constraints": "semantic_events", "semantic_novelty_constraints": "semantic_events",
 	"event_resolution_invocations": "sessions", "event_resolution_diagnostics": "event_resolution_invocations",
-	"semantic_event_corrections": "semantic_event_reports timeline_items",
+	"semantic_event_corrections": "semantic_event_reports",
 	"content_identity_aliases":   "runs", "content_continuity": "runs",
 }
 

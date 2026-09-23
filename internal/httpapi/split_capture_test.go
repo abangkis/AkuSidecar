@@ -154,6 +154,139 @@ func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) 
 	}
 }
 
+func TestSplitExplicitActionAuditCorrelatesWithoutPersistingPayloads(t *testing.T) {
+	for _, tc := range []struct {
+		name, actionType string
+		body             string
+		reader           bool
+		wantPhases       []string
+		wantEvents       int
+	}{
+		{
+			name:       "source open",
+			actionType: "open_source",
+			body:       `{"type":"open_source","source":"instagram","url":"https://private.example/post/URL_SECRET?content=CONTENT_SECRET&token=TOKEN_SECRET"}`,
+			wantPhases: []string{"phase=queued", "phase=claimed", "phase=result"},
+			wantEvents: 3,
+		},
+		{
+			name:       "native reader",
+			actionType: "open_native_post",
+			body:       `{"type":"open_native_post","source":"x","url":"https://private.example/post/URL_SECRET?content=CONTENT_SECRET","requestId":"TOKEN_SECRET"}`,
+			reader:     true,
+			wantPhases: []string{"phase=queued", "phase=claimed", "phase=reader_prepare", "phase=reader_foreground", "phase=result"},
+			wantEvents: 7,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, token := splitTestServer(t)
+			var logs strings.Builder
+			s.logger = log.New(&logs, "", 0)
+			if tc.reader {
+				s.SetSplitReaderPreparation(func(context.Context, string) (func(context.Context) error, error) {
+					return func(context.Context) error { return nil }, nil
+				})
+			}
+			type response struct {
+				code int
+				body string
+			}
+			requestDone := make(chan response, 1)
+			go func() {
+				w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/split-capture/actions", tc.body)
+				requestDone <- response{code: w.Code, body: w.Body.String()}
+			}()
+			queued := false
+			deadline := time.NewTimer(time.Second)
+			defer deadline.Stop()
+			for !queued {
+				s.splitCapture.mu.Lock()
+				queued = len(s.splitCapture.actions) > 0
+				s.splitCapture.mu.Unlock()
+				if queued {
+					break
+				}
+				select {
+				case got := <-requestDone:
+					t.Fatalf("action was rejected before queueing: %d %s", got.code, got.body)
+				case <-deadline.C:
+					t.Fatal("action did not enter the bounded queue")
+				case <-time.After(time.Millisecond):
+				}
+			}
+
+			next := splitRequest(s, token, s.splitCapture.key, "GET", "/api/bridge/split-capture/next", "")
+			if next.Code != 200 {
+				t.Fatalf("claim=%d %s", next.Code, next.Body)
+			}
+			var claimed struct {
+				Action struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"action"`
+			}
+			if err := json.Unmarshal(next.Body.Bytes(), &claimed); err != nil {
+				t.Fatal(err)
+			}
+			if claimed.Action.Type != tc.actionType || claimed.Action.ID == "" {
+				t.Fatalf("claimed action metadata=%+v", claimed.Action)
+			}
+			if tc.reader {
+				if w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/reader/prepare/"+claimed.Action.ID, `{}`); w.Code != 200 {
+					t.Fatalf("prepare=%d %s", w.Code, w.Body)
+				}
+				if w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/reader/foreground/"+claimed.Action.ID, `{}`); w.Code != 200 {
+					t.Fatalf("foreground=%d %s", w.Code, w.Body)
+				}
+			}
+			result := `{"ok":true,"message":"CONTENT_SECRET URL_SECRET TOKEN_SECRET","result":{"windowId":2}}`
+			if w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/"+claimed.Action.ID, result); w.Code != 204 {
+				t.Fatalf("result=%d %s", w.Code, w.Body)
+			}
+			select {
+			case got := <-requestDone:
+				if got.code != 200 {
+					t.Fatalf("UI action=%d %s", got.code, got.body)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("UI action did not finish")
+			}
+
+			logText := logs.String()
+			events, err := s.engine.ReadSplitActionAudit(context.Background(), "", 50)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seen := map[string]bool{}
+			for _, event := range events {
+				if event.ActionID != claimed.Action.ID {
+					continue
+				}
+				if event.ActionType != tc.actionType || event.ActionID == "" || event.OccurredAt == "" {
+					t.Fatalf("unexpected audit metadata: %+v", event)
+				}
+				seen[event.Phase] = true
+			}
+			for _, phase := range tc.wantPhases {
+				if !seen[strings.TrimPrefix(phase, "phase=")] {
+					t.Fatalf("missing audit phase %q in %+v", phase, events)
+				}
+			}
+			for _, secret := range []string{"URL_SECRET", "CONTENT_SECRET", "TOKEN_SECRET", "private.example"} {
+				if strings.Contains(logText, secret) {
+					t.Fatalf("logs persisted payload marker %q: %s", secret, logText)
+				}
+			}
+			if strings.Contains(logText, "error=") {
+				t.Fatalf("logs persisted arbitrary error detail: %s", logText)
+			}
+			if len(events) != tc.wantEvents {
+				t.Fatalf("audit retained unexpected fields/events: %+v", events)
+			}
+		})
+	}
+}
+
 func splitTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	state, err := store.Open(filepath.Join(t.TempDir(), "split.db"), domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))

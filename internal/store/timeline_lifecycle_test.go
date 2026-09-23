@@ -137,7 +137,7 @@ func lifecycleLegacyDB(t *testing.T) *sql.DB {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	legacy := strings.TrimSuffix(schemaSQL, timelineLifecycleSQL+timelineRetentionSQL)
+	legacy := strings.TrimSuffix(schemaSQL, timelineActiveLifecycleSQL+timelineRetentionSQL+semanticEvidenceOwnershipSQL+splitActionAuditSQL)
 	legacy = strings.ReplaceAll(legacy, "CREATE INDEX IF NOT EXISTS timeline_presented ON timeline_items(presented_at DESC);\n", "")
 	for _, table := range []string{"timeline_items", "ai_assessments", "media_provenance_assessments", "feedback_events", "semantic_event_reports"} {
 		start := strings.Index(legacy, "CREATE TABLE IF NOT EXISTS "+table+" (")

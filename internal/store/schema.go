@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 28
+const SchemaVersion = 29
 
-const schemaVersion = "28"
+const schemaVersion = "29"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;
@@ -1221,7 +1221,8 @@ CREATE INDEX IF NOT EXISTS semantic_events_last_seen ON semantic_events(last_see
 CREATE TABLE IF NOT EXISTS semantic_event_reports (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES semantic_events(id) ON DELETE CASCADE,
-  timeline_id TEXT NOT NULL UNIQUE REFERENCES timeline_items(id) ON DELETE CASCADE,
+  timeline_id TEXT NOT NULL UNIQUE,
+  item_json TEXT,
   session_id TEXT NOT NULL,
   run_id TEXT NOT NULL,
   evidence_key TEXT NOT NULL,
@@ -1307,7 +1308,7 @@ CREATE TABLE IF NOT EXISTS event_resolution_diagnostics (
 CREATE TABLE IF NOT EXISTS semantic_event_corrections (
   id TEXT PRIMARY KEY,
   report_id TEXT NOT NULL REFERENCES semantic_event_reports(id) ON DELETE CASCADE,
-  timeline_id TEXT NOT NULL REFERENCES timeline_items(id) ON DELETE CASCADE,
+  timeline_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('not_same_event','same_event')),
   from_event_id TEXT NOT NULL,
   from_relation TEXT NOT NULL,
@@ -1318,4 +1319,4 @@ CREATE TABLE IF NOT EXISTS semantic_event_corrections (
 );
 
 CREATE INDEX IF NOT EXISTS semantic_corrections_timeline_created ON semantic_event_corrections(timeline_id, created_at DESC);
-` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL + livingTopicsSchemaSQL + timelineLifecycleSQL + timelineRetentionSQL
+` + memorySchemaSQL + memorySearchSchemaSQL + memoryRetentionSchemaSQL + contentContextFeedbackSchemaSQL + livingTopicsSchemaSQL + timelineActiveLifecycleSQL + timelineRetentionSQL + semanticEvidenceOwnershipSQL + splitActionAuditSQL

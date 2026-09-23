@@ -1058,6 +1058,14 @@ func (e *Engine) RecordCaptureSurfaceEvent(ctx context.Context, value domain.Cap
 	return e.store.RecordCaptureSurfaceEvent(ctx, value)
 }
 
+func (e *Engine) RecordSplitActionAudit(ctx context.Context, value store.SplitActionAudit) error {
+	return e.store.RecordSplitActionAudit(ctx, value)
+}
+
+func (e *Engine) ReadSplitActionAudit(ctx context.Context, since string, limit int) ([]store.SplitActionAudit, error) {
+	return e.store.ReadSplitActionAudit(ctx, since, limit)
+}
+
 func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string, value domain.Observation) (domain.Run, error) {
 	run, err := e.store.GetRun(ctx, runID)
 	if err != nil {

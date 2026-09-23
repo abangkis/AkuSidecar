@@ -17,6 +17,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 // This transport is instantiated only by the Windows app-shell feature gate.
@@ -24,6 +25,42 @@ import (
 // fence old workers, and at-most-once claims never replay an interactive action.
 const splitActionLimit = 32
 const splitActionTimeout = 115 * time.Second
+
+// split-action audit records only the metadata needed to correlate explicit
+// user actions with native foreground samples. Never pass action payloads,
+// URLs, source content, bridge credentials, or error strings to this store.
+func (s *Server) splitActionAuditRecord(action splitCaptureAction, phase, outcome string) (store.SplitActionAudit, bool) {
+	if s.engine == nil || (action.Type != "open_source" && action.Type != "open_native_post") || !splitID(action.ID) {
+		return store.SplitActionAudit{}, false
+	}
+	switch phase {
+	case "queued", "claimed", "reader_broker_attached", "reader_prepare", "reader_foreground", "result":
+	default:
+		return store.SplitActionAudit{}, false
+	}
+	switch outcome {
+	case "", "pending", "accepted", "rejected":
+	default:
+		return store.SplitActionAudit{}, false
+	}
+	return store.SplitActionAudit{
+		ActionID: action.ID, ActionType: action.Type, Phase: phase, Outcome: outcome,
+		OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}, true
+}
+
+func (s *Server) persistSplitActionAudit(ctx context.Context, value store.SplitActionAudit) {
+	err := s.engine.RecordSplitActionAudit(ctx, value)
+	if err != nil && s.logger != nil {
+		s.logger.Printf("split action audit unavailable")
+	}
+}
+
+func (s *Server) auditSplitAction(ctx context.Context, action splitCaptureAction, phase, outcome string) {
+	if value, ok := s.splitActionAuditRecord(action, phase, outcome); ok {
+		s.persistSplitActionAudit(ctx, value)
+	}
+}
 
 //go:embed split_ui_bridge.js
 var splitUIBridge []byte
@@ -90,17 +127,24 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	var entry *pendingSplitAction
+	var attachedAudit store.SplitActionAudit
+	var attachedAuditReady bool
 	for entry == nil {
 		t.mu.Lock()
 		for _, a := range t.actions {
 			if a.action.RequestID == req.RequestID && a.action.Type == "open_native_post" && a.action.Source == req.Source && a.action.URL == req.URL && a.brokerReady != nil && !a.brokerAttached {
 				a.brokerAttached = true
 				entry = a
+				attachedAudit, attachedAuditReady = s.splitActionAuditRecord(entry.action, "reader_broker_attached", "accepted")
 				break
 			}
 		}
 		closed := t.closed
 		t.mu.Unlock()
+		if attachedAuditReady {
+			s.persistSplitActionAudit(ctx, attachedAudit)
+			attachedAuditReady = false
+		}
 		if closed {
 			return errors.New("reader broker stopped")
 		}
@@ -136,8 +180,10 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	t.mu.Unlock()
 	if target.HWND == 0 || verify == nil || time.Now().After(target.Expires) {
 		outcome = errors.New("reader binding unavailable or expired")
+		s.auditSplitAction(ctx, entry.action, "reader_foreground", "rejected")
 		return outcome
 	}
+	s.auditSplitAction(ctx, entry.action, "reader_foreground", "pending")
 	result, err := activate(target)
 	if err != nil {
 		outcome = err
@@ -147,6 +193,11 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		outcome = verify(ctx)
 	}
 	s.logger.Printf("reader_broker action=%s applied=%t readback=%t verified=%t", entry.action.ID, result.Applied, result.Readback, outcome == nil)
+	if outcome == nil {
+		s.auditSplitAction(ctx, entry.action, "reader_foreground", "accepted")
+	} else {
+		s.auditSplitAction(ctx, entry.action, "reader_foreground", "rejected")
+	}
 	if outcome == nil {
 		t.mu.Lock()
 		entry.readerForegroundVerified = true
@@ -305,17 +356,21 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			foreground := entry.readerForeground
 			entry.readerForeground = nil // Consume before the native call; never replay.
 			t.mu.Unlock()
+			s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "pending")
 			if foreground == nil {
+				s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "rejected")
 				s.logger.Printf("split_reader action=%s phase=foreground outcome=missing_intent", entry.action.ID)
 				return apiError{Status: 409, Code: "reader_intent_consumed", Message: "Reader foreground intent is not available."}
 			}
 			if err := foreground(r.Context()); err != nil {
-				s.logger.Printf("split_reader action=%s phase=foreground outcome=rejected error=%q", entry.action.ID, err.Error())
+				s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "rejected")
+				s.logger.Printf("split_reader action=%s phase=foreground outcome=rejected", entry.action.ID)
 				return apiError{Status: 409, Code: "reader_foreground_rejected", Message: err.Error()}
 			}
 			t.mu.Lock()
 			entry.readerForegroundVerified = true
 			t.mu.Unlock()
+			s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "accepted")
 			s.logger.Printf("split_reader action=%s phase=foreground outcome=accepted", entry.action.ID)
 			return writeJSON(w, 200, map[string]bool{"foreground": true})
 		}
@@ -327,6 +382,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		prepare := t.prepareReader
 		prepareBroker := t.prepareBrokerReader
 		t.mu.Unlock()
+		s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "pending")
 		var foreground func(context.Context) error
 		var target readerbroker.Target
 		var err error
@@ -336,13 +392,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			foreground, err = prepare(r.Context(), "AkuBrowser reader "+entry.action.ID)
 		}
 		if err != nil {
-			s.logger.Printf("split_reader action=%s phase=prepare outcome=rejected error=%q", entry.action.ID, err.Error())
+			s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "rejected")
+			s.logger.Printf("split_reader action=%s phase=prepare outcome=rejected", entry.action.ID)
 			return apiError{Status: 409, Code: "reader_binding_rejected", Message: err.Error()}
 		}
 		t.mu.Lock()
 		entry.readerForeground = foreground
 		entry.brokerTarget = target
 		t.mu.Unlock()
+		s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "accepted")
 		s.logger.Printf("split_reader action=%s phase=prepare outcome=accepted", entry.action.ID)
 		return writeJSON(w, 200, map[string]bool{"prepared": true})
 	}
@@ -379,7 +437,11 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture transport is unavailable or busy."}
 		}
 		t.actions = append(t.actions, entry)
+		queuedAudit, queuedAuditReady := s.splitActionAuditRecord(entry.action, "queued", "accepted")
 		t.mu.Unlock()
+		if queuedAuditReady {
+			s.persistSplitActionAudit(r.Context(), queuedAudit)
+		}
 		defer func() {
 			t.mu.Lock()
 			defer t.mu.Unlock()
@@ -420,7 +482,11 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				if !entry.claimed && (entry.brokerReady == nil || entry.brokerAttached) {
 					entry.claimed = true
 					action := entry.action
+					claimAudit, claimAuditReady := s.splitActionAuditRecord(action, "claimed", "accepted")
 					t.mu.Unlock()
+					if claimAuditReady {
+						s.persistSplitActionAudit(r.Context(), claimAudit)
+					}
 					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action})
 				}
 			}
@@ -458,8 +524,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 					if result.OK {
 						s.logger.Printf("split_reader action=%s phase=result outcome=accepted", entry.action.ID)
 					} else {
-						s.logger.Printf("split_reader action=%s phase=result outcome=rejected error=%q", entry.action.ID, result.Message)
+						s.logger.Printf("split_reader action=%s phase=result outcome=rejected", entry.action.ID)
 					}
+				}
+				if entry.action.Type == "open_source" || entry.action.Type == "open_native_post" {
+					outcome := "rejected"
+					if result.OK {
+						outcome = "accepted"
+					}
+					s.auditSplitAction(r.Context(), entry.action, "result", outcome)
 				}
 				select {
 				case entry.result <- result:

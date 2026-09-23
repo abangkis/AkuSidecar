@@ -77,9 +77,11 @@ bind it again with a fresh action ID.
 ## Bounded evidence
 
 `capture_zorder` emits aggregate counters at most once every five seconds while
-there is activity, plus a final flush: `attempted`, `applied`, `readback`, `failed`,
+there is activity, plus a final flush: `foreground_cycles`, `attempted`, `applied`, `readback`, `failed`,
 and one fixed `last_failure` code. `applied` means Windows accepted asynchronous
 positioning; only `readback` proves a subsequent below-anchor observation.
+`foreground_cycles` counts sampled owned non-reader capture foreground states;
+it does not repair them or identify the activating caller.
 Unverified readback becomes a failure after one second; tracking is capped at
 128 HWNDs and reader exemptions at 32. No titles, URLs, post text, credentials or
 external application identity enter these records. Hook failure is explicitly
@@ -87,6 +89,13 @@ logged with the fallback interval. `reader_broker` records native-call acceptanc
 helper readback and independent verification; `reader_foreground` is readback-only. The
 `split_reader` phase records identify whether an explicit request reached
 preparation, foregrounding and final result, without recording the post URL.
+
+Schema 29 also keeps at most 512 `split_action_audit` transitions for explicit
+`open_source` and `open_native_post` actions. Each row has only an opaque action
+ID, action type, phase, accepted/rejected/pending outcome, and UTC time. URL,
+title, post content, credentials, and arbitrary error messages are excluded.
+These rows can be correlated with native foreground samples; they do not by
+themselves prove why Chromium activated or that containment succeeded.
 
 Tests cover ownership/anchor/reader rejection before a write, valid and invalid
 readback, platform gating, authenticated claimed-action fencing and replay,

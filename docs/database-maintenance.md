@@ -69,9 +69,9 @@ the transaction and restored before normal operation; the migration checks that
 no new FK violations appeared. The schema marker and lifecycle triggers commit
 atomically. Existing unrelated damage stays available to the maintenance UI.
 Full Reset explicitly deletes durable Timeline rows; ordinary session retention
-does not. Durable Timeline/feedback currently have no automatic age eviction.
+does not. Schema 29 adds separate finite Timeline retention, described below.
 
-## Finite-inbox observation (schema 28)
+## Finite-inbox presentation and observation (schema 28)
 
 Schema 28 records the moment a card actually enters the visible Timeline.
 User-triggered cards receive `presented_at` when their durable card is published;
@@ -80,21 +80,44 @@ backfills visible schema-27 cards from batch reveal time, then session completio
 then card creation time. Hidden prepared or expired batches remain unpresented
 and fail safe as protected.
 
-Every retention invocation now writes one bounded aggregate receipt in
+Schema 28 began writing one bounded aggregate receipt per retention invocation in
 `timeline_retention_receipts`. At most 128 receipts are retained. Receipts contain
-no card ids or content and run in `observe` mode: **no Timeline card is deleted**.
-The canary policy protects cards for 14 days after presentation, starts routine
-expiry eligibility at 30 days, and previews soft boundaries of 500 cards and
+no card ids or content. Historical schema-28 receipts have `observe` mode and
+did not delete Timeline cards. The policy protects cards for 14 days after
+presentation, starts routine expiry eligibility at 30 days, and uses soft
+boundaries of 500 cards and
 10 MiB of logical Timeline-card payload. Cards aged 14–30 days are candidates
 only when a soft boundary is exceeded. Hidden cards and visible cards without a
 valid presentation timestamp remain protected.
 
+## Active finite inbox and semantic ownership (schema 29)
+
+Schema 29 snapshots each semantic report's bounded card evidence into the
+report, retaining its historical Timeline ID without a parent foreign key.
+Corrections and event deltas remain attached to their report. Semantic lookup,
+correction, undo, and backfill can therefore work after a Timeline card expires.
+The migration rebuilds the affected tables transactionally, preserves existing
+report/correction IDs and history, checks for new FK issues, and restores FK
+enforcement before normal operation.
+
+Retention now removes the oldest eligible visible cards in the same transaction
+as its database-health checks and aggregate receipt. Cards at least 30 days old
+expire routinely; cards between 14 and 30 days are removed only as needed for
+the 500-card or 10 MiB logical soft boundary. Hidden cards, cards without a valid
+presentation timestamp, and cards with pending/running Living Topic routing,
+queued/claimed media recapture, or queued/running media provenance assessment
+remain protected. In-flight routing also protects its origin session. The
+receipt records actual removed counts/bytes and remaining totals. If deletion,
+receipt write, or postflight health fails, the transaction rolls back.
+
 `GET /api/timeline/storage` returns current aggregate usage and eligibility,
 including protected, eligible, routine-expired, hidden, and missing-presentation
 counts. It reports effective and allocated whole-database bytes separately from
-the Timeline logical payload. `wouldRemove*` is a dry-run estimate, not a cleanup
-promise, and `needsAttention` means eligible candidates are insufficient to get
-under the preview boundaries. The endpoint is read-only.
+the Timeline logical payload. `wouldRemove*` is the current candidate plan, not
+an assertion that a previous cycle removed those cards. `removed*` in an active
+retention receipt records actual deletion. `needsAttention` means eligible
+candidates are insufficient to get under the soft boundaries. The endpoint is
+read-only.
 
 ## User action and cleanup
 
@@ -142,9 +165,8 @@ database may be cleaned without backup when explicitly authorized.
 ## Remaining lifecycle work
 
 These changes close the integrity gap, young-session storage eviction, Timeline
-and feedback operational ownership, and add finite-inbox measurement plus durable
-dry-run receipts. They do not activate Timeline deletion, split every durable
-category into a separately enforced budget, or add independent TTLs for every
-transient payload class. Do not infer those behaviors from zero FK violations or
-from a dry-run candidate count. A pristine health result means the inspected
-invariants hold, not recovery of already deleted parent data.
+and feedback operational ownership, and activate bounded Timeline-card deletion
+with semantic history retained independently. They do not split every durable
+category into a separately enforced budget or add independent TTLs for every
+transient payload class. A pristine health result means the inspected invariants
+hold, not recovery of already deleted parent data.

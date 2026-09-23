@@ -63,6 +63,22 @@ func captureReadbackVerified(hwnd, foreground uintptr, ordered []captureZWindow)
 	return false
 }
 
+// captureOwnedForeground reports when Chromium has promoted an owned capture
+// window above the external foreground boundary. The monitor deliberately
+// does not reorder or activate external windows, so this must remain a visible
+// containment outcome rather than being treated as an empty target set.
+func captureOwnedForeground(foreground uintptr, ordered []captureZWindow) bool {
+	if foreground == 0 {
+		return false
+	}
+	for _, w := range ordered {
+		if w.hwnd == foreground {
+			return w.owned && !w.reader
+		}
+	}
+	return false
+}
+
 // Recheck current native identity immediately before the write. All operands
 // are functions so tests also prove that rejection never reaches SetWindowPos.
 func lowerCaptureWindow(expectedForeground uintptr, foreground func() uintptr, owned, reader func() bool, lower func() bool) (attempted, applied bool) {

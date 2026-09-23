@@ -77,7 +77,7 @@ func TestPersonalMemorySchemaContract(t *testing.T) {
 	if err := state.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != schemaVersion || SchemaVersion != 28 {
+	if version != schemaVersion || SchemaVersion != 29 {
 		t.Fatalf("schema version=%q constant=%d", version, SchemaVersion)
 	}
 	indexes := map[string]bool{}

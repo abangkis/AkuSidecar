@@ -10,9 +10,11 @@ export function settingsStorageView(report) {
   if (totalItems === null || logicalBytes === null || !maxItems || !maxLogicalBytes) return null;
   const over = usage.overItemLimit === true || usage.overByteLimit === true;
   const eligible = knownCount(usage.eligibleItems);
+  const active = usage.mode === "active";
+  const limit = active ? "retention limit" : "preview limit";
   const status = over
-    ? eligible === 0 ? "Above preview limit · no eligible cards" : eligible === null ? "Above preview limit · eligibility unknown" : "Above preview limit · candidates available"
-    : "Within preview limits";
+    ? eligible === 0 ? `Above ${limit} · no eligible cards` : eligible === null ? `Above ${limit} · eligibility unknown` : `Above ${limit} · candidates available`
+    : `Within ${active ? "retention" : "preview"} limits`;
   return {
     ...usage,
     totalItems,
@@ -20,6 +22,7 @@ export function settingsStorageView(report) {
     maxItems,
     maxLogicalBytes,
     status,
+    active,
     pressure: over,
     eligible,
     itemPercent: Math.min(100, totalItems / maxItems * 100),

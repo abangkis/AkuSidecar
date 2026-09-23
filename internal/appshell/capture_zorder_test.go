@@ -69,3 +69,28 @@ func TestCaptureReadbackRequiresLiveOwnedWindowBelowKnownAnchor(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptureOwnedForegroundIsReportedButReaderAndExternalForegroundAreNot(t *testing.T) {
+	windows := []captureZWindow{
+		{hwnd: 1, owned: true, visible: true},
+		{hwnd: 2, owned: true, reader: true, visible: true},
+		{hwnd: 3, owned: false, visible: true},
+	}
+	for _, tc := range []struct {
+		name       string
+		foreground uintptr
+		want       bool
+	}{
+		{name: "capture root foreground", foreground: 1, want: true},
+		{name: "explicit reader foreground", foreground: 2, want: false},
+		{name: "external foreground", foreground: 3, want: false},
+		{name: "unknown foreground", foreground: 99, want: false},
+		{name: "missing foreground", foreground: 0, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := captureOwnedForeground(tc.foreground, windows); got != tc.want {
+				t.Fatalf("captureOwnedForeground(%d)=%t want %t", tc.foreground, got, tc.want)
+			}
+		})
+	}
+}

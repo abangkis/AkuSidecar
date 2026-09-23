@@ -333,9 +333,9 @@ func (s *Store) backfillSemanticEventDeltas(ctx context.Context) error {
 		return err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id,r.event_id,r.relation,r.confidence,r.source,r.evidence_key,r.created_at,t.item_json
+		SELECT r.id,r.event_id,r.relation,r.confidence,r.source,r.evidence_key,r.created_at,COALESCE(t.item_json,r.item_json)
 		FROM semantic_event_reports r
-		JOIN timeline_items t ON t.id=r.timeline_id
+		LEFT JOIN timeline_items t ON t.id=r.timeline_id
 		WHERE r.relation IN ('material_update','contradiction','new_consequence','context_only')
 		ORDER BY r.created_at`)
 	if err != nil {
@@ -504,8 +504,8 @@ func (s *Store) EventResolutionSummary(ctx context.Context, sessionID string) (*
 		SELECT COALESCE(SUM(CASE WHEN c.action='not_same_event' THEN 1 ELSE 0 END),0),
 		       COALESCE(SUM(CASE WHEN c.action='same_event' THEN 1 ELSE 0 END),0)
 		FROM semantic_event_corrections c
-		JOIN timeline_items t ON t.id=c.timeline_id
-		WHERE t.session_id=? AND c.undone_at IS NULL`, sessionID).
+		JOIN semantic_event_reports r ON r.id=c.report_id
+		WHERE r.session_id=? AND c.undone_at IS NULL`, sessionID).
 		Scan(&value.UserSplitCorrections, &value.UserMergeCorrections); err != nil {
 		return nil, err
 	}
@@ -657,8 +657,8 @@ func (s *Store) CorrectSemanticEvent(ctx context.Context, timelineID, action, ta
 	var source domain.Source
 	var alreadyCorrected int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT r.id,r.evidence_key,r.event_id,r.relation,t.item_json,r.corrected,r.source
-		FROM semantic_event_reports r JOIN timeline_items t ON t.id=r.timeline_id WHERE r.timeline_id=?`, timelineID).
+		SELECT r.id,r.evidence_key,r.event_id,r.relation,COALESCE(t.item_json,r.item_json),r.corrected,r.source
+		FROM semantic_event_reports r LEFT JOIN timeline_items t ON t.id=r.timeline_id WHERE r.timeline_id=?`, timelineID).
 		Scan(&reportID, &evidenceKey, &fromEventID, &fromRelation, &itemRaw, &alreadyCorrected, &source); err != nil {
 		return domain.EventCorrection{}, err
 	}
@@ -753,7 +753,7 @@ func (s *Store) UndoSemanticCorrection(ctx context.Context, id string) (domain.E
 	}
 	var source domain.Source
 	var itemRaw string
-	if err := tx.QueryRowContext(ctx, `SELECT r.source,t.item_json FROM semantic_event_reports r JOIN timeline_items t ON t.id=r.timeline_id WHERE r.id=?`, reportID).Scan(&source, &itemRaw); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT r.source,COALESCE(t.item_json,r.item_json) FROM semantic_event_reports r LEFT JOIN timeline_items t ON t.id=r.timeline_id WHERE r.id=?`, reportID).Scan(&source, &itemRaw); err != nil {
 		return domain.EventCorrection{}, err
 	}
 	var item domain.ReasonedItem
@@ -818,10 +818,10 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsBefore); err != nil {
 		return result, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_event_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM semantic_event_reports r WHERE r.evidence_key=semantic_event_constraints.evidence_key) AND NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_event_constraints.evidence_key)`, cutoff); err != nil {
 		return result, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_novelty_constraints.evidence_key)`, cutoff); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_novelty_constraints WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM semantic_event_reports r WHERE r.evidence_key=semantic_novelty_constraints.evidence_key) AND NOT EXISTS (SELECT 1 FROM timeline_items t WHERE t.evidence_key=semantic_novelty_constraints.evidence_key)`, cutoff); err != nil {
 		return result, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM content_continuity WHERE last_seen_at<?`, cutoff); err != nil {
@@ -830,7 +830,7 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM content_identity_aliases WHERE last_seen_at<?`, cutoff); err != nil {
 		return result, err
 	}
-	deleted, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL AND completed_at<? AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=sessions.id AND b.state='prepared')`, cutoff)
+	deleted, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE status IN ('completed','partial','failed','cancelled') AND completed_at IS NOT NULL AND completed_at<? AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=sessions.id AND b.state='prepared') AND NOT EXISTS (SELECT 1 FROM living_topic_routing_jobs j WHERE j.session_id=sessions.id AND j.status IN ('pending','running'))`, cutoff)
 	if err != nil {
 		return result, err
 	}
@@ -850,9 +850,9 @@ func (s *Store) EnforceRetention(ctx context.Context, settings domain.Settings) 
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM semantic_events`).Scan(&eventsAfter); err != nil {
 		return result, err
 	}
-	timelineStatus, err := s.recordTimelineRetentionObservationTx(ctx, tx, s.Now())
+	timelineStatus, err := s.enforceTimelineRetentionTx(ctx, tx, s.Now())
 	if err != nil {
-		return result, fmt.Errorf("record Timeline retention observation: %w", err)
+		return result, fmt.Errorf("enforce Timeline retention: %w", err)
 	}
 	result.Timeline = timelineStatus
 	health, _, err = inspectDatabaseHealth(ctx, tx)

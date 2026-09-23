@@ -4,6 +4,7 @@ import { settingsStorageView } from "../internal/httpapi/web/settings-storage-st
 
 const report = (overrides = {}) => ({ timelineStorage: {
   totalItems: 180,
+  mode: "active",
   logicalBytes: 2_293_175,
   eligibleItems: 0,
   overItemLimit: false,
@@ -14,16 +15,17 @@ const report = (overrides = {}) => ({ timelineStorage: {
 
 test("Timeline storage stays distinct from whole database size", () => {
   const view = settingsStorageView(report({ databaseEffectiveBytes: 32_575_488 }));
-  assert.equal(view.status, "Within preview limits");
+  assert.equal(view.status, "Within retention limits");
   assert.equal(view.itemPercent, 36);
   assert.equal(view.bytePercent < 100, true);
   assert.equal(view.databaseEffectiveBytes, 32_575_488);
 });
 
 test("pressure distinguishes eligible zero, candidates, and unknown", () => {
-  assert.equal(settingsStorageView(report({ overItemLimit: true })).status, "Above preview limit · no eligible cards");
-  assert.equal(settingsStorageView(report({ overByteLimit: true, eligibleItems: 3 })).status, "Above preview limit · candidates available");
-  assert.equal(settingsStorageView(report({ overByteLimit: true, eligibleItems: null })).status, "Above preview limit · eligibility unknown");
+  assert.equal(settingsStorageView(report({ overItemLimit: true })).status, "Above retention limit · no eligible cards");
+  assert.equal(settingsStorageView(report({ overByteLimit: true, eligibleItems: 3 })).status, "Above retention limit · candidates available");
+  assert.equal(settingsStorageView(report({ overByteLimit: true, eligibleItems: null })).status, "Above retention limit · eligibility unknown");
+  assert.equal(settingsStorageView(report({ mode: "observe" })).status, "Within preview limits");
 });
 
 test("incomplete metrics remain unavailable rather than zero", () => {

@@ -43,6 +43,7 @@ type captureZOrder struct {
 	nextReader                           uintptr
 	property                             *uint16
 	attempted, applied, readback, failed uint64
+	foregroundCycles                     uint64
 	lastFailure                          string
 	pending                              map[uintptr]time.Time
 	stopped                              bool
@@ -156,6 +157,13 @@ func (c *captureZOrder) cycle() {
 		c.lastFailure = "window_enumeration_unavailable"
 		return
 	}
+	if captureOwnedForeground(fg, ordered) {
+		// Chrome may asynchronously promote a capture window beyond the Bridge's
+		// sampled focus checks. The containment path never activates an
+		// external HWND, so retain explicit evidence instead of silently treating
+		// this foreground state as an empty target set.
+		c.foregroundCycles++
+	}
 	targets := captureWindowsToLower(fg, ordered)
 	readbackForeground, _, _ := captureForeground.Call()
 	for hwnd, at := range c.pending {
@@ -205,10 +213,10 @@ func (c *captureZOrder) cycle() {
 func (c *captureZOrder) logStats() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.logger != nil && (c.attempted > 0 || c.readback > 0 || c.failed > 0) {
-		c.logger.Printf("capture_zorder attempted=%d applied=%d readback=%d failed=%d last_failure=%s", c.attempted, c.applied, c.readback, c.failed, c.lastFailure)
+	if c.logger != nil && (c.attempted > 0 || c.readback > 0 || c.failed > 0 || c.foregroundCycles > 0) {
+		c.logger.Printf("capture_zorder foreground_cycles=%d attempted=%d applied=%d readback=%d failed=%d last_failure=%s", c.foregroundCycles, c.attempted, c.applied, c.readback, c.failed, c.lastFailure)
 	}
-	c.attempted, c.applied, c.readback, c.failed = 0, 0, 0, 0
+	c.foregroundCycles, c.attempted, c.applied, c.readback, c.failed = 0, 0, 0, 0, 0
 	c.lastFailure = ""
 }
 
