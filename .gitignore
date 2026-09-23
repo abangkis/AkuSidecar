@@ -9,6 +9,7 @@ runtime/
 *.pid
 
 # Go build and test output
+/build/
 *.exe
 *.test
 *.out
