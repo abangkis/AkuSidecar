@@ -100,7 +100,12 @@ function Enable-WindowsCaptureSplit {
     }
     $uiIndex = [Array]::IndexOf($verifiedArguments, $uiChromiumPathFlag)
     if ($uiIndex -lt 0 -or $uiIndex + 1 -ge $verifiedArguments.Count -or $verifiedArguments[$uiIndex + 1] -ne $pinnedUIChromium) { throw 'AkuSupervisor did not retain the pinned UI-only Chromium path.' }
+    $originIndex = [Array]::IndexOf($verifiedArguments, '--bridge-extension-origin')
+    if ($originIndex -lt 0 -or $originIndex + 1 -ge $verifiedArguments.Count -or -not $verifiedArguments[$originIndex + 1].StartsWith('chrome-extension://')) {
+        throw 'AkuSupervisor does not declare a valid Bridge extension origin for the Sidecar candidate inspection.'
+    }
     Write-Host 'AkuSidecar development restart will use the Windows capture split.' -ForegroundColor Cyan
+    return $verifiedArguments[$originIndex + 1]
 }
 
 if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
@@ -108,21 +113,43 @@ if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
 }
 
 $supervisorConfig = Resolve-AkuSupervisorConfigPath
-Enable-WindowsCaptureSplit -ConfigurationPath $supervisorConfig
+$bridgeOrigin = Enable-WindowsCaptureSplit -ConfigurationPath $supervisorConfig
 
 & (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe'
 if ($LASTEXITCODE -ne 0) {
     throw "AkuSidecar candidate build failed."
 }
+if (-not (Test-Path -LiteralPath $candidateProvenance -PathType Leaf)) {
+    throw "AkuSidecar candidate provenance was not produced: $candidateProvenance"
+}
+
+# Inspect with the candidate itself before taking down the working runtime.
+# A product-version rollback can reject an unchanged schema solely because
+# the database's last-writer marker is newer than the rebuilt binary.
+$inspectionText = & $candidate `
+    --config (Join-Path $repoRoot 'config\sidecar.json') `
+    --bridge-extension-origin $bridgeOrigin `
+    --database-inspect 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "AkuSidecar candidate database inspection failed; the running runtime was left untouched: $(($inspectionText | Out-String).Trim())"
+}
+try {
+    $inspection = ($inspectionText | Out-String) | ConvertFrom-Json
+}
+catch {
+    throw 'AkuSidecar candidate database inspection returned invalid JSON; the running runtime was left untouched.'
+}
+if ($inspection.status -notin @('absent', 'current', 'migratable')) {
+    $candidateVersion = (Get-Content -LiteralPath $candidateProvenance -Raw | ConvertFrom-Json).version
+    throw "Refusing to stop AkuSidecar: candidate $candidateVersion cannot open the existing database (status: $($inspection.status); reason: $($inspection.reason)). The running runtime was left untouched."
+}
+
 & (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') `
     -RuntimeDirectory $runtimeDir `
     -Register `
     -ReplaceExistingRegistration:$ReplaceReaderBrokerRegistration
 if ($LASTEXITCODE -ne 0) {
     throw 'AkuBrowser reader broker registration failed.'
-}
-if (-not (Test-Path -LiteralPath $candidateProvenance -PathType Leaf)) {
-    throw "AkuSidecar candidate provenance was not produced: $candidateProvenance"
 }
 
 $deadline = [DateTime]::UtcNow.AddSeconds($WaitForIdleSeconds)

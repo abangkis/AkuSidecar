@@ -95,3 +95,12 @@ test("development restart registers the staged broker with explicit takeover fen
   assert.match(register, /Google\\Chrome/);
   assert.match(register, /Chromium/);
 });
+
+test("development restart inspects the candidate against existing data before stopping Sidecar", () => {
+  const restart = fs.readFileSync(new URL("scripts/restart-dev.ps1", new URL("../", import.meta.url)), "utf8");
+  const inspect = restart.indexOf("--database-inspect");
+  const register = restart.indexOf("'register-reader-broker-dev.ps1'");
+  const stop = restart.indexOf("& $supervisor stop akusidecar");
+  assert.ok(inspect >= 0 && register > inspect && stop > register);
+  assert.match(restart, /inspection\.status -notin @\('absent', 'current', 'migratable'\)/);
+});
