@@ -13,6 +13,71 @@ export const CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN = "close_offscreen";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE = "preserve";
 export const CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT = CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN;
 
+const CONTENT_CONTEXT_RELATION_PROVENANCE = new Set(["observed_dom", "observed_response", "legacy_capture"]);
+
+function isContentContextObject(value, expectedKind) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.kind !== expectedKind) return false;
+  if (!["captured", "partial", "reference_only"].includes(value.availability)) return false;
+  if (typeof value.text !== "undefined" && typeof value.text !== "string") return false;
+  if (typeof value.hasMedia !== "undefined" && typeof value.hasMedia !== "boolean") return false;
+  const hasText = Boolean(value.text?.trim());
+  const hasMedia = value.hasMedia === true;
+  if (value.availability === "captured" && !hasText && !hasMedia) return false;
+  if (value.availability === "reference_only" && (hasText || hasMedia)) return false;
+  return true;
+}
+
+function isKnownContentContextRelation(source, relation) {
+  if (!relation || typeof relation !== "object" || Array.isArray(relation)) return false;
+  if (!CONTENT_CONTEXT_RELATION_PROVENANCE.has(relation.provenance)) return false;
+  if (source === "x") {
+    return relation.kind === "replies_to"
+      && isContentContextObject(relation.target, "post")
+      && !relation.parent;
+  }
+  if (source !== "linkedin" || !["feed_comment", "feed_reply"].includes(relation.kind)) return false;
+  if (!isContentContextObject(relation.target, "comment")) return false;
+  return relation.kind === "feed_reply"
+    ? (!relation.parent || isContentContextObject(relation.parent, "comment"))
+    : !relation.parent;
+}
+
+export function contentContextKnownTypes({ source = "", directContext = [] } = {}) {
+  const types = [];
+  for (const relation of (Array.isArray(directContext) ? directContext.slice(0, 8) : [])) {
+    if (!isKnownContentContextRelation(source, relation)) continue;
+    const label = ({ replies_to: "Reply to post", feed_comment: "Comment", feed_reply: "Reply to comment" })[relation.kind];
+    if (label && !types.includes(label)) types.push(label);
+  }
+  return types;
+}
+
+export function contentContextKnownTypesDescription(types = []) {
+  const normalized = Array.isArray(types) ? types.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  if (!normalized.length) return "";
+  return "Known conversation: " + normalized.map((value) => value.toLowerCase()).join(" and ") + ".";
+}
+
+export function contentContextRelationLabel(source, relation) {
+  if (!relation || typeof relation !== "object") return "Conversation context";
+  if (source === "x" && relation.kind === "replies_to") return "Reply to post";
+  if (source === "linkedin" && relation.kind === "feed_comment") {
+    const actor = typeof relation.actor === "string" ? relation.actor.trim() : "";
+    return actor ? "Comment by " + actor : "Comment";
+  }
+  if (source === "linkedin" && relation.kind === "feed_reply") {
+    const actor = typeof relation.actor === "string" ? relation.actor.trim() : "";
+    const parentAuthor = typeof relation.parent?.author === "string" ? relation.parent.author.trim() : "";
+    return actor && parentAuthor ? actor + " replied to " + parentAuthor : "Reply to comment";
+  }
+  return "Conversation context";
+}
+
+export function contentContextObjectCaptureLabel(object) {
+  if (object?.availability === "partial") return "Partial capture";
+  if (Boolean(typeof object?.text === "string" && object.text.trim()) || object?.hasMedia === true) return "Captured evidence";
+  return "Content not captured";
+}
 export function normalizeContentContextUpScrollMode(value) {
   return value === CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE
     ? CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE

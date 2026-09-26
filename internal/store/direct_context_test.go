@@ -21,7 +21,7 @@ func TestDirectContextWithoutLexicalTermsRefreshesEvidenceAndRejectsSelf(t *test
 	s := openTestStore(t)
 	id := insertContentContextTimelineFixture(t, s, false)
 	own := "https://x.com/owner/status/12345"
-	relation := domain.DirectContext{Kind: "quotes", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "post", Permalink: "https://x.com/other/status/67890", Text: "Quote evidence", Availability: "captured"}}
+	relation := domain.DirectContext{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", Permalink: "https://x.com/other/status/67890", Text: "Reply target evidence", Availability: "captured"}}
 	b := domain.Block{Permalink: own, DirectContext: []domain.DirectContext{relation, relation}}
 	self := relation
 	self.Target.Permalink = "https://x.com/i/status/12345"
@@ -31,13 +31,13 @@ func TestDirectContextWithoutLexicalTermsRefreshesEvidenceAndRejectsSelf(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.DirectContext) != 1 || result.DirectContext[0].Target.Text != "Quote evidence" || len(result.Matches) != 0 {
+	if len(result.DirectContext) != 1 || result.DirectContext[0].Target.Text != "Reply target evidence" || len(result.Matches) != 0 {
 		t.Fatalf("%+v", result)
 	}
-	b.DirectContext[0].Target.Text = "Updated quote"
+	b.DirectContext[0].Target.Text = "Updated reply target"
 	directFixture(t, s, id, b)
 	next, err := s.ContentContext(ctx, id, 3)
-	if err != nil || next.DirectContext[0].Target.Text != "Updated quote" {
+	if err != nil || next.DirectContext[0].Target.Text != "Updated reply target" {
 		t.Fatalf("%+v %v", next, err)
 	}
 }
@@ -188,7 +188,7 @@ func TestDirectContextDoesNotReadRunningOrPreparedObservations(t *testing.T) {
 	if _, err = s.ClaimCommand(ctx, runs[0].ID, "context-test"); err != nil {
 		t.Fatal(err)
 	}
-	block.DirectContext = []domain.DirectContext{{Kind: "quotes", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "post", ID: "67890", Text: "Hidden body", Availability: "captured"}}}
+	block.DirectContext = []domain.DirectContext{{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "67890", Text: "Hidden body", Availability: "captured"}}}
 	if err = s.SaveObservation(ctx, command.ID, runs[0].ID, domain.Observation{Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}, Coverage: map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -216,13 +216,34 @@ func TestDirectContextDoesNotReadRunningOrPreparedObservations(t *testing.T) {
 	}
 }
 
-func TestDirectContextKeepsLegacyQuoteAlongsideTypedReply(t *testing.T) {
+func TestDirectContextExcludesXQuotesButRetainsTimelineEvidence(t *testing.T) {
 	s := openTestStore(t)
+	ctx := context.Background()
 	id := insertContentContextTimelineFixture(t, s, false)
-	b := domain.Block{Permalink: "https://x.com/owner/status/12345", QuotedPost: map[string]any{"text": "Legacy quote", "permalink": "https://x.com/quote/status/67890"}, DirectContext: []domain.DirectContext{{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "99999", Availability: "reference_only"}}}}
+	reply := domain.DirectContext{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "99999", Availability: "reference_only"}}
+	typedQuote := domain.DirectContext{Kind: "quotes", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "post", ID: "67890", Text: "Typed quote capture", Availability: "captured"}}
+	b := domain.Block{
+		Permalink:     "https://x.com/owner/status/12345",
+		QuotedPost:    map[string]any{"text": "Legacy inline quote", "permalink": "https://x.com/quote/status/67890"},
+		DirectContext: []domain.DirectContext{typedQuote, reply},
+	}
 	directFixture(t, s, id, b)
-	result, err := s.ContentContext(context.Background(), id, 3)
-	if err != nil || len(result.DirectContext) != 2 {
-		t.Fatalf("%+v %v", result, err)
+
+	result, err := s.ContentContext(ctx, id, 3)
+	if err != nil || len(result.DirectContext) != 1 || result.DirectContext[0].Kind != "replies_to" {
+		t.Fatalf("quote leaked or reply missing: %+v %v", result, err)
+	}
+	item, err := s.TimelineItem(ctx, id)
+	if err != nil || item.Evidence == nil || item.Evidence.QuotedPost["text"] != "Legacy inline quote" || len(item.Evidence.DirectContext) != 2 {
+		t.Fatalf("quote Timeline evidence changed: %+v %v", item.Evidence, err)
+	}
+
+	// Legacy snapshots may have only quotedPost; it must not be synthesized
+	// into Related Context, while the typed reply remains visible.
+	b.DirectContext = []domain.DirectContext{reply}
+	directFixture(t, s, id, b)
+	result, err = s.ContentContext(ctx, id, 3)
+	if err != nil || len(result.DirectContext) != 1 || result.DirectContext[0].Kind != "replies_to" {
+		t.Fatalf("legacy quote leaked or reply missing: %+v %v", result, err)
 	}
 }

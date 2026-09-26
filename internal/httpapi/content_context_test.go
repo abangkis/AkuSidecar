@@ -179,8 +179,9 @@ func TestContentContextHTTPReturnsDirectEvidenceWithoutLexicalTerms(t *testing.T
 		t.Fatal(err)
 	}
 	key := "x:status:12345"
-	relation := domain.DirectContext{Kind: "quotes", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "post", ID: "67890", Permalink: "https://x.com/parent/status/67890", Text: "Captured source", Availability: "captured"}}
-	block := domain.Block{EvidenceKey: key, PlatformID: key, Permalink: "https://x.com/owner/status/12345", Text: "!", DirectContext: []domain.DirectContext{relation}}
+	quote := domain.DirectContext{Kind: "quotes", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "post", ID: "67890", Permalink: "https://x.com/parent/status/67890", Text: "Inline quote evidence", Availability: "captured"}}
+	reply := domain.DirectContext{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "99999", Permalink: "https://x.com/parent/status/99999", Text: "Captured reply target", Availability: "captured"}}
+	block := domain.Block{EvidenceKey: key, PlatformID: key, Permalink: "https://x.com/owner/status/12345", Text: "!", QuotedPost: map[string]any{"text": "Inline quote evidence", "permalink": "https://x.com/parent/status/67890"}, DirectContext: []domain.DirectContext{quote, reply}}
 	if err = state.SaveObservation(ctx, command.ID, run.ID, domain.Observation{Source: run.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}, Coverage: map[string]any{"status": "complete"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +202,11 @@ func TestContentContextHTTPReturnsDirectEvidenceWithoutLexicalTerms(t *testing.T
 	if err = json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.DirectContext) != 1 || result.DirectContext[0].Target.Text != "Captured source" || len(result.Matches) != 0 || len(result.TopicInsights) != 0 {
-		t.Fatalf("%+v", result)
+	if len(result.DirectContext) != 1 || result.DirectContext[0].Kind != "replies_to" || result.DirectContext[0].Target.Text != "Captured reply target" || len(result.Matches) != 0 || len(result.TopicInsights) != 0 {
+		t.Fatalf("quote leaked or reply missing: %+v", result)
+	}
+	timelineItem, timelineErr := state.TimelineItem(ctx, "direct-http")
+	if timelineErr != nil || timelineItem.Evidence == nil || timelineItem.Evidence.QuotedPost["text"] != "Inline quote evidence" || len(timelineItem.Evidence.DirectContext) != 2 {
+		t.Fatalf("quote capture not retained on Timeline: %+v %v", timelineItem.Evidence, timelineErr)
 	}
 }

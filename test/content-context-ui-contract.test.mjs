@@ -6,12 +6,11 @@ const app = fs.readFileSync(new URL("../internal/httpapi/web/app.js", import.met
 const index = fs.readFileSync(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
 const state = fs.readFileSync(new URL("../internal/httpapi/web/timeline-content-context-state.js", import.meta.url), "utf8");
 const styles = fs.readFileSync(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
+const ui = fs.readFileSync(new URL("../internal/httpapi/web/timeline-content-context-ui.js", import.meta.url), "utf8");
 
 test("Timeline Content Context is explicit, lazy, bounded, and accessible", () => {
   for (const marker of [
     "timeline-content-context-state.js",
-    "timeline-content-context-tab",
-    "Related context",
     "timeline-content-context-drawer",
     "timeline-content-context-close",
     "timeline-content-context-expand",
@@ -31,7 +30,6 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "contentContextUpScrollMode",
     "timelineContentContextOverlapsBackToTop",
     "backToTopBoundaryBottom",
-    "aria-controls",
     "Loading captured and local context",
     "No related local context found.",
     "timeline-content-context-reason",
@@ -46,6 +44,8 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "Undo",
     "buildTimelineContentContextPath(entry.id)",
   ]) assert.match(app, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `app missing ${marker}`);
+  assert.match(ui, /timeline-content-context-tab/);
+  assert.match(ui, /Related context/);
   assert.match(app, /Current supported understanding/);
   assert.match(app, /function openTimelineContentContext\([\s\S]*?const pending = beginTimelineContentContextLookup\([\s\S]*?revealTimelineContentContextDrawer/);
   assert.doesNotMatch(app, /current\?\.status === "success" \|\| current\?\.status === "loading"/);
@@ -73,7 +73,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /tab\.dataset\.timelineContentContextId = entry\.id/);
   assert.match(app, /id === visibleID/);
   assert.match(app, /timelineContentContextViewportID/);
-  assert.match(app, /tab\.setAttribute\("aria-controls", "timeline-content-context-drawer"\)/);
+  assert.match(ui, /tab\.setAttribute\("aria-controls", "timeline-content-context-drawer"\)/);
   assert.doesNotMatch(index, /Find related context/);
   assert.match(styles, /\.timeline-content-context/);
   assert.match(styles, /\.timeline-content-context-match\.is-feedback-not-relevant/);

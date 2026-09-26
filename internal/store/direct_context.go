@@ -38,38 +38,13 @@ func (s *Store) directContext(ctx context.Context, item domain.TimelineItem) ([]
 	if err != nil {
 		return nil, err
 	}
-	// Legacy quotes contain actual nested evidence. Legacy reply URLs were not
-	// verified, so they must never become structural edges by backfill.
-	hasQuote := false
-	for _, value := range values {
-		if value.Kind == "quotes" {
-			hasQuote = true
-			break
-		}
-	}
-	if !hasQuote && item.Source == domain.SourceX && len(block.QuotedPost) > 0 {
-		q := block.QuotedPost
-		text, _ := q["text"].(string)
-		author, _ := q["author"].(string)
-		permalink, _ := q["permalink"].(string)
-		if len([]rune(text)) > 4000 {
-			text = string([]rune(text)[:4000])
-		}
-		if len([]rune(author)) > 300 {
-			author = string([]rune(author)[:300])
-		}
-		media := false
-		if list, ok := q["media"].([]any); ok {
-			media = len(list) > 0
-		}
-		availability := "reference_only"
-		if text != "" || media {
-			availability = "captured"
-		}
-		values = append(values, domain.DirectContext{Kind: "quotes", Provenance: "legacy_capture", Target: domain.ContextObject{Kind: "post", Permalink: permalink, Author: author, Text: text, HasMedia: media, Availability: availability}})
-	}
+	// X quote evidence stays on the Timeline Block for inline display, but the
+	// Related Context projection omits quote relations and legacy quotedPost.
 	values = domain.MergeDirectContext(nil, values)
 	for _, value := range values {
+		if item.Source == domain.SourceX && value.Kind == "quotes" {
+			continue
+		}
 		if domain.ValidateDirectContext(item.Source, []domain.DirectContext{value}) != nil {
 			continue
 		}
