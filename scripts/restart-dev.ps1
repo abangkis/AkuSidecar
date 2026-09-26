@@ -18,7 +18,6 @@ $targetProvenance = "$target.runtime-state.json"
 $candidateProvenance = "$candidate.runtime-state.json"
 $supervisor = Join-Path $workspaceRoot 'AkuSupervisor\target\dev\aku-supervisor.exe'
 $captureSplitFlag = '--windows-capture-split'
-$legacyCaptureSplitFlag = '--experimental-windows-capture-split'
 $uiChromiumPathFlag = '--ui-chromium-path'
 $pinnedUIChromium = Join-Path $repoRoot 'runtime\chromium\bin\chrome.exe'
 
@@ -57,7 +56,6 @@ function Enable-WindowsCaptureSplit {
         }
         if ($argument -eq $uiChromiumPathFlag) { $skipUIPathValue = $true; continue }
         if ($argument.StartsWith("$uiChromiumPathFlag=")) { continue }
-        if ($argument -eq $legacyCaptureSplitFlag) { continue }
         if ($argument -eq $captureSplitFlag) {
             if (-not $flagSeen) {
                 $nextArguments.Add($argument)
@@ -95,7 +93,7 @@ function Enable-WindowsCaptureSplit {
 
     $verified = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
     $verifiedArguments = @($verified.services.akusidecar.args | ForEach-Object { [string] $_ })
-    if (@($verifiedArguments | Where-Object { $_ -eq $captureSplitFlag }).Count -ne 1 -or $verifiedArguments -contains $legacyCaptureSplitFlag) {
+    if (@($verifiedArguments | Where-Object { $_ -eq $captureSplitFlag }).Count -ne 1) {
         throw "AkuSupervisor did not retain exactly one $captureSplitFlag argument."
     }
     $uiIndex = [Array]::IndexOf($verifiedArguments, $uiChromiumPathFlag)

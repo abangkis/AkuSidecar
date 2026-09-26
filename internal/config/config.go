@@ -457,32 +457,31 @@ type BridgeConfig struct {
 }
 
 type Options struct {
-	DatabaseInspect                 bool
-	DatabaseAction                  string
-	DatabaseConfirm                 bool
-	DatabaseExpectedFingerprint     string
-	ConfigPath                      string
-	CodexPath                       string
-	DatabasePath                    string
-	Provider                        string
-	Port                            int
-	Dev                             bool
-	DiscoverCodex                   bool
-	DiscoverChromium                bool
-	AppShell                        bool
-	ExperimentalWindowsCaptureSplit bool
-	WindowsCaptureSplit             bool
-	ChromiumPath                    string
-	UIChromiumPath                  string
-	BridgeExtensionPath             string
-	BrowserProfilePath              string
-	AppUserModelID                  string
-	AppRelaunchCommand              string
-	AppRelaunchDisplayName          string
-	RuntimeControlToken             string
-	RuntimeCandidateProbe           bool
-	RuntimeCandidateProbeSchema     int
-	BridgeExtensionOrigin           string
+	DatabaseInspect             bool
+	DatabaseAction              string
+	DatabaseConfirm             bool
+	DatabaseExpectedFingerprint string
+	ConfigPath                  string
+	CodexPath                   string
+	DatabasePath                string
+	Provider                    string
+	Port                        int
+	Dev                         bool
+	DiscoverCodex               bool
+	DiscoverChromium            bool
+	AppShell                    bool
+	WindowsCaptureSplit         bool
+	ChromiumPath                string
+	UIChromiumPath              string
+	BridgeExtensionPath         string
+	BrowserProfilePath          string
+	AppUserModelID              string
+	AppRelaunchCommand          string
+	AppRelaunchDisplayName      string
+	RuntimeControlToken         string
+	RuntimeCandidateProbe       bool
+	RuntimeCandidateProbeSchema int
+	BridgeExtensionOrigin       string
 }
 
 func ParseFlags() Options {
@@ -500,7 +499,6 @@ func ParseFlags() Options {
 	flag.BoolVar(&options.DiscoverCodex, "discover-codex", false, "discover and validate a Codex App Server executable, print JSON, and exit")
 	flag.BoolVar(&options.DiscoverChromium, "discover-chromium", false, "discover and validate a pinned-Chromium executable, print JSON, and exit")
 	flag.BoolVar(&options.AppShell, "app-shell", false, "open the embedded pinned-Chromium application window after startup")
-	flag.BoolVar(&options.ExperimentalWindowsCaptureSplit, "experimental-windows-capture-split", os.Getenv("AKUBROWSER_EXPERIMENTAL_WINDOWS_CAPTURE_SPLIT") == "1", "compatibility alias for Windows capture split")
 	flag.BoolVar(&options.WindowsCaptureSplit, "windows-capture-split", false, "separate Windows app-shell UI and capture Chromium processes")
 	flag.StringVar(&options.ChromiumPath, "chromium-path", "", "override pinned-Chromium executable for this process")
 	flag.StringVar(&options.UIChromiumPath, "ui-chromium-path", "", "Windows capture split only: pinned Chrome for Testing UI executable; never changes the capture browser")

@@ -111,7 +111,7 @@ process. The UI gets a separate `-ui-split-cft` profile, leaving the former
 `-ui-split` directory intact and avoiding a branded-Chrome-to-CfT downgrade.
 No cookies, source profiles or login data are copied.
 
-`--ui-chromium-path` is accepted only in Windows experimental split mode.
+`--ui-chromium-path` is accepted only in Windows app-shell split mode.
 Installed builds default to sibling `chromium/bin/chrome.exe`; development
 restart configuration explicitly selects `runtime/chromium/bin/chrome.exe`
 without changing capture arguments. Startup fails closed unless `pin.json`
