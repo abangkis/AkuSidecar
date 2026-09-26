@@ -183,7 +183,7 @@ func (s *Store) matchLivingTopicKnowledge(ctx context.Context, query contentcont
 	if topicLimit > 2 {
 		topicLimit = 2
 	}
-	matches := contentContextEngine.Match(query, candidates, len(candidates))
+	matches := contentContextEngine.MatchAll(query, candidates)
 	maxIdentity := 0
 	for _, match := range matches {
 		if identityScores[match.Item.ID] > maxIdentity {

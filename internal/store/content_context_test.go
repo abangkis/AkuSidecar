@@ -202,6 +202,62 @@ func TestContentContextSurfacesOnlyCurrentSupportedLivingTopicKnowledge(t *testi
 	}
 }
 
+func TestLivingTopicKnowledgeRanksMoreThanFiveCandidatesBeforeApplyingIdentityGate(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID := insertContentContextTimelineFixture(t, state, false)
+	var exactID string
+	for index := 0; index < 6; index++ {
+		name := fmt.Sprintf("Quantum Systems %d", index)
+		if index == 0 {
+			name = "Quantum Systems"
+		}
+		topic, err := state.CreateLivingTopic(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			exactID = topic.ID
+		}
+		evidence, err := state.CreateMemoryRecallStub(ctx, libraryInput(
+			fmt.Sprintf("topic-insight-many-%d", index), domain.SourceLinkedIn,
+			name+" evidence", "A supported quantum systems result", "2026-08-29T00:00:00Z",
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.AddLivingTopicMember(ctx, topic.ID, evidence.ID); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := state.SaveLivingTopicSnapshot(ctx, domain.LivingTopicSnapshot{
+			TopicID: topic.ID, Status: "ready", Overview: "Quantum systems research has a source-backed result.",
+			Claims:      []domain.LivingTopicClaim{{Text: "The quantum systems result is supported.", Assessment: "supported", TemporalStatus: "current", EventStatus: "ongoing", EvidenceIDs: []string{evidence.ID}}},
+			EvidenceIDs: []string{evidence.ID}, InputDigest: fmt.Sprintf("topic-insight-many-digest-%d", index),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.db.ExecContext(ctx, `UPDATE living_topics SET understanding_status='current',understanding_input_digest=? WHERE id=?`, snapshot.InputDigest, topic.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	contextResult, err := state.ContentContext(ctx, timelineID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contextResult.TopicInsights) != 1 || contextResult.TopicInsights[0].TopicID != exactID {
+		t.Fatalf("Related Context should retain the exact topic among six candidates: %+v", contextResult.TopicInsights)
+	}
+	libraryResult, err := state.SearchLivingTopicKnowledge(ctx, "Quantum Systems", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(libraryResult) != 1 || libraryResult[0].TopicID != exactID {
+		t.Fatalf("Library search should retain the exact topic among six candidates: %+v", libraryResult)
+	}
+}
+
 func TestLibrarySearchUsesCurrentSupportedLivingTopicKnowledgeReadOnly(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

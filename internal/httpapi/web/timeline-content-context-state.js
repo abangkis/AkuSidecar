@@ -197,6 +197,20 @@ export function buildTimelineContentContextPath(id, limit = CONTENT_CONTEXT_DEFA
   return `/api/timeline/${encodeURIComponent(normalized)}/content-context?limit=${bounded}`;
 }
 
+// A drawer opening starts a fresh local lookup. The pending object also fences
+// responses from an earlier opening of the same post.
+export function beginTimelineContentContextLookup(cache, id) {
+  const pending = { status: "loading", matches: [], topicInsights: [], feedbackDirty: false };
+  cache.set(id, pending);
+  return pending;
+}
+
+export function settleTimelineContentContextLookup(cache, id, pending, result) {
+  if (cache.get(id) !== pending) return false;
+  cache.set(id, result);
+  return true;
+}
+
 export function buildTimelineContentContextFeedbackPath(id) {
   const normalized = String(id ?? "").trim();
   return normalized ? `/api/timeline/${encodeURIComponent(normalized)}/content-context-feedback` : "";

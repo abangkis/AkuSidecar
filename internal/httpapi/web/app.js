@@ -70,6 +70,7 @@ import {
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
 import {
   backToTopBoundaryBottom,
+  beginTimelineContentContextLookup,
   buildContentContextFeedbackUndoPath,
   buildTimelineContentContextPath,
   buildTimelineContentContextFeedbackPath,
@@ -81,6 +82,7 @@ import {
   contentContextPostPassedReadingExitLine,
   contentContextPostPassedViewportBottom,
   selectContentContextViewportID,
+  settleTimelineContentContextLookup,
   contentContextShouldCloseOnScroll,
   CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
   CONTENT_CONTEXT_MAX_LIMIT,
@@ -8274,30 +8276,27 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
     state.timelineContentContext.delete(previousID);
   }
   state.timelineContentContextActiveID = entry.id;
-  const current = state.timelineContentContext.get(entry.id);
+  const pending = beginTimelineContentContextLookup(state.timelineContentContext, entry.id);
   revealTimelineContentContextDrawer({ focus });
-  if (current?.status === "success" || current?.status === "loading") return;
-  state.timelineContentContext.set(entry.id, { status: "loading", matches: [], topicInsights: [], feedbackDirty: false });
-  renderTimelineContentContextDrawer();
   void api(buildTimelineContentContextPath(entry.id)).then((payload) => {
-    state.timelineContentContext.set(entry.id, {
+    if (!settleTimelineContentContextLookup(state.timelineContentContext, entry.id, pending, {
       status: "success",
       matches: Array.isArray(payload?.matches) ? payload.matches : [],
       topicInsights: Array.isArray(payload?.topicInsights) ? payload.topicInsights : [],
       feedbackDirty: false,
-    });
+    })) return;
     if (state.timelineContentContextActiveID === entry.id) {
       renderTimelineContentContextDrawer();
       scheduleTimelineContentContextPosition();
     }
   }).catch((error) => {
-    state.timelineContentContext.set(entry.id, {
+    if (!settleTimelineContentContextLookup(state.timelineContentContext, entry.id, pending, {
       status: "error",
       message: error.message || String(error),
       matches: [],
       topicInsights: [],
       feedbackDirty: false,
-    });
+    })) return;
     if (state.timelineContentContextActiveID === entry.id) {
       renderTimelineContentContextDrawer();
       scheduleTimelineContentContextPosition();

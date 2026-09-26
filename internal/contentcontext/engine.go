@@ -168,6 +168,19 @@ func (e Engine) Match(query Query, candidates []Candidate, limit int) []domain.C
 	if limit < domain.ContentContextMinLimit || limit > domain.ContentContextMaxLimit {
 		return []domain.ContentContextMatch{}
 	}
+	return e.match(query, candidates, limit)
+}
+
+// MatchAll ranks every admitted candidate for internal callers that need to
+// apply a second precision gate before choosing their public result limit.
+func (e Engine) MatchAll(query Query, candidates []Candidate) []domain.ContentContextMatch {
+	return e.match(query, candidates, len(candidates))
+}
+
+func (e Engine) match(query Query, candidates []Candidate, limit int) []domain.ContentContextMatch {
+	if limit == 0 {
+		return []domain.ContentContextMatch{}
+	}
 	queryTerms := uniqueTerms(query.Terms)
 	queryAnchors := uniqueTerms(query.Anchors)
 	queryPhrases := uniqueTerms(query.Phrases)

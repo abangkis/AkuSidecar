@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   backToTopBoundaryBottom,
+  beginTimelineContentContextLookup,
   CONTENT_CONTEXT_DEFAULT_LIMIT,
   CONTENT_CONTEXT_MAX_LIMIT,
   CONTENT_CONTEXT_READING_EXIT_RATIO,
@@ -15,6 +16,7 @@ import {
   contentContextPostPassedViewportBottom,
   contentContextShouldCloseOnScroll,
   selectContentContextViewportID,
+  settleTimelineContentContextLookup,
   CONTENT_CONTEXT_UP_SCROLL_MODE_CLOSE_OFFSCREEN,
   CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE,
   CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
@@ -44,6 +46,26 @@ test("Content Context stays explicit, encoded, and bounded", () => {
     buildContentContextFeedbackUndoPath("feedback/one"),
     "/api/content-context-feedback/feedback%2Fone/undo",
   );
+});
+
+test("reopening Related Context refetches and ignores an older response", () => {
+  const cache = new Map();
+  const first = beginTimelineContentContextLookup(cache, "post-one");
+  assert.equal(settleTimelineContentContextLookup(cache, "post-one", first, {
+    status: "success", topicInsights: [{ topicName: "Old understanding" }],
+  }), true);
+
+  const reopened = beginTimelineContentContextLookup(cache, "post-one");
+  assert.equal(cache.get("post-one"), reopened);
+  assert.equal(reopened.status, "loading");
+  assert.deepEqual(reopened.topicInsights, []);
+  assert.equal(settleTimelineContentContextLookup(cache, "post-one", first, {
+    status: "success", topicInsights: [{ topicName: "Stale response" }],
+  }), false);
+  assert.equal(settleTimelineContentContextLookup(cache, "post-one", reopened, {
+    status: "success", topicInsights: [{ topicName: "Current understanding" }],
+  }), true);
+  assert.equal(cache.get("post-one").topicInsights[0].topicName, "Current understanding");
 });
 
 test("Content Context uses an item anchor to choose the responsive drawer mode", () => {
