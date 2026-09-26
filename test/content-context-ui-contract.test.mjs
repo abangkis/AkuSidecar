@@ -32,7 +32,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "timelineContentContextOverlapsBackToTop",
     "backToTopBoundaryBottom",
     "aria-controls",
-    "Searching local Personal Memory",
+    "Loading captured and local context",
     "No related local context found.",
     "timeline-content-context-reason",
     "timeline-content-context-feedback",

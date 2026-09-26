@@ -193,6 +193,7 @@ func mergeBlock(previous, current domain.Block) domain.Block {
 	result.Engagement = mergeMaps(previous.Engagement, current.Engagement)
 	result.Presentation = mergeMaps(previous.Presentation, current.Presentation)
 	result.QuotedPost = mergeMaps(previous.QuotedPost, current.QuotedPost)
+	result.DirectContext = domain.MergeDirectContext(previous.DirectContext, current.DirectContext)
 	result.CaptureQuality = mergeMaps(previous.CaptureQuality, current.CaptureQuality)
 	result.Attachments = mergeAttachments(previous.Attachments, current.Attachments)
 	if len(previous.Media) > len(current.Media) {

@@ -69,8 +69,12 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 	if err := tx.Commit(); err != nil {
 		return domain.ContentContextResult{}, fmt.Errorf("commit content context read snapshot: %w", err)
 	}
+	direct, err := s.directContext(ctx, timeline)
+	if err != nil {
+		return domain.ContentContextResult{}, err
+	}
 	if len(query.Terms) == 0 {
-		return domain.ContentContextResult{Matches: []domain.ContentContextMatch{}, TopicInsights: []domain.ContentContextTopicInsight{}}, nil
+		return domain.ContentContextResult{DirectContext: direct, Matches: []domain.ContentContextMatch{}, TopicInsights: []domain.ContentContextTopicInsight{}}, nil
 	}
 
 	items, err := s.searchMemoryContextCandidates(ctx, query.Terms, contentContextEngine.CandidatePool)
@@ -98,7 +102,7 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 	if err != nil {
 		return domain.ContentContextResult{}, err
 	}
-	return domain.ContentContextResult{Matches: contentContextEngine.Match(query, candidates, limit), TopicInsights: topicInsights}, nil
+	return domain.ContentContextResult{DirectContext: direct, Matches: contentContextEngine.Match(query, candidates, limit), TopicInsights: topicInsights}, nil
 }
 
 func (s *Store) livingTopicContentContextInsights(ctx context.Context, query contentcontext.Query, limit int) ([]domain.ContentContextTopicInsight, error) {

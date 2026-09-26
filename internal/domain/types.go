@@ -1287,6 +1287,7 @@ type Block struct {
 	RelationshipType string           `json:"relationshipType"`
 	ParentPermalink  string           `json:"parentPermalink"`
 	QuotedPost       map[string]any   `json:"quotedPost"`
+	DirectContext    []DirectContext  `json:"directContext,omitempty"`
 	Engagement       map[string]any   `json:"engagement"`
 	Presentation     map[string]any   `json:"presentation"`
 	Attachments      []Attachment     `json:"attachments"`

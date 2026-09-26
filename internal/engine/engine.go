@@ -1157,6 +1157,9 @@ func validateObservation(value domain.Observation) error {
 					return errors.New("captured block permalink is not a canonical native source URL")
 				}
 			}
+			if err := domain.ValidateDirectContext(value.Source, block.DirectContext); err != nil {
+				return err
+			}
 			if len(block.Attachments) > 3 {
 				return errors.New("captured block exceeds the attachment limit")
 			}

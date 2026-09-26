@@ -1181,3 +1181,12 @@ h3 { letter-spacing: -0.02em; }
 @media (prefers-reduced-motion: reduce) {
   .back-to-top, .timeline-side-pane, .timeline-side-pane-toggle, .timeline-content-context-tab, .timeline-content-context-drawer { transition: none; }
 }
+
+.timeline-direct-context-object {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.timeline-direct-context-object p { margin: 0; white-space: pre-wrap; }
+.timeline-direct-context-object + .timeline-direct-context-object { border-top: 1px solid var(--line); }

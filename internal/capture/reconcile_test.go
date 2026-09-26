@@ -137,3 +137,24 @@ func TestReconcileSnapshotsIgnoresEstimatedTimestampDrift(t *testing.T) {
 		}
 	}
 }
+
+func TestReconcileSnapshotsPreservesDistinctInteractionActors(t *testing.T) {
+	relation := func(actor string) domain.DirectContext {
+		return domain.DirectContext{Kind: "feed_comment", ActorURL: "https://www.linkedin.com/in/" + actor, Provenance: "observed_dom", Target: domain.ContextObject{Kind: "comment", Availability: "reference_only"}}
+	}
+	block := domain.Block{EvidenceKey: "linkedin:activity:1234567", PlatformID: "linkedin:activity:1234567", Permalink: "https://www.linkedin.com/feed/update/urn:li:activity:1234567", Text: strings.Repeat("Same substantial captured post body. ", 4), Author: "Owner", DirectContext: []domain.DirectContext{relation("alice")}}
+	next := block
+	next.DirectContext = []domain.DirectContext{relation("bob")}
+	snapshots := ReconcileSnapshots(domain.SourceLinkedIn, []domain.Snapshot{{Blocks: []domain.Block{block}}, {Blocks: []domain.Block{next}}})
+	found := false
+	for _, snapshot := range snapshots {
+		for _, b := range snapshot.Blocks {
+			if len(b.DirectContext) == 2 {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("actor observations lost: %+v", snapshots)
+	}
+}

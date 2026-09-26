@@ -710,7 +710,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		for _, insight := range result.TopicInsights {
 			topicInsights = append(topicInsights, publicContentContextTopicInsight(insight))
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches, "topicInsights": topicInsights})
+		direct := result.DirectContext
+		if direct == nil {
+			direct = []domain.DirectContext{}
+		}
+		if len(direct) > domain.DirectContextLimit {
+			direct = direct[:domain.DirectContextLimit]
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches, "topicInsights": topicInsights, "directContext": direct})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/content-context-feedback"):
 		id := path.Base(strings.TrimSuffix(p, "/content-context-feedback"))
 		var body domain.ContentContextFeedbackInput

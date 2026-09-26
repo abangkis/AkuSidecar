@@ -37,6 +37,7 @@ type ContentContextMatch struct {
 }
 
 type ContentContextResult struct {
+	DirectContext []DirectContext              `json:"directContext"`
 	Matches       []ContentContextMatch        `json:"matches"`
 	TopicInsights []ContentContextTopicInsight `json:"topicInsights"`
 }

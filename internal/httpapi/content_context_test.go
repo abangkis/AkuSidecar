@@ -157,3 +157,51 @@ func TestContentContextHTTPReturnsBoundedPublicMatchReasonAndProjection(t *testi
 		t.Fatalf("undo status=%d body=%s", undoResponse.Code, undoResponse.Body.String())
 	}
 }
+
+func TestContentContextHTTPReturnsDirectEvidenceWithoutLexicalTerms(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	session, err := state.CreateUpdateSession(ctx, "direct HTTP fixture", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session.Runs[0]
+	command, err := state.StartRun(ctx, run.ID, map[string]any{"source": run.Source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = state.ClaimCommand(ctx, run.ID, "direct-context-test"); err != nil {
+		t.Fatal(err)
+	}
+	key := "x:status:12345"
+	relation := domain.DirectContext{Kind: "quotes", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "post", ID: "67890", Permalink: "https://x.com/parent/status/67890", Text: "Captured source", Availability: "captured"}}
+	block := domain.Block{EvidenceKey: key, PlatformID: key, Permalink: "https://x.com/owner/status/12345", Text: "!", DirectContext: []domain.DirectContext{relation}}
+	if err = state.SaveObservation(ctx, command.ID, run.ID, domain.Observation{Source: run.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}, Coverage: map[string]any{"status": "complete"}}); err != nil {
+		t.Fatal(err)
+	}
+	item := domain.ReasonedItem{EvidenceKey: key, Source: run.Source, SourceURL: block.Permalink}
+	assessment := domain.CandidateAssessment{EvidenceKey: key}
+	if err = state.CompleteRun(ctx, run, domain.ReasoningResult{Items: []domain.ReasonedItem{item}}, []store.ScoredAssessment{{Assessment: assessment, Selected: true}}, []domain.TimelineItem{{ID: "direct-http", SessionID: session.ID, RunID: run.ID, Source: run.Source, EvidenceKey: key, Item: item}}, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = state.FinalizeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/timeline/direct-http/content-context", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d %s", response.Code, response.Body.String())
+	}
+	var result domain.ContentContextResult
+	if err = json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DirectContext) != 1 || result.DirectContext[0].Target.Text != "Captured source" || len(result.Matches) != 0 || len(result.TopicInsights) != 0 {
+		t.Fatalf("%+v", result)
+	}
+}

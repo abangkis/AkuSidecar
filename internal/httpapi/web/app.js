@@ -8031,7 +8031,7 @@ function syncTimelineContentContextTabs() {
         tabWidth: tabRect.width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
       });
     tab.setAttribute("aria-expanded", String(active));
-    tab.title = active ? "Close related context" : "Related context from local Personal Memory";
+    tab.title = active ? "Close related context" : "Conversation, interaction, and local context";
     tab.classList.toggle("is-visible", Boolean(fits));
     tab.classList.toggle("is-retracting", !fits);
   }
@@ -8160,6 +8160,44 @@ function renderTimelineContentContextTopicInsight(insight) {
   return article;
 }
 
+function renderDirectContext(relation, source) {
+  const article = document.createElement("article");
+  article.className = "timeline-content-context-match timeline-direct-context";
+  const title = document.createElement("strong");
+  title.textContent = ({ quotes: "Quoted post", replies_to: "Replying to", feed_comment: "Comment shown by LinkedIn", feed_reply: "Reply shown by LinkedIn" })[relation.kind] || "Conversation context";
+  article.append(title);
+  if (relation.observedText) {
+    const observed = document.createElement("p");
+    observed.textContent = `Platform label: ${relation.observedText}`;
+    article.append(observed);
+  }
+  const appendObject = (object, label) => {
+    if (!object) return;
+    const box = document.createElement("div");
+    box.className = "timeline-direct-context-object";
+    const heading = document.createElement("strong");
+    heading.textContent = [label, object.author].filter(Boolean).join(" · ");
+    box.append(heading);
+    const text = document.createElement("p");
+    text.textContent = object.text || (object.hasMedia ? "Media captured with this post." : "Content not captured. The referenced content may still be available at the source.");
+    box.append(text);
+    const url = safeSourceUrl(object.permalink, source);
+    if (url) { const link = document.createElement("a"); link.className = "source-link"; link.href = url; configureNativePostLink(link, url, source); link.textContent = "Open source"; box.append(link); }
+    const meta = document.createElement("small");
+    meta.textContent = [object.availability === "reference_only" ? "Reference only" : object.availability === "partial" ? "Partial capture" : "Captured evidence",
+      object.evidenceOrigin === "local_timeline" ? "Retained Timeline" : object.evidenceOrigin === "local_memory" ? "Local full copy" : "Source capture",
+      object.capturedAt ? `captured ${formatDate(object.capturedAt)}` : null].filter(Boolean).join(" · ");
+    box.append(meta); article.append(box);
+  };
+  appendObject(relation.parent, "Parent comment");
+  appendObject(relation.target, relation.kind === "feed_reply" ? "Reply" : relation.kind === "feed_comment" ? "Comment" : "Post");
+  if (relation.kind === "feed_reply" && !relation.parent) {
+    const missing = document.createElement("small"); missing.textContent = "Parent comment not captured."; article.append(missing);
+  }
+  if (relation.capturedAt) { const time = document.createElement("small"); time.textContent = `Observed ${formatDate(relation.capturedAt)}`; article.append(time); }
+  return article;
+}
+
 function renderTimelineContentContextDrawer() {
   const body = $("#timeline-content-context-body");
   if (!body) return;
@@ -8168,7 +8206,7 @@ function renderTimelineContentContextDrawer() {
   body.replaceChildren();
   body.setAttribute("role", current.status === "error" ? "alert" : "status");
   if (current.status === "loading") {
-    body.textContent = "Searching local Personal Memory…";
+    body.textContent = "Loading captured and local context…";
     return;
   }
   if (current.status === "error") {
@@ -8177,9 +8215,16 @@ function renderTimelineContentContextDrawer() {
   }
   const matches = Array.isArray(current.matches) ? current.matches.slice(0, CONTENT_CONTEXT_MAX_LIMIT) : [];
   const topicInsights = Array.isArray(current.topicInsights) ? current.topicInsights.slice(0, 2) : [];
-  if (!matches.length && !topicInsights.length) {
+  const directContext = Array.isArray(current.directContext) ? current.directContext.slice(0, 8) : [];
+  if (!directContext.length && !matches.length && !topicInsights.length) {
     body.textContent = "No related local context found.";
     return;
+  }
+  if (directContext.length) {
+    const heading = document.createElement("strong"); heading.textContent = "Conversation and interaction context";
+    const list = document.createElement("div"); list.className = "timeline-content-context-list";
+    list.append(...directContext.map((relation) => renderDirectContext(relation, current.source)));
+    body.append(heading, list);
   }
   if (topicInsights.length) {
     const topicHeading = document.createElement("strong");
@@ -8283,6 +8328,8 @@ function openTimelineContentContext(entry, { focus = true } = {}) {
       status: "success",
       matches: Array.isArray(payload?.matches) ? payload.matches : [],
       topicInsights: Array.isArray(payload?.topicInsights) ? payload.topicInsights : [],
+      directContext: Array.isArray(payload?.directContext) ? payload.directContext : [],
+      source: entry.source || entry.item?.source,
       feedbackDirty: false,
     })) return;
     if (state.timelineContentContextActiveID === entry.id) {
@@ -8536,7 +8583,7 @@ function buildTimelineContentContextAnchor(entry, item) {
   tab.setAttribute("aria-controls", "timeline-content-context-drawer");
   tab.setAttribute("aria-expanded", "false");
   tab.setAttribute("aria-label", "Related context");
-  tab.title = "Related context from local Personal Memory";
+  tab.title = "Conversation, interaction, and local context";
   tab.textContent = "Related context";
   tab.addEventListener("click", () => toggleTimelineContentContext(entry));
   anchor.append(item, tab);
