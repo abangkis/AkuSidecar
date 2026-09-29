@@ -27,7 +27,7 @@ function fixture(reply = { ok: true, result: {} }, lateDiagnostics = false, opti
   const listeners = new Map();
   let now = Date.now();
   const window = { dispatchEvent(event) { listeners.get(event.type)?.(event); }, addEventListener: (event, fn) => { listeners.set(event, fn); }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => { if (options.storageDenied) throw new Error("denied"); return stored.get(key) ?? null; }, setItem: (key, value) => stored.set(key, value) }, location: { origin, hash: options.startup ? "#aku-startup=" + "b".repeat(64) : "", href: origin + "/#aku-startup=" + "b".repeat(64), replace: (url) => { if (options.navigationDenied) throw new Error("denied"); reloads.push(url); } }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
+  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => { if (options.storageDenied) throw new Error("denied"); return stored.get(key) ?? null; }, setItem: (key, value) => stored.set(key, value) }, location: { origin, hash: options.startup ? "#aku-startup=" + "b".repeat(64) : "", href: origin + "/#aku-startup=" + "b".repeat(64), reload: () => { if (options.navigationDenied) throw new Error("denied"); reloads.push(context.location.href); } }, history: { state: null, replaceState: (_state, _title, url) => { if (options.historyDenied) throw new Error("denied"); context.location.href = url; } }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
     calls.push({ url, options });
     return { ok: true, status: 200, json: async () => url === "/api/bootstrap"
       ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
@@ -35,6 +35,9 @@ function fixture(reply = { ok: true, result: {} }, lateDiagnostics = false, opti
   if (!lateDiagnostics) vm.runInNewContext(diagnosticsScript, context);
   vm.runInNewContext(script, context);
   assert.equal(messages.shift().type, "AKU_BROWSER_READER_BROKER_PROBE");
+  // Model the independent startup watchdog stripping the launch fragment.
+  context.location.href = origin + "/";
+  context.location.hash = "";
   return { stored, reloads, loadDiagnostics: () => vm.runInNewContext(diagnosticsScript, context), calls, messages, timers, traces, window, advance: (ms) => { now += ms; }, read: () => window.akuNativePostDiagnostics.read(), send: (data, eventOrigin = origin) => listeners.get("message")({ source: window, origin: eventOrigin, data }) };
 }
 
@@ -159,5 +162,13 @@ test("failed startup navigation keeps manual recovery and the consumed retry mar
   f.advance(5001); f.timers.shift()();
   assert.equal(f.read().at(-1).phase, "broker_reload_failed");
   assert.equal(f.window.akuReaderBrokerStatus, "unavailable");
+  assert.equal(f.stored.get("akuReaderBrokerStartupReload.v1"), "attempted");
+});
+
+test("failed fragment restoration does not navigate or permit another retry", () => {
+  const f = fixture(undefined, false, { startup: true, historyDenied: true });
+  f.advance(5001); f.timers.shift()();
+  assert.equal(f.reloads.length, 0);
+  assert.equal(f.read().at(-1).phase, "broker_reload_failed");
   assert.equal(f.stored.get("akuReaderBrokerStartupReload.v1"), "attempted");
 });

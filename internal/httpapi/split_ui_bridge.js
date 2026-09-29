@@ -45,7 +45,13 @@
     } catch { return; }
     nativePostTrace("invalid", "broker_reload_attempt");
     // Same tab/window/profile; no native action or click is replayed.
-    try { location.replace(startupReloadURL); }
+    try {
+      // Restore the acknowledgement fragment without navigating, then explicitly
+      // reload. location.replace with only a fragment change keeps this document
+      // alive and cannot retry extension content-script injection.
+      history.replaceState(history.state, "", startupReloadURL);
+      location.reload();
+    }
     catch { nativePostTrace("invalid", "broker_reload_failed"); }
   };
   // Bounded availability handshake; this grants no native activation authority.
