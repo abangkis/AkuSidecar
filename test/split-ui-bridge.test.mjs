@@ -6,16 +6,16 @@ import vm from "node:vm";
 const script = fs.readFileSync(new URL("../internal/httpapi/split_ui_bridge.js", import.meta.url), "utf8");
 const origin = "http://127.0.0.1:11122";
 function fixture(reply = { ok: true, result: {} }) {
-  const calls = [], messages = [], timers = [];
+  const calls = [], messages = [], timers = [], traces = [];
   let listener;
   const window = { addEventListener: (_event, fn) => { listener = fn; }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  vm.runInNewContext(script, { window, location: { origin }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
+  vm.runInNewContext(script, { window, location: { origin }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
     calls.push({ url, options });
-    return { ok: true, json: async () => url === "/api/bootstrap"
+    return { ok: true, status: 200, json: async () => url === "/api/bootstrap"
       ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
   } });
   assert.equal(messages.shift().type, "AKU_BROWSER_READER_BROKER_PROBE");
-  return { calls, messages, timers, send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
+  return { calls, messages, timers, traces, send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
 }
 
 test("native post fails visibly without broker readiness or trusted-click correlation", async () => {
@@ -34,6 +34,10 @@ test("native post fails visibly without broker readiness or trusted-click correl
   await f.send(action);
   assert.equal(f.calls.length, 2);
   assert.equal(JSON.parse(f.calls[1].options.body).requestId, action.requestId);
+  const nativeTraces = f.traces.filter((entry) => entry.label === "native_post_trace");
+  assert.deepEqual(nativeTraces.slice(-4).map((entry) => entry.detail.phase), ["relay_received", "relay_bootstrap_done", "relay_request_start", "relay_request_end"]);
+  assert.ok(nativeTraces.every((entry) => entry.detail.trace === action.requestId || entry.detail.trace === "invalid"));
+  assert.ok(nativeTraces.every((entry) => !Object.hasOwn(entry.detail, "url")));
   const count = f.messages.length;
   f.timers[0]();
   assert.equal(f.messages.length, count, "readiness ends polling");

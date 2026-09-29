@@ -3,6 +3,9 @@
 // capture process. The separate UI reader broker handles only trusted clicks.
 (() => {
   const origin = location.origin;
+  const nativePostTrace = (requestId, phase, details = {}) => {
+    console.info("native_post_trace", { trace: requestId, phase, ...details });
+  };
   let readerBrokerReady = false;
   const readerBrokerDeadline = Date.now() + 5000;
   // Bounded availability handshake; this grants no native activation authority.
@@ -36,6 +39,9 @@
     }
     const operation = Object.hasOwn(operations, message.type) ? operations[message.type] : null;
     if (!operation) return;
+    const nativeStarted = operation[0] === "open_native_post" ? performance.now() : null;
+    const nativeTraceId = /^broker_[0-9a-f]{32}$/.test(message.requestId ?? "") ? message.requestId : "invalid";
+    if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_received");
     const correlation = {};
     for (const key of ["requestId", "source", "leaseId", "runId", "recaptureId"]) {
       if (typeof message[key] === "string") correlation[key] = message[key];
@@ -45,12 +51,14 @@
         throw new Error("Open native post is unavailable: the UI reader broker is not ready or did not receive a trusted click. Restart AkuBrowser with its supported Chrome for Testing UI runtime.");
       }
       const config = await bootstrap();
+      if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_bootstrap_done", { elapsedMs: Math.round(performance.now() - nativeStarted) });
       const body = { type: operation[0] };
       for (const key of ["source", "url", "runId", "leaseId", "recaptureId", "actionId"]) {
         if (typeof message[key] === "string") body[key] = message[key];
       }
       if (operation[0] === "open_native_post" && typeof message.requestId === "string") body.requestId = message.requestId;
       if (Array.isArray(message.candidateIds)) body.candidateIds = message.candidateIds;
+      if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_request_start", { elapsedMs: Math.round(performance.now() - nativeStarted) });
       const response = await fetch("/api/split-capture/actions", {
         method: "POST", cache: "no-store", headers: {
           "Content-Type": "application/json",
@@ -60,6 +68,7 @@
         }, body: JSON.stringify(body),
       });
       const reply = await response.json();
+      if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_request_end", { status: response.status, elapsedMs: Math.round(performance.now() - nativeStarted) });
       if (!response.ok || !reply.ok) throw new Error(reply.message || "Capture process action failed.");
       if (operation[1]) window.postMessage({
         ...correlation, ...(reply.result ?? {}),
@@ -67,6 +76,7 @@
           ? "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED" : operation[1],
       }, origin);
     } catch (error) {
+      if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_error", { elapsedMs: Math.round(performance.now() - nativeStarted) });
       bootstrapPromise = undefined;
       window.postMessage({ ...correlation, type: operation[2], message: String(error?.message ?? error) }, origin);
     }

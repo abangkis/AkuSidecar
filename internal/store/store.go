@@ -26,6 +26,26 @@ type Store struct {
 	clock Clock
 }
 
+// FeedbackTiming records the stages of one routine Timeline feedback request.
+// Pool wait deltas describe the whole DB pool during this request, including
+// other concurrent work; they are not attributed solely to this request.
+type FeedbackTiming struct {
+	Lookup                time.Duration
+	Hydration             time.Duration
+	BeginTx               time.Duration
+	Transaction           time.Duration
+	Commit                time.Duration
+	Total                 time.Duration
+	PoolWaitCountDelta    int64
+	PoolWaitDurationDelta time.Duration
+}
+
+type feedbackTimingKey struct{}
+
+func WithFeedbackTiming(ctx context.Context, timing *FeedbackTiming) context.Context {
+	return context.WithValue(ctx, feedbackTimingKey{}, timing)
+}
+
 type Clock interface {
 	Now() time.Time
 }
@@ -2034,11 +2054,26 @@ func (s *Store) attachEffectivePreferenceDecision(ctx context.Context, items []d
 }
 
 func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain.Feedback) (domain.Feedback, error) {
+	timing, _ := ctx.Value(feedbackTimingKey{}).(*FeedbackTiming)
+	if timing != nil {
+		started := time.Now()
+		before := s.db.Stats()
+		defer func() {
+			after := s.db.Stats()
+			timing.Total = time.Since(started)
+			timing.PoolWaitCountDelta = after.WaitCount - before.WaitCount
+			timing.PoolWaitDurationDelta = after.WaitDuration - before.WaitDuration
+		}()
+	}
 	var sessionID, runID, evidenceKey, sessionStatus string
+	lookupStarted := time.Now()
 	err := s.db.QueryRowContext(ctx, `
 		SELECT t.session_id,t.run_id,t.evidence_key,COALESCE(s.status,t.origin_status)
 		FROM timeline_items t LEFT JOIN sessions s ON s.id=t.session_id
 		WHERE t.id=?`, timelineID).Scan(&sessionID, &runID, &evidenceKey, &sessionStatus)
+	if timing != nil {
+		timing.Lookup = time.Since(lookupStarted)
+	}
 	if err != nil {
 		return domain.Feedback{}, err
 	}
@@ -2067,7 +2102,11 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 	retractMemory := false
 	var timelineItem domain.TimelineItem
 	if projectMemory || (input.Direction == "less" && (sessionStatus == "completed" || sessionStatus == "partial")) {
+		hydrationStarted := time.Now()
 		timelineItem, err = s.TimelineItem(ctx, timelineID)
+		if timing != nil {
+			timing.Hydration = time.Since(hydrationStarted)
+		}
 		if err != nil {
 			return domain.Feedback{}, err
 		}
@@ -2087,9 +2126,17 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 		normalized.IdentityDigest = memoryIdentityDigest(tombstoneKey, normalized.Identity)
 	}
 
+	beginStarted := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
+	if timing != nil {
+		timing.BeginTx = time.Since(beginStarted)
+	}
 	if err != nil {
 		return domain.Feedback{}, fmt.Errorf("begin feedback transaction: %w", err)
+	}
+	if timing != nil {
+		transactionStarted := time.Now()
+		defer func() { timing.Transaction = time.Since(transactionStarted) }()
 	}
 	defer tx.Rollback()
 	if input.Direction == "less" && timelineItem.ID != "" {
@@ -2121,7 +2168,12 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 			return domain.Feedback{}, fmt.Errorf("retract routine More memory: %w", err)
 		}
 	}
-	if err = tx.Commit(); err != nil {
+	commitStarted := time.Now()
+	err = tx.Commit()
+	if timing != nil {
+		timing.Commit = time.Since(commitStarted)
+	}
+	if err != nil {
 		return domain.Feedback{}, fmt.Errorf("commit feedback transaction: %w", err)
 	}
 	return input, nil

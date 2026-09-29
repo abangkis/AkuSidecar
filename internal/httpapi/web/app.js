@@ -3009,29 +3009,35 @@ function configureNativePostLink(link, href, source) {
 }
 
 function openNativePostInReaderWindow(url, source, brokerRequestId = null) {
+  const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const started = performance.now();
+  logInteractionTrace("native_post", requestId, "click");
   if (!state.bootstrap?.bridge?.compatible) {
+    logInteractionTrace("native_post", requestId, "terminal", { outcome: "bridge_unavailable", elapsedMs: Math.round(performance.now() - started) });
     return Promise.reject(new Error("AkuBridge is not ready to open this native post."));
   }
-  const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => finish(
       reject,
       new Error("AkuBridge timed out while opening the native post."),
+      "timeout",
     ), NATIVE_POST_OPEN_TIMEOUT_MS);
-    function finish(callback, value) {
+    function finish(callback, value, outcome) {
       window.clearTimeout(timeout);
       window.removeEventListener("message", onResult);
+      logInteractionTrace("native_post", requestId, "terminal", { outcome, elapsedMs: Math.round(performance.now() - started) });
       callback(value);
     }
     function onResult(event) {
       if (event.source !== window || event.origin !== endpoint || event.data?.requestId !== requestId) return;
       if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPENED") {
-        finish(resolve, event.data);
+        finish(resolve, event.data, "opened");
       } else if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPEN_FAILED") {
-        finish(reject, new Error(event.data.message || "AkuBridge could not open the native post."));
+        finish(reject, new Error(event.data.message || "AkuBridge could not open the native post."), "rejected");
       }
     }
     window.addEventListener("message", onResult);
+    logInteractionTrace("native_post", requestId, "dispatch");
     window.postMessage({
       type: "AKU_BROWSER_OPEN_NATIVE_POST",
       requestId,
@@ -7957,16 +7963,24 @@ function buildActions(entry) {
   };
   renderDirection();
   more.addEventListener("click", async () => {
-    const feedback = await sendFeedback(entry.id, "more", null);
+    const traceId = crypto.randomUUID();
+    const started = performance.now();
+    logInteractionTrace("timeline_feedback", traceId, "click", { direction: "more" });
+    const feedback = await sendFeedback(entry.id, "more", null, traceId);
     if (!feedback) return;
     entry.feedback = feedback;
     renderDirection();
+    logInteractionTrace("timeline_feedback", traceId, "rendered", { elapsedMs: Math.round(performance.now() - started) });
   });
   less.addEventListener("click", async () => {
-    const feedback = await sendFeedback(entry.id, "less", "not_interested");
+    const traceId = crypto.randomUUID();
+    const started = performance.now();
+    logInteractionTrace("timeline_feedback", traceId, "click", { direction: "less" });
+    const feedback = await sendFeedback(entry.id, "less", "not_interested", traceId);
     if (!feedback) return;
     entry.feedback = feedback;
     renderDirection();
+    logInteractionTrace("timeline_feedback", traceId, "rendered", { elapsedMs: Math.round(performance.now() - started) });
   });
   feedback.append(more, less);
   actions.append(primary, feedback);
@@ -8829,17 +8843,28 @@ function feedbackButton(label) {
   return button;
 }
 
-async function sendFeedback(id, direction, reason) {
+function logInteractionTrace(action, trace, phase, details = {}) {
+  console.info(`${action}_trace`, { trace, phase, ...details });
+}
+
+async function sendFeedback(id, direction, reason, traceId) {
+  const started = performance.now();
+  let outcome = "error";
+  logInteractionTrace("timeline_feedback", traceId, "request_start");
   try {
     const response = await api(`/api/timeline/${encodeURIComponent(id)}/feedback`, {
       method: "POST",
       body: { direction, reason },
+      feedbackTraceId: traceId,
     });
     invalidateLibraryStorage();
+    outcome = "ok";
     return response.feedback;
   } catch (error) {
     showError(error);
     return null;
+  } finally {
+    logInteractionTrace("timeline_feedback", traceId, "request_end", { outcome, elapsedMs: Math.round(performance.now() - started) });
   }
 }
 
@@ -9411,6 +9436,7 @@ function safePlaybackUrl(value, source) {
 async function api(path, options = {}) {
   const init = { method: options.method || "GET", cache: "no-store", headers: {} };
   if (options.signal) init.signal = options.signal;
+  if (options.feedbackTraceId) init.headers["X-Aku-Feedback-Trace"] = options.feedbackTraceId;
   if (options.body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.body);

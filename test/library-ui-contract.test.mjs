@@ -68,7 +68,7 @@ test("Library storage summary and Spring Cleaning remain read-only and review-on
 test("Library storage state invalidates after memory lifecycle success", () => {
   assert.match(app, /function invalidateLibraryStorage\(\) \{\s*resetLibraryStorage\(\);/);
   assert.match(app, /entry\.personalMemory = \{\s*retentionTier: response\.retentionTier,\s*saved: true,\s*permanentKeep: response\.permanentKeep === true,\s*\};\s*invalidateLibraryStorage\(\);/);
-  assert.match(app, /async function sendFeedback\(id, direction, reason\)[\s\S]*invalidateLibraryStorage\(\);/);
+  assert.match(app, /async function sendFeedback\(id, direction, reason, traceId\)[\s\S]*invalidateLibraryStorage\(\);/);
   assert.match(app, /state\.library\.detailError = null;\s*}\s*reloadLibraryStorage\(\);/);
   assert.match(app, /function refreshLibrary\(\)[\s\S]*reloadLibraryStorage\(\);/);
 });
