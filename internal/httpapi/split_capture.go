@@ -102,6 +102,8 @@ type splitCaptureTransport struct {
 	closed              bool
 	actions             []*pendingSplitAction
 	wake                chan struct{}
+	hostWake            chan struct{}
+	hostWakeStreams     int
 	done                chan struct{}
 	prepareReader       func(context.Context, string) (func(context.Context) error, error)
 	prepareBrokerReader func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
@@ -186,10 +188,7 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 			if s.logger != nil {
 				s.logger.Printf("reader_broker request_id=%s action=%s phase=attached outcome=accepted elapsed_ms=%d queue_wait_ms=%s", req.RequestID, entry.action.ID, attachedAt.Sub(startedAt).Milliseconds(), splitQueueWaitMS(entry, attachedAt))
 			}
-			select {
-			case t.wake <- struct{}{}:
-			default:
-			}
+			t.notifyCapture()
 			break
 		}
 		select {
@@ -265,7 +264,66 @@ func newSplitCaptureTransport() *splitCaptureTransport {
 	if _, err := rand.Read(secret[:]); err != nil {
 		panic(err)
 	}
-	return &splitCaptureTransport{key: hex.EncodeToString(secret[:]), wake: make(chan struct{}, 1), done: make(chan struct{})}
+	return &splitCaptureTransport{key: hex.EncodeToString(secret[:]), wake: make(chan struct{}, 1), hostWake: make(chan struct{}), done: make(chan struct{})}
+}
+
+// Wake hints never claim, carry or extend an action. The host's network callback
+// can wake a suspended extension worker without a throttled page timer.
+func (t *splitCaptureTransport) notifyCapture() {
+	t.mu.Lock()
+	close(t.hostWake)
+	t.hostWake = make(chan struct{})
+	t.mu.Unlock()
+	select {
+	case t.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (t *splitCaptureTransport) serveHostWake(w http.ResponseWriter, r *http.Request) error {
+	if !t.authorized(r) {
+		return apiError{Status: 403, Code: "capture_instance_mismatch", Message: "Capture wake rejected."}
+	}
+	t.mu.Lock()
+	if t.closed || t.hostWakeStreams >= 4 {
+		t.mu.Unlock()
+		return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture wake unavailable."}
+	}
+	t.hostWakeStreams++
+	wake := t.hostWake
+	t.mu.Unlock()
+	defer func() { t.mu.Lock(); t.hostWakeStreams--; t.mu.Unlock() }()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	controller := http.NewResponseController(w)
+	send := func() error {
+		if _, err := io.WriteString(w, "wake\n"); err != nil {
+			return err
+		}
+		return controller.Flush()
+	}
+	if err := send(); err != nil {
+		return nil
+	}
+	// Reconnect on network completion, before the server's 130s write deadline.
+	timer := time.NewTimer(90 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-wake:
+			t.mu.Lock()
+			wake = t.hostWake
+			t.mu.Unlock()
+			if err := send(); err != nil {
+				return nil
+			}
+		case <-timer.C:
+			return nil
+		case <-t.done:
+			return nil
+		case <-r.Context().Done():
+			return nil
+		}
+	}
 }
 func (t *splitCaptureTransport) authorized(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(t.key), []byte(r.Header.Get("X-Aku-Capture-Instance"))) == 1
@@ -399,6 +457,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		return notFound("Windows capture split")
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if p == "/api/bridge/split-capture/wake" && r.Method == http.MethodGet {
+		return t.serveHostWake(w, r)
+	}
 	if p == "/api/bridge/split-capture/bootstrap" && r.Method == http.MethodPost {
 		if !t.authorized(r) {
 			return apiError{Status: 403, Code: "capture_instance_mismatch", Message: "Capture bootstrap rejected."}
@@ -555,10 +616,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				}
 			}
 		}()
-		select {
-		case t.wake <- struct{}{}:
-		default:
-		}
+		t.notifyCapture()
 		timeout := splitActionTimeout
 		if entry.brokerReady != nil {
 			timeout = readerbroker.Lifetime
