@@ -11,6 +11,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +85,7 @@ type splitActionResult struct {
 }
 type pendingSplitAction struct {
 	action                   splitCaptureAction
+	queuedAt                 time.Time
 	claimed                  bool
 	result                   chan splitActionResult
 	readerPreparing          bool
@@ -116,7 +118,7 @@ func (s *Server) SetSplitReaderBroker(prepare func(context.Context, string) (rea
 
 // HandleReaderBroker is called only by the OS-authenticated native pipe server.
 // The collector has no route to this entry point and never receives a ticket.
-func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Request, activate func(readerbroker.Target) (readerbroker.Reply, error)) error {
+func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Request, activate func(readerbroker.Target) (readerbroker.Reply, error)) (retErr error) {
 	if err := req.Validate(); err != nil {
 		return err
 	}
@@ -124,17 +126,48 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	if t == nil {
 		return errors.New("reader broker disabled")
 	}
+	startedAt := time.Now()
+	if s.logger != nil {
+		s.logger.Printf("reader_broker request_id=%s phase=received outcome=active elapsed_ms=0", req.RequestID)
+	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	var entry *pendingSplitAction
+	var attachedAt time.Time
 	var attachedAudit store.SplitActionAudit
 	var attachedAuditReady bool
+	terminalOutcome := "unmatched"
+	defer func() {
+		if s.logger == nil {
+			return
+		}
+		elapsedMS := time.Since(startedAt).Milliseconds()
+		if entry == nil {
+			if terminalOutcome == "unmatched" && ctx.Err() != nil {
+				terminalOutcome = "cancelled"
+			}
+			s.logger.Printf("reader_broker request_id=%s phase=terminal outcome=%s elapsed_ms=%d", req.RequestID, terminalOutcome, elapsedMS)
+			return
+		}
+		outcome := "rejected"
+		switch {
+		case retErr == nil:
+			outcome = "accepted"
+		case errors.Is(retErr, context.Canceled):
+			outcome = "cancelled"
+		case errors.Is(retErr, context.DeadlineExceeded):
+			outcome = "timed_out"
+		}
+		queueWaitMS := splitQueueWaitMS(entry, attachedAt)
+		s.logger.Printf("reader_broker request_id=%s action=%s phase=complete outcome=%s elapsed_ms=%d queue_wait_ms=%s", req.RequestID, entry.action.ID, outcome, elapsedMS, queueWaitMS)
+	}()
 	for entry == nil {
 		t.mu.Lock()
 		for _, a := range t.actions {
 			if a.action.RequestID == req.RequestID && a.action.Type == "open_native_post" && a.action.Source == req.Source && a.action.URL == req.URL && a.brokerReady != nil && !a.brokerAttached {
 				a.brokerAttached = true
 				entry = a
+				attachedAt = time.Now()
 				attachedAudit, attachedAuditReady = s.splitActionAuditRecord(entry.action, "reader_broker_attached", "accepted")
 				break
 			}
@@ -146,9 +179,13 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 			attachedAuditReady = false
 		}
 		if closed {
+			terminalOutcome = "stopped"
 			return errors.New("reader broker stopped")
 		}
 		if entry != nil {
+			if s.logger != nil {
+				s.logger.Printf("reader_broker request_id=%s action=%s phase=attached outcome=accepted elapsed_ms=%d queue_wait_ms=%s", req.RequestID, entry.action.ID, attachedAt.Sub(startedAt).Milliseconds(), splitQueueWaitMS(entry, attachedAt))
+			}
 			select {
 			case t.wake <- struct{}{}:
 			default:
@@ -157,6 +194,7 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		}
 		select {
 		case <-ctx.Done():
+			terminalOutcome = "cancelled"
 			return ctx.Err()
 		case <-ticker.C:
 		}
@@ -192,7 +230,13 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	} else {
 		outcome = verify(ctx)
 	}
-	s.logger.Printf("reader_broker action=%s applied=%t readback=%t verified=%t", entry.action.ID, result.Applied, result.Readback, outcome == nil)
+	if s.logger != nil {
+		activationOutcome := "rejected"
+		if outcome == nil {
+			activationOutcome = "accepted"
+		}
+		s.logger.Printf("reader_broker request_id=%s action=%s phase=activation outcome=%s applied=%t readback=%t verified=%t", req.RequestID, entry.action.ID, activationOutcome, result.Applied, result.Readback, outcome == nil)
+	}
 	if outcome == nil {
 		s.auditSplitAction(ctx, entry.action, "reader_foreground", "accepted")
 	} else {
@@ -293,6 +337,60 @@ func splitID(v string) bool {
 }
 func splitSource(v string) bool {
 	return v == "x" || v == "linkedin" || v == "facebook" || v == "instagram"
+}
+
+// splitBrokerRequestID returns only the fixed-format opaque broker ID. This
+// keeps log fields safe even for native-post actions created without the broker
+// transport enabled.
+func splitBrokerRequestID(action splitCaptureAction) string {
+	const prefix = "broker_"
+	if action.Type != "open_native_post" || len(action.RequestID) != len(prefix)+32 || !strings.HasPrefix(action.RequestID, prefix) {
+		return "-"
+	}
+	for _, c := range action.RequestID[len(prefix):] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return "-"
+		}
+	}
+	return action.RequestID
+}
+
+type splitActionQueueSnapshot struct {
+	total               int
+	unclaimed           int
+	claimed             int
+	nativeUnclaimed     int
+	nativeWaitingBroker int
+	nativeReady         int
+}
+
+func snapshotSplitActionQueue(actions []*pendingSplitAction) splitActionQueueSnapshot {
+	var snapshot splitActionQueueSnapshot
+	snapshot.total = len(actions)
+	for _, entry := range actions {
+		if entry.claimed {
+			snapshot.claimed++
+			continue
+		}
+		snapshot.unclaimed++
+		if entry.action.Type != "open_native_post" {
+			continue
+		}
+		snapshot.nativeUnclaimed++
+		if entry.brokerReady != nil && !entry.brokerAttached {
+			snapshot.nativeWaitingBroker++
+		} else {
+			snapshot.nativeReady++
+		}
+	}
+	return snapshot
+}
+
+func splitQueueWaitMS(entry *pendingSplitAction, attachedAt time.Time) string {
+	if entry.queuedAt.IsZero() || attachedAt.IsZero() {
+		return "unavailable"
+	}
+	return strconv.FormatInt(attachedAt.Sub(entry.queuedAt).Milliseconds(), 10)
 }
 
 func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p string) error {
@@ -436,9 +534,14 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			t.mu.Unlock()
 			return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture transport is unavailable or busy."}
 		}
+		entry.queuedAt = time.Now()
 		t.actions = append(t.actions, entry)
+		queueSnapshot := snapshotSplitActionQueue(t.actions)
 		queuedAudit, queuedAuditReady := s.splitActionAuditRecord(entry.action, "queued", "accepted")
 		t.mu.Unlock()
+		if entry.action.Type == "open_native_post" && s.logger != nil {
+			s.logger.Printf("split_action action=%s request_id=%s phase=queued outcome=accepted queue_total=%d unclaimed=%d claimed=%d native_unclaimed=%d native_waiting_broker=%d native_ready=%d", entry.action.ID, splitBrokerRequestID(entry.action), queueSnapshot.total, queueSnapshot.unclaimed, queueSnapshot.claimed, queueSnapshot.nativeUnclaimed, queueSnapshot.nativeWaitingBroker, queueSnapshot.nativeReady)
+		}
 		if queuedAuditReady {
 			s.persistSplitActionAudit(r.Context(), queuedAudit)
 		}
@@ -460,20 +563,52 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if entry.brokerReady != nil {
 			timeout = readerbroker.Lifetime
 		}
+		finishAction := func(outcome string) {
+			if entry.action.Type == "open_native_post" && s.logger != nil {
+				s.logger.Printf("split_action action=%s request_id=%s phase=terminal outcome=%s elapsed_ms=%d", entry.action.ID, splitBrokerRequestID(entry.action), outcome, time.Since(entry.queuedAt).Milliseconds())
+			}
+		}
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		select {
 		case result := <-entry.result:
+			outcome := "rejected"
+			if result.OK {
+				outcome = "accepted"
+			}
+			finishAction(outcome)
 			return writeJSON(w, 200, result)
 		case <-t.done:
+			finishAction("transport_stopped")
 			return apiError{Status: 503, Code: "capture_stopped", Message: "Capture process stopped."}
 		case <-r.Context().Done():
+			finishAction("client_cancelled")
 			return r.Context().Err()
 		case <-timer.C:
+			finishAction("timed_out")
 			return apiError{Status: 504, Code: "capture_timeout", Message: "Capture action timed out; an already claimed action may still finish. It was not replayed."}
 		}
 	}
 	if p == "/api/bridge/split-capture/next" && r.Method == http.MethodGet {
+		pollID := domain.NewID("splitpoll")
+		pollStartedAt := time.Now()
+		if s.logger != nil {
+			s.logger.Printf("split_capture_poll poll=%s phase=start outcome=active", pollID)
+		}
+		finishPoll := func(outcome string, action *splitCaptureAction) {
+			if s.logger == nil {
+				return
+			}
+			t.mu.Lock()
+			snapshot := snapshotSplitActionQueue(t.actions)
+			t.mu.Unlock()
+			actionID, requestID := "-", "-"
+			if action != nil {
+				actionID = action.ID
+				requestID = splitBrokerRequestID(*action)
+			}
+			s.logger.Printf("split_capture_poll poll=%s phase=end outcome=%s elapsed_ms=%d queue_total=%d unclaimed=%d claimed=%d native_unclaimed=%d native_waiting_broker=%d native_ready=%d action=%s request_id=%s", pollID, outcome, time.Since(pollStartedAt).Milliseconds(), snapshot.total, snapshot.unclaimed, snapshot.claimed, snapshot.nativeUnclaimed, snapshot.nativeWaitingBroker, snapshot.nativeReady, actionID, requestID)
+		}
 		timer := time.NewTimer(20 * time.Second)
 		defer timer.Stop()
 		for {
@@ -487,6 +622,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 					if claimAuditReady {
 						s.persistSplitActionAudit(r.Context(), claimAudit)
 					}
+					finishPoll("claimed", &action)
 					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action})
 				}
 			}
@@ -494,12 +630,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			select {
 			case <-t.wake:
 			case <-timer.C:
+				finishPoll("idle_timeout", nil)
 				w.WriteHeader(204)
 				return nil
 			case <-t.done:
+				finishPoll("transport_stopped", nil)
 				w.WriteHeader(410)
 				return nil
 			case <-r.Context().Done():
+				finishPoll("client_cancelled", nil)
 				return r.Context().Err()
 			}
 		}

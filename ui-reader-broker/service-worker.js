@@ -62,9 +62,31 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     const window = await chrome.windows.get(tab.windowId);
     if (!tab.active || !window.focused) throw new Error("AkuBrowser UI must be active.");
     // sendNativeMessage launches a fresh executable for each explicit click.
-    return chrome.runtime.sendNativeMessage("com.akubrowser.reader_activation", {
-      requestId: message.requestId, source: message.source, url: message.url,
-    });
+    // Keep diagnostics free of the native URL and browser capability data.
+    const startedAt = performance.now();
+    console.info("aku_reader_broker", { requestId: message.requestId, phase: "helper_start" });
+    try {
+      const result = await chrome.runtime.sendNativeMessage("com.akubrowser.reader_activation", {
+        requestId: message.requestId, source: message.source, url: message.url,
+      });
+      console.info("aku_reader_broker", {
+        requestId: message.requestId,
+        phase: "helper_result",
+        outcome: result?.ok === true ? "accepted" : "rejected",
+        failureKind: result?.ok === true ? undefined
+          : result?.message === "Reader broker is unavailable or busy" ? "pipe_busy" : "other",
+        elapsedMs: Math.round(performance.now() - startedAt),
+      });
+      return result;
+    } catch (error) {
+      console.info("aku_reader_broker", {
+        requestId: message.requestId,
+        phase: "helper_result",
+        outcome: "transport_error",
+        elapsedMs: Math.round(performance.now() - startedAt),
+      });
+      throw error;
+    }
   })().then(reply, (error) => reply({ ok: false, message: String(error?.message ?? error) }));
   return true;
 });

@@ -83,6 +83,39 @@ test("only trusted visible primary clicks correlate and launch a fresh helper", 
   assert.equal(calls[0].source,"x");assert.equal(calls[0].url,link.href);
 });
 
+test("reader helper diagnostics correlate the outcome without logging the native URL", async () => {
+  let listener;
+  let clock = 0;
+  const logs = [];
+  const chrome = {
+    runtime: {
+      id: "dlibmmlopdahibfniinemhnghlifiple",
+      onMessage: { addListener(fn) { listener = fn; } },
+      sendNativeMessage: async () => ({ ok: false, message: "Reader broker is unavailable or busy" }),
+    },
+    tabs: { onRemoved: { addListener() {} }, get: async () => ({ active: true, windowId: 7 }) },
+    windows: { get: async () => ({ focused: true }) },
+  };
+  vm.runInNewContext(fs.readFileSync(new URL("service-worker.js", root), "utf8"), {
+    chrome, URL, Map, Set, Number, Math,
+    performance: { now: () => clock += 12 },
+    console: { info: (...entry) => logs.push(entry) },
+  });
+  const requestId = "broker_" + "a".repeat(32);
+  const url = "https://x.com/private/status/123";
+  const sender = { id: chrome.runtime.id, frameId: 0, url: "http://127.0.0.1:11122/", tab: { id: 19 } };
+  const reply = await new Promise(resolve => listener({ requestId, source: "x", url }, sender, resolve));
+  assert.equal(reply.ok, false);
+  assert.equal(logs.length, 2);
+  assert.equal(logs[0][1].phase, "helper_start");
+  assert.equal(logs[1][1].phase, "helper_result");
+  assert.equal(logs[1][1].outcome, "rejected");
+  assert.equal(logs[1][1].failureKind, "pipe_busy");
+  assert.equal(logs[1][1].elapsedMs, 12);
+  assert.ok(logs.every(([, value]) => value.requestId === requestId));
+  assert.ok(!JSON.stringify(logs).includes(url));
+});
+
 test("development restart registers the staged broker with explicit takeover fencing", () => {
   const repository = new URL("../", import.meta.url);
   const restart = fs.readFileSync(new URL("scripts/restart-dev.ps1", repository), "utf8");
