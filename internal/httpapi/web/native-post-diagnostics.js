@@ -6,13 +6,14 @@
   const maxAgeMs = 24 * 60 * 60 * 1000;
   const tracePattern = /^(?:broker_[a-f0-9]{32}|pointer_[a-f0-9]{32}|native_post_\d+_[a-f0-9]+)$/;
   const phases = new Set([
+    "broker_ready", "broker_unavailable",
     "pointerdown", "click_ignored", "click", "dispatch", "terminal",
     "relay_received", "relay_bootstrap_done", "relay_request_start",
     "relay_request_end", "relay_error",
   ]);
   const outcomes = new Set(["opened", "rejected", "timeout", "bridge_unavailable", "ignored"]);
   const errorKinds = new Set([
-    "broker_not_ready", "ui_not_foreground", "broker_busy", "broker_identity",
+    "broker_not_ready", "broker_click_missing", "ui_not_foreground", "broker_busy", "broker_identity",
     "extension_unavailable", "native_host_unavailable", "reader_activation",
     "epoch_mismatch", "bootstrap_failed", "transport_busy", "network",
     "timeout", "other",
@@ -20,7 +21,8 @@
 
   function errorKind(error) {
     const message = String(error?.message ?? error ?? "");
-    if (/UI reader broker is not ready|did not receive a trusted click/i.test(message)) return "broker_not_ready";
+    if (/did not receive a trusted click/i.test(message)) return "broker_click_missing";
+    if (/UI reader broker is not ready/i.test(message)) return "broker_not_ready";
     if (/UI must be active|UI must remain foreground|UI foreground changed/i.test(message)) return "ui_not_foreground";
     if (/Reader broker is unavailable or busy/i.test(message)) return "broker_busy";
     if (/Reader (?:helper|broker server) identity rejected/i.test(message)) return "broker_identity";

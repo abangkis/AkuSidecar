@@ -8,12 +8,20 @@
     else console.info("native_post_trace", { trace: requestId, phase, ...details });
   };
   let readerBrokerReady = false;
+  window.akuReaderBrokerStatus = "pending";
+  const brokerStatus = (status) => {
+    if (window.akuReaderBrokerStatus === status) return;
+    window.akuReaderBrokerStatus = status;
+    nativePostTrace("invalid", status === "ready" ? "broker_ready" : "broker_unavailable");
+    window.dispatchEvent(new CustomEvent("aku-reader-broker-status", { detail: status }));
+  };
   const readerBrokerDeadline = Date.now() + 5000;
   // Bounded availability handshake; this grants no native activation authority.
   const probeReaderBroker = () => {
     if (readerBrokerReady) return;
     window.postMessage({ type: "AKU_BROWSER_READER_BROKER_PROBE" }, origin);
     if (Date.now() < readerBrokerDeadline) setTimeout(probeReaderBroker, 250);
+    else brokerStatus("unavailable");
   };
   let bootstrapPromise;
   const bootstrap = () => bootstrapPromise ??= fetch("/api/bootstrap", { cache: "no-store" })
@@ -36,6 +44,7 @@
     const message = event.data;
     if (message.type === "AKU_BROWSER_READER_BROKER_READY") {
       readerBrokerReady = true;
+      brokerStatus("ready");
       return;
     }
     const operation = Object.hasOwn(operations, message.type) ? operations[message.type] : null;
@@ -49,8 +58,11 @@
       if (typeof message[key] === "string") correlation[key] = message[key];
     }
     try {
-      if (operation[0] === "open_native_post" && (!readerBrokerReady || !/^broker_[0-9a-f]{32}$/.test(message.requestId ?? ""))) {
-        throw new Error("Open native post is unavailable: the UI reader broker is not ready or did not receive a trusted click. Restart AkuBrowser with its supported Chrome for Testing UI runtime.");
+      if (operation[0] === "open_native_post" && !readerBrokerReady) {
+        throw new Error("Open native post is unavailable: the UI reader broker is not ready. Reload the interface to retry.");
+      }
+      if (operation[0] === "open_native_post" && !/^broker_[0-9a-f]{32}$/.test(message.requestId ?? "")) {
+        throw new Error("Open native post is unavailable: the UI reader broker did not receive a trusted click. Reload the interface and click the post again.");
       }
       const config = await bootstrap();
       if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_bootstrap_done", { elapsedMs: Math.round(performance.now() - nativeStarted) });

@@ -10,8 +10,9 @@ function fixture(reply = { ok: true, result: {} }) {
   const calls = [], messages = [], timers = [], traces = [];
   const stored = new Map();
   let listener;
-  const window = { addEventListener: (_event, fn) => { listener = fn; }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  const context = { window, sessionStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) }, location: { origin }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
+  let now = Date.now();
+  const window = { dispatchEvent() {}, addEventListener: (_event, fn) => { listener = fn; }, postMessage: (v, target) => messages.push({ ...v, target }) };
+  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) }, location: { origin }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
     calls.push({ url, options });
     return { ok: true, status: 200, json: async () => url === "/api/bootstrap"
       ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
@@ -19,7 +20,7 @@ function fixture(reply = { ok: true, result: {} }) {
   vm.runInNewContext(diagnosticsScript, context);
   vm.runInNewContext(script, context);
   assert.equal(messages.shift().type, "AKU_BROWSER_READER_BROKER_PROBE");
-  return { calls, messages, timers, traces, read: () => window.akuNativePostDiagnostics.read(), send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
+  return { calls, messages, timers, traces, window, advance: (ms) => { now += ms; }, read: () => window.akuNativePostDiagnostics.read(), send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
 }
 
 test("native post fails visibly without broker readiness or trusted-click correlation", async () => {
@@ -64,7 +65,7 @@ test("missing browser broker keeps the page fallback trace without authorizing a
   await f.send({ type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId, source: "linkedin", url: "https://www.linkedin.com/posts/private" });
   assert.equal(f.calls.length, 0);
   assert.equal(f.read().at(-1).trace, requestId);
-  assert.equal(f.read().at(-1).errorKind, "broker_not_ready");
+  assert.equal(f.read().at(-1).errorKind, "broker_click_missing");
 });
 
 test("split UI keeps request correlation and sends only typed actions using current bootstrap authority", async () => {
@@ -91,4 +92,19 @@ test("split UI reports explicit correlated release failure", async () => {
   assert.equal(f.messages[0].type, "AKU_BROWSER_CAPTURE_SURFACE_RELEASE_FAILED");
   assert.equal(f.messages[0].leaseId, "lease-1");
   assert.equal(f.messages[0].message, "Capture unavailable");
+});
+
+
+test("broker handshake deadline exposes recovery and late readiness restores availability", async () => {
+  const f = fixture();
+  assert.equal(f.window.akuReaderBrokerStatus, "pending");
+  f.advance(5001);
+  f.timers.shift()();
+  assert.equal(f.window.akuReaderBrokerStatus, "unavailable");
+  assert.equal(f.read().at(-1).phase, "broker_unavailable");
+  assert.equal(f.timers.length, 0);
+  await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" });
+  assert.equal(f.window.akuReaderBrokerStatus, "ready");
+  assert.equal(f.read().at(-1).phase, "broker_ready");
+  assert.equal(f.calls.length, 0, "availability never authorizes a native action");
 });

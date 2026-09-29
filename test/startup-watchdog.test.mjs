@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const source = readFileSync(new URL("../internal/httpapi/web/startup-watchdog.js", import.meta.url), "utf8");
-function fixture(hash = "") {
+function fixture(hash = "", brokerStatus) {
   const elements = Object.fromEntries(["startup-recovery", "startup-recovery-heading", "startup-recovery-detail"]
     .map((id) => [id, { hidden: false, textContent: "" }]));
   const listeners = new Map();
@@ -14,6 +14,7 @@ function fixture(hash = "") {
   const requests = [];
   const replacements = [];
   const window = {
+    akuReaderBrokerStatus: brokerStatus,
     addEventListener: (name, handler) => listeners.set(name, handler),
     removeEventListener: (name) => listeners.delete(name),
   };
@@ -106,5 +107,28 @@ test("watchdog loads independently before the app module and app confirms render
   const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
   for (const stage of ["restoring", "rendering", "ready"]) {
     assert.ok(app.includes(`new CustomEvent("aku-startup-stage", { detail: "${stage}" })`));
+  }
+});
+
+
+test("split UI keeps broker recovery visible after rendering and clears on late readiness", () => {
+  const app = fixture("", "pending");
+  app.send("aku-startup-stage", { detail: "ready" });
+  assert.equal(app.elements["startup-recovery"].hidden, false);
+  assert.match(app.text(), /Waiting for the UI reader broker/);
+  app.window.akuReaderBrokerStatus = "unavailable";
+  app.send("aku-reader-broker-status", {});
+  assert.match(app.text(), /Reload interface/);
+  assert.equal(app.elements["startup-recovery"].hidden, false);
+  app.window.akuReaderBrokerStatus = "ready";
+  app.send("aku-reader-broker-status", {});
+  assert.equal(app.elements["startup-recovery"].hidden, true);
+});
+
+test("broker timeout before app render is retained; ready broker permits normal startup", () => {
+  for (const status of ["unavailable", "ready"]) {
+    const app = fixture("", status);
+    app.send("aku-startup-stage", { detail: "ready" });
+    assert.equal(app.elements["startup-recovery"].hidden, status === "ready");
   }
 });

@@ -26,6 +26,18 @@
   if (!panel || !heading || !detail) return;
   let stage = "interface assets";
   let ready = false;
+  function renderBrokerStatus() {
+    if (!ready || !window.akuReaderBrokerStatus) return;
+    const status = window.akuReaderBrokerStatus;
+    panel.hidden = status === "ready";
+    if (status === "ready") return;
+    heading.textContent = status === "pending"
+      ? "Checking native post availability…" : "Native posts are unavailable";
+    detail.textContent = status === "pending"
+      ? "The interface has loaded. Waiting for the UI reader broker."
+      : "The interface has loaded, but the UI reader broker did not become ready. Use Reload interface below to retry. Your running update continues in the background.";
+  }
+  if (window.akuReaderBrokerStatus) window.addEventListener("aku-reader-broker-status", renderBrokerStatus);
   function report(reason) {
     if (ready) return;
     panel.hidden = false;
@@ -39,6 +51,7 @@
       ready = true;
       clearTimeout(timer);
       panel.hidden = true;
+      renderBrokerStatus();
       window.removeEventListener("aku-startup-stage", onStage);
       window.removeEventListener("error", onError, true);
       window.removeEventListener("unhandledrejection", onRejection);
