@@ -4,7 +4,8 @@
 (() => {
   const origin = location.origin;
   const nativePostTrace = (requestId, phase, details = {}) => {
-    console.info("native_post_trace", { trace: requestId, phase, ...details });
+    if (window.akuNativePostDiagnostics) window.akuNativePostDiagnostics.record(requestId, phase, details);
+    else console.info("native_post_trace", { trace: requestId, phase, ...details });
   };
   let readerBrokerReady = false;
   const readerBrokerDeadline = Date.now() + 5000;
@@ -40,8 +41,9 @@
     const operation = Object.hasOwn(operations, message.type) ? operations[message.type] : null;
     if (!operation) return;
     const nativeStarted = operation[0] === "open_native_post" ? performance.now() : null;
-    const nativeTraceId = /^broker_[0-9a-f]{32}$/.test(message.requestId ?? "") ? message.requestId : "invalid";
-    if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_received");
+    const nativeTraceId = /^(?:broker_[0-9a-f]{32}|native_post_\d+_[0-9a-f]+)$/.test(message.requestId ?? "")
+      ? message.requestId : "invalid";
+    if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_received", { brokerReady: readerBrokerReady });
     const correlation = {};
     for (const key of ["requestId", "source", "leaseId", "runId", "recaptureId"]) {
       if (typeof message[key] === "string") correlation[key] = message[key];
@@ -76,7 +78,10 @@
           ? "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED" : operation[1],
       }, origin);
     } catch (error) {
-      if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_error", { elapsedMs: Math.round(performance.now() - nativeStarted) });
+      if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_error", {
+        elapsedMs: Math.round(performance.now() - nativeStarted),
+        errorKind: window.akuNativePostDiagnostics?.errorKind(error) ?? "other",
+      });
       bootstrapPromise = undefined;
       window.postMessage({ ...correlation, type: operation[2], message: String(error?.message ?? error) }, origin);
     }

@@ -4,18 +4,22 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const script = fs.readFileSync(new URL("../internal/httpapi/split_ui_bridge.js", import.meta.url), "utf8");
+const diagnosticsScript = fs.readFileSync(new URL("../internal/httpapi/web/native-post-diagnostics.js", import.meta.url), "utf8");
 const origin = "http://127.0.0.1:11122";
 function fixture(reply = { ok: true, result: {} }) {
   const calls = [], messages = [], timers = [], traces = [];
+  const stored = new Map();
   let listener;
   const window = { addEventListener: (_event, fn) => { listener = fn; }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  vm.runInNewContext(script, { window, location: { origin }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
+  const context = { window, sessionStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) }, location: { origin }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
     calls.push({ url, options });
     return { ok: true, status: 200, json: async () => url === "/api/bootstrap"
       ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
-  } });
+  } };
+  vm.runInNewContext(diagnosticsScript, context);
+  vm.runInNewContext(script, context);
   assert.equal(messages.shift().type, "AKU_BROWSER_READER_BROKER_PROBE");
-  return { calls, messages, timers, traces, send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
+  return { calls, messages, timers, traces, read: () => window.akuNativePostDiagnostics.read(), send: (data, eventOrigin = origin) => listener({ source: window, origin: eventOrigin, data }) };
 }
 
 test("native post fails visibly without broker readiness or trusted-click correlation", async () => {
@@ -38,9 +42,29 @@ test("native post fails visibly without broker readiness or trusted-click correl
   assert.deepEqual(nativeTraces.slice(-4).map((entry) => entry.detail.phase), ["relay_received", "relay_bootstrap_done", "relay_request_start", "relay_request_end"]);
   assert.ok(nativeTraces.every((entry) => entry.detail.trace === action.requestId || entry.detail.trace === "invalid"));
   assert.ok(nativeTraces.every((entry) => !Object.hasOwn(entry.detail, "url")));
+  assert.equal(f.read().at(-1).phase, "relay_request_end");
   const count = f.messages.length;
   f.timers[0]();
   assert.equal(f.messages.length, count, "readiness ends polling");
+});
+
+test("native relay keeps an early rejection category after the request fails", async () => {
+  const f = fixture();
+  const action = { type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId: "broker_" + "c".repeat(32), source: "linkedin", url: "https://www.linkedin.com/posts/private" };
+  await f.send(action);
+  assert.equal(f.read().at(-1).phase, "relay_error");
+  assert.equal(f.read().at(-1).errorKind, "broker_not_ready");
+  assert.equal(JSON.stringify(f.read()).includes("linkedin.com"), false);
+});
+
+test("missing browser broker keeps the page fallback trace without authorizing a native action", async () => {
+  const f = fixture();
+  const requestId = "native_post_123_a1";
+  await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" });
+  await f.send({ type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId, source: "linkedin", url: "https://www.linkedin.com/posts/private" });
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.read().at(-1).trace, requestId);
+  assert.equal(f.read().at(-1).errorKind, "broker_not_ready");
 });
 
 test("split UI keeps request correlation and sends only typed actions using current bootstrap authority", async () => {

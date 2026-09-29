@@ -438,6 +438,9 @@ func TestSplitAssetsAreAbsentByDefault(t *testing.T) {
 	if !s.serveSplitCaptureAsset(w, r) || !strings.Contains(w.Body.String(), "/split-ui-bridge.js") {
 		t.Fatal("split UI adapter absent")
 	}
+	if !strings.Contains(w.Body.String(), "/native-post-diagnostics.js") {
+		t.Fatal("reload-safe native post diagnostics absent")
+	}
 	if strings.Contains(w.Body.String(), s.splitCapture.key) {
 		t.Fatal("capture capability leaked into UI")
 	}

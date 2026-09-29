@@ -2995,25 +2995,41 @@ function openSourceFromSettings(source) {
   }, endpoint);
 }
 
+const nativePointerTraces = new WeakMap();
+document.addEventListener("pointerdown", (event) => {
+  if (!event.isTrusted || event.button !== 0) return;
+  const link = event.target?.closest?.("a[data-aku-native-post]");
+  if (!link) return;
+  const pointerTrace = `pointer_${crypto.randomUUID().replaceAll("-", "")}`;
+  nativePointerTraces.set(link, { trace: pointerTrace, at: Date.now() });
+  logNativePostTrace(pointerTrace, "pointerdown");
+}, true);
+
 function configureNativePostLink(link, href, source) {
   link.href = href;
   link.dataset.akuNativePost = source;
   link.rel = "noopener noreferrer";
   link.addEventListener("click", (event) => {
-    if (event.defaultPrevented || event.button !== 0) return;
+    const pointer = nativePointerTraces.get(link);
+    nativePointerTraces.delete(link);
+    const gesture = pointer && Date.now() - pointer.at <= 5000 ? pointer.trace : null;
+    if (event.defaultPrevented || event.button !== 0) {
+      if (gesture) logNativePostTrace(gesture, "click_ignored", { outcome: "ignored" });
+      return;
+    }
     event.preventDefault();
     const brokerRequestId = link.dataset.akuReaderRequest;
     delete link.dataset.akuReaderRequest;
-    openNativePostInReaderWindow(href, source, brokerRequestId).catch(showError);
+    openNativePostInReaderWindow(href, source, brokerRequestId, gesture).catch(showError);
   });
 }
 
-function openNativePostInReaderWindow(url, source, brokerRequestId = null) {
+function openNativePostInReaderWindow(url, source, brokerRequestId = null, gesture = null) {
   const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const started = performance.now();
-  logInteractionTrace("native_post", requestId, "click");
+  logNativePostTrace(requestId, "click", { gesture });
   if (!state.bootstrap?.bridge?.compatible) {
-    logInteractionTrace("native_post", requestId, "terminal", { outcome: "bridge_unavailable", elapsedMs: Math.round(performance.now() - started) });
+    logNativePostTrace(requestId, "terminal", { outcome: "bridge_unavailable", elapsedMs: Math.round(performance.now() - started) });
     return Promise.reject(new Error("AkuBridge is not ready to open this native post."));
   }
   return new Promise((resolve, reject) => {
@@ -3025,7 +3041,11 @@ function openNativePostInReaderWindow(url, source, brokerRequestId = null) {
     function finish(callback, value, outcome) {
       window.clearTimeout(timeout);
       window.removeEventListener("message", onResult);
-      logInteractionTrace("native_post", requestId, "terminal", { outcome, elapsedMs: Math.round(performance.now() - started) });
+      logNativePostTrace(requestId, "terminal", {
+        outcome,
+        elapsedMs: Math.round(performance.now() - started),
+        ...(outcome === "rejected" ? { errorKind: window.akuNativePostDiagnostics?.errorKind(value) ?? "other" } : {}),
+      });
       callback(value);
     }
     function onResult(event) {
@@ -3037,7 +3057,7 @@ function openNativePostInReaderWindow(url, source, brokerRequestId = null) {
       }
     }
     window.addEventListener("message", onResult);
-    logInteractionTrace("native_post", requestId, "dispatch");
+    logNativePostTrace(requestId, "dispatch");
     window.postMessage({
       type: "AKU_BROWSER_OPEN_NATIVE_POST",
       requestId,
@@ -8845,6 +8865,11 @@ function feedbackButton(label) {
 
 function logInteractionTrace(action, trace, phase, details = {}) {
   console.info(`${action}_trace`, { trace, phase, ...details });
+}
+
+function logNativePostTrace(trace, phase, details = {}) {
+  if (window.akuNativePostDiagnostics) window.akuNativePostDiagnostics.record(trace, phase, details);
+  else logInteractionTrace("native_post", trace, phase, details);
 }
 
 async function sendFeedback(id, direction, reason, traceId) {
