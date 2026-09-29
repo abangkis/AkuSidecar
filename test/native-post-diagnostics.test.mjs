@@ -7,9 +7,10 @@ const script = readFileSync(new URL("../internal/httpapi/web/native-post-diagnos
 const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
 
 function load(storage, messages = []) {
-  const window = {};
+  const window = { dispatchEvent() {} };
   vm.runInNewContext(script, {
     window,
+    CustomEvent: class { constructor(type) { this.type = type; } },
     sessionStorage: storage,
     console: { info: (label, detail) => messages.push({ label, detail }) },
   });

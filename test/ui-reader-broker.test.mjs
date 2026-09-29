@@ -5,6 +5,36 @@ import vm from "node:vm";
 import crypto from "node:crypto";
 const root = new URL("../ui-reader-broker/", import.meta.url);
 
+test("startup messaging failures cannot prevent trusted-click listener installation", async () => {
+  for (const synchronous of [true, false]) {
+    const listeners = new Map(); const messages = []; const calls = [];
+    let click;
+    const window = { addEventListener: (name, fn) => listeners.set(name, fn), postMessage: (m) => messages.push(m) };
+    window.top = window;
+    const document = { visibilityState: "visible", addEventListener: (_name, fn) => { click = fn; } };
+    const context = {
+      window, document, setTimeout() {}, crypto: { randomUUID: () => "a".repeat(32) },
+      location: { pathname: "/", origin: "http://127.0.0.1:11122", hash: "#aku-startup=" + "b".repeat(64), href: "private-startup-url" },
+      chrome: { runtime: { sendMessage(message) {
+        assert.equal(typeof click, "function", "listener must exist before messaging");
+        calls.push(message);
+        if (!message.type) return Promise.resolve({ ok: true });
+        if (synchronous) throw new Error("private sync failure");
+        return Promise.reject(new Error("private async failure"));
+      } } },
+    };
+    vm.runInNewContext(fs.readFileSync(new URL("content.js", root), "utf8"), context);
+    await new Promise(setImmediate);
+    assert.ok(messages.some((m) => m.phase === "broker_startup_error"));
+    assert.ok(messages.some((m) => m.type === "AKU_BROWSER_READER_BROKER_READY"));
+    assert.doesNotMatch(JSON.stringify(messages), /private/);
+    const link = { dataset: { akuNativePost: "x" }, href: "https://x.com/a/status/1" };
+    click({ isTrusted: true, button: 0, target: { closest: () => link } });
+    assert.equal(calls.at(-1).requestId, "broker_" + "a".repeat(32));
+    assert.equal(link.dataset.akuReaderRequest, calls.at(-1).requestId);
+  }
+});
+
 test("broker identity and permissions isolate it from source cookies and capture", () => {
   const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", root)));
   const id = crypto.createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex").slice(0,32).replace(/[0-9a-f]/g, c => String.fromCharCode(97 + parseInt(c,16)));

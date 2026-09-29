@@ -7,6 +7,8 @@
   const tracePattern = /^(?:broker_[a-f0-9]{32}|pointer_[a-f0-9]{32}|native_post_\d+_[a-f0-9]+)$/;
   const phases = new Set([
     "broker_ready", "broker_unavailable",
+    "broker_listener_ready", "broker_startup_error",
+    "broker_reload_attempt", "broker_reload_failed",
     "pointerdown", "click_ignored", "click", "dispatch", "terminal",
     "relay_received", "relay_bootstrap_done", "relay_request_start",
     "relay_request_end", "relay_error",
@@ -52,6 +54,7 @@
     if (Number.isInteger(value.status) && value.status >= 100 && value.status <= 599) entry.status = value.status;
     if (Number.isInteger(value.elapsedMs) && value.elapsedMs >= 0 && value.elapsedMs <= 600_000) entry.elapsedMs = value.elapsedMs;
     if (typeof value.brokerReady === "boolean") entry.brokerReady = value.brokerReady;
+    if (value.brokerRevision === "listener-first-v1") entry.brokerRevision = value.brokerRevision;
     return entry;
   }
 
@@ -78,4 +81,5 @@
   const recovered = read();
   if (recovered.length) console.info("native_post_trace_recovered", { count: recovered.length, events: recovered });
   window.akuNativePostDiagnostics = Object.freeze({ record, read, errorKind });
+  window.dispatchEvent(new CustomEvent("aku-native-post-diagnostics-ready"));
 })();

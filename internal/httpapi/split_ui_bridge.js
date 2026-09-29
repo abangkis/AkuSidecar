@@ -3,9 +3,27 @@
 // capture process. The separate UI reader broker handles only trusted clicks.
 (() => {
   const origin = location.origin;
+  // Retain the launch URL only in this closure: the page watchdog strips its
+  // acknowledgement fragment. Never persist or log that capability.
+  const startupReloadURL = /^#aku-startup=[a-f0-9]{64}$/.test(location.hash) ? location.href : null;
+  const startupReloadKey = "akuReaderBrokerStartupReload.v1";
+  let startupEdited = false;
+  window.addEventListener("input", () => { startupEdited = true; }, true);
+  window.addEventListener("change", () => { startupEdited = true; }, true);
+  const pendingNativeTraces = [];
+  const flushNativeTraces = () => {
+    if (!window.akuNativePostDiagnostics) return;
+    for (const entry of pendingNativeTraces.splice(0)) window.akuNativePostDiagnostics.record(...entry);
+  };
+  window.addEventListener("aku-native-post-diagnostics-ready", flushNativeTraces);
   const nativePostTrace = (requestId, phase, details = {}) => {
-    if (window.akuNativePostDiagnostics) window.akuNativePostDiagnostics.record(requestId, phase, details);
-    else console.info("native_post_trace", { trace: requestId, phase, ...details });
+    if (window.akuNativePostDiagnostics) {
+      flushNativeTraces();
+      window.akuNativePostDiagnostics.record(requestId, phase, details);
+    } else {
+      if (pendingNativeTraces.length < 16) pendingNativeTraces.push([requestId, phase, details]);
+      console.info("native_post_trace", { trace: requestId, phase, ...details });
+    }
   };
   let readerBrokerReady = false;
   window.akuReaderBrokerStatus = "pending";
@@ -16,12 +34,26 @@
     window.dispatchEvent(new CustomEvent("aku-reader-broker-status", { detail: status }));
   };
   const readerBrokerDeadline = Date.now() + 5000;
+  const recoverReaderBroker = () => {
+    brokerStatus("unavailable");
+    if (!startupReloadURL || startupEdited || readerBrokerReady) return;
+    try {
+      if (sessionStorage.getItem(startupReloadKey) === "attempted") return;
+      sessionStorage.setItem(startupReloadKey, "attempted");
+      // Verify storage before navigating: failed persistence must not loop.
+      if (sessionStorage.getItem(startupReloadKey) !== "attempted") return;
+    } catch { return; }
+    nativePostTrace("invalid", "broker_reload_attempt");
+    // Same tab/window/profile; no native action or click is replayed.
+    try { location.replace(startupReloadURL); }
+    catch { nativePostTrace("invalid", "broker_reload_failed"); }
+  };
   // Bounded availability handshake; this grants no native activation authority.
   const probeReaderBroker = () => {
     if (readerBrokerReady) return;
     window.postMessage({ type: "AKU_BROWSER_READER_BROKER_PROBE" }, origin);
     if (Date.now() < readerBrokerDeadline) setTimeout(probeReaderBroker, 250);
-    else brokerStatus("unavailable");
+    else recoverReaderBroker();
   };
   let bootstrapPromise;
   const bootstrap = () => bootstrapPromise ??= fetch("/api/bootstrap", { cache: "no-store" })
@@ -42,6 +74,13 @@
   window.addEventListener("message", async (event) => {
     if (event.source !== window || event.origin !== origin || !event.data) return;
     const message = event.data;
+    if (message.type === "AKU_BROWSER_READER_BROKER_DIAGNOSTIC") {
+      if (["broker_listener_ready", "broker_startup_error"].includes(message.phase) &&
+          message.brokerRevision === "listener-first-v1") {
+        nativePostTrace("invalid", message.phase, { brokerRevision: message.brokerRevision });
+      }
+      return;
+    }
     if (message.type === "AKU_BROWSER_READER_BROKER_READY") {
       readerBrokerReady = true;
       brokerStatus("ready");
