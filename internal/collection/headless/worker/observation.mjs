@@ -113,7 +113,7 @@ function toBlock(source, post, feedPosition) {
   };
 }
 
-export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason }) {
+export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, frontier, freshness }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
   const domainSnapshots = snapshots.map((snapshot, index) => {
@@ -164,6 +164,8 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       authenticatedUiObserved: last.authenticatedUiObserved === true,
       documentReady: last.documentReady === true,
       ...(first.quoteIdentityProbe ? { quoteIdentityProbe: structuredClone(first.quoteIdentityProbe) } : {}),
+      ...(frontier ? { frontier: structuredClone(frontier) } : {}),
+      ...(freshness ? { freshness: structuredClone(freshness) } : {}),
       provenance,
     },
   };

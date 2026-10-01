@@ -169,7 +169,7 @@ because DOM capture passed. Browser remains default after this gate.
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
 | 2a-2b | Foundation complete and committed; final integrated validation pending | Process ownership, durable driver/generation fencing, session/media/action leases, cancellation drain and native-reader/source lifetime tracking; commits `b376438`, `86cd0c3`, `d9b735a` and paired Bridge `8541337` |
 | 2c | Local candidate; acceptance incomplete | Credential rotation, callback rebinding, interactive borrowing and verified recovery exist. Resolve popup TOCTOU and prove real handoff/recovery before activation |
-| 3 | Local candidate; acceptance incomplete | Dependency-free Node/CDP X/Facebook worker and Observation mapping exist. Fix production payload/budget names and follow-up frontier; restage the init fix and repeat ownership smoke |
+| 3 | Local candidate; focused contract/ownership checks pass, acceptance incomplete | Production Bridge fields and per-source continuation/frontier handling implemented. Worker fixtures 6/6 and isolated real Node/CDP/Job/profile exclusivity/reuse smoke pass; authenticated parity, freshness qualification and source gaps remain |
 | 4 | Local candidate; acceptance incomplete | Settings/API/UI persist browser/headless and show requested/effective/pending/failure. Validate the complete switching, login/native reader, auto-update and recapture journey |
 | 5 | Packaging helper implemented; product validation incomplete | Official Node archive pin, worker/license staging and builder integration exist; helper fixture tests pass. Full package build, authenticated parity and Windows visibility evidence remain |
 
@@ -180,16 +180,14 @@ candidate out of installed/released runtimes until the ownership gate is closed.
 
 ### Resume order after the local candidate checkpoint
 
-1. Complete production payload/budget handling and follow-up frontier ownership,
-   including source interleaving and media-recapture invalidation.
-2. Resolve the cross-driver error-contract test mismatch; restage the init fix
-   and rerun isolated profile exclusivity/reuse smoke plus focused integration
-   checks. Do not treat earlier successful suites as validation of later edits.
-3. Finish scoped review and close popup/handoff/recovery acceptance. A live
+1. Resolve the product decision below before changing handoff semantics. Retain
+   the passing payload/frontier, permission-revocation and ownership evidence;
+   authenticated parity and freshness qualification are still open.
+2. Close popup/handoff/recovery acceptance under the approved design. A live
    successful transition alone does not eliminate the known TOCTOU race.
-4. Validate rendered Settings and native-reader/login journeys, then bounded
+3. Validate rendered Settings and native-reader/login journeys, then bounded
    authenticated X/Facebook parity and background-window visibility.
-5. Build and verify complete local packages. Record supported capabilities and
+4. Build and verify complete local packages. Record supported capabilities and
    remaining source limitations before declaring any phase complete.
 
 Snapshot commits preserve unfinished candidate work; they do not authorize
@@ -410,6 +408,45 @@ a mode switch. Do not retrofit a settings-only change around them.
   new commit or push occurred. Existing experiments remain excluded. Work was
   stopped because the active 1,000,000-token goal budget was exhausted; agents
   were interrupted. Preserve all local edits when resuming.
+
+### Post-checkpoint continuation and required product decision (2026-10-01)
+
+- Checkpoint commits: Sidecar `8967dff` preserves the unfinished integration and
+  updated roadmap; AkuBrowser `479d11b` adds pinned worker packaging. Neither was
+  pushed or installed. The following continuation remains local until committed.
+- Worker now accepts production Bridge payload/budget fields; uses per-source
+  CDP tabs; preserves source frontier across interleaved captures; verifies
+  round-2 URL, scroll and anchors; invalidates continuation on fresh navigation
+  or recapture; rejects unverifiable continuation explicitly. Freshness policy
+  remains `not_verified` in coverage, not a claim of live browser parity.
+- Worker fixtures pass 6/6 and all worker module syntax checks pass. Staging was
+  refreshed. Real Node/CDP/Windows Job smoke passes with an isolated profile:
+  concurrent owner rejection, verified tree cleanup and profile reuse. WMI
+  enumeration was denied in sandbox; the smoke passed outside sandbox. It did
+  not use the installed profile, navigate to social feeds or open visible Chrome.
+- Cross-driver claim/recapture errors now wrap the common stale-owner sentinel.
+  Fresh browser heartbeat refreshes retained headless source authorization and
+  clears revoked/incompatible access; a new regression test passes. Login and
+  challenge failures preserve their codes and are not automatic-retry promises.
+- Final focused suites passed for runtime, collection, domain, engine, HTTP and
+  app entrypoint after these changes. Three collection Settings-state JavaScript
+  tests, app syntax and diff whitespace checks pass. Earlier application build
+  passed; no full package or rendered/live UI/source validation is claimed.
+- A scoped lifecycle review confirms the unresolved safety race. Replace checks
+  readiness before CloseForRetry; CloseForRetry sends WM_CLOSE to all owned
+  top-level windows and can kill the Job after eight seconds. New native popups
+  are not fenced by Go admission mutexes. Recover also needs the same live-headed
+  safety policy; extra snapshots or a successful smoke do not prove atomicity.
+- Product decision required: either preserve live switching/automatic return to
+  headless and extend the headed browser's cooperation/quiescence design, or
+  approve a reduced contract: headless at cold startup, browser sticky after
+  interactive promotion until the user closes the application. The latter
+  changes the approved resume-after-interaction behavior and requires a startup
+  and source-consent design; it is not implemented or silently selected here.
+- Keep the candidate out of installed/released runtimes. Rendered journeys,
+  authenticated X/Facebook parity, complete packaging and visibility evidence
+  still follow closure of the handoff gate. No additional profile/runtime action
+  is authorized merely by this documentation checkpoint.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

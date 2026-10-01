@@ -18,15 +18,23 @@ func (e *Engine) ResetCaptureHeartbeat() {
 	status := e.BridgeStatus()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if status.Compatible && status.Actual != nil {
-		e.headlessAccess = nil
-		for _, source := range status.Actual.SourceAccess.Sources {
-			if source.Ready && (source.Source == "x" || source.Source == "facebook") {
-				e.headlessAccess = append(e.headlessAccess, domain.Source(source.Source))
-			}
-		}
+	if status.Actual != nil {
+		e.headlessAccess = headlessGrantedSources(status)
 	}
 	e.heartbeat = nil
+}
+
+func headlessGrantedSources(status BridgeStatus) []domain.Source {
+	if !status.Compatible || status.Actual == nil {
+		return nil
+	}
+	var sources []domain.Source
+	for _, source := range status.Actual.SourceAccess.Sources {
+		if source.Ready && source.PermissionGranted && source.ScriptRegistered && (source.Source == "x" || source.Source == "facebook") {
+			sources = append(sources, domain.Source(source.Source))
+		}
+	}
+	return sources
 }
 
 func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
@@ -43,7 +51,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 		e.mu.RLock()
 		retained := len(e.headlessAccess) > 0
 		e.mu.RUnlock()
-		if retained && e.captureOwner.Snapshot().Driver == "headless" {
+		if retained && e.captureOwner != nil && e.captureOwner.Snapshot().Driver == "headless" {
 			return nil
 		}
 		return errors.New("waiting for browser source-access confirmation before headless handoff")
@@ -169,7 +177,7 @@ func headlessFailure(err error) domain.Failure {
 	var typed *headless.CaptureError
 	if errors.As(err, &typed) {
 		failure.Code = "headless_" + typed.Code
-		if typed.Code == "login_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" {
+		if typed.Code == "login_required" || typed.Code == "challenge_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" {
 			failure.Retryable = false
 		}
 	}

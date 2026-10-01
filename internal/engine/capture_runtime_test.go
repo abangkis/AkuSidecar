@@ -21,6 +21,34 @@ type runtimeTestProcess struct {
 type headlessTestProcess struct{ *runtimeTestProcess }
 
 func (p *headlessTestProcess) Driver() string { return "headless" }
+
+func TestFreshBrowserHeartbeatRevokesRetainedHeadlessAuthority(t *testing.T) {
+	e, _ := testEngine(t)
+	if len(e.headlessAccess) != 2 {
+		t.Fatalf("initial retained access=%v", e.headlessAccess)
+	}
+	heartbeat := ExpectedHeartbeat()
+	heartbeat.SourceAccess.GrantedSources = []string{"facebook", "linkedin", "instagram"}
+	for i := range heartbeat.SourceAccess.Sources {
+		if heartbeat.SourceAccess.Sources[i].Source == "x" {
+			heartbeat.SourceAccess.Sources[i].PermissionGranted = false
+			heartbeat.SourceAccess.Sources[i].ScriptRegistered = false
+			heartbeat.SourceAccess.Sources[i].Ready = false
+			heartbeat.SourceAccess.Sources[i].Reason = "permission_not_granted"
+		}
+	}
+	if status := e.RecordHeartbeat(heartbeat); !status.Compatible {
+		t.Fatal(status.Reasons)
+	}
+	if len(e.headlessAccess) != 1 || e.headlessAccess[0] != "facebook" {
+		t.Fatal("revoked X remained authorized", e.headlessAccess)
+	}
+	heartbeat.ContractVersion = "incompatible"
+	e.RecordHeartbeat(heartbeat)
+	if len(e.headlessAccess) != 0 {
+		t.Fatal("unknown access remained authorized")
+	}
+}
 func TestHeadlessClaimsCannotCrossDriverAndRetainGrantedAccess(t *testing.T) {
 	ctx := context.Background()
 	e, _ := singleSourceEngine(t, nil)

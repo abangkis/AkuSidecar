@@ -291,6 +291,14 @@ func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
 	}
 	e.heartbeat = &value
 	e.mu.Unlock()
+	status := e.BridgeStatus()
+	e.mu.Lock()
+	if e.heartbeat == &value {
+		// A newer browser report can revoke retained headless authority. Never
+		// wait for process rotation to apply that revocation.
+		e.headlessAccess = headlessGrantedSources(status)
+	}
+	e.mu.Unlock()
 	if err := e.recoverExpiredBridgeCommands(context.Background(), time.Now()); err != nil {
 		e.logger.Printf("recover expired Bridge command: %v", err)
 	}
@@ -983,7 +991,7 @@ func (e *Engine) claimCommandForDriver(ctx context.Context, runID, bridgeID, dri
 	wrongDriver := lease != nil && lease.Driver() != driver
 	e.captureMu.Unlock()
 	if wrongDriver {
-		return nil, errors.New("command belongs to another collection driver")
+		return nil, fmt.Errorf("%w: command belongs to another collection driver", errStaleCaptureRuntime)
 	}
 	command, err := e.store.ClaimCommand(ctx, runID, bridgeID)
 	if err != nil || command == nil {
@@ -2366,7 +2374,7 @@ func (e *Engine) claimMediaRecaptureForDriver(ctx context.Context, id, bridgeID,
 	wrongDriver := lease != nil && lease.Driver() != driver
 	e.captureMu.Unlock()
 	if wrongDriver {
-		return domain.MediaRecapture{}, errors.New("media recapture belongs to another collection driver")
+		return domain.MediaRecapture{}, fmt.Errorf("%w: media recapture belongs to another collection driver", errStaleCaptureRuntime)
 	}
 	if err := e.validateRecaptureOwner(ctx, id); err != nil {
 		failure := domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Media recapture owner changed; stale request was not dispatched.", Retryable: true}
