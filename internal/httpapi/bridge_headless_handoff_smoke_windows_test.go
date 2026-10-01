@@ -64,7 +64,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal("resolve project-local smoke directory")
 	}
 	sidecarRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", ".."))
-	artifactRoot := filepath.Join(sidecarRoot, ".test-artifacts")
+	artifactRoot := filepath.Join(sidecarRoot, "build", "bridge-handoff-smoke")
 	if err := os.MkdirAll(artifactRoot, 0700); err != nil {
 		t.Fatal("create project-local smoke directory")
 	}
