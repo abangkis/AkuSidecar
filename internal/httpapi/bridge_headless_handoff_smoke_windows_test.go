@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -206,8 +207,10 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	var borrowedWindow *appshell.Window
 	var borrowedContainment appshell.CaptureContainment
 	var borrowedHostURL string
+	var borrowedMachineTargets *bridgeFixtureTargetRecorder
 	bindQuiet := func(nextCtx context.Context, headed *appshell.Window, generation uint64) error {
-		targets, err := quiet.NewTargets(nextCtx, headed.CaptureProtocol())
+		recorder := &bridgeFixtureTargetRecorder{protocol: headed.CaptureProtocol(), created: map[string]bool{}}
+		targets, err := quiet.NewTargets(nextCtx, recorder)
 		if err != nil {
 			if targets != nil {
 				_ = targets.Close(nextCtx)
@@ -231,6 +234,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		}
 		if coordinator != nil {
 			coordinator.SetBrowserCollector(generation, worker)
+			borrowedMachineTargets = recorder
 		}
 		return nil
 	}
@@ -401,7 +405,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 				WindowID int `json:"windowId"`
 			}
 			if otherErr == nil && json.Unmarshal(otherInfo, &otherWindow) == nil && otherWindow.WindowID == nativeWindow.WindowID {
-				t.Fatalf("fixture window contains another page; refusing native window close (other_is_host=%t other_is_blank=%t other_is_fixture=%t)", info.URL == borrowedHostURL, info.URL == "about:blank", info.URL == "http://127.0.0.1:11122/quiet-interactive-fixture")
+				t.Fatalf("fixture window contains another page; refusing native window close (other_is_host=%t other_is_blank=%t other_is_fixture=%t other_is_created_hidden=%t)", info.URL == borrowedHostURL, info.URL == "about:blank", info.URL == "http://127.0.0.1:11122/quiet-interactive-fixture", borrowedMachineTargets.owns(info.TargetID))
 			}
 		}
 		if info.URL != borrowedHostURL {
@@ -469,6 +473,38 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		}
 	}
 	t.Log("host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 interactive_hwnd_retained=true auto_return_after_window_close=true auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
+}
+
+// Record only successful machine-target creation responses, never adopt IDs
+// from inventories. This fixture recorder does not change production routing.
+type bridgeFixtureTargetRecorder struct {
+	protocol appshell.CaptureProtocol
+	mu       sync.Mutex
+	created  map[string]bool
+}
+
+func (r *bridgeFixtureTargetRecorder) Call(ctx context.Context, method string, params any, session string) (json.RawMessage, error) {
+	raw, err := r.protocol.Call(ctx, method, params, session)
+	if err == nil && method == "Target.createTarget" {
+		values, ok := params.(map[string]any)
+		var created struct {
+			TargetID string `json:"targetId"`
+		}
+		if ok && values["hidden"] == true && json.Unmarshal(raw, &created) == nil && created.TargetID != "" {
+			r.mu.Lock()
+			r.created[created.TargetID] = true
+			r.mu.Unlock()
+		}
+	}
+	return raw, err
+}
+func (r *bridgeFixtureTargetRecorder) owns(id string) bool {
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.created[id]
 }
 
 // Fixture-only user-close equivalent. The real containment supplies the unique

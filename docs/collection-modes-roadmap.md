@@ -833,6 +833,22 @@ a mode switch. Do not retrofit a settings-only change around them.
   The new one-million-token segment is nearing its ceiling; continued diagnosis
   requires a budget/scope decision.
 
+### Bounded blank-target provenance diagnostic (2026-10-02)
+
+- A fixture-only protocol recorder now records successful hidden-target creation
+  responses directly; it never adopts IDs from target inventories.
+- The additional `about:blank` page does not match any recorded machine target
+  in the borrowed browser generation. Receipt:
+  `AkuSidecar/build/bridge-handoff-89fdcdce-8e71-430c-9aaa-371d9fc7739d`.
+  Diagnostic fails its safety assertion in `5.53s`, after initial real Bridge
+  handoff succeeds; original runtime restoration is verified. This rules out
+  treating the unknown page as a Quiet collector or excluding it from safety
+  checks on that basis. Its origin remains open.
+- Next investigation should distinguish pages already present after browser
+  re-entry from pages created with the interactive window. Do not close/adopt
+  the unknown target or weaken production native lifetime checks. No production
+  code or candidate payload changed in this diagnostic continuation.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
