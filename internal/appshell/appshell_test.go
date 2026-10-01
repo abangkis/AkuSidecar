@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,45 @@ func TestLaunchOptionsCarryIndependentWindowIcon(t *testing.T) {
 	options := LaunchOptions{ExtensionPath: "C:\\bridge", IconPath: "C:\\bridge\\icons\\icon-128.png"}
 	if options.IconPath == "" || options.IconPath == options.ExtensionPath {
 		t.Fatalf("window icon path must be an explicit asset: %+v", options)
+	}
+}
+
+func TestPrivateCDPRequiresManagedMinimizedWindow(t *testing.T) {
+	_, err := Launch(context.Background(), LaunchOptions{
+		Executable: "unused",
+		URL:        "http://127.0.0.1:11122/",
+		PrivateCDP: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "managed minimized capture window") {
+		t.Fatalf("private CDP without managed minimized ownership returned %v", err)
+	}
+}
+
+func TestPrivateCDPRejectsCallerSuppliedDebuggingSwitches(t *testing.T) {
+	_, err := Launch(context.Background(), LaunchOptions{
+		Executable:     "unused",
+		URL:            "http://127.0.0.1:11122/",
+		StartMinimized: true,
+		PrivateCDP:     true,
+		ExtraArgs:      []string{"--remote-debugging-port=9222"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "caller-supplied DevTools switches") {
+		t.Fatalf("private CDP with an HTTP debugging port returned %v", err)
+	}
+}
+
+func TestPrivateCDPNonWindowsStubRejectsOptIn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows creates private inherited CDP pipes")
+	}
+	_, err := Launch(context.Background(), LaunchOptions{
+		Executable:     "unused",
+		URL:            "http://127.0.0.1:11122/",
+		StartMinimized: true,
+		PrivateCDP:     true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "only available on Windows") {
+		t.Fatalf("non-Windows private CDP opt-in returned %v", err)
 	}
 }
 

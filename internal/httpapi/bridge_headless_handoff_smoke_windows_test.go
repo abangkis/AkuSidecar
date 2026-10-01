@@ -14,13 +14,10 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -162,8 +159,8 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	window, err := appshell.Launch(ctx, appshell.LaunchOptions{
 		Executable: chromePath, ExtensionPath: bridgePath, UserDataDir: profile,
-		URL: launchURL, StartMinimized: true,
-		ExtraArgs: []string{"--start-minimized", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"},
+		URL: launchURL, StartMinimized: true, PrivateCDP: true,
+		ExtraArgs: []string{"--start-minimized"},
 	})
 	if err != nil {
 		t.Fatal("launch disposable capture Chrome")
@@ -196,6 +193,13 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if err := s.SetSplitCaptureRuntime(manager); err != nil {
 		t.Fatal("attach capture owner to split server")
 	}
+	protocol := window.CaptureProtocol()
+	if protocol == nil {
+		t.Fatal("managed capture private protocol unavailable")
+	}
+	if err := initializeBridgeSmokeCaptureHost(ctx, protocol, launchURL); err != nil {
+		t.Fatal(err)
+	}
 	if err := manager.SetTransitionReadiness(func(checkCtx context.Context) error {
 		if manager.Snapshot().Driver == "headless" {
 			return checkCtx.Err()
@@ -222,10 +226,8 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	stopCapabilityWait()
 	if capabilityErr != nil {
 		diagnosticCtx, stopDiagnostic := context.WithTimeout(ctx, 8*time.Second)
-		diagnostic := bridgeHandoffStartupDiagnostic(
-			diagnosticCtx, filepath.Join(runtimeRoot, "node.exe"),
-			filepath.Join(filepath.Dir(sourceFile), "..", "appshell", "testdata", "host_handoff_cdp.mjs"),
-			profile, origin,
+		diagnostic := bridgeHandoffOwnedStartupDiagnostic(
+			diagnosticCtx, protocol, launchURL, origin,
 			observed.hostPageHits.Load()-hostHitsAfterPreflight,
 			observed.bootstrapRequests.Load(), observed.bootstrapStatus.Load(),
 			s,
@@ -253,11 +255,12 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if !closeAcknowledgedBeforeRotation {
 		t.Fatal("real Bridge close action was not claimed and acknowledged successfully")
 	}
-	select {
-	case <-window.Done(): // CloseForRetry returns only after natural root and Job drain.
-	case <-ctx.Done():
-		t.Fatal("headed Chrome owner did not drain naturally")
+	// Manager already consumes the single Done result. CloseForRetry is the
+	// repeatable ownership readback and returns only after verified Job drain.
+	if err := window.CloseForRetry(ctx); err != nil {
+		t.Fatal("headed Chrome ownership readback failed after replacement")
 	}
+	t.Log("bridge_bootstrap=true close_ack=true natural_owner_drain=true")
 	status := coordinator.Status()
 	if status.Effective != "headless" || status.Pending || status.Generation != 2 || status.State != captureruntime.Ready {
 		t.Fatal("headless generation 2 was not ready after verified profile handoff")
@@ -339,76 +342,110 @@ func waitForBridgeHandoffCapability(ctx context.Context, s *Server) error {
 	}
 }
 
-func bridgeHandoffStartupDiagnostic(
-	ctx context.Context, nodePath, helperPath, profile, extensionOrigin string,
+type bridgeHandoffOwnedProtocol interface {
+	Call(context.Context, string, any, string) (json.RawMessage, error)
+}
+
+func bridgeHandoffOwnedStartupDiagnostic(ctx context.Context, protocol bridgeHandoffOwnedProtocol, launchURL, extensionOrigin string,
 	hostHits, bootstrapRequests, bootstrapStatus int32, s *Server,
 ) string {
-	type startupState struct {
-		ProbeState          string `json:"probeState"`
-		TargetFound         bool   `json:"targetFound"`
-		FragmentValid       bool   `json:"fragmentValid"`
-		ExtensionWorker     bool   `json:"extensionWorker"`
-		Attached            bool   `json:"attached"`
-		FrameMatches        bool   `json:"frameMatches"`
-		Unreachable         bool   `json:"unreachable"`
-		DocumentState       string `json:"documentState"`
-		TitleMatches        bool   `json:"titleMatches"`
-		HostMarker          bool   `json:"hostMarker"`
-		StatusState         string `json:"statusState"`
-		ErrorClass          string `json:"errorClass"`
-		ExtensionWorld      bool   `json:"extensionWorld"`
-		BridgeContentScript bool   `json:"bridgeContentScript"`
-		DocumentResponses   int    `json:"documentResponses"`
-		DocumentStatus      int    `json:"documentStatus"`
-		NetworkFailures     int    `json:"networkFailures"`
-		FailureClass        string `json:"failureClass"`
-	}
-	state := startupState{}
-	cdpState := "unavailable"
-	if endpoint, ok := bridgeHandoffDevToolsEndpoint(ctx, profile); ok {
-		params, _ := json.Marshal(map[string]string{"expectedExtensionOrigin": extensionOrigin})
-		command := exec.CommandContext(ctx, nodePath, helperPath, endpoint, "CaptureHostStartup", string(params))
-		command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		output, err := command.Output()
-		if err == nil {
-			if json.Unmarshal(output, &state) == nil {
-				cdpState = "ok"
-			}
-		} else if ctx.Err() == nil {
-			cdpState = "query_error"
+	state := "query_failed"
+	expectedTargets := 0
+	hostTitle, exactExtensionWorker := false, false
+	encoded, err := protocol.Call(ctx, "Target.getTargets", nil, "")
+	if err == nil {
+		var targets struct {
+			TargetInfos []struct {
+				Type  string `json:"type"`
+				URL   string `json:"url"`
+				Title string `json:"title"`
+			} `json:"targetInfos"`
 		}
-	} else if ctx.Err() != nil {
-		cdpState = "deadline"
+		if json.Unmarshal(encoded, &targets) == nil {
+			state = "ok"
+			for _, target := range targets.TargetInfos {
+				if target.Type == "page" && target.URL == launchURL {
+					expectedTargets++
+					hostTitle = target.Title == "AkuBrowser capture host"
+				}
+				if target.Type == "service_worker" && strings.HasPrefix(target.URL, extensionOrigin+"/") {
+					exactExtensionWorker = true
+				}
+			}
+		}
 	}
 	s.splitCapture.mu.Lock()
 	accepted := s.splitCapture.sourceTrackingSupported && s.splitCapture.hostCloseSupported
 	s.splitCapture.mu.Unlock()
-	return fmt.Sprintf("host_http_hits=%d probe=%s host_target=%t fragment_valid=%t page_attached=%t frame_matches=%t unreachable=%t document_state=%s title_matches=%t host_marker=%t status=%s page_error=%s extension_worker=%t extension_world=%t bridge_content_script=%t late_document_responses=%d document_status=%d late_network_failures=%d network_error=%s bootstrap_requests=%d bootstrap_status=%d bootstrap_accepted=%t cdp=%s",
-		hostHits, state.ProbeState, state.TargetFound, state.FragmentValid, state.Attached, state.FrameMatches,
-		state.Unreachable, state.DocumentState, state.TitleMatches, state.HostMarker,
-		state.StatusState, state.ErrorClass, state.ExtensionWorker, state.ExtensionWorld,
-		state.BridgeContentScript, state.DocumentResponses, state.DocumentStatus,
-		state.NetworkFailures, state.FailureClass, bootstrapRequests, bootstrapStatus, accepted, cdpState)
+	return fmt.Sprintf("host_http_hits=%d private_protocol=%s exact_host_targets=%d host_title=%t exact_bridge_worker=%t bootstrap_requests=%d bootstrap_status=%d bootstrap_accepted=%t",
+		hostHits, state, expectedTargets, hostTitle, exactExtensionWorker, bootstrapRequests, bootstrapStatus, accepted)
 }
 
-func bridgeHandoffDevToolsEndpoint(ctx context.Context, profile string) (string, bool) {
-	ticker := time.NewTicker(50 * time.Millisecond)
+// Navigate only the known static host after its server/runtime bindings exist.
+// The owner keeps the root pipe; this function detaches just its temporary page
+// session. Protocol acceptance alone does not establish Bridge bootstrap.
+func initializeBridgeSmokeCaptureHost(ctx context.Context, protocol bridgeHandoffOwnedProtocol, launchURL string) error {
+	lookupCtx, stopLookup := context.WithTimeout(ctx, 2*time.Second)
+	defer stopLookup()
+	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
-	for {
-		if raw, err := os.ReadFile(filepath.Join(profile, "DevToolsActivePort")); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-			if len(lines) == 2 {
-				port, portErr := strconv.Atoi(strings.TrimSpace(lines[0]))
-				path := strings.TrimSpace(lines[1])
-				if portErr == nil && port > 0 && port <= 65535 && strings.HasPrefix(path, "/devtools/browser/") {
-					return "ws://127.0.0.1:" + strconv.Itoa(port) + path, true
-				}
+	targetID := ""
+	for targetID == "" {
+		encoded, err := protocol.Call(lookupCtx, "Target.getTargets", nil, "")
+		if err != nil {
+			return errors.New("capture host target lookup failed")
+		}
+		var targets struct {
+			TargetInfos []struct {
+				ID   string `json:"targetId"`
+				Type string `json:"type"`
+				URL  string `json:"url"`
+			} `json:"targetInfos"`
+		}
+		if json.Unmarshal(encoded, &targets) != nil {
+			return errors.New("capture host target response invalid")
+		}
+		for _, target := range targets.TargetInfos {
+			if target.Type != "page" || target.URL != launchURL {
+				continue
+			}
+			if targetID != "" {
+				return errors.New("capture host target identity ambiguous")
+			}
+			targetID = target.ID
+		}
+		if targetID == "" {
+			select {
+			case <-lookupCtx.Done():
+				return errors.New("capture host target unavailable")
+			case <-ticker.C:
 			}
 		}
-		select {
-		case <-ctx.Done():
-			return "", false
-		case <-ticker.C:
-		}
 	}
+	encoded, err := protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, "")
+	if err != nil {
+		return errors.New("capture host session attach failed")
+	}
+	var attached struct {
+		SessionID string `json:"sessionId"`
+	}
+	if json.Unmarshal(encoded, &attached) != nil || attached.SessionID == "" {
+		return errors.New("capture host session response invalid")
+	}
+	defer func() {
+		detachCtx, stopDetach := context.WithTimeout(context.Background(), time.Second)
+		defer stopDetach()
+		_, _ = protocol.Call(detachCtx, "Target.detachFromTarget", map[string]string{"sessionId": attached.SessionID}, "")
+	}()
+	encoded, err = protocol.Call(ctx, "Page.navigate", map[string]string{"url": launchURL}, attached.SessionID)
+	if err != nil {
+		return errors.New("capture host navigation command failed")
+	}
+	var navigation struct {
+		ErrorText string `json:"errorText"`
+	}
+	if json.Unmarshal(encoded, &navigation) != nil || navigation.ErrorText != "" {
+		return errors.New("capture host navigation rejected")
+	}
+	return nil
 }

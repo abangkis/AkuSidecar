@@ -77,6 +77,9 @@ type LaunchOptions struct {
 	OnStartupReady        func()
 	// Windows capture-host experiment only; Chromium still owns window showing.
 	StartMinimized bool
+	// PrivateCDP opts this managed minimized capture window into a private
+	// inherited-pipe DevTools connection. It never opens a debugging port.
+	PrivateCDP bool
 }
 
 type ApplicationIdentity struct {
@@ -108,6 +111,8 @@ type Window struct {
 	cleanupErr           error
 	command              *exec.Cmd
 	owner                processOwnership
+	capturePipe          captureProtocolLaunch
+	captureProtocol      CaptureProtocol
 	icon                 windowIcon
 	done                 chan error
 	executable           string
@@ -132,6 +137,15 @@ func (w *Window) Done() <-chan error {
 		return nil
 	}
 	return w.done
+}
+
+// CaptureProtocol returns the private pipe client only for a Window launched
+// with LaunchOptions.PrivateCDP. It returns nil for ordinary app windows.
+func (w *Window) CaptureProtocol() CaptureProtocol {
+	if w == nil {
+		return nil
+	}
+	return w.captureProtocol
 }
 
 func (w *Window) Terminate() {
@@ -185,6 +199,21 @@ func (w *Window) release() {
 	}
 	w.icon.close()
 	for {
+		if w.capturePipe != nil && w.terminationRequested {
+			if err := w.owner.drain(); err == nil {
+				w.cleanupErr = w.capturePipe.closeAfterOwnerExit()
+				w.owner.close()
+				close(w.closed)
+				w.ownershipMu.Unlock()
+				return
+			} else {
+				w.cleanupErr = err
+				w.ownershipMu.Unlock()
+				time.Sleep(100 * time.Millisecond)
+				w.ownershipMu.Lock()
+				continue
+			}
+		}
 		if !w.captureHost || w.terminationRequested {
 			w.cleanupErr = w.owner.drain()
 			w.owner.close()
@@ -198,6 +227,9 @@ func (w *Window) release() {
 		complete, err := w.owner.naturallyDrained()
 		w.cleanupErr = err
 		if err == nil && complete {
+			if w.capturePipe != nil {
+				w.cleanupErr = w.capturePipe.closeAfterOwnerExit()
+			}
 			w.owner.close()
 			close(w.closed)
 			w.ownershipMu.Unlock()
@@ -358,31 +390,95 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 	if err := options.Identity.validate(); err != nil {
 		return nil, err
 	}
+	if options.PrivateCDP {
+		if !options.StartMinimized {
+			return nil, errors.New("private CDP is limited to a managed minimized capture window")
+		}
+		for _, arg := range options.ExtraArgs {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(arg)), "--remote-debugging-") {
+				return nil, errors.New("private CDP cannot be combined with caller-supplied DevTools switches")
+			}
+		}
+	}
+	var capturePipe captureProtocolLaunch
+	if options.PrivateCDP {
+		var err error
+		capturePipe, err = newCaptureProtocolLaunch()
+		if err != nil {
+			return nil, err
+		}
+	}
 	args := buildArgs(options)
+	if capturePipe != nil {
+		args = append(args, capturePipe.args()...)
+	}
 	command := exec.Command(options.Executable, args...)
 	command.Stdin = nil
 	prepareCommand(command)
+	if capturePipe != nil {
+		if err := capturePipe.configure(command); err != nil {
+			_ = capturePipe.closeAfterOwnerExit()
+			return nil, err
+		}
+	}
 	owner, err := newProcessOwnership()
 	if err != nil {
+		if capturePipe != nil {
+			_ = capturePipe.closeAfterOwnerExit()
+		}
 		return nil, err
 	}
 	if err := command.Start(); err != nil {
 		owner.close()
+		if capturePipe != nil {
+			_ = capturePipe.closeAfterOwnerExit()
+		}
 		return nil, fmt.Errorf("start app shell executable: %w", err)
 	}
 	if err := owner.attach(command); err != nil {
 		_ = command.Process.Kill()
 		_ = command.Wait()
+		if capturePipe != nil {
+			// The process was not admitted to the Job, so retain the private
+			// endpoints rather than claiming that its descendants have exited.
+			quarantineCaptureProtocol(owner, capturePipe)
+			return nil, fmt.Errorf("%w: private capture process could not be assigned to its Job: %v", errCleanupUnverified, err)
+		}
 		owner.close()
 		return nil, fmt.Errorf("%w: %v", errCleanupUnverified, err)
+	}
+	if capturePipe != nil {
+		if err := capturePipe.childStarted(); err != nil {
+			owner.terminate(command.Process)
+			_ = command.Wait()
+			cleanupErr := owner.drain()
+			if cleanupErr == nil {
+				_ = capturePipe.closeAfterOwnerExit()
+				owner.close()
+				return nil, err
+			}
+			// Keep the pipes and Job alive if cleanup cannot be verified.
+			quarantineCaptureProtocol(owner, capturePipe)
+			return nil, fmt.Errorf("%w: private pipe setup: %v; cleanup: %v", errCleanupUnverified, err, cleanupErr)
+		}
 	}
 	if options.StartMinimized && runtime.GOOS == "windows" {
 		if err := owner.minimizeInitialWindow(ctx, command.Process.Pid); err != nil {
 			owner.terminate(command.Process)
 			_ = command.Wait()
 			cleanupErr := owner.drain()
-			owner.close()
+			if cleanupErr == nil {
+				if capturePipe != nil {
+					_ = capturePipe.closeAfterOwnerExit()
+				}
+			}
+			if cleanupErr == nil || capturePipe == nil {
+				owner.close()
+			}
 			if cleanupErr != nil {
+				if capturePipe != nil {
+					quarantineCaptureProtocol(owner, capturePipe)
+				}
 				return nil, fmt.Errorf("%w: minimize: %v; cleanup: %v", errCleanupUnverified, err, cleanupErr)
 			}
 			return nil, err
@@ -393,8 +489,18 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		owner.terminate(command.Process)
 		_ = command.Wait()
 		cleanupErr := owner.drain()
-		owner.close()
+		if cleanupErr == nil {
+			if capturePipe != nil {
+				_ = capturePipe.closeAfterOwnerExit()
+			}
+		}
+		if cleanupErr == nil || capturePipe == nil {
+			owner.close()
+		}
 		if cleanupErr != nil {
+			if capturePipe != nil {
+				quarantineCaptureProtocol(owner, capturePipe)
+			}
 			return nil, fmt.Errorf("%w: initialization: %v; cleanup: %v", errCleanupUnverified, err, cleanupErr)
 		}
 		return nil, err
@@ -402,9 +508,13 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 	window := &Window{
 		closed:  make(chan struct{}),
 		command: command, owner: owner, icon: icon, done: make(chan error, 1),
+		capturePipe: capturePipe,
 		startup:     options.Startup,
 		captureHost: options.StartMinimized,
 		executable:  options.Executable, userDataDir: options.UserDataDir,
+	}
+	if capturePipe != nil {
+		window.captureProtocol = capturePipe.protocol()
 	}
 	go func() {
 		err := command.Wait()

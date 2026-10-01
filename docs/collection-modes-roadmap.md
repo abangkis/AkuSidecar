@@ -712,6 +712,44 @@ a mode switch. Do not retrofit a settings-only change around them.
   production Window API, hidden-collector integration, independent interactive
   window retention, worker-failure recovery or authenticated Bridge handoff.
 
+### Managed private transport and static Bridge handoff checkpoint (2026-10-02)
+
+- The opt-in managed Window foundation now exposes `LaunchOptions.PrivateCDP`
+  and `Window.CaptureProtocol().Call`. It requires minimized capture ownership,
+  rejects caller debugging switches, and uses Windows inherited anonymous pipes
+  without an HTTP debug port. Ordinary launches retain their previous behavior.
+  Product main/Quiet routing does not enable this option yet.
+- Transport calls have bounded frames/requests/pending work. Cancellation leaves
+  the owner-held connection open; late responses cannot resolve a newer request.
+  The extraction backend must review these bounds before large script/results
+  are passed through this bootstrap-oriented foundation.
+- Focused transport/options tests and Linux cross-compilation pass. The managed
+  Window native smoke passes in 0.45 seconds with Chrome/152.0.7977.54: exact
+  target closure, natural root exit and empty Job are verified while parent pipe
+  endpoints remain held until drain. Exceptional startup cleanup remains
+  fail-closed: package-owned quarantine retains pipe and Job references until
+  application exit when startup cleanup cannot be verified. A retention unit test
+  passes; these error paths have not received native fault injection.
+- The real Bridge fixture now explicitly navigates only the uniquely identified
+  static host after its bindings exist. A first corrected run passes bootstrap
+  and host-close ACK but fails its final assertion after 68.07 seconds:
+  `Manager.watch` had consumed the single Window.Done result. This was a fixture
+  assertion defect, not evidence that ownership remained live. Receipt:
+  `build/bridge-handoff-c41f9ec0-6cd4-4f0d-a7e0-f21d56105e95/receipt.json`.
+- After changing the fixture to repeatable CloseForRetry ownership readback,
+  the authorized stop/test/restore smoke passes in 9.38 seconds. Authenticated
+  Bridge bootstrap, real close ACK, natural owner drain and headless generation
+  2 Ready on the same disposable profile are verified. Receipt:
+  `build/bridge-handoff-120669ea-5960-4dce-8724-af7265790fc2/receipt.json`.
+  Both runs restore the original healthy runtime, compatible Bridge and exactly
+  one original-profile Chrome owner. No installation or registration change.
+- This closes the static Bridge bootstrap/direct-Manager handoff smoke gap.
+  It does not close phase 2d: hidden collector routing, independent interactive
+  survival, extraction-worker failure containment, automatic Coordinator return,
+  Quiet UI/source parity and authenticated X/Facebook comparisons remain open.
+  The existing full package tuple supplies Chrome/Bridge/Node to these source
+  fixtures; it does not contain the new managed transport binary yet.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
