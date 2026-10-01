@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -95,6 +96,9 @@ type pendingSplitAction struct {
 	brokerDone               chan error
 	brokerAttached           bool
 	brokerTarget             readerbroker.Target
+	runtimeLease             *captureruntime.Lease
+	detached                 bool
+	completed                bool
 }
 type splitCaptureTransport struct {
 	mu                  sync.Mutex
@@ -107,6 +111,57 @@ type splitCaptureTransport struct {
 	done                chan struct{}
 	prepareReader       func(context.Context, string) (func(context.Context) error, error)
 	prepareBrokerReader func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+	runtime             *captureruntime.Manager
+	actionTimeout       time.Duration
+}
+
+// SetSplitCaptureRuntime adopts pending action ownership before exposing the
+// manager to split admission. It does not rotate transport credentials or launch
+// a browser; those belong to the eventual verified handoff coordinator.
+func (s *Server) SetSplitCaptureRuntime(owner *captureruntime.Manager) error {
+	t := s.splitCapture
+	if t == nil {
+		return errors.New("split capture transport unavailable")
+	}
+	if owner == nil {
+		return errors.New("capture runtime unavailable")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.runtime != nil {
+		return errors.New("split capture runtime already attached")
+	}
+	var adopted []*pendingSplitAction
+	for _, entry := range t.actions {
+		if entry == nil || entry.completed {
+			continue
+		}
+		lease, err := owner.Acquire()
+		if err != nil {
+			for _, old := range adopted {
+				old.runtimeLease.Release()
+				old.runtimeLease = nil
+			}
+			return err
+		}
+		entry.runtimeLease = lease
+		adopted = append(adopted, entry)
+	}
+	t.runtime = owner
+	return nil
+}
+
+// Caller holds t.mu. A detached claimed action keeps both queue ownership and
+// lease until its late result arrives; it cannot be claimed or replayed again.
+func (t *splitCaptureTransport) removeAction(entry *pendingSplitAction) {
+	for i, value := range t.actions {
+		if value == entry {
+			t.actions = append(t.actions[:i], t.actions[i+1:]...)
+			break
+		}
+	}
+	entry.runtimeLease.Release()
+	entry.runtimeLease = nil
 }
 
 func (s *Server) SetSplitReaderBroker(prepare func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)) {
@@ -264,7 +319,7 @@ func newSplitCaptureTransport() *splitCaptureTransport {
 	if _, err := rand.Read(secret[:]); err != nil {
 		panic(err)
 	}
-	return &splitCaptureTransport{key: hex.EncodeToString(secret[:]), wake: make(chan struct{}, 1), hostWake: make(chan struct{}), done: make(chan struct{})}
+	return &splitCaptureTransport{key: hex.EncodeToString(secret[:]), wake: make(chan struct{}, 1), hostWake: make(chan struct{}), done: make(chan struct{}), actionTimeout: splitActionTimeout}
 }
 
 // Wake hints never claim, carry or extend an action. The host's network callback
@@ -333,6 +388,13 @@ func (t *splitCaptureTransport) close() {
 	defer t.mu.Unlock()
 	if !t.closed {
 		t.closed = true
+		for _, entry := range t.actions {
+			if entry != nil {
+				entry.runtimeLease.Release()
+				entry.runtimeLease = nil
+			}
+		}
+		t.actions = nil
 		close(t.done)
 	}
 }
@@ -595,9 +657,18 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			t.mu.Unlock()
 			return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture transport is unavailable or busy."}
 		}
+		if t.runtime != nil {
+			lease, err := t.runtime.Acquire()
+			if err != nil {
+				t.mu.Unlock()
+				return apiError{Status: 503, Code: "capture_runtime_unavailable", Message: "Capture runtime is not accepting actions."}
+			}
+			entry.runtimeLease = lease
+		}
 		entry.queuedAt = time.Now()
 		t.actions = append(t.actions, entry)
 		queueSnapshot := snapshotSplitActionQueue(t.actions)
+		actionTimeout := t.actionTimeout
 		queuedAudit, queuedAuditReady := s.splitActionAuditRecord(entry.action, "queued", "accepted")
 		t.mu.Unlock()
 		if entry.action.Type == "open_native_post" && s.logger != nil {
@@ -609,15 +680,17 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		defer func() {
 			t.mu.Lock()
 			defer t.mu.Unlock()
-			for i, v := range t.actions {
-				if v == entry {
-					t.actions = append(t.actions[:i], t.actions[i+1:]...)
-					break
-				}
+			if t.runtime != nil && entry.claimed && !entry.completed && !t.closed {
+				entry.detached = true
+				return
 			}
+			t.removeAction(entry)
 		}()
 		t.notifyCapture()
-		timeout := splitActionTimeout
+		timeout := actionTimeout
+		if timeout <= 0 {
+			timeout = splitActionTimeout
+		}
 		if entry.brokerReady != nil {
 			timeout = readerbroker.Lifetime
 		}
@@ -712,6 +785,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		defer t.mu.Unlock()
 		for _, entry := range t.actions {
 			if entry.action.ID == id && entry.claimed {
+				if entry.completed {
+					return apiError{Status: 409, Code: "capture_result_duplicate", Message: "Capture result was already received."}
+				}
 				if entry.action.Type == "open_native_post" {
 					if result.OK && !entry.readerForegroundVerified {
 						// Deliver a terminal failure to the waiting UI, rather than
@@ -733,6 +809,12 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				}
 				select {
 				case entry.result <- result:
+					entry.completed = true
+					entry.runtimeLease.Release()
+					entry.runtimeLease = nil
+					if entry.detached {
+						t.removeAction(entry)
+					}
 					w.WriteHeader(204)
 					return nil
 				default:

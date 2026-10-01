@@ -204,6 +204,7 @@ func main() {
 		shell, capture = launchAppShell(logger, options, cfg, address.String(), server)
 		if capture != nil {
 			fatal(logger, runtime.AttachCaptureRuntime(context.Background(), capture))
+			fatal(logger, server.SetSplitCaptureRuntime(capture))
 			server.SetOpenExtensionsAction(capture.OpenExtensionsPage)
 			server.SetAppShellPID(capture.PID)
 		} else {

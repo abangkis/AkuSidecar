@@ -1,7 +1,8 @@
 # Browser and headless collection roadmap
 
-Status: architecture approved; phase 1 committed; phase 2a/2b implemented locally,
-with native-reader lifetime guard added. Phase 2c handoff integration is pending.
+Status: architecture approved; phase 1 committed; runtime/session/media ownership
+and reader guard committed as `b376438`. Split-action lease work is local; phase
+2c handoff integration is pending.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ## Product contract
@@ -164,7 +165,7 @@ because DOM capture passed. Browser remains default after this gate.
 | Phase | Status | Evidence / next action |
 | --- | --- | --- |
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
-| 2 | In progress: session/follow-up/recapture leases and owner fences wired; 2c pending | Native reader guard implemented; pending interactive actions, sign-in lifetime and transport/containment rebinding remain before replacement is exposed |
+| 2 | In progress: ownership foundation committed; split-action leases implemented locally; 2c pending | Sign-in lifetime, transport/containment rebinding and recovery remain before replacement is exposed |
 | 3 | PoC evidence only | `experiments/x-headless`; resolve product worker dependency and source gaps |
 | 4 | Not started | No collectionMode setting or user-visible switch exists yet |
 | 5 | Not started | Product parity and packaging require phases 2-4 |
@@ -255,14 +256,41 @@ closures also point to the original containment instance and must be rebound.
   owner across real follow-up workflow, stale-epoch dispatch/result rejection,
   malformed generations, unavailable runtime admission, media ownership/duplicate
   admission and native reader existence. No live Chrome handoff was performed.
-- Phase 2 remains incomplete: pending/claimed split actions need admission leases
-  that survive client cancellation; sign-in windows need full-lifetime protection;
+- At that checkpoint phase 2 remained incomplete: pending/claimed split actions
+  still needed admission leases; sign-in windows need full-lifetime protection;
   replacement must rotate split instance credentials and rebind containment and
   reader callbacks. Recovery after failed startup also needs verified ownership
   cleanup. Do not wire a product replacement trigger until these gates pass.
 
 Complete these remaining ownership boundaries with targeted tests before opening
 a mode switch. Do not retrofit a settings-only change around them.
+
+### Split-action lease checkpoint (2026-10-01)
+
+- Previous runtime/session/recapture/reader foundation committed as `b376438`,
+  excluding `experiments/`. No push or runtime installation performed.
+- Split action admission acquires a manager lease before enqueue. Startup adopts
+  existing queued/claimed actions before publishing the runtime to admission.
+- An unclaimed cancelled/timed-out request removes its action and releases the
+  lease. A claimed request remains detached in its original queue slot until a
+  late result arrives or the transport closes. It cannot be claimed again.
+- Late results, including failure results, release ownership and remove detached
+  actions. Explicit completion state rejects duplicates even after a waiting UI
+  consumes the result channel. Unknown claimed outcomes stay unknown and block
+  replacement; expiry alone never proves browser work has stopped.
+- Detached actions count toward the existing 32-slot limit. Transport closure
+  releases pending leases; the native reader-lifetime guard separately protects
+  reader windows after action completion. Login-window lifetime and rebinding
+  still need implementation. No replacement endpoint or headless setting exists.
+- Added controlled API tests for client cancellation before/after claim, request
+  timeout, successful/failed late results, duplicate result after consumption,
+  existing-action adoption, unavailable runtime admission and transport shutdown.
+  Production action timeout remains 115 seconds; tests use a shorter internal
+  transport timeout. This is not live authenticated browser handoff evidence.
+- Validation: full `go test ./internal/httpapi ./internal/captureruntime
+  ./internal/engine ./cmd/akusidecar -count=1` passed, including seven new action
+  lease tests; application build and diff whitespace check passed. New split-action
+  changes remain local and uncommitted; installed runtime has not been restarted.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
