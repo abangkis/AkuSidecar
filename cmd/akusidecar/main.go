@@ -356,6 +356,11 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		if containment != nil {
 			server.SetSplitReaderPreparation(containment.PrepareReader)
 			server.SetSplitReaderBroker(containment.PrepareBrokerReader)
+			if source, ok := containment.(interface {
+				PrepareSourceWindowLifetime(context.Context, string) error
+			}); ok {
+				server.SetSplitSourceWindowPreparation(source.PrepareSourceWindowLifetime)
+			}
 		}
 		// Never copy or relocate the signed-in profile. The UI receives a
 		// separate directory and no AkuBridge extension.

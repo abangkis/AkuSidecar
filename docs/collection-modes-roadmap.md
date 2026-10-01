@@ -1,8 +1,9 @@
 # Browser and headless collection roadmap
 
 Status: architecture approved; phase 1 committed; runtime/session/media ownership
-and reader guard committed as `b376438`. Split-action lease work is local; phase
-2c handoff integration is pending.
+and reader guard committed as `b376438`; split-action leases committed as
+`86cd0c3`. Source/login-window tracking is implemented in the paired Sidecar and
+Bridge checkpoint. Phase 2c handoff integration remains pending.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ## Product contract
@@ -54,7 +55,7 @@ not write Timeline records directly or bypass durable command admission.
 | `internal/collection/bridge/` | Existing Bridge payload preparation; asynchronous transport remains intact |
 | `internal/collection/coordinator.go` (planned) | Driver routing, capability/readiness checks, admission and pinned run ownership |
 | `internal/collection/headless/` (planned) | CDP acquisition worker and common observation submission |
-| `internal/captureruntime/` (planned) | Managed Chrome lifecycle, profile ownership, generation, interactive leases and recovery |
+| `internal/captureruntime/` | Managed Chrome lifecycle, profile ownership, generation and leases; handoff integration/recovery remain pending |
 | `internal/engine/`, `internal/store/` | Durable commands/runs, result validation, reasoning and common data persistence |
 | `internal/httpapi/` and embedded UI | Settings contract, transition status, source capabilities and error presentation |
 | AkuBridge source runtime | Reusable extraction logic with separate Bridge/CDP host facilities |
@@ -165,7 +166,7 @@ because DOM capture passed. Browser remains default after this gate.
 | Phase | Status | Evidence / next action |
 | --- | --- | --- |
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
-| 2 | In progress: ownership foundation committed; split-action leases implemented locally; 2c pending | Sign-in lifetime, transport/containment rebinding and recovery remain before replacement is exposed |
+| 2 | In progress: ownership, split-action leases and explicit reader/source window tracking implemented; 2c pending | Legacy capability enforcement, site-created popups, transport/containment rebinding and verified recovery remain before replacement is exposed |
 | 3 | PoC evidence only | `experiments/x-headless`; resolve product worker dependency and source gaps |
 | 4 | Not started | No collectionMode setting or user-visible switch exists yet |
 | 5 | Not started | Product parity and packaging require phases 2-4 |
@@ -290,7 +291,35 @@ a mode switch. Do not retrofit a settings-only change around them.
 - Validation: full `go test ./internal/httpapi ./internal/captureruntime
   ./internal/engine ./cmd/akusidecar -count=1` passed, including seven new action
   lease tests; application build and diff whitespace check passed. New split-action
-  changes remain local and uncommitted; installed runtime has not been restarted.
+  checkpoint committed as `86cd0c3`; installed runtime has not been restarted.
+
+### Source/login-window lifetime checkpoint (2026-10-01)
+
+- Scope: protect the explicitly opened split source/permission window before
+  source navigation, using a paired optional Sidecar/Bridge handshake. Sidecar
+  records a uniquely marked native HWND in the capture job without foreground
+  writes or reader foreground privileges. Keep the original browser default.
+- The next-action response advertises native source tracking only when a native
+  callback exists. New Bridge creates a local marker window, requests one-use
+  authenticated preparation for its claimed `open_source` action, then navigates
+  the same tab to permission/feed. Binding failure closes only that new marker
+  window; navigation failure after binding preserves its tracked lifetime.
+- Source windows share the bounded native lifetime guard with readers and block
+  replacement while their HWND still exists, including when minimized. Tracking
+  does not expire when the action acknowledges or its HTTP request finishes.
+- Legacy Bridge/Sidecar combinations preserve direct source opening. They do not
+  prove login-window tracking and cannot qualify for safe runtime handoff.
+  Site-created popup windows and transport credential/callback rebinding still
+  require evidence before phase 2 can pass. No mode switch is exposed.
+- This paired checkpoint is committed separately in AkuSidecar and AkuBridge.
+  No live authenticated capture, installation, runtime restart or headless
+  activation is part of this checkpoint.
+- Validation: Sidecar API/runtime/engine/entrypoint suites and targeted native
+  containment/lifetime tests passed; Sidecar application build passed. Bridge
+  syntax checks and 16 targeted tests passed, including negotiated/legacy source
+  handshake, ordering, failed-binding cleanup and post-binding navigation failure.
+  Additional API cases cover native capability advertisement, marker access,
+  claimed/type/instance fencing, consumed/completed intent and failed-binding replay.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

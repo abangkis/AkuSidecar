@@ -90,6 +90,7 @@ type pendingSplitAction struct {
 	claimed                  bool
 	result                   chan splitActionResult
 	readerPreparing          bool
+	sourcePreparing          bool
 	readerForeground         func(context.Context) error
 	readerForegroundVerified bool
 	brokerReady              chan struct{}
@@ -111,6 +112,7 @@ type splitCaptureTransport struct {
 	done                chan struct{}
 	prepareReader       func(context.Context, string) (func(context.Context) error, error)
 	prepareBrokerReader func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+	prepareSourceWindow func(context.Context, string) error
 	runtime             *captureruntime.Manager
 	actionTimeout       time.Duration
 }
@@ -312,6 +314,16 @@ func (s *Server) SetSplitReaderPreparation(prepare func(context.Context, string)
 	s.splitCapture.mu.Lock()
 	defer s.splitCapture.mu.Unlock()
 	s.splitCapture.prepareReader = prepare
+}
+
+// Source preparation records native lifetime only; it grants no foreground intent.
+func (s *Server) SetSplitSourceWindowPreparation(prepare func(context.Context, string) error) {
+	if s.splitCapture == nil {
+		return
+	}
+	s.splitCapture.mu.Lock()
+	defer s.splitCapture.mu.Unlock()
+	s.splitCapture.prepareSourceWindow = prepare
 }
 
 func newSplitCaptureTransport() *splitCaptureTransport {
@@ -535,6 +547,32 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 	if err := s.requireBridge(r); err != nil {
 		return err
 	}
+	if strings.HasPrefix(p, "/api/bridge/split-capture/source/prepare/") && r.Method == http.MethodPost {
+		id := strings.TrimPrefix(p, "/api/bridge/split-capture/source/prepare/")
+		t.mu.Lock()
+		var entry *pendingSplitAction
+		for _, candidate := range t.actions {
+			if candidate.action.ID == id && candidate.claimed && !candidate.completed && candidate.action.Type == "open_source" {
+				entry = candidate
+				break
+			}
+		}
+		if t.closed || entry == nil || t.prepareSourceWindow == nil {
+			t.mu.Unlock()
+			return notFound("active source intent")
+		}
+		if entry.sourcePreparing {
+			t.mu.Unlock()
+			return apiError{Status: 409, Code: "source_intent_consumed", Message: "Source preparation was already claimed."}
+		}
+		entry.sourcePreparing = true
+		prepare := t.prepareSourceWindow
+		t.mu.Unlock()
+		if err := prepare(r.Context(), "AkuBrowser source "+id); err != nil {
+			return apiError{Status: 409, Code: "source_binding_rejected", Message: err.Error()}
+		}
+		return writeJSON(w, 200, map[string]bool{"prepared": true})
+	}
 	if strings.HasPrefix(p, "/api/bridge/split-capture/reader/") && r.Method == http.MethodPost {
 		parts := strings.Split(strings.TrimPrefix(p, "/api/bridge/split-capture/reader/"), "/")
 		if len(parts) != 2 || (parts[0] != "prepare" && parts[0] != "foreground") {
@@ -748,13 +786,14 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				if !entry.claimed && (entry.brokerReady == nil || entry.brokerAttached) {
 					entry.claimed = true
 					action := entry.action
+					sourceLifetime := action.Type == "open_source" && t.prepareSourceWindow != nil
 					claimAudit, claimAuditReady := s.splitActionAuditRecord(action, "claimed", "accepted")
 					t.mu.Unlock()
 					if claimAuditReady {
 						s.persistSplitActionAudit(r.Context(), claimAudit)
 					}
 					finishPoll("claimed", &action)
-					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action})
+					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime})
 				}
 			}
 			t.mu.Unlock()
@@ -833,6 +872,24 @@ func (s *Server) serveSplitCaptureAsset(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	switch r.URL.Path {
+	case "/split-source-intent":
+		id := r.URL.Query().Get("id")
+		s.splitCapture.mu.Lock()
+		allowed := false
+		for _, entry := range s.splitCapture.actions {
+			if entry.claimed && !entry.completed && entry.action.ID == id && entry.action.Type == "open_source" {
+				allowed = true
+				break
+			}
+		}
+		s.splitCapture.mu.Unlock()
+		if !allowed {
+			http.NotFound(w, r)
+			return true
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<!doctype html><html><head><title>"+html.EscapeString("AkuBrowser source "+id)+"</title></head><body>Opening source…</body></html>")
+		return true
 	case "/split-reader-intent":
 		id := r.URL.Query().Get("id")
 		s.splitCapture.mu.Lock()

@@ -347,11 +347,53 @@ func (c *captureZOrder) PrepareBrokerReader(ctx context.Context, marker string) 
 	}
 }
 
-func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// Tracks an explicitly requested login/permission window without foreground writes.
+func (c *captureZOrder) PrepareSourceWindowLifetime(ctx context.Context, marker string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(marker, "AkuBrowser source split_") || len(marker) > 300 {
+		return errors.New("invalid source marker")
+	}
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		c.mu.Lock()
+		hwnd, err := c.findOwnedMarker(marker)
+		if err == nil && hwnd != 0 {
+			if c.readerLifetimes == nil {
+				c.readerLifetimes = map[uintptr]struct{}{}
+			}
+			retainLiveReaders(c.readerLifetimes, func(h uintptr) bool { exists, _, _ := captureIsWindow.Call(h); return exists != 0 })
+			if _, tracked := c.readerLifetimes[hwnd]; !tracked && len(c.readerLifetimes) >= 32 {
+				err = errors.New("live interactive HWND limit reached")
+			} else {
+				c.readerLifetimes[hwnd] = struct{}{}
+			}
+		}
+		c.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		if hwnd != 0 {
+			return ctx.Err()
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("source HWND marker not found")
+		case <-tick.C:
+		}
+	}
+}
+
+// Caller holds mu. Match only a unique window in this capture's owned job.
+func (c *captureZOrder) findOwnedMarker(marker string) (uintptr, error) {
 	if c.stopped {
-		return 0, 0, time.Time{}, errors.New("capture containment stopped")
+		return 0, errors.New("capture containment stopped")
 	}
 	var match uintptr
 	for _, w := range c.snapshot() {
@@ -365,9 +407,22 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 			continue
 		}
 		if match != 0 {
-			return 0, 0, time.Time{}, errors.New("ambiguous reader HWND marker")
+			return 0, errors.New("ambiguous interactive HWND marker")
 		}
 		match = w.hwnd
+	}
+	if match != 0 && !c.owns(match) {
+		return 0, errors.New("interactive HWND ownership changed")
+	}
+	return match, nil
+}
+
+func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	match, err := c.findOwnedMarker(marker)
+	if err != nil {
+		return 0, 0, time.Time{}, err
 	}
 	for hwnd := range c.readers {
 		if !c.owns(hwnd) || !c.isReader(hwnd) {
@@ -405,8 +460,8 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 	return match, binding.id, binding.expires, nil
 }
 
-// Keep all explicitly bound readers until their native HWND ceases to exist,
-// including minimized readers and expired/consumed foreground exemptions. HWND
+// Keep all explicitly bound readers and source windows until their native HWND
+// ceases to exist, including minimized windows and consumed reader exemptions. HWND
 // reuse conservatively keeps replacement blocked rather than closing a window
 // whose lifetime cannot be established. This check performs no native writes.
 func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
@@ -420,7 +475,7 @@ func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
 	}
 	active := retainLiveReaders(c.readerLifetimes, func(hwnd uintptr) bool { exists, _, _ := captureIsWindow.Call(hwnd); return exists != 0 })
 	if active {
-		return errors.New("native reader window is still open")
+		return errors.New("native interactive window is still open")
 	}
 	return nil
 }
