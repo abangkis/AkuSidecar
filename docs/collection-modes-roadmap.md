@@ -18,6 +18,13 @@ remains a browser-only policy, with its value preserved while headless is active
 Quiet is not headless. Settings must show the requested mode, effective mode,
 pending transition and actionable failure separately.
 
+Approved amendment (2026-10-02): Quiet browser collection may use hidden Chrome
+targets created as machine collectors from the beginning. Explicit interactive
+source/login/reader windows and Adaptive/foreground behavior remain separate and
+preserved. Update Quiet's single/multiple-window promises with the implementation;
+do not silently reinterpret existing ordinary tabs as disposable hidden targets.
+This amendment does not establish source parity or authorize installation/release.
+
 Both drivers submit `domain.Observation` through the existing engine acceptance,
 quality validation, reconciliation, reasoning and storage pipeline. A driver must
 not write Timeline records directly or bypass durable command admission.
@@ -47,6 +54,14 @@ not write Timeline records directly or bypass durable command admission.
   a defect in the installed browser collector. Shared extractor changes require
   browser-mode regression evidence; retain headless-specific fixes in that path
   until their common contract is proven.
+- Hidden collectors must use the managed profile's default browser context and
+  an immutable allowlist of created machine targets. Never adopt an interactive
+  target into that list. Retire collector targets/sessions before the static host;
+  preserve legacy ordinary tabs whose interactive ownership cannot be fenced.
+- A headed capture's private CDP transport belongs to the persistent process
+  owner, not to an extraction worker. Worker timeout/cancellation must not close
+  the root pipe, invoke Browser.close or kill the Job while interactive windows
+  survive. Pipe disconnection can close Chrome; retain it through natural exit.
 
 ## Code ownership
 
@@ -116,6 +131,15 @@ Implementation checkpoints (all are required to complete phase 2):
   split transport, containment and reader callbacks to the new process. Define
   bounded transition contexts, failure presentation and verified-owner recovery.
   Do not call Replace from product code before 2b and 2c gates pass.
+- **2d: approved Quiet machine surfaces.** First prove hidden-target support and
+  private owner-held transport in the pinned Chrome, with disposable static
+  fixtures. Then separate collector backend from browser/headless presentation,
+  preserving durable admission, generation fencing and source capabilities.
+  Require hidden default-context/cookie continuity, no tab/window promotion,
+  independent interactive-window survival, worker-failure containment, natural
+  owner/Job drain and automatic same-profile return. Update Quiet UI wording and
+  browser regressions together. Experimental protocol support is a capability
+  gate, not an assumed guarantee or an excuse to drop Adaptive/source parity.
 
 ### 3. Productize the headless driver behind an internal gate
 
@@ -633,8 +657,14 @@ a mode switch. Do not retrofit a settings-only change around them.
 - An upstream CEF Windows minimized-startup issue identifies native occlusion as
   a possible hypothesis, not a verified cause in this Chrome build:
   https://github.com/chromiumembedded/cef/issues/3638 . A separate disposable
-  loopback navigation comparison is being prepared; it does not require stopping
-  the original runtime or changing its profile/settings.
+  loopback navigation comparison completed in 13.04 seconds: baseline and
+  `--disable-features=CalculateNativeWinOcclusion` both observed 0 page hits and
+  `loaded=false`. The probe completed, but the occlusion flag did not resolve
+  this failure. It did not stop the original runtime or change its profile/settings.
+- The user subsequently approved hidden Quiet collectors while retaining
+  interactive and Adaptive windows. Pinned-Chrome hidden-target and private-pipe
+  capability probes are the next bounded steps; no production backend change has
+  been accepted or shipped on the basis of upstream source alone.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
