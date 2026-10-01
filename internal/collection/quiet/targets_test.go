@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -198,7 +199,7 @@ func TestTargetsPoisonOnUncertainCreateAndDetachWithoutAdoptingTarget(t *testing
 	}
 }
 
-func TestTargetsCleanupRetriesUntilExactOwnedTargetIsAbsent(t *testing.T) {
+func TestTargetsClosePollsUntilExactOwnedTargetDisappears(t *testing.T) {
 	closeCalls, listingCalls := 0, 0
 	protocol := &fakeProtocol{handler: func(call protocolCall, _ int) (json.RawMessage, error) {
 		switch call.method {
@@ -225,10 +226,10 @@ func TestTargetsCleanupRetriesUntilExactOwnedTargetIsAbsent(t *testing.T) {
 			if call.session != "browser-child" {
 				t.Fatal("target absence was checked outside the child browser session")
 			}
-			if listingCalls == 1 {
-				return raw(`{"targetInfos":[{"targetId":"owned-x"}]}`), nil
+			if listingCalls < 4 {
+				return raw(`{"targetInfos":[{"targetId":"owned-x"},{"targetId":"unowned-visible-target"}]}`), nil
 			}
-			return raw(`{"targetInfos":[]}`), nil
+			return raw(`{"targetInfos":[{"targetId":"unowned-visible-target"}]}`), nil
 		case "Target.detachFromTarget":
 			if call.session != "" || paramString(t, call.params, "sessionId") != "browser-child" {
 				t.Fatal("detached the wrong browser session")
@@ -246,17 +247,70 @@ func TestTargetsCleanupRetriesUntilExactOwnedTargetIsAbsent(t *testing.T) {
 	if _, err := targets.Call(context.Background(), domain.SourceX, "Page.navigate", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := targets.Close(context.Background()); err == nil {
-		t.Fatal("cleanup succeeded while the owned target was still listed")
+	if err := targets.Close(context.Background()); err != nil {
+		t.Fatalf("bounded target absence polling failed: %v", err)
+	}
+	if closeCalls != 1 || listingCalls != 4 || len(callsFor(protocol.calls, "Target.detachFromTarget")) != 1 {
+		t.Fatalf("cleanup retry counts close/list/detach=%d/%d/%d", closeCalls, listingCalls, len(callsFor(protocol.calls, "Target.detachFromTarget")))
+	}
+	for _, call := range callsFor(protocol.calls, "Target.closeTarget") {
+		if paramString(t, call.params, "targetId") != "owned-x" {
+			t.Fatal("cleanup closed an unowned target from the listing")
+		}
+	}
+}
+
+func TestTargetsCloseReturnsCallerCancellationAndCanRetry(t *testing.T) {
+	listingCalls := 0
+	protocol := &fakeProtocol{handler: func(call protocolCall, _ int) (json.RawMessage, error) {
+		switch call.method {
+		case "Target.attachToBrowserTarget":
+			return raw(`{"sessionId":"browser-child"}`), nil
+		case "Browser.getVersion":
+			return raw(`{"product":"Chrome/152.0.0.0"}`), nil
+		case "Target.createTarget":
+			return raw(`{"targetId":"owned-cancel"}`), nil
+		case "Target.attachToTarget":
+			return raw(`{"sessionId":"page-cancel"}`), nil
+		case "Page.enable", "Runtime.enable", "Network.enable", "Emulation.setDeviceMetricsOverride":
+			return raw(`{}`), nil
+		case "Page.navigate":
+			return raw(`{"frameId":"frame"}`), nil
+		case "Target.closeTarget":
+			if paramString(t, call.params, "targetId") != "owned-cancel" {
+				t.Fatal("cleanup targeted a target outside the broker ownership map")
+			}
+			return raw(`{"success":true}`), nil
+		case "Target.getTargets":
+			listingCalls++
+			if listingCalls == 1 {
+				return raw(`{"targetInfos":[{"targetId":"owned-cancel"}]}`), nil
+			}
+			return raw(`{"targetInfos":[]}`), nil
+		case "Target.detachFromTarget":
+			return raw(`{}`), nil
+		default:
+			t.Fatalf("unexpected command %s", call.method)
+			return nil, errors.New("unexpected command")
+		}
+	}}
+	targets, err := NewTargets(context.Background(), protocol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := targets.Call(context.Background(), domain.SourceX, "Page.navigate", nil); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := targets.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() = %v, want caller deadline", err)
 	}
 	if len(callsFor(protocol.calls, "Target.detachFromTarget")) != 0 {
-		t.Fatal("child browser session detached before target absence was verified")
+		t.Fatal("child browser session detached before owned target absence was verified")
 	}
 	if err := targets.Close(context.Background()); err != nil {
-		t.Fatalf("bounded cleanup retry failed: %v", err)
-	}
-	if closeCalls != 2 || listingCalls != 2 || len(callsFor(protocol.calls, "Target.detachFromTarget")) != 1 {
-		t.Fatalf("cleanup retry counts close/list/detach=%d/%d/%d", closeCalls, listingCalls, len(callsFor(protocol.calls, "Target.detachFromTarget")))
+		t.Fatalf("cleanup did not remain retryable after caller cancellation: %v", err)
 	}
 }
 

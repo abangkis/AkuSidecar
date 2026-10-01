@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,6 +21,12 @@ type collectionUIFixtureProcess struct {
 }
 
 func (p *collectionUIFixtureProcess) Driver() string { return p.mode }
+
+type collectionUIFixtureCollector struct{}
+
+func (collectionUIFixtureCollector) Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error) {
+	return domain.Observation{}, errors.New("rendered UI fixture cannot collect source data")
+}
 
 // This opt-in server exercises the real UI, Settings API and coordinator using
 // fake capture processes. It cannot establish Chrome handoff, authentication or
@@ -60,9 +67,14 @@ func TestCollectionSettingsRenderedFixture(t *testing.T) {
 	if err := s.engine.AttachCaptureRuntime(context.Background(), owner); err != nil {
 		t.Fatal(err)
 	}
-	coordinator := collection.NewCoordinator(owner, func(_ context.Context, mode string, _ uint64) (captureruntime.Process, error) {
+	var coordinator *collection.Coordinator
+	coordinator = collection.NewCoordinator(owner, func(_ context.Context, mode string, generation uint64) (captureruntime.Process, error) {
+		if mode == "browser" {
+			coordinator.SetBrowserCollector(generation, collectionUIFixtureCollector{})
+		}
 		return process(mode), nil
 	}, func() error { return nil })
+	coordinator.SetBrowserCollector(owner.Snapshot().Generation, collectionUIFixtureCollector{})
 	s.engine.AttachCollectionCoordinator(coordinator)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -20,6 +21,11 @@ var (
 )
 
 var sourceOrder = [...]domain.Source{domain.SourceX, domain.SourceFacebook}
+
+const (
+	ownedTargetClosePollInterval = 25 * time.Millisecond
+	ownedTargetClosePollLimit    = 3 * time.Second
+)
 
 var allowedPageMethods = map[string]struct{}{
 	"Page.navigate":                      {},
@@ -240,36 +246,63 @@ func (t *Targets) Close(ctx context.Context) error {
 		}
 	}
 	if len(knownTargets) > 0 {
+		pollCtx, cancel := context.WithTimeout(ctx, ownedTargetClosePollLimit)
+		defer cancel()
 		for _, target := range knownTargets {
 			// A failed close response is ambiguous. The following owned-session
 			// listing decides whether another bounded Close attempt is needed.
-			_, _ = t.protocol.Call(ctx, "Target.closeTarget", map[string]any{"targetId": target.targetID}, t.browserID)
+			_, _ = t.protocol.Call(pollCtx, "Target.closeTarget", map[string]any{"targetId": target.targetID}, t.browserID)
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-		}
-		raw, err := t.protocol.Call(ctx, "Target.getTargets", nil, t.browserID)
-		if err != nil {
-			return errors.New("owned hidden target absence could not be verified")
-		}
-		var listing struct {
-			TargetInfos []struct {
-				TargetID string `json:"targetId"`
-			} `json:"targetInfos"`
-		}
-		if json.Unmarshal(raw, &listing) != nil {
-			return errors.New("owned hidden target listing was invalid")
-		}
-		present := make(map[string]bool, len(listing.TargetInfos))
-		for _, info := range listing.TargetInfos {
-			if info.TargetID != "" {
-				present[info.TargetID] = true
+			if err := pollCtx.Err(); err != nil {
+				return errors.New("owned hidden target close did not complete; cleanup can be retried")
 			}
 		}
-		for _, target := range knownTargets {
-			target.absent = !present[target.targetID]
-			if !target.absent {
+		ticker := time.NewTicker(ownedTargetClosePollInterval)
+		defer ticker.Stop()
+		for {
+			raw, err := t.protocol.Call(pollCtx, "Target.getTargets", nil, t.browserID)
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if pollCtx.Err() != nil {
+					return errors.New("owned hidden target absence timed out; cleanup can be retried")
+				}
+				return errors.New("owned hidden target absence could not be verified")
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var listing struct {
+				TargetInfos []struct {
+					TargetID string `json:"targetId"`
+				} `json:"targetInfos"`
+			}
+			if json.Unmarshal(raw, &listing) != nil {
+				return errors.New("owned hidden target listing was invalid")
+			}
+			present := make(map[string]bool, len(listing.TargetInfos))
+			for _, info := range listing.TargetInfos {
+				if info.TargetID != "" {
+					present[info.TargetID] = true
+				}
+			}
+			allAbsent := true
+			for _, target := range knownTargets {
+				target.absent = !present[target.targetID]
+				allAbsent = allAbsent && target.absent
+			}
+			if allAbsent {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-pollCtx.Done():
 				return errors.New("owned hidden target is still present; cleanup can be retried")
+			case <-ticker.C:
 			}
 		}
 	}

@@ -114,8 +114,14 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	var observed bridgeHandoffHTTPObservation
+	const interactiveMarker = "AkuBrowser source split_fixture_lifetime"
 	originalHandler := s.http.Handler
 	s.http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/quiet-interactive-fixture" {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, "<!doctype html><title>"+interactiveMarker+"</title><p>Disposable interactive lifetime fixture</p>")
+			return
+		}
 		if r.Method == http.MethodGet && r.URL.Path == "/split-capture-host" {
 			observed.hostPageHits.Add(1)
 		}
@@ -194,6 +200,10 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal("attach capture owner to split server")
 	}
 	var coordinator *collection.Coordinator
+	var borrowedWindow *appshell.Window
+	var borrowedSourceLifetime interface {
+		PrepareSourceWindowLifetime(context.Context, string) error
+	}
 	bindQuiet := func(nextCtx context.Context, headed *appshell.Window, generation uint64) error {
 		targets, err := quiet.NewTargets(nextCtx, headed.CaptureProtocol())
 		if err != nil {
@@ -274,6 +284,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 			return headed, errors.New("source-window containment missing")
 		}
 		s.SetSplitSourceWindowPreparation(source.PrepareSourceWindowLifetime)
+		borrowedWindow, borrowedSourceLifetime = headed, source
 		if err := appshell.NavigateCaptureHost(nextCtx, headed.CaptureProtocol(), url); err != nil {
 			return headed, err
 		}
@@ -323,7 +334,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		s.splitCapture.mu.Unlock()
 		return launch(nextCtx, "headless", generation)
 	}); err != nil {
-		t.Fatal("real Bridge scoped retirement and profile handoff failed")
+		t.Fatal("real Bridge scoped retirement and profile handoff failed", err)
 	}
 	if !closeAcknowledgedBeforeRotation {
 		t.Fatal("real Bridge close action was not claimed and acknowledged successfully")
@@ -349,8 +360,49 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if lease.Driver() != "browser" || lease.Generation() != 3 || !coordinator.BrowserCollectorAvailable(domain.SourceX) {
 		t.Fatal("browser generation 3 collector not ready")
 	}
+	// An ordinary source window stays outside the machine-target ownership list.
+	// Its real HWND lifetime must hold auto-return after the dispatch lease ends.
+	created, err := borrowedWindow.CaptureProtocol().Call(ctx, "Target.createTarget", map[string]any{
+		"url": "http://127.0.0.1:11122/quiet-interactive-fixture", "newWindow": true, "background": true,
+	}, "")
+	if err != nil {
+		t.Fatal("create static source lifetime fixture", err)
+	}
+	var interactive struct {
+		TargetID string `json:"targetId"`
+	}
+	if json.Unmarshal(created, &interactive) != nil || interactive.TargetID == "" {
+		t.Fatal("static interactive target unavailable")
+	}
+	windowInfo, err := borrowedWindow.CaptureProtocol().Call(ctx, "Browser.getWindowForTarget", map[string]any{"targetId": interactive.TargetID}, "")
+	if err != nil {
+		t.Fatal("static interactive window unavailable", err)
+	}
+	var nativeWindow struct {
+		WindowID int `json:"windowId"`
+	}
+	if json.Unmarshal(windowInfo, &nativeWindow) != nil {
+		t.Fatal("static interactive window response invalid")
+	}
+	if _, err := borrowedWindow.CaptureProtocol().Call(ctx, "Browser.setWindowBounds", map[string]any{"windowId": nativeWindow.WindowID, "bounds": map[string]any{"windowState": "minimized"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := borrowedSourceLifetime.PrepareSourceWindowLifetime(ctx, interactiveMarker); err != nil {
+		t.Fatal("track static interactive HWND", err)
+	}
 	lease.Release()
 	releaseIntent()
+	select {
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	case <-time.After(350 * time.Millisecond):
+	}
+	if status := coordinator.Status(); status.Effective != "browser" || status.Generation != 3 {
+		t.Fatal("auto-return crossed a live interactive HWND", status)
+	}
+	if _, err := borrowedWindow.CaptureProtocol().Call(ctx, "Target.closeTarget", map[string]any{"targetId": interactive.TargetID}, ""); err != nil {
+		t.Fatal("close only static interactive fixture", err)
+	}
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -367,7 +419,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		case <-tick.C:
 		}
 	}
-	t.Log("host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
+	t.Log("host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 interactive_hwnd_retained=true auto_return_after_window_close=true auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
 }
 
 func bridgeExtensionOrigin(bridgePath string) (string, error) {
