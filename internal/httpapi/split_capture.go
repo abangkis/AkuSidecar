@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -78,6 +79,7 @@ type splitCaptureAction struct {
 	ActionID     string   `json:"actionId,omitempty"`
 	RequestID    string   `json:"requestId,omitempty"`
 	CandidateIDs []string `json:"candidateIds,omitempty"`
+	HostOnly     bool     `json:"hostOnly,omitempty"`
 }
 type splitActionResult struct {
 	OK      bool            `json:"ok"`
@@ -120,6 +122,8 @@ type splitCaptureTransport struct {
 	actionTimeout           time.Duration
 	sourceTrackingSupported bool
 	hostCloseSupported      bool
+	hostOnlyRequired        bool
+	hostOnlySupported       bool
 	untrackedSourceOutcome  bool
 }
 
@@ -135,6 +139,9 @@ func (s *Server) SplitCaptureReplacementReadiness(ctx context.Context) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.hostOnlyRequired && !t.hostOnlySupported {
+		return errors.New("Bridge host-only retirement is not negotiated; update or reload AkuBridge before switching collection mode")
+	}
 	if t.closed || t.prepareSourceWindow == nil || !t.sourceTrackingSupported {
 		return errors.New("Bridge source-window tracking is not negotiated")
 	}
@@ -458,7 +465,7 @@ func (s *Server) RotateSplitCapture() error {
 	t.actions = nil
 	t.key = hex.EncodeToString(secret[:])
 	t.prepareReader, t.prepareBrokerReader, t.prepareSourceWindow = nil, nil, nil
-	t.sourceTrackingSupported, t.untrackedSourceOutcome, t.hostCloseSupported = false, false, false
+	t.sourceTrackingSupported, t.untrackedSourceOutcome, t.hostCloseSupported, t.hostOnlySupported = false, false, false, false
 	s.engine.ResetCaptureHeartbeat()
 	t.mu.Unlock()
 	t.notifyCapture()
@@ -614,8 +621,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			return apiError{Status: 403, Code: "capture_instance_mismatch", Message: "Capture bootstrap rejected."}
 		}
 		var capability struct {
-			SourceWindowLifetime int `json:"sourceWindowLifetime"`
-			CaptureHostClose     int `json:"captureHostClose"`
+			SourceWindowLifetime      int `json:"sourceWindowLifetime"`
+			CaptureHostClose          int `json:"captureHostClose"`
+			CaptureHostOnlyRetirement int `json:"captureHostOnlyRetirement"`
 		}
 		if r.ContentLength != 0 {
 			if err := readJSON(r, &capability); err != nil {
@@ -633,8 +641,10 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		t.sourceTrackingSupported = capability.SourceWindowLifetime == 1
 		t.hostCloseSupported = capability.CaptureHostClose == 1
+		t.hostOnlySupported = capability.CaptureHostOnlyRetirement == 1 && capability.CaptureHostClose == 1
+		hostOnlySupported := t.hostOnlySupported
 		t.mu.Unlock()
-		return writeJSON(w, 200, map[string]any{"token": token, "instanceEpoch": s.engine.Epoch(), "protocolMajor": 2, "captureHostClose": capability.CaptureHostClose == 1})
+		return writeJSON(w, 200, map[string]any{"token": token, "instanceEpoch": s.engine.Epoch(), "protocolMajor": 2, "captureHostClose": capability.CaptureHostClose == 1, "captureHostOnlyRetirement": hostOnlySupported})
 	}
 	if err := s.requireBridge(r); err != nil {
 		return err
@@ -768,6 +778,34 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		if err := validateSplitAction(a); err != nil {
 			return apiError{Status: 400, Code: "invalid_capture_action", Message: err.Error()}
+		}
+		// A browser-owned Quiet command is consumed by the internal pump. The
+		// Bridge still owns heartbeat, permissions and other browser sources.
+		if a.Type == "dispatch" {
+			route, err := s.engine.RunCaptureCollector(r.Context(), a.RunID)
+			if err != nil {
+				return err
+			}
+			if route == collection.BackendQuiet {
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{}`)})
+			}
+		}
+		if a.Type == "media_recapture" {
+			job, err := s.store.MediaRecapture(r.Context(), a.RecaptureID)
+			if err != nil {
+				return err
+			}
+			route, err := store.CaptureCollector(job.Payload)
+			if err != nil {
+				return err
+			}
+			if route == collection.BackendQuiet {
+				raw, err := json.Marshal(map[string]any{"recapture": job})
+				if err != nil {
+					return err
+				}
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: raw})
+			}
 		}
 		if s.engine.CollectionRuntime().Effective == "headless" {
 			switch a.Type {
@@ -925,13 +963,14 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 					action := entry.action
 					sourceLifetime := action.Type == "open_source" && t.prepareSourceWindow != nil
 					hostClose := t.hostCloseSupported
+					hostOnly := t.hostOnlySupported
 					claimAudit, claimAuditReady := s.splitActionAuditRecord(action, "claimed", "accepted")
 					t.mu.Unlock()
 					if claimAuditReady {
 						s.persistSplitActionAudit(r.Context(), claimAudit)
 					}
 					finishPoll("claimed", &action)
-					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime, "captureHostClose": hostClose})
+					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime, "captureHostClose": hostClose, "captureHostOnlyRetirement": hostOnly})
 				}
 			}
 			t.mu.Unlock()

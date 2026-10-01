@@ -750,6 +750,47 @@ a mode switch. Do not retrofit a settings-only change around them.
   The existing full package tuple supplies Chrome/Bridge/Node to these source
   fixtures; it does not contain the new managed transport binary yet.
 
+### Quiet hidden backend implementation checkpoint (2026-10-02)
+
+- Local code now binds a generation-specific browser Quiet backend to the Go-owned
+  private protocol. X/Facebook in both Quiet policies use hidden targets created
+  from birth; Adaptive and other sources retain Bridge. Browser ownership and
+  captureRuntime stamps remain unchanged; captureCollector is persisted separately.
+- Initial and replacement headed hosts use exact-target explicit navigation after
+  bindings exist. Hidden source targets have independent flattened sessions and
+  fixed 1280x900 page metrics in the default authenticated context. The broker
+  rejects worker browser/target-management commands and tracks only created IDs.
+- A borrowed worker owns Node only and forwards source-scoped CDP requests to Go.
+  Its RPC replies bypass the capture command queue. Worker timeout/protocol failure
+  stops Node and retires only hidden targets; root pipe and capture Job stay owned.
+  Transport bounds are now 16 MiB response frames and 8 MiB requests, covering
+  bounded extractor injection/results without making the stream unbounded.
+- Durable routes fence claims before mutation, filter each consumers pending work,
+  pin followups/media, preserve legacy Bridge commands, and fail closed on unknown
+  or corrupt stamps. Quiet source authorization is checked again before capture.
+  Per-route split dispatch acknowledges the internal pump while other Bridge
+  actions and browser source coverage remain intact.
+- Required host-only retirement is newly negotiated by Bridge. Go retires hidden
+  targets before requesting hostOnly:true; the Bridge client skips ordinary-tab
+  cleanup and revalidates/closes only the authenticated static host. Older Bridge
+  capabilities block handoff explicitly. Legacy unset retirement stays unchanged.
+  Untracked/legacy ordinary windows can therefore keep profile release pending.
+- Full store/engine/httpapi suites passed at the routing checkpoint (8.433s/3.841s/
+  2.599s); later host-only and corrupt-route focused checks pass. Collection,
+  appshell and main checks pass; Node worker/collection-mode tests pass 12/12.
+  Bridge split-client negotiation/legacy tests pass 23/23. UI Quiet labels now
+  describe hidden X/Facebook only when that backend is configured; rendered
+  validation for these new labels remains open.
+- The isolated native worker-failure smoke passes in 8.86s with pinned Chrome152:
+  two hidden targets, shared fixture cookie, independent minimized interactive
+  window survival, retained root pipe, exact hidden cleanup and natural owner
+  drain after the last ordinary window closes. Actual pinned Node RPC extraction
+  with fake CDP passes in 8.523s, preserving IDs, partial quality and unresolved
+  media. Neither fixture establishes authenticated source parity.
+- New full package validation and automatic native borrow/return smoke are next.
+  End-to-end login/reader-close auto-return, source parity, focus measurements and
+  release/install acceptance remain open. No installed runtime/settings changed.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

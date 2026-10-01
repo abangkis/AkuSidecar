@@ -21,6 +21,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
+	"github.com/abangkis/AkuSidecar/internal/collection/quiet"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
@@ -202,14 +203,19 @@ func main() {
 	collectionCtx, stopCollection := context.WithCancel(context.Background())
 	defer stopCollection()
 	var collector *collection.Coordinator
+	var initializeCapture func(context.Context) error
 	if options.AppShell {
 		if resetErr := discardLegacyProfileResetMarker(state, logger); resetErr != nil {
 			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
-		shell, capture, collector = launchAppShell(logger, options, cfg, address.String(), server)
+		shell, capture, collector, initializeCapture = launchAppShell(logger, options, cfg, address.String(), server)
 		if capture != nil {
 			fatal(logger, runtime.AttachCaptureRuntime(context.Background(), capture))
 			fatal(logger, server.SetSplitCaptureRuntime(capture))
+			startupCtx, cancelStartup := context.WithTimeout(collectionCtx, 10*time.Second)
+			startupErr := initializeCapture(startupCtx)
+			cancelStartup()
+			fatal(logger, startupErr)
 			fatal(logger, capture.SetTransitionReadiness(func(ctx context.Context) error {
 				if capture.Snapshot().Driver == "headless" {
 					return ctx.Err()
@@ -322,7 +328,7 @@ func discoverChromium(options config.Options) int {
 	return 0
 }
 
-func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) (*appshell.Session, *captureruntime.Manager, *collection.Coordinator) {
+func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) (*appshell.Session, *captureruntime.Manager, *collection.Coordinator, func(context.Context) error) {
 	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
 	cancel()
@@ -350,6 +356,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	uiResult := result
 	var uiArgs []string
 	if cfg.WindowsCaptureSplit {
+		fatal(logger, server.RequireHostOnlyRetirement())
 		sidecarExecutable, executableErr := os.Executable()
 		fatal(logger, executableErr)
 		uiDiscoveryCtx, cancelUIDiscovery := context.WithTimeout(context.Background(), 10*time.Second)
@@ -366,7 +373,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		fatal(logger, err)
 		capture, err = appshell.Launch(context.Background(), appshell.LaunchOptions{
 			Executable: result.Executable, ExtensionPath: extensionPath,
-			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true,
+			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized"},
 		})
 		fatal(logger, err)
 		containment, err := capture.StartCaptureContainment(logger)
@@ -427,8 +434,8 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	}
 	var captureManager *captureruntime.Manager
 	var collector *collection.Coordinator
+	var initializeCapture func(context.Context) error
 	if capture != nil {
-		fatal(logger, capture.SetCaptureHandoff(server.CloseSplitCaptureHost))
 		captureManager, err = captureruntime.New(capture)
 		fatal(logger, err)
 		captureProfile, _, profileErr := appshell.SplitProfilePaths(browserProfilePath(options, cfg))
@@ -439,6 +446,32 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		headlessOptions := headless.Options{Node: filepath.Join(workerRoot, "node.exe"), Worker: filepath.Join(workerRoot, "worker.mjs"), Pin: filepath.Join(workerRoot, "node.pin.json"), Chrome: result.Executable, Profile: captureProfile, BridgePath: options.BridgeExtensionPath}
 		if !filepath.IsAbs(headlessOptions.BridgePath) {
 			headlessOptions.BridgePath, _ = filepath.Abs(headlessOptions.BridgePath)
+		}
+		bindQuiet := func(ctx context.Context, window *appshell.Window, generation uint64) error {
+			targets, err := quiet.NewTargets(ctx, window.CaptureProtocol())
+			if err != nil {
+				if targets != nil {
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					cleanupErr := targets.Close(cleanupCtx)
+					cancel()
+					if cleanupErr != nil {
+						return fmt.Errorf("%w; Quiet partial session cleanup unverified: %v", err, cleanupErr)
+					}
+				}
+				return err
+			}
+			worker := quiet.NewWorker(targets, headlessOptions)
+			if err := window.SetCaptureHandoff(func(ctx context.Context) error {
+				if err := worker.Retire(ctx); err != nil {
+					return err
+				}
+				return server.CloseSplitCaptureHost(ctx)
+			}); err != nil {
+				_ = worker.Retire(ctx)
+				return err
+			}
+			collector.SetBrowserCollector(generation, worker)
+			return nil
 		}
 		collector = collection.NewCoordinator(captureManager, func(ctx context.Context, mode string, generation uint64) (captureruntime.Process, error) {
 			if err := server.RotateSplitCapture(); err != nil {
@@ -451,11 +484,11 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			if err != nil {
 				return nil, err
 			}
-			process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, ExtensionPath: options.BridgeExtensionPath, UserDataDir: captureProfile, URL: url, StartMinimized: true})
+			process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, ExtensionPath: options.BridgeExtensionPath, UserDataDir: captureProfile, URL: url, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized"}})
 			if err != nil {
 				return process, err
 			}
-			if err := process.SetCaptureHandoff(server.CloseSplitCaptureHost); err != nil {
+			if err := bindQuiet(ctx, process, generation); err != nil {
 				return process, err
 			}
 			containment, err := process.StartCaptureContainment(logger)
@@ -468,6 +501,9 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				PrepareSourceWindowLifetime(context.Context, string) error
 			}); ok {
 				server.SetSplitSourceWindowPreparation(source.PrepareSourceWindowLifetime)
+			}
+			if err := appshell.NavigateCaptureHost(ctx, process.CaptureProtocol(), url); err != nil {
+				return process, err
 			}
 			tick := time.NewTicker(100 * time.Millisecond)
 			defer tick.Stop()
@@ -482,8 +518,18 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				}
 			}
 		}, func() error { return headless.Validate(headlessOptions) })
+		initializeCapture = func(ctx context.Context) error {
+			if err := bindQuiet(ctx, capture, captureManager.Snapshot().Generation); err != nil {
+				return err
+			}
+			url, err := server.SplitCaptureLaunchURL(target)
+			if err != nil {
+				return err
+			}
+			return appshell.NavigateCaptureHost(ctx, capture.CaptureProtocol(), url)
+		}
 	}
-	return window, captureManager, collector
+	return window, captureManager, collector, initializeCapture
 }
 
 func isolatedChromiumStartupLogPath(profilePath string) string {

@@ -25,6 +25,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
+	"github.com/abangkis/AkuSidecar/internal/collection/quiet"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
@@ -109,6 +110,9 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		_ = state.Close()
 		t.Fatal("create isolated smoke server")
 	}
+	if err := s.RequireHostOnlyRetirement(); err != nil {
+		t.Fatal(err)
+	}
 	var observed bridgeHandoffHTTPObservation
 	originalHandler := s.http.Handler
 	s.http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,10 +182,6 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal("capture containment cannot track source windows")
 	}
 	s.SetSplitSourceWindowPreparation(sourceLifetime.PrepareSourceWindowLifetime)
-	if err := window.SetCaptureHandoff(s.CloseSplitCaptureHost); err != nil {
-		window.Terminate()
-		t.Fatal("bind scoped capture-host retirement")
-	}
 	manager, err = captureruntime.New(window)
 	if err != nil {
 		window.Terminate()
@@ -192,6 +192,38 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	if err := s.SetSplitCaptureRuntime(manager); err != nil {
 		t.Fatal("attach capture owner to split server")
+	}
+	var coordinator *collection.Coordinator
+	bindQuiet := func(nextCtx context.Context, headed *appshell.Window, generation uint64) error {
+		targets, err := quiet.NewTargets(nextCtx, headed.CaptureProtocol())
+		if err != nil {
+			if targets != nil {
+				_ = targets.Close(nextCtx)
+			}
+			return err
+		}
+		worker := quiet.NewWorker(targets, options)
+		// Keep one actual hidden target alive so retirement must dispose it.
+		if _, err := targets.Call(nextCtx, domain.SourceX, "Runtime.evaluate", map[string]any{"expression": "({fixture:true})", "returnByValue": true}); err != nil {
+			_ = worker.Retire(nextCtx)
+			return err
+		}
+		if err := headed.SetCaptureHandoff(func(closeCtx context.Context) error {
+			if err := worker.Retire(closeCtx); err != nil {
+				return err
+			}
+			return s.CloseSplitCaptureHost(closeCtx)
+		}); err != nil {
+			_ = worker.Retire(nextCtx)
+			return err
+		}
+		if coordinator != nil {
+			coordinator.SetBrowserCollector(generation, worker)
+		}
+		return nil
+	}
+	if err := bindQuiet(ctx, window, manager.Snapshot().Generation); err != nil {
+		t.Fatal(err)
 	}
 	protocol := window.CaptureProtocol()
 	if protocol == nil {
@@ -208,16 +240,57 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}); err != nil {
 		t.Fatal("bind authenticated transport readiness")
 	}
-	launch := func(nextCtx context.Context, mode string, _ uint64) (captureruntime.Process, error) {
-		if mode != "headless" {
-			return nil, errors.New("unexpected smoke runtime")
-		}
+	launch := func(nextCtx context.Context, mode string, generation uint64) (captureruntime.Process, error) {
 		if err := s.RotateSplitCapture(); err != nil {
 			return nil, err
 		}
-		return headless.Launch(nextCtx, options)
+		if mode == "headless" {
+			return headless.Launch(nextCtx, options)
+		}
+		if mode != "browser" {
+			return nil, errors.New("unexpected smoke runtime")
+		}
+		url, err := s.SplitCaptureLaunchURL("http://127.0.0.1:11122")
+		if err != nil {
+			return nil, err
+		}
+		headed, err := appshell.Launch(nextCtx, appshell.LaunchOptions{Executable: chromePath, ExtensionPath: bridgePath, UserDataDir: profile, URL: url, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized"}})
+		if err != nil {
+			return headed, err
+		}
+		if err := bindQuiet(nextCtx, headed, generation); err != nil {
+			return headed, err
+		}
+		containment, err := headed.StartCaptureContainment(logger)
+		if err != nil {
+			return headed, err
+		}
+		s.SetSplitReaderPreparation(containment.PrepareReader)
+		s.SetSplitReaderBroker(containment.PrepareBrokerReader)
+		source, ok := containment.(interface {
+			PrepareSourceWindowLifetime(context.Context, string) error
+		})
+		if !ok {
+			return headed, errors.New("source-window containment missing")
+		}
+		s.SetSplitSourceWindowPreparation(source.PrepareSourceWindowLifetime)
+		if err := appshell.NavigateCaptureHost(nextCtx, headed.CaptureProtocol(), url); err != nil {
+			return headed, err
+		}
+		tick := time.NewTicker(50 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			if s.SplitCaptureReplacementReadiness(nextCtx) == nil {
+				return headed, nil
+			}
+			select {
+			case <-nextCtx.Done():
+				return headed, nextCtx.Err()
+			case <-tick.C:
+			}
+		}
 	}
-	coordinator := collection.NewCoordinator(manager, launch, func() error { return headless.Validate(options) })
+	coordinator = collection.NewCoordinator(manager, launch, func() error { return headless.Validate(options) })
 	e.AttachCollectionCoordinator(coordinator)
 	coordinator.Request("headless")
 
@@ -265,6 +338,36 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if status.Effective != "headless" || status.Pending || status.Generation != 2 || status.State != captureruntime.Ready {
 		t.Fatal("headless generation 2 was not ready after verified profile handoff")
 	}
+	// This static lifecycle fixture has no source permissions or social capture.
+	// Permission admission is separately tested; bypass only that gate here.
+	coordinator.SetHeadlessReadiness(func() error { return nil })
+	coordinator.Start(ctx)
+	lease, releaseIntent, err := coordinator.BorrowBrowser(ctx)
+	if err != nil {
+		t.Fatal("automatic borrow of real browser owner failed", err)
+	}
+	if lease.Driver() != "browser" || lease.Generation() != 3 || !coordinator.BrowserCollectorAvailable(domain.SourceX) {
+		t.Fatal("browser generation 3 collector not ready")
+	}
+	lease.Release()
+	releaseIntent()
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		status := coordinator.Status()
+		if status.Effective == "headless" && status.Generation == 4 && !status.Pending && status.State == captureruntime.Ready {
+			break
+		}
+		if status.Failure != "" {
+			t.Fatal("auto-return failed", status.Failure)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("auto-return did not reach headless generation 4")
+		case <-tick.C:
+		}
+	}
+	t.Log("host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
 }
 
 func bridgeExtensionOrigin(bridgePath string) (string, error) {
@@ -385,67 +488,5 @@ func bridgeHandoffOwnedStartupDiagnostic(ctx context.Context, protocol bridgeHan
 // The owner keeps the root pipe; this function detaches just its temporary page
 // session. Protocol acceptance alone does not establish Bridge bootstrap.
 func initializeBridgeSmokeCaptureHost(ctx context.Context, protocol bridgeHandoffOwnedProtocol, launchURL string) error {
-	lookupCtx, stopLookup := context.WithTimeout(ctx, 2*time.Second)
-	defer stopLookup()
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
-	targetID := ""
-	for targetID == "" {
-		encoded, err := protocol.Call(lookupCtx, "Target.getTargets", nil, "")
-		if err != nil {
-			return errors.New("capture host target lookup failed")
-		}
-		var targets struct {
-			TargetInfos []struct {
-				ID   string `json:"targetId"`
-				Type string `json:"type"`
-				URL  string `json:"url"`
-			} `json:"targetInfos"`
-		}
-		if json.Unmarshal(encoded, &targets) != nil {
-			return errors.New("capture host target response invalid")
-		}
-		for _, target := range targets.TargetInfos {
-			if target.Type != "page" || target.URL != launchURL {
-				continue
-			}
-			if targetID != "" {
-				return errors.New("capture host target identity ambiguous")
-			}
-			targetID = target.ID
-		}
-		if targetID == "" {
-			select {
-			case <-lookupCtx.Done():
-				return errors.New("capture host target unavailable")
-			case <-ticker.C:
-			}
-		}
-	}
-	encoded, err := protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, "")
-	if err != nil {
-		return errors.New("capture host session attach failed")
-	}
-	var attached struct {
-		SessionID string `json:"sessionId"`
-	}
-	if json.Unmarshal(encoded, &attached) != nil || attached.SessionID == "" {
-		return errors.New("capture host session response invalid")
-	}
-	defer func() {
-		detachCtx, stopDetach := context.WithTimeout(context.Background(), time.Second)
-		defer stopDetach()
-		_, _ = protocol.Call(detachCtx, "Target.detachFromTarget", map[string]string{"sessionId": attached.SessionID}, "")
-	}()
-	encoded, err = protocol.Call(ctx, "Page.navigate", map[string]string{"url": launchURL}, attached.SessionID)
-	if err != nil {
-		return errors.New("capture host navigation command failed")
-	}
-	var navigation struct {
-		ErrorText string `json:"errorText"`
-	}
-	if json.Unmarshal(encoded, &navigation) != nil || navigation.ErrorText != "" {
-		return errors.New("capture host navigation rejected")
-	}
-	return nil
+	return appshell.NavigateCaptureHost(ctx, protocol, launchURL)
 }

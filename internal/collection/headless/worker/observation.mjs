@@ -64,7 +64,7 @@ function validatePost(source, post) {
   return platformId;
 }
 
-function toBlock(source, post, feedPosition) {
+function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
   const platformId = validatePost(source, post);
   const media = Array.isArray(post.media) ? structuredClone(post.media.slice(0, 20)) : [];
   const expected = Array.isArray(post.mediaExpected) ? post.mediaExpected.slice(0, 12) : [];
@@ -84,7 +84,7 @@ function toBlock(source, post, feedPosition) {
   if (post.timestampEvidence && typeof post.timestampEvidence === 'object') presentation.timestampEvidence = structuredClone(post.timestampEvidence);
   const quality = {
     status: 'unverified',
-    mode: 'headless_dom_observation',
+    mode: captureMode === 'browser_quiet_hidden' ? 'quiet_dom_observation' : 'headless_dom_observation',
     headlessSourceId: post.id,
     limitations,
     textStatus: typeof post.textStatus === 'string' ? post.textStatus : 'unverified',
@@ -113,7 +113,7 @@ function toBlock(source, post, feedPosition) {
   };
 }
 
-export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, frontier, freshness }) {
+export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, frontier, freshness, captureMode = 'headless_worker' }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
   const domainSnapshots = snapshots.map((snapshot, index) => {
@@ -123,7 +123,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
     const counts = { candidates: Number.isInteger(snapshot.candidateCount) ? snapshot.candidateCount : posts.length };
     const candidateDiagnostics = snapshot.candidateDiagnostics && typeof snapshot.candidateDiagnostics === 'object'
       ? structuredClone(snapshot.candidateDiagnostics) : undefined;
-    const qualityReports = [{ status: 'unverified', mode: 'headless_dom_observation', candidateCount: counts.candidates,
+    const qualityReports = [{ status: 'unverified', mode: captureMode === 'browser_quiet_hidden' ? 'quiet_dom_observation' : 'headless_dom_observation', candidateCount: counts.candidates,
       observedPostCount: posts.length, rejected: Number.isInteger(snapshot.rejected) ? snapshot.rejected : 0,
       rejectionReasons: preserveMap(snapshot.rejectionReasons) }];
     return {
@@ -139,7 +139,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       scrollY: Number.isFinite(snapshot.scroll?.y) ? Math.trunc(snapshot.scroll.y) : 0,
       viewportHeight: Number.isFinite(snapshot.scroll?.viewportHeight) ? Math.trunc(snapshot.scroll.viewportHeight) : 0,
       newCandidateCount: [...uniqueIds].filter(id => !previousIds.has(id)).length,
-      blocks: posts.map((post, position) => toBlock(source, post, position)),
+      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode)),
       qualityReports,
     };
   });
@@ -153,7 +153,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
     snapshots: domainSnapshots,
     coverage: {
       status,
-      captureMode: 'headless_worker',
+      captureMode,
       captureStatus: 'captured_partial',
       stopReason,
       observedBlockCount: domainSnapshots.reduce((sum, snapshot) => sum + snapshot.blocks.length, 0),

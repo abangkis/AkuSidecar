@@ -975,6 +975,14 @@ func (e *Engine) ClaimCommand(ctx context.Context, runID, bridgeID string) (*dom
 	return e.claimCommandForDriver(ctx, runID, bridgeID, "browser")
 }
 func (e *Engine) claimCommandForDriver(ctx context.Context, runID, bridgeID, driver string) (*domain.BridgeCommand, error) {
+	collector := collection.BackendBridge
+	if driver == "headless" {
+		collector = collection.BackendHeadless
+	}
+	return e.claimCommandForCollector(ctx, runID, bridgeID, driver, collector)
+}
+
+func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, driver, collector string) (*domain.BridgeCommand, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
 		return nil, err
@@ -993,7 +1001,7 @@ func (e *Engine) claimCommandForDriver(ctx context.Context, runID, bridgeID, dri
 	if wrongDriver {
 		return nil, fmt.Errorf("%w: command belongs to another collection driver", errStaleCaptureRuntime)
 	}
-	command, err := e.store.ClaimCommand(ctx, runID, bridgeID)
+	command, err := e.store.ClaimCommandForCollector(ctx, runID, bridgeID, collector)
 	if err != nil || command == nil {
 		return command, err
 	}
@@ -1010,7 +1018,7 @@ func (e *Engine) PendingBridgeRunID(ctx context.Context) (string, error) {
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
 		return "", err
 	}
-	return e.store.PendingBridgeRunID(ctx)
+	return e.store.PendingRunIDForCollector(ctx, collection.BackendBridge)
 }
 
 func (e *Engine) recoverExpiredBridgeCommands(ctx context.Context, now time.Time) error {
@@ -2335,10 +2343,26 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 		return domain.MediaRecapture{}, err
 	}
 	var stamp map[string]any
+	driver := "browser"
 	if lease != nil {
+		driver = lease.Driver()
 		stamp = map[string]any{"driver": lease.Driver(), "epoch": e.epoch, "generation": int(lease.Generation())}
 	}
-	job, err := e.store.CreateOwnedMediaRecapture(ctx, timelineID, mode, reason, stamp)
+	item, err := e.store.TimelineItem(ctx, timelineID)
+	if err != nil {
+		lease.Release()
+		return domain.MediaRecapture{}, err
+	}
+	settings, err := e.store.GetSettings(ctx)
+	if err != nil {
+		lease.Release()
+		return domain.MediaRecapture{}, err
+	}
+	collector := e.selectCaptureCollector(item.Source, settings, driver)
+	if mode == domain.MediaRecaptureForeground && driver == "browser" {
+		collector = collection.BackendBridge
+	}
+	job, err := e.store.CreateOwnedMediaRecapture(ctx, timelineID, mode, reason, stamp, collector)
 	if err != nil {
 		lease.Release()
 		return domain.MediaRecapture{}, err
@@ -2362,6 +2386,14 @@ func (e *Engine) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (
 	return e.claimMediaRecaptureForDriver(ctx, id, bridgeID, "browser")
 }
 func (e *Engine) claimMediaRecaptureForDriver(ctx context.Context, id, bridgeID, driver string) (domain.MediaRecapture, error) {
+	collector := collection.BackendBridge
+	if driver == "headless" {
+		collector = collection.BackendHeadless
+	}
+	return e.claimMediaRecaptureForCollector(ctx, id, bridgeID, driver, collector)
+}
+
+func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridgeID, driver, collector string) (domain.MediaRecapture, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if _, err := e.store.MediaRecapture(ctx, id); err != nil {
 		return domain.MediaRecapture{}, err
@@ -2383,7 +2415,7 @@ func (e *Engine) claimMediaRecaptureForDriver(ctx context.Context, id, bridgeID,
 		}
 		return domain.MediaRecapture{}, err
 	}
-	return e.store.ClaimMediaRecapture(ctx, id, bridgeID)
+	return e.store.ClaimMediaRecaptureForCollector(ctx, id, bridgeID, collector)
 }
 
 func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {

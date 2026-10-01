@@ -31,7 +31,7 @@ func (s *Store) CreateMediaRecaptureForReason(ctx context.Context, timelineID st
 
 // CreateOwnedMediaRecapture persists the runtime stamp in the same write that
 // admits the job. Legacy callers retain their original unstamped payload.
-func (s *Store) CreateOwnedMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason, runtime map[string]any) (domain.MediaRecapture, error) {
+func (s *Store) CreateOwnedMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason, runtime map[string]any, collector ...string) (domain.MediaRecapture, error) {
 	if mode != domain.MediaRecaptureBackground && mode != domain.MediaRecaptureForeground {
 		return domain.MediaRecapture{}, errors.New("media recapture mode must be background or foreground")
 	}
@@ -137,6 +137,15 @@ func (s *Store) CreateOwnedMediaRecapture(ctx context.Context, timelineID string
 	}
 	if runtime != nil {
 		job.Payload["captureRuntime"] = runtime
+	}
+	if len(collector) > 1 {
+		return domain.MediaRecapture{}, errors.New("only one capture collector may own a recapture")
+	}
+	if len(collector) == 1 {
+		job.Payload["captureCollector"] = map[string]any{"backend": collector[0], "version": 1}
+		if _, err := CaptureCollector(job.Payload); err != nil {
+			return domain.MediaRecapture{}, err
+		}
 	}
 	payload, err := json.Marshal(job.Payload)
 	if err != nil {
@@ -299,6 +308,10 @@ func (s *Store) requireUnavailableBackgroundRecapture(ctx context.Context, timel
 }
 
 func (s *Store) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {
+	return s.ClaimMediaRecaptureForCollector(ctx, id, bridgeID, "")
+}
+
+func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeID, collector string) (domain.MediaRecapture, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.MediaRecapture{}, err
@@ -310,6 +323,15 @@ func (s *Store) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (d
 	}
 	if job.Status != "queued" {
 		return domain.MediaRecapture{}, fmt.Errorf("media recapture is %s, not queued", job.Status)
+	}
+	if collector != "" {
+		route, err := CaptureCollector(job.Payload)
+		if err != nil {
+			return domain.MediaRecapture{}, err
+		}
+		if route != collector {
+			return domain.MediaRecapture{}, nil
+		}
 	}
 	now := domain.Now()
 	result, err := tx.ExecContext(ctx, `UPDATE media_recaptures SET status='claimed',claimed_by=?,claimed_at=? WHERE id=? AND status='queued'`, bridgeID, now, id)
@@ -448,7 +470,10 @@ func mediaRecaptureByID(ctx context.Context, queryer rowQueryer, id string) (dom
 	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
-	decodeJSON(payloadRaw, &job.Payload)
+	job.Payload, err = decodeCapturePayload(payloadRaw)
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
 	if claimedAt.Valid {
 		job.ClaimedAt = &claimedAt.String
 	}

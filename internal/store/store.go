@@ -1092,6 +1092,16 @@ func (s *Store) QueueFollowUp(ctx context.Context, runID string, payload map[str
 }
 
 func (s *Store) ClaimCommand(ctx context.Context, runID, bridgeID string) (*domain.BridgeCommand, error) {
+	return s.claimCommand(ctx, runID, bridgeID, "")
+}
+
+// ClaimCommandForCollector fences the immutable route before changing durable
+// claim state. A command belonging to another consumer remains queued.
+func (s *Store) ClaimCommandForCollector(ctx context.Context, runID, bridgeID, collector string) (*domain.BridgeCommand, error) {
+	return s.claimCommand(ctx, runID, bridgeID, collector)
+}
+
+func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector string) (*domain.BridgeCommand, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -1119,6 +1129,19 @@ func (s *Store) ClaimCommand(ctx context.Context, runID, bridgeID string) (*doma
 	if err != nil {
 		return nil, err
 	}
+	command.Payload, err = decodeCapturePayload(raw)
+	if err != nil {
+		return nil, err
+	}
+	if collector != "" {
+		route, err := CaptureCollector(command.Payload)
+		if err != nil {
+			return nil, err
+		}
+		if route != collector {
+			return nil, nil
+		}
+	}
 	now := domain.Now()
 	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='claimed',claimed_by=?,claimed_at=? WHERE id=? AND status='queued'`, bridgeID, now, command.ID)
 	if err != nil {
@@ -1133,8 +1156,56 @@ func (s *Store) ClaimCommand(ctx context.Context, runID, bridgeID string) (*doma
 	}
 	command.Status = "claimed"
 	command.ClaimedAt = &now
-	decodeJSON(raw, &command.Payload)
 	return &command, nil
+}
+
+// CaptureCollector preserves legacy routing while rejecting unknown stamped
+// contracts. The runtime driver identifies the profile owner, not its consumer.
+func CaptureCollector(payload map[string]any) (string, error) {
+	if value, exists := payload["captureCollector"]; exists {
+		stamp, ok := value.(map[string]any)
+		if !ok || (stamp["version"] != 1 && stamp["version"] != float64(1)) {
+			return "", errors.New("unsupported capture collector stamp")
+		}
+		backend, _ := stamp["backend"].(string)
+		switch backend {
+		case "bridge", "browser_quiet_hidden", "headless":
+			return backend, nil
+		default:
+			return "", errors.New("unsupported capture collector backend")
+		}
+	}
+	if runtime, ok := payload["captureRuntime"].(map[string]any); ok && runtime["driver"] == "headless" {
+		return "headless", nil
+	}
+	return "bridge", nil
+}
+
+func decodeCapturePayload(raw string) (map[string]any, error) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, errors.New("invalid capture payload JSON")
+	}
+	return payload, nil
+}
+
+// FirstCommandCollector pins all acquisition rounds to the first durable
+// command, including queued work restored before managed runtime attachment.
+func (s *Store) FirstCommandCollector(ctx context.Context, runID string) (string, bool, error) {
+	var raw string
+	err := s.db.QueryRowContext(ctx, `SELECT payload_json FROM bridge_commands WHERE run_id=? ORDER BY created_at,rowid LIMIT 1`, runID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	payload, err := decodeCapturePayload(raw)
+	if err != nil {
+		return "", true, err
+	}
+	route, err := CaptureCollector(payload)
+	return route, true, err
 }
 
 func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]domain.BridgeCommand, error) {
@@ -1221,6 +1292,29 @@ func (s *Store) PendingBridgeRunID(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return runID, err
+}
+
+func (s *Store) PendingRunIDForCollector(ctx context.Context, collector string) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT r.id,c.payload_json FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.status='waiting_for_bridge' AND c.status='queued' ORDER BY c.created_at,c.rowid`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return "", err
+		}
+		payload, err := decodeCapturePayload(raw)
+		if err != nil {
+			continue // Corrupt work is never admitted as a legacy Bridge route.
+		}
+		route, routeErr := CaptureCollector(payload)
+		if routeErr == nil && route == collector {
+			return id, nil
+		}
+	}
+	return "", rows.Err()
 }
 
 func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, observation domain.Observation) error {

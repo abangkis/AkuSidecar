@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
 import { launchChrome } from './chrome.mjs';
+import { createBorrowedChrome, createBorrowedRPC } from './borrowed.mjs';
 import { capture } from './capture.mjs';
 import { sourceProvenance } from './provenance.mjs';
 
@@ -53,7 +54,7 @@ async function sourceAssets(bridgePath, source) {
         { relative: 'worker/vendor/facebook-time-evidence.js', path: resolve(root, 'vendor/facebook-time-evidence.js'), execute: true },
         { relative: 'worker/vendor/facebook-extract.js', path: resolve(root, 'vendor/facebook-extract.js'), execute: true },
       ];
-  const workerModules = ['capture.mjs', 'chrome.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {
@@ -87,6 +88,7 @@ export async function runWorker({ input = process.stdin, output = process.stdout
     browser = null;
     await owned.close();
   };
+  const borrowedRPC = createBorrowedRPC(write);
   const handle = async raw => {
     let id = null;
     try {
@@ -98,17 +100,20 @@ export async function runWorker({ input = process.stdin, output = process.stdout
       if (shuttingDown) throw requestError('worker_shutting_down', 'worker is shutting down');
       if (request.type === 'init') {
         if (browser) throw requestError('already_initialized', 'worker already owns a Chrome process');
-        const options = validateInit(request);
+        const borrowed = request.backend === 'browser_quiet_hidden';
+        const options = borrowed ? validateBorrowedInit(request) : validateInit(request);
         const loadedAssets = {
           x: await sourceAssets(options.bridgePath, 'x'),
           facebook: await sourceAssets(options.bridgePath, 'facebook'),
         };
-        browser = await launchChrome(options);
+        browser = borrowed
+          ? createBorrowedChrome(borrowedRPC.send, request.chromeVersion)
+          : await launchChrome(options);
         assetsBySource = loadedAssets;
         const result = {
           pid: browser.pid,
           chromeVersion: browser.version,
-          workerDriver: { name: 'aku-headless-worker', version: WORKER_VERSION, protocolVersion: PROTOCOL_VERSION },
+          workerDriver: { name: borrowed ? 'aku-quiet-worker' : 'aku-headless-worker', version: WORKER_VERSION, protocolVersion: PROTOCOL_VERSION },
         };
         await write(responseFor(id, true, result));
         return;
@@ -136,7 +141,7 @@ export async function runWorker({ input = process.stdin, output = process.stdout
 
   input.on('data', chunk => {
     lineBuffer += decoder.write(chunk);
-    if (Buffer.byteLength(lineBuffer, 'utf8') > MAX_LINE_BYTES && !lineBuffer.includes('\n')) {
+    if (Buffer.byteLength(lineBuffer, 'utf8') > 16 * 1024 * 1024 && !lineBuffer.includes('\n')) {
       lineBuffer = '';
       void write(responseFor(null, false, undefined, { code: 'request_too_large', message: 'request line exceeds the 1 MiB limit' }));
       return;
@@ -146,10 +151,16 @@ export async function runWorker({ input = process.stdin, output = process.stdout
       const raw = lineBuffer.slice(0, newline).replace(/\r$/, '');
       lineBuffer = lineBuffer.slice(newline + 1);
       if (!raw) continue;
+      // CDP replies must bypass the serialized capture queue: capture awaits
+      // these replies itself. Ordinary commands still have the 1 MiB bound.
+      let fastReply;
+      try { fastReply = JSON.parse(raw); } catch {}
+      if (borrowedRPC.receive(fastReply)) continue;
       queued = queued.then(() => handle(raw));
     }
   });
   input.on('end', () => {
+    borrowedRPC.close();
     lineBuffer += decoder.end();
     if (lineBuffer.trim()) queued = queued.then(() => handle(lineBuffer));
     queued = queued.then(closeBrowser).catch(error => {
@@ -157,6 +168,7 @@ export async function runWorker({ input = process.stdin, output = process.stdout
     });
   });
   const interrupt = () => {
+    borrowedRPC.close();
     shuttingDown = true;
     void closeBrowser().catch(error => errorOutput?.write(`[headless-worker] interrupt close error: ${String(error?.message || error).slice(0, 300)}\n`));
   };
@@ -183,6 +195,15 @@ export function validateInit(request) {
     throw requestError('invalid_init', 'profileDirectory must be a simple Chrome profile name');
   }
   return { chromePath: value.chrome, profilePath: value.profile, bridgePath: value.bridgePath, profileDirectory: value.profileDirectory };
+}
+
+export function validateBorrowedInit(request) {
+  if (request.backend !== 'browser_quiet_hidden' || typeof request.bridgePath !== 'string'
+      || !isAbsolutePath(request.bridgePath) || !request.chromeVersion
+      || typeof request.chromeVersion !== 'object' || request.chrome || request.profile) {
+    throw requestError('invalid_init', 'Quiet requires host-owned Chrome metadata and explicit source assets');
+  }
+  return {bridgePath: request.bridgePath};
 }
 
 function isAbsolutePath(value) {

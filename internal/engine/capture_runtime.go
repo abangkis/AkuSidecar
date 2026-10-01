@@ -10,6 +10,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 var errStaleCaptureRuntime = errors.New("capture command belongs to another runtime owner")
@@ -98,25 +99,29 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 				return
 			case <-ticker.C:
 			}
-			if !e.headlessEffective() {
+			if e.collectionRuntime == nil || e.captureOwner == nil {
 				continue
+			}
+			collector, driver, workerID := collection.BackendQuiet, "browser", "aku-browser-quiet-v1"
+			if e.headlessEffective() {
+				collector, driver, workerID = collection.BackendHeadless, "headless", "aku-headless-v1"
 			}
 			lease, err := e.acquireCaptureLease()
 			if err != nil {
 				continue
 			}
-			if lease == nil || lease.Driver() != "headless" {
+			if lease == nil || lease.Driver() != driver {
 				lease.Release()
 				continue
 			}
 			func() {
 				defer lease.Release()
-				id, err := e.PendingBridgeRunID(ctx)
+				id, err := e.store.PendingRunIDForCollector(ctx, collector)
 				if err != nil || id == "" {
-					e.captureHeadlessMediaRecapture(ctx)
+					e.captureInternalMediaRecapture(ctx, driver, collector, workerID)
 					return
 				}
-				command, err := e.claimCommandForDriver(ctx, id, "aku-headless-v1", "headless")
+				command, err := e.claimCommandForCollector(ctx, id, workerID, driver, collector)
 				if err != nil || command == nil {
 					return
 				}
@@ -124,7 +129,7 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 				if err != nil {
 					return
 				}
-				observation, err := e.collectionRuntime.Capture(ctx, run.Source, command.Payload)
+				observation, err := e.captureForCollector(ctx, run.Source, command.Payload, collector)
 				if ctx.Err() != nil {
 					return
 				}
@@ -132,14 +137,14 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 					_, err = e.AcceptObservation(ctx, command.ID, id, observation)
 				}
 				if err != nil {
-					_, _ = e.FailCommand(ctx, command.ID, id, headlessFailure(err))
+					_, _ = e.FailCommand(ctx, command.ID, id, internalCollectorFailure(err, collector))
 				}
 			}()
 		}
 	}()
 }
 
-func (e *Engine) captureHeadlessMediaRecapture(ctx context.Context) {
+func (e *Engine) captureInternalMediaRecapture(ctx context.Context, driver, collector, workerID string) {
 	ids, err := e.store.ActiveMediaRecaptureIDs(ctx)
 	if err != nil {
 		return
@@ -149,8 +154,12 @@ func (e *Engine) captureHeadlessMediaRecapture(ctx context.Context) {
 		if err != nil || job.Status != "queued" {
 			continue
 		}
-		job, err = e.claimMediaRecaptureForDriver(ctx, id, "aku-headless-v1", "headless")
-		if err != nil {
+		route, err := store.CaptureCollector(job.Payload)
+		if err != nil || route != collector {
+			continue
+		}
+		job, err = e.claimMediaRecaptureForCollector(ctx, id, workerID, driver, collector)
+		if err != nil || job.ID == "" {
 			continue
 		}
 		payload := map[string]any{}
@@ -158,7 +167,7 @@ func (e *Engine) captureHeadlessMediaRecapture(ctx context.Context) {
 			payload[key] = value
 		}
 		payload["pageUrl"] = job.TargetURL
-		observation, err := e.collectionRuntime.Capture(ctx, job.Source, payload)
+		observation, err := e.captureForCollector(ctx, job.Source, payload, collector)
 		if ctx.Err() != nil {
 			return
 		}
@@ -166,7 +175,7 @@ func (e *Engine) captureHeadlessMediaRecapture(ctx context.Context) {
 			_, err = e.AcceptMediaRecapture(ctx, id, observation)
 		}
 		if err != nil {
-			_, _ = e.FailMediaRecapture(ctx, id, headlessFailure(err))
+			_, _ = e.FailMediaRecapture(ctx, id, internalCollectorFailure(err, collector))
 		}
 		return
 	}
@@ -177,9 +186,17 @@ func headlessFailure(err error) domain.Failure {
 	var typed *headless.CaptureError
 	if errors.As(err, &typed) {
 		failure.Code = "headless_" + typed.Code
-		if typed.Code == "login_required" || typed.Code == "challenge_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" {
+		if typed.Code == "login_required" || typed.Code == "challenge_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" || typed.Code == "source_access_revoked" {
 			failure.Retryable = false
 		}
+	}
+	return failure
+}
+
+func internalCollectorFailure(err error, collector string) domain.Failure {
+	failure := headlessFailure(err)
+	if collector == collection.BackendQuiet {
+		failure.Code = "quiet_" + failure.Code[len("headless_"):]
 	}
 	return failure
 }
@@ -334,11 +351,72 @@ func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings do
 	}
 	payload := capturePayload(run, leaseID, settings, round, continuation, reason)
 	e.captureMu.Lock()
-	defer e.captureMu.Unlock()
+	driver := "browser"
 	if lease := e.captureSessions[run.SessionID]; lease != nil {
+		driver = lease.Driver()
 		payload["captureRuntime"] = map[string]any{"driver": lease.Driver(), "epoch": e.epoch, "generation": int(lease.Generation())}
 	}
+	e.captureMu.Unlock()
+	collector, exists, err := e.store.FirstCommandCollector(context.Background(), run.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		collector = e.selectCaptureCollector(run.Source, settings, driver)
+	}
+	payload["captureCollector"] = collectorStamp(collector)
 	return payload, nil
+}
+
+func collectorStamp(backend string) map[string]any {
+	return map[string]any{"backend": backend, "version": 1}
+}
+
+func (e *Engine) selectCaptureCollector(source domain.Source, settings domain.Settings, driver string) string {
+	if driver == "headless" {
+		return collection.BackendHeadless
+	}
+	if (settings.CaptureVisibility != "quiet" && settings.CaptureVisibility != "quiet_multi_window") || e.collectionRuntime == nil || !e.collectionRuntime.BrowserCollectorAvailable(source) {
+		return collection.BackendBridge
+	}
+	if e.quietSourceAuthorized(source) {
+		return collection.BackendQuiet
+	}
+	return collection.BackendBridge
+}
+
+func (e *Engine) quietSourceAuthorized(source domain.Source) bool {
+	status := e.BridgeStatus()
+	if status.Compatible && status.Actual != nil {
+		for _, access := range status.Actual.SourceAccess.Sources {
+			if domain.Source(access.Source) == source && access.Ready && access.PermissionGranted && access.ScriptRegistered {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *Engine) captureForCollector(ctx context.Context, source domain.Source, payload map[string]any, collector string) (domain.Observation, error) {
+	if collector == collection.BackendQuiet && !e.quietSourceAuthorized(source) {
+		return domain.Observation{}, &headless.CaptureError{Code: "source_access_revoked", Message: "Browser source access is no longer confirmed; grant source access before retrying Quiet capture."}
+	}
+	return e.collectionRuntime.Capture(ctx, source, payload)
+}
+
+// RunCaptureCollector is read-only and uses the persisted command route rather
+// than current settings, including for UI dispatch acknowledgements.
+func (e *Engine) RunCaptureCollector(ctx context.Context, runID string) (string, error) {
+	collector, exists, err := e.store.FirstCommandCollector(ctx, runID)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		// Preserve the existing Bridge action path when there is no durable
+		// command yet; it still cannot claim or execute nonexistent work.
+		return collection.BackendBridge, nil
+	}
+	return collector, nil
 }
 
 func (e *Engine) validateCaptureOwner(sessionID string, payload map[string]any) error {

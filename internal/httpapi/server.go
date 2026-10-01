@@ -1559,6 +1559,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return conflict(err.Error())
 		}
+		if recapture.ID == "" {
+			w.WriteHeader(http.StatusNoContent)
+			return nil
+		}
 		return writeJSON(w, http.StatusOK, map[string]any{"recapture": recapture})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/media-recaptures/") && strings.HasSuffix(p, "/observation"):
 		if err := s.requireBridge(r); err != nil {

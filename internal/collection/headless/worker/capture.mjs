@@ -212,8 +212,9 @@ export async function capture(browser, assetsBySource, source, payload) {
   if (options.restoreScroll) await page.evaluate(`window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   return toObservation({
     source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
+    captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
     frontier,
-    freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'headless worker cannot apply AkuBridge tab wake or freshness qualification' },
+    freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'CDP worker cannot apply AkuBridge tab wake or freshness qualification' },
   });
 }
 

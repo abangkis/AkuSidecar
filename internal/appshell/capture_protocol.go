@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	captureProtocolMaxFrame   = 1 << 20
-	captureProtocolMaxRequest = 64 << 10
+	captureProtocolMaxFrame   = 16 << 20
+	captureProtocolMaxRequest = 8 << 20
 	captureProtocolMaxPending = 32
 )
 

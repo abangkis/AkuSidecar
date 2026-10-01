@@ -3265,7 +3265,16 @@ function renderCollectionRuntime() {
   const select = $("#collection-mode");
   if (!select) return;
   select.querySelector('[value="headless"]').disabled = !view.canSelectHeadless;
-  $("#capture-visibility-policy").disabled = select.value === "headless";
+  const visibility = $("#capture-visibility-policy");
+  visibility.disabled = select.value === "headless";
+  const hiddenQuiet = runtime?.quietAvailable === true;
+  visibility.querySelector('[value="quiet"]').textContent = hiddenQuiet
+    ? "Quiet capture — hidden X/Facebook — recommended" : "Quiet capture — single window — recommended";
+  visibility.querySelector('[value="quiet_multi_window"]').textContent = hiddenQuiet
+    ? "Quiet capture — hidden X/Facebook, separate windows for other sources" : "Quiet capture — multiple windows (trial)";
+  $("#capture-visibility-description").textContent = hiddenQuiet
+    ? "Quiet keeps X and Facebook collection hidden. Login and native posts still open an interactive window. Other sources retain the selected background-window policy; Adaptive uses a normal Chrome tab."
+    : "Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.";
   $("#collection-runtime-status").textContent = view.detail;
 }
 async function pollCollectionRuntime() {
