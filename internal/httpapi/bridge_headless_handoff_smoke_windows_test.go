@@ -368,6 +368,19 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	// An ordinary source window stays outside the machine-target ownership list.
 	// Its real HWND lifetime must hold auto-return after the dispatch lease ends.
+	beforeRaw, err := borrowedWindow.CaptureProtocol().Call(ctx, "Target.getTargets", nil, "")
+	var before struct {
+		TargetInfos []struct {
+			TargetID string `json:"targetId"`
+		} `json:"targetInfos"`
+	}
+	if err != nil || json.Unmarshal(beforeRaw, &before) != nil {
+		t.Fatal("pre-window fixture inventory unavailable")
+	}
+	beforeIDs := map[string]bool{}
+	for _, info := range before.TargetInfos {
+		beforeIDs[info.TargetID] = true
+	}
 	interactiveID, err := createBridgeFixtureWindow(ctx, borrowedWindow.CaptureProtocol(), origin)
 	if err != nil {
 		t.Fatal("create isolated Bridge fixture window", err)
@@ -405,7 +418,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 				WindowID int `json:"windowId"`
 			}
 			if otherErr == nil && json.Unmarshal(otherInfo, &otherWindow) == nil && otherWindow.WindowID == nativeWindow.WindowID {
-				t.Fatalf("fixture window contains another page; refusing native window close (other_is_host=%t other_is_blank=%t other_is_fixture=%t other_is_created_hidden=%t)", info.URL == borrowedHostURL, info.URL == "about:blank", info.URL == "http://127.0.0.1:11122/quiet-interactive-fixture", borrowedMachineTargets.owns(info.TargetID))
+				t.Fatalf("fixture window contains another page; refusing native window close (other_is_host=%t other_is_blank=%t other_is_fixture=%t other_is_created_hidden=%t other_existed_before_window=%t)", info.URL == borrowedHostURL, info.URL == "about:blank", info.URL == "http://127.0.0.1:11122/quiet-interactive-fixture", borrowedMachineTargets.owns(info.TargetID), beforeIDs[info.TargetID])
 			}
 		}
 		if info.URL != borrowedHostURL {

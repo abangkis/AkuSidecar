@@ -848,6 +848,13 @@ a mode switch. Do not retrofit a settings-only change around them.
   re-entry from pages created with the interactive window. Do not close/adopt
   the unknown target or weaken production native lifetime checks. No production
   code or candidate payload changed in this diagnostic continuation.
+- A subsequent before/after inventory proves the unknown blank target was not
+  present before interactive-window creation. Receipt:
+  `AkuSidecar/build/bridge-handoff-1f2afc62-fbc1-4b2e-a763-68c5fbc0c7ae`;
+  diagnostic fails safely in `5.49s`, original runtime restored. This narrows the
+  next investigation to window creation/CDP target representation. Compare the
+  exact newly created Chrome window's actual tabs against its CDP page targets
+  before interpreting either inventory as permission to close a native window.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
