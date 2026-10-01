@@ -694,6 +694,24 @@ a mode switch. Do not retrofit a settings-only change around them.
   preservation and production collection integration remain separate gates.
   The loopback debugging endpoint exists only in this disposable probe.
 
+### Go-owned Windows pipe capability checkpoint (2026-10-02)
+
+- The first disposable private-pipe probe establishes Browser.getVersion as
+  `Chrome/152.0.7977.54`, but fails after 0.32 seconds because an exact
+  `about:blank` app target is unavailable. It closes no ambiguous target and
+  cleans up only its synthetic owned Job. Natural shutdown remains unproven
+  by that first run.
+- The corrected fixture uses its own random-port `/pipe-host` URL and a bounded
+  two-second wait for one exact page target. The second native run passes in
+  0.38 seconds: pipe roundtrip, exact target closure, clean natural root exit and
+  whole-Job zero are verified while both Go parent pipe ends remain open.
+- The Windows transport uses inherited child-only anonymous pipe handles and
+  `--remote-debugging-io-pipes`; it exposes no HTTP debugging port. No signed-in
+  profile, original runtime interruption or global configuration change occurs.
+- This is a transport/lifecycle capability proof. It does not yet prove the
+  production Window API, hidden-collector integration, independent interactive
+  window retention, worker-failure recovery or authenticated Bridge handoff.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
