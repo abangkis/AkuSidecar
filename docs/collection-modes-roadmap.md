@@ -55,7 +55,7 @@ not write Timeline records directly or bypass durable command admission.
 | `internal/collection/request.go` | Acquisition intent and command-preparation contract; no browser execution |
 | `internal/collection/bridge/` | Existing Bridge payload preparation; asynchronous transport remains intact |
 | `internal/collection/coordinator.go` | Local candidate for driver routing, capability/readiness checks, admission and pinned run ownership |
-| `internal/collection/headless/` | Local candidate for the packaged Node/CDP worker and common observation submission; production continuation remains incomplete |
+| `internal/collection/headless/` | Packaged Node/CDP worker and common observation submission; production continuation fixtures pass, authenticated parity remains open |
 | `internal/captureruntime/` | Managed Chrome lifecycle, profile ownership, generation and leases; local handoff/recovery implementation awaits final acceptance |
 | `internal/engine/`, `internal/store/` | Durable commands/runs, result validation, reasoning and common data persistence |
 | `internal/httpapi/` and embedded UI | Settings contract, transition status, source capabilities and error presentation |
@@ -168,9 +168,9 @@ because DOM capture passed. Browser remains default after this gate.
 | --- | --- | --- |
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
 | 2a-2b | Foundation complete and committed; final integrated validation pending | Process ownership, durable driver/generation fencing, session/media/action leases, cancellation drain and native-reader/source lifetime tracking; commits `b376438`, `86cd0c3`, `d9b735a` and paired Bridge `8541337` |
-| 2c | Local candidate; acceptance incomplete | Credential rotation, callback rebinding, interactive borrowing and verified recovery exist. Resolve popup TOCTOU and prove real handoff/recovery before activation |
+| 2c | Scoped retirement implemented; integrated acceptance incomplete | Natural-exit ownership and automatic retry pass isolated Windows popup smoke. Finish authenticated Bridge retirement and integrated handoff/recovery |
 | 3 | Local candidate; focused contract/ownership checks pass, acceptance incomplete | Production Bridge fields and per-source continuation/frontier handling implemented. Worker fixtures 6/6 and isolated real Node/CDP/Job/profile exclusivity/reuse smoke pass; authenticated parity, freshness qualification and source gaps remain |
-| 4 | Local candidate; acceptance incomplete | Settings/API/UI persist browser/headless and show requested/effective/pending/failure. Validate the complete switching, login/native reader, auto-update and recapture journey |
+| 4 | Rendered Settings fixture passes; integrated acceptance incomplete | Real UI/API/coordinator with fake processes proves switching, reload persistence, visibility restoration and unsupported-source rejection. Native reader/login, auto-update and recapture journey remain |
 | 5 | Packaging helper implemented; product validation incomplete | Official Node archive pin, worker/license staging and builder integration exist; helper fixture tests pass. Full package build, authenticated parity and Windows visibility evidence remain |
 
 The table describes code availability separately from acceptance. Candidate
@@ -180,14 +180,13 @@ candidate out of installed/released runtimes until the ownership gate is closed.
 
 ### Resume order after the local candidate checkpoint
 
-1. Resolve the product decision below before changing handoff semantics. Retain
-   the passing payload/frontier, permission-revocation and ownership evidence;
-   authenticated parity and freshness qualification are still open.
-2. Close popup/handoff/recovery acceptance under the approved design. A live
-   successful transition alone does not eliminate the known TOCTOU race.
-3. Validate rendered Settings and native-reader/login journeys, then bounded
-   authenticated X/Facebook parity and background-window visibility.
-4. Build and verify complete local packages. Record supported capabilities and
+1. Finish authenticated Bridge scoped retirement under the approved live-switch
+   and auto-return contract. Retain the passing payload/frontier, permissions,
+   rendered Settings and isolated Windows ownership evidence.
+2. Build and verify complete local packages after the Bridge delta is stable.
+3. Close integrated handoff/recovery and native-reader/login journeys, then
+   bounded authenticated X/Facebook parity and background-window visibility.
+4. Record supported capabilities and
    remaining source limitations before declaring any phase complete.
 
 Snapshot commits preserve unfinished candidate work; they do not authorize
@@ -490,6 +489,35 @@ a mode switch. Do not retrofit a settings-only change around them.
   packaging, rendered journeys and authenticated source parity. This checkpoint
   does not establish zero blinking, popup safety in live Chrome, or release
   readiness. Installed runtime/profile remain untouched.
+
+### Isolated popup and rendered Settings checkpoint (2026-10-02)
+
+- Sidecar `3511147`, AkuBrowser `036d839` and Bridge `b7d7340` preserve scoped
+  Go retirement, launcher worker-manifest support and capability negotiation.
+  The following tests add acceptance evidence without changing production code.
+- Opt-in Windows smoke passes (12.88 seconds) with project-local pinned Node,
+  configured Chrome and a disposable profile. An independent minimized popup
+  is created after Manager readiness, inside the host-close callback. Exact host
+  removal times out without killing the popup, root or Job. Coordinator retry
+  subsequently starts real headless generation 2 on the same profile after the
+  popup is closed separately and the old owner exits naturally.
+- This smoke substitutes an exact CDP host-target close for the authenticated
+  Bridge/server callback. It proves the native ownership boundary for this popup
+  scenario; it does not prove all native dialogs or end-to-end Bridge handoff.
+  The sandbox denied loopback CDP; the unchanged smoke passed outside sandbox.
+- The real rendered Settings UI/API/coordinator fixture passes (100.63 seconds).
+  The browser/headless/browser/headless journey, reload persistence, restored
+  browser visibility controls and unsupported LinkedIn rejection were exercised.
+  Final assertions verify headless, retained quiet visibility, X/Facebook source
+  settings and at least four generations. Capture processes and source consent
+  are simulated; native reader, authentication and live parity are not covered.
+- Evidence screenshots are local artifacts under
+  `build/collection-ui-fixture-20261002/`; the final assertion run uses
+  `build/collection-ui-final-20261002/`. Opt-in fixtures skip in ordinary suites.
+- Remaining gates: authenticated Bridge retirement, full package rerun and
+  verifier, integrated native reader/login and recovery, authenticated X/Facebook
+  parity including native IDs/media/coverage, and Windows visibility evidence.
+  No installed runtime/profile, push or release was changed.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
