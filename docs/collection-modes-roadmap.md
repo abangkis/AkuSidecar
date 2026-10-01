@@ -855,6 +855,13 @@ a mode switch. Do not retrofit a settings-only change around them.
   next investigation to window creation/CDP target representation. Compare the
   exact newly created Chrome window's actual tabs against its CDP page targets
   before interpreting either inventory as permission to close a native window.
+- Chrome windows API subsequently reports three tabs in that window, only one
+  matching the fixture URL. Receipt:
+  `AkuSidecar/build/bridge-handoff-b6f83bb5-e15e-48d3-84e5-2afe680f96c2`;
+  diagnostic fails safely in `5.54s`, original runtime restored. Two additional
+  tabs remain unidentified. The reported zero blank-tab URLs does not prove
+  absence because URL permissions/availability may differ from CDP. Do not
+  classify this as merely a CDP representation artifact or close the window.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

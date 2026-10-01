@@ -381,7 +381,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	for _, info := range before.TargetInfos {
 		beforeIDs[info.TargetID] = true
 	}
-	interactiveID, err := createBridgeFixtureWindow(ctx, borrowedWindow.CaptureProtocol(), origin)
+	interactiveID, err := createBridgeFixtureWindow(ctx, borrowedWindow.CaptureProtocol(), origin, t)
 	if err != nil {
 		t.Fatal("create isolated Bridge fixture window", err)
 	}
@@ -559,7 +559,7 @@ func closeBridgeFixtureReader(ctx context.Context, target readerbroker.Target) e
 
 // Use the same windows API as Bridge source/reader actions. CDP createTarget
 // in app mode can leave an additional page in the new window.
-func createBridgeFixtureWindow(ctx context.Context, protocol appshell.CaptureProtocol, origin string) (string, error) {
+func createBridgeFixtureWindow(ctx context.Context, protocol appshell.CaptureProtocol, origin string, t *testing.T) (string, error) {
 	const fixtureURL = "http://127.0.0.1:11122/quiet-interactive-fixture"
 	list := func() ([]struct {
 		TargetID string `json:"targetId"`
@@ -607,15 +607,21 @@ func createBridgeFixtureWindow(ctx context.Context, protocol appshell.CapturePro
 		defer cancel()
 		_, _ = protocol.Call(cleanup, "Target.detachFromTarget", map[string]any{"sessionId": session.SessionID}, "")
 	}()
-	raw, err := protocol.Call(ctx, "Runtime.evaluate", map[string]any{"expression": `chrome.windows.create({url:"` + fixtureURL + `",type:"normal",focused:false,state:"minimized"}).then(()=>true)`, "awaitPromise": true, "returnByValue": true}, session.SessionID)
+	raw, err := protocol.Call(ctx, "Runtime.evaluate", map[string]any{"expression": `chrome.windows.create({url:"` + fixtureURL + `",type:"normal",focused:false,state:"minimized"}).then(async w=>{const actual=await chrome.windows.get(w.id,{populate:true});const tabs=actual.tabs??[];return {ok:true,tabCount:tabs.length,fixtureCount:tabs.filter(t=>t.url==="` + fixtureURL + `"||t.pendingUrl==="` + fixtureURL + `").length,blankCount:tabs.filter(t=>t.url==="about:blank").length};})`, "awaitPromise": true, "returnByValue": true}, session.SessionID)
 	var evaluated struct {
 		Result struct {
-			Value bool `json:"value"`
+			Value struct {
+				OK           bool `json:"ok"`
+				TabCount     int  `json:"tabCount"`
+				FixtureCount int  `json:"fixtureCount"`
+				BlankCount   int  `json:"blankCount"`
+			} `json:"value"`
 		} `json:"result"`
 	}
-	if err != nil || json.Unmarshal(raw, &evaluated) != nil || !evaluated.Result.Value {
+	if err != nil || json.Unmarshal(raw, &evaluated) != nil || !evaluated.Result.Value.OK {
 		return "", errors.New("Bridge fixture window creation rejected")
 	}
+	t.Logf("fixture_chrome_tabs=%d fixture_url_tabs=%d fixture_blank_tabs=%d", evaluated.Result.Value.TabCount, evaluated.Result.Value.FixtureCount, evaluated.Result.Value.BlankCount)
 	infos, err = list()
 	if err != nil {
 		return "", err
