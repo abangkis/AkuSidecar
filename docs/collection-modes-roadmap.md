@@ -555,6 +555,62 @@ a mode switch. Do not retrofit a settings-only change around them.
   packaging does not establish headless feature release readiness. No installer,
   installed-runtime launch/restart, profile access, push or publication occurred.
 
+### End-to-end preparation and runtime boundary (2026-10-02)
+
+- Read-only preflight identifies the active listener as the registered dev runtime
+  (`runtime/dev/aku-sidecar.exe`, PID 2704), not an installed candidate. Supervisor
+  reports healthy/running, no operator hold; Inbox has no active sessions. The
+  registered capture profile has exactly one Google Chrome owner (PID 8372), and
+  Bridge is healthy/compatible. These are observations, not a stop authorization.
+- An alternative listener on `127.0.0.2:11122` bound successfully. Scoped Chrome
+  resolver mapping to preserve the localhost origin did not produce a matching
+  fixture request within the bounded probe: the expected target URL was present
+  with an empty title and the isolated listener observed zero matching requests.
+  The cause remains unverified. No DNS, extension allowlist or running service was
+  changed; failed probe code is retained only as an ignored build artifact.
+- `scripts/test-bridge-headless-handoff.mjs` prepares a controlled operator-only
+  test. Default invocation performs read-only preflight. That mode and its syntax
+  check pass. The explicit `--allow-runtime-stop` branch requires authorization:
+  it verifies the candidate, rechecks idle Inbox and original ownership, stops the
+  registered service through Supervisor, runs a disposable-profile smoke on the
+  original port, and restores/verifies the original service in `finally`.
+- End-to-end fixture execution requires a user decision because it temporarily
+  closes the active product UI/capture runtime. It does not install the candidate,
+  alter registration/settings, copy cookies or select the user's profile for the
+  static Bridge smoke. Authenticated source parity remains a separate evidence
+  gate after the static protocol/lifecycle smoke.
+
+### Authorized static Bridge smoke and startup diagnosis (2026-10-02)
+
+- The user approved controlled stop/test/restore after the fixture was ready.
+  The wrapper and Windows-only `TestBridgeHeadlessHandoffWindowsSmoke` fixture
+  were reviewed; default-skip compilation passes with project-local caches and
+  temporary directories. The fixture binds the original loopback port before
+  creating Chrome, uses an isolated store/profile and trusts the exact packaged
+  extension identity. It would verify the real close ACK before transport rotation
+  and direct Manager replacement, not an automatic Coordinator trigger.
+- First opt-in run failed after 60.17 seconds waiting for authenticated capability
+  bootstrap. It did not reach host retirement or profile handoff. Receipt:
+  `build/bridge-handoff-dec61495-5ee7-4319-9549-b57513660e94/receipt.json`.
+- A single diagnostic repeat added a direct HTTP host-page preflight, request
+  counters and safe CDP booleans. It failed after 48.71 seconds with
+  `host_http_hits=0`, `host_target=true`, `host_title=false`,
+  `host_fragment=true`, `bridge_worker=true`, `bootstrap_requests=0`,
+  `bootstrap_status=0`, `bootstrap_accepted=false`, `cdp=ok`. The direct HTTP
+  preflight returns the expected page; its hit is excluded from Chrome counters.
+  Receipt: `build/bridge-handoff-853137c6-3cdd-43dd-9d84-71106585a3e6/receipt.json`.
+- Both runs restored the original registered service and verified healthy runtime,
+  compatible Bridge and exactly one original-profile Chrome owner. A separate
+  read-only preflight after the first restoration also confirmed zero active
+  Inbox sessions. No candidate installation, registration change or authenticated
+  source capture was performed.
+- The failure is narrowed to initial host navigation: the packaged Bridge worker
+  exists, but Chrome never requests the host document, so the capability handshake
+  cannot begin. The navigation cause remains unverified; neither the host-close
+  protocol nor end-to-end handoff is accepted. Do not repeat without a causal
+  startup correction or new diagnostic evidence. The earlier popup smoke covers
+  native lifecycle only and cannot fill this gap.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
