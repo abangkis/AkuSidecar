@@ -1,6 +1,7 @@
 # Browser and headless collection roadmap
 
-Status: architecture approved; phase 1 complete and validated locally.
+Status: architecture approved; phase 1 committed; phase 2a/2b implemented locally,
+with native-reader lifetime guard added. Phase 2c handoff integration is pending.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ## Product contract
@@ -96,6 +97,23 @@ shutdown and restart preserve accepted observations. Define timeout and failed
 handoff recovery before adding headless. Any persisted ownership changes require
 an explicit backward-compatible schema migration and restart tests.
 
+Implementation checkpoints (all are required to complete phase 2):
+
+- **2a: process-owner foundation.** Adopt the current split capture process in
+  `captureruntime.Manager`. Distinguish intentional replacement from unexpected
+  exit; wait for owned-tree cleanup, block replacements while leases exist, and
+  expose a process-local generation fence. No replacement endpoint is exposed.
+- **2b: collection admission and durable fencing.** Attach leases to actual runs,
+  including follow-up rounds and media recapture. Pin driver/generation in durable
+  command ownership; integrate claim/result rejection, cancellation, restart
+  recovery, readiness and automatic updates. A local generation counter alone is
+  not sufficient to authenticate or fence a persisted command.
+- **2c: interactive ownership and replacement integration.** Hold leases through
+  native-reader lifetime, not merely through dispatch of an open action. Rebind
+  split transport, containment and reader callbacks to the new process. Define
+  bounded transition contexts, failure presentation and verified-owner recovery.
+  Do not call Replace from product code before 2b and 2c gates pass.
+
 ### 3. Productize the headless driver behind an internal gate
 
 Scope: use the configured capture Chrome through CDP; adapt the common source
@@ -145,8 +163,8 @@ because DOM capture passed. Browser remains default after this gate.
 
 | Phase | Status | Evidence / next action |
 | --- | --- | --- |
-| 1 | Complete; locally validated | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
-| 2 | Not started | Design command fencing and runtime owner around the current shutdown/reader coupling |
+| 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
+| 2 | In progress: session/follow-up/recapture leases and owner fences wired; 2c pending | Native reader guard implemented; pending interactive actions, sign-in lifetime and transport/containment rebinding remain before replacement is exposed |
 | 3 | PoC evidence only | `experiments/x-headless`; resolve product worker dependency and source gaps |
 | 4 | Not started | No collectionMode setting or user-visible switch exists yet |
 | 5 | Not started | Product parity and packaging require phases 2-4 |
@@ -165,6 +183,86 @@ because DOM capture passed. Browser remains default after this gate.
 - Settings, storage schema, Bridge wire payload, extraction, command transport and
   Chrome startup behavior remain unchanged. Existing PoC files were preserved.
 - No live capture, installed runtime restart, commit, push or deployment performed.
+
+### Phase 2a implementation boundary (2026-10-01)
+
+- Split startup returns a managed capture owner to main. Intentional replacement
+  does not end that manager; unexpected capture exit preserves the existing
+  application shutdown policy. Combined UI/capture launches are unchanged.
+- Replacement uses the existing `appshell.Window.CloseForRetry` ownership drain,
+  not root exit alone. Failed cleanup retains the old owner and blocks admission.
+  Failed/cancelled launch blocks admission and further launch attempts because
+  ownership may be unverified; there is no silent fallback.
+- Manager leases are process-local building blocks. Current source dispatch and
+  readers do not yet acquire them, and generation checks are not yet connected to
+  persisted commands. Product code therefore does not call Replace yet.
+- Tests cover first/second lease drain, idempotent release, intentional replacement,
+  late-generation rejection, root exit before owned-tree drain, cleanup/launch
+  failure, cancellation before/during cleanup and launch, unexpected exit and
+  shutdown. These are controlled-process tests, not live Chrome handoff evidence.
+- `go test ./internal/captureruntime ./internal/collection/... ./internal/engine
+  ./internal/httpapi ./cmd/akusidecar -count=1`: passed, including all 11 manager
+  tests and the existing engine/API/app-entrypoint suites.
+- `go build -buildvcs=false -o build/capture-runtime-check.exe ./cmd/akusidecar`:
+  passed. The binary was not installed or executed.
+- Race-detector execution is unavailable here: CGO is disabled and no GCC is on
+  PATH. No compiler installation is needed for this checkpoint.
+- First-stage commit `a263bcc` was explicitly authorized after phase 1. Phase 2a
+  remains local work; existing PoC files are preserved. No push, installation,
+  installed runtime restart or live browser capture has been performed.
+
+### Next implementation checkpoint: 2b and 2c
+
+Baseline inspection confirmed `startNext` admits initial acquisition and
+`AcceptObservation` can admit the next source before reasoning finishes. A lease
+must therefore cover durable session/run ownership, not only a synchronous
+capture callback. Follow-up commands are queued later by reasoning; release on
+the first observation would permit a driver change between rounds.
+
+The split action transport tracks action completion and reader foreground
+preparation, not the full lifetime of a native reader window. Action completion
+is not evidence that the reader released its profile. Add explicit reader
+lifetime tracking before connecting any replacement trigger. Existing callback
+closures also point to the original containment instance and must be rebound.
+
+### Phase 2b and native-reader guard (2026-10-01)
+
+- Managed split startup attaches capture ownership to the engine before starting
+  automatic updates. Existing durable active session/recapture leases are adopted
+  before the manager is published to callbacks. Combined UI/capture launches keep
+  the legacy unowned payload behavior.
+- Session admission acquires ownership before writing a session. It holds through
+  queued acquisition, both follow-up rounds, progressive-source scheduling and
+  reasoning. Only durable terminal state plus worker drain releases the lease.
+  Cancellation alone does not release an active reasoning worker's ownership.
+- Managed command payloads persist an additive `captureRuntime` object with
+  driver, Sidecar epoch and generation. Claim rejects stale commands before
+  dispatch; observation admission checks that persisted owner before saving.
+  Stale queued work follows the existing failed-command/fallback path rather than
+  replaying an accepted capture. Legacy unstamped commands are admitted only in
+  the initial managed generation. No database schema version change is required.
+- Media recapture acquires its own lease and atomically persists the owner stamp
+  with job creation. Claim, acceptance and failure check ownership; terminal jobs
+  release their lease, including passive enrichment that completes an active job.
+- Replacement checks a process readiness guard before terminating the old owner.
+  Windows containment remembers explicitly bound reader HWNDs independently of
+  consumed/expired foreground capability. Native existence, not visibility or
+  action completion, controls release. Reused live HWNDs conservatively block;
+  tracked live readers are bounded to 32. No native foreground behavior changes.
+- Passed full tests for captureruntime, collection, engine, store, HTTP API and
+  app entrypoint; passed targeted appshell reader/containment tests and application
+  build. Added controlled tests for session cancellation/worker drain, unchanged
+  owner across real follow-up workflow, stale-epoch dispatch/result rejection,
+  malformed generations, unavailable runtime admission, media ownership/duplicate
+  admission and native reader existence. No live Chrome handoff was performed.
+- Phase 2 remains incomplete: pending/claimed split actions need admission leases
+  that survive client cancellation; sign-in windows need full-lifetime protection;
+  replacement must rotate split instance credentials and rebind containment and
+  reader callbacks. Recovery after failed startup also needs verified ownership
+  cleanup. Do not wire a product replacement trigger until these gates pass.
+
+Complete these remaining ownership boundaries with targeted tests before opening
+a mode switch. Do not retrofit a settings-only change around them.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

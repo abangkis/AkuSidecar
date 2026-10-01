@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
+	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	collectionbridge "github.com/abangkis/AkuSidecar/internal/collection/bridge"
 	"github.com/abangkis/AkuSidecar/internal/config"
@@ -45,28 +46,32 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
-	store         *store.Store
-	provider      reasoning.Provider
-	config        config.Config
-	epoch         string
-	mu            sync.RWMutex
-	operation     sync.Mutex
-	schedule      sync.Mutex
-	heartbeat     *domain.BridgeHeartbeat
-	bridgeOrigins map[string]time.Time
-	active        map[string]context.CancelFunc
-	pending       map[string]bool
-	cancelled     map[string]bool
-	shuttingDown  bool
-	logger        Logger
-	reloads       *ReloadActions
-	events        *semanticengine.Engine
-	aiFast        aidetector.FastDetector
-	aiDeep        aidetector.Resolver
-	mediaOrigin   mediaprovenance.Inspector
-	topics        livingtopics.Resolver
-	autoCancel    context.CancelFunc
-	autoWake      chan struct{}
+	store             *store.Store
+	provider          reasoning.Provider
+	config            config.Config
+	epoch             string
+	mu                sync.RWMutex
+	operation         sync.Mutex
+	captureMu         sync.Mutex
+	captureOwner      *captureruntime.Manager
+	captureSessions   map[string]*captureruntime.Lease
+	captureRecaptures map[string]*captureruntime.Lease
+	schedule          sync.Mutex
+	heartbeat         *domain.BridgeHeartbeat
+	bridgeOrigins     map[string]time.Time
+	active            map[string]context.CancelFunc
+	pending           map[string]bool
+	cancelled         map[string]bool
+	shuttingDown      bool
+	logger            Logger
+	reloads           *ReloadActions
+	events            *semanticengine.Engine
+	aiFast            aidetector.FastDetector
+	aiDeep            aidetector.Resolver
+	mediaOrigin       mediaprovenance.Inspector
+	topics            livingtopics.Resolver
+	autoCancel        context.CancelFunc
+	autoWake          chan struct{}
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -585,10 +590,16 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 	}
 	settings.ActiveSources = validSources
 	e.cancelDeepDetections()
-	session, err := e.store.CreateUpdateSession(ctx, intent, settings, policy)
+	lease, err := e.acquireCaptureLease()
 	if err != nil {
 		return domain.Session{}, err
 	}
+	session, err := e.store.CreateUpdateSession(ctx, intent, settings, policy)
+	if err != nil {
+		lease.Release()
+		return domain.Session{}, err
+	}
+	e.rememberCaptureSession(session.ID, lease)
 	if _, err := e.startNext(ctx, session.ID); err != nil {
 		return domain.Session{}, err
 	}
@@ -598,6 +609,7 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, error) {
 	e.schedule.Lock()
 	defer e.schedule.Unlock()
+	defer e.releaseTerminalCaptureSessions(context.Background())
 	session, err := e.store.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -694,7 +706,10 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 	if err != nil {
 		return nil, err
 	}
-	payload := capturePayload(*run, sessionID, settings, 1, nil, "")
+	payload, err := e.ownedCapturePayload(*run, sessionID, settings, 1, nil, "")
+	if err != nil {
+		return nil, err
+	}
 	if _, err = e.store.StartRun(ctx, run.ID, payload); err != nil {
 		return nil, err
 	}
@@ -918,10 +933,29 @@ func capturePayload(run domain.Run, leaseID string, settings domain.Settings, ro
 }
 
 func (e *Engine) ClaimCommand(ctx context.Context, runID, bridgeID string) (*domain.BridgeCommand, error) {
+	defer e.releaseTerminalCaptureSessions(context.Background())
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
 		return nil, err
 	}
-	return e.store.ClaimCommand(ctx, runID, bridgeID)
+	run, err := e.store.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.ensureCaptureSession(run.SessionID); err != nil {
+		return nil, err
+	}
+	command, err := e.store.ClaimCommand(ctx, runID, bridgeID)
+	if err != nil || command == nil {
+		return command, err
+	}
+	if err := e.validateCaptureOwner(run.SessionID, command.Payload); err != nil {
+		failure := domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Capture owner changed; stale command was not dispatched.", Retryable: true}
+		if _, failErr := e.FailCommand(ctx, command.ID, runID, failure); failErr != nil {
+			return nil, failErr
+		}
+		return nil, err
+	}
+	return command, nil
 }
 func (e *Engine) PendingBridgeRunID(ctx context.Context) (string, error) {
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
@@ -1082,6 +1116,13 @@ func (e *Engine) ReadSplitActionAudit(ctx context.Context, since string, limit i
 func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string, value domain.Observation) (domain.Run, error) {
 	run, err := e.store.GetRun(ctx, runID)
 	if err != nil {
+		return domain.Run{}, err
+	}
+	payload, err := e.store.CaptureCommandPayload(ctx, commandID, runID)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if err := e.validateCaptureOwner(run.SessionID, payload); err != nil {
 		return domain.Run{}, err
 	}
 	if value.Source != run.Source {
@@ -1267,6 +1308,7 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 			if relaunch {
 				e.launchProcess(runID, pendingAllowPlanning)
 			}
+			e.releaseTerminalCaptureSessions(context.Background())
 		}()
 		if err := e.process(ctx, runID, allowPlanning); err != nil {
 			if e.shouldPauseForShutdown(ctx, err) {
@@ -1575,7 +1617,10 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 			}
 		} else if localReason, localFollowUp := localXFollowUpReason(run.Source, observations[0]); localFollowUp {
 			continuation := continuationFrom(merged)
-			payload := capturePayload(run, run.SessionID, settings, 2, continuation, localReason)
+			payload, payloadErr := e.ownedCapturePayload(run, run.SessionID, settings, 2, continuation, localReason)
+			if payloadErr != nil {
+				return payloadErr
+			}
 			if _, err = e.store.QueueFollowUp(ctx, runID, payload); err != nil {
 				return err
 			}
@@ -1610,7 +1655,10 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 			if plan.Decision == "request_follow_up" {
 				continuation := continuationFrom(merged)
 				if continuation != nil {
-					payload := capturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
+					payload, payloadErr := e.ownedCapturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
+					if payloadErr != nil {
+						return payloadErr
+					}
 					if _, err = e.store.QueueFollowUp(ctx, runID, payload); err != nil {
 						return err
 					}
@@ -2103,7 +2151,11 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 		}
 	}
 	e.mu.Unlock()
-	return e.store.CancelSession(ctx, id)
+	if err := e.store.CancelSession(ctx, id); err != nil {
+		return err
+	}
+	e.releaseTerminalCaptureSessions(ctx)
+	return nil
 }
 func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domain.Feedback) (domain.Feedback, error) {
 	return e.store.AddFeedback(ctx, timelineID, value)
@@ -2209,14 +2261,57 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 	if !status.Compatible {
 		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
 	}
-	return e.store.CreateMediaRecaptureForReason(ctx, timelineID, mode, reason)
+	lease, err := e.acquireCaptureLease()
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	var stamp map[string]any
+	if lease != nil {
+		stamp = map[string]any{"driver": "browser", "epoch": e.epoch, "generation": int(lease.Generation())}
+	}
+	job, err := e.store.CreateOwnedMediaRecapture(ctx, timelineID, mode, reason, stamp)
+	if err != nil {
+		lease.Release()
+		return domain.MediaRecapture{}, err
+	}
+	if lease != nil {
+		e.captureMu.Lock()
+		if e.captureRecaptures == nil {
+			e.captureRecaptures = map[string]*captureruntime.Lease{}
+		}
+		if e.captureRecaptures[job.ID] != nil {
+			lease.Release()
+		} else {
+			e.captureRecaptures[job.ID] = lease
+		}
+		e.captureMu.Unlock()
+	}
+	return job, nil
 }
 
 func (e *Engine) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {
+	defer e.releaseTerminalCaptureSessions(context.Background())
+	if _, err := e.store.MediaRecapture(ctx, id); err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if err := e.ensureCaptureRecapture(id); err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if err := e.validateRecaptureOwner(ctx, id); err != nil {
+		failure := domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Media recapture owner changed; stale request was not dispatched.", Retryable: true}
+		if _, failErr := e.store.FailMediaRecapture(ctx, id, failure); failErr != nil {
+			return domain.MediaRecapture{}, failErr
+		}
+		return domain.MediaRecapture{}, err
+	}
 	return e.store.ClaimMediaRecapture(ctx, id, bridgeID)
 }
 
 func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {
+	defer e.releaseTerminalCaptureSessions(context.Background())
+	if err := e.validateRecaptureOwner(ctx, id); err != nil {
+		return domain.MediaRecapture{}, err
+	}
 	normalizeObservation(&observation)
 	if err := validateObservation(observation); err != nil {
 		return domain.MediaRecapture{}, err
@@ -2231,10 +2326,15 @@ func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observatio
 }
 
 func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure domain.Failure) (domain.MediaRecapture, error) {
+	defer e.releaseTerminalCaptureSessions(context.Background())
+	if err := e.validateRecaptureOwner(ctx, id); err != nil {
+		return domain.MediaRecapture{}, err
+	}
 	return e.store.FailMediaRecapture(ctx, id, failure)
 }
 
 func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bridgeID string, value domain.PassiveXMediaEvidence) (domain.MediaRecapture, bool, error) {
+	defer e.releaseTerminalCaptureSessions(context.Background())
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	recapture, updated, err := e.store.ApplyPassiveXMediaEvidence(ctx, timelineID, bridgeID, value)

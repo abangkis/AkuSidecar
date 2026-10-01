@@ -30,6 +30,7 @@ var (
 	captureSetProp     = user32.NewProc("SetPropW")
 	captureGetProp     = user32.NewProc("GetPropW")
 	captureRemoveProp  = user32.NewProc("RemovePropW")
+	captureIsWindow    = user32.NewProc("IsWindow")
 )
 
 type captureZOrder struct {
@@ -40,6 +41,7 @@ type captureZOrder struct {
 	stop, done                           chan struct{}
 	once                                 sync.Once
 	readers                              map[uintptr]captureReaderBinding
+	readerLifetimes                      map[uintptr]struct{}
 	nextReader                           uintptr
 	property                             *uint16
 	attempted, applied, readback, failed uint64
@@ -385,6 +387,13 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 	if len(c.readers) >= 32 {
 		return 0, 0, time.Time{}, errors.New("reader HWND limit reached")
 	}
+	if c.readerLifetimes == nil {
+		c.readerLifetimes = map[uintptr]struct{}{}
+	}
+	retainLiveReaders(c.readerLifetimes, func(hwnd uintptr) bool { exists, _, _ := captureIsWindow.Call(hwnd); return exists != 0 })
+	if _, tracked := c.readerLifetimes[match]; !tracked && len(c.readerLifetimes) >= 32 {
+		return 0, 0, time.Time{}, errors.New("live reader HWND limit reached")
+	}
 	c.nextReader++
 	ok, _, _ := captureSetProp.Call(match, uintptr(unsafe.Pointer(c.property)), c.nextReader)
 	if ok == 0 {
@@ -392,7 +401,28 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 	}
 	binding := captureReaderBinding{id: c.nextReader, expires: time.Now().Add(5 * time.Second)}
 	c.readers[match] = binding
+	c.readerLifetimes[match] = struct{}{}
 	return match, binding.id, binding.expires, nil
+}
+
+// Keep all explicitly bound readers until their native HWND ceases to exist,
+// including minimized readers and expired/consumed foreground exemptions. HWND
+// reuse conservatively keeps replacement blocked rather than closing a window
+// whose lifetime cannot be established. This check performs no native writes.
+func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stopped {
+		return errors.New("capture containment stopped")
+	}
+	active := retainLiveReaders(c.readerLifetimes, func(hwnd uintptr) bool { exists, _, _ := captureIsWindow.Call(hwnd); return exists != 0 })
+	if active {
+		return errors.New("native reader window is still open")
+	}
+	return nil
 }
 
 func (c *captureZOrder) foregroundReader(ctx context.Context, hwnd, id uintptr, expires time.Time) error {

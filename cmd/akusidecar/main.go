@@ -17,6 +17,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/appshell"
+	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -190,19 +191,19 @@ func main() {
 	fatal(logger, runtime.ResumeMediaProvenance(context.Background()))
 	address, err := server.Start()
 	fatal(logger, err)
-	runtime.StartAutoUpdateScheduler()
 	logger.Printf("version=%s runtime=go address=http://%s provider=%s database=%s", domain.ApplicationVersion, address, provider.Name(), state.Path())
 	if resumed > 0 {
 		logger.Printf("resumed_reasoning_runs=%d from_durable_capture=true", resumed)
 	}
 	var shell *appshell.Session
-	var capture *appshell.Window
+	var capture *captureruntime.Manager
 	if options.AppShell {
 		if resetErr := discardLegacyProfileResetMarker(state, logger); resetErr != nil {
 			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
 		shell, capture = launchAppShell(logger, options, cfg, address.String(), server)
 		if capture != nil {
+			fatal(logger, runtime.AttachCaptureRuntime(context.Background(), capture))
 			server.SetOpenExtensionsAction(capture.OpenExtensionsPage)
 			server.SetAppShellPID(capture.PID)
 		} else {
@@ -210,6 +211,7 @@ func main() {
 			server.SetAppShellPID(shell.PID)
 		}
 	}
+	runtime.StartAutoUpdateScheduler()
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	select {
@@ -218,7 +220,7 @@ func main() {
 	case <-shell.Done():
 		logger.Printf("app shell window closed")
 	case <-capture.Done():
-		logger.Printf("experimental capture process exited; stopping paired UI")
+		logger.Printf("managed capture process exited unexpectedly; stopping paired UI")
 	}
 	shutdownStarted := time.Now()
 	shell.Cancel() // Stop accepting/relaunching windows as soon as shutdown wins.
@@ -301,7 +303,7 @@ func discoverChromium(options config.Options) int {
 	return 0
 }
 
-func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) (*appshell.Session, *appshell.Window) {
+func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) (*appshell.Session, *captureruntime.Manager) {
 	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
 	cancel()
@@ -399,7 +401,12 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			}
 		}()
 	}
-	return window, capture
+	var captureManager *captureruntime.Manager
+	if capture != nil {
+		captureManager, err = captureruntime.New(capture)
+		fatal(logger, err)
+	}
+	return window, captureManager
 }
 
 func isolatedChromiumStartupLogPath(profilePath string) string {

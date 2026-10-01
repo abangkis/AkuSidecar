@@ -558,6 +558,7 @@ func TestLinkedInFollowUpCaptureCompletesWithDurablePlanningReceipt(t *testing.T
 		log.New(io.Discard, "", 0),
 	)
 	runtime.RecordHeartbeat(ExpectedHeartbeat())
+	captureOwner := attachTestCapture(t, runtime)
 
 	session, err := runtime.StartVisibleUpdate(ctx, "LinkedIn follow-up acceptance")
 	if err != nil {
@@ -612,6 +613,8 @@ func TestLinkedInFollowUpCaptureCompletesWithDurablePlanningReceipt(t *testing.T
 	if continuation, ok := followUp.Payload["continuation"].(map[string]any); !ok || len(continuation) == 0 {
 		t.Fatalf("follow-up continuation=%+v", followUp.Payload["continuation"])
 	}
+	assertSameCaptureStamp(t, command.Payload, followUp.Payload)
+	waitCaptureLeases(t, captureOwner, 1)
 
 	newText := strings.Repeat("A second distinct LinkedIn item appears beyond the proven overlap frontier. ", 2)
 	second := domain.Observation{
@@ -649,6 +652,7 @@ func TestLinkedInFollowUpCaptureCompletesWithDurablePlanningReceipt(t *testing.T
 	if len(completed.Items) != 2 {
 		t.Fatalf("completed LinkedIn items=%d session=%+v", len(completed.Items), completed)
 	}
+	waitCaptureLeases(t, captureOwner, 0)
 	inbox, _, err := runtime.Inbox(ctx, 1, 0)
 	if err != nil || len(inbox) != 1 || len(inbox[0].Runs) != 1 {
 		t.Fatalf("Inbox=%+v err=%v", inbox, err)

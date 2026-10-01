@@ -19,6 +19,17 @@ type captureZWindow struct {
 	owned, reader, visible bool
 }
 
+// Native existence is intentionally independent of visibility and the brief
+// foreground capability. Unknown/reused live handles must conservatively remain.
+func retainLiveReaders(readers map[uintptr]struct{}, exists func(uintptr) bool) bool {
+	for hwnd := range readers {
+		if !exists(hwnd) {
+			delete(readers, hwnd)
+		}
+	}
+	return len(readers) > 0
+}
+
 // EnumWindows order is front-to-back. Never operate without a known external
 // foreground anchor, or on that anchor, a reader, or an unowned window.
 func captureWindowsToLower(foreground uintptr, ordered []captureZWindow) []uintptr {
