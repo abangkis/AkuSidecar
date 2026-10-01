@@ -791,6 +791,48 @@ a mode switch. Do not retrofit a settings-only change around them.
   End-to-end login/reader-close auto-return, source parity, focus measurements and
   release/install acceptance remain open. No installed runtime/settings changed.
 
+### Packaged Quiet and native handoff checkpoint (2026-10-02)
+
+- Implementation commits: Sidecar `f8b3f2a` and `266f33c`, Bridge `e8136f7`.
+  Exact owned-target disposal now polls for up to three seconds before child
+  session detachment. Delayed disappearance and cancellation/retry tests pass
+  (`0.104s`). No ordinary target is adopted during polling.
+- Full local candidate:
+  `AkuBrowser/build/quiet-hidden-verified-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+  Builder and tuple verifier pass: 412 files / 588,821,744 bytes, Chrome
+  152.0.7977.54. Sidecar binary SHA-256:
+  `cc4ac7513c0004c1f83b7dde199c1b4ddebcf039c5c741aa29c80466dea608ea`.
+  Source identities: Sidecar `266f33c`, Bridge `e8136f7`, Browser `036d839`.
+  Untracked experiments were excluded from commits. Later test/documentation
+  changes do not alter this candidate payload.
+- Rendered isolated Settings fixture passes in `82.23s`: hidden Quiet wording,
+  browser -> headless -> browser -> headless, browser-only visibility control,
+  and headless selection retained after reload. Fake process/collector owners
+  do not establish native handoff or source parity.
+- Real static Bridge smoke now proves the initial browser -> headless handoff:
+  negotiated host-only retirement, successful close ACK, hidden target disposal
+  and natural owned-tree/profile drain. The former one-shot target listing raced
+  Chrome's asynchronous destruction; bounded polling corrected that cause.
+- The extended generation-3 interactive-window/auto-return fixture still fails
+  its safety assertion. CDP window lookup reports another `about:blank` page in
+  the fixture window, both after CDP target creation and Bridge windows API
+  creation. Its provenance and native association remain unverified. The fixture
+  refuses WM_CLOSE on a window containing an unknown page; production retention
+  rules are unchanged. Closing only the fixture tab did not clear the tracked
+  HWND. This does not establish completed auto-return acceptance.
+- Latest diagnostic:
+  `AkuSidecar/build/bridge-handoff-8ca282de-7993-4dd9-adf8-d195db2ffdaa`.
+  Smoke fails in `5.54s` after the first handoff proof, with original Supervisor
+  runtime restored and Bridge compatible. Every controlled run restored the
+  original runtime. No candidate installation or settings replacement occurred.
+- Next: identify that blank target without adopting or closing an ordinary tab;
+  prove an isolated native reader/source window lifetime and automatic return
+  after closure. Then finish authenticated X/Facebook parity, integrated login/
+  native reader journeys, visibility and release gates. Authenticated profile
+  collection remains separate from approved disposable static stop/test/restore.
+  The new one-million-token segment is nearing its ceiling; continued diagnosis
+  requires a budget/scope decision.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

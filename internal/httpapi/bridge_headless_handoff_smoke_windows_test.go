@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
@@ -29,8 +30,10 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
+	"golang.org/x/sys/windows"
 )
 
 // Explicit opt-in E2E fixture. It uses a disposable profile and the exact
@@ -114,7 +117,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	var observed bridgeHandoffHTTPObservation
-	const interactiveMarker = "AkuBrowser source split_fixture_lifetime"
+	const interactiveMarker = "AkuBrowser reader split_fixture_lifetime"
 	originalHandler := s.http.Handler
 	s.http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/quiet-interactive-fixture" {
@@ -201,9 +204,8 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	var coordinator *collection.Coordinator
 	var borrowedWindow *appshell.Window
-	var borrowedSourceLifetime interface {
-		PrepareSourceWindowLifetime(context.Context, string) error
-	}
+	var borrowedContainment appshell.CaptureContainment
+	var borrowedHostURL string
 	bindQuiet := func(nextCtx context.Context, headed *appshell.Window, generation uint64) error {
 		targets, err := quiet.NewTargets(nextCtx, headed.CaptureProtocol())
 		if err != nil {
@@ -214,7 +216,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		}
 		worker := quiet.NewWorker(targets, options)
 		// Keep one actual hidden target alive so retirement must dispose it.
-		if _, err := targets.Call(nextCtx, domain.SourceX, "Runtime.evaluate", map[string]any{"expression": "({fixture:true})", "returnByValue": true}); err != nil {
+		if _, err := targets.Call(nextCtx, domain.SourceX, "Page.navigate", map[string]any{"url": "http://127.0.0.1:11122/quiet-hidden-fixture"}); err != nil {
 			_ = worker.Retire(nextCtx)
 			return err
 		}
@@ -284,7 +286,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 			return headed, errors.New("source-window containment missing")
 		}
 		s.SetSplitSourceWindowPreparation(source.PrepareSourceWindowLifetime)
-		borrowedWindow, borrowedSourceLifetime = headed, source
+		borrowedWindow, borrowedContainment, borrowedHostURL = headed, containment, url
 		if err := appshell.NavigateCaptureHost(nextCtx, headed.CaptureProtocol(), url); err != nil {
 			return headed, err
 		}
@@ -362,18 +364,11 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	// An ordinary source window stays outside the machine-target ownership list.
 	// Its real HWND lifetime must hold auto-return after the dispatch lease ends.
-	created, err := borrowedWindow.CaptureProtocol().Call(ctx, "Target.createTarget", map[string]any{
-		"url": "http://127.0.0.1:11122/quiet-interactive-fixture", "newWindow": true, "background": true,
-	}, "")
+	interactiveID, err := createBridgeFixtureWindow(ctx, borrowedWindow.CaptureProtocol(), origin)
 	if err != nil {
-		t.Fatal("create static source lifetime fixture", err)
+		t.Fatal("create isolated Bridge fixture window", err)
 	}
-	var interactive struct {
-		TargetID string `json:"targetId"`
-	}
-	if json.Unmarshal(created, &interactive) != nil || interactive.TargetID == "" {
-		t.Fatal("static interactive target unavailable")
-	}
+	interactive := struct{ TargetID string }{interactiveID}
 	windowInfo, err := borrowedWindow.CaptureProtocol().Call(ctx, "Browser.getWindowForTarget", map[string]any{"targetId": interactive.TargetID}, "")
 	if err != nil {
 		t.Fatal("static interactive window unavailable", err)
@@ -384,24 +379,81 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if json.Unmarshal(windowInfo, &nativeWindow) != nil {
 		t.Fatal("static interactive window response invalid")
 	}
+	listing, err := borrowedWindow.CaptureProtocol().Call(ctx, "Target.getTargets", nil, "")
+	if err != nil {
+		t.Fatal("inspect disposable host identity", err)
+	}
+	var listed struct {
+		TargetInfos []struct {
+			TargetID string `json:"targetId"`
+			URL      string `json:"url"`
+			Type     string `json:"type"`
+		} `json:"targetInfos"`
+	}
+	if json.Unmarshal(listing, &listed) != nil {
+		t.Fatal("invalid disposable target listing")
+	}
+	hostMatches := 0
+	for _, info := range listed.TargetInfos {
+		if info.Type == "page" && info.TargetID != interactive.TargetID {
+			otherInfo, otherErr := borrowedWindow.CaptureProtocol().Call(ctx, "Browser.getWindowForTarget", map[string]any{"targetId": info.TargetID}, "")
+			var otherWindow struct {
+				WindowID int `json:"windowId"`
+			}
+			if otherErr == nil && json.Unmarshal(otherInfo, &otherWindow) == nil && otherWindow.WindowID == nativeWindow.WindowID {
+				t.Fatalf("fixture window contains another page; refusing native window close (other_is_host=%t other_is_blank=%t other_is_fixture=%t)", info.URL == borrowedHostURL, info.URL == "about:blank", info.URL == "http://127.0.0.1:11122/quiet-interactive-fixture")
+			}
+		}
+		if info.URL != borrowedHostURL {
+			continue
+		}
+		hostMatches++
+		hostInfo, err := borrowedWindow.CaptureProtocol().Call(ctx, "Browser.getWindowForTarget", map[string]any{"targetId": info.TargetID}, "")
+		var hostWindow struct {
+			WindowID int `json:"windowId"`
+		}
+		if err != nil || json.Unmarshal(hostInfo, &hostWindow) != nil {
+			t.Fatal("inspect disposable host window")
+		}
+		if hostWindow.WindowID == nativeWindow.WindowID {
+			t.Fatal("fixture target shares static host window; refusing native window close")
+		}
+	}
+	if hostMatches != 1 {
+		t.Fatal("static host window identity is ambiguous")
+	}
 	if _, err := borrowedWindow.CaptureProtocol().Call(ctx, "Browser.setWindowBounds", map[string]any{"windowId": nativeWindow.WindowID, "bounds": map[string]any{"windowState": "minimized"}}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := borrowedSourceLifetime.PrepareSourceWindowLifetime(ctx, interactiveMarker); err != nil {
-		t.Fatal("track static interactive HWND", err)
+	readerTarget, _, err := borrowedContainment.PrepareBrokerReader(ctx, interactiveMarker)
+	if err != nil {
+		t.Fatal("track static reader HWND", err)
 	}
 	lease.Release()
 	releaseIntent()
-	select {
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	case <-time.After(350 * time.Millisecond):
+	guardDeadline := time.NewTimer(3 * time.Second)
+	guardTick := time.NewTicker(25 * time.Millisecond)
+	guardExercised := false
+	for !guardExercised {
+		guardExercised = strings.Contains(coordinator.Status().Failure, "native interactive window is still open")
+		if guardExercised {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-guardDeadline.C:
+			t.Fatal("native interactive guard was not exercised")
+		case <-guardTick.C:
+		}
 	}
+	guardDeadline.Stop()
+	guardTick.Stop()
 	if status := coordinator.Status(); status.Effective != "browser" || status.Generation != 3 {
 		t.Fatal("auto-return crossed a live interactive HWND", status)
 	}
-	if _, err := borrowedWindow.CaptureProtocol().Call(ctx, "Target.closeTarget", map[string]any{"targetId": interactive.TargetID}, ""); err != nil {
-		t.Fatal("close only static interactive fixture", err)
+	if err := closeBridgeFixtureReader(ctx, readerTarget); err != nil {
+		t.Fatal("close only static fixture window", err)
 	}
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()
@@ -410,16 +462,128 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		if status.Effective == "headless" && status.Generation == 4 && !status.Pending && status.State == captureruntime.Ready {
 			break
 		}
-		if status.Failure != "" {
-			t.Fatal("auto-return failed", status.Failure)
-		}
 		select {
 		case <-ctx.Done():
-			t.Fatal("auto-return did not reach headless generation 4")
+			t.Fatal("auto-return did not reach headless generation 4", status.Failure)
 		case <-tick.C:
 		}
 	}
 	t.Log("host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 interactive_hwnd_retained=true auto_return_after_window_close=true auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
+}
+
+// Fixture-only user-close equivalent. The real containment supplies the unique
+// owned HWND binding; revalidate PID/property/expiry immediately before WM_CLOSE.
+func closeBridgeFixtureReader(ctx context.Context, target readerbroker.Target) error {
+	user32 := windows.NewLazySystemDLL("user32.dll")
+	property, err := windows.UTF16PtrFromString(target.Property)
+	if err != nil || target.HWND == 0 || target.PID == 0 || target.Value == 0 || !strings.HasPrefix(target.Property, "AkuBrowser.ExplicitReader.") {
+		return errors.New("invalid fixture reader binding")
+	}
+	var pid uint32
+	user32.NewProc("GetWindowThreadProcessId").Call(uintptr(target.HWND), uintptr(unsafe.Pointer(&pid)))
+	value, _, _ := user32.NewProc("GetPropW").Call(uintptr(target.HWND), uintptr(unsafe.Pointer(property)))
+	if ctx.Err() != nil || pid != target.PID || value != uintptr(target.Value) || time.Now().After(target.Expires) {
+		return errors.New("fixture reader binding expired or changed")
+	}
+	ok, _, _ := user32.NewProc("PostMessageW").Call(uintptr(target.HWND), 0x0010, 0, 0)
+	if ok == 0 {
+		return errors.New("fixture window close was rejected")
+	}
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		exists, _, _ := user32.NewProc("IsWindow").Call(uintptr(target.HWND))
+		if exists == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("fixture HWND did not close")
+		case <-tick.C:
+		}
+	}
+}
+
+// Use the same windows API as Bridge source/reader actions. CDP createTarget
+// in app mode can leave an additional page in the new window.
+func createBridgeFixtureWindow(ctx context.Context, protocol appshell.CaptureProtocol, origin string) (string, error) {
+	const fixtureURL = "http://127.0.0.1:11122/quiet-interactive-fixture"
+	list := func() ([]struct {
+		TargetID string `json:"targetId"`
+		Type     string `json:"type"`
+		URL      string `json:"url"`
+	}, error) {
+		raw, err := protocol.Call(ctx, "Target.getTargets", nil, "")
+		var result struct {
+			TargetInfos []struct {
+				TargetID string `json:"targetId"`
+				Type     string `json:"type"`
+				URL      string `json:"url"`
+			} `json:"targetInfos"`
+		}
+		if err != nil || json.Unmarshal(raw, &result) != nil {
+			return nil, errors.New("fixture target inventory unavailable")
+		}
+		return result.TargetInfos, nil
+	}
+	infos, err := list()
+	if err != nil {
+		return "", err
+	}
+	worker := ""
+	for _, info := range infos {
+		if info.Type == "service_worker" && strings.HasPrefix(info.URL, origin+"/") {
+			if worker != "" {
+				return "", errors.New("Bridge worker identity ambiguous")
+			}
+			worker = info.TargetID
+		}
+	}
+	if worker == "" {
+		return "", errors.New("exact Bridge worker unavailable")
+	}
+	attached, err := protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": worker, "flatten": true}, "")
+	var session struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err != nil || json.Unmarshal(attached, &session) != nil || session.SessionID == "" {
+		return "", errors.New("fixture Bridge worker attachment failed")
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, _ = protocol.Call(cleanup, "Target.detachFromTarget", map[string]any{"sessionId": session.SessionID}, "")
+	}()
+	raw, err := protocol.Call(ctx, "Runtime.evaluate", map[string]any{"expression": `chrome.windows.create({url:"` + fixtureURL + `",type:"normal",focused:false,state:"minimized"}).then(()=>true)`, "awaitPromise": true, "returnByValue": true}, session.SessionID)
+	var evaluated struct {
+		Result struct {
+			Value bool `json:"value"`
+		} `json:"result"`
+	}
+	if err != nil || json.Unmarshal(raw, &evaluated) != nil || !evaluated.Result.Value {
+		return "", errors.New("Bridge fixture window creation rejected")
+	}
+	infos, err = list()
+	if err != nil {
+		return "", err
+	}
+	target := ""
+	for _, info := range infos {
+		if info.Type == "page" && info.URL == fixtureURL {
+			if target != "" {
+				return "", errors.New("fixture target identity ambiguous")
+			}
+			target = info.TargetID
+		}
+	}
+	if target == "" {
+		return "", errors.New("fixture target unavailable after window creation")
+	}
+	return target, nil
 }
 
 func bridgeExtensionOrigin(bridgePath string) (string, error) {
