@@ -666,6 +666,34 @@ a mode switch. Do not retrofit a settings-only change around them.
   capability probes are the next bounded steps; no production backend change has
   been accepted or shipped on the basis of upstream source alone.
 
+### Pinned-Chrome hidden-target capability checkpoint (2026-10-02)
+
+- The isolated random-port diagnostic completes in 1.64 seconds using the
+  existing full package tuple and reports actual `Chrome/152.0.7977.54`.
+  No original runtime stop, authenticated profile or production configuration
+  change is involved. The fixture's PASS means its diagnostic completed.
+- Hidden targets created in a dedicated child browser session are supported;
+  the default browser context is retained. The hidden fixture receives one HTTP
+  request and reaches the expected complete document. Its native-window lookup
+  returns a protocol error, whose exact reason was not classified in this run.
+- Explicit Page.navigate of the known disposable host receives one HTTP request
+  and reaches the complete host document. Natural startup had zero requests,
+  an expected target URL but empty frame/history URLs. Initial document evaluation
+  failed, so its exact initial document class remains unverified. This establishes
+  an effective explicit-navigation path, not the underlying Chromium cause or
+  authenticated Bridge bootstrap.
+- A harmless fixture cookie seeded by the host is visible in the hidden target:
+  default-context sharing passes without copying cookies. This is not live
+  X/Facebook authentication evidence. Exact hidden disposal and child-session
+  detachment pass while the root test-only WebSocket remains connected.
+- After the run, the helper makes opaque-document cookie reads exception-safe,
+  classifies window errors without raw text, and labels extension presence as
+  `anyExtensionWorker` rather than claiming exact Bridge identity. Syntax passes;
+  these diagnostic refinements have not received another native run.
+- Go-owned private-pipe lifetime, worker-failure containment, interactive-window
+  preservation and production collection integration remain separate gates.
+  The loopback debugging endpoint exists only in this disposable probe.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
