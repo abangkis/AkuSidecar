@@ -611,6 +611,31 @@ a mode switch. Do not retrofit a settings-only change around them.
   startup correction or new diagnostic evidence. The earlier popup smoke covers
   native lifecycle only and cannot fill this gap.
 
+### Renderer startup diagnostic checkpoint (2026-10-02)
+
+- A bounded read-only CDP diagnostic attaches to the disposable capture-host
+  target and reports sanitized document, frame and extension state. It neither
+  navigates/reloads the target nor changes production launch flags. Default-skip
+  compilation, JavaScript syntax and diff whitespace checks pass.
+- One authorized stop/test/restore run fails at capability bootstrap after
+  48.80 seconds. Receipt:
+  `build/bridge-handoff-ea285e40-1901-4999-9549-1361c656231c/receipt.json`.
+  The original runtime is restored and its health, compatible Bridge and single
+  original-profile Chrome owner are verified by the wrapper.
+- Diagnostic: host HTTP hits 0; target found and attached; renderer document
+  state `complete`, expected frame/title/host marker false, error class
+  `unexpected_document`, unreachable false. Packaged extension worker exists,
+  but its isolated world/content-script marker is absent from this document.
+  Bootstrap requests remain 0. Target URL presence therefore does not establish
+  navigation to the expected document. No handoff acceptance is claimed.
+- Network counters are explicitly late observations: zero events after diagnostic
+  attachment cannot prove that no earlier request or network failure occurred.
+- An upstream CEF Windows minimized-startup issue identifies native occlusion as
+  a possible hypothesis, not a verified cause in this Chrome build:
+  https://github.com/chromiumembedded/cef/issues/3638 . A separate disposable
+  loopback navigation comparison is being prepared; it does not require stopping
+  the original runtime or changing its profile/settings.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

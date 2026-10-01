@@ -225,7 +225,7 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		diagnostic := bridgeHandoffStartupDiagnostic(
 			diagnosticCtx, filepath.Join(runtimeRoot, "node.exe"),
 			filepath.Join(filepath.Dir(sourceFile), "..", "appshell", "testdata", "host_handoff_cdp.mjs"),
-			profile, launchURL, origin,
+			profile, origin,
 			observed.hostPageHits.Load()-hostHitsAfterPreflight,
 			observed.bootstrapRequests.Load(), observed.bootstrapStatus.Load(),
 			s,
@@ -340,36 +340,39 @@ func waitForBridgeHandoffCapability(ctx context.Context, s *Server) error {
 }
 
 func bridgeHandoffStartupDiagnostic(
-	ctx context.Context, nodePath, helperPath, profile, launchURL, extensionOrigin string,
+	ctx context.Context, nodePath, helperPath, profile, extensionOrigin string,
 	hostHits, bootstrapRequests, bootstrapStatus int32, s *Server,
 ) string {
-	hostTarget, hostTitle, hostFragment, bridgeWorker := false, false, false, false
+	type startupState struct {
+		ProbeState          string `json:"probeState"`
+		TargetFound         bool   `json:"targetFound"`
+		FragmentValid       bool   `json:"fragmentValid"`
+		ExtensionWorker     bool   `json:"extensionWorker"`
+		Attached            bool   `json:"attached"`
+		FrameMatches        bool   `json:"frameMatches"`
+		Unreachable         bool   `json:"unreachable"`
+		DocumentState       string `json:"documentState"`
+		TitleMatches        bool   `json:"titleMatches"`
+		HostMarker          bool   `json:"hostMarker"`
+		StatusState         string `json:"statusState"`
+		ErrorClass          string `json:"errorClass"`
+		ExtensionWorld      bool   `json:"extensionWorld"`
+		BridgeContentScript bool   `json:"bridgeContentScript"`
+		DocumentResponses   int    `json:"documentResponses"`
+		DocumentStatus      int    `json:"documentStatus"`
+		NetworkFailures     int    `json:"networkFailures"`
+		FailureClass        string `json:"failureClass"`
+	}
+	state := startupState{}
 	cdpState := "unavailable"
 	if endpoint, ok := bridgeHandoffDevToolsEndpoint(ctx, profile); ok {
-		command := exec.CommandContext(ctx, nodePath, helperPath, endpoint, "Target.getTargets", "{}")
+		params, _ := json.Marshal(map[string]string{"expectedExtensionOrigin": extensionOrigin})
+		command := exec.CommandContext(ctx, nodePath, helperPath, endpoint, "CaptureHostStartup", string(params))
 		command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		output, err := command.Output()
 		if err == nil {
-			var result struct {
-				TargetInfos []struct {
-					Type  string `json:"type"`
-					URL   string `json:"url"`
-					Title string `json:"title"`
-				} `json:"targetInfos"`
-			}
-			if json.Unmarshal(output, &result) == nil {
+			if json.Unmarshal(output, &state) == nil {
 				cdpState = "ok"
-				baseURL := strings.SplitN(launchURL, "#", 2)[0]
-				for _, target := range result.TargetInfos {
-					if target.Type == "page" && strings.SplitN(target.URL, "#", 2)[0] == baseURL {
-						hostTarget = true
-						hostTitle = target.Title == "AkuBrowser capture host"
-						hostFragment = target.URL == launchURL
-					}
-					if target.Type == "service_worker" && strings.HasPrefix(target.URL, extensionOrigin+"/") {
-						bridgeWorker = true
-					}
-				}
 			}
 		} else if ctx.Err() == nil {
 			cdpState = "query_error"
@@ -380,9 +383,12 @@ func bridgeHandoffStartupDiagnostic(
 	s.splitCapture.mu.Lock()
 	accepted := s.splitCapture.sourceTrackingSupported && s.splitCapture.hostCloseSupported
 	s.splitCapture.mu.Unlock()
-	return fmt.Sprintf("host_http_hits=%d host_target=%t host_title=%t host_fragment=%t bridge_worker=%t bootstrap_requests=%d bootstrap_status=%d bootstrap_accepted=%t cdp=%s",
-		hostHits, hostTarget, hostTitle, hostFragment, bridgeWorker,
-		bootstrapRequests, bootstrapStatus, accepted, cdpState)
+	return fmt.Sprintf("host_http_hits=%d probe=%s host_target=%t fragment_valid=%t page_attached=%t frame_matches=%t unreachable=%t document_state=%s title_matches=%t host_marker=%t status=%s page_error=%s extension_worker=%t extension_world=%t bridge_content_script=%t late_document_responses=%d document_status=%d late_network_failures=%d network_error=%s bootstrap_requests=%d bootstrap_status=%d bootstrap_accepted=%t cdp=%s",
+		hostHits, state.ProbeState, state.TargetFound, state.FragmentValid, state.Attached, state.FrameMatches,
+		state.Unreachable, state.DocumentState, state.TitleMatches, state.HostMarker,
+		state.StatusState, state.ErrorClass, state.ExtensionWorker, state.ExtensionWorld,
+		state.BridgeContentScript, state.DocumentResponses, state.DocumentStatus,
+		state.NetworkFailures, state.FailureClass, bootstrapRequests, bootstrapStatus, accepted, cdpState)
 }
 
 func bridgeHandoffDevToolsEndpoint(ctx context.Context, profile string) (string, bool) {
