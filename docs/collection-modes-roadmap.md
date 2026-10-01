@@ -171,7 +171,7 @@ because DOM capture passed. Browser remains default after this gate.
 | 2c | Scoped retirement implemented; integrated acceptance incomplete | Natural-exit ownership and automatic retry pass isolated Windows popup smoke. Finish authenticated Bridge retirement and integrated handoff/recovery |
 | 3 | Local candidate; focused contract/ownership checks pass, acceptance incomplete | Production Bridge fields and per-source continuation/frontier handling implemented. Worker fixtures 6/6 and isolated real Node/CDP/Job/profile exclusivity/reuse smoke pass; authenticated parity, freshness qualification and source gaps remain |
 | 4 | Rendered Settings fixture passes; integrated acceptance incomplete | Real UI/API/coordinator with fake processes proves switching, reload persistence, visibility restoration and unsupported-source rejection. Native reader/login, auto-update and recapture journey remain |
-| 5 | Packaging helper implemented; product validation incomplete | Official Node archive pin, worker/license staging and builder integration exist; helper fixture tests pass. Full package build, authenticated parity and Windows visibility evidence remain |
+| 5 | Complete local tuple build and verifier pass; product validation incomplete | Official Node pin, worker/license staging, 411-file payload hashes and candidate probe pass. Packaged Chrome/worker popup smoke passes; authenticated parity, end-to-end Bridge and Windows visibility remain |
 
 The table describes code availability separately from acceptance. Candidate
 Settings/driver wiring was implemented before the 2c gate passed; this is an open
@@ -530,6 +530,30 @@ a mode switch. Do not retrofit a settings-only change around them.
   verifier, integrated native reader/login and recovery, authenticated X/Facebook
   parity including native IDs/media/coverage, and Windows visibility evidence.
   No installed runtime/profile, push or release was changed.
+
+### Complete local package checkpoint (2026-10-02)
+
+- Full installed-app tuple builder and independent builder verifier both report
+  `status: ok`. Candidate directory:
+  `AkuBrowser/build/headless-handoff-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+  Its exact source tuple is Browser `036d839`, Sidecar `a3a148a`, Bridge `19719a5`.
+  Sidecar is recorded dirty because untracked experiments remain preserved;
+  `-AllowDirty` was used only for this local candidate.
+- The payload contains 411 files / 588,711,115 bytes. Verifier checks the complete
+  declared payload hashes, adjacent pinned Node/worker and both licenses, Chrome
+  executable pin, Bridge identity, schema 29 provenance and Sidecar candidate
+  probe. Launcher verify-only also succeeds; it does not launch the application.
+- SHA-256: launcher
+  `3e1223555c51273206c0b9fb77d414d5e28f3dd26e920d46a67b5a47401aef0e`;
+  Sidecar
+  `34329997ff32cd3aef46c4472f2fe9f54eb4e160e84fcd16ec4b9d21c5ebcd05`.
+- Isolated Windows popup smoke passes again (13.71 seconds) using this package's
+  Chrome, Node, worker and Bridge paths. The changed binary inputs justify the
+  rerun. It retains the existing smoke's CDP callback substitution and does not
+  close the authenticated end-to-end Bridge gate.
+- Package metadata inherits the existing 0.9.0 release tuple labels. Successful
+  packaging does not establish headless feature release readiness. No installer,
+  installed-runtime launch/restart, profile access, push or publication occurred.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
