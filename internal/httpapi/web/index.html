@@ -336,6 +336,11 @@
                   <button id="reset-timeline-boundary-return" type="button">Reset to default</button>
                 </span>
               </div>
+              <label class="settings-row" for="collection-mode">
+                <span class="settings-copy"><strong>Collection mode</strong><small>Browser is the default. Headless collects without a visible source window; X and Facebook have bounded support, and some media may remain unresolved.</small></span>
+                <select id="collection-mode" name="collectionMode"><option value="browser">Browser</option><option value="headless">Headless (opt-in)</option></select>
+              </label>
+              <p id="collection-runtime-status" class="field-note" role="status"></p>
               <label class="settings-row" for="capture-visibility-policy">
                 <span class="settings-copy"><strong>Capture visibility</strong><small>Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.</small></span>
                 <select id="capture-visibility-policy" name="captureVisibility">

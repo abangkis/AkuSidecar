@@ -208,6 +208,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
+	case r.Method == http.MethodGet && p == "/api/collection/runtime":
+		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime()})
+	case r.Method == http.MethodPost && p == "/api/collection/interactive":
+		if err := s.engine.PrepareInteractiveCapture(ctx); err != nil {
+			return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime()})
 	case r.Method == http.MethodGet && p == "/api/runtime/update-readiness":
 		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
 		if err != nil {
@@ -343,7 +350,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": health.Status, "schemaVersion": store.SchemaVersion}, "databaseHealth": health, "sources": domain.Sources(), "settings": settings, "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": health.Status, "schemaVersion": store.SchemaVersion}, "databaseHealth": health, "sources": domain.Sources(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {
@@ -419,13 +426,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding, "settings": settings, "calibration": calibration})
+		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding, "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "calibration": calibration})
 	case r.Method == http.MethodGet && p == "/api/settings":
 		settings, err := s.engine.Settings(ctx)
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
+		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
 	case r.Method == http.MethodGet && p == "/api/reasoning/providers/readiness":
 		providers, err := s.engine.ReasoningProviderReadiness(ctx)
 		if err != nil {
@@ -511,7 +518,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return badRequest(err.Error())
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
+		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
 	case r.Method == http.MethodPost && p == "/api/updates":
 		var body struct {
 			Intent string `json:"intent"`
@@ -1372,6 +1379,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			body.Capabilities.ExtensionOrigin = origin
 		} else {
 			body.Capabilities.ExtensionOrigin = canonicalExtensionOrigin(body.Capabilities.ExtensionOrigin)
+		}
+		if s.splitCapture != nil {
+			s.splitCapture.mu.Lock()
+			defer s.splitCapture.mu.Unlock()
+			if s.splitCapture.key != r.Header.Get("X-Aku-Capture-Instance") {
+				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
+			}
 		}
 		return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.RecordHeartbeat(body.Capabilities)})
 	case r.Method == http.MethodPost && p == "/api/operations/bridge/actions/reload-self":

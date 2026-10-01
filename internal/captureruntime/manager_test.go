@@ -19,6 +19,56 @@ type fakeProcess struct {
 	readinessErr  error
 	pid           int
 }
+type headlessFake struct{ *fakeProcess }
+
+func (p *headlessFake) Driver() string { return "headless" }
+func TestWorkerExitRetainsUIAndAllowsVerifiedRecovery(t *testing.T) {
+	p := &headlessFake{newProcess(100)}
+	m, err := New(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Terminate()
+	p.exit(errors.New("worker crashed"))
+	deadline := time.Now().Add(time.Second)
+	for m.Snapshot().State != Failed && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if m.Snapshot().State != Failed {
+		t.Fatal("worker failure not reported")
+	}
+	select {
+	case <-m.Done():
+		t.Fatal("worker crash shut down UI")
+	default:
+	}
+	if err := m.Recover(context.Background(), nil); err == nil {
+		t.Fatal("nil recovery admitted")
+	}
+	next := newProcess(101)
+	if err := m.Recover(context.Background(), func(context.Context, uint64) (Process, error) { return next, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if m.Snapshot().State != Ready || m.Snapshot().Driver != "browser" {
+		t.Fatal(m.Snapshot())
+	}
+}
+func TestRecoveryCannotBypassUnverifiedTreeCleanup(t *testing.T) {
+	p := &headlessFake{newProcess(100)}
+	p.cleanupErr = errors.New("owned child alive")
+	m, _ := New(p)
+	defer m.Terminate()
+	p.exit(errors.New("crashed"))
+	deadline := time.Now().Add(time.Second)
+	for m.Snapshot().State != Failed && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	called := false
+	err := m.Recover(context.Background(), func(context.Context, uint64) (Process, error) { called = true; return newProcess(101), nil })
+	if err == nil || called || m.Snapshot().State != Blocked {
+		t.Fatal("recovery ignored uncertain cleanup")
+	}
+}
 
 func newProcess(pid int) *fakeProcess {
 	return &fakeProcess{done: make(chan error, 1), terminated: make(chan struct{}), pid: pid}
@@ -61,6 +111,39 @@ func await(t *testing.T, result <-chan error) error {
 	case <-time.After(2 * time.Second):
 		t.Fatal("runtime event timed out")
 		return nil
+	}
+}
+
+func TestTransportReadinessGatePreservesOwnerAndCannotBeRemoved(t *testing.T) {
+	p := newProcess(10)
+	m := newManager(t, p)
+	ready := false
+	if err := m.SetTransitionReadiness(func(context.Context) error {
+		if !ready {
+			return ErrUnavailable
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetTransitionReadiness(func(context.Context) error { return nil }); err == nil {
+		t.Fatal("guard replaced")
+	}
+	launch := func(context.Context, uint64) (Process, error) { return newProcess(20), nil }
+	if err := m.Replace(context.Background(), launch); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("unnegotiated: %v", err)
+	}
+	select {
+	case <-p.terminated:
+		t.Fatal("unnegotiated owner terminated")
+	default:
+	}
+	if s := m.Snapshot(); s.State != Ready || s.Generation != 1 {
+		t.Fatalf("snapshot: %+v", s)
+	}
+	ready = true
+	if err := m.Replace(context.Background(), launch); err != nil {
+		t.Fatal(err)
 	}
 }
 

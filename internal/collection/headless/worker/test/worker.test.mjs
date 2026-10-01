@@ -1,0 +1,118 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { PassThrough } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { canonicalSourceURL, evidenceKey, toObservation } from '../observation.mjs';
+import { validateCapture } from '../capture.mjs';
+import { runWorker, validateInit, validateRequest } from '../worker.mjs';
+
+test('accepts only canonical native X and Facebook recapture URLs', () => {
+  assert.equal(canonicalSourceURL('x', 'https://x.com/example/status/1890000000000000000/photo/1?x=1'),
+    'https://x.com/example/status/1890000000000000000');
+  assert.equal(canonicalSourceURL('x', 'https://evil.example/example/status/1890000000000000000'), null);
+  assert.equal(canonicalSourceURL('facebook', 'https://www.facebook.com/example/posts/12345'),
+    'https://www.facebook.com/example/posts/12345');
+  assert.equal(canonicalSourceURL('facebook', 'https://www.facebook.com/story.php?id=1'), null);
+  assert.equal(canonicalSourceURL('facebook', 'https://attacker.example/example/posts/12345'), null);
+  assert.equal(validateCapture('x', {}).pageUrl, 'https://x.com/home');
+  assert.throws(() => validateCapture('x', { pageUrl: 'https://example.com/post/1' }), { code: 'invalid_page_url' });
+  assert.throws(() => validateCapture('facebook', { pageUrl: 'https://www.facebook.com/' }), { code: 'invalid_page_url' });
+});
+
+test('maps X evidence to the canonical Observation shape without changing source IDs', () => {
+  const post = {
+    id: '1890000000000000000',
+    permalink: 'https://x.com/example/status/1890000000000000000',
+    author: 'Example',
+    avatar: 'https://pbs.twimg.com/profile_images/example.jpg',
+    text: 'A source-backed X post.',
+    publishedAt: '2026-09-30T10:20:30.000Z',
+    contentKind: 'video',
+    relationshipType: 'quote',
+    parentPermalink: 'https://x.com/other/status/1880000000000000000',
+    quotedPost: { id: '1880000000000000000', permalink: null, identityStatus: 'unknown', media: [{ kind: 'video_poster' }] },
+    engagement: { replies: 4, reposts: 2 },
+    media: [{ kind: 'video_poster', url: 'https://video.twimg.com/poster.jpg', loaded: true }],
+    mediaExpected: ['video'],
+    mediaEvidence: { status: 'missing_expected_url', expectedWithoutUrl: ['video'] },
+    limitations: ['video_stream_not_resolved'],
+    textStatus: 'visible_text_no_collapse_control',
+  };
+  const provenance = { schema: 'aku.headless-source-provenance.v1', algorithm: 'sha256', sources: [{ path: 'AkuBridge/adapters/x-adapter.js', sha256: 'a'.repeat(64) }] };
+  const observation = toObservation({ source: 'x', requestedUrl: 'https://x.com/example/status/1890000000000000000',
+    snapshots: [{ posts: [post], adapterVersion: 'x-dom-v23', discoveryStrategy: 'tweet_testid', candidateCount: 1,
+      scroll: { y: 0, viewportHeight: 900 }, documentReady: true }], provenance,
+    capturedAt: '2026-10-01T00:00:00.000Z', stopReason: 'scroll_limit' });
+  const block = observation.snapshots[0].blocks[0];
+  const expectedDigest = createHash('sha256').update('x\0x:status:' + post.id, 'utf8').digest('hex').slice(0, 24);
+  assert.equal(observation.source, 'x');
+  assert.equal(observation.coverage.status, 'partial');
+  assert.equal(observation.coverage.provenance.sources[0].sha256, 'a'.repeat(64));
+  assert.equal(block.platformId, `x:status:${post.id}`);
+  assert.equal(block.captureQuality.headlessSourceId, post.id);
+  assert.equal(block.permalink, post.permalink);
+  assert.equal(block.publishedAt, post.publishedAt);
+  assert.equal(block.relationshipType, 'quote');
+  assert.deepEqual(block.quotedPost, post.quotedPost);
+  assert.equal(block.evidenceKey, `x:${expectedDigest}`);
+  assert.equal(block.mediaRecovery.unknownVideo, 'unresolved');
+  assert.equal(block.media[0].url, post.media[0].url);
+});
+
+test('maps Facebook timestamp and video uncertainty without promoting unknowns', () => {
+  const post = {
+    id: 'facebook:post:12345',
+    permalink: 'https://www.facebook.com/example/posts/12345',
+    author: 'Example Page',
+    text: 'A bounded Facebook post.',
+    publishedAt: null,
+    timestampSource: 'unavailable',
+    timestampEstimated: false,
+    timestampText: '',
+    timestampEvidence: { diagnostics: { scannedScripts: 3 }, publishedAt: null },
+    contentKind: 'video',
+    relationshipType: 'original',
+    parentPermalink: null,
+    presentation: { timestampAvailability: 'unavailable' },
+    media: [{ kind: 'video_poster', url: 'https://video.xx.fbcdn.net/poster.jpg', loaded: true }],
+    mediaExpected: ['video'],
+    mediaEvidence: { status: 'missing_expected_url', expectedWithoutUrl: ['video'] },
+    limitations: ['video_stream_not_resolved'],
+    textStatus: 'visible_text_no_collapse_control',
+  };
+  const observation = toObservation({ source: 'facebook', requestedUrl: post.permalink,
+    snapshots: [{ posts: [post], adapterVersion: 'facebook-dom-v18', discoveryStrategy: 'aria_posinset', candidateCount: 2,
+      rejected: 1, rejectionReasons: { missing_identity: 1 }, scroll: { y: 0, viewportHeight: 900 } }],
+    provenance: { schema: 'aku.headless-source-provenance.v1', algorithm: 'sha256', sources: [] },
+    capturedAt: '2026-10-01T00:00:00.000Z', stopReason: 'post_limit' });
+  const block = observation.snapshots[0].blocks[0];
+  assert.equal(block.platformId, post.id);
+  assert.equal(block.publishedAt, null);
+  assert.equal(block.presentation.timestampAvailability, 'unavailable');
+  assert.equal(block.presentation.timestampSource, 'unavailable');
+  assert.equal(block.mediaRecovery.unknownVideo, 'unresolved');
+  assert.equal(observation.coverage.status, 'partial');
+  assert.equal(observation.snapshots[0].candidateDiagnostics, undefined);
+  assert.equal(observation.snapshots[0].qualityReports[0].status, 'unverified');
+});
+
+test('JSONL protocol rejects capture before init and shuts down without starting Chrome', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let transcript = '';
+  output.setEncoding('utf8');
+  output.on('data', chunk => { transcript += chunk; });
+  const running = runWorker({ input, output, errorOutput: new PassThrough() });
+  input.write(JSON.stringify({ id: 'before-init', type: 'capture', source: 'x', payload: {} }) + '\n');
+  input.write(JSON.stringify({ id: 'stop', type: 'shutdown' }) + '\n');
+  await running;
+  const replies = transcript.trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(replies.map(reply => reply.id), ['before-init', 'stop']);
+  assert.equal(replies[0].ok, false);
+  assert.equal(replies[0].error.code, 'not_initialized');
+  assert.deepEqual(replies[1], { id: 'stop', ok: true, result: { stopped: true } });
+  assert.deepEqual(validateRequest({ id: 7, type: 'init', chrome: 'C:\\Chrome\\chrome.exe' }).type, 'init');
+  assert.deepEqual(validateInit({ type: 'init', chrome: 'C:\\Chrome\\chrome.exe', profile: 'C:\\Profile', bridgePath: 'C:\\AkuBridge' }), {
+    chromePath: 'C:\\Chrome\\chrome.exe', profilePath: 'C:\\Profile', bridgePath: 'C:\\AkuBridge', profileDirectory: undefined,
+  });
+});

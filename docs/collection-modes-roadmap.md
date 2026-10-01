@@ -3,7 +3,8 @@
 Status: architecture approved; phase 1 committed; runtime/session/media ownership
 and reader guard committed as `b376438`; split-action leases committed as
 `86cd0c3`. Source/login-window tracking is implemented in the paired Sidecar and
-Bridge checkpoint. Phase 2c handoff integration remains pending.
+Bridge checkpoint. Local candidate implementations for phases 2c-5 now exist,
+but acceptance is incomplete. Do not install or release this candidate yet.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ## Product contract
@@ -53,9 +54,9 @@ not write Timeline records directly or bypass durable command admission.
 | --- | --- |
 | `internal/collection/request.go` | Acquisition intent and command-preparation contract; no browser execution |
 | `internal/collection/bridge/` | Existing Bridge payload preparation; asynchronous transport remains intact |
-| `internal/collection/coordinator.go` (planned) | Driver routing, capability/readiness checks, admission and pinned run ownership |
-| `internal/collection/headless/` (planned) | CDP acquisition worker and common observation submission |
-| `internal/captureruntime/` | Managed Chrome lifecycle, profile ownership, generation and leases; handoff integration/recovery remain pending |
+| `internal/collection/coordinator.go` | Local candidate for driver routing, capability/readiness checks, admission and pinned run ownership |
+| `internal/collection/headless/` | Local candidate for the packaged Node/CDP worker and common observation submission; production continuation remains incomplete |
+| `internal/captureruntime/` | Managed Chrome lifecycle, profile ownership, generation and leases; local handoff/recovery implementation awaits final acceptance |
 | `internal/engine/`, `internal/store/` | Durable commands/runs, result validation, reasoning and common data persistence |
 | `internal/httpapi/` and embedded UI | Settings contract, transition status, source capabilities and error presentation |
 | AkuBridge source runtime | Reusable extraction logic with separate Bridge/CDP host facilities |
@@ -166,10 +167,33 @@ because DOM capture passed. Browser remains default after this gate.
 | Phase | Status | Evidence / next action |
 | --- | --- | --- |
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
-| 2 | In progress: ownership, split-action leases and explicit reader/source window tracking implemented; 2c pending | Legacy capability enforcement, site-created popups, transport/containment rebinding and verified recovery remain before replacement is exposed |
-| 3 | PoC evidence only | `experiments/x-headless`; resolve product worker dependency and source gaps |
-| 4 | Not started | No collectionMode setting or user-visible switch exists yet |
-| 5 | Not started | Product parity and packaging require phases 2-4 |
+| 2a-2b | Foundation complete and committed; final integrated validation pending | Process ownership, durable driver/generation fencing, session/media/action leases, cancellation drain and native-reader/source lifetime tracking; commits `b376438`, `86cd0c3`, `d9b735a` and paired Bridge `8541337` |
+| 2c | Local candidate; acceptance incomplete | Credential rotation, callback rebinding, interactive borrowing and verified recovery exist. Resolve popup TOCTOU and prove real handoff/recovery before activation |
+| 3 | Local candidate; acceptance incomplete | Dependency-free Node/CDP X/Facebook worker and Observation mapping exist. Fix production payload/budget names and follow-up frontier; restage the init fix and repeat ownership smoke |
+| 4 | Local candidate; acceptance incomplete | Settings/API/UI persist browser/headless and show requested/effective/pending/failure. Validate the complete switching, login/native reader, auto-update and recapture journey |
+| 5 | Packaging helper implemented; product validation incomplete | Official Node archive pin, worker/license staging and builder integration exist; helper fixture tests pass. Full package build, authenticated parity and Windows visibility evidence remain |
+
+The table describes code availability separately from acceptance. Candidate
+Settings/driver wiring was implemented before the 2c gate passed; this is an open
+roadmap sequencing deviation, not evidence that phases 3-4 are accepted. Keep the
+candidate out of installed/released runtimes until the ownership gate is closed.
+
+### Resume order after the local candidate checkpoint
+
+1. Complete production payload/budget handling and follow-up frontier ownership,
+   including source interleaving and media-recapture invalidation.
+2. Resolve the cross-driver error-contract test mismatch; restage the init fix
+   and rerun isolated profile exclusivity/reuse smoke plus focused integration
+   checks. Do not treat earlier successful suites as validation of later edits.
+3. Finish scoped review and close popup/handoff/recovery acceptance. A live
+   successful transition alone does not eliminate the known TOCTOU race.
+4. Validate rendered Settings and native-reader/login journeys, then bounded
+   authenticated X/Facebook parity and background-window visibility.
+5. Build and verify complete local packages. Record supported capabilities and
+   remaining source limitations before declaring any phase complete.
+
+Snapshot commits preserve unfinished candidate work; they do not authorize
+installation, runtime restart, push or publication and do not imply green tests.
 
 ### Phase 1 validation (2026-10-01)
 
@@ -320,6 +344,72 @@ a mode switch. Do not retrofit a settings-only change around them.
   handshake, ordering, failed-binding cleanup and post-binding navigation failure.
   Additional API cases cover native capability advertisement, marker access,
   claimed/type/instance fencing, consumed/completed intent and failed-binding replay.
+
+### Capability and popup readiness checkpoint (2026-10-01)
+
+- Source/login-window checkpoint committed as Sidecar `d9b735a` and Bridge
+  `8541337`. This next checkpoint remains local and uncommitted.
+- Bridge declares version 1 of source-window tracking at authenticated split
+  bootstrap. Legacy/unknown versions keep browser operation compatible but do
+  not pass transport readiness for replacement. An unprepared successful source
+  result records an unverified outcome; a reconnect cannot erase that uncertainty.
+- Main registers an immutable transport-readiness callback on the manager. Its
+  refusal restores the prior state without terminating the owner or increasing
+  its generation. No product replacement trigger is exposed.
+- Windows replacement readiness enumerates owned top-level browser windows,
+  including hidden/minimized windows, without foreground property writes. It
+  requires one capture-host marker and rejects additional Chrome windows even
+  after their parent closes. Other user Chrome processes are outside ownership;
+  known non-browser native helper windows are ignored. Unknown owned classes,
+  failed enumeration, missing/ambiguous host markers fail closed.
+- This is a conservative preflight, not atomic popup protection. A popup can
+  appear after enumeration; quiescence and the final cleanup/transition boundary
+  still need integrated evidence. A missing marker may conservatively block a
+  healthy runtime. This guard currently describes browser capture, not headless.
+- Transport rotation/rebinding, selected-driver readiness and verified recovery
+  remain pending. Installed Chrome has not been restarted or tested live.
+- Validation: full API/runtime/engine/entrypoint suites, targeted appshell
+  containment/lifetime/popup tests and the application build passed. Sixteen
+  Bridge tests and its client syntax check passed. New cases cover legacy/unknown
+  capability versions, downgrade on reconnect, persistent unverified outcomes,
+  verified preparation, closed transport, immutable manager gate and hidden,
+  orphaned, unowned, missing-host and ambiguous-host windows. This is fixture and
+  controlled-process evidence; it is not a live native popup handoff test.
+
+### Local integration candidate and stop checkpoint (2026-10-01)
+
+- Uncommitted candidate adds requested/effective/pending Settings status,
+  browser/headless coordination, generation-pinned execution, interactive
+  browser borrowing, split credential rotation/rebinding and verified recovery.
+  The engine submits worker observations through its existing acceptance path.
+- Dependency-free Node/CDP worker supports bounded X/Facebook extraction and
+  canonical Observation IDs with explicit partial quality/video uncertainty.
+  AkuBrowser builders now stage a checksum-pinned official Node runtime,
+  worker sources and licenses beside Sidecar. Packaging helper fixture tests
+  passed; a full package build and installed-runtime validation have not run.
+- Coordinator/domain tests and three Settings-state JavaScript tests passed.
+  The earlier focused Go suites passed before the latest integration changes.
+  Latest runtime and HTTP suites passed, but the new engine cross-driver test
+  failed because rejection returns a plain error rather than the expected stale
+  owner sentinel. The rejection itself occurred; final suites are not green.
+- Real Node/Go-owned Chrome smoke used an isolated test profile, without source
+  navigation. It failed at init because the worker omitted bridgePath from its
+  validated options. That source fix exists, but staged assets still predate it;
+  restage and rerun the profile-exclusivity/reuse smoke before claiming success.
+- Important remaining implementation: production payload names/budgets and
+  acquisition-round continuation/frontier handling. Current worker still reads
+  PoC-style maxScrolls/waitMs and navigates home for every capture. Do not claim
+  production follow-up parity until this is fixed and tested, including source
+  interleaving and recapture invalidation.
+- Remaining acceptance: finish scoped integration review; final Go/JS checks;
+  full packaging; rendered Settings/native-reader journey; authenticated X/FB
+  parity; live profile handoff/recovery and native popup protection. Window
+  enumeration is still a conservative preflight with a known TOCTOU gap, not
+  proof of atomic popup safety. The product handoff acceptance gate is open.
+- No installation, installed-runtime restart, authenticated live collection,
+  new commit or push occurred. Existing experiments remain excluded. Work was
+  stopped because the active 1,000,000-token goal budget was exhausted; agents
+  were interrupted. Preserve all local edits when resuming.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

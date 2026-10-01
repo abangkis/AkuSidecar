@@ -61,6 +61,7 @@ func (s Source) Valid() bool {
 type Settings struct {
 	LoadProfile                 string                     `json:"loadProfile"`
 	CaptureVisibility           string                     `json:"captureVisibility"`
+	CollectionMode              string                     `json:"collectionMode"`
 	OpenMissingSource           bool                       `json:"openMissingSource"`
 	ActiveSources               []Source                   `json:"activeSources"`
 	SourceHydrationTimeoutMS    map[Source]int             `json:"sourceHydrationTimeoutMs"`
@@ -159,6 +160,7 @@ func DefaultSettings(profile, visibility, preferenceMode string, openMissing boo
 	settings := Settings{
 		LoadProfile:                 profile,
 		CaptureVisibility:           visibility,
+		CollectionMode:              "browser",
 		OpenMissingSource:           openMissing,
 		ActiveSources:               DefaultSources(),
 		SourceHydrationTimeoutMS:    DefaultSourceHydrationTimeouts(),
@@ -222,6 +224,9 @@ func (s *Settings) ApplyProfile() {
 }
 
 func (s *Settings) Normalize() {
+	if s.CollectionMode == "" {
+		s.CollectionMode = "browser"
+	}
 	if s.SourceWaitMode == "" {
 		s.SourceWaitMode = DefaultSourceWaitMode
 	}
@@ -328,6 +333,9 @@ func (s *Settings) Normalize() {
 }
 
 func (s Settings) Validate() error {
+	if s.CollectionMode != "" && s.CollectionMode != "browser" && s.CollectionMode != "headless" {
+		return fmt.Errorf("unsupported collection mode %q", s.CollectionMode)
+	}
 	if s.LoadProfile != "standard" && s.LoadProfile != "expanded" && s.LoadProfile != "stress" && s.LoadProfile != "custom" {
 		return fmt.Errorf("unsupported load profile %q", s.LoadProfile)
 	}

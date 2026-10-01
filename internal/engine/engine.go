@@ -56,8 +56,10 @@ type Engine struct {
 	captureOwner      *captureruntime.Manager
 	captureSessions   map[string]*captureruntime.Lease
 	captureRecaptures map[string]*captureruntime.Lease
+	collectionRuntime *collection.Coordinator
 	schedule          sync.Mutex
 	heartbeat         *domain.BridgeHeartbeat
+	headlessAccess    []domain.Source
 	bridgeOrigins     map[string]time.Time
 	active            map[string]context.CancelFunc
 	pending           map[string]bool
@@ -114,6 +116,14 @@ func (e *Engine) Settings(ctx context.Context) (domain.Settings, error) {
 func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domain.Settings, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	value.Normalize()
+	if e.collectionRuntime != nil {
+		if err := e.collectionRuntime.ValidateSelection(value.CollectionMode, value.ActiveSources); err != nil {
+			return domain.Settings{}, err
+		}
+	} else if value.CollectionMode == "headless" {
+		return domain.Settings{}, errors.New("headless requires the managed Windows split capture runtime")
+	}
 	current, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return domain.Settings{}, err
@@ -196,6 +206,9 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	}
 	if err := e.store.SaveSettings(ctx, value); err != nil {
 		return domain.Settings{}, err
+	}
+	if e.collectionRuntime != nil {
+		e.collectionRuntime.Request(value.CollectionMode)
 	}
 	if current.AIDetectionEnabled && !value.AIDetectionEnabled {
 		e.cancelDeepDetections()
@@ -527,6 +540,21 @@ func (e *Engine) StartVisibleUpdate(ctx context.Context, intent string) (domain.
 }
 
 func (e *Engine) grantedActiveSources(settings domain.Settings) []domain.Source {
+	if e.headlessEffective() {
+		e.mu.RLock()
+		allowed := append([]domain.Source(nil), e.headlessAccess...)
+		e.mu.RUnlock()
+		valid := []domain.Source{}
+		for _, source := range settings.ActiveSources {
+			for _, granted := range allowed {
+				if source == granted {
+					valid = append(valid, source)
+					break
+				}
+			}
+		}
+		return valid
+	}
 	status := e.BridgeStatus()
 	if !status.Compatible || status.Actual == nil {
 		return nil
@@ -551,6 +579,9 @@ func noGrantedActiveSourceError() error {
 func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	if e.collectionRuntime != nil && e.collectionRuntime.Status().Pending {
+		return domain.Session{}, errors.New("collection mode transition is pending; finish active capture or close source/reader windows")
+	}
 	if err := e.store.RequireHealthyDatabase(ctx); err != nil {
 		return domain.Session{}, err
 	}
@@ -577,7 +608,7 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, errors.New("complete the active calibration before starting another update")
 	}
 	status := e.BridgeStatus()
-	if !status.Compatible {
+	if !e.headlessEffective() && !status.Compatible {
 		return domain.Session{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
 	}
 	settings, err := e.store.GetSettings(ctx)
@@ -933,6 +964,9 @@ func capturePayload(run domain.Run, leaseID string, settings domain.Settings, ro
 }
 
 func (e *Engine) ClaimCommand(ctx context.Context, runID, bridgeID string) (*domain.BridgeCommand, error) {
+	return e.claimCommandForDriver(ctx, runID, bridgeID, "browser")
+}
+func (e *Engine) claimCommandForDriver(ctx context.Context, runID, bridgeID, driver string) (*domain.BridgeCommand, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
 		return nil, err
@@ -943,6 +977,13 @@ func (e *Engine) ClaimCommand(ctx context.Context, runID, bridgeID string) (*dom
 	}
 	if err := e.ensureCaptureSession(run.SessionID); err != nil {
 		return nil, err
+	}
+	e.captureMu.Lock()
+	lease := e.captureSessions[run.SessionID]
+	wrongDriver := lease != nil && lease.Driver() != driver
+	e.captureMu.Unlock()
+	if wrongDriver {
+		return nil, errors.New("command belongs to another collection driver")
 	}
 	command, err := e.store.ClaimCommand(ctx, runID, bridgeID)
 	if err != nil || command == nil {
@@ -2252,14 +2293,34 @@ func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mod
 func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason) (domain.MediaRecapture, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	if e.collectionRuntime != nil && e.collectionRuntime.Status().Pending {
+		return domain.MediaRecapture{}, errors.New("wait for the collection mode transition before recapturing media")
+	}
 	if active, err := e.store.ActiveSession(ctx); err != nil {
 		return domain.MediaRecapture{}, err
 	} else if active != nil {
 		return domain.MediaRecapture{}, errors.New("finish the active update before recapturing media")
 	}
 	status := e.BridgeStatus()
-	if !status.Compatible {
+	if !e.headlessEffective() && !status.Compatible {
 		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
+	}
+	if e.headlessEffective() {
+		item, err := e.store.TimelineItem(ctx, timelineID)
+		if err != nil {
+			return domain.MediaRecapture{}, err
+		}
+		e.mu.RLock()
+		allowed := false
+		for _, source := range e.headlessAccess {
+			if source == item.Source {
+				allowed = true
+			}
+		}
+		e.mu.RUnlock()
+		if !allowed {
+			return domain.MediaRecapture{}, errors.New("headless recapture source is unsupported or access has not been granted")
+		}
 	}
 	lease, err := e.acquireCaptureLease()
 	if err != nil {
@@ -2267,7 +2328,7 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 	}
 	var stamp map[string]any
 	if lease != nil {
-		stamp = map[string]any{"driver": "browser", "epoch": e.epoch, "generation": int(lease.Generation())}
+		stamp = map[string]any{"driver": lease.Driver(), "epoch": e.epoch, "generation": int(lease.Generation())}
 	}
 	job, err := e.store.CreateOwnedMediaRecapture(ctx, timelineID, mode, reason, stamp)
 	if err != nil {
@@ -2290,12 +2351,22 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 }
 
 func (e *Engine) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (domain.MediaRecapture, error) {
+	return e.claimMediaRecaptureForDriver(ctx, id, bridgeID, "browser")
+}
+func (e *Engine) claimMediaRecaptureForDriver(ctx context.Context, id, bridgeID, driver string) (domain.MediaRecapture, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if _, err := e.store.MediaRecapture(ctx, id); err != nil {
 		return domain.MediaRecapture{}, err
 	}
 	if err := e.ensureCaptureRecapture(id); err != nil {
 		return domain.MediaRecapture{}, err
+	}
+	e.captureMu.Lock()
+	lease := e.captureRecaptures[id]
+	wrongDriver := lease != nil && lease.Driver() != driver
+	e.captureMu.Unlock()
+	if wrongDriver {
+		return domain.MediaRecapture{}, errors.New("media recapture belongs to another collection driver")
 	}
 	if err := e.validateRecaptureOwner(ctx, id); err != nil {
 		failure := domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Media recapture owner changed; stale request was not dispatched.", Retryable: true}
@@ -2426,6 +2497,12 @@ func (e *Engine) FullReset(ctx context.Context) (store.FullResetResult, error) {
 	if err != nil {
 		return store.FullResetResult{}, err
 	}
+	if e.collectionRuntime != nil {
+		e.collectionRuntime.Request("browser")
+	}
+	e.mu.Lock()
+	e.headlessAccess = nil
+	e.mu.Unlock()
 	if swap != nil {
 		swap.apply(e)
 		swap = nil

@@ -1,0 +1,203 @@
+package collection
+
+import (
+	"context"
+	"errors"
+	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection/headless"
+	"github.com/abangkis/AkuSidecar/internal/domain"
+	"sync"
+	"time"
+)
+
+type RuntimeStatus struct {
+	Available         bool                 `json:"available"`
+	Requested         string               `json:"requested"`
+	Effective         string               `json:"effective"`
+	Pending           bool                 `json:"pending"`
+	State             captureruntime.State `json:"state"`
+	Failure           string               `json:"failure,omitempty"`
+	Generation        uint64               `json:"generation"`
+	ActiveLeases      int                  `json:"activeLeases"`
+	HeadlessAvailable bool                 `json:"headlessAvailable"`
+	SupportedSources  []domain.Source      `json:"supportedSources"`
+	AuthorizedSources []domain.Source      `json:"authorizedSources,omitempty"`
+}
+type Coordinator struct {
+	mu                sync.Mutex
+	owner             *captureruntime.Manager
+	requested         string
+	interactive       int
+	launch            func(context.Context, string, uint64) (captureruntime.Process, error)
+	validate          func() error
+	readiness         func() error
+	headless          *headless.Process
+	failure           string
+	retry             bool
+	headlessAvailable bool
+}
+
+func NewCoordinator(owner *captureruntime.Manager, launch func(context.Context, string, uint64) (captureruntime.Process, error), validate func() error) *Coordinator {
+	return &Coordinator{owner: owner, requested: "browser", launch: launch, validate: validate, headlessAvailable: validate() == nil}
+}
+
+// Bound before Start: retained permissions must be confirmed before handoff.
+func (c *Coordinator) SetHeadlessReadiness(check func() error) { c.readiness = check }
+func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) error {
+	if mode != "browser" && mode != "headless" {
+		return errors.New("unsupported collection mode")
+	}
+	if mode == "headless" {
+		if err := c.validate(); err != nil {
+			return err
+		}
+		for _, source := range sources {
+			if source != domain.Source("x") && source != domain.Source("facebook") {
+				return errors.New("headless collection supports X and Facebook only; deselect unsupported sources")
+			}
+		}
+	}
+	return nil
+}
+func (c *Coordinator) Request(mode string) {
+	c.mu.Lock()
+	c.requested = mode
+	c.retry = true
+	c.failure = ""
+	c.mu.Unlock()
+}
+func (c *Coordinator) Status() RuntimeStatus {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.owner.Snapshot()
+	effective := s.Driver
+	if s.State != captureruntime.Ready {
+		effective = ""
+	}
+	available := c.headlessAvailable
+	return RuntimeStatus{Available: true, Requested: c.requested, Effective: effective, Pending: c.requested != effective || c.interactive > 0, State: s.State, Failure: c.failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, SupportedSources: []domain.Source{"x", "facebook"}}
+}
+func (c *Coordinator) Start(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				c.reconcile(ctx)
+			}
+		}
+	}()
+}
+func (c *Coordinator) reconcile(parent context.Context) {
+	c.mu.Lock()
+	mode := c.requested
+	if c.interactive > 0 {
+		mode = "browser"
+	}
+	retry := c.retry
+	c.mu.Unlock()
+	s := c.owner.Snapshot()
+	if s.State == captureruntime.Ready && s.Driver == mode {
+		return
+	}
+	if s.ActiveLeases > 0 {
+		return
+	}
+	if (s.State == captureruntime.Blocked || s.State == captureruntime.Failed) && !retry {
+		return
+	}
+	// Validate assets before releasing a healthy authenticated owner.
+	if mode == "headless" {
+		if err := c.validate(); err != nil {
+			c.mu.Lock()
+			c.failure, c.retry = err.Error(), false
+			c.mu.Unlock()
+			return
+		}
+		if c.readiness != nil {
+			if err := c.readiness(); err != nil {
+				c.mu.Lock()
+				c.failure = err.Error()
+				c.mu.Unlock()
+				return
+			}
+		}
+	}
+	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
+	defer cancel()
+	factory := func(ctx context.Context, generation uint64) (captureruntime.Process, error) {
+		process, err := c.launch(ctx, mode, generation)
+		if err == nil {
+			c.mu.Lock()
+			c.headless, _ = process.(*headless.Process)
+			c.mu.Unlock()
+		}
+		return process, err
+	}
+	var err error
+	if s.State == captureruntime.Blocked || s.State == captureruntime.Failed {
+		err = c.owner.Recover(ctx, factory)
+	} else {
+		err = c.owner.Replace(ctx, factory)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err != nil {
+		c.failure = err.Error()
+		c.retry = false
+	} else {
+		c.failure = ""
+		c.retry = false
+	}
+}
+func (c *Coordinator) BorrowBrowser(ctx context.Context) (*captureruntime.Lease, func(), error) {
+	c.mu.Lock()
+	c.interactive++
+	c.retry = true
+	c.failure = ""
+	c.mu.Unlock()
+	var once sync.Once
+	releaseIntent := func() { once.Do(func() { c.mu.Lock(); c.interactive--; c.mu.Unlock() }) }
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		s := c.owner.Snapshot()
+		if s.State == captureruntime.Ready && s.Driver == "browser" {
+			lease, err := c.owner.Acquire()
+			if err != nil {
+				releaseIntent()
+				return nil, nil, err
+			}
+			if lease.Driver() != "browser" {
+				lease.Release()
+				continue
+			}
+			return lease, releaseIntent, nil
+		}
+		c.mu.Lock()
+		failure := c.failure
+		c.mu.Unlock()
+		if failure != "" {
+			releaseIntent()
+			return nil, nil, errors.New(failure)
+		}
+		select {
+		case <-ctx.Done():
+			releaseIntent()
+			return nil, nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+func (c *Coordinator) Capture(ctx context.Context, source domain.Source, payload map[string]any) (domain.Observation, error) {
+	c.mu.Lock()
+	process := c.headless
+	c.mu.Unlock()
+	if process == nil {
+		return domain.Observation{}, errors.New("headless owner is unavailable")
+	}
+	return process.Capture(ctx, source, payload)
+}

@@ -4,12 +4,177 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection"
+	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
 var errStaleCaptureRuntime = errors.New("capture command belongs to another runtime owner")
+
+func (e *Engine) ResetCaptureHeartbeat() {
+	status := e.BridgeStatus()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if status.Compatible && status.Actual != nil {
+		e.headlessAccess = nil
+		for _, source := range status.Actual.SourceAccess.Sources {
+			if source.Ready && (source.Source == "x" || source.Source == "facebook") {
+				e.headlessAccess = append(e.headlessAccess, domain.Source(source.Source))
+			}
+		}
+	}
+	e.heartbeat = nil
+}
+
+func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
+	e.collectionRuntime = runtime
+	runtime.SetHeadlessReadiness(func() error {
+		status := e.BridgeStatus()
+		if status.Compatible && status.Actual != nil {
+			for _, source := range status.Actual.SourceAccess.Sources {
+				if source.Ready && (source.Source == "x" || source.Source == "facebook") {
+					return nil
+				}
+			}
+		}
+		e.mu.RLock()
+		retained := len(e.headlessAccess) > 0
+		e.mu.RUnlock()
+		if retained && e.captureOwner.Snapshot().Driver == "headless" {
+			return nil
+		}
+		return errors.New("waiting for browser source-access confirmation before headless handoff")
+	})
+}
+func (e *Engine) BorrowInteractiveCapture(ctx context.Context) (*captureruntime.Lease, func(), error) {
+	if e.collectionRuntime == nil {
+		return nil, nil, nil
+	}
+	return e.collectionRuntime.BorrowBrowser(ctx)
+}
+func (e *Engine) PrepareInteractiveCapture(ctx context.Context) error {
+	lease, release, err := e.BorrowInteractiveCapture(ctx)
+	if err != nil {
+		return err
+	}
+	if lease != nil {
+		time.AfterFunc(30*time.Second, func() { lease.Release(); release() })
+	}
+	return nil
+}
+func (e *Engine) CollectionRuntime() collection.RuntimeStatus {
+	if e.collectionRuntime == nil {
+		return collection.RuntimeStatus{Requested: "browser", Effective: "browser"}
+	}
+	status := e.collectionRuntime.Status()
+	if status.Effective == "headless" {
+		e.mu.RLock()
+		status.AuthorizedSources = append([]domain.Source(nil), e.headlessAccess...)
+		e.mu.RUnlock()
+	}
+	return status
+}
+func (e *Engine) headlessEffective() bool {
+	return e.collectionRuntime != nil && e.collectionRuntime.Status().Effective == "headless"
+}
+func (e *Engine) StartHeadlessCollection(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if !e.headlessEffective() {
+				continue
+			}
+			lease, err := e.acquireCaptureLease()
+			if err != nil {
+				continue
+			}
+			if lease == nil || lease.Driver() != "headless" {
+				lease.Release()
+				continue
+			}
+			func() {
+				defer lease.Release()
+				id, err := e.PendingBridgeRunID(ctx)
+				if err != nil || id == "" {
+					e.captureHeadlessMediaRecapture(ctx)
+					return
+				}
+				command, err := e.claimCommandForDriver(ctx, id, "aku-headless-v1", "headless")
+				if err != nil || command == nil {
+					return
+				}
+				run, err := e.store.GetRun(ctx, id)
+				if err != nil {
+					return
+				}
+				observation, err := e.collectionRuntime.Capture(ctx, run.Source, command.Payload)
+				if ctx.Err() != nil {
+					return
+				}
+				if err == nil {
+					_, err = e.AcceptObservation(ctx, command.ID, id, observation)
+				}
+				if err != nil {
+					_, _ = e.FailCommand(ctx, command.ID, id, headlessFailure(err))
+				}
+			}()
+		}
+	}()
+}
+
+func (e *Engine) captureHeadlessMediaRecapture(ctx context.Context) {
+	ids, err := e.store.ActiveMediaRecaptureIDs(ctx)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		job, err := e.store.MediaRecapture(ctx, id)
+		if err != nil || job.Status != "queued" {
+			continue
+		}
+		job, err = e.claimMediaRecaptureForDriver(ctx, id, "aku-headless-v1", "headless")
+		if err != nil {
+			continue
+		}
+		payload := map[string]any{}
+		for key, value := range job.Payload {
+			payload[key] = value
+		}
+		payload["pageUrl"] = job.TargetURL
+		observation, err := e.collectionRuntime.Capture(ctx, job.Source, payload)
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			_, err = e.AcceptMediaRecapture(ctx, id, observation)
+		}
+		if err != nil {
+			_, _ = e.FailMediaRecapture(ctx, id, headlessFailure(err))
+		}
+		return
+	}
+}
+
+func headlessFailure(err error) domain.Failure {
+	failure := domain.Failure{Code: "headless_capture_failed", Stage: "capture", Message: err.Error(), Retryable: true}
+	var typed *headless.CaptureError
+	if errors.As(err, &typed) {
+		failure.Code = "headless_" + typed.Code
+		if typed.Code == "login_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" {
+			failure.Retryable = false
+		}
+	}
+	return failure
+}
 
 // AttachCaptureRuntime adopts durable active work before a replacement could be
 // considered. Ordinary combined UI/capture launches have no separate manager.
@@ -163,7 +328,7 @@ func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings do
 	e.captureMu.Lock()
 	defer e.captureMu.Unlock()
 	if lease := e.captureSessions[run.SessionID]; lease != nil {
-		payload["captureRuntime"] = map[string]any{"driver": "browser", "epoch": e.epoch, "generation": int(lease.Generation())}
+		payload["captureRuntime"] = map[string]any{"driver": lease.Driver(), "epoch": e.epoch, "generation": int(lease.Generation())}
 	}
 	return payload, nil
 }
@@ -196,7 +361,7 @@ func (e *Engine) validateCaptureStamp(lease *captureruntime.Lease, payload map[s
 		return errStaleCaptureRuntime
 	}
 	identity, ok := stamp.(map[string]any)
-	if !ok || identity["driver"] != "browser" || identity["epoch"] != e.epoch || !captureGenerationMatches(identity["generation"], lease.Generation()) {
+	if !ok || identity["driver"] != lease.Driver() || identity["epoch"] != e.epoch || !captureGenerationMatches(identity["generation"], lease.Generation()) {
 		return fmt.Errorf("%w: driver, epoch or generation mismatch", errStaleCaptureRuntime)
 	}
 	return nil

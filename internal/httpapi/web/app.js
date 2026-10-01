@@ -1,4 +1,5 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
+import { collectionModeState } from "./collection-mode.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
@@ -452,6 +453,7 @@ const settingsForm = $("#runtime-settings-form");
 settingsForm.addEventListener("submit", saveSettings);
 settingsForm.addEventListener("input", refreshSettingsDirtyState);
 settingsForm.addEventListener("change", refreshSettingsDirtyState);
+$("#collection-mode").addEventListener("change", renderCollectionRuntime);
 settingsForm.addEventListener("click", (event) => {
   if (event.target.closest("button")) queueMicrotask(refreshSettingsDirtyState);
 });
@@ -673,6 +675,7 @@ async function bootstrap(options = {}) {
     pingBridge();
     bridgeActionLoop();
     setInterval(pingBridge, 30_000);
+    state.collectionPoller ??= setInterval(pollCollectionRuntime, 2000);
     setInterval(pollAutoUpdate, 15_000);
     databaseHealthPoller ??= setInterval(pollDatabaseHealth, 60_000);
     void refreshLivingTopicNotificationProjection();
@@ -2946,6 +2949,7 @@ function appendLibraryMediaMetadata(fragment, values) {
 }
 
 function pingBridge() {
+  if (state.bootstrap?.collectionRuntime?.effective === "headless") return;
   window.postMessage({
     type: "AKU_BROWSER_BRIDGE_PING",
     protocolMajor: 2,
@@ -2964,6 +2968,7 @@ function refreshBridgeAfterUserReturn() {
 }
 
 function requestSourceSessionReadiness() {
+	if (state.bootstrap?.collectionRuntime?.effective === "headless") return;
   if (!state.bootstrap?.bridge?.compatible || state.sourceSessionProbeInFlight) return;
   state.sourceSessionProbeInFlight = true;
   state.sourceSessionProbeTimer = window.setTimeout(() => {
@@ -2981,7 +2986,7 @@ function requestSourceSessionReadiness() {
 
 function openSourceFromSettings(source) {
   const descriptor = sourceDescriptor(source);
-  if (!descriptor || !state.bootstrap?.bridge?.compatible) return;
+  if (!descriptor || (!state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available)) return;
   setSourceSessionStatus(source, {
     source,
     state: "loading",
@@ -3025,6 +3030,12 @@ function configureNativePostLink(link, href, source) {
 }
 
 function openNativePostInReaderWindow(url, source, brokerRequestId = null, gesture = null) {
+  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
+    return api("/api/collection/interactive", { method:"POST", body:{} }).then(async () => {
+      await bootstrap();
+      showNotice("Browser ready. Click Open native post again to open this post.");
+    });
+  }
   const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const started = performance.now();
   logNativePostTrace(requestId, "click", { gesture });
@@ -3122,7 +3133,7 @@ function renderSourceSessionReadiness() {
     button.textContent = stateValue === "permission_required"
       ? "Grant access"
       : stateValue === "login_required" ? "Sign in" : "Open source";
-    button.disabled = !state.bootstrap?.bridge?.compatible;
+    button.disabled = !state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available;
   }
   renderOnboardingSourceReadiness();
 }
@@ -3171,7 +3182,7 @@ function renderOnboardingSourceReadiness() {
     button.textContent = !access?.permissionGranted || stateValue === "permission_required"
       ? "Grant access"
       : stateValue === "login_required" ? "Sign in" : "Open source";
-    button.disabled = !state.bootstrap?.bridge?.compatible;
+    button.disabled = !state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available;
   }
 }
 
@@ -3196,6 +3207,12 @@ async function bridgeActionLoop() {
 
 function renderBridge(bridge) {
   if (state.bootstrap) state.bootstrap.bridge = bridge;
+  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
+    setPill("#bridge-status", "Headless collection ready", "ok");
+    $("#bridge-reload").classList.add("hidden");
+    syncRunButtons();
+    return;
+  }
   const bridgeRecoveryButton = $("#bridge-reload");
   const development = state.bootstrap?.deployment?.mode === "development";
   const recovery = bridgeRecoveryState(bridge, development);
@@ -3242,6 +3259,28 @@ function configureBackgroundBridge() {
   }, endpoint);
 }
 
+function renderCollectionRuntime() {
+  const runtime = state.bootstrap?.collectionRuntime;
+  const view = collectionModeState(runtime,state.bootstrap?.bridge?.compatible);
+  const select = $("#collection-mode");
+  if (!select) return;
+  select.querySelector('[value="headless"]').disabled = !view.canSelectHeadless;
+  $("#capture-visibility-policy").disabled = select.value === "headless";
+  $("#collection-runtime-status").textContent = view.detail;
+}
+async function pollCollectionRuntime() {
+  if (!state.bootstrap || state.collectionPollInFlight) return;
+  state.collectionPollInFlight = true;
+  try {
+    const response = await api("/api/collection/runtime");
+    state.bootstrap.collectionRuntime = response.collectionRuntime;
+    renderCollectionRuntime();
+    renderSourceSessionReadiness();
+    syncRunButtons();
+    if (response.collectionRuntime.effective === "headless") setPill("#bridge-status", "Headless collection ready", "ok");
+  } catch { /* Existing connection recovery owns transient failures. */ }
+  finally { state.collectionPollInFlight = false; }
+}
 function renderSettings(settings) {
   if (!settings) return;
   renderReasoningProcesses(state.bootstrap?.reasoningProcesses ?? []);
@@ -3253,6 +3292,8 @@ function renderSettings(settings) {
   $("#detect-reasoning-executable").disabled = reasoningRuntime?.editable === false;
   $("#bounded-load-profile").value = settings.loadProfile;
   $("#capture-visibility-policy").value = settings.captureVisibility;
+  $("#collection-mode").value = settings.collectionMode || "browser";
+  renderCollectionRuntime();
   $("#source-wait-mode").value = settings.sourceWaitMode || "progressive_wait";
   $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
   $("#calibration-enabled").checked = settings.calibrationEnabled;
@@ -3706,6 +3747,7 @@ function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
   return {
     loadProfile,
     captureVisibility: $("#capture-visibility-policy").value,
+    collectionMode: $("#collection-mode").value,
     sourceWaitMode: $("#source-wait-mode").value,
     preferenceEligibilityMode: $("#preference-eligibility-mode").value,
     calibrationEnabled: $("#calibration-enabled").checked,
@@ -3797,6 +3839,7 @@ async function persistSettings(settings, confirmationPhrase = "") {
   try {
     const previousProvider = state.bootstrap.settings?.reasoningProvider || state.bootstrap.provider;
     const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
+    state.bootstrap.collectionRuntime = response.collectionRuntime ?? state.bootstrap.collectionRuntime;
     applyReasoningRuntimeResponse(state.bootstrap, response);
     renderActiveReasoningProvider();
     renderSettings(response.settings);
@@ -4527,7 +4570,10 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 // source host permission and unregister its capture scripts before a full
 // reset persists. Full reset fails closed when the Bridge cannot confirm it;
 // the browser profile and the Bridge installation are always preserved.
-function revokeSourceAccessViaBridge() {
+async function revokeSourceAccessViaBridge() {
+  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
+    await api("/api/collection/interactive", { method:"POST", body:{} });
+  }
   return new Promise((resolve) => {
     const requestId = `revoke-${Date.now()}`;
     let settled = false;
@@ -4829,7 +4875,7 @@ async function retryBootstrap() {
 }
 
 async function startVisibleUpdate() {
-  if (state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !state.bootstrap?.bridge?.compatible) return;
+  if (state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect) return;
   hideFailure();
   clearNotice();
   setPill("#sidecar-status", "AkuSidecar ready", "ok");
@@ -5247,6 +5293,10 @@ function runDisabledReason() {
   const bridgeUnavailable = bridgeUnavailableReason(state.bootstrap?.bridge);
   if (bridgeUnavailable) return bridgeUnavailable;
   const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
+  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
+    const allowed = new Set(state.bootstrap.collectionRuntime.authorizedSources ?? []);
+    return (state.bootstrap.settings.activeSources ?? []).some(source => allowed.has(source)) ? "" : "Source access is not confirmed. Open the source to grant access in Browser mode.";
+  }
   if (!Array.isArray(grantedSources)) return "Waiting for AkuBridge source permission status…";
   if (sourceAccessNeedsAttention()) {
     return "No active source is ready. Open Settings, then use each source's Grant access or Sign in action before updating.";
@@ -5255,6 +5305,9 @@ function runDisabledReason() {
 }
 
 function bridgeUnavailableReason(bridge) {
+  const runtime = state.bootstrap?.collectionRuntime;
+  if (runtime?.available && runtime.pending) return "Waiting for the collection mode transition. Finish capture or close open source windows.";
+  if (collectionModeState(runtime,bridge?.compatible).canCollect) return "";
   if (bridge?.compatible) return "";
   if (bridge?.state === "incompatible") {
     const reasons = Array.isArray(bridge.reasons)

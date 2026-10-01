@@ -2,6 +2,7 @@ package appshell
 
 import (
 	"context"
+	"errors"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
 
@@ -17,6 +18,29 @@ type CaptureContainment interface {
 type captureZWindow struct {
 	hwnd                   uintptr
 	owned, reader, visible bool
+	chromeWindow, host     bool
+}
+
+// Sample native windows at replacement, independent of popup creation events
+// and the continued existence of the parent window.
+func capturePopupReadiness(ordered []captureZWindow) error {
+	if ordered == nil {
+		return errors.New("capture window enumeration unavailable")
+	}
+	hosts := 0
+	for _, w := range ordered {
+		if !w.owned || !w.chromeWindow {
+			continue
+		}
+		if !w.host {
+			return errors.New("capture popup or interactive window is still open")
+		}
+		hosts++
+	}
+	if hosts != 1 {
+		return errors.New("capture host window is missing or ambiguous")
+	}
+	return nil
 }
 
 // Native existence is intentionally independent of visibility and the brief

@@ -8,6 +8,7 @@ import "sync"
 type Lease struct {
 	manager    *Manager
 	generation uint64
+	driver     string
 	once       sync.Once
 }
 
@@ -21,10 +22,11 @@ func (m *Manager) Acquire() (*Lease, error) {
 		return nil, ErrUnavailable
 	}
 	m.leases++
-	return &Lease{manager: m, generation: m.generation}, nil
+	return &Lease{manager: m, generation: m.generation, driver: m.current.driver}, nil
 }
 
 func (l *Lease) Generation() uint64 { return l.generation }
+func (l *Lease) Driver() string     { return l.driver }
 
 func (l *Lease) Release() {
 	if l == nil {

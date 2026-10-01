@@ -91,6 +91,8 @@ type pendingSplitAction struct {
 	result                   chan splitActionResult
 	readerPreparing          bool
 	sourcePreparing          bool
+	sourcePrepared           bool
+	interactionRelease       func()
 	readerForeground         func(context.Context) error
 	readerForegroundVerified bool
 	brokerReady              chan struct{}
@@ -102,19 +104,42 @@ type pendingSplitAction struct {
 	completed                bool
 }
 type splitCaptureTransport struct {
-	mu                  sync.Mutex
-	key                 string
-	closed              bool
-	actions             []*pendingSplitAction
-	wake                chan struct{}
-	hostWake            chan struct{}
-	hostWakeStreams     int
-	done                chan struct{}
-	prepareReader       func(context.Context, string) (func(context.Context) error, error)
-	prepareBrokerReader func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
-	prepareSourceWindow func(context.Context, string) error
-	runtime             *captureruntime.Manager
-	actionTimeout       time.Duration
+	mu                      sync.Mutex
+	key                     string
+	closed                  bool
+	actions                 []*pendingSplitAction
+	wake                    chan struct{}
+	hostWake                chan struct{}
+	hostWakeStreams         int
+	done                    chan struct{}
+	prepareReader           func(context.Context, string) (func(context.Context) error, error)
+	prepareBrokerReader     func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+	prepareSourceWindow     func(context.Context, string) error
+	runtime                 *captureruntime.Manager
+	actionTimeout           time.Duration
+	sourceTrackingSupported bool
+	untrackedSourceOutcome  bool
+}
+
+// Capability declarations cannot clear earlier unverified source outcomes.
+// Only a fresh transport/owner boundary may clear that uncertainty.
+func (s *Server) SplitCaptureReplacementReadiness(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t := s.splitCapture
+	if t == nil {
+		return errors.New("split capture transport unavailable")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed || t.prepareSourceWindow == nil || !t.sourceTrackingSupported {
+		return errors.New("Bridge source-window tracking is not negotiated")
+	}
+	if t.untrackedSourceOutcome {
+		return errors.New("source window ownership is unverified")
+	}
+	return nil
 }
 
 // SetSplitCaptureRuntime adopts pending action ownership before exposing the
@@ -164,6 +189,10 @@ func (t *splitCaptureTransport) removeAction(entry *pendingSplitAction) {
 	}
 	entry.runtimeLease.Release()
 	entry.runtimeLease = nil
+	if entry.interactionRelease != nil {
+		entry.interactionRelease()
+		entry.interactionRelease = nil
+	}
 }
 
 func (s *Server) SetSplitReaderBroker(prepare func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)) {
@@ -378,6 +407,10 @@ func (t *splitCaptureTransport) serveHostWake(w http.ResponseWriter, r *http.Req
 		select {
 		case <-wake:
 			t.mu.Lock()
+			if t.key != r.Header.Get("X-Aku-Capture-Instance") {
+				t.mu.Unlock()
+				return nil
+			}
 			wake = t.hostWake
 			t.mu.Unlock()
 			if err := send(); err != nil {
@@ -393,7 +426,41 @@ func (t *splitCaptureTransport) serveHostWake(w http.ResponseWriter, r *http.Req
 	}
 }
 func (t *splitCaptureTransport) authorized(r *http.Request) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return subtle.ConstantTimeCompare([]byte(t.key), []byte(r.Header.Get("X-Aku-Capture-Instance"))) == 1
+}
+
+// Invalidate the old process capability only after its owner has drained.
+// Keep the transport stable for in-flight handlers; do not carry callbacks.
+func (s *Server) RotateSplitCapture() error {
+	t := s.splitCapture
+	if t == nil {
+		return errors.New("split capture unavailable")
+	}
+	var secret [32]byte
+	if _, err := rand.Read(secret[:]); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return errors.New("split capture closed")
+	}
+	for _, entry := range t.actions {
+		if !entry.completed {
+			t.mu.Unlock()
+			return captureruntime.ErrBusy
+		}
+	}
+	t.actions = nil
+	t.key = hex.EncodeToString(secret[:])
+	t.prepareReader, t.prepareBrokerReader, t.prepareSourceWindow = nil, nil, nil
+	t.sourceTrackingSupported, t.untrackedSourceOutcome = false, false
+	s.engine.ResetCaptureHeartbeat()
+	t.mu.Unlock()
+	t.notifyCapture()
+	return nil
 }
 func (t *splitCaptureTransport) close() {
 	t.mu.Lock()
@@ -404,6 +471,10 @@ func (t *splitCaptureTransport) close() {
 			if entry != nil {
 				entry.runtimeLease.Release()
 				entry.runtimeLease = nil
+				if entry.interactionRelease != nil {
+					entry.interactionRelease()
+					entry.interactionRelease = nil
+				}
 			}
 		}
 		t.actions = nil
@@ -417,6 +488,8 @@ func (s *Server) SplitCaptureLaunchURL(origin string) (string, error) {
 	if s.splitCapture == nil {
 		return "", errors.New("Windows capture split is disabled")
 	}
+	s.splitCapture.mu.Lock()
+	defer s.splitCapture.mu.Unlock()
 	return strings.TrimSuffix(origin, "/") + "/split-capture-host#" + s.splitCapture.key, nil
 }
 func splitCaptureOwnedRoute(r *http.Request) bool {
@@ -538,10 +611,25 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if !t.authorized(r) {
 			return apiError{Status: 403, Code: "capture_instance_mismatch", Message: "Capture bootstrap rejected."}
 		}
+		var capability struct {
+			SourceWindowLifetime int `json:"sourceWindowLifetime"`
+		}
+		if r.ContentLength != 0 {
+			if err := readJSON(r, &capability); err != nil {
+				return err
+			}
+		}
 		token, err := s.store.BridgeToken(r.Context())
 		if err != nil {
 			return err
 		}
+		t.mu.Lock()
+		if r.Header.Get("X-Aku-Capture-Instance") != t.key || t.closed {
+			t.mu.Unlock()
+			return apiError{Status: 403, Code: "capture_instance_mismatch", Message: "Capture bootstrap rejected."}
+		}
+		t.sourceTrackingSupported = capability.SourceWindowLifetime == 1
+		t.mu.Unlock()
 		return writeJSON(w, 200, map[string]any{"token": token, "instanceEpoch": s.engine.Epoch(), "protocolMajor": 2})
 	}
 	if err := s.requireBridge(r); err != nil {
@@ -571,6 +659,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if err := prepare(r.Context(), "AkuBrowser source "+id); err != nil {
 			return apiError{Status: 409, Code: "source_binding_rejected", Message: err.Error()}
 		}
+		t.mu.Lock()
+		entry.sourcePrepared = true
+		t.mu.Unlock()
 		return writeJSON(w, 200, map[string]bool{"prepared": true})
 	}
 	if strings.HasPrefix(p, "/api/bridge/split-capture/reader/") && r.Method == http.MethodPost {
@@ -674,8 +765,45 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if err := validateSplitAction(a); err != nil {
 			return apiError{Status: 400, Code: "invalid_capture_action", Message: err.Error()}
 		}
+		if s.engine.CollectionRuntime().Effective == "headless" {
+			switch a.Type {
+			case "dispatch", "configure_background", "release":
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{}`)})
+			case "media_recapture":
+				job, err := s.store.MediaRecapture(r.Context(), a.RecaptureID)
+				if err != nil {
+					return err
+				}
+				raw, err := json.Marshal(map[string]any{"recapture": job})
+				if err != nil {
+					return err
+				}
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: raw})
+			case "media_evidence":
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{"evidence":[]}`)})
+			case "ping", "probe_source_sessions", "reload_self":
+				return apiError{Status: 409, Code: "browser_handoff_required", Message: "This operation requires browser mode; open the source or select Browser in Settings."}
+			}
+		}
 		a.ID = domain.NewID("split")
 		entry := &pendingSplitAction{action: a, result: make(chan splitActionResult, 1)}
+		queued := false
+		if a.Type == "open_source" || a.Type == "open_native_post" || a.Type == "revoke_source_access" {
+			lease, release, err := s.engine.BorrowInteractiveCapture(r.Context())
+			if err != nil {
+				return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
+			}
+			entry.runtimeLease, entry.interactionRelease = lease, release
+			// Before queue ownership begins, every validation failure must return
+			// the borrowed profile intent. Once queued, normal action drain owns it.
+			defer func() {
+				if !queued && entry.interactionRelease != nil {
+					entry.runtimeLease.Release()
+					entry.interactionRelease()
+					entry.interactionRelease = nil
+				}
+			}()
+		}
 		t.mu.Lock()
 		if a.Type == "open_native_post" && t.prepareBrokerReader != nil {
 			if err := (readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}).Validate(); err != nil {
@@ -695,7 +823,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			t.mu.Unlock()
 			return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture transport is unavailable or busy."}
 		}
-		if t.runtime != nil {
+		if t.runtime != nil && entry.runtimeLease == nil {
 			lease, err := t.runtime.Acquire()
 			if err != nil {
 				t.mu.Unlock()
@@ -705,6 +833,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		entry.queuedAt = time.Now()
 		t.actions = append(t.actions, entry)
+		queued = true
 		queueSnapshot := snapshotSplitActionQueue(t.actions)
 		actionTimeout := t.actionTimeout
 		queuedAudit, queuedAuditReady := s.splitActionAuditRecord(entry.action, "queued", "accepted")
@@ -782,6 +911,10 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		defer timer.Stop()
 		for {
 			t.mu.Lock()
+			if t.key != r.Header.Get("X-Aku-Capture-Instance") {
+				t.mu.Unlock()
+				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
+			}
 			for _, entry := range t.actions {
 				if !entry.claimed && (entry.brokerReady == nil || entry.brokerAttached) {
 					entry.claimed = true
@@ -823,9 +956,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		for _, entry := range t.actions {
+			if t.key != r.Header.Get("X-Aku-Capture-Instance") {
+				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
+			}
 			if entry.action.ID == id && entry.claimed {
 				if entry.completed {
 					return apiError{Status: 409, Code: "capture_result_duplicate", Message: "Capture result was already received."}
+				}
+				if entry.action.Type == "open_source" && result.OK && !entry.sourcePrepared {
+					t.untrackedSourceOutcome = true
 				}
 				if entry.action.Type == "open_native_post" {
 					if result.OK && !entry.readerForegroundVerified {
@@ -851,6 +990,10 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 					entry.completed = true
 					entry.runtimeLease.Release()
 					entry.runtimeLease = nil
+					if entry.interactionRelease != nil {
+						entry.interactionRelease()
+						entry.interactionRelease = nil
+					}
 					if entry.detached {
 						t.removeAction(entry)
 					}

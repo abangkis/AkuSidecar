@@ -346,7 +346,7 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 		}
 		return domain.Session{}, err
 	}
-	if e.BridgeStatus().Compatible == false {
+	if !e.headlessEffective() && e.BridgeStatus().Compatible == false {
 		return domain.Session{}, fmt.Errorf("AkuBridge is not ready")
 	}
 	if active, activeErr := e.store.ActiveSession(ctx); activeErr != nil || active != nil {

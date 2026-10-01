@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
@@ -16,6 +17,49 @@ import (
 type runtimeTestProcess struct {
 	done chan error
 	once sync.Once
+}
+type headlessTestProcess struct{ *runtimeTestProcess }
+
+func (p *headlessTestProcess) Driver() string { return "headless" }
+func TestHeadlessClaimsCannotCrossDriverAndRetainGrantedAccess(t *testing.T) {
+	ctx := context.Background()
+	e, _ := singleSourceEngine(t, nil)
+	m := attachTestCapture(t, e)
+	c := collection.NewCoordinator(m, nil, func() error { return nil })
+	e.AttachCollectionCoordinator(c)
+	e.ResetCaptureHeartbeat()
+	if err := m.Replace(ctx, func(context.Context, uint64) (captureruntime.Process, error) {
+		return &headlessTestProcess{&runtimeTestProcess{done: make(chan error, 1)}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.Request("headless")
+	session, err := e.StartVisibleUpdate(ctx, "headless owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := session.Runs[0].ID
+	if command, err := e.ClaimCommand(ctx, id, "old-browser"); command != nil || !errors.Is(err, errStaleCaptureRuntime) {
+		t.Fatalf("cross-driver=%+v %v", command, err)
+	}
+	command, err := e.claimCommandForDriver(ctx, id, "headless", "headless")
+	if err != nil || command == nil {
+		t.Fatalf("headless=%+v %v", command, err)
+	}
+	if stamp := command.Payload["captureRuntime"].(map[string]any); stamp["driver"] != "headless" {
+		t.Fatal(stamp)
+	}
+	if len(e.CollectionRuntime().AuthorizedSources) == 0 {
+		t.Fatal("confirmed grants lost")
+	}
+	e.mu.Lock()
+	e.headlessAccess = nil
+	e.mu.Unlock()
+	settings, _ := e.Settings(ctx)
+	if len(e.grantedActiveSources(settings)) != 0 {
+		t.Fatal("headless bypassed source consent")
+	}
+	_ = e.CancelSession(ctx, session.ID)
 }
 
 func (p *runtimeTestProcess) Done() <-chan error                         { return p.done }

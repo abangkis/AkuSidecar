@@ -104,3 +104,68 @@ func TestSplitSourceFailedBindingCannotReplay(t *testing.T) {
 		t.Fatalf("native callback replayed: %d", calls)
 	}
 }
+
+func TestSplitTrackingCapabilityAndUnverifiedOutcomeGate(t *testing.T) {
+	s, token := splitTestServer(t)
+	s.SetSplitSourceWindowPreparation(func(context.Context, string) error { return nil })
+	bootstrap := func(body string) {
+		t.Helper()
+		if got := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/bootstrap", body).Code; got != 200 {
+			t.Fatalf("bootstrap: %d", got)
+		}
+	}
+	ready := func() bool { return s.SplitCaptureReplacementReadiness(context.Background()) == nil }
+	if ready() {
+		t.Fatal("unnegotiated ready")
+	}
+	bootstrap("")
+	if ready() {
+		t.Fatal("legacy ready")
+	}
+	bootstrap(`{"sourceWindowLifetime":2}`)
+	if ready() {
+		t.Fatal("unknown version ready")
+	}
+	bootstrap(`{"sourceWindowLifetime":1}`)
+	if !ready() {
+		t.Fatal("capability not accepted")
+	}
+	bootstrap("{}")
+	if ready() {
+		t.Fatal("legacy reconnect retained capability")
+	}
+	bootstrap(`{"sourceWindowLifetime":1}`)
+	s.splitCapture.actions = append(s.splitCapture.actions, &pendingSplitAction{claimed: true, result: make(chan splitActionResult, 1), action: splitCaptureAction{ID: "split_untracked", Type: "open_source"}})
+	if got := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/split_untracked", `{"ok":true}`).Code; got != 204 {
+		t.Fatalf("legacy result: %d", got)
+	}
+	if ready() {
+		t.Fatal("unverified outcome ready")
+	}
+	bootstrap(`{"sourceWindowLifetime":1}`)
+	if ready() {
+		t.Fatal("bootstrap cleared unverified outcome")
+	}
+}
+
+func TestVerifiedSourcePreparationKeepsTrackingGateReady(t *testing.T) {
+	s, token := splitTestServer(t)
+	s.SetSplitSourceWindowPreparation(func(context.Context, string) error { return nil })
+	if got := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/bootstrap", `{"sourceWindowLifetime":1}`).Code; got != 200 {
+		t.Fatal(got)
+	}
+	s.splitCapture.actions = append(s.splitCapture.actions, &pendingSplitAction{claimed: true, result: make(chan splitActionResult, 1), action: splitCaptureAction{ID: "split_verified", Type: "open_source"}})
+	if got := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/source/prepare/split_verified", "{}").Code; got != 200 {
+		t.Fatal(got)
+	}
+	if got := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/split_verified", `{"ok":true}`).Code; got != 204 {
+		t.Fatal(got)
+	}
+	if err := s.SplitCaptureReplacementReadiness(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s.splitCapture.close()
+	if err := s.SplitCaptureReplacementReadiness(context.Background()); err == nil {
+		t.Fatal("closed transport ready")
+	}
+}

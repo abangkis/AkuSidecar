@@ -27,6 +27,7 @@ var (
 	capturePeekMessage = user32.NewProc("PeekMessageW")
 	capturePostThread  = user32.NewProc("PostThreadMessageW")
 	captureWindowText  = user32.NewProc("GetWindowTextW")
+	captureWindowClass = user32.NewProc("GetClassNameW")
 	captureSetProp     = user32.NewProc("SetPropW")
 	captureGetProp     = user32.NewProc("GetPropW")
 	captureRemoveProp  = user32.NewProc("RemovePropW")
@@ -115,6 +116,12 @@ func (c *captureZOrder) isReader(hwnd uintptr) bool {
 }
 
 func (c *captureZOrder) snapshot() []captureZWindow {
+	return c.snapshotWindows(true, false)
+}
+
+// Replacement sampling performs no foreground property writes. Window class
+// and host checks are only needed at handoff, not on every containment cycle.
+func (c *captureZOrder) snapshotWindows(inspectReader, inspectPopup bool) []captureZWindow {
 	var result []captureZWindow
 	owners := make(map[uint32]bool)
 	// Reuse one callback for this monitor's lifetime: Windows callbacks cannot
@@ -130,7 +137,21 @@ func (c *captureZOrder) snapshot() []captureZWindow {
 			owned = c.owns(hwnd)
 			owners[pid] = owned
 		}
-		result = append(result, captureZWindow{hwnd: hwnd, owned: owned, reader: owned && c.isReader(hwnd), visible: visible != 0})
+		chromeWindow := false
+		if inspectPopup && owned {
+			var class [128]uint16
+			classRead, _, _ := captureWindowClass.Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class)))
+			// An unreadable owned class is conservatively treated as a browser window.
+			chromeWindow = classRead == 0 || windows.UTF16ToString(class[:]) == "Chrome_WidgetWin_1"
+		}
+		host := false
+		if chromeWindow {
+			var title [512]uint16
+			captureWindowText.Call(hwnd, uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
+			text := windows.UTF16ToString(title[:])
+			host = text == "AkuBrowser capture host" || strings.HasPrefix(text, "AkuBrowser capture host - ")
+		}
+		result = append(result, captureZWindow{hwnd: hwnd, owned: owned, reader: inspectReader && owned && c.isReader(hwnd), visible: visible != 0, chromeWindow: chromeWindow, host: host})
 	}
 	defer func() { captureEnumerationVisit = nil }()
 	ok, _, _ := procEnumWindows.Call(captureEnumerationCallback, 0)
@@ -477,7 +498,7 @@ func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
 	if active {
 		return errors.New("native interactive window is still open")
 	}
-	return nil
+	return capturePopupReadiness(c.snapshotWindows(false, true))
 }
 
 func (c *captureZOrder) foregroundReader(ctx context.Context, hwnd, id uintptr, expires time.Time) error {
