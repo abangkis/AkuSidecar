@@ -180,11 +180,12 @@ candidate out of installed/released runtimes until the ownership gate is closed.
 
 ### Resume order after the local candidate checkpoint
 
-1. Finish authenticated Bridge scoped retirement under the approved live-switch
-   and auto-return contract. Retain the passing payload/frontier, permissions,
-   rendered Settings and isolated Windows ownership evidence.
-2. Build and verify complete local packages after the Bridge delta is stable.
-3. Close integrated handoff/recovery and native-reader/login journeys, then
+1. Build and verify complete local packages with the committed Bridge scoped
+   retirement. Retain the passing payload/frontier, permissions, rendered
+   Settings and isolated Windows ownership evidence.
+2. Close authenticated end-to-end Bridge handoff/recovery under the approved
+   live-switch and auto-return contract.
+3. Validate native-reader/login journeys, then
    bounded authenticated X/Facebook parity and background-window visibility.
 4. Record supported capabilities and
    remaining source limitations before declaring any phase complete.
@@ -514,7 +515,18 @@ a mode switch. Do not retrofit a settings-only change around them.
 - Evidence screenshots are local artifacts under
   `build/collection-ui-fixture-20261002/`; the final assertion run uses
   `build/collection-ui-final-20261002/`. Opt-in fixtures skip in ordinary suites.
-- Remaining gates: authenticated Bridge retirement, full package rerun and
+- Bridge implementation is committed as `19719a5`. Both bootstrap and action
+  envelope must advertise the internal close capability. Host identity is checked
+  before managed retirement and again after result ACK; close polling waits for
+  completion to prevent a terminal next-action response preempting host removal.
+  Only exact tracked feed/placeholder tabs in minimized unfocused windows are
+  retired. Transient, reader, source and navigated tabs are preserved. Failed ACK
+  or host removal does not establish profile release. Focused tests pass 74/74;
+  service-worker/client/runtime syntax checks and diff whitespace checks pass.
+- Chrome has no atomic conditional tab removal. Navigation or user promotion
+  between the final re-read and `tabs.remove` remains a residual race; repeated
+  checks are not an atomic safety guarantee. End-to-end acceptance stays open.
+- Remaining gates: authenticated end-to-end Bridge retirement, full package rerun and
   verifier, integrated native reader/login and recovery, authenticated X/Facebook
   parity including native IDs/media/coverage, and Windows visibility evidence.
   No installed runtime/profile, push or release was changed.
