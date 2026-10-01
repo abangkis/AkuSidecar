@@ -100,13 +100,14 @@ func (c *Coordinator) reconcile(parent context.Context) {
 	retry := c.retry
 	c.mu.Unlock()
 	s := c.owner.Snapshot()
+	retiring := c.owner.Retiring()
 	if s.State == captureruntime.Ready && s.Driver == mode {
 		return
 	}
 	if s.ActiveLeases > 0 {
 		return
 	}
-	if (s.State == captureruntime.Blocked || s.State == captureruntime.Failed) && !retry {
+	if (s.State == captureruntime.Blocked || s.State == captureruntime.Failed) && !retry && !retiring {
 		return
 	}
 	// Validate assets before releasing a healthy authenticated owner.
@@ -117,7 +118,7 @@ func (c *Coordinator) reconcile(parent context.Context) {
 			c.mu.Unlock()
 			return
 		}
-		if c.readiness != nil {
+		if c.readiness != nil && !retiring {
 			if err := c.readiness(); err != nil {
 				c.mu.Lock()
 				c.failure = err.Error()

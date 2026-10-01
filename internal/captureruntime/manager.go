@@ -133,6 +133,18 @@ func (m *Manager) Snapshot() Snapshot {
 	return Snapshot{State: m.state, Generation: m.generation, ActiveLeases: m.leases, Driver: driver}
 }
 
+// Retiring identifies a retained headed owner whose scoped host-close request
+// may have completed while independent windows still keep its profile alive.
+func (m *Manager) Retiring() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == nil {
+		return false
+	}
+	process, ok := m.current.process.(interface{ Retiring() bool })
+	return ok && process.Retiring()
+}
+
 // Accepts is a local generation fence, not a replacement for durable command
 // authorization. Dispatch/result ingestion must wire their persisted fence too.
 func (m *Manager) Accepts(generation uint64) bool {
@@ -264,8 +276,26 @@ func (m *Manager) Recover(ctx context.Context, launch Launch) error {
 		return ErrUnavailable
 	}
 	previous := m.current
-	previous.intentional = true
+	previousState := m.state
 	m.state = Replacing
+	m.mu.Unlock()
+	// Recovery is not permission to close a live interactive owner. An exited
+	// process may report readiness after its verified cleanup; a live headed
+	// owner must satisfy the same native-lifetime boundary as ordinary handoff.
+	if err := previous.process.ReplacementReadiness(ctx); err != nil {
+		m.mu.Lock()
+		if !m.stopped {
+			m.state = previousState
+		}
+		m.mu.Unlock()
+		return fmt.Errorf("capture recovery not ready: %w", err)
+	}
+	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return ErrStopped
+	}
+	previous.intentional = true
 	m.mu.Unlock()
 	if err := previous.process.CloseForRetry(ctx); err != nil {
 		m.mu.Lock()

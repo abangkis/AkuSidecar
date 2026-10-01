@@ -428,3 +428,36 @@ func TestReaderReadinessRefusesReplacementWithoutTerminatingOwner(t *testing.T) 
 	default:
 	}
 }
+
+func TestRecoveryReadinessRefusesToTerminateRetainedOwner(t *testing.T) {
+	for _, state := range []State{Blocked, Failed} {
+		t.Run(string(state), func(t *testing.T) {
+			old := newProcess(10)
+			old.readinessErr = ErrBusy
+			m := newManager(t, old)
+			m.mu.Lock()
+			m.state = state
+			m.mu.Unlock()
+			if err := m.Recover(context.Background(), func(context.Context, uint64) (Process, error) {
+				t.Fatal("readiness refusal launched a replacement")
+				return nil, nil
+			}); !errors.Is(err, ErrBusy) {
+				t.Fatalf("recovery readiness=%v", err)
+			}
+			if snapshot := m.Snapshot(); snapshot.State != state || snapshot.Generation != 1 || m.PID() != 10 {
+				t.Fatalf("refusal changed owner: %+v", snapshot)
+			}
+			m.mu.Lock()
+			intentional := m.current.intentional
+			m.mu.Unlock()
+			if intentional {
+				t.Fatal("refused recovery marked owner intentionally stopped")
+			}
+			select {
+			case <-old.terminated:
+				t.Fatal("refused recovery terminated retained owner")
+			default:
+			}
+		})
+	}
+}

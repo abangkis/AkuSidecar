@@ -3,6 +3,7 @@ package collection
 import (
 	"context"
 	"errors"
+	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"sync"
@@ -87,5 +88,56 @@ func TestUnsupportedSourcesRejectedBeforeSwitch(t *testing.T) {
 	}
 	if c.ValidateSelection("headless", []domain.Source{"x", "facebook"}) != nil {
 		t.Fatal("supported sources refused")
+	}
+}
+
+type retiringTestProcess struct {
+	*testProcess
+	retiring, naturallyExited bool
+}
+
+func (p *retiringTestProcess) Retiring() bool { return p.retiring }
+func (p *retiringTestProcess) CloseForRetry(context.Context) error {
+	p.retiring = true
+	if !p.naturallyExited {
+		return appshell.ErrCaptureHandoffPending
+	}
+	p.Terminate()
+	return nil
+}
+
+func TestRetainedPopupAutomaticallyResumesHeadlessAfterNaturalExit(t *testing.T) {
+	p := &retiringTestProcess{testProcess: proc("browser")}
+	m, err := captureruntime.New(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Terminate()
+	launches, readinessChecks := 0, 0
+	c := NewCoordinator(m, func(_ context.Context, mode string, _ uint64) (captureruntime.Process, error) {
+		launches++
+		return proc(mode), nil
+	}, func() error { return nil })
+	c.SetHeadlessReadiness(func() error {
+		readinessChecks++
+		if p.retiring {
+			return errors.New("retired host heartbeat disappeared")
+		}
+		return nil
+	})
+	c.Request("headless")
+	c.reconcile(context.Background())
+	if s := c.Status(); s.State != captureruntime.Blocked || !s.Pending || s.Generation != 1 || launches != 0 || p.closed {
+		t.Fatalf("popup was not retained: %+v launches=%d closed=%t", s, launches, p.closed)
+	}
+	// An ordinary tick retries retained retirement without new user intent.
+	c.reconcile(context.Background())
+	if launches != 0 || p.closed || readinessChecks != 1 {
+		t.Fatal("pending retirement closed popup or required vanished host heartbeat")
+	}
+	p.naturallyExited = true
+	c.reconcile(context.Background())
+	if s := c.Status(); s.Effective != "headless" || s.Pending || s.Generation != 2 || launches != 1 {
+		t.Fatalf("automatic return did not complete: %+v launches=%d", s, launches)
 	}
 }

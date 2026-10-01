@@ -485,6 +485,9 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 // ceases to exist, including minimized windows and consumed reader exemptions. HWND
 // reuse conservatively keeps replacement blocked rather than closing a window
 // whose lifetime cannot be established. This check performs no native writes.
+// Other Chrome windows do not prevent scoped host-tab retirement: the Bridge
+// closes only verified background tabs and the static host, leaving unknown
+// windows alive while the owner waits for natural process-tree exit.
 func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -498,7 +501,7 @@ func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
 	if active {
 		return errors.New("native interactive window is still open")
 	}
-	return capturePopupReadiness(c.snapshotWindows(false, true))
+	return nil
 }
 
 func (c *captureZOrder) foregroundReader(ctx context.Context, hwnd, id uintptr, expires time.Time) error {

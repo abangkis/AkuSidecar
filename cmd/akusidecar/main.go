@@ -428,6 +428,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	var captureManager *captureruntime.Manager
 	var collector *collection.Coordinator
 	if capture != nil {
+		fatal(logger, capture.SetCaptureHandoff(server.CloseSplitCaptureHost))
 		captureManager, err = captureruntime.New(capture)
 		fatal(logger, err)
 		captureProfile, _, profileErr := appshell.SplitProfilePaths(browserProfilePath(options, cfg))
@@ -452,6 +453,9 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			}
 			process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, ExtensionPath: options.BridgeExtensionPath, UserDataDir: captureProfile, URL: url, StartMinimized: true})
 			if err != nil {
+				return process, err
+			}
+			if err := process.SetCaptureHandoff(server.CloseSplitCaptureHost); err != nil {
 				return process, err
 			}
 			containment, err := process.StartCaptureContainment(logger)

@@ -217,6 +217,22 @@ func (o *processOwnership) close() {
 	}
 }
 
+// naturallyDrained performs readback only. The caller must retain the Job
+// handle while any process remains because closing it would terminate the tree.
+func (o *processOwnership) naturallyDrained() (bool, error) {
+	if o.job == 0 {
+		return true, nil
+	}
+	var accounting struct {
+		TotalUser, TotalKernel, PeriodUser, PeriodKernel                 int64
+		PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses uint32
+	}
+	if err := windows.QueryInformationJobObject(o.job, 1, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil); err != nil {
+		return false, fmt.Errorf("verify natural app shell cleanup: %w", err)
+	}
+	return accounting.ActiveProcesses == 0, nil
+}
+
 func (o *processOwnership) drain() error {
 	if o.job == 0 {
 		return nil

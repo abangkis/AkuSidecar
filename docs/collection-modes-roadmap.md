@@ -448,6 +448,49 @@ a mode switch. Do not retrofit a settings-only change around them.
   still follow closure of the handoff gate. No additional profile/runtime action
   is authorized merely by this documentation checkpoint.
 
+### Approved live-switch contract and scoped retirement (2026-10-01)
+
+- The user selected immediate browser/headless switching and automatic return
+  to headless after interaction. Cold-start-only or sticky browser mode is not
+  the approved contract. Continuation changes above were committed as `284bfcc`.
+- CDP renderer freezing and new-target pause do not establish a native popup
+  creation barrier. Destructive WM_CLOSE-all or Job termination therefore cannot
+  implement a safe headed handoff. A fail-closed guard now protects that boundary.
+- The implementation direction is scoped retirement: an authenticated Bridge
+  command removes only verified background capture tabs and its exact host tab;
+  source, login and reader windows are preserved. Sidecar waits for natural
+  Chrome exit and verified zero owned processes before launching the next mode.
+  A popup race or timeout retains the old owner and a pending mode request;
+  it never authorizes a forced close or profile reuse. Explicit application quit
+  remains separate from collection-mode handoff.
+- This protocol and lifecycle change are under implementation. Its acceptance
+  requires non-destructive timeout/retry tests, preservation of independent
+  interactive windows, and integrated Windows handoff evidence. Settings,
+  authenticated X/Facebook parity, full packaging and visibility gates remain
+  open until their respective evidence is recorded.
+- The pinned Windows c2patool binary exists at Sidecar's project-local
+  `runtime/dev/c2patool.exe` with the manifest SHA-256. Full packaging can use
+  that explicit input without provisioning a binary outside the workspace.
+- Go lifecycle implementation now binds scoped retirement to initial and
+  replacement capture windows. Recovery applies readiness before cleanup;
+  retirement timeouts retain the owner and retry automatically. Natural root
+  exit retains the Windows Job handle until zero active processes is verified;
+  it does not kill surviving children or close a kill-on-close handle early.
+- The internal HTTP action is negotiated explicitly, admitted only while the
+  manager is replacing a browser owner with no active leases, and omitted from
+  public UI action admission. Claimed requests survive cancellation without
+  replay; late ACK and completed rejection behavior are covered by tests.
+- Focused appshell/runtime/collection/domain/engine/HTTP/entrypoint suites pass.
+  The full package attempt reached launcher verification and exposed strict
+  decoding of the new `headlessWorkerPath` field. Launcher now recognizes the
+  optional adjacent worker directory and requires declared worker payloads;
+  its full Go suite passes. The package builder still needs a final rerun.
+- Actual independent-popup Windows smoke has not run. Bridge tab-retirement
+  integration is the current remaining implementation delta, followed by full
+  packaging, rendered journeys and authenticated source parity. This checkpoint
+  does not establish zero blinking, popup safety in live Chrome, or release
+  readiness. Installed runtime/profile remain untouched.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

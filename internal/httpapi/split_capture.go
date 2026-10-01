@@ -102,6 +102,7 @@ type pendingSplitAction struct {
 	runtimeLease             *captureruntime.Lease
 	detached                 bool
 	completed                bool
+	completionResult         *splitActionResult
 }
 type splitCaptureTransport struct {
 	mu                      sync.Mutex
@@ -118,6 +119,7 @@ type splitCaptureTransport struct {
 	runtime                 *captureruntime.Manager
 	actionTimeout           time.Duration
 	sourceTrackingSupported bool
+	hostCloseSupported      bool
 	untrackedSourceOutcome  bool
 }
 
@@ -456,7 +458,7 @@ func (s *Server) RotateSplitCapture() error {
 	t.actions = nil
 	t.key = hex.EncodeToString(secret[:])
 	t.prepareReader, t.prepareBrokerReader, t.prepareSourceWindow = nil, nil, nil
-	t.sourceTrackingSupported, t.untrackedSourceOutcome = false, false
+	t.sourceTrackingSupported, t.untrackedSourceOutcome, t.hostCloseSupported = false, false, false
 	s.engine.ResetCaptureHeartbeat()
 	t.mu.Unlock()
 	t.notifyCapture()
@@ -613,6 +615,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		var capability struct {
 			SourceWindowLifetime int `json:"sourceWindowLifetime"`
+			CaptureHostClose     int `json:"captureHostClose"`
 		}
 		if r.ContentLength != 0 {
 			if err := readJSON(r, &capability); err != nil {
@@ -629,8 +632,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			return apiError{Status: 403, Code: "capture_instance_mismatch", Message: "Capture bootstrap rejected."}
 		}
 		t.sourceTrackingSupported = capability.SourceWindowLifetime == 1
+		t.hostCloseSupported = capability.CaptureHostClose == 1
 		t.mu.Unlock()
-		return writeJSON(w, 200, map[string]any{"token": token, "instanceEpoch": s.engine.Epoch(), "protocolMajor": 2})
+		return writeJSON(w, 200, map[string]any{"token": token, "instanceEpoch": s.engine.Epoch(), "protocolMajor": 2, "captureHostClose": capability.CaptureHostClose == 1})
 	}
 	if err := s.requireBridge(r); err != nil {
 		return err
@@ -920,13 +924,14 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 					entry.claimed = true
 					action := entry.action
 					sourceLifetime := action.Type == "open_source" && t.prepareSourceWindow != nil
+					hostClose := t.hostCloseSupported
 					claimAudit, claimAuditReady := s.splitActionAuditRecord(action, "claimed", "accepted")
 					t.mu.Unlock()
 					if claimAuditReady {
 						s.persistSplitActionAudit(r.Context(), claimAudit)
 					}
 					finishPoll("claimed", &action)
-					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime})
+					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime, "captureHostClose": hostClose})
 				}
 			}
 			t.mu.Unlock()
@@ -988,6 +993,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				select {
 				case entry.result <- result:
 					entry.completed = true
+					entry.completionResult = &result
 					entry.runtimeLease.Release()
 					entry.runtimeLease = nil
 					if entry.interactionRelease != nil {

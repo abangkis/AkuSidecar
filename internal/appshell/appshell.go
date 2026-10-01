@@ -103,18 +103,21 @@ func (identity ApplicationIdentity) validate() error {
 }
 
 type Window struct {
-	ownershipMu sync.Mutex
-	closed      chan struct{}
-	cleanupErr  error
-	command     *exec.Cmd
-	owner       processOwnership
-	icon        windowIcon
-	done        chan error
-	executable  string
-	userDataDir string
-	startup     *Startup
-	captureHost bool
-	containment CaptureContainment
+	ownershipMu          sync.Mutex
+	closed               chan struct{}
+	cleanupErr           error
+	command              *exec.Cmd
+	owner                processOwnership
+	icon                 windowIcon
+	done                 chan error
+	executable           string
+	userDataDir          string
+	startup              *Startup
+	captureHost          bool
+	containment          CaptureContainment
+	captureHandoff       func(context.Context) error
+	retiring             bool
+	terminationRequested bool
 }
 
 func (w *Window) PID() int {
@@ -143,6 +146,7 @@ func (w *Window) Terminate() {
 		return
 	default:
 	}
+	w.terminationRequested = true
 	var root *os.Process
 	if w.command != nil {
 		root = w.command.Process
@@ -175,20 +179,69 @@ func (w *Window) OpenExtensionsPage(ctx context.Context) error {
 
 func (w *Window) release() {
 	w.ownershipMu.Lock()
-	defer w.ownershipMu.Unlock()
 	w.startup.Stop()
 	if w.containment != nil {
 		w.containment.Stop()
 	}
 	w.icon.close()
-	w.cleanupErr = w.owner.drain()
-	w.owner.close()
-	close(w.closed)
+	for {
+		if !w.captureHost || w.terminationRequested {
+			w.cleanupErr = w.owner.drain()
+			w.owner.close()
+			close(w.closed)
+			w.ownershipMu.Unlock()
+			return
+		}
+		// Natural root exit is not permission to kill a remaining helper or
+		// close a KILL_ON_JOB_CLOSE handle. Retain ownership until zero is
+		// positively verified; explicit whole-app shutdown still uses drain.
+		complete, err := w.owner.naturallyDrained()
+		w.cleanupErr = err
+		if err == nil && complete {
+			w.owner.close()
+			close(w.closed)
+			w.ownershipMu.Unlock()
+			return
+		}
+		w.ownershipMu.Unlock()
+		time.Sleep(25 * time.Millisecond)
+		w.ownershipMu.Lock()
+	}
 }
 
 // CloseForRetry only permits profile reuse after root wait and owned-tree
 // cleanup have both completed. A timeout/error must never trigger relaunch.
 func (w *Window) CloseForRetry(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	w.ownershipMu.Lock()
+	select {
+	case <-w.closed:
+		err := w.cleanupErr
+		w.ownershipMu.Unlock()
+		return err
+	default:
+	}
+	if w.captureHost {
+		closeHost := w.captureHandoff
+		if closeHost == nil {
+			w.ownershipMu.Unlock()
+			return ErrCaptureHandoffUnsafe
+		}
+		w.retiring = true
+		w.ownershipMu.Unlock()
+		if err := closeHost(ctx); err != nil {
+			return fmt.Errorf("%w: %v", ErrCaptureHandoffPending, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", ErrCaptureHandoffPending, ctx.Err())
+		case <-w.closed:
+			return w.cleanupErr
+		}
+	}
+	w.ownershipMu.Unlock()
 	w.Terminate()
 	select {
 	case <-ctx.Done():

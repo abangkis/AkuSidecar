@@ -88,6 +88,10 @@ func rootExited(root *os.Process, timeout time.Duration) bool {
 
 func (o processOwnership) close() {}
 
+func (o processOwnership) naturallyDrained() (bool, error) {
+	return false, errors.New("verified natural app-shell cleanup is only available on Windows")
+}
+
 func (o processOwnership) drain() error {
 	// Native retry is Windows-only. Do not claim process-group exclusivity on
 	// other platforms without an equivalent verified cleanup implementation.
