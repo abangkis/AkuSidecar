@@ -194,9 +194,9 @@ because DOM capture passed. Browser remains default after this gate.
 | 2a-2b | Foundation complete and committed; final integrated validation pending | Process ownership, durable driver/generation fencing, session/media/action leases, cancellation drain and native-reader/source lifetime tracking; commits `b376438`, `86cd0c3`, `d9b735a` and paired Bridge `8541337` |
 | 2c | Static packaged Bridge handoff and auto-return pass; live-source acceptance incomplete | Real host-only ACK, natural owner drain, interactive HWND retention and generation-4 auto-return pass on a disposable profile. Finish live authenticated reader/login and recovery |
 | 2d | Hidden Quiet backend implemented; integrated source acceptance incomplete | Go-owned hidden targets, worker-failure isolation and persisted collector routes pass fixtures; packaged native return passes. Live X/Facebook parity and visibility remain |
-| 3 | Local candidate; focused contract/ownership checks pass, acceptance incomplete | Production Bridge fields and per-source continuation/frontier handling implemented. Worker fixtures 6/6 and isolated real Node/CDP/Job/profile exclusivity/reuse smoke pass; authenticated parity, freshness qualification and source gaps remain |
+| 3 | Packaged authenticated X/Facebook feed/follow-up/target pass; broader source parity incomplete | Same configured Chrome/profile authentication and cleanup proven. Native watch/video URL contract fixed in worker and Go admission. Full video metadata, native aliases, freshness qualification and broader content cases remain |
 | 4 | Rendered Settings fixture passes; integrated acceptance incomplete | Real UI/API/coordinator with fake processes proves switching, reload persistence, visibility restoration and unsupported-source rejection. Native reader/login, auto-update and recapture journey remain |
-| 5 | Complete local tuple build and verifier pass; product validation incomplete | Current 412-file package includes lazy hidden headless collectors; packaged static Bridge auto-return passes. Authenticated parity, integrated reader/login and Windows visibility remain |
+| 5 | Local tuple and bounded headless source/visibility proofs pass; product validation incomplete | Native X/Facebook 6/6 capture passes and 19 blocks validate in Go without ingestion. Passive Windows trace sees no root-window visibility/activation during about 75s. Integrated reader/login, Quiet visibility and full media/content parity remain |
 
 The table describes code availability separately from acceptance. Candidate
 Settings/driver wiring was implemented before the 2c gate passed; this is an open
@@ -1050,6 +1050,44 @@ a mode switch. Do not retrofit a settings-only change around them.
   text match. Keep the strict comparison mismatch visible; do not silently strip
   metadata or equate authors from text alone. The saved sequential baseline is
   not proof of an incorrect native author binding.
+
+### Official packaged Facebook feed and passive Windows acceptance (2026-10-02)
+
+- Candidate tuple: Sidecar `51d5378`, Bridge `e8136f7`, Browser `036d839`.
+  `AkuBrowser/build/headless-facebook-watch-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+  Builder and tuple verifier pass: 412 files / 588,830,979 bytes. Sidecar binary
+  SHA-256 `52f1d6fdfe44b87a1e579f5134a584d98b7263abffb874d79551a7ac04527930`.
+- Official packaged-worker receipt:
+  `build/authenticated-parity-15be6fe4-1430-4b52-8d1d-0b4995773066`.
+  X and Facebook feed/follow-up/native-target all pass (6/6): X 5 unique IDs,
+  14 blocks, 7 media observations; Facebook 2 unique IDs, 5 blocks, 5 media
+  observations. Every capture reports authenticated UI, no login/challenge and
+  no within-snapshot duplicate IDs. Facebook watch feed now passes the URL
+  contract. Repeated frontier observations are not proof of full feed coverage.
+- Worker shutdown/exit, profile release before restore, original runtime health,
+  compatible Bridge and one configured capture owner all pass. No observations
+  are imported, and original settings/registration remain unchanged.
+- Passive native trace spans 05:09:29.129-05:10:43.973 UTC, starts before candidate
+  Chrome and ends after worker exit, before restoring the original UI. Nine
+  changed-state/event records, complete start/end with available hooks and no
+  truncated window inventory. Exact init PID has zero sampled visible windows
+  and zero foreground events. This closes bounded standalone headless visibility
+  evidence, not a universal zero-blinking guarantee or Quiet/interactive evidence.
+- Optional read-only engine check on the private receipt validates all six
+  observations / 19 blocks with `validateObservation`. It requires an official
+  packaged-worker lifecycle receipt under project build and never ingests or
+  prints private source content. Focused Go check passes (0.022s).
+- Saved Timeline comparison remains partial: X target has matched native identity,
+  author and prose with URL tokens replaced, but only a video poster; Facebook
+  target matches native identity/author/text and CDN image path, with changed
+  query and explicitly estimated current timestamp. Unobserved older feed targets
+  and unverified numeric/pfbid aliases remain distinct from proven source absence.
+- Next implementation delta: reuse the existing Bridge self-contained MAIN-world
+  structured video resolvers in the headless worker, with exact-ID and trusted
+  media URL admission, bounded execution and provenance. Preserve unresolved
+  media when evidence is absent or conflicting. The original Bridge collector
+  stays unchanged. Then verify the new official package and remaining native
+  interactive/Quiet journey gates.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
