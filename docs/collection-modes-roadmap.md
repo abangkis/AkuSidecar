@@ -940,6 +940,41 @@ a mode switch. Do not retrofit a settings-only change around them.
   the cumulative two-million ceiling remain preserved. Total measured coverage
   is partial; current post-resume accounting/enforcement is unavailable.
 
+### Authenticated packaged-worker comparison (2026-10-02)
+
+- User approved the original authenticated capture profile for bounded read-only
+  X/Facebook QA with Supervisor stop/test/restore. The operator harness defaults
+  to read-only preflight; explicit `--allow-runtime-stop` is required. It uses the
+  registered Google Chrome executable and profile, with candidate pinned Node and
+  worker. Reports remain under ignored project build; no observations are imported.
+- First packaged-worker run completes in 44.13s with Chrome 154.0.8037.93:
+  `build/authenticated-parity-cee75349-fc50-431b-8dd8-ff9bbfc93f88`.
+  X feed/followup/target succeed (5 unique native IDs, 13 observed blocks, 4 media
+  observations); no within-snapshot duplicate ID is observed. X target identity
+  and author match its saved Timeline baseline, but text/media parity does not.
+  The text difference is one rendered URL token; all other tokens match. The
+  saved video is absent in this target observation; DOM/hydration cause is open.
+- Facebook feed returns `empty_unverified`, with no claim of true empty source.
+  Native recapture succeeds with authenticated UI, matching native ID, author and
+  normalized text. One image is present in both captures; its CDN host/path match,
+  while query strings differ. Exact URL equality and full media parity remain
+  unverified. Native structured-story time is observed in this recapture only.
+  A second saved numeric-ID/pfbid-URL alias remains explicitly unverified.
+- Explicit worker shutdown, worker exit and zero profile owner before restore
+  pass. Original runtime returns healthy, Bridge compatible and one registered
+  Chrome owner. No login/cookie copy, installation, configuration replacement or
+  account write occurs. This compares saved Timeline evidence with sequential live
+  headless capture; it does not establish simultaneous headed/headless parity.
+- Comparison guards reject text-only matches, ambiguous same-ID bindings and
+  unverified native-ID/URL relationships; unavailable media remains separate from
+  observed zero. Focused comparison tests pass. Native baseline/continuation
+  harness fixtures and syntax checks pass.
+- Next diagnostic delta: one X target DOM sample at first admission/+2s/+5s,
+  and bounded structural counts on Facebook `empty_unverified`. The diagnostic
+  wrapper is project-build-only and explicitly recorded as instrumented. Empty
+  diagnostics exclude page text, URLs and native IDs; privacy/unknown-state test
+  passes. This instrumentation is evidence gathering, not source acceptance.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

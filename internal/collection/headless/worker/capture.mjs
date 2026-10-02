@@ -200,7 +200,8 @@ export async function capture(browser, assetsBySource, source, payload) {
     if (evidenceLimitReached) { stopReason = 'evidence_size_limit'; break; }
     if (unchangedRounds >= 3) { stopReason = 'three_rounds_without_new_identity'; break; }
   }
-  if (!seenIds.size) throw captureError('empty_unverified', 'no source post evidence was captured');
+  if (!seenIds.size) throw Object.assign(captureError('empty_unverified', 'no source post evidence was captured'),
+    { diagnostics: emptyCaptureDiagnostics(snapshots) });
   const last = snapshots.at(-1);
   const anchorKeys = [...new Set(last.posts.map(post => canonicalPostId(source, post)).filter(Boolean))].slice(0, 3);
   const scrollY = Number.isFinite(last.scroll?.y) ? Math.max(0, Math.trunc(last.scroll.y)) : resumeScrollY;
@@ -216,6 +217,33 @@ export async function capture(browser, assetsBySource, source, payload) {
     frontier,
     freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'CDP worker cannot apply AkuBridge tab wake or freshness qualification' },
   });
+}
+
+// Error diagnostics contain bounded structural counts, never page text, URLs or IDs.
+export function emptyCaptureDiagnostics(snapshots) {
+  const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : null;
+  const flag = value => typeof value === 'boolean' ? value : null;
+  const records = value => Array.isArray(value) ? value.filter(item=>item && typeof item==='object' && !Array.isArray(item)) : [];
+  return {sampleCount:snapshots.length,samples:records(snapshots).slice(-2).map(snapshot=>({
+    candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
+    authenticatedUiObserved:flag(snapshot.authenticatedUiObserved),documentReady:flag(snapshot.documentReady),
+    loginRequired:flag(snapshot.loginRequired),challengeDetected:flag(snapshot.challengeDetected),
+    scrollY:count(snapshot.scroll?.y),
+    rejectionReasons:Object.fromEntries(Object.entries(snapshot.rejectionReasons || {}).slice(0,16)
+      .filter(([key,value])=>/^[a-z_]{1,64}$/.test(key) && count(value) !== null)),
+    boundaries:records(snapshot.boundaryDiagnostics).slice(0,6).map(boundary=>({
+      positionWrapper:flag(boundary.positionWrapper),narrowed:flag(boundary.narrowed),
+      nestedPostBoundaries:count(boundary.nestedPostBoundaries),
+      allActions:count(boundary.allActions),ownActions:count(boundary.ownActions),
+      allBodies:count(boundary.allBodies),ownBodies:count(boundary.ownBodies),
+      allAnchors:count(boundary.allAnchors),ownAnchors:count(boundary.ownAnchors),
+    })),
+    hover:records(snapshot.identityDiagnostics).slice(0,4).map(identity=>({
+      eligibleHoverAnchors:count(identity.eligibleHoverAnchors),
+      attempted:flag(identity.hovered?.attempted),
+      permalinkRecovered:flag(identity.hovered?.permalinkRecoveredByHover),
+    })),
+  }))};
 }
 
 function canonicalPostId(source, post) {

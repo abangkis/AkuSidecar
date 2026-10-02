@@ -35,7 +35,7 @@ function requestError(code, message) {
   return error;
 }
 
-async function sourceAssets(bridgePath, source) {
+export async function sourceAssets(bridgePath, source) {
   const bridge = await realpath(bridgePath);
   const bridgeStat = await stat(bridge);
   if (!bridgeStat.isDirectory()) throw requestError('invalid_init', 'bridgePath must name the AkuBridge directory');
@@ -133,6 +133,7 @@ export async function runWorker({ input = process.stdin, output = process.stdout
       const safe = {
         code: error?.code || 'worker_error',
         message: String(error?.message || 'worker request failed').slice(0, 500),
+        ...(error?.code === 'empty_unverified' && error.diagnostics ? {diagnostics:error.diagnostics} : {}),
       };
       await write(responseFor(id, false, undefined, safe));
       if (errorOutput && error?.stack) errorOutput.write(`[headless-worker] ${safe.code}: ${safe.message}\n`);
