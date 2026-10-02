@@ -1533,6 +1533,40 @@ Implementation and validation:
   This limitation, the original unavailable target, and live video/full legacy
   parity remain open. Browser remains default; no installation performed.
 
+### Facebook network and initial-route investigation (2026-10-02)
+
+- Production dialog correction is committed as `e7bc7a2`. Subsequent probes are
+  isolated operator diagnostics under ignored `build/`; no production collector
+  changes, private API replay, installation or default migration were performed.
+- Passive CDP receipt `authenticated-parity-f751aa65-3d99-4555-b3cc-b960971500c9`
+  observes 108 Facebook document/Fetch/XHR requests and fully inspects seven
+  selected content responses. A live control's feed click issues
+  `CometSinglePostDialogContentQuery`; direct navigation carries its identity in
+  the initial document. Both captures match identity, author, full text and four
+  image host/path values. The initial probe `57442f4e-fec5-4894-a402-66d54590a87c`
+  exhausted its body budget; do not use its skipped later bodies as negative data.
+- Structured-route receipts `99a147a6-61a3-4c5b-b3e1-945273434b0b` and
+  `e3f856d2-6647-42a6-9b2e-7dace9ce3acf` distinguish a server-delivered unavailable
+  view from merely finding an error module name. The original target's
+  `initialRouteInfo.route.rootView.props` and `hostableView.props` contain the
+  unavailable title and `privacy: true`; `SiteData.ef_page` is null. The same
+  result appears before and after control navigation. The flag does not prove
+  that the post is private or identify the underlying availability/URL cause.
+- A saved directly observed control permalink opens in a fresh Chrome process
+  without a preceding feed click: its initial route contains `storyID` and
+  `SiteData.ef_page = CometSinglePostDialogRoute`. Persistent profile caches were
+  not cleared; this is not a cache-free experiment or a same-post comparison.
+- A bounded saved Timeline audit examines 686 items, including 58 Facebook items.
+  One record matches the original target, retaining `media_parent_id` provenance;
+  no alternative observed permalink is recovered. Its internal-click path and
+  matched foreground/headless behavior remain untested at this checkpoint.
+- An active Inbox preflight blocked a route probe without stopping the runtime;
+  execution resumed after the session finished naturally. All four completed
+  diagnostic runs confirm worker exit, profile release and healthy original
+  service/Bridge restoration. These are diagnostic receipts, not source-parity
+  passes. Next evidence: test the exact URL in foreground with the same profile,
+  and recover the original post's observed permalink or authoritative identity.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
