@@ -128,10 +128,11 @@ export async function capture(browser, assetsBySource, source, payload) {
 
   await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)}}`, timeLeft(deadline));
   const readinessDeadline = Math.min(deadline, Date.now() + options.hydrationMs);
+  let mediaSettleDeadline = null;
   let snapshot = null;
   while (Date.now() < readinessDeadline) {
     ensureTime(deadline);
-    if (options.acquisitionRound === 1) await sleep(Math.min(300, Math.max(25, readinessDeadline - Date.now())));
+    if (options.acquisitionRound === 1 || snapshot?.posts.length) await sleep(Math.min(300, Math.max(25, readinessDeadline - Date.now())));
     try {
       await inject(page, assets, deadline);
       snapshot = await collect(page, source, deadline);
@@ -139,7 +140,16 @@ export async function capture(browser, assetsBySource, source, payload) {
       if (isTransientContextError(error)) continue;
       throw error;
     }
-    if (snapshot.posts.length || snapshot.loginRequired || snapshot.challengeDetected || snapshot.sourceUnavailable) break;
+    if (snapshot.loginRequired || snapshot.challengeDetected || snapshot.sourceUnavailable) break;
+    if (snapshot.posts.length) {
+      // X can render tweet text before its attachment shell hydrates. Re-sample
+      // only missing expected URLs, within both source readiness and a 3s bound.
+      const pendingMedia = source === 'x' && snapshot.posts.some(post =>
+        Array.isArray(post.mediaEvidence?.expectedWithoutUrl) && post.mediaEvidence.expectedWithoutUrl.length > 0);
+      if (!pendingMedia) break;
+      mediaSettleDeadline ??= Math.min(readinessDeadline, Date.now() + 3000);
+      if (Date.now() >= mediaSettleDeadline) break;
+    }
   }
   if (!snapshot) throw captureError('empty_unverified', 'source page produced no verifiable snapshot before the readiness deadline');
   const stateError = sourceStateError(snapshot);
@@ -211,12 +221,17 @@ export async function capture(browser, assetsBySource, source, payload) {
     hasMoreCandidateSignal: height > scrollY + viewport };
   sourceFrontiers.set(source, { source, requestedUrl, pageUrl: pageKey(source, requestedUrl), frontier });
   if (options.restoreScroll) await page.evaluate(`window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
-  return toObservation({
-    source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
-    captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
-    frontier,
-    freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'CDP worker cannot apply AkuBridge tab wake or freshness qualification' },
-  });
+  try {
+    return toObservation({
+      source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
+      captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
+      frontier,
+      freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'CDP worker cannot apply AkuBridge tab wake or freshness qualification' },
+    });
+  } catch (error) {
+    if (error?.code === 'invalid_observation') error.diagnostics = emptyCaptureDiagnostics(snapshots);
+    throw error;
+  }
 }
 
 // Error diagnostics contain bounded structural counts, never page text, URLs or IDs.

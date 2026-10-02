@@ -975,6 +975,36 @@ a mode switch. Do not retrofit a settings-only change around them.
   diagnostics exclude page text, URLs and native IDs; privacy/unknown-state test
   passes. This instrumentation is evidence gathering, not source acceptance.
 
+### Authenticated source diagnosis and bounded readiness correction (2026-10-02)
+
+- Instrumented X target receipt:
+  `build/authenticated-parity-3cd18e8b-1014-4799-b7d8-055126973223/report.json`.
+  The first admitted snapshot has text and an empty attachment shell. At +2s
+  and +5s, the same native post has a ready video element and poster accepted by
+  the existing selector. This proves a hydration timing gap; no shared vendor
+  selector change is justified. Original runtime restoration passes.
+- Headless capture now re-samples X missing expected media URLs for up to three
+  additional seconds, bounded by the source hydration and capture deadlines.
+  Video stream resolution remains explicitly unresolved. The focused fixture
+  admits the hydrated poster and preserves that uncertainty. Native packaged
+  verification of this correction is pending.
+- The X text mismatch is one rendered link: baseline URL 54 characters, current
+  visible URL 19 characters. All other word tokens match in all diagnostic
+  samples. Keep exact text unequal and compare URL-normalized prose separately;
+  do not reconstruct a destination from a saved baseline.
+- Official packaged Facebook diagnostic receipt:
+  `build/authenticated-parity-6683d3d5-fe5d-4abf-935e-008e89c38ced/report.json`.
+  Feed now returns `invalid_observation`; native target still succeeds with one
+  image. The old QA report discarded the validation message. The wrapper now
+  retains its bounded message privately, and invalid-observation responses carry
+  bounded structural diagnostics excluding body, URLs, author and native IDs.
+  The focused invalid-permalink fixture verifies that privacy boundary. No
+  Facebook extractor correction is claimed before the precise failure is known.
+- Each authenticated diagnostic explicitly shuts down the worker, waits for
+  profile release and restores original healthy runtime, compatible Bridge and
+  one configured Chrome owner. Source acceptance, actual social reader/login
+  journeys and final visibility gates remain open.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

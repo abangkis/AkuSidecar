@@ -1,6 +1,7 @@
 import { canonicalSourceURL } from '../internal/collection/headless/worker/observation.mjs';
 
 const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
+const urlNormalizedProse = value => normalized(value).replace(/https?:\/\/[^\s<>"']+/giu, '[URL]');
 const blocksOf = result => (result?.snapshots || []).flatMap(snapshot => snapshot.blocks || []);
 const mediaKey = item => JSON.stringify([item?.kind || null, item?.url || null, item?.posterUrl || null]);
 const urlPath = value => {try {const url=new URL(value);return `${url.origin}${url.pathname}`;}catch{return value || null;}};
@@ -36,6 +37,7 @@ export function compareReport(report) {
     if (nativeIdentity(target.source,permalink) !== block.platformId) return {...result,status:'observed_native_id_url_unverified'};
     if (normalized(block.author) !== normalized(target.author)) return {...result,status:'author_binding_mismatch'};
     const before = normalized(target.text), after = normalized(block.text);
+    const proseEqualWithUrlTokensReplaced = urlNormalizedProse(before) === urlNormalizedProse(after);
     const beforeMedia = Array.isArray(target.media) ? target.media : null;
     const afterMedia = Array.isArray(block.media) ? block.media : null;
     const a = beforeMedia ? [...new Set(beforeMedia.map(mediaKey))].sort() : null;
@@ -44,6 +46,7 @@ export function compareReport(report) {
     const pathB = afterMedia ? [...new Set(afterMedia.map(mediaPathKey))].sort() : null;
     return {...result,status:'native_identity_and_author_match',
       textEqual:before === after, textPrefixCompatible:Boolean(before && after && (before.startsWith(after) || after.startsWith(before))),
+      proseEqualWithUrlTokensReplaced,
       baselineTextCharacters:Array.from(before).length, observedTextCharacters:Array.from(after).length,
       baselineMediaCount:beforeMedia?.length ?? null, observedMediaCount:afterMedia?.length ?? null,
       exactMediaSetsEqual:a && b ? JSON.stringify(a) === JSON.stringify(b) : null,
@@ -61,6 +64,7 @@ export function compareReport(report) {
     fullParityVerified:false,
     limitations:['saved baseline is not a simultaneous headed capture','coverage is bounded',
       'missing identity is not proof of source absence','exact media URL mismatch may require CDN evidence',
+      'URL tokens replaced for prose comparison do not establish displayed URL or destination equality',
       'unknown quality and video resolution remain unknown'],
     sources:['x','facebook'].map(source => {
       const sourceCaptures = captures.filter(capture => capture.source === source);

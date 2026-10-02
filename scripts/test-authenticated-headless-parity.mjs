@@ -367,10 +367,10 @@ function responseErrorCode(response) {
 function addCapture(report, source, kind, targetPlatformId, responseOrError) {
   if (responseOrError instanceof Error) {
     report.captures.push({source, kind, targetPlatformId, ok: false, result: null,
-      error: {code: responseOrError.code || 'harness_error'}});
+      error: {code: responseOrError.code || 'harness_error', message: String(responseOrError.message || '').slice(0,500)}});
   } else if (!responseOrError?.ok) {
     report.captures.push({source, kind, targetPlatformId, ok: false, result: null,
-      error: {code: responseErrorCode(responseOrError),
+      error: {code: responseErrorCode(responseOrError), message: String(responseOrError?.error?.message || '').slice(0,500),
         ...(responseOrError?.error?.diagnostics ? {diagnostics:responseOrError.error.diagnostics} : {})}});
   } else {
     report.captures.push({source, kind, targetPlatformId, ok: true, result: responseOrError.result, error: null});

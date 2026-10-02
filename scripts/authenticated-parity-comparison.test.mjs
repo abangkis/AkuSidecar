@@ -29,3 +29,23 @@ test('preserves unavailable media and quality separately from observed empty med
   assert.equal(empty.observedMediaCount,0);
   assert.equal(compareReport(report([target])).fullParityVerified,false);
 });
+test('URL token replacement isolates prose while retaining an exact text mismatch',()=>{
+  const baseline={...target,text:'Status is live https://example.test/story/expanded-display-token'};
+  const observed={...target,text:'Status is live https://t.co/short'};
+  const result=compareReport({...report([observed]),baseline:{targets:[baseline]}});
+  assert.equal(result.cases[0].textEqual,false);
+  assert.equal(result.cases[0].proseEqualWithUrlTokensReplaced,true);
+  assert.equal(result.fullParityVerified,false);
+});
+test('changed prose remains unequal after URL tokens are replaced',()=>{
+  const baseline={...target,text:'Status is live https://example.test/story/expanded-display-token'};
+  const observed={...target,text:'A different status https://t.co/short'};
+  const result=compareReport({...report([observed]),baseline:{targets:[baseline]}});
+  assert.equal(result.cases[0].textEqual,false);
+  assert.equal(result.cases[0].proseEqualWithUrlTokensReplaced,false);
+});
+test('unchanged text remains equal in both comparisons',()=>{
+  const result=compareReport(report([target]));
+  assert.equal(result.cases[0].textEqual,true);
+  assert.equal(result.cases[0].proseEqualWithUrlTokensReplaced,true);
+});
