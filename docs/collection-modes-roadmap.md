@@ -51,6 +51,45 @@ to owned headless Chrome; it does not alter the borrowed Quiet broker or permit
 foreground activation. Require two-source rendering and passive native-window
 verification before accepting the corrected packaged worker.
 
+### Approved fresh-data replacement validation (2026-10-02)
+
+The user requests practical quality at least equal to the existing mechanism,
+not perfection. Prioritize X and Facebook on newly collected data. Park the old
+unavailable Facebook URL as a regression fixture; it fails in both headless and
+foreground and is not, by itself, a headless replacement blocker.
+
+- Use the latest completed browser/Bridge acquisition as the reference and
+  record its actual driver, adapter revision, profile, acquisition time and
+  surface. Prefer raw acquisition observations over AI-selected Timeline items
+  so downstream selection does not distort extraction quality comparisons.
+- Target a paired collection gap of at most 30 minutes. Record the actual gap;
+  older saved examples remain supplementary evidence. Freshly acquired is not
+  necessarily newly published: report publication time separately when known.
+- Compare the same posts wherever identity can be established. Keep a separate
+  feed-yield comparison: personalization and changing feed order mean unequal
+  feed IDs alone cannot establish a regression. Do not rewrite identity or
+  accept unrelated recommendations to inflate successful matching.
+- Begin with a bounded pilot, then repeat across at least two fresh acquisition
+  windows and observed text, single-image, multi-image and video cases for each
+  source. Missing content types remain untested, not failed or silently passed.
+- Judge text completeness, author/post ownership, usable image count and video
+  evidence/playback, continuation, capture reliability/duration, login retention,
+  and focus interruption. Permit harmless formatting, relative-time labels and
+  signed-CDN query differences when the underlying evidence is equivalent.
+- A limitation shared by both mechanisms is recorded but does not automatically
+  block replacement. Reproducible loss of usable text/media that the current
+  mechanism obtains, wrong-post attribution, failed authentication/cleanup or
+  broken handoff does block the affected gate. A visible post with unverified
+  identity is not yet a verified successful capture.
+- Report four outcomes explicitly: equivalent or better, headless regression,
+  shared limitation, and unverified. No arbitrary success percentage or perfect
+  field-equality target replaces the paired evidence and user-visible quality.
+
+After X/Facebook source evidence, finish the integrated collection/reader/login/
+auto-return journey. Instagram and LinkedIn remain next; only qualify a default
+change after all four sources pass. No default migration, installation, release
+or foreground activation is implied by this validation amendment.
+
 ### Current acceptance status (2026-10-02)
 
 This table is the current execution order. The phase history below records
@@ -60,7 +99,7 @@ earlier checkpoints and must not be read as release acceptance.
 | --- | --- | --- |
 | Profile ownership and selected subprofile | Profile selection is pinned across replacements; blocked worker writes retire their owned tree; disposable Profile 2 launch passes | Integrated authenticated login/reader/auto-return journey |
 | X collection | Feed, continuation and two native targets pass; own MP4 decodes in Chrome | AkuBrowser player journey and comparison with full legacy Bridge extraction |
-| Facebook collection | Feed and direct-anchor image target pass; owned headless rendering corrected and packaged | Feed video/multi-image coverage with reliable post links, unavailable inferred target diagnosis, continuation when offered |
+| Facebook collection | Feed and image targets pass; original unavailable URL fails in both foreground/headless; saved-URL survey recorded below | Fresh paired Browser/headless text and media quality, identity binding, feed video/multi-image and continuation coverage |
 | Browser fallback | Existing collector remains available in the codebase | Isolate experimental hidden Quiet routing without regressing safe handoff |
 | Product journey | Separate Settings and native handoff fixtures pass | Combined real source, Settings, reader/login, recapture and auto-update acceptance |
 | Instagram / LinkedIn | Existing browser support retained | Start headless qualification after X/Facebook gates pass |
@@ -1566,6 +1605,48 @@ Implementation and validation:
   service/Bridge restoration. These are diagnostic receipts, not source-parity
   passes. Next evidence: test the exact URL in foreground with the same profile,
   and recover the original post's observed permalink or authoritative identity.
+
+### Foreground control and saved-URL survey (2026-10-02)
+
+- Foreground receipt `authenticated-parity-c0f2224f-b0cf-4df9-a439-3a570251fb38`
+  uses the same registered Chrome 154 and authenticated profile, with headless
+  and focus emulation disabled. Computer Use visually confirms the exact old
+  URL remains unavailable and the control shows text/image. Native observation
+  confirms foreground presence; it does not prove uninterrupted foreground.
+  Initial error route properties match headless. Original runtime/Bridge restore.
+- Survey snapshot contains 1,000 saved Timeline items, including 86 Facebook
+  items: 11 lack a permalink; 75 unique destinations are tested. Among 40 post
+  URLs, 31 are observed anchors and nine are inferred media-parent URLs. One
+  inferred URL (the original foreground-tested case) explicitly reports
+  unavailable: 1/40 post URLs, or 2.5% observed in this saved sample.
+- The other post results are six exact-identity captures and 33 pages with post
+  structure but unverified target identity. Do not count all 39 as parity passes.
+  Among 35 photo URLs, 28 show matching loaded media; seven remain unverified.
+  Tracking parameters are not photo identity; 23 initially inconclusive photo
+  cases are rechecked using photo ID plus visible media host/path matching.
+- The five batch receipts are `587b84e0-592d-45c4-89a7-d1cf7a26ebf4`,
+  `76a379c6-b88d-46b7-a2fe-e66fce99d261`,
+  `6a9169c9-90d2-46f6-9fff-997b788e4a76`,
+  `eaa6f72c-2c3b-4736-a337-38bc4359dd61`, and
+  `bd497971-1390-480a-8213-9bc1147b1c30`, each under
+  `build/authenticated-parity-<id>/report.json`. All confirm worker exit, profile
+  release and healthy service/Bridge restoration. Summary:
+  `build/facebook-url-survey-summary-20261002.json` (private local diagnostics).
+- This is a bounded availability survey of saved data, not a random Facebook
+  prevalence estimate or a replacement-quality proof. Its unresolved identity
+  cases motivate the fresh paired comparison above; historical URL archaeology
+  is no longer the main implementation trajectory.
+
+Fresh pilot preparation: raw observations from the latest completed Browser
+runs are read with SQLite in read-only mode, preserving acquisition provenance
+before AI selection. The available reference has six unique X candidates
+(video evidence) and one Facebook candidate (image evidence), captured at
+14:13:31Z and 14:12:48Z respectively. By pilot preparation completion these are
+over the 30-minute target gap, so they are not accepted as a fresh paired proof.
+Local `build/fresh-collection-pilot-worker.mjs` is prepared with a stale-baseline
+guard; no live paired pilot has run at this checkpoint. The next proof requires
+new Browser acquisition and broader content coverage, then prompt headless
+comparison on the same profile. Latest is not automatically fresh enough.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
