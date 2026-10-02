@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { canonicalSourceURL, evidenceKey } from '../internal/collection/headless/worker/observation.mjs';
 import { compareReport } from './authenticated-parity-comparison.mjs';
 import { startNativeObserver, summarizeNativeVisibility } from './headless-native-observer.mjs';
@@ -532,6 +532,12 @@ async function main() {
   }
   const observerExe = args.nativeObserver ? await containedRealpath(join(sidecar,'build'),args.nativeObserver,'native_observer') : null;
   if (observerExe && !(await stat(observerExe)).isFile()) throw new HarnessError('invalid_native_observer');
+  const operatorTools = [];
+  for (const [role,path] of [['quiet_qa_adapter',candidate.quietProbe],['passive_window_observer',observerExe]]) {
+    if (!path) continue;
+    if ((await stat(path)).size > 64 * 1024 * 1024) throw new HarnessError('operator_tool_too_large');
+    operatorTools.push({role,path:relative(sidecar,path),sha256:createHash('sha256').update(await readFile(path)).digest('hex')});
+  }
   if (args.diagnosticWorker) {
     candidate.packagedWorker = candidate.worker;
     candidate.worker = await containedRealpath(join(sidecar,'build'),args.diagnosticWorker,'diagnostic_worker');
@@ -560,6 +566,7 @@ async function main() {
     execution: {
       scope: args.quietProbe ? 'saved_timeline_vs_live_quiet_sequential' : 'saved_timeline_vs_live_headless_sequential',
       workerMode:args.quietProbe ? 'production_quiet_driver_packaged_worker' : (args.diagnosticWorker ? 'instrumented_diagnostic' : 'packaged_worker'),
+      operatorTools,
       selectedSources, targetsOnly:args.targetsOnly,
       runtimeControl: {
         before, secondPreflight, stopIssued: false, stoppedConfirmed: false,

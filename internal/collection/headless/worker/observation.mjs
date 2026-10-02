@@ -83,10 +83,22 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
   const media = Array.isArray(post.media) ? structuredClone(post.media.slice(0, 20)) : [];
   const expected = Array.isArray(post.mediaExpected) ? post.mediaExpected.slice(0, 12) : [];
   const limitations = Array.isArray(post.limitations) ? post.limitations.slice(0, 24) : [];
-  const unresolvedVideo = expected.includes('video') || media.some(item => item?.kind === 'video_poster');
+  const expectsVideo = expected.includes('video') || media.some(item => item?.kind === 'video_poster');
+  const structuredResolution = post.mediaEvidence?.structuredMediaResolution;
+  const verifiedStructuredVideos = media.filter(item => isVerifiedStructuredVideo(source, item));
+  const structuredResolved = expectsVideo
+    && structuredResolution?.status === 'resolved'
+    && structuredResolution.resolverVersion === (source === 'x' ? 'x-main-world-structured-v1' : 'facebook-structured-video-v1')
+    && Number.isSafeInteger(structuredResolution.ownVideoPosterCount)
+    && structuredResolution.ownVideoPosterCount > 0
+    && structuredResolution.accountedPosterCount === structuredResolution.ownVideoPosterCount
+    && structuredResolution.verifiedVideoCount === structuredResolution.ownVideoPosterCount
+    && verifiedStructuredVideos.length >= structuredResolution.verifiedVideoCount
+    && !media.some(item => item?.kind === 'video_poster');
+  const unresolvedVideo = expectsVideo && !structuredResolved;
   const recovery = {
-    status: unresolvedVideo ? 'partial' : post.mediaEvidence?.status || 'unverified',
-    outcome: unresolvedVideo ? 'unresolved' : 'observed_dom_only',
+    status: structuredResolved ? 'resolved' : unresolvedVideo ? 'partial' : post.mediaEvidence?.status || 'unverified',
+    outcome: structuredResolved ? 'verified_owned_playback' : unresolvedVideo ? 'unresolved' : 'observed_dom_only',
     expected,
     evidence: preserveMap(post.mediaEvidence),
     ...(unresolvedVideo ? { unknownVideo: 'unresolved', limitation: 'video_stream_not_resolved' } : {}),
@@ -125,6 +137,28 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
     captureQuality: quality,
     feedPosition,
   };
+}
+
+function isVerifiedStructuredVideo(source, item) {
+  if (!item || item.kind !== 'video' || typeof item.posterUrl !== 'string' || typeof item.playbackUrl !== 'string') return false;
+  try {
+    const poster = new URL(item.posterUrl);
+    const playback = new URL(item.playbackUrl);
+    if ([poster, playback].some(url => url.protocol !== 'https:' || url.username || url.password || url.port)) return false;
+    if (source === 'x') {
+      return poster.hostname === 'pbs.twimg.com'
+        && /^\/(?:ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//i.test(poster.pathname)
+        && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(poster.pathname)
+        && playback.hostname === 'video.twimg.com'
+        && /^\/(?:amplify_video|ext_tw_video|tweet_video)\//i.test(playback.pathname)
+        && /\.mp4$/i.test(playback.pathname);
+    }
+    const allowed = host => ['fbcdn.net', 'fbsbx.com'].some(suffix => host === suffix || host.endsWith(`.${suffix}`));
+    return allowed(poster.hostname.toLowerCase())
+      && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(poster.pathname)
+      && allowed(playback.hostname.toLowerCase())
+      && /\.mp4$/i.test(playback.pathname);
+  } catch { return false; }
 }
 
 export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, frontier, freshness, captureMode = 'headless_worker' }) {

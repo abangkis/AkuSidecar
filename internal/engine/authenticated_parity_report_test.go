@@ -49,13 +49,14 @@ func TestAuthenticatedParityReportObservationContract(t *testing.T) {
 			RuntimeControl struct {
 				Restored        bool `json:"restored"`
 				ProfileReleased bool `json:"profileReleasedBeforeRestore"`
+				WorkerExited    bool `json:"workerExitConfirmed"`
 			} `json:"runtimeControl"`
 		} `json:"execution"`
 	}
 	if json.Unmarshal(data, &report) != nil {
 		t.Fatal("receipt JSON contract mismatch")
 	}
-	if report.Execution.WorkerMode != "packaged_worker" || !report.Execution.RuntimeControl.Restored || !report.Execution.RuntimeControl.ProfileReleased {
+	if (report.Execution.WorkerMode != "packaged_worker" && report.Execution.WorkerMode != "production_quiet_driver_packaged_worker") || !report.Execution.RuntimeControl.Restored || !report.Execution.RuntimeControl.ProfileReleased || !report.Execution.RuntimeControl.WorkerExited {
 		t.Fatal("official packaged-worker lifecycle proof missing")
 	}
 	seen := map[string]bool{}
@@ -70,6 +71,13 @@ func TestAuthenticatedParityReportObservationContract(t *testing.T) {
 		}
 		if string(capture.Result.Source) != capture.Source {
 			t.Fatal("capture source mismatch")
+		}
+		expectedMode := "headless_worker"
+		if report.Execution.WorkerMode == "production_quiet_driver_packaged_worker" {
+			expectedMode = "browser_quiet_hidden"
+		}
+		if capture.Result.Coverage["captureMode"] != expectedMode {
+			t.Fatal("capture driver mode mismatch")
 		}
 		if err := validateObservation(capture.Result); err != nil {
 			t.Fatalf("%s %s observation contract rejected: %v", capture.Source, capture.Kind, err)

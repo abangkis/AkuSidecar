@@ -1112,6 +1112,31 @@ a mode switch. Do not retrofit a settings-only change around them.
   comparison against headless, application Bridge/Settings and real source
   login/reader auto-return still require their own receipts.
 
+### Structured video candidate (2026-10-02)
+
+- The shared headless/Quiet worker now reuses the existing self-contained X and
+  Facebook Bridge MAIN-world media resolvers. Original module bytes retain their
+  own SHA-256 provenance; a serialized function is a separate execution binding.
+  Missing optional resolver code leaves DOM collection intact and unresolved.
+- Only exact native post ID/permalink bindings are requested, at most 16 IDs,
+  with bounded traversal and CDP time inside the capture deadline. Trusted HTTPS
+  poster/MP4 pairs must match the observed DOM poster host/path. Unmatched images,
+  mixed posters, unknown aliases and conflicting candidate/playback bindings are
+  preserved rather than synthesized. Verified own playback can clear that video's
+  unknown flag; overall capture quality remains unverified.
+- Worker/media focused checks pass 17/17. Coordinator checks pass 19/19 across
+  resolver and receipt comparators, including wrong-source resolver revisions,
+  foreign/unsafe media, mixed posters, ambiguity, provenance and playback URL
+  comparisons. The Quiet/headless comparator accepts only proven official
+  lifecycle receipts and requested native targets; it never claims full parity.
+- Read-only Go receipt validation now accepts either official standalone headless
+  or production Quiet-driver receipts and verifies the declared capture mode,
+  worker exit and profile release. The earlier headless receipt still validates
+  six observations / 19 blocks without ingestion (0.023s).
+- The new candidate needs an immutable local build and authenticated headless /
+  Quiet receipts. Operator helper binary digests are retained in new QA reports.
+  This checkpoint does not close live-source or integrated interaction gates.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

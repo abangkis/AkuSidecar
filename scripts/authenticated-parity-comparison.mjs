@@ -3,9 +3,11 @@ import { canonicalSourceURL } from '../internal/collection/headless/worker/obser
 const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
 const urlNormalizedProse = value => normalized(value).replace(/https?:\/\/[^\s<>"']+/giu, '[URL]');
 const blocksOf = result => (result?.snapshots || []).flatMap(snapshot => snapshot.blocks || []);
-const mediaKey = item => JSON.stringify([item?.kind || null, item?.url || null, item?.posterUrl || null]);
+const mediaKey = item => JSON.stringify([item?.kind || null, item?.url || null, item?.posterUrl || null,
+  item?.playbackUrl || null, item?.playbackMode || null]);
 const urlPath = value => {try {const url=new URL(value);return `${url.origin}${url.pathname}`;}catch{return value || null;}};
-const mediaPathKey = item => JSON.stringify([item?.kind || null,urlPath(item?.url),urlPath(item?.posterUrl)]);
+const mediaPathKey = item => JSON.stringify([item?.kind || null,urlPath(item?.url),urlPath(item?.posterUrl),
+  urlPath(item?.playbackUrl),item?.playbackMode || null]);
 function nativeIdentity(source, permalink) {
   const canonical = canonicalSourceURL(source, permalink);
   if (!canonical) return null;

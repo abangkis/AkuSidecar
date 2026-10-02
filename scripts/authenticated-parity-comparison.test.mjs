@@ -25,6 +25,20 @@ test('separately reports CDN query differences without claiming full parity',()=
   assert.equal(result.cases[0].sameHostPathMediaSets,true);
   assert.equal(result.fullParityVerified,false);
 });
+
+test('video parity includes playback identity, not just a matching poster',()=>{
+  const media={kind:'video',url:'https://pbs.twimg.com/amplify_video_thumb/1/p.jpg',
+    posterUrl:'https://pbs.twimg.com/amplify_video_thumb/1/p.jpg',playbackUrl:'https://video.twimg.com/amplify_video/1/vid.mp4?token=old',playbackMode:'inline'};
+  const baseline={...target,media:[media]};
+  const compare=playbackUrl=>compareReport({...report([{...target,media:[{...media,playbackUrl}]}]),baseline:{targets:[baseline]}}).cases[0];
+  const other=compare('https://video.twimg.com/amplify_video/2/vid.mp4');
+  assert.equal(other.exactMediaSetsEqual,false);
+  assert.equal(other.sameHostPathMediaSets,false);
+  const rotated=compare('https://video.twimg.com/amplify_video/1/vid.mp4?token=new');
+  assert.equal(rotated.exactMediaSetsEqual,false);
+  assert.equal(rotated.sameHostPathMediaSets,true);
+  assert.equal(compare(undefined).exactMediaSetsEqual,false);
+});
 test('preserves unavailable media and quality separately from observed empty media',()=>{
   const missing = compareReport(report([target])).cases[0];
   assert.equal(missing.exactMediaSetsEqual,null);

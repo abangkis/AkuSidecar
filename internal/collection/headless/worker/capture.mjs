@@ -1,6 +1,7 @@
 import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs';
 import { canonicalSourceURL, captureError, toObservation } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
+import { resolveStructuredMedia } from './structured-media.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -175,6 +176,7 @@ export async function capture(browser, assetsBySource, source, payload) {
     quoteIdentityProbe = resolution?.probe || null;
   }
   snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
+  snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
 
   const snapshots = [];
   const seenIds = new Set();
@@ -192,6 +194,7 @@ export async function capture(browser, assetsBySource, source, payload) {
       snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
       const nextError = sourceStateError(snapshot);
       if (nextError) throw nextError;
+      snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
     }
     const previousCount = seenIds.size;
     const posts = [];
@@ -291,6 +294,17 @@ async function collect(page, source, deadline) {
   try { snapshot = JSON.parse(encoded); } catch { throw captureError('invalid_observation', 'source extractor returned invalid JSON'); }
   if (!snapshot || !Array.isArray(snapshot.posts)) throw captureError('invalid_observation', 'source extractor returned no posts array');
   return snapshot;
+}
+
+async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline) {
+  const resolution = await resolveStructuredMedia({
+    page,
+    source,
+    posts: snapshot.posts,
+    resolver: assets?.structuredMediaResolver,
+    deadlineAt: deadline,
+  });
+  return { ...snapshot, posts: resolution.posts, structuredMediaResolution: resolution.summary };
 }
 
 function sourceStateError(snapshot) {

@@ -54,7 +54,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'worker/vendor/facebook-time-evidence.js', path: resolve(root, 'vendor/facebook-time-evidence.js'), execute: true },
         { relative: 'worker/vendor/facebook-extract.js', path: resolve(root, 'vendor/facebook-extract.js'), execute: true },
       ];
-  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {
@@ -63,6 +63,31 @@ export async function sourceAssets(bridgePath, source) {
     const content = await readFile(asset.path, 'utf8');
     assets.push({ ...asset, content, sha256: createHash('sha256').update(content).digest('hex') });
   }
+  const resolverAsset = source === 'x'
+    ? { relative: 'AkuBridge/x-main-world-media-resolver.js', path: resolve(bridge, 'x-main-world-media-resolver.js'), execute: false,
+        exportName: 'resolveXStructuredMediaInMainWorld', runtimeRevision: 'x-main-world-media-resolver-v1' }
+    : { relative: 'AkuBridge/facebook-main-world-media-resolver.js', path: resolve(bridge, 'facebook-main-world-media-resolver.js'), execute: false,
+        exportName: 'resolveFacebookStructuredMediaInMainWorld', runtimeRevision: 'facebook-main-world-media-resolver-v1' };
+  const structuredMediaResolver = { available: false, functionSource: '', runtimeRevision: resolverAsset.runtimeRevision,
+    relative: resolverAsset.relative, sha256: null };
+  try {
+    const info = await stat(resolverAsset.path);
+    if (info.isFile() && info.size <= 1024 * 1024) {
+      const content = await readFile(resolverAsset.path, 'utf8');
+      const sha256 = createHash('sha256').update(content).digest('hex');
+      assets.push({ relative: resolverAsset.relative, path: resolverAsset.path, execute: false, content, sha256 });
+      structuredMediaResolver.sha256 = sha256;
+      const module = await import(pathToFileURL(await realpath(resolverAsset.path)).href);
+      const exportedResolver = module[resolverAsset.exportName];
+      if (typeof exportedResolver === 'function') {
+        structuredMediaResolver.available = true;
+        structuredMediaResolver.functionSource = exportedResolver.toString();
+      }
+    }
+  } catch {
+    // Structured media is optional. Missing or unloadable Bridge resolver leaves DOM capture intact.
+  }
+  Object.defineProperty(assets, 'structuredMediaResolver', { value: structuredMediaResolver, enumerable: false });
   return assets;
 }
 
