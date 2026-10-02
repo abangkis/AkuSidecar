@@ -352,6 +352,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	fatal(logger, err)
 	profilePath := browserProfilePath(options, cfg)
 	var capture *appshell.Window
+	var captureProfileDirectory string
 	extensionPath := options.BridgeExtensionPath
 	uiResult := result
 	var uiArgs []string
@@ -369,11 +370,13 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		}
 		captureProfile, uiProfile, err := appshell.SplitProfilePaths(profilePath)
 		fatal(logger, err)
+		captureProfileDirectory, err = appshell.ResolveProfileDirectory(captureProfile)
+		fatal(logger, err)
 		captureURL, err := server.SplitCaptureLaunchURL(target)
 		fatal(logger, err)
 		capture, err = appshell.Launch(context.Background(), appshell.LaunchOptions{
 			Executable: result.Executable, ExtensionPath: extensionPath,
-			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized"},
+			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--profile-directory=" + captureProfileDirectory},
 		})
 		fatal(logger, err)
 		containment, err := capture.StartCaptureContainment(logger)
@@ -443,7 +446,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		executable, exeErr := os.Executable()
 		fatal(logger, exeErr)
 		workerRoot := filepath.Join(filepath.Dir(executable), "headless-worker")
-		headlessOptions := headless.Options{Node: filepath.Join(workerRoot, "node.exe"), Worker: filepath.Join(workerRoot, "worker.mjs"), Pin: filepath.Join(workerRoot, "node.pin.json"), Chrome: result.Executable, Profile: captureProfile, BridgePath: options.BridgeExtensionPath}
+		headlessOptions := headless.Options{Node: filepath.Join(workerRoot, "node.exe"), Worker: filepath.Join(workerRoot, "worker.mjs"), Pin: filepath.Join(workerRoot, "node.pin.json"), Chrome: result.Executable, Profile: captureProfile, ProfileDirectory: captureProfileDirectory, BridgePath: options.BridgeExtensionPath}
 		if !filepath.IsAbs(headlessOptions.BridgePath) {
 			headlessOptions.BridgePath, _ = filepath.Abs(headlessOptions.BridgePath)
 		}
@@ -484,7 +487,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			if err != nil {
 				return nil, err
 			}
-			process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, ExtensionPath: options.BridgeExtensionPath, UserDataDir: captureProfile, URL: url, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized"}})
+			process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, ExtensionPath: options.BridgeExtensionPath, UserDataDir: captureProfile, URL: url, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--profile-directory=" + captureProfileDirectory}})
 			if err != nil {
 				return process, err
 			}

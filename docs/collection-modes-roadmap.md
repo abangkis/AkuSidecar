@@ -11,7 +11,35 @@ Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 The user selects browser or headless collection in Settings and can switch back.
 Browser remains the default, including when older settings omit the new field.
-Headless is opt-in and does not replace the current collector.
+Headless remains opt-in during the transition. It is the intended replacement
+collector, but must not become the default until X, Facebook, Instagram and
+LinkedIn have each passed source and integrated product acceptance.
+
+### Approved transition direction (2026-10-02)
+
+This amendment supersedes the earlier assumption of permanent equal investment
+in Browser and Headless, and the earlier Quiet productization completion gate.
+
+1. Finish X and Facebook first, with source quality at least equivalent to the
+   existing Bridge collector and a complete collection/interactive/auto-return
+   journey. Compare against the existing collector, not only hidden Quiet.
+2. Then implement and qualify Instagram and LinkedIn. Do not remove their current
+   browser support or silently route them to an unsupported headless driver.
+3. Only after all four sources pass, propose the default migration with explicit
+   rollback and preserved authentication. Sunset the legacy collector after the
+   replacement is proven; retain browser interaction for login/challenge/readers.
+
+Freeze hidden Quiet as an independent feature. Its media parity and standalone
+recovery are no longer prerequisites for headless acceptance. Preserve needed
+process/target ownership and handoff components; isolate the experimental Quiet
+collector from the legacy fallback before shipping the transition candidate.
+During an interactive browser lease, headless acquisition waits and resumes after
+verified auto-return; it need not run hidden Quiet concurrently.
+
+Immediate priorities: align production and QA profile selection, bound worker
+pipe writes and cleanup, validate the actual product journey, and resolve X/FB
+media gaps with causal evidence. Existing receipts below retain their original
+scope and do not establish parity with the complete legacy Bridge pipeline.
 
 `collectionMode` will be `browser` or `headless`. Existing `captureVisibility`
 remains a browser-only policy, with its value preserved while headless is active.
@@ -1194,6 +1222,32 @@ a mode switch. Do not retrofit a settings-only change around them.
 - Next: immutable candidate build and new official authenticated receipts to
   resolve the media diagnosis and qualify collection-phase visibility. Actual
   Settings/Bridge/social reader/login integration gates remain open.
+
+### Transition implementation checkpoint (2026-10-02)
+
+- Production pins the Chrome subprofile selected from Local State before initial
+  headed launch and carries it through headless and browser replacement. Missing
+  selected profiles and malformed metadata fail explicitly; no cookies are copied.
+  Six selection cases pass, including a non-Default authenticated profile.
+- Headless's request deadline now includes pipe writes. A blocked write retires
+  the owned worker tree before returning. Two pipe tests pass; a real Windows
+  owned-Node fixture with unread stdin verifies timeout and Job release (8.10s).
+- Official candidate 13a113b headless receipt
+  `build/authenticated-parity-7548d56f-e9ff-4c4a-b07a-0f6eb593ea8e/report.json`
+  passes six captures and 17-block Go admission without ingestion. Its exact-root
+  after-init trace completes over about 62 seconds with no visible/foreground
+  root. Quiet receipt `build/authenticated-parity-50495749-1efc-4013-b8ab-3fa87127b185/report.json`
+  also passes six captures, but still lacks the X poster and records startup
+  foreground activity. Both restore the original healthy runtime and profile.
+- Count-only X diagnostic receipt
+  `build/authenticated-parity-72e2b2ba-da44-47fb-b134-7bdf366c673c/report.json`
+  isolates a depth boundary: default depth 9 visits 266 nodes, depth 12 visits
+  408, neither matches; a bounded diagnostic finds own Tweet objects at depth 13.
+  This instrumented run is not an official parity receipt and restores cleanly.
+- The shared X resolver now accepts an explicit depth up to 16 while retaining
+  Bridge's default 9. Headless requests 16 with the same 1500-node and time caps.
+  Bridge resolver/runtime checks pass 9/9, including deep own/quoted media and
+  depth-cap fixtures; worker checks pass 17/17. New packaged/live proof is pending.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

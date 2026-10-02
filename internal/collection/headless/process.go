@@ -20,7 +20,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
-type Options struct{ Node, Worker, Pin, Chrome, Profile, BridgePath string }
+type Options struct{ Node, Worker, Pin, Chrome, Profile, ProfileDirectory, BridgePath string }
 type Process struct {
 	owner     *appshell.OwnedCommand
 	input     io.WriteCloser
@@ -42,6 +42,9 @@ type CaptureError struct {
 func (e *CaptureError) Error() string { return e.Code + ": " + e.Message }
 
 func Validate(options Options) error {
+	if options.ProfileDirectory != "" && !appshell.ValidProfileDirectory(options.ProfileDirectory) {
+		return errors.New("invalid headless Chrome subprofile")
+	}
 	for _, path := range []string{options.Node, options.Worker, options.Pin, options.Chrome, options.Profile, options.BridgePath} {
 		if !filepath.IsAbs(path) {
 			return errors.New("headless runtime paths must be absolute")
@@ -82,6 +85,13 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 	if err := Validate(options); err != nil {
 		return nil, err
 	}
+	if options.ProfileDirectory == "" {
+		var err error
+		options.ProfileDirectory, err = appshell.ResolveProfileDirectory(options.Profile)
+		if err != nil {
+			return nil, err
+		}
+	}
 	command := exec.Command(options.Node, options.Worker)
 	command.Stderr = io.Discard
 	input, err := command.StdinPipe()
@@ -113,7 +123,7 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 			}
 		}
 	}()
-	metadata, err := p.call(ctx, map[string]any{"type": "init", "chrome": options.Chrome, "profile": options.Profile, "bridgePath": options.BridgePath})
+	metadata, err := p.call(ctx, map[string]any{"type": "init", "chrome": options.Chrome, "profile": options.Profile, "profileDirectory": options.ProfileDirectory, "bridgePath": options.BridgePath})
 	if err == nil {
 		var initialized struct {
 			WorkerDriver struct {
@@ -141,9 +151,6 @@ func (p *Process) call(ctx context.Context, request map[string]any) (json.RawMes
 	if err != nil {
 		return nil, err
 	}
-	if _, err := p.input.Write(append(raw, '\n')); err != nil {
-		return nil, err
-	}
 	// Once dispatched, do not pretend cancellation stopped Chrome. Await the
 	// bounded worker outcome; owning run leases remain held until this returns.
 	timeout := 120 * time.Second
@@ -154,6 +161,12 @@ func (p *Process) call(ctx context.Context, request map[string]any) (json.RawMes
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+	// The same deadline covers pipe backpressure and the reply. A timed-out
+	// write has an uncertain dispatch outcome, so retire the owned tree before
+	// releasing the caller's lease or allowing any subsequent request.
+	if err := writeWorkerFrame(p.input, append(raw, '\n'), timer.C); err != nil {
+		return nil, p.protocolFailure(err.Error())
+	}
 	select {
 	case value, ok := <-p.replies:
 		if !ok {
@@ -180,6 +193,26 @@ func (p *Process) call(ctx context.Context, request map[string]any) (json.RawMes
 			return nil, fmt.Errorf("headless timeout; cleanup unverified: %w", err)
 		}
 		return nil, errors.New("headless worker timed out and its owned tree was stopped")
+	}
+}
+
+func writeWorkerFrame(output io.Writer, frame []byte, deadline <-chan time.Time) error {
+	written := make(chan error, 1)
+	go func() {
+		n, err := output.Write(frame)
+		if err == nil && n != len(frame) {
+			err = io.ErrShortWrite
+		}
+		written <- err
+	}()
+	select {
+	case err := <-written:
+		if err != nil {
+			return errors.New("headless worker write failed")
+		}
+		return nil
+	case <-deadline:
+		return errors.New("headless worker write timed out")
 	}
 }
 func (p *Process) protocolFailure(message string) error {
