@@ -86,6 +86,9 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		Pin: filepath.Join(runtimeRoot, "node.pin.json"), Chrome: chromePath,
 		Profile: profile, BridgePath: bridgePath,
 	}
+	if os.Getenv("AKU_BRIDGE_HANDOFF_SMOKE_SOURCE_WORKER") == "1" {
+		options.Worker = filepath.Join(sidecarRoot, "internal", "collection", "headless", "worker", "worker.mjs")
+	}
 	if err := headless.Validate(options); err != nil {
 		t.Fatal("staged headless runtime is invalid")
 	}
@@ -326,6 +329,18 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatalf("capture host handoff capability bootstrap timed out (%s)", diagnostic)
 	}
 	closeAcknowledgedBeforeRotation := false
+	t.Log("fixture_window_baseline_before_headless=true")
+	baselineTarget, err := createBridgeFixtureWindow(ctx, protocol, origin, t)
+	if err != nil {
+		t.Fatal("pre-headless single-window baseline", err)
+	}
+	closedBaseline, err := protocol.Call(ctx, "Target.closeTarget", map[string]any{"targetId": baselineTarget}, "")
+	var baselineClosed struct {
+		Success bool `json:"success"`
+	}
+	if err != nil || json.Unmarshal(closedBaseline, &baselineClosed) != nil || !baselineClosed.Success {
+		t.Fatal("could not close exact single-tab baseline fixture")
+	}
 	if err := manager.Replace(ctx, func(nextCtx context.Context, generation uint64) (captureruntime.Process, error) {
 		// RotateSplitCapture starts the next Bridge generation and clears the
 		// previous generation's action ledger. Snapshot the real ACK first.
@@ -351,6 +366,23 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal("headed Chrome ownership readback failed after replacement")
 	}
 	t.Log("bridge_bootstrap=true close_ack=true natural_owner_drain=true")
+	preferences, prefsErr := os.ReadFile(filepath.Join(profile, "Default", "Preferences"))
+	var prefs struct {
+		Session struct {
+			RestoreOnStartup *int `json:"restore_on_startup"`
+		} `json:"session"`
+	}
+	prefsValid := prefsErr == nil && json.Unmarshal(preferences, &prefs) == nil
+	restoreValue := -1
+	if prefsValid && prefs.Session.RestoreOnStartup != nil {
+		restoreValue = *prefs.Session.RestoreOnStartup
+	}
+	localState, localErr := os.ReadFile(filepath.Join(profile, "Local State"))
+	var local struct {
+		WasRestarted bool `json:"was_restarted"`
+	}
+	localValid := localErr == nil && json.Unmarshal(localState, &local) == nil
+	t.Logf("fixture_restore_pref_json_valid=%t restore_on_startup=%d local_state_json_valid=%t was_restarted=%t", prefsValid, restoreValue, localValid, local.WasRestarted)
 	status := coordinator.Status()
 	if status.Effective != "headless" || status.Pending || status.Generation != 2 || status.State != captureruntime.Ready {
 		t.Fatal("headless generation 2 was not ready after verified profile handoff")
@@ -607,14 +639,16 @@ func createBridgeFixtureWindow(ctx context.Context, protocol appshell.CapturePro
 		defer cancel()
 		_, _ = protocol.Call(cleanup, "Target.detachFromTarget", map[string]any{"sessionId": session.SessionID}, "")
 	}()
-	raw, err := protocol.Call(ctx, "Runtime.evaluate", map[string]any{"expression": `chrome.windows.create({url:"` + fixtureURL + `",type:"normal",focused:false,state:"minimized"}).then(async w=>{const actual=await chrome.windows.get(w.id,{populate:true});const tabs=actual.tabs??[];return {ok:true,tabCount:tabs.length,fixtureCount:tabs.filter(t=>t.url==="` + fixtureURL + `"||t.pendingUrl==="` + fixtureURL + `").length,blankCount:tabs.filter(t=>t.url==="about:blank").length};})`, "awaitPromise": true, "returnByValue": true}, session.SessionID)
+	raw, err := protocol.Call(ctx, "Runtime.evaluate", map[string]any{"expression": `chrome.windows.create({url:"` + fixtureURL + `",type:"normal",focused:false,state:"minimized"}).then(async w=>{const actual=await chrome.windows.get(w.id,{populate:true});const tabs=actual.tabs??[];const category=t=>{const value=t.url||t.pendingUrl;if(!value)return "url_unavailable";if(value==="` + fixtureURL + `")return "fixture";if(value==="about:blank")return "blank";try{const u=new URL(value);if(u.protocol==="chrome:")return "chrome_internal";if(u.protocol==="chrome-extension:")return "extension";if(u.hostname==="127.0.0.1"||u.hostname==="localhost")return "other_loopback";if(u.hostname==="x.com"||u.hostname==="www.facebook.com")return "source";return "other";}catch{return "invalid";}};return {ok:true,createdTabCount:(w.tabs??[]).length,tabCount:tabs.length,fixtureCount:tabs.filter(t=>t.url==="` + fixtureURL + `"||t.pendingUrl==="` + fixtureURL + `").length,blankCount:tabs.filter(t=>t.url==="about:blank").length,categories:tabs.map(category)};})`, "awaitPromise": true, "returnByValue": true}, session.SessionID)
 	var evaluated struct {
 		Result struct {
 			Value struct {
-				OK           bool `json:"ok"`
-				TabCount     int  `json:"tabCount"`
-				FixtureCount int  `json:"fixtureCount"`
-				BlankCount   int  `json:"blankCount"`
+				OK              bool     `json:"ok"`
+				TabCount        int      `json:"tabCount"`
+				FixtureCount    int      `json:"fixtureCount"`
+				BlankCount      int      `json:"blankCount"`
+				CreatedTabCount int      `json:"createdTabCount"`
+				Categories      []string `json:"categories"`
 			} `json:"value"`
 		} `json:"result"`
 	}
@@ -622,6 +656,10 @@ func createBridgeFixtureWindow(ctx context.Context, protocol appshell.CapturePro
 		return "", errors.New("Bridge fixture window creation rejected")
 	}
 	t.Logf("fixture_chrome_tabs=%d fixture_url_tabs=%d fixture_blank_tabs=%d", evaluated.Result.Value.TabCount, evaluated.Result.Value.FixtureCount, evaluated.Result.Value.BlankCount)
+	t.Logf("fixture_created_tabs=%d fixture_tab_categories=%v", evaluated.Result.Value.CreatedTabCount, evaluated.Result.Value.Categories)
+	if evaluated.Result.Value.TabCount != 1 || evaluated.Result.Value.FixtureCount != 1 {
+		return "", errors.New("fixture window includes tabs outside its creation request")
+	}
 	infos, err = list()
 	if err != nil {
 		return "", err

@@ -5,6 +5,8 @@ import { resolve, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 
 const CDP_TIMEOUT_MS = 15000;
+const TARGET_CLEANUP_TIMEOUT_MS = 1000;
+const TARGET_CLEANUP_VERIFY_TIMEOUT_MS = 2000;
 const execFileAsync = promisify(execFile);
 
 export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default' }) {
@@ -27,7 +29,7 @@ export async function launchChrome({ chromePath, profilePath, profileDirectory =
     '--disable-extensions',
     '--disable-session-crashed-bubble',
     '--hide-crash-restore-bubble',
-    'about:blank',
+    '--no-startup-window',
   ];
   const child = spawn(executable, args, {
     windowsHide: true,
@@ -149,24 +151,56 @@ function connectOwnedChrome(child, executable, profilePath) {
   return (async () => {
     try {
       const version = await send('Browser.getVersion');
+      const { sessionId: browserSessionId } = await send('Target.attachToBrowserTarget');
       const sourceContexts = new Map();
-      let spareContext = await createPageContext();
+      let hiddenTargetSeeded = false;
+      async function closeTargetAndWait(targetId) {
+        await send('Target.closeTarget', { targetId }, browserSessionId, TARGET_CLEANUP_TIMEOUT_MS);
+        const deadline = Date.now() + TARGET_CLEANUP_VERIFY_TIMEOUT_MS;
+        while (Date.now() < deadline) {
+          const timeoutMs = Math.min(TARGET_CLEANUP_TIMEOUT_MS, deadline - Date.now());
+          const { targetInfos = [] } = await send('Target.getTargets', {}, browserSessionId, timeoutMs);
+          if (!targetInfos.some(target => target.targetId === targetId)) return;
+          await delay(Math.min(50, deadline - Date.now()));
+        }
+        throw new Error('Chrome did not release its temporary target.');
+      }
       async function createPageContext() {
-        const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
-        const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
-        await send('Page.enable', {}, sessionId);
-        await send('Runtime.enable', {}, sessionId);
-        await send('Network.enable', {}, sessionId);
-        await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
-        return {
-          send: (method, params = {}, timeoutMs) => send(method, params, sessionId, timeoutMs),
-          async evaluate(expression, timeoutMs) {
-            const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId, timeoutMs);
-            if (result.exceptionDetails) throw new Error(`Page evaluation failed: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'exception'}`);
-            return result.result?.value;
-          },
-          navigate(url, timeoutMs) { return send('Page.navigate', { url }, sessionId, timeoutMs); },
-        };
+        let bootstrapTargetId;
+        let targetId;
+        try {
+          if (!hiddenTargetSeeded) {
+            ({ targetId: bootstrapTargetId } = await send('Target.createTarget', {
+              url: 'about:blank', background: true, forTab: false,
+            }, browserSessionId));
+          }
+          ({ targetId } = await send('Target.createTarget', {
+            url: 'about:blank', hidden: true, background: true, forTab: false,
+          }, browserSessionId));
+          const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }, browserSessionId);
+          await send('Page.enable', {}, sessionId);
+          await send('Runtime.enable', {}, sessionId);
+          await send('Network.enable', {}, sessionId);
+          await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
+          if (bootstrapTargetId) {
+            await closeTargetAndWait(bootstrapTargetId);
+            bootstrapTargetId = null;
+            hiddenTargetSeeded = true;
+          }
+          return {
+            send: (method, params = {}, timeoutMs) => send(method, params, sessionId, timeoutMs),
+            async evaluate(expression, timeoutMs) {
+              const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId, timeoutMs);
+              if (result.exceptionDetails) throw new Error(`Page evaluation failed: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'exception'}`);
+              return result.result?.value;
+            },
+            navigate(url, timeoutMs) { return send('Page.navigate', { url }, sessionId, timeoutMs); },
+          };
+        } catch (error) {
+          if (targetId) await closeTargetAndWait(targetId).catch(() => {});
+          if (bootstrapTargetId) await closeTargetAndWait(bootstrapTargetId).catch(() => {});
+          throw error;
+        }
       }
       return {
         pid: child.pid,
@@ -176,8 +210,7 @@ function connectOwnedChrome(child, executable, profilePath) {
         async forSource(source) {
           if (!['x', 'facebook'].includes(source)) throw new Error('Unsupported Chrome source context.');
           if (sourceContexts.has(source)) return sourceContexts.get(source);
-          const context = spareContext || await createPageContext();
-          spareContext = null;
+          const context = await createPageContext();
           sourceContexts.set(source, context);
           return context;
         },

@@ -863,6 +863,42 @@ a mode switch. Do not retrofit a settings-only change around them.
   absence because URL permissions/availability may differ from CDP. Do not
   classify this as merely a CDP representation artifact or close the window.
 
+### Headless startup/session carryover diagnosis (2026-10-02)
+
+- User added one million tokens to the previously reset one-million task ceiling:
+  the cumulative ceiling is now two million, with the saved default unchanged.
+  The previous native goal is unavailable; its last measured 979,770 tokens remain
+  recorded. A new native goal measures only the additional one-million segment.
+  Aggregate coverage remains partial; this does not reset historical usage.
+- Same-profile disposable A/B proves the first ordinary window has one tab before
+  the headless cycle and three afterwards. Receipt:
+  `build/bridge-handoff-31b9b6d9-32d9-49a0-821b-afd609cd95ea` (5.49s).
+  Missing `session.restore_on_startup` is preserved separately from explicit zero;
+  Local State reports `was_restarted=false`. Original runtime restoration passes.
+  Extra target IDs are new and do not match broker-owned hidden targets.
+- The old standalone headless worker launches an ordinary blank startup page and
+  eagerly creates a second ordinary blank page. The observed carryover fits
+  Chromium session restoration when the later first ordinary window opens.
+  No profile preferences, session files or unknown targets were changed.
+- A no-startup-window/lazy-hidden implementation encountered Chromium's initial
+  frame prerequisite: hidden creation fails when no remote-debuggable frame exists.
+  The loopback-only helper reports the exact failed stage; native acceptance is
+  pending a bounded owned-bootstrap correction. This is not a pipe-access failure.
+- HTTP API, collection drivers and capture-runtime suites pass after the fixture
+  diagnostics update (HTTP API 2.400s). Authenticated parity and native auto-return
+  remain open; the existing packaged payload is unchanged.
+- The bounded correction now passes native Chrome 152 loopback smoke (4.49s):
+  lazy hidden X/Facebook targets share the default-context cookie, and the cookie
+  persists through a clean restart of the same disposable profile. Only the exact
+  temporary bootstrap target is closed; its disappearance is verified before
+  the source context is returned. Chrome starts without ordinary startup tabs.
+  Fixture: `internal/collection/headless/worker/test/headless-machine-smoke.mjs`,
+  profile evidence under `build/headless-machine-smoke-20261002-c`.
+  Focused worker tests pass 6/6 and syntax checks pass.
+- The first corrected Bridge wrapper attempt stopped at preflight because an
+  original Inbox session was running; no Supervisor interruption occurred.
+  Native auto-return and packaged-worker verification remain pending.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
