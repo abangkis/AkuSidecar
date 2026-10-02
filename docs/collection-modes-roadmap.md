@@ -1691,6 +1691,39 @@ the same fresh target, then extend matched fresh samples and continuation.
 Repeat the baseline when the 30-minute pairing window expires. Headless stays
 opt-in; no production collector change or default switch follows this pilot.
 
+### Fresh photo-viewer diagnosis (2026-10-02)
+
+After checkpoint `14ea20d`, the exact Facebook photo URL from the fresh Browser
+baseline was inspected with packaged headless Chrome and the same registered
+profile. Four observations at approximately 4/8/12/16 seconds consistently
+showed the same `fbid`, a completed document, no login redirect and no explicit
+unavailable notice. A visible, loaded image matched the baseline CDN host/path
+and had natural dimensions 2048 x 1465. The normalized baseline text also
+occurred in page text. The baseline was about 9.8 minutes old at completion.
+
+The packaged extractor nevertheless returned zero posts: its discovery/scope
+contained zero eligible candidates, with no subsequent identity rejection.
+Two visible article elements existed, but no visible post-message markers and
+no visible dialogs. This locates the observed failure at candidate discovery
+on the photo surface, before post admission. The exact selector/admission
+reason has not been separately measured. Static inspection confirms discovery
+uses the shared Facebook adapter's feed/post selectors and admission rules;
+the headless native-post dialog scope does not apply to `/photo` routes.
+
+For this sample, foreground rendering is not needed to obtain the image.
+Page-wide text presence plus matching image is photo availability evidence,
+not a proven author/text/photo ownership binding or complete post parity.
+Do not relax post admission or substitute the photo ID as a parent-post ID.
+The next scoped work is a photo-surface evidence path bound to the observed
+photo ID and existing baseline media, with ownership kept separate, followed
+by fresh matched feed/post comparisons. No production source was changed.
+
+Private evidence: `build/facebook-fresh-photo-probe-result.json` and
+`build/authenticated-parity-81f5744e-8d73-486d-9710-b0b1d1494508/report.json`.
+The receipt confirms worker exit, profile release, restored runtime, healthy
+service and compatible Bridge. This remains a diagnostic result, not an
+official parity pass or default-mode gate closure.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
