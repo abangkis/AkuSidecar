@@ -193,7 +193,7 @@ because DOM capture passed. Browser remains default after this gate.
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
 | 2a-2b | Foundation complete and committed; final integrated validation pending | Process ownership, durable driver/generation fencing, session/media/action leases, cancellation drain and native-reader/source lifetime tracking; commits `b376438`, `86cd0c3`, `d9b735a` and paired Bridge `8541337` |
 | 2c | Static packaged Bridge handoff and auto-return pass; live-source acceptance incomplete | Real host-only ACK, natural owner drain, interactive HWND retention and generation-4 auto-return pass on a disposable profile. Finish live authenticated reader/login and recovery |
-| 2d | Hidden Quiet backend implemented; integrated source acceptance incomplete | Go-owned hidden targets, worker-failure isolation and persisted collector routes pass fixtures; packaged native return passes. Live X/Facebook parity and visibility remain |
+| 2d | Hidden Quiet backend and bounded authenticated capture pass; integrated acceptance incomplete | Production Quiet driver plus packaged worker passes X/Facebook 6/6 and natural profile drain. X hidden-media parity, startup visibility and real interactive journeys remain |
 | 3 | Packaged authenticated X/Facebook feed/follow-up/target pass; broader source parity incomplete | Same configured Chrome/profile authentication and cleanup proven. Native watch/video URL contract fixed in worker and Go admission. Full video metadata, native aliases, freshness qualification and broader content cases remain |
 | 4 | Rendered Settings fixture passes; integrated acceptance incomplete | Real UI/API/coordinator with fake processes proves switching, reload persistence, visibility restoration and unsupported-source rejection. Native reader/login, auto-update and recapture journey remain |
 | 5 | Local tuple and bounded headless source/visibility proofs pass; product validation incomplete | Native X/Facebook 6/6 capture passes and 19 blocks validate in Go without ingestion. Passive Windows trace sees no root-window visibility/activation during about 75s. Integrated reader/login, Quiet visibility and full media/content parity remain |
@@ -1136,6 +1136,41 @@ a mode switch. Do not retrofit a settings-only change around them.
 - The new candidate needs an immutable local build and authenticated headless /
   Quiet receipts. Operator helper binary digests are retained in new QA reports.
   This checkpoint does not close live-source or integrated interaction gates.
+
+### Native structured-media / Quiet comparison checkpoint (2026-10-02)
+
+- Local candidate:
+  `AkuBrowser/build/headless-structured-media-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+  Sidecar `557d721`, Bridge `e8136f7`, Browser `036d839`; verified payload 413
+  files / 588,849,490 bytes. UI CfT 152.0.7977.54 and pinned Node 24.16.0.
+  Authenticated source QA uses the configured Google Chrome 154.0.8037.93 and
+  original profile. No installation, release, registration or account writes.
+- Official headless receipt
+  `build/authenticated-parity-513c2d75-5572-4c1b-a883-751c25514851/report.json`:
+  X/Facebook feed/follow-up/target 6/6; 19 blocks pass the read-only Go engine
+  observation validator (0.025s). Runtime/Bridge and one configured profile owner
+  restore successfully after explicit worker exit and profile release.
+- Production Quiet-driver / packaged-worker receipt
+  `build/authenticated-parity-a1112111-92e6-4e18-8d77-d8c3a07f4070/report.json`:
+  X/Facebook 6/6; 17 blocks validate in Go without ingestion (0.024s). Exact
+  hidden-target/host cleanup, natural profile drain and original restoration pass.
+- The saved `quiet-headless-target-comparison.json` proves matching target native
+  identities, authors and exact text with identical Chrome product and extraction
+  asset hashes. Facebook image host/path matches with CDN query differences.
+  X is not media-equivalent: Quiet has no poster while headless has one. Both
+  structured resolvers report no matching own playback and retain unknown video.
+  Quiet X feed also observes image expectations without media URLs. Diagnose
+  renderer hydration and resolver input boundaries before qualifying parity.
+- Latest passive visibility receipts are partial because the shared inventory
+  cap truncates other Chrome windows. Recorded headless samples have no visible
+  root or root foreground event; this does not replace complete coverage. Quiet
+  positively records an initial host show/foreground at 06:09:05.166 UTC, then
+  minimized state at 06:09:05.291 UTC. Preserve this startup finding separately
+  from later hidden source collection; no zero-blinking claim is justified.
+- Remaining gates are still open: X media parity, explicit video expectations
+  for native Facebook video URLs, qualified visibility, real login/reader return
+  and integrated Settings/auto-update/recapture journeys. Native capture success
+  and contract admission do not establish complete source quality or release.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
