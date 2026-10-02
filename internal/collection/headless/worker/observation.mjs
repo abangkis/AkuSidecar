@@ -18,6 +18,11 @@ export function canonicalSourceURL(source, raw) {
   }
   if (source !== 'facebook' || !['www.facebook.com', 'facebook.com', 'm.facebook.com'].includes(host)) return null;
   const path = url.pathname.toLowerCase();
+  if (/^\/(?:watch\/|video\.php)$/.test(path)) {
+    const videoId = url.searchParams.get('v');
+    if (url.searchParams.getAll('v').length !== 1 || !/^\d{1,32}$/.test(videoId || '')) return null;
+    return `https://www.facebook.com/watch/?v=${videoId}`;
+  }
   const native = path.includes('/posts/') || path.includes('/permalink/')
     || (path.includes('/story.php') && Boolean(url.searchParams.get('story_fbid')))
     || (path.includes('/photo') && Boolean(url.searchParams.get('fbid') || url.searchParams.get('photo_id')))
@@ -54,6 +59,15 @@ function validatePost(source, post) {
     platformId = `x:status:${statusId}`;
   } else if (!/^facebook:post:(?:pfbid[A-Za-z0-9]+|\d+)$/i.test(post.id)) {
     throw captureError('invalid_observation', 'Facebook post identity is not canonical');
+  } else {
+    const canonical = canonicalSourceURL(source, post.permalink);
+    const parsed = canonical ? new URL(canonical) : null;
+    if (parsed?.pathname.toLowerCase() === '/watch/') {
+      const videoId = parsed.searchParams.get('v');
+      if (post.id !== `facebook:post:${videoId}`) {
+        throw captureError('invalid_observation', 'Facebook video identity does not match its native permalink');
+      }
+    }
   }
   if (typeof post.author !== 'string' || post.author.length > 1200 || typeof post.text !== 'string') {
     throw captureError('invalid_observation', 'post author or text has an invalid shape');

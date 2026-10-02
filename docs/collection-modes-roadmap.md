@@ -1005,6 +1005,52 @@ a mode switch. Do not retrofit a settings-only change around them.
   one configured Chrome owner. Source acceptance, actual social reader/login
   journeys and final visibility gates remain open.
 
+### Packaged media correction and Facebook URL-contract cause (2026-10-02)
+
+- Sidecar `e3322be`, Bridge `e8136f7`, Browser `036d839` candidate:
+  `AkuBrowser/build/headless-media-ready-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+  Builder and operator tuple verifier pass: 412 files, 588,826,200 bytes;
+  pinned UI Chrome 152.0.7977.54 and Node 24.16.0 are unchanged. Authenticated
+  collection retains configured Google Chrome 154.0.8037.93.
+- Official packaged-worker receipt:
+  `build/authenticated-parity-437a0549-0d0b-4d5c-91e9-07d733e42752` (63.62s).
+  X feed/follow-up/target all succeed: 5 unique native IDs, 13 blocks, 7 media
+  observations. The target now contains one video poster. Native identity/author
+  and URL-normalized prose match; exact text and saved resolved video media
+  remain different, with `unknownVideo=unresolved`. A second X feed identity
+  has an author-binding mismatch against its older saved baseline; do not admit
+  it as a parity match. Facebook target succeeds; feed validation remains open.
+- Private instrumented Facebook receipt:
+  `build/authenticated-parity-90a90467-389b-4018-b966-cbfef52f2bc3`.
+  Rejected native permalink is HTTPS on an allowed Facebook host, exact watch
+  path with a numeric video query matching its native post ID; no credentials or
+  port. The shared adapter supports this canonical form, but headless URL
+  validation omitted it. Correct the headless-only contract and ID check, then
+  verify official packaged feed/follow-up capture. No shared collector change.
+- Original runtime/profile/Bridge restoration passes both runs. No source data
+  import, installation, registration change, cookie copy or account write occurs.
+- A passive operator-only Windows observer reuses `internal/nativetrace`, starts
+  before candidate Chrome and stops before restoring the original UI. It records
+  bounded window metadata, never titles, contents, input or screenshots. Exact
+  init PID attribution is separate from unrelated Chrome windows. Native helper
+  smoke outside the sandbox confirms available trace start/end and clean exit;
+  aggregation guards preserve partial coverage and never promise zero blinking.
+  Live source visibility verification with the helper is pending.
+- Pipeline inspection identifies the same missing watch/video URL form in Go
+  `domain.CanonicalSourceURL`, used by engine observation validation and recapture.
+  The correction aligns this shared URL contract with the existing adapter;
+  it does not change the production collector. Only exact watch/video.php paths,
+  HTTPS trusted hosts and a single numeric video ID of at most 32 digits are
+  admitted. Worker observations additionally bind this ID to their native post ID.
+  Domain URL and engine media-only browser/headless fixtures pass; full domain,
+  engine and store suites pass (0.017s/3.691s/8.656s). Worker/comparator/native
+  observer focused checks pass 17/17. Official packaged source QA remains next.
+- The second X author mismatch is isolated to a relative-time token inside the
+  shared adapter's author header. Handle, remaining header, native permalink and
+  text match. Keep the strict comparison mismatch visible; do not silently strip
+  metadata or equate authors from text alone. The saved sequential baseline is
+  not proof of an incorrect native author binding.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

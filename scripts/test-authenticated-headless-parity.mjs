@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { canonicalSourceURL, evidenceKey } from '../internal/collection/headless/worker/observation.mjs';
 import { compareReport } from './authenticated-parity-comparison.mjs';
+import { startNativeObserver, summarizeNativeVisibility } from './headless-native-observer.mjs';
 
 const execFile = promisify(execFileCallback);
 const sidecar = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -33,6 +34,7 @@ function parseArguments(values) {
   let diagnosticWorker = null;
   let targetsOnly = false;
   let selectedSource = null;
+  let nativeObserver = null;
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
     if (value === '--targets-only') {
@@ -41,6 +43,9 @@ function parseArguments(values) {
     } else if (value === '--source') {
       if (selectedSource || !SOURCES.includes(values[index + 1])) throw new HarnessError('invalid_arguments');
       selectedSource = values[++index];
+    } else if (value === '--native-observer') {
+      if (nativeObserver || !isAbsolute(values[index + 1] || '')) throw new HarnessError('invalid_arguments');
+      nativeObserver = values[++index];
     } else if (value === '--diagnostic-worker') {
       if (diagnosticWorker || !isAbsolute(values[index + 1] || '')) throw new HarnessError('invalid_arguments');
       diagnosticWorker = values[++index];
@@ -62,7 +67,7 @@ function parseArguments(values) {
     }
   }
   if (!artifact || !baseline) throw new HarnessError('invalid_arguments');
-  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource};
+  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource, nativeObserver};
 }
 
 function isInside(parent, child, allowEqual = false) {
@@ -516,6 +521,8 @@ async function main() {
   const baselinePath = await containedRealpath(join(sidecar, 'build'), args.baseline, 'baseline');
   const baseline = validateBaseline(JSON.parse(await readFile(baselinePath, 'utf8')));
   const candidate = await loadCandidate(args.artifact);
+  const observerExe = args.nativeObserver ? await containedRealpath(join(sidecar,'build'),args.nativeObserver,'native_observer') : null;
+  if (observerExe && !(await stat(observerExe)).isFile()) throw new HarnessError('invalid_native_observer');
   if (args.diagnosticWorker) {
     candidate.packagedWorker = candidate.worker;
     candidate.worker = await containedRealpath(join(sidecar,'build'),args.diagnosticWorker,'diagnostic_worker');
@@ -556,6 +563,7 @@ async function main() {
   };
   let operationError = null;
   let client = null;
+  let nativeObserver = null;
   let runtimeDeadline = 0;
   try {
     runtimeDeadline = Date.now() + MAX_INTERRUPTION_MS;
@@ -564,6 +572,7 @@ async function main() {
     const stopped = await waitForStopped(registration.profile);
     report.execution.runtimeControl.stoppedConfirmed = stopped.stopped;
     if (!stopped.stopped) throw new HarnessError('registered_service_stop_unconfirmed');
+    if (observerExe) nativeObserver = await startNativeObserver(observerExe);
     const runtimeWorkDeadline = runtimeDeadline - RESTORE_RESERVE_MS;
     client = workerClient(candidate);
     report.execution.runtimeControl.workerStarted = true;
@@ -615,6 +624,15 @@ async function main() {
       } catch {
         report.execution.runtimeControl.workerExitConfirmed = false;
         report.execution.runtimeControl.workerExplicitShutdown = false;
+      }
+    }
+    if (nativeObserver) {
+      try {
+        const trace = await nativeObserver.close();
+        await writeFile(join(receiptRoot,'native-window-trace.json'), JSON.stringify(trace,null,2), 'utf8');
+        report.execution.nativeVisibility = summarizeNativeVisibility(trace, report.workerIdentity?.pid);
+      } catch {
+        report.execution.nativeVisibility = {status:'unavailable',reason:'observer_close_or_receipt_failed'};
       }
     }
     if (report.execution.runtimeControl.stopIssued) {

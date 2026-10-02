@@ -13,6 +13,8 @@ function nativeIdentity(source, permalink) {
   if (source === 'x') return `x:status:${url.pathname.match(/\/status\/(\d+)/)?.[1]}`;
   const pathId = url.pathname.match(/\/(?:posts|permalink|videos)\/(pfbid[A-Za-z0-9]+|\d+)(?:\/|$)/i)?.[1];
   const storyId = /\/(?:story|permalink)\.php$/i.test(url.pathname) ? url.searchParams.get('story_fbid') : null;
+  const watchId = /^\/watch\/$/i.test(url.pathname) ? url.searchParams.get('v') : null;
+  if (watchId !== null) return /^\d{1,32}$/.test(watchId) ? `facebook:post:${watchId}` : null;
   const id = pathId || storyId;
   return id && /^(?:pfbid[A-Za-z0-9]+|\d+)$/.test(id) ? `facebook:post:${id}` : null;
 }

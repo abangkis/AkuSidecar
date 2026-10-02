@@ -49,3 +49,14 @@ test('unchanged text remains equal in both comparisons',()=>{
   assert.equal(result.cases[0].textEqual,true);
   assert.equal(result.cases[0].proseEqualWithUrlTokensReplaced,true);
 });
+test('binds Facebook watch video identities across canonical URL variants',()=>{
+  const facebookTarget={source:'facebook',platformId:'facebook:post:12345',
+    permalink:'https://www.facebook.com/watch/?v=12345',author:'Fixture Page',text:'Video post'};
+  const observed={...facebookTarget,permalink:'https://www.facebook.com/video.php?v=12345'};
+  const result=compareReport({baseline:{targets:[facebookTarget]},captures:[{source:'facebook',kind:'target',ok:true,
+    result:{snapshots:[{blocks:[observed]}]}}]});
+  assert.equal(result.cases[0].status,'native_identity_and_author_match');
+  const mismatchedBaseline={...facebookTarget,platformId:'facebook:post:54321'};
+  const invalid=compareReport({baseline:{targets:[mismatchedBaseline]},captures:[]});
+  assert.equal(invalid.cases[0].status,'baseline_native_id_url_unverified');
+});

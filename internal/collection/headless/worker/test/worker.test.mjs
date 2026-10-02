@@ -19,6 +19,44 @@ test('accepts only canonical native X and Facebook recapture URLs', () => {
   assert.throws(() => validateCapture('facebook', { pageUrl: 'https://www.facebook.com/' }), { code: 'invalid_page_url' });
 });
 
+test('canonicalizes exact Facebook watch and video.php URLs with bounded numeric identities', () => {
+  const canonical = 'https://www.facebook.com/watch/?v=12345678901234567890';
+  for (const raw of [
+    'https://www.facebook.com/watch/?v=12345678901234567890',
+    'https://facebook.com/video.php?v=12345678901234567890&ref=watch',
+    'https://m.facebook.com/watch/?v=12345678901234567890',
+  ]) assert.equal(canonicalSourceURL('facebook', raw), canonical);
+
+  const invalid = [
+    'https://attacker.example/watch/?v=123',
+    'http://www.facebook.com/watch/?v=123',
+    'https://user@www.facebook.com/watch/?v=123',
+    'https://www.facebook.com:8443/watch/?v=123',
+    'https://www.facebook.com/watch/',
+    'https://www.facebook.com/video.php?v=not-numeric',
+    'https://www.facebook.com/watch/?v=123&v=456',
+    `https://www.facebook.com/watch/?v=${'1'.repeat(33)}`,
+  ];
+  for (const raw of invalid) assert.equal(canonicalSourceURL('facebook', raw), null, raw);
+  assert.equal(canonicalSourceURL('facebook', 'https://www.facebook.com/watch?v=123'), null);
+});
+
+test('requires a Facebook watch permalink ID to match its numeric v identity', () => {
+  const post = {
+    id: 'facebook:post:12345',
+    permalink: 'https://www.facebook.com/video.php?v=12345',
+    author: 'Example Page',
+    text: 'A bounded Facebook video post.',
+  };
+  const observation = toObservation({source: 'facebook', requestedUrl: post.permalink,
+    snapshots: [{posts: [post]}], provenance: {}, capturedAt: '2026-10-02T00:00:00.000Z', stopReason: 'fixture'});
+  assert.equal(observation.snapshots[0].blocks[0].platformId, post.id);
+  assert.equal(observation.snapshots[0].blocks[0].permalink, post.permalink);
+  assert.throws(() => toObservation({source: 'facebook', requestedUrl: post.permalink,
+    snapshots: [{posts: [{...post, id: 'facebook:post:54321'}]}], provenance: {},
+    capturedAt: '2026-10-02T00:00:00.000Z', stopReason: 'fixture'}), {code: 'invalid_observation'});
+});
+
 test('validates Bridge production capture fields and enforces the worker deadline ceiling', () => {
   const first = validateCapture('facebook', {
     mode: 'catch_up', sourceHydrationTimeoutMs: 29000, scrolls: 3, scrollFraction: 0.75,

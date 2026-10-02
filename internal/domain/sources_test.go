@@ -2,6 +2,7 @@ package domain
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -170,6 +171,29 @@ func TestCanonicalSourceURLSupportsEveryRegisteredSource(t *testing.T) {
 	} {
 		if got, ok := CanonicalSourceURL(SourceFacebook, raw); ok || got != "" {
 			t.Fatalf("untrusted Facebook URL admitted: %q", raw)
+		}
+	}
+}
+
+func TestCanonicalSourceURLFacebookVideoContract(t *testing.T) {
+	for _, raw := range []string{
+		"https://www.facebook.com/watch/?v=12345",
+		"https://facebook.com/video.php?v=12345&ref=watch#player",
+		"https://m.facebook.com/watch/?v=12345",
+	} {
+		if got, ok := CanonicalSourceURL(SourceFacebook, raw); !ok || got != "https://www.facebook.com/watch/?v=12345" {
+			t.Fatalf("native video URL rejected: %q -> %q, %v", raw, got, ok)
+		}
+	}
+	for _, raw := range []string{
+		"https://www.facebook.com/watch/", "https://www.facebook.com/watch/?v=not-numeric",
+		"https://www.facebook.com/watch/?v=123&v=456", "https://www.facebook.com/watch?v=123",
+		"https://www.facebook.com/watch/?v=" + strings.Repeat("1", 33),
+		"https://attacker.example/watch/?v=123", "http://www.facebook.com/watch/?v=123",
+		"https://user@www.facebook.com/watch/?v=123", "https://www.facebook.com:8443/watch/?v=123",
+	} {
+		if got, ok := CanonicalSourceURL(SourceFacebook, raw); ok || got != "" {
+			t.Fatalf("unsafe video URL admitted: %q -> %q", raw, got)
 		}
 	}
 }

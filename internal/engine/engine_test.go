@@ -755,6 +755,20 @@ func TestValidateObservationRejectsNonCanonicalPermalink(t *testing.T) {
 	}
 }
 
+func TestValidateObservationAcceptsNativeFacebookWatchVideo(t *testing.T) {
+	for _, mode := range []string{"browser", "headless"} {
+		observation := domain.Observation{Source: domain.SourceFacebook,
+			Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+				EvidenceKey: "facebook:watch-fixture", PlatformID: "facebook:post:12345",
+				Author: "Fixture", Permalink: "https://www.facebook.com/watch/?v=12345",
+				Media: []map[string]any{{"kind": "video_poster", "url": "https://fixture.fbcdn.net/poster.jpg"}},
+			}}}}, Coverage: map[string]any{"captureMode": mode}}
+		if err := validateObservation(observation); err != nil {
+			t.Fatalf("%s native video observation rejected: %v", mode, err)
+		}
+	}
+}
+
 func TestValidateObservationAcceptsNativeMediaOnlyEvidence(t *testing.T) {
 	observation := domain.Observation{
 		Source: domain.SourceFacebook,

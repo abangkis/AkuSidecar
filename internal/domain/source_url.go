@@ -10,6 +10,7 @@ var linkedInNativeIdentityPattern = regexp.MustCompile(`(?i)(activity|ugcpost|sh
 var xNativeStatusPathPattern = regexp.MustCompile(`^/([^/]+)/status/(\d+)(?:/.*)?$`)
 var instagramNativeIdentityPattern = regexp.MustCompile(`(?i)/(p|reel|tv)/([a-z0-9_-]+)`)
 var instagramNormalizedIdentityPattern = regexp.MustCompile(`(?i)^instagram:(p|reel|tv):([a-z0-9_-]+)$`)
+var facebookVideoIDPattern = regexp.MustCompile(`^\d{1,32}$`)
 
 // CanonicalSourceURL accepts only native post permalinks owned by the captured
 // source. It deliberately excludes arbitrary external references: link
@@ -36,7 +37,19 @@ func CanonicalSourceURL(source Source, raw string) (string, bool) {
 	case SourceLinkedIn:
 		valid = host == "www.linkedin.com" && (strings.Contains(parsed.Path, "/posts/") || strings.Contains(parsed.Path, "/feed/update/"))
 	case SourceFacebook:
-		valid = (host == "www.facebook.com" || host == "facebook.com" || host == "m.facebook.com") && facebookNativePostPath(parsed.Path, parsed.Query())
+		if host == "www.facebook.com" || host == "facebook.com" || host == "m.facebook.com" {
+			path := strings.ToLower(parsed.Path)
+			if path == "/watch/" || path == "/video.php" {
+				values := parsed.Query()["v"]
+				if len(values) == 1 && facebookVideoIDPattern.MatchString(values[0]) {
+					parsed.Host, parsed.Path, parsed.RawPath = "www.facebook.com", "/watch/", ""
+					parsed.RawQuery, parsed.Fragment = url.Values{"v": values}.Encode(), ""
+					valid = true
+				}
+			} else {
+				valid = facebookNativePostPath(parsed.Path, parsed.Query())
+			}
+		}
 	case SourceInstagram:
 		valid = (host == "www.instagram.com" || host == "instagram.com") && instagramNativePostPath(parsed.Path)
 	}
