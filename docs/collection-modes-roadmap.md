@@ -60,7 +60,7 @@ earlier checkpoints and must not be read as release acceptance.
 | --- | --- | --- |
 | Profile ownership and selected subprofile | Profile selection is pinned across replacements; blocked worker writes retire their owned tree; disposable Profile 2 launch passes | Integrated authenticated login/reader/auto-return journey |
 | X collection | Feed, continuation and two native targets pass; own MP4 decodes in Chrome | AkuBrowser player journey and comparison with full legacy Bridge extraction |
-| Facebook collection | Feed and image-post target pass | Feed video coverage, native Watch comparison with legacy, continuation when offered |
+| Facebook collection | Feed and direct-anchor image target pass; owned headless rendering corrected and packaged | Feed video/multi-image coverage with reliable post links, unavailable inferred target diagnosis, continuation when offered |
 | Browser fallback | Existing collector remains available in the codebase | Isolate experimental hidden Quiet routing without regressing safe handoff |
 | Product journey | Separate Settings and native handoff fixtures pass | Combined real source, Settings, reader/login, recapture and auto-update acceptance |
 | Instagram / LinkedIn | Existing browser support retained | Start headless qualification after X/Facebook gates pass |
@@ -1449,6 +1449,31 @@ a mode switch. Do not retrofit a settings-only change around them.
   navigation/restart smoke initially caught missing second-tab rendering, then
   passes with the combined correction. All 39 worker/QA tests pass. Packaged
   authenticated X/Facebook and window verification remain pending.
+- Candidate `headless-rendering-20261002` contains Sidecar `1931a03`, Bridge
+  `8dd4d6d` and Browser `036d839`; 413 files / 588,868,558 bytes verify. The native
+  two-source rendering/cookie/restart smoke passes against Google Chrome 154
+  and bundled Chrome for Testing 152. An initial authenticated preflight saw an
+  active Inbox and issued no stop; execution resumed only after it became idle.
+- Official receipt `build/authenticated-parity-e5b3756f-2dd1-4262-a359-7f901ecc5c89/report.json`
+  passes five captures: X feed/followup/target and Facebook feed/target. All seven
+  blocks pass Go observation admission without ingestion (0.024s). Facebook's
+  direct-anchor target matches native identity, author, text (853 Unicode code
+  points) and the image host/path; signed CDN URLs differ. Quality stays
+  `unverified`. The X target retains the previously documented author-label
+  mismatch. No Facebook continuation was offered, so this is not a six-capture
+  or complete legacy-parity pass. Exact-root visibility observation for roughly
+  29 seconds records zero visible/foreground samples; global inventory remains
+  partial. Worker exit, profile release and healthy original runtime/Bridge
+  restoration all pass. No installation or collection-default change.
+- Official target regression
+  `build/authenticated-parity-6031293f-ddc0-4163-80e9-56e9394acace/report.json`
+  retains the X target's owned inline MP4. The inferred five-image Facebook target
+  still returns `target_unavailable` with the corrected renderer, so it must
+  remain an open URL/availability case rather than a solved foreground issue.
+  Exact-root observation for 33 seconds records zero visible/foreground samples;
+  worker exit, profile release and healthy original runtime/Bridge restoration
+  pass. Next Facebook evidence should use a live directly observed permalink
+  for multi-image/feed-video comparison; never invent a replacement post ID.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
