@@ -1346,6 +1346,14 @@ a mode switch. Do not retrofit a settings-only change around them.
   The old second Facebook baseline had an unverified ID/URL binding. The fresh
   second-Facebook-target attempt was rejected at preflight with
   `inbox_active_or_unverifiable`; no stop was issued and no capture occurred.
+- After the original runtime naturally became idle, official receipt
+  `build/authenticated-parity-ad973da3-7542-4281-a9d5-ef91a22e0c22/report.json`
+  captures the fresh second Facebook target. Native identity/author and all
+  855 text characters match the saved baseline; the single image's host/path
+  also matches. The observation passes Go admission, with quality still
+  `unverified`. Worker/profile release and healthy original restoration pass.
+  This closes that bounded image-post comparison, not Watch/video coverage or
+  the complete integrated Facebook gate.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
