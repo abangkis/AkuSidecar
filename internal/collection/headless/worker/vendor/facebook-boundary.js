@@ -1,12 +1,15 @@
 // PoC-only ownership boundary. Queries retain real DOM nodes for clicks/geometry.
 (() => {
-  if(globalThis.FacebookHeadlessBoundary?.runtimeRevision==='facebook-boundary-v4')return;
+  if(globalThis.FacebookHeadlessBoundary?.runtimeRevision==='facebook-boundary-v5')return;
   const selector = 'div[aria-posinset], [role="article"]';
   const actionSelector = '[aria-label^="Actions for this post by "]';
   const contentSelector = '[data-ad-preview="message"], [data-ad-comet-preview="message"]';
   const views = new WeakMap();
   const raw = node => node?.__facebookBoundaryRoot || node;
   function isPostBoundary(element){
+    // Comment attachments are separate owners even when they have no post
+    // header/message markers. Keep ordinary media-presentation wrappers open.
+    if(element.matches('[role="article"]')&&/^(?:Comment|Reply|Komentar|Balasan)\b/i.test(element.getAttribute('aria-label')||''))return true;
     if(element.matches('div[aria-posinset]'))return true;
     const postSignals=[...element.querySelectorAll(`${actionSelector}, ${contentSelector}`)]
       .some(node=>node.closest(selector)===element);
@@ -109,5 +112,5 @@
         })};
     });
   }
-  globalThis.FacebookHeadlessBoundary={runtimeRevision:'facebook-boundary-v4',raw,owner,owns,candidates,captureScope,diagnostics};
+  globalThis.FacebookHeadlessBoundary={runtimeRevision:'facebook-boundary-v5',raw,owner,owns,candidates,captureScope,diagnostics};
 })();

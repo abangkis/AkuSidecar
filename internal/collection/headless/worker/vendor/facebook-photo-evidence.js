@@ -15,6 +15,25 @@
         && /(^|\.)fbcdn\.net$/.test(u.hostname) ? u.origin + u.pathname : null;
     } catch { return null; }
   };
+  function parentBinding(records, ownerId) {
+    const stories=records.flatMap(r=>[r.container_story,r.creation_story]).filter(s=>s&&typeof s==='object');
+    const unique=key=>new Set(stories.map(s=>s[key]).filter(v=>typeof v==='string'&&v));
+    if (unique('id').size!==1 || unique('post_id').size!==1 || unique('url').size!==1) return null;
+    const full=stories.filter(s=>s.post_id&&s.url&&typeof s.message?.text==='string'&&Array.isArray(s.actors)&&s.actors.length===1);
+    if (!full.length) return null;
+    const first=full[0],actor=first.actors[0],text=first.message.text;
+    if (!/^\d+$/.test(first.post_id)||actor.id!==ownerId||typeof actor.name!=='string'||!actor.name.trim()
+        ||actor.name.length>1200||text.length>4000) return null;
+    if (full.some(s=>s.message.text!==text||s.actors[0].id!==actor.id||s.actors[0].name!==actor.name)) return null;
+    // Partial fragments may corroborate identity, but cannot override a conflicting actor/body.
+    if (stories.some(s=>typeof s.message?.text==='string'&&s.message.text!==text
+      ||Array.isArray(s.actors)&&s.actors.some(a=>a.id!==actor.id||a.name&&a.name!==actor.name))) return null;
+    try {
+      const u=new URL(first.url),id=u.pathname.match(/^\/[^/]+\/posts\/(pfbid[A-Za-z0-9]+|\d+)\/?$/)?.[1];
+      if(u.origin!=='https://www.facebook.com'||u.username||u.password||u.search||u.hash||!id) return null;
+      return {url:u.href,nativeId:`facebook:post:${id}`,numericPostId:first.post_id,author:actor.name,text};
+    }catch{return null;}
+  }
   function collect() {
     const id = photoId(location.href);
     if (!id) return {status:'not_photo_route'};
@@ -52,7 +71,7 @@
     return {status:'verified_photo_media', identityKind:'photo', photoId:id, ownerId:[...owners][0],
       media:{kind:'image',url:img.currentSrc || img.src,width:img.naturalWidth,height:img.naturalHeight,loaded:true},
       // A photo owner does not establish the author or body of its parent post.
-      postBinding:'unverified', provenance:'exact_photo_metadata_and_visible_image'};
+      postBinding:'unverified', parent:parentBinding(records,[...owners][0]), provenance:'exact_photo_metadata_and_visible_image'};
   }
   globalThis.FacebookHeadlessPhotoEvidence = {collect};
 })();

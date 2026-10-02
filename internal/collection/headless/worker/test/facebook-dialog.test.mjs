@@ -11,6 +11,16 @@ const post=(id,text='Full post',author='Fixture',media=[])=>({id,text,author,med
   matches:()=>false,querySelectorAll:()=>[],querySelector:()=>null,getAttribute:()=>null,hasAttribute:()=>false});
 const dialog=(members=[],style={display:'block',visibility:'visible'})=>({style,
   getBoundingClientRect:()=>({width:800,height:700,top:50,bottom:750}),contains:node=>members.includes(node)});
+test('comment and reply media remain separate while unlabeled media wrappers retain ownership',()=>{
+  const context=vm.createContext({});vm.runInContext(boundary,context);
+  const root={};
+  for(const label of ['Comment by Fixture','Reply by Fixture','Komentar oleh Fixture','Balasan oleh Fixture','']){
+    const wrapper={matches:s=>s==='[role="article"]',getAttribute:()=>label,
+      querySelectorAll:()=>[],querySelector:()=>({}),parentElement:{closest:()=>root}};
+    const image={closest:()=>wrapper};
+    assert.equal(context.FacebookHeadlessBoundary.owns(image,root),label==='');
+  }
+});
 function fixture(posts,dialogs=[],url=link('123')) {
   const document={querySelectorAll:selector=>selector==='[role="dialog"]'?dialogs:[],querySelector:()=>null,
     visibilityState:'visible',readyState:'complete',title:'Fixture',scrollingElement:{scrollHeight:2000}};

@@ -1790,6 +1790,78 @@ parent URL with conflict checks, a bounded navigation budget and separate
 photo/post identities; then repeat with fresh Browser samples. Complete
 replacement/default readiness remains open.
 
+### Integrated photo-parent navigation and fresh pilot (2026-10-02)
+
+Checkpoint `0d56b22` records the preceding parent-route validation. Owned
+headless target capture now permits one photo-to-parent navigation within the
+original capture deadline. A metadata binding requires consistent story IDs,
+numeric parent ID, explicit native URL, actor and body across fragments. The
+loaded photo evidence is required first. After navigation, the exact native
+parent page must corroborate the author, text and photo image path before its
+post is returned. Photo ID and native parent identity remain separate in
+coverage provenance. Borrowed Quiet behavior is excluded; the shared Browser
+adapter is unchanged. Conflicts and redirects fail closed. All 46 worker tests
+pass, including conflicting metadata, mismatching post evidence and Quiet.
+
+A new normal Browser update provided a Facebook photo baseline captured at
+15:53:52Z through `aku-bridge`. The source-worker integration pilot started
+about 1.69 minutes later and completed capture in 6.2 seconds. It resolved the
+photo to its parent and returned one parent post with identical author and all
+70 text characters. The baseline image matched the loaded headless image's
+CDN host/path (headless dimensions 960 x 503 versus Browser 570 x 299).
+
+Headless also returned a second loaded image (261 x 196). Its relationship to
+the post has not been independently checked. Raw media equality therefore
+does not pass; do not call this complete media parity or silently discard the
+additional image. This proves fresh route resolution and baseline-content
+retention for one sample, with additional-media ownership still open.
+
+Receipt: `build/authenticated-parity-767a9e7d-15aa-40e7-94d4-8d5d90f6d3ca/report.json`.
+Private comparison: `build/fresh-photo-integration-result.json`. Worker exit,
+profile release and restoration with healthy compatible Bridge all passed.
+The test uses current source assets with packaged Chrome; rebuilding the
+release package and downstream recapture/dedup handling of photo-to-parent
+identity remain unverified. Next: inspect the additional image's ownership,
+then broaden fresh samples and validate downstream identity handling before
+declaring replacement readiness. No default-mode change is authorized here.
+
+### Comment-media correction and downstream identity audit (2026-10-02)
+
+The extra 261 x 196 image was independently traced to an article labeled as a
+comment/reply, with no post-action header. The primary baseline image has no
+such comment article ancestor. Evidence receipts:
+`61775c1d-e335-4181-99bc-df88c949b61f` (DOM ancestry) and
+`998a178c-df02-43a2-a21e-a69c6c874ffe` (comment-label confirmation), under
+ignored `build/authenticated-parity-*/report.json`.
+
+Headless ownership boundary v5 now treats explicitly labeled comment/reply
+articles as separate owners even when they contain images. It retains the
+existing behavior for unlabeled media-presentation wrappers. The shared Bridge
+adapter is unchanged. English/Indonesian comment/reply labels have regression
+coverage; other unobserved locale markup remains outside this proof. All 47
+worker tests pass.
+
+The repeated integration pilot using the same fresh Browser reference passed
+at a 13.25-minute gap: verified photo-to-parent identity, equal author, all 70
+text characters, one image on each side and equal media host/path. Capture
+took 4.0 seconds. This closes the additional-comment-image discrepancy for
+this sample. Receipt:
+`build/authenticated-parity-3da15be4-8f9a-47ba-b862-a2e225cb4fb0/report.json`.
+Runtime restoration and healthy compatible Bridge were verified.
+
+Read-only downstream audit found an integration gap: store `recapturedBlock`
+matches only the job evidence key or native URL; the parent block has neither
+the old photo evidence key nor its URL. `nativeIdentityRelation` classifies
+different nonempty platform IDs as conflicts. Consequently the successful
+worker capture is not proof that recapture updates an existing photo-backed
+item or deduplicates it against its parent. No store matcher or persisted
+identity was changed during this audit.
+
+Next: introduce a narrowly validated photo-to-parent relation for headless
+recapture and identity reconciliation, with mismatch/forgery/ambiguity tests.
+Keep photo and parent IDs distinct and avoid merging by text similarity alone.
+Full product journey, broader fresh samples and package validation remain open.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

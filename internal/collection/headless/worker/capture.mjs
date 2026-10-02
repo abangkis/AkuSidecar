@@ -128,7 +128,8 @@ export async function capture(browser, assetsBySource, source, payload) {
   }
 
   await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)}}`, timeLeft(deadline));
-  const readinessDeadline = Math.min(deadline, Date.now() + options.hydrationMs);
+  let readinessDeadline = Math.min(deadline, Date.now() + options.hydrationMs);
+  let photoResolution = null;
   let mediaSettleDeadline = null;
   let snapshot = null;
   while (Date.now() < readinessDeadline) {
@@ -142,6 +143,19 @@ export async function capture(browser, assetsBySource, source, payload) {
       throw error;
     }
     if (snapshot.loginRequired || snapshot.challengeDetected || snapshot.sourceUnavailable) break;
+    if (!photoResolution && source === 'facebook' && options.acquisitionRound === 1
+        && options.explicitPageUrl && browser.backend !== 'browser_quiet_hidden') {
+      const parent=verifiedPhotoParent(snapshot.photoEvidence, requestedUrl);
+      if(parent){
+        photoResolution={...parent,photoUrl:requestedUrl};
+        requestedUrl=parent.url;
+        const navigation=await page.navigate(requestedUrl,timeLeft(deadline));
+        if(navigation.errorText)throw captureError('navigation_failed','Chrome could not navigate to the verified parent');
+        snapshot=null;
+        readinessDeadline=Math.min(deadline,Date.now()+options.hydrationMs);
+        continue;
+      }
+    }
     if (snapshot.posts.length) {
       // X can render tweet text before its attachment shell hydrates. Re-sample
       // only missing expected URLs, within both source readiness and a 3s bound.
@@ -187,6 +201,8 @@ export async function capture(browser, assetsBySource, source, payload) {
   snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
   snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
 
+  if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
+
   const snapshots = [];
   const seenIds = new Set();
   let postEvidenceBytes = 0;
@@ -204,6 +220,7 @@ export async function capture(browser, assetsBySource, source, payload) {
       const nextError = sourceStateError(snapshot);
       if (nextError) throw nextError;
       snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
+      if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
     }
     const previousCount = seenIds.size;
     const posts = [];
@@ -234,16 +251,47 @@ export async function capture(browser, assetsBySource, source, payload) {
   sourceFrontiers.set(source, { source, requestedUrl, pageUrl: pageKey(source, requestedUrl), frontier });
   if (options.restoreScroll) await page.evaluate(`window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {
-    return toObservation({
+    const observation=toObservation({
       source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
       captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
       frontier,
       freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'CDP worker cannot apply AkuBridge tab wake or freshness qualification' },
     });
+    if(photoResolution) observation.coverage.photoParentResolution={status:'verified',photoId:photoResolution.photoId,
+      parentPlatformId:photoResolution.nativeId,provenance:'structured_photo_parent_and_matching_native_post'};
+    return observation;
   } catch (error) {
     if (error?.code === 'invalid_observation') error.diagnostics = emptyCaptureDiagnostics(snapshots);
     throw error;
   }
+}
+
+export function verifiedPhotoParent(evidence, requestedUrl) {
+  if(evidence?.status!=='verified_photo_media'||evidence.identityKind!=='photo'||!evidence.parent)return null;
+  try{
+    const photo=new URL(requestedUrl),p=evidence.parent,u=new URL(p.url);
+    const ids=[...photo.searchParams.getAll('fbid'),...photo.searchParams.getAll('photo_id')];
+    if(photo.origin!=='https://www.facebook.com'||!/^\/photo(?:\.php|\/)?$/.test(photo.pathname)
+      ||!ids.length||!ids.every(id=>/^\d+$/.test(id)&&id===evidence.photoId))return null;
+    const native=u.pathname.match(/^\/[^/]+\/posts\/(pfbid[A-Za-z0-9]+|\d+)\/?$/)?.[1];
+    if(u.origin!=='https://www.facebook.com'||u.username||u.password||u.search||u.hash||!native
+      ||p.nativeId!==`facebook:post:${native}`||typeof p.author!=='string'||!p.author.trim()||p.author.length>1200
+      ||typeof p.text!=='string'||p.text.length>4000)return null;
+    const media=new URL(evidence.media?.url);
+    if(media.protocol!=='https:'||media.username||media.password||media.port||!/(^|\.)fbcdn\.net$/.test(media.hostname))return null;
+    return {...p,photoId:evidence.photoId,mediaPath:media.origin+media.pathname};
+  }catch{return null;}
+}
+
+async function bindPhotoParentSnapshot(page,snapshot,parent,deadline) {
+  const actual=await page.evaluate('location.href',timeLeft(deadline));
+  const norm=s=>String(s||'').replace(/\s+/g,' ').trim();
+  const posts=snapshot.posts.filter(p=>p.id===parent.nativeId);
+  const matches=p=>norm(p.author)===norm(parent.author)&&norm(p.text)===norm(parent.text)
+    &&p.media?.some(m=>{try{const u=new URL(m.url);return m.kind==='image'&&u.origin+u.pathname===parent.mediaPath;}catch{return false;}});
+  if(canonicalSourceURL('facebook',actual)!==parent.url||!posts.length||posts.some(p=>!matches(p)))
+    throw captureError('photo_parent_unverified','Parent post did not corroborate the photo metadata');
+  return {...snapshot,posts};
 }
 
 // Error diagnostics contain bounded structural counts, never page text, URLs or IDs.

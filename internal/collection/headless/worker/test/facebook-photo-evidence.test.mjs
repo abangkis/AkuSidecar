@@ -52,3 +52,14 @@ test('empty capture reports photo status without leaking identity, owner or medi
   assert.equal(serialized.includes('fbcdn'),false);assert.equal(serialized.includes('ownerId'),false);
   assert.equal(emptyCaptureDiagnostics([{photoEvidence:{status:'untrusted page text'}}]).samples[0].photoEvidence.status,null);
 });
+test('parent resolution requires consistent explicit story URL, actor and body',()=>{
+  const story={id:'opaque-story',post_id:'789',url:'https://www.facebook.com/fixture/posts/pfbidABC',
+    actors:[{id:'456',name:'Fixture'}],message:{text:'Body'}};
+  const record={...photo(),container_story:story,creation_story:{...story}};
+  const parent=run({records:[record]}).parent;
+  assert.equal(parent.nativeId,'facebook:post:pfbidABC');assert.equal(parent.numericPostId,'789');
+  for(const patch of [{post_id:'999'},{url:'https://evil.example/fixture/posts/789'},
+    {actors:[{id:'999',name:'Other'}]},{message:{text:'Other body'}},{id:'other-story'}]){
+    assert.equal(run({records:[{...record,creation_story:{...story,...patch}}]}).parent,null);
+  }
+});
