@@ -7,7 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { canonicalSourceURL, evidenceKey } from '../internal/collection/headless/worker/observation.mjs';
-import { compareReport } from './authenticated-parity-comparison.mjs';
+import { compareReport, comparisonScope, nativeIdentity } from './authenticated-parity-comparison.mjs';
 import { startNativeObserver, summarizeNativeVisibility } from './headless-native-observer.mjs';
 
 const execFile = promisify(execFileCallback);
@@ -36,9 +36,13 @@ function parseArguments(values) {
   let selectedSource = null;
   let nativeObserver = null;
   let quietProbe = null;
+  let targetIndex = null;
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
-    if (value === '--targets-only') {
+    if (value === '--target-index') {
+      if (targetIndex !== null || !['0', '1'].includes(values[index + 1])) throw new HarnessError('invalid_arguments');
+      targetIndex = Number(values[++index]);
+    } else if (value === '--targets-only') {
       if (targetsOnly) throw new HarnessError('invalid_arguments');
       targetsOnly = true;
     } else if (value === '--source') {
@@ -72,7 +76,16 @@ function parseArguments(values) {
   }
   if (!artifact || !baseline) throw new HarnessError('invalid_arguments');
   if (quietProbe && diagnosticWorker) throw new HarnessError('conflicting_worker_modes');
-  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource, nativeObserver, quietProbe};
+  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource, nativeObserver, quietProbe, targetIndex: targetIndex ?? 0};
+}
+
+// Select and verify before stopping any runtime. A second baseline entry must
+// never be silently replaced by the first or an unverified native identity.
+export function selectTarget(baseline, source, targetIndex = 0) {
+  if (!SOURCES.includes(source) || ![0, 1].includes(targetIndex)) throw new HarnessError('invalid_target_selection');
+  const target = baseline.targets.filter(value => value.source === source)[targetIndex];
+  if (!target || nativeIdentity(source, target.permalink) !== target.platformId) throw new HarnessError('selected_target_identity_unverified');
+  return target;
 }
 
 function isInside(parent, child, allowEqual = false) {
@@ -545,6 +558,7 @@ async function main() {
     if (!info.isFile() || info.size > 256 * 1024 || !candidate.worker.endsWith('.mjs')) throw new HarnessError('invalid_diagnostic_worker');
   }
   const selectedSources = args.selectedSource ? [args.selectedSource] : SOURCES;
+  const selectedTargets = new Map(selectedSources.map(source => [source, selectTarget(baseline, source, args.targetIndex)]));
   const feedSources = args.targetsOnly ? [] : selectedSources;
   const registration = await loadRegistration();
   const before = await preflight(registration);
@@ -564,10 +578,10 @@ async function main() {
     captures: [],
     workerIdentity: null,
     execution: {
-      scope: args.quietProbe ? 'saved_timeline_vs_live_quiet_sequential' : 'saved_timeline_vs_live_headless_sequential',
+      scope: comparisonScope(baseline, Boolean(args.quietProbe)),
       workerMode:args.quietProbe ? 'production_quiet_driver_packaged_worker' : (args.diagnosticWorker ? 'instrumented_diagnostic' : 'packaged_worker'),
       operatorTools,
-      selectedSources, targetsOnly:args.targetsOnly,
+      selectedSources, targetsOnly:args.targetsOnly, targetIndex:args.targetIndex,
       runtimeControl: {
         before, secondPreflight, stopIssued: false, stoppedConfirmed: false,
         workerStarted: false, workerExitConfirmed: null, restored: false, restoreBlocked: false,
@@ -625,7 +639,7 @@ async function main() {
       }
     }
     for (const source of selectedSources) {
-      const target = baseline.targets.find(value => value.source === source);
+      const target = selectedTargets.get(source);
       const capture = await captureRequest(client, report, source, 'target', target, runtimeWorkDeadline);
       report.execution.targetRecaptures.push({source, attemptedPlatformId: target.platformId, ok: capture.ok,
         matchedCopies: capture.ok ? (capture.result?.snapshots || []).flatMap(snapshot => snapshot.blocks || []).filter(block => block.platformId === target.platformId).length : null});

@@ -1,14 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareReport } from './authenticated-parity-comparison.mjs';
+import { compareReport, comparisonScope } from './authenticated-parity-comparison.mjs';
+import { selectTarget } from './test-authenticated-headless-parity.mjs';
 
 const target = {source:'x',platformId:'x:status:123',permalink:'https://x.com/fixture/status/123',author:'Fixture',text:'Original text'};
 const report = blocks => ({baseline:{targets:[target]},captures:[{source:'x',kind:'target',ok:true,result:{snapshots:[{blocks}]}}]});
 
 test('keeps the Quiet driver scope distinct from a headless runtime',()=>{
-  const result=compareReport({...report([target]),execution:{scope:'saved_timeline_vs_live_quiet_sequential'}});
+  const result=compareReport({...report([target]),baseline:{targets:[target],scope:'saved_browser_timeline_vs_live_headless_sequential'},execution:{scope:'saved_timeline_vs_live_quiet_sequential'}});
   assert.equal(result.scope,'saved_timeline_vs_live_quiet_sequential');
   assert.equal(result.fullParityVerified,false);
+});
+
+test('a prior headless or unverified baseline cannot be labeled legacy Timeline evidence',()=>{
+  const prior={scope:'previous_headless_observed_video_target_not_legacy_parity',targets:[target]};
+  assert.equal(comparisonScope(prior),'previous_headless_vs_live_headless_sequential');
+  assert.equal(compareReport({...report([target]),baseline:prior,execution:{scope:'saved_timeline_vs_live_headless_sequential'}}).scope,
+    'previous_headless_vs_live_headless_sequential');
+  assert.equal(comparisonScope({}),'unverified_baseline_vs_live_headless_sequential');
+});
+
+test('selects the second target explicitly and rejects mismatched native IDs before execution',()=>{
+  const second={...target,platformId:'x:status:456',permalink:'https://x.com/fixture/status/456'};
+  const fb={source:'facebook',platformId:'facebook:post:123',permalink:'https://www.facebook.com/watch/?v=123'};
+  const baseline={targets:[target,second,fb,{...fb,platformId:'facebook:post:456'}]};
+  assert.equal(selectTarget(baseline,'x',1),second);
+  assert.equal(selectTarget(baseline,'facebook'),fb);
+  assert.throws(()=>selectTarget(baseline,'facebook',1),{code:'selected_target_identity_unverified'});
+  assert.throws(()=>selectTarget(baseline,'x',2),{code:'invalid_target_selection'});
 });
 test('rejects same text without explicit native identity and rejects conflicting bindings',()=>{
   assert.equal(compareReport(report([{...target,platformId:'x:status:456'}])).cases[0].status,'not_observed');

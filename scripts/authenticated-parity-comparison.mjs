@@ -8,7 +8,7 @@ const mediaKey = item => JSON.stringify([item?.kind || null, item?.url || null, 
 const urlPath = value => {try {const url=new URL(value);return `${url.origin}${url.pathname}`;}catch{return value || null;}};
 const mediaPathKey = item => JSON.stringify([item?.kind || null,urlPath(item?.url),urlPath(item?.posterUrl),
   urlPath(item?.playbackUrl),item?.playbackMode || null]);
-function nativeIdentity(source, permalink) {
+export function nativeIdentity(source, permalink) {
   const canonical = canonicalSourceURL(source, permalink);
   if (!canonical) return null;
   const url = new URL(canonical);
@@ -19,6 +19,13 @@ function nativeIdentity(source, permalink) {
   if (watchId !== null) return /^\d{1,32}$/.test(watchId) ? `facebook:post:${watchId}` : null;
   const id = pathId || storyId;
   return id && /^(?:pfbid[A-Za-z0-9]+|\d+)$/.test(id) ? `facebook:post:${id}` : null;
+}
+
+export function comparisonScope(baseline, quiet = false) {
+  const driver = quiet ? 'quiet' : 'headless';
+  if (baseline?.scope === 'saved_browser_timeline_vs_live_headless_sequential') return `saved_timeline_vs_live_${driver}_sequential`;
+  if (baseline?.scope === 'previous_headless_observed_video_target_not_legacy_parity') return `previous_headless_vs_live_${driver}_sequential`;
+  return `unverified_baseline_vs_live_${driver}_sequential`;
 }
 
 export function compareReport(report) {
@@ -64,8 +71,8 @@ export function compareReport(report) {
       limitations:block.captureQuality?.limitations || []};
   });
   return {schema:'aku.authenticated-parity-summary.v1',
-    scope:report?.execution?.scope === 'saved_timeline_vs_live_quiet_sequential'
-      ? 'saved_timeline_vs_live_quiet_sequential' : 'saved_timeline_vs_live_headless_sequential',
+    scope:comparisonScope(report?.baseline, report?.execution?.workerMode === 'production_quiet_driver_packaged_worker'
+      || report?.execution?.scope?.endsWith('_quiet_sequential') === true),
     fullParityVerified:false,
     limitations:['saved baseline is not a simultaneous headed capture','coverage is bounded',
       'missing identity is not proof of source absence','exact media URL mismatch may require CDN evidence',

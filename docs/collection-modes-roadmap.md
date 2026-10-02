@@ -41,12 +41,31 @@ pipe writes and cleanup, validate the actual product journey, and resolve X/FB
 media gaps with causal evidence. Existing receipts below retain their original
 scope and do not establish parity with the complete legacy Bridge pipeline.
 
+### Current acceptance status (2026-10-02)
+
+This table is the current execution order. The phase history below records
+earlier checkpoints and must not be read as release acceptance.
+
+| Gate | Current evidence | Remaining work |
+| --- | --- | --- |
+| Profile ownership and selected subprofile | Profile selection is pinned across replacements; blocked worker writes retire their owned tree; disposable Profile 2 launch passes | Integrated authenticated login/reader/auto-return journey |
+| X collection | Feed, continuation and two native targets pass; own MP4 decodes in Chrome | AkuBrowser player journey and comparison with full legacy Bridge extraction |
+| Facebook collection | Feed and image-post target pass | Feed video coverage, native Watch comparison with legacy, continuation when offered |
+| Browser fallback | Existing collector remains available in the codebase | Isolate experimental hidden Quiet routing without regressing safe handoff |
+| Product journey | Separate Settings and native handoff fixtures pass | Combined real source, Settings, reader/login, recapture and auto-update acceptance |
+| Instagram / LinkedIn | Existing browser support retained | Start headless qualification after X/Facebook gates pass |
+| Default migration | Browser remains default | All four sources and integrated journey must pass before migration |
+
+An absent continuation is not a failed capture and is not a passed continuation
+test. An admitted observation is not a media-playback or complete parity proof.
+
 `collectionMode` will be `browser` or `headless`. Existing `captureVisibility`
 remains a browser-only policy, with its value preserved while headless is active.
 Quiet is not headless. Settings must show the requested mode, effective mode,
 pending transition and actionable failure separately.
 
-Approved amendment (2026-10-02): Quiet browser collection may use hidden Chrome
+Historical amendment (superseded as an independent feature gate by the approved
+transition above): Quiet browser collection may use hidden Chrome
 targets created as machine collectors from the beginning. Explicit interactive
 source/login/reader windows and Adaptive/foreground behavior remain separate and
 preserved. Update Quiet's single/multiple-window promises with the implementation;
@@ -1263,7 +1282,70 @@ a mode switch. Do not retrofit a settings-only change around them.
   family/ID, preferring the available larger resolution. Bridge's unspecified
   default keeps existing pairing behavior. Foreign asset variants and HLS-only
   evidence stay unpaired. Ten Bridge resolver/runtime and nine worker checks pass.
-  New official package/source validation remains required.
+  New official package/source validation is recorded in the next checkpoint.
+
+### X MP4 and selected-profile native validation (2026-10-02)
+
+- Immutable candidate `headless-transition-xmp4-20261002` uses Sidecar `107d905`,
+  Bridge `8dd4d6d`, Browser `036d839`; 413 files / 588,866,906 bytes verify.
+- Official receipt `build/authenticated-parity-366d44de-b797-4201-8c36-d4fbdd82b0b8/report.json`
+  passes X feed/follow-up/target and Facebook feed/target: five observations /
+  14 blocks pass Go admission without ingestion. Facebook offers no valid
+  continuation in this run; its follow-up is untested, not a sixth success.
+- X target media is now video with one own playback URL and resolved media
+  recovery, without the unknown-video flag. This proves the returned metadata,
+  not a decoded playback frame or full legacy parity.
+- Exact-root after-init visibility observation completes over about 72 seconds
+  with zero visible/exposed/foreground root samples. This excludes startup and
+  intervals shorter than sampling. Worker exit, profile release and original
+  runtime/Bridge restoration all pass.
+- `TestAuthenticatedCaptureReceiptObservationContract` permits bounded official
+  partial journeys to validate admission separately. The original parity test
+  still requires every X/Facebook feed/follow-up/target label; neither accepts
+  diagnostic workers or missing lifecycle proof.
+- `TestOwnedChromeSelectedSubprofileSmoke` launches packaged worker and configured
+  Google Chrome 154 against a disposable Local State selecting Profile 2. It
+  verifies Profile 2 Preferences are created, Default Preferences are absent,
+  and owned cleanup completes (3.428s). No authenticated profile is modified.
+- Facebook Watch target receipt `build/authenticated-parity-a8e56acc-a107-4516-8ede-3f779236dbfa/report.json`
+  reports `empty_unverified`, despite authenticated/ready state. Count-only
+  diagnostic `build/authenticated-parity-f31de379-82eb-43c5-b339-a9bd7e97aa56/report.json`
+  sees a Watch page with two video elements but no admitted post candidates and
+  no structured media candidate within headless limits. Both restore cleanly.
+  The target derives from an earlier headless feed observation, not a legacy
+  acceptance baseline. Legacy content-script uses the same adapter discovery
+  and admission; a live legacy comparison remains required before classifying
+  this as a headless regression or a shared surface limitation.
+
+### Broader target and decoder proof (2026-10-02)
+
+- Count-only Facebook receipt `build/authenticated-parity-beb4e025-9fd6-45c2-8fd5-080662c39723/report.json`
+  repeats the Watch diagnosis using both the headless limits and the legacy
+  resolver defaults. Neither returns a candidate; shared adapter discovery
+  reports zero structural/admitted candidates. Raising resolver limits alone
+  does not repair this surface. Original runtime and profile restore pass.
+- Instrumented X receipt `build/authenticated-parity-73d7e36e-92e4-4b12-8272-5d79ab57c481/report.json`
+  captures the native video target and a temporary muted element decodes four
+  frames at 1920x1080, readyState 4, without a media error. The probe removes its
+  element and shuts down cleanly; profile release and original restoration pass.
+  This is decoder proof in source Chrome, not the rendered AkuBrowser player.
+  An earlier probe `c4f334bb-5894-4601-a3f4-61007de52591` timed out waiting for a
+  presentation callback on an invisible element; keep that diagnostic separate.
+- The operator harness now supports `--target-index 0|1`. It verifies the selected
+  native ID/permalink before stopping the runtime and records the index. A prior
+  headless or unverified baseline is no longer mislabeled as saved legacy Timeline
+  evidence. Fourteen comparison/selection checks pass.
+- Official second-X-target receipt `build/authenticated-parity-6bca3044-556a-4ba3-84c0-26f373fe9e46/report.json`
+  captures one native post with exact baseline text and clean restoration. Strict
+  comparison reports `author_binding_mismatch`: the saved author label has a
+  trailing relative-time token absent on the native target; the handle and
+  remaining label match. Do not turn this into a full-parity success implicitly.
+- A fresh read-only Timeline baseline examines 417 items and selects two targets
+  per source with verified native ID/permalink bindings:
+  `build/authenticated-baseline-3617d6a3-abdd-4110-8dd5-c189f183c5c6/baseline.json`.
+  The old second Facebook baseline had an unverified ID/URL binding. The fresh
+  second-Facebook-target attempt was rejected at preflight with
+  `inbox_active_or_unverifiable`; no stop was issued and no capture occurred.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

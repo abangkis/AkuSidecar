@@ -53,3 +53,36 @@ func TestOwnedChromeProfileReuseSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOwnedChromeSelectedSubprofileSmoke(t *testing.T) {
+	runtime, chrome, bridge := os.Getenv("AKU_HEADLESS_SMOKE_RUNTIME"), os.Getenv("AKU_HEADLESS_SMOKE_CHROME"), os.Getenv("AKU_HEADLESS_SMOKE_BRIDGE")
+	if runtime == "" || chrome == "" || bridge == "" {
+		t.Skip("explicit staged runtime, Chrome and Bridge paths required")
+	}
+	profile := filepath.Join(t.TempDir(), "capture-profile")
+	if err := os.MkdirAll(filepath.Join(profile, "Profile 2"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profile, "Local State"), []byte(`{"profile":{"last_used":"Profile 2"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	options := Options{Node: filepath.Join(runtime, "node.exe"), Worker: filepath.Join(runtime, "worker.mjs"), Pin: filepath.Join(runtime, "node.pin.json"), Chrome: chrome, BridgePath: bridge, Profile: profile}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	process, err := Launch(ctx, options)
+	if process != nil {
+		defer process.Terminate()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.CloseForRetry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Join(profile, "Profile 2", "Preferences")); err != nil || !info.Mode().IsRegular() {
+		t.Fatal("selected subprofile was not initialized")
+	}
+	if _, err := os.Stat(filepath.Join(profile, "Default", "Preferences")); !os.IsNotExist(err) {
+		t.Fatal("headless unexpectedly initialized Default instead of the selected profile")
+	}
+}

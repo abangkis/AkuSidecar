@@ -13,6 +13,17 @@ import (
 // Optional read-only contract check for an operator-owned private QA receipt.
 // It never ingests observations or prints source identities/content.
 func TestAuthenticatedParityReportObservationContract(t *testing.T) {
+	validateAuthenticatedReceipt(t, true)
+}
+
+// Targeted receipts can validate admission without pretending to contain the
+// full six-capture parity journey (for example when no continuation is offered).
+func TestAuthenticatedCaptureReceiptObservationContract(t *testing.T) {
+	validateAuthenticatedReceipt(t, false)
+}
+
+func validateAuthenticatedReceipt(t *testing.T, requireFullJourney bool) {
+	t.Helper()
 	path := os.Getenv("AKU_AUTHENTICATED_PARITY_REPORT")
 	if path == "" {
 		t.Skip("operator receipt not provided")
@@ -56,6 +67,9 @@ func TestAuthenticatedParityReportObservationContract(t *testing.T) {
 	if json.Unmarshal(data, &report) != nil {
 		t.Fatal("receipt JSON contract mismatch")
 	}
+	if len(report.Captures) == 0 {
+		t.Fatal("receipt contains no observations")
+	}
 	if (report.Execution.WorkerMode != "packaged_worker" && report.Execution.WorkerMode != "production_quiet_driver_packaged_worker") || !report.Execution.RuntimeControl.Restored || !report.Execution.RuntimeControl.ProfileReleased || !report.Execution.RuntimeControl.WorkerExited {
 		t.Fatal("official packaged-worker lifecycle proof missing")
 	}
@@ -82,15 +96,21 @@ func TestAuthenticatedParityReportObservationContract(t *testing.T) {
 		if err := validateObservation(capture.Result); err != nil {
 			t.Fatalf("%s %s observation contract rejected: %v", capture.Source, capture.Kind, err)
 		}
-		seen[capture.Source+":"+capture.Kind] = true
+		key := capture.Source + ":" + capture.Kind
+		if seen[key] {
+			t.Fatal("duplicate capture label in bounded receipt")
+		}
+		seen[key] = true
 		for _, snapshot := range capture.Result.Snapshots {
 			blocks += len(snapshot.Blocks)
 		}
 	}
-	for _, source := range []string{"x", "facebook"} {
-		for _, kind := range []string{"feed", "followup", "target"} {
-			if !seen[source+":"+kind] {
-				t.Fatal("bounded source journey missing")
+	if requireFullJourney {
+		for _, source := range []string{"x", "facebook"} {
+			for _, kind := range []string{"feed", "followup", "target"} {
+				if !seen[source+":"+kind] {
+					t.Fatal("bounded source journey missing")
+				}
 			}
 		}
 	}
