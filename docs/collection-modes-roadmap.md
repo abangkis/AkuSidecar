@@ -1355,6 +1355,35 @@ a mode switch. Do not retrofit a settings-only change around them.
   This closes that bounded image-post comparison, not Watch/video coverage or
   the complete integrated Facebook gate.
 
+### Post-push Facebook target diagnosis (2026-10-02)
+
+- Checkpoints Sidecar `cbd6eac`, Bridge `8dd4d6d` and Browser `036d839` were
+  pushed to their existing main branches; remote SHAs match local commits.
+- Legacy Bridge's `isNativePostUrl` rejects the tested Facebook Watch URL for
+  native recapture. Preserve this existing scope limitation separately from
+  headless regressions; ordinary Facebook feed-video coverage still needs proof.
+- The fresh five-image saved Facebook post returns no observation in official
+  receipt `build/authenticated-parity-d79555f0-3e6d-4df4-b513-ad7782631cd6/report.json`.
+  The QA harness had used X's 12-second hydration budget for both sources. It
+  now matches the source defaults: X 12 seconds, Facebook 25, while retaining
+  the 45-second capture / six-minute interruption limits. Fifteen QA tests pass.
+- Receipt `build/authenticated-parity-f174b771-a638-4b66-8b2d-ad5c80370dbb/report.json`
+  remains empty with 25 seconds. Count-only diagnostic
+  `build/authenticated-parity-1cef1c5a-690b-4e6b-8dc1-f8181809f2b2/report.json`
+  sees a native post page with an explicit unavailable-content notice and zero
+  articles, post bodies, post actions or admitted candidates. Both restore the
+  original runtime/profile. This does not establish a five-image extraction loss
+  or explain why that native page is unavailable in the current session.
+- Headless now recognizes a bounded standalone unavailable notice only for an
+  empty, exact requested Facebook native target, after readiness. Feed pages,
+  redirects, loading shells and text inside posts remain excluded. The typed
+  `target_unavailable` result describes this post/current session and disables
+  automatic retry; it neither marks the account unavailable nor deletes data.
+- Count-only error diagnostics now distinguish structural/admitted candidate
+  counts and preserve unknown values. Twelve worker checks and the Go failure
+  mapping check pass. Immutable packaging and native verification of the new
+  error classification remain pending at this checkpoint.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

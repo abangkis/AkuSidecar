@@ -172,6 +172,22 @@ test('maps X evidence to the canonical Observation shape without changing source
   assert.equal(block.media[0].url, post.media[0].url);
 });
 
+test('unavailable Facebook target notice is scoped to the exact requested native page', async () => {
+  const native='https://www.facebook.com/example/posts/12345';
+  const assets={facebook:['runtime','adapter','extractor'].map((name,i)=>({relative:name,sha256:String(i).repeat(64),execute:false}))};
+  for (const [pageUrl,actualUrl,want] of [[native,native,'target_unavailable'],[native,'https://www.facebook.com/','empty_unverified'],[undefined,'https://www.facebook.com/','empty_unverified']]) {
+    let noticeCalls=0;
+    const page={async navigate(){return {};},async evaluate(expression){
+      if(expression==='location.href')return actualUrl;
+      if(expression==='globalThis.XHeadlessPoC?.prepareEvidenceTargets?.() || []')return [];
+      if(expression.includes('XHeadlessPoC.collect()'))return JSON.stringify({posts:[],documentReady:true,scroll:{y:0}});
+      if(expression.includes('function facebookTargetUnavailable')){noticeCalls++;return true;}
+    }};
+    await assert.rejects(capture({forSource:async()=>page},assets,'facebook',{pageUrl,scrolls:0,sourceHydrationTimeoutMs:1000,captureTimeoutMs:3000}),{code:want});
+    assert.equal(noticeCalls,want==='target_unavailable'?1:0);
+  }
+});
+
 test('maps Facebook timestamp and video uncertainty without promoting unknowns', () => {
   const post = {
     id: 'facebook:post:12345',

@@ -155,6 +155,15 @@ export async function capture(browser, assetsBySource, source, payload) {
   if (!snapshot) throw captureError('empty_unverified', 'source page produced no verifiable snapshot before the readiness deadline');
   const stateError = sourceStateError(snapshot);
   if (stateError) throw stateError;
+  if (source === 'facebook' && options.explicitPageUrl && snapshot.posts.length === 0) {
+    // A saved feed post can later open an unavailable native page. Keep this
+    // distinct from an empty extractor and from an account-wide source outage.
+    const actualUrl = await page.evaluate('location.href', timeLeft(deadline));
+    if (canonicalSourceURL(source, actualUrl) === requestedUrl
+        && await page.evaluate(`(${facebookTargetUnavailable.toString()})()`, timeLeft(deadline))) {
+      throw captureError('target_unavailable', 'Facebook reports that this post is unavailable in the current session');
+    }
+  }
   if (frontierUrlMismatch) throw captureError('source_frontier_unavailable', 'the retained source tab navigated away from its frontier');
 
   if (options.acquisitionRound === 2) {
@@ -238,12 +247,29 @@ export async function capture(browser, assetsBySource, source, payload) {
 }
 
 // Error diagnostics contain bounded structural counts, never page text, URLs or IDs.
+// Runs in the page. Only recognize a standalone native-page notice, never
+// matching words inside a feed post, quote, or caption. No page text is returned.
+export function facebookTargetUnavailable() {
+  if (document.readyState !== 'complete') return false;
+  if (document.querySelector('[role="article"], [role="feed"], [aria-posinset], [data-ad-preview="message"], [data-ad-comet-preview="message"]')) return false;
+  const root = document.querySelector('[role="main"], main');
+  if (!root) return false;
+  const text = String(root.innerText || '');
+  if (text.length > 8000) return false;
+  return text.split(/\r?\n/).some(line => /^(?:this content (?:isn['’]t|is not) available|content not found|konten ini tidak tersedia)[.!]?$/i.test(line.trim()));
+}
+
 export function emptyCaptureDiagnostics(snapshots) {
   const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : null;
   const flag = value => typeof value === 'boolean' ? value : null;
   const records = value => Array.isArray(value) ? value.filter(item=>item && typeof item==='object' && !Array.isArray(item)) : [];
   return {sampleCount:snapshots.length,samples:records(snapshots).slice(-2).map(snapshot=>({
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
+    discovery:{
+      structuralCandidates:count(snapshot.candidateDiagnostics?.structuralCandidates),
+      eligibleCandidates:count(snapshot.candidateDiagnostics?.eligibleCandidates),
+      actionAnchoredCandidates:count(snapshot.candidateDiagnostics?.actionAnchoredCandidates),
+    },
     authenticatedUiObserved:flag(snapshot.authenticatedUiObserved),documentReady:flag(snapshot.documentReady),
     loginRequired:flag(snapshot.loginRequired),challengeDetected:flag(snapshot.challengeDetected),
     scrollY:count(snapshot.scroll?.y),

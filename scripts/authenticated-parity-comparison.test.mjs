@@ -1,10 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compareReport, comparisonScope } from './authenticated-parity-comparison.mjs';
-import { selectTarget } from './test-authenticated-headless-parity.mjs';
+import { selectTarget, makeCapturePayload } from './test-authenticated-headless-parity.mjs';
+import { sourceDefinition } from '../../AkuBridge/source-catalog.js';
 
 const target = {source:'x',platformId:'x:status:123',permalink:'https://x.com/fixture/status/123',author:'Fixture',text:'Original text'};
 const report = blocks => ({baseline:{targets:[target]},captures:[{source:'x',kind:'target',ok:true,result:{snapshots:[{blocks}]}}]});
+
+test('read-only capture uses each source hydration default without increasing total capture time',()=>{
+  for (const source of ['x','facebook']) for (const kind of ['feed','target']) {
+    const payload=makeCapturePayload(kind,{permalink:'https://fixture.invalid/'},source);
+    assert.equal(payload.sourceHydrationTimeoutMs,sourceDefinition(source).hydration.defaultTimeoutMs);
+    assert.equal(payload.captureTimeoutMs,45_000);
+    assert.equal(payload.sameTabMutationAllowed,false);
+    assert.equal(payload.pendingContentPolicy,'detect_only');
+  }
+  assert.throws(()=>makeCapturePayload('feed',null,'instagram'),{code:'unsupported_capture_source'});
+});
 
 test('keeps the Quiet driver scope distinct from a headless runtime',()=>{
   const result=compareReport({...report([target]),baseline:{targets:[target],scope:'saved_browser_timeline_vs_live_headless_sequential'},execution:{scope:'saved_timeline_vs_live_quiet_sequential'}});

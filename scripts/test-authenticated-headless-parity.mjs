@@ -19,6 +19,9 @@ const pause = milliseconds => new Promise(resolveDelay => setTimeout(resolveDela
 const MAX_INTERRUPTION_MS = 6 * 60_000;
 const RESTORE_RESERVE_MS = 90_000;
 const SOURCES = ['x', 'facebook'];
+// Match the source defaults used by the product rather than imposing X's
+// shorter hydration window on Facebook. Overall interruption bounds stay fixed.
+const SOURCE_HYDRATION_MS = {x: 12_000, facebook: 25_000};
 
 class HarnessError extends Error {
   constructor(code, message = code) {
@@ -401,15 +404,16 @@ function addCapture(report, source, kind, targetPlatformId, responseOrError) {
   return report.captures.at(-1);
 }
 
-function makeCapturePayload(kind, target) {
+export function makeCapturePayload(kind, target, source) {
+  if (!SOURCES.includes(source)) throw new HarnessError('unsupported_capture_source');
   const readOnly = {pendingContentPolicy: 'detect_only', sourceFreshnessPolicy: 'preserve_frontier', sameTabMutationAllowed: false};
   if (kind === 'feed') return {
     scrolls: 1, maxBlocksPerSnapshot: 20, captureTimeoutMs: 45_000,
-    sourceHydrationTimeoutMs: 12_000, restoreScroll: true, ...readOnly,
+    sourceHydrationTimeoutMs: SOURCE_HYDRATION_MS[source], restoreScroll: true, ...readOnly,
   };
   if (kind === 'target') return {
     pageUrl: target.permalink, scrolls: 0, maxBlocksPerSnapshot: 20, captureTimeoutMs: 45_000,
-    sourceHydrationTimeoutMs: 12_000, restoreScroll: true, ...readOnly,
+    sourceHydrationTimeoutMs: SOURCE_HYDRATION_MS[source], restoreScroll: true, ...readOnly,
   };
   throw new HarnessError('unsupported_capture_kind');
 }
@@ -421,7 +425,7 @@ async function captureRequest(client, report, source, kind, target, runtimeWorkD
   }
   const id = `capture-${report.captures.length + 1}`;
   try {
-    const response = await client.request({id, type: 'capture', source, payload: makeCapturePayload(kind, target)}, 53_000);
+    const response = await client.request({id, type: 'capture', source, payload: makeCapturePayload(kind, target, source)}, 53_000);
     return addCapture(report, source, kind, targetPlatformId, response);
   } catch (error) {
     return addCapture(report, source, kind, targetPlatformId, error);
@@ -582,6 +586,7 @@ async function main() {
       workerMode:args.quietProbe ? 'production_quiet_driver_packaged_worker' : (args.diagnosticWorker ? 'instrumented_diagnostic' : 'packaged_worker'),
       operatorTools,
       selectedSources, targetsOnly:args.targetsOnly, targetIndex:args.targetIndex,
+      sourceHydrationTimeoutMs: Object.fromEntries(selectedSources.map(source => [source, SOURCE_HYDRATION_MS[source]])),
       runtimeControl: {
         before, secondPreflight, stopIssued: false, stoppedConfirmed: false,
         workerStarted: false, workerExitConfirmed: null, restored: false, restoreBlocked: false,
@@ -631,7 +636,7 @@ async function main() {
       try {
         const response = await client.request({id, type: 'capture', source,
           payload: {acquisitionRound: 2, continuation, scrolls: 1, maxBlocksPerSnapshot: 20,
-            captureTimeoutMs: 45_000, sourceHydrationTimeoutMs: 12_000, restoreScroll: true,
+            captureTimeoutMs: 45_000, sourceHydrationTimeoutMs: SOURCE_HYDRATION_MS[source], restoreScroll: true,
             pendingContentPolicy: 'detect_only', sourceFreshnessPolicy: 'preserve_frontier', sameTabMutationAllowed: false}}, 53_000);
         addCapture(report, source, 'followup', null, response);
       } catch (error) {

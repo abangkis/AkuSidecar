@@ -14,6 +14,16 @@ import (
 
 type failingQuietBackend struct{}
 
+func TestUnavailableNativeTargetDoesNotAutomaticallyRetry(t *testing.T) {
+	err := &headless.CaptureError{Code: "target_unavailable", Message: "Facebook reports this post is unavailable in the current session"}
+	for _, backend := range []string{collection.BackendHeadless, collection.BackendQuiet} {
+		failure := internalCollectorFailure(err, backend)
+		if failure.Retryable || failure.Stage != "capture" || failure.Message != err.Error() {
+			t.Fatalf("target failure lost its scoped non-retryable outcome: %+v", failure)
+		}
+	}
+}
+
 func (failingQuietBackend) Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error) {
 	return domain.Observation{}, errors.New("quiet backend unavailable")
 }

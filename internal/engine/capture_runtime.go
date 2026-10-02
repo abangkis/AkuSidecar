@@ -186,7 +186,7 @@ func headlessFailure(err error) domain.Failure {
 	var typed *headless.CaptureError
 	if errors.As(err, &typed) {
 		failure.Code = "headless_" + typed.Code
-		if typed.Code == "login_required" || typed.Code == "challenge_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" || typed.Code == "source_access_revoked" {
+		if typed.Code == "login_required" || typed.Code == "challenge_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" || typed.Code == "source_access_revoked" || typed.Code == "target_unavailable" {
 			failure.Retryable = false
 		}
 	}
