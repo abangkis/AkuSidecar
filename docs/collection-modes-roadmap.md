@@ -1758,6 +1758,38 @@ text/author before adapting it to post admission. Preserve separate photo and
 post IDs and compare against fresh Browser evidence. Full parity, continuation
 and package validation remain open; Browser remains the default.
 
+### Parent-story validation after photo-evidence push (2026-10-02)
+
+Commit `3bb3151` (photo evidence implementation) is pushed to `origin/main`;
+remote SHA verification matched. All 42 worker tests passed before push.
+
+Read-only metadata inspection of the same photo found matching fragments for
+both `container_story` and `creation_story`: one consistent numeric parent
+post ID, one consistent native `/posts/pfbid...` URL, actor and story identity.
+The photo ID differs from the parent post ID. The opaque URL identity and
+numeric parent ID are linked by the structured story record, not inferred
+through numeric URL construction. The story's author and 71-character text
+match the Browser baseline. The photo's own message/owner match as well.
+
+Following that exact metadata-provided parent URL with the existing packaged
+headless post collector succeeded: native URL identity matched, author and
+all text matched, and the one image matched the baseline CDN host/path.
+Private receipts:
+`build/authenticated-parity-75bf17ca-a439-4c49-ae3a-f57e97bdb46a/report.json`
+(metadata) and
+`build/authenticated-parity-6d6bfb82-460e-4a97-8de3-031ae64ddfbe/report.json`
+(parent capture). Both restored the runtime with healthy compatible Bridge.
+Detailed parent capture is in `build/facebook-parent-target-result.json`.
+
+The baseline was approximately 46.5 minutes old at metadata completion and
+48.4 minutes old at parent capture start. Therefore this validates a route
+resolution mechanism and content agreement on one sample, not the <=30-minute
+fresh parity gate. No automatic photo-to-parent navigation was introduced in
+this validation step. Next implementation can use the explicitly bound native
+parent URL with conflict checks, a bounded navigation budget and separate
+photo/post identities; then repeat with fresh Browser samples. Complete
+replacement/default readiness remains open.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
