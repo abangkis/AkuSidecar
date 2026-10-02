@@ -1724,6 +1724,40 @@ The receipt confirms worker exit, profile release, restored runtime, healthy
 service and compatible Bridge. This remains a diagnostic result, not an
 official parity pass or default-mode gate closure.
 
+### Headless photo evidence implementation (2026-10-02)
+
+Checkpoint `882d310` records the preceding diagnosis. The new headless-only
+`facebook-photo-evidence.js` reads bounded JSON script records for the exact
+photo-route ID, requires Photo metadata, a consistent owner and image path,
+and matches that image to a visible loaded DOM image. It rejects conflicting
+IDs/owners/images, hidden/unloaded media, untrusted media hosts and excessive
+evidence. Photo identity remains separate from post identity. The module does
+not infer a parent post, author or body from page-wide text.
+
+The worker loads and hashes this asset, the Facebook snapshot carries photo
+evidence, and empty-capture diagnostics expose only an allowlisted status and
+the unresolved post binding. Existing post admission is unchanged: a photo
+alone still cannot produce a successful post Observation. This implements the
+photo evidence stage, not complete photo-to-post collection.
+
+Live source-module injection into the existing packaged headless Chrome
+returned `verified_photo_media` on all four observations of the same target:
+exact photo ID, owner present and loaded 2048 x 1465 image. Baseline age at
+completion was approximately 19.8 minutes. Receipt:
+`build/authenticated-parity-43179115-7c57-4b25-90af-2219d73303ff/report.json`.
+Runtime/Bridge restoration passed. This is source-module validation; the new
+worker asset has not yet been rebuilt into a release package.
+
+An earlier attempt timed out during diagnostic-worker initialization because
+an asynchronous file read followed readline construction. Moving that read
+before input construction fixed the local harness; its failed receipt also
+confirms runtime restoration (`5b07a9dc-ae4f-40d3-bb83-ea10549f8f44`).
+
+Next: validate the structured photo-to-container-story relationship and owned
+text/author before adapting it to post admission. Preserve separate photo and
+post IDs and compare against fresh Browser evidence. Full parity, continuation
+and package validation remain open; Browser remains the default.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

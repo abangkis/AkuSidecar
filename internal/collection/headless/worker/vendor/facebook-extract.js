@@ -227,6 +227,7 @@
       return { source: 'facebook', adapterVersion: adapter.version, visibility: document.visibilityState, url: location.href, title: document.title,
         candidateCount: discovery.candidates.length, discoveryStrategy: discovery.strategy, candidateDiagnostics: discovery.candidateDiagnostics,
         dialogScope:{status:scope.status,candidateCount:scope.candidates.length},
+        photoEvidence:globalThis.FacebookHeadlessPhotoEvidence?.collect() || null,
         rejected: Object.values(rejectionReasons).reduce((sum,count) => sum + count, 0), rejectionReasons, identityDiagnostics, posts:admitted,
         boundaryDiagnostics:boundary.diagnostics(discovery.candidates),
         sourceUnavailable: adapter.availability(), loginRequired,

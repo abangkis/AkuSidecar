@@ -52,6 +52,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'AkuBridge/adapters/facebook-adapter.js', path: resolve(bridge, 'adapters/facebook-adapter.js'), execute: true },
         { relative: 'worker/vendor/facebook-boundary.js', path: resolve(root, 'vendor/facebook-boundary.js'), execute: true },
         { relative: 'worker/vendor/facebook-time-evidence.js', path: resolve(root, 'vendor/facebook-time-evidence.js'), execute: true },
+        { relative: 'worker/vendor/facebook-photo-evidence.js', path: resolve(root, 'vendor/facebook-photo-evidence.js'), execute: true },
         { relative: 'worker/vendor/facebook-extract.js', path: resolve(root, 'vendor/facebook-extract.js'), execute: true },
       ];
   const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'worker.mjs', 'package.json']

@@ -265,6 +265,8 @@ export function emptyCaptureDiagnostics(snapshots) {
   const records = value => Array.isArray(value) ? value.filter(item=>item && typeof item==='object' && !Array.isArray(item)) : [];
   return {sampleCount:snapshots.length,samples:records(snapshots).slice(-2).map(snapshot=>({
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
+    photoEvidence:{status:['not_photo_route','evidence_limit','photo_metadata_missing','conflicting_photo_binding','photo_owner_missing','photo_image_not_visible','verified_photo_media'].includes(snapshot.photoEvidence?.status)?snapshot.photoEvidence.status:null,
+      postBinding:snapshot.photoEvidence?.postBinding==='unverified'?'unverified':null},
     dialogScope:{status:['page','ambiguous_dialog','dialog_pending_identity','native_post_dialog'].includes(snapshot.dialogScope?.status)?snapshot.dialogScope.status:null,
       candidateCount:count(snapshot.dialogScope?.candidateCount)},
     discovery:{
