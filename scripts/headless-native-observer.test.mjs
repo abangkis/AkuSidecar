@@ -17,3 +17,12 @@ test('missing end, unknown PID, truncated or degraded observation cannot claim c
     assert.equal(summarizeNativeVisibility({closed:true,exitCode:0,records},pid).status,'partial');
   }
 });
+test('Quiet separates minimized visible host from an exposed root window',()=>{
+  const result=summarizeNativeVisibility({closed:true,exitCode:0,records:[
+    sample('trace_start',[{pid:11,visible:true,minimized:true}]),
+    sample('state_poll',[{pid:11,visible:true,minimized:false}]),sample('trace_end')]},11,'quiet');
+  assert.equal(result.scope,'passive_windows_quiet_probe_lifetime');
+  assert.equal(result.visibleRootSamples,2);
+  assert.equal(result.visibleNonMinimizedRootSamples,1);
+  assert.match(result.limitations.at(-1),/Settings, Bridge and interactive/);
+});

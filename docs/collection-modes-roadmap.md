@@ -1089,6 +1089,29 @@ a mode switch. Do not retrofit a settings-only change around them.
   stays unchanged. Then verify the new official package and remaining native
   interactive/Quiet journey gates.
 
+### Quiet authenticated QA preparation (2026-10-02)
+
+- Operator-only `scripts/quiet-authenticated-probe` borrows production
+  `quiet.Targets` and `quiet.Worker`, with the candidate's pinned Node/worker.
+  It launches a minimized unique loopback host through the Go-owned private CDP
+  pipe, without loading or registering a new extension. The existing QA harness
+  accepts an explicit `--quiet-probe` binary and preserves stop/test/restore
+  guards. Reports and passive visibility summaries distinguish Quiet from
+  standalone headless; a minimized visible host is not an exposed source window.
+- Cleanup retires Node/hidden targets before closing only the exact unique host.
+  No `Browser.close` or root termination is permitted in this adapter. Natural
+  root/Job drain must complete before profile reuse. Remaining ordinary windows
+  retain the private pipe and block restoration rather than being adopted or
+  closed.
+- Disposable-profile native fixture passes with configured Google Chrome
+  154.0.8037.93 (0.813s): hidden source setup, exact host retirement, an independent
+  fixture retaining the root pipe, then exact fixture closure and natural drain.
+  Six host-binding cases reject unknown restored blanks, non-page targets,
+  malformed and ambiguous identities. Comparator/visibility tests pass 11/11.
+- This is QA tooling and fixture evidence. Authenticated Quiet source capture,
+  comparison against headless, application Bridge/Settings and real source
+  login/reader auto-return still require their own receipts.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

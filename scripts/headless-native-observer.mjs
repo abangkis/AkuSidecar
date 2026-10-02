@@ -28,18 +28,20 @@ export async function startNativeObserver(executable) {
   }};
 }
 
-export function summarizeNativeVisibility(trace, pid) {
+export function summarizeNativeVisibility(trace, pid, mode = 'headless') {
   const records=trace?.records||[];
   const start=records.find(s=>s.trigger==='trace_start');
   const end=records.find(s=>s.trigger==='trace_end');
   const complete=Boolean(trace?.closed&&trace.exitCode===0&&start&&end&&Number.isSafeInteger(pid)&&pid>0
     &&records.every(s=>s.status==='available'&&!s.windowsTruncated));
-  return {scope:'passive_windows_headless_worker_lifetime',status:complete?'bounded_observation_complete':'partial',
+  return {scope:mode === 'quiet' ? 'passive_windows_quiet_probe_lifetime' : 'passive_windows_headless_worker_lifetime',status:complete?'bounded_observation_complete':'partial',
     sampleCount:records.length,startAt:start?.at||null,endAt:end?.at||null,
     exactRootPid:pid||null,visibleRootSamples:records.filter(s=>(s.windows||[]).some(w=>w.pid===pid&&w.visible)).length,
+    visibleNonMinimizedRootSamples:records.filter(s=>(s.windows||[]).some(w=>w.pid===pid&&w.visible&&!w.minimized)).length,
     rootForegroundEvents:records.filter(s=>s.trigger==='foreground_event'&&s.eventPid===pid).length,
     zeroBlinkingGuaranteed:false,
     limitations:['window state sampled at 100ms; brief visibility between polls can be missed',
       'foreground hook supplements polling; pixels and DWM occlusion are not observed',
-      'standalone headless source capture only; Quiet and interactive journeys require separate evidence']};
+      mode === 'quiet' ? 'Quiet probe with a minimized local host; application Settings, Bridge and interactive journeys require separate evidence'
+        : 'standalone headless source capture only; Quiet and interactive journeys require separate evidence']};
 }

@@ -61,6 +61,10 @@ func TestAuthenticatedParityReportObservationContract(t *testing.T) {
 	seen := map[string]bool{}
 	blocks := 0
 	for _, capture := range report.Captures {
+		if (capture.Source != "x" && capture.Source != "facebook") ||
+			(capture.Kind != "feed" && capture.Kind != "followup" && capture.Kind != "target") {
+			t.Fatal("receipt capture labels are outside the bounded QA contract")
+		}
 		if !capture.OK {
 			t.Fatal("receipt contains a failed capture")
 		}

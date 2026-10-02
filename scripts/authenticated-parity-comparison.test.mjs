@@ -4,6 +4,12 @@ import { compareReport } from './authenticated-parity-comparison.mjs';
 
 const target = {source:'x',platformId:'x:status:123',permalink:'https://x.com/fixture/status/123',author:'Fixture',text:'Original text'};
 const report = blocks => ({baseline:{targets:[target]},captures:[{source:'x',kind:'target',ok:true,result:{snapshots:[{blocks}]}}]});
+
+test('keeps the Quiet driver scope distinct from a headless runtime',()=>{
+  const result=compareReport({...report([target]),execution:{scope:'saved_timeline_vs_live_quiet_sequential'}});
+  assert.equal(result.scope,'saved_timeline_vs_live_quiet_sequential');
+  assert.equal(result.fullParityVerified,false);
+});
 test('rejects same text without explicit native identity and rejects conflicting bindings',()=>{
   assert.equal(compareReport(report([{...target,platformId:'x:status:456'}])).cases[0].status,'not_observed');
   assert.equal(compareReport(report([target,{...target,author:'Other'}])).cases[0].status,'ambiguous_identity_binding');

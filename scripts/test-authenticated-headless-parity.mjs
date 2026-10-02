@@ -35,6 +35,7 @@ function parseArguments(values) {
   let targetsOnly = false;
   let selectedSource = null;
   let nativeObserver = null;
+  let quietProbe = null;
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
     if (value === '--targets-only') {
@@ -43,6 +44,9 @@ function parseArguments(values) {
     } else if (value === '--source') {
       if (selectedSource || !SOURCES.includes(values[index + 1])) throw new HarnessError('invalid_arguments');
       selectedSource = values[++index];
+    } else if (value === '--quiet-probe') {
+      if (quietProbe || !isAbsolute(values[index + 1] || '')) throw new HarnessError('invalid_arguments');
+      quietProbe = values[++index];
     } else if (value === '--native-observer') {
       if (nativeObserver || !isAbsolute(values[index + 1] || '')) throw new HarnessError('invalid_arguments');
       nativeObserver = values[++index];
@@ -67,7 +71,8 @@ function parseArguments(values) {
     }
   }
   if (!artifact || !baseline) throw new HarnessError('invalid_arguments');
-  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource, nativeObserver};
+  if (quietProbe && diagnosticWorker) throw new HarnessError('conflicting_worker_modes');
+  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource, nativeObserver, quietProbe};
 }
 
 function isInside(parent, child, allowEqual = false) {
@@ -257,7 +262,7 @@ async function verifyTuple(artifactRoot) {
 }
 
 function workerClient(candidate) {
-  const child = spawn(candidate.nodeExe, [candidate.worker], {
+  const child = spawn(candidate.quietProbe || candidate.nodeExe, candidate.quietProbe ? [] : [candidate.worker], {
     cwd: candidate.versionRoot,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -521,6 +526,10 @@ async function main() {
   const baselinePath = await containedRealpath(join(sidecar, 'build'), args.baseline, 'baseline');
   const baseline = validateBaseline(JSON.parse(await readFile(baselinePath, 'utf8')));
   const candidate = await loadCandidate(args.artifact);
+  if (args.quietProbe) {
+    candidate.quietProbe = await containedRealpath(join(sidecar,'build'),args.quietProbe,'quiet_probe');
+    if (!(await stat(candidate.quietProbe)).isFile() || !candidate.quietProbe.endsWith('.exe')) throw new HarnessError('invalid_quiet_probe');
+  }
   const observerExe = args.nativeObserver ? await containedRealpath(join(sidecar,'build'),args.nativeObserver,'native_observer') : null;
   if (observerExe && !(await stat(observerExe)).isFile()) throw new HarnessError('invalid_native_observer');
   if (args.diagnosticWorker) {
@@ -549,8 +558,8 @@ async function main() {
     captures: [],
     workerIdentity: null,
     execution: {
-      scope: 'saved_timeline_vs_live_headless_sequential',
-      workerMode:args.diagnosticWorker ? 'instrumented_diagnostic' : 'packaged_worker',
+      scope: args.quietProbe ? 'saved_timeline_vs_live_quiet_sequential' : 'saved_timeline_vs_live_headless_sequential',
+      workerMode:args.quietProbe ? 'production_quiet_driver_packaged_worker' : (args.diagnosticWorker ? 'instrumented_diagnostic' : 'packaged_worker'),
       selectedSources, targetsOnly:args.targetsOnly,
       runtimeControl: {
         before, secondPreflight, stopIssued: false, stoppedConfirmed: false,
@@ -630,7 +639,7 @@ async function main() {
       try {
         const trace = await nativeObserver.close();
         await writeFile(join(receiptRoot,'native-window-trace.json'), JSON.stringify(trace,null,2), 'utf8');
-        report.execution.nativeVisibility = summarizeNativeVisibility(trace, report.workerIdentity?.pid);
+        report.execution.nativeVisibility = summarizeNativeVisibility(trace, report.workerIdentity?.pid, args.quietProbe ? 'quiet' : 'headless');
       } catch {
         report.execution.nativeVisibility = {status:'unavailable',reason:'observer_close_or_receipt_failed'};
       }

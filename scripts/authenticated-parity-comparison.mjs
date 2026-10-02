@@ -62,7 +62,8 @@ export function compareReport(report) {
       limitations:block.captureQuality?.limitations || []};
   });
   return {schema:'aku.authenticated-parity-summary.v1',
-    scope:'saved_timeline_vs_live_headless_sequential',
+    scope:report?.execution?.scope === 'saved_timeline_vs_live_quiet_sequential'
+      ? 'saved_timeline_vs_live_quiet_sequential' : 'saved_timeline_vs_live_headless_sequential',
     fullParityVerified:false,
     limitations:['saved baseline is not a simultaneous headed capture','coverage is bounded',
       'missing identity is not proof of source absence','exact media URL mismatch may require CDN evidence',
