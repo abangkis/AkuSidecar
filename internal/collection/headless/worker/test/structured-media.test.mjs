@@ -263,6 +263,7 @@ test('duplicate candidate bindings fail closed and more than sixteen requested I
   assert.equal(built.bounded, true);
   assert.equal(built.request.maxTraversalNodes, 1500);
   assert.equal(built.request.maxDepth, 16);
+  assert.equal(built.request.playbackFormat, 'mp4');
 });
 
 test('unavailable optional resolver leaves posts intact and records unavailability', async () => {

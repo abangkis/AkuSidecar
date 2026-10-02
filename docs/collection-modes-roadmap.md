@@ -1249,6 +1249,22 @@ a mode switch. Do not retrofit a settings-only change around them.
   Bridge resolver/runtime checks pass 9/9, including deep own/quoted media and
   depth-cap fixtures; worker checks pass 17/17. New packaged/live proof is pending.
 
+### X playback-format diagnosis (2026-10-02)
+
+- Candidate Sidecar 435d7a1 / Bridge 208b705 passes immutable local packaging.
+  Official target receipt `build/authenticated-parity-2daa58ed-93e9-4ea7-b16f-f31f960955be/report.json`
+  now finds three matching structured objects / one candidate within 841 nodes,
+  but retains unknown video because no safe poster/MP4 pair is returned.
+- Count-only diagnostic `build/authenticated-parity-bafdf833-9a32-47c5-9093-fbda38cdef43/report.json`
+  confirms a JPG poster paired to HLS plus four unpaired MP4 variants. Both runs
+  release the profile and restore the original runtime. This is format evidence,
+  not playback or full-parity acceptance.
+- Headless now explicitly requests MP4 pairing by matching native video asset
+  family/ID, preferring the available larger resolution. Bridge's unspecified
+  default keeps existing pairing behavior. Foreign asset variants and HLS-only
+  evidence stay unpaired. Ten Bridge resolver/runtime and nine worker checks pass.
+  New official package/source validation remains required.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
