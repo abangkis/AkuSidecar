@@ -9,6 +9,8 @@ test('native Facebook unavailable notice excludes live posts, loading shells and
   });
   assert.equal(probe("This content isn't available\nGo back"),true);
   assert.equal(probe('This content isn’t available.'),true);
+  assert.equal(probe("This content isn't available right now"),true);
+  assert.equal(probe('This content isn’t available right now.'),true);
   assert.equal(probe('Konten ini tidak tersedia'),true);
   assert.equal(probe("This content isn't available",{post:true}),false);
   assert.equal(probe("This content isn't available",{ready:'loading'}),false);

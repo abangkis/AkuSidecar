@@ -1383,6 +1383,14 @@ a mode switch. Do not retrofit a settings-only change around them.
   counts and preserve unknown values. Twelve worker checks and the Go failure
   mapping check pass. Immutable packaging and native verification of the new
   error classification remain pending at this checkpoint.
+- Candidate `headless-facebook-availability-20261002` (Sidecar `d6ec336`) verifies
+  413 files / 588,868,578 bytes. Initial native receipt
+  `build/authenticated-parity-310ef5bb-1330-4378-868d-8440966ec2cd/report.json`
+  still returns `empty_unverified`. Count-only follow-up
+  `build/authenticated-parity-38af4d76-afc6-4dd6-921e-1df862f396b7/report.json`
+  identifies the exact notice variant ending in "right now" inside the main
+  region and heading. Both restore cleanly. The bounded exact-line matcher now
+  includes that observed variant; native verification must be repeated.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

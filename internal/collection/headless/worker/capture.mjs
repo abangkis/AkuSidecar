@@ -256,7 +256,7 @@ export function facebookTargetUnavailable() {
   if (!root) return false;
   const text = String(root.innerText || '');
   if (text.length > 8000) return false;
-  return text.split(/\r?\n/).some(line => /^(?:this content (?:isn['’]t|is not) available|content not found|konten ini tidak tersedia)[.!]?$/i.test(line.trim()));
+  return text.split(/\r?\n/).some(line => /^(?:this content (?:isn['’]t|is not) available(?: right now)?|content not found|konten ini tidak tersedia)[.!]?$/i.test(line.trim()));
 }
 
 export function emptyCaptureDiagnostics(snapshots) {
