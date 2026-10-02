@@ -153,7 +153,6 @@ function connectOwnedChrome(child, executable, profilePath) {
       const version = await send('Browser.getVersion');
       const { sessionId: browserSessionId } = await send('Target.attachToBrowserTarget');
       const sourceContexts = new Map();
-      let hiddenTargetSeeded = false;
       async function closeTargetAndWait(targetId) {
         await send('Target.closeTarget', { targetId }, browserSessionId, TARGET_CLEANUP_TIMEOUT_MS);
         const deadline = Date.now() + TARGET_CLEANUP_VERIFY_TIMEOUT_MS;
@@ -166,27 +165,23 @@ function connectOwnedChrome(child, executable, profilePath) {
         throw new Error('Chrome did not release its temporary target.');
       }
       async function createPageContext() {
-        let bootstrapTargetId;
         let targetId;
         try {
-          if (!hiddenTargetSeeded) {
-            ({ targetId: bootstrapTargetId } = await send('Target.createTarget', {
-              url: 'about:blank', background: true, forTab: false,
-            }, browserSessionId));
-          }
+          // This process is already headless. A CDP hidden target additionally
+          // suppresses animation frames, even when visibilityState is visible.
+          // Keep normal rendering without activating a desktop window.
           ({ targetId } = await send('Target.createTarget', {
-            url: 'about:blank', hidden: true, background: true, forTab: false,
+            url: 'about:blank', background: true, forTab: false,
           }, browserSessionId));
           const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }, browserSessionId);
           await send('Page.enable', {}, sessionId);
           await send('Runtime.enable', {}, sessionId);
           await send('Network.enable', {}, sessionId);
+          // The second ordinary background tab otherwise remains occluded and
+          // stops animation frames. CDP emulation changes page lifecycle only;
+          // no Target.activateTarget or OS foreground operation is needed.
+          await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
           await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
-          if (bootstrapTargetId) {
-            await closeTargetAndWait(bootstrapTargetId);
-            bootstrapTargetId = null;
-            hiddenTargetSeeded = true;
-          }
           return {
             send: (method, params = {}, timeoutMs) => send(method, params, sessionId, timeoutMs),
             async evaluate(expression, timeoutMs) {
@@ -198,7 +193,6 @@ function connectOwnedChrome(child, executable, profilePath) {
           };
         } catch (error) {
           if (targetId) await closeTargetAndWait(targetId).catch(() => {});
-          if (bootstrapTargetId) await closeTargetAndWait(bootstrapTargetId).catch(() => {});
           throw error;
         }
       }

@@ -28,6 +28,16 @@ export function comparisonScope(baseline, quiet = false) {
   return `unverified_baseline_vs_live_${driver}_sequential`;
 }
 
+// ID/URL agreement only checks internal consistency. In particular, a media
+// parent's numeric ID plus an inferred author path is not an observed post link.
+export function permalinkEvidence(target) {
+  if (target?.source !== 'facebook') return 'not_applicable';
+  const source = target.presentation?.permalinkSource;
+  if (source === 'media_parent_id') return 'inferred_media_parent';
+  if (['direct_anchor', 'post_anchor', 'story_anchor', 'video_anchor', 'embedded_video_anchor'].includes(source)) return 'observed_anchor';
+  return 'unknown';
+}
+
 export function compareReport(report) {
   const captures = Array.isArray(report.captures) ? report.captures : [];
   const targets = report.baseline?.targets || [];
@@ -37,6 +47,7 @@ export function compareReport(report) {
     const native = canonicalSourceURL(target.source, target.permalink);
     const signatures = new Set(evidence.map(block => JSON.stringify([normalized(block.author), normalized(block.text)])));
     const result = {source:target.source, platformId:target.platformId, observedCopies:evidence.length,
+      baselinePermalinkEvidence:permalinkEvidence(target),
       baselineObservedAt:target.observedAt || null, status:'not_observed'};
     if (!native) return {...result,status:'invalid_baseline'};
     if (nativeIdentity(target.source,native) !== target.platformId) return {...result,status:'baseline_native_id_url_unverified'};
@@ -76,6 +87,7 @@ export function compareReport(report) {
     fullParityVerified:false,
     limitations:['saved baseline is not a simultaneous headed capture','coverage is bounded',
       'missing identity is not proof of source absence','exact media URL mismatch may require CDN evidence',
+      'ID/URL consistency does not establish that an inferred permalink opens the saved post',
       'URL tokens replaced for prose comparison do not establish displayed URL or destination equality',
       'unknown quality and video resolution remain unknown'],
     sources:['x','facebook'].map(source => {

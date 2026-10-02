@@ -41,6 +41,16 @@ pipe writes and cleanup, validate the actual product journey, and resolve X/FB
 media gaps with causal evidence. Existing receipts below retain their original
 scope and do not establish parity with the complete legacy Bridge pipeline.
 
+Owned headless Chrome must use ordinary background page targets with CDP focus
+emulation for each source. A separate
+`hidden:true` target suppresses animation-frame callbacks in the tested Chrome
+154 even while DOM visibility is `visible`; focus emulation does not restore
+them. Ordinary background tabs also need focus emulation so both sources keep
+rendering after navigation. Headless process mode supplies window isolation. This correction is scoped
+to owned headless Chrome; it does not alter the borrowed Quiet broker or permit
+foreground activation. Require two-source rendering and passive native-window
+verification before accepting the corrected packaged worker.
+
 ### Current acceptance status (2026-10-02)
 
 This table is the current execution order. The phase history below records
@@ -1400,6 +1410,45 @@ a mode switch. Do not retrofit a settings-only change around them.
   This passes the negative-case classification gate; it is not a successful
   post capture or a full source-parity result. Focused engine routing/failure
   regression checks also pass (0.162s). No installation or default change.
+
+### Foreground-free Facebook rendering investigation (2026-10-02)
+
+- Checkpoint `e8caa0f` was already pushed. Focus-only A/B/A receipt
+  `build/authenticated-parity-acdb5bd6-7d11-400f-bbef-321a1c774b86/report.json`
+  changes `document.hasFocus()` as requested but does not recover the unavailable
+  five-image target. Its saved permalink is `media_parent_id`, inferred from an
+  album parent ID and author path. ID/URL consistency is not proof of a working
+  post URL. QA comparison now exposes inferred/observed/unknown link provenance.
+- Read-only Timeline inventory examines 418 items, including 46 Facebook items.
+  All five saved multi-image cases have inferred media-parent links; none is a
+  direct-anchor multi-image control. This is a baseline limitation, not proof
+  that these URLs are wrong or that focus never affects Facebook.
+- Cold-target / feed / warm-target receipt
+  `build/authenticated-parity-d8f4c1fa-af87-4f8e-8f15-f65930fd6ff0/report.json`
+  still sees unavailable notices at both target visits. Timers run, but animation
+  callbacks are zero in all three one-second samples; the bounded feed capture
+  times out at 15 seconds. Do not generalize that diagnostic deadline to product
+  capture failure. Original runtime and profile restoration pass.
+- Disposable fixture `build/headless-frame-probe-ce274055-5c54-4ca1-9bf2-96ad8598e156/report.json`
+  isolates the rendering defect: hidden targets return zero animation callbacks
+  with focus emulation off or on; ordinary targets return approximately 60/sec.
+  Authenticated ordinary-target diagnostic
+  `build/authenticated-parity-78b82e2c-7cc4-4eab-b249-b5431e89330d/report.json`
+  restores frames and captures two feed posts. The inferred target remains
+  unavailable cold and warm. Restoration passes; this is diagnostic evidence,
+  not packaged parity acceptance.
+- Two-source fixture `build/headless-two-source-frames-1b03cc2a-1dcc-4f43-8366-cd78f047d59d/report.json`
+  shows the second ordinary background tab also needs CDP focus emulation:
+  its 1.2-second sample changes from zero frames/hidden visibility to 73 frames/
+  visible. No OS activation command is used. All diagnostic exact-root observation
+  windows record zero visible/foreground samples; global inventories are partial
+  and sampling cannot guarantee absence of brief blinking.
+- The owned headless launcher now creates ordinary background targets, enables
+  focus emulation per target and removes the obsolete hidden-target bootstrap.
+  Borrowed Quiet and legacy Bridge code are unchanged. The two-source cookie/
+  navigation/restart smoke initially caught missing second-tab rendering, then
+  passes with the combined correction. All 39 worker/QA tests pass. Packaged
+  authenticated X/Facebook and window verification remain pending.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

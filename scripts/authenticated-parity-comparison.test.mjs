@@ -1,11 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareReport, comparisonScope } from './authenticated-parity-comparison.mjs';
+import { compareReport, comparisonScope, permalinkEvidence } from './authenticated-parity-comparison.mjs';
 import { selectTarget, makeCapturePayload } from './test-authenticated-headless-parity.mjs';
 import { sourceDefinition } from '../../AkuBridge/source-catalog.js';
 
 const target = {source:'x',platformId:'x:status:123',permalink:'https://x.com/fixture/status/123',author:'Fixture',text:'Original text'};
 const report = blocks => ({baseline:{targets:[target]},captures:[{source:'x',kind:'target',ok:true,result:{snapshots:[{blocks}]}}]});
+
+test('Facebook inferred, observed and unknown permalinks remain distinct even when ID and URL agree',()=>{
+  const fb={source:'facebook',platformId:'facebook:post:123',permalink:'https://www.facebook.com/fixture/posts/123/'};
+  for (const [source,expected] of [['media_parent_id','inferred_media_parent'],['post_anchor','observed_anchor'],['direct_anchor','observed_anchor'],['unavailable','unknown'],[undefined,'unknown']]) {
+    const baseline={...fb,presentation:{permalinkSource:source}};
+    assert.equal(permalinkEvidence(baseline),expected);
+    const result=compareReport({baseline:{targets:[baseline]},captures:[]});
+    assert.equal(result.cases[0].status,'not_observed');
+    assert.equal(result.cases[0].baselinePermalinkEvidence,expected);
+    assert.equal(result.fullParityVerified,false);
+    // Inferred links remain usable as diagnostic cases; they are not silently
+    // discarded or relabeled as invalid IDs.
+    assert.equal(selectTarget({targets:[baseline]},'facebook'),baseline);
+  }
+  assert.equal(permalinkEvidence(target),'not_applicable');
+});
 
 test('read-only capture uses each source hydration default without increasing total capture time',()=>{
   for (const source of ['x','facebook']) for (const kind of ['feed','target']) {

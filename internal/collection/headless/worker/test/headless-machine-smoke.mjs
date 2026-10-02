@@ -84,6 +84,17 @@ function assertCookieAt(index) {
   if (!value.split(';').map(part => part.trim()).includes(cookie)) fail('A source page did not receive the shared loopback cookie.');
 }
 
+async function assertAnimationFrames(page) {
+  const result = await page.evaluate(`new Promise(resolve => {
+    let frames = 0, done = false;
+    const finish = () => { if (done) return; done = true; clearTimeout(timer); resolve({frames, visibility:document.visibilityState}); };
+    const timer = setTimeout(finish, 2500);
+    const step = () => { if (done) return; if (++frames >= 3) finish(); else requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  })`, 4000);
+  if (result?.frames < 3 || result?.visibility !== 'visible') fail('Headless source rendering did not advance animation frames.');
+}
+
 async function closeServer(server) {
   if (!server?.listening) return;
   await new Promise((resolveClose, rejectClose) => server.close(error => error ? rejectClose(error) : resolveClose()));
@@ -104,7 +115,7 @@ async function run() {
     stage = 'first_launch';
     firstRun = await launchChrome({ chromePath, profilePath });
     if (observedCookies.length !== 0) fail('The fixture received a request before a source page navigated.');
-    stage = 'hidden_source_contexts';
+    stage = 'headless_source_contexts';
     const x = await firstRun.forSource('x');
     const facebook = await firstRun.forSource('facebook');
     if (x === facebook) fail('Source pages must use distinct CDP targets.');
@@ -115,6 +126,11 @@ async function run() {
     if (observedCookies.length !== 2) fail('Both source pages must reach the local fixture.');
     assertCookieAt(0);
     assertCookieAt(1);
+    stage = 'both_source_animation_frames';
+    // Both contexts must advance after creating/navigating the second source.
+    // DOM visibility and timers alone do not detect a hidden-target freeze.
+    await assertAnimationFrames(x);
+    await assertAnimationFrames(facebook);
     stage = 'first_close';
     await firstRun.close();
     firstRun = null;
@@ -126,6 +142,8 @@ async function run() {
     await navigate(reopenedSource, `${baseUrl}/observe?source=restart`);
     if (observedCookies.length !== 3) fail('The reopened source page must reach the local fixture.');
     assertCookieAt(2);
+    stage = 'reopened_animation_frames';
+    await assertAnimationFrames(reopenedSource);
     await secondRun.close();
     secondRun = null;
   } finally {
@@ -135,7 +153,7 @@ async function run() {
 }
 
 run().then(() => {
-  process.stdout.write('headless-machine-smoke passed: hidden source targets share and retain a loopback cookie.\n');
+  process.stdout.write('headless-machine-smoke passed: source targets render frames and share/retain a loopback cookie.\n');
 }).catch(error => {
   const diagnostic = String(error.message).split(' Chrome diagnostic:')[0]
     .replace(/https?:\/\/\S+/g, '[url]').replace(/[A-Za-z]:[\\/][^\r\n]*/g, '[path]');
