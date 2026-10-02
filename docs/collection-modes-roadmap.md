@@ -1648,6 +1648,49 @@ guard; no live paired pilot has run at this checkpoint. The next proof requires
 new Browser acquisition and broader content coverage, then prompt headless
 comparison on the same profile. Latest is not automatically fresh enough.
 
+### Fresh Browser versus headless pilot (2026-10-02)
+
+After checkpoint `ed2e978`, a new normal Browser update completed. Raw SQLite
+observations verify `aku-bridge` provenance: X captured five unique candidates
+at 14:59:39Z (image/video), Facebook one at 14:58:55Z (image). Existing source
+settings were preserved; only X/Facebook evidence enters this comparison.
+
+The headless feed pilot ran on the same registered Chrome/profile about
+1.35 minutes after X and 2.15 minutes after Facebook. It captured three X
+candidates and one Facebook candidate, but neither source overlapped the
+Browser candidate IDs. Different feed samples do not establish either parity
+or lost content. This is a successful acquisition smoke, not a quality pass.
+
+An immediate target pilot used URLs from that fresh Browser baseline:
+
+- X: exact native post identity and all 30 text characters matched. The author
+  differed only by the Browser's relative-time suffix. Both had inline video
+  playback evidence; headless reported readyState 4, loaded=true and playback
+  time about 2.37 seconds. Headless additionally returned a video poster, so
+  raw media counts (one versus two) are not a missing-video regression.
+  This supports one video target, not full video or image parity.
+- Facebook: the Browser block's direct anchor is a `/photo?fbid=...` URL,
+  although the block carries a `facebook:post` identity. Direct headless
+  capture returned `empty_unverified`, not `target_unavailable`. This is an
+  unresolved photo-route/extraction/identity case; neither content absence nor
+  a headless-only regression has been established. Do not silently translate
+  the photo ID into a post URL or count a loaded unrelated image as parity.
+
+Both bounded stop/test/restore runs confirmed worker exit, profile release,
+runtime restoration, healthy service and compatible Bridge. Private receipts:
+`build/authenticated-parity-ad72fd2a-8a45-4b4c-b08e-e47123502dfe/report.json`
+(feed) and
+`build/authenticated-parity-5560d695-109c-41db-8953-cef709f51b5f/report.json`
+(targets). The local diagnostic worker intentionally returns a diagnostic
+completion code; the outer harness does not claim official parity success.
+Detailed observations remain in ignored `build/fresh-collection-pilot-20261002.json`
+and `build/fresh-target-pilot-20261002.json`, outside tracked source.
+
+Next: distinguish Facebook photo-viewer evidence from post extraction using
+the same fresh target, then extend matched fresh samples and continuation.
+Repeat the baseline when the 30-minute pairing window expires. Headless stays
+opt-in; no production collector change or default switch follows this pilot.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
