@@ -192,10 +192,11 @@ because DOM capture passed. Browser remains default after this gate.
 | --- | --- | --- |
 | 1 | Complete; committed as `a263bcc` | Typed Request, Bridge Builder, engine integration and two wire fixtures; full engine tests and application build pass |
 | 2a-2b | Foundation complete and committed; final integrated validation pending | Process ownership, durable driver/generation fencing, session/media/action leases, cancellation drain and native-reader/source lifetime tracking; commits `b376438`, `86cd0c3`, `d9b735a` and paired Bridge `8541337` |
-| 2c | Scoped retirement implemented; integrated acceptance incomplete | Natural-exit ownership and automatic retry pass isolated Windows popup smoke. Finish authenticated Bridge retirement and integrated handoff/recovery |
+| 2c | Static packaged Bridge handoff and auto-return pass; live-source acceptance incomplete | Real host-only ACK, natural owner drain, interactive HWND retention and generation-4 auto-return pass on a disposable profile. Finish live authenticated reader/login and recovery |
+| 2d | Hidden Quiet backend implemented; integrated source acceptance incomplete | Go-owned hidden targets, worker-failure isolation and persisted collector routes pass fixtures; packaged native return passes. Live X/Facebook parity and visibility remain |
 | 3 | Local candidate; focused contract/ownership checks pass, acceptance incomplete | Production Bridge fields and per-source continuation/frontier handling implemented. Worker fixtures 6/6 and isolated real Node/CDP/Job/profile exclusivity/reuse smoke pass; authenticated parity, freshness qualification and source gaps remain |
 | 4 | Rendered Settings fixture passes; integrated acceptance incomplete | Real UI/API/coordinator with fake processes proves switching, reload persistence, visibility restoration and unsupported-source rejection. Native reader/login, auto-update and recapture journey remain |
-| 5 | Complete local tuple build and verifier pass; product validation incomplete | Official Node pin, worker/license staging, 411-file payload hashes and candidate probe pass. Packaged Chrome/worker popup smoke passes; authenticated parity, end-to-end Bridge and Windows visibility remain |
+| 5 | Complete local tuple build and verifier pass; product validation incomplete | Current 412-file package includes lazy hidden headless collectors; packaged static Bridge auto-return passes. Authenticated parity, integrated reader/login and Windows visibility remain |
 
 The table describes code availability separately from acceptance. Candidate
 Settings/driver wiring was implemented before the 2c gate passed; this is an open
@@ -898,6 +899,46 @@ a mode switch. Do not retrofit a settings-only change around them.
 - The first corrected Bridge wrapper attempt stopped at preflight because an
   original Inbox session was running; no Supervisor interruption occurred.
   Native auto-return and packaged-worker verification remain pending.
+
+### Packaged native auto-return acceptance (2026-10-02)
+
+- Implementation checkpoint: Sidecar `4530d31`, Bridge `e8136f7`, Browser
+  `036d839`. New candidate:
+  `AkuBrowser/build/headless-machine-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+  Full builder and verifier pass: 412 files, 588,823,401 bytes, Chrome
+  152.0.7977.54 and pinned Node 24.16.0. Sidecar binary remains
+  `cc4ac7513c0004c1f83b7dde199c1b4ddebcf039c5c741aa29c80466dea608ea`;
+  this correction is in the separately hashed worker payload.
+- Default packaged-worker static Bridge smoke passes in 17.52s, without a source
+  worker override. Before and after the headless cycle, Chrome's window API reports
+  exactly one fixture tab. Host-only negotiation, hidden-target retirement, real
+  close ACK and natural profile drain pass. Browser generation 3 remains retained
+  while the fixture native reader HWND exists; exact window closure automatically
+  returns to headless generation 4 Ready. Receipt:
+  `build/bridge-handoff-1b80fb31-affb-4b4a-b106-dd5915b6cade/receipt.json`.
+- Supervisor restores the original healthy runtime, compatible Bridge and one
+  original-profile Chrome owner. No candidate installation, registration change,
+  authenticated social collection or original-profile cookie change occurred.
+- This closes the static native auto-return gap, not the live login/native-post
+  journey or source parity gates. The fixture substitutes source readiness and
+  uses a loopback reader page; authenticated X/Facebook QA remains separate.
+- Compatibility smoke also passes in 4.47s with the currently configured Google
+  Chrome 154.0.8037.93, using another disposable loopback profile. Same-context
+  cookies and restart persistence pass. Live authenticated QA must retain this
+  configured capture executable, rather than move its profile to packaged CfT.
+- Concrete next authorized-scope decision: a bounded read-only comparison of X
+  and Facebook using the registered authenticated capture profile and configured
+  Google Chrome. Preflight must require no active Inbox session, one exact profile
+  owner and healthy Bridge. Supervisor stop/test/restore remains mandatory; keep
+  results under project build, use production extractors/worker, preserve unknown
+  identity/media states and restore original health/Bridge/profile ownership.
+  Do not install the candidate, change registration/settings, copy cookies or
+  perform account writes. Disposable-profile approval does not authorize this
+  authenticated-profile run; obtain that concrete approval before execution.
+- After interruption, native goal readback is paused at 335,669 tokens for the
+  additional segment; supported tools cannot resume it. Prior 979,770 tokens and
+  the cumulative two-million ceiling remain preserved. Total measured coverage
+  is partial; current post-resume accounting/enforcement is unavailable.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
