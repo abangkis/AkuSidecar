@@ -172,7 +172,7 @@ func (e *Engine) captureInternalMediaRecapture(ctx context.Context, driver, coll
 			return
 		}
 		if err == nil {
-			_, err = e.AcceptMediaRecapture(ctx, id, observation)
+			_, err = e.acceptMediaRecapture(ctx, id, observation, collector == "headless")
 		}
 		if err != nil {
 			_, _ = e.FailMediaRecapture(ctx, id, internalCollectorFailure(err, collector))

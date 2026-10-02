@@ -2419,6 +2419,10 @@ func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridge
 }
 
 func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {
+	return e.acceptMediaRecapture(ctx, id, observation, false)
+}
+
+func (e *Engine) acceptMediaRecapture(ctx context.Context, id string, observation domain.Observation, internalHeadless bool) (domain.MediaRecapture, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if err := e.validateRecaptureOwner(ctx, id); err != nil {
 		return domain.MediaRecapture{}, err
@@ -2427,7 +2431,13 @@ func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observatio
 	if err := validateObservation(observation); err != nil {
 		return domain.MediaRecapture{}, err
 	}
-	value, err := e.store.CompleteMediaRecapture(ctx, id, observation)
+	var value domain.MediaRecapture
+	var err error
+	if internalHeadless {
+		value, err = e.store.CompleteHeadlessMediaRecapture(ctx, id, observation)
+	} else {
+		value, err = e.store.CompleteMediaRecapture(ctx, id, observation)
+	}
 	if err == nil {
 		if item, loadErr := e.store.TimelineItem(ctx, value.TimelineID); loadErr == nil {
 			e.launchMediaProvenanceItems([]domain.TimelineItem{item})

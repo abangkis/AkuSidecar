@@ -75,6 +75,21 @@ func (s *Store) resolveObservationContentIdentity(
 					summary.NativePresent++
 				}
 			}
+			// Explicit saved relations also cover short captions; they do not rely
+			// on the text-signature threshold used by heuristic fallback identity.
+			if observation.Source == domain.SourceFacebook {
+				key, err := savedPhotoParentKey(ctx, tx, *block)
+				if err != nil {
+					return contentIdentitySummary{}, err
+				}
+				if key != "" {
+					if block.EvidenceKey != key {
+						block.EvidenceKey = key
+						summary.AliasesReused++
+					}
+					continue
+				}
+			}
 			signature := capture.ContentSignature(observation.Source, *block)
 			if signature == "" {
 				continue

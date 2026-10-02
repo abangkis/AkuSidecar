@@ -1862,6 +1862,38 @@ recapture and identity reconciliation, with mismatch/forgery/ambiguity tests.
 Keep photo and parent IDs distinct and avoid merging by text similarity alone.
 Full product journey, broader fresh samples and package validation remain open.
 
+### Internal recapture and persisted parent identity (2026-10-02)
+
+Checkpoint `cae5e19` commits photo-parent navigation and comment-media exclusion.
+The internal owned headless completion path now has a separate store entrypoint
+for accepting a photo-parent result. Public Bridge completion retains its
+existing matcher; caller-supplied recovery relation markers are stripped before
+persistence. Headless job routing, exact photo ID, native parent URL/platform ID,
+saved author/text and recovered image evidence must corroborate the transition.
+An item with missing media can use its saved exact photo URL and nonempty caption;
+existing saved images, when present, must all be corroborated.
+
+Successful recapture keeps the timeline item's evidence key and real parent
+platform identity separate, updates its evidence override, and creates no second
+timeline row. The store issues the persisted relation marker itself. Future
+parent observations may reuse this saved key only through that persisted proof,
+with matching native parent URL and author. Short captions are supported without
+the generic text-fingerprint threshold. Ambiguous saved keys are not selected.
+Later direct recapture preserves an already verified relation instead of
+accepting a replacement relation supplied by the caller.
+
+Fixture validation covers internal versus Bridge entrypoints, wrong photo IDs,
+conflicting query IDs, forged coverage, wrong author/text/media/parent URL,
+one-item recapture, subsequent key reuse and retention on direct refresh. These
+tests use isolated test stores, not the running user's database. No live data
+migration, installation or runtime restart was performed for this backend change.
+
+Scope limit: generic feed observations cannot create a new photo-parent alias
+from coverage alone. Reuse currently requires a relation persisted by internal
+recapture. First-time feed reconciliation without recapture, full UI-to-store
+headless validation and rebuilt package smoke remain open. Browser remains the
+default. This step does not claim four-source replacement readiness.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

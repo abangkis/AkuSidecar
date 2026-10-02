@@ -351,6 +351,16 @@ func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeI
 }
 
 func (s *Store) CompleteMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {
+	return s.completeMediaRecapture(ctx, id, observation, false)
+}
+
+// CompleteHeadlessMediaRecapture is reserved for the internal owned collector.
+// Bridge-submitted coverage cannot authorize a photo-to-parent transition.
+func (s *Store) CompleteHeadlessMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {
+	return s.completeMediaRecapture(ctx, id, observation, true)
+}
+
+func (s *Store) completeMediaRecapture(ctx context.Context, id string, observation domain.Observation, internalHeadless bool) (domain.MediaRecapture, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.MediaRecapture{}, err
@@ -366,9 +376,38 @@ func (s *Store) CompleteMediaRecapture(ctx context.Context, id string, observati
 	if observation.Source != job.Source {
 		return domain.MediaRecapture{}, errors.New("recapture observation source does not match the item")
 	}
+	// Persisted relation authority is issued here, never accepted from caller maps.
+	for si := range observation.Snapshots {
+		for bi := range observation.Snapshots[si].Blocks {
+			b := &observation.Snapshots[si].Blocks[bi]
+			b.MediaRecovery = mergeAnyValues(b.MediaRecovery, nil)
+			delete(b.MediaRecovery, "photoParentResolution")
+		}
+	}
 	block, ok := recapturedBlock(observation, job)
+	if !ok && internalHeadless {
+		original, loadErr := timelineEvidenceFrom(ctx, tx, job.TimelineID, job.EvidenceKey)
+		if loadErr != nil {
+			return domain.MediaRecapture{}, loadErr
+		}
+		block, ok = recapturedPhotoParent(observation, job, original)
+	}
 	if !ok {
 		return domain.MediaRecapture{}, errors.New("recapture did not return the requested native post")
+	}
+	if job.Source == domain.SourceFacebook && block.MediaRecovery["photoParentResolution"] == nil {
+		// A later direct recapture must not erase an already verified relation.
+		original, loadErr := timelineEvidenceFrom(ctx, tx, job.TimelineID, job.EvidenceKey)
+		if loadErr != nil {
+			return domain.MediaRecapture{}, loadErr
+		}
+		if proof, valid := original.MediaRecovery["photoParentResolution"].(map[string]any); valid &&
+			proof["provenance"] == "internal_headless_and_saved_photo_evidence" && proof["status"] == "verified" &&
+			proof["parentPlatformId"] == block.PlatformID && original.PlatformID == block.PlatformID && original.Permalink == block.Permalink &&
+			strings.Join(strings.Fields(original.Author), " ") == strings.Join(strings.Fields(block.Author), " ") {
+			block.MediaRecovery = mergeAnyValues(block.MediaRecovery, map[string]any{"photoParentResolution": proof})
+			block.EvidenceKey = job.EvidenceKey
+		}
 	}
 	now := domain.Now()
 	outcome := "unavailable"
@@ -487,8 +526,17 @@ func mediaRecaptureByID(ctx context.Context, queryer rowQueryer, id string) (dom
 }
 
 func (s *Store) timelineEvidence(ctx context.Context, timelineID, evidenceKey string) (domain.Block, error) {
+	return timelineEvidenceFrom(ctx, s.db, timelineID, evidenceKey)
+}
+
+type evidenceQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func timelineEvidenceFrom(ctx context.Context, queryer evidenceQueryer, timelineID, evidenceKey string) (domain.Block, error) {
 	var overrideRaw string
-	err := s.db.QueryRowContext(ctx, `SELECT evidence_json FROM timeline_evidence_overrides WHERE timeline_id=?`, timelineID).Scan(&overrideRaw)
+	err := queryer.QueryRowContext(ctx, `SELECT evidence_json FROM timeline_evidence_overrides WHERE timeline_id=?`, timelineID).Scan(&overrideRaw)
 	if err == nil {
 		var block domain.Block
 		decodeJSON(overrideRaw, &block)
@@ -497,7 +545,7 @@ func (s *Store) timelineEvidence(ctx context.Context, timelineID, evidenceKey st
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domain.Block{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT o.observation_json FROM timeline_items t JOIN observations o ON o.run_id=t.run_id WHERE t.id=? ORDER BY o.created_at`, timelineID)
+	rows, err := queryer.QueryContext(ctx, `SELECT o.observation_json FROM timeline_items t JOIN observations o ON o.run_id=t.run_id WHERE t.id=? ORDER BY o.created_at`, timelineID)
 	if err != nil {
 		return domain.Block{}, err
 	}
