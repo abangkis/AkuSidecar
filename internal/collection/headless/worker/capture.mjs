@@ -265,6 +265,8 @@ export function emptyCaptureDiagnostics(snapshots) {
   const records = value => Array.isArray(value) ? value.filter(item=>item && typeof item==='object' && !Array.isArray(item)) : [];
   return {sampleCount:snapshots.length,samples:records(snapshots).slice(-2).map(snapshot=>({
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
+    dialogScope:{status:['page','ambiguous_dialog','dialog_pending_identity','native_post_dialog'].includes(snapshot.dialogScope?.status)?snapshot.dialogScope.status:null,
+      candidateCount:count(snapshot.dialogScope?.candidateCount)},
     discovery:{
       structuralCandidates:count(snapshot.candidateDiagnostics?.structuralCandidates),
       eligibleCandidates:count(snapshot.candidateDiagnostics?.eligibleCandidates),

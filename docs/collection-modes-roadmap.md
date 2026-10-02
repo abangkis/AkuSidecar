@@ -1475,6 +1475,64 @@ a mode switch. Do not retrofit a settings-only change around them.
   pass. Next Facebook evidence should use a live directly observed permalink
   for multi-image/feed-video comparison; never invent a replacement post ID.
 
+### Approved Facebook dialog extraction correction (2026-10-02)
+
+The user approved implementing native-post dialog scoping in the headless
+collector after read-only receipt `authenticated-parity-f5242ba5-5b8a-48c3-885b-9e11b33933a3`
+reproduced unscoped rejection, scoped success, then unscoped rejection on one
+post. Scoped and direct navigation matched identity, author, full text and media.
+The original unavailable target was not found and remains unresolved.
+
+Scope: bind a single visible dialog to the native route's exact post identity;
+wait for identity hydration, exclude the feed underlay and preserve conflicts
+within the dialog. No-dialog pages retain existing behavior; ambiguous dialogs
+must not select a first/longest record. Legacy Bridge is unchanged. Validate
+text, image/video preservation, ambiguity, readiness and native packaged capture
+before accepting the change. No default migration or installation is authorized.
+
+Implementation and validation:
+- Worker boundary v4 selects a unique visible native-post dialog and keeps all
+  bindings of its exact route identity for the existing author/text conflict
+  check. Missing identities wait within the existing hydration deadline. Hover
+  evidence is limited to that dialog and includes links whose href appears only
+  after hover. No-dialog pages retain their existing extraction behavior.
+- Forty-eight worker/QA tests pass, including text, multiple images, video
+  evidence preservation, wrong IDs, ambiguous/nested/hidden dialogs, readiness,
+  no-dialog conflicts and sanitized dialog diagnostics. These fixtures do not
+  establish live Facebook video playback parity.
+- Initial package `headless-dialog-20261002` passes X feed/followup/target but
+  returns empty Facebook feed/target in receipt
+  `authenticated-parity-f6ab5163-8490-4e5a-a473-5bc5cf7fb42b`. Feed diagnostics
+  show missing identities; target diagnostics motivate the bounded identity
+  investigation below. Do not count this run as a source parity pass.
+- Instrumented packaged receipt
+  `authenticated-parity-0be519a5-0de5-4f6d-bb7a-7e9ad167123c` confirms the new
+  collector itself selects `native_post_dialog` after a feed-anchor click and
+  direct navigation: both return the same native identity, author, text and
+  five image paths. The additional diagnostic projection is no longer needed
+  for the initial collection to succeed. This is a bounded diagnostic, not
+  full legacy pipeline parity.
+- Final candidate `headless-dialog-v2-20261002` verifies 413 files /
+  588,871,321 bytes. It contains the uncommitted source delta on `2d486b9`, not
+  an installed release. Official receipt
+  `authenticated-parity-dd4b1c8f-7063-4785-a131-9c7648d5fb7c` passes Facebook
+  feed, continuation and the existing direct-anchor image target. Three
+  observations / four blocks pass Go admission without ingestion (0.022s).
+  The target matches identity, author, text and image host/path; quality remains
+  unverified and signed CDN URLs differ. Original runtime, Bridge and profile
+  ownership restore successfully. Exact-root observation records no visible or
+  foreground samples; sampling is bounded and does not guarantee zero blinking.
+- Remaining identity case: receipt
+  `authenticated-parity-43e97876-ea28-4314-9ceb-2542df7d884a` passes Facebook feed
+  and continuation but holds the six-image comparison target at
+  `dialog_pending_identity`. Count-only follow-up
+  `authenticated-parity-d61a6ae0-ecf0-4e17-bfb3-7ea3ffa6162f` confirms that the
+  dialog's own permalink ID differs from the requested native route, although
+  author and six image paths match; no canonical metadata resolves the binding.
+  Do not infer an alias or rewrite stored identity from that similarity alone.
+  This limitation, the original unavailable target, and live video/full legacy
+  parity remain open. Browser remains default; no installation performed.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

@@ -35,6 +35,13 @@ test('empty capture diagnostics retain unknown states and exclude private DOM ev
   assert.deepEqual(emptyCaptureDiagnostics([{boundaryDiagnostics:'untrusted',identityDiagnostics:[null]}]).samples[0].boundaries,[]);
 });
 
+test('dialog diagnostics preserve readiness states without copying untrusted labels',()=>{
+  const result=emptyCaptureDiagnostics([{dialogScope:{status:'dialog_pending_identity',candidateCount:0}},
+    {dialogScope:{status:'private-label',candidateCount:-1}}]);
+  assert.deepEqual(result.samples[0].dialogScope,{status:'dialog_pending_identity',candidateCount:0});
+  assert.deepEqual(result.samples[1].dialogScope,{status:null,candidateCount:null});
+});
+
 test('distinguishes no discovered post from rejected candidates without copying page labels',()=>{
   const value=emptyCaptureDiagnostics([
     {candidateCount:0,candidateDiagnostics:{structuralCandidates:0,eligibleCandidates:0,actionAnchoredCandidates:0}},

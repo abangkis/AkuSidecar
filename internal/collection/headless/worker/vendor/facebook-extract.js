@@ -20,7 +20,7 @@
     return boundary.owns(element,container);
   }
   function timestampAnchors(container) {
-    return [...container.querySelectorAll('a[href], abbr[data-utime], time')].filter(anchor => {
+    return [...container.querySelectorAll('a,[role="link"], abbr[data-utime], time')].filter(anchor => {
       if (!ownPostElement(anchor, container)) return false;
       if (anchor.closest('h2,h3,h4,strong') || anchor.querySelector('img,video')) return false;
       if (anchor.closest('[data-ad-preview="message"], [data-ad-comet-preview="message"]'))return false;
@@ -28,7 +28,8 @@
       return rect.width > 0 && rect.height > 0 && rect.width < 250 && rect.height < 80 && rect.top >= 0 && rect.bottom <= innerHeight
         && (anchor.tagName !== 'A' || anchor.target === '_blank' || anchor.hasAttribute('aria-describedby')
           || /\/posts\/|story_fbid=|\/permalink\//.test(anchor.href) || compactText(anchor).length <= 80);
-    }).sort((left, right) => Number(right.target === '_blank') - Number(left.target === '_blank')
+    }).sort((left, right) => Number(!right.getAttribute('href')) - Number(!left.getAttribute('href'))
+      || Number(right.target === '_blank') - Number(left.target === '_blank')
       || Number(right.tagName !== 'A') - Number(left.tagName !== 'A')).slice(0, 3);
   }
   function relativeTime(value, adapter, capturedAt) {
@@ -143,7 +144,8 @@
     prepareEvidenceTargets() {
       const adapter = globalThis.AkuSourceAdapters.get('facebook');
       const targets = [];
-      for (const container of boundary.candidates(adapter.discoverCandidates(helpers).candidates)) {
+      const scope=boundary.captureScope(boundary.candidates(adapter.discoverCandidates(helpers).candidates),adapter,helpers);
+      for (const container of scope.hoverCandidates) {
         const box = container.getBoundingClientRect();
         if (box.height <= 0 || box.bottom <= 0 || box.top >= innerHeight) continue;
         const key = fingerprint(adapter, container);
@@ -184,15 +186,17 @@
     },
     scrollNext() {
       const adapter = globalThis.AkuSourceAdapters.get('facebook');
-      const next = boundary.candidates(adapter.discoverCandidates(helpers).candidates).find(container => container.getBoundingClientRect().top >= innerHeight);
+      const scope=boundary.captureScope(boundary.candidates(adapter.discoverCandidates(helpers).candidates),adapter,helpers);
+      const next = scope.candidates.find(container => container.getBoundingClientRect().top >= innerHeight);
       if (next) next.scrollIntoView({ block: 'start' });
       else window.scrollBy(0, Math.round(innerHeight * 0.8 * adapter.captureTuning.scrollStepMultiplier));
     },
     async collect() {
       const adapter = globalThis.AkuSourceAdapters.get('facebook');
       const discovery = adapter.discoverCandidates(helpers);
+      const scope=boundary.captureScope(boundary.candidates(discovery.candidates),adapter,helpers);
       const posts = [], rejectionReasons = {}, identityDiagnostics = [];
-      for (const container of boundary.candidates(discovery.candidates)) {
+      for (const container of scope.candidates) {
         const box = container.getBoundingClientRect();
         if (box.height <= 0 || box.bottom <= 0 || box.top >= innerHeight) continue;
         const result = await extract(adapter, container);
@@ -222,6 +226,7 @@
       const loginRequired = adapter.loginRequired();
       return { source: 'facebook', adapterVersion: adapter.version, visibility: document.visibilityState, url: location.href, title: document.title,
         candidateCount: discovery.candidates.length, discoveryStrategy: discovery.strategy, candidateDiagnostics: discovery.candidateDiagnostics,
+        dialogScope:{status:scope.status,candidateCount:scope.candidates.length},
         rejected: Object.values(rejectionReasons).reduce((sum,count) => sum + count, 0), rejectionReasons, identityDiagnostics, posts:admitted,
         boundaryDiagnostics:boundary.diagnostics(discovery.candidates),
         sourceUnavailable: adapter.availability(), loginRequired,

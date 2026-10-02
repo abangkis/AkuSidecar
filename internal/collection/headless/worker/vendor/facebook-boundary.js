@@ -1,6 +1,6 @@
 // PoC-only ownership boundary. Queries retain real DOM nodes for clicks/geometry.
 (() => {
-  if(globalThis.FacebookHeadlessBoundary?.runtimeRevision==='facebook-boundary-v3')return;
+  if(globalThis.FacebookHeadlessBoundary?.runtimeRevision==='facebook-boundary-v4')return;
   const selector = 'div[aria-posinset], [role="article"]';
   const actionSelector = '[aria-label^="Actions for this post by "]';
   const contentSelector = '[data-ad-preview="message"], [data-ad-comet-preview="message"]';
@@ -62,6 +62,36 @@
     views.set(root,view);return view;
   }
   function candidates(discovered){return [...new Set(discovered.map(viewFor))];}
+  function captureScope(values,adapter,helpers) {
+    const unchanged={status:'page',candidates:values,hoverCandidates:values};
+    // Only a native post route can bind a dialog to the requested identity.
+    // Feed/search/notification dialogs must never supply a guessed post ID.
+    const url=new URL(location.href);
+    const native=/\/(?:posts|permalink|videos)\/(?:pfbid[A-Za-z0-9]+|\d+)\/?$/i.test(url.pathname)
+      || /^\/reel\/\d+\/?$/i.test(url.pathname)
+      || /^\/(?:story|permalink)\.php$/i.test(url.pathname)&&url.searchParams.has('story_fbid')
+      || /^\/(?:watch\/|video\.php)$/i.test(url.pathname)&&url.searchParams.has('v');
+    if(!native)return unchanged;
+    const expected=adapter.platformIdFromCandidates([url.href]);
+    if(!expected)return unchanged;
+    const visible=[...document.querySelectorAll('[role="dialog"]')].filter(dialog=>{
+      const rect=dialog.getBoundingClientRect(),style=getComputedStyle(dialog);
+      return rect.width>0&&rect.height>0&&rect.bottom>0&&rect.top<innerHeight
+        &&style.display!=='none'&&style.visibility!=='hidden'&&style.visibility!=='collapse';
+    });
+    if(!visible.length)return unchanged;
+    // Facebook nests dialog wrappers. Keep the innermost visible surface;
+    // separate simultaneous dialogs remain ambiguous, rather than picking one.
+    const leaves=visible.filter(dialog=>!visible.some(other=>other!==dialog&&dialog.contains(other)));
+    if(leaves.length!==1)return {status:'ambiguous_dialog',candidates:[],hoverCandidates:[]};
+    const dialog=leaves[0];
+    const inside=values.filter(candidate=>dialog.contains(raw(candidate)));
+    const bound=inside.filter(candidate=>adapter.platformIdFromCandidates([adapter.findPermalinkDetails(candidate,helpers)?.url])===expected);
+    if(!bound.length)return {status:'dialog_pending_identity',candidates:[],hoverCandidates:inside};
+    // Keep every binding of this ID in the dialog. The extractor's existing
+    // author/text conflict checks still reject inconsistent representations.
+    return {status:'native_post_dialog',candidates:bound,hoverCandidates:inside};
+  }
   function diagnostics(discovered){
     return discovered.slice(0,12).map(candidate=>{
       const view=viewFor(candidate),root=raw(view);
@@ -79,5 +109,5 @@
         })};
     });
   }
-  globalThis.FacebookHeadlessBoundary={runtimeRevision:'facebook-boundary-v3',raw,owner,owns,candidates,diagnostics};
+  globalThis.FacebookHeadlessBoundary={runtimeRevision:'facebook-boundary-v4',raw,owner,owns,candidates,captureScope,diagnostics};
 })();
