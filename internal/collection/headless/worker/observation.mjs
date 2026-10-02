@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
 
 const X_POST = /^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/;
+const MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS = 8;
+const STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS = [
+  'requestedCandidates', 'eligibleCandidates', 'returnedCandidates',
+  'resolverCandidateCount', 'returnedExactCandidateCount', 'noExactReturnedCandidateCount',
+  'resolverNoSafePairCandidateCount', 'resolverDomVideoPosterPathMismatchCount', 'resolverDomImagePathNoMatchCount',
+  'resolverPairWithoutDomPosterCount',
+  'resolverAmbiguousCandidateCount', 'resolverTraversedNodeCount', 'resolverMatchedStructuredNodeCount',
+  'resolverMatchedMediaObjectCount', 'ownSafePairCount', 'domVideoPosterCount', 'domImageCount',
+  'matchedPosterPathCount', 'enrichedVideoCount', 'unmatchedVideoPosterCount', 'resolvedPosts', 'unresolvedPosts',
+];
 
 export function canonicalSourceURL(source, raw) {
   if (typeof raw !== 'string' || raw.length > 4096) return null;
@@ -193,6 +203,14 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
   });
   const last = snapshots.at(-1) || first;
   const status = hasPosts ? 'partial' : 'unverified';
+  const structuredMediaResolution = {
+    schema: 'aku.headless-structured-media-diagnostics.v1',
+    snapshotCount: boundedDiagnosticCount(snapshots.length),
+    includedSnapshotCount: Math.min(snapshots.length, MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS),
+    truncated: snapshots.length > MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS,
+    snapshots: snapshots.slice(0, MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS)
+      .map((snapshot, index) => structuredMediaDiagnosticSnapshot(snapshot?.structuredMediaResolution, index)),
+  };
   return {
     source,
     pageUrl: requestedUrl,
@@ -211,12 +229,30 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       sourceUnavailable: last.sourceUnavailable === true,
       authenticatedUiObserved: last.authenticatedUiObserved === true,
       documentReady: last.documentReady === true,
+      structuredMediaResolution,
       ...(first.quoteIdentityProbe ? { quoteIdentityProbe: structuredClone(first.quoteIdentityProbe) } : {}),
       ...(frontier ? { frontier: structuredClone(frontier) } : {}),
       ...(freshness ? { freshness: structuredClone(freshness) } : {}),
       provenance,
     },
   };
+}
+
+function structuredMediaDiagnosticSnapshot(summary, index) {
+  const value = summary && typeof summary === 'object' && !Array.isArray(summary) ? summary : {};
+  const allowedStatuses = new Set(['not_needed', 'unavailable', 'bounded', 'observed', 'unresolved']);
+  return {
+    snapshotIndex: index,
+    status: allowedStatuses.has(value.status) ? value.status : 'not_recorded',
+    available: typeof value.available === 'boolean' ? value.available : null,
+    bounded: typeof value.bounded === 'boolean' ? value.bounded : null,
+    resolverBounded: typeof value.resolverBounded === 'boolean' ? value.resolverBounded : null,
+    ...Object.fromEntries(STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS.map(key => [key, boundedDiagnosticCount(value[key])])),
+  };
+}
+
+function boundedDiagnosticCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : null;
 }
 
 export function captureError(code, message) {

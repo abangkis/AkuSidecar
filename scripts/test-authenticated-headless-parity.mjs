@@ -596,6 +596,7 @@ async function main() {
       profile: registration.profile, profileDirectory: registration.profileDirectory, bridgePath: candidate.bridgePath}, 45_000);
     if (!init?.ok || !init.result) throw new HarnessError(responseErrorCode(init));
     report.workerIdentity = init.result;
+    if(nativeObserver)report.execution.nativeVisibilityBinding=await nativeObserver.bind(init.result.pid);
 
     const feedResults = new Map();
     for (const source of feedSources) {

@@ -26,3 +26,17 @@ test('Quiet separates minimized visible host from an exposed root window',()=>{
   assert.equal(result.visibleNonMinimizedRootSamples,1);
   assert.match(result.limitations.at(-1),/Settings, Bridge and interactive/);
 });
+
+test('exact root observation stays separately qualified when the global inventory truncates',()=>{
+  const root=trigger=>({trigger,pid:11,at:'2026-10-02T00:00:00Z',status:'available',scanComplete:true,
+    visibleRootCount:1,visibleNonMinimizedRootCount:0,rootForeground:false});
+  const trace={closed:true,exitCode:0,records:[sample('trace_start',[],{windowsTruncated:true}),sample('trace_end')],
+    rootRecords:[root('root_start'),root('root_end')]};
+  const result=summarizeNativeVisibility(trace,11,'quiet');
+  assert.equal(result.status,'partial');
+  assert.equal(result.afterInitRootVisibility.status,'bounded_observation_complete');
+  assert.equal(result.afterInitRootVisibility.visibleNonMinimizedRootSamples,0);
+  assert.equal(summarizeNativeVisibility(trace,12).afterInitRootVisibility.visibleNonMinimizedRootSamples,null);
+  trace.rootRecords[1].scanComplete=false;
+  assert.equal(summarizeNativeVisibility(trace,11).afterInitRootVisibility.status,'partial');
+});

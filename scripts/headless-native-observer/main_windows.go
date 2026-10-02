@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"sync"
@@ -29,9 +30,37 @@ func main() {
 			once.Do(func() { close(ended) })
 		}
 	})
-	write(map[string]any{"type": "ready", "maxDurationMs": nativetrace.MaxDuration.Milliseconds()})
+	write(map[string]any{"type": "ready", "maxDurationMs": nativetrace.MaxDuration.Milliseconds(), "rootBindingSupported": true})
 	scanner := bufio.NewScanner(os.Stdin)
-	_ = scanner.Scan() // One stop line or EOF ends the passive observer.
+	scanner.Buffer(make([]byte, 256), 1024)
+	var cancelRoot context.CancelFunc
+	var rootDone chan struct{}
+	for scanner.Scan() {
+		if scanner.Text() == "stop" {
+			break
+		}
+		var binding struct {
+			Type string `json:"type"`
+			PID  uint32 `json:"pid"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &binding) != nil || binding.Type != "bind_root" || binding.PID == 0 || cancelRoot != nil {
+			break
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), nativetrace.MaxDuration)
+		cancelRoot = cancel
+		rootDone = make(chan struct{})
+		ready := make(chan struct{})
+		go observeRoot(ctx, binding.PID, write, ready, rootDone)
+		<-ready
+		write(map[string]any{"type": "root_ready", "pid": binding.PID})
+	}
+	if cancelRoot != nil {
+		cancelRoot()
+		select {
+		case <-rootDone:
+		case <-time.After(2 * time.Second):
+		}
+	}
 	observer.Stop()
 	select {
 	case <-ended:

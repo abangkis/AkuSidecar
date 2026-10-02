@@ -1172,6 +1172,29 @@ a mode switch. Do not retrofit a settings-only change around them.
   and integrated Settings/auto-update/recapture journeys. Native capture success
   and contract admission do not establish complete source quality or release.
 
+### Native media diagnosis and exact-root observer (2026-10-02)
+
+- Native Facebook watch/video/reel permalinks with an exact own ID now retain a
+  video expectation even when the DOM exposes only an image. Missing structured
+  playback stays unknown; unrelated images and unverified aliases are preserved.
+- Bounded count-only structured-media diagnostics distinguish no exact returned
+  candidate, no safe own poster/playback pair, and DOM path mismatch. Coverage
+  retains at most eight snapshot summaries; unavailable counters remain null.
+  Worker focused checks pass 17/17, including the video-expectation delta.
+- QA-only Windows observation binds the exact source Chrome PID after worker
+  initialization. Its independent aggregate scan cannot be displaced by other
+  Chrome windows in the shared sixteen-window inventory. The startup/global
+  trace remains separately qualified and retains the previously observed host
+  activation. After-init sampling cannot establish absence of startup flashing
+  or visibility shorter than the 100ms polling interval.
+- Observer summary checks pass 4/4. The disposable Google Chrome 154 fixture
+  observes its known minimized root without an exposed window (0.460s); a
+  passive exact-PID handshake also reaches a clean start/end receipt. These are
+  tool/fixture checks, not authenticated source acceptance for the new delta.
+- Next: immutable candidate build and new official authenticated receipts to
+  resolve the media diagnosis and qualify collection-phase visibility. Actual
+  Settings/Bridge/social reader/login integration gates remain open.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

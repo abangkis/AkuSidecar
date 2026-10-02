@@ -219,6 +219,24 @@ test('unsafe or missing Facebook media remains unknown and is never synthesized'
   });
 });
 
+test('exact native Facebook video URLs retain video expectation when DOM exposes an image only', async () => {
+  const id='123456789012349';
+  const post={id:`facebook:post:${id}`,permalink:`https://www.facebook.com/watch/?v=${id}`,
+    author:'Fixture',text:'Video shell',mediaExpected:['image'],media:[{kind:'image',url:'https://scontent.xx.fbcdn.net/fixture/frame.jpg'}]};
+  const result=await resolveStructuredMedia({page:fakePage(),source:'facebook',posts:[post],resolver:null,deadlineAt:Date.now()+2000});
+  assert.deepEqual(result.posts[0].mediaExpected,['image','video']);
+  assert.equal(result.posts[0].mediaEvidence.nativeVideoPermalink,true);
+  assert.equal(result.posts[0].media[0].kind,'image');
+  const block=toObservation({source:'facebook',requestedUrl:'https://www.facebook.com/',snapshots:[{posts:result.posts}],
+    provenance:{},capturedAt:'2026-10-02T00:00:00.000Z',stopReason:'fixture'}).snapshots[0].blocks[0];
+  assert.equal(block.mediaRecovery.unknownVideo,'unresolved');
+  assert.equal(block.captureQuality.status,'unverified');
+  const alias={...post,id:'facebook:post:123456789012350'};
+  assert.equal(structuredMediaRequest('facebook',[alias]).request.candidateIds.length,0);
+  const imagePost={...post,permalink:`https://www.facebook.com/fixture/posts/${id}`};
+  assert.equal(structuredMediaRequest('facebook',[imagePost]).request.candidateIds.length,0);
+});
+
 test('duplicate candidate bindings fail closed and more than sixteen requested IDs are bounded', async () => {
   const id = '1890000000000000004';
   const poster = 'https://pbs.twimg.com/ext_tw_video_thumb/own/pu/img/frame.jpg';
@@ -254,4 +272,73 @@ test('unavailable optional resolver leaves posts intact and records unavailabili
   assert.equal(result.posts[0].media[0].kind, 'video_poster');
   assert.equal(result.posts[0].mediaEvidence.structuredMediaResolution.status, 'unavailable');
   assert.equal(result.summary.available, false);
+  const observation = toObservation({ source: 'x', requestedUrl: 'https://x.com/home',
+    snapshots: [{ posts: result.posts, structuredMediaResolution: result.summary }], provenance: {},
+    capturedAt: '2026-10-02T00:00:00.000Z', stopReason: 'fixture' });
+  const diagnostics = observation.coverage.structuredMediaResolution.snapshots[0];
+  assert.equal(diagnostics.returnedExactCandidateCount, null);
+  assert.equal(diagnostics.resolverBounded, null);
+  assert.equal(diagnostics.ownSafePairCount, null);
+  assert.equal(diagnostics.domVideoPosterCount, 1);
+});
+
+test('aggregate diagnostics distinguish absent candidates, unsafe pairs, and DOM poster path mismatch', async () => {
+  const id = '1890000000000000006';
+  const post = xPost(id, ['https://pbs.twimg.com/ext_tw_video_thumb/dom/pu/img/frame.jpg']);
+  const diagnostics = { candidateCount: 0, traversedNodeCount: 19, matchedStructuredNodeCount: 0, bounded: false };
+  const noCandidate = await resolveStructuredMedia({ page: fakePage(() => ({
+    runtimeRevision: xResolver.runtimeRevision, resolverVersion: 'x-main-world-structured-v1', candidates: [], diagnostics,
+  })), source: 'x', posts: [post], resolver: xResolver, deadlineAt: Date.now() + 2000 });
+  assert.equal(noCandidate.summary.noExactReturnedCandidateCount, 1);
+  assert.equal(noCandidate.summary.resolverNoSafePairCandidateCount, 0);
+  assert.equal(noCandidate.summary.resolverTraversedNodeCount, 19);
+  assert.equal(noCandidate.summary.resolverMatchedStructuredNodeCount, 0);
+  assert.equal(noCandidate.summary.resolverBounded, false);
+  assert.equal(noCandidate.summary.returnedCandidates, 0);
+
+  const candidateId = `x:status:${id}`;
+  const noSafePair = await resolveStructuredMedia({ page: fakePage(() => ({
+    runtimeRevision: xResolver.runtimeRevision, resolverVersion: 'x-main-world-structured-v1',
+    candidates: [{ candidateId, media: [{ kind: 'video', url: 'https://video.twimg.com/ext_tw_video/own/clip.mp4',
+      playbackUrl: 'https://video.twimg.com/ext_tw_video/own/clip.mp4', posterUrl: null }] }],
+    diagnostics: { candidateCount: 1, traversedNodeCount: 23, matchedStructuredNodeCount: 1, bounded: false },
+  })), source: 'x', posts: [post], resolver: xResolver, deadlineAt: Date.now() + 2000 });
+  assert.equal(noSafePair.summary.noExactReturnedCandidateCount, 0);
+  assert.equal(noSafePair.summary.resolverNoSafePairCandidateCount, 1);
+  assert.equal(noSafePair.summary.ownSafePairCount, 0);
+  assert.equal(noSafePair.posts[0].mediaEvidence.structuredMediaResolution.status, 'no_match');
+
+  const poster = 'https://pbs.twimg.com/ext_tw_video_thumb/structured/pu/img/frame.jpg';
+  const playback = 'https://video.twimg.com/ext_tw_video/structured/pu/vid/clip.mp4';
+  const mismatch = await resolveStructuredMedia({ page: fakePage(() => ({
+    runtimeRevision: xResolver.runtimeRevision, resolverVersion: 'x-main-world-structured-v1',
+    candidates: [{ candidateId, media: [{ kind: 'video', url: poster, posterUrl: poster, playbackUrl: playback }] }],
+    diagnostics: { candidateCount: 1, traversedNodeCount: 31, matchedStructuredNodeCount: 2, bounded: true },
+  })), source: 'x', posts: [post], resolver: xResolver, deadlineAt: Date.now() + 2000 });
+  assert.equal(mismatch.summary.resolverNoSafePairCandidateCount, 0);
+  assert.equal(mismatch.summary.ownSafePairCount, 1);
+  assert.equal(mismatch.summary.domVideoPosterCount, 1);
+  assert.equal(mismatch.summary.matchedPosterPathCount, 0);
+  assert.equal(mismatch.summary.resolverDomVideoPosterPathMismatchCount, 1);
+  assert.equal(mismatch.summary.resolverBounded, true);
+  assert.equal(mismatch.posts[0].mediaEvidence.structuredMediaResolution.status, 'partial');
+
+  const observation = toObservation({ source: 'x', requestedUrl: 'https://x.com/home',
+    snapshots: [{ posts: mismatch.posts, structuredMediaResolution: mismatch.summary }], provenance: {},
+    capturedAt: '2026-10-02T00:00:00.000Z', stopReason: 'fixture' });
+  const coverage = observation.coverage.structuredMediaResolution;
+  assert.equal(coverage.schema, 'aku.headless-structured-media-diagnostics.v1');
+  assert.equal(coverage.snapshots[0].resolverDomVideoPosterPathMismatchCount, 1);
+  assert.equal(coverage.snapshots[0].resolverTraversedNodeCount, 31);
+  assert.equal(JSON.stringify(coverage).includes(id), false);
+  assert.equal(JSON.stringify(coverage).includes('pbs.twimg.com'), false);
+  assert.equal(JSON.stringify(coverage).includes('Fixture author'), false);
+
+  const capped = toObservation({ source: 'x', requestedUrl: 'https://x.com/home',
+    snapshots: Array.from({ length: 9 }, () => ({ posts: [], structuredMediaResolution: mismatch.summary })),
+    provenance: {}, capturedAt: '2026-10-02T00:00:00.000Z', stopReason: 'fixture' }).coverage.structuredMediaResolution;
+  assert.equal(capped.snapshotCount, 9);
+  assert.equal(capped.includedSnapshotCount, 8);
+  assert.equal(capped.truncated, true);
+  assert.equal(capped.snapshots.length, 8);
 });

@@ -2,11 +2,12 @@ import { canonicalSourceURL } from './observation.mjs';
 
 const MAX_CANDIDATES = 16;
 const MAX_RESOLVER_RESULT_BYTES = 256 * 1024;
+const MAX_DIAGNOSTIC_COUNT = 1_000_000;
 
 export function structuredMediaRequest(source, posts) {
   const eligible = [];
   for (const post of Array.isArray(posts) ? posts : []) {
-    if (!expectsVideo(post)) continue;
+    if (!expectsVideo(post) && !nativeVideoPermalink(source, post)) continue;
     const candidateId = nativeCandidateId(source, post);
     if (candidateId) eligible.push({ post, candidateId });
   }
@@ -26,19 +27,21 @@ export function structuredMediaRequest(source, posts) {
 }
 
 export async function resolveStructuredMedia({ page, source, posts, resolver, deadlineAt }) {
-  const originalPosts = Array.isArray(posts) ? posts : [];
+  const originalPosts = (Array.isArray(posts) ? posts : []).map(post => {
+    if (!nativeVideoPermalink(source, post)) return post;
+    return { ...post,
+      mediaExpected: [...new Set([...(Array.isArray(post.mediaExpected) ? post.mediaExpected : []), 'video'])],
+      mediaEvidence: { ...(plainObject(post.mediaEvidence) ? post.mediaEvidence : {}), nativeVideoPermalink: true },
+    };
+  });
   const { eligible, requestedIds, request, bounded } = structuredMediaRequest(source, originalPosts);
+  const domCounts = countDomMedia(eligible);
   const statusFor = new Map();
   for (const entry of eligible) {
     statusFor.set(entry.post, requestedIds.has(entry.candidateId) ? 'no_match' : 'bounded');
   }
-  const noWorkSummary = status => ({
-    available: status !== 'unavailable', status,
-    requestedCandidates: request.candidateIds.length,
-    eligibleCandidates: eligible.length,
-    resolvedPosts: 0,
-    unresolvedPosts: eligible.length,
-    bounded,
+  const noWorkSummary = status => makeSummary({
+    available: status !== 'unavailable', status, request, eligible, bounded, domCounts,
   });
 
   if (!eligible.length) return { posts: originalPosts, summary: noWorkSummary('not_needed') };
@@ -83,32 +86,72 @@ export async function resolveStructuredMedia({ page, source, posts, resolver, de
 
   const replacements = new Map();
   let resolvedPosts = 0;
+  const diagnostics = {
+    returnedCandidates: diagnosticCount(result.candidates.length),
+    resolverCandidateCount: diagnosticCount(result.diagnostics?.candidateCount),
+    returnedExactCandidateCount: byId.size,
+    noExactReturnedCandidateCount: [...requestedIds].filter(candidateId => !byId.has(candidateId)).length,
+    resolverNoSafePairCandidateCount: 0,
+    resolverDomVideoPosterPathMismatchCount: domCounts.videoPosterCount === null ? null : 0,
+    resolverDomImagePathNoMatchCount: domCounts.imageCount === null ? null : 0,
+    resolverPairWithoutDomPosterCount: domCounts.videoPosterCount === null
+      || source === 'facebook' && domCounts.imageCount === null ? null : 0,
+    resolverAmbiguousCandidateCount: 0,
+    resolverTraversedNodeCount: diagnosticCount(result.diagnostics?.traversedNodeCount),
+    resolverMatchedStructuredNodeCount: diagnosticCount(result.diagnostics?.matchedStructuredNodeCount),
+    resolverMatchedMediaObjectCount: diagnosticCount(result.diagnostics?.matchedMediaObjectCount),
+    resolverBounded: typeof result.diagnostics?.bounded === 'boolean' ? result.diagnostics.bounded : null,
+    ownSafePairCount: 0,
+    domVideoPosterCount: domCounts.videoPosterCount,
+    domImageCount: domCounts.imageCount,
+    matchedPosterPathCount: domCounts.videoPosterCount === null || source === 'facebook' && domCounts.imageCount === null ? null : 0,
+    enrichedVideoCount: domCounts.videoPosterCount === null || source === 'facebook' && domCounts.imageCount === null ? null : 0,
+    unmatchedVideoPosterCount: domCounts.videoPosterCount === null ? null : 0,
+  };
   for (const [candidateId, entries] of entriesById) {
     if (!requestedIds.has(candidateId)) continue;
     if (entries.length !== 1) {
+      diagnostics.resolverAmbiguousCandidateCount++;
       for (const entry of entries) statusFor.set(entry.post, 'ambiguous');
       continue;
     }
     const candidates = byId.get(candidateId) || [];
     if (candidates.length > 1) {
+      diagnostics.resolverAmbiguousCandidateCount++;
       statusFor.set(entries[0].post, 'ambiguous');
       continue;
     }
     const candidate = candidates[0];
     if (!candidate) continue;
     const pairs = verifiedVideoPairs(source, candidate.media);
+    diagnostics.ownSafePairCount = diagnosticCount((diagnostics.ownSafePairCount || 0) + pairs.byPosterPath.size);
     if (pairs.ambiguous) {
+      diagnostics.resolverAmbiguousCandidateCount++;
       statusFor.set(entries[0].post, 'ambiguous');
       continue;
     }
-    if (!pairs.byPosterPath.size) continue;
+    if (!pairs.byPosterPath.size) {
+      diagnostics.resolverNoSafePairCandidateCount++;
+      continue;
+    }
     const post = entries[0].post;
     const originalMedia = Array.isArray(post.media) ? post.media : [];
+    const domCandidatePosterCount = Array.isArray(post.media)
+      ? originalMedia.filter(item => item?.kind === 'video_poster'
+        || source === 'facebook' && item?.kind === 'image').length
+      : null;
+    if (domCandidatePosterCount === 0 && diagnostics.resolverPairWithoutDomPosterCount !== null) {
+      diagnostics.resolverPairWithoutDomPosterCount++;
+    }
     const nextMedia = [];
     let ownVideoPosterCount = 0;
     let accountedPosterCount = 0;
     let verifiedVideoCount = 0;
     let matchedFacebookImage = false;
+    let unmatchedVideoPostersForCandidate = 0;
+    let matchedFacebookImagesForCandidate = 0;
+    const facebookImageCount = source === 'facebook'
+      ? originalMedia.filter(item => item?.kind === 'image').length : 0;
     for (const item of originalMedia) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
         nextMedia.push(item);
@@ -126,9 +169,16 @@ export async function resolveStructuredMedia({ page, source, posts, resolver, de
         matchedFacebookImage = true;
       }
       if (!pair || (!isVideoPoster && !isMatchedFacebookImage)) {
+        if (isVideoPoster) {
+          unmatchedVideoPostersForCandidate++;
+          if (diagnostics.unmatchedVideoPosterCount !== null) diagnostics.unmatchedVideoPosterCount++;
+        }
         nextMedia.push(item);
         continue;
       }
+      if (diagnostics.matchedPosterPathCount !== null) diagnostics.matchedPosterPathCount++;
+      if (diagnostics.enrichedVideoCount !== null) diagnostics.enrichedVideoCount++;
+      if (isMatchedFacebookImage) matchedFacebookImagesForCandidate++;
       accountedPosterCount++;
       verifiedVideoCount++;
       nextMedia.push({
@@ -148,6 +198,11 @@ export async function resolveStructuredMedia({ page, source, posts, resolver, de
       && verifiedVideoCount === ownVideoPosterCount;
     const status = fullyResolved ? 'resolved'
       : (accountedPosterCount > 0 || ownVideoPosterCount > 0 || matchedFacebookImage ? 'partial' : 'no_match');
+    if (unmatchedVideoPostersForCandidate > 0 && diagnostics.resolverDomVideoPosterPathMismatchCount !== null) {
+      diagnostics.resolverDomVideoPosterPathMismatchCount++;
+    }
+    if (facebookImageCount > 0 && matchedFacebookImagesForCandidate === 0
+        && diagnostics.resolverDomImagePathNoMatchCount !== null) diagnostics.resolverDomImagePathNoMatchCount++;
     statusFor.set(post, status);
     if (fullyResolved) resolvedPosts++;
     replacements.set(post, {
@@ -182,16 +237,12 @@ export async function resolveStructuredMedia({ page, source, posts, resolver, de
       : limitations;
     return { ...post, media: replacement.media, mediaEvidence, limitations: nextLimitations };
   });
-  const summary = {
+  const summary = makeSummary({
     available: true,
     status: bounded ? 'bounded' : (resolvedPosts ? 'observed' : 'unresolved'),
-    requestedCandidates: request.candidateIds.length,
-    eligibleCandidates: eligible.length,
-    returnedCandidates: Math.min(result.candidates.length, MAX_CANDIDATES * 2),
-    resolvedPosts,
-    unresolvedPosts: Math.max(0, eligible.length - resolvedPosts),
-    bounded: bounded || result.diagnostics?.bounded === true,
-  };
+    request, eligible, bounded: bounded || result.diagnostics?.bounded === true,
+    domCounts, resolvedPosts, diagnostics,
+  });
   return { posts: enriched, summary };
 }
 
@@ -208,15 +259,10 @@ function attachUnavailable(posts, eligible, status, request, bounded) {
     : post);
   return {
     posts: result,
-    summary: {
-      available: status !== 'unavailable',
-      status: bounded ? 'bounded' : status,
-      requestedCandidates: request.candidateIds.length,
-      eligibleCandidates: eligible.length,
-      resolvedPosts: 0,
-      unresolvedPosts: eligible.length,
-      bounded,
-    },
+    summary: makeSummary({
+      available: status !== 'unavailable', status: bounded ? 'bounded' : status,
+      request, eligible, bounded, domCounts: countDomMedia(eligible),
+    }),
   };
 }
 
@@ -254,6 +300,13 @@ function facebookNativeId(canonical) {
     return ['story_fbid', 'fbid', 'photo_id'].map(key => url.searchParams.get(key))
       .find(value => /^(?:pfbid[A-Za-z0-9]+|\d{1,32})$/i.test(value || '')) || null;
   } catch { return null; }
+}
+
+function nativeVideoPermalink(source, post) {
+  if (source !== 'facebook' || !nativeCandidateId(source, post)) return false;
+  const canonical = canonicalSourceURL(source, post.permalink);
+  const path = new URL(canonical).pathname;
+  return path.toLowerCase() === '/watch/' || /\/(?:videos|reel)\/(?:pfbid[A-Za-z0-9]+|\d+)(?:\/|$)/i.test(path);
 }
 
 function expectsVideo(post) {
@@ -335,6 +388,66 @@ function boundedDimension(value) {
 
 function countVideoPosters(post) {
   return Array.isArray(post?.media) ? post.media.filter(item => item?.kind === 'video_poster').length : 0;
+}
+
+function makeSummary({ available, status, request, eligible, bounded, domCounts, resolvedPosts = 0, diagnostics = null }) {
+  const unresolvedPosts = Math.max(0, eligible.length - resolvedPosts);
+  const base = {
+    available,
+    status,
+    requestedCandidates: diagnosticCount(request?.candidateIds?.length),
+    eligibleCandidates: diagnosticCount(eligible?.length),
+    returnedCandidates: diagnostics?.returnedCandidates ?? null,
+    resolvedPosts: diagnosticCount(resolvedPosts),
+    unresolvedPosts: diagnosticCount(unresolvedPosts),
+    bounded: typeof bounded === 'boolean' ? bounded : null,
+    domVideoPosterCount: domCounts?.videoPosterCount ?? null,
+    domImageCount: domCounts?.imageCount ?? null,
+    ...nullResolverDiagnostics(),
+    ...(diagnostics || {}),
+  };
+  return base;
+}
+
+function nullResolverDiagnostics() {
+  return {
+    resolverCandidateCount: null,
+    returnedExactCandidateCount: null,
+    noExactReturnedCandidateCount: null,
+    resolverNoSafePairCandidateCount: null,
+    resolverDomVideoPosterPathMismatchCount: null,
+    resolverDomImagePathNoMatchCount: null,
+    resolverPairWithoutDomPosterCount: null,
+    resolverAmbiguousCandidateCount: null,
+    resolverTraversedNodeCount: null,
+    resolverMatchedStructuredNodeCount: null,
+    resolverMatchedMediaObjectCount: null,
+    resolverBounded: null,
+    ownSafePairCount: null,
+    matchedPosterPathCount: null,
+    enrichedVideoCount: null,
+    unmatchedVideoPosterCount: null,
+  };
+}
+
+function countDomMedia(eligible) {
+  if (!eligible.length) return { videoPosterCount: null, imageCount: null };
+  let videoPosterCount = 0;
+  let imageCount = 0;
+  let complete = true;
+  for (const { post } of eligible) {
+    if (!Array.isArray(post?.media)) {
+      complete = false;
+      continue;
+    }
+    videoPosterCount += post.media.filter(item => item?.kind === 'video_poster').length;
+    imageCount += post.media.filter(item => item?.kind === 'image').length;
+  }
+  return complete ? { videoPosterCount, imageCount } : { videoPosterCount: null, imageCount: null };
+}
+
+function diagnosticCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= MAX_DIAGNOSTIC_COUNT ? value : null;
 }
 
 function resolverVersion(value) {
