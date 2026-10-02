@@ -1391,6 +1391,15 @@ a mode switch. Do not retrofit a settings-only change around them.
   identifies the exact notice variant ending in "right now" inside the main
   region and heading. Both restore cleanly. The bounded exact-line matcher now
   includes that observed variant; native verification must be repeated.
+- Final candidate `headless-facebook-availability-v2-20261002` (Sidecar
+  `9a869d7`, Bridge `8dd4d6d`, Browser `036d839`) verifies 413 files /
+  588,868,593 bytes. Official receipt
+  `build/authenticated-parity-9b3c8cd0-5b69-4739-a5f6-8baecf42edad/report.json`
+  now returns the expected `target_unavailable` classification. Explicit worker
+  exit, profile release and healthy original runtime restoration are confirmed.
+  This passes the negative-case classification gate; it is not a successful
+  post capture or a full source-parity result. Focused engine routing/failure
+  regression checks also pass (0.162s). No installation or default change.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
