@@ -26,9 +26,26 @@ test('photo follows one explicit parent and returns parent identity with separat
     provenance:'structured_photo_parent_and_matching_native_post'});
 });
 test('wrong author, text, media, identity or redirect cannot pass parent admission',async()=>{
-  for(const patch of [{author:'Other'},{text:'Other'},{media:[]},{id:'facebook:post:999'}])
-    await assert.rejects(run(patch),e=>e.code==='photo_parent_unverified');
-  await assert.rejects(run({},undefined,true),e=>e.code==='photo_parent_unverified');
+  for(const [patch,field] of [[{author:'Other'},'authorMatchCount'],[{text:'Other'},'textMatchCount'],
+    [{media:[]},'imagePathMatchCount'],[{id:'facebook:post:999'},'nativeIdentityCandidateCount']])
+    await assert.rejects(run(patch),e=>{
+      assert.equal(e.code,'photo_parent_unverified');
+      assert.equal(e.diagnostics.stage,'photo_parent_corroboration');
+      assert.equal(e.diagnostics.routeMatches,true);
+      assert.equal(e.diagnostics[field],0);
+      assert.equal(e.diagnostics.corroboratedCandidateCount,0);
+      // Diagnostics expose only a stage, a boolean and counts, never social
+      // content, IDs, URLs or media tokens.
+      assert.ok(Object.entries(e.diagnostics).every(([key,value])=>
+        key==='stage' ? value==='photo_parent_corroboration' : typeof value==='boolean'||Number.isSafeInteger(value)));
+      return true;
+    });
+  await assert.rejects(run({},undefined,true),e=>{
+    assert.equal(e.code,'photo_parent_unverified');
+    assert.equal(e.diagnostics.routeMatches,false);
+    assert.equal(e.diagnostics.corroboratedCandidateCount,1);
+    return true;
+  });
 });
 test('borrowed Quiet capture does not acquire photo navigation behavior',async()=>{
   await assert.rejects(run({},'browser_quiet_hidden'),e=>e.code==='empty_unverified');

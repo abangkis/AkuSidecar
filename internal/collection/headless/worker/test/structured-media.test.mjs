@@ -163,14 +163,16 @@ test('X mixed posters stay unresolved, while fully accounted owned playback keep
   });
 });
 
-test('Facebook resolver upgrades only an exact own image poster and preserves other images', async () => {
+test('Facebook resolver reaches delayed JSON but upgrades only its own poster and preserves other images', async () => {
   const id = '123456789012345';
   const poster = 'https://scontent.xx.fbcdn.net/v/t39.30808-6/12345_n.jpg?stp=dst-jpg_s320x320';
   const playback = 'https://video.xx.fbcdn.net/o1/v/t2/f2/m412/fixture.mp4?ccb=9';
   const foreign = facebookScript('123456789012346', 'https://scontent.xx.fbcdn.net/foreign/frame.jpg',
     'https://video.xx.fbcdn.net/foreign/clip.mp4');
   const own = facebookScript(id, poster, playback);
-  const pageDocument = { querySelectorAll: () => [own, foreign] };
+  const pageDocument = { querySelectorAll: () => [
+    ...Array.from({length: 35}, () => ({textContent: '{}'})), foreign, own,
+  ] };
   const post = {
     id: `facebook:post:${id}`,
     permalink: `https://www.facebook.com/watch/?v=${id}`,
@@ -193,6 +195,26 @@ test('Facebook resolver upgrades only an exact own image poster and preserves ot
     assert.equal(result.posts[0].media[1].kind, 'image');
     assert.equal(result.posts[0].mediaEvidence.structuredMediaResolution.status, 'resolved');
     assert.deepEqual(result.posts[0].limitations, ['visible_dom_only']);
+  });
+});
+
+test('Facebook evidence beyond the script-count cap stays unresolved without accepting foreign media', async () => {
+  const id = '123456789012348';
+  const poster = 'https://scontent.xx.fbcdn.net/fixture/own.jpg';
+  const own = facebookScript(id, poster, 'https://video.xx.fbcdn.net/fixture/own.mp4');
+  const foreign = facebookScript('123456789012349', poster, 'https://video.xx.fbcdn.net/fixture/foreign.mp4');
+  const document = {querySelectorAll: () => [foreign,
+    ...Array.from({length: 47}, () => ({textContent: '{}'})), own]};
+  const post = {id: `facebook:post:${id}`, permalink: `https://www.facebook.com/watch/?v=${id}`,
+    author: 'Fixture author', text: 'Video', mediaExpected: ['video'],
+    media: [{kind: 'video_poster', url: poster, loaded: true}]};
+  await withDocument(document, async () => {
+    const result = await resolveStructuredMedia({page: fakePage(), source: 'facebook',
+      posts: [post], resolver: facebookResolver, deadlineAt: Date.now() + 2000});
+    assert.equal(result.summary.resolvedPosts, 0);
+    assert.equal(result.posts[0].media[0].kind, 'video_poster');
+    assert.equal(result.posts[0].media[0].playbackUrl, undefined);
+    assert.equal(result.posts[0].mediaEvidence.structuredMediaResolution.status, 'no_match');
   });
 });
 

@@ -297,8 +297,17 @@ async function bindPhotoParentSnapshot(page,snapshot,parent,deadline) {
   const posts=snapshot.posts.filter(p=>p.id===parent.nativeId);
   const matches=p=>norm(p.author)===norm(parent.author)&&norm(p.text)===norm(parent.text)
     &&p.media?.some(m=>{try{const u=new URL(m.url);return m.kind==='image'&&u.origin+u.pathname===parent.mediaPath;}catch{return false;}});
-  if(canonicalSourceURL('facebook',actual)!==parent.url||!posts.length||posts.some(p=>!matches(p)))
-    throw captureError('photo_parent_unverified','Parent post did not corroborate the photo metadata');
+  const routeMatches=canonicalSourceURL('facebook',actual)===parent.url;
+  if(!routeMatches||!posts.length||posts.some(p=>!matches(p)))
+    throw Object.assign(captureError('photo_parent_unverified','Parent post did not corroborate the photo metadata'),{
+      diagnostics:{stage:'photo_parent_corroboration',routeMatches,
+        candidateCount:Math.min(snapshot.posts.length,1_000_000),
+        nativeIdentityCandidateCount:Math.min(posts.length,1_000_000),
+        authorMatchCount:Math.min(posts.filter(p=>norm(p.author)===norm(parent.author)).length,1_000_000),
+        textMatchCount:Math.min(posts.filter(p=>norm(p.text)===norm(parent.text)).length,1_000_000),
+        imagePathMatchCount:Math.min(posts.filter(p=>p.media?.some(m=>{try{const u=new URL(m.url);return m.kind==='image'&&u.origin+u.pathname===parent.mediaPath;}catch{return false;}})).length,1_000_000),
+        corroboratedCandidateCount:Math.min(posts.filter(matches).length,1_000_000)}
+    });
   return {...snapshot,posts};
 }
 

@@ -16,7 +16,7 @@ export function structuredMediaRequest(source, posts) {
     ? { candidateIds: candidateIds.slice(0, MAX_CANDIDATES), maxCandidates: MAX_CANDIDATES,
         maxMediaPerCandidate: 8, maxTraversalNodes: 1500, maxDepth: 16, playbackFormat: 'mp4' }
     : { candidateIds: candidateIds.slice(0, MAX_CANDIDATES), maxCandidates: MAX_CANDIDATES,
-        maxScripts: 12, maxScriptBytes: 131072, maxTotalBytes: 524288,
+        maxScripts: 48, maxScriptBytes: 131072, maxTotalBytes: 524288,
         maxTraversalNodes: 6000, maxDepth: 24 };
   return {
     eligible,

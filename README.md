@@ -231,6 +231,9 @@ Every development build writes an adjacent
 `aku-sidecar.exe.runtime-state.json` provenance receipt containing the
 application version, source commit, dirty state, build time, and binary
 SHA-256. Candidate provenance is promoted atomically with the executable, and
+the pinned headless/Quiet worker is staged alongside it. Restart builds stage
+worker assets under `headless-worker.next` and promote them only after the old
+runtime stops; a previous worker directory is retained for diagnosis/rollback.
 the restart succeeds only after the new health endpoint reports the recorded
 version.
 Use `build-dev.ps1` alone when only a stopped binary needs to be built.

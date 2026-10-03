@@ -16,6 +16,8 @@ $target = Join-Path $runtimeDir 'aku-sidecar.exe'
 $candidate = Join-Path $runtimeDir 'aku-sidecar.next.exe'
 $targetProvenance = "$target.runtime-state.json"
 $candidateProvenance = "$candidate.runtime-state.json"
+$candidateWorker = Join-Path $runtimeDir 'headless-worker.next'
+$targetWorker = Join-Path $runtimeDir 'headless-worker'
 $supervisor = Join-Path $workspaceRoot 'AkuSupervisor\target\dev\aku-supervisor.exe'
 $captureSplitFlag = '--windows-capture-split'
 $uiChromiumPathFlag = '--ui-chromium-path'
@@ -120,6 +122,9 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path -LiteralPath $candidateProvenance -PathType Leaf)) {
     throw "AkuSidecar candidate provenance was not produced: $candidateProvenance"
 }
+if (-not (Test-Path -LiteralPath (Join-Path $candidateWorker 'node.pin.json') -PathType Leaf)) {
+    throw 'Candidate worker was not staged; the running runtime was left untouched.'
+}
 
 # Inspect with the candidate itself before taking down the working runtime.
 # A product-version rollback can reject an unchanged schema solely because
@@ -202,9 +207,26 @@ if ($LASTEXITCODE -ne 0) {
     throw "AkuSupervisor could not stop akusidecar. Candidate remains at $candidate"
 }
 
+# Promote worker assets only after Supervisor stopped the existing runtime.
+$previousWorker = Join-Path $runtimeDir ('.headless-worker.previous-' + [Guid]::NewGuid().ToString('n'))
+$workerBackedUp = $false
+try {
+    if (Test-Path -LiteralPath $targetWorker -PathType Container) {
+        Move-Item -LiteralPath $targetWorker -Destination $previousWorker
+        $workerBackedUp = $true
+    }
+    Move-Item -LiteralPath $candidateWorker -Destination $targetWorker
+}
+catch {
+    if ($workerBackedUp -and -not (Test-Path -LiteralPath $targetWorker)) {
+        Move-Item -LiteralPath $previousWorker -Destination $targetWorker
+    }
+    throw
+}
 Move-Item -LiteralPath $candidate -Destination $target -Force
 Move-Item -LiteralPath $candidateProvenance -Destination $targetProvenance -Force
 $promotedProvenance = Get-Content -LiteralPath $targetProvenance -Raw | ConvertFrom-Json
+$promotedProvenance.headlessWorker.destinationDirectory = $targetWorker
 $promotedProvenance.binaryFile = 'aku-sidecar.exe'
 $promotedProvenance | Add-Member -NotePropertyName promotedAtUtc -NotePropertyValue ([DateTime]::UtcNow.ToString('o'))
 $temporaryTargetProvenance = "$targetProvenance.tmp"

@@ -7,6 +7,10 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
 $cacheRoot = Join-Path $repoRoot '.go-build'
+$workerStager = Join-Path (Split-Path -Parent $repoRoot) 'AkuBrowser\scripts\stage-headless-worker.ps1'
+if (-not (Test-Path -LiteralPath $workerStager -PathType Leaf)) {
+    throw "Required pin-checked worker staging helper is missing: $workerStager"
+}
 
 function Resolve-WorkspaceSharedTemp {
     $cursor = Get-Item -LiteralPath $repoRoot
@@ -39,6 +43,7 @@ $env:GOTMPDIR = $goTempRoot
 }
 
 $output = Join-Path $runtimeDir $OutputName
+$workerDirectoryName = if ($OutputName -eq 'aku-sidecar.next.exe') { 'headless-worker.next' } else { 'headless-worker' }
 $provenancePath = "$output.runtime-state.json"
 Push-Location $repoRoot
 try {
@@ -55,6 +60,12 @@ try {
         Copy-Item -LiteralPath (Join-Path $repoRoot "ui-reader-broker\$asset") -Destination (Join-Path $brokerDirectory $asset) -Force
     }
     & (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') -RuntimeDirectory $runtimeDir
+
+    # Quiet and Headless resolve their pinned worker beside the Sidecar binary.
+    # Use the release stager so development keeps the same runtime contract.
+    $workerProvenanceText = & $workerStager -DestinationDirectory (Join-Path $runtimeDir $workerDirectoryName)
+    $workerProvenance = ($workerProvenanceText | Out-String) | ConvertFrom-Json
+    if ($workerProvenance.status -ne 'ok') { throw 'Headless worker staging failed.' }
 
     $domainSource = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\domain\types.go') -Raw
     if ($domainSource -notmatch 'ApplicationVersion\s*=\s*"([^"]+)"') {
@@ -76,6 +87,7 @@ try {
         builtAtUtc = [DateTime]::UtcNow.ToString('o')
         binaryFile = $OutputName
         binarySha256 = $binaryHash
+        headlessWorker = $workerProvenance
     }
     $temporaryProvenance = "$provenancePath.tmp"
     [IO.File]::WriteAllText(
