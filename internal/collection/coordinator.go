@@ -3,11 +3,12 @@ package collection
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/domain"
-	"sync"
-	"time"
 )
 
 type RuntimeStatus struct {
@@ -33,6 +34,22 @@ const (
 
 type CaptureBackend interface {
 	Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error)
+}
+
+// CaptureAvailability is an optional, nonblocking capability for backends
+// whose readiness can change after they are bound to a browser generation.
+type CaptureAvailability interface {
+	CaptureAvailable() bool
+}
+
+func captureBackendAvailable(backend CaptureBackend) bool {
+	if backend == nil {
+		return false
+	}
+	if readiness, ok := backend.(CaptureAvailability); ok {
+		return readiness.CaptureAvailable()
+	}
+	return true
 }
 
 type Coordinator struct {
@@ -62,9 +79,10 @@ func (c *Coordinator) SetBrowserCollector(generation uint64, backend CaptureBack
 
 func (c *Coordinator) BrowserCollectorAvailable(source domain.Source) bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	backend, generation := c.browserCollector, c.browserGeneration
+	c.mu.Unlock()
 	s := c.owner.Snapshot()
-	return (source == "x" || source == "facebook") && c.browserCollector != nil && c.browserGeneration == s.Generation && s.State == captureruntime.Ready && s.Driver == "browser"
+	return (source == "x" || source == "facebook") && captureBackendAvailable(backend) && generation == s.Generation && s.State == captureruntime.Ready && s.Driver == "browser"
 }
 
 func NewCoordinator(owner *captureruntime.Manager, launch func(context.Context, string, uint64) (captureruntime.Process, error), validate func() error) *Coordinator {
@@ -98,14 +116,16 @@ func (c *Coordinator) Request(mode string) {
 }
 func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	requested, interactive, failure, available := c.requested, c.interactive, c.failure, c.headlessAvailable
+	backend, generation := c.browserCollector, c.browserGeneration
+	c.mu.Unlock()
 	s := c.owner.Snapshot()
 	effective := s.Driver
 	if s.State != captureruntime.Ready {
 		effective = ""
 	}
-	available := c.headlessAvailable
-	return RuntimeStatus{Available: true, Requested: c.requested, Effective: effective, Pending: c.requested != effective || c.interactive > 0, State: s.State, Failure: c.failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: c.browserCollector != nil && c.browserGeneration == s.Generation && effective == "browser", SupportedSources: []domain.Source{"x", "facebook"}}
+	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
+	return RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{"x", "facebook"}}
 }
 func (c *Coordinator) Start(ctx context.Context) {
 	go func() {

@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -312,7 +313,40 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	coordinator = collection.NewCoordinator(manager, launch, func() error { return headless.Validate(options) })
 	e.AttachCollectionCoordinator(coordinator)
-	coordinator.Request("headless")
+	// Use the product Settings boundary to persist the requested mode. The
+	// explicit replacement below still observes the actual Bridge retirement ACK.
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal("read isolated settings before headless request")
+	}
+	settings.CollectionMode = "headless"
+	settings.ActiveSources = []domain.Source{domain.SourceX, domain.SourceFacebook}
+	settingsPayload, err := json.Marshal(map[string]any{"settings": settings})
+	if err != nil {
+		t.Fatal("encode isolated headless Settings request")
+	}
+	settingsRequest, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://127.0.0.1:11122/api/settings", bytes.NewReader(settingsPayload))
+	if err != nil {
+		t.Fatal("create isolated headless Settings request")
+	}
+	settingsRequest.Header.Set("Content-Type", "application/json")
+	settingsResponse, err := (&http.Client{Timeout: 5 * time.Second}).Do(settingsRequest)
+	if err != nil {
+		t.Fatal("send isolated headless Settings request")
+	}
+	settingsBody, readSettingsErr := io.ReadAll(io.LimitReader(settingsResponse.Body, 128*1024))
+	_ = settingsResponse.Body.Close()
+	var settingsResult struct {
+		Settings domain.Settings          `json:"settings"`
+		Runtime  collection.RuntimeStatus `json:"collectionRuntime"`
+	}
+	if readSettingsErr != nil || settingsResponse.StatusCode != http.StatusOK || json.Unmarshal(settingsBody, &settingsResult) != nil {
+		t.Fatalf("isolated Settings request failed (HTTP %d)", settingsResponse.StatusCode)
+	}
+	if settingsResult.Settings.CollectionMode != "headless" || settingsResult.Settings.CaptureVisibility != settings.CaptureVisibility ||
+		settingsResult.Runtime.Requested != "headless" || settingsResult.Runtime.Effective != "browser" || !settingsResult.Runtime.Pending {
+		t.Fatal("Settings did not persist and expose the pending headless request")
+	}
 
 	capabilityCtx, stopCapabilityWait := context.WithTimeout(ctx, 48*time.Second)
 	capabilityErr := waitForBridgeHandoffCapability(capabilityCtx, s)
@@ -501,6 +535,10 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if status := coordinator.Status(); status.Effective != "browser" || status.Generation != 3 {
 		t.Fatal("auto-return crossed a live interactive HWND", status)
 	}
+	borrowedSettings, err := state.GetSettings(ctx)
+	if err != nil || borrowedSettings.CollectionMode != "headless" || coordinator.Status().Requested != "headless" {
+		t.Fatal("interactive borrow changed the persisted headless selection")
+	}
 	if err := closeBridgeFixtureReader(ctx, readerTarget); err != nil {
 		t.Fatal("close only static fixture window", err)
 	}
@@ -517,7 +555,11 @@ func TestBridgeHeadlessHandoffWindowsSmoke(t *testing.T) {
 		case <-tick.C:
 		}
 	}
-	t.Log("host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 interactive_hwnd_retained=true auto_return_after_window_close=true auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
+	returnedSettings, err := state.GetSettings(ctx)
+	if err != nil || returnedSettings.CollectionMode != "headless" || returnedSettings.CaptureVisibility != settings.CaptureVisibility {
+		t.Fatal("auto-return changed the persisted settings")
+	}
+	t.Log("settings_api_requested_and_persisted=true host_only_negotiated=true hidden_retirement=true browser_borrow_generation=3 interactive_hwnd_retained=true auto_return_after_window_close=true auto_return_headless_generation=4 source_permission_gate_fixture_only=true")
 }
 
 // Record only successful machine-target creation responses, never adopt IDs

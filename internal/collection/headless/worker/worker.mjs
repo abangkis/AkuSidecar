@@ -55,7 +55,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'worker/vendor/facebook-photo-evidence.js', path: resolve(root, 'vendor/facebook-photo-evidence.js'), execute: true },
         { relative: 'worker/vendor/facebook-extract.js', path: resolve(root, 'vendor/facebook-extract.js'), execute: true },
       ];
-  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'photo-recapture.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {

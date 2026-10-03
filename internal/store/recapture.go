@@ -385,6 +385,19 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 		}
 	}
 	block, ok := recapturedBlock(observation, job)
+	if _, mediaOnly := observation.Coverage["photoMediaRecapture"]; mediaOnly {
+		if !internalHeadless {
+			return domain.MediaRecapture{}, errors.New("photo media evidence requires the internal headless collector")
+		}
+		original, loadErr := timelineEvidenceFrom(ctx, tx, job.TimelineID, job.EvidenceKey)
+		if loadErr != nil {
+			return domain.MediaRecapture{}, loadErr
+		}
+		block, ok = recapturedPhotoMedia(observation, job, original)
+		if !ok {
+			return domain.MediaRecapture{}, errors.New("photo media evidence does not match the saved photo")
+		}
+	}
 	if !ok && internalHeadless {
 		original, loadErr := timelineEvidenceFrom(ctx, tx, job.TimelineID, job.EvidenceKey)
 		if loadErr != nil {

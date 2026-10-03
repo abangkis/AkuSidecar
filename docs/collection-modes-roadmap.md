@@ -90,7 +90,7 @@ auto-return journey. Instagram and LinkedIn remain next; only qualify a default
 change after all four sources pass. No default migration, installation, release
 or foreground activation is implied by this validation amendment.
 
-### Current acceptance status (2026-10-02)
+### Current acceptance status (2026-10-03)
 
 This table is the current execution order. The phase history below records
 earlier checkpoints and must not be read as release acceptance.
@@ -98,10 +98,10 @@ earlier checkpoints and must not be read as release acceptance.
 | Gate | Current evidence | Remaining work |
 | --- | --- | --- |
 | Profile ownership and selected subprofile | Profile selection is pinned across replacements; blocked worker writes retire their owned tree; disposable Profile 2 launch passes | Integrated authenticated login/reader/auto-return journey |
-| X collection | Feed, continuation and two native targets pass; own MP4 decodes in Chrome | AkuBrowser player journey and comparison with full legacy Bridge extraction |
-| Facebook collection | Feed and image targets pass; original unavailable URL fails in both foreground/headless; saved-URL survey recorded below | Fresh paired Browser/headless text and media quality, identity binding, feed video/multi-image and continuation coverage |
-| Browser fallback | Existing collector remains available in the codebase | Isolate experimental hidden Quiet routing without regressing safe handoff |
-| Product journey | Separate Settings and native handoff fixtures pass | Combined real source, Settings, reader/login, recapture and auto-update acceptance |
+| X collection | Two fresh windows match two native IDs each; second-window extra avatar attribution is corrected and verified with the rebuilt packaged worker, matching text/media counts and video poster/MP4 | Multi-image coverage, AkuBrowser player journey, continuation/reliability and full legacy Bridge comparison |
+| Facebook collection | Fresh native post matches ID/author/text/single-image in source and packaged runs; two further Browser windows repeat one photo-link item; exact photo media matches but direct post binding stays unverified; current headless feed acquires two different items | A second usable paired native-post window, stable feed acquisition, video/multi-image and continuation coverage; targeted sample selection needs additional foreground permission |
+| Browser fallback | Existing collector retained; unavailable Quiet readiness now excluded in source and a local candidate build; installed runtime unchanged | Validate integrated fallback and isolate experimental hidden Quiet routing without regressing safe handoff |
+| Product journey | Settings/handoff fixtures and actual rendered in-app UI-to-worker/store single-photo recapture pass with preserved identity; served UI displays recovery and loaded media | Combined installed-app Settings, reader/login, auto-return and auto-update acceptance; fresh source parity and multi-image recovery |
 | Instagram / LinkedIn | Existing browser support retained | Start headless qualification after X/Facebook gates pass |
 | Default migration | Browser remains default | All four sources and integrated journey must pass before migration |
 
@@ -1893,6 +1893,609 @@ from coverage alone. Reuse currently requires a relation persisted by internal
 recapture. First-time feed reconciliation without recapture, full UI-to-store
 headless validation and rebuilt package smoke remain open. Browser remains the
 default. This step does not claim four-source replacement readiness.
+
+### Pushed backend and rebuilt candidate validation (2026-10-02)
+
+Commit `28e0b37` pushes internal recapture and persisted parent-key reuse to
+`origin/main`; remote SHA matched. A new fixture explicitly tests a first
+parent-feed encounter with identical long author/text and claimed photo-parent
+coverage but no persisted relation. It retains the parent's own evidence key
+and reports an identity conflict rather than guessing an alias. Focused photo
+recapture/authority/first-encounter store tests pass. This is a fail-closed
+boundary proof, not automatic first-feed relationship discovery.
+
+The local installed-app candidate was rebuilt at
+`AkuBrowser/build/headless-parent-28e0b37-20261002/AkuBrowser-0.9.0-windows-x64-installed-app`.
+Builder result: 414 files, 588900042 bytes; Sidecar SHA-256
+`d07ec18175fb651107ec4edde1f3cc76ecd6fbf603879684627608f44eac1ccd`.
+The default external c2patool path was absent; the builder accepted the pinned
+binary from the prior candidate with its normal provenance checks. No new tool
+download or installation was needed. The candidate declares dirty local source
+state (including untracked experiments/test work); it is not a clean release.
+
+Packaged Node and Chromium 152.0.7977.54 passed the headless machine smoke on a
+new isolated profile: both source targets rendered animation frames and shared
+and retained the loopback fixture cookie. Capture, Chrome control, worker and
+Facebook extraction/boundary/photo-evidence assets were hash-compared against
+current source and were identical. The smoke imports the identical source
+Chrome module; it does not claim an authenticated four-source product test.
+
+No installed runtime/profile/configuration was changed. Remaining gates include
+authenticated rebuilt-package capture, UI-to-store recapture, broader fresh
+source coverage and first-time relationship discovery without saved recapture
+proof. The successful package and boundary checks do not close these gates.
+
+### Authenticated rebuilt worker and UI recapture transport (2026-10-02)
+
+Authenticated tests now import capture/source assets from the rebuilt candidate,
+not source overrides. The harness uses the registered logged-in Chrome
+154.0.8037.93/profile; packaged Chromium 152 was tested separately on fixtures.
+The latest Browser update's Facebook run failed `capture_empty` while X, IG and
+LinkedIn completed. The most recent completed Facebook reference (16:19:33Z)
+remained within the 30-minute window for this diagnostic.
+
+The rebuilt worker returned `empty_unverified` at 16.10- and 18.37-minute gaps.
+It reported authenticated UI, completed document, loaded verified photo media,
+no login/challenge, but no verified parent binding. Metadata inspection found
+two distinct story IDs/post IDs/URLs across `container_story` and
+`creation_story`: the container has a 945-character message; creation has no
+message and its post ID equals the photo ID. The current consistency rule
+correctly declines this case. Do not call this a package parity pass or treat
+the two different relation roles as interchangeable identities.
+
+Private receipts: `06e8da41-4f28-419c-bbf2-2fec6d5a8de2` and
+`84d99fa3-871f-4fa5-b5a7-d53fcbbf88cd` (packaged capture),
+`baebca72-6884-416f-833c-1a543c46874a` (relation diagnosis), under ignored
+`build/authenticated-parity-*/report.json`. Runtime restoration passed.
+
+UI inspection exposed a separate integration gap: Recapture still gated on
+Bridge and awaited extension messages. It now uses collection readiness and
+the job's durable collector stamp. Internal headless/Quiet jobs poll a bounded
+read-only `/api/media-recaptures/{id}` projection (ID/status/outcome/error only),
+while Bridge jobs retain extension dispatch. Poll requests have individual
+timeouts, total waiting is bounded, and foreground offers are suppressed in
+headless. No automatic mode switch or foreground action was added.
+
+Four Node tests pass, including execution of the actual UI recapture function
+with Bridge unavailable, timeline refresh, unavailable/failure states, mismatch
+and timeout handling. Store, engine and HTTP suites pass, including loopback
+origin checks for the new endpoint. These are fixture/contract checks, not a
+live click-through of the new UI: the UI changes are not in the previously
+built candidate or installed runtime yet.
+
+### Distinct photo and containing-post diagnosis (2026-10-02)
+
+The reference item has zero text and reports `already_complete`; it is not
+evidence of a truncated caption. The creation story has no verified message
+string and its metadata URL returns to `/photo.php`. The container story points
+to a native `/posts/` route. Selecting creation as a native post was rejected
+before navigation by the diagnostic route guard; these attempts are not
+capture failures or parity results.
+
+Read-only headless navigation to the explicit container URL succeeded: exact
+native identity, matching author, 942 extracted text characters and four media
+items, including the reference image. The reference has one image and no text.
+Thus replacing the photo item with the container would change its content scope.
+This is a mechanism diagnostic at a 31.41-minute reference gap, outside the
+fresh-parity window. It is not a fresh parity pass. Receipt:
+`build/authenticated-parity-60ef9c21-5007-4b38-8611-4bfe9afc6bea/report.json`.
+Worker exit, profile release, runtime restoration and compatible Bridge health
+were verified. No production binding rule was relaxed. A regression fixture
+keeps the two identities distinct for both absent and explicitly empty photo
+messages, even when their owner matches.
+
+### Photo-only missing-media recovery (2026-10-03 local)
+
+Implemented a recapture-only photo evidence path. For an explicit Facebook photo
+URL, round one, owned headless and `recapture_media`/`missing_media`, the worker
+can return exactly one verified visible photo without navigating to the parent.
+Requested and actual photo IDs, structured metadata ID, owner, trusted image URL
+and loaded dimensions must agree. This result does not claim live author/body
+evidence or admit a new feed post. The module is included in source provenance.
+
+The internal store completion path corroborates the saved permalink/evidence
+key, requested photo ID, returned page/block/proof, headless job ownership and
+missing-media reason. It accepts only one image and an originally unavailable
+item with no media. It preserves saved caption (including empty), author,
+platform ID, permalink, relationships and evidence key. It creates no parent
+alias and no new timeline row. Bridge submissions and mixed/mismatching evidence
+are rejected. Existing image replacement, playback-error repair and first-feed
+photo admission are outside this path.
+
+Authenticated source-worker diagnostic receipt:
+`build/authenticated-parity-d51a7d93-2369-4e80-a54c-463b488cdb1a/report.json`.
+Result: verified photo proof, one block, one image, matching reference image host
+and path, no album caption or parent relation. The reference was 40.83 minutes
+old, so this is mechanism evidence, not a fresh parity pass. It used current
+source capture/assets with the earlier package's Chrome launcher and registered
+authenticated Chrome, not a newly rebuilt package. Runtime stop/restore,
+worker exit, profile release and compatible Bridge restoration passed.
+
+Store, engine and HTTP suites pass. Worker/UI Node tests cover actual capture
+routing, wrong IDs/redirects/unsafe media, saved-content preservation, single
+timeline-item completion, and rejection through the Bridge entrypoint.
+
+### Combined candidate and remaining integration evidence (2026-10-03)
+
+The combined candidate was rebuilt at
+`AkuBrowser/build/headless-photo-recapture-20261003/AkuBrowser-0.9.0-windows-x64-installed-app`.
+It contains the current worker, store and embedded UI changes (415 files,
+588919707 bytes; Sidecar SHA-256
+`8c055ae2247ad18b44327b25974bb8fece3f26b11688a92e9778639b51dc7085`).
+This is a dirty-source local candidate, not an installed release.
+
+Packaged Node/Chromium passed the isolated machine smoke: rendered frames and
+shared/retained loopback cookie. The source Chrome controller used by that smoke
+does not establish an authenticated product journey. Authenticated diagnostic
+`bd0ddc5a-4f13-4415-9955-a9221cc6f597` imports worker/capture/assets from this new
+package and returns one verified photo block without parent content. Its URL
+host differs from the reference but its image path matches; reference age was
+46.16 minutes. Runtime/profile/Bridge restoration passed. This remains a
+mechanism diagnostic, outside fresh parity.
+
+The packaged binary ran on a separate loopback port and fresh fixture database
+with no app shell. Its embedded app and recapture transport match source. The
+actual UI recapture function polled the real HTTP endpoint, read a persisted
+completed job and refreshed timeline once. Foreign origins were rejected and
+private payload/result fields excluded. Receipt:
+`build/packaged-recapture-ui-smoke-20261003-v3/report.json`. Queue response and
+worker completion were fixture inputs: this does not close the full journey.
+
+Current-state correction: re-reading the reference photo block shows three
+distinct images with zero text, not a single-image feed baseline. The one-image
+photo recovery demonstrates an individual attachment mechanism only. It does
+not prove full feed-media parity or complete recovery of a multi-image item.
+Historical single-image claims above must not be used to close that gate.
+
+Engine integration fixture now seeds a Facebook photo through normal
+claim/observation acceptance, switches ownership to headless, queues a real
+recapture and verifies Bridge cannot claim it. Headless claim/acceptance updates
+the store, preserves author/caption/platform identity and leaves exactly one
+timeline row. Focused test
+`TestHeadlessPhotoMediaRecapturePreservesSavedFacebookItem` passed. Its capture
+observation and process are synthetic, so it is not live worker/UI proof.
+The HTTP regression
+`TestMediaRecaptureStatusProjectsDurableStatesWithoutPrivateEvidence` also
+passed for all four durable states and an exact four-field response projection.
+
+Fresh baseline attempt `session_554df7a91e6c52d0ba3190309f54b14d` completed
+partially: Facebook and X failed `quiet_capture_failed` with Quiet collector
+unavailable at dispatch; Instagram/LinkedIn completed. Loopback and compatible
+Bridge health remained healthy. No settings/mode change or runtime installation
+was made to bypass this baseline failure. This attempt supplies no fresh X/FB
+parity pair, and its failure must not be attributed to headless capture.
+
+### Quiet readiness and authenticated recapture chain (2026-10-03)
+
+Inspection identified a false-ready state: coordinator availability checked a
+bound backend pointer/generation, while the Quiet worker could already be failed
+or retired. `CaptureAvailability` is now an optional nonblocking capability;
+Quiet clears its atomic readiness flag before failure/retirement cleanup.
+Coordinator status and new-command selection exclude unavailable workers.
+The existing Browser selection can then choose its existing Bridge route for
+new work; already queued Quiet jobs retain their stamped owner and fail
+explicitly. No mode switch, automatic retry or reassignment of queued work was
+added. Legacy backends without this optional capability retain their contract.
+
+Collection/Quiet, engine and HTTP suites pass, including the engine regression
+`TestUnavailableQuietWorkerDoesNotOwnNewCommandsOrChangePinnedRoute` and photo
+recapture integration. A race-detector run was unavailable in the current
+CGO/GCC environment; the shared readiness flag is atomic and worker lifecycle
+fields remain serialized by its existing operation channel. The rebuilt
+candidate above predates this readiness fix; installed runtime is unchanged.
+
+An authenticated integration harness now connects the actual UI recapture
+function, real HTTP queue, engine owned-capture loop, packaged headless worker
+and database persistence. Receipt:
+`build/authenticated-parity-c9f45427-c055-4e39-9215-a7bca5a2cbb3/report.json`;
+detail `build/recapture-live-latest.json`. It passed: headless collector stamp,
+completed/recovered job, one saved image, preserved evidence key/platform ID/
+permalink/author/caption, exactly one timeline row, and one UI timeline refresh.
+Worker exit/profile release and healthy compatible Bridge restoration passed.
+
+The harness seeds an unavailable item in an isolated database and uses fixture
+permission/initial-owner state. It runs the current compiled source engine/HTTP
+with the rebuilt candidate's actual worker and registered authenticated Chrome.
+The UI function executes in a VM, so this proves the transport/worker/store chain
+but not a rendered button click or full installed-app behavior. The target was
+old (802.69 minutes), so this is not fresh parity or multi-image equivalence.
+Startup debugging was first isolated on an empty profile; no production trust
+or access checks were disabled to make the fixture run.
+
+The readiness fix has now been rebuilt into a separate local candidate at
+`AkuBrowser/build/headless-quiet-readiness-20261003/AkuBrowser-0.9.0-windows-x64-installed-app`:
+415 files, 588920219 bytes; Sidecar SHA-256
+`e982689df15c40b6f4238f19710210c21d3f1153e2f565b1d665f2343db0970c`.
+The manifest declares dirty Sidecar inputs. This candidate has not been installed.
+Rendered UI validation remains open.
+
+The user authorized one temporary Adaptive Fidelity Update to obtain a fresh
+Browser baseline, followed by restoration of Quiet. The scoped helper passed
+syntax checking and a read-only dry run against the current Browser/Quiet
+settings. It preserves the other settings during restoration and observes the
+same Update session without restarting it. Live receipt and source-specific
+outcomes must be inspected before this supplies any parity baseline.
+
+Adaptive baseline session `session_b76e8c24557050fb7e47ad25325ca1e2` finished
+partial. Quiet was restored and collection mode remained Browser. Instagram,
+LinkedIn and X completed; Facebook failed `capture_empty`. Facebook diagnostics
+showed two action-anchored candidates rejected for missing required identity;
+this is a Browser/Bridge baseline failure, not a headless comparison outcome.
+Receipt: `build/adaptive-baseline-5538ba18-1092-4cca-9404-4197ebd78921/report.json`.
+
+The exact-session raw X baseline contains eight blocks from `aku-bridge`,
+captured at `2026-10-03T05:55:20.276Z`. Authenticated headless feed diagnostic
+`762a8ae8-110b-4083-89f7-a633b02365fa` ran 1.50 minutes later and captured three
+native X IDs with no baseline overlap. The diagnostic completed and runtime,
+profile release and healthy compatible Bridge restoration passed. Different
+feed results provide no matched content/media parity evidence; the next X
+check must capture the baseline URLs directly. Detail:
+`build/fresh-x-pilot-20261003.json`. Facebook has no fresh usable baseline from
+this session.
+
+Same-URL X diagnostic `e392df65-f3b1-4477-96b9-a766f04b096a` captured two
+distinct targets from that raw Browser session 3.96 minutes after capture.
+Both native IDs were observed once. Media counts matched (one image and zero
+media respectively), including the image host/path. Raw author/text equality
+was not universal: the image post's text differed only by the observed link's
+`twclid` query parameter, and the other Browser author included a relative-time
+suffix absent from headless. Preserve those raw mismatches; this bounded check
+does not close feed, video playback, pagination, or full-platform parity.
+Runtime/profile/healthy compatible Bridge restoration passed. Detail:
+`build/fresh-x-exact-20261003.json`.
+
+Field-difference diagnostic `build/fresh-x-differences-20261003.json` confirms
+equal prose with URL tokens separated, matching link origin/path with only
+`twclid` present in the Browser query, and matching authors after separating the
+observed relative-time label. The raw strings remain preserved. These two cases
+support bounded equivalence under the approved harmless-formatting rule; they
+do not prove URL navigation behavior or close broader X source acceptance.
+
+Current authenticated Facebook feed diagnostics were also run against the
+readiness candidate's actual worker. First receipt
+`2a843c03-f8ab-42e7-b3be-34d203dea5d0` returned `empty_unverified`. The helper
+was corrected to retain error diagnostics, then receipt
+`112b7ba5-79bd-49b5-9730-09f5758e0796` captured one native item containing five
+images. No production extractor change occurred between these runs; the new
+success cannot be attributed to a collector fix. Quality remains `unverified`
+and text expansion was skipped under `detect_only`. Both runs restored the
+runtime/profile and healthy compatible Bridge. This demonstrates a current
+multi-image acquisition, but with no usable paired Browser item it does not
+close Facebook completeness, stability or parity. Detail:
+`build/facebook-current-feed-20261003.json`.
+
+Rendered Recapture harness diagnosis remains scoped to disposable UI/capture
+profiles. Its sandboxed run failed Windows profile-owner inspection before
+capture Chrome launch; running outside the sandbox preserved the ownership
+check and initialized successfully. A separate cascading missing startup
+metadata error is now rejected explicitly by the harness. No production trust
+or ownership guard was relaxed.
+
+The escalated isolated run rendered a visible enabled Recapture button on a
+separate packaged UI Chrome profile. The subsequent diagnostic hit-tested that
+button but observed no document click event and no recapture HTTP request; the
+application handler was not entered. This currently points to headless UI
+input/focus dispatch, not a queue/backend rejection. The local harness requires
+a focused verification after its input correction. These receipts do not yet
+close the rendered product interaction gate.
+
+The focused UI-headless input correction (page focus and explicit mouse button
+state) still produced no DOM click or HTTP request. This result leaves the
+rendered interaction unverified; it is not a failed backend capture. The next
+bounded check uses the actual served UI in Codex's interactive in-app browser
+while collection remains headless. Auto-review rejected opening that visible
+fixture tab because the existing foreground authorization covered only one
+Adaptive Update. Explicit permission for the visible fixture/Recapture action
+has been requested. No alternate UI action may bypass that rejection.
+
+The user then explicitly authorized the visible in-app fixture and Recapture
+click. The first fixture expired while approval was pending and restored the
+runtime without a recapture job. The following run queued and recovered the
+photo, but the helper closed immediately after durable completion and raced
+the UI's final status read. This was corrected in the local helper by retaining
+the fixture briefly for operator UI evidence; no production code changed.
+
+Authenticated receipt `83ca4fe1-fe46-4f57-a635-ccff96daac21` and fixture directory
+`build/recapture-iab-a8a12251-ea8d-4c3d-8739-a545f5b7a042` now prove the rendered
+single-photo journey: the observed Recapture button was clicked through Codex's
+in-app browser, the UI showed its in-progress state, an actual headless job
+completed/recovered, and the UI refreshed to display the recovery notice and
+loaded image. `ui-evidence.json` records one Timeline card and no remaining
+Recapture button; `ui-recovered.jpg` captures the completed UI. Backend evidence
+preserves the evidence key, platform ID, permalink, author and caption, with one
+image and exactly one Timeline row. UI evidence is a separate operator artifact
+in that same fixture directory; do not require it to be embedded in the worker's
+already-written report.
+
+The worker exited, the authenticated profile was released, and runtime/healthy
+compatible Bridge restoration passed. This uses a seeded unavailable item and
+fixture permission/initial-owner state, current compiled engine/HTTP UI plus
+the candidate's actual worker and registered authenticated Chrome. Its source
+reference was 853.27 minutes old. It closes the served rendered Recapture
+transport/worker/persistence gap for one photo, not fresh parity, full album
+recovery, installed-app handoff, or four-source/default acceptance.
+
+Next: acquire a second fresh X/Facebook window and a working Facebook Browser
+baseline for media parity,
+including multi-image items. The installed runtime has not received these
+changes. Full parity remains open.
+
+### Second fresh acquisition window and X avatar regression (2026-10-03)
+
+The user authorized exactly one additional Adaptive Fidelity Update and Quiet
+restoration. Session `session_b3dc395ed94c44ba41ef8bd4e1d83f8f` completed all
+active sources. The exact-session Browser/Bridge export contains eight X blocks
+and one Facebook block; it does not reuse failed or older source observations.
+The helper verified restoration to Browser/Quiet.
+
+Authenticated diagnostic receipt `1adf4aef-5ebe-4e23-9ad3-4f7d52e097d7` compares
+the actual new baseline URLs using the packaged worker and registered Chrome
+154/profile. Detailed results are private under
+`build/fresh-window2-exact-20261003.json`. Its outer harness uses an older
+preflight fixture and intentionally reports `fresh_window2_complete`; those
+outer fixture IDs/counts are not the comparison targets or failed captures.
+
+- Facebook: one exact native ID, author, text and image host/path match within
+  4.67 minutes. This is usable fresh single-image evidence, not full Facebook
+  acceptance; only one of the two Browser windows produced a usable FB baseline.
+- X: two exact native IDs match within 4.01 minutes. Text is equal and author
+  differences are relative-time labels. One native video has the same poster and
+  MP4 host/path as Browser, but headless additionally emits the author's 48x48
+  `pbs.twimg.com/profile_images/` avatar as `video_poster`. Record that extra
+  media attribution as a headless regression, not harmless count variance.
+
+The X-only headless extractor now excludes that CDN profile-image namespace
+before classifying attachments. It retains author/avatar metadata, native
+video posters and real images, with no Bridge production collector change.
+The new rendered-extractor VM regression test passes; all 52 worker tests pass.
+This correction is newer than the packaged readiness candidate and does not
+update the installed runtime. Live source verification and package refresh
+remain separate evidence requirements.
+
+The first source retry exited before init because the temporary helper resolved
+its source root against the candidate working directory. Receipt
+`62ebdc20-3dfa-4299-860b-ac0eb561afb0` verifies healthy runtime/profile/Bridge
+restoration. The helper was corrected to an explicit source root; this is an
+environment harness failure and supplies no source-quality result.
+
+After that path correction, receipt `1b9668fe-e17b-45f6-be4b-2e86352478b7`
+verifies both same X URLs with the current source worker and packaged Bridge
+assets/registered authenticated Chrome. The actual gap is 7.53 minutes; both
+native IDs and texts match, relative-author labels are the only author variance,
+and media counts are now 1/1 and 0/0 with matching host/paths. The unwanted
+avatar is absent. The video retains the same poster and MP4 as Browser. This
+is live source correction evidence, not a rebuilt-package or player proof.
+Detailed before/after results remain separately preserved in ignored build
+artifacts. Worker shutdown, profile release and healthy compatible Bridge
+restoration passed; final settings independently read Browser/Quiet.
+
+### Rebuilt X filter candidate checkpoint (2026-10-03)
+
+Canonical `scripts/build-windows-installed-app.ps1 -AllowDirty` built
+`AkuBrowser/build/headless-x-avatar-fix-20261003/AkuBrowser-0.9.0-windows-x64-installed-app`.
+The default c2patool workspace location was absent, so the builder reused the
+previous local candidate's binary through its explicit `-C2paToolPath` option.
+The official release-pin SHA-256 and version checks remained enabled and passed;
+no tool was downloaded or installed. Build manifest, staged config/schema probe,
+Chrome pin and payload checks passed: 415 files, 588920533 bytes, Chrome for
+Testing 152.0.7977.54. Sidecar remains
+`e982689df15c40b6f4238f19710210c21d3f1153e2f565b1d665f2343db0970c`.
+
+The packaged and source `vendor/x-extract.js` SHA-256 both equal
+`4412d41c1110cf4a3a1e3bd7dd9a712ef4bed8a81d6e7f342b16e7e43cf0f354`.
+This packages the live-verified source correction, but is not new packaged
+authenticated capture or player evidence. The manifest records Sidecar as dirty
+at HEAD `28e0b37`; this is a local candidate, not a release. Existing runtime,
+configuration and default mode were not changed. No commit/push/install occurred.
+
+The user requested a cumulative 2-million-token ceiling. The original native
+segment reached `budgetLimited` at 1,000,427 tokens; no tool could modify that
+active cap. After the user continued, native readback returned no goal. A new
+segment was therefore configured for the remaining 999,573 tokens, retaining
+the same full objective and the prior checkpoint as a cumulative baseline.
+New-segment counts exclude earlier work; aggregate worker coverage remains
+partial. No counter reset, old-goal completion or cap modification was claimed.
+
+Authenticated receipt `bad58f9e-0390-4fae-a87c-76d5e847cfe1` then ran the rebuilt
+candidate's actual worker on the same second-window URLs. The private detailed
+report `build/fresh-window2-packaged-20261003.json` proves the Facebook native
+ID/author/text/single image within 15.34 minutes and two X native IDs/text/media
+within 14.68 minutes. The corrected X video produces exactly one media item
+with matching poster/MP4; the unrelated avatar is absent. Relative-time author
+labels remain harmless recorded variance. Profile release and healthy runtime/
+compatible Bridge restoration passed, with independent Browser/Quiet readback.
+This closes the updated packaged extraction check for these three examples;
+it does not prove player, multi-image, installed handoff or full source parity.
+
+### Additional Facebook windows: photo media is separate from post parity
+
+The user authorized at most two more Adaptive Updates, restoring Quiet after
+each. Both completed and restoration passed:
+`session_093bdd2988c8f1ed52ae707f2a44afa2` and
+`session_ea0dc377f15444addcfb8090a2e67a2e`. Exact exports preserve raw Bridge
+observations separately. Each has one Facebook feed item with the same identity,
+one image, empty caption and a photo permalink; no multi-image or video case was
+observed. Observation page routes are the feed, so this is not evidence that
+the Browser acquisition ran on the photo detail page. These windows are not
+additional independent content-type coverage.
+
+Receipt `7a51fd88-008d-48f6-8f2a-7fa2bf1a16b0` attempts the first window's exact
+photo URL within 2.06 minutes using ordinary post capture. It reports
+`empty_unverified`: authenticated UI is present, no login/challenge is detected,
+and photo media is verified, but post binding is unverified. Do not admit that
+photo as a parent post or invent author/caption to make the comparison pass.
+The Browser feed block and a photo-detail extraction have different evidence
+scopes; this result alone cannot establish a feed acquisition regression.
+
+Receipt `68cb014a-21f2-407a-8c55-aafdd6397b95` separates those scopes against the
+latest baseline within 3.59 minutes. Its headless feed captures two native IDs
+and one image, with no overlap with the single Browser baseline item. Feed
+personalization remains an unverified comparison, not a matching-post failure.
+The explicit exact-photo missing-media capture returns one image with the same
+host/path as the Browser reference, with no invented author or caption. This
+proves fresh photo media availability for the bounded recovery path, not general
+post admission, album completeness, or Timeline persistence in this diagnostic.
+Worker exit, profile release and healthy compatible Bridge restoration pass.
+
+The two-Update foreground allowance is now exhausted. A targeted read-only
+foreground sample-selection request (at most ten Facebook posts, then Browser/
+headless comparison and Quiet restoration) was approved by the user's
+"ya silahkan lanjutkan". The bounded discovery found the public Physics Girl
+video described below. This does not extend the exhausted two-Update allowance.
+Do not keep repeating unrelated feed Updates or claim missing content types
+as passed.
+
+A read-only Luna scout also reconciled the integrated handoff evidence:
+`TestCollectionSettingsRenderedFixture` proves Settings/UI/API persistence with
+fake capture processes; `TestBridgeHeadlessHandoffWindowsSmoke` proves real
+Chrome/Bridge HWND lifetime and post-close auto-return, but uses a synthetic
+reader page, direct coordinator mode request and fixture permissions. Neither
+proves the combined actual source-authenticated Settings/reader/login journey.
+The next integrated proof must use the normal Settings and reader action paths,
+retain the same profile authentication, and verify a subsequent headless source
+check. The canonical Windows smoke can be extended, but its isolated foreground
+runtime swap is separate authorization from the completed Adaptive Updates.
+
+### Settings boundary prepared for the Windows handoff smoke
+
+`TestBridgeHeadlessHandoffWindowsSmoke` now requests Headless through the real
+`PUT /api/settings` endpoint instead of calling the coordinator's request method
+directly. It preserves the existing visibility, selects the two supported
+sources, and requires the HTTP response to expose persisted Headless plus
+effective Browser/pending before the explicit initial replacement. Additional
+assertions require the persisted/requested selection to remain Headless while
+the actual native-window guard holds Browser, and require settings to stay
+unchanged after auto-return. Existing retirement ACK/ownership assertions remain.
+
+The opt-in test compiles with the live environment variables absent. This
+invocation supplies no live Chrome proof: the test is gated, so do not report
+the new Settings integration as passed Windows acceptance yet. The reader
+page, permission admission override and initial replacement remain fixture
+boundaries; the real source-authenticated rendered Settings/reader journey is
+still required. No installed executable or runtime changed for this test-only
+preparation. Run the extended live smoke only with appropriate foreground and
+runtime-swap authorization after the active source-validation work is idle.
+
+### Authenticated Watch video renders, but post extraction remains unverified
+
+The approved foreground discovery inspected fewer than ten feed posts and
+selected the visible Physics Girl video labelled "2 days ago". Clicking that
+post's timestamp exposed the native URL
+`https://www.facebook.com/watch/?v=1639349817600268`. The primary Chrome tab is
+URL-discovery evidence only, not the managed Browser/Bridge baseline. Its
+visible playback, author and caption are recorded in ignored
+`build/fb-video-discovery-20261003/discovery.json` and `foreground.jpg`.
+
+The current packaged worker was then run against that exact URL with the
+registered authenticated collection profile. Receipt
+`authenticated-parity-15bb7e3c-00b0-4ba0-bcd4-6f06fa39879f` reports
+`empty_unverified`, zero structural/eligible candidates, authenticated UI and
+no login requirement or challenge. A second bounded diagnostic added the
+missing DOM evidence; receipt
+`authenticated-parity-a76e3a69-4b5f-4b78-8142-31bec7504d10` confirms the same
+target rendered its Physics Girl caption and a playing 720x720 video:
+`readyState=4`, `currentTime=24.263753`, duration `232.633333` seconds.
+The video element has no DOM poster URL. Both receipts confirm explicit worker
+shutdown, profile release and restoration of the healthy compatible Bridge.
+Browser/Quiet selection was preserved.
+
+This target therefore does not demonstrate a foreground-only rendering
+restriction. The measured gap is Watch-page post discovery/admission: the
+shared adapter discovers feed post containers, whereas this Watch page has
+no eligible feed post container. Its comment articles and recommended videos
+must not be promoted to the requested post. The DOM diagnostic is private
+test evidence and does not admit an item or prove a usable media URL.
+
+Before expanding headless behavior, verify whether legacy Bridge can collect
+the same Watch target and keep Watch detail support distinct from feed parity.
+Any headless-specific fallback must require exact target identity, corroborated
+owner and isolated caption/video evidence; it must fail closed on comments,
+recommendations, conflicting identity and unresolved playback URLs. This
+sample does not close Facebook video parity, multi-image completeness or the
+installed Settings/reader/auto-return gate. No shared Bridge collector was
+changed by this diagnostic.
+
+### Headless collection pauses playback while retaining media evidence
+
+The user clarified that collection needs media URLs, not sustained playback.
+After approval to continue, the owned headless Chrome path now installs an
+early document/frame guard for native `play` and `playing` events. The guard
+immediately pauses HTML media elements, including repeated site playback
+attempts. It does not replace `play()`, strip media sources, block metadata,
+change persistent browser settings, or affect borrowed Quiet/interactive
+contexts. Ordinary Chrome autoplay flags alone do not cover muted autoplay.
+
+`playback-policy.test.mjs` verifies repeated attempts, retained source and
+metadata, and unchanged native playback methods. Its opt-in real Chrome test
+uses generated local media and an isolated profile; muted video autoplay and
+script retries remain paused with loaded metadata through two navigations.
+Both tests pass with packaged Chrome 152. The complete worker suite passes
+53 tests and skips only this opt-in real Chrome case, which passed separately.
+
+Candidate `AkuBrowser/build/headless-paused-media-20261003/` was rebuilt with
+the current worker; packaging checks pass (415 payload files). Its authenticated
+same-target Facebook diagnostic is receipt
+`authenticated-parity-98d2498b-d30b-4dbb-87e6-9b181979afca`, using the registered
+Chrome/profile rather than downgrading the live profile to bundled Chrome.
+`build/fb-video-discovery-20261003/headless-paused.json` records the Physics Girl
+video at `currentTime=0`, `paused=true`, `readyState=4`, 720x720 and duration
+232.633333 seconds after the full hydration wait. Caption and author still
+render. The recommended video is also paused. Worker exit, profile release and
+healthy compatible Bridge restoration pass; Browser/Quiet is retained.
+
+Watch post discovery remains `empty_unverified` with zero candidates. This
+change closes sustained incidental playback in the measured target, not Watch
+post admission, extraction of a playable media URL, or video parity. No package
+was installed and no shared Bridge collector was changed. The next media
+validation must keep exact video/post ownership and resolve an admissible URL
+without depending on playback; retain the same-target legacy baseline gate.
+
+### Progress checkpoint for the approved commit/push (2026-10-03)
+
+The user authorized committing and pushing this validated checkpoint to
+`abangkis/AkuSidecar`, branch `main`. Scope includes exact photo-only missing
+media recovery with retained saved identity/content, durable Recapture UI
+transport and bounded status endpoint, Quiet backend availability/routing,
+X avatar exclusion, headless playback pause policy, the prepared Settings API
+handoff assertions, and this evidence ledger. Untracked `experiments/` and
+ignored build/private authenticated evidence are excluded.
+
+Pre-commit Go tests pass for `internal/store`, `internal/engine`,
+`internal/httpapi`, `internal/collection` and `internal/collection/quiet`.
+The four Recapture transport/UI tests pass. Current worker evidence remains
+53 passed plus one gated Chrome test, separately passed in actual packaged
+Chrome; the rebuilt candidate and authenticated paused Facebook diagnostic
+are recorded above. The opt-in Windows handoff remains gated, not a newly
+passed live acceptance test. `git diff --check` passes.
+
+Acceptance status and execution order:
+
+1. Photo-only Recapture's actual UI-to-headless-to-isolated-store path has
+   passed; retain single-image/exact-photo scope and saved item identity.
+2. X has bounded fresh same-URL text/image/video evidence, including the
+   packaged avatar fix. Broader collection stability, continuation and mixed
+   media coverage remain open, including live checks after playback policy.
+3. Facebook has bounded fresh native-post single-image evidence and verified
+   photo media recovery. Watch renders while paused, but Watch discovery and
+   a usable exact-owned video URL are not proved. Obtain a same-profile legacy
+   Browser/Bridge observation of the exact sampled target before deciding
+   whether Watch support is a parity fix or additional surface support.
+4. Validate Facebook video URL acquisition without sustained playback and
+   fresh multi-image completeness, then repeat aligned X/Facebook collection
+   windows. Separate shared adapter gaps from headless regressions; do not
+   modify the shared production collector just to make a PoC pass.
+5. Close the integrated rendered Settings, authenticated reader/login,
+   interactive-window close, auto-return and subsequent headless collection
+   journey. Current fixture/smoke proofs cover separate boundaries.
+6. Begin IG/LinkedIn only after X/Facebook qualify. Browser remains default
+   until all four sources pass. Commit/push does not install this candidate
+   or change the default/runtime on the user's machine.
+
+The cumulative task ceiling is 2,000,000 tokens. Last native readback remains
+195,849 for the continuation segment plus the prior 1,000,427 checkpoint
+(1,196,276 cumulative, partial coverage). Its status is still `blocked` after
+the user resumed; the available tool cannot reactivate/reset that counter, so
+this is a stale measurement, not complete accounting of subsequent work.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

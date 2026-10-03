@@ -1,5 +1,6 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { collectionModeState } from "./collection-mode.js";
+import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
@@ -5254,7 +5255,7 @@ function syncRunButtons() {
   $("#timeline-runner-status").textContent = reason;
   $("#timeline-runner-guidance").classList.toggle("hidden", !showGuidance);
   $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || !sourceAccessNeedsAttention());
-  for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled;
+  for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled || (button.classList.contains("foreground-recapture-button") && state.bootstrap?.collectionRuntime?.effective === "headless");
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
 }
@@ -7520,7 +7521,7 @@ function buildSourceCard(entry) {
     const message = document.createElement("span");
     message.textContent = "Media was present at the source but unavailable in this captured view.";
     unavailable.append(message);
-    unavailable.append(state.foregroundRecaptureOffers.has(entry.id)
+    unavailable.append(state.foregroundRecaptureOffers.has(entry.id) && state.bootstrap?.collectionRuntime?.effective !== "headless"
       ? buildForegroundRecaptureOffer(entry)
       : buildMediaRecaptureButton(entry));
     card.append(unavailable);
@@ -7912,7 +7913,7 @@ function queueInlinePlaybackRecovery(entry, source, playbackUrl) {
   if (
     descriptor?.playbackRecoveryCapability !== "native_post_recapture" ||
     !entry?.id || !safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, source) ||
-    state.session || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible
+    state.session || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect
   ) return;
   if (state.playbackRecoveryAttempts.get(entry.id) === playbackUrl) return;
   if (state.playbackRecoveryAttempts.size >= 64) {
@@ -8807,7 +8808,7 @@ function buildMediaRecaptureButton(entry) {
   button.type = "button";
   button.className = "recapture-button";
   button.textContent = "Recapture";
-  button.disabled = Boolean(state.session) || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible;
+  button.disabled = Boolean(state.session) || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect;
   button.addEventListener("click", () => recaptureMedia(entry, button, "background"));
   return button;
 }
@@ -8845,7 +8846,8 @@ function buildForegroundRecaptureOffer(entry) {
 }
 
 async function recaptureMedia(entry, button, captureMode, reason = "missing_media") {
-  if (state.session || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible) return;
+  if(captureMode==='foreground' && state.bootstrap?.collectionRuntime?.effective==='headless') return;
+  if (state.session || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect) return;
   state.mediaRecaptureActive = true;
   if (button) {
     button.disabled = true;
@@ -8860,8 +8862,9 @@ async function recaptureMedia(entry, button, captureMode, reason = "missing_medi
       // A typed reason now reuses the same bounded recapture transport.
       body: { captureMode, reason },
     });
-    const completed = await dispatchMediaRecapture(recapture.id);
-    if (captureMode === "background" && completed?.outcome !== "recovered") {
+    const transport=mediaRecaptureTransport(recapture);
+    const completed = transport==='sidecar' ? await waitForMediaRecapture(recapture.id,api) : await dispatchMediaRecapture(recapture.id);
+    if (captureMode === "background" && completed?.outcome !== "recovered" && transport==='bridge') {
       state.foregroundRecaptureOffers.set(entry.id, reason);
       await refreshTimeline();
       return;
@@ -8875,7 +8878,7 @@ async function recaptureMedia(entry, button, captureMode, reason = "missing_medi
       ? reason === "playback_error"
         ? "Playback refreshed from the native post. Select play again."
         : "Media recaptured from the native post."
-      : "Media is still unavailable after the foreground capture.");
+      : transport==='sidecar' ? "Media is still unavailable after recapture." : "Media is still unavailable after the foreground capture.");
   } catch (error) {
     showError(error);
     if (button) {

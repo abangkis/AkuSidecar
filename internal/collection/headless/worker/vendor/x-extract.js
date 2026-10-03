@@ -55,6 +55,10 @@
       const posterImage = !video && Boolean(element.closest(adapter.mediaRendering.videoRootSelector));
       const url = normalizeHttpUrl(video ? element.poster : element.currentSrc || element.src);
       if (!url || !adapter.mediaHosts.includes(new URL(url).hostname)) continue;
+      // Detail video controls can nest the author's avatar under the video root.
+      // Its trusted CDN host alone does not make it an attachment or video poster.
+      const mediaURL = new URL(url);
+      if (mediaURL.hostname === 'pbs.twimg.com' && mediaURL.pathname.startsWith('/profile_images/')) continue;
       const kind = video || posterImage ? 'video_poster' : 'image';
       const key = `${kind}:${url}`;
       if (seen.has(key)) continue;

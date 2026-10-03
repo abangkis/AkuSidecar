@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
@@ -19,16 +20,17 @@ import (
 // Worker borrows source-scoped hidden targets. Its Job owns Node only; neither
 // worker shutdown nor worker failure has authority over the capture Chrome Job.
 type Worker struct {
-	op       chan struct{}
-	writeMu  sync.Mutex
-	targets  *Targets
-	options  headless.Options
-	owner    *appshell.OwnedCommand
-	input    io.WriteCloser
-	replies  chan workerReply
-	sequence uint64
-	retired  bool
-	failure  error
+	op        chan struct{}
+	writeMu   sync.Mutex
+	targets   *Targets
+	options   headless.Options
+	owner     *appshell.OwnedCommand
+	input     io.WriteCloser
+	replies   chan workerReply
+	sequence  uint64
+	retired   bool
+	failure   error
+	available atomic.Bool
 }
 
 type workerReply struct {
@@ -45,7 +47,15 @@ type workerReply struct {
 }
 
 func NewWorker(targets *Targets, options headless.Options) *Worker {
-	return &Worker{targets: targets, options: options, op: make(chan struct{}, 1)}
+	worker := &Worker{targets: targets, options: options, op: make(chan struct{}, 1)}
+	worker.available.Store(true)
+	return worker
+}
+
+// CaptureAvailable reports whether this worker can accept newly routed work.
+// It stays nonblocking while Capture or Retire owns the worker operation lock.
+func (w *Worker) CaptureAvailable() bool {
+	return w != nil && w.available.Load()
 }
 
 func (w *Worker) start(ctx context.Context) error {
@@ -218,6 +228,7 @@ func (w *Worker) Capture(ctx context.Context, source domain.Source, payload map[
 }
 
 func (w *Worker) fail(cause error) error {
+	w.available.Store(false)
 	w.failure = cause
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
@@ -228,6 +239,7 @@ func (w *Worker) fail(cause error) error {
 }
 
 func (w *Worker) Retire(ctx context.Context) error {
+	w.available.Store(false)
 	select {
 	case w.op <- struct{}{}:
 	case <-ctx.Done():
@@ -238,6 +250,7 @@ func (w *Worker) Retire(ctx context.Context) error {
 }
 
 func (w *Worker) retire(ctx context.Context) error {
+	w.available.Store(false)
 	w.retired = true
 	// No graceful worker command is required: this Job owns Node only. Stop it
 	// first so EOF cannot trigger new page calls during hidden-target disposal.

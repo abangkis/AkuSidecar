@@ -3,10 +3,40 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
+
+func TestFirstParentFeedDoesNotInferAliasFromIdenticalContent(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, _, _ := insertFacebookPlaybackFixture(t, state)
+	var runID string
+	if err := state.db.QueryRowContext(ctx, `SELECT run_id FROM timeline_items WHERE id=?`, timelineID).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	_, photo, parent := photoParentFixture()
+	photo.Text = strings.Repeat("Identical content still does not prove a photo-to-parent identity relation. ", 3)
+	parent.Snapshots[0].Blocks[0].Text = photo.Text
+	original := domain.Observation{Source: domain.SourceFacebook, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{photo}}}}
+	tx, err := state.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := state.resolveObservationContentIdentity(ctx, tx, runID, &original, domain.Now()); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := state.resolveObservationContentIdentity(ctx, tx, runID, &parent, domain.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parent.Snapshots[0].Blocks[0].EvidenceKey == photo.EvidenceKey || summary.AliasesReused != 0 || summary.NativeConflicts != 1 {
+		t.Fatalf("first encounter guessed an alias: %+v", summary)
+	}
+}
 
 func photoParentFixture() (domain.MediaRecapture, domain.Block, domain.Observation) {
 	original := domain.Block{EvidenceKey: "saved-photo", PlatformID: "facebook:post:123", Permalink: "https://www.facebook.com/photo?fbid=123",

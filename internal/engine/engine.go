@@ -2422,6 +2422,10 @@ func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observatio
 	return e.acceptMediaRecapture(ctx, id, observation, false)
 }
 
+func (e *Engine) MediaRecapture(ctx context.Context, id string) (domain.MediaRecapture, error) {
+	return e.store.MediaRecapture(ctx, id)
+}
+
 func (e *Engine) acceptMediaRecapture(ctx context.Context, id string, observation domain.Observation, internalHeadless bool) (domain.MediaRecapture, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if err := e.validateRecaptureOwner(ctx, id); err != nil {

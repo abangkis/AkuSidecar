@@ -14,6 +14,53 @@ import (
 
 type failingQuietBackend struct{}
 
+type readinessQuietBackend struct {
+	ready bool
+}
+
+func (b *readinessQuietBackend) CaptureAvailable() bool { return b.ready }
+func (b *readinessQuietBackend) Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error) {
+	return domain.Observation{}, errors.New("fixture Quiet worker failed")
+}
+
+func TestUnavailableQuietWorkerDoesNotOwnNewCommandsOrChangePinnedRoute(t *testing.T) {
+	ctx := context.Background()
+	e, state := singleSourceEngine(t, reasoning.Deterministic{})
+	m := attachTestCapture(t, e)
+	c := collection.NewCoordinator(m, nil, func() error { return nil })
+	backend := &readinessQuietBackend{ready: true}
+	c.SetBrowserCollector(m.Snapshot().Generation, backend)
+	e.AttachCollectionCoordinator(c)
+	session, err := e.StartVisibleUpdate(ctx, "pin Quiet before failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := session.Runs[0].ID
+	if route, err := e.RunCaptureCollector(ctx, id); err != nil || route != collection.BackendQuiet {
+		t.Fatalf("initial route=%q err=%v", route, err)
+	}
+	backend.ready = false
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.selectCaptureCollector(domain.SourceX, settings, "browser"); got != collection.BackendBridge {
+		t.Fatalf("new Browser command chose unavailable Quiet: %s", got)
+	}
+	if got := e.selectCaptureCollector(domain.SourceFacebook, settings, "headless"); got != collection.BackendHeadless {
+		t.Fatalf("Quiet readiness changed headless selection: %s", got)
+	}
+	if route, err := e.RunCaptureCollector(ctx, id); err != nil || route != collection.BackendQuiet {
+		t.Fatalf("existing command changed owner: %q %v", route, err)
+	}
+	if command, err := e.ClaimCommand(ctx, id, "bridge"); err != nil || command != nil {
+		t.Fatalf("Bridge claimed pinned Quiet work: %+v %v", command, err)
+	}
+	if err := e.CancelSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUnavailableNativeTargetDoesNotAutomaticallyRetry(t *testing.T) {
 	err := &headless.CaptureError{Code: "target_unavailable", Message: "Facebook reports this post is unavailable in the current session"}
 	for _, backend := range []string{collection.BackendHeadless, collection.BackendQuiet} {

@@ -2,6 +2,7 @@ import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs
 import { canonicalSourceURL, captureError, toObservation } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
+import { photoRecaptureObservation } from './photo-recapture.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -143,6 +144,13 @@ export async function capture(browser, assetsBySource, source, payload) {
       throw error;
     }
     if (snapshot.loginRequired || snapshot.challengeDetected || snapshot.sourceUnavailable) break;
+    if (payload?.mode === 'recapture_media' && payload.reason === 'missing_media'
+        && source === 'facebook' && options.acquisitionRound === 1
+        && options.explicitPageUrl && browser.backend !== 'browser_quiet_hidden') {
+      const actualUrl=await page.evaluate('location.href',timeLeft(deadline));
+      const photo=photoRecaptureObservation(snapshot.photoEvidence,requestedUrl,actualUrl,capturedAt,provenance);
+      if(photo)return photo;
+    }
     if (!photoResolution && source === 'facebook' && options.acquisitionRound === 1
         && options.explicitPageUrl && browser.backend !== 'browser_quiet_hidden') {
       const parent=verifiedPhotoParent(snapshot.photoEvidence, requestedUrl);

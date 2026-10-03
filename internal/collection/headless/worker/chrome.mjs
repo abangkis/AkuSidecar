@@ -9,6 +9,18 @@ const TARGET_CLEANUP_TIMEOUT_MS = 1000;
 const TARGET_CLEANUP_VERIFY_TIMEOUT_MS = 2000;
 const execFileAsync = promisify(execFile);
 
+// Muted autoplay is allowed by Chrome's ordinary autoplay policy. Collection
+// needs media metadata/URLs, not a running player. Stop each playback attempt
+// without replacing play(), removing sources or blocking metadata acquisition.
+export const CAPTURE_PLAYBACK_GUARD_SOURCE = `(() => {
+  const stopPlayback = event => {
+    const media = event.target;
+    if (media instanceof HTMLMediaElement && !media.paused) media.pause();
+  };
+  document.addEventListener('play', stopPlayback, true);
+  document.addEventListener('playing', stopPlayback, true);
+})();`;
+
 export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default' }) {
   if (!isAbsolute(chromePath) || !isAbsolute(profilePath)) throw new Error('Chrome and profile paths must be absolute.');
   const executable = await realpath(chromePath);
@@ -177,6 +189,9 @@ function connectOwnedChrome(child, executable, profilePath) {
           await send('Page.enable', {}, sessionId);
           await send('Runtime.enable', {}, sessionId);
           await send('Network.enable', {}, sessionId);
+          // Install before navigation, including subsequent documents/frames.
+          // Interactive/borrowed Chrome contexts do not use this launch path.
+          await send('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_PLAYBACK_GUARD_SOURCE }, sessionId);
           // The second ordinary background tab otherwise remains occluded and
           // stops animation frames. CDP emulation changes page lifecycle only;
           // no Target.activateTarget or OS foreground operation is needed.

@@ -63,3 +63,17 @@ test('parent resolution requires consistent explicit story URL, actor and body',
     assert.equal(run({records:[{...record,creation_story:{...story,...patch}}]}).parent,null);
   }
 });
+
+test('photo creation and containing album post remain distinct even with the same owner',()=>{
+  const actors=[{id:'456',name:'Fixture'}];
+  const container={id:'album-story',post_id:'789',url:'https://www.facebook.com/fixture/posts/pfbidABC',
+    actors,message:{text:'Caption for an album containing several photos'}};
+  const creation={id:'photo-story',post_id:'123',url:'https://www.facebook.com/photo.php?fbid=123',actors};
+  for(const story of [creation,{...creation,message:{text:''}}]){
+    const result=run({records:[{...photo(),container_story:container,creation_story:story}]});
+    assert.equal(result.status,'verified_photo_media');
+    assert.equal(result.media.url,uri);
+    assert.equal(result.parent,null);
+    assert.equal(result.text,undefined);
+  }
+});

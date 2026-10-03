@@ -288,6 +288,101 @@ func TestMediaRecaptureLeaseAndOwnerFence(t *testing.T) {
 	waitCaptureLeases(t, manager, 0)
 }
 
+func TestHeadlessPhotoMediaRecapturePreservesSavedFacebookItem(t *testing.T) {
+	ctx := context.Background()
+	engine, state := testEngine(t)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceFacebook}
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	manager := attachTestCapture(t, engine)
+	coordinator := collection.NewCoordinator(manager, nil, func() error { return nil })
+	engine.AttachCollectionCoordinator(coordinator)
+	session, err := engine.StartVisibleUpdate(ctx, "save Facebook photo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var facebookRun string
+	for _, run := range session.Runs {
+		if run.Source == domain.SourceFacebook {
+			facebookRun = run.ID
+		}
+	}
+	if facebookRun == "" {
+		t.Fatalf("Facebook run missing: %+v", session.Runs)
+	}
+	command, err := engine.ClaimCommand(ctx, facebookRun, "bridge-test")
+	if err != nil || command == nil {
+		t.Fatalf("seed claim=%+v err=%v", command, err)
+	}
+	photoURL := "https://www.facebook.com/photo?fbid=123"
+	original := domain.Block{
+		EvidenceKey:   "facebook:post:000000000000000000000123",
+		PlatformID:    "facebook:post:000000000000000000000123",
+		Permalink:     photoURL,
+		Author:        "Saved photo author",
+		Text:          "A saved caption that must survive media recovery.",
+		MediaRecovery: map[string]any{"outcome": "unavailable"},
+	}
+	seed := domain.Observation{Source: domain.SourceFacebook, PageURL: photoURL, CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{original}}}, Coverage: map[string]any{"quality": "complete"}}
+	if _, err := engine.AcceptObservation(ctx, command.ID, facebookRun, seed); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitSession(t, engine, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(completed.Items) != 1 {
+		t.Fatalf("seed timeline items=%d", len(completed.Items))
+	}
+	waitCaptureLeases(t, manager, 0)
+	engine.ResetCaptureHeartbeat()
+	if err := manager.Replace(ctx, func(context.Context, uint64) (captureruntime.Process, error) {
+		return &headlessTestProcess{&runtimeTestProcess{done: make(chan error, 1)}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.Request("headless")
+	job, err := engine.QueueMediaRecapture(ctx, completed.Items[0].ID, domain.MediaRecaptureBackground)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.ClaimMediaRecapture(ctx, job.ID, "bridge-test"); !errors.Is(err, errStaleCaptureRuntime) {
+		t.Fatalf("Bridge claimed headless work: %v", err)
+	}
+	claimed, err := engine.claimMediaRecaptureForDriver(ctx, job.ID, "headless-test", "headless")
+	if err != nil || claimed.Status != "claimed" {
+		t.Fatalf("headless claim=%+v err=%v", claimed, err)
+	}
+	stamp, ok := claimed.Payload["captureRuntime"].(map[string]any)
+	if !ok || stamp["driver"] != "headless" {
+		t.Fatalf("headless owner stamp=%+v", claimed.Payload["captureRuntime"])
+	}
+	result := domain.Observation{Source: domain.SourceFacebook, PageURL: photoURL, CapturedAt: domain.Now(),
+		Coverage: map[string]any{"photoMediaRecapture": map[string]any{
+			"status": "verified", "photoId": "123", "ownerId": "456", "provenance": "exact_photo_metadata_and_visible_image",
+		}},
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{PlatformID: "facebook:photo:123", Permalink: photoURL,
+			Media: []map[string]any{{"kind": "image", "url": "https://media.fbcdn.net/photo.jpg"}},
+		}}}},
+	}
+	done, err := engine.acceptMediaRecapture(ctx, job.ID, result, true)
+	if err != nil || done.Outcome != "recovered" {
+		t.Fatalf("headless completion=%+v err=%v", done, err)
+	}
+	items, err := engine.Timeline(ctx, 10, 0)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("timeline rows=%d err=%v", len(items), err)
+	}
+	saved := items[0].Evidence
+	if saved == nil || saved.EvidenceKey != original.EvidenceKey || saved.PlatformID != original.PlatformID ||
+		saved.Permalink != original.Permalink || saved.Author != original.Author || saved.Text != original.Text || len(saved.Media) != 1 {
+		t.Fatalf("saved photo identity/content changed: %+v", saved)
+	}
+}
+
 func TestCaptureGenerationFenceRejectsMalformedValues(t *testing.T) {
 	for _, value := range []any{nil, "1", float64(1.5), float64(0), -1, float64(2)} {
 		if captureGenerationMatches(value, 1) {

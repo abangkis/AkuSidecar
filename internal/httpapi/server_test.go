@@ -1628,6 +1628,8 @@ func TestLoopbackBoundaryRejectsForeignHostsAndOrigins(t *testing.T) {
 		want        int
 	}{
 		{name: "foreign host", method: http.MethodGet, path: "/api/health", host: "attacker.example", want: http.StatusForbidden},
+		{name: "recapture status missing job", method: http.MethodGet, path: "/api/media-recaptures/missing", host: "127.0.0.1:11122", want: http.StatusNotFound},
+		{name: "foreign recapture status origin", method: http.MethodGet, path: "/api/media-recaptures/missing", host: "127.0.0.1:11122", origin: "https://attacker.example", want: http.StatusForbidden},
 		{name: "foreign browser origin", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "https://attacker.example", contentType: "application/json", want: http.StatusForbidden},
 		{name: "extension cannot call UI mutation", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "chrome-extension://abcdefghijklmnop", contentType: "application/json", want: http.StatusForbidden},
 		{name: "same origin UI reaches route", method: http.MethodPut, path: "/api/onboarding", host: "127.0.0.1:11122", origin: "http://127.0.0.1:11122", contentType: "application/json", want: http.StatusOK},

@@ -1274,6 +1274,19 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest(err.Error())
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/media-recaptures/"):
+		id := strings.TrimPrefix(p, "/api/media-recaptures/")
+		if id == "" || strings.Contains(id, "/") {
+			return notFound("media recapture")
+		}
+		job, err := s.engine.MediaRecapture(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("media recapture")
+		}
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"recapture": map[string]any{"id": job.ID, "status": job.Status, "outcome": job.Outcome, "error": job.Error}})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
 		id := path.Base(strings.TrimSuffix(p, "/recapture"))
 		var body struct {

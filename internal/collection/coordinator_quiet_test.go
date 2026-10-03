@@ -3,6 +3,7 @@ package collection
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
@@ -14,6 +15,20 @@ type quietFixtureBackend struct{ calls int }
 func (b *quietFixtureBackend) Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error) {
 	b.calls++
 	return domain.Observation{}, errors.New("fixture unavailable")
+}
+
+type readinessQuietBackend struct {
+	available atomic.Bool
+	calls     atomic.Int32
+}
+
+func (b *readinessQuietBackend) CaptureAvailable() bool { return b.available.Load() }
+func (b *readinessQuietBackend) Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error) {
+	b.calls.Add(1)
+	if !b.CaptureAvailable() {
+		return domain.Observation{}, errors.New("Quiet collector is unavailable")
+	}
+	return domain.Observation{}, nil
 }
 
 func TestQuietBackendDoesNotCrossBrowserGenerations(t *testing.T) {
@@ -47,5 +62,30 @@ func TestQuietBackendDoesNotCrossBrowserGenerations(t *testing.T) {
 	c.SetBrowserCollector(2, &quietFixtureBackend{})
 	if !c.Status().QuietAvailable {
 		t.Fatal("new browser backend unavailable")
+	}
+}
+
+func TestQuietReadinessFencesNewSelectionWithoutReroutingPinnedCapture(t *testing.T) {
+	m, err := captureruntime.New(proc("browser"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Terminate()
+	c := NewCoordinator(m, func(context.Context, string, uint64) (captureruntime.Process, error) { return proc("browser"), nil }, func() error { return nil })
+	b := &readinessQuietBackend{}
+	b.available.Store(true)
+	c.SetBrowserCollector(1, b)
+	if !c.BrowserCollectorAvailable("facebook") || !c.Status().QuietAvailable {
+		t.Fatal("ready Quiet backend was hidden")
+	}
+	b.available.Store(false)
+	if c.BrowserCollectorAvailable("facebook") || c.Status().QuietAvailable {
+		t.Fatal("failed Quiet backend remained available for new work")
+	}
+	if _, err := c.Capture(context.Background(), "facebook", nil); err == nil || err.Error() != "Quiet collector is unavailable" {
+		t.Fatalf("pinned Quiet capture did not fail explicitly: %v", err)
+	}
+	if b.calls.Load() != 1 {
+		t.Fatal("unavailable Quiet capture was rerouted or skipped")
 	}
 }
