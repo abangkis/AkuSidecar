@@ -2497,6 +2497,86 @@ The cumulative task ceiling is 2,000,000 tokens. Last native readback remains
 the user resumed; the available tool cannot reactivate/reset that counter, so
 this is a stale measurement, not complete accounting of subsequent work.
 
+### Legacy Watch target contract checked before a live baseline attempt
+
+The same-profile Browser baseline preflight passed after checkpoint `b06a512`:
+healthy runtime/compatible Bridge, one registered Chrome profile owner,
+Browser/Quiet and no active capture. Further inspection found that the unchanged
+production Bridge's Facebook `nativePostPath` in `source-catalog.js` excludes
+`/watch/`. Executing its exported `isNativePostUrl` on the exact observed URL
+returns false. `service-worker.js` uses this check in `assertRecaptureTarget`,
+including targeted `collect_visible` commands. The private proof is
+`build/fb-video-discovery-20261003/bridge-target-contract.json` and records the
+source-catalog SHA256. This is native-target contract evidence, not a live
+Browser observation or full parity verdict.
+
+The proposed foreground fixture was therefore stopped before launch; no
+permissions, production DB or shared Bridge code changed. The unused new
+wrapper was removed. Do not force readiness, silently enable Watch URLs in
+Bridge, or substitute a guessed native URL merely to produce a baseline.
+This target is not eligible for comparison through the current native-target
+route. The video-URL acquisition investigation can continue read-only using
+exact target metadata with playback paused; a supported permalink must be
+observed/corroborated before it becomes a legacy comparison target. Feed-video
+capture parity and Watch-detail support remain separate outstanding evidence.
+
+### Exact-target delivery URLs discovered with playback paused
+
+Two bounded metadata diagnostics used the current packaged playback guard and
+the registered authenticated profile. Receipts
+`authenticated-parity-add4a610-60cf-48c5-8fbe-6f882cee0682` and
+`authenticated-parity-931956c6-1237-4225-b8e4-fd22faf84b3d` confirm profile
+release and healthy compatible Bridge restoration. The target video remained
+paused at zero with `readyState=4` and the same 720x720 dimensions/duration.
+
+The read-only JSON walk was bounded to 8 MiB, 80,000 nodes and depth 32. Exact
+ID `1639349817600268` records include typed `Video` fragments, a consistent
+Physics Girl owner ID, and modern `videoDeliveryResponseResult` /
+`progressive_urls` delivery branches. These branches expose two distinct
+trusted HTTPS `fbcdn.net` progressive MP4 URL candidates. Signed URLs remain
+only in ignored private evidence; no playback or media download was used to
+validate them, and no production item was admitted.
+
+The same exact-ID typed metadata exposes the native URL/permalink
+`https://www.facebook.com/reel/1639349817600268/`. This is observed evidence,
+not an invented Watch alias. The unchanged Bridge's exported `isNativePostUrl`
+accepts this Reel form. Private evidence and scope are recorded in
+`build/fb-video-discovery-20261003/target-delivery-metadata.json` and
+`target-delivery-summary.json`. The next same-video comparison should use this
+observed supported URL on both sides. Its rendering, Bridge admission,
+headless admission and reusable URL quality are still unverified; the old
+Watch failure is not a parity verdict for the Reel route.
+
+### Observed Reel permalink renders but item discovery remains unverified
+
+Receipt `authenticated-parity-94cf88bb-0921-4641-97d7-3ef6c202b3b2`
+tested the observed Reel permalink using the same registered authenticated
+profile and packaged playback guard. The page retained the exact video ID,
+Physics Girl author and matching caption. The target video was visible,
+720x720, metadata-ready, paused at zero. A second suggested video was also
+present, so any future media admission must bind the exact target rather than
+selecting the first available media URL.
+
+Normal capture returned `empty_unverified`: zero structural and eligible
+candidates, with no login requirement or challenge. This identifies a Reel
+item-discovery boundary; it does not establish a content-rendering restriction
+or Browser/Bridge parity failure. Accepting the URL in the legacy target
+contract is not proof that its collector admits the item. Private diagnostic:
+`build/fb-video-discovery-20261003/reel-target-delivery-metadata.json`.
+
+The worker shut down explicitly, released the profile, and the original
+runtime restored healthy with one profile owner and compatible healthy Bridge.
+Next: obtain a normal legacy observation on this supported permalink, then
+decide whether a bounded headless discovery adapter is needed for parity or
+additional detail-surface support. Preserve exact video/owner/poster binding,
+including conflicting suggested-video evidence, before promoting delivery
+URLs. Fresh feed-video and multi-image parity remain open.
+
+Budget readback for this checkpoint: active native segment 355,287/803,724
+tokens, plus 1,196,276 measured before this segment, for 1,551,563 cumulative
+measured tokens against the approved 2,000,000 ceiling. Coverage remains
+partial; this does not erase unmeasured activity or change the saved default.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
