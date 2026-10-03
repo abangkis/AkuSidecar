@@ -36,6 +36,7 @@ function requestError(code, message) {
 }
 
 export async function sourceAssets(bridgePath, source) {
+  if (!['x','facebook','instagram','linkedin'].includes(source)) throw requestError('unsupported_source','no headless source assets');
   const bridge = await realpath(bridgePath);
   const bridgeStat = await stat(bridge);
   if (!bridgeStat.isDirectory()) throw requestError('invalid_init', 'bridgePath must name the AkuBridge directory');
@@ -48,14 +49,20 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'worker/vendor/x-quote-identity.js', path: resolve(root, 'vendor/x-quote-identity.js'), execute: true },
         { relative: 'worker/vendor/x-extract.js', path: resolve(root, 'vendor/x-extract.js'), execute: true },
       ]
-    : [
+    : source === 'facebook' ? [
         { relative: 'AkuBridge/adapters/facebook-adapter.js', path: resolve(bridge, 'adapters/facebook-adapter.js'), execute: true },
         { relative: 'worker/vendor/facebook-boundary.js', path: resolve(root, 'vendor/facebook-boundary.js'), execute: true },
         { relative: 'worker/vendor/facebook-time-evidence.js', path: resolve(root, 'vendor/facebook-time-evidence.js'), execute: true },
         { relative: 'worker/vendor/facebook-photo-evidence.js', path: resolve(root, 'vendor/facebook-photo-evidence.js'), execute: true },
         { relative: 'worker/vendor/facebook-extract.js', path: resolve(root, 'vendor/facebook-extract.js'), execute: true },
+      ] : [
+        { relative: 'AkuBridge/bounded-capture-policy.js', path: resolve(bridge, 'bounded-capture-policy.js'), execute: true },
+        { relative: 'AkuBridge/media-post-processor.js', path: resolve(bridge, 'media-post-processor.js'), execute: true },
+        ...(source === 'linkedin' ? ['linkedin-permalink-policy.js','linkedin-timestamp-policy.js'].map(name=>({relative:`AkuBridge/${name}`,path:resolve(bridge,name),execute:true})) : []),
+        { relative: `AkuBridge/adapters/${source}-adapter.js`, path: resolve(bridge, `adapters/${source}-adapter.js`), execute: true },
+        { relative: 'worker/vendor/adapter-extract.js', path: resolve(root, 'vendor/adapter-extract.js'), execute: true },
       ];
-  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'photo-recapture.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {
@@ -64,7 +71,11 @@ export async function sourceAssets(bridgePath, source) {
     const content = await readFile(asset.path, 'utf8');
     assets.push({ ...asset, content, sha256: createHash('sha256').update(content).digest('hex') });
   }
-  const resolverAsset = source === 'x'
+  const resolverAsset = source === 'instagram' || source === 'linkedin'
+    ? { relative:`AkuBridge/${source}-main-world-media-resolver.js`,path:resolve(bridge,`${source}-main-world-media-resolver.js`),execute:false,
+        exportName:source==='instagram' ? 'resolveInstagramStructuredMediaInMainWorld' : 'resolveLinkedInStructuredMediaInMainWorld',
+        runtimeRevision:`${source}-main-world-media-resolver-${source==='instagram' ? 'v2' : 'v1'}` }
+    : source === 'x'
     ? { relative: 'AkuBridge/x-main-world-media-resolver.js', path: resolve(bridge, 'x-main-world-media-resolver.js'), execute: false,
         exportName: 'resolveXStructuredMediaInMainWorld', runtimeRevision: 'x-main-world-media-resolver-v1' }
     : { relative: 'AkuBridge/facebook-main-world-media-resolver.js', path: resolve(bridge, 'facebook-main-world-media-resolver.js'), execute: false,
@@ -89,6 +100,21 @@ export async function sourceAssets(bridgePath, source) {
     // Structured media is optional. Missing or unloadable Bridge resolver leaves DOM capture intact.
   }
   Object.defineProperty(assets, 'structuredMediaResolver', { value: structuredMediaResolver, enumerable: false });
+  if(source==='instagram') {
+    const feedResolver={available:false,functionSource:'',runtimeRevision:'instagram-main-world-feed-resolver-v1'};
+    try {
+      const path=resolve(bridge,'instagram-main-world-feed-resolver.js');
+      const content=await readFile(path,'utf8');
+      if(Buffer.byteLength(content)<=1024*1024) {
+        assets.push({relative:'AkuBridge/instagram-main-world-feed-resolver.js',path,execute:false,content,sha256:createHash('sha256').update(content).digest('hex')});
+        const module=await import(pathToFileURL(await realpath(path)).href);
+        if(typeof module.resolveInstagramStructuredFeedInMainWorld==='function') {
+          feedResolver.available=true;feedResolver.functionSource=module.resolveInstagramStructuredFeedInMainWorld.toString();
+        }
+      }
+    } catch { /* Optional bounded fallback does not change DOM collection. */ }
+    Object.defineProperty(assets,'structuredFeedResolver',{value:feedResolver,enumerable:false});
+  }
   return assets;
 }
 
@@ -128,10 +154,10 @@ export async function runWorker({ input = process.stdin, output = process.stdout
         if (browser) throw requestError('already_initialized', 'worker already owns a Chrome process');
         const borrowed = request.backend === 'browser_quiet_hidden';
         const options = borrowed ? validateBorrowedInit(request) : validateInit(request);
-        const loadedAssets = {
-          x: await sourceAssets(options.bridgePath, 'x'),
-          facebook: await sourceAssets(options.bridgePath, 'facebook'),
-        };
+        const loadedAssets = {};
+        for (const source of borrowed ? ['x','facebook'] : ['x','facebook','instagram','linkedin']) {
+          loadedAssets[source] = await sourceAssets(options.bridgePath, source);
+        }
         browser = borrowed
           ? createBorrowedChrome(borrowedRPC.send, request.chromeVersion)
           : await launchChrome(options);

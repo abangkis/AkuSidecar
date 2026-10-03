@@ -2,6 +2,7 @@ import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs
 import { canonicalSourceURL, captureError, toObservation } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
+import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget } from './additional-source-media.mjs';
 import { photoRecaptureObservation } from './photo-recapture.mjs';
 
 const MAX_CAPTURE_MS = 90000;
@@ -11,10 +12,10 @@ const sourceFrontiers = new Map();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export function validateCapture(source, payload = {}) {
-  if (source !== 'x' && source !== 'facebook') throw captureError('unsupported_source', 'supported sources are x and facebook');
+  if (!['x','facebook','instagram','linkedin'].includes(source)) throw captureError('unsupported_source', 'no headless collector for this source');
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw captureError('invalid_payload', 'payload must be a JSON object');
   const acquisitionRound = boundedInteger(payload.acquisitionRound ?? payload.round, 1, 1, 2, 'acquisitionRound');
-  const home = source === 'x' ? 'https://x.com/home' : 'https://www.facebook.com/';
+  const home = {x:'https://x.com/home',facebook:'https://www.facebook.com/',instagram:'https://www.instagram.com/',linkedin:'https://www.linkedin.com/feed/'}[source];
   const rawPageUrl = payload.pageUrl;
   let pageUrl = null;
   if (rawPageUrl !== undefined && rawPageUrl !== null && rawPageUrl !== '') {
@@ -87,7 +88,7 @@ function pageKey(source, url) {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return '';
-    const expected = source === 'x' ? ['x.com'] : ['www.facebook.com', 'facebook.com', 'm.facebook.com'];
+    const expected = {x:['x.com'],facebook:['www.facebook.com','facebook.com','m.facebook.com'],instagram:['www.instagram.com','instagram.com'],linkedin:['www.linkedin.com']}[source] || [];
     if (!expected.includes(parsed.hostname.toLowerCase())) return '';
     return `${source}://${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/$/, '') || '/'}${parsed.search}`;
   } catch { return ''; }
@@ -124,7 +125,7 @@ export async function capture(browser, assetsBySource, source, payload) {
     const actualUrl = await page.evaluate('location.href', timeLeft(deadline));
     frontierUrlMismatch = pageKey(source, actualUrl) !== state.pageUrl;
     resumeScrollY = options.continuation.startScrollY;
-    await page.evaluate(`window.scrollTo({top:${resumeScrollY},behavior:'instant'})`, timeLeft(deadline));
+    await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${resumeScrollY}) : window.scrollTo({top:${resumeScrollY},behavior:'instant'})`, timeLeft(deadline));
     await sleep(Math.min(options.continuation.settleMs, timeLeft(deadline)));
   }
 
@@ -165,9 +166,9 @@ export async function capture(browser, assetsBySource, source, payload) {
       }
     }
     if (snapshot.posts.length) {
-      // X can render tweet text before its attachment shell hydrates. Re-sample
+      // Post text can render before its attachment shell hydrates. Re-sample
       // only missing expected URLs, within both source readiness and a 3s bound.
-      const pendingMedia = source === 'x' && snapshot.posts.some(post =>
+      const pendingMedia = ['x','instagram','linkedin'].includes(source) && snapshot.posts.some(post =>
         Array.isArray(post.mediaEvidence?.expectedWithoutUrl) && post.mediaEvidence.expectedWithoutUrl.length > 0);
       if (!pendingMedia) break;
       mediaSettleDeadline ??= Math.min(readinessDeadline, Date.now() + 3000);
@@ -175,6 +176,9 @@ export async function capture(browser, assetsBySource, source, payload) {
     }
   }
   if (!snapshot) throw captureError('empty_unverified', 'source page produced no verifiable snapshot before the readiness deadline');
+  if(source==='instagram' && options.explicitPageUrl && snapshot.posts.length===0) {
+    snapshot=await resolveInstagramNativeTarget({page,requestedUrl,snapshot,resolver:assets?.structuredFeedResolver,deadlineAt:deadline});
+  }
   const stateError = sourceStateError(snapshot);
   if (stateError) throw stateError;
   if (source === 'facebook' && options.explicitPageUrl && snapshot.posts.length === 0) {
@@ -221,7 +225,7 @@ export async function capture(browser, assetsBySource, source, payload) {
   for (let scroll = 0; scroll <= options.scrolls; scroll++) {
     ensureTime(deadline);
     if (scroll > 0) {
-      await page.evaluate(`window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
+      await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceBy ? globalThis.XHeadlessPoC.scrollSourceBy(${options.scrollFraction}) : window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
       await sleep(Math.min(options.scrollSettleMs, timeLeft(deadline)));
       snapshot = await collect(page, source, deadline);
       snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
@@ -257,7 +261,7 @@ export async function capture(browser, assetsBySource, source, payload) {
   const frontier = { scrollY, anchorKeys, newCandidateCount: lastNewCandidateCount,
     hasMoreCandidateSignal: height > scrollY + viewport };
   sourceFrontiers.set(source, { source, requestedUrl, pageUrl: pageKey(source, requestedUrl), frontier });
-  if (options.restoreScroll) await page.evaluate(`window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
+  if (options.restoreScroll) await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${originalScrollY}) : window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {
     const observation=toObservation({
       source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
@@ -392,11 +396,13 @@ async function collect(page, source, deadline) {
 }
 
 async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline) {
-  const resolution = await resolveStructuredMedia({
+  const resolveMedia=source==='instagram' || source==='linkedin' ? resolveAdditionalSourceMedia : resolveStructuredMedia;
+  const resolution = await resolveMedia({
     page,
     source,
     posts: snapshot.posts,
     resolver: assets?.structuredMediaResolver,
+    feedResolver: assets?.structuredFeedResolver,
     deadlineAt: deadline,
   });
   return { ...snapshot, posts: resolution.posts, structuredMediaResolution: resolution.summary };

@@ -63,9 +63,28 @@ try {
 
     # Quiet and Headless resolve their pinned worker beside the Sidecar binary.
     # Use the release stager so development keeps the same runtime contract.
-    $workerProvenanceText = & $workerStager -DestinationDirectory (Join-Path $runtimeDir $workerDirectoryName)
+    # The release stager accepts project build/artifact roots, not runtime/dev.
+    # Stage there first, then retain the old development assets before promotion.
+    $workerStage = Join-Path $repoRoot ('build\dev-worker-stage-' + [Guid]::NewGuid().ToString('n'))
+    $workerDestination = [IO.Path]::GetFullPath((Join-Path $runtimeDir $workerDirectoryName))
+    $runtimeBoundary = [IO.Path]::GetFullPath($runtimeDir).TrimEnd('\') + '\'
+    if (-not $workerDestination.StartsWith($runtimeBoundary, [StringComparison]::OrdinalIgnoreCase)) { throw 'Worker destination escaped development runtime.' }
+    $workerProvenanceText = & $workerStager -DestinationDirectory $workerStage
     $workerProvenance = ($workerProvenanceText | Out-String) | ConvertFrom-Json
     if ($workerProvenance.status -ne 'ok') { throw 'Headless worker staging failed.' }
+    $priorWorkerStage = $workerDestination + '.previous-' + [Guid]::NewGuid().ToString('n')
+    $workerStageBackedUp = $false
+    try {
+        if (Test-Path -LiteralPath $workerDestination -PathType Container) {
+            Move-Item -LiteralPath $workerDestination -Destination $priorWorkerStage
+            $workerStageBackedUp = $true
+        }
+        Move-Item -LiteralPath $workerStage -Destination $workerDestination
+    } catch {
+        if ($workerStageBackedUp -and -not (Test-Path -LiteralPath $workerDestination)) { Move-Item -LiteralPath $priorWorkerStage -Destination $workerDestination }
+        throw
+    }
+    $workerProvenance.destinationDirectory = $workerDestination
 
     $domainSource = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\domain\types.go') -Raw
     if ($domainSource -notmatch 'ApplicationVersion\s*=\s*"([^"]+)"') {

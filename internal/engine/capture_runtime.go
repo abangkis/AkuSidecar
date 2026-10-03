@@ -31,7 +31,7 @@ func headlessGrantedSources(status BridgeStatus) []domain.Source {
 	}
 	var sources []domain.Source
 	for _, source := range status.Actual.SourceAccess.Sources {
-		if source.Ready && source.PermissionGranted && source.ScriptRegistered && (source.Source == "x" || source.Source == "facebook") {
+		if source.Ready && source.PermissionGranted && source.ScriptRegistered && collection.HeadlessSourceSupported(domain.Source(source.Source)) {
 			sources = append(sources, domain.Source(source.Source))
 		}
 	}
@@ -44,7 +44,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 		status := e.BridgeStatus()
 		if status.Compatible && status.Actual != nil {
 			for _, source := range status.Actual.SourceAccess.Sources {
-				if source.Ready && (source.Source == "x" || source.Source == "facebook") {
+				if source.Ready && source.PermissionGranted && source.ScriptRegistered && collection.HeadlessSourceSupported(domain.Source(source.Source)) {
 					return nil
 				}
 			}

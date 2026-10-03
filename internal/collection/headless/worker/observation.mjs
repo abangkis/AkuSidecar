@@ -26,6 +26,18 @@ export function canonicalSourceURL(source, raw) {
     url.hash = '';
     return url.href;
   }
+  if (source === 'instagram' && ['www.instagram.com','instagram.com'].includes(host)) {
+    const match=url.pathname.match(/^\/(p|reel|tv)\/([A-Za-z0-9_-]+)\/?$/);
+    if (!match) return null;
+    return `https://www.instagram.com/${match[1]}/${match[2]}/`;
+  }
+  if (source === 'linkedin' && host === 'www.linkedin.com') {
+    const match=url.pathname.match(/^\/feed\/update\/urn:li:(activity|ugcPost|share):(\d{5,30})\/?$/i)
+      || url.pathname.match(/^\/posts\/[^/]*-(activity|ugcpost|share)-(\d{5,30})(?:-[A-Za-z0-9_-]+)?\/?$/i);
+    if (!match) return null;
+    const kind=match[1].toLowerCase()==='ugcpost'?'ugcPost':match[1].toLowerCase();
+    return `https://www.linkedin.com/feed/update/urn:li:${kind}:${match[2]}/`;
+  }
   if (source !== 'facebook' || !['www.facebook.com', 'facebook.com', 'm.facebook.com'].includes(host)) return null;
   const path = url.pathname.toLowerCase();
   if (/^\/(?:watch\/|video\.php)$/.test(path)) {
@@ -67,6 +79,13 @@ function validatePost(source, post) {
       throw captureError('invalid_observation', 'X post identity does not match its native permalink');
     }
     platformId = `x:status:${statusId}`;
+  } else if (source === 'instagram' || source === 'linkedin') {
+    const parsed=new URL(canonicalSourceURL(source,post.permalink));
+    const match=source==='instagram'?parsed.pathname.match(/^\/(p|reel|tv)\/([A-Za-z0-9_-]+)\/$/)
+      :parsed.pathname.match(/urn:li:(activity|ugcPost|share):(\d{5,30})/i);
+    const expected=`${source}:${match[1].toLowerCase()}:${match[2]}`;
+    if (post.id !== expected) throw captureError('invalid_observation','post identity does not match its native permalink');
+    platformId=expected;
   } else if (!/^facebook:post:(?:pfbid[A-Za-z0-9]+|\d+)$/i.test(post.id)) {
     throw captureError('invalid_observation', 'Facebook post identity is not canonical');
   } else {
@@ -106,12 +125,18 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
     && verifiedStructuredVideos.length >= structuredResolution.verifiedVideoCount
     && !media.some(item => item?.kind === 'video_poster');
   const unresolvedVideo = expectsVideo && !structuredResolved;
+  const additionalOwnedVideo=['instagram','linkedin'].includes(source)
+    && post.mediaEvidence?.additionalStructuredMedia?.status==='observed_owned_urls'
+    && media.some(item=>item?.kind==='video' && typeof item.playbackUrl==='string');
   const recovery = {
     status: structuredResolved ? 'resolved' : unresolvedVideo ? 'partial' : post.mediaEvidence?.status || 'unverified',
-    outcome: structuredResolved ? 'verified_owned_playback' : unresolvedVideo ? 'unresolved' : 'observed_dom_only',
+    outcome: structuredResolved ? 'verified_owned_playback' : additionalOwnedVideo ? 'owned_playback_url_observed' : unresolvedVideo ? 'unresolved'
+      : source==='instagram' && post.evidenceMode==='headless_native_target_structured_observation' ? 'observed_native_target_structured' : 'observed_dom_only',
     expected,
     evidence: preserveMap(post.mediaEvidence),
-    ...(unresolvedVideo ? { unknownVideo: 'unresolved', limitation: 'video_stream_not_resolved' } : {}),
+    ...(unresolvedVideo ? additionalOwnedVideo
+      ? {unknownVideo:'playback_unverified',limitation:'video_playback_unverified'}
+      : { unknownVideo: 'unresolved', limitation: 'video_stream_not_resolved' } : {}),
   };
   const presentation = preserveMap(post.presentation);
   if (post.timestampSource) presentation.timestampSource = post.timestampSource;
@@ -120,7 +145,8 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
   if (post.timestampEvidence && typeof post.timestampEvidence === 'object') presentation.timestampEvidence = structuredClone(post.timestampEvidence);
   const quality = {
     status: 'unverified',
-    mode: captureMode === 'browser_quiet_hidden' ? 'quiet_dom_observation' : 'headless_dom_observation',
+    mode: source==='instagram' && post.evidenceMode==='headless_native_target_structured_observation' ? post.evidenceMode
+      : captureMode === 'browser_quiet_hidden' ? 'quiet_dom_observation' : 'headless_dom_observation',
     headlessSourceId: post.id,
     limitations,
     textStatus: typeof post.textStatus === 'string' ? post.textStatus : 'unverified',
@@ -138,11 +164,13 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
     relationshipType: typeof post.relationshipType === 'string' ? post.relationshipType : 'original',
     parentPermalink: typeof post.parentPermalink === 'string' ? post.parentPermalink : '',
     quotedPost: preserveMap(post.quotedPost),
+    ...(['instagram','linkedin'].includes(source) && Array.isArray(post.directContext)
+      ? {directContext:structuredClone(post.directContext.slice(0,12))} : {}),
     engagement: preserveMap(post.engagement),
     presentation,
-    attachments: [],
+    attachments: ['instagram','linkedin'].includes(source) && Array.isArray(post.attachments) ? structuredClone(post.attachments.slice(0,20)) : [],
     media,
-    links: [],
+    links: ['instagram','linkedin'].includes(source) && Array.isArray(post.links) ? structuredClone(post.links.slice(0,20)) : [],
     mediaRecovery: recovery,
     captureQuality: quality,
     feedPosition,

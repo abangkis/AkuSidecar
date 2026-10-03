@@ -31,8 +31,148 @@ does not block progress or qualification of X/Instagram/LinkedIn.
 Browser remains the default. This change authorizes the new implementation
 priority and checkpoint commit/push, not installation or default migration.
 The earlier all-four-source default gate remains until separately revised;
-Facebook can continue using Browser while other sources are qualified.
+Use Browser mode when Facebook collection is needed while the other sources
+are being qualified. Collection mode is still global; this amendment does not
+introduce simultaneous per-source Browser/headless operation on the same profile.
 Historical Facebook next-step proposals later in this ledger are parked.
+
+### Instagram/LinkedIn implementation boundary (2026-10-03)
+
+The user now authorizes implementing both additional headless sources. Reuse
+the existing source adapters and keep native source identity, author/body,
+media ownership and permission gates. Enable owned headless source contexts,
+source asset loading, capture homes/targets, observation URL/ID validation,
+backend capability/authority, Settings messaging and read-only QA selection.
+Borrowed hidden Quiet remains limited to X/Facebook; do not expand that parked
+mechanism. Source capability is not parity certification. Browser stays default.
+
+Initial DOM extraction must preserve owned visible media, presentation and
+LinkedIn attachments while marking unresolved video streams/partial text as
+unknown. No social action, sustained playback, login reset or blanket media
+attribution is authorized. Real profile QA uses the existing guarded headless
+stop/test/restore route; a new foreground baseline requires scoped approval.
+Saved Browser observations older than 30 minutes are supplementary evidence,
+not fresh paired qualification. Only source acceptance evidence can close the
+new Instagram/LinkedIn gates.
+
+First implementation checkpoint: backend supported-source/retained-authority
+gates now admit IG/LinkedIn only with source readiness, permission and registered
+script. Owned Chrome source contexts and default feed URLs are extended; hidden
+Quiet remains unchanged. Observation validation requires exact shortcode or
+LinkedIn native URN agreement, and retains new-source attachments/links/direct
+context. The authenticated QA tool adds explicit additional-source qualification
+scope and selection without requiring a Facebook baseline; historical X/FB
+baseline requirements remain intact. Settings labels all implemented collectors
+experimental rather than claiming source acceptance.
+
+Focused Node contract tests and full Go collection/engine/HTTP tests pass.
+Privacy-safe saved Browser baseline from session_b907b90c39264916712362639d810c6a
+contains two IG and three LinkedIn blocks. It is now over 30 minutes old and can
+only support initial regression evidence, not fresh paired parity.
+
+Canonical worker staging inspection also found the dev helper previously
+passed runtime/dev to a release stager that only permits build/artifact roots.
+Dev build now stages in a unique project build directory, promotes the staged
+assets with retained previous directories, and restores previous candidate
+assets if promotion fails. Isolated tests execute both actual filesystem
+promotion blocks; both pass. No live dev build/restart or installation has
+been performed for this amendment.
+
+Initial packaged authenticated evidence (2026-10-03): the canonical candidate
+build and payload verifier pass. Worker tests pass 59 with one optional skip;
+the new-source asset test now executes the actual Bridge scripts, rather than
+only checking their filenames. This exposed and fixes the mandatory bounded
+capture policy dependency before media-post-processor initialization.
+
+Guarded headless target and feed runs used registered Chrome 154 with the same
+logged-in profile, not packaged Chrome 152 against that newer profile. Every
+run released the worker/profile and restored one original Chrome owner with
+healthy compatible Bridge. Instagram feed captured one native post with text
+and image (repeated across two snapshots); its saved native target was empty
+with authenticated UI present and no discovered candidates. LinkedIn target
+captured the matching native ID and 613-character body; expected video remains
+unresolved. LinkedIn feed rejected two visible candidates lacking identity;
+the existing adapter has bounded menu/embed permalink recovery that the initial
+headless wrapper does not yet invoke. Native target binding and reuse of that
+read-only recovery are the concrete next fixes. No source parity gate is closed.
+
+Private receipts remain ignored under build/authenticated-parity-1e6b7634-e369-
+490d-bc5d-0593590d8af7 and build/authenticated-parity-d79d4b93-e98e-4c24-bdb1-
+1e55afeabdd6. They are supplementary saved-target/feed evidence; not fresh
+paired Browser/headless acceptance. The operator harness now supports feed-only
+qualification to avoid repeating unrelated target failures, rejects conflicting
+feed-only/targets-only flags, and reports privacy-safe failure-stage labels.
+
+Combined causal fixes and final target evidence: headless now reuses LinkedIn's
+bounded own-post menu/embed permalink recovery and dedicated main-world media
+reader. Instagram uses its dedicated media reader, plus exact native-shortcode
+structured target fallback when no article is rendered. The latter requires
+the actual navigated URL, one matching candidate, canonical native ID, bounded
+author/caption and source-safe media. It is explicitly labeled structured
+target evidence rather than visible-DOM extraction. Post identity conflicts,
+foreign CDN URLs and duplicate structured candidate bindings remain rejected.
+
+Authenticated combined receipt build/authenticated-parity-77957cc2-aa4b-438c-
+a255-b2ef59d8615d captures both feeds, including LinkedIn owned playback URLs.
+Final target receipt build/authenticated-parity-15f7024c-97a5-41d3-8092-
+12ad96bab916 captures both saved targets: IG exact native ID with 563-character
+caption and image; LinkedIn exact native ID with 613-character body and video
+playback URL. Capture resamples missing expected media for up to three seconds
+within the source/deadline budget; no intentional video playback is performed.
+All runs release the worker/profile and restore one original owner and healthy
+compatible Bridge. Worker tests pass 63 with one optional skip; comparison tests
+pass 20. Full Go collection/engine/HTTP evidence remains valid (Go unchanged).
+
+The saved-target runs above remain supplementary. The fresh qualification
+checkpoint below supersedes their pending baseline/continuation status, without
+closing overall source parity or integrated product acceptance.
+
+### Fresh Instagram/LinkedIn qualification checkpoint (2026-10-04)
+
+One explicitly approved Browser Update selected Instagram/LinkedIn and Adaptive
+Fidelity temporarily. Session session_fcfcbb732c7d7dce9bb884b0eba0c7b6 completed;
+Quiet and the original four-source selection were restored. Browser remains
+the default. One LinkedIn observation without native identity was excluded from
+target comparison rather than assigned a fabricated ID.
+
+The current packaged worker fixes source-container scrolling and frontier
+restoration, reuses bounded LinkedIn own-post permalink recovery, preserves
+owned DOM images independently of legacy recovery selectors, and excludes UI
+expansion-button text from the post body. Instagram caption enrichment requires
+the same native shortcode, canonical URL, author and compatible visible prefix;
+foreign, ambiguous or conflicting structured candidates remain rejected.
+
+Fresh paired receipts build/authenticated-parity-3d832183-0b97-43fd-8e80-
+c879f8ee2dbf and build/authenticated-parity-844aa04e-2207-43d5-a8f0-
+5712d643c1fb used the same baseline and candidate within 30 minutes. Both sources
+passed feed, eligible continuation and native-target capture; the additional
+LinkedIn long-text target also passed. Three native targets match identity,
+author and normalized text: Instagram 576 characters, LinkedIn image post 430,
+and LinkedIn long text 2257. Repeated snapshots are not unique-post/media counts.
+
+Instagram's compared image has the same CDN host/path with different signed
+query values. LinkedIn's compared image retains the same underlying asset
+identifier but uses an observed 800 rendition versus Browser's 1280 rendition;
+exact URL/path and image-quality parity remain unverified. Do not synthesize a
+larger URL or relax comparisons to conceal this difference.
+
+Owned video URLs were extracted for both sources without intentional playback.
+After explicit approval for two CDN HEAD requests, both returned HTTP 200 and
+video/mp4 metadata. Instagram uses the fresh receipt; LinkedIn video remains
+supplementary saved-target evidence. HEAD metadata is not playback or rendered
+player verification. Private signed URLs and receipts remain ignored under build/.
+
+Worker tests pass 67 with one optional skip. The canonical quality-20261004
+candidate package verifies 417 payload files. Authenticated QA used registered
+Chrome 154 and the existing logged-in profile; packaged Chrome 152 was not
+opened against that newer profile. Every guarded run released worker/profile
+ownership and restored one original Chrome owner with healthy compatible Bridge.
+
+Remaining gates: broader fresh content/media diversity, rendition quality,
+timestamp fidelity, repeatability and the integrated reader/login/auto-return
+journey. No installation, default migration or new commit/push occurred here.
+Budget remains the authorized one-million cap with only partial measurement;
+the last native cutoff was 326381 tokens and subsequent usage is unmetered.
 
 ## Product contract
 
@@ -129,7 +269,7 @@ earlier checkpoints and must not be read as release acceptance.
 | Facebook collection — parked | Some fresh post/photo targets pass; another parent target has zero discovered posts while media-only recovery succeeds; no overall parity claim | Defer further investigation and qualification until the user resumes Facebook; keep existing Browser fallback |
 | Browser fallback | Existing collector retained; unavailable Quiet readiness now excluded in source and a local candidate build; installed runtime unchanged | Validate integrated fallback and isolate experimental hidden Quiet routing without regressing safe handoff |
 | Product journey | Settings/handoff fixtures and actual rendered in-app UI-to-worker/store single-photo recapture pass with preserved identity; served UI displays recovery and loaded media | Combined installed-app Settings, reader/login, auto-return and auto-update acceptance; fresh source parity and multi-image recovery |
-| Instagram / LinkedIn | Existing browser support retained | Active next-source priority after remaining X/shared runtime gates; Facebook no longer blocks this work |
+| Instagram / LinkedIn | Packaged feed, eligible continuation and native targets pass; three fresh targets match native identity, author and text; owned images/video URLs extracted, two video HEAD checks return 200 | Broader media/content diversity, LinkedIn 800 versus Browser 1280 rendition, timestamp fidelity, repeatability and integrated user journey remain open; full parity is unverified |
 | Default migration | Browser remains default | All four sources and integrated journey must pass before migration |
 
 An absent continuation is not a failed capture and is not a passed continuation

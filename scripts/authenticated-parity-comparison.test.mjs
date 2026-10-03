@@ -1,11 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compareReport, comparisonScope, permalinkEvidence } from './authenticated-parity-comparison.mjs';
-import { selectTarget, makeCapturePayload } from './test-authenticated-headless-parity.mjs';
+import { selectTarget, makeCapturePayload, validateBaseline, parseArguments } from './test-authenticated-headless-parity.mjs';
 import { sourceDefinition } from '../../AkuBridge/source-catalog.js';
 
 const target = {source:'x',platformId:'x:status:123',permalink:'https://x.com/fixture/status/123',author:'Fixture',text:'Original text'};
 const report = blocks => ({baseline:{targets:[target]},captures:[{source:'x',kind:'target',ok:true,result:{snapshots:[{blocks}]}}]});
+
+test('feed-only qualification rejects conflicting scope before runtime access',()=>{
+  const args=['--artifact',import.meta.filename,'--baseline',import.meta.filename,'--source','instagram','--feed-only'];
+  assert.equal(parseArguments(args).feedOnly,true);
+  assert.throws(()=>parseArguments([...args,'--targets-only']),{code:'conflicting_capture_scopes'});
+  assert.throws(()=>parseArguments([...args,'--feed-only']),{code:'invalid_arguments'});
+});
+
+test('new-source qualification is explicit, native-bound and does not require Facebook',()=>{
+  const rows=[{source:'instagram',platformId:'instagram:p:AbC_123',permalink:'https://www.instagram.com/p/AbC_123/',author:'Fixture',text:'Caption'},
+    {source:'linkedin',platformId:'linkedin:activity:1234567890',permalink:'https://www.linkedin.com/feed/update/urn:li:activity:1234567890/',author:'Fixture',text:'Body'}];
+  const baseline={scope:'new_source_headless_qualification_baseline',targets:rows};
+  assert.equal(validateBaseline(baseline),baseline);
+  for (const row of rows) assert.equal(selectTarget(baseline,row.source),row);
+  assert.throws(()=>validateBaseline({...baseline,targets:[{...rows[0],platformId:'instagram:p:Other'}]}),{code:'baseline_identity_permalink_mismatch'});
+  assert.throws(()=>validateBaseline({...baseline,targets:[]}),{code:'invalid_baseline'});
+  assert.throws(()=>validateBaseline({targets:rows}),{code:'baseline_requires_two_targets_per_source'});
+  const result=compareReport({baseline,captures:rows.map(row=>({source:row.source,ok:true,result:{snapshots:[{blocks:[row]}]}}))});
+  assert.ok(result.cases.every(row=>row.status==='native_identity_and_author_match'));
+  assert.equal(result.scope,'new_source_browser_targets_vs_live_headless_sequential');
+  assert.equal(result.fullParityVerified,false);
+});
 
 test('X author normalization requires the same display name and URL-bound handle',()=>{
   const baseline={...target,author:'Fixture @fixture · 5h'};
@@ -100,14 +122,14 @@ test('Facebook inferred, observed and unknown permalinks remain distinct even wh
 });
 
 test('read-only capture uses each source hydration default without increasing total capture time',()=>{
-  for (const source of ['x','facebook']) for (const kind of ['feed','target']) {
+  for (const source of ['x','facebook','instagram','linkedin']) for (const kind of ['feed','target']) {
     const payload=makeCapturePayload(kind,{permalink:'https://fixture.invalid/'},source);
     assert.equal(payload.sourceHydrationTimeoutMs,sourceDefinition(source).hydration.defaultTimeoutMs);
     assert.equal(payload.captureTimeoutMs,45_000);
     assert.equal(payload.sameTabMutationAllowed,false);
     assert.equal(payload.pendingContentPolicy,'detect_only');
   }
-  assert.throws(()=>makeCapturePayload('feed',null,'instagram'),{code:'unsupported_capture_source'});
+  assert.throws(()=>makeCapturePayload('feed',null,'unknown'),{code:'unsupported_capture_source'});
 });
 
 test('keeps the Quiet driver scope distinct from a headless runtime',()=>{

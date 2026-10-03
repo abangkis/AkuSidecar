@@ -37,6 +37,14 @@ export function nativeIdentity(source, permalink) {
   if (!canonical) return null;
   const url = new URL(canonical);
   if (source === 'x') return `x:status:${url.pathname.match(/\/status\/(\d+)/)?.[1]}`;
+  if (source === 'instagram') {
+    const match=url.pathname.match(/^\/(p|reel|tv)\/([A-Za-z0-9_-]+)\/$/);
+    return match ? `instagram:${match[1]}:${match[2]}` : null;
+  }
+  if (source === 'linkedin') {
+    const match=url.pathname.match(/urn:li:(activity|ugcPost|share):(\d{5,30})/i);
+    return match ? `linkedin:${match[1].toLowerCase()}:${match[2]}` : null;
+  }
   const pathId = url.pathname.match(/\/(?:posts|permalink|videos|reel)\/(pfbid[A-Za-z0-9]+|\d+)(?:\/|$)/i)?.[1];
   const storyId = /\/(?:story|permalink)\.php$/i.test(url.pathname) ? url.searchParams.get('story_fbid') : null;
   const watchId = /^\/watch\/$/i.test(url.pathname) ? url.searchParams.get('v') : null;
@@ -47,6 +55,7 @@ export function nativeIdentity(source, permalink) {
 
 export function comparisonScope(baseline, quiet = false) {
   const driver = quiet ? 'quiet' : 'headless';
+  if (baseline?.scope === 'new_source_headless_qualification_baseline') return `new_source_browser_targets_vs_live_${driver}_sequential`;
   if (baseline?.scope === 'fresh_browser_feed_acquisition_baseline') return `fresh_browser_feed_targets_vs_live_${driver}_sequential`;
   if (baseline?.scope === 'native_bridge_media_recapture_foreground_baseline') return `native_bridge_media_recapture_vs_live_${driver}_sequential`;
   if (baseline?.scope === 'saved_browser_timeline_vs_live_headless_sequential') return `saved_timeline_vs_live_${driver}_sequential`;
@@ -146,7 +155,7 @@ export function compareReport(report) {
       'ID/URL consistency does not establish that an inferred permalink opens the saved post',
       'URL tokens replaced for prose comparison do not establish displayed URL or destination equality',
       'unknown quality and video resolution remain unknown'],
-    sources:['x','facebook'].map(source => {
+    sources:['x','facebook','instagram','linkedin'].map(source => {
       const sourceCaptures = captures.filter(capture => capture.source === source);
       const blocks = sourceCaptures.filter(capture => capture.ok).flatMap(capture => blocksOf(capture.result));
       return {source,captureCount:sourceCaptures.length,

@@ -217,7 +217,7 @@ function connectOwnedChrome(child, executable, profilePath) {
         profilePath,
         version: { product: version.product || '', revision: version.revision || '', protocolVersion: version.protocolVersion || '' },
         async forSource(source) {
-          if (!['x', 'facebook'].includes(source)) throw new Error('Unsupported Chrome source context.');
+          if (!['x', 'facebook', 'instagram', 'linkedin'].includes(source)) throw new Error('Unsupported Chrome source context.');
           if (sourceContexts.has(source)) return sourceContexts.get(source);
           const context = await createPageContext();
           sourceContexts.set(source, context);

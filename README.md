@@ -38,6 +38,14 @@ and [Build Week evidence](https://github.com/abangkis/AkuBrowser/blob/main/BUILD
 
 ## Requirements
 
+The optional Headless collector implements X, Instagram, LinkedIn, and Facebook
+without a visible collection window. It reuses source adapters and retained
+Browser permissions; login, challenges and readers still use the interactive
+browser. Instagram/LinkedIn are experimental pending authenticated source and
+media qualification. Browser remains the default, and unresolved video streams
+are reported as unknown rather than synthesized. Facebook qualification is
+currently deferred. See `docs/collection-modes-roadmap.md` for acceptance gates.
+
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server

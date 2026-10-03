@@ -22,9 +22,40 @@ type headlessTestProcess struct{ *runtimeTestProcess }
 
 func (p *headlessTestProcess) Driver() string { return "headless" }
 
+func TestAdditionalHeadlessSourcesRequireRetainedPermissionAndScript(t *testing.T) {
+	for _, wanted := range []domain.Source{domain.SourceInstagram, domain.SourceLinkedIn} {
+		for _, missing := range []string{"none", "permission", "script", "readiness"} {
+			heartbeat := ExpectedHeartbeat()
+			for i := range heartbeat.SourceAccess.Sources {
+				access := &heartbeat.SourceAccess.Sources[i]
+				access.Ready = domain.Source(access.Source) == wanted
+				if domain.Source(access.Source) == wanted {
+					if missing == "permission" {
+						access.PermissionGranted = false
+					}
+					if missing == "script" {
+						access.ScriptRegistered = false
+					}
+					if missing == "readiness" {
+						access.Ready = false
+					}
+				}
+			}
+			got := headlessGrantedSources(BridgeStatus{Compatible: true, Actual: &heartbeat})
+			if missing == "none" {
+				if !reflect.DeepEqual(got, []domain.Source{wanted}) {
+					t.Fatalf("authorized added source not retained: %v", got)
+				}
+			} else if len(got) != 0 {
+				t.Fatalf("%s source admitted without %s", wanted, missing)
+			}
+		}
+	}
+}
+
 func TestFreshBrowserHeartbeatRevokesRetainedHeadlessAuthority(t *testing.T) {
 	e, _ := testEngine(t)
-	if len(e.headlessAccess) != 2 {
+	if len(e.headlessAccess) != 4 {
 		t.Fatalf("initial retained access=%v", e.headlessAccess)
 	}
 	heartbeat := ExpectedHeartbeat()
@@ -40,8 +71,13 @@ func TestFreshBrowserHeartbeatRevokesRetainedHeadlessAuthority(t *testing.T) {
 	if status := e.RecordHeartbeat(heartbeat); !status.Compatible {
 		t.Fatal(status.Reasons)
 	}
-	if len(e.headlessAccess) != 1 || e.headlessAccess[0] != "facebook" {
+	if len(e.headlessAccess) != 3 {
 		t.Fatal("revoked X remained authorized", e.headlessAccess)
+	}
+	for _, source := range e.headlessAccess {
+		if source == domain.SourceX {
+			t.Fatal("revoked X remained authorized")
+		}
 	}
 	heartbeat.ContractVersion = "incompatible"
 	e.RecordHeartbeat(heartbeat)

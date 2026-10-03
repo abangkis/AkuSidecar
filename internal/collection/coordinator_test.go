@@ -83,11 +83,14 @@ func TestUnsupportedSourcesRejectedBeforeSwitch(t *testing.T) {
 	m, _ := captureruntime.New(proc("browser"))
 	defer m.Terminate()
 	c := NewCoordinator(m, nil, func() error { return nil })
-	if c.ValidateSelection("headless", []domain.Source{"x", "instagram"}) == nil {
+	if c.ValidateSelection("headless", []domain.Source{"x", "unsupported"}) == nil {
 		t.Fatal("unsupported source admitted")
 	}
-	if c.ValidateSelection("headless", []domain.Source{"x", "facebook"}) != nil {
+	if c.ValidateSelection("headless", []domain.Source{"x", "facebook", "instagram", "linkedin"}) != nil {
 		t.Fatal("supported sources refused")
+	}
+	if got := c.Status().SupportedSources; len(got) != 4 {
+		t.Fatalf("Settings runtime capability missing implemented collectors: %v", got)
 	}
 }
 

@@ -36,6 +36,11 @@ type CaptureBackend interface {
 	Capture(context.Context, domain.Source, map[string]any) (domain.Observation, error)
 }
 
+// Implemented opt-in collectors; this is capability, not source parity certification.
+func HeadlessSourceSupported(source domain.Source) bool {
+	return source == domain.SourceX || source == domain.SourceFacebook || source == domain.SourceInstagram || source == domain.SourceLinkedIn
+}
+
 // CaptureAvailability is an optional, nonblocking capability for backends
 // whose readiness can change after they are bound to a browser generation.
 type CaptureAvailability interface {
@@ -100,8 +105,8 @@ func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) er
 			return err
 		}
 		for _, source := range sources {
-			if source != domain.Source("x") && source != domain.Source("facebook") {
-				return errors.New("headless collection supports X and Facebook only; deselect unsupported sources")
+			if !HeadlessSourceSupported(source) {
+				return errors.New("selected source has no headless collector")
 			}
 		}
 	}
@@ -125,7 +130,7 @@ func (c *Coordinator) Status() RuntimeStatus {
 		effective = ""
 	}
 	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
-	return RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{"x", "facebook"}}
+	return RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
 }
 func (c *Coordinator) Start(ctx context.Context) {
 	go func() {

@@ -1,4 +1,4 @@
-// Operator-only authenticated X/Facebook parity QA. Default is read-only preflight.
+// Operator-only authenticated source parity QA. Default is read-only preflight.
 import { spawn } from 'node:child_process';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -19,9 +19,10 @@ const pause = milliseconds => new Promise(resolveDelay => setTimeout(resolveDela
 const MAX_INTERRUPTION_MS = 6 * 60_000;
 const RESTORE_RESERVE_MS = 90_000;
 const SOURCES = ['x', 'facebook'];
+const SUPPORTED_SOURCES = [...SOURCES,'instagram','linkedin'];
 // Match the source defaults used by the product rather than imposing X's
 // shorter hydration window on Facebook. Overall interruption bounds stay fixed.
-const SOURCE_HYDRATION_MS = {x: 12_000, facebook: 25_000};
+const SOURCE_HYDRATION_MS = {x: 12_000, facebook: 25_000,instagram:15_000,linkedin:18_000};
 
 class HarnessError extends Error {
   constructor(code, message = code) {
@@ -30,12 +31,13 @@ class HarnessError extends Error {
   }
 }
 
-function parseArguments(values) {
+export function parseArguments(values) {
   let artifact = null;
   let baseline = null;
   let allowRuntimeStop = false;
   let diagnosticWorker = null;
   let targetsOnly = false;
+  let feedOnly = false;
   let selectedSource = null;
   let nativeObserver = null;
   let quietProbe = null;
@@ -48,8 +50,11 @@ function parseArguments(values) {
     } else if (value === '--targets-only') {
       if (targetsOnly) throw new HarnessError('invalid_arguments');
       targetsOnly = true;
+    } else if (value === '--feed-only') {
+      if (feedOnly) throw new HarnessError('invalid_arguments');
+      feedOnly = true;
     } else if (value === '--source') {
-      if (selectedSource || !SOURCES.includes(values[index + 1])) throw new HarnessError('invalid_arguments');
+      if (selectedSource || !SUPPORTED_SOURCES.includes(values[index + 1])) throw new HarnessError('invalid_arguments');
       selectedSource = values[++index];
     } else if (value === '--quiet-probe') {
       if (quietProbe || !isAbsolute(values[index + 1] || '')) throw new HarnessError('invalid_arguments');
@@ -78,14 +83,15 @@ function parseArguments(values) {
     }
   }
   if (!artifact || !baseline) throw new HarnessError('invalid_arguments');
+  if (targetsOnly && feedOnly) throw new HarnessError('conflicting_capture_scopes');
   if (quietProbe && diagnosticWorker) throw new HarnessError('conflicting_worker_modes');
-  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, selectedSource, nativeObserver, quietProbe, targetIndex: targetIndex ?? 0};
+  return {artifact, baseline, allowRuntimeStop, diagnosticWorker, targetsOnly, feedOnly, selectedSource, nativeObserver, quietProbe, targetIndex: targetIndex ?? 0};
 }
 
 // Select and verify before stopping any runtime. A second baseline entry must
 // never be silently replaced by the first or an unverified native identity.
 export function selectTarget(baseline, source, targetIndex = 0) {
-  if (!SOURCES.includes(source) || ![0, 1].includes(targetIndex)) throw new HarnessError('invalid_target_selection');
+  if (!SUPPORTED_SOURCES.includes(source) || ![0, 1].includes(targetIndex)) throw new HarnessError('invalid_target_selection');
   const target = baseline.targets.filter(value => value.source === source)[targetIndex];
   if (!target || nativeIdentity(source, target.permalink) !== target.platformId) throw new HarnessError('selected_target_identity_unverified');
   return target;
@@ -100,6 +106,8 @@ function isInside(parent, child, allowEqual = false) {
 function validatePlatformId(source, value) {
   if (typeof value !== 'string' || value.length > 128) return false;
   if (source === 'x') return /^x:status:\d+$/.test(value);
+  if (source === 'instagram') return /^instagram:(p|reel|tv):[A-Za-z0-9_-]+$/.test(value);
+  if (source === 'linkedin') return /^linkedin:(activity|ugcpost|share):\d{5,30}$/.test(value);
   return source === 'facebook' && /^facebook:post:(?:pfbid[A-Za-z0-9]+|\d+)$/i.test(value);
 }
 
@@ -107,12 +115,12 @@ export function validateBaseline(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.targets)) {
     throw new HarnessError('invalid_baseline');
   }
-  const counts = {x: 0, facebook: 0};
+  const counts = {x: 0, facebook: 0,instagram:0,linkedin:0};
   const ids = new Map();
   const links = new Map();
   for (const target of value.targets) {
     if (!target || typeof target !== 'object' || Array.isArray(target)
-        || !SOURCES.includes(target.source) || !validatePlatformId(target.source, target.platformId)
+        || !SUPPORTED_SOURCES.includes(target.source) || !validatePlatformId(target.source, target.platformId)
         || typeof target.permalink !== 'string' || typeof target.author !== 'string'
         || target.author.length > 1200 || typeof target.text !== 'string'
         || Array.from(target.text).length > 4000
@@ -125,6 +133,9 @@ export function validateBaseline(value) {
     if (target.source === 'x') {
       const pathId = new URL(canonical).pathname.match(/^\/[^/]+\/status\/(\d+)$/)?.[1];
       if (!pathId || target.platformId !== `x:status:${pathId}`) throw new HarnessError('baseline_identity_permalink_mismatch');
+    }
+    if (['instagram','linkedin'].includes(target.source) && nativeIdentity(target.source,canonical)!==target.platformId) {
+      throw new HarnessError('baseline_identity_permalink_mismatch');
     }
     // Exercise the packaged evidence-key contract after source, ID, and permalink checks.
     const key = evidenceKey(target.source, target.platformId, canonical, target.author, target.text);
@@ -140,7 +151,9 @@ export function validateBaseline(value) {
     counts[target.source]++;
     if (counts[target.source] > 2) throw new HarnessError('baseline_target_limit');
   }
-  if (value.targets.length !== 4 || counts.x !== 2 || counts.facebook !== 2) {
+  if (value.scope === 'new_source_headless_qualification_baseline') {
+    if (!value.targets.length || value.targets.length>8) throw new HarnessError('invalid_baseline');
+  } else if (value.targets.length !== 4 || counts.x !== 2 || counts.facebook !== 2) {
     throw new HarnessError('baseline_requires_two_targets_per_source');
   }
   return value;
@@ -237,7 +250,8 @@ async function bridgeHealth() {
   const response = await fetch('http://127.0.0.1:11122/api/bridge/health', {signal: AbortSignal.timeout(5000)});
   if (!response.ok) throw new HarnessError('bridge_health_unavailable');
   const value = (await response.json()).bridge;
-  return {state: value?.state || 'unknown', compatible: value?.compatible === true};
+  return {state: value?.state || 'unknown', compatible: value?.compatible === true,
+    authorizedSources:(value?.actual?.sourceAccess?.sources || []).filter(s=>s.ready===true && s.permissionGranted===true && s.scriptRegistered===true).map(s=>s.source)};
 }
 
 async function inboxState() {
@@ -250,7 +264,7 @@ async function inboxState() {
   return {sessions: value.sessions.length, activeSessions: 0};
 }
 
-async function preflight(registration) {
+async function preflight(registration, selectedSources=[]) {
   const [service, owners, bridge, inbox] = await Promise.all([
     serviceStatus(), exactProfileOwners(registration.profile), bridgeHealth(), inboxState(),
   ]);
@@ -262,6 +276,7 @@ async function preflight(registration) {
     throw new HarnessError('original_profile_ownership_unhealthy');
   }
   if (!bridge.compatible) throw new HarnessError('bridge_incompatible');
+  if (selectedSources.some(source=>!bridge.authorizedSources.includes(source))) throw new HarnessError('source_access_unconfirmed');
   return {
     service: {lifecycle: service.lifecycle, health: service.health.status, ownedProcessCount: service.ownedPids.length},
     exactProfileOwnerCount: owners.length,
@@ -405,7 +420,7 @@ function addCapture(report, source, kind, targetPlatformId, responseOrError) {
 }
 
 export function makeCapturePayload(kind, target, source) {
-  if (!SOURCES.includes(source)) throw new HarnessError('unsupported_capture_source');
+  if (!SUPPORTED_SOURCES.includes(source)) throw new HarnessError('unsupported_capture_source');
   const readOnly = {pendingContentPolicy: 'detect_only', sourceFreshnessPolicy: 'preserve_frontier', sameTabMutationAllowed: false};
   if (kind === 'feed') return {
     scrolls: 1, maxBlocksPerSnapshot: 20, captureTimeoutMs: 45_000,
@@ -537,11 +552,14 @@ function publicSummary(summary) {
   };
 }
 
+let currentStage = 'arguments';
 async function main() {
   if (process.platform !== 'win32') throw new HarnessError('windows_required');
   const args = parseArguments(process.argv.slice(2));
+  currentStage = 'baseline';
   const baselinePath = await containedRealpath(join(sidecar, 'build'), args.baseline, 'baseline');
   const baseline = validateBaseline(JSON.parse(await readFile(baselinePath, 'utf8')));
+  currentStage = 'candidate';
   const candidate = await loadCandidate(args.artifact);
   if (args.quietProbe) {
     candidate.quietProbe = await containedRealpath(join(sidecar,'build'),args.quietProbe,'quiet_probe');
@@ -561,19 +579,25 @@ async function main() {
     const info = await stat(candidate.worker);
     if (!info.isFile() || info.size > 256 * 1024 || !candidate.worker.endsWith('.mjs')) throw new HarnessError('invalid_diagnostic_worker');
   }
-  const selectedSources = args.selectedSource ? [args.selectedSource] : SOURCES;
+  const selectedSources = args.selectedSource ? [args.selectedSource] : baseline.scope==='new_source_headless_qualification_baseline'
+    ? SUPPORTED_SOURCES.filter(source=>baseline.targets.some(t=>t.source===source)) : SOURCES;
+  if (args.quietProbe && selectedSources.some(source=>!SOURCES.includes(source))) throw new HarnessError('unsupported_quiet_source');
   const selectedTargets = new Map(selectedSources.map(source => [source, selectTarget(baseline, source, args.targetIndex)]));
   const feedSources = args.targetsOnly ? [] : selectedSources;
+  currentStage = 'registration';
   const registration = await loadRegistration();
-  const before = await preflight(registration);
+  currentStage = 'preflight';
+  const before = await preflight(registration,selectedSources);
   if (!args.allowRuntimeStop) {
     process.stdout.write(`${JSON.stringify({status: 'preflight_only', requiresExplicitRuntimeStop: true,
-      sourceTargets: {x: 2, facebook: 2}, preflight: before})}\n`);
+      sourceTargets: Object.fromEntries(selectedSources.map(source=>[source,baseline.targets.filter(t=>t.source===source).length])), preflight: before})}\n`);
     return;
   }
 
+  currentStage = 'artifact_verification';
   await verifyTuple(candidate.artifactRoot);
-  const secondPreflight = await preflight(registration);
+  const secondPreflight = await preflight(registration,selectedSources);
+  currentStage = 'runtime_test';
   const receiptRoot = join(sidecar, 'build', `authenticated-parity-${randomUUID()}`);
   await mkdir(receiptRoot, {recursive: false});
   const report = {
@@ -585,7 +609,7 @@ async function main() {
       scope: comparisonScope(baseline, Boolean(args.quietProbe)),
       workerMode:args.quietProbe ? 'production_quiet_driver_packaged_worker' : (args.diagnosticWorker ? 'instrumented_diagnostic' : 'packaged_worker'),
       operatorTools,
-      selectedSources, targetsOnly:args.targetsOnly, targetIndex:args.targetIndex,
+      selectedSources, targetsOnly:args.targetsOnly, feedOnly:args.feedOnly, targetIndex:args.targetIndex,
       sourceHydrationTimeoutMs: Object.fromEntries(selectedSources.map(source => [source, SOURCE_HYDRATION_MS[source]])),
       runtimeControl: {
         before, secondPreflight, stopIssued: false, stoppedConfirmed: false,
@@ -643,7 +667,7 @@ async function main() {
         addCapture(report, source, 'followup', null, error);
       }
     }
-    for (const source of selectedSources) {
+    for (const source of args.feedOnly ? [] : selectedSources) {
       const target = selectedTargets.get(source);
       const capture = await captureRequest(client, report, source, 'target', target, runtimeWorkDeadline);
       report.execution.targetRecaptures.push({source, attemptedPlatformId: target.platformId, ok: capture.ok,
@@ -714,7 +738,7 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   void main().catch(error => {
     const code = typeof error?.code === 'string' ? error.code : 'harness_error';
-    process.stderr.write(`${JSON.stringify({status: 'failed', code})}\n`);
+    process.stderr.write(`${JSON.stringify({status: 'failed', code, stage: currentStage})}\n`);
     process.exitCode = 1;
   });
 }
