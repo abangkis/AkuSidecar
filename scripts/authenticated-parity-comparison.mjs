@@ -8,6 +8,17 @@ const mediaKey = item => JSON.stringify([item?.kind || null, item?.url || null, 
 const urlPath = value => {try {const url=new URL(value);return `${url.origin}${url.pathname}`;}catch{return value || null;}};
 const mediaPathKey = item => JSON.stringify([item?.kind || null,urlPath(item?.url),urlPath(item?.posterUrl),
   urlPath(item?.playbackUrl),item?.playbackMode || null]);
+function baselineFreshness(target, captures) {
+  const timestamp = value => typeof value === 'string' ? Date.parse(value) : NaN;
+  const baselineTime = timestamp(target.observedAt);
+  const captureTimes = captures.filter(c => c.source === target.source && c.ok
+    && blocksOf(c.result).some(block => block.platformId === target.platformId))
+    .map(c => timestamp(c.result?.capturedAt)).filter(Number.isFinite);
+  if (!Number.isFinite(baselineTime) || !captureTimes.length) return {status:'unknown',maxAgeMs:null};
+  if (captureTimes.some(time => time < baselineTime)) return {status:'invalid_time_order',maxAgeMs:null};
+  const maxAgeMs = Math.max(...captureTimes) - baselineTime;
+  return {status:maxAgeMs <= 30 * 60_000 ? 'paired_within_30_minutes' : 'supplementary_stale',maxAgeMs};
+}
 const xAuthorKey = (value, permalink) => {
   const match = normalized(value).match(/^(.*?)\s+@([A-Za-z0-9_]{1,15})(?:\s+[·•]\s+\d+[smhd])?$/u);
   if (!match || !match[1]) return null;
@@ -83,6 +94,7 @@ export function compareReport(report) {
     let result = {source:target.source, platformId:target.platformId, observedCopies:evidence.length,
       baselinePermalinkEvidence:permalinkEvidence(target),
       baselineObservedAt:target.observedAt || null, status:'not_observed'};
+    result.baselineFreshness = baselineFreshness(target, captures);
     if (!native) return {...result,status:'invalid_baseline'};
     let photoParent = null;
     const baselineUrl = new URL(native);

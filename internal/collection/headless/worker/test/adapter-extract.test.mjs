@@ -244,3 +244,44 @@ test('LinkedIn UI expansion text is excluded while punctuation in the actual pos
   const result=await run('linkedin',adapter,'https://www.linkedin.com/feed/').collect();
   assert.equal(result.posts[0].text,'Native caption…');
 });
+
+test('image resolution diagnostics retain intrinsic versus rendered sizes without extra signed URLs',async()=>{
+  const own=element({tagName:'IMG',attrs:{src:'https://media.licdn.com/dms/image/large.jpg?secret=original',
+    currentSrc:'https://media.licdn.com/dms/image/small.jpg?secret=selected',
+    srcset:'https://media.licdn.com/dms/image/large.jpg?secret=alternative 1280w',naturalWidth:800,naturalHeight:450}});
+  const foreign=element({tagName:'IMG',attrs:{src:'https://other.example/unowned.jpg'}});
+  const profile=element({tagName:'IMG',attrs:{src:'https://media.licdn.com/dms/image/profile.jpg'}});
+  profile.closest=selector=>selector.includes('/in/') ? {} : null;
+  const root=candidate({urn:'urn:li:share:1234567890',images:[own,foreign,profile]});
+  const adapter=baseAdapter('linkedin',[root]);adapter.mediaAcquisition={detectExpectedKinds:()=>[],extractCandidates:()=>[]};
+  const result=await run('linkedin',adapter,'https://www.linkedin.com/feed/').collect();
+  const evidence=result.posts[0].mediaEvidence.imageResolution;
+  assert.equal(evidence.length,1);
+  assert.equal(evidence[0].mediaIndex,0);
+  assert.equal(evidence[0].renderedWidth,500);
+  assert.equal(evidence[0].naturalWidth,800);
+  assert.equal(evidence[0].naturalSizeMeaning,'browser_density_adjusted_intrinsic_size');
+  assert.equal(evidence[0].currentSrcDiffersFromSrc,true);
+  assert.equal(evidence[0].hasSrcset,true);
+  assert.equal(evidence[0].devicePixelRatio,null);
+  assert.equal(JSON.stringify(evidence).includes('https:'),false);
+  assert.equal(JSON.stringify(evidence).includes('secret'),false);
+  assert.equal(result.posts[0].media[0].url,own.currentSrc);
+});
+
+test('a visible native post retains rendered images below the viewport but excludes hidden and comment images',async()=>{
+  const below=element({tagName:'IMG',attrs:{src:'https://media.licdn.com/dms/image/below.jpg'},
+    rect:{width:320,height:320,left:0,right:320,top:1000,bottom:1320}});
+  const hidden=element({tagName:'IMG',attrs:{src:'https://media.licdn.com/dms/image/hidden.jpg'}});
+  hidden.style.display='none';
+  const comment=element({tagName:'IMG',attrs:{src:'https://media.licdn.com/dms/image/comment.jpg'}});
+  comment.closest=selector=>selector.includes('comments-comment-item') ? {} : null;
+  const root=candidate({urn:'urn:li:share:1234567890',images:[below,hidden],commentImages:[comment]});
+  const adapter=baseAdapter('linkedin',[root]);adapter.mediaAcquisition={detectExpectedKinds:()=>[],extractCandidates:()=>[]};
+  const result=await run('linkedin',adapter,'https://www.linkedin.com/feed/').collect();
+  assert.equal(result.posts[0].media.length,1);
+  assert.equal(result.posts[0].media[0].url,below.src);
+  assert.equal(result.posts[0].mediaEvidence.imageResolution.length,1);
+  root.getBoundingClientRect=()=>({width:600,height:300,left:0,right:600,top:1000,bottom:1300});
+  assert.equal((await run('linkedin',adapter,'https://www.linkedin.com/feed/').collect()).posts.length,0);
+});

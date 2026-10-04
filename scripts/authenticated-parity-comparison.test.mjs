@@ -7,6 +7,25 @@ import { sourceDefinition } from '../../AkuBridge/source-catalog.js';
 const target = {source:'x',platformId:'x:status:123',permalink:'https://x.com/fixture/status/123',author:'Fixture',text:'Original text'};
 const report = blocks => ({baseline:{targets:[target]},captures:[{source:'x',kind:'target',ok:true,result:{snapshots:[{blocks}]}}]});
 
+test('paired freshness derives from actual capture times rather than a saved baseline label',()=>{
+  const input=report([target]);
+  input.baseline.targets=[{...target,observedAt:'2026-10-04T00:00:00Z'}];
+  input.baseline.freshness='paired_under_30_minutes_at_dispatch';
+  const check=time=>{
+    input.captures[0].result.capturedAt=time;
+    return compareReport(input).cases[0].baselineFreshness;
+  };
+  assert.deepEqual(check('2026-10-04T00:30:00Z'),{status:'paired_within_30_minutes',maxAgeMs:1800000});
+  assert.equal(check('2026-10-04T00:30:00.001Z').status,'supplementary_stale');
+  assert.equal(check('2026-10-03T23:59:59Z').status,'invalid_time_order');
+  assert.equal(check(null).status,'unknown');
+  assert.equal(check('not a date').status,'unknown');
+  input.captures[0].result.capturedAt='2026-10-04T00:10:00Z';
+  input.captures.push({...input.captures[0],result:{...input.captures[0].result,capturedAt:'2026-10-04T00:40:00Z'}});
+  assert.equal(compareReport(input).cases[0].baselineFreshness.status,'supplementary_stale');
+  assert.equal(compareReport(input).fullParityVerified,false);
+});
+
 test('feed-only qualification rejects conflicting scope before runtime access',()=>{
   const args=['--artifact',import.meta.filename,'--baseline',import.meta.filename,'--source','instagram','--feed-only'];
   assert.equal(parseArguments(args).feedOnly,true);

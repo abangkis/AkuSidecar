@@ -174,6 +174,75 @@ journey. No installation, default migration or new commit/push occurred here.
 Budget remains the authorized one-million cap with only partial measurement;
 the last native cutoff was 326381 tokens and subsequent usage is unmetered.
 
+### Resolution diagnostics after checkpoint 5500cb4 (2026-10-04)
+
+The Instagram/LinkedIn implementation checkpoint was committed and pushed to
+AkuSidecar main as 5500cb4266d467bf369cb22c5bf5e8dcc4543a3b; remote SHA matches.
+Existing experiments and private build receipts were not included.
+
+Static inspection finds both collectors prefer browser-selected currentSrc.
+Bridge also parses srcset as a fallback after currentSrc/src; neither collector
+ranks LinkedIn rendition tokens or synthesizes a larger URL. Headless uses a
+1280 by 900 viewport at device scale 1. Viewport/layout/source state remain
+possible causes; static inspection alone cannot establish their causal effect.
+
+The worker now records bounded admitted-image diagnostics: rendered dimensions,
+browser density-adjusted intrinsic dimensions, device pixel ratio, whether
+currentSrc differs from src, and whether srcset exists. Extra signed URLs are
+not copied to these diagnostics; foreign, profile and comment media remain
+excluded. The packaged resolution-20261004 candidate passes 68 worker tests
+with one optional skip. Receipt build/authenticated-parity-7e12e714-8272-4a64-
+b6cb-a97d8dacdc6c captures the LinkedIn image target and restores runtime/Bridge.
+It reports rendered 550 by 551, intrinsic 640 by 640, device pixel ratio 1,
+srcset present and currentSrc different from src, despite URL rendition token
+800. The token alone is therefore not an actual image-resolution measurement.
+This receipt uses a baseline over six hours old and is supplementary only.
+
+Comparison output now derives each target's baseline freshness from actual
+observation and capture times rather than trusting a saved freshness label.
+Missing times remain unknown, backwards time is invalid, and captures beyond
+30 minutes are supplementary. Focused comparison tests pass 21.
+
+One further explicitly approved Browser Update completed as
+session_e4ea962f4034b3a95681fadf44d28b28 and restored Quiet plus the original
+source selection. Its fresh baseline contains one Instagram image post and
+two LinkedIn native targets, including a five-image promoted post. No targets
+needed exclusion. Receipt build/authenticated-parity-21dac70c-37cc-476f-9ebe-
+5246cac7cdf1 passes six feed/continuation/target captures; Instagram and the
+LinkedIn text target match native identity, author and text within two minutes.
+The promoted five-image post was not observed in the bounded feed; this is
+feed-selection variation, not proof that the source lacks it.
+
+Direct receipt build/authenticated-parity-cd924d35-0513-4b57-a68a-6c291f4d361f
+binds that five-image post and matches author/text, but initially retains three
+images versus Browser's five. Inspection identifies a scope mismatch: headless
+requires each image to intersect the viewport while Browser reads rendered
+images throughout the owned post. The new worker keeps the native post visibility
+gate but admits its rendered own images below/outside the viewport. Hidden,
+profile, comment and foreign media stay excluded; video handling is unchanged.
+Boundary tests explicitly reject an entirely offscreen post and hidden/comment
+images. The owned-images-20261004 candidate builds; worker tests pass 69 with
+one optional skip. Receipt build/authenticated-parity-6304ad30-43a4-48b7-
+89cf-f83ea18ee7ad confirms the correction on that same fresh target: five of
+five images, exact media URL sets equal, native identity/author/text equal,
+approximately four minutes after Browser observation. Runtime was restored.
+This closes the demonstrated viewport-related missing-image regression for
+this sample, not broad rendition quality or overall source acceptance.
+
+Final same-candidate regression receipt build/authenticated-parity-b19fb1ca-
+4492-40ca-b4d6-e108876dee64 passes six feed/continuation/target captures across
+Instagram and LinkedIn. The Instagram target and LinkedIn text target match
+native identity, author and normalized text within six minutes of the same
+Browser baseline. Together with the preceding five-image target run, these
+provide three fresh matched targets on the owned-images candidate. Instagram's
+signed image URL differs, while the LinkedIn five-image target has exact media
+URL equality. Do not aggregate repeated snapshots as unique assets or combine
+this with earlier candidate receipts as a single immutable payload proof.
+Each run confirms worker exit and runtime restoration; final read-only preflight
+confirms Browser/Quiet, original four sources and compatible granted Bridge.
+The post-checkpoint diagnostics/fix/freshness changes remain local, uncommitted;
+no candidate installation or default migration occurred.
+
 ## Product contract
 
 The user selects browser or headless collection in Settings and can switch back.

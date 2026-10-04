@@ -150,14 +150,20 @@
       ? instagramIdentity(value) : linkedinIdentity(value))) ? 'explicit_target_route' : explicitIdentity ? 'adapter_recovery' : 'native_dom') };
   }
 
-  function isVisible(element) {
+  function isRendered(element) {
     if (!element?.getBoundingClientRect) return false;
     for (let current = element; current; current = current.parentElement) {
       const style = typeof getComputedStyle === 'function' ? getComputedStyle(current) : null;
       if (style && (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0)) return false;
     }
     const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function isVisible(element) {
+    if (!isRendered(element)) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < innerHeight
       && rect.right > 0 && rect.left < innerWidth;
   }
 
@@ -218,7 +224,9 @@
       }
     } else {
       for (const image of images) {
-        if (!isVisible(image) || excluded?.contains(image) || adapter.shouldSkipImage?.(image)
+        // A visible native post can extend below the viewport. Its rendered own
+        // images still belong to that post, matching Browser collection scope.
+        if (!isRendered(image) || excluded?.contains(image) || adapter.shouldSkipImage?.(image)
           || /profile picture/i.test(image.alt || '')
           || (adapter.source==='linkedin' && image.closest?.('a[href*="/in/"], a[href*="/company/"], a[href*="/school/"], a[href*="/showcase/"]'))) continue;
         const size = dimensions(image, root);
@@ -295,9 +303,31 @@
         .filter(player => !excluded.contains(player) && isVisible(player))
         .map(player => String(player.id || player.getAttribute?.('id') || '').trim().slice(0, 240)).filter(Boolean)).slice(0, 16)
       : [];
+    // Resolution diagnostics describe admitted own images only. Do not persist
+    // extra signed URLs or infer CDN rendition size from a filename.
+    const imageResolution = [];
+    for (const image of container.querySelectorAll('img')) {
+      if (imageResolution.length >= MAX_MEDIA) break;
+      if (excluded.contains(image) || !isRendered(image)) continue;
+      const url = safeMediaUrl(image.currentSrc || image.src || image.getAttribute?.('src'), adapter);
+      const mediaIndex = media.findIndex(item => item.kind === 'image' && item.url === url);
+      if (mediaIndex < 0 || imageResolution.some(item => item.mediaIndex === mediaIndex)) continue;
+      const rect = image.getBoundingClientRect();
+      const dimension = value => Number.isFinite(value) && value > 0 ? Math.min(32768, Math.round(value)) : null;
+      const declaredSrc = safeMediaUrl(image.src || image.getAttribute?.('src'), adapter);
+      imageResolution.push({ mediaIndex,
+        renderedWidth: dimension(rect.width), renderedHeight: dimension(rect.height),
+        naturalWidth: dimension(image.naturalWidth), naturalHeight: dimension(image.naturalHeight),
+        naturalSizeMeaning: 'browser_density_adjusted_intrinsic_size',
+        currentSrcDiffersFromSrc: url && declaredSrc ? url !== declaredSrc : null,
+        hasSrcset: Boolean(image.getAttribute?.('srcset')?.trim()),
+        devicePixelRatio: Number.isFinite(globalThis.devicePixelRatio) && globalThis.devicePixelRatio > 0
+          ? Math.min(16, globalThis.devicePixelRatio) : null });
+    }
     return { expected, media, evidence: {
       status: expectedWithoutUrl.length ? 'missing_expected_url' : media.length ? 'observed_urls_partial' : 'no_media_observed',
       expectedWithoutUrl, notReady: media.filter(entry => !entry.loaded).length,
+      imageResolution,
       ...(source === 'linkedin' ? { playerIds } : {}),
       videoStreamStatus: expected.includes('video') ? media.some(entry => entry.kind === 'video' && entry.playbackUrl)
         ? 'direct_dom_playback_observed' : 'unknown' : 'not_expected',
