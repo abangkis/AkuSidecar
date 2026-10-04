@@ -20,6 +20,26 @@ const pause = milliseconds => new Promise(resolveDelay => setTimeout(resolveDela
 const MAX_BOOTSTRAP_MS = 120_000;
 const CANDIDATE_DRAIN_MS = 20_000;
 const HEALTH_ORIGIN = 'http://127.0.0.1';
+// A filtered Get-NetTCPConnection query throws when no listener matches.
+// Enumerate successfully first so an empty result proves absence, not failure.
+const listenerQuery = String.raw`
+try {
+  $listeners = @(Get-NetTCPConnection -ErrorAction Stop | Where-Object {
+    $_.State -eq 'Listen' -and $_.LocalPort -eq $port
+  } | ForEach-Object { [pscustomobject]@{ pid=$_.OwningProcess; address=$_.LocalAddress } })
+  $listenerInspectionAvailable = $true
+} catch { $listeners = @(); $listenerInspectionAvailable = $false }
+`;
+
+export async function inspectWindowsListeners(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new BootstrapError('invalid_listener_port');
+  const script = '$port=[int]$env:AKU_BOOTSTRAP_PORT\n' + listenerQuery
+    + '\n[ordered]@{listeners=$listeners;available=$listenerInspectionAvailable}|ConvertTo-Json -Depth 3 -Compress';
+  const {stdout} = await execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    windowsHide: true, timeout: 10_000, env: {...process.env, AKU_BOOTSTRAP_PORT: String(port)},
+  });
+  return JSON.parse(stdout.trim());
+}
 
 export class BootstrapError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -259,12 +279,7 @@ $owners = @($all | Where-Object {
 $launcher = @($all | Where-Object { $_.ProcessId -eq $launcherPid } | Select-Object -First 1 | ForEach-Object {
   [pscustomobject]@{ pid=$_.ProcessId; executable=$_.ExecutablePath; creationUtc=$_.CreationDate.ToUniversalTime().ToString('o') }
 })
-try {
-  $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction Stop | ForEach-Object {
-    [pscustomobject]@{ pid=$_.OwningProcess; address=$_.LocalAddress }
-  })
-  $listenerInspectionAvailable = $true
-} catch { $listeners = @(); $listenerInspectionAvailable = $false }
+${listenerQuery}
 [ordered]@{ candidate=$candidate; profileOwners=$owners; launcher=$launcher; listeners=$listeners;
   listenerInspectionAvailable=$listenerInspectionAvailable } | ConvertTo-Json -Depth 5 -Compress
 `;
@@ -482,6 +497,8 @@ async function smokeCandidate(candidate, plan) {
   } catch (error) {
     primaryError = error instanceof BootstrapError ? error : new BootstrapError('candidate_bootstrap_failed');
   }
+  plan.candidateBootstrap = {passed: Boolean(smokeResult), result: smokeResult,
+    failureCode: primaryError?.code || null};
   const shutdown = await cooperativeCandidateStop(runState);
   plan.lastCandidateStop = {released: shutdown.released === true, method: shutdown.method || null, reason: shutdown.reason || null};
   if (!shutdown.released) {

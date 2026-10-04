@@ -250,6 +250,27 @@ flags remain false; no test profile or acceptance directory is created. The live
 package bootstrap now needs a fresh, separately scoped foreground/runtime-stop
 approval because the preceding mixed-Update permission covered one completed run.
 
+The user then authorized one package bootstrap cycle. Initial preflight paused
+for an active original collection session; after it completed, one actual
+stop/test/restore cycle launched the candidate with an empty isolated profile.
+The helper returned `candidate_shutdown_unverified` / drain timeout and held
+restoration. Follow-up inspection found no candidate process/profile owner or
+port listener remaining. Original Supervisor runtime was restored and verified:
+healthy compatible Bridge, one registered Chrome profile owner, four source
+grants, no active sessions and unchanged original settings digest.
+Receipt: `build/hybrid-package-bootstrap-20261004-attempt1-receipt.json`.
+
+The causal fixture defect is Windows listener-query semantics: filtered
+`Get-NetTCPConnection -LocalPort ... -State Listen -ErrorAction Stop` throws on
+an empty match, so a free port was treated as unavailable inspection. Successful
+unfiltered enumeration followed by filtering now distinguishes empty results
+from failure. Ten guards pass, including a real local TCP listener followed by
+empty-listener verification. No forced-stop fallback was added. The helper also
+retains the bootstrap projection/failure separately before cleanup; the previous
+run lost that primary result, so package bootstrap acceptance remains unknown.
+One fresh live retry requires separate authorization; no installation, login,
+grant, posting or default change occurred.
+
 ### Current priority amendment (2026-10-03): defer Facebook
 
 The user changes tactics after the accumulated Facebook investigation effort:

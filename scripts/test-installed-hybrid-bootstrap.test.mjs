@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseArguments, runStopTestRestore, validateOriginalProjection, sameOriginalProjection, validateCandidateBridge} from './test-installed-hybrid-bootstrap.mjs';
+import {createServer} from 'node:net';
+import {parseArguments, runStopTestRestore, validateOriginalProjection, sameOriginalProjection, validateCandidateBridge, inspectWindowsListeners} from './test-installed-hybrid-bootstrap.mjs';
+
+test('Windows listener inspection distinguishes an owned TCP listener from an available empty result',
+  {skip: process.platform !== 'win32', timeout: 30_000}, async () => {
+    const server = createServer();
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    const port = server.address().port;
+    try {
+      const occupied = await inspectWindowsListeners(port);
+      assert.equal(occupied.available, true);
+      assert.ok(occupied.listeners.some(value => value.pid === process.pid));
+    } finally {
+      await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+    const released = await inspectWindowsListeners(port);
+    assert.equal(released.available, true);
+    assert.deepEqual(released.listeners, []);
+  });
 
 const originalOrigin = `chrome-extension://${'a'.repeat(32)}/`;
 const originalSnapshot = {settingsSha256: 'abc', configuredBridgeOrigin: originalOrigin,
