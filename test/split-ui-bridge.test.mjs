@@ -34,6 +34,16 @@ test("early broker initialization diagnostics survive late diagnostics loading w
   await f.send({ type: "AKU_BROWSER_READER_BROKER_DIAGNOSTIC", phase: "broker_startup_error", brokerRevision: "listener-first-v1" }, "https://foreign.example");
   assert.equal(f.read().length, count);
 });
+
+test("retired passive probes are quiet, but user actions and unrelated failures stay visible", async () => {
+  for (const status of [200, 409]) {
+    for (const type of ["AKU_BROWSER_BRIDGE_PING", "AKU_BROWSER_PROBE_SOURCE_SESSIONS", "AKU_BROWSER_BRIDGE_RELOAD_SELF"]) {
+      const f = fixture({ ok: false, error: "browser_handoff_required", message: "retired" }, false, { responseStatus: status });
+      await f.send({ type });
+      assert.equal(f.messages.at(-1).type, type === "AKU_BROWSER_BRIDGE_RELOAD_SELF" ? "AKU_BROWSER_BRIDGE_ERROR" : "AKU_BROWSER_PASSIVE_PROBE_SKIPPED");
+    }
+  }
+});
 function fixture(reply = { ok: true, result: {} }, lateDiagnostics = false, options = {}) {
   const calls = [], messages = [], timers = [], traces = [];
   const stored = options.stored ?? new Map();
@@ -41,9 +51,9 @@ function fixture(reply = { ok: true, result: {} }, lateDiagnostics = false, opti
   const listeners = new Map();
   let now = Date.now();
   const window = { dispatchEvent(event) { listeners.get(event.type)?.(event); }, addEventListener: (event, fn) => { listeners.set(event, fn); }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => { if (options.storageDenied) throw new Error("denied"); return stored.get(key) ?? null; }, setItem: (key, value) => stored.set(key, value) }, location: { origin, hash: options.startup ? "#aku-startup=" + "b".repeat(64) : "", href: origin + "/#aku-startup=" + "b".repeat(64), reload: () => { if (options.navigationDenied) throw new Error("denied"); reloads.push(context.location.href); } }, history: { state: null, replaceState: (_state, _title, url) => { if (options.historyDenied) throw new Error("denied"); context.location.href = url; } }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, options) => {
-    calls.push({ url, options });
-    return { ok: url === "/api/bootstrap" || reply.ok !== false, status: url === "/api/bootstrap" ? 200 : reply.ok === false ? 409 : 200, json: async () => url === "/api/bootstrap"
+  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => { if (options.storageDenied) throw new Error("denied"); return stored.get(key) ?? null; }, setItem: (key, value) => stored.set(key, value) }, location: { origin, hash: options.startup ? "#aku-startup=" + "b".repeat(64) : "", href: origin + "/#aku-startup=" + "b".repeat(64), reload: () => { if (options.navigationDenied) throw new Error("denied"); reloads.push(context.location.href); } }, history: { state: null, replaceState: (_state, _title, url) => { if (options.historyDenied) throw new Error("denied"); context.location.href = url; } }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, requestOptions) => {
+    calls.push({ url, options: requestOptions });
+    return { ok: url === "/api/bootstrap" || (options.responseStatus ? options.responseStatus === 200 : reply.ok !== false), status: url === "/api/bootstrap" ? 200 : options.responseStatus ?? (reply.ok === false ? 409 : 200), json: async () => url === "/api/bootstrap"
       ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
   } };
   if (!lateDiagnostics) vm.runInNewContext(diagnosticsScript, context);

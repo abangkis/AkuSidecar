@@ -1,3 +1,8 @@
+export function browserCollectorProbeAllowed(runtime) {
+  if (runtime?.nativeReaderOnly || runtime?.effective === "headless") return false;
+  return !runtime?.available || (runtime.state === "ready" && runtime.effective === "browser");
+}
+
 export function collectionModeState(runtime, bridgeCompatible = false) {
   if (!runtime?.available) return { canCollect: bridgeCompatible, label: "Browser", detail: "Browser collection is active.", canSelectHeadless: false };
   const requested = runtime.requested || "browser";

@@ -130,7 +130,7 @@
       if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_request_end", { status: response.status, elapsedMs: Math.round(performance.now() - nativeStarted) });
       // A passive probe sent before auto-return may reach the server after it.
       // This is a skipped Browser observation, not a native-reader failure.
-      if (response.status === 409 && reply.error === "browser_handoff_required" &&
+      if ((response.status === 409 || (response.status === 200 && reply.ok === false)) && reply.error === "browser_handoff_required" &&
           ["ping", "probe_source_sessions"].includes(operation[0])) {
         window.postMessage({ ...correlation, type: "AKU_BROWSER_PASSIVE_PROBE_SKIPPED", operation: operation[0] }, origin);
         return;

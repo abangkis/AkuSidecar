@@ -68,6 +68,15 @@ type Manager struct {
 	finishOnce          sync.Once
 	transitionReadiness func(context.Context) error
 	timingObserver      func(string, time.Duration, bool)
+	exitObserver        func(uint64)
+}
+
+// Bind before exposing runtime admission. Called outside the manager mutex
+// when the current owner exits unexpectedly (including a reader's natural exit).
+func (m *Manager) SetExitObserver(observer func(uint64)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.exitObserver = observer
 }
 
 // SetTimingObserver reports transition durations only, without profile or URL data.
@@ -124,7 +133,11 @@ func (m *Manager) watch(value *owner) {
 		}
 	}
 	shutdown := unexpected && m.stopped
+	observer, generation := m.exitObserver, m.generation
 	m.mu.Unlock()
+	if unexpected && observer != nil {
+		observer(generation)
+	}
 	if shutdown {
 		m.finish(err)
 	}

@@ -83,6 +83,7 @@ type splitCaptureAction struct {
 }
 type splitActionResult struct {
 	OK      bool            `json:"ok"`
+	Error   string          `json:"error,omitempty"`
 	Message string          `json:"message,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 }
@@ -194,7 +195,38 @@ func (s *Server) SetSplitCaptureRuntime(owner *captureruntime.Manager) error {
 		adopted = append(adopted, entry)
 	}
 	t.runtime = owner
+	owner.SetExitObserver(s.retireReaderPassiveActions)
 	return nil
+}
+
+func passiveCollectorProbe(action string) bool {
+	return action == "ping" || action == "probe_source_sessions"
+}
+
+// Only read-only probes from the exited reader generation may be retired.
+// User actions and collector work retain their existing completion guards.
+func (s *Server) retireReaderPassiveActions(generation uint64) {
+	t := s.splitCapture
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.directReader == nil {
+		return
+	}
+	for _, entry := range append([]*pendingSplitAction(nil), t.actions...) {
+		if entry.runtimeLease == nil || entry.runtimeLease.Generation() != generation || !passiveCollectorProbe(entry.action.Type) {
+			continue
+		}
+		result := splitActionResult{Error: "browser_handoff_required", Message: "Browser probe skipped after native reader exit."}
+		entry.completed, entry.completionResult = true, &result
+		select {
+		case entry.result <- result:
+		default:
+		}
+		t.removeAction(entry)
+	}
 }
 
 // Caller holds t.mu. A detached claimed action keeps both queue ownership and
@@ -836,7 +868,11 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				return writeJSON(w, 200, splitActionResult{OK: true, Result: raw})
 			}
 		}
-		if s.engine.CollectionRuntime().Effective == "headless" {
+		runtimeStatus := s.engine.CollectionRuntime()
+		if passiveCollectorProbe(a.Type) && (runtimeStatus.NativeReaderOnly || (runtimeStatus.Available && runtimeStatus.State != captureruntime.Ready)) {
+			return apiError{Status: 409, Code: "browser_handoff_required", Message: "Browser probe skipped while the capture owner is changing or a native reader is active."}
+		}
+		if runtimeStatus.Effective == "headless" {
 			switch a.Type {
 			case "dispatch", "configure_background", "release":
 				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{}`)})
@@ -896,6 +932,17 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}()
 		}
 		t.mu.Lock()
+		if t.directReader != nil && a.Type != "open_native_post" {
+			t.mu.Unlock()
+			switch a.Type {
+			case "dispatch", "configure_background", "release":
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{}`)})
+			case "media_evidence":
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{"evidence":[]}`)})
+			default:
+				return apiError{Status: 409, Code: "browser_handoff_required", Message: "Close native post windows before using the Browser collector."}
+			}
+		}
 		if a.Type == "open_native_post" && (t.prepareBrokerReader != nil || t.directReader != nil) {
 			if err := (readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}).Validate(); err != nil {
 				t.mu.Unlock()

@@ -9,6 +9,28 @@ Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ### Native reader visibility and timing follow-up (2026-10-04)
 
+Latest owner click after activation: API total 490 ms, broker total 958 ms,
+profile handoff 400 ms, owner release 74 ms, Chrome launch 4 ms, reader readiness
+247 ms, coordinator wait 0 ms, target preparation 34 ms and accepted HWND
+activation 18 ms. Post navigation dispatch after activation took 28 ms. This is
+one successful sample, not full social-content load or universal latency proof.
+
+A subsequent reader-close trial exposed automatic Browser probes queued against
+the hostless reader. Pending leases delayed auto-return and produced the generic
+capture-runtime error. The runtime later recovered without intervention. The
+follow-up blocks UI ping/source probes and passive media lookup outside a ready
+Browser collector, checks admission again on the server, and retires only
+read-only ping/source probes belonging to an exited reader generation. Actual
+user actions retain completion and lease guards. A generation-scoped owner-exit
+observer runs outside manager locks; structured skipped probe results are quiet
+in the UI while unrelated errors remain visible. The misleading source-access
+review button is hidden while reader-only ownership is active. This follow-up
+is validated in source but is not yet activated for a real close/auto-return trial.
+Validation: HTTP API, capture-runtime and coordinator Go suites pass; 35 targeted
+frontend tests and the Windows Sidecar build pass. Tests cover admission without
+leases, natural owner-exit cleanup, generation fencing, retained user-action
+leases, actual UI probe guards and structured passive-skip handling.
+
 Owner approved option 1 optimization after the real click measured API 4754 ms,
 broker 5208 ms, profile handoff 3800 ms (release 2529 ms, launch 15 ms, readiness
 254 ms), target preparation 918 ms (post navigation dispatch 833 ms), and rejected

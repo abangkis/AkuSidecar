@@ -1,5 +1,5 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
-import { collectionModeState } from "./collection-mode.js";
+import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
@@ -2966,7 +2966,7 @@ function appendLibraryMediaMetadata(fragment, values) {
 }
 
 function pingBridge() {
-  if (state.bootstrap?.collectionRuntime?.effective === "headless") return;
+  if (!browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime)) return;
   window.postMessage({
     type: "AKU_BROWSER_BRIDGE_PING",
     protocolMajor: 2,
@@ -2985,7 +2985,7 @@ function refreshBridgeAfterUserReturn() {
 }
 
 function requestSourceSessionReadiness() {
-	if (state.bootstrap?.collectionRuntime?.effective === "headless") return;
+	if (!browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime)) return;
   if (!state.bootstrap?.bridge?.compatible || state.sourceSessionProbeInFlight) return;
   state.sourceSessionProbeInFlight = true;
   state.sourceSessionProbeTimer = window.setTimeout(() => {
@@ -5282,7 +5282,7 @@ function syncRunButtons() {
   const showGuidance = Boolean(reason) && !showCalibrationProgress && !Boolean(state.session && !terminalStatuses.has(state.session.status));
   setSettingsText($("#timeline-runner-status"), reason);
   $("#timeline-runner-guidance").classList.toggle("hidden", !showGuidance);
-  $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || !sourceAccessNeedsAttention());
+  $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || state.bootstrap?.collectionRuntime?.nativeReaderOnly || !sourceAccessNeedsAttention());
   for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled || (button.classList.contains("foreground-recapture-button") && state.bootstrap?.collectionRuntime?.effective === "headless");
   $("#open-reset-learning").disabled = Boolean(state.session);
   $("#open-full-reset").disabled = Boolean(state.session);
@@ -6909,6 +6909,7 @@ function schedulePassiveMediaEnrichment(items = state.timelineItems) {
     state.passiveMediaEnrichmentActive ||
     state.passiveMediaEnrichmentTimer ||
     state.session ||
+    !browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime) ||
     !state.bootstrap?.bridge?.compatible ||
     document.visibilityState === "hidden"
   ) return;

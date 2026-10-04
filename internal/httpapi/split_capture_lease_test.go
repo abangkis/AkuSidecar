@@ -11,7 +11,69 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
+
+func TestReaderOnlyRejectsPassiveProbesBeforeAcquiringLeases(t *testing.T) {
+	s, token := splitTestServer(t)
+	m := attachSplitLeaseManager(t, s)
+	s.SetSplitDirectNativeReader(func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error) {
+		t.Fatal("passive probe reached reader")
+		return readerbroker.Target{}, nil, nil
+	}, func(context.Context) error { return nil })
+	for _, action := range []string{"ping", "probe_source_sessions", "reload_self"} {
+		w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/split-capture/actions", `{"type":"`+action+`","actionId":"reload_test"}`)
+		if w.Code != 409 || !strings.Contains(w.Body.String(), "browser_handoff_required") {
+			t.Fatalf("%s status=%d", action, w.Code)
+		}
+	}
+	if m.Snapshot().ActiveLeases != 0 || len(s.splitCapture.actions) != 0 {
+		t.Fatal("reader-only request held a collector lease")
+	}
+}
+
+func TestReaderExitRetiresOnlyMatchingGenerationPassiveProbes(t *testing.T) {
+	s, token := splitTestServer(t)
+	process := &splitLeaseProcess{done: make(chan error, 1)}
+	m, err := captureruntime.New(process)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSplitCaptureRuntime(m); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Terminate)
+	_, done, probe := startCancellableSplitAction(t, s, token)
+	// Model probes admitted by the old runtime before the reader-only gate.
+	s.SetSplitDirectNativeReader(func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error) {
+		return readerbroker.Target{}, nil, nil
+	}, func(context.Context) error { return nil })
+	userLease, err := m.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := &pendingSplitAction{action: splitCaptureAction{ID: "split_user", Type: "open_native_post"}, runtimeLease: userLease, result: make(chan splitActionResult, 1)}
+	s.splitCapture.mu.Lock()
+	probe.claimed = true
+	s.splitCapture.actions = append(s.splitCapture.actions, user)
+	s.splitCapture.mu.Unlock()
+	s.retireReaderPassiveActions(m.Snapshot().Generation + 1)
+	if m.Snapshot().ActiveLeases != 2 {
+		t.Fatal("wrong-generation probe retired")
+	}
+	// The fake process naturally exits; the manager's observer drains the probe.
+	process.Terminate()
+	awaitSplitClient(t, done)
+	if m.Snapshot().ActiveLeases != 1 {
+		t.Fatal("user action lost its lease or passive lease leaked")
+	}
+	s.splitCapture.mu.Lock()
+	defer s.splitCapture.mu.Unlock()
+	if len(s.splitCapture.actions) != 1 || s.splitCapture.actions[0] != user || !probe.completed {
+		t.Fatal("incorrect retirement")
+	}
+	s.splitCapture.removeAction(user)
+}
 
 type splitLeaseProcess struct {
 	done chan error
