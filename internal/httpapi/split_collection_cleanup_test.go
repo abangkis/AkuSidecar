@@ -41,7 +41,7 @@ func TestBrowserCollectionCleanupKeepsClaimThroughTimeoutAndLateAck(t *testing.T
 		t.Fatal("claimed cleanup must pin its Browser generation until acknowledgement")
 	}
 	if got := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/"+payload.Action.ID,
-		`{"ok":true,"result":{"released":true,"mode":"owned_window_closed"}}`).Code; got != 204 {
+		`{"ok":true,"result":{"outcome":{"released":true,"mode":"owned_window_closed"}}}`).Code; got != 204 {
 		t.Fatalf("late acknowledgement: %d", got)
 	}
 	if owner.Snapshot().ActiveLeases != 0 {
@@ -75,12 +75,12 @@ func TestBrowserCollectionCleanupRejectsWrongOwnerBeforeAdmission(t *testing.T) 
 }
 
 func TestBrowserCollectionCleanupRequiresVerifiedLeaseOutcome(t *testing.T) {
-	for _, raw := range []string{``, `null`, `{"reason":"lease_mismatch"}`, `{"reason":"surface_unverified"}`} {
+	for _, raw := range []string{``, `null`, `{"released":true,"mode":"owned_window_closed"}`, `{"outcome":null}`, `{"outcome":{"reason":"lease_mismatch"}}`, `{"outcome":{"released":false,"reason":"surface_unverified"}}`, `{"outcome":{"released":false,"reason":"lease_mismatch"}}`, `{"outcome":{"released":true,"mode":"unsupported"}}`} {
 		if err := browserCollectionCleanupResult(&splitActionResult{OK: true, Result: json.RawMessage(raw)}); err == nil {
 			t.Errorf("unverified outcome accepted: %q", raw)
 		}
 	}
-	for _, raw := range []string{`{"released":true,"mode":"owned_window_closed"}`, `{"released":false,"reason":"no_owned_surface"}`} {
+	for _, raw := range []string{`{"outcome":{"released":true,"mode":"owned_window_closed"}}`, `{"outcome":{"released":false,"reason":"no_owned_surface"}}`, `{"outcome":{"released":false,"mode":"owned_transient_tabs_closed"}}`} {
 		if err := browserCollectionCleanupResult(&splitActionResult{OK: true, Result: json.RawMessage(raw)}); err != nil {
 			t.Errorf("valid cleanup rejected: %s: %v", raw, err)
 		}

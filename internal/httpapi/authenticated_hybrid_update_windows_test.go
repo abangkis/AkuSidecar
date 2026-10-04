@@ -24,8 +24,20 @@ import (
 func runAuthenticatedHybridUpdate(t *testing.T, ctx context.Context, state *store.Store, e *engine.Engine, coordinator *collection.Coordinator, manager *captureruntime.Manager) {
 	t.Helper()
 	e.StartHeadlessCollection(ctx)
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal("mixed Update isolated settings are unavailable")
+	}
+	// A fresh fixture DB has no onboarding completion. Establish that local
+	// prerequisite through the normal engine path after real grants are ready.
+	if _, err := e.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+		t.Fatal("mixed Update isolated onboarding could not be completed")
+	}
 	session, err := e.StartVisibleUpdate(ctx, "bounded authenticated hybrid routing qualification")
-	if err != nil || len(session.Runs) != 4 {
+	if err != nil {
+		t.Fatalf("mixed Update admission was rejected: %v", err)
+	}
+	if len(session.Runs) != 4 {
 		t.Fatal("mixed Update did not admit all four previously authorized sources")
 	}
 	if session.Runs[3].Source != domain.SourceFacebook {
@@ -101,7 +113,7 @@ func runAuthenticatedHybridUpdate(t *testing.T, ctx context.Context, state *stor
 		case <-ticker.C:
 		}
 	}
-	settings, err := state.GetSettings(ctx)
+	settings, err = state.GetSettings(ctx)
 	if err != nil || len(settings.ActiveSources) != 4 || settings.ActiveSources[0] != domain.SourceFacebook || settings.CollectionMode != "headless" {
 		t.Fatal("execution ordering changed the isolated user's configured source order or selected mode")
 	}

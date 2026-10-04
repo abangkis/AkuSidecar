@@ -62,7 +62,8 @@ background cleanup is asynchronous, and source-only release can retain a
 managed placeholder window. Host-only retirement deliberately preserves
 ordinary tabs. A cleanup acknowledgement may close Bridge-owned surfaces;
 it never authorizes closing adopted user tabs or killing the profile owner.
-The complete mixed-session cleanup and auto-return gate remains open.
+At that initial checkpoint the mixed-session cleanup and auto-return gate
+remained open; the successful scoped receipt below supersedes it.
 
 New headless sessions now persist `hybrid_headless_v1` with source driver
 assignments and stable execution ordinals: X/Instagram/LinkedIn first, Facebook
@@ -87,7 +88,9 @@ mixed-Update, profile and foreground acknowledgements. Compilation and four
 wrapper guard tests pass; the live test was skipped without authorization.
 Read-only preflight confirms healthy registered runtime/Bridge, one exact
 profile owner and existing grants for all four sources. It needs no old post
-baseline and cannot establish media/text parity. No live mixed Update has run.
+baseline and cannot establish media/text parity. At this initial fixture
+checkpoint no live mixed Update had run; later receipts below supersede that
+status.
 
 The full Go collection/store/engine/HTTP suites pass after integration
 (`go test ./internal/collection ./internal/store ./internal/engine ./internal/httpapi -count=1 -timeout=180s`).
@@ -131,8 +134,77 @@ The Store regression also verifies that `released` cannot regress to `pending`
 when a late pump write races with acknowledgement persistence. Eleven combined
 collection-mode and Recapture transport/UI Node tests pass. `git diff --check`
 is clean. This checkpoint contains the continuation after pushed `6fedd47`;
-the installed default remains Browser. The previously proposed
-foreground mixed-Update permission is still pending and no live run is claimed.
+the installed default remains Browser. The continuation was committed and pushed
+as `9be120f`; remote `main` matched its full SHA.
+
+One explicitly authorized live mixed-Update attempt stopped during admission:
+the new isolated DB had not completed onboarding, so the normal Update API
+rejected it before collection qualification. The fixture's combined error/run
+count assertion hid the rejection reason. The original runtime was restored,
+the test profile owner released, and original settings verified unchanged.
+Receipt: `build/authenticated-source-handoff-dd7428fe-f3e1-4d30-99cf-f8ff26543f91/`.
+
+The local fixture correction completes isolated onboarding through the engine,
+disables fixture calibration for deterministic batch qualification, and reports
+admission rejection separately from a missing-source count. The full HTTP suite
+passes after this correction; the operator test compiles and stays opt-in.
+The user separately approved one retry. All four source runs completed with
+persisted collector/driver authority and real captured blocks: X/headless 12,
+Instagram/headless 6, LinkedIn/headless 11, Facebook/Browser/Bridge 10. The Browser
+was generation 3 after initial headless generation 2. Auto-return remained pinned
+until the six-minute bound because the cleanup ACK parser rejected the receipt.
+Receipt: `build/authenticated-source-handoff-bac0a43b-2308-41ae-95e4-5cc8f7dc08c1/`.
+The original runtime was restored, the test profile owner released, and original
+settings verified unchanged. Read-only post-restore preflight confirms healthy
+runtime/Bridge, one exact profile owner, four grants and no active session.
+
+The cleanup contract defect is identified: the existing Bridge release handler
+returns `{outcome: ...}` and the split client preserves that object under
+`result`; the Sidecar parser and its mock tests incorrectly expected flattened
+fields. The local parser correction reads `result.outcome` and still rejects
+missing, mismatched, unverified or unsupported cleanup outcomes. Timeout/late-ACK
+tests now use the real nested envelope. Focused cleanup tests and the full HTTP
+suite pass. No Bridge code, user settings or permissions changed in this fix.
+The user approved one further attempt. The corrected candidate passes the real
+mixed Update: X/headless 12 blocks, Instagram/headless 6, LinkedIn/headless 14,
+Facebook/Browser/Bridge 2. All runs completed with persisted collector/driver
+authority and nonempty observations. Initial headless generation 2 drained before
+Facebook Browser generation 3; acknowledged cleanup returned naturally to
+headless generation 4 with no remaining collection ownership. The configured
+source order and headless selection in the isolated DB were preserved.
+Receipt: `build/authenticated-source-handoff-8354db7d-0196-4a76-9e87-64a57fe8bba9/`;
+the Go operator test passed in 127.64 seconds. The wrapper confirms original
+runtime restoration, profile release and unchanged original settings.
+
+This closes the scoped authenticated mixed-session routing/cleanup/auto-return
+gate with the registered development Bridge and staged headless worker. It does
+not establish matched media/text parity, trusted reader click, actual login,
+automatic Facebook Recapture, or a complete installed-package identity journey.
+Next: build and verify the current complete local candidate, then qualify those
+remaining product gates before default migration. No installation, publication
+or current runtime default migration is authorized by this candidate build.
+
+The complete local candidate was rebuilt at
+`AkuBrowser/build/headless-hybrid-collection-20261004-8354db7d/AkuBrowser-0.9.0-windows-x64-installed-app`.
+The canonical builder and `test-windows-installed-app-builder.ps1` both pass:
+417 declared payload files, 589,081,749 bytes, exact production-app Bridge
+identity, pinned Chrome for Testing 152.0.7977.54, worker/Node hashes and licenses,
+DB schema and binary candidate probe. The Sidecar executable SHA-256 is
+`7701d405672d2b9f31b8cdbb493419a111233e56ffd01899d6a123207ac45101`.
+This is a working-tree candidate on Sidecar `9be120f`, explicitly marked dirty;
+the local fixture/ACK corrections are included. Untracked experiments remain
+outside the payload. The builder used the prior staged c2patool executable after
+verifying its release-pinned hash/version because the default SharedTemp source
+was absent; no download or installation was needed.
+
+The existing isolated acceptance launcher passes PlanOnly for this candidate.
+No full candidate UI has been launched. Next preparation is a bounded operator
+bootstrap fixture with isolated empty profile/credential namespace, exact
+production Bridge identity, paired runtime-stop/foreground opt-ins and verified
+original-runtime restoration. This will establish bootstrap identity rather than
+authenticated parity or a trusted reader click. Never run packaged CfT152 against
+the registered Chrome154 authenticated profile; retain separate empty package
+test data. Browser remains the installed default.
 
 ### Current priority amendment (2026-10-03): defer Facebook
 

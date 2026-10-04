@@ -383,6 +383,7 @@ func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
 		settings.MaxItemsPerSource = 5
 		settings.MaxItemsTotal = 20
 		settings.AIDetectionEnabled = false
+		settings.CalibrationEnabled = false
 	}
 	settingsPayload, err := json.Marshal(map[string]any{"settings": settings})
 	if err != nil {

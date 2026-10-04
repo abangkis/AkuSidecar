@@ -85,14 +85,22 @@ func browserCollectionCleanupResult(result *splitActionResult) error {
 	if result == nil || !result.OK {
 		return errors.New("Browser collection cleanup was rejected or unverified")
 	}
-	var outcome struct {
-		Reason   string `json:"reason"`
-		Released *bool  `json:"released"`
-		Mode     string `json:"mode"`
+	// The existing Bridge release handler returns { outcome: ... }; the split
+	// client preserves that envelope as result rather than flattening it.
+	var receipt struct {
+		Outcome *struct {
+			Reason   string `json:"reason"`
+			Released *bool  `json:"released"`
+			Mode     string `json:"mode"`
+		} `json:"outcome"`
 	}
-	if len(result.Result) == 0 || json.Unmarshal(result.Result, &outcome) != nil {
+	if len(result.Result) == 0 || json.Unmarshal(result.Result, &receipt) != nil {
 		return errors.New("Browser collection cleanup acknowledgement is invalid")
 	}
+	if receipt.Outcome == nil {
+		return errors.New("Browser collection cleanup acknowledgement lacks an outcome")
+	}
+	outcome := receipt.Outcome
 	if outcome.Reason != "" && outcome.Reason != "no_owned_surface" {
 		return errors.New("Browser collection cleanup did not release its owned surfaces")
 	}
