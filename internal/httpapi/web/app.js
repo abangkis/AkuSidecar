@@ -5,6 +5,7 @@ import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
+import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
@@ -5528,10 +5529,9 @@ async function refreshTimeline(options = {}) {
           options.revealPlacement ?? "append",
         )
       : items ?? [];
-    renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
-    if (Number.isFinite(options.restoreScrollY)) {
-      requestAnimationFrame(() => window.scrollTo({ top: options.restoreScrollY, behavior: "auto" }));
-    }
+    const render = () => renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
+    if (options.preserveScroll || options.background) renderWithCurrentScroll(render);
+    else render();
   } catch (error) {
     showError(error);
   }
@@ -5565,7 +5565,6 @@ async function revealPreparedBatch(presentation) {
     sessionID = autoUpdate?.preparedBatches?.[0]?.sessionId || "";
     if (!sessionID) return false;
     const previousItems = [...state.timelineItems];
-    const restoreScrollY = window.scrollY;
     const revealPlacement = presentation === "latest" ? "prepend" : "append";
     const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, {
       method: "POST",
@@ -5589,7 +5588,7 @@ async function revealPreparedBatch(presentation) {
         revealPlacement,
         previousItems,
         extraItems: batch?.itemCount || 0,
-        restoreScrollY,
+        preserveScroll: true,
         highlightSessionID: sessionID,
       });
     }
@@ -7814,6 +7813,7 @@ function buildImageMediaControl(value, source, imageMedia, canOpen = () => true)
   const imageIndex = imageMedia.indexOf(value);
   control.setAttribute("aria-label", `Open image ${imageIndex + 1} of ${imageMedia.length} in viewer`);
   const image = document.createElement("img");
+  reserveMediaDimensions(image, value);
   image.src = value.displayUrl;
   image.alt = value.alt || `${sourceLabel(source)} post media`;
   image.loading = "lazy";
@@ -7831,12 +7831,16 @@ function buildVideoMedia(value, source, nativePostUrl, entry = null) {
   shell.className = "source-layout-video-shell";
   const canPlayInline = Boolean(value.inlinePlaybackUrl);
   const control = buildVideoPosterControl({
+    width: value.width,
+    height: value.height,
     posterUrl: value.displayUrl,
     alt: value.alt,
     source,
     nativePostUrl,
     playInline: canPlayInline
       ? () => activateInlineVideo(shell, {
+        width: value.width,
+        height: value.height,
         playbackUrl: value.inlinePlaybackUrl,
         posterUrl: value.displayUrl,
         alt: value.alt,
@@ -7850,12 +7854,13 @@ function buildVideoMedia(value, source, nativePostUrl, entry = null) {
   return shell;
 }
 
-function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, playInline = null }) {
+function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, width, height, playInline = null }) {
   const canPlayInline = typeof playInline === "function";
   const control = document.createElement(canPlayInline || !nativePostUrl ? "button" : "a");
   if (control.tagName === "BUTTON") control.type = "button";
   control.className = "source-layout-media-item is-video-poster";
   const image = document.createElement("img");
+  reserveMediaDimensions(image, { width, height });
   image.src = posterUrl;
   image.alt = alt || `${sourceLabel(source)} video poster`;
   image.loading = "lazy";
@@ -7887,11 +7892,12 @@ function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, playIn
   return control;
 }
 
-function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl, entry = null }) {
+function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl, width, height, entry = null }) {
   if (!shell || shell.querySelector("video.source-layout-inline-video")) return;
   const control = shell.querySelector(".source-layout-media-item");
   if (!control) return;
   const video = document.createElement("video");
+  reserveMediaDimensions(video, { width, height });
   video.className = "source-layout-inline-video";
   video.controls = true;
   video.playsInline = true;
@@ -7915,6 +7921,8 @@ function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativ
     video.pause();
     video.removeAttribute("src");
     video.replaceWith(buildVideoPosterControl({
+      width,
+      height,
       posterUrl,
       alt,
       source,

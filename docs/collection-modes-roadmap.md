@@ -19,6 +19,41 @@ Targeted tests cover rapid scroll, in-flight acquisition, geometry read/write
 ordering, gutter fallbacks and scoped CSS writes. These changes still require
 restart and live user scroll acceptance; no FPS improvement is yet measured.
 
+The subsequent owner trial reported jumps rather than frame stutter. Astra's
+isolated CfT 152 fixture reproduced two preexisting mechanisms: an unreserved
+lazy image shifted following content by 375 px, and `behavior: auto` inherited
+global smooth scrolling during restoration to an older coordinate. Product
+follow-up now applies valid captured width/height to images, video posters and
+inline-video/fallback surfaces, with natural `height: auto` outside the fixed
+carousel. Missing or invalid dimensions do not receive an invented aspect ratio.
+Continue/auto-reveal and background refresh snapshot current scroll immediately
+before the synchronous render and restore it with `behavior: instant`. The old
+coordinate saved before network waits and deferred restoration callback are
+removed. Explicit latest-batch navigation remains intentional. All 153 frontend
+tests, HTTP API Go tests and the Windows Sidecar build pass. Real user acceptance
+after restart remains pending; the isolated diagnosis is not proof that every
+observed jump has this cause.
+
+Changed-source browser proof (CfT 152.0.7977.54, fresh empty profile, HTTP/HTTPS
+blocked) now measures zero following-content shift for delayed landscape image,
+portrait image and video poster. Reserved heights remain 400, 480 and 337.5 px;
+carousel stage/image remain 480 px before/after loading. Unknown dimensions leave
+width/height attributes unset. A simulated network wait with user movement from
+900 to 1800 preserves scrollY 1800 immediately after rendering and 350 ms later,
+even under global smooth CSS. Evidence is local/ignored under
+`build/timeline-scroll-fix-proof/probe-result.json`. Fixture initially stalled on
+decoding offscreen lazy images; moving each tested image into view corrected
+the harness. Actual authenticated Timeline acceptance after restart is pending.
+
+Owner manually restarted and reports smoother scrolling with remaining jank.
+Live readback confirms headless ready, health OK, served media dimension
+reservation/current-position instant restoration active, and the stale restore
+option absent. All 153 frontend tests pass again; the changed-source Chrome
+fixture repeats zero media-content shift and retained scrollY 1800. This closes
+activation verification, not scroll-performance acceptance. Residual jank needs
+a browser frame trace separating script, style/layout, image decode and paint;
+these tests do not measure the user's frame rate or identify that remaining cause.
+
 Latest owner click after activation: API total 490 ms, broker total 958 ms,
 profile handoff 400 ms, owner release 74 ms, Chrome launch 4 ms, reader readiness
 247 ms, coordinator wait 0 ms, target preparation 34 ms and accepted HWND
