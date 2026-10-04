@@ -324,6 +324,26 @@ Facebook Update plus one eligible Recapture, temporary runtime stop, possible
 foreground windows and verified restore; the package bootstrap permission was
 limited to its completed cycle.
 
+The user approved one authenticated Facebook fixture cycle. One fresh Facebook
+Update completed through Browser/Bridge with durable route evidence and returned
+to headless generation 4. The fixture then found no newly acquired target that
+met all eligibility fences (same session/run and raw observation identity,
+unavailable media, supported route); it did not request Recapture. The operator
+test therefore fails as unqualified sample coverage, not as an observed Recapture
+failure. The test ran for 87.65 seconds. Receipt:
+`build/authenticated-source-handoff-75adc8c4-dcc9-4c24-8729-d1de428601ca/`.
+The wrapper verifies original runtime restoration, profile release and unchanged
+original settings. Automatic Recapture's live gate remains untested.
+
+Next decision: keep requiring a naturally unavailable fresh item (which needs a
+new suitable sample), or qualify ownership/dispatch with a controlled missing
+media state on a freshly acquired item in the isolated fixture DB. The latter
+would retain the real target, source observation and native identity, modify only
+the copied test media state, and exercise the actual authenticated Bridge/API
+Recapture path. It would prove live borrowing/dispatch/cleanup, not a naturally
+occurring media-recovery symptom; report those scopes separately. No controlled
+state mode or second live cycle has been authorized or implemented yet.
+
 ### Current priority amendment (2026-10-03): defer Facebook
 
 The user changes tactics after the accumulated Facebook investigation effort:
