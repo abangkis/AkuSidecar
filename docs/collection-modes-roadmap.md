@@ -240,8 +240,141 @@ URL equality. Do not aggregate repeated snapshots as unique assets or combine
 this with earlier candidate receipts as a single immutable payload proof.
 Each run confirms worker exit and runtime restoration; final read-only preflight
 confirms Browser/Quiet, original four sources and compatible granted Bridge.
-The post-checkpoint diagnostics/fix/freshness changes remain local, uncommitted;
-no candidate installation or default migration occurred.
+The diagnostics/fix/freshness checkpoint was subsequently committed and pushed
+as 05d2e3c8f931f4c49285586346b6fe70410f61fe; remote main SHA matches. No
+candidate installation or default migration occurred.
+
+### Authenticated source-window journey fixture (2026-10-04)
+
+The next gate is a real-source interactive lifetime journey rather than another
+static popup smoke. The new operator wrapper reuses the authenticated parity
+harness's registered-profile, permission, owner-drain, package and restoration
+guards. Its default is read-only preflight. Execution requires separate explicit
+runtime-stop and source-window foreground flags; both acknowledgements are also
+required by the opt-in Go fixture. The registered Chrome executable and selected
+subprofile are reused; packaged Chrome 152 is never substituted for the newer
+authenticated profile. The fixture's database is project-local and separate.
+
+The fixture requests headless through the isolated Settings API, requires actual
+Bridge Ready/PermissionGranted/ScriptRegistered evidence without substituting
+source readiness, captures a native target, and dispatches real Bridge
+open_source through the product HTTP action route. Successful actual HWND
+preparation must hold auto-return after dispatch leases drain. Closure is limited
+to one new single-page source window distinct from the capture host; old,
+foreign, changed or ambiguous targets are rejected. After closure, headless must
+return and capture the same native target again. No source login submission,
+social action, extension API invocation by CDP or production settings write is
+part of this fixture. Internal private CDP stays within app-shell host bootstrap
+and the owned fixture's window inventory/close operations.
+
+Compile/default-skip, source-window discovery/close and retirement-capability
+guards pass. Three Node operator approval/identity/scope tests plus the existing
+21 comparison tests pass. The user approved one LinkedIn cycle. Initial receipt
+`authenticated-source-handoff-827aaadd-036b-4b62-a8d9-898504939f68` stopped at
+missing compatible heartbeat, before headless or opening a source window.
+Diagnosis verified registered Google Chrome, whose branded build ignores
+`--load-extension`, and distinct candidate/development Bridge manifest IDs.
+The profile has the development ID installed; the fixture originally trusted
+the candidate ID. The wrapper now verifies the registered manifest origin/path
+and installed unpacked-profile identity before stopping anything. This qualifies
+registered development Bridge plus staged candidate worker, not full packaged
+Bridge identity/parity. The candidate payload verification remains separate.
+
+The causal identity correction passed preflight. Receipt
+`authenticated-source-handoff-cd396299-e565-4cf7-8217-3c2e33d9c96f` then established
+healthy compatible Bridge and persisted isolated headless Settings, but the
+runtime correctly held generation 1 Browser: host-only retirement was not
+negotiated. No source window or auto-return capture ran. Both receipts verify
+profile release, restored healthy runtime/Bridge, and unchanged original Settings.
+This is a transport capability gate failure, not source media/auto-return failure.
+Stale loaded Bridge code is a hypothesis; a compatible heartbeat alone cannot
+prove fresh capture-host bootstrap. The fixture now checks negotiated host-only
+retirement before changing isolated Settings and reports safe capability booleans
+after a bounded wait instead of spending the whole journey timeout there.
+
+An optional `--allow-bridge-reload` flag requires both runtime/source-window approvals,
+clears inherited reload opt-ins, and permits exactly one product `reload_self`
+control action only when initial host capabilities are absent. It then requires
+fresh negotiation; it does not force takeover, downgrade Chrome, install an
+extension, grant source access, or inject an extension API through CDP. The native reader
+trusted-click, actual login, rendered Settings and installed-product gates remain
+open; no acceptance gate is closed by these failed lifecycle attempts.
+
+Authorized reload cycle continuation (2026-10-04): receipt
+`authenticated-source-handoff-6c1df501-0896-4cd9-90f7-98244825162d` rejected the
+fixture's synthetic reload action ID. No extension reload or source window
+completed. The helper was corrected to create and claim the existing product
+maintenance action, relay its exact ID, and verify the expected post-reload
+heartbeat. A browser-free integration test against the real maintenance and
+split HTTP routes now exercises action acceptance and result completion.
+
+One causal retry, receipt
+`authenticated-source-handoff-c1ec7dfa-e5ac-42e6-a151-b08007830b9b`, completed the
+authorized single reload. It then passed initial headless generation 2 and
+same-native-ID LinkedIn capture, Settings requested headless, actual Bridge
+source-window preparation and borrowed Browser generation 3. It stopped at
+source-window target discovery before the scoped close/auto-return assertions.
+Both receipts verify original profile release, runtime/Bridge restoration and
+unchanged original Settings. No post-close capture, reader click, fresh paired
+parity or installed-package gate is claimed. This consumes the one source-window
+cycle; no further foreground cycle has run.
+
+Inspection shows Bridge acknowledges `tabs.update` before navigation commits;
+the fixture's immediate source-host inventory could still see its loopback
+intent page. The receipt's old generic failure did not retain the exact guard
+reason, so this is a plausible timing cause, not a confirmed live diagnosis.
+The fixture now binds the exact action's intent target during actual native
+preparation, waits at most eight seconds for source navigation, and requires the
+same target ID. Only absent source navigation is retried; ambiguity, unexpected
+targets or shared windows remain terminal. Browser-free tests cover delayed
+commit, mismatched prepared identity and no accidental closure. Five focused Go
+guard/integration tests pass, with the opt-in live test skipped. A new one-cycle
+source-window approval is needed to validate this correction; another automatic
+reload is not planned.
+
+LinkedIn authenticated lifecycle gate passed (2026-10-04): receipt
+`authenticated-source-handoff-2443de01-1322-4a60-8aa6-3a2bd51710d5` ran the new
+explicitly approved cycle without Bridge reload. Generation 2 headless captured
+the exact native target ID; real Bridge open_source borrowed generation 3 and
+prepared its native source-window lifetime. The exact action-bound target
+committed its source navigation, occupied a unique single-page window separate
+from the capture host, and was revalidated before close. Its live HWND blocked
+auto-return after action leases drained. Closing only that target permitted
+natural generation 4 headless return; the second capture preserved the same
+native post ID. The opt-in live Go test passed in 24.51 seconds; wrapper exited
+successfully and verified profile release, healthy runtime/compatible Bridge
+restoration, and unchanged original Settings.
+
+This closes the bounded LinkedIn source-window API lifetime/auto-return gate
+for registered development Bridge plus staged candidate worker. It is not
+trusted reader-click, credential login, rendered Settings, complete packaged
+Bridge, or fresh paired media/text parity evidence. The old native target is a
+lifecycle identity fixture, not a fresh Browser parity baseline. Browser remains
+default; no installation occurred. Instagram read-only preflight passes on the
+same fixture and selected logged-in profile. A separate single-cycle Instagram
+foreground approval is required before exercising its source window.
+
+Instagram authenticated lifecycle gate passed (2026-10-04): the user separately
+approved its single cycle. Receipt
+`authenticated-source-handoff-b4d8b025-b753-42f4-9667-fbafbc9f795b` passed without
+Bridge reload. The same fixture verified generation 2 headless capture of the
+exact native target ID, generation 3 real Bridge source-window preparation,
+the action-bound source target's unique single-page window, the live HWND hold
+after action leases drained, scoped close, natural generation 4 headless return,
+and same-native-ID capture afterwards. The wrapper exited successfully and
+verified profile release, restored healthy runtime/compatible Bridge, and
+unchanged original Settings. This separately closes the bounded Instagram
+source-window API lifetime/auto-return gate in the same registered-development
+Bridge/staged-worker scope as LinkedIn. Neither test submitted credentials,
+posted social content, installed a candidate, or changed the Browser default.
+
+Both new sources now have authenticated source-window lifetime evidence.
+Remaining integrated acceptance is actual trusted reader click, rendered
+Settings switching, and the complete packaged Bridge identity/runtime journey.
+Broader fresh media/text parity and reliability remain separate qualification
+work; these old-target lifecycle receipts must not be relabeled as fresh paired
+Browser acquisition evidence. Facebook stays parked. The new fixture/guard and
+ledger changes are local; no new checkpoint commit/push is claimed here.
 
 ## Product contract
 

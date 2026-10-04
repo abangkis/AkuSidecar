@@ -175,7 +175,7 @@ async function containedRealpath(root, path, label, allowEqual = false) {
   return resolvedPath;
 }
 
-async function loadCandidate(artifactArgument) {
+export async function loadCandidate(artifactArgument) {
   const allowedRoot = await realpath(join(browserRepo, 'build'));
   const artifactRoot = await containedRealpath(allowedRoot, artifactArgument, 'candidate');
   const pointer = JSON.parse(await readFile(join(artifactRoot, 'runtime', 'current.json'), 'utf8'));
@@ -200,7 +200,7 @@ function registrationArgument(registration, flag) {
   return value;
 }
 
-async function loadRegistration() {
+export async function loadRegistration() {
   if (!process.env.LOCALAPPDATA) throw new HarnessError('local_app_data_unavailable');
   const configPath = join(process.env.LOCALAPPDATA, 'AkuSupervisor', 'services.json');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
@@ -223,7 +223,7 @@ async function loadRegistration() {
   return {profile, captureExe, profileDirectory};
 }
 
-async function supervisor(command) {
+export async function supervisor(command) {
   const {stdout} = await execFile(supervisorExe, [...command, '--json', '--config', join(process.env.LOCALAPPDATA, 'AkuSupervisor', 'services.json')], {
     windowsHide: true, timeout: 45_000, maxBuffer: 1024 * 1024,
   });
@@ -264,7 +264,7 @@ async function inboxState() {
   return {sessions: value.sessions.length, activeSessions: 0};
 }
 
-async function preflight(registration, selectedSources=[]) {
+export async function preflight(registration, selectedSources=[]) {
   const [service, owners, bridge, inbox] = await Promise.all([
     serviceStatus(), exactProfileOwners(registration.profile), bridgeHealth(), inboxState(),
   ]);
@@ -286,7 +286,7 @@ async function preflight(registration, selectedSources=[]) {
   };
 }
 
-async function verifyTuple(artifactRoot) {
+export async function verifyTuple(artifactRoot) {
   await execFile('pwsh.exe', ['-NoProfile', '-File', join(browserRepo, 'scripts', 'test-windows-installed-app-builder.ps1'), '-ArtifactDirectory', artifactRoot], {
     windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024,
   });
@@ -464,7 +464,7 @@ async function restoreHealthy(registration) {
   };
 }
 
-async function waitForStopped(profile) {
+export async function waitForStopped(profile) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const service = await serviceStatus();
@@ -492,7 +492,7 @@ async function closeWorker(client, runtimeDeadline) {
   return {closed: result.closed, explicitShutdown, exitCode: result.code ?? null};
 }
 
-async function waitForNoProfileOwners(profile, timeoutMs) {
+export async function waitForNoProfileOwners(profile, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const owners = await exactProfileOwners(profile);
@@ -503,7 +503,7 @@ async function waitForNoProfileOwners(profile, timeoutMs) {
   return {clear: false, exactProfileOwnerCount: owners.length};
 }
 
-async function restoreOriginal(registration, stopIssued, runtimeDeadline) {
+export async function restoreOriginal(registration, stopIssued, runtimeDeadline) {
   if (!stopIssued) return {restored: false, blocked: false, reason: 'runtime_stop_not_issued'};
   try {
     const current = await serviceStatus();
