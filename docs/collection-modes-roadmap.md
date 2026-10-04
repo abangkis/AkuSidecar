@@ -216,7 +216,7 @@ Current acceptance summary (later evidence supersedes historical statuses):
 | Gate | Current result | Remaining boundary |
 | --- | --- | --- |
 | Mixed-source routing, cleanup and auto-return | Passed authenticated development-Bridge fixture | Complete-package journey |
-| Complete candidate payload and identity | Canonical build and static validation passed | Live bootstrap with production Bridge identity |
+| Complete candidate payload and identity | Canonical build/static validation and isolated live bootstrap passed | Authenticated product journey |
 | Settings | Rendered component and controlled tests passed | Integrated product journey |
 | Login/source window lifetime | LinkedIn/Instagram scoped lifecycle receipts available | Actual login and trusted reader click |
 | Automatic Facebook Recapture borrowing | Controlled lifecycle/transport tests passed | Authenticated end-to-end Recapture |
@@ -270,6 +270,28 @@ retains the bootstrap projection/failure separately before cleanup; the previous
 run lost that primary result, so package bootstrap acceptance remains unknown.
 One fresh live retry requires separate authorization; no installation, login,
 grant, posting or default change occurred.
+
+The user separately authorized one retry after the listener correction. That
+retry passes (`status=complete`, exit 0): actual candidate health is healthy
+production-installed-app 0.9.0, the Bridge reports the exact production-app
+origin `chrome-extension://piijgldhnhknddmiljookikjpheiiddn/`, compatibility is
+true, and the fresh isolated profile has zero grants. Settings projection is
+valid. Cooperative runtime shutdown completes, both candidate profiles and its
+process/listener ownership clear, and original runtime restoration is verified
+with unchanged settings digest, healthy compatible Bridge, one registered Chrome
+profile owner, four source grants and zero active sessions.
+Receipt: `build/hybrid-package-bootstrap-20261004-attempt2-receipt.json`;
+isolated package data is under
+`AkuBrowser/build/headless-hybrid-bootstrap-1791106215158-ada9a1e1-f6fc-4f2d-9500-f0a949ba92fb`.
+
+This closes complete-package bootstrap/production identity and cooperative
+stop/restore qualification for the frozen candidate. It does not close an
+authenticated package capture, integrated trusted reader/login, Facebook
+Recapture, or fresh media/text parity. No install, grant, login, publication or
+default migration occurred. Next product qualification should exercise automatic
+Facebook Browser Recapture and the reader/source-window journey while retaining
+the headless selection; use scoped operator approval for any new foreground
+cycle and never reuse packaged CfT152 on the Chrome154 authenticated profile.
 
 ### Current priority amendment (2026-10-03): defer Facebook
 
