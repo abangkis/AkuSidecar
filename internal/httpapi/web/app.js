@@ -4,6 +4,7 @@ import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
+import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
@@ -271,6 +272,7 @@ const settingsDirty = createDirtyStateTracker({
   onChange: renderSettingsDirtyState,
 });
 const $ = (selector) => document.querySelector(selector);
+const timelineScrollIdle = createScrollIdleGate();
 const scrollUIFrames = createFrameTaskQueue({
   requestFrame: (callback) => window.requestAnimationFrame(callback),
   run(tasks) {
@@ -577,6 +579,7 @@ $("#media-viewer").addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("scroll", () => {
+  timelineScrollIdle.noteScroll();
   scrollUIFrames.schedule("scroll");
 }, { passive: true });
 window.addEventListener("resize", () => {
@@ -4047,11 +4050,12 @@ function syncTimelineSidePanePosition() {
     window.innerHeight - minimumTop - toggleHalfHeight,
     Math.max(minimumTop + toggleHalfHeight, attachmentTop + toggleHalfHeight),
   );
-  setInlineStyle(document.documentElement, "--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
-  setInlineStyle(document.documentElement, "--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
-  setInlineStyle(document.documentElement, "--timeline-side-pane-top", `${Math.round(paneTop)}px`);
-  setInlineStyle(document.documentElement, "--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
-  setInlineStyle(document.documentElement, "--timeline-side-pane-toggle-top", `${Math.round(toggleTop)}px`);
+  const pane = $("#timeline-side-pane");
+  setInlineStyle(pane, "--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
+  setInlineStyle(pane, "--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
+  setInlineStyle(pane, "--timeline-side-pane-top", `${Math.round(paneTop)}px`);
+  setInlineStyle(toggle, "--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
+  setInlineStyle(toggle, "--timeline-side-pane-toggle-top", `${Math.round(toggleTop)}px`);
 }
 
 function applyTimelineBatchGap(value) {
@@ -4789,47 +4793,28 @@ function scheduleBackToTop() {
 
 function syncBackToTopNow() {
   const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
+  const measurements = state.currentView === "timeline" ? measureTimelineContentContextTabs() : [];
   $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
-  if (top >= BACK_TO_TOP_THRESHOLD_PX) syncBackToTopPosition(top);
-  syncTimelineContentContextTabs();
+  if (top >= BACK_TO_TOP_THRESHOLD_PX) syncBackToTopPosition(top, measurements);
+  syncTimelineContentContextTabs(measurements);
 }
 
-function timelineContentContextTabOverlapsBackToTop(button) {
-  if (state.currentView !== "timeline" || !button || button.classList.contains("hidden")) return false;
-  const buttonRect = button.getBoundingClientRect();
-  if (buttonRect.width <= 0 || buttonRect.height <= 0) return false;
-  return [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")].some((tab) => {
-    if (tab.closest(".semantic-duplicate-report.hidden")) return false;
-    const anchorRect = tab.closest(".timeline-content-context-anchor")?.getBoundingClientRect();
-    const tabRect = tab.getBoundingClientRect();
-    if (!anchorRect || tabRect.width <= 0 || tabRect.height <= 0) return false;
+function timelineContentContextObstacles(measurements) {
+  if (state.currentView !== "timeline") return [];
+  const obstacles = [];
+  for (const { rect: anchorRect, width, height, eligible } of measurements) {
+    if (!eligible) continue;
+    if (!anchorRect || anchorRect.bottom < 0 || anchorRect.top > window.innerHeight) continue;
+    if (width <= 0 || height <= 0) continue;
     const left = anchorRect.right - 1;
-    const right = left + tabRect.width;
-    const top = anchorRect.top;
-    const bottom = top + tabRect.height;
-    return left < buttonRect.right && right > buttonRect.left && top < buttonRect.bottom && bottom > buttonRect.top;
-  });
+    obstacles.push({ left, right: left + width, top: anchorRect.top, bottom: anchorRect.top + height });
+  }
+  const drawer = state.timelineContentContextDrawerOpen && $("#timeline-content-context-drawer");
+  if (drawer && !drawer.classList.contains("hidden")) obstacles.push(drawer.getBoundingClientRect());
+  return obstacles;
 }
 
-function timelineContentContextDrawerOverlapsBackToTop(button) {
-  if (state.currentView !== "timeline" || !state.timelineContentContextDrawerOpen || !button || button.classList.contains("hidden")) return false;
-  const drawer = $("#timeline-content-context-drawer");
-  if (!drawer || drawer.classList.contains("hidden")) return false;
-  const buttonRect = button.getBoundingClientRect();
-  const drawerRect = drawer.getBoundingClientRect();
-  if (buttonRect.width <= 0 || buttonRect.height <= 0 || drawerRect.width <= 0 || drawerRect.height <= 0) return false;
-  return drawerRect.left < buttonRect.right
-    && drawerRect.right > buttonRect.left
-    && drawerRect.top < buttonRect.bottom
-    && drawerRect.bottom > buttonRect.top;
-}
-
-function timelineContentContextOverlapsBackToTop(button) {
-  return timelineContentContextTabOverlapsBackToTop(button)
-    || timelineContentContextDrawerOverlapsBackToTop(button);
-}
-
-function syncBackToTopPosition(top) {
+function syncBackToTopPosition(top, measurements) {
   const anchorsByView = {
     timeline: [$("#result-panel"), document.querySelector(".timeline-heading-row")],
     inbox: [$("#inbox-panel")],
@@ -4838,32 +4823,22 @@ function syncBackToTopPosition(top) {
     settings: [$("#settings-panel")],
   };
   const candidates = anchorsByView[state.currentView] ?? [$("#timeline-panel")];
-  const anchor = candidates.find((element) => {
-    if (!element || element.classList.contains("hidden")) return false;
+  let anchorRect;
+  for (const element of candidates) {
+    if (!element || element.classList.contains("hidden")) continue;
     const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  });
-  const anchorRect = anchor?.getBoundingClientRect();
-  const buttonWidth = window.innerWidth <= 700 ? 44 : 48;
-  const gap = 30;
-  syncBackToTopBoundaryPosition(top, buttonWidth);
-  const canUseContentSide = anchorRect && window.innerWidth - anchorRect.right >= buttonWidth + gap * 2;
-  if (canUseContentSide) {
-    setInlineStyle($("#back-to-top"), "left", `${Math.round(anchorRect.right + gap)}px`);
-    setInlineStyle($("#back-to-top"), "right", "auto");
-    if (!timelineContentContextOverlapsBackToTop($("#back-to-top"))) return;
+    if (rect.width > 0 && rect.height > 0) { anchorRect = rect; break; }
   }
-  setInlineStyle($("#back-to-top"), "left", "");
-  setInlineStyle($("#back-to-top"), "right", "");
-  if (!timelineContentContextOverlapsBackToTop($("#back-to-top"))) return;
-  const canUseStreamLeft = anchorRect && anchorRect.left >= buttonWidth + gap * 2;
-  if (canUseStreamLeft) {
-    setInlineStyle($("#back-to-top"), "left", `${Math.round(anchorRect.left - buttonWidth - gap)}px`);
-    setInlineStyle($("#back-to-top"), "right", "auto");
-    if (!timelineContentContextOverlapsBackToTop($("#back-to-top"))) return;
-    setInlineStyle($("#back-to-top"), "left", "");
-    setInlineStyle($("#back-to-top"), "right", "");
-  }
+  const button = $("#back-to-top");
+  const measured = button.getBoundingClientRect();
+  const obstacles = timelineContentContextObstacles(measurements);
+  const bottom = syncBackToTopBoundaryPosition(top, measured.height || 48);
+  const buttonRect = Number.isFinite(bottom)
+    ? { width: measured.width, top: window.innerHeight - bottom - measured.height, bottom: window.innerHeight - bottom }
+    : measured;
+  const position = backToTopHorizontalPosition({ anchor: anchorRect, button: buttonRect, viewportWidth: window.innerWidth, obstacles });
+  setInlineStyle(button, "left", position.left);
+  setInlineStyle(button, "right", position.right);
 }
 
 function syncBackToTopBoundaryPosition(top, buttonHeight) {
@@ -4885,7 +4860,6 @@ function syncBackToTopBoundaryPosition(top, buttonHeight) {
   const markerVisible = Number.isFinite(lineY) && lineY >= safeTop && lineY <= acquisitionBottom;
 
   if (marker && !markerVisible) {
-    releaseBackToTopBoundary();
     marker = null;
   }
   if (!marker && delta > 1) {
@@ -4895,12 +4869,13 @@ function syncBackToTopBoundaryPosition(top, buttonHeight) {
     }) ?? null;
     lineY = linePosition(marker);
   }
-  if (!marker || !Number.isFinite(lineY)) return;
+  if (!marker || !Number.isFinite(lineY)) { releaseBackToTopBoundary(); return; }
 
   state.backToTopBoundary = marker;
   button.classList.add("is-following-boundary");
   const bottom = backToTopBoundaryBottom({ lineY, viewportHeight: window.innerHeight, restBottom });
   setInlineStyle(button, "--back-to-top-bottom", `${Math.round(bottom)}px`);
+  return Math.round(bottom);
 }
 
 function releaseBackToTopBoundary() {
@@ -5535,6 +5510,11 @@ async function refreshTimeline(options = {}) {
     const configuredLimit = state.bootstrap?.settings?.timelineCapacity ?? 24;
     const limit = Math.min(50, configuredLimit + Math.max(0, options.extraItems || 0));
     const { items, timelineBatches, latestCheck, autoUpdate } = await api(`/api/timeline?limit=${limit}&offset=0`);
+    if (options.background) {
+      // Scrolling may have started while the request was in flight.
+      await timelineScrollIdle.wait();
+      if (timelineInteractionActive()) { state.backgroundTimelineRefreshPending = true; return; }
+    }
     if (state.bootstrap) state.bootstrap.latestCheck = latestCheck ?? null;
     if (state.bootstrap) state.bootstrap.timelineBatches = timelineBatches ?? state.bootstrap.timelineBatches ?? [];
     if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate ?? state.bootstrap.autoUpdate;
@@ -7079,10 +7059,12 @@ async function flushBackgroundTimelineRefresh() {
     || state.backgroundTimelineRefreshInFlight
     || timelineInteractionActive()
   ) return;
-  state.backgroundTimelineRefreshPending = false;
   state.backgroundTimelineRefreshInFlight = true;
   try {
-    await refreshTimeline();
+    await timelineScrollIdle.wait();
+    if (timelineInteractionActive()) return;
+    state.backgroundTimelineRefreshPending = false;
+    await refreshTimeline({ background: true });
   } finally {
     state.backgroundTimelineRefreshInFlight = false;
   }
@@ -8133,24 +8115,30 @@ function timelineContentContextTrigger(id) {
     .find((element) => element.dataset.timelineContentContextId === String(id)) || null;
 }
 
-function syncTimelineContentContextTabs() {
-  if (state.currentView !== "timeline") return;
+function measureTimelineContentContextTabs() {
+  if (state.currentView !== "timeline") return [];
   const tabs = [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")];
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   // Finish every geometry read before any tab attribute/class writes.
-  const measured = tabs.map((tab) => {
+  return tabs.map((tab) => {
     const anchor = tab.closest(".timeline-content-context-anchor");
     const rect = anchor?.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
     return {
       tab,
       id: tab.dataset.timelineContentContextId || "",
       rect,
-      width: tab.getBoundingClientRect().width,
+      width: tabRect.width,
+      height: tabRect.height,
       top: rect?.top,
       bottom: rect?.bottom,
       eligible: state.currentView === "timeline" && !tab.closest(".semantic-duplicate-report.hidden"),
     };
   });
+}
+
+function syncTimelineContentContextTabs(measured = measureTimelineContentContextTabs()) {
+  if (state.currentView !== "timeline") return;
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const visibleID = state.timelineContentContextDrawerOpen
     ? state.timelineContentContextActiveID
     : selectContentContextViewportID({

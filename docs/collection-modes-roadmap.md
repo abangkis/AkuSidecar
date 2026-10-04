@@ -9,6 +9,16 @@ Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ### Native reader visibility and timing follow-up (2026-10-04)
 
+Timeline scroll follow-up: background refresh now waits for 350 ms of scroll
+idle both before acquisition and before applying a response. Explicit user
+refresh/reveal stays immediate. Back-to-top collisions use predicted candidate
+rectangles from one read phase rather than moving the button to test positions;
+Related Context reuses the same card measurements. Side-pane position variables
+are scoped to the pane/toggle instead of inherited from the document root.
+Targeted tests cover rapid scroll, in-flight acquisition, geometry read/write
+ordering, gutter fallbacks and scoped CSS writes. These changes still require
+restart and live user scroll acceptance; no FPS improvement is yet measured.
+
 Latest owner click after activation: API total 490 ms, broker total 958 ms,
 profile handoff 400 ms, owner release 74 ms, Chrome launch 4 ms, reader readiness
 247 ms, coordinator wait 0 ms, target preparation 34 ms and accepted HWND

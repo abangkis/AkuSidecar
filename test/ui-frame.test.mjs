@@ -28,7 +28,7 @@ test("a scroll burst coalesces tasks and defers requests made during a flush", (
 
 test("Related Context measures all cards before writing and skips other views", () => {
   const app = fs.readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
-  const start = app.indexOf("function syncTimelineContentContextTabs() {");
+  const start = app.indexOf("function measureTimelineContentContextTabs() {");
   const end = app.indexOf("\nfunction timelineContentContextFeedbackKey", start);
   assert.ok(start >= 0 && end > start);
   const operations = [], visibility = new Map();

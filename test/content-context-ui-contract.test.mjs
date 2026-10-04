@@ -28,7 +28,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "contentContextShouldCloseOnScroll",
     "selectContentContextViewportID",
     "contentContextUpScrollMode",
-    "timelineContentContextOverlapsBackToTop",
+    "backToTopHorizontalPosition",
     "backToTopBoundaryBottom",
     "Loading captured and local context",
     "No related local context found.",
@@ -95,10 +95,10 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /const item = buildTimelineItem\(entry, \{ contentContext: false \}\)/);
   assert.match(app, /if \(expanded && state\.timelineContentContextActiveID === entry\.id\)[\s\S]*closeTimelineContentContextDrawer\(\{ clearActive: true, focusTrigger: false \}\)/);
   assert.match(app, /report\.classList\.toggle\("hidden", expanded\)/);
-  assert.match(app, /function timelineContentContextOverlapsBackToTop\([\s\S]*timelineContentContextDrawerOverlapsBackToTop/);
+  assert.match(app, /function timelineContentContextObstacles\([\s\S]*timelineContentContextDrawerOpen[\s\S]*obstacles\.push\(drawer\.getBoundingClientRect\(\)\)/);
   assert.match(app, /scheduleTimelineContentContextPosition\(\);\r?\n  scheduleBackToTop\(\);/);
   assert.match(app, /syncTimelineContentContextTabs\(\);\r?\n  scheduleBackToTop\(\);/);
-  assert.match(app, /function syncBackToTopNow\(\)[\s\S]*syncBackToTopPosition\(top\);[\s\S]*syncTimelineContentContextTabs\(\);/);
+  assert.match(app, /function syncBackToTopNow\(\)[\s\S]*measureTimelineContentContextTabs\(\)[\s\S]*syncBackToTopPosition\(top, measurements\);[\s\S]*syncTimelineContentContextTabs\(measurements\);/);
   assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTabs\(\);/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?scheduleTimelineContentContextPosition\(\)/);
   assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?contentContextPostPassedReadingExitLine/);
