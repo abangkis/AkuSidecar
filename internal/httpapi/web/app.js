@@ -2,6 +2,7 @@ import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { collectionModeState } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
+import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
@@ -217,7 +218,6 @@ const state = {
   onboardingLearningPaused: false,
   onboardingLearningUserPaused: false,
   resetOperation: null,
-  backToTopFrame: null,
   backToTopLastScrollY: 0,
   backToTopBoundary: null,
   mediaRecaptureActive: false,
@@ -227,7 +227,6 @@ const state = {
   seenTimelineItems: new Set(),
   aiDeepPoller: null,
   sidePaneItems: [],
-  sidePaneFrame: null,
   timelineItems: [],
   timelineReadLaterInFlight: new Set(),
   timelineContentContext: new Map(),
@@ -271,6 +270,24 @@ const settingsDirty = createDirtyStateTracker({
   onChange: renderSettingsDirtyState,
 });
 const $ = (selector) => document.querySelector(selector);
+const scrollUIFrames = createFrameTaskQueue({
+  requestFrame: (callback) => window.requestAnimationFrame(callback),
+  run(tasks) {
+    if (tasks.has("scroll")) {
+      const movingDown = window.scrollY > state.autoLoadLastScrollY;
+      state.autoLoadLastScrollY = window.scrollY;
+      if (state.currentView === "timeline") {
+        handleTimelineContentContextScroll();
+        if (movingDown && state.bootstrap?.settings?.nextBatchBehavior === "auto_at_finish") {
+          const finish = $("#finish-line");
+          if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) revealPreparedBatch("continue");
+        }
+      }
+    }
+    if (tasks.has("scroll") || tasks.has("back-to-top")) syncBackToTopNow();
+    if (tasks.has("scroll") || tasks.has("side-pane")) syncTimelineSidePanePosition();
+  },
+});
 
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== endpoint || !event.data) return;
@@ -559,11 +576,7 @@ $("#media-viewer").addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("scroll", () => {
-  scheduleBackToTop();
-  if (state.currentView === "timeline") {
-    scheduleTimelineSidePanePosition();
-    handleTimelineContentContextScroll();
-  }
+  scrollUIFrames.schedule("scroll");
 }, { passive: true });
 window.addEventListener("resize", () => {
   scheduleBackToTop();
@@ -580,15 +593,6 @@ window.addEventListener("beforeunload", (event) => {
   event.preventDefault();
   event.returnValue = "";
 });
-window.addEventListener("scroll", () => {
-  const movingDown = window.scrollY > state.autoLoadLastScrollY;
-  state.autoLoadLastScrollY = window.scrollY;
-  if (state.currentView !== "timeline" || !movingDown || state.bootstrap?.settings?.nextBatchBehavior !== "auto_at_finish") return;
-  const finish = $("#finish-line");
-  if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) {
-    revealPreparedBatch("continue");
-  }
-}, { passive: true });
 const timelineSidePaneLayoutObserver = new ResizeObserver(scheduleTimelineSidePanePosition);
 for (const element of [$(".timeline-heading-row"), $("#processing-panel"), $("#result-items")]) {
   if (element) timelineSidePaneLayoutObserver.observe(element);
@@ -3999,11 +4003,7 @@ function applyPostFreshnessStyle(value) {
 
 function scheduleTimelineSidePanePosition() {
   if (state.currentView !== "timeline") return;
-  if (state.sidePaneFrame !== null) return;
-  state.sidePaneFrame = window.requestAnimationFrame(() => {
-    state.sidePaneFrame = null;
-    syncTimelineSidePanePosition();
-  });
+  scrollUIFrames.schedule("side-pane");
 }
 
 function syncTimelineSidePanePosition() {
@@ -4031,11 +4031,11 @@ function syncTimelineSidePanePosition() {
     window.innerHeight - minimumTop - toggleHalfHeight,
     Math.max(minimumTop + toggleHalfHeight, attachmentTop + toggleHalfHeight),
   );
-  document.documentElement.style.setProperty("--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
-  document.documentElement.style.setProperty("--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
-  document.documentElement.style.setProperty("--timeline-side-pane-top", `${Math.round(paneTop)}px`);
-  document.documentElement.style.setProperty("--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
-  document.documentElement.style.setProperty("--timeline-side-pane-toggle-top", `${Math.round(toggleTop)}px`);
+  setInlineStyle(document.documentElement, "--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
+  setInlineStyle(document.documentElement, "--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
+  setInlineStyle(document.documentElement, "--timeline-side-pane-top", `${Math.round(paneTop)}px`);
+  setInlineStyle(document.documentElement, "--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
+  setInlineStyle(document.documentElement, "--timeline-side-pane-toggle-top", `${Math.round(toggleTop)}px`);
 }
 
 function applyTimelineBatchGap(value) {
@@ -4768,17 +4768,13 @@ async function submitReset() {
 }
 
 function scheduleBackToTop() {
-  if (state.backToTopFrame) return;
-  state.backToTopFrame = requestAnimationFrame(() => {
-    state.backToTopFrame = null;
-    syncBackToTopNow();
-  });
+  scrollUIFrames.schedule("back-to-top");
 }
 
 function syncBackToTopNow() {
   const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
   $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
-  syncBackToTopPosition(top);
+  if (top >= BACK_TO_TOP_THRESHOLD_PX) syncBackToTopPosition(top);
   syncTimelineContentContextTabs();
 }
 
@@ -4837,20 +4833,20 @@ function syncBackToTopPosition(top) {
   syncBackToTopBoundaryPosition(top, buttonWidth);
   const canUseContentSide = anchorRect && window.innerWidth - anchorRect.right >= buttonWidth + gap * 2;
   if (canUseContentSide) {
-    $("#back-to-top").style.left = `${Math.round(anchorRect.right + gap)}px`;
-    $("#back-to-top").style.right = "auto";
+    setInlineStyle($("#back-to-top"), "left", `${Math.round(anchorRect.right + gap)}px`);
+    setInlineStyle($("#back-to-top"), "right", "auto");
     if (!timelineContentContextOverlapsBackToTop($("#back-to-top"))) return;
   }
-  $("#back-to-top").style.removeProperty("left");
-  $("#back-to-top").style.removeProperty("right");
+  setInlineStyle($("#back-to-top"), "left", "");
+  setInlineStyle($("#back-to-top"), "right", "");
   if (!timelineContentContextOverlapsBackToTop($("#back-to-top"))) return;
   const canUseStreamLeft = anchorRect && anchorRect.left >= buttonWidth + gap * 2;
   if (canUseStreamLeft) {
-    $("#back-to-top").style.left = `${Math.round(anchorRect.left - buttonWidth - gap)}px`;
-    $("#back-to-top").style.right = "auto";
+    setInlineStyle($("#back-to-top"), "left", `${Math.round(anchorRect.left - buttonWidth - gap)}px`);
+    setInlineStyle($("#back-to-top"), "right", "auto");
     if (!timelineContentContextOverlapsBackToTop($("#back-to-top"))) return;
-    $("#back-to-top").style.removeProperty("left");
-    $("#back-to-top").style.removeProperty("right");
+    setInlineStyle($("#back-to-top"), "left", "");
+    setInlineStyle($("#back-to-top"), "right", "");
   }
 }
 
@@ -4888,14 +4884,14 @@ function syncBackToTopBoundaryPosition(top, buttonHeight) {
   state.backToTopBoundary = marker;
   button.classList.add("is-following-boundary");
   const bottom = backToTopBoundaryBottom({ lineY, viewportHeight: window.innerHeight, restBottom });
-  button.style.setProperty("--back-to-top-bottom", `${Math.round(bottom)}px`);
+  setInlineStyle(button, "--back-to-top-bottom", `${Math.round(bottom)}px`);
 }
 
 function releaseBackToTopBoundary() {
   state.backToTopBoundary = null;
   const button = $("#back-to-top");
   button.classList.remove("is-following-boundary");
-  button.style.removeProperty("--back-to-top-bottom");
+  setInlineStyle(button, "--back-to-top-bottom", "");
 }
 
 function returnToTop() {
@@ -5278,13 +5274,13 @@ function syncRunButtons() {
   $("#timeline-runner-button").disabled = disabled && !canRetryBootstrap;
   $("#timeline-prepared-button").disabled = Boolean(preparedReason);
   $("#done-button").disabled = prepared > 0 ? Boolean(preparedReason) : disabled;
-  $("#timeline-runner-button").textContent = canRetryBootstrap ? "Retry connection" : "Update now";
+  setSettingsText($("#timeline-runner-button"), canRetryBootstrap ? "Retry connection" : "Update now");
   $("#timeline-runner-button").title = canRetryBootstrap ? "Retry restoring the Timeline and active check." : reason;
   $("#timeline-prepared-button").title = preparedReason;
   $("#done-button").title = prepared > 0 ? preparedReason : reason;
   const showCalibrationProgress = renderTimelineCalibrationProgress();
   const showGuidance = Boolean(reason) && !showCalibrationProgress && !Boolean(state.session && !terminalStatuses.has(state.session.status));
-  $("#timeline-runner-status").textContent = reason;
+  setSettingsText($("#timeline-runner-status"), reason);
   $("#timeline-runner-guidance").classList.toggle("hidden", !showGuidance);
   $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || !sourceAccessNeedsAttention());
   for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled || (button.classList.contains("foreground-recapture-button") && state.bootstrap?.collectionRuntime?.effective === "headless");
@@ -8123,11 +8119,15 @@ function syncTimelineContentContextTabs() {
   if (state.currentView !== "timeline") return;
   const tabs = [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")];
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const candidates = tabs.map((tab) => {
+  // Finish every geometry read before any tab attribute/class writes.
+  const measured = tabs.map((tab) => {
     const anchor = tab.closest(".timeline-content-context-anchor");
     const rect = anchor?.getBoundingClientRect();
     return {
+      tab,
       id: tab.dataset.timelineContentContextId || "",
+      rect,
+      width: tab.getBoundingClientRect().width,
       top: rect?.top,
       bottom: rect?.bottom,
       eligible: state.currentView === "timeline" && !tab.closest(".semantic-duplicate-report.hidden"),
@@ -8136,21 +8136,17 @@ function syncTimelineContentContextTabs() {
   const visibleID = state.timelineContentContextDrawerOpen
     ? state.timelineContentContextActiveID
     : selectContentContextViewportID({
-      candidates,
+      candidates: measured,
       viewportHeight: window.innerHeight,
       previousID: state.timelineContentContextViewportID,
     });
   state.timelineContentContextViewportID = visibleID;
-  for (const tab of tabs) {
-    const id = tab.dataset.timelineContentContextId || "";
+  for (const measurement of measured) {
+    const { tab, id, rect: postRect, width, eligible } = measurement;
     const active = state.timelineContentContextDrawerOpen && state.timelineContentContextActiveID === id;
-    const anchor = tab.closest(".timeline-content-context-anchor");
-    const concealedReport = Boolean(tab.closest(".semantic-duplicate-report.hidden"));
-    const postRect = anchor?.getBoundingClientRect();
-    const tabRect = tab.getBoundingClientRect();
     const fits = state.currentView === "timeline"
       && id === visibleID
-      && !concealedReport
+      && eligible
       && postRect
       && contentContextTabFits({
         postRight: postRect.right,
@@ -8160,7 +8156,7 @@ function syncTimelineContentContextTabs() {
         // from making the next readable post lose its trigger.
         boundaryLeft: viewportWidth,
         viewportWidth,
-        tabWidth: tabRect.width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
+        tabWidth: width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
       });
     syncTimelineContentContextTab(tab, { active });
     tab.classList.toggle("is-visible", Boolean(fits));
@@ -8605,7 +8601,7 @@ function handleTimelineContentContextScroll() {
       return;
     }
   }
-  syncTimelineContentContextTabs();
+  // The shared frame callback synchronizes tabs once via syncBackToTopNow.
 }
 
 function buildTimelineReadLaterAction(entry) {
@@ -9253,8 +9249,8 @@ function hideFailure() {
 
 function setPill(selector, text, tone) {
   const node = $(selector);
-  node.textContent = text;
-  node.className = `status-pill status-${tone}`;
+  setSettingsText(node, text);
+  setSettingsClass(node, `status-pill status-${tone}`);
 }
 
 function showError(error) {

@@ -7,6 +7,19 @@ Bridge checkpoint. Local candidate implementations for phases 2c-5 now exist,
 but acceptance is incomplete. Do not install or release this candidate yet.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
+### Scroll/render performance follow-up (2026-10-04)
+
+Scroll requests now share one animation-frame queue for context tabs, back-to-top,
+side-pane placement and automatic batch reveal. Related Context reads all card
+geometry before updating tab attributes/classes and measures each anchor once;
+non-Timeline views skip those card reads. Unchanged position styles, context
+attributes, status pills and runner text no longer rewrite the same DOM values.
+The 70 focused frontend tests pass, including burst coalescing, requests during
+flush, geometry-before-write ordering, tab visibility and unchanged-value writes.
+HTTP API tests and the standalone Windows Sidecar build pass. This additional
+source delta is not yet activated; actual scroll/frame profiling and owner trial
+remain pending. Database-health contention remains a separate follow-up.
+
 ### Timeline hydration performance follow-up (2026-10-04)
 
 User approved fixing the 12-card/1000-item detail-loading path. Collapse/hide

@@ -1,3 +1,4 @@
+import { setAttributeValue } from "./ui-frame.js";
 import {
   contentContextKnownTypes, contentContextKnownTypesDescription,
   contentContextRelationLabel, contentContextObjectCaptureLabel,
@@ -7,11 +8,11 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function syncTimelineContentContextTab(tab, { active = false } = {}) {
   if (!tab) return;
-  tab.setAttribute("aria-expanded", String(active));
+  setAttributeValue(tab, "aria-expanded", String(active));
   const cue = tab.dataset.contextCueDescription || "";
   const label = active ? "Close related context" : cue ? "Related context. " + cue : "Related context";
-  tab.setAttribute("aria-label", label);
-  tab.title = active ? "Close related context" : cue || "Conversation, interaction, and local context";
+  setAttributeValue(tab, "aria-label", label);
+  setAttributeValue(tab, "title", active ? "Close related context" : cue || "Conversation, interaction, and local context");
 }
 
 export function buildTimelineContentContextTab(entry, onToggle, documentRef = document) {
