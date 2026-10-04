@@ -36,7 +36,8 @@ Implementation proceeds in three acceptance stages:
    publication is authorized by this implementation stage. Broader fresh source
    media/text qualification remains required for a production readiness claim.
 
-The initial implementation is local and not yet accepted end to end. Changing
+The initial implementation is committed and pushed as `6fedd47`, with the remote
+`main` SHA verified, but is not yet accepted end to end. Changing
 the Settings default alone cannot implement this policy. Validate the
 ownership/admission boundary first; do not select a Facebook Bridge command
 while the profile is pinned to a headless session.
@@ -72,11 +73,12 @@ access, wrong-driver/collector claim rejection, cancellation and partial-session
 cleanup, and mismatched recovery. Three HTTP cleanup tests pass for exact owner
 binding, late acknowledgement without replay, and rejected cleanup outcomes.
 
-Facebook Recapture under the normal saved headless selection currently returns
-`facebook_browser_recapture_required`; the user can select Browser and retry.
-Automatic collection borrowing for that job lifecycle remains unfinished and
-blocks default migration. This interim guard does not retire explicit Facebook
-headless PoC fixtures or claim Facebook headless readiness.
+Commit `6fedd47` used the interim `facebook_browser_recapture_required` guard
+under saved headless selection. The local continuation replaces that guard with
+asynchronous Browser borrowing for Facebook Recapture, as detailed below.
+Authenticated live Recapture qualification remains open and blocks default
+migration. This does not retire explicit Facebook headless PoC fixtures or
+claim Facebook headless readiness.
 
 The operator fixture now offers `--mixed-update`: one real four-source Update,
 deterministic local reasoning, Facebook Adaptive Fidelity in an isolated DB,
@@ -94,9 +96,43 @@ fence and restoration of active and terminal-but-unfinalized Facebook Browser
 holds. The staged worker package tuple is reverified; the Go fixture exercises
 the current working-tree engine with that unchanged worker and registered
 development Bridge. This is not a newly rebuilt complete installed package.
-Cleanup rejection or an invalid acknowledgement keeps Browser ownership pinned;
-the failure is logged but still needs a user-visible status before default
-migration. The same release action is not silently replayed.
+Cleanup rejection or an invalid acknowledgement keeps Browser ownership pinned.
+The continuation adds a per-lease cleanup failure projection; Settings displays
+the reason and keeps collection paused. A focused coordinator regression verifies
+that one successful cleanup cannot hide another pending failure, and Settings
+requests cannot erase it. Five collection-mode Node tests pass. The failure state
+was rendered and inspected at
+`build/hybrid-settings-render-438e2045-e10b-4081-bc62-87e09e4573d8/settings.png`.
+This remains component evidence; the integrated live failure journey is open.
+The same release action is not silently replayed.
+
+Automatic Facebook Recapture borrowing is implemented in the local continuation.
+Its waiting/admitted marker lets the frontend poll the existing job while the
+engine owns Browser admission and dispatch. Waiting jobs are unclaimable and
+receive their immutable runtime stamp only after fresh Facebook access and the
+Browser owner are ready. The HTTP dispatch helper pins the exact generation,
+retains pending actions through caller cancellation, and accepts only a matching
+completed-job receipt without replay. Two focused HTTP tests and six Recapture
+transport/UI Node tests pass, including preservation of the explicit foreground
+retry offer. Full Collection and HTTP suites pass after callback integration.
+
+Three focused engine lifecycle tests pass: admission/dispatch with cleanup-gated
+auto-return, fresh permission revocation before admission, and terminal cleanup
+recovery after restart. Cleanup remains durable as `pending` until acknowledged
+and saved as `released`; failed cleanup keeps the Browser hold and exposes its
+reason. The pump excludes historical jobs whose cleanup is already released.
+These use controlled process/Bridge fixtures; they do not establish authenticated
+Recapture parity, a live mixed Update, or a complete package/product journey.
+
+Final local validation passes across all four changed Go packages:
+`go test ./internal/collection ./internal/httpapi -count=1 -timeout=180s` and
+`go test ./internal/store ./internal/engine -count=1 -timeout=300s`.
+The Store regression also verifies that `released` cannot regress to `pending`
+when a late pump write races with acknowledgement persistence. Eleven combined
+collection-mode and Recapture transport/UI Node tests pass. `git diff --check`
+is clean. This checkpoint contains the continuation after pushed `6fedd47`;
+the installed default remains Browser. The previously proposed
+foreground mixed-Update permission is still pending and no live run is claimed.
 
 ### Current priority amendment (2026-10-03): defer Facebook
 

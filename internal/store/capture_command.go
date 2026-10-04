@@ -35,3 +35,32 @@ func (s *Store) ActiveMediaRecaptureIDs(ctx context.Context) ([]string, error) {
 	}
 	return ids, rows.Err()
 }
+
+// BrowserAdmissionMediaRecaptureIDs includes terminal rows so startup can
+// restore the profile hold and finish an unacknowledged managed-surface cleanup.
+func (s *Store) BrowserAdmissionMediaRecaptureIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM media_recaptures
+		WHERE source='facebook' AND payload_json LIKE '%"captureAdmission"%'
+		AND (
+			status IN ('queued','claimed') OR
+			(status IN ('completed','failed','cancelled') AND json_valid(payload_json)
+			 AND json_extract(payload_json,'$.captureAdmission.policy')='hybrid_headless_v1'
+			 AND json_extract(payload_json,'$.captureAdmission.driver')='browser'
+			 AND json_extract(payload_json,'$.captureAdmission.phase')='admitted'
+			 AND COALESCE(json_extract(payload_json,'$.captureCleanup'),'')!='released')
+		)
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

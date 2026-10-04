@@ -88,6 +88,7 @@ type splitActionResult struct {
 }
 type pendingSplitAction struct {
 	collectionCleanupGeneration uint64
+	browserRecaptureGeneration  uint64
 	action                      splitCaptureAction
 	queuedAt                    time.Time
 	claimed                     bool
@@ -800,7 +801,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			if err != nil {
 				return err
 			}
-			if route == collection.BackendQuiet {
+			if route == collection.BackendQuiet || sidecarOwnsBrowserRecapture(job) {
 				raw, err := json.Marshal(map[string]any{"recapture": job})
 				if err != nil {
 					return err

@@ -39,6 +39,34 @@ func TestFacebookCollectionBorrowDoesNotReleaseInteractiveOwner(t *testing.T) {
 	}
 }
 
+func TestCollectionCleanupFailuresRemainUntilEachLeaseIsConfirmed(t *testing.T) {
+	m, _ := captureruntime.New(proc("browser"))
+	defer m.Terminate()
+	c := NewCoordinator(m, nil, func() error { return nil })
+	first, _ := c.BeginBrowserCollection(domain.SourceFacebook)
+	second, _ := c.BeginBrowserCollection(domain.SourceFacebook)
+	c.SetBrowserCollectionFailure("first", "cleanup acknowledgement timed out")
+	c.SetBrowserCollectionFailure("second", "cleanup outcome unverified")
+	c.Request("browser")
+	if c.Status().CollectionBorrowFailure != "cleanup acknowledgement timed out" {
+		t.Fatal("settings request hid an unresolved cleanup error")
+	}
+	c.SetBrowserCollectionFailure("first", "")
+	first()
+	if c.Status().CollectionBorrowFailure != "cleanup outcome unverified" || !c.Status().Pending {
+		t.Fatal("one success hid another lease's failure")
+	}
+	c.SetBrowserCollectionFailure("second", "")
+	second()
+	if c.Status().CollectionBorrowFailure != "" || c.Status().CollectionBorrowSource != "" {
+		t.Fatal("confirmed cleanup retained stale failure state")
+	}
+	c.SetBrowserCollectionFailure("expired", "late failure")
+	if c.Status().CollectionBorrowFailure != "" {
+		t.Fatal("late callback recreated a released borrow")
+	}
+}
+
 func TestBrowserCollectionBorrowRejectsOtherSourcesWithoutTakingOwnership(t *testing.T) {
 	m, _ := captureruntime.New(proc("browser"))
 	defer m.Terminate()

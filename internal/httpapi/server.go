@@ -63,6 +63,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 	if cfg.WindowsCaptureSplit && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
 		runtime.SetBrowserCollectionCleanup(server.ReleaseBrowserCollectionSurfaces)
+		runtime.SetBrowserMediaRecaptureDispatch(server.DispatchBrowserMediaRecapture)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.api())

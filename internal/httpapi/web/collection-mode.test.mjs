@@ -27,3 +27,11 @@ test('Facebook collection hold reports automatic return rather than asking to cl
  assert.equal(failed.canCollect,false);
  assert.match(failed.detail,/unavailable.*profile release unverified/);
 });
+test('unconfirmed cleanup blocks collection and exposes the reason instead of claiming capture is running',()=>{
+ const view=collectionModeState({available:true,requested:'headless',effective:'browser',state:'ready',pending:true,
+   collectionBorrowSource:'facebook',collectionBorrowFailure:'cleanup acknowledgement timed out'},true);
+ assert.equal(view.canCollect,false);
+ assert.match(view.detail,/cleanup is unconfirmed: cleanup acknowledgement timed out/);
+ assert.match(view.detail,/Collection remains paused/);
+ assert.doesNotMatch(view.detail,/Facebook is collecting/);
+});

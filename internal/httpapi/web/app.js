@@ -8869,7 +8869,8 @@ async function recaptureMedia(entry, button, captureMode, reason = "missing_medi
     });
     const transport=mediaRecaptureTransport(recapture);
     const completed = transport==='sidecar' ? await waitForMediaRecapture(recapture.id,api) : await dispatchMediaRecapture(recapture.id);
-    if (captureMode === "background" && completed?.outcome !== "recovered" && transport==='bridge') {
+    const bridgeCollector = transport === 'bridge' || recapture?.payload?.captureCollector?.backend === 'bridge';
+    if (captureMode === "background" && completed?.outcome !== "recovered" && bridgeCollector) {
       state.foregroundRecaptureOffers.set(entry.id, reason);
       await refreshTimeline();
       return;

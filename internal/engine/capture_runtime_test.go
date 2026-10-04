@@ -15,6 +15,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 type runtimeTestProcess struct {
@@ -388,9 +389,23 @@ func TestHeadlessPhotoMediaRecapturePreservesSavedFacebookItem(t *testing.T) {
 	if _, err := engine.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := engine.QueueMediaRecapture(ctx, completed.Items[0].ID, domain.MediaRecaptureBackground); !errors.Is(err, ErrFacebookRecaptureUnavailable) {
-		t.Fatalf("saved headless Facebook recapture did not fail closed: %v", err)
+	waiting, err := engine.QueueMediaRecapture(ctx, completed.Items[0].ID, domain.MediaRecaptureBackground)
+	if err != nil {
+		t.Fatalf("saved headless Facebook recapture was not queued: %v", err)
 	}
+	if marker, marked, markerErr := store.MediaRecaptureAdmission(waiting.Payload); markerErr != nil || !marked || marker.Phase != "waiting" {
+		t.Fatalf("Facebook recapture admission marker=%+v marked=%t err=%v", marker, marked, markerErr)
+	}
+	if _, err := engine.ClaimMediaRecapture(ctx, waiting.ID, "bridge-test"); err != nil {
+		t.Fatalf("waiting Facebook recapture was claimable through error: %v", err)
+	}
+	if claim, err := engine.store.ClaimMediaRecapture(ctx, waiting.ID, "early-bridge"); err != nil || claim.ID != "" {
+		t.Fatalf("waiting Facebook recapture claim=%+v err=%v", claim, err)
+	}
+	if _, err := engine.store.FailMediaRecapture(ctx, waiting.ID, domain.Failure{Code: "test_cancelled", Stage: "test", Message: "waiting admission test cleanup"}); err != nil {
+		t.Fatal(err)
+	}
+	engine.releaseTerminalCaptureSessions(ctx)
 	settings.CollectionMode = "browser"
 	if _, err := engine.SaveSettings(ctx, settings); err != nil {
 		t.Fatal(err)
@@ -945,6 +960,295 @@ func TestHybridPartialSessionKeepsBrowserLeaseUntilCleanupAcknowledges(t *testin
 	waitHybridCondition(t, "partial Facebook collection intent release", func() bool {
 		return coordinator.Status().CollectionBorrowSource == ""
 	})
+}
+
+func TestHybridFacebookRecaptureAdmitsBrowserDispatchesBridgeAndCleansSurface(t *testing.T) {
+	ctx := context.Background()
+	engine, manager, coordinator, _ := newHybridCollectionEngine(t, nil)
+	timelineID := seedUnavailableFacebookTimelineItem(t, engine, manager, coordinator)
+
+	dispatchStarted := make(chan struct{}, 1)
+	cleanupSeen := make(chan struct {
+		id         string
+		generation uint64
+	}, 1)
+	engine.SetBrowserMediaRecaptureDispatch(func(dispatchCtx context.Context, id string, generation uint64) error {
+		dispatchStarted <- struct{}{}
+		if generation != manager.Snapshot().Generation {
+			return errors.New("dispatch used a stale Browser generation")
+		}
+		claimed, err := engine.ClaimMediaRecapture(dispatchCtx, id, "fake-browser-bridge")
+		if err != nil || claimed.ID != id || claimed.Status != "claimed" {
+			return errors.New("Browser Bridge could not claim admitted recapture")
+		}
+		marker, marked, err := store.MediaRecaptureAdmission(claimed.Payload)
+		if err != nil || !marked || marker.Phase != "admitted" {
+			return errors.New("Bridge claim did not retain its admitted owner marker")
+		}
+		_, err = engine.FailMediaRecapture(dispatchCtx, id, domain.Failure{Code: "test_dispatch_complete", Stage: "test", Message: "controlled terminal result"})
+		return err
+	})
+	engine.SetBrowserCollectionCleanup(func(_ context.Context, id string, generation uint64) error {
+		cleanupSeen <- struct {
+			id         string
+			generation uint64
+		}{id, generation}
+		return nil
+	})
+	job, err := engine.QueueMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, marked, err := store.MediaRecaptureAdmission(job.Payload)
+	if err != nil || !marked || marker.Phase != "waiting" || job.Payload["captureRuntime"] != nil {
+		t.Fatalf("queued Facebook recapture marker=%+v marked=%t err=%v payload=%+v", marker, marked, err, job.Payload)
+	}
+	if route, err := store.CaptureCollector(job.Payload); err != nil || route != collection.BackendBridge {
+		t.Fatalf("queued Facebook recapture route=%q err=%v", route, err)
+	}
+	if manager.Snapshot().ActiveLeases != 0 {
+		t.Fatalf("queued admission acquired a Browser lease before transition: %+v", manager.Snapshot())
+	}
+	if claim, err := engine.ClaimMediaRecapture(ctx, job.ID, "early-browser"); err != nil || claim.ID != "" {
+		t.Fatalf("waiting recapture was claimable: %+v %v", claim, err)
+	}
+	engine.processHybridBrowserMediaRecaptures(ctx)
+	if stored, err := engine.MediaRecapture(ctx, job.ID); err != nil || stored.Status != "queued" {
+		t.Fatalf("headless owner admitted the waiting Browser job: %+v %v", stored, err)
+	}
+	waitHybridCondition(t, "Browser owner for queued Facebook recapture", func() bool {
+		snapshot := manager.Snapshot()
+		return snapshot.State == captureruntime.Ready && snapshot.Driver == "browser"
+	})
+	engine.processHybridBrowserMediaRecaptures(ctx)
+	select {
+	case <-dispatchStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("admitted Facebook recapture was not dispatched to Bridge")
+	}
+	waitHybridCondition(t, "terminal Bridge recapture cleanup acknowledgement", func() bool {
+		stored, loadErr := engine.MediaRecapture(ctx, job.ID)
+		return loadErr == nil && stored.Status == "failed" && stored.Payload["captureCleanup"] == "released"
+	})
+	select {
+	case cleanup := <-cleanupSeen:
+		if cleanup.id != job.ID || cleanup.generation != manager.Snapshot().Generation {
+			t.Fatalf("recapture cleanup identity=%+v Browser=%+v", cleanup, manager.Snapshot())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Bridge recapture surface cleanup was not requested")
+	}
+	waitHybridCondition(t, "automatic return after recapture cleanup", func() bool {
+		return coordinator.Status().CollectionBorrowSource == "" && manager.Snapshot().State == captureruntime.Ready &&
+			manager.Snapshot().Driver == "headless" && manager.Snapshot().ActiveLeases == 0
+	})
+	stored, err := engine.MediaRecapture(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, marked, err = store.MediaRecaptureAdmission(stored.Payload)
+	stamp, stamped := stored.Payload["captureRuntime"].(map[string]any)
+	if err != nil || !marked || marker.Phase != "admitted" || !stamped || stamp["driver"] != "browser" || stored.Payload["captureCleanup"] != "released" {
+		t.Fatalf("final durable Facebook owner/cleanup=%+v stamp=%+v err=%v", marker, stamp, err)
+	}
+}
+
+func TestHybridFacebookRecaptureFreshPermissionRevocationFailsWaitingJob(t *testing.T) {
+	ctx := context.Background()
+	engine, manager, coordinator, _ := newHybridCollectionEngine(t, nil)
+	timelineID := seedUnavailableFacebookTimelineItem(t, engine, manager, coordinator)
+	denied := ExpectedHeartbeat()
+	for index := range denied.SourceAccess.Sources {
+		if denied.SourceAccess.Sources[index].Source == string(domain.SourceFacebook) {
+			denied.SourceAccess.Sources[index].Ready = false
+			denied.SourceAccess.Sources[index].PermissionGranted = false
+			denied.SourceAccess.Sources[index].ScriptRegistered = false
+		}
+	}
+	engine.RecordHeartbeat(denied)
+	dispatchCalls := 0
+	engine.SetBrowserMediaRecaptureDispatch(func(context.Context, string, uint64) error {
+		dispatchCalls++
+		return nil
+	})
+	job, err := engine.QueueMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitHybridCondition(t, "Browser for fresh permission check", func() bool {
+		snapshot := manager.Snapshot()
+		return snapshot.State == captureruntime.Ready && snapshot.Driver == "browser"
+	})
+	engine.processHybridBrowserMediaRecaptures(ctx)
+	waitHybridCondition(t, "revoked waiting recapture failure", func() bool {
+		stored, loadErr := engine.MediaRecapture(ctx, job.ID)
+		return loadErr == nil && stored.Status == "failed"
+	})
+	stored, err := engine.MediaRecapture(ctx, job.ID)
+	if err != nil || stored.Payload["captureRuntime"] != nil || stored.Payload["captureCleanup"] != nil {
+		t.Fatalf("revoked unadmitted job gained capture authority: %+v %v", stored, err)
+	}
+	if dispatchCalls != 0 {
+		t.Fatalf("revoked Facebook permission dispatched %d Browser actions", dispatchCalls)
+	}
+	waitHybridCondition(t, "release of unadmitted revoked hold", func() bool {
+		return coordinator.Status().CollectionBorrowSource == "" && manager.Snapshot().ActiveLeases == 0
+	})
+}
+
+func TestHybridFacebookRecaptureTerminalCleanupRestoredAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	engine, oldManager, oldCoordinator, _ := newHybridCollectionEngine(t, nil)
+	timelineID := seedUnavailableFacebookTimelineItem(t, engine, oldManager, oldCoordinator)
+	cleanupAttempted := make(chan struct{}, 1)
+	engine.SetBrowserCollectionCleanup(func(context.Context, string, uint64) error {
+		cleanupAttempted <- struct{}{}
+		return errors.New("cleanup acknowledgement timed out")
+	})
+	engine.SetBrowserMediaRecaptureDispatch(func(dispatchCtx context.Context, id string, _ uint64) error {
+		if _, err := engine.ClaimMediaRecapture(dispatchCtx, id, "restart-fixture-bridge"); err != nil {
+			return err
+		}
+		_, err := engine.FailMediaRecapture(dispatchCtx, id, domain.Failure{Code: "test_terminal", Stage: "test", Message: "controlled terminal state"})
+		return err
+	})
+	job, err := engine.QueueMediaRecapture(ctx, timelineID, domain.MediaRecaptureBackground)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitHybridCondition(t, "Browser owner for terminal cleanup fixture", func() bool {
+		snapshot := oldManager.Snapshot()
+		return snapshot.State == captureruntime.Ready && snapshot.Driver == "browser"
+	})
+	engine.processHybridBrowserMediaRecaptures(ctx)
+	select {
+	case <-cleanupAttempted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("terminal recapture cleanup was not attempted")
+	}
+	waitHybridCondition(t, "durable pending cleanup after failed acknowledgement", func() bool {
+		stored, loadErr := engine.MediaRecapture(ctx, job.ID)
+		return loadErr == nil && stored.Status == "failed" && stored.Payload["captureCleanup"] == "pending"
+	})
+	if oldCoordinator.Status().CollectionBorrowSource != domain.SourceFacebook || oldManager.Snapshot().ActiveLeases != 1 {
+		t.Fatalf("failed cleanup released old owner: coordinator=%+v owner=%+v", oldCoordinator.Status(), oldManager.Snapshot())
+	}
+
+	newManager, err := captureruntime.New(&runtimeTestProcess{done: make(chan error, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := New(engine.store, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
+	restarted.RecordHeartbeat(ExpectedHeartbeat())
+	if err := restarted.AttachCaptureRuntime(ctx, newManager); err != nil {
+		t.Fatal(err)
+	}
+	newCoordinator := collection.NewCoordinator(newManager, func(_ context.Context, mode string, _ uint64) (captureruntime.Process, error) {
+		process := &runtimeTestProcess{done: make(chan error, 1)}
+		if mode == "headless" {
+			return &headlessTestProcess{process}, nil
+		}
+		return process, nil
+	}, func() error { return nil })
+	newCoordinator.Request("headless")
+	restarted.AttachCollectionCoordinator(newCoordinator)
+	cleanupAck := make(chan struct{}, 1)
+	restarted.SetBrowserCollectionCleanup(func(_ context.Context, id string, generation uint64) error {
+		if id != job.ID || generation != newManager.Snapshot().Generation {
+			return errors.New("recovery cleanup did not use the exact current Browser owner")
+		}
+		cleanupAck <- struct{}{}
+		return nil
+	})
+	coordCtx, stopCoordinator := context.WithCancel(context.Background())
+	newCoordinator.Start(coordCtx)
+	restarted.releaseTerminalCaptureSessions(ctx)
+	select {
+	case <-cleanupAck:
+	case <-time.After(time.Second):
+		t.Fatal("restart did not retry terminal Browser surface cleanup")
+	}
+	waitHybridCondition(t, "durably released terminal recapture cleanup", func() bool {
+		stored, loadErr := restarted.MediaRecapture(ctx, job.ID)
+		return loadErr == nil && stored.Payload["captureCleanup"] == "released"
+	})
+	waitHybridCondition(t, "recovered collection auto-return", func() bool {
+		return newCoordinator.Status().CollectionBorrowSource == "" && newManager.Snapshot().Driver == "headless" &&
+			newManager.Snapshot().ActiveLeases == 0
+	})
+	stopCoordinator()
+	restarted.Shutdown()
+	newManager.Terminate()
+	engine.captureMu.Lock()
+	oldLease := engine.captureRecaptures[job.ID]
+	delete(engine.captureRecaptures, job.ID)
+	oldIntent := engine.collectionIntents[job.ID]
+	delete(engine.collectionIntents, job.ID)
+	engine.captureMu.Unlock()
+	if oldLease != nil {
+		oldLease.Release()
+	}
+	if oldIntent != nil {
+		oldIntent()
+	}
+}
+
+func seedUnavailableFacebookTimelineItem(t *testing.T, engine *Engine, manager *captureruntime.Manager, coordinator *collection.Coordinator) string {
+	t.Helper()
+	ctx := context.Background()
+	settings, err := engine.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.CollectionMode = "browser"
+	settings.ActiveSources = []domain.Source{domain.SourceFacebook}
+	engine.RecordHeartbeat(ExpectedHeartbeat())
+	if _, err := engine.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	waitHybridCondition(t, "Browser mode for Facebook fixture", func() bool {
+		snapshot := manager.Snapshot()
+		return !coordinator.Status().Pending && snapshot.State == captureruntime.Ready && snapshot.Driver == "browser"
+	})
+	session, err := engine.StartVisibleUpdate(ctx, "seed Facebook unavailable media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Runs) != 1 || session.Runs[0].Source != domain.SourceFacebook {
+		t.Fatalf("fixture session runs=%+v", session.Runs)
+	}
+	command, err := engine.ClaimCommand(ctx, session.Runs[0].ID, "fixture-browser")
+	if err != nil || command == nil {
+		t.Fatalf("fixture Facebook command=%+v err=%v", command, err)
+	}
+	permalink := "https://www.facebook.com/photo?fbid=7654321"
+	observation := domain.Observation{Source: domain.SourceFacebook, PageURL: permalink, CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{
+			EvidenceKey: "facebook:photo:7654321", PlatformID: "facebook:post:7654321", Permalink: permalink,
+			Author: "Fixture author", Text: "Saved Facebook photo with unavailable media.", MediaRecovery: map[string]any{"outcome": "unavailable"},
+		}}}}, Coverage: map[string]any{"status": "complete"}}
+	if _, err := engine.AcceptObservation(ctx, command.ID, session.Runs[0].ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitSession(t, engine, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
+	if len(completed.Items) != 1 {
+		t.Fatalf("fixture items=%d", len(completed.Items))
+	}
+	waitCaptureLeases(t, manager, 0)
+	settings, err = engine.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.CollectionMode = "headless"
+	engine.RecordHeartbeat(ExpectedHeartbeat())
+	if _, err := engine.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	waitHybridCondition(t, "saved headless owner for recapture fixture", func() bool {
+		snapshot := manager.Snapshot()
+		return !coordinator.Status().Pending && snapshot.State == captureruntime.Ready && snapshot.Driver == "headless" && snapshot.ActiveLeases == 0
+	})
+	return completed.Items[0].ID
 }
 
 func waitHybridCondition(t *testing.T, description string, condition func() bool) {

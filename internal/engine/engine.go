@@ -46,38 +46,42 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
-	store                    *store.Store
-	provider                 reasoning.Provider
-	config                   config.Config
-	epoch                    string
-	mu                       sync.RWMutex
-	operation                sync.Mutex
-	captureMu                sync.Mutex
-	captureOwner             *captureruntime.Manager
-	captureSessions          map[string]*captureruntime.Lease
-	captureRecaptures        map[string]*captureruntime.Lease
-	collectionIntents        map[string]func()
-	collectionCleanupPending map[string]bool
-	collectionCleanupDone    map[string]bool
-	browserCollectionCleanup func(context.Context, string, uint64) error
-	collectionRuntime        *collection.Coordinator
-	schedule                 sync.Mutex
-	heartbeat                *domain.BridgeHeartbeat
-	headlessAccess           []domain.Source
-	bridgeOrigins            map[string]time.Time
-	active                   map[string]context.CancelFunc
-	pending                  map[string]bool
-	cancelled                map[string]bool
-	shuttingDown             bool
-	logger                   Logger
-	reloads                  *ReloadActions
-	events                   *semanticengine.Engine
-	aiFast                   aidetector.FastDetector
-	aiDeep                   aidetector.Resolver
-	mediaOrigin              mediaprovenance.Inspector
-	topics                   livingtopics.Resolver
-	autoCancel               context.CancelFunc
-	autoWake                 chan struct{}
+	store                             *store.Store
+	provider                          reasoning.Provider
+	config                            config.Config
+	epoch                             string
+	mu                                sync.RWMutex
+	operation                         sync.Mutex
+	captureMu                         sync.Mutex
+	captureOwner                      *captureruntime.Manager
+	captureSessions                   map[string]*captureruntime.Lease
+	captureRecaptures                 map[string]*captureruntime.Lease
+	collectionIntents                 map[string]func()
+	collectionCleanupPending          map[string]bool
+	collectionCleanupDone             map[string]bool
+	browserCollectionCleanup          func(context.Context, string, uint64) error
+	browserRecaptureDispatch          func(context.Context, string, uint64) error
+	browserRecaptureDispatchRunning   map[string]bool
+	browserRecaptureDispatchStarted   map[string]bool
+	browserRecaptureDispatchConfirmed map[string]bool
+	collectionRuntime                 *collection.Coordinator
+	schedule                          sync.Mutex
+	heartbeat                         *domain.BridgeHeartbeat
+	headlessAccess                    []domain.Source
+	bridgeOrigins                     map[string]time.Time
+	active                            map[string]context.CancelFunc
+	pending                           map[string]bool
+	cancelled                         map[string]bool
+	shuttingDown                      bool
+	logger                            Logger
+	reloads                           *ReloadActions
+	events                            *semanticengine.Engine
+	aiFast                            aidetector.FastDetector
+	aiDeep                            aidetector.Resolver
+	mediaOrigin                       mediaprovenance.Inspector
+	topics                            livingtopics.Resolver
+	autoCancel                        context.CancelFunc
+	autoWake                          chan struct{}
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -2357,11 +2361,8 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
-	hybridFacebook := settings.CollectionMode == "headless" && item.Source == domain.SourceFacebook
-	if e.collectionRuntime != nil && e.collectionRuntime.Status().Pending {
-		if hybridFacebook {
-			return domain.MediaRecapture{}, fmt.Errorf("%w: finish the Browser collection transition before retrying", ErrFacebookRecaptureUnavailable)
-		}
+	hybridFacebook := e.collectionRuntime != nil && settings.CollectionMode == "headless" && item.Source == domain.SourceFacebook
+	if e.collectionRuntime != nil && e.collectionRuntime.Status().Pending && !hybridFacebook {
 		return domain.MediaRecapture{}, errors.New("wait for the collection mode transition before recapturing media")
 	}
 	if active, err := e.store.ActiveSession(ctx); err != nil {
@@ -2370,13 +2371,10 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 		return domain.MediaRecapture{}, errors.New("finish the active update before recapturing media")
 	}
 	status := e.BridgeStatus()
-	if !e.headlessEffective() && !status.Compatible {
+	if !hybridFacebook && !e.headlessEffective() && !status.Compatible {
 		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
 	}
-	if e.headlessEffective() {
-		if hybridFacebook {
-			return domain.MediaRecapture{}, fmt.Errorf("%w: Facebook cannot be recaptured by the headless collector", ErrFacebookRecaptureUnavailable)
-		}
+	if e.headlessEffective() && !hybridFacebook {
 		e.mu.RLock()
 		allowed := false
 		for _, source := range e.headlessAccess {
@@ -2388,6 +2386,20 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 		if !allowed {
 			return domain.MediaRecapture{}, errors.New("headless recapture source is unsupported or access has not been granted")
 		}
+	}
+	if hybridFacebook {
+		job, err := e.store.CreateOwnedMediaRecaptureWithAdmission(ctx, timelineID, mode, reason, collection.BackendBridge, domain.MediaRecaptureCaptureAdmission{
+			Policy: domain.MediaRecaptureAdmissionHybridHeadlessV1,
+			Driver: "browser",
+			Phase:  "waiting",
+		})
+		if err != nil {
+			return domain.MediaRecapture{}, err
+		}
+		if err := e.beginBrowserCollectionHold(job.ID, item.Source); err != nil {
+			e.logger.Printf("Facebook recapture %s is queued pending Browser collection admission: %v", job.ID, err)
+		}
+		return job, nil
 	}
 	lease, err := e.acquireCaptureLease()
 	if err != nil {
@@ -2436,10 +2448,36 @@ func (e *Engine) claimMediaRecaptureForDriver(ctx context.Context, id, bridgeID,
 
 func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridgeID, driver, collector string) (domain.MediaRecapture, error) {
 	defer e.releaseTerminalCaptureSessions(context.Background())
-	if _, err := e.store.MediaRecapture(ctx, id); err != nil {
+	job, err := e.store.MediaRecapture(ctx, id)
+	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
-	if err := e.ensureCaptureRecapture(id); err != nil {
+	admission, hybrid, err := store.MediaRecaptureAdmission(job.Payload)
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if hybrid {
+		if job.Source != domain.SourceFacebook || admission.Policy != domain.MediaRecaptureAdmissionHybridHeadlessV1 {
+			return domain.MediaRecapture{}, errors.New("hybrid Browser recapture marker is not valid for this source")
+		}
+		if admission.Phase == "waiting" {
+			return domain.MediaRecapture{}, nil
+		}
+		if !e.facebookSourceAuthorizedNow() {
+			failure := domain.Failure{Code: "source_access_revoked", Stage: "capture", Message: "Facebook Browser permission is no longer confirmed.", Retryable: true}
+			if _, failErr := e.store.FailMediaRecapture(ctx, id, failure); failErr != nil {
+				return domain.MediaRecapture{}, failErr
+			}
+			return domain.MediaRecapture{}, errors.New("Facebook Browser permission is no longer confirmed")
+		}
+		if err := e.ensureAdmittedBrowserRecapture(job); err != nil {
+			failure := domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Media recapture owner changed; stale request was not dispatched.", Retryable: true}
+			if _, failErr := e.store.FailMediaRecapture(ctx, id, failure); failErr != nil {
+				return domain.MediaRecapture{}, failErr
+			}
+			return domain.MediaRecapture{}, err
+		}
+	} else if err := e.ensureCaptureRecapture(id); err != nil {
 		return domain.MediaRecapture{}, err
 	}
 	e.captureMu.Lock()
@@ -2457,6 +2495,34 @@ func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridge
 		return domain.MediaRecapture{}, err
 	}
 	return e.store.ClaimMediaRecaptureForCollector(ctx, id, bridgeID, collector)
+}
+
+func (e *Engine) ensureAdmittedBrowserRecapture(job domain.MediaRecapture) error {
+	e.captureMu.Lock()
+	defer e.captureMu.Unlock()
+	if e.captureOwner == nil {
+		return errStaleCaptureRuntime
+	}
+	snapshot := e.captureOwner.Snapshot()
+	if !mediaRecaptureStampMatches(job.Payload, snapshot, e.epoch) {
+		return errStaleCaptureRuntime
+	}
+	lease := e.captureRecaptures[job.ID]
+	if lease == nil {
+		var err error
+		lease, err = e.captureOwner.Acquire()
+		if err != nil {
+			return err
+		}
+		if e.captureRecaptures == nil {
+			e.captureRecaptures = map[string]*captureruntime.Lease{}
+		}
+		e.captureRecaptures[job.ID] = lease
+	}
+	if lease.Driver() != "browser" || lease.Generation() != snapshot.Generation {
+		return errStaleCaptureRuntime
+	}
+	return nil
 }
 
 func (e *Engine) AcceptMediaRecapture(ctx context.Context, id string, observation domain.Observation) (domain.MediaRecapture, error) {

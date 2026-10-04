@@ -10,6 +10,28 @@ test('durable collector decides transport, not a later UI mode change',()=>{
  assert.equal(mediaRecaptureTransport({}),'bridge');
  assert.throws(()=>mediaRecaptureTransport({payload:{captureCollector:{version:2,backend:'headless'}}}));
 });
+test('hybrid Facebook Browser job is polled without duplicate frontend dispatch',()=>{
+ const job={source:'facebook',payload:{captureCollector:{version:1,backend:'bridge'},captureAdmission:{policy:'hybrid_headless_v1',driver:'browser',phase:'waiting'}}};
+ for(const phase of ['waiting','admitted'])assert.equal(mediaRecaptureTransport({...job,payload:{...job.payload,captureAdmission:{...job.payload.captureAdmission,phase}}}),'sidecar');
+ assert.equal(mediaRecaptureTransport({...job,source:'instagram',payload:{captureCollector:{version:1,backend:'bridge'}}}),'bridge');
+ for(const bad of [{...job,source:'x'}, {...job,payload:{...job.payload,captureAdmission:{policy:'other',driver:'browser'}}},
+   {...job,payload:{...job.payload,captureAdmission:{...job.payload.captureAdmission,phase:'unknown'}}},
+   {...job,payload:{captureAdmission:job.payload.captureAdmission}}])assert.throws(()=>mediaRecaptureTransport(bad));
+});
+test('actual UI keeps foreground fallback for internally dispatched Facebook Bridge jobs',async()=>{
+ const app=await readFile(new URL('../internal/httpapi/web/app.js',import.meta.url),'utf8');
+ const fn=app.slice(app.indexOf('async function recaptureMedia('),app.indexOf('\nfunction dispatchMediaRecapture('));
+ const calls=[],errors=[];let refreshed=0;
+ const state={session:null,mediaRecaptureActive:false,bootstrap:{bridge:{compatible:false},collectionRuntime:{available:true,state:'ready',effective:'headless'}},foregroundRecaptureOffers:new Map()};
+ const context=vm.createContext({state,collectionModeState,mediaRecaptureTransport,waitForMediaRecapture,
+  api:async(path,opts)=>{calls.push(path);return {recapture:opts?.method==='POST'?{id:'job',source:'facebook',payload:{captureCollector:{version:1,backend:'bridge'},captureAdmission:{policy:'hybrid_headless_v1',driver:'browser',phase:'waiting'}}}:{id:'job',status:'completed',outcome:'unavailable'}};},
+  dispatchMediaRecapture:()=>{throw Error('frontend must not dispatch hybrid job');},syncRunButtons(){},clearNotice(){},
+  refreshTimeline:async()=>{refreshed++;},$:()=>({setAttribute(){}}),setNoticeText(){},showError:e=>errors.push(e.message)});
+ vm.runInContext(fn,context);await context.recaptureMedia({id:'item'},null,'background');
+ assert.deepEqual(calls,['/api/timeline/item/recapture','/api/media-recaptures/job']);
+ assert.equal(refreshed,1);assert.equal(state.foregroundRecaptureOffers.has('item'),true);
+ assert.equal(state.mediaRecaptureActive,false);assert.deepEqual(errors,[]);
+});
 test('actual UI recapture function completes headless jobs without Bridge and refreshes timeline',async()=>{
  const app=await readFile(new URL('../internal/httpapi/web/app.js',import.meta.url),'utf8');
  const fn=app.slice(app.indexOf('async function recaptureMedia('),app.indexOf('\nfunction dispatchMediaRecapture('));

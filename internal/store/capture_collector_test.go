@@ -180,3 +180,97 @@ func TestMediaCollectorAdmissionAndWrongClaimRemainAtomic(t *testing.T) {
 		t.Fatalf("right recapture consumer=%+v %v", claim, err)
 	}
 }
+
+func TestHybridFacebookRecaptureWaitsForAtomicBrowserAdmission(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, _, _ := insertFacebookPlaybackFixture(t, state)
+	job, err := state.CreateOwnedMediaRecaptureWithAdmission(ctx, timelineID, domain.MediaRecaptureBackground, domain.MediaRecapturePlaybackError, "bridge", domain.MediaRecaptureCaptureAdmission{
+		Policy: domain.MediaRecaptureAdmissionHybridHeadlessV1,
+		Driver: "browser",
+		Phase:  "waiting",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, consumer := range []string{"", "bridge", "headless"} {
+		claim, err := state.ClaimMediaRecaptureForCollector(ctx, job.ID, "early-consumer", consumer)
+		if err != nil || claim.ID != "" {
+			t.Fatalf("waiting recapture claim by %q = %+v, %v", consumer, claim, err)
+		}
+	}
+	stored, err := state.MediaRecapture(ctx, job.ID)
+	if err != nil || stored.Status != "queued" {
+		t.Fatalf("early claim changed waiting job: %+v, %v", stored, err)
+	}
+	stamp := map[string]any{"driver": "browser", "epoch": "epoch-test", "generation": 7}
+	if admitted, err := state.BindMediaRecaptureBrowserAdmission(ctx, job.ID, stamp); err != nil || !admitted {
+		t.Fatalf("Browser admission bound=%t: %v", admitted, err)
+	}
+	stored, err = state.MediaRecapture(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, exists, err := MediaRecaptureAdmission(stored.Payload)
+	if err != nil || !exists || marker.Phase != "admitted" || stored.Payload["captureRuntime"] == nil {
+		t.Fatalf("admitted marker/runtime=%+v, %t, %v, payload=%+v", marker, exists, err, stored.Payload)
+	}
+	if claim, err := state.ClaimMediaRecaptureForCollector(ctx, job.ID, "wrong", "headless"); err != nil || claim.ID != "" {
+		t.Fatalf("wrong collector claimed admitted Browser job: %+v, %v", claim, err)
+	}
+	if claim, err := state.ClaimMediaRecaptureForCollector(ctx, job.ID, "right", "bridge"); err != nil || claim.ID != job.ID {
+		t.Fatalf("Bridge could not claim admitted job: %+v, %v", claim, err)
+	}
+	if _, err := state.FailMediaRecapture(ctx, job.ID, domain.Failure{Code: "test", Stage: "test", Message: "terminal cleanup fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SetMediaRecaptureCaptureCleanupState(ctx, job.ID, "pending"); err != nil {
+		t.Fatal(err)
+	}
+	stored, err = state.MediaRecapture(ctx, job.ID)
+	if err != nil || stored.Payload["captureCleanup"] != "pending" {
+		t.Fatalf("pending cleanup state did not persist: %+v, %v", stored.Payload, err)
+	}
+	ids, err := state.BrowserAdmissionMediaRecaptureIDs(ctx)
+	if err != nil || len(ids) != 1 || ids[0] != job.ID {
+		t.Fatalf("pending terminal cleanup missing from recovery scan: %v, %v", ids, err)
+	}
+	if err := state.SetMediaRecaptureCaptureCleanupState(ctx, job.ID, "released"); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SetMediaRecaptureCaptureCleanupState(ctx, job.ID, "pending"); err != nil {
+		t.Fatalf("stale pending cleanup write should be idempotent after release: %v", err)
+	}
+	stored, err = state.MediaRecapture(ctx, job.ID)
+	if err != nil || stored.Payload["captureCleanup"] != "released" {
+		t.Fatalf("released cleanup state regressed: %+v, %v", stored.Payload, err)
+	}
+	ids, err = state.BrowserAdmissionMediaRecaptureIDs(ctx)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("released terminal admitted job still appears in recovery scan: %v, %v", ids, err)
+	}
+}
+
+func TestMalformedHybridRecaptureAdmissionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	timelineID, _, _ := insertFacebookPlaybackFixture(t, state)
+	job, err := state.CreateOwnedMediaRecaptureWithAdmission(ctx, timelineID, domain.MediaRecaptureBackground, domain.MediaRecapturePlaybackError, "bridge", domain.MediaRecaptureCaptureAdmission{
+		Policy: domain.MediaRecaptureAdmissionHybridHeadlessV1,
+		Driver: "browser",
+		Phase:  "waiting",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE media_recaptures SET payload_json=json_set(payload_json,'$.captureAdmission.phase','future') WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if claim, err := state.ClaimMediaRecaptureForCollector(ctx, job.ID, "bridge", "bridge"); err == nil || claim.ID != "" {
+		t.Fatalf("malformed admission claim=%+v, %v", claim, err)
+	}
+	stored, err := state.MediaRecapture(ctx, job.ID)
+	if err != nil || stored.Status != "queued" {
+		t.Fatalf("malformed marker mutated job: %+v, %v", stored, err)
+	}
+}

@@ -32,6 +32,16 @@ func (s *Store) CreateMediaRecaptureForReason(ctx context.Context, timelineID st
 // CreateOwnedMediaRecapture persists the runtime stamp in the same write that
 // admits the job. Legacy callers retain their original unstamped payload.
 func (s *Store) CreateOwnedMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason, runtime map[string]any, collector ...string) (domain.MediaRecapture, error) {
+	return s.createOwnedMediaRecapture(ctx, timelineID, mode, reason, runtime, nil, collector...)
+}
+
+// CreateOwnedMediaRecaptureWithAdmission creates a durable, unclaimable job
+// whose runtime stamp will be bound only after asynchronous Browser admission.
+func (s *Store) CreateOwnedMediaRecaptureWithAdmission(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason, collector string, admission domain.MediaRecaptureCaptureAdmission) (domain.MediaRecapture, error) {
+	return s.createOwnedMediaRecapture(ctx, timelineID, mode, reason, nil, &admission, collector)
+}
+
+func (s *Store) createOwnedMediaRecapture(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason, runtime map[string]any, admission *domain.MediaRecaptureCaptureAdmission, collector ...string) (domain.MediaRecapture, error) {
 	if mode != domain.MediaRecaptureBackground && mode != domain.MediaRecaptureForeground {
 		return domain.MediaRecapture{}, errors.New("media recapture mode must be background or foreground")
 	}
@@ -147,6 +157,13 @@ func (s *Store) CreateOwnedMediaRecapture(ctx context.Context, timelineID string
 			return domain.MediaRecapture{}, err
 		}
 	}
+	if admission != nil {
+		if runtime != nil || len(collector) != 1 || collector[0] != "bridge" ||
+			admission.Policy != domain.MediaRecaptureAdmissionHybridHeadlessV1 || admission.Driver != "browser" || admission.Phase != "waiting" {
+			return domain.MediaRecapture{}, errors.New("media recapture admission must start as an unstamped Browser/Bridge wait")
+		}
+		job.Payload["captureAdmission"] = *admission
+	}
 	payload, err := json.Marshal(job.Payload)
 	if err != nil {
 		return domain.MediaRecapture{}, err
@@ -159,6 +176,166 @@ func (s *Store) CreateOwnedMediaRecapture(ctx context.Context, timelineID string
 		return domain.MediaRecapture{}, err
 	}
 	return job, nil
+}
+
+// MediaRecaptureAdmission reads the durable owner-admission fence. Unknown or
+// malformed markers fail closed so they can never fall through to legacy
+// claim behavior.
+func MediaRecaptureAdmission(payload map[string]any) (domain.MediaRecaptureCaptureAdmission, bool, error) {
+	raw, exists := payload["captureAdmission"]
+	if !exists {
+		return domain.MediaRecaptureCaptureAdmission{}, false, nil
+	}
+	var admission domain.MediaRecaptureCaptureAdmission
+	switch value := raw.(type) {
+	case domain.MediaRecaptureCaptureAdmission:
+		admission = value
+	case map[string]any:
+		admission.Policy, _ = value["policy"].(string)
+		admission.Driver, _ = value["driver"].(string)
+		admission.Phase, _ = value["phase"].(string)
+	default:
+		return domain.MediaRecaptureCaptureAdmission{}, true, errors.New("media recapture admission marker is malformed")
+	}
+	if admission.Policy != domain.MediaRecaptureAdmissionHybridHeadlessV1 || admission.Driver != "browser" ||
+		(admission.Phase != "waiting" && admission.Phase != "admitted") {
+		return domain.MediaRecaptureCaptureAdmission{}, true, errors.New("media recapture admission marker is unsupported")
+	}
+	if admission.Phase == "waiting" {
+		if _, stamped := payload["captureRuntime"]; stamped {
+			return domain.MediaRecaptureCaptureAdmission{}, true, errors.New("waiting media recapture already has a runtime owner")
+		}
+	} else if _, stamped := payload["captureRuntime"]; !stamped {
+		return domain.MediaRecaptureCaptureAdmission{}, true, errors.New("admitted media recapture has no runtime owner")
+	}
+	route, err := CaptureCollector(payload)
+	if err != nil || route != "bridge" {
+		return domain.MediaRecaptureCaptureAdmission{}, true, errors.New("hybrid Facebook media recapture must retain its Bridge collector")
+	}
+	return admission, true, nil
+}
+
+// BindMediaRecaptureBrowserAdmission atomically binds the immutable Browser
+// owner and advances a waiting job. A concurrent Bridge claim can only observe
+// either the waiting fence or the complete admitted stamp.
+func (s *Store) BindMediaRecaptureBrowserAdmission(ctx context.Context, id string, runtime map[string]any) (bool, error) {
+	epoch, epochOK := runtime["epoch"].(string)
+	if runtime == nil || runtime["driver"] != "browser" || !epochOK || strings.TrimSpace(epoch) == "" || !positiveCaptureGeneration(runtime["generation"]) {
+		return false, errors.New("Browser media recapture admission requires a complete runtime stamp")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	job, err := mediaRecaptureByID(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	if job.Status != "queued" || job.Source != domain.SourceFacebook {
+		return false, nil
+	}
+	admission, exists, err := MediaRecaptureAdmission(job.Payload)
+	if err != nil {
+		return false, err
+	}
+	if !exists || admission.Phase != "waiting" {
+		return false, nil
+	}
+	admission.Phase = "admitted"
+	job.Payload["captureRuntime"] = runtime
+	job.Payload["captureAdmission"] = admission
+	payload, err := json.Marshal(job.Payload)
+	if err != nil {
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE media_recaptures SET payload_json=? WHERE id=? AND status='queued'`, string(payload), id)
+	if err != nil {
+		return false, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if count != 1 {
+		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func positiveCaptureGeneration(value any) bool {
+	switch generation := value.(type) {
+	case int:
+		return generation > 0
+	case int64:
+		return generation > 0
+	case float64:
+		return generation > 0 && generation == float64(int64(generation))
+	default:
+		return false
+	}
+}
+
+// SetMediaRecaptureCaptureCleanupState persists whether the Bridge surface
+// cleanup for an admitted Browser job has been acknowledged. Terminal rows
+// remain recoverable until the released state is durable.
+func (s *Store) SetMediaRecaptureCaptureCleanupState(ctx context.Context, id, state string) error {
+	if state != "pending" && state != "released" {
+		return errors.New("media recapture cleanup state must be pending or released")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	job, err := mediaRecaptureByID(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if job.Status != "completed" && job.Status != "failed" && job.Status != "cancelled" {
+		return errors.New("media recapture cleanup can be recorded only after terminal status")
+	}
+	if admission, exists, err := MediaRecaptureAdmission(job.Payload); err != nil {
+		return err
+	} else if !exists || admission.Phase != "admitted" {
+		return errors.New("media recapture has no admitted Browser owner")
+	}
+	// A cleanup acknowledgement is final. A pump cycle can have read a stale
+	// pending row before the acknowledgement commits, so guard the write below
+	// as well as treating an already-released row as an idempotent no-op.
+	if state == "pending" && job.Payload["captureCleanup"] == "released" {
+		return tx.Commit()
+	}
+	job.Payload["captureCleanup"] = state
+	payload, err := json.Marshal(job.Payload)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE media_recaptures SET payload_json=?
+		WHERE id=? AND status IN ('completed','failed','cancelled')
+		AND (?='released' OR COALESCE(json_extract(payload_json,'$.captureCleanup'),'')!='released')`, string(payload), id, state)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		if state == "pending" {
+			var cleanup sql.NullString
+			readErr := tx.QueryRowContext(ctx, `SELECT json_extract(payload_json,'$.captureCleanup')
+				FROM media_recaptures WHERE id=? AND status IN ('completed','failed','cancelled')`, id).Scan(&cleanup)
+			if readErr == nil && cleanup.Valid && cleanup.String == "released" {
+				return tx.Commit()
+			}
+		}
+		return errors.New("media recapture cleanup state could not be saved")
+	}
+	return tx.Commit()
 }
 
 // ApplyPassiveXMediaEvidence persists media evidence that AkuBridge already
@@ -323,6 +500,11 @@ func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeI
 	}
 	if job.Status != "queued" {
 		return domain.MediaRecapture{}, fmt.Errorf("media recapture is %s, not queued", job.Status)
+	}
+	if admission, exists, err := MediaRecaptureAdmission(job.Payload); err != nil {
+		return domain.MediaRecapture{}, err
+	} else if exists && admission.Phase == "waiting" {
+		return domain.MediaRecapture{}, nil
 	}
 	if collector != "" {
 		route, err := CaptureCollector(job.Payload)

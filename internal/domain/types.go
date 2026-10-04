@@ -1094,6 +1094,16 @@ func (value MediaRecaptureReason) Valid() bool {
 	return value == MediaRecaptureMissingMedia || value == MediaRecapturePlaybackError
 }
 
+const MediaRecaptureAdmissionHybridHeadlessV1 = "hybrid_headless_v1"
+
+// MediaRecaptureCaptureAdmission remains in the durable job payload after
+// admission so transport and recovery can identify Browser-owned jobs.
+type MediaRecaptureCaptureAdmission struct {
+	Policy string `json:"policy"`
+	Driver string `json:"driver"`
+	Phase  string `json:"phase"`
+}
+
 type MediaRecapture struct {
 	ID          string         `json:"id"`
 	TimelineID  string         `json:"timelineId"`

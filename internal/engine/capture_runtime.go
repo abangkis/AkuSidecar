@@ -40,6 +40,63 @@ func headlessGrantedSources(status BridgeStatus) []domain.Source {
 	return sources
 }
 
+func (e *Engine) facebookSourceAuthorizedNow() bool {
+	status := e.BridgeStatus()
+	if !status.Compatible || status.Actual == nil {
+		return false
+	}
+	now := time.Now()
+	if !recentBridgeAccessObservation(status.Actual.ReceivedAt, now) || !recentBridgeAccessObservation(status.Actual.SourceAccess.ObservedAt, now) {
+		return false
+	}
+	granted := false
+	for _, source := range status.Actual.SourceAccess.GrantedSources {
+		if source == string(domain.SourceFacebook) {
+			granted = true
+			break
+		}
+	}
+	if !granted {
+		return false
+	}
+	for _, source := range status.Actual.SourceAccess.Sources {
+		if domain.Source(source.Source) == domain.SourceFacebook {
+			return source.Ready && source.PermissionGranted && source.ScriptRegistered
+		}
+	}
+	return false
+}
+
+func (e *Engine) facebookSourcePermissionDeniedNow() bool {
+	status := e.BridgeStatus()
+	if !status.Compatible || status.Actual == nil || !recentBridgeAccessObservation(status.Actual.ReceivedAt, time.Now()) ||
+		!recentBridgeAccessObservation(status.Actual.SourceAccess.ObservedAt, time.Now()) {
+		return false
+	}
+	granted := false
+	for _, source := range status.Actual.SourceAccess.GrantedSources {
+		if source == string(domain.SourceFacebook) {
+			granted = true
+			break
+		}
+	}
+	for _, source := range status.Actual.SourceAccess.Sources {
+		if domain.Source(source.Source) == domain.SourceFacebook {
+			return !granted || !source.Ready || !source.PermissionGranted || !source.ScriptRegistered
+		}
+	}
+	return true
+}
+
+func recentBridgeAccessObservation(value string, now time.Time) bool {
+	observed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return false
+	}
+	age := now.Sub(observed)
+	return age >= -5*time.Second && age <= 2*time.Minute
+}
+
 func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 	e.collectionRuntime = runtime
 	runtime.SetHeadlessReadiness(func() error {
@@ -59,6 +116,24 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 		}
 		return errors.New("waiting for browser source-access confirmation before headless handoff")
 	})
+	if ids, err := e.store.BrowserAdmissionMediaRecaptureIDs(context.Background()); err == nil {
+		for _, id := range ids {
+			job, loadErr := e.store.MediaRecapture(context.Background(), id)
+			if loadErr != nil || job.Source != domain.SourceFacebook {
+				continue
+			}
+			admission, exists, markerErr := store.MediaRecaptureAdmission(job.Payload)
+			needsHold := job.Status == "queued" || job.Status == "claimed"
+			if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" {
+				needsHold = admission.Phase == "admitted" && job.Payload["captureCleanup"] != "released"
+			}
+			if markerErr == nil && exists && needsHold && admission.Policy == domain.MediaRecaptureAdmissionHybridHeadlessV1 {
+				if err := e.beginBrowserCollectionHold(id, domain.SourceFacebook); err != nil {
+					e.logger.Printf("restore Facebook recapture collection intent for job %s: %v", id, err)
+				}
+			}
+		}
+	}
 	// Restore the temporary Browser hold for a persisted hybrid Facebook run
 	// before the coordinator can reconcile back to the saved headless mode.
 	if active, err := e.store.ActiveSession(context.Background()); err == nil && active != nil && hybridCollectionSession(*active) {
@@ -120,6 +195,15 @@ func (e *Engine) SetBrowserCollectionCleanup(cleanup func(context.Context, strin
 	e.browserCollectionCleanup = cleanup
 	e.captureMu.Unlock()
 }
+
+// SetBrowserMediaRecaptureDispatch binds the asynchronous Bridge consumer for
+// admitted hybrid Facebook recaptures. The callback must deduplicate by job ID
+// and generation and return only after the matching job reaches terminal state.
+func (e *Engine) SetBrowserMediaRecaptureDispatch(dispatch func(context.Context, string, uint64) error) {
+	e.captureMu.Lock()
+	e.browserRecaptureDispatch = dispatch
+	e.captureMu.Unlock()
+}
 func (e *Engine) BorrowInteractiveCapture(ctx context.Context) (*captureruntime.Lease, func(), error) {
 	if e.collectionRuntime == nil {
 		return nil, nil, nil
@@ -165,6 +249,7 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 				continue
 			}
 			e.releaseTerminalCaptureSessions(ctx)
+			e.processHybridBrowserMediaRecaptures(ctx)
 			if active, err := e.store.ActiveSession(ctx); err == nil && active != nil && hybridCollectionSession(*active) {
 				if _, err := e.startNext(ctx, active.ID); err != nil {
 					e.logger.Printf("retry hybrid collection admission for session %s: %v", active.ID, err)
@@ -210,6 +295,190 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 			}()
 		}
 	}()
+}
+
+func (e *Engine) processHybridBrowserMediaRecaptures(ctx context.Context) {
+	if e.collectionRuntime == nil {
+		return
+	}
+	ids, err := e.store.BrowserAdmissionMediaRecaptureIDs(ctx)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		job, err := e.store.MediaRecapture(ctx, id)
+		if err != nil || job.Source != domain.SourceFacebook {
+			continue
+		}
+		admission, marked, err := store.MediaRecaptureAdmission(job.Payload)
+		if err != nil {
+			e.logger.Printf("Facebook recapture %s has an invalid Browser admission marker: %v", id, err)
+			continue
+		}
+		if !marked || admission.Policy != domain.MediaRecaptureAdmissionHybridHeadlessV1 {
+			continue
+		}
+		active := job.Status == "queued" || job.Status == "claimed"
+		terminal := job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled"
+		if !active && !terminal {
+			continue
+		}
+		if active {
+			if err := e.beginBrowserCollectionHold(id, job.Source); err != nil {
+				continue
+			}
+			if admission.Phase == "waiting" {
+				if !e.facebookSourceAuthorizedNow() {
+					if e.facebookSourcePermissionDeniedNow() {
+						_, _ = e.store.FailMediaRecapture(ctx, id, domain.Failure{Code: "source_access_revoked", Stage: "capture", Message: "Facebook Browser permission is not confirmed; request a new recapture after granting access.", Retryable: true})
+						e.releaseTerminalCaptureSessions(ctx)
+					}
+					continue
+				}
+				e.captureMu.Lock()
+				owner := e.captureOwner
+				if owner == nil {
+					e.captureMu.Unlock()
+					continue
+				}
+				snapshot := owner.Snapshot()
+				if snapshot.State != captureruntime.Ready || snapshot.Driver != "browser" {
+					e.captureMu.Unlock()
+					continue
+				}
+				lease, acquireErr := owner.Acquire()
+				if acquireErr != nil {
+					e.captureMu.Unlock()
+					continue
+				}
+				runtime := map[string]any{"driver": "browser", "epoch": e.epoch, "generation": int(lease.Generation())}
+				admitted, bindErr := e.store.BindMediaRecaptureBrowserAdmission(ctx, id, runtime)
+				if bindErr != nil || !admitted {
+					lease.Release()
+					e.captureMu.Unlock()
+					if bindErr != nil {
+						e.logger.Printf("admit Facebook recapture %s to Browser: %v", id, bindErr)
+					}
+					continue
+				}
+				if e.captureRecaptures == nil {
+					e.captureRecaptures = map[string]*captureruntime.Lease{}
+				}
+				if existing := e.captureRecaptures[id]; existing == nil {
+					e.captureRecaptures[id] = lease
+					lease = nil
+				}
+				if lease != nil {
+					lease.Release()
+				}
+				e.captureMu.Unlock()
+				job, err = e.store.MediaRecapture(ctx, id)
+				if err != nil {
+					continue
+				}
+				admission, _, err = store.MediaRecaptureAdmission(job.Payload)
+				if err != nil {
+					continue
+				}
+			}
+		}
+		if admission.Phase != "admitted" {
+			continue
+		}
+		if job.Status == "queued" && !e.facebookSourceAuthorizedNow() {
+			_, _ = e.store.FailMediaRecapture(ctx, id, domain.Failure{Code: "source_access_revoked", Stage: "capture", Message: "Facebook Browser permission is no longer confirmed.", Retryable: true})
+			continue
+		}
+		e.captureMu.Lock()
+		owner := e.captureOwner
+		if owner == nil {
+			e.captureMu.Unlock()
+			continue
+		}
+		snapshot := owner.Snapshot()
+		stamp, _ := job.Payload["captureRuntime"].(map[string]any)
+		stampEpoch, _ := stamp["epoch"].(string)
+		if stampEpoch != e.epoch {
+			e.captureMu.Unlock()
+			if active {
+				_, _ = e.store.FailMediaRecapture(ctx, id, domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Media recapture owner changed; stale Browser work was not dispatched.", Retryable: true})
+			}
+			continue
+		}
+		if snapshot.State != captureruntime.Ready || snapshot.Driver != "browser" {
+			e.captureMu.Unlock()
+			continue
+		}
+		if !mediaRecaptureStampMatches(job.Payload, snapshot, e.epoch) {
+			e.captureMu.Unlock()
+			if active {
+				_, _ = e.store.FailMediaRecapture(ctx, id, domain.Failure{Code: "capture_runtime_changed", Stage: "capture", Message: "Media recapture owner changed; stale Browser work was not dispatched.", Retryable: true})
+			}
+			continue
+		}
+		lease := e.captureRecaptures[id]
+		if lease == nil {
+			lease, err = owner.Acquire()
+			if err == nil {
+				if e.captureRecaptures == nil {
+					e.captureRecaptures = map[string]*captureruntime.Lease{}
+				}
+				e.captureRecaptures[id] = lease
+			}
+		}
+		if err != nil || lease == nil || lease.Driver() != "browser" || lease.Generation() != snapshot.Generation {
+			e.captureMu.Unlock()
+			continue
+		}
+		dispatch := e.browserRecaptureDispatch
+		shouldDispatch := dispatch != nil && !e.browserRecaptureDispatchRunning[id] && !e.browserRecaptureDispatchConfirmed[id] &&
+			(active || e.browserRecaptureDispatchStarted[id])
+		generation := lease.Generation()
+		if shouldDispatch {
+			if e.browserRecaptureDispatchRunning == nil {
+				e.browserRecaptureDispatchRunning = map[string]bool{}
+			}
+			if e.browserRecaptureDispatchStarted == nil {
+				e.browserRecaptureDispatchStarted = map[string]bool{}
+			}
+			e.browserRecaptureDispatchRunning[id] = true
+			e.browserRecaptureDispatchStarted[id] = true
+		}
+		e.captureMu.Unlock()
+		if shouldDispatch {
+			dispatchID := id
+			dispatchGeneration := generation
+			dispatchCallback := dispatch
+			go func() {
+				dispatchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+				defer cancel()
+				dispatchErr := dispatchCallback(dispatchCtx, dispatchID, dispatchGeneration)
+				terminal := dispatchErr == nil
+				if dispatchErr != nil {
+					latest, loadErr := e.store.MediaRecapture(context.Background(), dispatchID)
+					terminal = loadErr == nil && isTerminalMediaRecapture(latest.Status)
+					if loadErr == nil && !terminal && !errors.Is(dispatchErr, context.DeadlineExceeded) && !errors.Is(dispatchErr, context.Canceled) {
+						_, failErr := e.store.FailMediaRecapture(context.Background(), dispatchID, domain.Failure{Code: "browser_dispatch_rejected", Stage: "capture", Message: "Browser Bridge did not accept the Facebook recapture dispatch.", Retryable: true})
+						terminal = failErr == nil
+					}
+				}
+				e.captureMu.Lock()
+				delete(e.browserRecaptureDispatchRunning, dispatchID)
+				stillOwned := e.collectionIntents[dispatchID] != nil || e.captureRecaptures[dispatchID] != nil
+				if terminal && stillOwned {
+					if e.browserRecaptureDispatchConfirmed == nil {
+						e.browserRecaptureDispatchConfirmed = map[string]bool{}
+					}
+					e.browserRecaptureDispatchConfirmed[dispatchID] = true
+				}
+				e.captureMu.Unlock()
+				if dispatchErr != nil {
+					e.logger.Printf("dispatch Browser Facebook recapture %s: %v", dispatchID, dispatchErr)
+				}
+				e.releaseTerminalCaptureSessions(context.Background())
+			}()
+		}
+	}
 }
 
 func (e *Engine) captureInternalMediaRecapture(ctx context.Context, driver, collector, workerID string) {
@@ -372,6 +641,21 @@ func (e *Engine) AttachCaptureRuntime(ctx context.Context, owner *captureruntime
 		return err
 	}
 	for _, id := range ids {
+		job, err := e.store.MediaRecapture(ctx, id)
+		if err != nil {
+			return err
+		}
+		admission, hasAdmission, err := store.MediaRecaptureAdmission(job.Payload)
+		if err != nil {
+			return err
+		}
+		if hasAdmission {
+			if admission.Phase == "waiting" || !mediaRecaptureStampMatches(job.Payload, owner.Snapshot(), e.epoch) {
+				// Waiting jobs have no owner yet. Admitted jobs from an earlier
+				// epoch/generation stay unadopted and are failed closed by the tick.
+				continue
+			}
+		}
 		lease, err := owner.Acquire()
 		if err != nil {
 			return err
@@ -384,6 +668,14 @@ func (e *Engine) AttachCaptureRuntime(ctx context.Context, owner *captureruntime
 	attached = true
 	e.releaseTerminalCaptureSessions(ctx)
 	return nil
+}
+
+func mediaRecaptureStampMatches(payload map[string]any, snapshot captureruntime.Snapshot, epoch string) bool {
+	if snapshot.State != captureruntime.Ready {
+		return false
+	}
+	stamp, ok := payload["captureRuntime"].(map[string]any)
+	return ok && stamp["driver"] == snapshot.Driver && stamp["epoch"] == epoch && captureGenerationMatches(stamp["generation"], snapshot.Generation)
 }
 
 func (e *Engine) acquireCaptureLease() (*captureruntime.Lease, error) {
@@ -459,6 +751,10 @@ func hybridDriverForRun(session domain.Session, source domain.Source) (string, b
 }
 
 func (e *Engine) beginHybridBrowserCollection(sessionID string, source domain.Source) error {
+	return e.beginBrowserCollectionHold(sessionID, source)
+}
+
+func (e *Engine) beginBrowserCollectionHold(leaseID string, source domain.Source) error {
 	if source != domain.SourceFacebook {
 		return errors.New("only Facebook uses the hybrid Browser collection exception")
 	}
@@ -466,7 +762,7 @@ func (e *Engine) beginHybridBrowserCollection(sessionID string, source domain.So
 		return errors.New("hybrid collection runtime is unavailable")
 	}
 	e.captureMu.Lock()
-	if e.collectionIntents[sessionID] != nil {
+	if e.collectionIntents[leaseID] != nil {
 		e.captureMu.Unlock()
 		return nil
 	}
@@ -479,8 +775,8 @@ func (e *Engine) beginHybridBrowserCollection(sessionID string, source domain.So
 	if e.collectionIntents == nil {
 		e.collectionIntents = map[string]func(){}
 	}
-	if e.collectionIntents[sessionID] == nil {
-		e.collectionIntents[sessionID] = release
+	if e.collectionIntents[leaseID] == nil {
+		e.collectionIntents[leaseID] = release
 		release = nil
 	}
 	e.captureMu.Unlock()
@@ -625,17 +921,21 @@ func (e *Engine) headlessSourceAuthorized(source domain.Source) bool {
 // accepting the first observation or requesting cancellation is not release.
 func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 	e.captureMu.Lock()
-	ids := make(map[string]struct{}, len(e.captureSessions)+len(e.collectionIntents))
+	ids := make(map[string]struct{}, len(e.captureSessions)+len(e.captureRecaptures)+len(e.collectionIntents))
 	for id := range e.captureSessions {
+		ids[id] = struct{}{}
+	}
+	for id := range e.captureRecaptures {
 		ids[id] = struct{}{}
 	}
 	for id := range e.collectionIntents {
 		ids[id] = struct{}{}
 	}
 	type cleanupRequest struct {
-		sessionID  string
+		leaseID    string
 		generation uint64
 		callback   func(context.Context, string, uint64) error
+		recapture  bool
 	}
 	var cleanups []cleanupRequest
 	for id := range ids {
@@ -677,7 +977,7 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 				e.collectionCleanupPending = map[string]bool{}
 			}
 			e.collectionCleanupPending[id] = true
-			cleanups = append(cleanups, cleanupRequest{sessionID: id, generation: lease.Generation(), callback: callback})
+			cleanups = append(cleanups, cleanupRequest{leaseID: id, generation: lease.Generation(), callback: callback})
 			continue
 		}
 		if lease := e.captureSessions[id]; lease != nil {
@@ -691,13 +991,91 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 		delete(e.collectionCleanupPending, id)
 		delete(e.collectionCleanupDone, id)
 	}
-	for id, lease := range e.captureRecaptures {
+	for id := range ids {
 		job, err := e.store.MediaRecapture(ctx, id)
-		if err != nil || job.Status == "queued" || job.Status == "claimed" {
+		if err != nil {
 			continue
 		}
-		lease.Release()
-		delete(e.captureRecaptures, id)
+		if job.Status == "queued" || job.Status == "claimed" {
+			continue
+		}
+		admission, hybrid, markerErr := store.MediaRecaptureAdmission(job.Payload)
+		if markerErr != nil {
+			continue
+		}
+		if !hybrid {
+			if lease := e.captureRecaptures[id]; lease != nil {
+				lease.Release()
+				delete(e.captureRecaptures, id)
+			}
+			if release := e.collectionIntents[id]; release != nil {
+				release()
+				delete(e.collectionIntents, id)
+			}
+			continue
+		}
+		if admission.Phase == "waiting" {
+			if lease := e.captureRecaptures[id]; lease != nil {
+				lease.Release()
+				delete(e.captureRecaptures, id)
+			}
+			if release := e.collectionIntents[id]; release != nil {
+				release()
+				delete(e.collectionIntents, id)
+			}
+			delete(e.collectionCleanupPending, id)
+			delete(e.collectionCleanupDone, id)
+			delete(e.browserRecaptureDispatchRunning, id)
+			delete(e.browserRecaptureDispatchStarted, id)
+			delete(e.browserRecaptureDispatchConfirmed, id)
+			continue
+		}
+		if job.Payload["captureCleanup"] == "released" {
+			if lease := e.captureRecaptures[id]; lease != nil {
+				lease.Release()
+				delete(e.captureRecaptures, id)
+			}
+			if release := e.collectionIntents[id]; release != nil {
+				release()
+				delete(e.collectionIntents, id)
+			}
+			delete(e.collectionCleanupPending, id)
+			delete(e.collectionCleanupDone, id)
+			delete(e.browserRecaptureDispatchRunning, id)
+			delete(e.browserRecaptureDispatchStarted, id)
+			delete(e.browserRecaptureDispatchConfirmed, id)
+			continue
+		}
+		if e.browserRecaptureDispatchRunning[id] || (e.browserRecaptureDispatchStarted[id] && !e.browserRecaptureDispatchConfirmed[id]) {
+			continue
+		}
+		if job.Payload["captureCleanup"] != "pending" {
+			if err := e.store.SetMediaRecaptureCaptureCleanupState(ctx, id, "pending"); err != nil {
+				continue
+			}
+		}
+		lease := e.captureRecaptures[id]
+		if lease == nil && e.captureOwner != nil {
+			snapshot := e.captureOwner.Snapshot()
+			if snapshot.State == captureruntime.Ready && snapshot.Driver == "browser" {
+				lease, err = e.captureOwner.Acquire()
+				if err == nil {
+					if e.captureRecaptures == nil {
+						e.captureRecaptures = map[string]*captureruntime.Lease{}
+					}
+					e.captureRecaptures[id] = lease
+				}
+			}
+		}
+		callback := e.browserCollectionCleanup
+		if lease == nil || lease.Driver() != "browser" || callback == nil || e.collectionCleanupPending[id] {
+			continue
+		}
+		if e.collectionCleanupPending == nil {
+			e.collectionCleanupPending = map[string]bool{}
+		}
+		e.collectionCleanupPending[id] = true
+		cleanups = append(cleanups, cleanupRequest{leaseID: id, generation: lease.Generation(), callback: callback, recapture: true})
 	}
 	e.captureMu.Unlock()
 	for _, cleanup := range cleanups {
@@ -705,20 +1083,57 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 		go func() {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			err := cleanup.callback(cleanupCtx, cleanup.sessionID, cleanup.generation)
-			e.captureMu.Lock()
-			delete(e.collectionCleanupPending, cleanup.sessionID)
-			if err == nil {
-				if e.collectionCleanupDone == nil {
-					e.collectionCleanupDone = map[string]bool{}
+			err := cleanup.callback(cleanupCtx, cleanup.leaseID, cleanup.generation)
+			if err == nil && cleanup.recapture {
+				persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				persistErr := e.store.SetMediaRecaptureCaptureCleanupState(persistCtx, cleanup.leaseID, "released")
+				persistCancel()
+				if persistErr != nil {
+					e.logger.Printf("persist Browser recapture cleanup acknowledgement for lease %s: %v", cleanup.leaseID, persistErr)
+					err = errors.New("Browser cleanup acknowledgement could not be saved.")
 				}
-				e.collectionCleanupDone[cleanup.sessionID] = true
+			}
+			e.captureMu.Lock()
+			delete(e.collectionCleanupPending, cleanup.leaseID)
+			var releaseIntent func()
+			var releaseLease *captureruntime.Lease
+			if err == nil {
+				if cleanup.recapture {
+					// Late callback completion may clear existing ownership only. It
+					// never recreates per-job state after another path has released it.
+					if e.collectionIntents[cleanup.leaseID] != nil || e.captureRecaptures[cleanup.leaseID] != nil {
+						releaseIntent = e.collectionIntents[cleanup.leaseID]
+						delete(e.collectionIntents, cleanup.leaseID)
+						releaseLease = e.captureRecaptures[cleanup.leaseID]
+						delete(e.captureRecaptures, cleanup.leaseID)
+						delete(e.browserRecaptureDispatchRunning, cleanup.leaseID)
+						delete(e.browserRecaptureDispatchStarted, cleanup.leaseID)
+						delete(e.browserRecaptureDispatchConfirmed, cleanup.leaseID)
+					}
+				} else {
+					if e.collectionCleanupDone == nil {
+						e.collectionCleanupDone = map[string]bool{}
+					}
+					e.collectionCleanupDone[cleanup.leaseID] = true
+				}
 			}
 			e.captureMu.Unlock()
 			if err != nil {
-				e.logger.Printf("release hybrid Facebook capture surface for session %s: %v", cleanup.sessionID, err)
+				if e.collectionRuntime != nil {
+					e.collectionRuntime.SetBrowserCollectionFailure(cleanup.leaseID, err.Error())
+				}
+				e.logger.Printf("release hybrid Facebook capture surface for lease %s: %v", cleanup.leaseID, err)
 			}
 			if err == nil {
+				if e.collectionRuntime != nil {
+					e.collectionRuntime.SetBrowserCollectionFailure(cleanup.leaseID, "")
+				}
+				if releaseLease != nil {
+					releaseLease.Release()
+				}
+				if releaseIntent != nil {
+					releaseIntent()
+				}
 				e.releaseTerminalCaptureSessions(context.Background())
 			}
 		}()
@@ -732,6 +1147,10 @@ func hybridFacebookRunStarted(session domain.Session) bool {
 		}
 	}
 	return false
+}
+
+func isTerminalMediaRecapture(status string) bool {
+	return status == "completed" || status == "failed" || status == "cancelled"
 }
 
 func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings domain.Settings, round int, continuation map[string]any, reason string) (map[string]any, error) {

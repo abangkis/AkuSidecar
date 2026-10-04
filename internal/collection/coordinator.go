@@ -3,6 +3,7 @@ package collection
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -12,19 +13,20 @@ import (
 )
 
 type RuntimeStatus struct {
-	Available              bool                 `json:"available"`
-	Requested              string               `json:"requested"`
-	Effective              string               `json:"effective"`
-	Pending                bool                 `json:"pending"`
-	State                  captureruntime.State `json:"state"`
-	Failure                string               `json:"failure,omitempty"`
-	Generation             uint64               `json:"generation"`
-	ActiveLeases           int                  `json:"activeLeases"`
-	HeadlessAvailable      bool                 `json:"headlessAvailable"`
-	QuietAvailable         bool                 `json:"quietAvailable"`
-	SupportedSources       []domain.Source      `json:"supportedSources"`
-	AuthorizedSources      []domain.Source      `json:"authorizedSources,omitempty"`
-	CollectionBorrowSource domain.Source        `json:"collectionBorrowSource,omitempty"`
+	Available               bool                 `json:"available"`
+	Requested               string               `json:"requested"`
+	Effective               string               `json:"effective"`
+	Pending                 bool                 `json:"pending"`
+	State                   captureruntime.State `json:"state"`
+	Failure                 string               `json:"failure,omitempty"`
+	Generation              uint64               `json:"generation"`
+	ActiveLeases            int                  `json:"activeLeases"`
+	HeadlessAvailable       bool                 `json:"headlessAvailable"`
+	QuietAvailable          bool                 `json:"quietAvailable"`
+	SupportedSources        []domain.Source      `json:"supportedSources"`
+	AuthorizedSources       []domain.Source      `json:"authorizedSources,omitempty"`
+	CollectionBorrowSource  domain.Source        `json:"collectionBorrowSource,omitempty"`
+	CollectionBorrowFailure string               `json:"collectionBorrowFailure,omitempty"`
 }
 
 const (
@@ -59,20 +61,21 @@ func captureBackendAvailable(backend CaptureBackend) bool {
 }
 
 type Coordinator struct {
-	mu                sync.Mutex
-	owner             *captureruntime.Manager
-	requested         string
-	interactive       int
-	browserCollection int
-	launch            func(context.Context, string, uint64) (captureruntime.Process, error)
-	validate          func() error
-	readiness         func() error
-	headless          *headless.Process
-	browserCollector  CaptureBackend
-	browserGeneration uint64
-	failure           string
-	retry             bool
-	headlessAvailable bool
+	mu                        sync.Mutex
+	owner                     *captureruntime.Manager
+	requested                 string
+	interactive               int
+	browserCollection         int
+	browserCollectionFailures map[string]string
+	launch                    func(context.Context, string, uint64) (captureruntime.Process, error)
+	validate                  func() error
+	readiness                 func() error
+	headless                  *headless.Process
+	browserCollector          CaptureBackend
+	browserGeneration         uint64
+	failure                   string
+	retry                     bool
+	headlessAvailable         bool
 }
 
 // Bind once for the initial browser owner and again from its replacement
@@ -125,6 +128,15 @@ func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
 	requested, interactive, collectionBorrow, failure, available := c.requested, c.interactive, c.browserCollection, c.failure, c.headlessAvailable
 	backend, generation := c.browserCollector, c.browserGeneration
+	var collectionFailure string
+	if len(c.browserCollectionFailures) > 0 {
+		ids := make([]string, 0, len(c.browserCollectionFailures))
+		for id := range c.browserCollectionFailures {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		collectionFailure = c.browserCollectionFailures[ids[0]]
+	}
 	c.mu.Unlock()
 	s := c.owner.Snapshot()
 	effective := s.Driver
@@ -135,8 +147,27 @@ func (c *Coordinator) Status() RuntimeStatus {
 	status := RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0 || collectionBorrow > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
 	if collectionBorrow > 0 {
 		status.CollectionBorrowSource = domain.SourceFacebook
+		status.CollectionBorrowFailure = collectionFailure
 	}
 	return status
+}
+
+// Each collection lease keeps its own cleanup error. One successful release
+// cannot hide another outstanding cleanup failure or release profile ownership.
+func (c *Coordinator) SetBrowserCollectionFailure(leaseID, message string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if message == "" {
+		delete(c.browserCollectionFailures, leaseID)
+		return
+	}
+	if c.browserCollection == 0 {
+		return
+	}
+	if c.browserCollectionFailures == nil {
+		c.browserCollectionFailures = map[string]string{}
+	}
+	c.browserCollectionFailures[leaseID] = message
 }
 func (c *Coordinator) Start(ctx context.Context) {
 	go func() {
@@ -288,6 +319,9 @@ func (c *Coordinator) beginBrowserBorrow(collectionBorrow bool) func() {
 			c.mu.Lock()
 			if collectionBorrow {
 				c.browserCollection--
+				if c.browserCollection == 0 {
+					c.browserCollectionFailures = nil
+				}
 			} else {
 				c.interactive--
 			}
