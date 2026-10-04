@@ -1,5 +1,7 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { collectionModeState } from "./collection-mode.js";
+import { createNativePostRouter } from "./native-post-routing.js";
+import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
@@ -109,7 +111,7 @@ const AI_HIDE_CONFIRMATION_PHRASE = "HIDE STRONG AI SIGNALS";
 const AI_DEEP_POLL_INTERVAL_MS = 5000;
 const ONBOARDING_LEARNING_INTERVAL_MS = 7000;
 const PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS = 2500;
-const NATIVE_POST_OPEN_TIMEOUT_MS = 10000;
+const NATIVE_POST_OPEN_TIMEOUT_MS = 35000;
 const PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS = 10000;
 const BRIDGE_CONTEXT_RECOVERY_KEY = "akuBridgeContextRecoveryAt";
 const BRIDGE_TOKEN_RECOVERY_KEY = "akuBridgeTokenRecoveryAt";
@@ -291,6 +293,14 @@ window.addEventListener("message", (event) => {
   if (event.data.type === "AKU_BROWSER_BRIDGE_ERROR") {
     if (recoverInvalidatedBridgeContext(event.data.message)) return;
     showError(new Error(event.data.message));
+  }
+  if (event.data.type === "AKU_BROWSER_PASSIVE_PROBE_SKIPPED" && event.data.operation === "probe_source_sessions") {
+    state.sourceSessionProbeInFlight = false;
+    clearTimeout(state.sourceSessionProbeTimer);
+    state.sourceSessionProbeTimer = null;
+    // Preserve the last observation; Headless capture owns current readiness.
+    renderSourceSessionReadiness();
+    updateOnboardingSummary();
   }
   if (event.data.type === "AKU_BROWSER_SOURCE_SESSIONS_RESULT") {
     state.sourceSessionReadiness = event.data.sessions && typeof event.data.sessions === "object"
@@ -550,8 +560,10 @@ $("#media-viewer").addEventListener("keydown", (event) => {
 });
 window.addEventListener("scroll", () => {
   scheduleBackToTop();
-  scheduleTimelineSidePanePosition();
-  handleTimelineContentContextScroll();
+  if (state.currentView === "timeline") {
+    scheduleTimelineSidePanePosition();
+    handleTimelineContentContextScroll();
+  }
 }, { passive: true });
 window.addEventListener("resize", () => {
   scheduleBackToTop();
@@ -571,7 +583,7 @@ window.addEventListener("beforeunload", (event) => {
 window.addEventListener("scroll", () => {
   const movingDown = window.scrollY > state.autoLoadLastScrollY;
   state.autoLoadLastScrollY = window.scrollY;
-  if (!movingDown || state.bootstrap?.settings?.nextBatchBehavior !== "auto_at_finish") return;
+  if (state.currentView !== "timeline" || !movingDown || state.bootstrap?.settings?.nextBatchBehavior !== "auto_at_finish") return;
   const finish = $("#finish-line");
   if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) {
     revealPreparedBatch("continue");
@@ -3030,27 +3042,40 @@ function configureNativePostLink(link, href, source) {
   });
 }
 
+const routeNativePost = createNativePostRouter({
+  readRuntime: async () => {
+    const response = await api("/api/collection/runtime");
+    return response.collectionRuntime;
+  },
+  openHeadless: (request) => {
+    // The typed reader action borrows the exclusive profile on the server.
+    // Keep the original trusted-click broker alive through that handoff.
+    window.postMessage(request, endpoint);
+  },
+  openForeground: (request, runtime) => {
+    if (!runtime.available && !state.bootstrap?.bridge?.compatible) {
+      throw new Error("AkuBridge is not ready to open this native post.");
+    }
+    window.postMessage(request, endpoint);
+  },
+});
+
 function openNativePostInReaderWindow(url, source, brokerRequestId = null, gesture = null) {
-  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
-    return api("/api/collection/interactive", { method:"POST", body:{} }).then(async () => {
-      await bootstrap();
-      showNotice("Browser ready. Click Open native post again to open this post.");
-    });
-  }
   const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const started = performance.now();
   logNativePostTrace(requestId, "click", { gesture });
-  if (!state.bootstrap?.bridge?.compatible) {
-    logNativePostTrace(requestId, "terminal", { outcome: "bridge_unavailable", elapsedMs: Math.round(performance.now() - started) });
-    return Promise.reject(new Error("AkuBridge is not ready to open this native post."));
-  }
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const routing = new AbortController();
     const timeout = window.setTimeout(() => finish(
       reject,
       new Error("AkuBridge timed out while opening the native post."),
       "timeout",
     ), NATIVE_POST_OPEN_TIMEOUT_MS);
     function finish(callback, value, outcome) {
+      if (settled) return;
+      settled = true;
+      routing.abort();
       window.clearTimeout(timeout);
       window.removeEventListener("message", onResult);
       logNativePostTrace(requestId, "terminal", {
@@ -3069,13 +3094,15 @@ function openNativePostInReaderWindow(url, source, brokerRequestId = null, gestu
       }
     }
     window.addEventListener("message", onResult);
-    logNativePostTrace(requestId, "dispatch");
-    window.postMessage({
+    // Subscribe before reading mode so an early broker rejection is not lost.
+    routeNativePost({
       type: "AKU_BROWSER_OPEN_NATIVE_POST",
       requestId,
       source,
       url,
-    }, endpoint);
+    }, { signal: routing.signal }).then(() => {
+      if (!settled) logNativePostTrace(requestId, "dispatch");
+    }).catch((error) => finish(reject, error, "rejected"));
   });
 }
 
@@ -3110,10 +3137,12 @@ function renderSourceSessionReadiness() {
     const status = document.querySelector(`[data-source-session-readiness="${descriptor.id}"]`);
     const button = document.querySelector(`[data-source-open="${descriptor.id}"]`);
     if (!status || !button) continue;
-    status.className = "source-session-status";
+    setSettingsClass(status, "source-session-status" +
+      (observation?.state === "ready" ? " source-session-ready" :
+       ["login_required", "permission_required"].includes(observation?.state) ? " source-session-warning" : ""));
     if (state.sourceSessionProbeInFlight && !observation) {
-      status.textContent = "Session: checking existing tabs";
-      button.textContent = "Open source";
+      setSettingsText(status, "Session: checking existing tabs");
+      setSettingsText(button, "Open source");
       button.disabled = false;
       continue;
     }
@@ -3127,13 +3156,11 @@ function renderSourceSessionReadiness() {
       unavailable: "Session: temporarily unavailable",
       unknown: "Session: not confirmed",
     };
-    status.textContent = labels[stateValue] ?? labels.unknown;
+    setSettingsText(status, labels[stateValue] ?? labels.unknown);
     status.title = observation?.detail || "";
-    if (stateValue === "ready") status.classList.add("source-session-ready");
-    if (stateValue === "login_required" || stateValue === "permission_required") status.classList.add("source-session-warning");
-    button.textContent = stateValue === "permission_required"
+    setSettingsText(button, stateValue === "permission_required"
       ? "Grant access"
-      : stateValue === "login_required" ? "Sign in" : "Open source";
+      : stateValue === "login_required" ? "Sign in" : "Open source");
     button.disabled = !state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available;
   }
   renderOnboardingSourceReadiness();
@@ -3148,21 +3175,19 @@ function renderOnboardingSourceReadiness() {
     if (!accessStatus || !sessionStatus || !button) continue;
     const access = accessBySource.get(descriptor.id);
     const accessState = sourceAccessReadinessState(access);
-    accessStatus.className = "source-readiness-status";
+    setSettingsClass(accessStatus, "source-readiness-status" +
+      (accessState === "ready" ? " source-readiness-ready" :
+       ["permission_not_granted", "registration_missing", "capture_not_ready"].includes(accessState) ? " source-readiness-warning" : ""));
     if (accessState === "checking") {
-      accessStatus.textContent = "Access: checking";
+      setSettingsText(accessStatus, "Access: checking");
     } else if (accessState === "permission_not_granted") {
-      accessStatus.textContent = "Access: permission required";
-      accessStatus.classList.add("source-readiness-warning");
+      setSettingsText(accessStatus, "Access: permission required");
     } else if (accessState === "registration_missing") {
-      accessStatus.textContent = "Access: capture registration missing";
-      accessStatus.classList.add("source-readiness-warning");
+      setSettingsText(accessStatus, "Access: capture registration missing");
     } else if (accessState === "capture_not_ready") {
-      accessStatus.textContent = "Access: capture not ready";
-      accessStatus.classList.add("source-readiness-warning");
+      setSettingsText(accessStatus, "Access: capture not ready");
     } else {
-      accessStatus.textContent = "Access: ready";
-      accessStatus.classList.add("source-readiness-ready");
+      setSettingsText(accessStatus, "Access: ready");
     }
     const observation = state.sourceSessionReadiness?.[descriptor.id] ?? null;
     const stateValue = observation?.state ?? "unknown";
@@ -3175,14 +3200,14 @@ function renderOnboardingSourceReadiness() {
       unavailable: "Session: temporarily unavailable",
       unknown: "Session: not confirmed",
     };
-    sessionStatus.className = "source-session-status";
-    sessionStatus.textContent = labels[stateValue] ?? labels.unknown;
+    setSettingsClass(sessionStatus, "source-session-status" +
+      (stateValue === "ready" ? " source-session-ready" :
+       ["login_required", "permission_required"].includes(stateValue) ? " source-session-warning" : ""));
+    setSettingsText(sessionStatus, labels[stateValue] ?? labels.unknown);
     sessionStatus.title = observation?.detail || "";
-    if (stateValue === "ready") sessionStatus.classList.add("source-session-ready");
-    if (stateValue === "login_required" || stateValue === "permission_required") sessionStatus.classList.add("source-session-warning");
-    button.textContent = !access?.permissionGranted || stateValue === "permission_required"
+    setSettingsText(button, !access?.permissionGranted || stateValue === "permission_required"
       ? "Grant access"
-      : stateValue === "login_required" ? "Sign in" : "Open source";
+      : stateValue === "login_required" ? "Sign in" : "Open source");
     button.disabled = !state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available;
   }
 }
@@ -3271,17 +3296,17 @@ function renderCollectionRuntime() {
   visibility.disabled = false;
   const hybrid = select.value === "headless";
   const hiddenQuiet = !hybrid && runtime?.quietAvailable === true;
-  visibility.querySelector('[value="quiet"]').textContent = hybrid
+  setSettingsText(visibility.querySelector('[value="quiet"]'), hybrid
     ? "Facebook: single window" : hiddenQuiet
-    ? "Quiet capture — hidden X/Facebook — recommended" : "Quiet capture — single window — recommended";
-  visibility.querySelector('[value="quiet_multi_window"]').textContent = hybrid
+    ? "Quiet capture — hidden X/Facebook — recommended" : "Quiet capture — single window — recommended");
+  setSettingsText(visibility.querySelector('[value="quiet_multi_window"]'), hybrid
     ? "Facebook: multiple windows" : hiddenQuiet
-    ? "Quiet capture — hidden X/Facebook, separate windows for other sources" : "Quiet capture — multiple windows (trial)";
-  $("#capture-visibility-description").textContent = hybrid
+    ? "Quiet capture — hidden X/Facebook, separate windows for other sources" : "Quiet capture — multiple windows (trial)");
+  setSettingsText($("#capture-visibility-description"), hybrid
     ? "Visibility applies to Facebook Browser collection. X, Instagram and LinkedIn use headless. If Facebook content is unavailable, try Adaptive fidelity; its collection window can become visible." : hiddenQuiet
     ? "Quiet keeps X and Facebook collection hidden. Login and native posts still open an interactive window. Other sources retain the selected background-window policy; Adaptive uses a normal Chrome tab."
-    : "Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.";
-  $("#collection-runtime-status").textContent = view.detail;
+    : "Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.");
+  setSettingsText($("#collection-runtime-status"), view.detail);
 }
 async function pollCollectionRuntime() {
   if (!state.bootstrap || state.collectionPollInFlight) return;
@@ -3973,6 +3998,7 @@ function applyPostFreshnessStyle(value) {
 }
 
 function scheduleTimelineSidePanePosition() {
+  if (state.currentView !== "timeline") return;
   if (state.sidePaneFrame !== null) return;
   state.sidePaneFrame = window.requestAnimationFrame(() => {
     state.sidePaneFrame = null;
@@ -3981,6 +4007,7 @@ function scheduleTimelineSidePanePosition() {
 }
 
 function syncTimelineSidePanePosition() {
+  if (state.currentView !== "timeline") return;
   const stream = document.querySelector(".timeline-heading-row");
   if (!stream) return;
   const rect = stream.getBoundingClientRect();
@@ -5321,6 +5348,7 @@ function runDisabledReason() {
 
 function bridgeUnavailableReason(bridge) {
   const runtime = state.bootstrap?.collectionRuntime;
+  if (runtime?.nativeReaderOnly) return "Close the native post windows to resume headless collection.";
   if (runtime?.available && runtime.pending) return "Waiting for the collection mode transition. Finish capture or close open source windows.";
   if (collectionModeState(runtime,bridge?.compatible).canCollect) return "";
   if (bridge?.compatible) return "";
@@ -8092,6 +8120,7 @@ function timelineContentContextTrigger(id) {
 }
 
 function syncTimelineContentContextTabs() {
+  if (state.currentView !== "timeline") return;
   const tabs = [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")];
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const candidates = tabs.map((tab) => {

@@ -62,7 +62,7 @@ func (s *Session) authorizeReaderHelper(pid uint32) error {
 		return err
 	}
 	age := time.Since(time.Unix(0, created.Nanoseconds()))
-	if age < 0 || age > readerbroker.Lifetime {
+	if age < 0 || age > readerbroker.PreparationLifetime {
 		return errors.New("helper lifetime expired")
 	}
 	return nil

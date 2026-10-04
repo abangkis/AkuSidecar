@@ -111,7 +111,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 		e.mu.RLock()
 		retained := len(e.headlessAccess) > 0
 		e.mu.RUnlock()
-		if retained && e.captureOwner != nil && e.captureOwner.Snapshot().Driver == "headless" {
+		if retained && e.captureOwner != nil && (e.captureOwner.Snapshot().Driver == "headless" || runtime.Status().NativeReaderOnly) {
 			return nil
 		}
 		return errors.New("waiting for browser source-access confirmation before headless handoff")
@@ -210,6 +210,12 @@ func (e *Engine) BorrowInteractiveCapture(ctx context.Context) (*captureruntime.
 	}
 	return e.collectionRuntime.BorrowBrowser(ctx)
 }
+func (e *Engine) BorrowNativeReader(ctx context.Context) (*captureruntime.Lease, func(), error) {
+	if e.collectionRuntime == nil {
+		return nil, nil, nil
+	}
+	return e.collectionRuntime.BorrowNativeReader(ctx)
+}
 func (e *Engine) PrepareInteractiveCapture(ctx context.Context) error {
 	lease, release, err := e.BorrowInteractiveCapture(ctx)
 	if err != nil {
@@ -249,6 +255,11 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 				continue
 			}
 			e.releaseTerminalCaptureSessions(ctx)
+			// A native reader owns the signed-in profile solely for user interaction.
+			// It has neither a Quiet collector nor Bridge command consumers.
+			if e.collectionRuntime.Status().NativeReaderOnly {
+				continue
+			}
 			e.processHybridBrowserMediaRecaptures(ctx)
 			if active, err := e.store.ActiveSession(ctx); err == nil && active != nil && hybridCollectionSession(*active) {
 				if _, err := e.startNext(ctx, active.ID); err != nil {

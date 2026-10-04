@@ -99,3 +99,17 @@ func TestReaderTicketDisclosesTargetOnlyAfterSingleClaimAndRevalidation(t *testi
 		})
 	}
 }
+
+func TestColdPreparationDoesNotExtendActivationCapability(t *testing.T) {
+	if PreparationLifetime <= Lifetime || PreparationLifetime > 30*time.Second {
+		t.Fatal("cold preparation must be separately bounded")
+	}
+	var stream bytes.Buffer
+	target := Target{HWND: 123, PID: 456, Value: 1, Action: "split_one", Expires: time.Now().Add(Lifetime + time.Second)}
+	if _, err := Exchange(context.Background(), &stream, target, func() error { return nil }); err == nil {
+		t.Fatal("long preparation accepted an extended activation target")
+	}
+	if stream.Len() != 0 {
+		t.Fatal("invalid target disclosed a ticket")
+	}
+}

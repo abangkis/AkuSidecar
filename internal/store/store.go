@@ -2008,33 +2008,11 @@ func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.T
 		}
 		return items, err
 	}
-	items, err := s.listItems(ctx, `WHERE COALESCE((SELECT state FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),batch_state) IN ('','visible')`+timelinePresentationOrderSQL+` LIMIT 1000`)
+	ids, err := s.timelinePageIDs(ctx, settings.SemanticEventMode, limit, offset)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]domain.TimelineItem, 0, limit)
-	uniqueSeen := 0
-	uniqueIncluded := 0
-	for _, item := range items {
-		duplicate := item.SemanticEvent != nil && item.SemanticEvent.Relation == "duplicate_report"
-		if duplicate {
-			if settings.SemanticEventMode == "collapse" && uniqueSeen >= offset && uniqueIncluded <= limit {
-				result = append(result, item)
-			}
-			continue
-		}
-		if uniqueSeen < offset {
-			uniqueSeen++
-			continue
-		}
-		if uniqueIncluded >= limit {
-			break
-		}
-		result = append(result, item)
-		uniqueSeen++
-		uniqueIncluded++
-	}
-	return result, nil
+	return s.hydrateTimelinePage(ctx, ids)
 }
 
 func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]domain.TimelineItem, error) {

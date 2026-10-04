@@ -10,6 +10,14 @@ import (
 	"testing"
 )
 
+func TestNativeReaderNormalWindowDoesNotUseAppOrCaptureHostURL(t *testing.T) {
+	args := buildArgs(LaunchOptions{UserDataDir: "owned-reader-profile", URL: "http://127.0.0.1/marker", NormalWindow: true})
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--new-window") || !strings.Contains(joined, "http://127.0.0.1/marker") || strings.Contains(joined, "--app=") || strings.Contains(joined, "split-capture-host") {
+		t.Fatal("reader must use a normal Chrome window without the legacy host")
+	}
+}
+
 func TestBuildArgsIncludesCoreSwitches(t *testing.T) {
 	options := LaunchOptions{
 		Executable:    "chrome.exe",

@@ -19,6 +19,7 @@ const defaultCandidate = join(browserBuildRoot, 'headless-hybrid-collection-2026
 const pause = milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
 const MAX_BOOTSTRAP_MS = 120_000;
 const CANDIDATE_DRAIN_MS = 20_000;
+const MANUAL_TRIAL_MS = 30 * 60_000;
 const HEALTH_ORIGIN = 'http://127.0.0.1';
 // A filtered Get-NetTCPConnection query throws when no listener matches.
 // Enumerate successfully first so an empty result proves absence, not failure.
@@ -50,12 +51,16 @@ export function parseArguments(values) {
   let candidateSeen = false;
   let allowRuntimeStop = false;
   let allowForeground = false;
+  let manualTrial = false;
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
     if (value === '--candidate') {
       if (candidateSeen || !isAbsolute(values[index + 1] || '')) throw new BootstrapError('invalid_arguments');
       candidate = values[++index];
       candidateSeen = true;
+    } else if (value === '--manual-trial') {
+      if (manualTrial) throw new BootstrapError('invalid_arguments');
+      manualTrial = true;
     } else if (value === '--allow-runtime-stop') {
       if (allowRuntimeStop) throw new BootstrapError('invalid_arguments');
       allowRuntimeStop = true;
@@ -67,7 +72,19 @@ export function parseArguments(values) {
     }
   }
   if (allowRuntimeStop !== allowForeground) throw new BootstrapError('both_runtime_and_foreground_approval_required');
-  return {candidate, allowRuntimeStop, allowForeground};
+  return {candidate, allowRuntimeStop, allowForeground, manualTrial};
+}
+
+// A local completion marker ends user-led QA; it contains no credentials.
+// Timeout uses the same cooperative shutdown and verified restore as bootstrap.
+export async function waitForManualTrial({finished, exited, now = Date.now, sleep = pause}, timeoutMs = MANUAL_TRIAL_MS) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    if (await finished()) return 'operator_finished';
+    if (exited()) return 'candidate_exited';
+    await sleep(500);
+  }
+  return 'trial_time_limit';
 }
 
 function isInside(parent, child, allowEqual = false) {
@@ -437,7 +454,7 @@ export function validateCandidateBridge(value, expectedOrigin) {
   return {compatible: true, extensionOrigin: expectedOrigin, grantedSourceCount: 0};
 }
 
-async function smokeCandidate(candidate, plan) {
+async function smokeCandidate(candidate, plan, manualTrial = false) {
   await mkdir(plan.acceptanceRoot, {recursive: false});
   const launcherExe = await containedRealpath(candidate.candidateRoot,
     join(candidate.candidateRoot, 'AkuBrowserLauncher.exe'), 'candidate_launcher_outside_root');
@@ -499,6 +516,19 @@ async function smokeCandidate(candidate, plan) {
   }
   plan.candidateBootstrap = {passed: Boolean(smokeResult), result: smokeResult,
     failureCode: primaryError?.code || null};
+  if (manualTrial && smokeResult && !primaryError) {
+    const completionMarker = join(plan.acceptanceRoot, 'finish-trial');
+    process.stdout.write(`${JSON.stringify({status: 'manual_trial_ready', acceptanceRoot: plan.acceptanceRoot,
+      completionMarker, maxTrialMinutes: MANUAL_TRIAL_MS / 60_000, bootstrap: smokeResult})}\n`);
+    try {
+      plan.manualTrial = {completion: await waitForManualTrial({
+        finished: () => pathExists(completionMarker),
+        exited: () => child.exitCode !== null || child.signalCode !== null,
+      }), authenticationAndReaderAcceptance: 'operator_assessment_required'};
+    } catch {
+      primaryError = new BootstrapError('manual_trial_wait_failed');
+    }
+  }
   const shutdown = await cooperativeCandidateStop(runState);
   plan.lastCandidateStop = {released: shutdown.released === true, method: shutdown.method || null, reason: shutdown.reason || null};
   if (!shutdown.released) {
@@ -563,7 +593,8 @@ async function prepare(args) {
     candidate: candidate.candidateRoot, candidateVersion: candidate.version, candidateBridgeOrigin: candidate.manifest.bridgeIdentity.origin,
     acceptanceRoot, isolatedLocalAppData, isolatedBrowserProfile, isolatedUiProfile, credentialNamespace: `AkuBrowserTest-${namespaceDigest}`,
     currentRuntimePreflight: before, currentRuntimeProjection: projection,
-    bounds: {healthAndBridgeCheckMs: MAX_BOOTSTRAP_MS, candidateDrainMs: CANDIDATE_DRAIN_MS},
+    bounds: {healthAndBridgeCheckMs: MAX_BOOTSTRAP_MS, candidateDrainMs: CANDIDATE_DRAIN_MS,
+      manualTrialMs: args.manualTrial ? MANUAL_TRIAL_MS : 0},
     runtimeStopIssued: false, candidateLaunchIssued: false, grantsExpected: 0,
     requiresBothRuntimeStopAndForegroundApproval: true, liveAuthenticatedSourcesUsed: false,
     profileAuthCopied: false, permissionsGranted: false, bridgeReloaded: false};
@@ -598,7 +629,7 @@ async function main() {
       return true;
     },
     runCandidate: async () => {
-      return smokeCandidate(candidate, plan);
+      return smokeCandidate(candidate, plan, args.manualTrial);
     },
     verifyCandidateReleased: async () => plan.activeRunState
       ? candidateReleased(plan.activeRunState) : !plan.candidateLaunchIssued,

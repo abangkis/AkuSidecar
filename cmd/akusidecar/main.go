@@ -29,6 +29,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/httpapi"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -482,6 +483,22 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			}
 			if mode == "headless" {
 				return headless.Launch(ctx, headlessOptions)
+			}
+			if mode == "native_reader" {
+				origin := strings.TrimRight(target, "/")
+				idleURL := origin + "/native-reader-idle"
+				process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, UserDataDir: captureProfile, URL: idleURL, NormalWindow: true, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--disable-extensions", "--profile-directory=" + captureProfileDirectory}})
+				if err != nil {
+					return process, err
+				}
+				reader, err := appshell.NewNativeReader(ctx, process, idleURL, logger)
+				if err != nil {
+					return reader, err
+				}
+				server.SetSplitDirectNativeReader(func(ctx context.Context, id, url, marker string) (readerbroker.Target, func(context.Context) error, error) {
+					return reader.PrepareNativePost(ctx, id, url, origin+marker)
+				}, reader.ReplacementReadiness)
+				return reader, nil
 			}
 			url, err := server.SplitCaptureLaunchURL(target)
 			if err != nil {

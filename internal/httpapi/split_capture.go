@@ -102,6 +102,7 @@ type pendingSplitAction struct {
 	brokerReady                 chan struct{}
 	brokerDone                  chan error
 	brokerAttached              bool
+	directReader                bool
 	brokerTarget                readerbroker.Target
 	runtimeLease                *captureruntime.Lease
 	detached                    bool
@@ -120,6 +121,8 @@ type splitCaptureTransport struct {
 	prepareReader           func(context.Context, string) (func(context.Context) error, error)
 	prepareBrokerReader     func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
 	prepareSourceWindow     func(context.Context, string) error
+	directReader            func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error)
+	directReaderReadiness   func(context.Context) error
 	runtime                 *captureruntime.Manager
 	actionTimeout           time.Duration
 	sourceTrackingSupported bool
@@ -140,6 +143,11 @@ func (s *Server) SplitCaptureReplacementReadiness(ctx context.Context) error {
 		return errors.New("split capture transport unavailable")
 	}
 	t.mu.Lock()
+	if t.directReaderReadiness != nil && !t.closed {
+		check := t.directReaderReadiness
+		t.mu.Unlock()
+		return check(ctx)
+	}
 	defer t.mu.Unlock()
 	if t.hostOnlyRequired && !t.hostOnlySupported {
 		return errors.New("Bridge host-only retirement is not negotiated; update or reload AkuBridge before switching collection mode")
@@ -215,6 +223,17 @@ func (s *Server) SetSplitReaderBroker(prepare func(context.Context, string) (rea
 	s.splitCapture.prepareBrokerReader = prepare
 }
 
+// Installed only for a headless native-reader process, never for a collector.
+func (s *Server) SetSplitDirectNativeReader(prepare func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error), readiness func(context.Context) error) {
+	t := s.splitCapture
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.directReader, t.directReaderReadiness = prepare, readiness
+}
+
 // HandleReaderBroker is called only by the OS-authenticated native pipe server.
 // The collector has no route to this entry point and never receives a ticket.
 func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Request, activate func(readerbroker.Target) (readerbroker.Reply, error)) (retErr error) {
@@ -263,7 +282,7 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	for entry == nil {
 		t.mu.Lock()
 		for _, a := range t.actions {
-			if a.action.RequestID == req.RequestID && a.action.Type == "open_native_post" && a.action.Source == req.Source && a.action.URL == req.URL && a.brokerReady != nil && !a.brokerAttached {
+			if !a.completed && a.action.RequestID == req.RequestID && a.action.Type == "open_native_post" && a.action.Source == req.Source && a.action.URL == req.URL && a.brokerReady != nil && !a.brokerAttached {
 				a.brokerAttached = true
 				entry = a
 				attachedAt = time.Now()
@@ -467,6 +486,7 @@ func (s *Server) RotateSplitCapture() error {
 	t.actions = nil
 	t.key = hex.EncodeToString(secret[:])
 	t.prepareReader, t.prepareBrokerReader, t.prepareSourceWindow = nil, nil, nil
+	t.directReader, t.directReaderReadiness = nil, nil
 	t.sourceTrackingSupported, t.untrackedSourceOutcome, t.hostCloseSupported, t.hostOnlySupported = false, false, false, false
 	s.engine.ResetCaptureHeartbeat()
 	t.mu.Unlock()
@@ -830,10 +850,20 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}
 		}
 		a.ID = domain.NewID("split")
+		if a.Type == "open_native_post" {
+			// One bounded conversation includes both profile handoff and queue wait.
+			readerCtx, cancel := context.WithTimeout(r.Context(), readerbroker.PreparationLifetime)
+			defer cancel()
+			r = r.WithContext(readerCtx)
+		}
 		entry := &pendingSplitAction{action: a, result: make(chan splitActionResult, 1)}
 		queued := false
 		if a.Type == "open_source" || a.Type == "open_native_post" || a.Type == "revoke_source_access" {
-			lease, release, err := s.engine.BorrowInteractiveCapture(r.Context())
+			borrow := s.engine.BorrowInteractiveCapture
+			if a.Type == "open_native_post" {
+				borrow = s.engine.BorrowNativeReader
+			}
+			lease, release, err := borrow(r.Context())
 			if err != nil {
 				return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
 			}
@@ -849,7 +879,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}()
 		}
 		t.mu.Lock()
-		if a.Type == "open_native_post" && t.prepareBrokerReader != nil {
+		if a.Type == "open_native_post" && (t.prepareBrokerReader != nil || t.directReader != nil) {
 			if err := (readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}).Validate(); err != nil {
 				t.mu.Unlock()
 				return badRequest("Native reader requires an explicit UI broker click.")
@@ -862,6 +892,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}
 			entry.brokerReady = make(chan struct{})
 			entry.brokerDone = make(chan error, 1)
+			entry.directReader = t.directReader != nil
 		}
 		if t.closed || len(t.actions) >= splitActionLimit {
 			t.mu.Unlock()
@@ -881,12 +912,16 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		queueSnapshot := snapshotSplitActionQueue(t.actions)
 		actionTimeout := t.actionTimeout
 		queuedAudit, queuedAuditReady := s.splitActionAuditRecord(entry.action, "queued", "accepted")
+		directPrepare := t.directReader
 		t.mu.Unlock()
 		if entry.action.Type == "open_native_post" && s.logger != nil {
 			s.logger.Printf("split_action action=%s request_id=%s phase=queued outcome=accepted queue_total=%d unclaimed=%d claimed=%d native_unclaimed=%d native_waiting_broker=%d native_ready=%d", entry.action.ID, splitBrokerRequestID(entry.action), queueSnapshot.total, queueSnapshot.unclaimed, queueSnapshot.claimed, queueSnapshot.nativeUnclaimed, queueSnapshot.nativeWaitingBroker, queueSnapshot.nativeReady)
 		}
 		if queuedAuditReady {
 			s.persistSplitActionAudit(r.Context(), queuedAudit)
+		}
+		if entry.directReader {
+			go s.runDirectNativeReader(r.Context(), t, entry, directPrepare)
 		}
 		defer func() {
 			t.mu.Lock()
@@ -903,7 +938,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			timeout = splitActionTimeout
 		}
 		if entry.brokerReady != nil {
-			timeout = readerbroker.Lifetime
+			timeout = readerbroker.PreparationLifetime
 		}
 		finishAction := func(outcome string) {
 			if entry.action.Type == "open_native_post" && s.logger != nil {
@@ -960,7 +995,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
 			}
 			for _, entry := range t.actions {
-				if !entry.claimed && (entry.brokerReady == nil || entry.brokerAttached) {
+				if !entry.directReader && !entry.claimed && (entry.brokerReady == nil || entry.brokerAttached) {
 					entry.claimed = true
 					action := entry.action
 					sourceLifetime := action.Type == "open_source" && t.prepareSourceWindow != nil
@@ -1006,6 +1041,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
 			}
 			if entry.action.ID == id && entry.claimed {
+				if entry.directReader {
+					return notFound("Bridge capture action")
+				}
 				if entry.completed {
 					return apiError{Status: 409, Code: "capture_result_duplicate", Message: "Capture result was already received."}
 				}
@@ -1097,6 +1135,10 @@ func (s *Server) serveSplitCaptureAsset(w http.ResponseWriter, r *http.Request) 
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, "<!doctype html><html><head><title>"+html.EscapeString("AkuBrowser reader "+id)+"</title></head><body>Opening native post…</body></html>")
+		return true
+	case "/native-reader-idle":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<!doctype html><title>AkuBrowser native reader</title><p>Opening native post…</p>")
 		return true
 	case "/split-ui-bridge.js":
 		w.Header().Set("Content-Type", "application/javascript")

@@ -21,6 +21,10 @@ const HostName = "com.akubrowser.reader_activation"
 const PipeName = `\\.\pipe\AkuBrowser.reader-activation.11122`
 const Lifetime = 5 * time.Second
 
+// A cold headless-to-Browser handoff may outlive the activation capability.
+// Waiting discloses no HWND/ticket; the bound target still expires in Lifetime.
+const PreparationLifetime = 30 * time.Second
+
 type Request struct {
 	RequestID string `json:"requestId"`
 	Source    string `json:"source"`

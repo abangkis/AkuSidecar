@@ -131,7 +131,7 @@ func Serve(ctx context.Context, authorize func(uint32) error, handle func(contex
 			}
 			return err
 		}
-		deadline, cancel := context.WithTimeout(ctx, Lifetime)
+		deadline, cancel := context.WithTimeout(ctx, PreparationLifetime)
 		f.ctx = deadline
 		func() {
 			var req Request

@@ -25,6 +25,7 @@ type RuntimeStatus struct {
 	QuietAvailable          bool                 `json:"quietAvailable"`
 	SupportedSources        []domain.Source      `json:"supportedSources"`
 	AuthorizedSources       []domain.Source      `json:"authorizedSources,omitempty"`
+	NativeReaderOnly        bool                 `json:"nativeReaderOnly,omitempty"`
 	CollectionBorrowSource  domain.Source        `json:"collectionBorrowSource,omitempty"`
 	CollectionBorrowFailure string               `json:"collectionBorrowFailure,omitempty"`
 }
@@ -65,6 +66,8 @@ type Coordinator struct {
 	owner                     *captureruntime.Manager
 	requested                 string
 	interactive               int
+	nativeReaders             int
+	nativeReaderGeneration    uint64
 	browserCollection         int
 	browserCollectionFailures map[string]string
 	launch                    func(context.Context, string, uint64) (captureruntime.Process, error)
@@ -127,6 +130,7 @@ func (c *Coordinator) Request(mode string) {
 func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
 	requested, interactive, collectionBorrow, failure, available := c.requested, c.interactive, c.browserCollection, c.failure, c.headlessAvailable
+	nativeGeneration := c.nativeReaderGeneration
 	backend, generation := c.browserCollector, c.browserGeneration
 	var collectionFailure string
 	if len(c.browserCollectionFailures) > 0 {
@@ -145,6 +149,10 @@ func (c *Coordinator) Status() RuntimeStatus {
 	}
 	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
 	status := RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0 || collectionBorrow > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
+	status.NativeReaderOnly = nativeGeneration != 0 && nativeGeneration == s.Generation
+	if status.NativeReaderOnly {
+		status.Pending = true
+	}
 	if collectionBorrow > 0 {
 		status.CollectionBorrowSource = domain.SourceFacebook
 		status.CollectionBorrowFailure = collectionFailure
@@ -190,16 +198,18 @@ func (c *Coordinator) reconcile(parent context.Context) {
 		mode = "browser"
 	}
 	retry := c.retry
+	nativeOnly := c.nativeReaderGeneration != 0 && c.nativeReaderGeneration == c.owner.Snapshot().Generation
+	launchReader := c.requested == "headless" && c.nativeReaders > 0 && c.interactive == c.nativeReaders && c.browserCollection == 0
 	c.mu.Unlock()
 	s := c.owner.Snapshot()
 	retiring := c.owner.Retiring()
-	if s.State == captureruntime.Ready && s.Driver == mode {
+	if s.State == captureruntime.Ready && s.Driver == mode && !(nativeOnly && !launchReader) {
 		return
 	}
 	if s.ActiveLeases > 0 {
 		return
 	}
-	if (s.State == captureruntime.Blocked || s.State == captureruntime.Failed) && !retry && !retiring {
+	if (s.State == captureruntime.Blocked || s.State == captureruntime.Failed) && !retry && !retiring && !nativeOnly {
 		return
 	}
 	// Validate assets before releasing a healthy authenticated owner.
@@ -222,10 +232,18 @@ func (c *Coordinator) reconcile(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
 	defer cancel()
 	factory := func(ctx context.Context, generation uint64) (captureruntime.Process, error) {
-		process, err := c.launch(ctx, mode, generation)
+		launchMode := mode
+		if mode == "browser" && launchReader {
+			launchMode = "native_reader"
+		}
+		process, err := c.launch(ctx, launchMode, generation)
 		if err == nil {
 			c.mu.Lock()
 			c.headless, _ = process.(*headless.Process)
+			c.nativeReaderGeneration = 0
+			if launchMode == "native_reader" {
+				c.nativeReaderGeneration = generation
+			}
 			c.mu.Unlock()
 		}
 		return process, err
@@ -250,6 +268,30 @@ func (c *Coordinator) BorrowBrowser(ctx context.Context) (*captureruntime.Lease,
 	return c.borrowBrowser(ctx, false)
 }
 
+func (c *Coordinator) BorrowNativeReader(ctx context.Context) (*captureruntime.Lease, func(), error) {
+	c.mu.Lock()
+	c.nativeReaders++
+	c.mu.Unlock()
+	lease, release, err := c.borrowBrowserMode(ctx, false, true)
+	var once sync.Once
+	done := func() {
+		once.Do(func() {
+			if release != nil {
+				release()
+			}
+			c.mu.Lock()
+			c.nativeReaders--
+			c.retry = true
+			c.mu.Unlock()
+		})
+	}
+	if err != nil {
+		done()
+		return nil, nil, err
+	}
+	return lease, done, nil
+}
+
 // A Facebook batch borrows the same exclusive profile without pretending to be
 // a login/reader interaction. Its intent and process lease both prevent return.
 func (c *Coordinator) BorrowBrowserCollection(ctx context.Context, source domain.Source) (*captureruntime.Lease, func(), error) {
@@ -270,12 +312,19 @@ func (c *Coordinator) BeginBrowserCollection(source domain.Source) (func(), erro
 }
 
 func (c *Coordinator) borrowBrowser(ctx context.Context, collectionBorrow bool) (*captureruntime.Lease, func(), error) {
+	return c.borrowBrowserMode(ctx, collectionBorrow, false)
+}
+func (c *Coordinator) borrowBrowserMode(ctx context.Context, collectionBorrow, nativeReader bool) (*captureruntime.Lease, func(), error) {
 	releaseIntent := c.beginBrowserBorrow(collectionBorrow)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		s := c.owner.Snapshot()
 		if s.State == captureruntime.Ready && s.Driver == "browser" {
+			if c.Status().NativeReaderOnly && !nativeReader {
+				releaseIntent()
+				return nil, nil, errors.New("close native post windows before opening a source or collecting through Browser")
+			}
 			lease, err := c.owner.Acquire()
 			if err != nil {
 				releaseIntent()

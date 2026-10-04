@@ -80,6 +80,9 @@ type LaunchOptions struct {
 	// PrivateCDP opts this managed minimized capture window into a private
 	// inherited-pipe DevTools connection. It never opens a debugging port.
 	PrivateCDP bool
+	// Explicit native reader windows need normal Chrome navigation controls.
+	// The product UI and legacy capture host retain app mode by default.
+	NormalWindow bool
 }
 
 type ApplicationIdentity struct {
@@ -537,6 +540,10 @@ func buildArgs(options LaunchOptions) []string {
 		// interactive permission prompts remain available. See Chromium's
 		// docs/chrome_for_testing/README.md, User Interface & Infobars.
 		"--disable-infobars",
+	}
+	if options.NormalWindow {
+		args[0] = "--new-window"
+		args = append(args, strings.TrimSpace(options.URL))
 	}
 	if value := strings.TrimSpace(options.ExtensionPath); value != "" {
 		args = append(args, "--load-extension="+value)

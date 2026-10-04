@@ -7,6 +7,119 @@ Bridge checkpoint. Local candidate implementations for phases 2c-5 now exist,
 but acceptance is incomplete. Do not install or release this candidate yet.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
+### Timeline hydration performance follow-up (2026-10-04)
+
+User approved fixing the 12-card/1000-item detail-loading path. Collapse/hide
+now select page IDs and duplicate relations before hydrating only selected
+items. Existing ordering, unique offsets, trailing duplicate reports, prepared
+visibility, corrections and the 1000-candidate horizon are retained; show_all
+is unchanged. The lightweight selector can still inspect up to 1000 identities,
+but no longer hydrates their full evidence/AI/preference/memory projections.
+
+Read-only comparison against the current database verified deep equality of
+the complete 13-item response for a 12-unique-item request in three runs:
+old Store read 518/492/485 ms, new 18/19/25 ms. These are Store timings, not
+endpoint, rendered-frame or installed-runtime acceptance. Regression fixtures
+cover pagination/duplicate boundaries and ensure unselected history evidence
+is not decoded while selected evidence errors remain visible. User-approved
+Supervisor restart completed cooperatively (forced=false); runtime is Headless
+ready with X/Instagram/LinkedIn selected and Auto Update off. Three GET Timeline
+requests measured 144/189/123 ms versus the earlier 1070-1179 ms endpoint
+baseline. Hostless reader assets are served, but the real native-post click
+journey has not been exercised. Global scroll/layout and database-health contention
+remain separate follow-ups; this change does not certify whole-app smoothness.
+
+### Combined headless trial and remaining reader host gap (2026-10-04)
+
+Owner ran X/Instagram/LinkedIn together at 19:36-19:37 Jakarta time. Session
+`session_368c6567a06f8f722ec4fd6f42c32077` completed; all three commands carry
+Headless collector/driver stamps in the same epoch and generation 2.
+Instagram captured 2/added 0, LinkedIn captured 4/added 2, X captured 5/added 3.
+All runs completed without errors. This validates combined acquisition, not
+Facebook mixed routing, matched-content parity, or every media format.
+
+Owner reports native-post trouble and the Experimental capture host still
+appearing. The previous modularization only changed the UI route: the active
+Browser factory still launches `/split-capture-host`. A separate hostless
+reader role is now implemented in source, pending runtime activation and
+trusted-click trial. Native reader foreground/result receipts at 19:38-19:39 were
+accepted, but those do not certify first-click reliability or page-content
+readiness. The screenshot's `browser_handoff_required` error comes from the
+passive ping/probe or explicit reload branch, not native-post dispatch. The
+new relay treats only passive ping/probe requests receiving that exact 409 as
+skipped after auto-return; reader/reload and other failures remain visible.
+
+The user approved correcting repeated Node extraction. The shared stager now
+caches only node.exe/LICENSE by pinned archive hash and version. It validates
+the archive and derives entry hashes from it before trusting extracted files;
+worker source files are copied fresh on every stage. Cold/warm/fresh-source/
+corrupt-cache cases passed in project-only fixtures. Production restart is not
+needed to use this script change; the next development rebuild invokes it.
+
+A separately authorized local Chrome test passed: an empty profile, exactly
+one local reader page, owned HWND binding through private CDP, profile retained
+while the reader remained open, then natural process-tree exit after closing
+only that fixture page. Receipt is under
+`build/hostless-reader-smoke-*/receipt.json`. Production runtime was not stopped.
+This does not certify authenticated URLs or a real trusted UI click.
+
+The new `native_reader` factory role launches normal Chrome using the same
+configured executable/profile, without Bridge or `/split-capture-host`.
+Extensions are disabled only for this process, not removed or reconfigured.
+The exact broker request must attach before native URL navigation. Private CDP
+reuses only the unchanged local placeholder for the first post and creates a
+separate window for subsequent posts. Retirement closes only an untouched
+placeholder; post/source windows must close naturally before profile reuse.
+Reader-only generations reject source/Browser-collection borrows and expose
+`nativeReaderOnly`; Browser/Facebook use the existing Bridge route. Native
+reader natural exit permits verified recovery into Headless using retained
+source authorization. No new public collection setting is introduced.
+
+Fake protocol, coordinator and broker tests cover page ownership, URL/request
+correlation, independent repeated windows, denied activation, cancellation,
+Bridge exclusion, live-reader retention and auto-return after natural exit.
+Validation: seven affected Go package suites passed, 62 frontend tests passed,
+and standalone Windows Sidecar/helper builds passed without touching runtime.
+One existing Settings-storage wording assertion was already stale in HEAD;
+it now checks the actual preview/active-retention messages without changing
+retention behavior or adding cleanup controls.
+Activation still needs a separately approved development restart, followed by
+owner first-click/repeated-click and close-to-auto-return trials. No extension
+preferences, logged-in profile data, database, defaults, commit or push changed.
+
+### Current-profile trial follow-up: Settings and native reader (2026-10-04)
+
+User approved fixing Settings scrolling and modularizing native-post opening
+by the live Chrome mode. The served old UI deliberately spent the first
+Headless click preparing Browser and requested another click; this was not a
+completed URL-open attempt. The new router reads current runtime status and
+selects a Headless handoff route or an already-interactive Browser route,
+including Browser temporarily borrowed under a Headless preference. Both
+retain the existing authenticated profile, typed reader transport, trusted
+click broker and native lifetime tracking. No second click or full bootstrap
+rerender is needed. Headless collection remains headless; this is an explicit
+interactive reader action. The existing Bridge control host is still used.
+
+Cold preparation is bounded to 30 seconds for the helper and native action;
+the HWND activation capability remains 5 seconds and OS identity/foreground
+checks remain in force. Early broker failure cancels routing before a delayed
+status response can dispatch the URL. Settings uses an opaque sticky header
+instead of backdrop blur and preserves unchanged polling text/classes.
+
+Validation: 44 focused Node tests passed, including both single-click routes,
+temporary Browser ownership, failed/unknown runtime, early broker rejection,
+unchanged DOM writes, existing broker permissions and Timeline contracts.
+Go readerbroker/httpapi/collection/appshell suites passed; the protocol test
+rejects extended activation expiry despite the longer preparation window.
+One explicitly approved Supervisor restart completed cooperatively (no force).
+Read-only checks confirmed health OK and byte-identical served app/CSS/router/
+render modules. Runtime returned to Headless ready with all four authorized
+sources, LinkedIn selected, Adaptive Fidelity and Auto Update disabled. No
+native post or Update was issued. Rendered scrolling and the real trusted-click
+cold reader journey remain pending owner trial. Mixed
+Update step 5 remains deferred by the user; no social action, mode/default
+change, database reset, commit or push is part of this follow-up.
+
 ### Approved hybrid default direction (2026-10-04)
 
 The user approves headless as the intended default for X, Instagram and
@@ -221,6 +334,82 @@ Current acceptance summary (later evidence supersedes historical statuses):
 | Login/source window lifetime | LinkedIn/Instagram scoped lifecycle receipts available | Actual login and trusted reader click |
 | Automatic Facebook Recapture borrowing | Controlled lifecycle/transport tests passed | Authenticated end-to-end Recapture |
 | Headless default migration | Not applied | Close product gates and qualify fresh media/text evidence |
+
+User-led trial preparation (2026-10-04): the user requests a guided trial.
+A new canonical package is built from clean detached source checkouts under
+`AkuBrowser/build/hybrid-trial-20261004-clean/`, without copying untracked
+experiments. Source commits are AkuBrowser `036d839`, AkuSidecar `e2de038`, and
+AkuBridge `8dd4d6d`; the install manifest records an empty sourceDirty list.
+Artifact: `AkuBrowser/build/hybrid-trial-20261004-clean/AkuBrowser/build/trial-package/AkuBrowser-0.9.0-windows-x64-installed-app`.
+Canonical builder validation passes with 417 payload files (589110406 bytes);
+Sidecar SHA-256 is `5bacefae3598742b4a2de1ae9f598c2575ac1172432212432d6196cd43bafef1`.
+This is a new artifact, not a relabeling of the earlier dirty candidate.
+
+The bootstrap operator helper now offers `--manual-trial`: read-only unless
+the existing paired runtime-stop/foreground flags are supplied. After exact
+package health/Bridge validation with zero initial grants, it permits up to
+30 minutes of user-led interaction. A local `finish-trial` marker or candidate
+exit ends the wait; timeout follows the same cooperative shutdown and verified
+restore fences. Twelve guards pass outside the Windows inspection sandbox.
+Read-only preflight passes with healthy original runtime, four grants and no
+active session. No new candidate has been launched, no login/grant performed,
+and no installation/default migration applied. Fresh foreground/runtime-stop
+permission is pending for this user-led cycle. Login is required only because
+this complete-package trial intentionally uses a new isolated profile; mode
+switching within that trial continues to use its same authenticated profile.
+
+The user deferred that isolated-profile opening and instead approved a trial
+with the existing signed-in profile and current database after a backup. No
+database reset is authorized or performed. `scripts/activate-current-profile-hybrid-trial.mjs`
+validates the candidate tuple and the executing candidate's read-only database
+inspection (current schema 29 equals target 29), defaults to preflight-only,
+and requires paired runtime-stop/foreground flags for activation. It uses the
+existing Supervisor registration, configuration, Bridge and capture Chrome
+154.0.8037.93. The separate UI keeps its already-pinned CfT152 UI profile;
+CfT152 never opens the authenticated capture profile.
+
+Live activation passes: after verified Supervisor stop, zero capture/UI profile
+owners and no port listener, the database and existing companions are copied
+and hash-verified. Original selected dev runtime components are retained;
+the verified candidate executable, adjacent headless worker and reader broker
+are staged into the existing registered dev output. Supervisor starts normally
+without registration/configuration/Settings edits. The candidate reports healthy
+compatible Bridge with all four original grants, unchanged Settings, no active
+collection session and `headlessAvailable=true` with all four supported sources.
+Requested/effective mode remains Browser, generation 1, with no active leases.
+Backup/receipt: `build/current-profile-hybrid-trial-dc170dfa-e0b1-4105-984a-6178092b3427/`.
+The SQLite backup is 156540928 bytes; DB schema remains 29. The supervised dev
+candidate stays active for user-led Settings trials, with no automatic trial
+timer, no installation and no default migration. This establishes activation,
+not a completed manual Update, trusted reader click or collection parity.
+
+User-led X trial checkpoint (2026-10-04): the user ran a Browser baseline,
+then selected Headless through Settings and ran another manual Update. The
+persisted Browser command for `run_ea6260081df8bd102089d813aedc3acc` is stamped
+bridge/browser generation 1; the Headless command for
+`run_92c65aeb16b565514c72bd407f4fe0c0` is stamped headless/headless generation 2
+in the same epoch. Both sessions complete without a run error. Browser captured
+5 candidates in a 55.783-second total session and added 4 items. Headless captured
+4 candidates in 12.344 seconds: 3 unchanged native resurfaces skipped, one
+evaluated but not selected because of prior knowledge overlap, and 0 added.
+The four unique Headless blocks contain text; two contain image media. These
+are unaligned feed windows with zero shared native post IDs, not matched parity
+or a controlled speed comparison. Both expose partial bounded-viewport coverage
+and degraded capture-performance summaries. Video quality remains untested.
+
+The user reported sluggish Settings scrolling and authorized the first focused
+fix. Global scroll work now gates Timeline side-pane/content-context work to
+the Timeline view; the layout scheduler, its queued callback and tab-layout
+function independently return before reading hidden Timeline DOM on other
+views. Automatic next-batch scroll detection is also Timeline-only. Four
+inactive-view behavior probes prove no Timeline DOM/window work, and a queued
+frame followed by a view change exits safely. Fourteen existing related-context
+tests and syntax/diff checks pass. The blur CSS is unchanged. Canonical dev
+restart activates the embedded frontend; served app.js equals the updated source.
+Saved mode remains Headless, X-only, Auto Update off, generation 2 ready with
+zero active leases and all four source permissions retained. No fresh login,
+database reset or default migration occurred. The user-visible improvement
+still needs operator feedback; no measured frame-rate improvement is claimed.
 
 The next operator fixture is `scripts/test-installed-hybrid-bootstrap.mjs`.
 It defaults to a read-only plan and requires paired `--allow-runtime-stop` and

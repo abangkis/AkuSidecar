@@ -1,7 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:net';
-import {parseArguments, runStopTestRestore, validateOriginalProjection, sameOriginalProjection, validateCandidateBridge, inspectWindowsListeners} from './test-installed-hybrid-bootstrap.mjs';
+import {parseArguments, runStopTestRestore, validateOriginalProjection, sameOriginalProjection, validateCandidateBridge, inspectWindowsListeners, waitForManualTrial} from './test-installed-hybrid-bootstrap.mjs';
+
+test('manual trial is still read-only without paired stop/foreground flags', () => {
+  const args = parseArguments(['--manual-trial']);
+  assert.equal(args.manualTrial, true);
+  assert.equal(args.allowRuntimeStop, false);
+  assert.equal(args.allowForeground, false);
+  assert.throws(() => parseArguments(['--manual-trial', '--manual-trial']), {code: 'invalid_arguments'});
+  assert.throws(() => parseArguments(['--manual-trial', '--allow-runtime-stop']), {code: 'both_runtime_and_foreground_approval_required'});
+});
+
+test('manual trial ends on operator marker, candidate exit, or bounded timeout', async () => {
+  assert.equal(await waitForManualTrial({finished: async () => true, exited: () => false}), 'operator_finished');
+  assert.equal(await waitForManualTrial({finished: async () => false, exited: () => true}), 'candidate_exited');
+  let clock = 0;
+  assert.equal(await waitForManualTrial({finished: async () => false, exited: () => false,
+    now: () => clock, sleep: async () => { clock += 500; }}, 1000), 'trial_time_limit');
+  assert.equal(clock, 1000);
+});
 
 test('Windows listener inspection distinguishes an owned TCP listener from an available empty result',
   {skip: process.platform !== 'win32', timeout: 30_000}, async () => {
