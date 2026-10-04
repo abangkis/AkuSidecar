@@ -206,6 +206,50 @@ authenticated parity or a trusted reader click. Never run packaged CfT152 agains
 the registered Chrome154 authenticated profile; retain separate empty package
 test data. Browser remains the installed default.
 
+The cleanup correction and mixed-Update evidence are checkpointed as
+`c938f433a4bf98a3a6eb616f118ca6ebd3aff642`; remote `main` is verified at that
+SHA. The package above retains its original dirty-on-`9be120f` provenance;
+committing the source does not rewrite or requalify that artifact.
+
+Current acceptance summary (later evidence supersedes historical statuses):
+
+| Gate | Current result | Remaining boundary |
+| --- | --- | --- |
+| Mixed-source routing, cleanup and auto-return | Passed authenticated development-Bridge fixture | Complete-package journey |
+| Complete candidate payload and identity | Canonical build and static validation passed | Live bootstrap with production Bridge identity |
+| Settings | Rendered component and controlled tests passed | Integrated product journey |
+| Login/source window lifetime | LinkedIn/Instagram scoped lifecycle receipts available | Actual login and trusted reader click |
+| Automatic Facebook Recapture borrowing | Controlled lifecycle/transport tests passed | Authenticated end-to-end Recapture |
+| Headless default migration | Not applied | Close product gates and qualify fresh media/text evidence |
+
+The next operator fixture is `scripts/test-installed-hybrid-bootstrap.mjs`.
+It defaults to a read-only plan and requires paired `--allow-runtime-stop` and
+`--allow-foreground` flags for a live run. Its isolated LOCALAPPDATA, capture/UI
+profiles and credential namespace are newly allocated under AkuBrowser/build;
+it copies no authentication or grants. Candidate readiness is bounded to 120
+seconds. Cleanup uses only the verified candidate Sidecar's cooperative shutdown
+endpoint, with no forced-stop fallback; both profiles, launcher/Sidecar and TCP
+port ownership must clear before original-runtime restoration. Original settings
+are compared by digest. Controlled guards cover approval pairing, restore order,
+blocked restoration, failed stop issuance and settings mismatch. No live package
+bootstrap has been run.
+
+Detailed preparation identified an origin-format difference: the server
+canonicalizes heartbeat origins without a trailing slash, while package/config
+origins include it. The fixture now normalizes these two exact-origin forms and
+still rejects another extension ID, a path or query. Nine guard tests pass.
+If an older heartbeat omits origin, original-runtime comparison explicitly
+records limited configured-only evidence; the new candidate still requires an
+actual production origin match.
+
+Default read-only preflight passes after the causal correction: the registered
+runtime/Bridge are healthy and compatible, one exact authenticated profile owner
+matches the registered Chrome executable, four source grants remain, and no
+session is active. Heartbeat and configured identity match. Both stop/launch
+flags remain false; no test profile or acceptance directory is created. The live
+package bootstrap now needs a fresh, separately scoped foreground/runtime-stop
+approval because the preceding mixed-Update permission covered one completed run.
+
 ### Current priority amendment (2026-10-03): defer Facebook
 
 The user changes tactics after the accumulated Facebook investigation effort:
