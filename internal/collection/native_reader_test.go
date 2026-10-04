@@ -110,3 +110,43 @@ func TestBrowserNativeBorrowKeepsExistingForegroundOwner(t *testing.T) {
 		t.Fatal("foreground path replaced")
 	}
 }
+
+func TestNativeReaderIntentWakesCoordinatorBeforeFallbackTick(t *testing.T) {
+	m, _ := captureruntime.New(proc("headless"))
+	defer m.Terminate()
+	launched := make(chan string, 1)
+	c := NewCoordinator(m, func(_ context.Context, mode string, _ uint64) (captureruntime.Process, error) {
+		launched <- mode
+		return proc("browser"), nil
+	}, func() error { return nil })
+	c.Request("headless")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c.Start(ctx)
+	done := make(chan error, 1)
+	go func() {
+		lease, release, err := c.BorrowNativeReader(ctx)
+		if err == nil {
+			lease.Release()
+			release()
+		}
+		done <- err
+	}()
+	select {
+	case mode := <-launched:
+		if mode != "native_reader" {
+			t.Fatal(mode)
+		}
+	case <-time.After(750 * time.Millisecond):
+		t.Fatal("reader intent waited for the one-second fallback timer")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("borrow did not finish")
+	}
+	cancel()
+}

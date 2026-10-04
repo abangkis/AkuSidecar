@@ -7,6 +7,54 @@ Bridge checkpoint. Local candidate implementations for phases 2c-5 now exist,
 but acceptance is incomplete. Do not install or release this candidate yet.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
+### Native reader visibility and timing follow-up (2026-10-04)
+
+Owner approved option 1 optimization after the real click measured API 4754 ms,
+broker 5208 ms, profile handoff 3800 ms (release 2529 ms, launch 15 ms, readiness
+254 ms), target preparation 918 ms (post navigation dispatch 833 ms), and rejected
+activation. Those are pre-optimization measurements, not a passing reader trial.
+Intent changes now wake the single coordinator loop immediately, retaining its
+one-second lifecycle fallback and all profile/active-lease guards. Coordinator
+wait is logged separately. Chrome shutdown cancels its losing exit timeout so
+the timeout cannot keep Node alive after verified Chrome exit; shutdown deadlines
+and full tree cleanup remain intact. The local marker is bound and activated
+before dispatching social navigation; rejected activation never dispatches the
+post, and the completion callback cannot replay navigation. Fixed activation
+reason categories distinguish UI foreground change, binding changes, Windows
+rejection and exchange failure without logging arbitrary peer text. Real
+before/after click timings and foreground acceptance still require activation.
+Validation: five affected Go packages and Sidecar/helper Windows builds pass;
+30 routing/broker frontend tests pass; the full worker suite reports 71 passed,
+one opt-in smoke skipped, zero failures. A subprocess regression proves the
+losing shutdown timer cannot hold Node open. The immediate-wake regression
+passes ten runs, and failed activation cannot navigate a social URL or replay it.
+
+The deeper Astra consultation is recorded in `auth-session-reuse-design.md`.
+It is a research proposal only; no credentials/state/profile have been copied.
+
+The two-profile collector/reader session-copy proposal is deferred by the owner.
+It must prove login reuse, restart persistence and token/session refresh before
+adoption; no profile or authentication-state duplication is implemented.
+
+The native-reader launcher no longer requests minimized startup. Private CDP
+remains an inherited pipe under process-tree ownership, with normal readers now
+eligible for the existing scoped binding/retirement guard. Timing logs contain
+only generated action IDs, generation, stage, duration and success, never URLs
+or post content. Measurements distinguish owner readiness/release, Chrome launch,
+reader readiness, aggregate profile handoff, broker attachment, target attachment,
+marker navigation, HWND binding, post navigation dispatch and activation wait.
+Aggregate timings include their child stages and must not be summed with them.
+Navigation dispatch is not proof that social content finished rendering.
+Real click timing and foreground acceptance remain pending activation/trial.
+Five affected Go packages, 30 broker/routing frontend tests and the standalone
+Windows Sidecar build pass. The owner-approved opt-in Chrome 154 local fixture
+passes: process launch 9 ms, marker/HWND binding 300 ms; the owned reader is not
+minimized, holds profile ownership while open, and naturally exits after its
+only local page closes, with process-tree cleanup verified. These are empty-profile
+local timings, not real social-post or headless-handoff timings. The approved
+Supervisor restart completed cooperatively, and the runtime is Headless ready
+with a healthy database. A real owner click is pending to measure the full path.
+
 ### Scroll/render performance follow-up (2026-10-04)
 
 Scroll requests now share one animation-frame queue for context tabs, back-to-top,

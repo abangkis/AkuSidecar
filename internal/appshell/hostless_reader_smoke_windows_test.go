@@ -47,9 +47,11 @@ func TestHostlessReaderPrivateCDPCapability(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	started := time.Now()
 	window, err := Launch(ctx, LaunchOptions{Executable: chrome, UserDataDir: profile,
-		URL: server.URL + "/marker", StartMinimized: true, PrivateCDP: true, NormalWindow: true,
-		ExtraArgs: []string{"--start-minimized", "--disable-extensions"}})
+		URL: server.URL + "/marker", PrivateCDP: true, NormalWindow: true,
+		ExtraArgs: []string{"--disable-extensions"}})
+	t.Logf("stage=chrome_launch elapsed_ms=%d", time.Since(started).Milliseconds())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,9 +61,15 @@ func TestHostlessReaderPrivateCDPCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	started = time.Now()
 	target, _, err := containment.PrepareBrokerReader(ctx, "AkuBrowser reader split_hostless_poc")
+	t.Logf("stage=window_binding elapsed_ms=%d", time.Since(started).Milliseconds())
 	if err != nil || target.HWND == 0 || target.PID == 0 {
 		t.Fatalf("hostless marker could not bind an owned reader: %v", err)
+	}
+	iconic, _, _ := isCaptureIconic.Call(uintptr(target.HWND))
+	if iconic != 0 {
+		t.Fatal("normal reader window is minimized")
 	}
 	protocol := window.CaptureProtocol()
 	raw, err := protocol.Call(ctx, "Target.getTargets", nil, "")

@@ -20,10 +20,11 @@ type NativeReader struct {
 	containment CaptureContainment
 	idleURL     string
 	idleTarget  string
+	logger      *log.Logger
 }
 
 func NewNativeReader(ctx context.Context, window *Window, idleURL string, logger *log.Logger) (*NativeReader, error) {
-	r := &NativeReader{Window: window, protocol: window.CaptureProtocol(), idleURL: idleURL}
+	r := &NativeReader{Window: window, protocol: window.CaptureProtocol(), idleURL: idleURL, logger: logger}
 	if r.protocol == nil {
 		return r, errors.New("native reader private protocol unavailable")
 	}
@@ -119,6 +120,13 @@ func (r *NativeReader) closeIdle(ctx context.Context) error {
 // PrepareNativePost is called only after the exact trusted UI broker request
 // attaches. Bind a local marker before navigating the same owned page to the URL.
 func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, markerURL string) (readerbroker.Target, func(context.Context) error, error) {
+	started := time.Now()
+	timing := func(stage string, ok bool) {
+		if r.logger != nil {
+			r.logger.Printf("native_reader_timing action=%s stage=%s elapsed_ms=%d ok=%t", actionID, stage, time.Since(started).Milliseconds(), ok)
+		}
+		started = time.Now()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	id := r.idleTarget
@@ -166,17 +174,56 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 		defer cancel()
 		_, _ = r.protocol.Call(cleanup, "Target.detachFromTarget", map[string]string{"sessionId": attached.ID}, "")
 	}()
+	timing("target_attach", true)
 	if err := r.navigate(ctx, attached.ID, markerURL); err != nil {
+		timing("marker_navigation", false)
 		return readerbroker.Target{}, nil, err
 	}
+	timing("marker_navigation", true)
 	target, verify, err := r.containment.PrepareBrokerReader(ctx, "AkuBrowser reader "+actionID)
+	timing("window_binding", err == nil)
 	if err != nil {
 		return readerbroker.Target{}, nil, err
 	}
-	if err := r.navigate(ctx, attached.ID, url); err != nil {
-		return readerbroker.Target{}, nil, err
+	if verify == nil {
+		return readerbroker.Target{}, nil, errors.New("native reader verification unavailable")
 	}
-	return target, verify, nil
+	// Show and verify the local marker first. A slow social navigation must not
+	// consume the foreground capability or delay the first visible reader.
+	var once sync.Once
+	var completion error
+	return target, func(activeCtx context.Context) error {
+		once.Do(func() {
+			if completion = verify(activeCtx); completion != nil {
+				return
+			}
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			started := time.Now()
+			raw, err := r.protocol.Call(activeCtx, "Target.attachToTarget", map[string]any{"targetId": id, "flatten": true}, "")
+			if err != nil {
+				completion = err
+				return
+			}
+			var session struct {
+				ID string `json:"sessionId"`
+			}
+			if json.Unmarshal(raw, &session) != nil || session.ID == "" {
+				completion = errors.New("native reader navigation session unavailable")
+				return
+			}
+			defer func() {
+				cleanup, cancel := context.WithTimeout(context.WithoutCancel(activeCtx), time.Second)
+				defer cancel()
+				_, _ = r.protocol.Call(cleanup, "Target.detachFromTarget", map[string]string{"sessionId": session.ID}, "")
+			}()
+			completion = r.navigate(activeCtx, session.ID, url)
+			if r.logger != nil {
+				r.logger.Printf("native_reader_timing action=%s stage=post_navigation_dispatch elapsed_ms=%d ok=%t", actionID, time.Since(started).Milliseconds(), completion == nil)
+			}
+		})
+		return completion
+	}, nil
 }
 
 func (r *NativeReader) navigate(ctx context.Context, session, url string) error {

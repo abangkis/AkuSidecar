@@ -21,6 +21,39 @@ type fakeProcess struct {
 }
 type headlessFake struct{ *fakeProcess }
 
+func TestTransitionTimingObserverReportsReadinessAndRelease(t *testing.T) {
+	for _, failRelease := range []bool{false, true} {
+		p := newProcess(100)
+		if failRelease {
+			p.cleanupErr = errors.New("not drained")
+		}
+		m, err := New(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stages := []string{}
+		m.SetTimingObserver(func(stage string, duration time.Duration, ok bool) {
+			// Calling Snapshot proves callbacks are outside the manager mutex.
+			_ = m.Snapshot()
+			if duration < 0 {
+				t.Error("negative duration")
+			}
+			stages = append(stages, stage)
+			if stage == "owner_release" && ok == failRelease {
+				t.Error("wrong release outcome")
+			}
+		})
+		err = m.Replace(context.Background(), func(context.Context, uint64) (Process, error) { return newProcess(101), nil })
+		if (err != nil) != failRelease {
+			t.Fatal("replacement outcome", err)
+		}
+		if len(stages) != 2 || stages[0] != "owner_readiness" || stages[1] != "owner_release" {
+			t.Fatal(stages)
+		}
+		m.Terminate()
+	}
+}
+
 func (p *headlessFake) Driver() string { return "headless" }
 func TestWorkerExitRetainsUIAndAllowsVerifiedRecovery(t *testing.T) {
 	p := &headlessFake{newProcess(100)}

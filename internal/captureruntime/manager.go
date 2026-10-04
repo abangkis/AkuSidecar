@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 var (
@@ -66,6 +67,23 @@ type Manager struct {
 	done                chan error
 	finishOnce          sync.Once
 	transitionReadiness func(context.Context) error
+	timingObserver      func(string, time.Duration, bool)
+}
+
+// SetTimingObserver reports transition durations only, without profile or URL data.
+func (m *Manager) SetTimingObserver(observer func(string, time.Duration, bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.timingObserver = observer
+}
+
+func (m *Manager) reportTiming(stage string, started time.Time, ok bool) {
+	m.mu.Lock()
+	observer := m.timingObserver
+	m.mu.Unlock()
+	if observer != nil {
+		observer(stage, time.Since(started), ok)
+	}
 }
 
 // SetTransitionReadiness binds transport capability checks before handoff is
@@ -194,7 +212,9 @@ func (m *Manager) Replace(ctx context.Context, launch Launch) error {
 		}
 	}
 	if previous != nil {
+		started := time.Now()
 		if err := previous.process.ReplacementReadiness(ctx); err != nil {
+			m.reportTiming("owner_readiness", started, false)
 			m.mu.Lock()
 			if !m.stopped {
 				m.state = previousState
@@ -202,6 +222,7 @@ func (m *Manager) Replace(ctx context.Context, launch Launch) error {
 			m.mu.Unlock()
 			return fmt.Errorf("capture replacement not ready: %w", err)
 		}
+		m.reportTiming("owner_readiness", started, true)
 		m.mu.Lock()
 		if m.stopped {
 			m.mu.Unlock()
@@ -209,7 +230,10 @@ func (m *Manager) Replace(ctx context.Context, launch Launch) error {
 		}
 		previous.intentional = true
 		m.mu.Unlock()
-		if err := previous.process.CloseForRetry(ctx); err != nil {
+		started = time.Now()
+		err := previous.process.CloseForRetry(ctx)
+		m.reportTiming("owner_release", started, err == nil)
+		if err != nil {
 			m.mu.Lock()
 			m.state = Blocked // Retain the owner until cleanup is actually verified.
 			m.mu.Unlock()

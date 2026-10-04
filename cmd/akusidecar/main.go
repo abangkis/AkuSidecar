@@ -442,6 +442,9 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	if capture != nil {
 		captureManager, err = captureruntime.New(capture)
 		fatal(logger, err)
+		captureManager.SetTimingObserver(func(stage string, elapsed time.Duration, ok bool) {
+			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d ok=%t", stage, elapsed.Milliseconds(), ok)
+		})
 		captureProfile, _, profileErr := appshell.SplitProfilePaths(browserProfilePath(options, cfg))
 		fatal(logger, profileErr)
 		executable, exeErr := os.Executable()
@@ -487,11 +490,15 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			if mode == "native_reader" {
 				origin := strings.TrimRight(target, "/")
 				idleURL := origin + "/native-reader-idle"
-				process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, UserDataDir: captureProfile, URL: idleURL, NormalWindow: true, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--disable-extensions", "--profile-directory=" + captureProfileDirectory}})
+				started := time.Now()
+				process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, UserDataDir: captureProfile, URL: idleURL, NormalWindow: true, PrivateCDP: true, ExtraArgs: []string{"--disable-extensions", "--profile-directory=" + captureProfileDirectory}})
+				logger.Printf("native_reader_timing generation=%d stage=chrome_launch elapsed_ms=%d ok=%t", generation, time.Since(started).Milliseconds(), err == nil)
 				if err != nil {
 					return process, err
 				}
+				started = time.Now()
 				reader, err := appshell.NewNativeReader(ctx, process, idleURL, logger)
+				logger.Printf("native_reader_timing generation=%d stage=reader_ready elapsed_ms=%d ok=%t", generation, time.Since(started).Milliseconds(), err == nil)
 				if err != nil {
 					return reader, err
 				}
@@ -538,6 +545,9 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				}
 			}
 		}, func() error { return headless.Validate(headlessOptions) })
+		collector.SetTimingObserver(func(stage string, elapsed time.Duration) {
+			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d", stage, elapsed.Milliseconds())
+		})
 		initializeCapture = func(ctx context.Context) error {
 			if err := bindQuiet(ctx, capture, captureManager.Snapshot().Generation); err != nil {
 				return err

@@ -79,6 +79,9 @@ type Coordinator struct {
 	failure                   string
 	retry                     bool
 	headlessAvailable         bool
+	wake                      chan struct{}
+	wakeAt                    time.Time
+	timingObserver            func(string, time.Duration)
 }
 
 // Bind once for the initial browser owner and again from its replacement
@@ -99,7 +102,24 @@ func (c *Coordinator) BrowserCollectorAvailable(source domain.Source) bool {
 }
 
 func NewCoordinator(owner *captureruntime.Manager, launch func(context.Context, string, uint64) (captureruntime.Process, error), validate func() error) *Coordinator {
-	return &Coordinator{owner: owner, requested: "browser", launch: launch, validate: validate, headlessAvailable: validate() == nil}
+	return &Coordinator{owner: owner, requested: "browser", launch: launch, validate: validate, headlessAvailable: validate() == nil, wake: make(chan struct{}, 1)}
+}
+
+// Bind before Start. Intent changes wake the single reconciliation loop;
+// the timer remains a fallback for lease/process lifecycle changes.
+func (c *Coordinator) SetTimingObserver(observer func(string, time.Duration)) {
+	c.timingObserver = observer
+}
+func (c *Coordinator) notify() {
+	c.mu.Lock()
+	if c.wakeAt.IsZero() {
+		c.wakeAt = time.Now()
+	}
+	c.mu.Unlock()
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
 }
 
 // Bound before Start: retained permissions must be confirmed before handoff.
@@ -126,6 +146,7 @@ func (c *Coordinator) Request(mode string) {
 	c.retry = true
 	c.failure = ""
 	c.mu.Unlock()
+	c.notify()
 }
 func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
@@ -187,12 +208,16 @@ func (c *Coordinator) Start(ctx context.Context) {
 				return
 			case <-ticker.C:
 				c.reconcile(ctx)
+			case <-c.wake:
+				c.reconcile(ctx)
 			}
 		}
 	}()
 }
 func (c *Coordinator) reconcile(parent context.Context) {
 	c.mu.Lock()
+	wakeAt := c.wakeAt
+	c.wakeAt = time.Time{}
 	mode := c.requested
 	if c.interactive > 0 || c.browserCollection > 0 {
 		mode = "browser"
@@ -201,6 +226,9 @@ func (c *Coordinator) reconcile(parent context.Context) {
 	nativeOnly := c.nativeReaderGeneration != 0 && c.nativeReaderGeneration == c.owner.Snapshot().Generation
 	launchReader := c.requested == "headless" && c.nativeReaders > 0 && c.interactive == c.nativeReaders && c.browserCollection == 0
 	c.mu.Unlock()
+	if !wakeAt.IsZero() && c.timingObserver != nil {
+		c.timingObserver("coordinator_wait", time.Since(wakeAt))
+	}
 	s := c.owner.Snapshot()
 	retiring := c.owner.Retiring()
 	if s.State == captureruntime.Ready && s.Driver == mode && !(nativeOnly && !launchReader) {
@@ -362,6 +390,7 @@ func (c *Coordinator) beginBrowserBorrow(collectionBorrow bool) func() {
 	c.retry = true
 	c.failure = ""
 	c.mu.Unlock()
+	c.notify()
 	var once sync.Once
 	releaseIntent := func() {
 		once.Do(func() {
@@ -375,6 +404,7 @@ func (c *Coordinator) beginBrowserBorrow(collectionBorrow bool) func() {
 				c.interactive--
 			}
 			c.mu.Unlock()
+			c.notify()
 		})
 	}
 	return releaseIntent

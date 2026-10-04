@@ -337,7 +337,11 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		return outcome
 	}
 	s.auditSplitAction(ctx, entry.action, "reader_foreground", "pending")
+	activationStarted := time.Now()
 	result, err := activate(target)
+	if s.logger != nil {
+		s.logger.Printf("native_reader_timing action=%s stage=helper_activation elapsed_ms=%d reason=%s", entry.action.ID, time.Since(activationStarted).Milliseconds(), readerbroker.ActivationReason(result, err))
+	}
 	if err != nil {
 		outcome = err
 	} else if !result.OK || !result.Readback {
@@ -347,10 +351,13 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	}
 	if s.logger != nil {
 		activationOutcome := "rejected"
+		activationReason := readerbroker.ActivationReason(result, err)
 		if outcome == nil {
 			activationOutcome = "accepted"
+		} else if err == nil && result.OK && result.Readback {
+			activationReason = "post_activation_completion_failed"
 		}
-		s.logger.Printf("reader_broker request_id=%s action=%s phase=activation outcome=%s applied=%t readback=%t verified=%t", req.RequestID, entry.action.ID, activationOutcome, result.Applied, result.Readback, outcome == nil)
+		s.logger.Printf("reader_broker request_id=%s action=%s phase=activation outcome=%s reason=%s applied=%t readback=%t verified=%t", req.RequestID, entry.action.ID, activationOutcome, activationReason, result.Applied, result.Readback, outcome == nil)
 	}
 	if outcome == nil {
 		s.auditSplitAction(ctx, entry.action, "reader_foreground", "accepted")
@@ -850,6 +857,12 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}
 		}
 		a.ID = domain.NewID("split")
+		readerStarted := time.Now()
+		if a.Type == "open_native_post" && s.logger != nil {
+			defer func() {
+				s.logger.Printf("native_reader_timing action=%s stage=request_total elapsed_ms=%d", a.ID, time.Since(readerStarted).Milliseconds())
+			}()
+		}
 		if a.Type == "open_native_post" {
 			// One bounded conversation includes both profile handoff and queue wait.
 			readerCtx, cancel := context.WithTimeout(r.Context(), readerbroker.PreparationLifetime)
@@ -863,7 +876,11 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			if a.Type == "open_native_post" {
 				borrow = s.engine.BorrowNativeReader
 			}
+			borrowStarted := time.Now()
 			lease, release, err := borrow(r.Context())
+			if a.Type == "open_native_post" && s.logger != nil {
+				s.logger.Printf("native_reader_timing action=%s stage=profile_handoff elapsed_ms=%d ok=%t", a.ID, time.Since(borrowStarted).Milliseconds(), err == nil)
+			}
 			if err != nil {
 				return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
 			}

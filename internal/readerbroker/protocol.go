@@ -47,6 +47,28 @@ type Reply struct {
 	Readback bool    `json:"readback,omitempty"`
 }
 
+// Only fixed diagnostic categories may enter logs. Never log arbitrary peer text.
+func ActivationReason(reply Reply, err error) string {
+	if err != nil {
+		return "exchange_failed"
+	}
+	if reply.OK && reply.Readback {
+		return "accepted"
+	}
+	switch reply.Message {
+	case "Reader binding rejected":
+		return "binding_rejected"
+	case "Reader binding expired or changed":
+		return "binding_expired_or_changed"
+	case "Reader intent expired or UI foreground changed":
+		return "ui_foreground_changed"
+	case "Windows rejected reader activation":
+		return "windows_activation_rejected"
+	default:
+		return "activation_rejected"
+	}
+}
+
 var requestPattern = regexp.MustCompile(`^broker_[a-f0-9]{32}$`)
 
 func (r Request) Validate() error {

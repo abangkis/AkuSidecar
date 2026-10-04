@@ -10,6 +10,13 @@ import (
 )
 
 func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTransport, entry *pendingSplitAction, prepare func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error)) {
+	stageStarted := time.Now()
+	timing := func(stage string, ok bool) {
+		if s.logger != nil {
+			s.logger.Printf("native_reader_timing action=%s stage=%s elapsed_ms=%d ok=%t", entry.action.ID, stage, time.Since(stageStarted).Milliseconds(), ok)
+		}
+		stageStarted = time.Now()
+	}
 	var outcome error
 	defer func() {
 		result := splitActionResult{OK: outcome == nil}
@@ -83,6 +90,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		case <-tick.C:
 		}
 	}
+	timing("broker_attach_wait", true)
 	s.auditSplitAction(ctx, entry.action, "claimed", "accepted")
 	s.auditSplitAction(ctx, entry.action, "reader_prepare", "pending")
 	if prepare == nil {
@@ -91,6 +99,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 	}
 	marker := "/split-reader-intent?id=" + entry.action.ID
 	target, verify, err := prepare(ctx, entry.action.ID, entry.action.URL, marker)
+	timing("target_prepare", err == nil)
 	if err != nil {
 		outcome = err
 		s.auditSplitAction(ctx, entry.action, "reader_prepare", "rejected")
@@ -108,4 +117,5 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 	case <-t.done:
 		outcome = errors.New("reader transport stopped")
 	}
+	timing("reader_completion_wait", outcome == nil)
 }

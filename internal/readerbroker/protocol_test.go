@@ -11,6 +11,25 @@ import (
 	"time"
 )
 
+func TestActivationReasonIsAllowlisted(t *testing.T) {
+	for message, want := range map[string]string{
+		"Reader intent expired or UI foreground changed": "ui_foreground_changed",
+		"Reader binding expired or changed":              "binding_expired_or_changed",
+		"Windows rejected reader activation":             "windows_activation_rejected",
+		"https://private.example/token=secret":           "activation_rejected",
+	} {
+		if got := ActivationReason(Reply{Message: message}, nil); got != want {
+			t.Fatalf("got %s want %s", got, want)
+		}
+	}
+	if ActivationReason(Reply{OK: true, Readback: true}, nil) != "accepted" {
+		t.Fatal("success misclassified")
+	}
+	if ActivationReason(Reply{}, errors.New("secret")) != "exchange_failed" {
+		t.Fatal("exchange error leaked")
+	}
+}
+
 func TestReaderRequestRejectsNonClickIDsAndSourceConfusion(t *testing.T) {
 	good := Request{RequestID: "broker_" + strings.Repeat("a", 32), Source: "x", URL: "https://x.com/a/status/1"}
 	if err := good.Validate(); err != nil {

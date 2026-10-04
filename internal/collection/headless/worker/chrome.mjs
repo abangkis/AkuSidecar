@@ -150,10 +150,10 @@ function connectOwnedChrome(child, executable, profilePath) {
   async function closeOwned() {
     try {
       if (!closed) await send('Browser.close').catch(() => {});
-      if (!closed) await Promise.race([exited, delay(2500)]);
+      if (!closed) await waitForExitOrTimeout(exited, 2500);
       if (!closed) {
         await terminateOwnedTree(child.pid);
-        await Promise.race([exited, delay(2500)]);
+        await waitForExitOrTimeout(exited, 2500);
       }
     } finally {
       closePending(new Error('Chrome closed.'));
@@ -251,4 +251,15 @@ async function terminateOwnedTree(pid) {
   }
 }
 
+// A losing timeout must not keep the Node worker alive after Chrome exits.
+export async function waitForExitOrTimeout(exited, milliseconds) {
+  let timer;
+  try {
+    await Promise.race([exited, new Promise(resolveTimeout => {
+      timer = setTimeout(resolveTimeout, milliseconds);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));

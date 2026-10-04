@@ -131,6 +131,19 @@ func TestPrivateCDPRejectsCallerSuppliedDebuggingSwitches(t *testing.T) {
 	}
 }
 
+func TestNormalReaderPrivateCDPStillRejectsDebuggingPort(t *testing.T) {
+	_, err := Launch(context.Background(), LaunchOptions{Executable: "unused", URL: "http://127.0.0.1/", NormalWindow: true, PrivateCDP: true, ExtraArgs: []string{"--remote-debugging-port=9222"}})
+	if err == nil || !strings.Contains(err.Error(), "caller-supplied DevTools switches") {
+		t.Fatalf("normal reader guard returned %v", err)
+	}
+	args := buildArgs(LaunchOptions{NormalWindow: true, PrivateCDP: true, URL: "http://127.0.0.1/"})
+	for _, arg := range args {
+		if arg == "--start-minimized" || strings.HasPrefix(arg, "--app=") {
+			t.Fatalf("reader launched as capture/minimized: %s", arg)
+		}
+	}
+}
+
 func TestPrivateCDPNonWindowsStubRejectsOptIn(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows creates private inherited CDP pipes")

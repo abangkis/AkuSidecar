@@ -394,8 +394,8 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		return nil, err
 	}
 	if options.PrivateCDP {
-		if !options.StartMinimized {
-			return nil, errors.New("private CDP is limited to a managed minimized capture window")
+		if !options.StartMinimized && !options.NormalWindow {
+			return nil, errors.New("private CDP requires a managed minimized capture window or normal reader")
 		}
 		for _, arg := range options.ExtraArgs {
 			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(arg)), "--remote-debugging-") {
@@ -513,7 +513,7 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		command: command, owner: owner, icon: icon, done: make(chan error, 1),
 		capturePipe: capturePipe,
 		startup:     options.Startup,
-		captureHost: options.StartMinimized,
+		captureHost: options.StartMinimized || (options.NormalWindow && options.PrivateCDP),
 		executable:  options.Executable, userDataDir: options.UserDataDir,
 	}
 	if capturePipe != nil {
