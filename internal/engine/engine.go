@@ -46,34 +46,38 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
-	store             *store.Store
-	provider          reasoning.Provider
-	config            config.Config
-	epoch             string
-	mu                sync.RWMutex
-	operation         sync.Mutex
-	captureMu         sync.Mutex
-	captureOwner      *captureruntime.Manager
-	captureSessions   map[string]*captureruntime.Lease
-	captureRecaptures map[string]*captureruntime.Lease
-	collectionRuntime *collection.Coordinator
-	schedule          sync.Mutex
-	heartbeat         *domain.BridgeHeartbeat
-	headlessAccess    []domain.Source
-	bridgeOrigins     map[string]time.Time
-	active            map[string]context.CancelFunc
-	pending           map[string]bool
-	cancelled         map[string]bool
-	shuttingDown      bool
-	logger            Logger
-	reloads           *ReloadActions
-	events            *semanticengine.Engine
-	aiFast            aidetector.FastDetector
-	aiDeep            aidetector.Resolver
-	mediaOrigin       mediaprovenance.Inspector
-	topics            livingtopics.Resolver
-	autoCancel        context.CancelFunc
-	autoWake          chan struct{}
+	store                    *store.Store
+	provider                 reasoning.Provider
+	config                   config.Config
+	epoch                    string
+	mu                       sync.RWMutex
+	operation                sync.Mutex
+	captureMu                sync.Mutex
+	captureOwner             *captureruntime.Manager
+	captureSessions          map[string]*captureruntime.Lease
+	captureRecaptures        map[string]*captureruntime.Lease
+	collectionIntents        map[string]func()
+	collectionCleanupPending map[string]bool
+	collectionCleanupDone    map[string]bool
+	browserCollectionCleanup func(context.Context, string, uint64) error
+	collectionRuntime        *collection.Coordinator
+	schedule                 sync.Mutex
+	heartbeat                *domain.BridgeHeartbeat
+	headlessAccess           []domain.Source
+	bridgeOrigins            map[string]time.Time
+	active                   map[string]context.CancelFunc
+	pending                  map[string]bool
+	cancelled                map[string]bool
+	shuttingDown             bool
+	logger                   Logger
+	reloads                  *ReloadActions
+	events                   *semanticengine.Engine
+	aiFast                   aidetector.FastDetector
+	aiDeep                   aidetector.Resolver
+	mediaOrigin              mediaprovenance.Inspector
+	topics                   livingtopics.Resolver
+	autoCancel               context.CancelFunc
+	autoWake                 chan struct{}
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -623,15 +627,24 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 	if err != nil {
 		return domain.Session{}, err
 	}
+	if settings.CollectionMode == "headless" && (e.collectionRuntime == nil || e.captureOwner == nil) {
+		return domain.Session{}, errors.New("hybrid collection requires the managed capture runtime")
+	}
+	if e.collectionRuntime != nil && e.collectionRuntime.Status().Requested != settings.CollectionMode {
+		return domain.Session{}, errors.New("collection runtime does not match the saved collection mode")
+	}
 	validSources := e.grantedActiveSources(settings)
 	if len(validSources) == 0 {
 		return domain.Session{}, noGrantedActiveSourceError()
 	}
 	settings.ActiveSources = validSources
 	e.cancelDeepDetections()
-	lease, err := e.acquireCaptureLease()
-	if err != nil {
-		return domain.Session{}, err
+	var lease *captureruntime.Lease
+	if settings.CollectionMode != "headless" {
+		lease, err = e.acquireCaptureLease()
+		if err != nil {
+			return domain.Session{}, err
+		}
 	}
 	session, err := e.store.CreateUpdateSession(ctx, intent, settings, policy)
 	if err != nil {
@@ -740,6 +753,15 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		}
 		e.launchLivingTopicRouting(sessionID)
 		return nil, nil
+	}
+	if hybridCollectionSession(session) {
+		admitted, admissionErr := e.admitHybridRun(ctx, session, *run)
+		if admissionErr != nil {
+			return nil, admissionErr
+		}
+		if !admitted {
+			return nil, nil
+		}
 	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
@@ -991,7 +1013,19 @@ func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, 
 	if err != nil {
 		return nil, err
 	}
-	if err := e.ensureCaptureSession(run.SessionID); err != nil {
+	session, err := e.store.GetSession(ctx, run.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	if hybridCollectionSession(session) {
+		plannedDriver, ok := hybridDriverForRun(session, run.Source)
+		if !ok || plannedDriver != driver {
+			return nil, fmt.Errorf("%w: requested driver conflicts with the frozen hybrid source plan", errStaleCaptureRuntime)
+		}
+		if err := e.ensureHybridSessionLease(run.SessionID, plannedDriver); err != nil {
+			return nil, err
+		}
+	} else if err := e.ensureCaptureSession(run.SessionID); err != nil {
 		return nil, err
 	}
 	e.captureMu.Lock()
@@ -1364,6 +1398,12 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 			e.mu.Unlock()
 			if relaunch {
 				e.launchProcess(runID, pendingAllowPlanning)
+			} else if run, runErr := e.store.GetRun(context.Background(), runID); runErr == nil {
+				if session, sessionErr := e.store.GetSession(context.Background(), run.SessionID); sessionErr == nil && hybridCollectionSession(session) {
+					if _, advanceErr := e.startNext(context.Background(), session.ID); advanceErr != nil {
+						e.logger.Printf("retry hybrid collection admission for session %s after worker drain: %v", session.ID, advanceErr)
+					}
+				}
 			}
 			e.releaseTerminalCaptureSessions(context.Background())
 		}()
@@ -2309,7 +2349,19 @@ func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mod
 func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason) (domain.MediaRecapture, error) {
 	e.operation.Lock()
 	defer e.operation.Unlock()
+	item, err := e.store.TimelineItem(ctx, timelineID)
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	settings, err := e.store.GetSettings(ctx)
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	hybridFacebook := settings.CollectionMode == "headless" && item.Source == domain.SourceFacebook
 	if e.collectionRuntime != nil && e.collectionRuntime.Status().Pending {
+		if hybridFacebook {
+			return domain.MediaRecapture{}, fmt.Errorf("%w: finish the Browser collection transition before retrying", ErrFacebookRecaptureUnavailable)
+		}
 		return domain.MediaRecapture{}, errors.New("wait for the collection mode transition before recapturing media")
 	}
 	if active, err := e.store.ActiveSession(ctx); err != nil {
@@ -2322,9 +2374,8 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 		return domain.MediaRecapture{}, fmt.Errorf("AkuBridge v2 is not ready: %s", strings.Join(status.Reasons, "; "))
 	}
 	if e.headlessEffective() {
-		item, err := e.store.TimelineItem(ctx, timelineID)
-		if err != nil {
-			return domain.MediaRecapture{}, err
+		if hybridFacebook {
+			return domain.MediaRecapture{}, fmt.Errorf("%w: Facebook cannot be recaptured by the headless collector", ErrFacebookRecaptureUnavailable)
 		}
 		e.mu.RLock()
 		allowed := false
@@ -2348,18 +2399,8 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 		driver = lease.Driver()
 		stamp = map[string]any{"driver": lease.Driver(), "epoch": e.epoch, "generation": int(lease.Generation())}
 	}
-	item, err := e.store.TimelineItem(ctx, timelineID)
-	if err != nil {
-		lease.Release()
-		return domain.MediaRecapture{}, err
-	}
-	settings, err := e.store.GetSettings(ctx)
-	if err != nil {
-		lease.Release()
-		return domain.MediaRecapture{}, err
-	}
 	collector := e.selectCaptureCollector(item.Source, settings, driver)
-	if mode == domain.MediaRecaptureForeground && driver == "browser" {
+	if (mode == domain.MediaRecaptureForeground || hybridFacebook) && driver == "browser" {
 		collector = collection.BackendBridge
 	}
 	job, err := e.store.CreateOwnedMediaRecapture(ctx, timelineID, mode, reason, stamp, collector)

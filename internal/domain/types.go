@@ -12,36 +12,37 @@ import (
 )
 
 const (
-	ApplicationVersion              = "0.9.0"
-	BridgeContractVersion           = "aku-browser.bridge.v2"
-	SidecarUpdateProtocolVersion    = "aku-sidecar.software-update.v1"
-	DefaultTimelineBatchGapPX       = 36
-	DefaultTimelineBoundaryCueMode  = "follow"
-	DefaultTimelineBoundaryReturnMS = 350
-	DefaultSemanticShortlist        = 10
-	DefaultSemanticMergeThreshold   = 0.92
-	MinSemanticMergeThreshold       = 0.85
-	MaxSemanticMergeThreshold       = 0.95
-	DefaultRetentionDays            = 30
-	DefaultStorageLimitMB           = 100
-	DefaultAIDetectionPresentation  = "drawer"
-	DefaultAIDetectionEnabled       = true
-	DefaultResurfaceMode            = "smart"
-	DefaultResurfaceCooldownDays    = 7
-	DefaultReasoningAcquisition     = "luna_high"
-	DefaultReasoningEvaluation      = "luna_high"
-	DefaultReasoningSemantic        = "luna_high"
-	DefaultReasoningAIDeep          = "luna_high"
-	DefaultSourceWaitMode           = "progressive_wait"
-	DefaultAutoUpdateMode           = "adaptive"
-	DefaultAutoUpdateRefillMin      = 15
-	DefaultPreparedBatchLimit       = 2
-	DefaultAutoUpdateDailyTokens    = 2000000
-	DefaultAutoUpdateManualReserve  = 25
-	DefaultPreparedBatchMaxAgeHours = 24
-	DefaultNextBatchBehavior        = "require_action"
-	AIHideConfirmationPhrase        = "HIDE STRONG AI SIGNALS"
-	CurrentAIDeepDetectorVersion    = "codex-deep-v5"
+	ApplicationVersion                      = "0.9.0"
+	BridgeContractVersion                   = "aku-browser.bridge.v2"
+	SidecarUpdateProtocolVersion            = "aku-sidecar.software-update.v1"
+	DefaultTimelineBatchGapPX               = 36
+	DefaultTimelineBoundaryCueMode          = "follow"
+	DefaultTimelineBoundaryReturnMS         = 350
+	DefaultSemanticShortlist                = 10
+	DefaultSemanticMergeThreshold           = 0.92
+	MinSemanticMergeThreshold               = 0.85
+	MaxSemanticMergeThreshold               = 0.95
+	DefaultRetentionDays                    = 30
+	DefaultStorageLimitMB                   = 100
+	DefaultAIDetectionPresentation          = "drawer"
+	DefaultAIDetectionEnabled               = true
+	DefaultResurfaceMode                    = "smart"
+	DefaultResurfaceCooldownDays            = 7
+	DefaultReasoningAcquisition             = "luna_high"
+	DefaultReasoningEvaluation              = "luna_high"
+	DefaultReasoningSemantic                = "luna_high"
+	DefaultReasoningAIDeep                  = "luna_high"
+	DefaultSourceWaitMode                   = "progressive_wait"
+	DefaultAutoUpdateMode                   = "adaptive"
+	DefaultAutoUpdateRefillMin              = 15
+	DefaultPreparedBatchLimit               = 2
+	DefaultAutoUpdateDailyTokens            = 2000000
+	DefaultAutoUpdateManualReserve          = 25
+	DefaultPreparedBatchMaxAgeHours         = 24
+	DefaultNextBatchBehavior                = "require_action"
+	AIHideConfirmationPhrase                = "HIDE STRONG AI SIGNALS"
+	CurrentAIDeepDetectorVersion            = "codex-deep-v5"
+	SessionCollectionPolicyHybridHeadlessV1 = "hybrid_headless_v1"
 )
 
 type Source string

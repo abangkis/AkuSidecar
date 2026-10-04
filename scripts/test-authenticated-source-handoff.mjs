@@ -13,20 +13,21 @@ const exec=promisify(execFile);
 const fail=code=>{const error=new Error(code);error.code=code;throw error;};
 
 export function parseJourneyArguments(values) {
-  const result={allowStop:false,allowSourceWindow:false,allowBridgeReload:false};
+  const result={allowStop:false,allowSourceWindow:false,allowBridgeReload:false,mixedUpdate:false};
   for(let i=0;i<values.length;i++) {
     const flag=values[i];
     if(['--artifact','--baseline','--source'].includes(flag)) {
       const key=flag.slice(2),value=values[++i];
       if(result[key]!==undefined || !value || value.startsWith('--')) fail('invalid_arguments');
       result[key]=value;
-    } else if(['--allow-runtime-stop','--allow-source-window','--allow-bridge-reload'].includes(flag)) {
-      const key=flag==='--allow-runtime-stop'?'allowStop':flag==='--allow-source-window'?'allowSourceWindow':'allowBridgeReload';
+    } else if(['--allow-runtime-stop','--allow-source-window','--allow-bridge-reload','--mixed-update'].includes(flag)) {
+      const key=flag==='--mixed-update'?'mixedUpdate':flag==='--allow-runtime-stop'?'allowStop':flag==='--allow-source-window'?'allowSourceWindow':'allowBridgeReload';
       if(result[key]) fail('invalid_arguments');
       result[key]=true;
     } else fail('invalid_arguments');
   }
-  if(!isAbsolute(result.artifact || '') || !isAbsolute(result.baseline || '')
+  if(!isAbsolute(result.artifact || '') || (!result.mixedUpdate && !isAbsolute(result.baseline || ''))
+    || (result.baseline!==undefined && !isAbsolute(result.baseline))
     || !['instagram','linkedin'].includes(result.source)) fail('invalid_arguments');
   if(result.allowStop!==result.allowSourceWindow) fail('both_runtime_and_foreground_approval_required');
   if(result.allowBridgeReload && !result.allowStop) fail('bridge_reload_requires_runtime_and_foreground_approval');
@@ -73,37 +74,42 @@ let stage='arguments';
 async function main() {
   const args=parseJourneyArguments(process.argv.slice(2));
   if(process.platform!=='win32') fail('windows_required');
-  stage='baseline';
-  const baselinePath=await realpath(args.baseline);
-  const baselineRelative=relative(await realpath(join(sidecar,'build')),baselinePath);
-  if(!baselineRelative || baselineRelative.startsWith('..') || isAbsolute(baselineRelative)) fail('baseline_outside_build');
-  const baseline=validateBaseline(JSON.parse(await readFile(baselinePath,'utf8')));
-  const target=selectTarget(baseline,args.source,0);
+  let target=null;
+  if(!args.mixedUpdate) {
+    stage='baseline';
+    const baselinePath=await realpath(args.baseline);
+    const baselineRelative=relative(await realpath(join(sidecar,'build')),baselinePath);
+    if(!baselineRelative || baselineRelative.startsWith('..') || isAbsolute(baselineRelative)) fail('baseline_outside_build');
+    const baseline=validateBaseline(JSON.parse(await readFile(baselinePath,'utf8')));
+    target=selectTarget(baseline,args.source,0);
+  }
+  const sources=args.mixedUpdate?['x','facebook','instagram','linkedin']:[args.source];
   stage='candidate';
   const candidate=await loadCandidate(args.artifact);
   stage='preflight';
   const registration=await loadRegistration();
   const journeyBridge=await loadRegisteredJourneyBridge(registration);
-  const before=await preflight(registration,[args.source]);
+  const before=await preflight(registration,sources);
   const originalSettings=await settingsDigest();
   if(!args.allowStop) {
-    console.log(JSON.stringify({status:'preflight_only',source:args.source,before,
+    console.log(JSON.stringify({status:'preflight_only',source:args.source,sources,mixedUpdate:args.mixedUpdate,before,
       requiresRuntimeStopApproval:true,requiresForegroundApproval:true,
       profile:'registered logged-in profile and selected subprofile',database:'isolated fixture only',
       bridge:'registered development Bridge; staged candidate headless worker; not full packaged Bridge parity',
-      scope:'source-window API lifetime and post-close headless capture; not trusted reader-click or actual login submission'}));
+      scope:args.mixedUpdate?'one mixed-source Update with deterministic local reasoning, Facebook Adaptive Fidelity, cleanup and auto-return; not media parity or reader click':'source-window API lifetime and post-close headless capture; not trusted reader-click or actual login submission'}));
     return;
   }
   stage='artifact_verification';
   await verifyTuple(candidate.artifactRoot);
-  await preflight(registration,[args.source]);
+  await preflight(registration,sources);
   const receiptRoot=join(sidecar,'build',`authenticated-source-handoff-${randomUUID()}`);
   await mkdir(receiptRoot,{recursive:false});
   const report={schema:'aku.authenticated-source-handoff.v1',
-    scope:'real_source_window_api_lifetime_not_reader_click_or_login_submission',
-    startedAt:new Date().toISOString(),source:args.source,bridgeReloadAuthorized:args.allowBridgeReload,stopIssued:false,testPassed:false,restored:false};
+    scope:args.mixedUpdate?'mixed_source_update_routing_cleanup_auto_return_not_media_parity':'real_source_window_api_lifetime_not_reader_click_or_login_submission',
+    startedAt:new Date().toISOString(),source:args.source,sources,mixedUpdate:args.mixedUpdate,
+    bridgeReloadAuthorized:args.allowBridgeReload,stopIssued:false,testPassed:false,restored:false};
   let operationError;
-  const deadline=Date.now()+5*60_000;
+  const deadline=Date.now()+(args.mixedUpdate?10:5)*60_000;
   try {
     stage='stop';report.stopIssued=true;
     await supervisor(['stop','akusidecar','--actor','codex','--reason','authorized real-source window headless journey QA','--request-id',randomUUID()]);
@@ -113,14 +119,16 @@ async function main() {
       AKU_AUTH_JOURNEY_RUNTIME:dirname(candidate.worker),AKU_AUTH_JOURNEY_CHROME:registration.captureExe,
       AKU_AUTH_JOURNEY_BRIDGE:journeyBridge.path,AKU_AUTH_JOURNEY_PROFILE:registration.profile,
       AKU_AUTH_JOURNEY_PROFILE_DIRECTORY:registration.profileDirectory,AKU_AUTH_JOURNEY_SOURCE:args.source,
-      AKU_AUTH_JOURNEY_TARGET_URL:target.permalink,AKU_AUTH_JOURNEY_ACK_PROFILE:'1',AKU_AUTH_JOURNEY_ACK_FOREGROUND:'1'};
+      AKU_AUTH_JOURNEY_TARGET_URL:target?.permalink || '',AKU_AUTH_JOURNEY_ACK_PROFILE:'1',AKU_AUTH_JOURNEY_ACK_FOREGROUND:'1'};
     // Clear inherited opt-ins; only this invocation can authorize a reload.
     env.AKU_AUTH_JOURNEY_ACK_BRIDGE_RELOAD=args.allowBridgeReload?'1':'';
+    env.AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE=args.mixedUpdate?'1':'';
     try {
-      const result=await exec('go.exe',['test','./internal/httpapi','-run','^TestAuthenticatedSourceHeadlessHandoffWindowsSmoke$','-count=1','-timeout=180s','-v'],
-        {cwd:sidecar,env,windowsHide:true,timeout:195000,maxBuffer:1024*1024});
+      const testName=args.mixedUpdate?'TestAuthenticatedHybridUpdateWindowsSmoke':'TestAuthenticatedSourceHeadlessHandoffWindowsSmoke';
+      const result=await exec('go.exe',['test','./internal/httpapi','-run',`^${testName}$`,'-count=1',`-timeout=${args.mixedUpdate?390:180}s`,'-v'],
+        {cwd:sidecar,env,windowsHide:true,timeout:args.mixedUpdate?405000:195000,maxBuffer:1024*1024});
       await writeFile(join(receiptRoot,'test-output.txt'),result.stdout+result.stderr);
-      if(!result.stdout.includes('--- PASS: TestAuthenticatedSourceHeadlessHandoffWindowsSmoke ')) fail('fixture_did_not_run');
+      if(!result.stdout.includes(`--- PASS: ${testName} `)) fail('fixture_did_not_run');
       report.testPassed=true;
     } catch(error) {
       if(error.stdout || error.stderr) await writeFile(join(receiptRoot,'test-output.txt'),String(error.stdout || '')+String(error.stderr || ''));

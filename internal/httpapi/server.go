@@ -62,6 +62,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 	}
 	if cfg.WindowsCaptureSplit && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
+		runtime.SetBrowserCollectionCleanup(server.ReleaseBrowserCollectionSurfaces)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", server.api())
@@ -1306,6 +1307,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return badRequest("reason must be missing_media or playback_error")
 		}
 		recapture, err := s.engine.QueueMediaRecaptureForReason(ctx, id, body.CaptureMode, body.Reason)
+		if errors.Is(err, engine.ErrFacebookRecaptureUnavailable) {
+			return apiError{Status: http.StatusConflict, Code: "facebook_browser_recapture_required", Message: "Facebook Recapture currently requires Browser mode. Select Browser in Settings, then retry."}
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return notFound("timeline item")
 		}

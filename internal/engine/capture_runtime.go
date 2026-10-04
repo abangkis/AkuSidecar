@@ -15,6 +15,8 @@ import (
 
 var errStaleCaptureRuntime = errors.New("capture command belongs to another runtime owner")
 
+var ErrFacebookRecaptureUnavailable = errors.New("Facebook recapture is unavailable until Browser collection is ready")
+
 func (e *Engine) ResetCaptureHeartbeat() {
 	status := e.BridgeStatus()
 	e.mu.Lock()
@@ -57,6 +59,66 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 		}
 		return errors.New("waiting for browser source-access confirmation before headless handoff")
 	})
+	// Restore the temporary Browser hold for a persisted hybrid Facebook run
+	// before the coordinator can reconcile back to the saved headless mode.
+	if active, err := e.store.ActiveSession(context.Background()); err == nil && active != nil && hybridCollectionSession(*active) {
+		restored := false
+		for _, run := range active.Runs {
+			switch run.Status {
+			case "queued":
+				driver, ok := hybridDriverForRun(*active, run.Source)
+				if ok && run.Source == domain.SourceFacebook && driver == "browser" {
+					if err := e.beginHybridBrowserCollection(active.ID, run.Source); err != nil {
+						e.logger.Printf("restore hybrid Facebook collection intent for session %s: %v", active.ID, err)
+					}
+				}
+				restored = true
+				return
+			case "waiting_for_bridge", "reasoning":
+				if run.Source == domain.SourceFacebook {
+					driver, planned := hybridDriverForRun(*active, run.Source)
+					stampedDriver, stamped, driverErr := e.store.FirstCommandCaptureDriver(context.Background(), run.ID)
+					collector, hasCollector, collectorErr := e.store.FirstCommandCollector(context.Background(), run.ID)
+					if driverErr == nil && collectorErr == nil && planned && stamped && hasCollector &&
+						driver == "browser" && stampedDriver == driver && collector == collection.BackendBridge {
+						if err := e.beginHybridBrowserCollection(active.ID, run.Source); err != nil {
+							e.logger.Printf("restore hybrid Facebook collection intent for session %s: %v", active.ID, err)
+						}
+					}
+				}
+				restored = true
+				return
+			case "completed", "failed", "cancelled":
+				continue
+			}
+		}
+		if !restored && hybridFacebookRunStarted(*active) {
+			for _, run := range active.Runs {
+				if run.Source != domain.SourceFacebook || run.StartedAt == nil {
+					continue
+				}
+				driver, planned := hybridDriverForRun(*active, run.Source)
+				stampedDriver, stamped, driverErr := e.store.FirstCommandCaptureDriver(context.Background(), run.ID)
+				collector, hasCollector, collectorErr := e.store.FirstCommandCollector(context.Background(), run.ID)
+				if driverErr == nil && collectorErr == nil && planned && stamped && hasCollector &&
+					driver == "browser" && stampedDriver == driver && collector == collection.BackendBridge &&
+					e.captureOwner != nil && e.captureOwner.Snapshot().State == captureruntime.Ready && e.captureOwner.Snapshot().Driver == "browser" {
+					if err := e.beginHybridBrowserCollection(active.ID, run.Source); err != nil {
+						e.logger.Printf("restore terminal hybrid Facebook collection intent for session %s: %v", active.ID, err)
+					}
+				}
+				break
+			}
+		}
+	}
+}
+
+// SetBrowserCollectionCleanup binds the lease-bound, full-surface Bridge
+// release action used before a hybrid Facebook collection borrow is returned.
+func (e *Engine) SetBrowserCollectionCleanup(cleanup func(context.Context, string, uint64) error) {
+	e.captureMu.Lock()
+	e.browserCollectionCleanup = cleanup
+	e.captureMu.Unlock()
 }
 func (e *Engine) BorrowInteractiveCapture(ctx context.Context) (*captureruntime.Lease, func(), error) {
 	if e.collectionRuntime == nil {
@@ -101,6 +163,12 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 			}
 			if e.collectionRuntime == nil || e.captureOwner == nil {
 				continue
+			}
+			e.releaseTerminalCaptureSessions(ctx)
+			if active, err := e.store.ActiveSession(ctx); err == nil && active != nil && hybridCollectionSession(*active) {
+				if _, err := e.startNext(ctx, active.ID); err != nil {
+					e.logger.Printf("retry hybrid collection admission for session %s: %v", active.ID, err)
+				}
 			}
 			collector, driver, workerID := collection.BackendQuiet, "browser", "aku-browser-quiet-v1"
 			if e.headlessEffective() {
@@ -236,11 +304,68 @@ func (e *Engine) AttachCaptureRuntime(ctx context.Context, owner *captureruntime
 		return err
 	}
 	if active != nil {
-		lease, err := owner.Acquire()
-		if err != nil {
-			return err
+		adopt := true
+		if hybridCollectionSession(*active) {
+			decided := false
+			for _, run := range active.Runs {
+				switch run.Status {
+				case "queued":
+					driver, ok := hybridDriverForRun(*active, run.Source)
+					adopt = ok && owner.Snapshot().State == captureruntime.Ready && owner.Snapshot().Driver == driver
+					decided = true
+				case "waiting_for_bridge", "reasoning":
+					// A command already stamped before restart remains authoritative.
+					// A mismatched process is not adopted as a lease for that work.
+					planned, plannedOK := hybridDriverForRun(*active, run.Source)
+					stampedDriver, stamped, driverErr := e.store.FirstCommandCaptureDriver(ctx, run.ID)
+					if driverErr != nil {
+						return driverErr
+					}
+					collector, hasCollector, collectorErr := e.store.FirstCommandCollector(ctx, run.ID)
+					if collectorErr != nil {
+						return collectorErr
+					}
+					plannedCollector := collection.BackendBridge
+					if planned == "headless" {
+						plannedCollector = collection.BackendHeadless
+					}
+					snapshot := owner.Snapshot()
+					adopt = plannedOK && stamped && hasCollector && stampedDriver == planned && collector == plannedCollector &&
+						snapshot.State == captureruntime.Ready && snapshot.Driver == stampedDriver
+					decided = true
+				case "completed", "failed", "cancelled":
+					continue
+				}
+				if decided {
+					break
+				}
+			}
+			if !decided {
+				adopt = false
+				if hybridFacebookRunStarted(*active) {
+					for _, run := range active.Runs {
+						if run.Source != domain.SourceFacebook || run.StartedAt == nil {
+							continue
+						}
+						planned, plannedOK := hybridDriverForRun(*active, run.Source)
+						stampedDriver, stamped, driverErr := e.store.FirstCommandCaptureDriver(ctx, run.ID)
+						collector, hasCollector, collectorErr := e.store.FirstCommandCollector(ctx, run.ID)
+						snapshot := owner.Snapshot()
+						adopt = plannedOK && stamped && hasCollector && driverErr == nil && collectorErr == nil &&
+							planned == "browser" && stampedDriver == planned && collector == collection.BackendBridge &&
+							snapshot.State == captureruntime.Ready && snapshot.Driver == "browser"
+						break
+					}
+				}
+			}
 		}
-		sessions[active.ID] = lease
+		if adopt {
+			lease, err := owner.Acquire()
+			if err != nil {
+				return err
+			}
+			sessions[active.ID] = lease
+		}
 	}
 	ids, err := e.store.ActiveMediaRecaptureIDs(ctx)
 	if err != nil {
@@ -303,18 +428,223 @@ func (e *Engine) ensureCaptureSession(id string) error {
 	return nil
 }
 
+func (e *Engine) ensureHybridSessionLease(sessionID string, driver string) error {
+	e.captureMu.Lock()
+	defer e.captureMu.Unlock()
+	lease := e.captureSessions[sessionID]
+	if lease == nil || lease.Driver() != driver || e.captureOwner == nil || !e.captureOwner.Accepts(lease.Generation()) {
+		return errStaleCaptureRuntime
+	}
+	return nil
+}
+
+func hybridCollectionSession(session domain.Session) bool {
+	policy, _ := session.Coverage["collectionPolicy"].(string)
+	return policy == domain.SessionCollectionPolicyHybridHeadlessV1
+}
+
+func hybridDriverForRun(session domain.Session, source domain.Source) (string, bool) {
+	if !hybridCollectionSession(session) {
+		return "", false
+	}
+	drivers, ok := session.Coverage["collectionSourceDrivers"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	driver, ok := drivers[string(source)].(string)
+	if !ok || (driver != "headless" && driver != "browser") {
+		return "", false
+	}
+	return driver, true
+}
+
+func (e *Engine) beginHybridBrowserCollection(sessionID string, source domain.Source) error {
+	if source != domain.SourceFacebook {
+		return errors.New("only Facebook uses the hybrid Browser collection exception")
+	}
+	if e.collectionRuntime == nil {
+		return errors.New("hybrid collection runtime is unavailable")
+	}
+	e.captureMu.Lock()
+	if e.collectionIntents[sessionID] != nil {
+		e.captureMu.Unlock()
+		return nil
+	}
+	e.captureMu.Unlock()
+	release, err := e.collectionRuntime.BeginBrowserCollection(source)
+	if err != nil {
+		return err
+	}
+	e.captureMu.Lock()
+	if e.collectionIntents == nil {
+		e.collectionIntents = map[string]func(){}
+	}
+	if e.collectionIntents[sessionID] == nil {
+		e.collectionIntents[sessionID] = release
+		release = nil
+	}
+	e.captureMu.Unlock()
+	if release != nil {
+		release()
+	}
+	return nil
+}
+
+func (e *Engine) releaseSessionCaptureLease(sessionID string) {
+	e.captureMu.Lock()
+	lease := e.captureSessions[sessionID]
+	delete(e.captureSessions, sessionID)
+	e.captureMu.Unlock()
+	if lease != nil {
+		lease.Release()
+	}
+}
+
+func (e *Engine) admitHybridRun(ctx context.Context, session domain.Session, run domain.Run) (bool, error) {
+	desired, ok := hybridDriverForRun(session, run.Source)
+	if !ok {
+		return false, errors.New("hybrid session source plan is missing or invalid")
+	}
+	if desired == "browser" {
+		if err := e.beginHybridBrowserCollection(session.ID, run.Source); err != nil {
+			return false, err
+		}
+	}
+
+	e.captureMu.Lock()
+	lease := e.captureSessions[session.ID]
+	owner := e.captureOwner
+	e.captureMu.Unlock()
+	predecessorsDrained := false
+	if desired == "browser" || (lease != nil && lease.Driver() != desired) {
+		var err error
+		predecessorsDrained, err = e.hybridPredecessorsDrained(ctx, session, run)
+		if err != nil || !predecessorsDrained {
+			return false, err
+		}
+	}
+	if lease != nil && lease.Driver() != desired {
+		e.releaseSessionCaptureLease(session.ID)
+		lease = nil
+	}
+	if lease == nil {
+		if owner == nil {
+			return false, errors.New("hybrid capture runtime is unavailable")
+		}
+		snapshot := owner.Snapshot()
+		if snapshot.State != captureruntime.Ready || snapshot.Driver != desired {
+			return false, nil
+		}
+		var acquired *captureruntime.Lease
+		e.captureMu.Lock()
+		if existing := e.captureSessions[session.ID]; existing != nil {
+			acquired = existing
+		} else {
+			var err error
+			acquired, err = owner.Acquire()
+			if err != nil {
+				e.captureMu.Unlock()
+				return false, err
+			}
+			if acquired.Driver() != desired {
+				acquired.Release()
+				e.captureMu.Unlock()
+				return false, nil
+			}
+			if e.captureSessions == nil {
+				e.captureSessions = map[string]*captureruntime.Lease{}
+			}
+			e.captureSessions[session.ID] = acquired
+		}
+		e.captureMu.Unlock()
+		lease = acquired
+	}
+	if lease == nil || lease.Driver() != desired || owner == nil || !owner.Accepts(lease.Generation()) {
+		return false, nil
+	}
+	if run.Source == domain.SourceFacebook && desired == "browser" && !e.facebookBrowserSourceReady() {
+		return false, nil
+	}
+	if desired == "headless" && !e.headlessSourceAuthorized(run.Source) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (e *Engine) hybridPredecessorsDrained(ctx context.Context, session domain.Session, run domain.Run) (bool, error) {
+	for _, previous := range session.Runs {
+		if previous.Ordinal >= run.Ordinal {
+			break
+		}
+		switch previous.Status {
+		case "completed", "failed", "cancelled":
+		default:
+			return false, nil
+		}
+		e.mu.RLock()
+		_, active := e.active[previous.ID]
+		_, pending := e.pending[previous.ID]
+		e.mu.RUnlock()
+		if active || pending {
+			return false, nil
+		}
+	}
+	drained, err := e.store.SessionCaptureCommandsDrained(ctx, session.ID, &run.Ordinal)
+	return drained, err
+}
+
+func (e *Engine) facebookBrowserSourceReady() bool {
+	status := e.BridgeStatus()
+	if !status.Compatible || status.Actual == nil {
+		return false
+	}
+	receivedAt, err := time.Parse(time.RFC3339Nano, status.Actual.ReceivedAt)
+	if err != nil || time.Since(receivedAt) > 2*time.Minute || receivedAt.After(time.Now().Add(5*time.Second)) {
+		return false
+	}
+	for _, source := range status.Actual.SourceAccess.Sources {
+		if source.Source == string(domain.SourceFacebook) {
+			return source.Ready && source.PermissionGranted && source.ScriptRegistered
+		}
+	}
+	return false
+}
+
+func (e *Engine) headlessSourceAuthorized(source domain.Source) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, allowed := range e.headlessAccess {
+		if allowed == source {
+			return true
+		}
+	}
+	return false
+}
+
 // Release only after durable terminal state AND worker drain. In particular,
 // accepting the first observation or requesting cancellation is not release.
 func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 	e.captureMu.Lock()
-	defer e.captureMu.Unlock()
-	for id, lease := range e.captureSessions {
+	ids := make(map[string]struct{}, len(e.captureSessions)+len(e.collectionIntents))
+	for id := range e.captureSessions {
+		ids[id] = struct{}{}
+	}
+	for id := range e.collectionIntents {
+		ids[id] = struct{}{}
+	}
+	type cleanupRequest struct {
+		sessionID  string
+		generation uint64
+		callback   func(context.Context, string, uint64) error
+	}
+	var cleanups []cleanupRequest
+	for id := range ids {
 		session, err := e.store.GetSession(ctx, id)
 		if err != nil {
 			continue
 		} // Unknown state keeps ownership pinned.
 		switch session.Status {
-		case "completed", "failed", "cancelled":
+		case "completed", "partial", "failed", "cancelled":
 		default:
 			continue
 		}
@@ -332,8 +662,34 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 		if busy {
 			continue
 		}
-		lease.Release()
-		delete(e.captureSessions, id)
+		drained, err := e.store.SessionCaptureCommandsDrained(ctx, id, nil)
+		if err != nil || !drained {
+			continue
+		}
+		needsBrowserCleanup := hybridFacebookRunStarted(session) && e.collectionIntents[id] != nil
+		if needsBrowserCleanup && !e.collectionCleanupDone[id] {
+			lease := e.captureSessions[id]
+			callback := e.browserCollectionCleanup
+			if lease == nil || lease.Driver() != "browser" || callback == nil || e.collectionCleanupPending[id] {
+				continue
+			}
+			if e.collectionCleanupPending == nil {
+				e.collectionCleanupPending = map[string]bool{}
+			}
+			e.collectionCleanupPending[id] = true
+			cleanups = append(cleanups, cleanupRequest{sessionID: id, generation: lease.Generation(), callback: callback})
+			continue
+		}
+		if lease := e.captureSessions[id]; lease != nil {
+			lease.Release()
+			delete(e.captureSessions, id)
+		}
+		if release := e.collectionIntents[id]; release != nil {
+			release()
+			delete(e.collectionIntents, id)
+		}
+		delete(e.collectionCleanupPending, id)
+		delete(e.collectionCleanupDone, id)
 	}
 	for id, lease := range e.captureRecaptures {
 		job, err := e.store.MediaRecapture(ctx, id)
@@ -343,10 +699,58 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 		lease.Release()
 		delete(e.captureRecaptures, id)
 	}
+	e.captureMu.Unlock()
+	for _, cleanup := range cleanups {
+		cleanup := cleanup
+		go func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			err := cleanup.callback(cleanupCtx, cleanup.sessionID, cleanup.generation)
+			e.captureMu.Lock()
+			delete(e.collectionCleanupPending, cleanup.sessionID)
+			if err == nil {
+				if e.collectionCleanupDone == nil {
+					e.collectionCleanupDone = map[string]bool{}
+				}
+				e.collectionCleanupDone[cleanup.sessionID] = true
+			}
+			e.captureMu.Unlock()
+			if err != nil {
+				e.logger.Printf("release hybrid Facebook capture surface for session %s: %v", cleanup.sessionID, err)
+			}
+			if err == nil {
+				e.releaseTerminalCaptureSessions(context.Background())
+			}
+		}()
+	}
+}
+
+func hybridFacebookRunStarted(session domain.Session) bool {
+	for _, run := range session.Runs {
+		if run.Source == domain.SourceFacebook && run.StartedAt != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings domain.Settings, round int, continuation map[string]any, reason string) (map[string]any, error) {
-	if err := e.ensureCaptureSession(run.SessionID); err != nil {
+	session, err := e.store.GetSession(context.Background(), run.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	hybrid := hybridCollectionSession(session)
+	plannedDriver := ""
+	if hybrid {
+		var ok bool
+		plannedDriver, ok = hybridDriverForRun(session, run.Source)
+		if !ok {
+			return nil, errors.New("hybrid session source plan is missing or invalid")
+		}
+		if err := e.ensureHybridSessionLease(run.SessionID, plannedDriver); err != nil {
+			return nil, err
+		}
+	} else if err := e.ensureCaptureSession(run.SessionID); err != nil {
 		return nil, err
 	}
 	payload := capturePayload(run, leaseID, settings, round, continuation, reason)
@@ -362,7 +766,21 @@ func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings do
 		return nil, err
 	}
 	if !exists {
-		collector = e.selectCaptureCollector(run.Source, settings, driver)
+		if hybrid && plannedDriver == "headless" {
+			collector = collection.BackendHeadless
+		} else if hybrid && run.Source == domain.SourceFacebook {
+			collector = collection.BackendBridge
+		} else {
+			collector = e.selectCaptureCollector(run.Source, settings, driver)
+		}
+	} else if hybrid {
+		plannedCollector := collection.BackendBridge
+		if plannedDriver == "headless" {
+			plannedCollector = collection.BackendHeadless
+		}
+		if collector != plannedCollector {
+			return nil, fmt.Errorf("%w: durable collector conflicts with the frozen hybrid source plan", errStaleCaptureRuntime)
+		}
 	}
 	payload["captureCollector"] = collectorStamp(collector)
 	return payload, nil

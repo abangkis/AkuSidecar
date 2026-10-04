@@ -22,6 +22,14 @@ test('registered Bridge must bind its manifest identity to exactly one registere
   assert.throws(()=>registeredBridgeIdentity({args:args.slice(0,2).concat(['--bridge-extension-origin','chrome-extension://wrong'])},{key}),{code:'registered_bridge_origin_mismatch'});
   assert.throws(()=>registeredBridgeIdentity({args:[...args,...args]},{key}),{code:'registered_bridge_identity_unavailable'});
 });
+test('mixed Update remains a dry-run unless both runtime and foreground approvals are explicit',()=>{
+  const dry=parseJourneyArguments([...base,'--mixed-update']);
+  assert.equal(dry.mixedUpdate,true);assert.equal(dry.allowStop,false);
+	assert.equal(parseJourneyArguments(['--artifact',import.meta.filename,'--source','instagram','--mixed-update']).mixedUpdate,true);
+  assert.throws(()=>parseJourneyArguments([...base,'--mixed-update','--allow-runtime-stop']),{code:'both_runtime_and_foreground_approval_required'});
+  assert.throws(()=>parseJourneyArguments([...base,'--mixed-update','--mixed-update']),{code:'invalid_arguments'});
+  assert.equal(parseJourneyArguments([...base,'--mixed-update','--allow-runtime-stop','--allow-source-window']).mixedUpdate,true);
+});
 test('operator scope rejects unsupported sources, relative paths and duplicate flags',()=>{
   for(const args of [base.map(v=>v==='linkedin'?'facebook':v),['--artifact','relative',...base.slice(2)],
     [...base,'--source','instagram'],[...base,'--allow-runtime-stop','--allow-runtime-stop'],[...base,'--unknown']]) {

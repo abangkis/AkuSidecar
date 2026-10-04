@@ -7,6 +7,97 @@ Bridge checkpoint. Local candidate implementations for phases 2c-5 now exist,
 but acceptance is incomplete. Do not install or release this candidate yet.
 Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
+### Approved hybrid default direction (2026-10-04)
+
+The user approves headless as the intended default for X, Instagram and
+LinkedIn, with Facebook explicitly routed through the existing Browser/Bridge
+collector until its headless gap is resolved. This supersedes the earlier
+all-four-headless default gate and the global-only execution assumption below.
+Facebook headless research remains parked. Facebook's fallback must use the
+existing collector, not experimental hidden Quiet. Retain Browser selection
+as a rollback path for all sources.
+
+Implementation proceeds in three acceptance stages:
+
+1. Source-aware routing and sequential batch ownership. Preserve one Chrome
+   profile owner; never run headless and Browser simultaneously on that profile.
+   Assign collector/driver before admission and keep claimed-command authority
+   immutable. A mixed Update must drain its headless batch before borrowing
+   Browser for Facebook, then return to the requested mode. Session progress,
+   cancellation, recapture, permission retention and auto-update must remain
+   truthful across driver generations. Separate collection borrowing from
+   interactive login/reader lifetime; neither may retire the other's live work.
+2. Product validation: mixed-source Update, Facebook fallback behavior, rendered
+   Settings and actual trusted reader click, and complete package/runtime
+   identity. Existing LinkedIn/Instagram lifecycle receipts are reusable within
+   their documented development-Bridge scope, not complete package acceptance.
+3. Default migration only after those gates pass, with rollback and preserved
+   authentication. No current runtime default change, installation or release
+   publication is authorized by this implementation stage. Broader fresh source
+   media/text qualification remains required for a production readiness claim.
+
+The initial implementation is local and not yet accepted end to end. Changing
+the Settings default alone cannot implement this policy. Validate the
+ownership/admission boundary first; do not select a Facebook Bridge command
+while the profile is pinned to a headless session.
+
+The collection coordinator now distinguishes Facebook collection borrowing
+from interactive login/reader borrowing. A nonblocking collection intent allows
+the old session lease to drain before Browser acquisition, avoiding a
+same-profile handoff deadlock. Collection package tests pass, including
+independent interactive lifetime, idempotent release, source routing, and
+waiting for the old lease before replacing the owner.
+
+Settings now explains the Facebook exception and keeps its existing capture
+visibility selector usable when headless is selected. Four collection-mode
+Node tests pass. The actual isolated Settings card and renderer were inspected
+with a fresh empty system-Chrome profile; labels and the Facebook batch status
+render correctly. Receipt: `build/hybrid-settings-render-eedb64e2-abac-4d22-8668-a300b88db937/`.
+This is rendered component evidence, not a full authenticated Settings journey.
+
+Terminal Browser collection needs an explicit lease-bound Bridge surface
+cleanup acknowledgement before releasing its ownership intent. The existing
+background cleanup is asynchronous, and source-only release can retain a
+managed placeholder window. Host-only retirement deliberately preserves
+ordinary tabs. A cleanup acknowledgement may close Bridge-owned surfaces;
+it never authorizes closing adopted user tabs or killing the profile owner.
+The complete mixed-session cleanup and auto-return gate remains open.
+
+New headless sessions now persist `hybrid_headless_v1` with source driver
+assignments and stable execution ordinals: X/Instagram/LinkedIn first, Facebook
+last. Browser sessions retain the legacy plan. Follow-up collector stamps remain
+immutable even if visibility settings change. Focused store/engine regressions
+pass for the persisted plan, predecessor reasoning drain, fresh Facebook source
+access, wrong-driver/collector claim rejection, cancellation and partial-session
+cleanup, and mismatched recovery. Three HTTP cleanup tests pass for exact owner
+binding, late acknowledgement without replay, and rejected cleanup outcomes.
+
+Facebook Recapture under the normal saved headless selection currently returns
+`facebook_browser_recapture_required`; the user can select Browser and retry.
+Automatic collection borrowing for that job lifecycle remains unfinished and
+blocks default migration. This interim guard does not retire explicit Facebook
+headless PoC fixtures or claim Facebook headless readiness.
+
+The operator fixture now offers `--mixed-update`: one real four-source Update,
+deterministic local reasoning, Facebook Adaptive Fidelity in an isolated DB,
+explicit terminal cleanup, and natural return to headless. It requires separate
+mixed-Update, profile and foreground acknowledgements. Compilation and four
+wrapper guard tests pass; the live test was skipped without authorization.
+Read-only preflight confirms healthy registered runtime/Bridge, one exact
+profile owner and existing grants for all four sources. It needs no old post
+baseline and cannot establish media/text parity. No live mixed Update has run.
+
+The full Go collection/store/engine/HTTP suites pass after integration
+(`go test ./internal/collection ./internal/store ./internal/engine ./internal/httpapi -count=1 -timeout=180s`).
+Recovery regressions additionally cover the no-adopted-lease predecessor drain
+fence and restoration of active and terminal-but-unfinalized Facebook Browser
+holds. The staged worker package tuple is reverified; the Go fixture exercises
+the current working-tree engine with that unchanged worker and registered
+development Bridge. This is not a newly rebuilt complete installed package.
+Cleanup rejection or an invalid acknowledgement keeps Browser ownership pinned;
+the failure is logged but still needs a user-visible status before default
+migration. The same release action is not silently replayed.
+
 ### Current priority amendment (2026-10-03): defer Facebook
 
 The user changes tactics after the accumulated Facebook investigation effort:
@@ -380,9 +471,11 @@ ledger changes are local; no new checkpoint commit/push is claimed here.
 
 The user selects browser or headless collection in Settings and can switch back.
 Browser remains the default, including when older settings omit the new field.
-Headless remains opt-in during the transition. It is the intended replacement
-collector, but must not become the default until X, Facebook, Instagram and
-LinkedIn have each passed source and integrated product acceptance.
+Headless remains opt-in in the current runtime during the transition. The
+approved hybrid direction above makes it the intended default for X, Instagram
+and LinkedIn, with the existing Browser collector retained for Facebook.
+Default migration requires source and integrated hybrid product acceptance;
+Facebook headless parity is no longer a prerequisite.
 
 ### Approved transition direction (2026-10-02)
 

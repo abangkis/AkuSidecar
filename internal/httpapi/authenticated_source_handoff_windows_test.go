@@ -37,8 +37,22 @@ import (
 // this test then borrows the acknowledged existing profile only for one real
 // source-open action and bounded headless capture. It never removes the profile.
 func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
+	if os.Getenv("AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE") == "1" {
+		t.Skip("mixed Update authorization does not include a separate source-window cycle")
+	}
+	runAuthenticatedSourceFixture(t, false)
+}
+
+func TestAuthenticatedHybridUpdateWindowsSmoke(t *testing.T) {
+	if os.Getenv("AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE") != "1" {
+		t.Skip("one mixed Update requires its own explicit operator acknowledgement")
+	}
+	runAuthenticatedSourceFixture(t, true)
+}
+
+func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
 	if strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_RUNTIME")) == "" {
-		for _, key := range []string{"AKU_AUTH_JOURNEY_CHROME", "AKU_AUTH_JOURNEY_BRIDGE", "AKU_AUTH_JOURNEY_PROFILE", "AKU_AUTH_JOURNEY_PROFILE_DIRECTORY", "AKU_AUTH_JOURNEY_SOURCE", "AKU_AUTH_JOURNEY_TARGET_URL", "AKU_AUTH_JOURNEY_ACK_PROFILE", "AKU_AUTH_JOURNEY_ACK_FOREGROUND", "AKU_AUTH_JOURNEY_ACK_BRIDGE_RELOAD"} {
+		for _, key := range []string{"AKU_AUTH_JOURNEY_CHROME", "AKU_AUTH_JOURNEY_BRIDGE", "AKU_AUTH_JOURNEY_PROFILE", "AKU_AUTH_JOURNEY_PROFILE_DIRECTORY", "AKU_AUTH_JOURNEY_SOURCE", "AKU_AUTH_JOURNEY_TARGET_URL", "AKU_AUTH_JOURNEY_ACK_PROFILE", "AKU_AUTH_JOURNEY_ACK_FOREGROUND", "AKU_AUTH_JOURNEY_ACK_BRIDGE_RELOAD", "AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE"} {
 			if os.Getenv(key) != "" {
 				t.Fatalf("%s requires AKU_AUTH_JOURNEY_RUNTIME", key)
 			}
@@ -86,7 +100,7 @@ func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal("source must be instagram or linkedin")
 	}
 	targetURL, ok := domain.CanonicalSourceURL(source, os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL"))
-	if !ok || targetURL != strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL")) {
+	if !mixedUpdate && (!ok || targetURL != strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL"))) {
 		t.Fatal("target URL must be a canonical native post URL for the selected source")
 	}
 
@@ -103,7 +117,11 @@ func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
 		t.Fatal("staged headless runtime validation failed")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	timeout := 150 * time.Second
+	if mixedUpdate {
+		timeout = 360 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	probe, err := net.Listen("tcp", "127.0.0.1:11122")
 	if err != nil {
@@ -320,6 +338,13 @@ func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
 	if err := waitForAuthJourneyBridge(ctx, e, source); err != nil {
 		t.Fatal("real Bridge source permission/readiness was not established")
 	}
+	if mixedUpdate {
+		for _, required := range []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn} {
+			if err := waitForAuthJourneyBridge(ctx, e, required); err != nil {
+				t.Fatal("all four existing source permissions must be ready before the mixed Update")
+			}
+		}
+	}
 	// A permission heartbeat may come from an already registered background
 	// worker. It does not prove that this new capture host negotiated retirement.
 	capabilityCtx, capabilityCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -349,6 +374,16 @@ func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	settings.CollectionMode = "headless"
 	settings.ActiveSources = []domain.Source{source}
+	if mixedUpdate {
+		// Deliberately put Facebook first: the frozen execution plan must reorder
+		// it behind the headless batch without changing configured source order.
+		settings.ActiveSources = []domain.Source{domain.SourceFacebook, domain.SourceX, domain.SourceInstagram, domain.SourceLinkedIn}
+		settings.CaptureVisibility = "adaptive_fidelity"
+		settings.MaxScrolls = 0
+		settings.MaxItemsPerSource = 5
+		settings.MaxItemsTotal = 20
+		settings.AIDetectionEnabled = false
+	}
 	settingsPayload, err := json.Marshal(map[string]any{"settings": settings})
 	if err != nil {
 		t.Fatal("isolated headless settings could not be encoded")
@@ -367,11 +402,15 @@ func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
 	}
 	decodeErr := json.NewDecoder(io.LimitReader(settingsResp.Body, 128*1024)).Decode(&settingsResult)
 	_ = settingsResp.Body.Close()
-	if settingsResp.StatusCode != http.StatusOK || decodeErr != nil || settingsResult.Settings.CollectionMode != "headless" || len(settingsResult.Settings.ActiveSources) != 1 || settingsResult.Settings.ActiveSources[0] != source {
+	if settingsResp.StatusCode != http.StatusOK || decodeErr != nil || settingsResult.Settings.CollectionMode != "headless" || len(settingsResult.Settings.ActiveSources) != len(settings.ActiveSources) || settingsResult.Settings.ActiveSources[0] != settings.ActiveSources[0] {
 		t.Fatal("isolated Settings API did not persist the requested source and headless mode")
 	}
 	if err := waitForAuthJourneyRuntime(ctx, coordinator, "headless", 2); err != nil {
 		t.Fatal("initial headless owner did not become ready")
+	}
+	if mixedUpdate {
+		runAuthenticatedHybridUpdate(t, ctx, state, e, coordinator, manager)
+		return
 	}
 	preHandoffID, err := captureAuthJourneyTarget(ctx, coordinator, source, targetURL)
 	if err != nil {

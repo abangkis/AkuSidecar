@@ -15,3 +15,15 @@ test('headless readiness uses worker and reports failure',()=>{
  const view=collectionModeState({available:true,effective:'',state:'failed',failure:'worker disconnected'},true);
  assert.equal(view.canCollect,false);assert.match(view.detail,/worker disconnected/);
 });
+
+test('Facebook collection hold reports automatic return rather than asking to close its source',()=>{
+ const runtime={available:true,requested:'headless',effective:'browser',pending:true,state:'ready',headlessAvailable:true,collectionBorrowSource:'facebook'};
+ const view=collectionModeState(runtime,true);
+ assert.equal(view.canCollect,false);
+ assert.match(view.detail,/Facebook is collecting through Browser/);
+ assert.match(view.detail,/returns to your selected mode/);
+ assert.doesNotMatch(view.detail,/open source windows/);
+ const failed=collectionModeState({...runtime,state:'blocked',failure:'profile release unverified'},true);
+ assert.equal(failed.canCollect,false);
+ assert.match(failed.detail,/unavailable.*profile release unverified/);
+});

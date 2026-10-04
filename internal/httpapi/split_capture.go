@@ -87,24 +87,25 @@ type splitActionResult struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 }
 type pendingSplitAction struct {
-	action                   splitCaptureAction
-	queuedAt                 time.Time
-	claimed                  bool
-	result                   chan splitActionResult
-	readerPreparing          bool
-	sourcePreparing          bool
-	sourcePrepared           bool
-	interactionRelease       func()
-	readerForeground         func(context.Context) error
-	readerForegroundVerified bool
-	brokerReady              chan struct{}
-	brokerDone               chan error
-	brokerAttached           bool
-	brokerTarget             readerbroker.Target
-	runtimeLease             *captureruntime.Lease
-	detached                 bool
-	completed                bool
-	completionResult         *splitActionResult
+	collectionCleanupGeneration uint64
+	action                      splitCaptureAction
+	queuedAt                    time.Time
+	claimed                     bool
+	result                      chan splitActionResult
+	readerPreparing             bool
+	sourcePreparing             bool
+	sourcePrepared              bool
+	interactionRelease          func()
+	readerForeground            func(context.Context) error
+	readerForegroundVerified    bool
+	brokerReady                 chan struct{}
+	brokerDone                  chan error
+	brokerAttached              bool
+	brokerTarget                readerbroker.Target
+	runtimeLease                *captureruntime.Lease
+	detached                    bool
+	completed                   bool
+	completionResult            *splitActionResult
 }
 type splitCaptureTransport struct {
 	mu                      sync.Mutex

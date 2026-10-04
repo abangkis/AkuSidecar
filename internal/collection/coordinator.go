@@ -12,18 +12,19 @@ import (
 )
 
 type RuntimeStatus struct {
-	Available         bool                 `json:"available"`
-	Requested         string               `json:"requested"`
-	Effective         string               `json:"effective"`
-	Pending           bool                 `json:"pending"`
-	State             captureruntime.State `json:"state"`
-	Failure           string               `json:"failure,omitempty"`
-	Generation        uint64               `json:"generation"`
-	ActiveLeases      int                  `json:"activeLeases"`
-	HeadlessAvailable bool                 `json:"headlessAvailable"`
-	QuietAvailable    bool                 `json:"quietAvailable"`
-	SupportedSources  []domain.Source      `json:"supportedSources"`
-	AuthorizedSources []domain.Source      `json:"authorizedSources,omitempty"`
+	Available              bool                 `json:"available"`
+	Requested              string               `json:"requested"`
+	Effective              string               `json:"effective"`
+	Pending                bool                 `json:"pending"`
+	State                  captureruntime.State `json:"state"`
+	Failure                string               `json:"failure,omitempty"`
+	Generation             uint64               `json:"generation"`
+	ActiveLeases           int                  `json:"activeLeases"`
+	HeadlessAvailable      bool                 `json:"headlessAvailable"`
+	QuietAvailable         bool                 `json:"quietAvailable"`
+	SupportedSources       []domain.Source      `json:"supportedSources"`
+	AuthorizedSources      []domain.Source      `json:"authorizedSources,omitempty"`
+	CollectionBorrowSource domain.Source        `json:"collectionBorrowSource,omitempty"`
 }
 
 const (
@@ -62,6 +63,7 @@ type Coordinator struct {
 	owner             *captureruntime.Manager
 	requested         string
 	interactive       int
+	browserCollection int
 	launch            func(context.Context, string, uint64) (captureruntime.Process, error)
 	validate          func() error
 	readiness         func() error
@@ -121,7 +123,7 @@ func (c *Coordinator) Request(mode string) {
 }
 func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
-	requested, interactive, failure, available := c.requested, c.interactive, c.failure, c.headlessAvailable
+	requested, interactive, collectionBorrow, failure, available := c.requested, c.interactive, c.browserCollection, c.failure, c.headlessAvailable
 	backend, generation := c.browserCollector, c.browserGeneration
 	c.mu.Unlock()
 	s := c.owner.Snapshot()
@@ -130,7 +132,11 @@ func (c *Coordinator) Status() RuntimeStatus {
 		effective = ""
 	}
 	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
-	return RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
+	status := RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0 || collectionBorrow > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
+	if collectionBorrow > 0 {
+		status.CollectionBorrowSource = domain.SourceFacebook
+	}
+	return status
 }
 func (c *Coordinator) Start(ctx context.Context) {
 	go func() {
@@ -149,7 +155,7 @@ func (c *Coordinator) Start(ctx context.Context) {
 func (c *Coordinator) reconcile(parent context.Context) {
 	c.mu.Lock()
 	mode := c.requested
-	if c.interactive > 0 {
+	if c.interactive > 0 || c.browserCollection > 0 {
 		mode = "browser"
 	}
 	retry := c.retry
@@ -210,13 +216,30 @@ func (c *Coordinator) reconcile(parent context.Context) {
 	}
 }
 func (c *Coordinator) BorrowBrowser(ctx context.Context) (*captureruntime.Lease, func(), error) {
-	c.mu.Lock()
-	c.interactive++
-	c.retry = true
-	c.failure = ""
-	c.mu.Unlock()
-	var once sync.Once
-	releaseIntent := func() { once.Do(func() { c.mu.Lock(); c.interactive--; c.mu.Unlock() }) }
+	return c.borrowBrowser(ctx, false)
+}
+
+// A Facebook batch borrows the same exclusive profile without pretending to be
+// a login/reader interaction. Its intent and process lease both prevent return.
+func (c *Coordinator) BorrowBrowserCollection(ctx context.Context, source domain.Source) (*captureruntime.Lease, func(), error) {
+	if source != domain.SourceFacebook {
+		return nil, nil, errors.New("source has no browser collection exception")
+	}
+	return c.borrowBrowser(ctx, true)
+}
+
+// BeginBrowserCollection records an asynchronous collection intent. Admission
+// must drain/release its previous session lease before waiting for replacement;
+// acquiring a Browser lease while retaining a headless lease would deadlock.
+func (c *Coordinator) BeginBrowserCollection(source domain.Source) (func(), error) {
+	if source != domain.SourceFacebook {
+		return nil, errors.New("source has no browser collection exception")
+	}
+	return c.beginBrowserBorrow(true), nil
+}
+
+func (c *Coordinator) borrowBrowser(ctx context.Context, collectionBorrow bool) (*captureruntime.Lease, func(), error) {
+	releaseIntent := c.beginBrowserBorrow(collectionBorrow)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -247,6 +270,31 @@ func (c *Coordinator) BorrowBrowser(ctx context.Context) (*captureruntime.Lease,
 		case <-ticker.C:
 		}
 	}
+}
+
+func (c *Coordinator) beginBrowserBorrow(collectionBorrow bool) func() {
+	c.mu.Lock()
+	if collectionBorrow {
+		c.browserCollection++
+	} else {
+		c.interactive++
+	}
+	c.retry = true
+	c.failure = ""
+	c.mu.Unlock()
+	var once sync.Once
+	releaseIntent := func() {
+		once.Do(func() {
+			c.mu.Lock()
+			if collectionBorrow {
+				c.browserCollection--
+			} else {
+				c.interactive--
+			}
+			c.mu.Unlock()
+		})
+	}
+	return releaseIntent
 }
 func (c *Coordinator) Capture(ctx context.Context, source domain.Source, payload map[string]any) (domain.Observation, error) {
 	c.mu.Lock()

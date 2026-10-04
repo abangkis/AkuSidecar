@@ -837,12 +837,42 @@ func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings
 	}
 	now := s.Now().UTC().Format(time.RFC3339Nano)
 	sessionID := domain.NewID("session")
-	coverage, err := json.Marshal(map[string]any{
+	configuredSources := append([]domain.Source(nil), settings.ActiveSources...)
+	sources := append([]domain.Source(nil), configuredSources...)
+	coverageValue := map[string]any{
 		"sourceWaitMode":  settings.SourceWaitMode,
 		"trigger":         policy.Trigger,
 		"delivery":        policy.Delivery,
 		"budgetAuthority": policy.BudgetAuthority,
-	})
+	}
+	if settings.CollectionMode == "headless" {
+		// Freeze the experimental hybrid source plan with the session. Facebook
+		// remains a Bridge capture; all other admitted sources use headless.
+		ordered := make([]domain.Source, 0, len(sources))
+		for _, source := range sources {
+			if source != domain.SourceFacebook {
+				ordered = append(ordered, source)
+			}
+		}
+		for _, source := range sources {
+			if source == domain.SourceFacebook {
+				ordered = append(ordered, source)
+			}
+		}
+		sources = ordered
+		drivers := make(map[string]string, len(sources))
+		for _, source := range sources {
+			driver := "headless"
+			if source == domain.SourceFacebook {
+				driver = "browser"
+			}
+			drivers[string(source)] = driver
+		}
+		coverageValue["collectionPolicy"] = domain.SessionCollectionPolicyHybridHeadlessV1
+		coverageValue["collectionSourceDrivers"] = drivers
+		coverageValue["collectionSources"] = configuredSources
+	}
+	coverage, err := json.Marshal(coverageValue)
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -859,7 +889,7 @@ func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings
 			return domain.Session{}, err
 		}
 	}
-	for ordinal, source := range settings.ActiveSources {
+	for ordinal, source := range sources {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,source,ordinal,status,stage,created_at) VALUES(?,?,?,?,'queued','queued',?)`, domain.NewID("run"), sessionID, source, ordinal, now); err != nil {
 			return domain.Session{}, err
 		}
@@ -868,6 +898,23 @@ func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings
 		return domain.Session{}, err
 	}
 	return s.GetSession(ctx, sessionID)
+}
+
+// SessionCaptureCommandsDrained reports whether every command for a session
+// is terminal. A bounded ordinal supports safe hybrid-driver handoff after all
+// sources preceding the next run have fully drained.
+func (s *Store) SessionCaptureCommandsDrained(ctx context.Context, sessionID string, beforeOrdinal *int) (bool, error) {
+	query := `SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id WHERE r.session_id=? AND c.status IN ('queued','claimed')`
+	args := []any{sessionID}
+	if beforeOrdinal != nil {
+		query += ` AND r.ordinal<?`
+		args = append(args, *beforeOrdinal)
+	}
+	var outstanding int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&outstanding); err != nil {
+		return false, err
+	}
+	return outstanding == 0, nil
 }
 
 func (s *Store) ActiveSession(ctx context.Context) (*domain.Session, error) {
@@ -1206,6 +1253,36 @@ func (s *Store) FirstCommandCollector(ctx context.Context, runID string) (string
 	}
 	route, err := CaptureCollector(payload)
 	return route, true, err
+}
+
+// FirstCommandCaptureDriver reads the first command's durable runtime stamp.
+// It never derives a replacement from current settings or the attached owner.
+func (s *Store) FirstCommandCaptureDriver(ctx context.Context, runID string) (string, bool, error) {
+	var raw string
+	err := s.db.QueryRowContext(ctx, `SELECT payload_json FROM bridge_commands WHERE run_id=? ORDER BY created_at,rowid LIMIT 1`, runID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	payload, err := decodeCapturePayload(raw)
+	if err != nil {
+		return "", true, err
+	}
+	stamp, exists := payload["captureRuntime"]
+	if !exists {
+		return "", false, nil
+	}
+	identity, ok := stamp.(map[string]any)
+	if !ok {
+		return "", true, errors.New("invalid durable capture runtime stamp")
+	}
+	driver, ok := identity["driver"].(string)
+	if !ok || (driver != "browser" && driver != "headless") {
+		return "", true, errors.New("invalid durable capture runtime driver")
+	}
+	return driver, true, nil
 }
 
 func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]domain.BridgeCommand, error) {
