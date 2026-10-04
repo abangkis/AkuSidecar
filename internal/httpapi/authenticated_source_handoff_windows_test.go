@@ -37,22 +37,22 @@ import (
 // this test then borrows the acknowledged existing profile only for one real
 // source-open action and bounded headless capture. It never removes the profile.
 func TestAuthenticatedSourceHeadlessHandoffWindowsSmoke(t *testing.T) {
-	if os.Getenv("AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE") == "1" {
+	if os.Getenv("AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE") == "1" || os.Getenv("AKU_AUTH_JOURNEY_ACK_FACEBOOK_RECAPTURE") == "1" {
 		t.Skip("mixed Update authorization does not include a separate source-window cycle")
 	}
-	runAuthenticatedSourceFixture(t, false)
+	runAuthenticatedSourceFixture(t, false, false)
 }
 
 func TestAuthenticatedHybridUpdateWindowsSmoke(t *testing.T) {
 	if os.Getenv("AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE") != "1" {
 		t.Skip("one mixed Update requires its own explicit operator acknowledgement")
 	}
-	runAuthenticatedSourceFixture(t, true)
+	runAuthenticatedSourceFixture(t, true, false)
 }
 
-func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
+func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate, facebookRecapture bool) {
 	if strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_RUNTIME")) == "" {
-		for _, key := range []string{"AKU_AUTH_JOURNEY_CHROME", "AKU_AUTH_JOURNEY_BRIDGE", "AKU_AUTH_JOURNEY_PROFILE", "AKU_AUTH_JOURNEY_PROFILE_DIRECTORY", "AKU_AUTH_JOURNEY_SOURCE", "AKU_AUTH_JOURNEY_TARGET_URL", "AKU_AUTH_JOURNEY_ACK_PROFILE", "AKU_AUTH_JOURNEY_ACK_FOREGROUND", "AKU_AUTH_JOURNEY_ACK_BRIDGE_RELOAD", "AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE"} {
+		for _, key := range []string{"AKU_AUTH_JOURNEY_CHROME", "AKU_AUTH_JOURNEY_BRIDGE", "AKU_AUTH_JOURNEY_PROFILE", "AKU_AUTH_JOURNEY_PROFILE_DIRECTORY", "AKU_AUTH_JOURNEY_SOURCE", "AKU_AUTH_JOURNEY_TARGET_URL", "AKU_AUTH_JOURNEY_ACK_PROFILE", "AKU_AUTH_JOURNEY_ACK_FOREGROUND", "AKU_AUTH_JOURNEY_ACK_BRIDGE_RELOAD", "AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE", "AKU_AUTH_JOURNEY_ACK_FACEBOOK_RECAPTURE"} {
 			if os.Getenv(key) != "" {
 				t.Fatalf("%s requires AKU_AUTH_JOURNEY_RUNTIME", key)
 			}
@@ -96,11 +96,15 @@ func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
 		t.Fatal("selected authenticated subprofile is unavailable")
 	}
 	source := domain.Source(strings.ToLower(strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_SOURCE"))))
-	if source != domain.SourceInstagram && source != domain.SourceLinkedIn {
+	if facebookRecapture {
+		if source != domain.SourceFacebook || os.Getenv("AKU_AUTH_JOURNEY_ACK_FACEBOOK_RECAPTURE") != "1" || strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL")) != "" {
+			t.Fatal("Facebook Recapture requires its explicit acknowledgement and a fresh target")
+		}
+	} else if source != domain.SourceInstagram && source != domain.SourceLinkedIn {
 		t.Fatal("source must be instagram or linkedin")
 	}
 	targetURL, ok := domain.CanonicalSourceURL(source, os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL"))
-	if !mixedUpdate && (!ok || targetURL != strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL"))) {
+	if !mixedUpdate && !facebookRecapture && (!ok || targetURL != strings.TrimSpace(os.Getenv("AKU_AUTH_JOURNEY_TARGET_URL"))) {
 		t.Fatal("target URL must be a canonical native post URL for the selected source")
 	}
 
@@ -120,6 +124,9 @@ func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
 	timeout := 150 * time.Second
 	if mixedUpdate {
 		timeout = 360 * time.Second
+	}
+	if facebookRecapture {
+		timeout = 480 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -385,6 +392,14 @@ func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
 		settings.AIDetectionEnabled = false
 		settings.CalibrationEnabled = false
 	}
+	if facebookRecapture {
+		settings.CaptureVisibility = "adaptive_fidelity"
+		settings.MaxScrolls = 0
+		settings.MaxItemsPerSource = 5
+		settings.MaxItemsTotal = 5
+		settings.AIDetectionEnabled = false
+		settings.CalibrationEnabled = false
+	}
 	settingsPayload, err := json.Marshal(map[string]any{"settings": settings})
 	if err != nil {
 		t.Fatal("isolated headless settings could not be encoded")
@@ -408,6 +423,10 @@ func runAuthenticatedSourceFixture(t *testing.T, mixedUpdate bool) {
 	}
 	if err := waitForAuthJourneyRuntime(ctx, coordinator, "headless", 2); err != nil {
 		t.Fatal("initial headless owner did not become ready")
+	}
+	if facebookRecapture {
+		runAuthenticatedFacebookRecapture(t, ctx, state, e, coordinator, manager)
+		return
 	}
 	if mixedUpdate {
 		runAuthenticatedHybridUpdate(t, ctx, state, e, coordinator, manager)

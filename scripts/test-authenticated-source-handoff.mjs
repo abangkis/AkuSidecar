@@ -13,22 +13,25 @@ const exec=promisify(execFile);
 const fail=code=>{const error=new Error(code);error.code=code;throw error;};
 
 export function parseJourneyArguments(values) {
-  const result={allowStop:false,allowSourceWindow:false,allowBridgeReload:false,mixedUpdate:false};
+  const result={allowStop:false,allowSourceWindow:false,allowBridgeReload:false,mixedUpdate:false,facebookRecapture:false};
   for(let i=0;i<values.length;i++) {
     const flag=values[i];
     if(['--artifact','--baseline','--source'].includes(flag)) {
       const key=flag.slice(2),value=values[++i];
       if(result[key]!==undefined || !value || value.startsWith('--')) fail('invalid_arguments');
       result[key]=value;
-    } else if(['--allow-runtime-stop','--allow-source-window','--allow-bridge-reload','--mixed-update'].includes(flag)) {
-      const key=flag==='--mixed-update'?'mixedUpdate':flag==='--allow-runtime-stop'?'allowStop':flag==='--allow-source-window'?'allowSourceWindow':'allowBridgeReload';
+    } else if(['--allow-runtime-stop','--allow-source-window','--allow-bridge-reload','--mixed-update','--facebook-recapture'].includes(flag)) {
+      const key=flag==='--mixed-update'?'mixedUpdate':flag==='--facebook-recapture'?'facebookRecapture':flag==='--allow-runtime-stop'?'allowStop':flag==='--allow-source-window'?'allowSourceWindow':'allowBridgeReload';
       if(result[key]) fail('invalid_arguments');
       result[key]=true;
     } else fail('invalid_arguments');
   }
-  if(!isAbsolute(result.artifact || '') || (!result.mixedUpdate && !isAbsolute(result.baseline || ''))
-    || (result.baseline!==undefined && !isAbsolute(result.baseline))
-    || !['instagram','linkedin'].includes(result.source)) fail('invalid_arguments');
+  if(result.facebookRecapture) {
+    if(result.mixedUpdate || result.baseline!==undefined || (result.source!==undefined && result.source!=='facebook')) fail('invalid_arguments');
+    result.source='facebook';
+  } else if(!['instagram','linkedin'].includes(result.source)) fail('invalid_arguments');
+  if(!isAbsolute(result.artifact || '') || (!result.mixedUpdate && !result.facebookRecapture && !isAbsolute(result.baseline || ''))
+    || (result.baseline!==undefined && !isAbsolute(result.baseline))) fail('invalid_arguments');
   if(result.allowStop!==result.allowSourceWindow) fail('both_runtime_and_foreground_approval_required');
   if(result.allowBridgeReload && !result.allowStop) fail('bridge_reload_requires_runtime_and_foreground_approval');
   return result;
@@ -75,7 +78,7 @@ async function main() {
   const args=parseJourneyArguments(process.argv.slice(2));
   if(process.platform!=='win32') fail('windows_required');
   let target=null;
-  if(!args.mixedUpdate) {
+  if(!args.mixedUpdate && !args.facebookRecapture) {
     stage='baseline';
     const baselinePath=await realpath(args.baseline);
     const baselineRelative=relative(await realpath(join(sidecar,'build')),baselinePath);
@@ -92,11 +95,14 @@ async function main() {
   const before=await preflight(registration,sources);
   const originalSettings=await settingsDigest();
   if(!args.allowStop) {
-    console.log(JSON.stringify({status:'preflight_only',source:args.source,sources,mixedUpdate:args.mixedUpdate,before,
+    console.log(JSON.stringify({status:'preflight_only',source:args.source,sources,mixedUpdate:args.mixedUpdate,facebookRecapture:args.facebookRecapture,before,
       requiresRuntimeStopApproval:true,requiresForegroundApproval:true,
       profile:'registered logged-in profile and selected subprofile',database:'isolated fixture only',
       bridge:'registered development Bridge; staged candidate headless worker; not full packaged Bridge parity',
-      scope:args.mixedUpdate?'one mixed-source Update with deterministic local reasoning, Facebook Adaptive Fidelity, cleanup and auto-return; not media parity or reader click':'source-window API lifetime and post-close headless capture; not trusted reader-click or actual login submission'}));
+      acquisitionBoundSeconds:args.facebookRecapture?360:undefined,
+      recaptureWaitBoundSeconds:args.facebookRecapture?75:undefined,
+      fixtureBoundSeconds:args.facebookRecapture?480:undefined,
+      scope:args.facebookRecapture?'one fresh Facebook Update and automatic Browser Recapture for an eligible new item; not auth parity or trusted-reader proof':args.mixedUpdate?'one mixed-source Update with deterministic local reasoning, Facebook Adaptive Fidelity, cleanup and auto-return; not media parity or reader click':'source-window API lifetime and post-close headless capture; not trusted reader-click or actual login submission'}));
     return;
   }
   stage='artifact_verification';
@@ -105,11 +111,11 @@ async function main() {
   const receiptRoot=join(sidecar,'build',`authenticated-source-handoff-${randomUUID()}`);
   await mkdir(receiptRoot,{recursive:false});
   const report={schema:'aku.authenticated-source-handoff.v1',
-    scope:args.mixedUpdate?'mixed_source_update_routing_cleanup_auto_return_not_media_parity':'real_source_window_api_lifetime_not_reader_click_or_login_submission',
-    startedAt:new Date().toISOString(),source:args.source,sources,mixedUpdate:args.mixedUpdate,
+    scope:args.facebookRecapture?'fresh_facebook_update_and_automatic_hybrid_recapture':args.mixedUpdate?'mixed_source_update_routing_cleanup_auto_return_not_media_parity':'real_source_window_api_lifetime_not_reader_click_or_login_submission',
+    startedAt:new Date().toISOString(),source:args.source,sources,mixedUpdate:args.mixedUpdate,facebookRecapture:args.facebookRecapture,
     bridgeReloadAuthorized:args.allowBridgeReload,stopIssued:false,testPassed:false,restored:false};
   let operationError;
-  const deadline=Date.now()+(args.mixedUpdate?10:5)*60_000;
+  const deadline=Date.now()+(args.facebookRecapture?11:args.mixedUpdate?10:5)*60_000;
   try {
     stage='stop';report.stopIssued=true;
     await supervisor(['stop','akusidecar','--actor','codex','--reason','authorized real-source window headless journey QA','--request-id',randomUUID()]);
@@ -123,10 +129,12 @@ async function main() {
     // Clear inherited opt-ins; only this invocation can authorize a reload.
     env.AKU_AUTH_JOURNEY_ACK_BRIDGE_RELOAD=args.allowBridgeReload?'1':'';
     env.AKU_AUTH_JOURNEY_ACK_MIXED_UPDATE=args.mixedUpdate?'1':'';
+    env.AKU_AUTH_JOURNEY_ACK_FACEBOOK_RECAPTURE=args.facebookRecapture?'1':'';
     try {
-      const testName=args.mixedUpdate?'TestAuthenticatedHybridUpdateWindowsSmoke':'TestAuthenticatedSourceHeadlessHandoffWindowsSmoke';
-      const result=await exec('go.exe',['test','./internal/httpapi','-run',`^${testName}$`,'-count=1',`-timeout=${args.mixedUpdate?390:180}s`,'-v'],
-        {cwd:sidecar,env,windowsHide:true,timeout:args.mixedUpdate?405000:195000,maxBuffer:1024*1024});
+      const testName=args.facebookRecapture?'TestAuthenticatedHybridFacebookRecaptureWindowsSmoke':args.mixedUpdate?'TestAuthenticatedHybridUpdateWindowsSmoke':'TestAuthenticatedSourceHeadlessHandoffWindowsSmoke';
+      const testTimeout=args.facebookRecapture?500:args.mixedUpdate?390:180;
+      const result=await exec('go.exe',['test','./internal/httpapi','-run',`^${testName}$`,'-count=1',`-timeout=${testTimeout}s`,'-v'],
+        {cwd:sidecar,env,windowsHide:true,timeout:(testTimeout+15)*1000,maxBuffer:1024*1024});
       await writeFile(join(receiptRoot,'test-output.txt'),result.stdout+result.stderr);
       if(!result.stdout.includes(`--- PASS: ${testName} `)) fail('fixture_did_not_run');
       report.testPassed=true;

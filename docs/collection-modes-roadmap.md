@@ -293,6 +293,37 @@ Facebook Browser Recapture and the reader/source-window journey while retaining
 the headless selection; use scoped operator approval for any new foreground
 cycle and never reuse packaged CfT152 on the Chrome154 authenticated profile.
 
+Next preparation: an opt-in authenticated Facebook Recapture fixture. Acquire
+one fresh eligible Facebook media item through the existing Browser fallback
+with the isolated DB still configured as headless; wait for cleanup and return
+to headless, then call the normal timeline Recapture HTTP route for that exact
+item. Verify the job's immutable Browser/Bridge stamp, target identity, terminal
+media evidence, cleanup and a second return to headless. No old target baseline
+is required. If fresh acquisition yields no supported media target, report that
+limitation rather than inventing a target or accepting an empty result. Keep
+the original registered profile/runtime/settings restoration fence and scoped
+foreground opt-ins. This is fixture preparation, not live qualification.
+
+Preparation is implemented as `--facebook-recapture` in the existing operator
+wrapper, with a new opt-in Windows test. Five Node guards, the focused Go fresh
+target/identity/media guard, Windows compile-only build and diff checks pass.
+The target must match its newly created timeline session/run and that run's raw
+observation EvidenceKey, permalink and opaque Facebook platform ID. Watch and
+photo-only routes are excluded from this scoped test. A video poster cannot
+pass the direct media/playback URL check. Saved mode remains headless; the
+isolated acquisition uses Facebook-only Adaptive Fidelity with bounded budgets.
+There is no video playback or CDN HEAD request in this fixture.
+
+Read-only preflight passes after an active original session finished: healthy
+registered runtime/Bridge, one exact Chrome154 profile owner, retained Facebook
+grant and no active session. Bounds are explicit: acquisition 360 seconds,
+Recapture status wait 75 seconds, overall Go fixture 480 seconds (setup and
+cleanup included). The wrapper retains a separate restore allowance. Runtime
+testing has not run. A new live cycle needs scoped approval for one fresh
+Facebook Update plus one eligible Recapture, temporary runtime stop, possible
+foreground windows and verified restore; the package bootstrap permission was
+limited to its completed cycle.
+
 ### Current priority amendment (2026-10-03): defer Facebook
 
 The user changes tactics after the accumulated Facebook investigation effort:

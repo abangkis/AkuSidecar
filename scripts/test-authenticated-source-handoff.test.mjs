@@ -30,6 +30,20 @@ test('mixed Update remains a dry-run unless both runtime and foreground approval
   assert.throws(()=>parseJourneyArguments([...base,'--mixed-update','--mixed-update']),{code:'invalid_arguments'});
   assert.equal(parseJourneyArguments([...base,'--mixed-update','--allow-runtime-stop','--allow-source-window']).mixedUpdate,true);
 });
+test('Facebook Recapture mode owns its fresh target and requires the same paired opt-ins',()=>{
+  const fresh=['--artifact',import.meta.filename,'--facebook-recapture'];
+  const dry=parseJourneyArguments(fresh);
+  assert.equal(dry.facebookRecapture,true);assert.equal(dry.source,'facebook');assert.equal(dry.baseline,undefined);
+  assert.equal(dry.allowStop,false);
+  assert.throws(()=>parseJourneyArguments([...fresh,'--allow-runtime-stop']),{code:'both_runtime_and_foreground_approval_required'});
+  assert.throws(()=>parseJourneyArguments([...fresh,'--allow-source-window']),{code:'both_runtime_and_foreground_approval_required'});
+  const approved=parseJourneyArguments([...fresh,'--allow-runtime-stop','--allow-source-window']);
+  assert.equal(approved.facebookRecapture,true);assert.equal(approved.allowStop,true);assert.equal(approved.allowBridgeReload,false);
+  assert.throws(()=>parseJourneyArguments([...fresh,'--baseline',import.meta.filename]),{code:'invalid_arguments'});
+  assert.throws(()=>parseJourneyArguments([...fresh,'--mixed-update']),{code:'invalid_arguments'});
+  assert.throws(()=>parseJourneyArguments([...fresh,'--source','instagram']),{code:'invalid_arguments'});
+  assert.throws(()=>parseJourneyArguments(['--artifact',import.meta.filename,'--source','facebook','--baseline',import.meta.filename]),{code:'invalid_arguments'});
+});
 test('operator scope rejects unsupported sources, relative paths and duplicate flags',()=>{
   for(const args of [base.map(v=>v==='linkedin'?'facebook':v),['--artifact','relative',...base.slice(2)],
     [...base,'--source','instagram'],[...base,'--allow-runtime-stop','--allow-runtime-stop'],[...base,'--unknown']]) {
