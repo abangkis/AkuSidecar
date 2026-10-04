@@ -29,6 +29,14 @@ test("startup messaging failures cannot prevent trusted-click listener installat
     assert.ok(messages.some((m) => m.type === "AKU_BROWSER_READER_BROKER_READY"));
     assert.doesNotMatch(JSON.stringify(messages), /private/);
     const link = { dataset: { akuNativePost: "x" }, href: "https://x.com/a/status/1" };
+    for (const reason of ["Menunggu koleksi selesai", "Membuka native post…"]) {
+      link.dataset.akuNativeWait = reason;
+      const before = calls.length;
+      click({ isTrusted: true, button: 0, target: { closest: () => link } });
+      assert.equal(calls.length, before, "blocked click must not launch another helper");
+      assert.equal(link.dataset.akuReaderRequest, undefined);
+    }
+    delete link.dataset.akuNativeWait;
     click({ isTrusted: true, button: 0, target: { closest: () => link } });
     assert.equal(calls.at(-1).requestId, "broker_" + "a".repeat(32));
     assert.equal(link.dataset.akuReaderRequest, calls.at(-1).requestId);

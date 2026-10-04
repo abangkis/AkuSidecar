@@ -1197,3 +1197,13 @@ h3 { letter-spacing: -0.02em; }
 }
 .timeline-direct-context-object p { margin: 0; white-space: pre-wrap; }
 .timeline-direct-context-object + .timeline-direct-context-object { border-top: 1px solid var(--line); }
+[data-aku-native-post][data-aku-native-wait] {
+  cursor: wait;
+  opacity: 0.7;
+}
+[data-aku-native-post][data-aku-native-wait]::after {
+  content: attr(data-aku-native-wait);
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}

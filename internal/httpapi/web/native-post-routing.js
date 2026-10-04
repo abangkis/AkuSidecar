@@ -5,6 +5,10 @@ export function createNativePostRouter({ readRuntime, openHeadless, openForegrou
     signal?.throwIfAborted();
     const runtime = await readRuntime();
     signal?.throwIfAborted();
+    if (!runtime?.nativeReaderOnly && (runtime?.effective === "headless" || runtime?.requested === "headless") &&
+        (runtime?.activeLeases > 0 || runtime?.collectionBorrowSource)) {
+      throw new Error("Menunggu koleksi selesai. Klik native post lagi setelah koleksi selesai.");
+    }
     // pending also means a ready Browser is borrowed by an existing reader.
     if (runtime?.state && runtime.state !== "ready") {
       throw new Error("Chrome is changing collection mode. Wait until it is ready and retry.");

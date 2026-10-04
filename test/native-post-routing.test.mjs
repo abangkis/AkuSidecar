@@ -31,6 +31,14 @@ test("unknown or starting owners and failed status reads never open a reader", a
 });
 
 const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+test("live collection lease race does not dispatch a native action", async () => {
+  for (const runtime of [{ requested: "headless", effective: "headless", activeLeases: 1 },
+    { requested: "headless", effective: "browser", collectionBorrowSource: "facebook" }]) {
+    const route = createNativePostRouter({ readRuntime: async () => runtime,
+      openHeadless: () => assert.fail("opened"), openForeground: () => assert.fail("opened") });
+    await assert.rejects(route({}), /Menunggu koleksi selesai/);
+  }
+});
 function fixture(runtime, delayed = false) {
   const handlers = new Map(), messages = [], calls = [];
   let releaseRuntime;

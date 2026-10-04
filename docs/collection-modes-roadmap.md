@@ -25,11 +25,26 @@ user actions retain completion and lease guards. A generation-scoped owner-exit
 observer runs outside manager locks; structured skipped probe results are quiet
 in the UI while unrelated errors remain visible. The misleading source-access
 review button is hidden while reader-only ownership is active. This follow-up
-is validated in source but is not yet activated for a real close/auto-return trial.
+was activated and passed the owner's subsequent real close/auto-return trial:
+runtime returned to headless ready, pending false, active leases zero. This
+readback verifies recovery, not the absence of every possible UI banner.
 Validation: HTTP API, capture-runtime and coordinator Go suites pass; 35 targeted
 frontend tests and the Windows Sidecar build pass. Tests cover admission without
 leases, natural owner-exit cleanup, generation fencing, retained user-action
 leases, actual UI probe guards and structured passive-skip handling.
+
+The same trial exposed collection contention: two native-reader requests timed
+out after 30 seconds waiting for profile handoff; a later request completed in
+5104 ms (5000 ms handoff). The new UI wait guard displays “Menunggu koleksi
+selesai” on native links while a hybrid session or collection profile lease is
+active, and restores access after cleanup. A single in-flight opening displays
+“Membuka native post…” and prevents extra helper/action launches. Poster/label
+children are preserved. The isolated trusted-click broker ignores guarded links;
+live runtime routing also refuses a busy collection owner before dispatch.
+There is deliberately no deferred replay of an old trusted click: the user
+clicks again after collection finishes. Browser-only collection retains its
+existing native route; an existing hostless reader remains usable. These new
+wait controls require a runtime restart and real UI validation.
 
 Owner approved option 1 optimization after the real click measured API 4754 ms,
 broker 5208 ms, profile handoff 3800 ms (release 2529 ms, launch 15 ms, readiness

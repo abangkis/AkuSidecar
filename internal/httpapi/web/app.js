@@ -1,6 +1,7 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
+import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
@@ -3018,10 +3019,17 @@ function openSourceFromSettings(source) {
 }
 
 const nativePointerTraces = new WeakMap();
+let nativePostOpening = false;
+function syncNativePostLinks() {
+  const reason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening);
+  for (const link of document.querySelectorAll("[data-aku-native-post]")) syncNativePostAvailability(link, reason);
+}
 document.addEventListener("pointerdown", (event) => {
   if (!event.isTrusted || event.button !== 0) return;
   const link = event.target?.closest?.("a[data-aku-native-post]");
   if (!link) return;
+  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening));
+  if (link.dataset.akuNativeWait) return;
   const pointerTrace = `pointer_${crypto.randomUUID().replaceAll("-", "")}`;
   nativePointerTraces.set(link, { trace: pointerTrace, at: Date.now() });
   logNativePostTrace(pointerTrace, "pointerdown");
@@ -3031,6 +3039,7 @@ function configureNativePostLink(link, href, source) {
   link.href = href;
   link.dataset.akuNativePost = source;
   link.rel = "noopener noreferrer";
+  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening));
   link.addEventListener("click", (event) => {
     const pointer = nativePointerTraces.get(link);
     nativePointerTraces.delete(link);
@@ -3040,9 +3049,15 @@ function configureNativePostLink(link, href, source) {
       return;
     }
     event.preventDefault();
+    if (nativePostOpening || nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session)) return;
     const brokerRequestId = link.dataset.akuReaderRequest;
     delete link.dataset.akuReaderRequest;
-    openNativePostInReaderWindow(href, source, brokerRequestId, gesture).catch(showError);
+    nativePostOpening = true;
+    syncNativePostLinks();
+    openNativePostInReaderWindow(href, source, brokerRequestId, gesture).catch(showError).finally(() => {
+      nativePostOpening = false;
+      syncNativePostLinks();
+    });
   });
 }
 
@@ -3290,6 +3305,7 @@ function configureBackgroundBridge() {
 }
 
 function renderCollectionRuntime() {
+  syncNativePostLinks();
   const runtime = state.bootstrap?.collectionRuntime;
   const view = collectionModeState(runtime,state.bootstrap?.bridge?.compatible);
   const select = $("#collection-mode");
@@ -5082,6 +5098,7 @@ function dispatch(run) {
 }
 
 function renderSession() {
+  syncNativePostLinks();
   const session = state.session;
   $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
   const modeBadge = $("#processing-mode-badge");

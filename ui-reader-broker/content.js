@@ -28,6 +28,8 @@ if (window === window.top && location.pathname === "/") {
     if (!event.isTrusted || event.button !== 0 || document.visibilityState !== "visible") return;
     const link = event.target?.closest?.("a[data-aku-native-post]");
     if (!link) return;
+    // A disabled collection/pending link must not start another native helper.
+    if (link.dataset.akuNativeWait) return;
     const source = link.dataset.akuNativePost;
     const requestId = "broker_" + crypto.randomUUID().replaceAll("-", "");
     // The existing bubble handler reads/clears this before enqueueing exactly

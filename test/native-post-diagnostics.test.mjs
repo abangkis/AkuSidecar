@@ -51,6 +51,7 @@ test("a pressed native-post link remains traceable if no click follows", () => {
   let pointerdown;
   const handler = app.slice(app.indexOf("const nativePointerTraces = new WeakMap();"), app.indexOf("function configureNativePostLink"));
   vm.runInNewContext(handler, {
+    state: {}, nativePostWaitReason: () => "", syncNativePostAvailability() {},
     document: { addEventListener: (_name, callback) => { pointerdown = callback; } },
     crypto: { randomUUID: () => "11111111-2222-4333-8444-555555555555" },
     logNativePostTrace: diagnostics.record,
