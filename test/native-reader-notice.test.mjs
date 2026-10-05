@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { nativeReaderNotice } from "../internal/httpapi/web/native-reader-notice.js";
+import { nativeReaderNotice, nativeReaderResumeMessage } from "../internal/httpapi/web/native-reader-notice.js";
 
 test("reader banner distinguishes blocked, closing, failure and clear states", () => {
   assert.equal(nativeReaderNotice(null).visible, false);
@@ -24,7 +24,7 @@ function actionFixture(api) {
   const state = { bootstrap: { autoUpdate: { nativeReaderBlocked: true } }, closingNativeReaders: false };
   const notices = [];
   let polls = 0;
-  const context = { state, nativePostOpening: false, api,
+  const context = { state, nativePostOpening: false, api, nativeReaderResumeMessage,
     syncRunButtons() {}, syncNativePostLinks() {}, renderAutoUpdateStatus() {},
     pollCollectionRuntime: async () => {}, renderSession() {}, startPolling() { polls++; },
     showNotice: message => notices.push(message), Error };
@@ -53,6 +53,19 @@ test("explicit close action is single flight and only claims a batch if server s
   assert.equal(fixture.polls(), 0);
   await fixture.context.closeNativeReadersAndResume();
   assert.equal(calls, 1);
+});
+
+test("frequency-limited recovery explains the wait without promising an immediate batch", () => {
+  const response = { resumeReason: "Bounded generation allowance reached", autoUpdate: { nextCheckAt: "2026-10-05T09:28:11Z" } };
+  const message = nativeReaderResumeMessage(response);
+  assert.match(message, /menunggu batas frekuensi/);
+  assert.match(message, /Pemeriksaan berikutnya sekitar/);
+  assert.doesNotMatch(message, /mulai menyiapkan batch|Bounded generation/);
+  response.autoUpdate.nextCheckAt = "invalid";
+  assert.match(nativeReaderResumeMessage(response), /memeriksa kembali secara otomatis/);
+  assert.doesNotMatch(nativeReaderResumeMessage(response), /Invalid/);
+  response.session = { id: "started" };
+  assert.match(nativeReaderResumeMessage(response), /mulai menyiapkan batch/);
 });
 
 test("close failure preserves retry state; an unverified close never starts session polling", async () => {

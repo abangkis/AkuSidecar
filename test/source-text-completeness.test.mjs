@@ -14,7 +14,7 @@ test('short feed excerpts remain explicitly partial independently of collapse th
   assert.equal(sourceTextIsPartial(null), false);
 });
 
-test('actual source card labels a 280-character six-line excerpt without pretending it has more stored text', () => {
+test('source cards omit the incomplete-text notice and preserve expansion for longer stored text', () => {
   class Element {
     children = []; className = ''; textContent = '';
     classList = { toggle() {} }; style = { setProperty() {} };
@@ -36,7 +36,7 @@ test('actual source card labels a 280-character six-line excerpt without pretend
     .filter(node => node.className === className);
   context.entry = { evidence: { text: 'line\n'.repeat(5) + 'a'.repeat(255), captureQuality: { textStatus: 'requires_permalink_capture' } } };
   const partial = vm.runInContext('buildSourceCard(entry)', context);
-  assert.equal(find(partial, 'source-text-partial').length, 1);
+  assert.equal(find(partial, 'source-text-partial').length, 0);
   assert.equal(find(partial, 'content-expander').length, 0);
   context.entry = { evidence: { text: 'a'.repeat(600), captureQuality: { textStatus: 'permalink_text_verified' } } };
   const full = vm.runInContext('buildSourceCard(entry)', context);

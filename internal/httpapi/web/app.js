@@ -2,13 +2,12 @@ import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
-import { nativeReaderNotice } from "./native-reader-notice.js";
+import { nativeReaderNotice, nativeReaderResumeMessage } from "./native-reader-notice.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
 import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
-import { sourceTextIsPartial } from "./source-text-completeness.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
@@ -5387,9 +5386,7 @@ async function closeNativeReadersAndResume() {
     }
     renderAutoUpdateStatus(response.autoUpdate);
     await pollCollectionRuntime();
-    showNotice(response.session
-      ? "Jendela post ditutup. Auto Update mulai menyiapkan batch."
-      : `Jendela post ditutup. ${response.resumeReason || response.autoUpdate?.reason || "Status Auto Update sudah diperbarui."}`);
+    showNotice(nativeReaderResumeMessage(response));
   } catch (error) {
     state.nativeReaderResumeFeedback = error.message || "Jendela post belum bisa ditutup. Coba lagi.";
   } finally {
@@ -7682,12 +7679,6 @@ function buildSourceCard(entry) {
     label: "post",
     expansionKey: entry.id ? `${entry.id}|post` : null,
   }));
-  if (sourceTextIsPartial(evidence.captureQuality)) {
-    const notice = document.createElement("p");
-    notice.className = "source-text-partial";
-    notice.textContent = "Text incomplete. Open native post to read the rest.";
-    content.append(notice);
-  }
   const quote = buildQuotedPost(evidence.quotedPost, source, entry.id ? `${entry.id}|quote` : null);
   if (quote) content.append(quote);
   card.append(content);
