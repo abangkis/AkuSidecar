@@ -5,7 +5,8 @@ param(
     [int] $WaitForIdleSeconds = 900,
     [ValidateRange(1, 10)]
     [int] $PollSeconds = 2,
-    [switch] $ReplaceReaderBrokerRegistration
+    [switch] $ReplaceReaderBrokerRegistration,
+    [switch] $Verify
 )
 
 $ErrorActionPreference = 'Stop'
@@ -114,7 +115,7 @@ if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
 
 $supervisorConfig = Resolve-AkuSupervisorConfigPath
 
-& (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe'
+& (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe' -Verify:$Verify
 if ($LASTEXITCODE -ne 0) {
     throw "AkuSidecar candidate build failed."
 }

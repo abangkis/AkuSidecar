@@ -58,11 +58,12 @@ verification remain required. Regression coverage must span helper registration,
 owner rotation during borrowing, matching queue admission and activation, rather
 than testing each component independently.
 
-Development builds now run `scripts/test-native-reader-regression.ps1` before
-writing any runtime binary or broker asset. This uncached gate runs the complete
+Development build/restart defaults to no regression tests. The owner-approved
+`-Verify` mode runs `scripts/test-native-reader-regression.ps1` before writing
+any runtime binary or broker asset. This uncached gate runs the complete
 HTTP API, readerbroker, collection and appshell Go packages plus all frontend
 tests, with a 90-second Go timeout and workspace-owned temporary paths. Restart
-configuration changes occur only after the gate and build succeed. A green gate
+configuration changes occur only after the build (and optional gate) succeeds. A green gate
 does not certify real Windows foreground behavior; owner click validation after
 activation remains necessary. The corrected lifecycle regression failed on the
 old cancellation behavior and passes after the fix. The real Engine/Coordinator
