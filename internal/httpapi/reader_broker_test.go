@@ -59,7 +59,7 @@ func TestReaderBrokerMatchesClickAndVerifiesHelperBeforeCaptureSuccess(t *testin
 	}
 }
 
-func TestReaderBrokerRejectsUncorrelatedAndReplayedRequest(t *testing.T) {
+func TestReaderBrokerRejectsUncorrelatedRequest(t *testing.T) {
 	s, _ := splitTestServer(t)
 	req := readerbroker.Request{RequestID: "broker_" + strings.Repeat("b", 32), Source: "x", URL: "https://x.com/a/status/1"}
 	s.splitCapture.actions = []*pendingSplitAction{{action: splitCaptureAction{Type: "dispatch", RequestID: req.RequestID, Source: req.Source, URL: req.URL}, brokerReady: make(chan struct{}), brokerDone: make(chan error, 1)}}

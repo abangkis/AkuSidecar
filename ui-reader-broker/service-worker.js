@@ -74,7 +74,13 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         phase: "helper_result",
         outcome: result?.ok === true ? "accepted" : "rejected",
         failureKind: result?.ok === true ? undefined
-          : result?.message === "Reader broker is unavailable or busy" ? "pipe_busy" : "other",
+          : result?.message === "Reader broker is unavailable or busy" ? "pipe_busy"
+          : result?.message === "AkuBrowser UI must remain foreground" ||
+            result?.message === "Reader intent expired or UI foreground changed" ? "ui_foreground_changed" : "other",
+        focusCategory: ["none", "exact_reader", "ui", "other"].includes(result?.focusCategory)
+          ? result.focusCategory : undefined,
+        readerVisible: typeof result?.readerVisible === "boolean" ? result.readerVisible : undefined,
+        readerMinimized: typeof result?.readerMinimized === "boolean" ? result.readerMinimized : undefined,
         elapsedMs: Math.round(performance.now() - startedAt),
       });
       return result;

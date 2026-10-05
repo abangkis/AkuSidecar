@@ -563,6 +563,13 @@
                   <button id="export-diagnostics" class="primary-button" type="button">Export diagnostics…</button>
                 </div>
               </div>
+              <div id="scroll-trace-controls" class="settings-row hidden">
+                <span class="settings-copy"><strong>Timeline performance trace</strong><small id="scroll-trace-status">Record 30 seconds of timing while scrolling. No post content or URLs are recorded.</small></span>
+                <div class="diagnostics-controls">
+                  <button id="start-scroll-trace" class="primary-button" type="button">Trace scroll for 30 seconds</button>
+                  <button id="download-scroll-trace" type="button" disabled>Download last trace</button>
+                </div>
+              </div>
             </div>
           </fieldset>
         </form>
@@ -1061,5 +1068,6 @@
     <script src="/startup-watchdog.js?runtime=release-0.9.0-rc.8"></script>
     <script src="/native-post-diagnostics.js?runtime=release-0.9.0-rc.8"></script>
     <script type="module" src="/app.js?runtime=release-0.9.0-rc.8"></script>
+    <div id="scroll-trace-banner" class="scroll-trace-banner hidden" role="status">Recording scroll timing · 30 seconds <button id="stop-scroll-trace" type="button">Stop trace</button></div>
   </body>
 </html>

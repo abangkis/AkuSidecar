@@ -30,6 +30,36 @@ func TestActivationReasonIsAllowlisted(t *testing.T) {
 	}
 }
 
+func TestForegroundDiagnosticsUseOnlyFixedCategories(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		hwnd                 uintptr
+		foregroundPID, uiPID uint32
+		readerHWND           uintptr
+		want                 string
+	}{
+		{name: "no foreground", want: "none"},
+		{name: "UI", hwnd: 10, foregroundPID: 20, uiPID: 20, readerHWND: 30, want: "ui"},
+		{name: "exact reader", hwnd: 30, foregroundPID: 20, uiPID: 20, readerHWND: 30, want: "exact_reader"},
+		{name: "other window", hwnd: 40, foregroundPID: 50, uiPID: 20, readerHWND: 30, want: "other"},
+		{name: "unknown process", hwnd: 40, readerHWND: 30, want: "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ClassifyForeground(tc.hwnd, tc.foregroundPID, tc.uiPID, tc.readerHWND); got != tc.want {
+				t.Fatalf("focus category=%q want %q", got, tc.want)
+			}
+		})
+	}
+	for input, want := range map[string]string{
+		"none": "none", "exact_reader": "exact_reader", "ui": "ui", "other": "other",
+		"https://private.example/window": "unknown", "": "unknown",
+	} {
+		if got := DiagnosticFocusCategory(Reply{FocusCategory: input}); got != want {
+			t.Fatalf("diagnostic category %q became %q want %q", input, got, want)
+		}
+	}
+}
+
 func TestReaderRequestRejectsNonClickIDsAndSourceConfusion(t *testing.T) {
 	good := Request{RequestID: "broker_" + strings.Repeat("a", 32), Source: "x", URL: "https://x.com/a/status/1"}
 	if err := good.Validate(); err != nil {

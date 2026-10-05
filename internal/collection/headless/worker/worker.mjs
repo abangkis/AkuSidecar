@@ -62,7 +62,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: `AkuBridge/adapters/${source}-adapter.js`, path: resolve(bridge, `adapters/${source}-adapter.js`), execute: true },
         { relative: 'worker/vendor/adapter-extract.js', path: resolve(root, 'vendor/adapter-extract.js'), execute: true },
       ];
-  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {

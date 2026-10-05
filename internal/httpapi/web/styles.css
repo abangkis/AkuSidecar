@@ -1207,3 +1207,18 @@ h3 { letter-spacing: -0.02em; }
   font-size: 0.8rem;
   line-height: 1.4;
 }
+.scroll-trace-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 100;
+  padding: 10px 14px;
+  border: 1px solid #b6f36b;
+  border-radius: 8px;
+  background: #20251e;
+  color: #f0f6e9;
+  font-size: 13px;
+}
+
+.scroll-trace-banner button { margin-left: 10px; }
+.source-text-partial { color: var(--amber); font-size: 0.85rem; }

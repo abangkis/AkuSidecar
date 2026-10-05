@@ -110,6 +110,23 @@ func ForegroundPID() uint32 {
 	return pid
 }
 
+func withFocusDiagnostics(reply Reply, uiPID uint32, readerHWND uintptr) Reply {
+	hwnd, _, _ := foreground.Call()
+	var foregroundPID uint32
+	if hwnd != 0 {
+		windowPID.Call(hwnd, uintptr(unsafe.Pointer(&foregroundPID)))
+	}
+	reply.FocusCategory = ClassifyForeground(hwnd, foregroundPID, uiPID, readerHWND)
+	if readerHWND != 0 {
+		v, _, _ := visible.Call(readerHWND)
+		i, _, _ := iconic.Call(readerHWND)
+		readerVisible, readerMinimized := v != 0, i != 0
+		reply.ReaderVisible = &readerVisible
+		reply.ReaderMinimized = &readerMinimized
+	}
+	return reply
+}
+
 // Serve obtains the caller PID from the OS pipe connection, never JSON. Each
 // conversation has a hard deadline and is serialized to bound native helpers.
 func Serve(ctx context.Context, authorize func(uint32) error, handle func(context.Context, Request, func(Target) (Reply, error)) error) error {
@@ -174,8 +191,11 @@ func RunClient(ctx context.Context, req Request) Reply {
 		return Reply{Message: err.Error()}
 	}
 	parent, err := ParentPID(uint32(os.Getpid()))
-	if err != nil || ForegroundPID() != parent {
+	if err != nil {
 		return Reply{Message: "AkuBrowser UI must remain foreground"}
+	}
+	if ForegroundPID() != parent {
+		return withFocusDiagnostics(Reply{Message: "AkuBrowser UI must remain foreground"}, parent, 0)
 	}
 	name, _ := windows.UTF16PtrFromString(PipeName)
 	h, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OVERLAPPED, 0)
@@ -243,10 +263,10 @@ func activate(ctx context.Context, t Target, uiPID uint32) Reply {
 	v, _, _ := visible.Call(uintptr(t.HWND))
 	i, _, _ := iconic.Call(uintptr(t.HWND))
 	if fg == uintptr(t.HWND) && v != 0 && i == 0 {
-		return Reply{OK: true, Readback: true}
+		return withFocusDiagnostics(Reply{OK: true, Readback: true}, uiPID, uintptr(t.HWND))
 	}
 	if ForegroundPID() != uiPID {
-		return Reply{Message: "Reader intent expired or UI foreground changed"}
+		return withFocusDiagnostics(Reply{Message: "Reader intent expired or UI foreground changed"}, uiPID, uintptr(t.HWND))
 	}
 	show.Call(uintptr(t.HWND), 9)
 	applied, _, _ := setForeground.Call(uintptr(t.HWND))
@@ -256,9 +276,9 @@ func activate(ctx context.Context, t Target, uiPID uint32) Reply {
 		v, _, _ := visible.Call(uintptr(t.HWND))
 		i, _, _ := iconic.Call(uintptr(t.HWND))
 		if fg == uintptr(t.HWND) && v != 0 && i == 0 {
-			return Reply{OK: true, Applied: applied != 0, Readback: true}
+			return withFocusDiagnostics(Reply{OK: true, Applied: applied != 0, Readback: true}, uiPID, uintptr(t.HWND))
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return Reply{Message: "Windows rejected reader activation", Applied: applied != 0}
+	return withFocusDiagnostics(Reply{Message: "Windows rejected reader activation", Applied: applied != 0}, uiPID, uintptr(t.HWND))
 }

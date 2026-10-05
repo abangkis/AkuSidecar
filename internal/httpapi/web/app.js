@@ -6,6 +6,8 @@ import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
 import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
+import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
+import { sourceTextIsPartial } from "./source-text-completeness.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
@@ -274,22 +276,25 @@ const settingsDirty = createDirtyStateTracker({
 });
 const $ = (selector) => document.querySelector(selector);
 const timelineScrollIdle = createScrollIdleGate();
+const scrollPerformanceTrace = createScrollPerformanceTrace({ onStop: saveScrollPerformanceTrace });
 const scrollUIFrames = createFrameTaskQueue({
   requestFrame: (callback) => window.requestAnimationFrame(callback),
   run(tasks) {
-    if (tasks.has("scroll")) {
-      const movingDown = window.scrollY > state.autoLoadLastScrollY;
-      state.autoLoadLastScrollY = window.scrollY;
-      if (state.currentView === "timeline") {
-        handleTimelineContentContextScroll();
-        if (movingDown && state.bootstrap?.settings?.nextBatchBehavior === "auto_at_finish") {
-          const finish = $("#finish-line");
-          if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) revealPreparedBatch("continue");
+    scrollPerformanceTrace.measure("scroll_frame", () => {
+      if (tasks.has("scroll")) {
+        const movingDown = window.scrollY > state.autoLoadLastScrollY;
+        state.autoLoadLastScrollY = window.scrollY;
+        if (state.currentView === "timeline") {
+          scrollPerformanceTrace.measure("content_context_scroll", handleTimelineContentContextScroll);
+          if (movingDown && state.bootstrap?.settings?.nextBatchBehavior === "auto_at_finish") {
+            const finish = $("#finish-line");
+            if (finish && !finish.classList.contains("hidden") && finish.getBoundingClientRect().top <= window.innerHeight) revealPreparedBatch("continue");
+          }
         }
       }
-    }
-    if (tasks.has("scroll") || tasks.has("back-to-top")) syncBackToTopNow();
-    if (tasks.has("scroll") || tasks.has("side-pane")) syncTimelineSidePanePosition();
+      if (tasks.has("scroll") || tasks.has("back-to-top")) scrollPerformanceTrace.measure("back_to_top", syncBackToTopNow);
+      if (tasks.has("scroll") || tasks.has("side-pane")) scrollPerformanceTrace.measure("side_pane", syncTimelineSidePanePosition);
+    });
   },
 });
 
@@ -523,6 +528,9 @@ $("#database-maintenance-clean").addEventListener("click", () => cleanDatabase(f
 $("#database-maintenance-backup").addEventListener("click", () => cleanDatabase(true));
 $("#database-status").addEventListener("click", () => renderDatabaseHealth(state.bootstrap?.databaseHealth, true));
   $("#export-diagnostics").addEventListener("click", exportDiagnostics);
+  $("#start-scroll-trace").addEventListener("click", startScrollPerformanceTrace);
+  $("#stop-scroll-trace").addEventListener("click", () => scrollPerformanceTrace.stop("manual"));
+  $("#download-scroll-trace").addEventListener("click", downloadScrollPerformanceTrace);
 $("#reset-confirmation-cancel").addEventListener("click", closeResetDialog);
 $("#reset-confirmation-input").addEventListener("input", syncResetConfirmation);
 $("#reset-confirmation-submit").addEventListener("click", submitReset);
@@ -580,9 +588,16 @@ $("#media-viewer").addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("scroll", () => {
+  scrollPerformanceTrace.scroll();
   timelineScrollIdle.noteScroll();
   scrollUIFrames.schedule("scroll");
 }, { passive: true });
+document.addEventListener("load", event => {
+  if (event.target?.tagName === "IMG" && event.target.closest("#result-items")) scrollPerformanceTrace.mediaLoad();
+}, true);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") scrollPerformanceTrace.stop("hidden");
+});
 window.addEventListener("resize", () => {
   scheduleBackToTop();
   scheduleTimelineSidePanePosition();
@@ -734,6 +749,7 @@ function renderDeployment(deployment) {
     ? ` · ${installKind}`
     : "";
   setPill("#deployment-status", `${labels[mode] ?? "Mode invalid"}${suffix}`, mode === "unknown" ? "warning" : "neutral");
+  $("#scroll-trace-controls").classList.toggle("hidden", mode !== "development");
 }
 
 async function pollAutoUpdate() {
@@ -3048,13 +3064,21 @@ function configureNativePostLink(link, href, source) {
     const pointer = nativePointerTraces.get(link);
     nativePointerTraces.delete(link);
     const gesture = pointer && Date.now() - pointer.at <= 5000 ? pointer.trace : null;
-    if (event.defaultPrevented || event.button !== 0) {
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0) {
       if (gesture) logNativePostTrace(gesture, "click_ignored", { outcome: "ignored" });
       return;
     }
     event.preventDefault();
-    if (nativePostOpening || nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session)) return;
+    const waitReason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening);
+    syncNativePostAvailability(link, waitReason);
+    if (waitReason) return;
     const brokerRequestId = link.dataset.akuReaderRequest;
+    if (/^broker_[a-f0-9]{32}$/.test(brokerRequestId ?? "")) {
+      const consumed = (link.dataset.akuReaderRequestsConsumed ?? "").split(",")
+        .filter((id) => /^broker_[a-f0-9]{32}$/.test(id));
+      consumed.push(brokerRequestId);
+      link.dataset.akuReaderRequestsConsumed = consumed.join(",");
+    }
     delete link.dataset.akuReaderRequest;
     nativePostOpening = true;
     syncNativePostLinks();
@@ -3101,6 +3125,9 @@ function openNativePostInReaderWindow(url, source, brokerRequestId = null, gestu
       routing.abort();
       window.clearTimeout(timeout);
       window.removeEventListener("message", onResult);
+      if (callback === reject && brokerRequestId) {
+        cancelNativePostBroker(brokerRequestId, source, url);
+      }
       logNativePostTrace(requestId, "terminal", {
         outcome,
         elapsedMs: Math.round(performance.now() - started),
@@ -3124,9 +3151,21 @@ function openNativePostInReaderWindow(url, source, brokerRequestId = null, gestu
       source,
       url,
     }, { signal: routing.signal }).then(() => {
-      if (!settled) logNativePostTrace(requestId, "dispatch");
+      if (!settled) {
+        logNativePostTrace(requestId, "dispatch");
+      }
     }).catch((error) => finish(reject, error, "rejected"));
   });
+}
+
+function cancelNativePostBroker(requestId, source, url) {
+  if (!/^broker_[a-f0-9]{32}$/.test(requestId || "")) return;
+  window.postMessage({
+    type: "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER",
+    requestId,
+    source,
+    url,
+  }, endpoint);
 }
 
 function setSourceSessionStatus(source, observation) {
@@ -4700,6 +4739,44 @@ function closeResetDialog() {
   state.resetOperation = null;
   state.pendingSettings = null;
   $("#reset-confirmation-dialog").close();
+}
+
+let lastScrollPerformanceReport = null;
+
+function startScrollPerformanceTrace() {
+  if (scrollPerformanceTrace.active) return;
+  setView("timeline");
+  $("#start-scroll-trace").disabled = true;
+  $("#scroll-trace-status").textContent = "Recording timing for 30 seconds. Scroll the Timeline now.";
+  $("#scroll-trace-banner").classList.remove("hidden");
+  scrollPerformanceTrace.start(30000);
+}
+
+async function saveScrollPerformanceTrace(report) {
+  lastScrollPerformanceReport = report;
+  $("#scroll-trace-banner").classList.add("hidden");
+  $("#download-scroll-trace").disabled = false;
+  $("#scroll-trace-status").textContent = "Saving timing trace…";
+  try {
+    await api("/api/diagnostics/ui-performance", { method: "POST", body: report });
+    $("#scroll-trace-status").textContent = "Trace saved in runtime memory. You can download it or ask Codex to inspect it.";
+  } catch {
+    $("#scroll-trace-status").textContent = "Trace could not be saved to the runtime. Download last trace to keep the timing report.";
+  } finally {
+    $("#start-scroll-trace").disabled = false;
+  }
+}
+
+function downloadScrollPerformanceTrace() {
+  if (!lastScrollPerformanceReport) return;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(lastScrollPerformanceReport, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "aku-scroll-trace.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function exportDiagnostics() {
@@ -6758,6 +6835,10 @@ function routeAIDetectedItems(items) {
 }
 
 function renderTimeline(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
+  return scrollPerformanceTrace.measure("timeline_render", () => renderTimelineNow(items, latestCheck, timelineBatches, highlightSessionID));
+}
+
+function renderTimelineNow(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
   $("#finish-line").classList.remove("hidden");
   const allItems = Array.isArray(items) ? items : [];
   const batchMetadata = Array.isArray(timelineBatches)
@@ -7535,6 +7616,12 @@ function buildSourceCard(entry) {
     label: "post",
     expansionKey: entry.id ? `${entry.id}|post` : null,
   }));
+  if (sourceTextIsPartial(evidence.captureQuality)) {
+    const notice = document.createElement("p");
+    notice.className = "source-text-partial";
+    notice.textContent = "Text incomplete. Open native post to read the rest.";
+    content.append(notice);
+  }
   const quote = buildQuotedPost(evidence.quotedPost, source, entry.id ? `${entry.id}|quote` : null);
   if (quote) content.append(quote);
   card.append(content);

@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'test-native-reader-regression.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Native reader regression gate failed.' }
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
 $cacheRoot = Join-Path $repoRoot '.go-build'
 $workerStager = Join-Path (Split-Path -Parent $repoRoot) 'AkuBrowser\scripts\stage-headless-worker.ps1'

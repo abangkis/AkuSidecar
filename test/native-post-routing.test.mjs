@@ -80,5 +80,28 @@ test("an early trusted broker failure cancels routing before status arrives", as
   await assert.rejects(opened, /broker rejected/);
   f.releaseRuntime({ collectionRuntime: { effective: "headless", state: "ready" } });
   await new Promise(setImmediate);
-  assert.equal(f.messages.length, 0, "late status must not replay the failed click");
+  assert.equal(f.messages.filter(message => message.type === "AKU_BROWSER_OPEN_NATIVE_POST").length, 0,
+    "late status must not replay the failed click");
+  assert.equal(f.messages.filter(message => message.type === "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER").length, 1,
+    "the failed helper gets exact cleanup without redispatching the native action");
+  assert.equal(f.messages[0].requestId, "broker_" + "a".repeat(32));
+});
+
+test("a helper failure after API dispatch cancels only its exact broker request", async () => {
+  const f = fixture({ effective: "headless", state: "ready" });
+  const opened = f.open();
+  await new Promise(setImmediate);
+  assert.equal(f.messages[0].type, "AKU_BROWSER_OPEN_NATIVE_POST");
+  assert.equal(f.messages[0].requestId, "broker_" + "a".repeat(32));
+  f.reply("AKU_BROWSER_NATIVE_POST_OPEN_FAILED");
+  await assert.rejects(opened, /broker rejected/);
+  assert.deepEqual(f.messages.map(message => message.type), [
+    "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER",
+  ]);
+  assert.deepEqual({ ...f.messages[1] }, {
+    type: "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER",
+    requestId: "broker_" + "a".repeat(32),
+    source: "x",
+    url: "https://x.com/a/status/1",
+  });
 });

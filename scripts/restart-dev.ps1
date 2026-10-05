@@ -113,12 +113,12 @@ if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
 }
 
 $supervisorConfig = Resolve-AkuSupervisorConfigPath
-$bridgeOrigin = Enable-WindowsCaptureSplit -ConfigurationPath $supervisorConfig
 
 & (Join-Path $PSScriptRoot 'build-dev.ps1') -OutputName 'aku-sidecar.next.exe'
 if ($LASTEXITCODE -ne 0) {
     throw "AkuSidecar candidate build failed."
 }
+$bridgeOrigin = Enable-WindowsCaptureSplit -ConfigurationPath $supervisorConfig
 if (-not (Test-Path -LiteralPath $candidateProvenance -PathType Leaf)) {
     throw "AkuSidecar candidate provenance was not produced: $candidateProvenance"
 }

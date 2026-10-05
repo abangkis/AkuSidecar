@@ -29,7 +29,7 @@ test("actual native link blocks collection clicks and concurrent opens, then res
   vm.createContext(context);
   vm.runInContext(app.slice(app.indexOf("const nativePointerTraces ="), app.indexOf("const routeNativePost =")), context);
   context.configureNativePostLink(link, "https://x.com/a/status/1", "x");
-  const event = () => ({ button: 0, preventDefault() {} });
+  const event = () => ({ isTrusted: true, defaultPrevented: false, button: 0, preventDefault() { this.defaultPrevented = true; } });
   click(event()); click(event());
   assert.equal(calls, 0);
   state.session = null;

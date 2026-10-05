@@ -6,6 +6,24 @@ the database marker names a newer runtime, the script refuses to replace the
 working binary. This can happen even when the database schema number is the
 same: a 0.9.1 last-writer marker cannot be opened by a 0.9.0 runtime.
 
+Every development build first runs `scripts/test-native-reader-regression.ps1`.
+The gate covers native-reader profile handoff and owner rotation, explicit
+cancellation/shutdown, and the frontend click contracts. It runs without opening
+Chrome or restarting the service. A failing test stops the build before runtime
+binaries/helper assets are replaced; restart also defers Supervisor configuration
+changes until the validated build succeeds. Do not bypass this gate to activate
+an unverified fix. It can be run independently from the repository root:
+
+```powershell
+.\scripts\test-native-reader-regression.ps1
+```
+
+For source changes, use `restart-dev.ps1` after foreground/restart authorization.
+A plain Supervisor restart only restarts the existing binary. After activation,
+verify a real Open native post click, multiple tabs in one reader window, and
+headless readiness after the reader closes. Unit tests cannot prove Windows
+foreground activation or live social-source behavior.
+
 The installed-app NSIS uninstaller and `%LOCALAPPDATA%\AkuBrowser\data` belong
 to a different runtime. They do not reset the development database at
 `AkuSidecar/runtime/aku-sidecar.db`. Ensure no installed-app process owns port

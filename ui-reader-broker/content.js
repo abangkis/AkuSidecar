@@ -1,6 +1,8 @@
 // This isolated-world capture listener is the only native-host trigger.
 // No window message or synthetic click can manufacture user activation.
-if (window === window.top && location.pathname === "/") {
+if (window === window.top && location.pathname === "/" && !window.__akuReaderBrokerContentInstalledV1) {
+  // Content-script reinjection must not add another helper to the same click.
+  window.__akuReaderBrokerContentInstalledV1 = true;
   // The native startup capability is acknowledgement-only. Capture the exact
   // launch URL before the page watchdog removes its fragment, so this same tab
   // can perform one quiet navigation retry without creating or foregrounding
@@ -25,7 +27,7 @@ if (window === window.top && location.pathname === "/") {
     if (event.source === window && event.origin === location.origin && event.data?.type === "AKU_BROWSER_READER_BROKER_PROBE") announceReady();
   });
   document.addEventListener("click", (event) => {
-    if (!event.isTrusted || event.button !== 0 || document.visibilityState !== "visible") return;
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || document.visibilityState !== "visible") return;
     const link = event.target?.closest?.("a[data-aku-native-post]");
     if (!link) return;
     // A disabled collection/pending link must not start another native helper.
@@ -42,6 +44,23 @@ if (window === window.top && location.pathname === "/") {
     }).catch((error) => {
       window.postMessage({ type: "AKU_BROWSER_NATIVE_POST_OPEN_FAILED", requestId, source, message: String(error?.message ?? error) }, location.origin);
     });
+    // The app's bubble handler consumes this exact ID only after it admits the
+    // click. Its own preventDefault is not a rejection signal. If another
+    // handler blocked the event or the app declined it, retire only this helper.
+    setTimeout(() => {
+      const consumed = (link.dataset.akuReaderRequestsConsumed ?? "").split(",");
+      if (consumed.includes(requestId)) {
+        const remaining = consumed.filter((id) => id !== requestId);
+        if (remaining.length) link.dataset.akuReaderRequestsConsumed = remaining.join(",");
+        else delete link.dataset.akuReaderRequestsConsumed;
+        return;
+      }
+      if (link.dataset.akuReaderRequest === requestId) delete link.dataset.akuReaderRequest;
+      window.postMessage({
+        type: "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER",
+        requestId, source, url: request.url,
+      }, location.origin);
+    }, 0);
   }, true);
   announceReady();
   if (startupURL) {

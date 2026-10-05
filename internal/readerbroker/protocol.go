@@ -39,12 +39,38 @@ type Target struct {
 	Action   string    `json:"action"`
 }
 type Reply struct {
-	OK       bool    `json:"ok"`
-	Message  string  `json:"message,omitempty"`
-	Ticket   string  `json:"ticket,omitempty"`
-	Target   *Target `json:"target,omitempty"`
-	Applied  bool    `json:"applied,omitempty"`
-	Readback bool    `json:"readback,omitempty"`
+	OK              bool    `json:"ok"`
+	Message         string  `json:"message,omitempty"`
+	Ticket          string  `json:"ticket,omitempty"`
+	Target          *Target `json:"target,omitempty"`
+	Applied         bool    `json:"applied,omitempty"`
+	Readback        bool    `json:"readback,omitempty"`
+	FocusCategory   string  `json:"focusCategory,omitempty"`
+	ReaderVisible   *bool   `json:"readerVisible,omitempty"`
+	ReaderMinimized *bool   `json:"readerMinimized,omitempty"`
+}
+
+// ClassifyForeground returns only the fixed focus categories safe for logs.
+func ClassifyForeground(hwnd uintptr, foregroundPID, uiPID uint32, readerHWND uintptr) string {
+	if hwnd == 0 {
+		return "none"
+	}
+	if readerHWND != 0 && hwnd == readerHWND {
+		return "exact_reader"
+	}
+	if foregroundPID != 0 && uiPID != 0 && foregroundPID == uiPID {
+		return "ui"
+	}
+	return "other"
+}
+
+func DiagnosticFocusCategory(reply Reply) string {
+	switch reply.FocusCategory {
+	case "none", "exact_reader", "ui", "other":
+		return reply.FocusCategory
+	default:
+		return "unknown"
+	}
 }
 
 // Only fixed diagnostic categories may enter logs. Never log arbitrary peer text.

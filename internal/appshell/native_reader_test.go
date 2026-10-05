@@ -16,10 +16,11 @@ import (
 )
 
 type nativeProtocolFixture struct {
-	pages       []nativeReaderTarget
-	calls       []string
-	navigations []string
-	created     int
+	pages           []nativeReaderTarget
+	calls           []string
+	navigations     []string
+	created         int
+	createdWindowID int
 }
 
 func (p *nativeProtocolFixture) Call(_ context.Context, method string, params any, _ string) (json.RawMessage, error) {
@@ -31,11 +32,17 @@ func (p *nativeProtocolFixture) Call(_ context.Context, method string, params an
 		return json.RawMessage(`{"sessionId":"owned-session"}`), nil
 	case "Target.createTarget":
 		args := params.(map[string]any)
-		if args["newWindow"] != true {
-			return nil, fmt.Errorf("reader did not request a separate window")
+		if args["newWindow"] != false {
+			return nil, fmt.Errorf("reader did not request a tab in the existing window")
 		}
 		p.created++
-		return json.RawMessage(`{"targetId":"new-reader"}`), nil
+		return json.Marshal(map[string]string{"targetId": fmt.Sprintf("new-reader-%d", p.created)})
+	case "Browser.getWindowForTarget":
+		windowID := 10
+		if params.(map[string]string)["targetId"] != "idle" && p.createdWindowID != 0 {
+			windowID = p.createdWindowID
+		}
+		return json.Marshal(map[string]int{"windowId": windowID})
 	case "Page.navigate":
 		p.navigations = append(p.navigations, params.(map[string]string)["url"])
 	case "Target.closeTarget":
@@ -74,13 +81,13 @@ func TestNativeReaderRejectedActivationNeverNavigatesSocialURL(t *testing.T) {
 	}
 }
 
-func TestNativeReaderReusesOnlyIdleThenOpensIndependentReader(t *testing.T) {
+func TestNativeReaderReusesIdleThenCreatesTabsInSameWindow(t *testing.T) {
 	p := &nativeProtocolFixture{pages: []nativeReaderTarget{{ID: "idle", Type: "page", URL: "http://local/native-reader-idle"}}}
 	c := &nativeContainmentFixture{}
 	r := &NativeReader{protocol: p, containment: c, idleTarget: "idle", idleURL: p.pages[0].URL}
 	var timing bytes.Buffer
 	r.logger = log.New(&timing, "", 0)
-	for _, id := range []string{"split_first", "split_second"} {
+	for _, id := range []string{"split_first", "split_second", "split_third"} {
 		_, verify, err := r.PrepareNativePost(context.Background(), id, "https://x.com/a/status/1", "http://local/split-reader-intent?id="+id)
 		if err != nil || verify == nil {
 			t.Fatal("prepare", err)
@@ -96,7 +103,7 @@ func TestNativeReaderReusesOnlyIdleThenOpensIndependentReader(t *testing.T) {
 			t.Fatal("verification replayed navigation", err)
 		}
 	}
-	if p.created != 1 || !reflect.DeepEqual(c.markers, []string{"AkuBrowser reader split_first", "AkuBrowser reader split_second"}) {
+	if p.created != 2 || !reflect.DeepEqual(c.markers, []string{"AkuBrowser reader split_first", "AkuBrowser reader split_second", "AkuBrowser reader split_third"}) {
 		t.Fatal("reader window/correlation mismatch", p.created, c.markers)
 	}
 	for _, stage := range []string{"target_attach", "marker_navigation", "window_binding", "post_navigation_dispatch"} {
@@ -115,8 +122,18 @@ func TestNativeReaderReusesOnlyIdleThenOpensIndependentReader(t *testing.T) {
 			t.Fatal("retirement closed a post page")
 		}
 	}
-	if !reflect.DeepEqual(p.navigations, []string{"http://local/split-reader-intent?id=split_first", "https://x.com/a/status/1", "http://local/split-reader-intent?id=split_second", "https://x.com/a/status/1"}) {
+	if !reflect.DeepEqual(p.navigations, []string{"http://local/split-reader-intent?id=split_first", "https://x.com/a/status/1", "http://local/split-reader-intent?id=split_second", "https://x.com/a/status/1", "http://local/split-reader-intent?id=split_third", "https://x.com/a/status/1"}) {
 		t.Fatal("navigation mismatch", p.navigations)
+	}
+}
+
+func TestNativeReaderRejectsTabInDifferentWindow(t *testing.T) {
+	p := &nativeProtocolFixture{createdWindowID: 99}
+	windowID := 10
+	r := &NativeReader{protocol: p, containment: &nativeContainmentFixture{}, readerWindowID: &windowID}
+	_, verify, err := r.PrepareNativePost(context.Background(), "split_wrong", "https://x.com/a/status/1", "http://local/marker")
+	if err == nil || verify != nil || len(p.navigations) != 0 {
+		t.Fatal("unverified window was admitted or navigated", p.navigations, err)
 	}
 }
 

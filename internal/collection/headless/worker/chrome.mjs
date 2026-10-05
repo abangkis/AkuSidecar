@@ -21,6 +21,54 @@ export const CAPTURE_PLAYBACK_GUARD_SOURCE = `(() => {
   document.addEventListener('playing', stopPlayback, true);
 })();`;
 
+export async function createTemporaryPage({ send, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS }) {
+  let targetId;
+  let closePromise = null;
+  const boundedTimeout = Math.max(1, Math.min(CDP_TIMEOUT_MS, Number.isFinite(timeoutMs) ? timeoutMs : CDP_TIMEOUT_MS));
+  const setupDeadline = Date.now() + boundedTimeout;
+  const setupTimeLeft = () => {
+    const left = Math.trunc(setupDeadline - Date.now());
+    if (left < 1) throw Object.assign(new Error('Temporary Chrome page setup timed out.'), { code: 'capture_timeout' });
+    return left;
+  };
+  try {
+    ({ targetId } = await send('Target.createTarget', {
+      url: 'about:blank', background: true, forTab: false,
+    }, browserSessionId, setupTimeLeft()));
+    if (typeof targetId !== 'string' || !targetId) throw new Error('Chrome returned no temporary target identity.');
+    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }, browserSessionId, setupTimeLeft());
+    await send('Page.enable', {}, sessionId, setupTimeLeft());
+    await send('Runtime.enable', {}, sessionId, setupTimeLeft());
+    await send('Network.enable', {}, sessionId, setupTimeLeft());
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_PLAYBACK_GUARD_SOURCE }, sessionId, setupTimeLeft());
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId, setupTimeLeft());
+    await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId, setupTimeLeft());
+    return {
+      send: (method, params = {}, operationTimeout = boundedTimeout) => send(method, params, sessionId, operationTimeout),
+      async evaluate(expression, operationTimeout = boundedTimeout) {
+        const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId, operationTimeout);
+        if (result.exceptionDetails) throw new Error(`Page evaluation failed: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'exception'}`);
+        return result.result?.value;
+      },
+      navigate(url, operationTimeout = boundedTimeout) { return send('Page.navigate', { url }, sessionId, operationTimeout); },
+      close() {
+        closePromise ??= Promise.resolve().then(() => closeTargetAndWait(targetId)).catch(() => {
+          throw Object.assign(new Error('Chrome could not confirm cleanup of the temporary target.'), { code: 'temporary_target_cleanup_failed' });
+        });
+        return closePromise;
+      },
+    };
+  } catch (error) {
+    if (targetId) {
+      try { await closeTargetAndWait(targetId); }
+      catch {
+        throw Object.assign(new Error('Chrome could not confirm cleanup of a failed temporary target.'), { code: 'temporary_target_cleanup_failed' });
+      }
+    }
+    throw error;
+  }
+}
+
 export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default' }) {
   if (!isAbsolute(chromePath) || !isAbsolute(profilePath)) throw new Error('Chrome and profile paths must be absolute.');
   const executable = await realpath(chromePath);
@@ -177,39 +225,10 @@ function connectOwnedChrome(child, executable, profilePath) {
         throw new Error('Chrome did not release its temporary target.');
       }
       async function createPageContext() {
-        let targetId;
-        try {
-          // This process is already headless. A CDP hidden target additionally
-          // suppresses animation frames, even when visibilityState is visible.
-          // Keep normal rendering without activating a desktop window.
-          ({ targetId } = await send('Target.createTarget', {
-            url: 'about:blank', background: true, forTab: false,
-          }, browserSessionId));
-          const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }, browserSessionId);
-          await send('Page.enable', {}, sessionId);
-          await send('Runtime.enable', {}, sessionId);
-          await send('Network.enable', {}, sessionId);
-          // Install before navigation, including subsequent documents/frames.
-          // Interactive/borrowed Chrome contexts do not use this launch path.
-          await send('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_PLAYBACK_GUARD_SOURCE }, sessionId);
-          // The second ordinary background tab otherwise remains occluded and
-          // stops animation frames. CDP emulation changes page lifecycle only;
-          // no Target.activateTarget or OS foreground operation is needed.
-          await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
-          await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
-          return {
-            send: (method, params = {}, timeoutMs) => send(method, params, sessionId, timeoutMs),
-            async evaluate(expression, timeoutMs) {
-              const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId, timeoutMs);
-              if (result.exceptionDetails) throw new Error(`Page evaluation failed: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'exception'}`);
-              return result.result?.value;
-            },
-            navigate(url, timeoutMs) { return send('Page.navigate', { url }, sessionId, timeoutMs); },
-          };
-        } catch (error) {
-          if (targetId) await closeTargetAndWait(targetId).catch(() => {});
-          throw error;
-        }
+        const owned = await createTemporaryPage({ send, browserSessionId, closeTargetAndWait });
+        const { close, ...context } = owned;
+        void close; // Source targets are released together with the owned Chrome process.
+        return context;
       }
       return {
         pid: child.pid,
@@ -222,6 +241,9 @@ function connectOwnedChrome(child, executable, profilePath) {
           const context = await createPageContext();
           sourceContexts.set(source, context);
           return context;
+        },
+        createTemporaryPage(timeoutMs) {
+          return createTemporaryPage({ send, browserSessionId, closeTargetAndWait, timeoutMs });
         },
         close,
         exited,

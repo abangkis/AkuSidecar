@@ -9,6 +9,114 @@ Owner: AkuSidecar integration, with source extraction shared with AkuBridge.
 
 ### Native reader visibility and timing follow-up (2026-10-04)
 
+Open-native-post investigation (2026-10-05, owner trial): the 12:13:21 Jakarta
+attempt attached its helper and prepared the reader, then failed the foreground
+eligibility check (`ui_foreground_changed`) before requesting activation. Logs
+do not identify which window took focus. A separate helper received at 12:13:34
+and API action queued at 12:13:39 have different broker request IDs; neither
+attached to its counterpart and both timed out around 30 seconds. Later attempts
+at 12:14:31 and 12:16:20 completed successfully. These are distinct failure
+stages, not evidence of an unavailable social post or of ID rewriting within
+one click. Astra identified a possible orphan-helper/single-pipe blockage path:
+the trusted capture listener can launch a helper before the application rejects
+the click or routing fails. Stable transport rotation rules out an obsolete
+transport object. The approved follow-up aligns click admission and cancellation
+and adds categorical foreground evidence while preserving activation guards.
+
+The cancellation patch uses the existing authenticated UI relay and an exact
+broker request ID/source/URL tuple. It retires unmatched helper waits and queued
+actions before helper attachment; an already attached reader action keeps its
+existing verification and completion path. Canceled request tombstones last
+30 seconds, are capped at 256 entries without eviction of live records, and are
+checked both before and after native-reader profile borrowing. The UI consumes
+the helper ID only after trusted-click admission; the content listener checks
+for explicit consumption acknowledgement in a later task, after the whole click
+dispatch. An isolated-world installation guard prevents duplicate listeners
+after content-script reinjection. Route,
+helper, and relay failures request cleanup; cancellation networking is bounded
+to three seconds and reports failure instead of silently extending UI waiting.
+Helper replies and Sidecar activation timing logs include only allowlisted focus
+categories and reader visibility/minimized booleans; activation guards remain
+unchanged. Candidate Sidecar and Windows helper builds passed. All 163 frontend
+tests passed, including orphan cleanup, exact consumed-ID acknowledgement,
+reinjection protection, early routing failure and sanitized focus diagnostics.
+Go API, readerbroker and appshell packages passed; cancellation tests cover
+unmatched waiter release, authentication/epoch/tuple rejection, late-helper
+tombstones, exact queued lease cleanup, attached-action preservation and bounded
+capacity. A Go runner cleanup warning after package success was resolved by
+using the workspace test temporary directory; final verification exited 0.
+Owner activation at 13:07 WIB exposed a regression: three clicks around 13:11
+started helpers but received `context canceled` before queue admission. Native
+profile borrowing rotates the capture owner before launching the reader. The
+new rotation cleanup canceled the same UI-origin helper waiting for that
+handoff. This is separate from the earlier foreground eligibility failure.
+
+The correction preserves UI broker conversations and explicit cancellation
+tombstones during normal owner rotation. True shutdown still cancels waiting
+helpers; explicit tuple cancellation, expiry, stale-owner fencing and foreground
+verification remain required. Regression coverage must span helper registration,
+owner rotation during borrowing, matching queue admission and activation, rather
+than testing each component independently.
+
+Development builds now run `scripts/test-native-reader-regression.ps1` before
+writing any runtime binary or broker asset. This uncached gate runs the complete
+HTTP API, readerbroker, collection and appshell Go packages plus all frontend
+tests, with a 90-second Go timeout and workspace-owned temporary paths. Restart
+configuration changes occur only after the gate and build succeed. A green gate
+does not certify real Windows foreground behavior; owner click validation after
+activation remains necessary. The corrected lifecycle regression failed on the
+old cancellation behavior and passes after the fix. The real Engine/Coordinator
+borrow enters `native_reader`, rotates the owner and completes one correlated
+direct-reader preparation, activation and verification. Separate tests preserve
+explicit cancellation tombstones across rotation and release waiters at true
+shutdown. The complete gate passes four Go packages and all 164 frontend tests;
+candidate Sidecar and Windows helper builds pass. Owner-authorized restart at
+14:16 WIB completed cooperatively; health is `ok`, Headless is `ready` with zero
+leases, and the active binary hash matches the validated candidate. A real owner
+Open native post click remains pending.
+
+Test cleanup removed the obsolete no-op context statement and corrected the
+uncorrelated-request test name, which previously claimed replay coverage it did
+not exercise. Existing Browser/host tests remain relevant to the Facebook fallback
+and are retained. No live smoke-test approval is inherited by the build gate.
+
+Approved follow-up (2026-10-05): normal native reader reuses one Chrome window
+and creates a new tab per subsequent post instead of requesting a new window.
+Browser window identity is verified before marker/foreground preparation; a tab
+placed in another window fails admission without navigating to the social URL.
+Each action renews its HWND foreground capability, invalidating the previous
+request even when the window is shared. Existing user post tabs are neither
+overwritten nor closed. The profile remains held until the reader window closes.
+Unit tests and an isolated real headless Chrome fixture verify three owned local
+post tabs in one window. The separately authorized normal-Chrome local fixture
+also passes: three tabs share one HWND, each action renews its binding, old
+capabilities are rejected, the profile stays held until the last tab closes,
+and the process naturally exits. CIM verifies zero surviving test-profile
+processes; the user's runtime remains healthy. This local fixture does not
+establish the authenticated UI broker journey after activation.
+
+X short-feed excerpts now receive an explicit incomplete-text notice based on
+capture evidence, independently of local Show more thresholds. The Theo example
+has 280 characters and six logical lines, so the local 420-character/six-line
+folding rule correctly has no additional stored text to expose. Owned headless
+permalink recovery now uses a separately owned temporary page without navigating
+the retained feed. Each capture attempts at most three unique statuses, with
+three seconds per status and six seconds overall plus bounded target cleanup.
+Only matching post IDs/routes and resolved detail text can replace the excerpt;
+later longer or complete feed evidence is preserved. The 4,000-codepoint limit
+retains an explicit partial marker. Unsupported Quiet contexts and failed or
+timed-out recovery retain the incomplete-text notice. Historical saved excerpts
+are not silently backfilled by this UI change.
+
+Validation: 19 focused worker tests and two source-card completeness tests pass.
+Go tests for headless collection, app shell and HTTP API and Windows Sidecar/
+reader-helper builds pass. The staged worker includes the recovery module with
+a matching source hash. A real empty-profile headless Chrome fixture verifies
+that the source page survives temporary-target closure, closure is idempotent,
+and Chrome exits. The packaged Node cache is reused without archive expansion.
+Runtime activation and authenticated X recovery remain pending; local evidence
+does not establish live social-site behavior.
+
 Timeline scroll follow-up: background refresh now waits for 350 ms of scroll
 idle both before acquisition and before applying a response. Explicit user
 refresh/reveal stays immediate. Back-to-top collisions use predicted candidate
@@ -53,6 +161,22 @@ fixture repeats zero media-content shift and retained scrollY 1800. This closes
 activation verification, not scroll-performance acceptance. Residual jank needs
 a browser frame trace separating script, style/layout, image decode and paint;
 these tests do not measure the user's frame rate or identify that remaining cause.
+
+Owner approved an opt-in development trace. Settings → Diagnostics starts a
+30-second Timeline recording, with manual stop and stop-on-hidden behavior.
+Only bounded numeric timing and allowlisted stage names are retained; no post
+content, resource URLs or DOM attribution is collected. The latest report stays
+in runtime memory and can also be downloaded manually. See
+`timeline-performance-trace.md` for the trial steps and limitations.
+An empty-profile, network-blocked Chrome smoke records an intentionally injected
+110 ms task as stage cost, frame gap, long task and long animation frame. This
+validates instrumentation, not the real remaining Timeline jank. Activation and
+the owner's real scroll recording remain pending. GPU/paint/decode costs are
+not established by these main-thread APIs.
+Validation: all 159 frontend tests, HTTP API Go tests (including development-only
+access, privacy field rejection, bounds, trailing JSON and latest-report
+replacement), and the Windows Sidecar build pass. Runtime has not been restarted
+for this trace yet.
 
 Latest owner click after activation: API total 490 ms, broker total 958 ms,
 profile handoff 400 ms, owner release 74 ms, Chrome launch 4 ms, reader readiness

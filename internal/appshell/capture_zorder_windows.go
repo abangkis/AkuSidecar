@@ -55,6 +55,7 @@ type captureZOrder struct {
 type captureReaderBinding struct {
 	id      uintptr
 	expires time.Time
+	action  string
 }
 
 // The caller gates this to Windows + experimental split. An ordinary window
@@ -458,9 +459,11 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 	}
 	if c.isReader(match) {
 		binding := c.readers[match]
-		return match, binding.id, binding.expires, nil
+		if binding.action == marker {
+			return match, binding.id, binding.expires, nil
+		}
 	}
-	if len(c.readers) >= 32 {
+	if _, existing := c.readers[match]; !existing && len(c.readers) >= 32 {
 		return 0, 0, time.Time{}, errors.New("reader HWND limit reached")
 	}
 	if c.readerLifetimes == nil {
@@ -475,7 +478,9 @@ func (c *captureZOrder) bindReader(marker string) (uintptr, uintptr, time.Time, 
 	if ok == 0 {
 		return 0, 0, time.Time{}, errors.New("reader HWND property rejected")
 	}
-	binding := captureReaderBinding{id: c.nextReader, expires: time.Now().Add(5 * time.Second)}
+	// Each trusted request gets a fresh capability even when a new tab shares
+	// the existing HWND. Previous requests cannot activate the new post.
+	binding := captureReaderBinding{id: c.nextReader, expires: time.Now().Add(5 * time.Second), action: marker}
 	c.readers[match] = binding
 	c.readerLifetimes[match] = struct{}{}
 	return match, binding.id, binding.expires, nil

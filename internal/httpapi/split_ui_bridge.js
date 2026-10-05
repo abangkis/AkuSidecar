@@ -77,9 +77,51 @@
     AKU_BROWSER_REVOKE_SOURCE_ACCESS: ["revoke_source_access", "AKU_BROWSER_REVOKE_SOURCE_ACCESS_RESULT", "AKU_BROWSER_REVOKE_SOURCE_ACCESS_FAILED"],
     AKU_BROWSER_DISPATCH: ["dispatch", null, "AKU_BROWSER_DISPATCH_FAILED"],
   };
+  const cancelNativePostBroker = async (request) => {
+    const requestId = request?.requestId;
+    if (!/^broker_[a-f0-9]{32}$/.test(requestId ?? "") ||
+        !["x", "linkedin", "facebook", "instagram"].includes(request?.source) ||
+        typeof request?.url !== "string") return;
+    const controller = new AbortController();
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new Error("Native reader cancellation timed out."));
+      }, 3000);
+    });
+    try {
+      const config = await Promise.race([bootstrap(), timeout]);
+      const response = await Promise.race([fetch("/api/split-capture/reader-broker/cancel", {
+        method: "POST", cache: "no-store", headers: {
+          "Content-Type": "application/json",
+          "X-Aku-Bridge-Token": config.bridgeToken,
+          "X-Aku-Bridge-Contract": config.bridgeContractVersion,
+          "X-Aku-Split-Epoch": config.instanceEpoch,
+        }, body: JSON.stringify({ requestId, source: request.source, url: request.url }),
+        signal: controller.signal,
+      }), timeout]);
+      const reply = await Promise.race([response.json(), timeout]);
+      if (!response.ok || reply.cancelled !== true) throw new Error(reply.message || "Native reader cancellation failed.");
+      nativePostTrace(requestId, "relay_cancel", { outcome: "cancelled", status: response.status });
+    } catch (error) {
+      bootstrapPromise = undefined;
+      nativePostTrace(requestId, "relay_cancel", {
+        outcome: "rejected",
+        errorKind: window.akuNativePostDiagnostics?.errorKind(error) ?? "other",
+      });
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
   window.addEventListener("message", async (event) => {
     if (event.source !== window || event.origin !== origin || !event.data) return;
     const message = event.data;
+    if (message.type === "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER") {
+      try { await cancelNativePostBroker(message); } catch { /* Failure is recorded; native wait remains bounded. */ }
+      return;
+    }
     if (message.type === "AKU_BROWSER_READER_BROKER_DIAGNOSTIC") {
       if (["broker_listener_ready", "broker_startup_error"].includes(message.phase) &&
           message.brokerRevision === "listener-first-v1") {
@@ -142,6 +184,9 @@
           ? "AKU_BROWSER_SOURCE_PERMISSION_REQUIRED" : operation[1],
       }, origin);
     } catch (error) {
+      if (nativeStarted !== null) {
+        try { await cancelNativePostBroker(message); } catch { /* The helper retains its bounded native lifetime. */ }
+      }
       if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_error", {
         elapsedMs: Math.round(performance.now() - nativeStarted),
         errorKind: window.akuNativePostDiagnostics?.errorKind(error) ?? "other",

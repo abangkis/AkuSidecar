@@ -4,6 +4,7 @@ import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
 import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget } from './additional-source-media.mjs';
 import { photoRecaptureObservation } from './photo-recapture.mjs';
+import { createXTextRecovery } from './x-text-recovery.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -222,34 +223,40 @@ export async function capture(browser, assetsBySource, source, payload) {
   let unchangedRounds = 0;
   let stopReason = options.scrolls === 0 ? 'scrolls_zero' : 'scroll_limit';
   const originalScrollY = options.acquisitionRound === 1 ? 0 : resumeScrollY;
-  for (let scroll = 0; scroll <= options.scrolls; scroll++) {
-    ensureTime(deadline);
-    if (scroll > 0) {
-      await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceBy ? globalThis.XHeadlessPoC.scrollSourceBy(${options.scrollFraction}) : window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
-      await sleep(Math.min(options.scrollSettleMs, timeLeft(deadline)));
-      snapshot = await collect(page, source, deadline);
-      snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
-      const nextError = sourceStateError(snapshot);
-      if (nextError) throw nextError;
-      snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
-      if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
+  const textRecovery = source === 'x' ? createXTextRecovery({ browser, assets, deadlineAt: deadline }) : null;
+  try {
+    for (let scroll = 0; scroll <= options.scrolls; scroll++) {
+      ensureTime(deadline);
+      if (scroll > 0) {
+        await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceBy ? globalThis.XHeadlessPoC.scrollSourceBy(${options.scrollFraction}) : window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
+        await sleep(Math.min(options.scrollSettleMs, timeLeft(deadline)));
+        snapshot = await collect(page, source, deadline);
+        snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
+        const nextError = sourceStateError(snapshot);
+        if (nextError) throw nextError;
+        snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
+        if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
+      }
+      if (textRecovery) snapshot = await textRecovery.recoverSnapshot(snapshot);
+      const previousCount = seenIds.size;
+      const posts = [];
+      let evidenceLimitReached = false;
+      for (const post of snapshot.posts.slice(0, options.maxBlocksPerSnapshot)) {
+        const bytes = Buffer.byteLength(JSON.stringify(post), 'utf8');
+        if (postEvidenceBytes + bytes > MAX_POST_EVIDENCE_BYTES) { evidenceLimitReached = true; break; }
+        posts.push(post);
+        postEvidenceBytes += bytes;
+      }
+      if (evidenceLimitReached && posts.length === 0) { stopReason = 'evidence_size_limit'; break; }
+      for (const post of posts) seenIds.add(post.id);
+      lastNewCandidateCount = seenIds.size - previousCount;
+      snapshots.push({ ...snapshot, posts, capturedAt: new Date().toISOString(), ...(scroll === 0 && quoteIdentityProbe ? { quoteIdentityProbe } : {}) });
+      unchangedRounds = seenIds.size === previousCount ? unchangedRounds + 1 : 0;
+      if (evidenceLimitReached) { stopReason = 'evidence_size_limit'; break; }
+      if (unchangedRounds >= 3) { stopReason = 'three_rounds_without_new_identity'; break; }
     }
-    const previousCount = seenIds.size;
-    const posts = [];
-    let evidenceLimitReached = false;
-    for (const post of snapshot.posts.slice(0, options.maxBlocksPerSnapshot)) {
-      const bytes = Buffer.byteLength(JSON.stringify(post), 'utf8');
-      if (postEvidenceBytes + bytes > MAX_POST_EVIDENCE_BYTES) { evidenceLimitReached = true; break; }
-      posts.push(post);
-      postEvidenceBytes += bytes;
-    }
-    if (evidenceLimitReached && posts.length === 0) { stopReason = 'evidence_size_limit'; break; }
-    for (const post of posts) seenIds.add(post.id);
-    lastNewCandidateCount = seenIds.size - previousCount;
-    snapshots.push({ ...snapshot, posts, capturedAt: new Date().toISOString(), ...(scroll === 0 && quoteIdentityProbe ? { quoteIdentityProbe } : {}) });
-    unchangedRounds = seenIds.size === previousCount ? unchangedRounds + 1 : 0;
-    if (evidenceLimitReached) { stopReason = 'evidence_size_limit'; break; }
-    if (unchangedRounds >= 3) { stopReason = 'three_rounds_without_new_identity'; break; }
+  } finally {
+    await textRecovery?.close();
   }
   if (!seenIds.size) throw Object.assign(captureError('empty_unverified', 'no source post evidence was captured'),
     { diagnostics: emptyCaptureDiagnostics(snapshots) });

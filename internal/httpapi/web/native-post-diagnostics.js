@@ -11,9 +11,9 @@
     "broker_reload_attempt", "broker_reload_failed",
     "pointerdown", "click_ignored", "click", "dispatch", "terminal",
     "relay_received", "relay_bootstrap_done", "relay_request_start",
-    "relay_request_end", "relay_error",
+    "relay_request_end", "relay_error", "relay_cancel",
   ]);
-  const outcomes = new Set(["opened", "rejected", "timeout", "bridge_unavailable", "ignored"]);
+  const outcomes = new Set(["opened", "rejected", "timeout", "bridge_unavailable", "ignored", "cancelled"]);
   const errorKinds = new Set([
     "broker_not_ready", "broker_click_missing", "ui_not_foreground", "broker_busy", "broker_identity",
     "extension_unavailable", "native_host_unavailable", "reader_activation",

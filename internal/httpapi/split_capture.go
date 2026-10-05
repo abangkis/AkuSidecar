@@ -28,6 +28,7 @@ import (
 // fence old workers, and at-most-once claims never replay an interactive action.
 const splitActionLimit = 32
 const splitActionTimeout = 115 * time.Second
+const readerBrokerConversationLimit = 256
 
 // split-action audit records only the metadata needed to correlate explicit
 // user actions with native foreground samples. Never pass action payloads,
@@ -95,6 +96,7 @@ type pendingSplitAction struct {
 	claimed                     bool
 	result                      chan splitActionResult
 	readerPreparing             bool
+	readerPrepareCancel         context.CancelFunc
 	sourcePreparing             bool
 	sourcePrepared              bool
 	interactionRelease          func()
@@ -115,6 +117,7 @@ type splitCaptureTransport struct {
 	key                     string
 	closed                  bool
 	actions                 []*pendingSplitAction
+	readerBrokers           map[string]*readerBrokerConversation
 	wake                    chan struct{}
 	hostWake                chan struct{}
 	hostWakeStreams         int
@@ -131,6 +134,14 @@ type splitCaptureTransport struct {
 	hostOnlyRequired        bool
 	hostOnlySupported       bool
 	untrackedSourceOutcome  bool
+}
+
+type readerBrokerConversation struct {
+	source    string
+	url       string
+	cancel    context.CancelFunc
+	cancelled bool
+	expires   time.Time
 }
 
 // Capability declarations cannot clear earlier unverified source outcomes.
@@ -238,8 +249,10 @@ func (t *splitCaptureTransport) removeAction(entry *pendingSplitAction) {
 			break
 		}
 	}
-	entry.runtimeLease.Release()
-	entry.runtimeLease = nil
+	if entry.runtimeLease != nil {
+		entry.runtimeLease.Release()
+		entry.runtimeLease = nil
+	}
 	if entry.interactionRelease != nil {
 		entry.interactionRelease()
 		entry.interactionRelease = nil
@@ -276,7 +289,40 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	if t == nil {
 		return errors.New("reader broker disabled")
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	startedAt := time.Now()
+	conversation := &readerBrokerConversation{source: req.Source, url: req.URL, cancel: cancel, expires: startedAt.Add(readerbroker.PreparationLifetime)}
+	t.mu.Lock()
+	t.pruneReaderBrokersLocked(startedAt)
+	if old := t.readerBrokers[req.RequestID]; old != nil {
+		if old.source != req.Source || old.url != req.URL {
+			t.mu.Unlock()
+			return errors.New("reader broker conversation mismatch")
+		}
+		if old.cancelled || old.cancel != nil {
+			t.mu.Unlock()
+			return context.Canceled
+		}
+	}
+	if t.readerBrokers == nil {
+		t.readerBrokers = make(map[string]*readerBrokerConversation)
+	}
+	if len(t.readerBrokers) >= readerBrokerConversationLimit {
+		t.mu.Unlock()
+		return errors.New("reader broker capacity reached")
+	}
+	t.readerBrokers[req.RequestID] = conversation
+	t.mu.Unlock()
+	defer func() {
+		t.mu.Lock()
+		if t.readerBrokers[req.RequestID] == conversation {
+			conversation.cancel = nil
+			conversation.cancelled = true
+			conversation.expires = time.Now().Add(readerbroker.PreparationLifetime)
+		}
+		t.mu.Unlock()
+	}()
 	if s.logger != nil {
 		s.logger.Printf("reader_broker request_id=%s phase=received outcome=active elapsed_ms=0", req.RequestID)
 	}
@@ -372,7 +418,9 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	activationStarted := time.Now()
 	result, err := activate(target)
 	if s.logger != nil {
-		s.logger.Printf("native_reader_timing action=%s stage=helper_activation elapsed_ms=%d reason=%s", entry.action.ID, time.Since(activationStarted).Milliseconds(), readerbroker.ActivationReason(result, err))
+		s.logger.Printf("native_reader_timing action=%s stage=helper_activation elapsed_ms=%d reason=%s focus_category=%s reader_visible=%s reader_minimized=%s",
+			entry.action.ID, time.Since(activationStarted).Milliseconds(), readerbroker.ActivationReason(result, err),
+			readerbroker.DiagnosticFocusCategory(result), readerBrokerBoolDiagnostic(result.ReaderVisible), readerBrokerBoolDiagnostic(result.ReaderMinimized))
 	}
 	if err != nil {
 		outcome = err
@@ -404,6 +452,105 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	return outcome
 }
 
+func readerBrokerBoolDiagnostic(value *bool) string {
+	if value == nil {
+		return "unknown"
+	}
+	if *value {
+		return "true"
+	}
+	return "false"
+}
+
+// CancelReaderBroker retires only the exact UI click conversation. A bounded
+// tombstone handles cancellation that arrives before Chrome launches the helper.
+func (s *Server) CancelReaderBroker(req readerbroker.Request) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	t := s.splitCapture
+	if t == nil {
+		return errors.New("reader broker disabled")
+	}
+	now := time.Now()
+	var wake bool
+	t.mu.Lock()
+	t.pruneReaderBrokersLocked(now)
+	if t.readerBrokers == nil {
+		t.readerBrokers = make(map[string]*readerBrokerConversation)
+	}
+	conversation := t.readerBrokers[req.RequestID]
+	if conversation != nil && (conversation.source != req.Source || conversation.url != req.URL) {
+		t.mu.Unlock()
+		return errors.New("reader broker conversation mismatch")
+	}
+	attached := false
+	for _, entry := range t.actions {
+		if entry != nil && !entry.completed && entry.action.Type == "open_native_post" &&
+			entry.action.RequestID == req.RequestID && entry.action.Source == req.Source && entry.action.URL == req.URL &&
+			entry.brokerReady != nil && entry.brokerAttached {
+			attached = true
+			break
+		}
+	}
+	if attached {
+		t.mu.Unlock()
+		return nil
+	}
+	if conversation == nil {
+		if len(t.readerBrokers) >= readerBrokerConversationLimit {
+			t.mu.Unlock()
+			return errors.New("reader broker capacity reached")
+		}
+		conversation = &readerBrokerConversation{source: req.Source, url: req.URL}
+		t.readerBrokers[req.RequestID] = conversation
+	}
+	conversation.cancelled = true
+	conversation.expires = now.Add(readerbroker.PreparationLifetime)
+	if conversation.cancel != nil {
+		conversation.cancel()
+		conversation.cancel = nil
+	}
+	for _, entry := range append([]*pendingSplitAction(nil), t.actions...) {
+		if entry == nil || entry.completed || entry.action.Type != "open_native_post" ||
+			entry.action.RequestID != req.RequestID || entry.action.Source != req.Source || entry.action.URL != req.URL ||
+			entry.brokerReady == nil || entry.brokerAttached {
+			continue
+		}
+		if entry.readerPrepareCancel != nil {
+			entry.readerPrepareCancel()
+			entry.readerPrepareCancel = nil
+		}
+		result := splitActionResult{Error: "reader_broker_cancelled", Message: "Native reader click was canceled before helper attachment."}
+		entry.completed, entry.completionResult = true, &result
+		select {
+		case entry.result <- result:
+		default:
+		}
+		t.removeAction(entry)
+		wake = true
+	}
+	t.mu.Unlock()
+	if wake {
+		t.notifyCapture()
+	}
+	return nil
+}
+
+func (t *splitCaptureTransport) pruneReaderBrokersLocked(now time.Time) {
+	for id, conversation := range t.readerBrokers {
+		if conversation == nil || (conversation.cancel == nil && !now.Before(conversation.expires)) {
+			delete(t.readerBrokers, id)
+		}
+	}
+}
+
+func (t *splitCaptureTransport) readerBrokerCancelledLocked(req readerbroker.Request, now time.Time) bool {
+	t.pruneReaderBrokersLocked(now)
+	conversation := t.readerBrokers[req.RequestID]
+	return conversation != nil && conversation.cancelled && conversation.source == req.Source && conversation.url == req.URL
+}
+
 // Called only after the separately owned Windows capture host is launched.
 func (s *Server) SetSplitReaderPreparation(prepare func(context.Context, string) (func(context.Context) error, error)) {
 	if s.splitCapture == nil {
@@ -429,7 +576,7 @@ func newSplitCaptureTransport() *splitCaptureTransport {
 	if _, err := rand.Read(secret[:]); err != nil {
 		panic(err)
 	}
-	return &splitCaptureTransport{key: hex.EncodeToString(secret[:]), wake: make(chan struct{}, 1), hostWake: make(chan struct{}), done: make(chan struct{}), actionTimeout: splitActionTimeout}
+	return &splitCaptureTransport{key: hex.EncodeToString(secret[:]), wake: make(chan struct{}, 1), hostWake: make(chan struct{}), done: make(chan struct{}), actionTimeout: splitActionTimeout, readerBrokers: make(map[string]*readerBrokerConversation)}
 }
 
 // Wake hints never claim, carry or extend an action. The host's network callback
@@ -537,6 +684,7 @@ func (t *splitCaptureTransport) close() {
 	defer t.mu.Unlock()
 	if !t.closed {
 		t.closed = true
+		t.cancelReaderBrokersLocked(time.Now())
 		for _, entry := range t.actions {
 			if entry != nil {
 				entry.runtimeLease.Release()
@@ -549,6 +697,20 @@ func (t *splitCaptureTransport) close() {
 		}
 		t.actions = nil
 		close(t.done)
+	}
+}
+
+func (t *splitCaptureTransport) cancelReaderBrokersLocked(now time.Time) {
+	for _, conversation := range t.readerBrokers {
+		if conversation == nil {
+			continue
+		}
+		if conversation.cancel != nil {
+			conversation.cancel()
+			conversation.cancel = nil
+		}
+		conversation.cancelled = true
+		conversation.expires = now.Add(readerbroker.PreparationLifetime)
 	}
 }
 
@@ -710,6 +872,19 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 	if err := s.requireBridge(r); err != nil {
 		return err
 	}
+	if p == "/api/split-capture/reader-broker/cancel" && r.Method == http.MethodPost {
+		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
+			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+		}
+		var req readerbroker.Request
+		if err := readJSON(r, &req); err != nil {
+			return err
+		}
+		if err := s.CancelReaderBroker(req); err != nil {
+			return badRequest("Invalid native reader cancellation.")
+		}
+		return writeJSON(w, http.StatusOK, map[string]bool{"cancelled": true})
+	}
 	if strings.HasPrefix(p, "/api/bridge/split-capture/source/prepare/") && r.Method == http.MethodPost {
 		id := strings.TrimPrefix(p, "/api/bridge/split-capture/source/prepare/")
 		t.mu.Lock()
@@ -806,22 +981,37 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		entry.readerPreparing = true
 		prepare := t.prepareReader
 		prepareBroker := t.prepareBrokerReader
+		prepareCtx, prepareCancel := context.WithCancel(r.Context())
+		entry.readerPrepareCancel = prepareCancel
 		t.mu.Unlock()
+		defer prepareCancel()
 		s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "pending")
 		var foreground func(context.Context) error
 		var target readerbroker.Target
 		var err error
 		if prepareBroker != nil {
-			target, foreground, err = prepareBroker(r.Context(), "AkuBrowser reader "+entry.action.ID)
+			target, foreground, err = prepareBroker(prepareCtx, "AkuBrowser reader "+entry.action.ID)
 		} else {
-			foreground, err = prepare(r.Context(), "AkuBrowser reader "+entry.action.ID)
+			foreground, err = prepare(prepareCtx, "AkuBrowser reader "+entry.action.ID)
 		}
 		if err != nil {
+			t.mu.Lock()
+			entry.readerPrepareCancel = nil
+			cancelled := entry.completed || t.closed
+			t.mu.Unlock()
+			if cancelled {
+				return apiError{Status: 409, Code: "reader_broker_cancelled", Message: "Native reader click was canceled before helper attachment."}
+			}
 			s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "rejected")
 			s.logger.Printf("split_reader action=%s phase=prepare outcome=rejected", entry.action.ID)
 			return apiError{Status: 409, Code: "reader_binding_rejected", Message: err.Error()}
 		}
 		t.mu.Lock()
+		entry.readerPrepareCancel = nil
+		if entry.completed || t.closed {
+			t.mu.Unlock()
+			return apiError{Status: 409, Code: "reader_broker_cancelled", Message: "Native reader click was canceled before helper attachment."}
+		}
 		entry.readerForeground = foreground
 		entry.brokerTarget = target
 		t.mu.Unlock()
@@ -839,6 +1029,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		if err := validateSplitAction(a); err != nil {
 			return apiError{Status: 400, Code: "invalid_capture_action", Message: err.Error()}
+		}
+		if a.Type == "open_native_post" {
+			req := readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}
+			t.mu.Lock()
+			cancelled := t.readerBrokerCancelledLocked(req, time.Now())
+			t.mu.Unlock()
+			if cancelled {
+				return apiError{Status: 409, Code: "reader_broker_cancelled", Message: "Native reader click was canceled before queue admission."}
+			}
 		}
 		// A browser-owned Quiet command is consumed by the internal pump. The
 		// Bridge still owns heartbeat, permissions and other browser sources.
@@ -932,6 +1131,10 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}()
 		}
 		t.mu.Lock()
+		if a.Type == "open_native_post" && t.readerBrokerCancelledLocked(readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}, time.Now()) {
+			t.mu.Unlock()
+			return apiError{Status: 409, Code: "reader_broker_cancelled", Message: "Native reader click was canceled before queue admission."}
+		}
 		if t.directReader != nil && a.Type != "open_native_post" {
 			t.mu.Unlock()
 			switch a.Type {

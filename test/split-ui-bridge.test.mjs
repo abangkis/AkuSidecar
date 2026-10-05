@@ -28,7 +28,7 @@ test("early broker initialization diagnostics survive late diagnostics loading w
   assert.equal(f.read().at(-1).phase, "broker_startup_error");
   assert.equal(f.read().at(-1).brokerRevision, "listener-first-v1");
   assert.equal(f.window.akuReaderBrokerStatus, "pending");
-  assert.equal(f.calls.length, 0);
+  assert.equal(f.calls.filter(call => call.url === "/api/split-capture/actions").length, 0);
   assert.doesNotMatch(JSON.stringify(f.read()), /private-url/);
   const count = f.read().length;
   await f.send({ type: "AKU_BROWSER_READER_BROKER_DIAGNOSTIC", phase: "broker_startup_error", brokerRevision: "listener-first-v1" }, "https://foreign.example");
@@ -51,10 +51,13 @@ function fixture(reply = { ok: true, result: {} }, lateDiagnostics = false, opti
   const listeners = new Map();
   let now = Date.now();
   const window = { dispatchEvent(event) { listeners.get(event.type)?.(event); }, addEventListener: (event, fn) => { listeners.set(event, fn); }, postMessage: (v, target) => messages.push({ ...v, target }) };
-  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => { if (options.storageDenied) throw new Error("denied"); return stored.get(key) ?? null; }, setItem: (key, value) => stored.set(key, value) }, location: { origin, hash: options.startup ? "#aku-startup=" + "b".repeat(64) : "", href: origin + "/#aku-startup=" + "b".repeat(64), reload: () => { if (options.navigationDenied) throw new Error("denied"); reloads.push(context.location.href); } }, history: { state: null, replaceState: (_state, _title, url) => { if (options.historyDenied) throw new Error("denied"); context.location.href = url; } }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), fetch: async (url, requestOptions) => {
+  const context = { Date: class extends Date { static now() { return now; } }, CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } }, window, sessionStorage: { getItem: (key) => { if (options.storageDenied) throw new Error("denied"); return stored.get(key) ?? null; }, setItem: (key, value) => stored.set(key, value) }, location: { origin, hash: options.startup ? "#aku-startup=" + "b".repeat(64) : "", href: origin + "/#aku-startup=" + "b".repeat(64), reload: () => { if (options.navigationDenied) throw new Error("denied"); reloads.push(context.location.href); } }, history: { state: null, replaceState: (_state, _title, url) => { if (options.historyDenied) throw new Error("denied"); context.location.href = url; } }, performance: { now: () => Date.now() }, console: { info: (label, detail) => traces.push({ label, detail }) }, setTimeout: (fn) => timers.push(fn), clearTimeout: () => {}, AbortController, fetch: async (url, requestOptions) => {
     calls.push({ url, options: requestOptions });
-    return { ok: url === "/api/bootstrap" || (options.responseStatus ? options.responseStatus === 200 : reply.ok !== false), status: url === "/api/bootstrap" ? 200 : options.responseStatus ?? (reply.ok === false ? 409 : 200), json: async () => url === "/api/bootstrap"
-      ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" } : reply };
+    const isBootstrap = url === "/api/bootstrap";
+    const isCancel = url === "/api/split-capture/reader-broker/cancel";
+    return { ok: isBootstrap || isCancel || (options.responseStatus ? options.responseStatus === 200 : reply.ok !== false), status: isBootstrap || isCancel ? 200 : options.responseStatus ?? (reply.ok === false ? 409 : 200), json: async () => isBootstrap
+      ? { bridgeToken: "trusted-token", bridgeContractVersion: "aku-browser.bridge.v2", instanceEpoch: "current-epoch" }
+      : isCancel ? { cancelled: true } : reply };
   } };
   if (!lateDiagnostics) vm.runInNewContext(diagnosticsScript, context);
   vm.runInNewContext(script, context);
@@ -69,23 +72,27 @@ test("native post fails visibly without broker readiness or trusted-click correl
   const f = fixture();
   const action = { type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId: "broker_" + "a".repeat(32), source: "x", url: "https://x.com/a/status/1" };
   await f.send(action);
-  assert.equal(f.calls.length, 0);
+  assert.equal(f.calls.filter(call => call.url === "/api/split-capture/reader-broker/cancel").length, 1,
+    "an early relay rejection retires the exact helper conversation");
   assert.equal(f.messages.at(-1).type, "AKU_BROWSER_NATIVE_POST_OPEN_FAILED");
   assert.match(f.messages.at(-1).message, /UI reader broker is not ready/);
   await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" }, "https://foreign.example");
   await f.send(action);
-  assert.equal(f.calls.length, 0);
+  assert.equal(f.calls.filter(call => call.url === "/api/split-capture/actions").length, 0);
   await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" });
   await f.send({ ...action, requestId: "native_post_programmatic" });
-  assert.equal(f.calls.length, 0);
+  assert.equal(f.calls.filter(call => call.url === "/api/split-capture/actions").length, 0);
   await f.send(action);
-  assert.equal(f.calls.length, 2);
-  assert.equal(JSON.parse(f.calls[1].options.body).requestId, action.requestId);
+  const actionCall=f.calls.find(call=>call.url==="/api/split-capture/actions");
+  assert.ok(actionCall);
+  assert.equal(JSON.parse(actionCall.options.body).requestId, action.requestId);
   const nativeTraces = f.traces.filter((entry) => entry.label === "native_post_trace");
   assert.deepEqual(nativeTraces.slice(-4).map((entry) => entry.detail.phase), ["relay_received", "relay_bootstrap_done", "relay_request_start", "relay_request_end"]);
   assert.ok(nativeTraces.every((entry) => entry.detail.trace === action.requestId || entry.detail.trace === "invalid"));
   assert.ok(nativeTraces.every((entry) => !Object.hasOwn(entry.detail, "url")));
   assert.equal(f.read().at(-1).phase, "relay_request_end");
+  assert.equal(f.calls.filter(call => call.url === "/api/split-capture/reader-broker/cancel").length, 2,
+    "invalid helper correlation does not cancel another request");
   const count = f.messages.length;
   f.timers[0]();
   assert.equal(f.messages.length, count, "readiness ends polling");
@@ -98,6 +105,21 @@ test("native relay keeps an early rejection category after the request fails", a
   assert.equal(f.read().at(-1).phase, "relay_error");
   assert.equal(f.read().at(-1).errorKind, "broker_not_ready");
   assert.equal(JSON.stringify(f.read()).includes("linkedin.com"), false);
+});
+
+test("relay cleanup after API dispatch failure uses the exact authenticated click tuple", async () => {
+  const f=fixture({ok:false,message:"pipe became busy"},false,{responseStatus:409});
+  const requestId="broker_"+"e".repeat(32);
+  await f.send({type:"AKU_BROWSER_READER_BROKER_READY"});
+  await f.send({type:"AKU_BROWSER_OPEN_NATIVE_POST",requestId,source:"x",url:"https://x.com/a/status/9"});
+  const action=f.calls.find(call=>call.url==="/api/split-capture/actions");
+  const cancel=f.calls.find(call=>call.url==="/api/split-capture/reader-broker/cancel");
+  assert.ok(action,"API action was dispatched before its failure");
+  assert.ok(cancel,"dispatch failure retires an unattached helper");
+  assert.deepEqual(JSON.parse(cancel.options.body),{requestId,source:"x",url:"https://x.com/a/status/9"});
+  assert.equal(cancel.options.headers["X-Aku-Bridge-Token"],"trusted-token");
+  assert.equal(cancel.options.headers["X-Aku-Split-Epoch"],"current-epoch");
+  assert.equal(f.read().some(entry=>entry.phase==="relay_cancel"&&entry.outcome==="cancelled"),true);
 });
 
 test("missing browser broker keeps the page fallback trace without authorizing a native action", async () => {

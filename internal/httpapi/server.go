@@ -32,22 +32,24 @@ import (
 )
 
 type Server struct {
-	config            config.Config
-	store             *store.Store
-	engine            *engine.Engine
-	credentials       credentials.Manager
-	http              *http.Server
-	listener          net.Listener
-	logger            *log.Logger
-	started           time.Time
-	shutdownRequested chan struct{}
-	shutdownOnce      sync.Once
-	appShellActionsMu sync.RWMutex
-	openExtensions    func(context.Context) error
-	appShellStartup   *appshell.Startup
-	nativeTrace       nativetrace.Manager
-	appShellPID       func() int
-	splitCapture      *splitCaptureTransport
+	config              config.Config
+	store               *store.Store
+	engine              *engine.Engine
+	credentials         credentials.Manager
+	http                *http.Server
+	listener            net.Listener
+	logger              *log.Logger
+	started             time.Time
+	shutdownRequested   chan struct{}
+	shutdownOnce        sync.Once
+	appShellActionsMu   sync.RWMutex
+	openExtensions      func(context.Context) error
+	appShellStartup     *appshell.Startup
+	nativeTrace         nativetrace.Manager
+	appShellPID         func() int
+	splitCapture        *splitCaptureTransport
+	uiPerformanceMu     sync.RWMutex
+	uiPerformanceLatest *uiPerformanceSnapshot
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {
@@ -204,6 +206,19 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		w.Header().Set("Content-Disposition", "attachment; filename=aku-diagnostics-"+time.Now().UTC().Format("20060102T150405")+".json")
 		return writeJSON(w, http.StatusOK, export)
+	case p == "/api/diagnostics/ui-performance" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		if !uiPerformanceDiagnosticsEnabled(s.config) {
+			return notFound("UI performance diagnostics")
+		}
+		if r.Method == http.MethodGet {
+			return writeJSON(w, http.StatusOK, map[string]any{"trace": s.latestUIPerformanceSnapshot()})
+		}
+		report, err := readUIPerformanceReport(w, r)
+		if err != nil {
+			return err
+		}
+		s.saveUIPerformanceReport(report)
+		return writeJSON(w, http.StatusOK, map[string]any{"saved": true})
 	case r.Method == http.MethodGet && p == "/api/health":
 		settings, err := s.store.GetSettings(ctx)
 		if err != nil {

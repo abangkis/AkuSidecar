@@ -15,12 +15,13 @@ import (
 // Its only automatically closable page is the untouched initial local placeholder.
 type NativeReader struct {
 	*Window
-	mu          sync.Mutex
-	protocol    CaptureProtocol
-	containment CaptureContainment
-	idleURL     string
-	idleTarget  string
-	logger      *log.Logger
+	mu             sync.Mutex
+	protocol       CaptureProtocol
+	containment    CaptureContainment
+	idleURL        string
+	idleTarget     string
+	readerWindowID *int
+	logger         *log.Logger
 }
 
 func NewNativeReader(ctx context.Context, window *Window, idleURL string, logger *log.Logger) (*NativeReader, error) {
@@ -147,7 +148,7 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 		// From this point the page belongs to the user, even if preparation fails.
 		r.idleTarget = ""
 	} else {
-		raw, err := r.protocol.Call(ctx, "Target.createTarget", map[string]any{"url": markerURL, "newWindow": true}, "")
+		raw, err := r.protocol.Call(ctx, "Target.createTarget", map[string]any{"url": markerURL, "newWindow": false}, "")
 		if err != nil {
 			return readerbroker.Target{}, nil, err
 		}
@@ -159,6 +160,16 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 		}
 		id = created.ID
 	}
+	// A reader tab may be closed or moved by the user. Never overwrite it to
+	// open the next post, and verify Chrome placed the new tab in our window.
+	windowID, err := r.targetWindow(ctx, id)
+	if err != nil {
+		return readerbroker.Target{}, nil, err
+	}
+	if r.readerWindowID != nil && *r.readerWindowID != windowID {
+		return readerbroker.Target{}, nil, errors.New("native reader tab opened outside its reader window; close the reader windows and retry")
+	}
+	r.readerWindowID = &windowID
 	raw, err := r.protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": id, "flatten": true}, "")
 	if err != nil {
 		return readerbroker.Target{}, nil, err
@@ -224,6 +235,20 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 		})
 		return completion
 	}, nil
+}
+
+func (r *NativeReader) targetWindow(ctx context.Context, id string) (int, error) {
+	raw, err := r.protocol.Call(ctx, "Browser.getWindowForTarget", map[string]string{"targetId": id}, "")
+	if err != nil {
+		return 0, err
+	}
+	var result struct {
+		WindowID *int `json:"windowId"`
+	}
+	if json.Unmarshal(raw, &result) != nil || result.WindowID == nil || *result.WindowID < 0 {
+		return 0, errors.New("native reader window identity unavailable")
+	}
+	return *result.WindowID, nil
 }
 
 func (r *NativeReader) navigate(ctx context.Context, session, url string) error {
