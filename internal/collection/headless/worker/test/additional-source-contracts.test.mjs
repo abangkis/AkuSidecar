@@ -15,7 +15,7 @@ test('additional sources load their own Bridge adapter and media runtime with ha
   for (const {source} of fixtures) {
     const assets=await sourceAssets(bridge,source);
     assert.deepEqual(assets.filter(a=>a.execute).map(a=>a.relative),[
-      'AkuBridge/source-adapter-runtime.js','AkuBridge/bounded-capture-policy.js','AkuBridge/media-post-processor.js',
+      'AkuBridge/capture-primitives.js','AkuBridge/source-adapter-runtime.js','AkuBridge/bounded-capture-policy.js','AkuBridge/media-post-processor.js',
       ...(source==='linkedin' ? ['AkuBridge/linkedin-permalink-policy.js','AkuBridge/linkedin-timestamp-policy.js'] : []),
       `AkuBridge/adapters/${source}-adapter.js`,'worker/vendor/adapter-extract.js']);
     assert.ok(assets.every(a=>/^[a-f0-9]{64}$/.test(a.sha256)));

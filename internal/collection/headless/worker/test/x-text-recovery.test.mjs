@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { capture } from '../capture.mjs';
 import { createXTextRecovery } from '../x-text-recovery.mjs';
 
 const urlFor = id => `https://x.com/theo/status/${id}`;
 const assets = [
+  { relative: 'AkuBridge/capture-primitives.js', execute: true,
+    content: readFileSync(new URL('../../../../../../AkuBridge/capture-primitives.js', import.meta.url), 'utf8') },
   { relative: 'adapter', execute: true, content: 'fixture adapter' },
   { relative: 'extractor', execute: true, content: 'fixture extractor' },
 ];
@@ -31,7 +34,8 @@ function makeHarness({ documents = {}, redirects = {}, navigateError = null, han
   const page = {
     async navigate(url) {
       state.navigations.push(url);
-      if (navigateError) throw navigateError;
+      const error = typeof navigateError === 'function' ? navigateError(state.navigations.length) : navigateError;
+      if (error) throw error;
       state.url = redirects[url] || url;
       return {};
     },
@@ -40,7 +44,7 @@ function makeHarness({ documents = {}, redirects = {}, navigateError = null, han
       if (expression === '({url:location.href,ready:document.readyState})') return { url: state.url, ready: 'complete' };
       if (expression === 'location.href') return state.url;
       if (expression.includes('globalThis.XHeadlessPoC.collect()')) {
-        if (hangCollect) return new Promise(() => {});
+        if (typeof hangCollect === 'function' ? hangCollect(state) : hangCollect) return new Promise(() => {});
         const id = new URL(state.url).pathname.match(/\/status\/(\d+)/)?.[1];
         const reads = state.collectCounts.get(id) || 0;
         state.collectCounts.set(id, reads + 1);
@@ -84,6 +88,7 @@ test('recovers longer text only from a hydrated exact permalink and preserves fe
   const recovered = first.posts[0];
   assert.equal(recovered.text, fullText);
   assert.equal(recovered.textStatus, 'permalink_text_verified');
+  assert.equal(recovered.textCompleteness, 'recovery_verified');
   assert.equal(recovered.textCollapsed, false);
   assert.deepEqual(recovered.media, original.media);
   assert.deepEqual(recovered.quotedPost, original.quotedPost);
@@ -110,8 +115,64 @@ test('validates post identity before navigation and rejects a redirected status 
   assert.equal(result.textStatus, 'requires_permalink_capture');
   assert.ok(result.limitations.includes('permalink_identity_mismatch'));
   assert.deepEqual(state.navigations, [urlFor(id)]);
+  assert.equal(result.textRecovery.attempts.length, 1, 'identity mismatch must not retry');
   await recovery.close();
   assert.equal(state.closeCount, 1);
+});
+
+test('retries transient navigation once and preserves recovery stage diagnostics', async () => {
+  const id = '2106847019319062819';
+  const fullText = 'Recovered after transient navigation. ' + 'R'.repeat(320);
+  const { browser, state } = makeHarness({ documents: { [id]: detail(id, fullText) },
+    navigateError: attempt => attempt === 1 ? new Error('temporary navigation failure') : null });
+  const recovery = createXTextRecovery({ browser, assets, deadlineAt: Date.now() + 1000, perTargetMs: 400, totalMs: 600 });
+  const result = (await recovery.recoverSnapshot({ posts: [feedPost(id)] })).posts[0];
+  assert.equal(result.text, fullText);
+  assert.equal(result.textStatus, 'permalink_text_verified');
+  assert.equal(result.textRecovery.attempts.length, 2);
+  assert.equal(result.textRecovery.attempts[0].stage, 'navigation');
+  assert.equal(result.textRecovery.attempts[0].limitation, 'permalink_capture_failed');
+  assert.equal(result.textRecovery.attempts[1].outcome, 'verified');
+  await recovery.recoverSnapshot({ posts: [feedPost(id)] });
+  assert.equal(state.navigations.length, 2, 'successful retry is cached');
+  await recovery.close();
+  assert.equal(state.closeCount, 1);
+});
+
+test('retries a timed-out collection within the shared per-target deadline', async () => {
+  const id = '2106847019319062819';
+  const { browser, state } = makeHarness({ documents: { [id]: detail(id, 'Recovered text ' + 'T'.repeat(320)) },
+    hangCollect: state => state.navigations.length === 1 });
+  const recovery = createXTextRecovery({ browser, assets, deadlineAt: Date.now() + 1000, perTargetMs: 200, totalMs: 300 });
+  const result = (await recovery.recoverSnapshot({ posts: [feedPost(id)] })).posts[0];
+  assert.equal(result.textStatus, 'permalink_text_verified');
+  assert.equal(result.textRecovery.attempts.length, 2);
+  assert.equal(result.textRecovery.attempts[0].stage, 'text_collection');
+  assert.equal(result.textRecovery.attempts[0].limitation, 'permalink_capture_timeout');
+  assert.equal(state.createCount, 1);
+  await recovery.close();
+});
+
+test('persistent failures stop after two attempts and capture expiry prevents retry', async () => {
+  const id = '2106847019319062819';
+  const failing = makeHarness({ navigateError: new Error('persistent failure') });
+  const recovery = createXTextRecovery({ browser: failing.browser, assets, deadlineAt: Date.now() + 1000,
+    perTargetMs: 200, totalMs: 300 });
+  const first = (await recovery.recoverSnapshot({ posts: [feedPost(id)] })).posts[0];
+  assert.equal(first.textRecovery.attempts.length, 2);
+  assert.equal(first.text, feedPost(id).text);
+  await recovery.recoverSnapshot({ posts: [feedPost(id)] });
+  assert.equal(failing.state.navigations.length, 2, 'failed retry cannot repeat across feed snapshots');
+  await recovery.close();
+
+  const hung = makeHarness({ hangCollect: true });
+  const bounded = createXTextRecovery({ browser: hung.browser, assets, deadlineAt: Date.now() + 30,
+    perTargetMs: 200, totalMs: 300 });
+  const expired = (await bounded.recoverSnapshot({ posts: [feedPost(id)] })).posts[0];
+  assert.equal(expired.textRecovery.attempts.length, 1);
+  assert.equal(hung.state.navigations.length, 1);
+  assert.ok(expired.limitations.includes('permalink_capture_timeout'));
+  await bounded.close();
 });
 
 test('bounds target count, caches success and failure across snapshots, and closes one owned page', async () => {
@@ -187,6 +248,7 @@ test('keeps timeout, navigation failure, challenge, and unresolved collapse part
     const recovery = createXTextRecovery({ browser, assets, deadlineAt: Date.now() + 500, perTargetMs: 100, totalMs: 100 });
     const result = (await recovery.recoverSnapshot({ posts: [feedPost(id)] })).posts[0];
     assert.ok(result.limitations.includes('permalink_capture_unavailable'));
+    assert.equal(result.textRecovery.attempts.length, 1, 'challenge must not retry');
     await recovery.close();
   });
   await t.test('detail remains collapsed', async () => {
@@ -210,6 +272,7 @@ test('clips at the observation limit while marking text partial', async () => {
   assert.equal(result.textStatus, 'requires_permalink_capture');
   assert.ok(result.limitations.includes('text_may_be_truncated'));
   assert.ok(result.limitations.includes('text_truncated'));
+  assert.equal(result.textCompleteness, 'truncated');
   await recovery.close();
 });
 
@@ -261,6 +324,7 @@ test('capture preserves the retained feed page and its frontier while using a se
     },
   };
   const workerAssets = { x: [
+    assets[0],
     { relative: 'runtime', sha256: '1'.repeat(64), execute: false },
     { relative: 'adapter', sha256: '2'.repeat(64), execute: false },
     { relative: 'extractor', sha256: '3'.repeat(64), execute: false },
@@ -269,6 +333,8 @@ test('capture preserves the retained feed page and its frontier while using a se
     scrolls: 0, sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 5000,
   });
   assert.equal(observation.snapshots[0].blocks[0].captureQuality.textStatus, 'permalink_text_verified');
+  assert.equal(observation.snapshots[0].blocks[0].captureQuality.textRecovery.attempts[0].outcome, 'verified');
+  assert.equal(observation.snapshots[0].blocks[0].captureQuality.textCompleteness, 'recovery_verified');
   assert.equal(observation.coverage.frontier.scrollY, 0);
   assert.deepEqual(observation.coverage.frontier.anchorKeys, [`x:status:${id}`]);
   assert.deepEqual(feedState.navigations, ['https://x.com/home']);

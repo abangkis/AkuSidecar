@@ -1,49 +1,32 @@
 // This PoC collector reuses the real adapter; it is not the production admission pipeline.
 (() => {
+  const primitives = globalThis.AkuCapturePrimitives;
+  if (!primitives) throw new Error('Shared capture primitives were not loaded.');
   const compactText = value => String(typeof value === 'object' && value !== null
     ? value.innerText ?? value.textContent ?? '' : value ?? '').replace(/\s+/g, ' ').trim();
   const normalizeHttpUrl = value => {
     try { const u = new URL(value, location.href); return /^https?:$/.test(u.protocol) ? u.href : null; }
     catch { return null; }
   };
-  // Same structured text rules as AkuBridge content-script; preserve paragraphs and emoji alt.
-  const readNode = node => !node ? '' : node.nodeType === 3 ? node.nodeValue || '' : node.nodeType !== 1 ? ''
-    : node.tagName === 'IMG' ? node.getAttribute('alt') || '' : node.tagName === 'BR' ? '\n'
-      : [...node.childNodes].map(readNode).join('') + (/^(DIV|P|LI|SECTION|ARTICLE)$/.test(node.tagName) ? '\n' : '');
-  const structuredText = value => String(typeof value === 'string' ? value : readNode(value))
-    .replace(/\r\n?/g, '\n').split('\n').map(line => line.replace(/[\t\f\v\u00a0 ]+/g, ' ').trim())
-    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const structuredText = primitives.structuredText;
   const helpers = { compactText, structuredText, normalizeHttpUrl, uniqueElements: values => [...new Set(values)] };
   const expansionStates = new WeakMap();
   const ownControls = (container, quote, policy) => [...container.querySelectorAll(policy.buttonSelector)]
     .filter(button => !quote?.contains(button));
   async function expandDetail(adapter, container) {
     if (globalThis.AkuHeadlessCapturePolicy?.allowContentExpansion === false) return;
-    const policy = adapter.contentExpansion;
     const quote = adapter.findQuotedRoot(container);
-    const button = ownControls(container, quote, policy).find(b => /^(more|show more|see more)$/i.test(compactText(b)));
-    if (!button) return;
     const ownLink = [...container.querySelectorAll('time')].find(t => !quote?.contains(t))?.closest('a[href]')?.href;
     if (location.hostname === 'x.com' && canonical(location.href) !== canonical(ownLink)) return;
     if (expansionStates.has(container)) return;
-    const textRoot = container.querySelector(adapter.contentRootSelector);
-    const before = structuredText(textRoot);
-    const url = location.href;
-    button.click();
-    for (let attempt = 0; attempt < policy.attempts; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, policy.intervalMs));
-      if (location.href !== url) { expansionStates.set(container, 'navigation_changed'); return; }
-      if (structuredText(textRoot).length > before.length) { expansionStates.set(container, 'expanded'); return; }
-    }
-    expansionStates.set(container, 'expand_failed');
+    const expansion = await primitives.expandContent({ container, adapter, readText: structuredText,
+      route: () => location.href, deadlineAt: globalThis.AkuHeadlessCapturePolicy?.deadlineAt ?? Infinity });
+    const state = expansion.state === 'expanded_no_restore_control' ? 'expanded'
+      : expansion.state === 'route_changed' ? 'navigation_changed'
+      : expansion.state === 'no_collapse_observed' ? 'visible_text_no_collapse_control' : expansion.state;
+    expansionStates.set(container, state);
   }
-  const canonical = value => {
-    try {
-      const u = new URL(value);
-      const m = u.pathname.match(/^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/);
-      return u.protocol === 'https:' && u.hostname === 'x.com' && m ? `https://x.com/${m[1]}/status/${m[2]}` : null;
-    } catch { return null; }
-  };
+  const canonical = primitives.canonicalizeXPermalink;
   function findMedia(adapter, container, excludeRoot = null) {
     const records = [];
     const seen = new Set();
@@ -112,6 +95,7 @@
         const quote = adapter.findQuotedRoot(container);
         const times = [...container.querySelectorAll('time')].filter(t => !quote?.contains(t));
         const urls = [...new Set(times.map(t => canonical(t.closest('a[href]')?.href)).filter(Boolean))];
+        const identity = primitives.resolvePrimaryIdentity({ permalinks: urls });
         const author = adapter.findAuthor(container, helpers);
         if (urls.length !== 1 || !author) {
           rejected++;
@@ -126,7 +110,8 @@
         const media = findMedia(adapter, container, quote);
         const mediaExpected = adapter.mediaAcquisition.detectExpectedKinds(container, { ...helpers, excludeRoot: quote });
         const quotedPost = adapter.extractQuotedPost(container, { ...helpers, findMedia: root => findMedia(adapter, root) });
-        const textCollapsed = ownControls(container, quote, adapter.contentExpansion).length > 0;
+        const textCollapsed = ownControls(container, quote, adapter.contentExpansion)
+          .some(button => primitives.expansionLabel(compactText(button), 'more'));
         if (quotedPost) {
           const identity = globalThis.XHeadlessQuoteIdentity.resolve(container, permalink.match(/\/status\/(\d+)/)[1], quotedPost.permalink);
           quotedPost.permalink = identity.permalink;
@@ -136,8 +121,10 @@
           semantics.parentPermalink = identity.permalink;
           quotedPost.mediaExpected = [...new Set(adapter.mediaAcquisition.detectExpectedKinds(quote, helpers))];
           quotedPost.mediaEvidence = mediaEvidence(quotedPost.media, quotedPost.mediaExpected);
-          quotedPost.textCollapsed = Boolean(quote.querySelector(adapter.contentExpansion.buttonSelector));
+          quotedPost.textCollapsed = [...quote.querySelectorAll(adapter.contentExpansion.buttonSelector)]
+            .some(button => primitives.expansionLabel(compactText(button), 'more'));
           quotedPost.textStatus = quotedPost.textCollapsed ? 'requires_permalink_capture' : 'visible_text_no_collapse_control';
+          quotedPost.textCompleteness = primitives.textCompleteness({ collapsed: quotedPost.textCollapsed, textStatus: quotedPost.textStatus });
         }
         if (!text && !media.length && !quote && !mediaExpected.length) { rejected++; rejectionReasons.empty_evidence++; return []; }
         return [{ id: permalink.match(/\/status\/(\d+)/)[1], permalink, author, avatar,
@@ -145,6 +132,10 @@
           ...semantics, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
           quotedPostObserved: Boolean(quote),
           quotedPost, textCollapsed,
+          identityComparison: { legacyDecision: 'identified', sharedDecision: identity.status,
+            agrees: identity.status === 'identified' && identity.permalink === permalink },
+          textCompleteness: primitives.textCompleteness({ collapsed: textCollapsed,
+            textStatus: expansionStates.get(container) || (textCollapsed ? 'requires_permalink_capture' : 'visible_text_no_collapse_control') }),
           textStatus: textCollapsed ? expansionStates.get(container) || 'requires_permalink_capture'
             : expansionStates.get(container) || 'visible_text_no_collapse_control',
           limitations: ['visible_dom_only', 'no_production_admission',

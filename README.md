@@ -49,7 +49,7 @@ currently deferred. See `docs/collection-modes-roadmap.md` for acceptance gates.
 - Go 1.21 or newer
 - Windows x64 or macOS x64/arm64 for the current portable preview
 - a valid local Codex login for the managed Codex App Server
-- AkuBridge `0.9.2` / `source-adapters-v111`
+- AkuBridge `0.9.2` / `source-adapters-v112`
 - AkuSupervisor is recommended for normal Windows development and daily
   lifecycle ownership; it is not part of the portable runtime or a macOS
   prerequisite

@@ -130,7 +130,7 @@ export async function capture(browser, assetsBySource, source, payload) {
     await sleep(Math.min(options.continuation.settleMs, timeLeft(deadline)));
   }
 
-  await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)}}`, timeLeft(deadline));
+  await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)},deadlineAt:${deadline}}`, timeLeft(deadline));
   let readinessDeadline = Math.min(deadline, Date.now() + options.hydrationMs);
   let photoResolution = null;
   let mediaSettleDeadline = null;

@@ -150,6 +150,9 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
     headlessSourceId: post.id,
     limitations,
     textStatus: typeof post.textStatus === 'string' ? post.textStatus : 'unverified',
+    ...(post.textRecovery ? { textRecovery: structuredClone(post.textRecovery) } : {}),
+    ...(post.textCompleteness ? { textCompleteness: post.textCompleteness } : {}),
+    ...(post.identityComparison ? { identityComparison: structuredClone(post.identityComparison) } : {}),
     ...(post.permalinkProvenance ? { permalinkProvenance: post.permalinkProvenance } : {}),
   };
   return {

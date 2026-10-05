@@ -44,17 +44,15 @@
           if (object(child) && !seen.has(child) && !data(child, 'nodeType')) queue.push({ value: child, depth: depth + 1 });
         }
       }
-      const domId = domPermalink?.match(/\/status\/(\d+)/)?.[1] || null;
       const bounded = queue.length > 0;
       const ids = [...related];
-      const conflict = ids.length > 1 || domId && ids.some(candidate => candidate !== domId) || domId === primaryId;
       const evidence = { visited, matchedPrimaryNodes: matched, explicitQuoteIds: ids.slice(0, 4), bounded,
         quoteFieldNames: [...quoteFieldNames].slice(0, 20), primaryShapeKeys: [...primaryShapeKeys].slice(0, 40) };
-      if (conflict) return { permalink: null, status: 'conflicting_identity', provenance: null, evidence };
-      if (domId) return { permalink: domPermalink, status: 'identified', provenance: 'observed_dom', evidence };
-      if (ids.length === 1 && !bounded) return { permalink: `https://x.com/i/status/${ids[0]}`,
-        status: 'identified', provenance: 'main_structured_quote_relation', evidence };
-      return { permalink: null, status: bounded ? 'bounded_unresolved' : 'unknown', provenance: null, evidence };
+      const decision = globalThis.AkuCapturePrimitives.resolveQuoteIdentity({ primaryId, domPermalink,
+        explicitQuoteIds: ids, bounded });
+      return { permalink: decision.permalink, status: decision.status,
+        provenance: decision.source === 'dom_permalink' ? 'observed_dom' : decision.source,
+        evidence: { ...evidence, conflictReason: decision.conflictReason } };
     },
   };
 })();

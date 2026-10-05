@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 
 const code=await readFile(new URL('../vendor/x-extract.js',import.meta.url),'utf8');
+const shared=await readFile(new URL('../../../../../../AkuBridge/capture-primitives.js',import.meta.url),'utf8');
 test('video-root avatar is excluded while native poster and photo are retained',async()=>{
  const image=(url,inVideo=true)=>({tagName:'IMG',currentSrc:url,alt:'',complete:true,naturalWidth:48,naturalHeight:48,closest:()=>inVideo?{}:null});
  const avatar=image('https://pbs.twimg.com/profile_images/123/avatar_normal.jpg');
@@ -20,6 +21,7 @@ test('video-root avatar is excluded while native poster and photo are retained',
  const context=vm.createContext({URL,location:{href:'https://x.com/owner/status/456',hostname:'x.com',pathname:'/owner/status/456'},
   AkuHeadlessCapturePolicy:{allowContentExpansion:false},AkuSourceAdapters:{get:()=>adapter},
   innerHeight:900,innerWidth:1200,scrollY:0,document:{querySelector:()=>null,body:{innerText:''},readyState:'complete',visibilityState:'visible'}});
+ vm.runInContext(shared,context);
  vm.runInContext(code,context);
  const result=await context.XHeadlessPoC.collect();
  assert.equal(result.posts.length,1);

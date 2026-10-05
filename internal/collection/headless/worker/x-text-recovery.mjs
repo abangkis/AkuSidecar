@@ -1,8 +1,10 @@
-import { canonicalSourceURL } from './observation.mjs';
+import { capturePrimitivesFor } from './capture-primitives.mjs';
 
 const MAX_TARGETS = 3;
-const MAX_PER_TARGET_MS = 3000;
-const MAX_TOTAL_MS = 6000;
+// Reserve half of each target's bounded budget for one transient retry.
+// The shared recovery deadline never extends the enclosing capture deadline.
+const MAX_PER_TARGET_MS = 8000;
+const MAX_TOTAL_MS = 18000;
 const X_COLLECT = '(async () => JSON.stringify(await globalThis.XHeadlessPoC.collect()))()';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -11,6 +13,9 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
   const targetBudget = Math.max(1, Math.min(MAX_PER_TARGET_MS, Number.isFinite(perTargetMs) ? Math.trunc(perTargetMs) : MAX_PER_TARGET_MS));
   const totalBudget = Math.max(1, Math.min(MAX_TOTAL_MS, Number.isFinite(totalMs) ? Math.trunc(totalMs) : MAX_TOTAL_MS));
   const outcomes = new Map();
+  let primitives;
+  const helpers = () => primitives ??= capturePrimitivesFor(assets);
+  const routeFor = value => xRoute(value, helpers());
   const captureDeadline = Number.isFinite(deadlineAt) ? deadlineAt : Date.now() + totalBudget;
   let attemptedTargets = 0;
   let totalDeadline = null;
@@ -34,6 +39,9 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
           }
           page = created;
           return created;
+        }).catch(error => {
+          pagePromise = null;
+          throw error;
         });
     }
     return within(pagePromise, at);
@@ -45,39 +53,62 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
     attemptedTargets++;
     const now = Date.now();
     totalDeadline ??= Math.min(captureDeadline, now + totalBudget);
-    const at = Math.min(totalDeadline, now + targetBudget);
-    if (at <= now) return { kind: 'failed', limitation: 'permalink_capture_timeout' };
+    const targetDeadline = Math.min(totalDeadline, now + targetBudget);
+    let outcome;
+    const attempts = [];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const started = Date.now();
+      const at = attempt === 0 ? Math.min(targetDeadline, started + Math.ceil(targetBudget / 2)) : targetDeadline;
+      outcome = await recoverAttempt(target, post, at);
+      attempts.push({ stage: outcome.stage, outcome: outcome.kind, limitation: outcome.limitation || null,
+        durationMs: Math.max(0, Date.now() - started) });
+      if (outcome.kind !== 'failed' || !['permalink_capture_timeout', 'permalink_capture_failed'].includes(outcome.limitation)
+          || Date.now() >= targetDeadline) break;
+    }
+    return { ...outcome, diagnostics: { attempts, elapsedMs: Math.max(0, Date.now() - now) } };
+  }
+
+  async function recoverAttempt(target, post, at) {
+    let stage = 'deadline';
+    const failed = limitation => ({ kind: 'failed', limitation, stage });
+    const now = Date.now();
+    if (at <= now) return failed('permalink_capture_timeout');
     if (!target.route || !target.identityId || target.identityId !== target.route.statusId) {
-      return { kind: 'failed', limitation: 'permalink_identity_mismatch' };
+      return failed('permalink_identity_mismatch');
     }
 
     try {
+      stage = 'target_setup';
       const targetPage = await getPage(at);
+      stage = 'navigation';
       const navigation = await within(targetPage.navigate(target.route.url, remaining(at)), at);
-      if (navigation?.errorText) return { kind: 'failed', limitation: 'permalink_capture_failed' };
+      if (navigation?.errorText) return failed('permalink_capture_failed');
 
+      stage = 'document_ready';
       let ready = false;
       while (Date.now() < at) {
         const state = await within(targetPage.evaluate('({url:location.href,ready:document.readyState})', remaining(at)), at);
-        const actual = xRoute(state?.url);
+        const actual = routeFor(state?.url);
         if (actual) {
           if (actual.url !== target.route.url || actual.statusId !== target.statusId) {
-            return { kind: 'failed', limitation: 'permalink_identity_mismatch' };
+            return failed('permalink_identity_mismatch');
           }
           if (state.ready === 'complete') { ready = true; break; }
         } else if (typeof state?.url === 'string' && state.url.startsWith('https://x.com/') && state.url !== 'https://x.com/') {
-          return { kind: 'failed', limitation: 'permalink_identity_mismatch' };
+          return failed('permalink_identity_mismatch');
         }
         await delay(Math.min(100, Math.max(1, at - Date.now())));
       }
-      if (!ready) return { kind: 'failed', limitation: 'permalink_capture_timeout' };
+      if (!ready) return failed('permalink_capture_timeout');
 
-      await within(targetPage.evaluate('globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:true}', remaining(at)), at);
+      stage = 'asset_injection';
+      await within(targetPage.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:true,deadlineAt:${at}}`, remaining(at)), at);
       for (const asset of Array.isArray(assets) ? assets : []) {
         if (asset?.execute) await within(targetPage.evaluate(asset.content, remaining(at)), at);
       }
       let lastLimitation = 'permalink_capture_failed';
       while (Date.now() < at) {
+        stage = 'text_collection';
         let snapshot;
         try {
           const encoded = await within(targetPage.evaluate(X_COLLECT, remaining(at)), at);
@@ -92,12 +123,12 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
           throw error;
         }
         if (snapshot.loginRequired === true || snapshot.challengeDetected === true || snapshot.sourceUnavailable === true) {
-          return { kind: 'failed', limitation: 'permalink_capture_unavailable' };
+          return failed('permalink_capture_unavailable');
         }
-        const finalUrl = xRoute(snapshot?.url);
-        const actualUrl = xRoute(await within(targetPage.evaluate('location.href', remaining(at)), at));
+        const finalUrl = routeFor(snapshot?.url);
+        const actualUrl = routeFor(await within(targetPage.evaluate('location.href', remaining(at)), at));
         if ((finalUrl && finalUrl.url !== target.route.url) || (actualUrl && actualUrl.url !== target.route.url)) {
-          return { kind: 'failed', limitation: 'permalink_identity_mismatch' };
+          return failed('permalink_identity_mismatch');
         }
         if (!finalUrl || !actualUrl) {
           lastLimitation = 'permalink_capture_failed';
@@ -105,8 +136,8 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
           continue;
         }
         const matches = Array.isArray(snapshot.posts) ? snapshot.posts.filter(candidate =>
-          postStatusId(candidate?.id) === target.statusId && xRoute(candidate?.permalink)?.url === target.route.url) : [];
-        if (matches.length > 1) return { kind: 'failed', limitation: 'permalink_identity_mismatch' };
+          postStatusId(candidate?.id) === target.statusId && routeFor(candidate?.permalink)?.url === target.route.url) : [];
+        if (matches.length > 1) return failed('permalink_identity_mismatch');
         if (matches.length !== 1 || typeof matches[0].text !== 'string') {
           lastLimitation = 'permalink_capture_failed';
           await delay(Math.min(80, Math.max(1, at - Date.now())));
@@ -119,22 +150,22 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
           continue;
         }
         const text = matches[0].text;
-        if (codePointLength(text) <= codePointLength(post.text || '')) {
+        if (!helpers().evaluateTextReplacement({ originalText: post.text || '', recoveredText: text,
+          identityMatches: true, resolved: true })) {
           lastLimitation = 'permalink_text_unresolved';
           await delay(Math.min(80, Math.max(1, at - Date.now())));
           continue;
         }
         if (codePointLength(text) >= 4000) {
-          return { kind: 'truncated', text: [...text].slice(0, 4000).join('') };
+          return { kind: 'truncated', text: [...text].slice(0, 4000).join(''), stage };
         }
-        return { kind: 'verified', text };
+        return { kind: 'verified', text, stage };
       }
-      return { kind: 'failed', limitation: lastLimitation === 'permalink_capture_failed'
-        ? 'permalink_capture_timeout' : lastLimitation };
+      return failed(lastLimitation === 'permalink_capture_failed' ? 'permalink_capture_timeout' : lastLimitation);
     } catch (error) {
       if (error?.code === 'temporary_target_cleanup_failed') throw error;
-      return { kind: 'failed', limitation: error?.code === 'capture_timeout' || Date.now() >= at
-        ? 'permalink_capture_timeout' : 'permalink_capture_failed' };
+      return failed(error?.code === 'capture_timeout' || Date.now() >= at
+        ? 'permalink_capture_timeout' : 'permalink_capture_failed');
     }
   }
 
@@ -142,8 +173,9 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
     if (!Array.isArray(snapshot?.posts)) return snapshot;
     const posts = [];
     for (const post of snapshot.posts) {
-      const target = targetFor(post);
       const needsRecovery = post?.textStatus === 'requires_permalink_capture' || post?.textCollapsed === true;
+      if (!needsRecovery && outcomes.size === 0) { posts.push(post); continue; }
+      const target = targetFor(post, routeFor);
       if (!target || (!needsRecovery && !outcomes.has(target.key))) {
         posts.push(post);
         continue;
@@ -153,7 +185,7 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
         outcome = await recoverTarget(target, post);
         outcomes.set(target.key, outcome);
       }
-      posts.push(outcome && !preservesCurrentText(post, outcome) ? applyOutcome(post, outcome) : post);
+      posts.push(outcome && !preservesCurrentText(post, outcome) ? applyOutcome(post, outcome, helpers()) : post);
     }
     return { ...snapshot, posts };
   }
@@ -183,9 +215,9 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
   return { recoverSnapshot, close };
 }
 
-function targetFor(post) {
+function targetFor(post, routeFor) {
   if (!post || typeof post !== 'object') return null;
-  const route = xRoute(post.permalink);
+  const route = routeFor(post.permalink);
   const identityId = postStatusId(post.id);
   const statusId = route?.statusId || identityId;
   if (!statusId) return null;
@@ -193,8 +225,8 @@ function targetFor(post) {
   return { key, route, statusId, identityId };
 }
 
-function xRoute(value) {
-  const url = canonicalSourceURL('x', value);
+function xRoute(value, primitives) {
+  const url = primitives.canonicalizeXPermalink(value);
   if (!url) return null;
   const statusId = new URL(url).pathname.match(/^\/[^/]+\/status\/(\d+)$/)?.[1] || null;
   return statusId ? { url, statusId } : null;
@@ -210,11 +242,13 @@ function codePointLength(value) {
   return Array.from(String(value)).length;
 }
 
-function applyOutcome(post, outcome) {
+function applyOutcome(post, outcome, primitives) {
   const limitations = Array.isArray(post.limitations) ? post.limitations.filter(value => typeof value === 'string') : [];
   if (outcome.kind === 'verified') {
     return {
       ...post,
+      textRecovery: outcome.diagnostics,
+      textCompleteness: primitives.textCompleteness({ recoveryVerified: true }),
       text: outcome.text,
       textStatus: 'permalink_text_verified',
       textCollapsed: false,
@@ -225,6 +259,8 @@ function applyOutcome(post, outcome) {
     ? ['text_may_be_truncated', 'text_truncated'] : [outcome.limitation];
   return {
     ...post,
+    textRecovery: outcome.diagnostics,
+    textCompleteness: primitives.textCompleteness({ truncated: outcome.kind === 'truncated', collapsed: true }),
     ...(outcome.kind === 'truncated' ? { text: outcome.text } : {}),
     textStatus: 'requires_permalink_capture',
     limitations: unique([...limitations, ...textLimitations]),
