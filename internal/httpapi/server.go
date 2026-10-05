@@ -44,6 +44,12 @@ type Server struct {
 	shutdownOnce        sync.Once
 	appShellActionsMu   sync.RWMutex
 	openExtensions      func(context.Context) error
+	nativeReaderClose   func(context.Context) error
+	nativeReaderGate    chan struct{}
+	nativeReaderGateMu  sync.Mutex
+	nativeReaderClosing bool
+	nativeReaderEpoch   uint64
+	nativeReaderWaiters int
 	appShellStartup     *appshell.Startup
 	nativeTrace         nativetrace.Manager
 	appShellPID         func() int
@@ -61,6 +67,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 		config: cfg, store: state, engine: runtime, logger: logger,
 		credentials: credentials.ForRuntime(cfg.Root, cfg.Dev),
 		started:     time.Now(), shutdownRequested: make(chan struct{}),
+		nativeReaderGate: make(chan struct{}, 1),
 	}
 	if cfg.WindowsCaptureSplit && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
@@ -98,6 +105,18 @@ func (s *Server) openExtensionsPage(ctx context.Context) error {
 		return errors.New("app shell browser action is unavailable")
 	}
 	return action(ctx)
+}
+
+func (s *Server) SetNativeReaderCloseAction(action func(context.Context) error) {
+	s.appShellActionsMu.Lock()
+	s.nativeReaderClose = action
+	s.appShellActionsMu.Unlock()
+}
+
+func (s *Server) nativeReaderCloseAction() func(context.Context) error {
+	s.appShellActionsMu.RLock()
+	defer s.appShellActionsMu.RUnlock()
+	return s.nativeReaderClose
 }
 
 func (s *Server) Start() (net.Addr, error) {
@@ -1174,6 +1193,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return conflict(err.Error())
 		}
 		return writeJSON(w, http.StatusCreated, map[string]any{"session": session})
+	case r.Method == http.MethodPost && p == "/api/collection/native-reader/close-and-resume":
+		closeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+		result, err := s.closeNativeReaderAndResume(closeCtx)
+		if err != nil {
+			return apiError{Status: http.StatusConflict, Code: "native_reader_close_unverified", Message: err.Error()}
+		}
+		return writeJSON(w, http.StatusOK, result)
 	case r.Method == http.MethodPost && p == "/api/ui/activity":
 		s.engine.RecordUIAccess(ctx)
 		status, err := s.engine.AutoUpdateStatus(ctx)

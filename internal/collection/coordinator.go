@@ -13,21 +13,22 @@ import (
 )
 
 type RuntimeStatus struct {
-	Available               bool                 `json:"available"`
-	Requested               string               `json:"requested"`
-	Effective               string               `json:"effective"`
-	Pending                 bool                 `json:"pending"`
-	State                   captureruntime.State `json:"state"`
-	Failure                 string               `json:"failure,omitempty"`
-	Generation              uint64               `json:"generation"`
-	ActiveLeases            int                  `json:"activeLeases"`
-	HeadlessAvailable       bool                 `json:"headlessAvailable"`
-	QuietAvailable          bool                 `json:"quietAvailable"`
-	SupportedSources        []domain.Source      `json:"supportedSources"`
-	AuthorizedSources       []domain.Source      `json:"authorizedSources,omitempty"`
-	NativeReaderOnly        bool                 `json:"nativeReaderOnly,omitempty"`
-	CollectionBorrowSource  domain.Source        `json:"collectionBorrowSource,omitempty"`
-	CollectionBorrowFailure string               `json:"collectionBorrowFailure,omitempty"`
+	Available                bool                 `json:"available"`
+	Requested                string               `json:"requested"`
+	Effective                string               `json:"effective"`
+	Pending                  bool                 `json:"pending"`
+	State                    captureruntime.State `json:"state"`
+	Failure                  string               `json:"failure,omitempty"`
+	Generation               uint64               `json:"generation"`
+	ActiveLeases             int                  `json:"activeLeases"`
+	HeadlessAvailable        bool                 `json:"headlessAvailable"`
+	QuietAvailable           bool                 `json:"quietAvailable"`
+	SupportedSources         []domain.Source      `json:"supportedSources"`
+	AuthorizedSources        []domain.Source      `json:"authorizedSources,omitempty"`
+	NativeReaderOnly         bool                 `json:"nativeReaderOnly,omitempty"`
+	NativeReaderBlockedSince string               `json:"nativeReaderBlockedSince,omitempty"`
+	CollectionBorrowSource   domain.Source        `json:"collectionBorrowSource,omitempty"`
+	CollectionBorrowFailure  string               `json:"collectionBorrowFailure,omitempty"`
 }
 
 const (
@@ -68,6 +69,7 @@ type Coordinator struct {
 	interactive               int
 	nativeReaders             int
 	nativeReaderGeneration    uint64
+	nativeReaderSince         time.Time
 	browserCollection         int
 	browserCollectionFailures map[string]string
 	launch                    func(context.Context, string, uint64) (captureruntime.Process, error)
@@ -148,10 +150,20 @@ func (c *Coordinator) Request(mode string) {
 	c.mu.Unlock()
 	c.notify()
 }
+
+// Retry wakes reconciliation without changing the user's selected mode.
+func (c *Coordinator) Retry() {
+	c.mu.Lock()
+	c.retry = true
+	c.failure = ""
+	c.mu.Unlock()
+	c.notify()
+}
 func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
 	requested, interactive, collectionBorrow, failure, available := c.requested, c.interactive, c.browserCollection, c.failure, c.headlessAvailable
 	nativeGeneration := c.nativeReaderGeneration
+	nativeSince := c.nativeReaderSince
 	backend, generation := c.browserCollector, c.browserGeneration
 	var collectionFailure string
 	if len(c.browserCollectionFailures) > 0 {
@@ -173,6 +185,9 @@ func (c *Coordinator) Status() RuntimeStatus {
 	status.NativeReaderOnly = nativeGeneration != 0 && nativeGeneration == s.Generation
 	if status.NativeReaderOnly {
 		status.Pending = true
+		if !nativeSince.IsZero() {
+			status.NativeReaderBlockedSince = nativeSince.UTC().Format(time.RFC3339Nano)
+		}
 	}
 	if collectionBorrow > 0 {
 		status.CollectionBorrowSource = domain.SourceFacebook
@@ -269,8 +284,10 @@ func (c *Coordinator) reconcile(parent context.Context) {
 			c.mu.Lock()
 			c.headless, _ = process.(*headless.Process)
 			c.nativeReaderGeneration = 0
+			c.nativeReaderSince = time.Time{}
 			if launchMode == "native_reader" {
 				c.nativeReaderGeneration = generation
+				c.nativeReaderSince = time.Now().UTC()
 			}
 			c.mu.Unlock()
 		}

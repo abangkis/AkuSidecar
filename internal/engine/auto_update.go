@@ -94,6 +94,11 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		RefillIntervalMinutes:  settings.AutoUpdateRefillMinutes,
 		PreparedBatches:        batches,
 	}
+	runtimeStatus := e.CollectionRuntime()
+	status.NativeReaderBlocked = settings.AutoUpdateEnabled && runtimeStatus.NativeReaderOnly
+	if status.NativeReaderBlocked {
+		status.NativeReaderBlockedSince = runtimeStatus.NativeReaderBlockedSince
+	}
 	estimatedTokens := e.estimatedAutoUpdateTokens(ctx)
 	status.EstimatedNextRunTokens = estimatedTokens
 	schedule, err := e.store.AutoUpdateScheduleState(ctx)
@@ -263,7 +268,17 @@ func (e *Engine) StartPreparedUpdateNow(ctx context.Context) (domain.Session, er
 	return e.startAutoUpdate(ctx, true)
 }
 
+// RetryPreparedUpdateAfterReaderClose bypasses only cadence. Adaptive buffer,
+// generation allowance, cooldown and readiness rules remain authoritative.
+func (e *Engine) RetryPreparedUpdateAfterReaderClose(ctx context.Context) (domain.Session, error) {
+	return e.startAutoUpdateMode(ctx, true, true)
+}
+
 func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domain.Session, resultErr error) {
+	return e.startAutoUpdateMode(ctx, force, false)
+}
+
+func (e *Engine) startAutoUpdateMode(ctx context.Context, force, preserveAdaptive bool) (session domain.Session, resultErr error) {
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil || !settings.AutoUpdateEnabled {
 		if err == nil {
@@ -278,6 +293,23 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 	}
 	var schedule store.AutoUpdateScheduleState
 	var tickReceipt *domain.AutoUpdateTickReceipt
+	if force && preserveAdaptive && settings.AutoUpdateMode == "adaptive" {
+		schedule, err = e.store.AutoUpdateScheduleState(ctx)
+		if err != nil {
+			return domain.Session{}, err
+		}
+		batches, batchErr := e.store.PreparedBatches(ctx, settings.PreparedBatchMaxAgeHours)
+		if batchErr != nil {
+			return domain.Session{}, batchErr
+		}
+		plan, planErr := e.adaptiveUpdatePlan(ctx, settings, schedule, batches, e.store.Now())
+		if planErr != nil {
+			return domain.Session{}, planErr
+		}
+		if !adaptiveRetryCanBypassCadence(plan) {
+			return domain.Session{}, errors.New(plan.Reason)
+		}
+	}
 	defer func() {
 		if tickReceipt == nil {
 			return
@@ -390,7 +422,11 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 	if force {
 		trigger = domain.UpdateTriggerUser
 	}
-	session, err = e.startSession(context.Background(), "What materially changed since my last prepared batch?", domain.UpdatePolicy{
+	startCtx := context.Background()
+	if preserveAdaptive {
+		startCtx = ctx
+	}
+	session, err = e.startSession(startCtx, "What materially changed since my last prepared batch?", domain.UpdatePolicy{
 		Trigger: trigger, Delivery: domain.UpdateDeliveryPrepared, BudgetAuthority: domain.BudgetAuthorityAutomatic,
 	})
 	if err != nil {
@@ -398,6 +434,10 @@ func (e *Engine) startAutoUpdate(ctx context.Context, force bool) (session domai
 		return domain.Session{}, fmt.Errorf("start: %w", err)
 	}
 	return session, nil
+}
+
+func adaptiveRetryCanBypassCadence(plan adaptiveAutoUpdatePlan) bool {
+	return plan.Eligible || plan.Reason == "Waiting for the next standby refill opportunity" || plan.Reason == "Waiting for the next adaptive refill opportunity"
 }
 
 func nextScheduledAutoUpdateTick(schedule store.AutoUpdateScheduleState, cadence time.Duration, now time.Time) (time.Time, bool) {

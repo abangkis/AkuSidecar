@@ -2,6 +2,7 @@ import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
+import { nativeReaderNotice } from "./native-reader-notice.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
@@ -139,6 +140,8 @@ const RELEASE_REASONING_DEFAULTS = Object.freeze({
 const state = {
   bootstrap: null,
   bootstrapLoading: true,
+  closingNativeReaders: false,
+  nativeReaderResumeFeedback: "",
   bootstrapError: null,
   bootstrapAttempt: 0,
   bootstrapController: null,
@@ -455,6 +458,7 @@ $("#model-usage-refresh").addEventListener("click", loadAggregateModelUsage);
 $("#model-usage-window").addEventListener("change", loadAggregateModelUsage);
 $("#timeline-runner-button").addEventListener("click", handleTimelinePrimaryAction);
 $("#source-access-setup-button").addEventListener("click", openSourceAccessSettings);
+$("#native-reader-close-resume").addEventListener("click", closeNativeReadersAndResume);
 $("#timeline-calibration-continue").addEventListener("click", () => {
   const calibration = state.bootstrap?.calibration?.active;
   if (calibration) showCalibration(calibration);
@@ -3041,14 +3045,14 @@ function openSourceFromSettings(source) {
 const nativePointerTraces = new WeakMap();
 let nativePostOpening = false;
 function syncNativePostLinks() {
-  const reason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening);
+  const reason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders);
   for (const link of document.querySelectorAll("[data-aku-native-post]")) syncNativePostAvailability(link, reason);
 }
 document.addEventListener("pointerdown", (event) => {
   if (!event.isTrusted || event.button !== 0) return;
   const link = event.target?.closest?.("a[data-aku-native-post]");
   if (!link) return;
-  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening));
+  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders));
   if (link.dataset.akuNativeWait) return;
   const pointerTrace = `pointer_${crypto.randomUUID().replaceAll("-", "")}`;
   nativePointerTraces.set(link, { trace: pointerTrace, at: Date.now() });
@@ -3059,7 +3063,7 @@ function configureNativePostLink(link, href, source) {
   link.href = href;
   link.dataset.akuNativePost = source;
   link.rel = "noopener noreferrer";
-  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening));
+  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders));
   link.addEventListener("click", (event) => {
     const pointer = nativePointerTraces.get(link);
     nativePointerTraces.delete(link);
@@ -3069,7 +3073,7 @@ function configureNativePostLink(link, href, source) {
       return;
     }
     event.preventDefault();
-    const waitReason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening);
+    const waitReason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders);
     syncNativePostAvailability(link, waitReason);
     if (waitReason) return;
     const brokerRequestId = link.dataset.akuReaderRequest;
@@ -3459,6 +3463,7 @@ function renderSettings(settings) {
 }
 
 function renderAutoUpdateStatus(status) {
+  renderNativeReaderNotice(status);
   const detail = $("#auto-update-status");
   const queue = $("#auto-update-queue-status");
   const modeBadge = $("#auto-update-mode-badge");
@@ -5335,7 +5340,67 @@ function describeSessionProgress(session) {
   };
 }
 
+function renderNativeReaderNotice(status) {
+  const panel = $("#native-reader-update-notice");
+  if (!panel) return;
+  const notice = nativeReaderNotice(status, {
+    busy: state.closingNativeReaders,
+    feedback: state.nativeReaderResumeFeedback,
+  });
+  panel.classList.toggle("hidden", !notice.visible);
+  panel.setAttribute("aria-busy", String(state.closingNativeReaders));
+  setSettingsText($("#native-reader-update-title"), notice.title);
+  setSettingsText($("#native-reader-update-detail"), notice.detail);
+  setSettingsText($("#native-reader-update-feedback"), notice.feedback);
+  const button = $("#native-reader-close-resume");
+  button.disabled = notice.disabled || nativePostOpening;
+  setSettingsText(button, notice.button);
+}
+
+async function closeNativeReadersAndResume() {
+  if (state.closingNativeReaders || nativePostOpening || !state.bootstrap?.autoUpdate?.nativeReaderBlocked) return;
+  state.closingNativeReaders = true;
+  state.nativeReaderResumeFeedback = "";
+  syncRunButtons();
+  syncNativePostLinks();
+  try {
+    const response = await api("/api/collection/native-reader/close-and-resume", { method: "POST" });
+    if (!response.autoUpdate && response.closed === true) {
+      if (response.collectionRuntime) state.bootstrap.collectionRuntime = response.collectionRuntime;
+      throw new Error("Jendela post ditutup, tetapi status update belum tersedia. Refresh Timeline untuk memeriksa pemulihan.");
+    }
+    if (response.closed === false && response.resumeOutcome === "no_reader" && !response.session) {
+      state.bootstrap.autoUpdate = response.autoUpdate;
+      if (response.collectionRuntime) state.bootstrap.collectionRuntime = response.collectionRuntime;
+      renderAutoUpdateStatus(response.autoUpdate);
+      await pollCollectionRuntime();
+      showNotice("Jendela post sudah tidak terbuka. Status Auto Update diperbarui.");
+      return;
+    }
+    if (response.closed !== true) throw new Error("Penutupan jendela post belum terverifikasi. Coba lagi.");
+    state.bootstrap.autoUpdate = response.autoUpdate;
+    if (response.collectionRuntime) state.bootstrap.collectionRuntime = response.collectionRuntime;
+    if (response.session) {
+      state.session = response.session;
+      renderSession();
+      startPolling();
+    }
+    renderAutoUpdateStatus(response.autoUpdate);
+    await pollCollectionRuntime();
+    showNotice(response.session
+      ? "Jendela post ditutup. Auto Update mulai menyiapkan batch."
+      : `Jendela post ditutup. ${response.resumeReason || response.autoUpdate?.reason || "Status Auto Update sudah diperbarui."}`);
+  } catch (error) {
+    state.nativeReaderResumeFeedback = error.message || "Jendela post belum bisa ditutup. Coba lagi.";
+  } finally {
+    state.closingNativeReaders = false;
+    syncRunButtons();
+    syncNativePostLinks();
+  }
+}
+
 function syncRunButtons() {
+  renderNativeReaderNotice(state.bootstrap?.autoUpdate);
   const reason = runDisabledReason();
   const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError);
   const disabled = Boolean(reason);
@@ -5390,6 +5455,7 @@ function preparedBatchDisabledReason(prepared) {
 }
 
 function runDisabledReason() {
+  if (state.closingNativeReaders) return "Closing native post windows and restoring collection…";
   if (state.bootstrapLoading && state.bootstrapError) return "Timeline restore was interrupted. Retry now or wait for automatic recovery.";
   if (state.bootstrapLoading) return "Restoring your Timeline and active check…";
   if (state.session) {

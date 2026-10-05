@@ -1103,6 +1103,11 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			readerCtx, cancel := context.WithTimeout(r.Context(), readerbroker.PreparationLifetime)
 			defer cancel()
 			r = r.WithContext(readerCtx)
+			releaseNativeAction, gateErr := s.beginNativeReaderAction(r.Context())
+			if gateErr != nil {
+				return apiError{Status: http.StatusConflict, Code: "native_reader_closing", Message: gateErr.Error()}
+			}
+			defer releaseNativeAction()
 		}
 		entry := &pendingSplitAction{action: a, result: make(chan splitActionResult, 1)}
 		queued := false

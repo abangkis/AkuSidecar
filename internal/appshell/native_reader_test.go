@@ -54,12 +54,28 @@ func (p *nativeProtocolFixture) Call(_ context.Context, method string, params an
 type nativeContainmentFixture struct {
 	markers           []string
 	verificationError error
+	closeErr          error
+	closeCalls        int
+	onClose           func()
 }
 
 func (c *nativeContainmentFixture) PrepareReader(context.Context, string) (func(context.Context) error, error) {
 	return nil, nil
 }
 func (c *nativeContainmentFixture) Stop() {}
+func (c *nativeContainmentFixture) CloseReaderWindow(_ context.Context, hwnd uintptr) error {
+	if hwnd != 1 {
+		return errors.New("wrong HWND")
+	}
+	c.closeCalls++
+	if c.closeErr != nil {
+		return c.closeErr
+	}
+	if c.onClose != nil {
+		c.onClose()
+	}
+	return nil
+}
 func (c *nativeContainmentFixture) PrepareBrokerReader(_ context.Context, marker string) (readerbroker.Target, func(context.Context) error, error) {
 	c.markers = append(c.markers, marker)
 	return readerbroker.Target{HWND: 1, PID: 2, Expires: time.Now().Add(time.Second)}, func(context.Context) error { return c.verificationError }, nil
@@ -150,5 +166,29 @@ func TestNativeReaderChangedPlaceholderIsNeverNavigatedOrClosed(t *testing.T) {
 		if err == nil || len(p.calls) != 1 || p.calls[0] != "Target.getTargets" {
 			t.Fatal("changed page was modified", operation, p.calls, err)
 		}
+	}
+}
+
+func TestNativeReaderCloseRequiresExactOwnedPagesAndNaturalExit(t *testing.T) {
+	window := &Window{closed: make(chan struct{})}
+	c := &nativeContainmentFixture{}
+	p := &nativeProtocolFixture{createdWindowID: 10, pages: []nativeReaderTarget{
+		{ID: "post", Type: "page", URL: "https://x.com/a/status/1"},
+		{ID: "personal", Type: "page", URL: "https://accounts.example/login"},
+	}}
+	id := 10
+	r := &NativeReader{Window: window, protocol: p, containment: c, readerWindowID: &id, readerWindowHWND: 1, readerTargets: map[string]string{"post": "https://x.com/a/status/1"}}
+	if err := r.CloseOwnedWindow(context.Background()); err == nil || c.closeCalls != 0 {
+		t.Fatal("close reached an HWND while its window contained an unknown page", err, c.closeCalls)
+	}
+	p.pages = p.pages[:1]
+	c.closeErr = errors.New("WM_CLOSE rejected")
+	if err := r.CloseOwnedWindow(context.Background()); err == nil || c.closeCalls != 1 {
+		t.Fatal("close failure was hidden", err, c.closeCalls)
+	}
+	c.closeErr = nil
+	c.onClose = func() { close(window.closed) }
+	if err := r.CloseOwnedWindow(context.Background()); err != nil || c.closeCalls != 2 {
+		t.Fatal("owned reader did not wait for its natural process exit", err, c.closeCalls)
 	}
 }

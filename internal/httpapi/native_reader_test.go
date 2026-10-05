@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
@@ -314,5 +316,172 @@ func TestDirectNativeReadinessBypassesOnlyBridgeNegotiation(t *testing.T) {
 	}
 	if s.SplitCaptureReplacementReadiness(context.Background()) == nil {
 		t.Fatal("old direct readiness survived rotation")
+	}
+}
+
+func TestNativeReaderCloseWithStaleStatusDoesNotCloseOtherWindows(t *testing.T) {
+	s, _ := splitTestServer(t)
+	called := false
+	s.SetNativeReaderCloseAction(func(context.Context) error { called = true; return nil })
+	result, err := s.closeNativeReaderAndResume(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called || result["closed"] != false || result["resumeOutcome"] != "no_reader" {
+		t.Fatalf("stale reader status invoked a broad close or claimed success: called=%t result=%v", called, result)
+	}
+}
+
+func TestNativeReaderActionGateRejectsOpensRacingClose(t *testing.T) {
+	s, _ := splitTestServer(t)
+	openRelease, err := s.beginNativeReaderAction(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	queuedResult := make(chan error, 1)
+	go func() {
+		release, err := s.beginNativeReaderAction(context.Background())
+		if release != nil {
+			release()
+		}
+		queuedResult <- err
+	}()
+	waitersDeadline := time.Now().Add(time.Second)
+	for {
+		s.nativeReaderGateMu.Lock()
+		waiters := s.nativeReaderWaiters
+		s.nativeReaderGateMu.Unlock()
+		if waiters > 0 {
+			break
+		}
+		if time.Now().After(waitersDeadline) {
+			t.Fatal("second open did not queue behind the active action")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	closeReady := make(chan func(), 1)
+	closeErr := make(chan error, 1)
+	go func() {
+		finish, err := s.beginNativeReaderClose(context.Background())
+		if err != nil {
+			closeErr <- err
+			return
+		}
+		closeReady <- finish
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.nativeReaderGateMu.Lock()
+		closing := s.nativeReaderClosing
+		s.nativeReaderGateMu.Unlock()
+		if closing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("close did not fence new native reader actions")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := s.beginNativeReaderAction(context.Background()); err == nil {
+		t.Fatal("native reader open entered during close")
+	}
+	openRelease()
+	if err := <-queuedResult; err == nil {
+		t.Fatal("queued native reader action crossed the close epoch")
+	}
+	select {
+	case err := <-closeErr:
+		t.Fatal(err)
+	case finish := <-closeReady:
+		finish()
+	case <-time.After(time.Second):
+		t.Fatal("close did not proceed after the in-flight action completed")
+	}
+}
+
+type nativeResumeFixtureProcess struct {
+	*collectionUIFixtureProcess
+	readerOpen atomic.Bool
+}
+
+func (p *nativeResumeFixtureProcess) ReplacementReadiness(context.Context) error {
+	if p.readerOpen.Load() {
+		return errors.New("reader still open")
+	}
+	return nil
+}
+
+func TestNativeReaderCloseDoesNotStartSessionBeforeHeadlessReady(t *testing.T) {
+	s, _ := splitTestServer(t)
+	process := func(mode string) *collectionUIFixtureProcess {
+		return &collectionUIFixtureProcess{splitLeaseProcess: splitLeaseProcess{done: make(chan error, 1)}, mode: mode}
+	}
+	owner, err := captureruntime.New(process("headless"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Terminate()
+	if err := s.engine.AttachCaptureRuntime(context.Background(), owner); err != nil {
+		t.Fatal(err)
+	}
+	var reader *nativeResumeFixtureProcess
+	var coordinator *collection.Coordinator
+	coordinator = collection.NewCoordinator(owner, func(_ context.Context, mode string, generation uint64) (captureruntime.Process, error) {
+		if mode == "native_reader" {
+			reader = &nativeResumeFixtureProcess{collectionUIFixtureProcess: process("browser")}
+			reader.readerOpen.Store(true)
+			return reader, nil
+		}
+		return process(mode), nil
+	}, func() error { return nil })
+	s.engine.AttachCollectionCoordinator(coordinator)
+	coordinatorCtx, cancelCoordinator := context.WithCancel(context.Background())
+	defer cancelCoordinator()
+	coordinator.Start(coordinatorCtx)
+	coordinator.Request("headless")
+	borrowCtx, cancelBorrow := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelBorrow()
+	type borrowed struct {
+		lease   *captureruntime.Lease
+		release func()
+		err     error
+	}
+	borrowedResult := make(chan borrowed, 1)
+	go func() {
+		lease, release, err := coordinator.BorrowNativeReader(borrowCtx)
+		borrowedResult <- borrowed{lease, release, err}
+	}()
+	var borrow borrowed
+	select {
+	case borrow = <-borrowedResult:
+	case <-borrowCtx.Done():
+		t.Fatal("native reader fixture did not open")
+	}
+	if borrow.err != nil {
+		t.Fatal(borrow.err)
+	}
+	borrow.lease.Release()
+	borrow.release()
+	if !coordinator.Status().NativeReaderOnly {
+		t.Fatal("native reader status was not active")
+	}
+	s.SetNativeReaderCloseAction(func(context.Context) error {
+		return errors.New("graceful close rejected")
+	})
+	if _, err := s.closeNativeReaderAndResume(context.Background()); err == nil || !reader.readerOpen.Load() {
+		t.Fatal("failed close released the reader or resumed collection", err)
+	}
+	s.SetNativeReaderCloseAction(func(context.Context) error {
+		reader.readerOpen.Store(false)
+		return nil
+	})
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancelClose()
+	result, err := s.closeNativeReaderAndResume(closeCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["closed"] != true || result["resumeOutcome"] != "headless_not_ready" || result["session"] != nil {
+		t.Fatalf("batch started or closure was misreported before readiness: %v", result)
 	}
 }

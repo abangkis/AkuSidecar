@@ -238,6 +238,11 @@ func (e *Engine) CollectionRuntime() collection.RuntimeStatus {
 	}
 	return status
 }
+func (e *Engine) RetryCollectionRuntime() {
+	if e.collectionRuntime != nil {
+		e.collectionRuntime.Retry()
+	}
+}
 func (e *Engine) headlessEffective() bool {
 	return e.collectionRuntime != nil && e.collectionRuntime.Status().Effective == "headless"
 }

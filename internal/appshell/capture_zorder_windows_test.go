@@ -16,6 +16,13 @@ func TestCaptureContainmentRejectsOrdinaryOrUnownedWindows(t *testing.T) {
 	}
 }
 
+func TestCaptureReaderCloseRejectsUntrackedWindow(t *testing.T) {
+	c := &captureZOrder{job: 1, readerLifetimes: map[uintptr]struct{}{}}
+	if err := c.CloseReaderWindow(context.Background(), 123); err == nil {
+		t.Fatal("close accepted an HWND that is not owned by this native reader")
+	}
+}
+
 func TestCaptureReaderIntentRejectsMissingOwnershipWithoutNativeWrite(t *testing.T) {
 	c := &captureZOrder{}
 	if c.owns(0) || c.owns(123) {

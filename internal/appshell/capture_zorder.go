@@ -12,6 +12,7 @@ import (
 type CaptureContainment interface {
 	PrepareReader(context.Context, string) (func(context.Context) error, error)
 	PrepareBrokerReader(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+	CloseReaderWindow(context.Context, uintptr) error
 	Stop()
 }
 

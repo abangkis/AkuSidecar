@@ -69,3 +69,19 @@ func (w *Window) ReplacementReadiness(ctx context.Context) error {
 	}
 	return nil
 }
+
+// WaitForNaturalClose waits for the owned process tree's normal exit and
+// verified cleanup. It never requests termination.
+func (w *Window) WaitForNaturalClose(ctx context.Context) error {
+	if w == nil || w.closed == nil {
+		return errors.New("capture owner close state unavailable")
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.closed:
+		w.ownershipMu.Lock()
+		defer w.ownershipMu.Unlock()
+		return w.cleanupErr
+	}
+}

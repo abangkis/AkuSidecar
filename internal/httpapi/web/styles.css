@@ -141,6 +141,9 @@ h3 { letter-spacing: -0.02em; }
 .auto-update-timeline-status > div { display: grid; gap: 3px; }
 .auto-update-timeline-status strong { color: #e7ca70; }
 .auto-update-timeline-status span { color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+.native-reader-update-notice > div { min-width: 0; }
+.native-reader-update-notice button { flex: 0 0 auto; max-width: 100%; white-space: normal; }
+.native-reader-update-notice [role="status"]:empty { display: none; }
 .timeline-actions { display: flex; align-items: center; gap: 8px; }
 .timeline-action-cluster { display: grid; justify-items: end; gap: 7px; }
 .timeline-runner-status { max-width: 15rem; color: var(--muted); font-size: 0.72rem; line-height: 1.35; text-align: right; }

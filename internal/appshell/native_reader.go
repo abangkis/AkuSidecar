@@ -15,13 +15,15 @@ import (
 // Its only automatically closable page is the untouched initial local placeholder.
 type NativeReader struct {
 	*Window
-	mu             sync.Mutex
-	protocol       CaptureProtocol
-	containment    CaptureContainment
-	idleURL        string
-	idleTarget     string
-	readerWindowID *int
-	logger         *log.Logger
+	mu               sync.Mutex
+	protocol         CaptureProtocol
+	containment      CaptureContainment
+	idleURL          string
+	idleTarget       string
+	readerWindowID   *int
+	readerWindowHWND uintptr
+	readerTargets    map[string]string
+	logger           *log.Logger
 }
 
 func NewNativeReader(ctx context.Context, window *Window, idleURL string, logger *log.Logger) (*NativeReader, error) {
@@ -199,6 +201,14 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 	if verify == nil {
 		return readerbroker.Target{}, nil, errors.New("native reader verification unavailable")
 	}
+	if r.readerWindowHWND != 0 && r.readerWindowHWND != uintptr(target.HWND) {
+		return readerbroker.Target{}, nil, errors.New("native reader HWND identity changed")
+	}
+	r.readerWindowHWND = uintptr(target.HWND)
+	if r.readerTargets == nil {
+		r.readerTargets = map[string]string{}
+	}
+	r.readerTargets[id] = url
 	// Show and verify the local marker first. A slow social navigation must not
 	// consume the foreground capability or delay the first visible reader.
 	var once sync.Once
@@ -235,6 +245,53 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 		})
 		return completion
 	}, nil
+}
+
+// CloseOwnedWindow gracefully closes the exact HWND and post targets created
+// by this NativeReader, then waits for natural process-tree cleanup. Unknown
+// pages or a still-running profile owner keep the collection lease blocked.
+func (r *NativeReader) CloseOwnedWindow(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Window == nil {
+		return errors.New("native reader process ownership is unavailable")
+	}
+	select {
+	case <-r.Window.closed:
+		return r.Window.WaitForNaturalClose(ctx)
+	default:
+	}
+	if r.readerWindowID == nil || r.readerWindowHWND == 0 || len(r.readerTargets) == 0 || r.containment == nil {
+		return errors.New("no owned native reader window is available to close")
+	}
+	targets, err := r.targets(ctx)
+	if err != nil {
+		return err
+	}
+	ownedOpen := 0
+	for _, target := range targets {
+		if target.Type != "page" {
+			continue
+		}
+		windowID, windowErr := r.targetWindow(ctx, target.ID)
+		if windowErr != nil {
+			return errors.New("native reader page identity could not be verified")
+		}
+		if windowID != *r.readerWindowID {
+			continue
+		}
+		if _, known := r.readerTargets[target.ID]; !known {
+			return errors.New("native reader window contains an unverified page; close it manually")
+		}
+		ownedOpen++
+	}
+	if ownedOpen == 0 {
+		return errors.New("native reader window no longer has a verified post")
+	}
+	if err := r.containment.CloseReaderWindow(ctx, r.readerWindowHWND); err != nil {
+		return err
+	}
+	return r.Window.WaitForNaturalClose(ctx)
 }
 
 func (r *NativeReader) targetWindow(ctx context.Context, id string) (int, error) {

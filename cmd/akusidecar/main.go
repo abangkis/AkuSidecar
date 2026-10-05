@@ -481,6 +481,10 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			return nil
 		}
 		collector = collection.NewCoordinator(captureManager, func(ctx context.Context, mode string, generation uint64) (captureruntime.Process, error) {
+			if mode != "native_reader" {
+				server.SetSplitDirectNativeReader(nil, nil)
+				server.SetNativeReaderCloseAction(nil)
+			}
 			if err := server.RotateSplitCapture(); err != nil {
 				return nil, err
 			}
@@ -505,6 +509,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				server.SetSplitDirectNativeReader(func(ctx context.Context, id, url, marker string) (readerbroker.Target, func(context.Context) error, error) {
 					return reader.PrepareNativePost(ctx, id, url, origin+marker)
 				}, reader.ReplacementReadiness)
+				server.SetNativeReaderCloseAction(reader.CloseOwnedWindow)
 				return reader, nil
 			}
 			url, err := server.SplitCaptureLaunchURL(target)

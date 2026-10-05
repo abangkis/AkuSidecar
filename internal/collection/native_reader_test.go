@@ -62,8 +62,9 @@ func TestHeadlessNativeBorrowUsesReaderRoleAndReturnsAfterNaturalExit(t *testing
 	if borrow.err != nil {
 		t.Fatal(borrow.err)
 	}
-	if len(modes) != 1 || modes[0] != "native_reader" || !c.Status().NativeReaderOnly || borrow.lease.Driver() != "browser" {
-		t.Fatal("wrong role", modes, c.Status())
+	readerStatus := c.Status()
+	if len(modes) != 1 || modes[0] != "native_reader" || !readerStatus.NativeReaderOnly || readerStatus.NativeReaderBlockedSince == "" || borrow.lease.Driver() != "browser" {
+		t.Fatal("wrong role or missing reader-blocked timestamp", modes, readerStatus)
 	}
 	borrow.lease.Release()
 	borrow.release()

@@ -509,6 +509,36 @@ func (c *captureZOrder) ReplacementReadiness(ctx context.Context) error {
 	return nil
 }
 
+// CloseReaderWindow posts WM_CLOSE only to an HWND tracked by this owned
+// reader process. It never terminates the process or a window from another
+// process/profile.
+func (c *captureZOrder) CloseReaderWindow(ctx context.Context, hwnd uintptr) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stopped || hwnd == 0 {
+		return errors.New("native reader window ownership is unavailable")
+	}
+	if _, tracked := c.readerLifetimes[hwnd]; !tracked {
+		return errors.New("native reader window is not owned")
+	}
+	exists, _, _ := captureIsWindow.Call(hwnd)
+	if exists == 0 || !c.owns(hwnd) {
+		return errors.New("native reader window ownership changed")
+	}
+	var class [256]uint16
+	if n, _, _ := captureWindowClass.Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class))); n == 0 || !strings.Contains(windows.UTF16ToString(class[:]), "Chrome_WidgetWin") {
+		return errors.New("native reader window identity changed")
+	}
+	ok, _, _ := procPostMessageW.Call(hwnd, windowCloseMessage, 0, 0)
+	if ok == 0 {
+		return errors.New("native reader window refused graceful close")
+	}
+	return nil
+}
+
 func (c *captureZOrder) foregroundReader(ctx context.Context, hwnd, id uintptr, expires time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

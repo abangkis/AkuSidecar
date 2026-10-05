@@ -644,6 +644,8 @@ type AutoUpdateUsageLimitPause struct {
 
 type AutoUpdateStatus struct {
 	Enabled                             bool                    `json:"enabled"`
+	NativeReaderBlocked                 bool                    `json:"nativeReaderBlocked"`
+	NativeReaderBlockedSince            string                  `json:"nativeReaderBlockedSince,omitempty"`
 	Mode                                string                  `json:"mode"`
 	State                               string                  `json:"state"`
 	Reason                              string                  `json:"reason,omitempty"`

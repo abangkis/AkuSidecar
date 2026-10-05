@@ -1,5 +1,32 @@
 # Browser and headless collection roadmap
 
+### Explicit reader closure and Auto Update recovery (2026-10-05)
+
+The Timeline shows a persistent reader notice while Auto Update is enabled and
+owned native-post reader windows hold the collection profile. The action
+**Tutup jendela post & lanjutkan update** is explicit permission to close only
+AkuBrowser's tracked native-post reader windows. It does not target personal
+Chrome windows, source login windows, or arbitrary browser processes.
+
+Closure uses the normal window-close path, never force termination. Failure to
+verify ownership, natural process/profile release, or headless readiness keeps
+recovery blocked and visible. New native-post requests are fenced while the
+explicit action runs. A successful close retries one prepared batch immediately
+without waiting for the next cadence tick, while preserving enabled, capacity,
+active-session, onboarding, adaptive allowance and token/provider quota guards.
+If a guard still blocks a batch, the UI reports that authoritative reason rather
+than claiming collection started. No window is closed by a timer or notification.
+
+The UI uses `POST /api/collection/native-reader/close-and-resume`. Responses
+separate verified closure (`closed`) from scheduler outcomes (`resumeOutcome`,
+`resumeReason`, optional `session`) and include refreshed `collectionRuntime`
+and `autoUpdate`. A stale notice with no owned reader returns `no_reader` without
+starting a batch. `AutoUpdateStatus.nativeReaderBlocked` and
+`nativeReaderBlockedSince` supply the banner's authoritative state and timestamp.
+
+Activation and a real owner click trial remain separately authorized; unit tests
+and isolated UI rendering do not prove live Windows reader closure.
+
 Status: architecture approved; phase 1 committed; runtime/session/media ownership
 and reader guard committed as `b376438`; split-action leases committed as
 `86cd0c3`. Source/login-window tracking is implemented in the paired Sidecar and
