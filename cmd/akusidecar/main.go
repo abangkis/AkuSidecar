@@ -506,7 +506,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				if err != nil {
 					return reader, err
 				}
-				server.SetSplitDirectNativeReader(func(ctx context.Context, id, url, marker string) (readerbroker.Target, func(context.Context) error, error) {
+				server.SetSplitDirectNativeReader(func(ctx context.Context, id, url, marker string) (readerbroker.NativePostPreparation, error) {
 					return reader.PrepareNativePost(ctx, id, url, origin+marker)
 				}, reader.ReplacementReadiness)
 				server.SetNativeReaderCloseAction(reader.CloseOwnedWindow)

@@ -59,10 +59,11 @@ func TestNativeReaderTabsWindowsBindings(t *testing.T) {
 	var oldVerify func(context.Context) error
 	for i := 0; i < 3; i++ {
 		id := fmt.Sprintf("split_local_%d", i)
-		target, verify, err := r.PrepareNativePost(ctx, id, server.URL+"/post", server.URL+"/marker?id="+id)
+		prepared, err := r.PrepareNativePost(ctx, id, server.URL+"/post", server.URL+"/marker?id="+id)
 		if err != nil {
 			t.Fatal(err)
 		}
+		target, verify := prepared.Target, prepared.VerifyForeground
 		if i > 0 && (target.HWND != previous.HWND || target.Value == previous.Value || !target.Expires.After(previous.Expires)) {
 			t.Fatal("reader HWND not shared or capability not renewed")
 		}

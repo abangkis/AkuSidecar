@@ -38,6 +38,17 @@ type Target struct {
 	Expires  time.Time `json:"expires"`
 	Action   string    `json:"action"`
 }
+
+// NativePostPreparation binds one post URL to a specific NativeReader tab.
+// The direct-reader caller verifies foreground before using NavigatePost on a
+// normal activation, or uses it alone after the narrowly allowlisted Windows
+// activation rejection.
+type NativePostPreparation struct {
+	Target           Target
+	VerifyForeground func(context.Context) error
+	NavigatePost     func(context.Context) error
+}
+
 type Reply struct {
 	OK              bool    `json:"ok"`
 	Message         string  `json:"message,omitempty"`
@@ -48,6 +59,15 @@ type Reply struct {
 	FocusCategory   string  `json:"focusCategory,omitempty"`
 	ReaderVisible   *bool   `json:"readerVisible,omitempty"`
 	ReaderMinimized *bool   `json:"readerMinimized,omitempty"`
+}
+
+// CanNavigatePostWithoutForeground accepts only the exact Windows rejection
+// while the authenticated UI is still foreground and the prepared reader is
+// visible and not minimized. Missing diagnostics fail closed.
+func CanNavigatePostWithoutForeground(reply Reply) bool {
+	return !reply.OK && !reply.Readback && reply.Message == "Windows rejected reader activation" &&
+		reply.FocusCategory == "ui" && reply.ReaderVisible != nil && *reply.ReaderVisible &&
+		reply.ReaderMinimized != nil && !*reply.ReaderMinimized
 }
 
 // ClassifyForeground returns only the fixed focus categories safe for logs.

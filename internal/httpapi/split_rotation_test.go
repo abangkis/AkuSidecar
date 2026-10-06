@@ -121,14 +121,15 @@ func TestRotationPreservesLiveReaderBrokerDuringNativeBorrow(t *testing.T) {
 		switch mode {
 		case "native_reader":
 			// Match main.go: bind direct helper preparation to the new reader process.
-			s.SetSplitDirectNativeReader(func(_ context.Context, id, url, marker string) (readerbroker.Target, func(context.Context) error, error) {
+			s.SetSplitDirectNativeReader(func(_ context.Context, id, url, marker string) (readerbroker.NativePostPreparation, error) {
 				if url != request.URL || marker != "/split-reader-intent?id="+id {
 					t.Errorf("wrong direct reader correlation: id=%q url=%q marker=%q", id, url, marker)
 				}
 				prepared <- id
-				return readerbroker.Target{HWND: 123, PID: 456, Action: id, Expires: time.Now().Add(3 * time.Second)}, func(context.Context) error {
-					verified <- struct{}{}
-					return nil
+				return readerbroker.NativePostPreparation{
+					Target:           readerbroker.Target{HWND: 123, PID: 456, Action: id, Expires: time.Now().Add(3 * time.Second)},
+					VerifyForeground: func(context.Context) error { verified <- struct{}{}; return nil },
+					NavigatePost:     func(context.Context) error { return nil },
 				}, nil
 			}, func(context.Context) error { return nil })
 			close(launchEntered)

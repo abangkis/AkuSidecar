@@ -89,28 +89,31 @@ type splitActionResult struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 }
 type pendingSplitAction struct {
-	collectionCleanupGeneration uint64
-	browserRecaptureGeneration  uint64
-	action                      splitCaptureAction
-	queuedAt                    time.Time
-	claimed                     bool
-	result                      chan splitActionResult
-	readerPreparing             bool
-	readerPrepareCancel         context.CancelFunc
-	sourcePreparing             bool
-	sourcePrepared              bool
-	interactionRelease          func()
-	readerForeground            func(context.Context) error
-	readerForegroundVerified    bool
-	brokerReady                 chan struct{}
-	brokerDone                  chan error
-	brokerAttached              bool
-	directReader                bool
-	brokerTarget                readerbroker.Target
-	runtimeLease                *captureruntime.Lease
-	detached                    bool
-	completed                   bool
-	completionResult            *splitActionResult
+	collectionCleanupGeneration    uint64
+	browserRecaptureGeneration     uint64
+	action                         splitCaptureAction
+	queuedAt                       time.Time
+	claimed                        bool
+	result                         chan splitActionResult
+	readerPreparing                bool
+	readerPrepareCancel            context.CancelFunc
+	sourcePreparing                bool
+	sourcePrepared                 bool
+	interactionRelease             func()
+	readerForeground               func(context.Context) error
+	readerNavigatePost             func(context.Context) error
+	readerForegroundVerified       bool
+	readerManualForegroundRequired bool
+	readerManualForegroundReplyConsumed bool
+	brokerReady                    chan struct{}
+	brokerDone                     chan error
+	brokerAttached                 bool
+	directReader                   bool
+	brokerTarget                   readerbroker.Target
+	runtimeLease                   *captureruntime.Lease
+	detached                       bool
+	completed                      bool
+	completionResult               *splitActionResult
 }
 type splitCaptureTransport struct {
 	mu                      sync.Mutex
@@ -125,7 +128,7 @@ type splitCaptureTransport struct {
 	prepareReader           func(context.Context, string) (func(context.Context) error, error)
 	prepareBrokerReader     func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
 	prepareSourceWindow     func(context.Context, string) error
-	directReader            func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error)
+	directReader            func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error)
 	directReaderReadiness   func(context.Context) error
 	runtime                 *captureruntime.Manager
 	actionTimeout           time.Duration
@@ -269,7 +272,7 @@ func (s *Server) SetSplitReaderBroker(prepare func(context.Context, string) (rea
 }
 
 // Installed only for a headless native-reader process, never for a collector.
-func (s *Server) SetSplitDirectNativeReader(prepare func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error), readiness func(context.Context) error) {
+func (s *Server) SetSplitDirectNativeReader(prepare func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error), readiness func(context.Context) error) {
 	t := s.splitCapture
 	if t == nil {
 		return
@@ -407,9 +410,12 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	}
 	t.mu.Lock()
 	target, verify := entry.brokerTarget, entry.readerForeground
+	navigatePost := entry.readerNavigatePost
+	directReader := entry.directReader
 	entry.readerForeground = nil
+	entry.readerNavigatePost = nil
 	t.mu.Unlock()
-	if target.HWND == 0 || verify == nil || time.Now().After(target.Expires) {
+	if target.HWND == 0 || verify == nil || !time.Now().Before(target.Expires) {
 		outcome = errors.New("reader binding unavailable or expired")
 		s.auditSplitAction(ctx, entry.action, "reader_foreground", "rejected")
 		return outcome
@@ -422,29 +428,48 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 			entry.action.ID, time.Since(activationStarted).Milliseconds(), readerbroker.ActivationReason(result, err),
 			readerbroker.DiagnosticFocusCategory(result), readerBrokerBoolDiagnostic(result.ReaderVisible), readerBrokerBoolDiagnostic(result.ReaderMinimized))
 	}
+	foregroundVerified := false
+	manualForegroundRequired := false
 	if err != nil {
 		outcome = err
-	} else if !result.OK || !result.Readback {
-		outcome = errors.New("reader helper activation rejected")
-	} else {
+	} else if result.OK && result.Readback {
 		outcome = verify(ctx)
+		foregroundVerified = outcome == nil
+	} else if directReader && readerbroker.CanNavigatePostWithoutForeground(result) {
+		if ctx.Err() != nil {
+			outcome = ctx.Err()
+		} else if !time.Now().Before(target.Expires) {
+			outcome = errors.New("reader binding unavailable or expired")
+		} else if navigatePost == nil {
+			outcome = errors.New("native reader navigation is unavailable")
+		} else {
+			outcome = navigatePost(ctx)
+			manualForegroundRequired = outcome == nil
+		}
+	} else {
+		outcome = errors.New("reader helper activation rejected")
+	}
+	if manualForegroundRequired {
+		t.mu.Lock()
+		entry.readerManualForegroundRequired = true
+		t.mu.Unlock()
 	}
 	if s.logger != nil {
 		activationOutcome := "rejected"
 		activationReason := readerbroker.ActivationReason(result, err)
-		if outcome == nil {
+		if foregroundVerified {
 			activationOutcome = "accepted"
 		} else if err == nil && result.OK && result.Readback {
 			activationReason = "post_activation_completion_failed"
 		}
-		s.logger.Printf("reader_broker request_id=%s action=%s phase=activation outcome=%s reason=%s applied=%t readback=%t verified=%t", req.RequestID, entry.action.ID, activationOutcome, activationReason, result.Applied, result.Readback, outcome == nil)
+		s.logger.Printf("reader_broker request_id=%s action=%s phase=activation outcome=%s reason=%s applied=%t readback=%t verified=%t", req.RequestID, entry.action.ID, activationOutcome, activationReason, result.Applied, result.Readback, foregroundVerified)
 	}
-	if outcome == nil {
+	if foregroundVerified {
 		s.auditSplitAction(ctx, entry.action, "reader_foreground", "accepted")
 	} else {
 		s.auditSplitAction(ctx, entry.action, "reader_foreground", "rejected")
 	}
-	if outcome == nil {
+	if foregroundVerified {
 		t.mu.Lock()
 		entry.readerForegroundVerified = true
 		t.mu.Unlock()
@@ -935,6 +960,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			if entry.brokerReady != nil {
 				select {
 				case <-entry.brokerReady:
+					if entry.directReader && entry.completed && entry.readerManualForegroundRequired &&
+						entry.completionResult != nil && entry.completionResult.OK && !entry.readerManualForegroundReplyConsumed {
+						entry.readerManualForegroundReplyConsumed = true
+						t.mu.Unlock()
+						return writeJSON(w, 200, map[string]any{
+							"foreground": false, "manualRequired": true,
+							"message": nativeReaderManualForegroundMessage,
+						})
+					}
 					t.mu.Unlock()
 					return apiError{Status: 409, Code: "reader_intent_consumed", Message: "Reader intent was already requested."}
 				default:
@@ -945,6 +979,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				case err := <-entry.brokerDone:
 					if err != nil {
 						return apiError{Status: 409, Code: "reader_broker_rejected", Message: err.Error()}
+					}
+					t.mu.Lock()
+					manualForegroundRequired := entry.readerManualForegroundRequired
+					t.mu.Unlock()
+					if manualForegroundRequired {
+						return writeJSON(w, 200, map[string]any{
+							"foreground": false, "manualRequired": true,
+							"message": nativeReaderManualForegroundMessage,
+						})
 					}
 					return writeJSON(w, 200, map[string]bool{"foreground": true})
 				case <-r.Context().Done():

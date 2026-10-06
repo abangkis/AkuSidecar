@@ -122,7 +122,7 @@ func (r *NativeReader) closeIdle(ctx context.Context) error {
 
 // PrepareNativePost is called only after the exact trusted UI broker request
 // attaches. Bind a local marker before navigating the same owned page to the URL.
-func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, markerURL string) (readerbroker.Target, func(context.Context) error, error) {
+func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, markerURL string) (readerbroker.NativePostPreparation, error) {
 	started := time.Now()
 	timing := func(stage string, ok bool) {
 		if r.logger != nil {
@@ -136,7 +136,7 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 	if id != "" {
 		targets, err := r.targets(ctx)
 		if err != nil {
-			return readerbroker.Target{}, nil, err
+			return readerbroker.NativePostPreparation{}, err
 		}
 		found := false
 		for _, target := range targets {
@@ -145,20 +145,20 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 			}
 		}
 		if !found {
-			return readerbroker.Target{}, nil, errors.New("native reader placeholder is no longer owned at its original URL")
+			return readerbroker.NativePostPreparation{}, errors.New("native reader placeholder is no longer owned at its original URL")
 		}
 		// From this point the page belongs to the user, even if preparation fails.
 		r.idleTarget = ""
 	} else {
 		raw, err := r.protocol.Call(ctx, "Target.createTarget", map[string]any{"url": markerURL, "newWindow": false}, "")
 		if err != nil {
-			return readerbroker.Target{}, nil, err
+			return readerbroker.NativePostPreparation{}, err
 		}
 		var created struct {
 			ID string `json:"targetId"`
 		}
 		if json.Unmarshal(raw, &created) != nil || created.ID == "" {
-			return readerbroker.Target{}, nil, errors.New("native reader page creation unverified")
+			return readerbroker.NativePostPreparation{}, errors.New("native reader page creation unverified")
 		}
 		id = created.ID
 	}
@@ -166,21 +166,21 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 	// open the next post, and verify Chrome placed the new tab in our window.
 	windowID, err := r.targetWindow(ctx, id)
 	if err != nil {
-		return readerbroker.Target{}, nil, err
+		return readerbroker.NativePostPreparation{}, err
 	}
 	if r.readerWindowID != nil && *r.readerWindowID != windowID {
-		return readerbroker.Target{}, nil, errors.New("native reader tab opened outside its reader window; close the reader windows and retry")
+		return readerbroker.NativePostPreparation{}, errors.New("native reader tab opened outside its reader window; close the reader windows and retry")
 	}
 	r.readerWindowID = &windowID
 	raw, err := r.protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": id, "flatten": true}, "")
 	if err != nil {
-		return readerbroker.Target{}, nil, err
+		return readerbroker.NativePostPreparation{}, err
 	}
 	var attached struct {
 		ID string `json:"sessionId"`
 	}
 	if json.Unmarshal(raw, &attached) != nil || attached.ID == "" {
-		return readerbroker.Target{}, nil, errors.New("native reader session unavailable")
+		return readerbroker.NativePostPreparation{}, errors.New("native reader session unavailable")
 	}
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
@@ -190,61 +190,124 @@ func (r *NativeReader) PrepareNativePost(ctx context.Context, actionID, url, mar
 	timing("target_attach", true)
 	if err := r.navigate(ctx, attached.ID, markerURL); err != nil {
 		timing("marker_navigation", false)
-		return readerbroker.Target{}, nil, err
+		return readerbroker.NativePostPreparation{}, err
 	}
 	timing("marker_navigation", true)
 	target, verify, err := r.containment.PrepareBrokerReader(ctx, "AkuBrowser reader "+actionID)
 	timing("window_binding", err == nil)
 	if err != nil {
-		return readerbroker.Target{}, nil, err
+		return readerbroker.NativePostPreparation{}, err
 	}
 	if verify == nil {
-		return readerbroker.Target{}, nil, errors.New("native reader verification unavailable")
+		return readerbroker.NativePostPreparation{}, errors.New("native reader verification unavailable")
 	}
 	if r.readerWindowHWND != 0 && r.readerWindowHWND != uintptr(target.HWND) {
-		return readerbroker.Target{}, nil, errors.New("native reader HWND identity changed")
+		return readerbroker.NativePostPreparation{}, errors.New("native reader HWND identity changed")
 	}
 	r.readerWindowHWND = uintptr(target.HWND)
 	if r.readerTargets == nil {
 		r.readerTargets = map[string]string{}
 	}
 	r.readerTargets[id] = url
-	// Show and verify the local marker first. A slow social navigation must not
-	// consume the foreground capability or delay the first visible reader.
-	var once sync.Once
-	var completion error
-	return target, func(activeCtx context.Context) error {
-		once.Do(func() {
-			if completion = verify(activeCtx); completion != nil {
-				return
-			}
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			started := time.Now()
-			raw, err := r.protocol.Call(activeCtx, "Target.attachToTarget", map[string]any{"targetId": id, "flatten": true}, "")
-			if err != nil {
-				completion = err
-				return
-			}
-			var session struct {
-				ID string `json:"sessionId"`
-			}
-			if json.Unmarshal(raw, &session) != nil || session.ID == "" {
-				completion = errors.New("native reader navigation session unavailable")
-				return
-			}
-			defer func() {
-				cleanup, cancel := context.WithTimeout(context.WithoutCancel(activeCtx), time.Second)
-				defer cancel()
-				_, _ = r.protocol.Call(cleanup, "Target.detachFromTarget", map[string]string{"sessionId": session.ID}, "")
-			}()
-			completion = r.navigate(activeCtx, session.ID, url)
-			if r.logger != nil {
-				r.logger.Printf("native_reader_timing action=%s stage=post_navigation_dispatch elapsed_ms=%d ok=%t", actionID, time.Since(started).Milliseconds(), completion == nil)
-			}
+	// The caller chooses exactly one completion path: a verified foreground
+	// activation followed by navigation, or an eligible Windows rejection with
+	// navigation alone. Both callbacks are one-shot.
+	var verifyOnce sync.Once
+	var verifyErr error
+	verifyForeground := func(activeCtx context.Context) error {
+		verifyOnce.Do(func() { verifyErr = verify(activeCtx) })
+		return verifyErr
+	}
+	var navigateOnce sync.Once
+	var navigateErr error
+	navigatePost := func(activeCtx context.Context) error {
+		navigateOnce.Do(func() {
+			navigateErr = r.navigateOwnedNativePost(activeCtx, actionID, id, windowID, uintptr(target.HWND), markerURL, url, target.Expires)
 		})
-		return completion
+		return navigateErr
+	}
+	return readerbroker.NativePostPreparation{
+		Target: target, VerifyForeground: verifyForeground, NavigatePost: navigatePost,
 	}, nil
+}
+
+func (r *NativeReader) navigateOwnedNativePost(ctx context.Context, actionID, targetID string, windowID int, hwnd uintptr, markerURL, url string, expires time.Time) error {
+	started := time.Now()
+	navigateErr := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !time.Now().Before(expires) {
+			return errors.New("native reader binding expired before post navigation")
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.readerWindowID == nil || *r.readerWindowID != windowID || r.readerWindowHWND != hwnd || r.readerTargets[targetID] != url {
+			return errors.New("native reader tab ownership changed before post navigation")
+		}
+		targets, err := r.targets(ctx)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, target := range targets {
+			if target.ID == targetID && target.Type == "page" && target.URL == markerURL {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("native reader tab changed before post navigation")
+		}
+		currentWindowID, err := r.targetWindow(ctx, targetID)
+		if err != nil {
+			return err
+		}
+		if currentWindowID != windowID || ctx.Err() != nil || !time.Now().Before(expires) {
+			return errors.New("native reader window or binding changed before post navigation")
+		}
+		raw, err := r.protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, "")
+		if err != nil {
+			return err
+		}
+		var session struct {
+			ID string `json:"sessionId"`
+		}
+		if json.Unmarshal(raw, &session) != nil || session.ID == "" {
+			return errors.New("native reader navigation session unavailable")
+		}
+		defer func() {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+			_, _ = r.protocol.Call(cleanup, "Target.detachFromTarget", map[string]string{"sessionId": session.ID}, "")
+		}()
+		if ctx.Err() != nil || !time.Now().Before(expires) {
+			return errors.New("native reader context or binding expired before post navigation")
+		}
+		latestTargets, err := r.targets(ctx)
+		if err != nil {
+			return err
+		}
+		stillMarker := false
+		for _, target := range latestTargets {
+			if target.ID == targetID && target.Type == "page" && target.URL == markerURL {
+				stillMarker = true
+				break
+			}
+		}
+		currentWindowID, err = r.targetWindow(ctx, targetID)
+		if err != nil {
+			return err
+		}
+		if !stillMarker || currentWindowID != windowID || ctx.Err() != nil || !time.Now().Before(expires) {
+			return errors.New("native reader tab, window or binding changed before post navigation")
+		}
+		return r.navigate(ctx, session.ID, url)
+	}()
+	if r.logger != nil {
+		r.logger.Printf("native_reader_timing action=%s stage=post_navigation_dispatch elapsed_ms=%d ok=%t", actionID, time.Since(started).Milliseconds(), navigateErr == nil)
+	}
+	return navigateErr
 }
 
 // CloseOwnedWindow gracefully closes the exact HWND and post targets created

@@ -3141,6 +3141,9 @@ function openNativePostInReaderWindow(url, source, brokerRequestId = null, gestu
     function onResult(event) {
       if (event.source !== window || event.origin !== endpoint || event.data?.requestId !== requestId) return;
       if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPENED") {
+        if (event.data.foreground === "manual_required") {
+          showNotice(event.data.message || "The post opened in your Native Reader tab, but Windows did not bring that window to the foreground. Switch to the Native Reader window manually.");
+        }
         finish(resolve, event.data, "opened");
       } else if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPEN_FAILED") {
         finish(reject, new Error(event.data.message || "AkuBridge could not open the native post."), "rejected");

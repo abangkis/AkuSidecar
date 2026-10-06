@@ -30,6 +30,39 @@ func TestActivationReasonIsAllowlisted(t *testing.T) {
 	}
 }
 
+func TestCanNavigatePostWithoutForegroundRequiresExactWindowsRejectionAndDiagnostics(t *testing.T) {
+	visible, minimized := true, false
+	base := Reply{
+		Message:         "Windows rejected reader activation",
+		FocusCategory:   "ui",
+		ReaderVisible:   &visible,
+		ReaderMinimized: &minimized,
+	}
+	if !CanNavigatePostWithoutForeground(base) {
+		t.Fatal("authentic foreground rejection was not eligible for the manual fallback")
+	}
+	for name, mutate := range map[string]func(*Reply){
+		"helper accepted":         func(r *Reply) { r.OK = true },
+		"readback accepted":       func(r *Reply) { r.Readback = true },
+		"different message":       func(r *Reply) { r.Message = "Reader binding expired or changed" },
+		"missing focus":           func(r *Reply) { r.FocusCategory = "" },
+		"other focus":             func(r *Reply) { r.FocusCategory = "other" },
+		"changed ui":              func(r *Reply) { r.FocusCategory = "other" },
+		"missing visibility":      func(r *Reply) { r.ReaderVisible = nil },
+		"hidden reader":           func(r *Reply) { value := false; r.ReaderVisible = &value },
+		"missing minimized state": func(r *Reply) { r.ReaderMinimized = nil },
+		"minimized reader":        func(r *Reply) { value := true; r.ReaderMinimized = &value },
+	} {
+		t.Run(name, func(t *testing.T) {
+			reply := base
+			mutate(&reply)
+			if CanNavigatePostWithoutForeground(reply) {
+				t.Fatal("ineligible activation entered manual navigation fallback")
+			}
+		})
+	}
+}
+
 func TestForegroundDiagnosticsUseOnlyFixedCategories(t *testing.T) {
 	for _, tc := range []struct {
 		name                 string

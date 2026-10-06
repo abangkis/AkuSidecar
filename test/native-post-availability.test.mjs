@@ -44,6 +44,40 @@ test("actual native link blocks collection clicks and concurrent opens, then res
   finish(); await new Promise(setImmediate);
 });
 
+test("manual foreground result reaches the user as a visible success notice", async () => {
+  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const endpoint = "http://127.0.0.1:11122";
+  const notices = [];
+  let messageListener;
+  const window = {
+    addEventListener(type, listener) { if (type === "message") messageListener = listener; },
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  };
+  const context = {
+    window, endpoint, NATIVE_POST_OPEN_TIMEOUT_MS: 5_000, AbortController,
+    performance: { now: () => 1 },
+    routeNativePost: async () => {},
+    logNativePostTrace() {},
+    showNotice: message => notices.push(message),
+    setTimeout, clearTimeout, Error,
+  };
+  vm.createContext(context);
+  const start = app.indexOf("function openNativePostInReaderWindow(");
+  const end = app.indexOf("function setSourceSessionStatus(", start);
+  vm.runInContext(app.slice(start, end), context);
+  const requestId = "broker_" + "a".repeat(32);
+  const message = "The post opened in your Native Reader tab. Bring that window forward manually.";
+  const opened = context.openNativePostInReaderWindow("https://x.com/a/status/1", "x", requestId);
+  messageListener({ source: window, origin: endpoint, data: {
+    requestId, type: "AKU_BROWSER_NATIVE_POST_OPENED", foreground: "manual_required", message,
+  } });
+  const result = await opened;
+  assert.equal(result.foreground, "manual_required");
+  assert.deepEqual(notices, [message]);
+});
+
 test("wait state restores link without replacing poster or label and avoids repeated writes", () => {
   const attributes = new Map(); let writes = 0;
   const link = { dataset: {}, children: ["poster", "label"],

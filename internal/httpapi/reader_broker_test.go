@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"strings"
 	"testing"
@@ -16,6 +17,40 @@ func TestReaderBrokerCollectorCannotClaimUnattachedClick(t *testing.T) {
 	w := splitRequest(s, token, s.splitCapture.key, "GET", "/api/bridge/split-capture/next", "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "split_background") || blocked.claimed {
 		t.Fatalf("unattached reader claimed: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestReaderBrokerForegroundReturnsManualRequiredAfterNavigationFallback(t *testing.T) {
+	s, token := splitTestServer(t)
+	s.SetSplitReaderBroker(func(context.Context, string) (readerbroker.Target, func(context.Context) error, error) {
+		return readerbroker.Target{HWND: 1}, func(context.Context) error { return nil }, nil
+	})
+	entry := &pendingSplitAction{
+		action:                         splitCaptureAction{ID: "split_reader", Type: "open_native_post"},
+		claimed:                        true,
+		directReader:                   true,
+		completed:                      true,
+		readerManualForegroundRequired: true,
+		completionResult:               &splitActionResult{OK: true},
+		brokerReady:                    make(chan struct{}),
+		brokerDone:                     make(chan error, 1),
+	}
+	close(entry.brokerReady)
+	entry.brokerDone <- nil
+	s.splitCapture.actions = []*pendingSplitAction{entry}
+	w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/reader/foreground/split_reader", "{}")
+	if w.Code != 200 {
+		t.Fatalf("foreground fallback=%d %s", w.Code, w.Body)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["foreground"] != false || result["manualRequired"] != true || result["message"] != nativeReaderManualForegroundMessage {
+		t.Fatalf("manual foreground result was not explicit: %+v", result)
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/reader/foreground/split_reader", "{}"); w.Code != 409 {
+		t.Fatal("manual foreground response was replayed", w.Code, w.Body)
 	}
 }
 

@@ -17,9 +17,9 @@ import (
 func TestReaderOnlyRejectsPassiveProbesBeforeAcquiringLeases(t *testing.T) {
 	s, token := splitTestServer(t)
 	m := attachSplitLeaseManager(t, s)
-	s.SetSplitDirectNativeReader(func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error) {
+	s.SetSplitDirectNativeReader(func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error) {
 		t.Fatal("passive probe reached reader")
-		return readerbroker.Target{}, nil, nil
+		return readerbroker.NativePostPreparation{}, nil
 	}, func(context.Context) error { return nil })
 	for _, action := range []string{"ping", "probe_source_sessions", "reload_self"} {
 		w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/split-capture/actions", `{"type":"`+action+`","actionId":"reload_test"}`)
@@ -45,8 +45,8 @@ func TestReaderExitRetiresOnlyMatchingGenerationPassiveProbes(t *testing.T) {
 	t.Cleanup(m.Terminate)
 	_, done, probe := startCancellableSplitAction(t, s, token)
 	// Model probes admitted by the old runtime before the reader-only gate.
-	s.SetSplitDirectNativeReader(func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error) {
-		return readerbroker.Target{}, nil, nil
+	s.SetSplitDirectNativeReader(func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error) {
+		return readerbroker.NativePostPreparation{}, nil
 	}, func(context.Context) error { return nil })
 	userLease, err := m.Acquire()
 	if err != nil {

@@ -46,3 +46,19 @@ Selectors, adapters and structured-media resolvers were already shared. This con
 Both updated components must be staged together: the worker now requires the shared Bridge asset. Deploy/reload/restart and paired authenticated runtime validation remain separate from source-level tests. Old captured posts require recapture; these helpers cannot reconstruct absent text retroactively.
 
 The extension version remains `0.9.2`; runtime revision/build identity moves to `source-adapters-v112` in Bridge and Sidecar's expected identity. This also changes the content-script reinjection guard so an already-injected v111 controller is replaced rather than silently reused.
+
+## Deferred UX consideration: manually opened reader tabs
+
+Incident reported and clarified by the user on 6 October 2026 (Asia/Jakarta): the native reader window contained a tab the user opened manually. Clicking "Tutup jendela post & lanjutkan auto update" caused a brief UI refresh but left the window open. The banner displayed `native reader window contains an unverified page; close it manually`, which was easy to overlook.
+
+The user expected the button to close the entire reader window, including manually opened tabs. Current behavior instead rejects closure when any page in that window is absent from `readerTargets`. This guard already existed in commit `7aeb7c7`; the v112 consolidation did not change the closure path. Collection remains blocked until the reader is released.
+
+User decision: leave current behavior unchanged for now and retain this incident for future consideration. Potential future work, not yet approved: make the blocking page and error more visible, clarify the button's scope, or offer an explicit confirmation to close all tabs in an ownership-verified native reader window. Any such flow must preserve unrelated user windows and verify profile release before resuming headless collection.
+
+## Native post navigation when Windows rejects foreground activation
+
+On 6 October 2026, a trusted native-post click completed profile handoff and reader preparation but the helper reported `windows_activation_rejected`, with the UI still foreground and the reader visible and not minimized. The previous completion path waited for successful foreground activation before dispatching post navigation, leaving the prepared reader at its local marker and blocking headless profile access.
+
+The authorized fix separates foreground verification from one-shot navigation. Only the authenticated direct-reader path can fall back after that exact Windows rejection, with explicit matching focus/visibility diagnostics, a live context, an unexpired binding, and a revalidated marker tab in the original owned window. Changed pages/windows, cancelled or expired requests, missing diagnostics, transport failures and other rejection reasons remain rejected. Normal activation still verifies foreground before navigation.
+
+Fallback navigation reports `foreground: manual_required` and asks the user to select the reader window manually. It does not report successful foreground verification or release the reader's profile ownership. Runtime restart/reload and real Windows activation validation remain separate from source-level regression tests.

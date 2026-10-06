@@ -64,11 +64,14 @@ func TestNativeReaderTabsChrome(t *testing.T) {
 		t.Fatal("initial page missing")
 	}
 	for i := 0; i < 3; i++ {
-		_, verify, err := r.PrepareNativePost(ctx, fmt.Sprintf("split_local_%d", i), server.URL+fmt.Sprintf("/post/%d", i), server.URL+fmt.Sprintf("/marker/%d", i))
+		prepared, err := r.PrepareNativePost(ctx, fmt.Sprintf("split_local_%d", i), server.URL+fmt.Sprintf("/post/%d", i), server.URL+fmt.Sprintf("/marker/%d", i))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verify(ctx); err != nil {
+		if err := prepared.VerifyForeground(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := prepared.NavigatePost(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}

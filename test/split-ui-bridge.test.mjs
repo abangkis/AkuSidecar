@@ -98,6 +98,22 @@ test("native post fails visibly without broker readiness or trusted-click correl
   assert.equal(f.messages.length, count, "readiness ends polling");
 });
 
+test("direct native reader manual foreground result reaches the page", async () => {
+  const message = "The post opened in your Native Reader tab. Switch to that window manually.";
+  const requestId = "broker_" + "d".repeat(32);
+  const f = fixture({ ok: true, result: {
+    source: "x", state: "native_post_opened", url: "https://x.com/a/status/1",
+    foreground: "manual_required", message,
+  } });
+  await f.send({ type: "AKU_BROWSER_READER_BROKER_READY" });
+  await f.send({ type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId, source: "x", url: "https://x.com/a/status/1" });
+  const result = f.messages.at(-1);
+  assert.equal(result.type, "AKU_BROWSER_NATIVE_POST_OPENED");
+  assert.equal(result.requestId, requestId);
+  assert.equal(result.foreground, "manual_required");
+  assert.equal(result.message, message);
+});
+
 test("native relay keeps an early rejection category after the request fails", async () => {
   const f = fixture();
   const action = { type: "AKU_BROWSER_OPEN_NATIVE_POST", requestId: "broker_" + "c".repeat(32), source: "linkedin", url: "https://www.linkedin.com/posts/private" };

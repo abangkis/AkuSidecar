@@ -171,7 +171,9 @@ func (s *Server) closeNativeReaderAndResume(ctx context.Context) (map[string]any
 	return result, nil
 }
 
-func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTransport, entry *pendingSplitAction, prepare func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error)) {
+const nativeReaderManualForegroundMessage = "The post opened in your Native Reader tab, but Windows did not bring that window to the foreground. Switch to the Native Reader window manually."
+
+func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTransport, entry *pendingSplitAction, prepare func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error)) {
 	stageStarted := time.Now()
 	timing := func(stage string, ok bool) {
 		if s.logger != nil {
@@ -181,13 +183,20 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 	}
 	var outcome error
 	defer func() {
+		t.mu.Lock()
+		manualForegroundRequired := entry.readerManualForegroundRequired
 		result := splitActionResult{OK: outcome == nil}
 		if outcome != nil {
 			result.Message = "Native reader could not complete; close any opened reader window and retry."
+		} else if manualForegroundRequired {
+			result.Message = nativeReaderManualForegroundMessage
+			result.Result, _ = json.Marshal(map[string]string{
+				"source": entry.action.Source, "state": "native_post_opened", "url": entry.action.URL,
+				"foreground": "manual_required", "message": nativeReaderManualForegroundMessage,
+			})
 		} else {
 			result.Result, _ = json.Marshal(map[string]string{"source": entry.action.Source, "state": "native_post_opened", "url": entry.action.URL})
 		}
-		t.mu.Lock()
 		entry.completed, entry.completionResult = true, &result
 		select {
 		case <-entry.brokerReady:
@@ -260,15 +269,27 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		return
 	}
 	marker := "/split-reader-intent?id=" + entry.action.ID
-	target, verify, err := prepare(ctx, entry.action.ID, entry.action.URL, marker)
+	prepared, err := prepare(ctx, entry.action.ID, entry.action.URL, marker)
 	timing("target_prepare", err == nil)
 	if err != nil {
 		outcome = err
 		s.auditSplitAction(ctx, entry.action, "reader_prepare", "rejected")
 		return
 	}
+	if prepared.VerifyForeground == nil || prepared.NavigatePost == nil {
+		outcome = errors.New("native reader completion is unavailable")
+		s.auditSplitAction(ctx, entry.action, "reader_prepare", "rejected")
+		return
+	}
+	foreground := func(activeCtx context.Context) error {
+		if err := prepared.VerifyForeground(activeCtx); err != nil {
+			return err
+		}
+		return prepared.NavigatePost(activeCtx)
+	}
 	t.mu.Lock()
-	entry.brokerTarget, entry.readerForeground = target, verify
+	entry.brokerTarget, entry.readerForeground = prepared.Target, foreground
+	entry.readerNavigatePost = prepared.NavigatePost
 	close(entry.brokerReady)
 	t.mu.Unlock()
 	s.auditSplitAction(ctx, entry.action, "reader_prepare", "accepted")

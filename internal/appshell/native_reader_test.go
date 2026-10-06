@@ -21,6 +21,7 @@ type nativeProtocolFixture struct {
 	navigations     []string
 	created         int
 	createdWindowID int
+	attachedTarget  string
 }
 
 func (p *nativeProtocolFixture) Call(_ context.Context, method string, params any, _ string) (json.RawMessage, error) {
@@ -29,6 +30,7 @@ func (p *nativeProtocolFixture) Call(_ context.Context, method string, params an
 	case "Target.getTargets":
 		return json.Marshal(map[string]any{"targetInfos": p.pages})
 	case "Target.attachToTarget":
+		p.attachedTarget = params.(map[string]any)["targetId"].(string)
 		return json.RawMessage(`{"sessionId":"owned-session"}`), nil
 	case "Target.createTarget":
 		args := params.(map[string]any)
@@ -36,7 +38,9 @@ func (p *nativeProtocolFixture) Call(_ context.Context, method string, params an
 			return nil, fmt.Errorf("reader did not request a tab in the existing window")
 		}
 		p.created++
-		return json.Marshal(map[string]string{"targetId": fmt.Sprintf("new-reader-%d", p.created)})
+		id := fmt.Sprintf("new-reader-%d", p.created)
+		p.pages = append(p.pages, nativeReaderTarget{ID: id, Type: "page", URL: args["url"].(string)})
+		return json.Marshal(map[string]string{"targetId": id})
 	case "Browser.getWindowForTarget":
 		windowID := 10
 		if params.(map[string]string)["targetId"] != "idle" && p.createdWindowID != 0 {
@@ -44,7 +48,13 @@ func (p *nativeProtocolFixture) Call(_ context.Context, method string, params an
 		}
 		return json.Marshal(map[string]int{"windowId": windowID})
 	case "Page.navigate":
-		p.navigations = append(p.navigations, params.(map[string]string)["url"])
+		url := params.(map[string]string)["url"]
+		p.navigations = append(p.navigations, url)
+		for i := range p.pages {
+			if p.pages[i].ID == p.attachedTarget {
+				p.pages[i].URL = url
+			}
+		}
 	case "Target.closeTarget":
 		return json.RawMessage(`{"success":true}`), nil
 	}
@@ -54,6 +64,7 @@ func (p *nativeProtocolFixture) Call(_ context.Context, method string, params an
 type nativeContainmentFixture struct {
 	markers           []string
 	verificationError error
+	targetExpires     time.Time
 	closeErr          error
 	closeCalls        int
 	onClose           func()
@@ -78,22 +89,85 @@ func (c *nativeContainmentFixture) CloseReaderWindow(_ context.Context, hwnd uin
 }
 func (c *nativeContainmentFixture) PrepareBrokerReader(_ context.Context, marker string) (readerbroker.Target, func(context.Context) error, error) {
 	c.markers = append(c.markers, marker)
-	return readerbroker.Target{HWND: 1, PID: 2, Expires: time.Now().Add(time.Second)}, func(context.Context) error { return c.verificationError }, nil
+	expires := c.targetExpires
+	if expires.IsZero() {
+		expires = time.Now().Add(time.Second)
+	}
+	return readerbroker.Target{HWND: 1, PID: 2, Expires: expires}, func(context.Context) error { return c.verificationError }, nil
 }
 
 func TestNativeReaderRejectedActivationNeverNavigatesSocialURL(t *testing.T) {
 	p := &nativeProtocolFixture{pages: []nativeReaderTarget{{ID: "idle", Type: "page", URL: "http://local/native-reader-idle"}}}
 	c := &nativeContainmentFixture{verificationError: errors.New("not foreground")}
 	r := &NativeReader{protocol: p, containment: c, idleTarget: "idle", idleURL: p.pages[0].URL}
-	_, verify, err := r.PrepareNativePost(context.Background(), "split_one", "https://x.com/a/status/1", "http://local/marker")
+	prepared, err := r.PrepareNativePost(context.Background(), "split_one", "https://x.com/a/status/1", "http://local/marker")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verify(context.Background()); err == nil {
+	if err := prepared.VerifyForeground(context.Background()); err == nil {
 		t.Fatal("failed foreground accepted")
 	}
 	if !reflect.DeepEqual(p.navigations, []string{"http://local/marker"}) {
-		t.Fatal("unverified activation navigated post", p.navigations)
+		t.Fatal("failed foreground navigated post", p.navigations)
+	}
+}
+
+func TestNativeReaderFallbackRequiresExactLiveOwnedMarkerAndNavigatesOnce(t *testing.T) {
+	for _, scenario := range []string{"changed_page", "changed_window", "expired_binding", "cancelled", "valid"} {
+		t.Run(scenario, func(t *testing.T) {
+			p := &nativeProtocolFixture{createdWindowID: 10}
+			c := &nativeContainmentFixture{}
+			r := &NativeReader{protocol: p, containment: c}
+			postURL := "https://x.com/a/status/1"
+			markerURL := "http://local/split-reader-intent?id=split_owned"
+			prepared, err := r.PrepareNativePost(context.Background(), "split_owned", postURL, markerURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "changed_page":
+				p.pages[0].URL = "https://x.com/a/status/other"
+			case "changed_window":
+				p.createdWindowID = 11
+			case "expired_binding":
+				c.targetExpires = time.Now().Add(-time.Second)
+				prepared, err = r.PrepareNativePost(context.Background(), "split_expired", postURL, markerURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+			case "cancelled":
+				// Cancel before invoking the one-shot navigation callback.
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			if scenario == "cancelled" {
+				cancel()
+			}
+			defer cancel()
+			firstErr := prepared.NavigatePost(ctx)
+			if scenario == "valid" {
+				if firstErr != nil {
+					t.Fatal(firstErr)
+				}
+				if err := prepared.NavigatePost(ctx); err != nil {
+					t.Fatal("one-shot navigation should be idempotent", err)
+				}
+				if !reflect.DeepEqual(p.navigations, []string{markerURL, postURL}) {
+					t.Fatalf("post navigation count or target changed: %v", p.navigations)
+				}
+				return
+			}
+			if firstErr == nil {
+				t.Fatal("stale or changed tab was navigated")
+			}
+			if len(p.navigations) == 0 || p.navigations[0] != markerURL {
+				t.Fatalf("fallback navigated after %s: %v", scenario, p.navigations)
+			}
+			for _, navigatedURL := range p.navigations {
+				if navigatedURL == postURL {
+					t.Fatalf("fallback dispatched social navigation after %s: %v", scenario, p.navigations)
+				}
+			}
+		})
 	}
 }
 
@@ -104,18 +178,21 @@ func TestNativeReaderReusesIdleThenCreatesTabsInSameWindow(t *testing.T) {
 	var timing bytes.Buffer
 	r.logger = log.New(&timing, "", 0)
 	for _, id := range []string{"split_first", "split_second", "split_third"} {
-		_, verify, err := r.PrepareNativePost(context.Background(), id, "https://x.com/a/status/1", "http://local/split-reader-intent?id="+id)
-		if err != nil || verify == nil {
+		prepared, err := r.PrepareNativePost(context.Background(), id, "https://x.com/a/status/1", "http://local/split-reader-intent?id="+id)
+		if err != nil || prepared.VerifyForeground == nil || prepared.NavigatePost == nil {
 			t.Fatal("prepare", err)
 		}
 		if len(p.navigations) == 0 || strings.HasPrefix(p.navigations[len(p.navigations)-1], "https://") {
 			t.Fatal("social navigation occurred before activation")
 		}
-		if err := verify(context.Background()); err != nil {
+		if err := prepared.VerifyForeground(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := prepared.NavigatePost(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 		before := len(p.navigations)
-		if err := verify(context.Background()); err != nil || len(p.navigations) != before {
+		if err := prepared.NavigatePost(context.Background()); err != nil || len(p.navigations) != before {
 			t.Fatal("verification replayed navigation", err)
 		}
 	}
@@ -147,8 +224,8 @@ func TestNativeReaderRejectsTabInDifferentWindow(t *testing.T) {
 	p := &nativeProtocolFixture{createdWindowID: 99}
 	windowID := 10
 	r := &NativeReader{protocol: p, containment: &nativeContainmentFixture{}, readerWindowID: &windowID}
-	_, verify, err := r.PrepareNativePost(context.Background(), "split_wrong", "https://x.com/a/status/1", "http://local/marker")
-	if err == nil || verify != nil || len(p.navigations) != 0 {
+	prepared, err := r.PrepareNativePost(context.Background(), "split_wrong", "https://x.com/a/status/1", "http://local/marker")
+	if err == nil || prepared.VerifyForeground != nil || len(p.navigations) != 0 {
 		t.Fatal("unverified window was admitted or navigated", p.navigations, err)
 	}
 }
@@ -159,7 +236,7 @@ func TestNativeReaderChangedPlaceholderIsNeverNavigatedOrClosed(t *testing.T) {
 		r := &NativeReader{protocol: p, idleTarget: "idle", idleURL: "http://local/native-reader-idle"}
 		var err error
 		if operation == "prepare" {
-			_, _, err = r.PrepareNativePost(context.Background(), "split_test", "https://x.com/a/status/1", "http://local/marker")
+			_, err = r.PrepareNativePost(context.Background(), "split_test", "https://x.com/a/status/1", "http://local/marker")
 		} else {
 			err = r.closeIdle(context.Background())
 		}

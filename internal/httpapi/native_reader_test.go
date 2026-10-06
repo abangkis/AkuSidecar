@@ -17,14 +17,27 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
 
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func boolPointer(value bool) *bool { return &value }
+
 func TestDirectNativeReaderAPICompletesWithoutBridgeCollector(t *testing.T) {
 	s, token := splitTestServer(t)
 	req := readerbroker.Request{RequestID: "broker_" + strings.Repeat("e", 32), Source: "linkedin", URL: "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"}
-	s.SetSplitDirectNativeReader(func(_ context.Context, id, url, marker string) (readerbroker.Target, func(context.Context) error, error) {
+	s.SetSplitDirectNativeReader(func(_ context.Context, id, url, marker string) (readerbroker.NativePostPreparation, error) {
 		if url != req.URL || marker != "/split-reader-intent?id="+id {
 			t.Error("correlation changed")
 		}
-		return readerbroker.Target{HWND: 1, PID: 2, Expires: time.Now().Add(time.Second)}, func(context.Context) error { return nil }, nil
+		return readerbroker.NativePostPreparation{
+			Target:           readerbroker.Target{HWND: 1, PID: 2, Expires: time.Now().Add(time.Second)},
+			VerifyForeground: func(context.Context) error { return nil },
+			NavigatePost:     func(context.Context) error { return nil },
+		}, nil
 	}, func(context.Context) error { return nil })
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -59,21 +72,51 @@ func TestDirectNativeReaderAPICompletesWithoutBridgeCollector(t *testing.T) {
 }
 
 func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing.T) {
-	for _, accepted := range []bool{true, false} {
-		t.Run(map[bool]string{true: "accepted", false: "activation_rejected"}[accepted], func(t *testing.T) {
+	visible, notMinimized := true, false
+	tests := []struct {
+		name                  string
+		reply                 readerbroker.Reply
+		activationErr         error
+		targetLifetime        time.Duration
+		cancelDuringActivate  bool
+		expectActionOK        bool
+		expectManual          bool
+		expectForegroundCheck bool
+		expectNavigation      bool
+	}{
+		{name: "verified activation", reply: readerbroker.Reply{OK: true, Readback: true}, targetLifetime: time.Second, expectActionOK: true, expectForegroundCheck: true, expectNavigation: true},
+		{name: "plain rejection", reply: readerbroker.Reply{}, targetLifetime: time.Second},
+		{name: "authentic Windows rejection", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "ui", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, targetLifetime: time.Second, expectActionOK: true, expectManual: true, expectNavigation: true},
+		{name: "missing diagnostics", reply: readerbroker.Reply{Message: "Windows rejected reader activation"}, targetLifetime: time.Second},
+		{name: "changed focus", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "other", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, targetLifetime: time.Second},
+		{name: "missing visibility", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "ui", ReaderMinimized: &notMinimized}, targetLifetime: time.Second},
+		{name: "minimized reader", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "ui", ReaderVisible: &visible, ReaderMinimized: boolPointer(true)}, targetLifetime: time.Second},
+		{name: "expired binding reply", reply: readerbroker.Reply{Message: "Reader binding expired or changed", FocusCategory: "ui", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, targetLifetime: time.Second},
+		{name: "changed UI reply", reply: readerbroker.Reply{Message: "Reader intent expired or UI foreground changed", FocusCategory: "other", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, targetLifetime: time.Second},
+		{name: "transport error", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "ui", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, activationErr: errors.New("pipe failed"), targetLifetime: time.Second},
+		{name: "binding expires during activation", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "ui", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, targetLifetime: 200 * time.Millisecond},
+		{name: "cancelled during activation", reply: readerbroker.Reply{Message: "Windows rejected reader activation", FocusCategory: "ui", ReaderVisible: &visible, ReaderMinimized: &notMinimized}, targetLifetime: time.Second, cancelDuringActivate: true},
+	}
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			s, token := splitTestServer(t)
-			req := readerbroker.Request{RequestID: "broker_" + strings.Repeat("d", 32), Source: "x", URL: "https://x.com/a/status/1"}
+			req := readerbroker.Request{RequestID: "broker_" + strings.Repeat(fmt.Sprintf("%x", i), 32), Source: "x", URL: "https://x.com/a/status/1"}
 			entry := &pendingSplitAction{action: splitCaptureAction{ID: "split_direct", Type: "open_native_post", RequestID: req.RequestID, Source: req.Source, URL: req.URL}, directReader: true, brokerReady: make(chan struct{}), brokerDone: make(chan error, 1), result: make(chan splitActionResult, 1)}
 			s.splitCapture.actions = []*pendingSplitAction{entry, {action: splitCaptureAction{ID: "split_ping", Type: "ping"}}}
 			prepared := make(chan struct{}, 1)
-			prepare := func(_ context.Context, id, url, marker string) (readerbroker.Target, func(context.Context) error, error) {
+			verifyCalls, navigateCalls := 0, 0
+			prepare := func(_ context.Context, id, url, marker string) (readerbroker.NativePostPreparation, error) {
 				if id != "split_direct" || url != req.URL || marker != "/split-reader-intent?id=split_direct" {
 					t.Error("wrong reader correlation")
 				}
 				prepared <- struct{}{}
-				return readerbroker.Target{HWND: 123, PID: 456, Action: id, Expires: time.Now().Add(time.Second)}, func(context.Context) error { return nil }, nil
+				return readerbroker.NativePostPreparation{
+					Target:           readerbroker.Target{HWND: 123, PID: 456, Action: id, Expires: time.Now().Add(tc.targetLifetime)},
+					VerifyForeground: func(context.Context) error { verifyCalls++; return nil },
+					NavigatePost:     func(context.Context) error { navigateCalls++; return nil },
+				}, nil
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			go s.runDirectNativeReader(ctx, s.splitCapture, entry, prepare)
 			// Even an attached reader cannot be taken by a Bridge poll.
@@ -86,22 +129,50 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 				t.Fatal("API opened reader without broker")
 			default:
 			}
-			err := s.HandleReaderBroker(ctx, req, func(target readerbroker.Target) (readerbroker.Reply, error) {
+			activationErr := s.HandleReaderBroker(ctx, req, func(target readerbroker.Target) (readerbroker.Reply, error) {
 				if target.HWND != 123 {
 					t.Error("wrong target")
 				}
-				return readerbroker.Reply{OK: accepted, Readback: accepted}, nil
+				if tc.cancelDuringActivate {
+					cancel()
+				}
+				if tc.name == "binding expires during activation" {
+					remaining := time.Until(target.Expires)
+					if remaining <= 0 {
+						t.Error("test target expired before activation began")
+					} else {
+						time.Sleep(remaining + 10*time.Millisecond)
+					}
+				}
+				return tc.reply, tc.activationErr
 			})
-			if (err == nil) != accepted {
-				t.Fatal("activation result mismatch", err)
+			if (activationErr == nil) != (tc.expectActionOK || tc.expectForegroundCheck) {
+				t.Fatalf("broker completion mismatch: %v", activationErr)
 			}
 			select {
 			case result := <-entry.result:
-				if result.OK != accepted {
-					t.Fatal("result did not require activation", result)
+				if result.OK != tc.expectActionOK {
+					t.Fatalf("action ok=%t want %t: %+v", result.OK, tc.expectActionOK, result)
 				}
-			case <-ctx.Done():
+				if tc.expectManual {
+					var detail map[string]string
+					if json.Unmarshal(result.Result, &detail) != nil || detail["foreground"] != "manual_required" || detail["message"] != nativeReaderManualForegroundMessage || result.Message != nativeReaderManualForegroundMessage {
+						t.Fatalf("manual foreground feedback missing: %+v detail=%v", result, detail)
+					}
+					if entry.readerForegroundVerified || !entry.readerManualForegroundRequired {
+						t.Fatal("fallback was recorded as foreground success")
+					}
+				} else if entry.readerManualForegroundRequired {
+					t.Fatal("unexpected manual foreground result")
+				}
+			case <-time.After(500 * time.Millisecond):
 				t.Fatal("direct action did not complete")
+			}
+			if verifyCalls != boolInt(tc.expectForegroundCheck) || navigateCalls != boolInt(tc.expectNavigation) {
+				t.Fatalf("verify=%d navigate=%d", verifyCalls, navigateCalls)
+			}
+			if entry.readerForegroundVerified != tc.expectForegroundCheck {
+				t.Fatalf("foreground verification state=%t", entry.readerForegroundVerified)
 			}
 			if !entry.completed {
 				t.Fatal("direct action retained queue ownership")
@@ -118,9 +189,9 @@ func TestDirectNativeReaderCancellationDrainsWithoutOpening(t *testing.T) {
 	s.splitCapture.actions = []*pendingSplitAction{entry}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	s.runDirectNativeReader(ctx, s.splitCapture, entry, func(context.Context, string, string, string) (readerbroker.Target, func(context.Context) error, error) {
+	s.runDirectNativeReader(ctx, s.splitCapture, entry, func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error) {
 		t.Fatal("cancelled action opened reader")
-		return readerbroker.Target{}, nil, nil
+		return readerbroker.NativePostPreparation{}, nil
 	})
 	if released != 1 || len(s.splitCapture.actions) != 0 || (<-entry.result).OK {
 		t.Fatal("cancelled direct reader leaked ownership")
