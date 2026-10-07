@@ -49,6 +49,8 @@ test('capture carries a verified revealed primary and preserves its frontier in 
     pendingContentPolicy:'detect_only',sourceFreshnessPolicy:'preserve_frontier',sameTabMutationAllowed:false,
     continuation:{startScrollY:first.coverage.frontier.scrollY,anchorKeys:first.coverage.frontier.anchorKeys,settleMs:0}});
   assert.ok(next.snapshots[0].blocks.some(b=>b.platformId==='x:status:'+newID));
+  assert.equal(next.coverage.freshness.workerStatus,'preserved');
+  assert.equal(next.coverage.freshness.activationCount,0);
   assert.equal(f.state.clicks,1);assert.equal(f.state.navigations,1);
 });
 test('capture never reveals on an explicit native permalink or Quiet backend',async()=>{

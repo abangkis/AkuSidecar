@@ -234,3 +234,44 @@ into Timeline. Local, ignored receipts are
 Real-account reveal-click qualification remains pending natural availability of
 the supported control; fixture activation/identity regressions remain the
 evidence for that branch.
+
+## Acquisition telemetry handoff
+
+The engine combines candidate evidence across acquisition rounds but exposes
+only the latest round's capture telemetry at the top of `coverage`. Raw round
+coverage remains in `coverage.rounds`. Durable pipeline receipts, including
+follow-up yield, are retained without overwriting current capture fields or
+filling missing latest fields from an earlier round.
+
+Headless now emits the existing windowed keys `performedScrolls` and
+`scrollStopReason`, while retaining its legacy `stopReason`. Scroll counts
+describe observed movement, using the windowed two-pixel threshold. No movement
+ends bounded collection; unavailable position leaves the count unknown. The
+normal stop reasons are `not_requested`, `budget_exhausted`, `no_movement` and
+`deadline`, with explicit reasons for evidence limits and unavailable position.
+A deadline already reached between snapshots retains accepted partial evidence;
+an in-flight collection deadline retains the existing failure path.
+
+Planning telemetry is nullable: absent or malformed counts, frontier signals,
+and readiness are JSON `null`, rather than false or zero. Native anchor values
+remain private; only a validated count reaches the planner. The optional
+`frontier.continuationReady` takes precedence over deriving readiness from a
+legacy anchor array. Explicit false or unknown readiness prevents continuation
+dispatch. Headless retains a frontier only with observed position and native
+anchors, and reports missing height or viewport as an unknown candidate signal.
+Its overall quality remains partial/unverified; this change does not assert
+windowed quality parity or enable the complete-quality local follow-up gate.
+
+Regression coverage follows capture acceptance through the model planner,
+persisted continuation, adjacent capture and final evaluation for both backend
+telemetry shapes. It checks that both rounds' candidates survive, latest
+telemetry is retained, acquisition remains bounded to two rounds, and round two
+uses `preserve_frontier` / `detect_only` without further freshness activation.
+There is no scheduler, allowance, source-enablement or user-window policy change.
+
+Validation: 149 worker tests pass (one real-Chromium test skipped without its
+explicit executable setting). Engine and reasoning suites pass except
+`TestHybridFacebookRecaptureAdmitsBrowserDispatchesBridgeAndCleansSurface`, whose
+cleanup-generation mismatch also reproduces against pre-change HEAD through an
+isolated Go overlay. Authenticated account qualification of the telemetry patch
+remains pending runtime activation and subsequent user updates.

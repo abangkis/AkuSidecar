@@ -238,12 +238,19 @@ export async function capture(browser, assetsBySource, source, payload) {
   let lastNewCandidateCount = 0;
   let unchangedRounds = 0;
   let stopReason = options.scrolls === 0 ? 'scrolls_zero' : 'scroll_limit';
+  let performedScrolls = 0;
+  let performedScrollsKnown = true;
+  let scrollStopReason = options.scrolls === 0 ? 'not_requested' : 'budget_exhausted';
   const originalScrollY = options.acquisitionRound === 1 ? 0 : resumeScrollY;
   const textRecovery = source === 'x' ? createXTextRecovery({ browser, assets, deadlineAt: deadline }) : null;
   try {
     for (let scroll = 0; scroll <= options.scrolls; scroll++) {
+      if (scroll > 0 && Date.now() >= deadline) { scrollStopReason = 'deadline'; break; }
       ensureTime(deadline);
+      let noMovement = false;
+      let movementUnknown = false;
       if (scroll > 0) {
+        const previousScrollY = Number.isFinite(snapshot?.scroll?.y) ? Math.trunc(snapshot.scroll.y) : null;
         await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceBy ? globalThis.XHeadlessPoC.scrollSourceBy(${options.scrollFraction}) : window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
         await sleep(Math.min(options.scrollSettleMs, timeLeft(deadline)));
         snapshot = await collect(page, source, deadline);
@@ -252,6 +259,17 @@ export async function capture(browser, assetsBySource, source, payload) {
         if (nextError) throw nextError;
         snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
         if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
+        const currentScrollY = Number.isFinite(snapshot?.scroll?.y) ? Math.trunc(snapshot.scroll.y) : null;
+        if (previousScrollY === null || currentScrollY === null) {
+          movementUnknown = true;
+          performedScrollsKnown = false;
+          scrollStopReason = 'scroll_position_unavailable';
+        } else if (Math.abs(currentScrollY - previousScrollY) < 2) {
+          noMovement = true;
+          scrollStopReason = 'no_movement';
+        } else {
+          performedScrolls++;
+        }
       }
       if (textRecovery) snapshot = await textRecovery.recoverSnapshot(snapshot);
       const previousCount = seenIds.size;
@@ -263,13 +281,18 @@ export async function capture(browser, assetsBySource, source, payload) {
         posts.push(post);
         postEvidenceBytes += bytes;
       }
-      if (evidenceLimitReached && posts.length === 0) { stopReason = 'evidence_size_limit'; break; }
+      if (evidenceLimitReached && posts.length === 0) { stopReason = 'evidence_size_limit'; scrollStopReason = 'evidence_size_limit'; break; }
       for (const post of posts) seenIds.add(post.id);
       lastNewCandidateCount = seenIds.size - previousCount;
       snapshots.push({ ...snapshot, posts, capturedAt: new Date().toISOString(), ...(scroll === 0 && quoteIdentityProbe ? { quoteIdentityProbe } : {}) });
       unchangedRounds = seenIds.size === previousCount ? unchangedRounds + 1 : 0;
-      if (evidenceLimitReached) { stopReason = 'evidence_size_limit'; break; }
-      if (unchangedRounds >= 3) { stopReason = 'three_rounds_without_new_identity'; break; }
+      if (evidenceLimitReached) { stopReason = 'evidence_size_limit'; scrollStopReason = 'evidence_size_limit'; break; }
+      if (noMovement || movementUnknown) break;
+      if (unchangedRounds >= 3) {
+        stopReason = 'three_rounds_without_new_identity';
+        if (scroll < options.scrolls) scrollStopReason = 'no_new_candidates';
+        break;
+      }
     }
   } finally {
     await textRecovery?.close();
@@ -278,16 +301,22 @@ export async function capture(browser, assetsBySource, source, payload) {
     { diagnostics: emptyCaptureDiagnostics(snapshots) });
   const last = snapshots.at(-1);
   const anchorKeys = [...new Set(last.posts.map(post => canonicalPostId(source, post)).filter(Boolean))].slice(0, 3);
-  const scrollY = Number.isFinite(last.scroll?.y) ? Math.max(0, Math.trunc(last.scroll.y)) : resumeScrollY;
-  const height = Number.isFinite(last.scroll?.height) ? Math.trunc(last.scroll.height) : 0;
-  const viewport = Number.isFinite(last.scroll?.viewportHeight) ? Math.trunc(last.scroll.viewportHeight) : 0;
+  const scrollPositionRecorded = Number.isFinite(last.scroll?.y);
+  const scrollY = scrollPositionRecorded ? Math.max(0, Math.trunc(last.scroll.y)) : resumeScrollY;
+  const height = Number.isFinite(last.scroll?.height) && last.scroll.height >= 0 ? Math.trunc(last.scroll.height) : null;
+  const viewport = Number.isFinite(last.scroll?.viewportHeight) && last.scroll.viewportHeight > 0 ? Math.trunc(last.scroll.viewportHeight) : null;
+  const hasMoreCandidateSignal = height !== null && viewport !== null && scrollPositionRecorded
+    ? height > scrollY + viewport : null;
+  const continuationReady = !anchorKeys.length ? false : scrollPositionRecorded ? true : null;
   const frontier = { scrollY, anchorKeys, newCandidateCount: lastNewCandidateCount,
-    hasMoreCandidateSignal: height > scrollY + viewport };
-  sourceFrontiers.set(source, { source, requestedUrl, pageUrl: pageKey(source, requestedUrl), frontier });
+    hasMoreCandidateSignal, continuationReady };
+  if (continuationReady === true) sourceFrontiers.set(source, { source, requestedUrl, pageUrl: pageKey(source, requestedUrl), frontier });
+  else sourceFrontiers.delete(source);
   if (options.restoreScroll) await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${originalScrollY}) : window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {
     const observation=toObservation({
       source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
+      performedScrolls: performedScrollsKnown ? performedScrolls : undefined, scrollStopReason,
       captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
       frontier,
       freshness,

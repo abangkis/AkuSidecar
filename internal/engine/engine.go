@@ -1946,7 +1946,10 @@ func selectedItems(run domain.Run, result domain.ReasoningResult, scored []store
 func mergeObservations(values []domain.Observation) domain.Observation {
 	result := values[len(values)-1]
 	result.Snapshots = nil
-	result.Coverage = map[string]any{"acquisitionRounds": len(values), "rounds": []map[string]any{}}
+	// Candidate evidence spans all rounds; navigation and planning telemetry
+	// belongs exclusively to the last round. Missing latest fields stay unknown.
+	result.Coverage = cloneCoverageMap(result.Coverage)
+	result.Coverage["acquisitionRounds"] = len(values)
 	rounds := make([]map[string]any, 0, len(values))
 	for _, value := range values {
 		result.Snapshots = append(result.Snapshots, value.Snapshots...)
@@ -2035,8 +2038,16 @@ func localXFollowUpReason(source domain.Source, observation domain.Observation) 
 }
 
 func mergeDurableRunCoverage(target, durable map[string]any) {
+	captureFields := map[string]bool{"rounds": true, "acquisitionRounds": true}
+	if rounds, ok := target["rounds"].([]map[string]any); ok {
+		for _, round := range rounds {
+			for key := range round {
+				captureFields[key] = true
+			}
+		}
+	}
 	for key, value := range durable {
-		if key == "rounds" || key == "acquisitionRounds" {
+		if captureFields[key] {
 			continue
 		}
 		target[key] = value
@@ -2109,6 +2120,11 @@ func continuationFrom(value domain.Observation) map[string]any {
 	startScrollY := 0.0
 	anchors := continuationAnchors(value.Coverage)
 	if frontier, ok := value.Coverage["frontier"].(map[string]any); ok {
+		if readiness, explicit := frontier["continuationReady"]; explicit {
+			if ready, valid := readiness.(bool); !valid || !ready {
+				return nil
+			}
+		}
 		if scrollY, ok := frontier["scrollY"].(float64); ok && scrollY >= 0 {
 			startScrollY = scrollY
 		}

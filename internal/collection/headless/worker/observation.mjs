@@ -202,7 +202,7 @@ function isVerifiedStructuredVideo(source, item) {
   } catch { return false; }
 }
 
-export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, frontier, freshness, captureMode = 'headless_worker' }) {
+export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker' }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
   const domainSnapshots = snapshots.map((snapshot, index) => {
@@ -253,6 +253,8 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       captureMode,
       captureStatus: 'captured_partial',
       stopReason,
+      ...(Number.isSafeInteger(performedScrolls) && performedScrolls >= 0 ? { performedScrolls } : {}),
+      ...(typeof scrollStopReason === 'string' && scrollStopReason ? { scrollStopReason } : {}),
       observedBlockCount: domainSnapshots.reduce((sum, snapshot) => sum + snapshot.blocks.length, 0),
       observedUniqueIdCount: new Set(snapshots.flatMap(snapshot => (snapshot.posts || []).map(post => post.id))).size,
       loginRequired: last.loginRequired === true,

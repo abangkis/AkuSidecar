@@ -111,11 +111,18 @@ test('round 2 resumes its per-source page frontier after another source is captu
   const checkpoint = first.coverage.frontier;
   assert.deepEqual(checkpoint.anchorKeys, ['facebook:post:12345']);
   assert.equal(checkpoint.scrollY, 0);
+  assert.equal(first.coverage.performedScrolls, 0);
+  assert.equal(first.coverage.scrollStopReason, 'not_requested');
+  assert.equal(checkpoint.hasMoreCandidateSignal, null, 'missing document height must remain unknown');
+  assert.equal(checkpoint.continuationReady, true);
   assert.equal(first.coverage.freshness.workerStatus, 'not_verified');
   const x = await capture(browser, assets, 'x', { acquisitionRound: 1, scrolls: 3, scrollSettleMs: 100,
     sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 });
   assert.equal(x.source, 'x');
   assert.equal(x.snapshots.length, 4, 'maxBlocksPerSnapshot must not be treated as a total post limit');
+  assert.equal(x.coverage.performedScrolls, 3);
+  assert.equal(x.coverage.scrollStopReason, 'budget_exhausted');
+  assert.equal(x.coverage.frontier.hasMoreCandidateSignal, null, 'missing document height must remain unknown');
   const continuation = { startScrollY: checkpoint.scrollY, anchorKeys: checkpoint.anchorKeys, settleMs: 0 };
   assert.equal(continuationMatches({ source: 'facebook', pageUrl: 'facebook://www.facebook.com/', frontier: checkpoint }, 'facebook', 'https://www.facebook.com/', continuation), true);
   const next = await capture(browser, assets, 'facebook', {
@@ -126,10 +133,62 @@ test('round 2 resumes its per-source page frontier after another source is captu
   assert.equal(next.source, 'facebook');
   assert.equal(pages.get('facebook').navigations, 1, 'round 2 must not navigate or reload the source tab');
   assert.equal(pages.get('x').navigations, 1, 'capturing X must use its own retained tab');
+  assert.equal(next.coverage.performedScrolls, 0);
+  assert.equal(next.coverage.scrollStopReason, 'not_requested');
   await assert.rejects(() => capture(browser, assets, 'facebook', {
     acquisitionRound: 2, continuation: { ...continuation, startScrollY: 42 }, scrolls: 0,
     sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000,
   }), { code: 'unsupported_continuation' });
+});
+
+test('capture counts only observed scroll movement and records no_movement', async () => {
+  const page = {
+    url: 'about:blank',
+    async navigate(url) { this.url = url; return {}; },
+    async send() { return {}; },
+    async evaluate(expression) {
+      if (expression === 'location.href') return this.url;
+      if (expression === 'globalThis.XHeadlessPoC?.prepareEvidenceTargets?.() || []') return [];
+      if (expression.includes('XHeadlessPoC.collect()')) return JSON.stringify({
+        posts: [{ id: '1890000000000000000', permalink: 'https://x.com/example/status/1890000000000000000', author: 'Example', text: 'Fixture post' }],
+        scroll: { y: 0, viewportHeight: 900, height: 1800 }, documentReady: true,
+      });
+      return undefined;
+    },
+  };
+  const assets = { x: ['runtime', 'adapter', 'extractor'].map((name, i) => ({ relative: name, sha256: String(i).repeat(64), execute: false })) };
+  const observation = await capture(page, assets, 'x', { scrolls: 2, scrollSettleMs: 100, sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 });
+  assert.equal(observation.coverage.performedScrolls, 0);
+  assert.equal(observation.coverage.scrollStopReason, 'no_movement');
+  assert.equal(observation.coverage.frontier.hasMoreCandidateSignal, true);
+});
+
+test('capture leaves scroll count and continuation unknown when the post-scroll position is unavailable', async () => {
+  let collectCount = 0;
+  const page = {
+    url: 'about:blank',
+    async navigate(url) { this.url = url; return {}; },
+    async send() { return {}; },
+    async evaluate(expression) {
+      if (expression === 'location.href') return this.url;
+      if (expression === 'globalThis.XHeadlessPoC?.prepareEvidenceTargets?.() || []') return [];
+      if (expression.includes('XHeadlessPoC.collect()')) {
+        collectCount++;
+        return JSON.stringify({
+          posts: [{ id: '1890000000000000000', permalink: 'https://x.com/example/status/1890000000000000000', author: 'Example', text: 'Fixture post' }],
+          ...(collectCount === 1 ? { scroll: { y: 0, viewportHeight: 900, height: 1800 } } : {}),
+          documentReady: true,
+        });
+      }
+      return undefined;
+    },
+  };
+  const assets = { x: ['runtime', 'adapter', 'extractor'].map((name, i) => ({ relative: name, sha256: String(i).repeat(64), execute: false })) };
+  const observation = await capture(page, assets, 'x', { scrolls: 2, scrollSettleMs: 100, sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 });
+  assert.equal(observation.coverage.performedScrolls, undefined);
+  assert.equal(observation.coverage.scrollStopReason, 'scroll_position_unavailable');
+  assert.equal(observation.coverage.frontier.hasMoreCandidateSignal, null);
+  assert.equal(observation.coverage.frontier.continuationReady, null);
 });
 
 test('maps X evidence to the canonical Observation shape without changing source IDs', () => {

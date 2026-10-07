@@ -3,6 +3,7 @@ package reasoning
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"unicode"
@@ -29,26 +30,26 @@ type promptRun struct {
 type planningObservation struct {
 	Source            domain.Source          `json:"source"`
 	CandidateCount    int                    `json:"candidateCount"`
-	PerformedScrolls  int                    `json:"performedScrolls"`
+	PerformedScrolls  *int                   `json:"performedScrolls"`
 	ScrollStopReason  string                 `json:"scrollStopReason,omitempty"`
 	CaptureQuality    planningCaptureQuality `json:"captureQuality"`
 	Frontier          planningFrontier       `json:"frontier"`
-	ContinuationReady bool                   `json:"continuationReady"`
+	ContinuationReady *bool                  `json:"continuationReady"`
 }
 
 type planningCaptureQuality struct {
 	Verdict              string `json:"verdict,omitempty"`
-	CandidateReportCount int    `json:"candidateReportCount,omitempty"`
-	RetryAttempts        int    `json:"retryAttempts,omitempty"`
-	InvalidCount         int    `json:"invalidCount,omitempty"`
-	RetryableCount       int    `json:"retryableCount,omitempty"`
-	DegradedCount        int    `json:"degradedCount,omitempty"`
+	CandidateReportCount *int   `json:"candidateReportCount"`
+	RetryAttempts        *int   `json:"retryAttempts"`
+	InvalidCount         *int   `json:"invalidCount"`
+	RetryableCount       *int   `json:"retryableCount"`
+	DegradedCount        *int   `json:"degradedCount"`
 }
 
 type planningFrontier struct {
-	NewCandidateCount      int  `json:"newCandidateCount"`
-	HasMoreCandidateSignal bool `json:"hasMoreCandidateSignal"`
-	AnchorCount            int  `json:"anchorCount"`
+	NewCandidateCount      *int  `json:"newCandidateCount"`
+	HasMoreCandidateSignal *bool `json:"hasMoreCandidateSignal"`
+	AnchorCount            *int  `json:"anchorCount"`
 }
 
 func buildPlanningPrompt(run domain.Run, observation domain.Observation, _ []domain.ReasonedItem) string {
@@ -57,6 +58,7 @@ func buildPlanningPrompt(run domain.Run, observation domain.Observation, _ []dom
 The supplied observation is application-owned acquisition telemetry, not source content. Do not use tools, browse, execute commands, or read files.
 
 Choose only "finish" or "request_follow_up". A follow-up means one adjacent older viewport from the same source. Request it only for a concrete evidence-integrity or unfinished-frontier gap, not curiosity.
+Null telemetry means unknown, not false or zero. Unknown telemetry does not prove the feed is exhausted. A follow-up still requires a known navigable continuation and a concrete gap.
 
 Run: %s
 Acquisition telemetry: %s`, mustJSON(promptRun{Source: run.Source}), mustJSON(planningPromptObservation(observation)))
@@ -66,19 +68,72 @@ func planningPromptObservation(value domain.Observation) planningObservation {
 	quality := mapValue(value.Coverage["captureQuality"])
 	verdictCounts := mapValue(quality["verdictCounts"])
 	frontier := mapValue(value.Coverage["frontier"])
-	anchors := stringSliceLength(frontier["anchorKeys"])
+	anchors := planningAnchorCount(frontier["anchorKeys"])
+	continuation := planningBool(frontier["continuationReady"])
+	if _, explicit := frontier["continuationReady"]; !explicit && anchors != nil {
+		ready := *anchors > 0
+		continuation = &ready
+	}
 	return planningObservation{
 		Source: value.Source, CandidateCount: uniqueCandidateCount(value),
-		PerformedScrolls: integerValue(value.Coverage["performedScrolls"]),
+		PerformedScrolls: planningCount(value.Coverage["performedScrolls"]),
 		ScrollStopReason: boundedRunes(stringValue(value.Coverage["scrollStopReason"]), 80),
 		CaptureQuality: planningCaptureQuality{
 			Verdict:              boundedRunes(stringValue(quality["verdict"]), 40),
-			CandidateReportCount: integerValue(quality["candidateReportCount"]), RetryAttempts: integerValue(quality["retryAttempts"]),
-			InvalidCount: integerValue(verdictCounts["invalid"]), RetryableCount: integerValue(verdictCounts["retryable"]),
-			DegradedCount: integerValue(verdictCounts["usable_degraded"]),
+			CandidateReportCount: planningCount(quality["candidateReportCount"]), RetryAttempts: planningCount(quality["retryAttempts"]),
+			InvalidCount: planningCount(verdictCounts["invalid"]), RetryableCount: planningCount(verdictCounts["retryable"]),
+			DegradedCount: planningCount(verdictCounts["usable_degraded"]),
 		},
-		Frontier:          planningFrontier{NewCandidateCount: integerValue(frontier["newCandidateCount"]), HasMoreCandidateSignal: boolValue(frontier["hasMoreCandidateSignal"]), AnchorCount: anchors},
-		ContinuationReady: anchors > 0,
+		Frontier:          planningFrontier{NewCandidateCount: planningCount(frontier["newCandidateCount"]), HasMoreCandidateSignal: planningBool(frontier["hasMoreCandidateSignal"]), AnchorCount: anchors},
+		ContinuationReady: continuation,
+	}
+}
+
+// Acquisition observations from both backends use the same nullable contract.
+// Reject malformed telemetry rather than turning missing evidence into a fact.
+func planningCount(value any) *int {
+	var count int64
+	switch typed := value.(type) {
+	case int:
+		count = int64(typed)
+	case int64:
+		count = typed
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || typed < 0 || typed > math.MaxInt32 || typed != math.Trunc(typed) {
+			return nil
+		}
+		count = int64(typed)
+	default:
+		return nil
+	}
+	if count < 0 || count > math.MaxInt32 {
+		return nil
+	}
+	result := int(count)
+	return &result
+}
+
+func planningBool(value any) *bool {
+	result, ok := value.(bool)
+	if !ok {
+		return nil
+	}
+	return &result
+}
+
+func planningAnchorCount(value any) *int {
+	switch typed := value.(type) {
+	case []string:
+		return planningCount(stringSliceLength(typed))
+	case []any:
+		for _, anchor := range typed {
+			if _, ok := anchor.(string); !ok {
+				return nil
+			}
+		}
+		return planningCount(stringSliceLength(typed))
+	default:
+		return nil
 	}
 }
 
