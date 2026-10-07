@@ -11,6 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
 $workspaceRoot = Split-Path -Parent $repoRoot
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
 $target = Join-Path $runtimeDir 'aku-sidecar.exe'
@@ -19,6 +20,8 @@ $targetProvenance = "$target.runtime-state.json"
 $candidateProvenance = "$candidate.runtime-state.json"
 $candidateWorker = Join-Path $runtimeDir 'headless-worker.next'
 $targetWorker = Join-Path $runtimeDir 'headless-worker'
+$workerBackupPrefix = '.restart-dev-headless-worker-rollback-'
+$null = Assert-WorkerBackupCopyReady -RuntimeRoot $runtimeDir -WorkerRoot $targetWorker -BackupPrefix $workerBackupPrefix
 $supervisor = Join-Path $workspaceRoot 'AkuSupervisor\target\dev\aku-supervisor.exe'
 $captureSplitFlag = '--windows-capture-split'
 $uiChromiumPathFlag = '--ui-chromium-path'
@@ -209,7 +212,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Promote worker assets only after Supervisor stopped the existing runtime.
-$previousWorker = Join-Path $runtimeDir ('.headless-worker.previous-' + [Guid]::NewGuid().ToString('n'))
+$previousWorker = Join-Path $runtimeDir ($workerBackupPrefix + [Guid]::NewGuid().ToString('n'))
 $workerBackedUp = $false
 try {
     if (Test-Path -LiteralPath $targetWorker -PathType Container) {
@@ -260,6 +263,9 @@ if ($null -eq $health -or $health.status -ne 'ok') {
 }
 if ($health.version -ne $expected.version) {
     throw "AkuSidecar restarted with version $($health.version), but development provenance expects $($expected.version)."
+}
+if ($workerBackedUp) {
+    $null = Remove-WorkerBackupAfterSuccess -RuntimeRoot $runtimeDir -BackupPath $previousWorker -BackupPrefix $workerBackupPrefix
 }
 
 Write-Host "AkuSidecar $($health.version) was rebuilt and restarted under AkuSupervisor ownership."

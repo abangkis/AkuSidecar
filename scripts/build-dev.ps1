@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
 if ($Verify) {
     & (Join-Path $PSScriptRoot 'test-native-reader-regression.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Native reader regression gate failed.' }
@@ -50,6 +51,11 @@ $env:GOTMPDIR = $goTempRoot
 $output = Join-Path $runtimeDir $OutputName
 $workerDirectoryName = if ($OutputName -eq 'aku-sidecar.next.exe') { 'headless-worker.next' } else { 'headless-worker' }
 $provenancePath = "$output.runtime-state.json"
+$workerDestination = [IO.Path]::GetFullPath((Join-Path $runtimeDir $workerDirectoryName))
+$runtimeBoundary = [IO.Path]::GetFullPath($runtimeDir).TrimEnd('\') + '\'
+if (-not $workerDestination.StartsWith($runtimeBoundary, [StringComparison]::OrdinalIgnoreCase)) { throw 'Worker destination escaped development runtime.' }
+$workerBackupPrefix = ".build-dev-$workerDirectoryName-rollback-"
+Assert-WorkerBackupCopyReady -RuntimeRoot $runtimeDir -WorkerRoot $workerDestination -BackupPrefix $workerBackupPrefix
 Push-Location $repoRoot
 try {
     & go build -trimpath -o $output .\cmd\akusidecar
@@ -71,13 +77,10 @@ try {
     # The release stager accepts project build/artifact roots, not runtime/dev.
     # Stage there first, then retain the old development assets before promotion.
     $workerStage = Join-Path $repoRoot ('build\dev-worker-stage-' + [Guid]::NewGuid().ToString('n'))
-    $workerDestination = [IO.Path]::GetFullPath((Join-Path $runtimeDir $workerDirectoryName))
-    $runtimeBoundary = [IO.Path]::GetFullPath($runtimeDir).TrimEnd('\') + '\'
-    if (-not $workerDestination.StartsWith($runtimeBoundary, [StringComparison]::OrdinalIgnoreCase)) { throw 'Worker destination escaped development runtime.' }
     $workerProvenanceText = & $workerStager -DestinationDirectory $workerStage
     $workerProvenance = ($workerProvenanceText | Out-String) | ConvertFrom-Json
     if ($workerProvenance.status -ne 'ok') { throw 'Headless worker staging failed.' }
-    $priorWorkerStage = $workerDestination + '.previous-' + [Guid]::NewGuid().ToString('n')
+    $priorWorkerStage = Join-Path $runtimeDir ($workerBackupPrefix + [Guid]::NewGuid().ToString('n'))
     $workerStageBackedUp = $false
     try {
         if (Test-Path -LiteralPath $workerDestination -PathType Container) {
@@ -120,6 +123,9 @@ try {
         [Text.UTF8Encoding]::new($false)
     )
     Move-Item -LiteralPath $temporaryProvenance -Destination $provenancePath -Force
+    if ($workerStageBackedUp) {
+        $null = Remove-WorkerBackupAfterSuccess -RuntimeRoot $runtimeDir -BackupPath $priorWorkerStage -BackupPrefix $workerBackupPrefix
+    }
 }
 finally {
     $env:GOCACHE = $previousGoCache
