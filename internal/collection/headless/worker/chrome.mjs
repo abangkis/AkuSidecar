@@ -231,6 +231,7 @@ function connectOwnedChrome(child, executable, profilePath) {
         return context;
       }
       return {
+        backend: 'headless_worker',
         pid: child.pid,
         executable,
         profilePath,

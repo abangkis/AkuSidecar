@@ -5,6 +5,7 @@ import {mkdir} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import {launchChrome,CAPTURE_PLAYBACK_GUARD_SOURCE} from '../chrome.mjs';
+import {recoverHeadlessFreshness} from '../headless-freshness.mjs';
 
 test('capture pauses repeated media attempts without replacing playback or media sources',()=>{
   const listeners=new Map();
@@ -27,11 +28,27 @@ test('capture pauses repeated media attempts without replacing playback or media
 
 test('real headless Chrome retains metadata and pauses autoplay/retries across navigation',{
   skip:!process.env.AKU_TEST_CHROME_PATH,timeout:30000,
-},async()=>{
+},async t=>{
   const profile=resolve('build','playback-policy-'+randomUUID(),'profile');
   await mkdir(profile,{recursive:true});
   const browser=await launchChrome({chromePath:process.env.AKU_TEST_CHROME_PATH,profilePath:profile});
   try {
+    await t.test('owned Chrome identity admits generic freshness qualification',async()=>{
+      const page=await browser.forSource('x');
+      const url='data:text/html,<main>Owned feed fixture</main>';
+      await page.navigate(url);
+      const deadline=Date.now()+5000;
+      while(await page.evaluate('location.href')!==url){
+        assert.ok(Date.now()<deadline,'fixture route must load');
+        await new Promise(r=>setTimeout(r,25));
+      }
+      await page.evaluate('globalThis.AkuSourceFreshnessRuntime={probe:()=>({pendingContentDetected:false})}');
+      const result=await recoverHeadlessFreshness({source:'fixture',backend:browser.backend,page,snapshot:{url,posts:[]},
+        options:{source:'fixture',pageUrl:url,acquisitionRound:1,pendingContentPolicy:'reveal_if_present',sourceFreshnessPolicy:'wake_and_reveal',sameTabMutationAllowed:true},
+        contract:{source:'fixture',version:'fixture-v1',enabled:true,matchesFeedURL:value=>value===url,primaryIdentity:()=>null},deadlineAt:Date.now()+6000});
+      assert.equal(result.freshness.workerStatus,'checked_no_pending');
+      assert.equal(result.freshness.probeStatus,'observed');
+    });
     // A generated silent WAV tests real HTMLMediaElement behavior without an
     // external media download, social account, playback gesture or network.
     const dataSize=8000*2*2,wav=Buffer.alloc(44+dataSize);

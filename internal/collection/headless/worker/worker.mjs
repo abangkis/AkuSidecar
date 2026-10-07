@@ -63,7 +63,9 @@ export async function sourceAssets(bridgePath, source) {
         { relative: `AkuBridge/adapters/${source}-adapter.js`, path: resolve(bridge, `adapters/${source}-adapter.js`), execute: true },
         { relative: 'worker/vendor/adapter-extract.js', path: resolve(root, 'vendor/adapter-extract.js'), execute: true },
       ];
-  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'worker.mjs', 'package.json']
+  selected.splice(selected.findIndex(asset => asset.relative === `AkuBridge/adapters/${source}-adapter.js`) + 1, 0,
+    { relative: 'AkuBridge/source-freshness-runtime.js', path: resolve(bridge, 'source-freshness-runtime.js'), execute: true });
+  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {

@@ -5,6 +5,8 @@ import { resolveStructuredMedia } from './structured-media.mjs';
 import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget } from './additional-source-media.mjs';
 import { photoRecaptureObservation } from './photo-recapture.mjs';
 import { createXTextRecovery } from './x-text-recovery.mjs';
+import { recoverHeadlessFreshness } from './headless-freshness.mjs';
+import { sourceFreshnessContractFor } from './source-freshness-contract.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -200,6 +202,20 @@ export async function capture(browser, assetsBySource, source, payload) {
     }
   }
 
+  let freshness;
+  {
+    const recovered = await recoverHeadlessFreshness({source, contract: sourceFreshnessContractFor(assets, source),
+      page, snapshot, options, deadlineAt: deadline,
+      backend: browser.backend, collectSnapshot: async (phaseDeadline) => {
+        await inject(page, assets, phaseDeadline);
+        return collect(page, source, phaseDeadline);
+      }});
+    snapshot = recovered.snapshot;
+    freshness = recovered.freshness;
+    const freshnessStateError = sourceStateError(snapshot);
+    if (freshnessStateError) throw freshnessStateError;
+  }
+
   let quoteRecovery = null;
   let quoteIdentityProbe = null;
   if (source === 'x' && options.acquisitionRound === 1) {
@@ -274,7 +290,7 @@ export async function capture(browser, assetsBySource, source, payload) {
       source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
       captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
       frontier,
-      freshness: { requestedPolicy: options.sourceFreshnessPolicy, workerStatus: 'not_verified', limitation: 'CDP worker cannot apply AkuBridge tab wake or freshness qualification' },
+      freshness,
     });
     if(photoResolution) observation.coverage.photoParentResolution={status:'verified',photoId:photoResolution.photoId,
       parentPlatformId:photoResolution.nativeId,provenance:'structured_photo_parent_and_matching_native_post'};
