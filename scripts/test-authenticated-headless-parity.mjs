@@ -254,6 +254,35 @@ async function bridgeHealth() {
     authorizedSources:(value?.actual?.sourceAccess?.sources || []).filter(s=>s.ready===true && s.permissionGranted===true && s.scriptRegistered===true).map(s=>s.source)};
 }
 
+async function collectionStatus() {
+  const response = await fetch('http://127.0.0.1:11122/api/collection/runtime', {signal: AbortSignal.timeout(5000)});
+  if (!response.ok) throw new HarnessError('collection_runtime_unavailable');
+  return (await response.json()).collectionRuntime;
+}
+
+// A headless owner has no live MV3 heartbeat. Require the coordinator's
+// authoritative readiness and permissions instead, retaining browser checks.
+export function validateCollectionReadiness(runtime, bridge, sources = [], expectedEffective = null) {
+  if (!runtime || runtime.available !== true || runtime.state !== 'ready'
+      || runtime.pending !== false || runtime.activeLeases !== 0 || runtime.nativeReaderOnly === true
+      || !['headless', 'browser'].includes(runtime.effective)
+      || (expectedEffective && runtime.effective !== expectedEffective)) {
+    throw new HarnessError('collection_runtime_not_idle_ready');
+  }
+  let authorizedSources;
+  if (runtime.effective === 'headless') {
+    if (runtime.headlessAvailable !== true || !Array.isArray(runtime.authorizedSources)) {
+      throw new HarnessError('headless_unavailable');
+    }
+    authorizedSources = runtime.authorizedSources;
+  } else {
+    if (bridge?.compatible !== true) throw new HarnessError('bridge_incompatible');
+    authorizedSources = bridge.authorizedSources || [];
+  }
+  if (sources.some(source => !authorizedSources.includes(source))) throw new HarnessError('source_access_unconfirmed');
+  return {effective: runtime.effective, state: runtime.state, generation: runtime.generation, authorizedSources};
+}
+
 async function inboxState() {
   const response = await fetch('http://127.0.0.1:11122/api/inbox?limit=100', {signal: AbortSignal.timeout(5000)});
   if (!response.ok) throw new HarnessError('inbox_unavailable');
@@ -265,8 +294,8 @@ async function inboxState() {
 }
 
 export async function preflight(registration, selectedSources=[]) {
-  const [service, owners, bridge, inbox] = await Promise.all([
-    serviceStatus(), exactProfileOwners(registration.profile), bridgeHealth(), inboxState(),
+  const [service, owners, bridge, inbox, runtime] = await Promise.all([
+    serviceStatus(), exactProfileOwners(registration.profile), bridgeHealth(), inboxState(), collectionStatus(),
   ]);
   if (service.lifecycle !== 'running' || service.health?.status !== 'healthy'
       || service.operatorHold !== 'none' || !Array.isArray(service.ownedPids) || service.ownedPids.length === 0) {
@@ -275,13 +304,14 @@ export async function preflight(registration, selectedSources=[]) {
   if (owners.length !== 1 || owners[0].executable?.toLowerCase() !== registration.captureExe.toLowerCase()) {
     throw new HarnessError('original_profile_ownership_unhealthy');
   }
-  if (!bridge.compatible) throw new HarnessError('bridge_incompatible');
-  if (selectedSources.some(source=>!bridge.authorizedSources.includes(source))) throw new HarnessError('source_access_unconfirmed');
+  const collection = validateCollectionReadiness(runtime, bridge, selectedSources, registration.expectedEffective);
+  registration.expectedEffective = collection.effective;
   return {
     service: {lifecycle: service.lifecycle, health: service.health.status, ownedProcessCount: service.ownedPids.length},
     exactProfileOwnerCount: owners.length,
     registeredChromeExecutableMatch: true,
     bridge,
+    collection,
     inbox,
   };
 }
@@ -448,19 +478,22 @@ async function captureRequest(client, report, source, kind, target, runtimeWorkD
 }
 
 async function restoreHealthy(registration) {
-  const [service, owners, bridge] = await Promise.all([
-    serviceStatus(), exactProfileOwners(registration.profile), bridgeHealth(),
+  const [service, owners, bridge, runtime] = await Promise.all([
+    serviceStatus(), exactProfileOwners(registration.profile), bridgeHealth(), collectionStatus(),
   ]);
+  let collection = null;
+  try { collection = validateCollectionReadiness(runtime, bridge, [], registration.expectedEffective); } catch {}
   const healthy = service.lifecycle === 'running' && service.health?.status === 'healthy'
     && service.operatorHold === 'none' && Array.isArray(service.ownedPids) && service.ownedPids.length > 0
     && owners.length === 1 && owners[0].executable?.toLowerCase() === registration.captureExe.toLowerCase()
-    && bridge.compatible === true;
+    && collection !== null;
   return {
     healthy,
     serviceRunning: service.lifecycle === 'running' && service.health?.status === 'healthy',
     exactProfileOwnerCount: owners.length,
     registeredChromeExecutableMatch: owners.length === 1 && owners[0].executable?.toLowerCase() === registration.captureExe.toLowerCase(),
     bridge,
+    collection,
   };
 }
 
@@ -518,12 +551,10 @@ export async function restoreOriginal(registration, stopIssued, runtimeDeadline)
         }};
       }
       try {
-        const bridge = await bridgeHealth();
-        if (bridge.compatible) return {restored: true, blocked: false, verified: {
-          serviceRunning: true, exactProfileOwnerCount: 1, registeredChromeExecutableMatch: true, bridge,
-        }};
+        const verified = await restoreHealthy(registration);
+        if (verified.healthy) return {restored: true, blocked: false, verified};
       } catch {}
-      return {restored: false, blocked: true, reason: 'profile_owner_present_bridge_unverified'};
+      return {restored: false, blocked: true, reason: 'profile_owner_present_collection_unverified'};
     }
     // In the stopped/zero-owner state, Bridge health must not prevent Supervisor start.
     await supervisor(['start', 'akusidecar', '--actor', 'codex', '--reason', 'restore original runtime after authenticated parity QA', '--request-id', randomUUID()]);

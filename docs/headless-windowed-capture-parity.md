@@ -62,3 +62,37 @@ On 6 October 2026, a trusted native-post click completed profile handoff and rea
 The authorized fix separates foreground verification from one-shot navigation. Only the authenticated direct-reader path can fall back after that exact Windows rejection, with explicit matching focus/visibility diagnostics, a live context, an unexpired binding, and a revalidated marker tab in the original owned window. Changed pages/windows, cancelled or expired requests, missing diagnostics, transport failures and other rejection reasons remain rejected. Normal activation still verifies foreground before navigation.
 
 Fallback navigation reports `foreground: manual_required` and asks the user to select the reader window manually. It does not report successful foreground verification or release the reader's profile ownership. Runtime restart/reload and real Windows activation validation remain separate from source-level regression tests.
+
+## Bounded Darek text validation, 7 October 2026
+
+The user authorized updating the parity QA harness to accept an idle, ready
+headless coordinator without a windowed Bridge heartbeat. Browser mode retains
+its heartbeat and source-access checks. Both modes still require a healthy
+Supervisor, exactly one owner matching the registered Chromium executable,
+zero active leases, no native-reader ownership and no pending transition.
+Restoration verifies the original effective backend rather than treating an
+absent MV3 heartbeat as failed headless restoration.
+
+At 14:24 WIB, the current source worker captured X post
+`x:status:2106867448746021278` at its stored canonical Darek permalink. One exact
+identity matched; its 431-character primary text matched the user's native-post
+screenshot after whitespace normalization, including the final Claude paragraph.
+This is a supplementary comparison against the historical screenshot, not a
+fresh paired windowed/headless parity claim. The older Timeline record was not
+rewritten. The worker explicitly shut down, released the profile, and Supervisor
+restored a healthy headless owner. The receipt is
+`build/darek-validation-20261007-receipt.json` (local QA artifact).
+
+The owner subsequently opened two native posts and confirmed closing them with
+the close-and-resume button. Logs show both navigation requests completing at
+14:25:51 and 14:26:00 WIB, with reuse on the second request, followed by profile
+release at 14:26:04. The coordinator returned to ready headless with zero leases
+and `nativeReaderBlocked: false`.
+
+Immediate batch preparation remained guarded by the existing generation
+allowance. No allowance or scheduling setting was changed. After the allowance
+became available, scheduler session `session_d9968e0ef48fe6f1e2c966ea398e4ae0`
+started at 14:34:11 and completed at 14:35:00 WIB, with X, Instagram and LinkedIn
+runs completed without errors. Headless remained ready with zero active leases.
+The read-only observer receipt is `build/reader-close-resume-live-20261007.json`.
+The deferred manual-tab closure policy remains unchanged.
