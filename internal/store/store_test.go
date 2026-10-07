@@ -723,6 +723,27 @@ func TestLatestTimelineCheckUsesLatestTerminalSessionEvenWithZeroAdditions(t *te
 	if latest == nil || latest.SessionID != second.ID || latest.Status != "partial" || latest.CompletedAt != "2026-07-16T11:00:00Z" || latest.AddedItems != 0 {
 		t.Fatalf("latest=%+v", latest)
 	}
+	if latest.Outcome != "empty_capture" || latest.Diagnostics == nil || latest.Diagnostics.CapturedCandidates != 0 {
+		t.Fatalf("empty check diagnostics=%+v", latest)
+	}
+	failed, err := createVisibleUpdateSession(state, ctx, "failed capture check", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedRuns, err := state.listRuns(ctx, failed.ID)
+	if err != nil || len(failedRuns) == 0 {
+		t.Fatalf("runs=%+v err=%v", failedRuns, err)
+	}
+	if err := state.FailRun(ctx, failedRuns[0].ID, domain.Failure{Stage: "capture", Code: "capture_failed", Message: "Fixture capture failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `UPDATE sessions SET status='failed',completed_at='2026-07-16T12:00:00Z' WHERE id=?`, failed.ID); err != nil {
+		t.Fatal(err)
+	}
+	latest, err = state.LatestTimelineCheck(ctx)
+	if err != nil || latest == nil || latest.SessionID != failed.ID || latest.Outcome != "capture_failed" || latest.Diagnostics.FailedCaptureRuns != 1 {
+		t.Fatalf("failed check must replace previous success: latest=%+v err=%v", latest, err)
+	}
 }
 
 func TestCalibrationSessionReflectsSnapshotLiveInfluence(t *testing.T) {

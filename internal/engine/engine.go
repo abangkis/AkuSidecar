@@ -1744,7 +1744,13 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 			plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, nil, settings.ReasoningAcquisitionProfile)
 			_ = e.store.SaveTelemetry(context.Background(), telemetry)
 			if planErr != nil {
-				return planErr
+				failure, typed := reasoning.ProviderFailureFrom(planErr)
+				if ctx.Err() != nil || errors.Is(planErr, context.Canceled) || errors.Is(planErr, context.DeadlineExceeded) || !typed || failure.Code != "incomplete_response" || failure.Category != "response_missing" {
+					return planErr
+				}
+				// Acquisition planning is optional. Never use the partial model
+				// answer; retain accepted evidence and omit the extra capture.
+				plan = reasoning.AcquisitionPlan{Decision: "finish", Reason: "The optional acquisition planner returned an incomplete response; evaluate the accepted capture without an extra acquisition round."}
 			}
 			receipt := map[string]any{
 				"mode":                  "model",
@@ -1752,6 +1758,12 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 				"reason":                plan.Reason,
 				"followUpQueued":        false,
 				"followUpNewCandidates": 0,
+			}
+			if planErr != nil {
+				receipt["mode"] = "fallback"
+				receipt["plannerStatus"] = "failed"
+				receipt["failureCode"] = "incomplete_response"
+				receipt["fallbackPolicy"] = "evaluate_captured_skip_follow_up"
 			}
 			if plan.Decision == "request_follow_up" {
 				continuation := continuationFrom(merged)

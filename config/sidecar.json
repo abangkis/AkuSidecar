@@ -83,7 +83,7 @@
           "modelId": "gemini-3.5-flash-lite",
           "minReasoningTier": "high",
           "reasoningOptionId": "high",
-          "maxOutputTokens": 512
+          "maxOutputTokens": 2048
         },
         "evaluation": {
           "modelId": "gemini-3.5-flash-lite",

@@ -308,7 +308,7 @@ func TestRepositorySidecarConfigLoads(t *testing.T) {
 		t.Fatalf("repository c2patool path=%q", cfg.MediaProvenance.C2PAToolPath)
 	}
 	gemini := cfg.Reasoning.Providers["gemini-flash-lite"]
-	if gemini.Evaluation.MaxOutputTokens != 8192 || gemini.SemanticEvent.MaxOutputTokens != 8192 || gemini.AIDetection.MaxOutputTokens != 4096 {
+	if gemini.Planning.MaxOutputTokens != 2048 || gemini.Evaluation.MaxOutputTokens != 8192 || gemini.SemanticEvent.MaxOutputTokens != 8192 || gemini.AIDetection.MaxOutputTokens != 4096 {
 		t.Fatalf("Gemini workload output budgets=%+v", gemini)
 	}
 }

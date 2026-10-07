@@ -152,7 +152,7 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 		err = s.db.QueryRowContext(ctx,
 			"SELECT s.id,s.status,s.completed_at,COUNT(t.id),0 "+
 				"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
-				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=s.id AND b.state<>'visible') "+
+				"WHERE s.status IN ('completed','partial','failed') AND s.completed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=s.id AND b.state<>'visible') "+
 				"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
 			Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems, &value.DuplicateReports)
 	} else {
@@ -162,7 +162,7 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 				"SUM(CASE WHEN t.id IS NOT NULL AND r.relation='duplicate_report' THEN 1 ELSE 0 END) "+
 				"FROM sessions s LEFT JOIN timeline_items t ON t.session_id=s.id "+
 				"LEFT JOIN semantic_event_reports r ON r.timeline_id=t.id "+
-				"WHERE s.status IN ('completed','partial') AND s.completed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=s.id AND b.state<>'visible') "+
+				"WHERE s.status IN ('completed','partial','failed') AND s.completed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM auto_update_batches b WHERE b.session_id=s.id AND b.state<>'visible') "+
 				"GROUP BY s.id,s.status,s.completed_at ORDER BY s.completed_at DESC LIMIT 1").
 			Scan(&value.SessionID, &value.Status, &value.CompletedAt, &value.AddedItems, &value.DuplicateReports)
 	}
@@ -172,7 +172,89 @@ func (s *Store) LatestTimelineCheck(ctx context.Context) (*domain.TimelineCheckS
 	if err != nil {
 		return nil, err
 	}
+	diagnostics, err := s.timelineCheckDiagnostics(ctx, value.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	value.Diagnostics = diagnostics
+	value.Outcome = timelineCheckOutcome(value.AddedItems, diagnostics)
+	if value.AddedItems == 0 && value.DuplicateReports > 0 && value.Outcome == "no_selected_items" {
+		value.Outcome = "duplicate_reports_only"
+	}
 	return &value, nil
+}
+
+func (s *Store) timelineCheckDiagnostics(ctx context.Context, sessionID string) (*domain.TimelineCheckDiagnostics, error) {
+	runs, err := s.listRuns(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	d := &domain.TimelineCheckDiagnostics{}
+	for _, run := range runs {
+		observations, err := s.Observations(ctx, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		var snapshots []domain.Snapshot
+		for _, observation := range observations {
+			snapshots = append(snapshots, observation.Snapshots...)
+		}
+		keys := map[string]bool{}
+		for _, snapshot := range capture.ReconcileSnapshots(run.Source, snapshots) {
+			for _, block := range snapshot.Blocks {
+				if block.EvidenceKey != "" {
+					keys[block.EvidenceKey] = true
+				}
+			}
+		}
+		d.CapturedCandidates += len(keys)
+		planning, _ := run.Coverage["acquisitionPlanning"].(map[string]any)
+		planningFallback := planning["fallbackPolicy"] == "evaluate_captured_skip_follow_up"
+		if planningFallback {
+			d.PlanningFallbackRuns++
+		}
+		if run.Error != nil && run.Status == "failed" {
+			if run.Error.Stage == "reasoning" {
+				d.FailedReasoningRuns++
+				var phase string
+				err := s.db.QueryRowContext(ctx, `SELECT phase FROM reasoning_invocations WHERE run_id=? AND status='failed' ORDER BY created_at DESC LIMIT 1`, run.ID).Scan(&phase)
+				if err != nil && err != sql.ErrNoRows {
+					return nil, err
+				}
+				if phase == "acquisition_planning" && !planningFallback {
+					d.FailedPlanningRuns++
+				}
+			} else if run.Error.Stage == "capture" {
+				d.FailedCaptureRuns++
+			}
+		}
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM candidate_assessments WHERE run_id IN (SELECT id FROM runs WHERE session_id=?)`, sessionID).Scan(&d.EvaluatedCandidates); err != nil {
+		return nil, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_continuity_occurrences WHERE run_id IN (SELECT id FROM runs WHERE session_id=?) AND action='fail_fast'`, sessionID).Scan(&d.SkippedResurfaces); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func timelineCheckOutcome(added int, d *domain.TimelineCheckDiagnostics) string {
+	switch {
+	case d.FailedPlanningRuns > 0:
+		return "planning_failed"
+	case d.FailedReasoningRuns > 0:
+		return "reasoning_failed"
+	case d.FailedCaptureRuns > 0:
+		return "capture_failed"
+	case added > 0:
+		return "added"
+	case d.CapturedCandidates == 0:
+		return "empty_capture"
+	case d.SkippedResurfaces >= d.CapturedCandidates:
+		return "unchanged"
+	default:
+		return "no_selected_items"
+	}
 }
 
 // TimelineBatchSummaries returns the durable check metadata for sessions that

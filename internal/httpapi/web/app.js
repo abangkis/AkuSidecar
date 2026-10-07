@@ -6,6 +6,7 @@ import { nativeReaderNotice, nativeReaderResumeMessage } from "./native-reader-n
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
+import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
 import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
@@ -6940,9 +6941,8 @@ function renderTimelineNow(items, latestCheck, timelineBatches = null, highlight
   stopObservingInlineVideoVisibilityWithin(container);
   container.replaceChildren();
   if (latestCheck) {
-    const unique = latestCheck.addedItems ?? 0;
     const duplicates = latestCheck.duplicateReports ?? 0;
-    const parts = [unique ? `${unique} new item${unique === 1 ? "" : "s"}` : "No new items"];
+    const parts = [formatTimelineCheckSummary(latestCheck)];
     if (duplicates) parts.push(`${duplicates} duplicate report${duplicates === 1 ? "" : "s"}`);
     if (routed.drawer.length) parts.push(`${routed.drawer.length} in AI Signals`);
     if (routed.hidden.length) parts.push(`${routed.hidden.length} AI-signal post${routed.hidden.length === 1 ? "" : "s"} hidden`);

@@ -15,7 +15,7 @@ func TestGeminiLiveSidecarWorkloads(t *testing.T) {
 	if os.Getenv("AKU_GEMINI_LIVE") != "1" {
 		t.Skip("set AKU_GEMINI_LIVE=1 to run the live Gemini Sidecar gate")
 	}
-	planning := config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", ReasoningOptionID: "high", Assurance: "provider_strict", MaxOutputTokens: 512}
+	planning := config.ModelConfig{ModelID: "gemini-3.5-flash-lite", MinReasoningTier: "high", ReasoningOptionID: "high", Assurance: "provider_strict", MaxOutputTokens: 2048}
 	evaluation := planning
 	evaluation.MaxOutputTokens = 8192
 	provider, err := NewGemini(config.Config{
@@ -34,12 +34,24 @@ func TestGeminiLiveSidecarWorkloads(t *testing.T) {
 	defer cancel()
 	run, observation := fakeAppServerInput()
 	t.Run("planning", func(t *testing.T) {
-		plan, telemetry, err := provider.Plan(ctx, run, observation, nil)
-		if err != nil || (plan.Decision != "finish" && plan.Decision != "request_follow_up") {
-			t.Fatalf("planning gate failed: decision=%q provider=%q status=%q err=%v", plan.Decision, telemetry.Provider, telemetry.Status, err)
-		}
-		if telemetry.InputTokens == nil || telemetry.OutputTokens == nil {
-			t.Fatal("planning gate returned incomplete token telemetry")
+		for _, known := range []bool{true, false} {
+			capture := observation
+			capture.Coverage = map[string]any{"captureMode": "headless_worker", "performedScrolls": 2, "scrollStopReason": "budget_exhausted", "frontier": map[string]any{"newCandidateCount": 2, "hasMoreCandidateSignal": true, "anchorKeys": []string{"x:status:10001"}, "continuationReady": true}}
+			if !known {
+				capture.Coverage = map[string]any{"frontier": map[string]any{"newCandidateCount": nil, "hasMoreCandidateSignal": nil, "continuationReady": nil}}
+			}
+			plan, telemetry, err := provider.Plan(ctx, run, capture, nil)
+			if err != nil || (plan.Decision != "finish" && plan.Decision != "request_follow_up") {
+				t.Fatalf("planning gate failed: known=%t decision=%q provider=%q status=%q err=%v", known, plan.Decision, telemetry.Provider, telemetry.Status, err)
+			}
+			if telemetry.InputTokens == nil || telemetry.OutputTokens == nil {
+				t.Fatal("planning gate returned incomplete token telemetry")
+			}
+			var thinking any = "unknown"
+			if telemetry.ReasoningOutputTokens != nil {
+				thinking = *telemetry.ReasoningOutputTokens
+			}
+			t.Logf("known_frontier=%t decision=%s input=%d output=%d reasoning=%v", known, plan.Decision, *telemetry.InputTokens, *telemetry.OutputTokens, thinking)
 		}
 	})
 	t.Run("evaluation", func(t *testing.T) {

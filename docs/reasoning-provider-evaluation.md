@@ -331,3 +331,31 @@ model selection may not remove or weaken the two privacy preferences. Receipts
 may state which policy the SDK requested, but must not claim that the SDK
 independently audited the upstream provider. Availability under this filter is
 unknown until the separate live gate is run.
+
+## Optional acquisition planning recovery — 2026-10-07
+
+Gemini Planning now uses 2,048 output tokens, increased from 512. Other workload
+budgets and provider settings are unchanged. Two bounded synthetic live calls
+completed with high reasoning: a known continuation frontier returned
+`request_follow_up` (226 input, 38 output, 543 reasoning tokens), and an unknown
+frontier returned `finish` (217 input, 43 output, 662 reasoning tokens). This
+supports the budget change; it does not guarantee every future call succeeds.
+
+An optional planner failure typed as `incomplete_response` / `response_missing`
+now retains accepted capture for normal candidate evaluation. The partial model
+answer is discarded, no extra acquisition round is queued, and the run records
+`fallbackPolicy: evaluate_captured_skip_follow_up` alongside the failed planning
+invocation. Cancellation, authentication, untyped planner failures, and candidate
+evaluation failures retain their existing failure behavior.
+
+Timeline latest-check summaries now include failed terminal sessions and bounded
+diagnostic counts. The UI distinguishes empty capture, unchanged candidates in
+cooldown, planning or evaluation failure, no selected items, and reports matching
+events already represented in the timeline. A successful evaluation after the
+optional-planning fallback remains visible as such. No captured post body or raw
+provider response is added to this summary.
+
+Regression coverage exercises accepted capture through the engine and SQLite
+store, including discarded partial follow-up decisions and failures that must
+remain failures. The live gate used synthetic input only; development-runtime
+restart and a new user update remain separate validation steps.

@@ -778,11 +778,23 @@ type InboxPreferenceDecision struct {
 }
 
 type TimelineCheckSummary struct {
-	SessionID        string `json:"sessionId"`
-	Status           string `json:"status"`
-	CompletedAt      string `json:"completedAt"`
-	AddedItems       int    `json:"addedItems"`
-	DuplicateReports int    `json:"duplicateReports"`
+	SessionID        string                    `json:"sessionId"`
+	Status           string                    `json:"status"`
+	CompletedAt      string                    `json:"completedAt"`
+	AddedItems       int                       `json:"addedItems"`
+	DuplicateReports int                       `json:"duplicateReports"`
+	Outcome          string                    `json:"outcome,omitempty"`
+	Diagnostics      *TimelineCheckDiagnostics `json:"diagnostics,omitempty"`
+}
+
+type TimelineCheckDiagnostics struct {
+	CapturedCandidates   int `json:"capturedCandidates"`
+	SkippedResurfaces    int `json:"skippedResurfaces"`
+	EvaluatedCandidates  int `json:"evaluatedCandidates"`
+	FailedCaptureRuns    int `json:"failedCaptureRuns"`
+	FailedReasoningRuns  int `json:"failedReasoningRuns"`
+	FailedPlanningRuns   int `json:"failedPlanningRuns"`
+	PlanningFallbackRuns int `json:"planningFallbackRuns"`
 }
 
 // TimelineBatchSummary is the durable session-level metadata needed to render
