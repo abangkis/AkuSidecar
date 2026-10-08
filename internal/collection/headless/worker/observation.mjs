@@ -10,6 +10,14 @@ const STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS = [
   'resolverAmbiguousCandidateCount', 'resolverTraversedNodeCount', 'resolverMatchedStructuredNodeCount',
   'resolverMatchedMediaObjectCount', 'ownSafePairCount', 'domVideoPosterCount', 'domImageCount',
   'matchedPosterPathCount', 'enrichedVideoCount', 'unmatchedVideoPosterCount', 'resolvedPosts', 'unresolvedPosts',
+  'additionalMediaAttemptedPostCount', 'additionalMediaSkippedPostCount', 'additionalMediaErrorPostCount',
+  'additionalMediaRetryCandidateCount', 'additionalMediaRetryAttemptCount', 'additionalMediaRetryRecoveredCount',
+  'additionalMediaRetryNoMatchCount', 'additionalMediaRetryErrorCount', 'additionalMediaRetrySkippedDeadlineCount',
+  'additionalMediaRetrySkippedCandidateCapCount', 'additionalMediaOwnedUrlCount',
+  'additionalMediaResolverBoundedAttemptCount', 'additionalMediaResolverCandidateCount',
+  'additionalMediaReturnedCandidateCount', 'additionalMediaExactCandidateCount',
+  'additionalMediaInspectedScriptCount', 'additionalMediaParsedScriptCount', 'additionalMediaRejectedScriptCount',
+  'additionalMediaInspectedBytes', 'additionalMediaTraversedNodeCount', 'additionalMediaMatchedMediaObjectCount',
 ];
 
 export function canonicalSourceURL(source, raw) {
@@ -280,12 +288,13 @@ function structuredMediaDiagnosticSnapshot(summary, index) {
     available: typeof value.available === 'boolean' ? value.available : null,
     bounded: typeof value.bounded === 'boolean' ? value.bounded : null,
     resolverBounded: typeof value.resolverBounded === 'boolean' ? value.resolverBounded : null,
-    ...Object.fromEntries(STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS.map(key => [key, boundedDiagnosticCount(value[key])])),
+    ...Object.fromEntries(STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS.map(key => [key,
+      boundedDiagnosticCount(value[key], key === 'additionalMediaInspectedBytes' ? 32_000_000 : 1_000_000)])),
   };
 }
 
-function boundedDiagnosticCount(value) {
-  return Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : null;
+function boundedDiagnosticCount(value, maximum = 1_000_000) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= maximum ? value : null;
 }
 
 export function captureError(code, message) {

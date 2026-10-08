@@ -10,6 +10,7 @@ import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
 import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
+import { createPlaybackRecoveryQueue } from "./playback-recovery-queue.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
@@ -230,7 +231,6 @@ const state = {
   backToTopBoundary: null,
   mediaRecaptureActive: false,
   foregroundRecaptureOffers: new Map(),
-  playbackRecoveryAttempts: new Map(),
   pendingSettings: null,
   seenTimelineItems: new Set(),
   aiDeepPoller: null,
@@ -5401,6 +5401,7 @@ async function closeNativeReadersAndResume() {
 }
 
 function syncRunButtons() {
+  drainPlaybackRecovery();
   renderNativeReaderNotice(state.bootstrap?.autoUpdate);
   const reason = runDisabledReason();
   const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError);
@@ -8097,14 +8098,37 @@ function queueInlinePlaybackRecovery(entry, source, playbackUrl) {
   if (
     descriptor?.playbackRecoveryCapability !== "native_post_recapture" ||
     !entry?.id || !safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, source) ||
-    state.session || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect
+    !safePlaybackUrl(playbackUrl, source)
   ) return;
-  if (state.playbackRecoveryAttempts.get(entry.id) === playbackUrl) return;
-  if (state.playbackRecoveryAttempts.size >= 64) {
-    state.playbackRecoveryAttempts.delete(state.playbackRecoveryAttempts.keys().next().value);
+  if (playbackRecovery.enqueue({ id: entry.id, source, playbackUrl }) && !playbackRecoveryReady()) {
+    showNotice("Video refresh queued. It will run when collection is ready.");
   }
-  state.playbackRecoveryAttempts.set(entry.id, playbackUrl);
-  void recaptureMedia(entry, null, "background", "playback_error");
+  drainPlaybackRecovery();
+}
+
+function playbackRecoveryReady() {
+  const runtime = state.bootstrap?.collectionRuntime;
+  return Boolean(state.bootstrap && !state.bootstrapLoading && !state.bootstrapError && !state.sidecarEpochReloading
+    && !state.session && !state.pollInFlight && !state.mediaRecaptureActive && !state.closingNativeReaders
+    && !state.bootstrap.calibration?.active && state.bootstrap.onboarding?.status === "completed"
+    && !runtime?.nativeReaderOnly && !(runtime?.activeLeases > 0)
+    && collectionModeState(runtime, state.bootstrap.bridge?.compatible).canCollect);
+}
+
+const playbackRecovery = createPlaybackRecoveryQueue({
+  isReady: playbackRecoveryReady,
+  resolveEntry: (request) => {
+    const entry = state.timelineItems.find((item) => item.id === request.id);
+    if ((entry?.source || entry?.item?.source) !== request.source
+      || !safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, request.source)) return null;
+    return entry.evidence?.media?.some((media) => media.playbackMode === "inline"
+      && safePlaybackUrl(media.playbackUrl, request.source) === request.playbackUrl) ? entry : null;
+  },
+  recover: (entry) => recaptureMedia(entry, null, "background", "playback_error"),
+});
+
+function drainPlaybackRecovery() {
+  void playbackRecovery.drain().catch((error) => console.warn("Video refresh queue deferred.", error));
 }
 
 function pauseOtherInlineVideos(activeVideo) {
