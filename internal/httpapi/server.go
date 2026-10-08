@@ -1347,7 +1347,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			body.Reason = domain.MediaRecaptureMissingMedia
 		}
 		if !body.Reason.Valid() {
-			return badRequest("reason must be missing_media or playback_error")
+			return badRequest("reason must be missing_media, playback_error, or unresolved_video")
 		}
 		recapture, err := s.engine.QueueMediaRecaptureForReason(ctx, id, body.CaptureMode, body.Reason)
 		if errors.Is(err, engine.ErrFacebookRecaptureUnavailable) {

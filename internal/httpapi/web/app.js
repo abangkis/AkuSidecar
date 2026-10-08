@@ -11,6 +11,7 @@ import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-medi
 import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
 import { createPlaybackRecoveryQueue } from "./playback-recovery-queue.js";
+import { videoPlaybackMissing } from "./video-recapture-policy.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
@@ -5349,12 +5350,16 @@ function renderNativeReaderNotice(status) {
   const notice = nativeReaderNotice(status, {
     busy: state.closingNativeReaders,
     feedback: state.nativeReaderResumeFeedback,
+    runtimeFailure: state.bootstrap?.collectionRuntime?.failure,
   });
   panel.classList.toggle("hidden", !notice.visible);
   panel.setAttribute("aria-busy", String(state.closingNativeReaders));
   setSettingsText($("#native-reader-update-title"), notice.title);
   setSettingsText($("#native-reader-update-detail"), notice.detail);
   setSettingsText($("#native-reader-update-feedback"), notice.feedback);
+  const manualAction = $("#native-reader-manual-action");
+  setSettingsText(manualAction, notice.manualAction);
+  manualAction.classList.toggle("hidden", !notice.manualAction);
   const button = $("#native-reader-close-resume");
   button.disabled = notice.disabled || nativePostOpening;
   setSettingsText(button, notice.button);
@@ -7691,15 +7696,18 @@ function buildSourceCard(entry) {
   const nativePostUrl = safeSourceUrl(item.sourceUrl || evidence.permalink, source);
   const media = buildMedia(evidence.media, source, evidence.contentKind, nativePostUrl, entry);
   if (media) card.append(media);
-  if (evidence.mediaRecovery?.outcome === "unavailable") {
+  const recaptureReason = mediaRecaptureReasonForEntry(entry);
+  if (recaptureReason === "unresolved_video" || evidence.mediaRecovery?.outcome === "unavailable") {
     const unavailable = document.createElement("div");
     unavailable.className = "source-layout-media-unavailable";
     const message = document.createElement("span");
-    message.textContent = "Media was present at the source but unavailable in this captured view.";
+    message.textContent = recaptureReason === "unresolved_video"
+      ? "Video playback was not captured."
+      : "Media was present at the source but unavailable in this captured view.";
     unavailable.append(message);
     unavailable.append(state.foregroundRecaptureOffers.has(entry.id) && state.bootstrap?.collectionRuntime?.effective !== "headless"
       ? buildForegroundRecaptureOffer(entry)
-      : buildMediaRecaptureButton(entry));
+      : buildMediaRecaptureButton(entry, recaptureReason));
     card.append(unavailable);
   }
   const engagement = buildEngagement(evidence.engagement, source);
@@ -9018,13 +9026,21 @@ function safeSourceUrl(value, source) {
   return url.href;
 }
 
-function buildMediaRecaptureButton(entry) {
+function mediaRecaptureReasonForEntry(entry) {
+  const source = entry?.source || entry?.item?.source;
+  if (sourceDescriptor(source)?.playbackRecoveryCapability === "native_post_recapture"
+    && safeSourceUrl(entry?.item?.sourceUrl || entry?.evidence?.permalink, source)
+    && videoPlaybackMissing(entry?.evidence, source, safePlaybackUrl)) return "unresolved_video";
+  return "missing_media";
+}
+
+function buildMediaRecaptureButton(entry, reason = mediaRecaptureReasonForEntry(entry)) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "recapture-button";
-  button.textContent = "Recapture";
+  button.textContent = reason === "unresolved_video" ? "Recapture video" : "Recapture";
   button.disabled = Boolean(state.session) || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect;
-  button.addEventListener("click", () => recaptureMedia(entry, button, "background"));
+  button.addEventListener("click", () => recaptureMedia(entry, button, "background", reason));
   return button;
 }
 
@@ -9091,7 +9107,7 @@ async function recaptureMedia(entry, button, captureMode, reason = "missing_medi
     notice.className = "notice notice-complete";
     notice.setAttribute("role", "status");
     setNoticeText(notice, completed?.outcome === "recovered"
-      ? reason === "playback_error"
+      ? reason === "playback_error" || reason === "unresolved_video"
         ? "Playback refreshed from the native post. Select play again."
         : "Media recaptured from the native post."
       : transport==='sidecar' ? "Media is still unavailable after recapture." : "Media is still unavailable after the foreground capture.");
@@ -9711,7 +9727,7 @@ function safePlaybackUrl(value, source) {
     if (source === "x") {
       if (
         host !== "video.twimg.com" ||
-        !/^\/(?:amplify_video|ext_tw_video|tweet_video)\//.test(url.pathname)
+        !/^\/(?:amplify_video|ext_tw_video|tweet_video)\//.test(url.pathname) || !/\.mp4$/i.test(url.pathname)
       ) return null;
     } else if (source === "linkedin") {
       if (

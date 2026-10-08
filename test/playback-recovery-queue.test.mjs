@@ -103,3 +103,19 @@ test("actual UI drops obsolete playback evidence before idle and waits for other
   f.state.mediaRecaptureActive = false; f.context.syncRunButtons(); await settle();
   assert.equal(f.requests.length, 0);
 });
+
+test("actual UI X playback error uses the existing serial recovery queue", async () => {
+  const f = uiFixture();
+  f.entry.source = "x";
+  f.entry.item.sourceUrl = "https://x.com/example/status/12345";
+  f.entry.evidence.media[0].playbackUrl = "https://video.twimg.com/ext_tw_video/12345/pu/vid/clip.mp4";
+  f.context.safeSourceUrl = (url) => url?.startsWith("https://x.com/") ? url : null;
+  f.context.queueInlinePlaybackRecovery(f.entry, "x", f.entry.evidence.media[0].playbackUrl);
+  assert.equal(f.requests.length, 0);
+  f.state.session = null;
+  f.state.bootstrap.collectionRuntime.activeLeases = 0;
+  f.context.syncRunButtons(); await settle();
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.requests[0].options.body.reason, "playback_error");
+  f.waits[0]({ outcome: "recovered" }); await settle();
+});

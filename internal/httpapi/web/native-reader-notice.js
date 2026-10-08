@@ -1,17 +1,23 @@
-export function nativeReaderNotice(status, { busy = false, feedback = "" } = {}) {
+export function nativeReaderNotice(status, { busy = false, feedback = "", runtimeFailure = "" } = {}) {
   const blocked = status?.nativeReaderBlocked === true;
+  const requiresManualClose = [feedback, runtimeFailure].some(value => /close(?: it)? manually/i.test(value));
+  const manualActionRequired = blocked && !busy && requiresManualClose;
+  const displayedFeedback = requiresManualClose
+    ? blocked && !busy ? "Jendela ini berisi tab yang tidak dapat ditutup otomatis. Tutup jendelanya langsung di browser agar update dapat dilanjutkan." : ""
+    : feedback;
   const since = new Date(status?.nativeReaderBlockedSince ?? "");
   const sinceText = Number.isFinite(since.getTime())
     ? ` Tertunda sejak ${since.toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.`
     : "";
   return {
-    visible: blocked || busy || Boolean(feedback),
+    visible: blocked || busy || Boolean(displayedFeedback),
     disabled: busy || !blocked,
     title: busy ? "Menutup jendela post dan menyiapkan update…"
       : blocked ? "Update tertunda karena jendela post masih terbuka." : "Jendela post sudah ditutup.",
     detail: `Menutup semua jendela post yang dibuka AkuBrowser.${sinceText}`,
     button: busy ? "Menutup jendela post…" : "Tutup jendela post & lanjutkan auto update",
-    feedback,
+    feedback: displayedFeedback,
+    manualAction: manualActionRequired ? "Anda perlu menutup jendela post secara manual." : "",
   };
 }
 

@@ -46,7 +46,7 @@ func (s *Store) createOwnedMediaRecapture(ctx context.Context, timelineID string
 		return domain.MediaRecapture{}, errors.New("media recapture mode must be background or foreground")
 	}
 	if !reason.Valid() {
-		return domain.MediaRecapture{}, errors.New("media recapture reason must be missing_media or playback_error")
+		return domain.MediaRecapture{}, errors.New("media recapture reason must be missing_media, playback_error, or unresolved_video")
 	}
 	var source domain.Source
 	var evidenceKey, itemRaw string
@@ -78,6 +78,10 @@ func (s *Store) createOwnedMediaRecapture(ctx context.Context, timelineID string
 	}
 	failedPlaybackURL := ""
 	switch reason {
+	case domain.MediaRecaptureUnresolvedVideo:
+		if !domain.SupportsPlaybackErrorRecapture(source) || !unresolvedVideo(block, source) {
+			return domain.MediaRecapture{}, errors.New("this item does not have unresolved captured video")
+		}
 	case domain.MediaRecaptureMissingMedia:
 		if len(block.Media) > 0 || stringValue(block.MediaRecovery, "outcome") != "unavailable" {
 			return domain.MediaRecapture{}, errors.New("this item does not have unavailable captured media")
@@ -607,7 +611,17 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 	now := domain.Now()
 	outcome := "unavailable"
 	reason := mediaRecaptureReason(job.Payload)
-	if reason == domain.MediaRecapturePlaybackError {
+	if reason == domain.MediaRecaptureUnresolvedVideo {
+		canonical, valid := domain.CanonicalSourceURL(job.Source, block.Permalink)
+		if !valid || canonical != job.TargetURL {
+			return domain.MediaRecapture{}, errors.New("video recapture did not return the requested native post URL")
+		}
+	}
+	if reason == domain.MediaRecapturePlaybackError || reason == domain.MediaRecaptureUnresolvedVideo {
+		original, loadErr := timelineEvidenceFrom(ctx, tx, job.TimelineID, job.EvidenceKey)
+		if loadErr != nil {
+			return domain.MediaRecapture{}, loadErr
+		}
 		failedPlaybackURL := stringValue(job.Payload, "failedPlaybackUrl")
 		if inlinePlaybackURL(block, job.Source, failedPlaybackURL) != "" {
 			outcome = "recovered"
@@ -628,6 +642,16 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 			"playbackReplacementChanged":  outcome == "recovered",
 			"playbackRecoveryMode":        recoveryMode,
 		})
+		if reason == domain.MediaRecaptureUnresolvedVideo {
+			mediaRecovery["acquisitionStage"] = "unresolved_video_recapture"
+			if outcome == "unavailable" {
+				mediaRecovery["expected"] = videoExpectation(original)
+				if len(block.Media) == 0 {
+					block.Media = original.Media
+				}
+				block.ContentKind = original.ContentKind
+			}
+		}
 		if outcome == "recovered" || job.Payload["foregroundAuthorized"] == true {
 			delete(mediaRecovery, "visibilityRequirement")
 			delete(mediaRecovery, "limitation")
@@ -816,6 +840,57 @@ func inlinePlaybackURL(block domain.Block, source domain.Source, excluded string
 		}
 	}
 	return ""
+}
+
+func videoExpectation(block domain.Block) []string {
+	expected := []string{"video"}
+	add := func(kind any) {
+		if kind == "image" && len(expected) == 1 {
+			expected = append(expected, "image")
+		}
+	}
+	switch kinds := block.MediaRecovery["expected"].(type) {
+	case []any:
+		for _, kind := range kinds {
+			add(kind)
+		}
+	case []string:
+		for _, kind := range kinds {
+			add(kind)
+		}
+	}
+	return expected
+}
+
+// A poster does not satisfy captured video playback. Admit only explicit video
+// evidence, and reject posts that already have a source-trusted inline URL.
+func unresolvedVideo(block domain.Block, source domain.Source) bool {
+	if inlinePlaybackURL(block, source, "") != "" {
+		return false
+	}
+	if block.ContentKind == "video" {
+		return true
+	}
+	for _, media := range block.Media {
+		if media["kind"] == "video" || media["kind"] == "video_poster" {
+			return true
+		}
+	}
+	switch expected := block.MediaRecovery["expected"].(type) {
+	case []any:
+		for _, kind := range expected {
+			if kind == "video" {
+				return true
+			}
+		}
+	case []string:
+		for _, kind := range expected {
+			if kind == "video" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func withoutInlinePlayback(values []map[string]any) []map[string]any {

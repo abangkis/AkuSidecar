@@ -1100,12 +1100,13 @@ const (
 type MediaRecaptureReason string
 
 const (
-	MediaRecaptureMissingMedia  MediaRecaptureReason = "missing_media"
-	MediaRecapturePlaybackError MediaRecaptureReason = "playback_error"
+	MediaRecaptureMissingMedia    MediaRecaptureReason = "missing_media"
+	MediaRecapturePlaybackError   MediaRecaptureReason = "playback_error"
+	MediaRecaptureUnresolvedVideo MediaRecaptureReason = "unresolved_video"
 )
 
 func (value MediaRecaptureReason) Valid() bool {
-	return value == MediaRecaptureMissingMedia || value == MediaRecapturePlaybackError
+	return value == MediaRecaptureMissingMedia || value == MediaRecapturePlaybackError || value == MediaRecaptureUnresolvedVideo
 }
 
 const MediaRecaptureAdmissionHybridHeadlessV1 = "hybrid_headless_v1"

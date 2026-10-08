@@ -144,6 +144,7 @@ h3 { letter-spacing: -0.02em; }
 .native-reader-update-notice > div { min-width: 0; }
 .native-reader-update-notice button { flex: 0 0 auto; max-width: 100%; white-space: normal; }
 .native-reader-update-notice [role="status"]:empty { display: none; }
+.native-reader-update-notice .native-reader-manual-action { margin-top: 6px; padding: 9px 11px; border-left: 4px solid #ffdc70; border-radius: 4px; background: rgba(255, 220, 112, 0.12); color: #ffdc70; font-size: 1rem; font-weight: 800; line-height: 1.4; }
 .timeline-actions { display: flex; align-items: center; gap: 8px; }
 .timeline-action-cluster { display: grid; justify-items: end; gap: 7px; }
 .timeline-runner-status { max-width: 15rem; color: var(--muted); font-size: 0.72rem; line-height: 1.35; text-align: right; }

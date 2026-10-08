@@ -78,14 +78,30 @@ func TestMediaOnlyVisionPolicyRequiresTrustedMediaAndOnlyAppliesToInstagram(t *t
 	}
 }
 
+func TestXPlaybackRecoveryUsesOnlyTrustedMP4(t *testing.T) {
+	if !SupportsPlaybackErrorRecapture(SourceX) {
+		t.Fatal("X must declare playback recovery")
+	}
+	for _, raw := range []string{"https://video.twimg.com/ext_tw_video/12345/pu/vid/clip.mp4", "https://video.twimg.com/amplify_video/12345/vid/clip.mp4"} {
+		if _, ok := CanonicalInlinePlaybackURL(SourceX, raw); !ok {
+			t.Fatal(raw)
+		}
+	}
+	for _, raw := range []string{"https://video.twimg.com.evil.test/ext_tw_video/12345/clip.mp4", "https://video.twimg.com/ext_tw_video/12345/master.m3u8", "https://user@video.twimg.com/ext_tw_video/12345/clip.mp4", "https://video.twimg.com:444/ext_tw_video/12345/clip.mp4", "http://video.twimg.com/ext_tw_video/12345/clip.mp4"} {
+		if _, ok := CanonicalInlinePlaybackURL(SourceX, raw); ok {
+			t.Fatal(raw)
+		}
+	}
+}
+
 func TestLinkedInPlaybackRecoveryUsesOnlyProgressiveDMSURLs(t *testing.T) {
 	valid := "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123#ignored"
 	canonical, ok := CanonicalInlinePlaybackURL(SourceLinkedIn, valid)
 	if !ok || canonical != "https://dms.licdn.com/playlist/vid/v2/example/mp4-720p-30fp-crf28/example/0/1?e=123" {
 		t.Fatalf("canonical playback=%q ok=%v", canonical, ok)
 	}
-	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || !SupportsPlaybackErrorRecapture(SourceFacebook) || !SupportsPlaybackErrorRecapture(SourceInstagram) || SupportsPlaybackErrorRecapture(SourceX) {
-		t.Fatal("playback-error recapture capability must remain source-declared for LinkedIn, Facebook, and Instagram")
+	if !SupportsPlaybackErrorRecapture(SourceLinkedIn) || !SupportsPlaybackErrorRecapture(SourceFacebook) || !SupportsPlaybackErrorRecapture(SourceInstagram) || !SupportsPlaybackErrorRecapture(SourceX) {
+		t.Fatal("playback-error recapture capability must remain source-declared for X, LinkedIn, Facebook, and Instagram")
 	}
 	for _, raw := range []string{
 		"https://dms.licdn.com/playlist/vid/v2/example/master.m3u8",

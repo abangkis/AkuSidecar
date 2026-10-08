@@ -19,6 +19,17 @@ test("reader banner distinguishes blocked, closing, failure and clear states", (
   assert.doesNotMatch(nativeReaderNotice({ nativeReaderBlocked: true, nativeReaderBlockedSince: "invalid" }).detail, /Invalid|Tertunda sejak/);
 });
 
+test("manual closure is an explicit user action, including before a failed button click, and clears with runtime state", () => {
+  const runtimeFailure = "native reader window contains an unverified page; close it manually";
+  const status = { nativeReaderBlocked: true };
+  const notice = nativeReaderNotice(status, { runtimeFailure });
+  assert.match(notice.manualAction, /Anda perlu.*secara manual/);
+  assert.match(notice.feedback, /langsung di browser/);
+  assert.equal(nativeReaderNotice(status, { feedback: runtimeFailure }).manualAction, notice.manualAction);
+  assert.equal(nativeReaderNotice(status, { busy: true, runtimeFailure }).manualAction, "");
+  assert.equal(nativeReaderNotice({ nativeReaderBlocked: false }, { feedback: runtimeFailure }).visible, false);
+});
+
 function actionFixture(api) {
   const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
   const state = { bootstrap: { autoUpdate: { nativeReaderBlocked: true } }, closingNativeReaders: false };
