@@ -18,6 +18,7 @@ const STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS = [
   'additionalMediaReturnedCandidateCount', 'additionalMediaExactCandidateCount',
   'additionalMediaInspectedScriptCount', 'additionalMediaParsedScriptCount', 'additionalMediaRejectedScriptCount',
   'additionalMediaInspectedBytes', 'additionalMediaTraversedNodeCount', 'additionalMediaMatchedMediaObjectCount',
+  'nativeVideoFallbackCandidateCount', 'nativeVideoFallbackAttemptCount', 'nativeVideoFallbackRecoveredCount', 'nativeVideoFallbackSkippedCount',
 ];
 
 export function canonicalSourceURL(source, raw) {

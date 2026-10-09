@@ -200,11 +200,11 @@ test('Instagram skips retries for images, foreign candidates, ambiguous candidat
 
 test('Instagram caption enrichment requires same native author and a compatible visible prefix',async()=>{
   const f=fixtures[0];const post={id:f.id,permalink:f.permalink,author:'Fixture',text:'Visible caption...',media:[]};
-  const candidate={platformId:f.id,permalink:f.permalink,author:'Fixture',text:'Visible caption with more detail.'};
+  const candidate={candidateId:f.candidateId,platformId:f.id,permalink:f.permalink,author:'Fixture',text:'Visible caption with more detail.'};
   const run=async candidates=>resolveAdditionalSourceMedia({source:'instagram',posts:[post],deadlineAt:Date.now()+3000,
     feedResolver:{available:true,functionSource:'function captionReader(){}',runtimeRevision:'caption-fixture'},
     page:{evaluate:async()=>({runtimeRevision:'caption-fixture',candidates})}});
   assert.equal((await run([candidate])).posts[0].text,candidate.text);
   for(const candidates of [[{...candidate,author:'Another'}],[{...candidate,text:'Different story'}],[candidate,candidate],
-    [{...candidate,platformId:'instagram:p:Foreign'}]]) assert.equal((await run(candidates)).posts[0].text,post.text);
+    [{...candidate,platformId:'instagram:p:Foreign'}],[{...candidate,candidateId:'instagram:post:Foreign'}]]) assert.equal((await run(candidates)).posts[0].text,post.text);
 });

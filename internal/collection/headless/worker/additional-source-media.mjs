@@ -62,13 +62,15 @@ export async function resolveAdditionalSourceMedia({page,source,posts,resolver,f
       output.push(post); continue;
     }
     if(source==='instagram') {
-      const matches=captions.filter(c=>c?.platformId===post.id && canonicalSourceURL(source,c.permalink)===native);
+      const matches=captions.filter(c=>c?.platformId===post.id && c.candidateId===`instagram:post:${shortcode}`
+        && canonicalSourceURL(source,c.permalink)===native);
       const candidate=matches.length===1 ? matches[0] : null;
       const normalized=value=>String(value || '').replace(/\s+/g,' ').trim();
       const visiblePrefix=normalized(post.text).replace(/(?:\.{3}|…)$/,'').trim();
-      if(candidate && typeof candidate.text==='string' && Array.from(candidate.text).length<=4000 && visiblePrefix
+      if(candidate && typeof candidate.text==='string' && Array.from(candidate.text).length<=4000
+        && typeof candidate.author==='string' && normalized(candidate.author) && normalized(post.author)
         && normalized(candidate.author).toLowerCase()===normalized(post.author).toLowerCase()
-        && candidate.text.length>post.text.length && normalized(candidate.text).startsWith(visiblePrefix)) {
+        && candidate.text.length>String(post.text || '').length && (!visiblePrefix || normalized(candidate.text).startsWith(visiblePrefix))) {
         post={...post,text:candidate.text,textStatus:'structured_caption_native_id_bound',
           presentation:{...(post.presentation || {}),textSource:'native_shortcode_json'},
           limitations:[...(post.limitations || []).filter(v=>v!=='text_may_be_collapsed'),'structured_caption_enrichment',
@@ -280,6 +282,170 @@ function expectsInstagramVideoWithoutPlayback(post) {
     || media.some(item=>item?.kind==='video_poster') || post.contentKind==='video';
   const hasPlayback=media.some(item=>item?.kind==='video' && typeof item.playbackUrl==='string' && item.playbackUrl.length>0);
   return expected && !hasPlayback;
+}
+
+// Native enrichment is worker-owned and bounded across all scroll snapshots.
+// Keep the feed page/frontier intact and never create targets in borrowed Chrome.
+export function createInstagramVideoRecovery({browser,resolver,feedResolver,inspectSnapshot,deadlineAt,
+  maxTargets=2,perTargetMs=6000,totalMs=10000}) {
+  const limit=Math.max(0,Math.min(2,Number.isSafeInteger(maxTargets)?maxTargets:2));
+  const targetMs=Math.max(1,Math.min(6000,Number.isFinite(perTargetMs)?perTargetMs:6000));
+  const budgetMs=Math.max(1,Math.min(10000,Number.isFinite(totalMs)?totalMs:10000));
+  const deadline=Number.isFinite(deadlineAt)?deadlineAt:Date.now()+budgetMs;
+  const outcomes=new Map();
+  let attempted=0,totalDeadline=null,pagePromise=null,closed=false;
+  const available=browser?.backend!=='browser_quiet_hidden' && typeof browser?.createTemporaryPage==='function'
+    && typeof inspectSnapshot==='function' && [resolver,feedResolver].every(r=>r?.available
+      && typeof r.functionSource==='string' && r.functionSource.length<=128*1024);
+  const authorKey=value=>String(value || '').trim().toLowerCase();
+  const fail=outcome=>({outcome});
+
+  async function targetPage(at) {
+    pagePromise ??= Promise.resolve().then(()=>browser.createTemporaryPage(nativeTimeLeft(at))).then(async page=>{
+      if(!page || typeof page.navigate!=='function' || typeof page.evaluate!=='function' || typeof page.close!=='function') {
+        if(typeof page?.close==='function') {
+          try {await page.close();} catch {throw Object.assign(new Error('incomplete temporary Instagram page cleanup failed'),{code:'temporary_target_cleanup_failed'});}
+        }
+        throw new Error('temporary page API is incomplete');
+      }
+      return page;
+    });
+    return nativeWithin(pagePromise,at);
+  }
+
+  async function recover(post,url) {
+    if(!available || closed) return fail('unavailable');
+    if(attempted>=limit) return fail('candidate_cap');
+    totalDeadline ??= Math.min(deadline-500,Date.now()+budgetMs);
+    const at=Math.min(totalDeadline,Date.now()+targetMs);
+    if(at<=Date.now()) return fail('deadline');
+    attempted++;
+    try {
+      const page=await targetPage(at);
+      const navigation=await nativeWithin(page.navigate(url,nativeTimeLeft(at)),at);
+      if(navigation?.errorText) return fail('navigation_failed');
+      let ready=false;
+      while(Date.now()<at) {
+        const state=await nativeWithin(page.evaluate('({url:location.href,ready:document.readyState})',nativeTimeLeft(at)),at);
+        if(state?.url && state.url!=='about:blank' && canonicalSourceURL('instagram',state.url)!==url) return fail('identity_mismatch');
+        if(canonicalSourceURL('instagram',state?.url)===url && state?.ready==='complete') {ready=true;break;}
+        await nativeWithin(new Promise(resolve=>setTimeout(resolve,100)),at);
+      }
+      if(!ready) return fail('deadline');
+      // Policy explicitly disables expansion/clicks on the temporary target.
+      await nativeWithin(page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:false,deadlineAt:${at}}`,nativeTimeLeft(at)),at);
+      for(let poll=0;poll<3;poll++) {
+        const state=await nativeWithin(inspectSnapshot(page,at),at);
+        if(!state || !Array.isArray(state.posts)) return fail('invalid_snapshot');
+        if(state?.loginRequired || state?.challengeDetected || state?.sourceUnavailable) return fail('source_unavailable');
+        const native=await nativeWithin(resolveInstagramNativeTarget({page,requestedUrl:url,
+          snapshot:{...state,posts:[]},resolver:feedResolver,deadlineAt:at}),at);
+        const candidate=native?.posts?.[0];
+        if(candidate) {
+          if(candidate.id!==post.id || canonicalSourceURL('instagram',candidate.permalink)!==url
+            || !authorKey(post.author) || authorKey(candidate.author)!==authorKey(post.author)) return fail('identity_mismatch');
+          const resolution=await nativeWithin(resolveAdditionalSourceMedia({page,source:'instagram',posts:[candidate],resolver,deadlineAt:at}),at);
+          const recovered=resolution.posts[0];
+          if(canonicalSourceURL('instagram',await nativeWithin(page.evaluate('location.href',nativeTimeLeft(at)),at))!==url) return fail('identity_mismatch');
+          if(recovered.mediaEvidence?.additionalStructuredMedia?.status==='observed_owned_urls'
+            && recovered.media.some(m=>m.kind==='video' && m.playbackUrl)) return {outcome:'owned_playback_url_observed',post:recovered};
+        }
+        if(poll<2) await nativeWithin(new Promise(resolve=>setTimeout(resolve,150)),at);
+      }
+      return fail('unresolved');
+    } catch(error) {
+      if(error?.code==='temporary_target_cleanup_failed') throw error;
+      return fail(error?.code==='capture_timeout' || Date.now()>=at ? 'deadline' : 'evaluation_failed');
+    }
+  }
+
+  async function recoverSnapshot(snapshot) {
+    const counts={nativeVideoFallbackCandidateCount:0,nativeVideoFallbackAttemptCount:0,nativeVideoFallbackRecoveredCount:0,
+      nativeVideoFallbackSkippedCount:0};
+    const posts=[];
+    for(const post of Array.isArray(snapshot?.posts)?snapshot.posts:[]) {
+      if(!expectsInstagramVideoWithoutPlayback(post)) {posts.push(post);continue;}
+      counts.nativeVideoFallbackCandidateCount++;
+      const url=canonicalSourceURL('instagram',post.permalink);
+      const route=url?.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)\/$/);
+      if(!route || post.id!==`instagram:${route[1]}:${route[2]}` || !authorKey(post.author)) {
+        counts.nativeVideoFallbackSkippedCount++;posts.push(withNativeDiagnostic(post,'identity_mismatch'));continue;
+      }
+      const key=`${post.id}\0${url}\0${authorKey(post.author)}`;
+      let result=outcomes.get(key);
+      if(!result) {
+        const before=attempted,started=Date.now();
+        result=await recover(post,url);
+        result.elapsedMs=Math.max(0,Date.now()-started);
+        counts.nativeVideoFallbackAttemptCount+=attempted-before;
+        outcomes.set(key,result);
+      }
+      if(!result.post) {
+        counts.nativeVideoFallbackSkippedCount++;
+        posts.push(withNativeDiagnostic(post,result.outcome,result.elapsedMs));continue;
+      }
+      const media=result.post.media;
+      const originalMedia=Array.isArray(post.media)?post.media:[];
+      if(originalMedia.length && !originalMedia.some(m=>media.some(n=>samePath(m.posterUrl || m.url,n.posterUrl || n.url)))) {
+        counts.nativeVideoFallbackSkippedCount++;posts.push(withNativeDiagnostic(post,'poster_mismatch',result.elapsedMs));continue;
+      }
+      // Native carousel order wins; retain any distinct DOM attachment, within
+      // the normal cap. An image poster upgraded to video appears only once.
+      const merged=[...media];
+      for(const item of originalMedia) if(merged.length<20 && !merged.some(m=>samePath(m.posterUrl || m.url,item.posterUrl || item.url))) merged.push(item);
+      const visible=String(post.text || '').replace(/\s+/g,' ').replace(/(?:\.{3}|…)$/,'').trim();
+      const caption=result.post.text;
+      const enrich=typeof caption==='string' && caption.length>String(post.text || '').length
+        && (!visible || caption.replace(/\s+/g,' ').startsWith(visible));
+      const evidence={...(post.mediaEvidence || {}),status:'owned_url_observed_partial',videoStreamStatus:'owned_playback_url_observed',
+        expectedWithoutUrl:(post.mediaEvidence?.expectedWithoutUrl || []).filter(kind=>!merged.some(m=>m.kind===kind)),
+        additionalStructuredMedia:result.post.mediaEvidence.additionalStructuredMedia};
+      counts.nativeVideoFallbackRecoveredCount++;
+      posts.push(withNativeDiagnostic({...post,media:merged,contentKind:'video',
+        ...(enrich ? {text:caption,textStatus:'structured_caption_native_id_bound',
+          presentation:{...(post.presentation || {}),textSource:'native_shortcode_json'}} : {}),
+        mediaExpected:[...new Set([...(post.mediaExpected || []),'video'])],mediaEvidence:evidence,
+        limitations:[...new Set([...(post.limitations || []).filter(v=>v!=='video_stream_not_resolved'),
+          'video_playback_unverified',...(enrich && Array.from(caption).length===4000 ? ['text_may_be_truncated'] : [])])]},
+        result.outcome,result.elapsedMs));
+    }
+    return {...snapshot,posts,structuredMediaResolution:{...(snapshot.structuredMediaResolution || {}),...counts}};
+  }
+
+  async function close() {
+    if(closed) return;
+    closed=true;
+    if(!pagePromise) return;
+    let page;
+    try {page=await pagePromise;} catch(error) {
+      if(error?.code==='temporary_target_cleanup_failed') throw error;
+      return;
+    }
+    try {await page.close();} catch {throw Object.assign(new Error('temporary Instagram recovery page cleanup failed'),{code:'temporary_target_cleanup_failed'});}
+  }
+  return {recoverSnapshot,close};
+}
+
+function withNativeDiagnostic(post,outcome,elapsedMs=0) {
+  return {...post,mediaEvidence:{...(post.mediaEvidence || {}),nativeVideoFallback:{outcome,elapsedMs,
+    identityChecks:'native_url_shortcode_author_and_poster',playbackVerified:false}}};
+}
+function nativeTimeLeft(deadline) {
+  if(Date.now()>=deadline) throw Object.assign(new Error('native video recovery timed out'),{code:'capture_timeout'});
+  return Math.max(1,deadline-Date.now());
+}
+function nativeWithin(promise,deadline) {
+  const operation=Promise.resolve(promise);
+  let ms;
+  try {ms=nativeTimeLeft(deadline);} catch(error) {
+    // The operation may already have started when its caller's deadline expired.
+    operation.catch(()=>{});
+    return Promise.reject(error);
+  }
+  let timer;
+  return Promise.race([operation,new Promise((_,reject)=>{
+    timer=setTimeout(()=>reject(Object.assign(new Error('native video recovery timed out'),{code:'capture_timeout'})),ms);
+  })]).finally(()=>clearTimeout(timer));
 }
 
 function createInstagramSummary(resolver,posts) {

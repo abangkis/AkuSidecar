@@ -2,6 +2,42 @@
 
 Source audit: 5 October 2026. Windowed refers to AkuBridge's visible-browser capture pipeline; native reader display alone is not a capture pipeline. Quiet/hidden browser is a separate backend. This comparison focuses on the X text incident and the shared capture boundaries, not a live parity certification for every source.
 
+## Bounded Instagram native video recovery, 9 October 2026
+
+Feed video that remains unresolved after the existing structured-media pass can
+now use an owned temporary headless page. The capture controller keeps its feed
+page and continuation frontier intact. Quiet/borrowed browser mode, explicit
+native-target capture, image-only posts and posts with an inline video URL do
+not use this fallback.
+
+The recovery ceiling is two distinct post identities per capture, six seconds
+per target and ten seconds total, within the enclosing deadline with 500 ms
+reserved for capture completion. A target receives at most three hydration
+probes. Outcomes are cached across scroll snapshots, and the temporary page is
+closed in the controller's `finally` path, including failure. Cleanup failure
+is surfaced; no user windows are closed.
+
+Both existing Bridge MAIN-world readers are reused: the structured feed reader
+provides the native shortcode, author and caption, and the structured media
+reader resolves owned playback URLs. Requested ID/permalink, actual native
+route, author and a matching original poster path (when one exists) must agree.
+Native carousel order is preserved, with a poster upgraded to video only once.
+Failed recovery retains the feed evidence and records an outcome without raw
+HTML or signed CDN URLs in the diagnostic fields.
+
+The shared Instagram adapter excludes standalone English/Indonesian interface
+labels such as "Suggested for you" from DOM caption candidates. Native
+structured caption enrichment may fill an empty caption only for the same
+post/author; an existing substantive caption still requires a compatible prefix.
+This extraction fix applies to headless and windowed capture.
+
+`mediaEvidence.nativeVideoFallback` and bounded coverage counters distinguish
+attempts, recovered URLs and skipped targets. Success is
+`owned_playback_url_observed`, with `video_playback_unverified`; it is not proof
+of full playback. Regression fixtures exercise the real shared readers on a
+mixed image/video carousel, identity failures, limits, cleanup, caption guards
+and the capture/frontier integration. Existing stored posts are not rewritten.
+
 ## Shared contracts and separate controllers
 
 Headless injects AkuBridge's source-adapter runtime and adapters. X uses the same `x-dom-v22` selector, text/quote parser, expansion policy (12 attempts at 40 ms), and expected-media rules. Headless does not execute the complete `AkuBridge/content-script.js` controller. It supplies separate discovery, admission, hydration, navigation, recovery and serialization in its worker.

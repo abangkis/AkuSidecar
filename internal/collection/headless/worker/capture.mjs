@@ -2,7 +2,7 @@ import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs
 import { canonicalSourceURL, captureError, toObservation } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
-import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget } from './additional-source-media.mjs';
+import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget, createInstagramVideoRecovery } from './additional-source-media.mjs';
 import { photoRecaptureObservation } from './photo-recapture.mjs';
 import { createXTextRecovery } from './x-text-recovery.mjs';
 import { recoverHeadlessFreshness } from './headless-freshness.mjs';
@@ -243,6 +243,13 @@ export async function capture(browser, assetsBySource, source, payload) {
   let scrollStopReason = options.scrolls === 0 ? 'not_requested' : 'budget_exhausted';
   const originalScrollY = options.acquisitionRound === 1 ? 0 : resumeScrollY;
   const textRecovery = source === 'x' ? createXTextRecovery({ browser, assets, deadlineAt: deadline }) : null;
+  const videoRecovery = source === 'instagram' && !options.explicitPageUrl ? createInstagramVideoRecovery({
+    browser, resolver: assets.structuredMediaResolver, feedResolver: assets.structuredFeedResolver, deadlineAt: deadline,
+    inspectSnapshot: async (targetPage, at) => {
+      await inject(targetPage, assets, at);
+      return collect(targetPage, source, at);
+    },
+  }) : null;
   try {
     for (let scroll = 0; scroll <= options.scrolls; scroll++) {
       if (scroll > 0 && Date.now() >= deadline) { scrollStopReason = 'deadline'; break; }
@@ -272,6 +279,7 @@ export async function capture(browser, assetsBySource, source, payload) {
         }
       }
       if (textRecovery) snapshot = await textRecovery.recoverSnapshot(snapshot);
+      if (videoRecovery) snapshot = await videoRecovery.recoverSnapshot(snapshot);
       const previousCount = seenIds.size;
       const posts = [];
       let evidenceLimitReached = false;
@@ -296,6 +304,7 @@ export async function capture(browser, assetsBySource, source, payload) {
     }
   } finally {
     await textRecovery?.close();
+    await videoRecovery?.close();
   }
   if (!seenIds.size) throw Object.assign(captureError('empty_unverified', 'no source post evidence was captured'),
     { diagnostics: emptyCaptureDiagnostics(snapshots) });
