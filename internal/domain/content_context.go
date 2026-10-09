@@ -12,7 +12,7 @@ const (
 	ContentContextDefaultLimit  = 3
 	ContentContextMinLimit      = 1
 	ContentContextMaxLimit      = 5
-	ContentContextEngineVersion = "content-context-v2"
+	ContentContextEngineVersion = "content-context-v3"
 )
 
 // ContentContextUpScrollMode controls what happens when the active Timeline

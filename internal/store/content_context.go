@@ -73,11 +73,11 @@ func (s *Store) ContentContext(ctx context.Context, timelineID string, limit int
 	if err != nil {
 		return domain.ContentContextResult{}, err
 	}
-	if len(query.Terms) == 0 {
+	if len(query.Terms) == 0 && len(query.IdentityPhrases) == 0 {
 		return domain.ContentContextResult{DirectContext: direct, Matches: []domain.ContentContextMatch{}, TopicInsights: []domain.ContentContextTopicInsight{}}, nil
 	}
 
-	items, err := s.searchMemoryContextCandidates(ctx, query.Terms, contentContextEngine.CandidatePool)
+	items, err := s.searchMemoryContextCandidates(ctx, query, contentContextEngine.CandidatePool)
 	if err != nil {
 		return domain.ContentContextResult{}, err
 	}
@@ -109,8 +109,8 @@ func (s *Store) livingTopicContentContextInsights(ctx context.Context, query con
 	return s.matchLivingTopicKnowledge(ctx, query, limit, true)
 }
 
-// SearchLivingTopicKnowledge applies the same precision-first local relevance
-// engine to an explicit Library query. Only current, source-supported topic
+// SearchLivingTopicKnowledge uses the explicit Library search policy, separate
+// from automatic Related Context admission. Only current, source-supported topic
 // understanding is eligible; the read never invokes a provider or mutates
 // membership, feedback, snapshots, or Personal Memory.
 func (s *Store) SearchLivingTopicKnowledge(ctx context.Context, rawQuery string, limit int) ([]domain.ContentContextTopicInsight, error) {
@@ -391,14 +391,25 @@ func contentContextKey(timeline domain.TimelineItem) string {
 // OR query. It intentionally overfetches so the relevance engine can reject
 // weak generic-token matches without filling the public result quota from the
 // first BM25 rows.
-func (s *Store) searchMemoryContextCandidates(ctx context.Context, terms []string, limit int) ([]contentcontext.Candidate, error) {
-	quoted := make([]string, 0, len(terms))
-	for _, term := range terms {
+func (s *Store) searchMemoryContextCandidates(ctx context.Context, query contentcontext.Query, limit int) ([]contentcontext.Candidate, error) {
+	quoted := make([]string, 0, len(query.Terms)+len(query.IdentityPhrases))
+	seen := make(map[string]bool)
+	for _, term := range contentContextFTSFeatures(query) {
 		normalized, err := memorySearchTerms(term)
-		if err != nil || len(normalized) != 1 {
+		if err != nil || len(normalized) == 0 {
 			continue
 		}
-		quoted = append(quoted, normalized[0])
+		// FTS unicode61 splits model punctuation. Quote the entire normalized
+		// sequence so version parts never become independent OR candidates.
+		parts := make([]string, 0, len(normalized))
+		for _, token := range normalized {
+			parts = append(parts, strings.Trim(token, `"`))
+		}
+		phrase := `"` + strings.Join(parts, " ") + `"`
+		if !seen[phrase] {
+			seen[phrase] = true
+			quoted = append(quoted, phrase)
+		}
 	}
 	if len(quoted) == 0 {
 		return []contentcontext.Candidate{}, nil
@@ -446,6 +457,35 @@ func (s *Store) searchMemoryContextCandidates(ctx context.Context, terms []strin
 		return nil, fmt.Errorf("commit content context FTS snapshot: %w", err)
 	}
 	return items, nil
+}
+
+// The FTS tokenizer retains letter/digit compounds while the relevance engine
+// canonicalizes them. Generate a few whole-identity spellings for retrieval;
+// final admission still compares the complete canonical identity and subject.
+func contentContextFTSFeatures(query contentcontext.Query) []string {
+	features := append([]string{}, query.Terms...)
+	for index, identity := range query.IdentityPhrases {
+		if index >= contentcontext.MaxIdentityPhrases {
+			break
+		}
+		parts := strings.Fields(identity)
+		features = append(features, identity)
+		if len(parts) < 2 {
+			continue
+		}
+		features = append(features, strings.Join(parts, ""))
+		for position, part := range parts {
+			if position == 0 || len(part) == 0 || part[0] < '0' || part[0] > '9' {
+				continue
+			}
+			joined := append([]string{}, parts[:position-1]...)
+			joined = append(joined, parts[position-1]+part)
+			joined = append(joined, parts[position+1:]...)
+			features = append(features, strings.Join(joined, " "), strings.Join(parts[:position], " ")+" "+strings.Join(parts[position:], ""))
+			break
+		}
+	}
+	return features
 }
 
 func sameTimelineMemoryIdentity(timeline domain.TimelineItem, memory domain.MemoryItem) bool {

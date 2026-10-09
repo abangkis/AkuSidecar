@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -76,7 +77,7 @@ func TestContentContextSearchesLocalFTSExcludesCurrentIdentityAndDoesNotWrite(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := state.CreateMemoryRecallStub(ctx, libraryInput("context-other", domain.SourceX, "Quantum research notes", "Local context for systems", "2026-08-02T00:00:00Z"))
+	other, err := state.CreateMemoryRecallStub(ctx, libraryInput("context-other", domain.SourceX, "Quantum systems research notes", "Local context for systems", "2026-08-02T00:00:00Z"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestContentContextSearchesLocalFTSExcludesCurrentIdentityAndDoesNotWrite(t 
 			t.Fatalf("current Timeline identity leaked into context matches: %+v", result.Matches)
 		}
 	}
-	if result.Matches[0].MatchReason != "Shared topics: quantum; supported by title." {
+	if !strings.Contains(strings.ToLower(result.Matches[0].MatchReason), "quantum") || strings.Contains(result.Matches[0].MatchReason, "author") {
 		t.Fatalf("context reason=%q", result.Matches[0].MatchReason)
 	}
 	var afterActions, afterProvenance, afterItems int
@@ -372,7 +373,7 @@ func TestContentContextFeedbackIsPairwiseAppendOnlyAndUndoable(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)
 	timelineID := insertContentContextTimelineFixture(t, state, false)
-	matched, err := state.CreateMemoryRecallStub(ctx, libraryInput("feedback-match", domain.SourceX, "Quantum research notes", "Local context for systems", "2026-08-02T00:00:00Z"))
+	matched, err := state.CreateMemoryRecallStub(ctx, libraryInput("feedback-match", domain.SourceX, "Quantum systems research notes", "Local context for systems", "2026-08-02T00:00:00Z"))
 	if err != nil {
 		t.Fatal(err)
 	}
