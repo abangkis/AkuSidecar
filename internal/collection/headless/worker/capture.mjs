@@ -85,6 +85,16 @@ function sameStrings(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function hasExpectedVideoWithoutPlayback(post) {
+  const expected = [
+    ...(Array.isArray(post?.mediaExpected) ? post.mediaExpected : []),
+    ...(Array.isArray(post?.mediaEvidence?.expected) ? post.mediaEvidence.expected : []),
+  ];
+  if (!expected.includes('video')) return false;
+  return !Array.isArray(post.media) || !post.media.some(item => item?.kind === 'video'
+    && typeof item.playbackUrl === 'string' && item.playbackUrl.trim().length > 0);
+}
+
 function pageKey(source, url) {
   const canonical = canonicalSourceURL(source, url);
   if (canonical) return canonical;
@@ -172,7 +182,8 @@ export async function capture(browser, assetsBySource, source, payload) {
       // Post text can render before its attachment shell hydrates. Re-sample
       // only missing expected URLs, within both source readiness and a 3s bound.
       const pendingMedia = ['x','instagram','linkedin'].includes(source) && snapshot.posts.some(post =>
-        Array.isArray(post.mediaEvidence?.expectedWithoutUrl) && post.mediaEvidence.expectedWithoutUrl.length > 0);
+        (Array.isArray(post.mediaEvidence?.expectedWithoutUrl) && post.mediaEvidence.expectedWithoutUrl.length > 0)
+        || (['instagram','linkedin'].includes(source) && hasExpectedVideoWithoutPlayback(post)));
       if (!pendingMedia) break;
       mediaSettleDeadline ??= Math.min(readinessDeadline, Date.now() + 3000);
       if (Date.now() >= mediaSettleDeadline) break;

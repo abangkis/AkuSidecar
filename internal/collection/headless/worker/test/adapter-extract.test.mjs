@@ -285,3 +285,33 @@ test('a visible native post retains rendered images below the viewport but exclu
   root.getBoundingClientRect=()=>({width:600,height:300,left:0,right:600,top:1000,bottom:1300});
   assert.equal((await run('linkedin',adapter,'https://www.linkedin.com/feed/').collect()).posts.length,0);
 });
+
+test('LinkedIn and Instagram video posters remain pending until playback is observed',async()=>{
+  const fixtures=[
+    {source:'linkedin',root:candidate({urn:'urn:li:activity:1234567890',body:'Video post'}),
+      url:'https://www.linkedin.com/feed/',posterUrl:'https://media.licdn.com/dms/image/video-poster.jpg',
+      playbackUrl:'https://media.licdn.com/dms/video/clip.mp4'},
+    {source:'instagram',root:candidate({anchors:[anchor('https://www.instagram.com/reel/Fixture123/')],body:'Video post'}),
+      url:'https://www.instagram.com/',posterUrl:'https://scontent.cdninstagram.com/media/video-poster.jpg',
+      playbackUrl:'https://scontent.cdninstagram.com/media/clip.mp4'},
+  ];
+  for(const fixture of fixtures){
+    let playback=null;
+    const adapter=baseAdapter(fixture.source,[fixture.root]);
+    adapter.mediaAcquisition={detectExpectedKinds:()=>['video'],extractCandidates:()=>[{
+      kind:'video',url:fixture.posterUrl,posterUrl:fixture.posterUrl,playbackUrl:playback,
+      width:640,height:360,loaded:true,sourceKind:'poster',
+    }]};
+    const api=run(fixture.source,adapter,fixture.url);
+
+    const posterOnly=await api.collect();
+    assert.equal(posterOnly.posts[0].media[0].kind,'video',fixture.source);
+    assert.equal(posterOnly.posts[0].media[0].playbackUrl,null,fixture.source);
+    assert.deepEqual(Array.from(posterOnly.posts[0].mediaEvidence.expectedWithoutUrl),['video'],fixture.source);
+
+    playback=fixture.playbackUrl;
+    const hydrated=await api.collect();
+    assert.equal(hydrated.posts[0].media[0].playbackUrl,fixture.playbackUrl,fixture.source);
+    assert.deepEqual(Array.from(hydrated.posts[0].mediaEvidence.expectedWithoutUrl),[],fixture.source);
+  }
+});

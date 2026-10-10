@@ -295,8 +295,10 @@
       if (media.length >= MAX_MEDIA) break;
     }
     expected=uniqueElements([...expected,...media.map(item=>item.kind)]);
+    const videoPlaybackRequired = ['instagram','linkedin'].includes(source);
     const expectedWithoutUrl = expected.filter(kind => kind === 'video'
-      ? !media.some(entry => entry.kind === 'video')
+      ? !media.some(entry => entry.kind === 'video' && (!videoPlaybackRequired
+        || (typeof entry.playbackUrl === 'string' && entry.playbackUrl.trim())))
       : kind === 'image' ? !media.some(entry => entry.kind === 'image') : true);
     const playerIds = source === 'linkedin'
       ? uniqueElements([...(container.querySelectorAll?.('[data-vjs-player][id]') || [])]

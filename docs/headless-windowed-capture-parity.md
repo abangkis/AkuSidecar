@@ -2,6 +2,42 @@
 
 Source audit: 5 October 2026. Windowed refers to AkuBridge's visible-browser capture pipeline; native reader display alone is not a capture pipeline. Quiet/hidden browser is a separate backend. This comparison focuses on the X text incident and the shared capture boundaries, not a live parity certification for every source.
 
+## LinkedIn video readiness and recovery, 10 October 2026
+
+Two headless recaptures of Peter Gould's LinkedIn post
+`ugcPost:7514519298036576256` found the correct authenticated post but returned
+only its poster, with `no_match` from the shared Video.js reader. Both finished
+in about two seconds. A poster marked as video had satisfied the collector's
+missing-media check despite having no playback URL.
+
+For LinkedIn and Instagram, the headless DOM collector now keeps video unresolved
+until a playback URL is observed. Readiness also checks poster-only evidence when
+the old missing-media flag is empty. Hydration remains within the existing
+three-second media settle ceiling and enclosing source/capture deadline. X's
+poster hydration behavior remains separate.
+
+LinkedIn reuses `AkuBridge/linkedin-main-world-media-resolver.js`, with one retry
+after 150 ms only for expected video without playback and an empty `no_match`.
+At most four posts per snapshot may retry, within one shared three-second retry
+window, with 100 ms reserved before the enclosing deadline. Each resolver probe
+remains bounded to 1,200 ms, 16 players and 3,000 traversal nodes. Foreign or
+ambiguous candidates, rejected media, invalid results and evaluation errors do
+not authorize a retry. No player is started, and no user window is activated.
+
+The common additional-media wrapper and observation coverage retain bounded
+counts for player roots, resolved players, direct/adaptive URL evidence, native
+URN association and traversal, plus attempt/skip/retry outcomes. Missing counts
+remain null. Diagnostic records contain no signed CDN URLs, player IDs, raw
+HTML or exception text. Exact native identity and the existing progressive URL
+allowlist stay required; adaptive streams remain unsupported.
+
+Fixtures exercise the actual shared reader through delayed hydration, identity
+and URL rejection, retry/deadline limits, privacy-safe serialization and source
+readiness. An observed playback URL remains `video_playback_unverified`. A live
+recapture after a separately requested rebuild/restart is still needed to assess
+the reported post; existing evidence and the running service are not rewritten
+by this source change.
+
 ## Bounded Instagram native video recovery, 9 October 2026
 
 Feed video that remains unresolved after the existing structured-media pass can

@@ -18,6 +18,8 @@ const STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS = [
   'additionalMediaReturnedCandidateCount', 'additionalMediaExactCandidateCount',
   'additionalMediaInspectedScriptCount', 'additionalMediaParsedScriptCount', 'additionalMediaRejectedScriptCount',
   'additionalMediaInspectedBytes', 'additionalMediaTraversedNodeCount', 'additionalMediaMatchedMediaObjectCount',
+  'additionalMediaPlayerRootCount', 'additionalMediaResolvedPlayerCount', 'additionalMediaDirectPlaybackURLCount',
+  'additionalMediaRejectedAdaptiveURLCount', 'additionalMediaCandidateURNCount', 'additionalMediaAssignedCandidateCount',
   'nativeVideoFallbackCandidateCount', 'nativeVideoFallbackAttemptCount', 'nativeVideoFallbackRecoveredCount', 'nativeVideoFallbackSkippedCount',
 ];
 
