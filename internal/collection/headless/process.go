@@ -22,11 +22,12 @@ import (
 
 type Options struct{ Node, Worker, Pin, Chrome, Profile, ProfileDirectory, BridgePath string }
 type Process struct {
-	owner     *appshell.OwnedCommand
-	input     io.WriteCloser
-	operation sync.Mutex
-	replies   chan reply
-	sequence  atomic.Uint64
+	owner         *appshell.OwnedCommand
+	input         io.WriteCloser
+	operation     chan struct{}
+	operationOnce sync.Once
+	replies       chan reply
+	sequence      atomic.Uint64
 }
 type reply struct {
 	ID     uint64          `json:"id"`
@@ -126,12 +127,15 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 	metadata, err := p.call(ctx, map[string]any{"type": "init", "chrome": options.Chrome, "profile": options.Profile, "profileDirectory": options.ProfileDirectory, "bridgePath": options.BridgePath})
 	if err == nil {
 		var initialized struct {
-			WorkerDriver struct {
+			IdleReleaseVersion int `json:"idleReleaseVersion"`
+			WorkerDriver       struct {
 				ProtocolVersion int `json:"protocolVersion"`
 			} `json:"workerDriver"`
 		}
 		if json.Unmarshal(metadata, &initialized) != nil || initialized.WorkerDriver.ProtocolVersion != 1 {
 			err = errors.New("headless worker protocol mismatch")
+		} else if initialized.IdleReleaseVersion != 1 {
+			err = errors.New("headless worker lacks idle lease support; rebuild the matching packaged worker")
 		}
 	}
 	// Return the owned worker even on failure so cleanup can be verified by its
@@ -140,8 +144,15 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 }
 
 func (p *Process) call(ctx context.Context, request map[string]any) (json.RawMessage, error) {
-	p.operation.Lock()
-	defer p.operation.Unlock()
+	// Waiting for another RPC must respect the caller's deadline too. A lease
+	// acknowledgement must not hold admission indefinitely behind a capture.
+	p.operationOnce.Do(func() { p.operation = make(chan struct{}, 1) })
+	select {
+	case p.operation <- struct{}{}:
+		defer func() { <-p.operation }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -232,7 +243,24 @@ func (p *Process) Capture(ctx context.Context, source domain.Source, payload map
 	err = json.Unmarshal(raw, &observation)
 	return observation, err
 }
-func (p *Process) Driver() string     { return "headless" }
+func (p *Process) Driver() string { return "headless" }
+
+// SetIdleHold preserves source frontiers for the entire collection lease,
+// including quiet gaps between capture rounds. It never launches Chrome.
+func (p *Process) SetIdleHold(ctx context.Context, held bool) error {
+	raw, err := p.call(ctx, map[string]any{"type": "setIdleHold", "held": held})
+	if err != nil {
+		return err
+	}
+	var acknowledgement struct {
+		Held *bool `json:"held"`
+	}
+	if json.Unmarshal(raw, &acknowledgement) != nil || acknowledgement.Held == nil || *acknowledgement.Held != held {
+		return p.protocolFailure("headless idle hold acknowledgement mismatch")
+	}
+	return nil
+}
+
 func (p *Process) PID() int           { return p.owner.PID() }
 func (p *Process) Done() <-chan error { return p.owner.Done() }
 func (p *Process) Terminate()         { p.owner.Terminate() }

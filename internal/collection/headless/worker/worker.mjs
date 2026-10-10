@@ -11,6 +11,7 @@ import { sourceProvenance } from './provenance.mjs';
 
 export const WORKER_VERSION = '1.0.0';
 export const PROTOCOL_VERSION = 1;
+export const GLOBAL_RPC_IDLE_TIMEOUT_MS = 120_000;
 const MAX_LINE_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const root = dirname(fileURLToPath(import.meta.url));
@@ -25,7 +26,7 @@ export function validateRequest(value) {
       && !(Number.isSafeInteger(value.id) && value.id >= 0)) {
     throw requestError('invalid_request', 'id must be a non-empty string or non-negative safe integer');
   }
-  if (!['init', 'capture', 'shutdown'].includes(value.type)) throw requestError('invalid_request', 'unsupported request type');
+  if (!['init', 'capture', 'shutdown', 'setIdleHold'].includes(value.type)) throw requestError('invalid_request', 'unsupported request type');
   return value;
 }
 
@@ -121,10 +122,34 @@ export async function sourceAssets(bridgePath, source) {
   return assets;
 }
 
-export async function runWorker({ input = process.stdin, output = process.stdout, errorOutput = process.stderr } = {}) {
+export async function runWorker({
+  input = process.stdin,
+  output = process.stdout,
+  errorOutput = process.stderr,
+  launchChromeImpl = launchChrome,
+  captureImpl = capture,
+  sourceAssetsImpl = sourceAssets,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+  idleTimeoutMs = GLOBAL_RPC_IDLE_TIMEOUT_MS,
+} = {}) {
+  const boundedIdleTimeoutMs = Number.isFinite(idleTimeoutMs)
+    ? Math.max(1, Math.min(GLOBAL_RPC_IDLE_TIMEOUT_MS, Math.trunc(idleTimeoutMs)))
+    : GLOBAL_RPC_IDLE_TIMEOUT_MS;
   let browser = null;
   let assetsBySource = null;
+  let launchOptions = null;
+  let initialized = false;
+  let ownedBackend = false;
+  let cleanupUnverified = false;
+  let idleHeld = false;
   let shuttingDown = false;
+  let inputEnded = false;
+  let inputFinished = false;
+  let pendingRequests = 0;
+  let idleTimer = null;
+  let idleTimerGeneration = 0;
+  let idleCloseQueued = false;
   let lineBuffer = '';
   const decoder = new StringDecoder('utf8');
   let queued = Promise.resolve();
@@ -137,11 +162,95 @@ export async function runWorker({ input = process.stdin, output = process.stdout
     }
     return new Promise(resolveWrite => output.write(line + '\n', resolveWrite));
   };
+  const log = message => errorOutput?.write(`[headless-worker] ${message}\n`);
+  const cancelIdleTimer = () => {
+    idleTimerGeneration++;
+    if (idleTimer !== null) {
+      clearTimer(idleTimer);
+      idleTimer = null;
+    }
+  };
+  const scheduleIdleTimer = () => {
+    if (!initialized || !ownedBackend || !browser || idleHeld || shuttingDown || inputEnded
+        || pendingRequests > 0 || idleTimer !== null || idleCloseQueued) return;
+    const generation = ++idleTimerGeneration;
+    idleTimer = setTimer(() => {
+      if (generation !== idleTimerGeneration) return;
+      idleTimer = null;
+      if (!browser || !ownedBackend || idleHeld || shuttingDown || inputEnded || pendingRequests > 0) {
+        scheduleIdleTimer();
+        return;
+      }
+      idleCloseQueued = true;
+      queued = queued.then(async () => {
+        try {
+          if (browser && ownedBackend && !idleHeld && !shuttingDown && !inputEnded && pendingRequests === 0) {
+            await closeBrowser();
+          }
+        } catch (error) {
+          log(`idle Chrome close error: ${String(error?.message || error).slice(0, 300)}`);
+        } finally {
+          idleCloseQueued = false;
+          scheduleIdleTimer();
+        }
+      }, async () => {
+        idleCloseQueued = false;
+        scheduleIdleTimer();
+      });
+    }, boundedIdleTimeoutMs);
+  };
   const closeBrowser = async () => {
     if (!browser) return;
-    const owned = browser;
+    const closing = browser;
     browser = null;
-    await owned.close();
+    try {
+      await closing.close();
+    } catch (error) {
+      if (ownedBackend) cleanupUnverified = true;
+      throw error;
+    }
+  };
+  const launchOwnedChrome = async options => {
+    try {
+      return await launchChromeImpl(options);
+    } catch (error) {
+      if (error?.code === 'owned_chrome_cleanup_failed') cleanupUnverified = true;
+      throw error;
+    }
+  };
+  const ensureBrowser = async () => {
+    if (browser) return browser;
+    if (!initialized || !assetsBySource) throw requestError('not_initialized', 'send init before capture');
+    if (cleanupUnverified) {
+      throw requestError('owned_chrome_cleanup_unverified', 'previous Chrome process exit was not verified; refusing to launch another process for this profile');
+    }
+    if (!ownedBackend || !launchOptions) throw requestError('browser_unavailable', 'the initialized browser is unavailable');
+    browser = await launchOwnedChrome(launchOptions);
+    return browser;
+  };
+  const enqueueRequest = raw => {
+    cancelIdleTimer();
+    pendingRequests++;
+    queued = queued.then(async () => {
+      try {
+        await handle(raw);
+      } finally {
+        pendingRequests--;
+        scheduleIdleTimer();
+      }
+    }, async () => {
+      pendingRequests--;
+      scheduleIdleTimer();
+    });
+  };
+  const appendBrowserClose = context => {
+    queued = queued.then(async () => {
+      await closeBrowser();
+    }, async () => {
+      await closeBrowser();
+    }).catch(error => {
+      log(`${context}: ${String(error?.message || error).slice(0, 300)}`);
+    });
   };
   const borrowedRPC = createBorrowedRPC(write);
   const handle = async raw => {
@@ -153,32 +262,49 @@ export async function runWorker({ input = process.stdin, output = process.stdout
       const request = validateRequest(parsed);
       id = request.id;
       if (shuttingDown) throw requestError('worker_shutting_down', 'worker is shutting down');
+      if (request.type === 'setIdleHold') {
+        if (typeof request.held !== 'boolean') throw requestError('invalid_request', 'held must be a boolean');
+        idleHeld = request.held;
+        if (idleHeld) cancelIdleTimer();
+        else scheduleIdleTimer();
+        await write(responseFor(id, true, { held: idleHeld }));
+        return;
+      }
       if (request.type === 'init') {
-        if (browser) throw requestError('already_initialized', 'worker already owns a Chrome process');
+        if (initialized) throw requestError('already_initialized', 'worker is already initialized');
+        if (cleanupUnverified) {
+          throw requestError('owned_chrome_cleanup_unverified', 'previous Chrome process exit was not verified; refusing to initialize another browser');
+        }
         const borrowed = request.backend === 'browser_quiet_hidden';
         const options = borrowed ? validateBorrowedInit(request) : validateInit(request);
         const loadedAssets = {};
         for (const source of borrowed ? ['x','facebook'] : ['x','facebook','instagram','linkedin']) {
-          loadedAssets[source] = await sourceAssets(options.bridgePath, source);
+          loadedAssets[source] = await sourceAssetsImpl(options.bridgePath, source);
         }
-        browser = borrowed
+        const initializedBrowser = borrowed
           ? createBorrowedChrome(borrowedRPC.send, request.chromeVersion)
-          : await launchChrome(options);
+          : await launchOwnedChrome(options);
+        browser = initializedBrowser;
         assetsBySource = loadedAssets;
+        launchOptions = borrowed ? null : options;
+        ownedBackend = !borrowed;
+        initialized = true;
         const result = {
           pid: browser.pid,
           chromeVersion: browser.version,
           workerDriver: { name: borrowed ? 'aku-quiet-worker' : 'aku-headless-worker', version: WORKER_VERSION, protocolVersion: PROTOCOL_VERSION },
+          ...(!borrowed ? { idleReleaseVersion: 1 } : {}),
         };
         await write(responseFor(id, true, result));
         return;
       }
       if (request.type === 'capture') {
-        if (!browser || !assetsBySource) throw requestError('not_initialized', 'send init before capture');
-        const result = await capture(browser, assetsBySource, request.source, request.payload);
+        const activeBrowser = await ensureBrowser();
+        const result = await captureImpl(activeBrowser, assetsBySource, request.source, request.payload);
         await write(responseFor(id, true, result));
         return;
       }
+      cancelIdleTimer();
       shuttingDown = true;
       await closeBrowser();
       await write(responseFor(id, true, { stopped: true }));
@@ -212,25 +338,30 @@ export async function runWorker({ input = process.stdin, output = process.stdout
       let fastReply;
       try { fastReply = JSON.parse(raw); } catch {}
       if (borrowedRPC.receive(fastReply)) continue;
-      queued = queued.then(() => handle(raw));
+      enqueueRequest(raw);
     }
   });
-  input.on('end', () => {
+  const finishInput = () => {
+    if (inputFinished) return;
+    inputFinished = true;
+    inputEnded = true;
+    cancelIdleTimer();
     borrowedRPC.close();
     lineBuffer += decoder.end();
-    if (lineBuffer.trim()) queued = queued.then(() => handle(lineBuffer));
-    queued = queued.then(closeBrowser).catch(error => {
-      if (errorOutput) errorOutput.write(`[headless-worker] shutdown error: ${String(error?.message || error).slice(0, 300)}\n`);
-    });
-  });
+    if (lineBuffer.trim()) enqueueRequest(lineBuffer);
+    appendBrowserClose('shutdown error');
+  };
+  input.on('end', finishInput);
   const interrupt = () => {
+    cancelIdleTimer();
     borrowedRPC.close();
     shuttingDown = true;
-    void closeBrowser().catch(error => errorOutput?.write(`[headless-worker] interrupt close error: ${String(error?.message || error).slice(0, 300)}\n`));
+    appendBrowserClose('interrupt close error');
   };
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
   return new Promise(resolveRun => input.once('close', () => {
+    finishInput();
     void queued.finally(() => {
       process.removeListener('SIGINT', interrupt);
       process.removeListener('SIGTERM', interrupt);

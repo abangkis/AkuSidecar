@@ -132,11 +132,26 @@ function connectOwnedChrome(child, executable, profilePath) {
   let closePromise = null;
   let stderrTail = '';
   let exitResolve;
+  let processExitResolve;
+  let processSpawnObserved = false;
+  let processSpawnFailed = false;
+  let processExitObserved = false;
   const exited = new Promise(resolveExit => { exitResolve = resolveExit; });
+  const processExited = new Promise(resolveExit => { processExitResolve = resolveExit; });
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', chunk => { stderrTail = (stderrTail + chunk).slice(-3000); });
-  child.on('error', error => { closePending(error); markClosed(); });
-  child.on('exit', code => { closePending(new Error(`Chrome exited${code === null ? '' : ` (${code})`}.`)); markClosed(); });
+  child.once('spawn', () => { processSpawnObserved = true; });
+  child.on('error', error => {
+    if (!processSpawnObserved && child.pid === undefined) processSpawnFailed = true;
+    closePending(error);
+    markClosed();
+  });
+  child.on('exit', code => {
+    processExitObserved = true;
+    processExitResolve();
+    closePending(new Error(`Chrome exited${code === null ? '' : ` (${code})`}.`));
+    markClosed();
+  });
   child.stdio[3].on('error', error => closePending(error));
   child.stdio[4].setEncoding('utf8');
   child.stdio[4].on('data', chunk => {
@@ -196,12 +211,16 @@ function connectOwnedChrome(child, executable, profilePath) {
     return closePromise;
   }
   async function closeOwned() {
+    const processGone = () => processExitObserved || processSpawnFailed;
     try {
       if (!closed) await send('Browser.close').catch(() => {});
-      if (!closed) await waitForExitOrTimeout(exited, 2500);
-      if (!closed) {
+      if (!processGone()) await waitForExitOrTimeout(processExited, 2500);
+      if (!processGone()) {
         await terminateOwnedTree(child.pid);
-        await waitForExitOrTimeout(exited, 2500);
+        if (!processGone()) await waitForExitOrTimeout(processExited, 2500);
+      }
+      if (!processGone()) {
+        throw Object.assign(new Error('Chrome process exit could not be verified after owned-process cleanup.'), { code: 'owned_chrome_cleanup_failed' });
       }
     } finally {
       closePending(new Error('Chrome closed.'));
