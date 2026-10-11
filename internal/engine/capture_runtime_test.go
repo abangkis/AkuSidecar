@@ -1030,18 +1030,22 @@ func TestHybridFacebookRecaptureAdmitsBrowserDispatchesBridgeAndCleansSurface(t 
 		stored, loadErr := engine.MediaRecapture(ctx, job.ID)
 		return loadErr == nil && stored.Status == "failed" && stored.Payload["captureCleanup"] == "released"
 	})
-	select {
-	case cleanup := <-cleanupSeen:
-		if cleanup.id != job.ID || cleanup.generation != manager.Snapshot().Generation {
-			t.Fatalf("recapture cleanup identity=%+v Browser=%+v", cleanup, manager.Snapshot())
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Bridge recapture surface cleanup was not requested")
-	}
 	waitHybridCondition(t, "automatic return after recapture cleanup", func() bool {
 		return coordinator.Status().CollectionBorrowSource == "" && manager.Snapshot().State == captureruntime.Ready &&
 			manager.Snapshot().Driver == "headless" && manager.Snapshot().ActiveLeases == 0
 	})
+	select {
+	case cleanup := <-cleanupSeen:
+		// Cleanup belongs to the admitted Browser generation, even after the
+		// automatic return has advanced the manager to a new headless owner.
+		cleanedJob, loadErr := engine.MediaRecapture(ctx, job.ID)
+		cleanedStamp, stamped := cleanedJob.Payload["captureRuntime"].(map[string]any)
+		if loadErr != nil || !stamped || cleanup.id != job.ID || !captureGenerationMatches(cleanedStamp["generation"], cleanup.generation) {
+			t.Fatalf("recapture cleanup identity=%+v admitted=%+v err=%v", cleanup, cleanedStamp, loadErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Bridge recapture surface cleanup was not requested")
+	}
 	stored, err := engine.MediaRecapture(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
