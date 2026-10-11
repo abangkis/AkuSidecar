@@ -463,7 +463,16 @@ func (s *Store) searchMemoryContextCandidates(ctx context.Context, query content
 // canonicalizes them. Generate a few whole-identity spellings for retrieval;
 // final admission still compares the complete canonical identity and subject.
 func contentContextFTSFeatures(query contentcontext.Query) []string {
-	features := append([]string{}, query.Terms...)
+	features := make([]string, 0, len(query.Terms)+len(query.IdentityPhrases))
+	for _, term := range query.Terms {
+		if query.Mode == contentcontext.QueryLibrarySearch {
+			features = append(features, term)
+		} else {
+			// Expand only the engine's explicit feature equivalents. Do not
+			// stem model identities or broaden deliberate Library searches.
+			features = append(features, contentcontext.FeatureVariants(term)...)
+		}
+	}
 	for index, identity := range query.IdentityPhrases {
 		if index >= contentcontext.MaxIdentityPhrases {
 			break

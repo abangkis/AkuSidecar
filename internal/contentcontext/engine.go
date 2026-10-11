@@ -60,6 +60,11 @@ type Query struct {
 	// excludedAuthors is used only by the strict automatic policy. Keeping it
 	// private prevents callers from changing the admission boundary.
 	excludedAuthors map[string]bool
+	// Ordinary feature overlaps must be corroborated in the factual title or
+	// source text, rather than generated significance alone. Nil keeps explicit
+	// internal Query construction usable without inventing source provenance.
+	primaryTerms    map[string]bool
+	primarySubjects []string
 }
 
 // Engine owns deterministic Content Context feature extraction, ranking, and
@@ -87,9 +92,19 @@ func (e Engine) Extract(item domain.TimelineItem) Query {
 	sourceFields := []string{item.Item.WhatChanged, item.Item.WhyItMatters, text}
 	excludedAuthors := authorTokens(authors)
 	identityPhrases, identityTokens := relatedIdentities(sourceFields, excludedAuthors)
-	strictTerms := relatedTerms(sourceFields, excludedAuthors, identityTokens)
+	primaryTerms, _ := relatedContentTerms([]memoryField{{value: item.Item.WhatChanged}, {value: text}}, excludedAuthors, identityTokens)
+	// Give the bounded retrieval budget to primary features. Significance-only
+	// prose cannot pass ordinary admission and must not crowd a real issue out
+	// of the FTS pool. The explicit technical vocabulary remains eligible.
+	strictTerms := relatedTerms([]string{item.Item.WhatChanged, text}, excludedAuthors, identityTokens)
+	for _, term := range relatedTerms([]string{item.Item.WhyItMatters}, excludedAuthors, identityTokens) {
+		if focusedTechnicalTerms[term] && !containsString(strictTerms, term) && len(strictTerms) < MaxQueryTerms {
+			strictTerms = append(strictTerms, term)
+		}
+	}
 	tags := append(append([]string{}, item.Assessment.TopicTags...), item.Assessment.TopicFacets...)
 	subjectFeatures := relatedSubjectFeatures(sourceFields, tags, excludedAuthors, identityTokens)
+	primarySubjects := relatedContentSubjects(subjectFeatures, []memoryField{{value: item.Item.WhatChanged}, {value: text}}, excludedAuthors, identityTokens)
 	focusPhrases := relatedFocusPhrases(sourceFields, excludedAuthors, identityTokens)
 	if len(identityPhrases) > MaxIdentityPhrases {
 		identityPhrases = identityPhrases[:MaxIdentityPhrases]
@@ -101,6 +116,8 @@ func (e Engine) Extract(item domain.TimelineItem) Query {
 		Terms: strictTerms, SubjectFeatures: subjectFeatures, FocusPhrases: focusPhrases,
 		Mode: QueryRelated, IdentityPhrases: identityPhrases,
 		excludedAuthors: excludedAuthors,
+		primaryTerms:    primaryTerms,
+		primarySubjects: primarySubjects,
 	}
 }
 
@@ -373,17 +390,35 @@ func scoreRelatedCandidate(query Query, item domain.MemoryItem) candidateSignals
 	}
 	candidateIdentities, identityTokens := relatedIdentities(text, excluded)
 	candidateTerms, support := relatedContentTerms(fields, excluded, identityTokens)
+	primaryFields := []memoryField{{label: "title", value: item.Title}}
+	if item.FullContent != nil {
+		primaryFields = append(primaryFields, memoryField{label: "retained text", value: *item.FullContent})
+	}
+	candidatePrimaryTerms, _ := relatedContentTerms(primaryFields, excluded, identityTokens)
 	candidateFocus := relatedFocusPhrases(text, excluded, identityTokens)
 	candidateTags := append(append([]string{}, item.Tags...), item.Facets...)
 	candidateSubjects := relatedSubjectFeatures(text, candidateTags, excluded, identityTokens)
+	featureSubjectTokens := subjectFeatureTokens(append(append([]string{}, query.SubjectFeatures...), candidateSubjects...))
 	shared := make([]string, 0, len(queryTerms))
 	for _, term := range uniqueTerms(query.Terms) {
-		if queryTerms[term] && candidateTerms[term] {
-			shared = append(shared, term)
+		if !queryTerms[term] || featureSubjectTokens[term] || (query.primaryTerms != nil && !query.primaryTerms[term] && !focusedTechnicalTerms[term]) {
+			continue
+		}
+		for _, variant := range FeatureVariants(term) {
+			if candidatePrimaryTerms[variant] || (focusedTechnicalTerms[variant] && candidateTerms[variant]) {
+				shared = append(shared, term)
+				break
+			}
 		}
 	}
-	sharedFocus := sharedPhrases(query.FocusPhrases, candidateFocus)
+	// Performance is an evaluation category, not a concrete shared issue by
+	// itself. Coding, error analysis, pricing, etc. can still corroborate it.
+	if len(shared) == 1 && shared[0] == "performance" {
+		shared = nil
+	}
+	sharedFocus := filterSubjectFeaturePhrases(sharedPhrases(query.FocusPhrases, candidateFocus), featureSubjectTokens)
 	sharedSubjects := sharedPhrases(query.SubjectFeatures, append(candidateSubjects, relatedContentSubjects(query.SubjectFeatures, fields, excluded, identityTokens)...))
+	sharedPrimarySubjects := sharedPhrases(query.SubjectFeatures, relatedContentSubjects(query.SubjectFeatures, primaryFields, excluded, identityTokens))
 
 	if len(query.IdentityPhrases) > 0 {
 		queryIdentitySet := make(map[string]bool, len(query.IdentityPhrases))
@@ -402,16 +437,11 @@ func scoreRelatedCandidate(query Query, item domain.MemoryItem) candidateSignals
 		if exactIdentity == "" || (len(shared) == 0 && !hasDistinctPhrase(sharedFocus, strings.Fields(exactIdentity))) {
 			return candidateSignals{}
 		}
-		feature := ""
-		if len(shared) > 0 {
-			feature = shared[0]
-		} else if len(sharedFocus) > 0 {
-			feature = sharedFocus[0]
-		}
+		features := describeSharedFeatures(shared, sharedFocus)
 		return candidateSignals{
 			admitted: true,
 			strength: 300 + len(shared)*100 + len(sharedFocus)*80 + len(support)*5,
-			reason:   fmt.Sprintf("Shared model identity %q and topic %q.", exactIdentity, feature),
+			reason:   fmt.Sprintf("Shared model identity %q and features %q.", exactIdentity, features),
 		}
 	}
 
@@ -419,13 +449,19 @@ func scoreRelatedCandidate(query Query, item domain.MemoryItem) candidateSignals
 		matchedSubject := ""
 		for _, subject := range uniqueTerms(query.SubjectFeatures) {
 			if containsString(sharedSubjects, subject) {
-				matchedSubject = subject
-				break
+				if matchedSubject == "" {
+					matchedSubject = subject
+				}
+				if containsString(sharedPrimarySubjects, subject) && (query.primaryTerms == nil || containsString(query.primarySubjects, subject)) {
+					matchedSubject = subject
+					break
+				}
 			}
 		}
 		namedSubjectConflict := len(candidateSubjects) > 0 && len(sharedSubjects) == 0
-		if matchedSubject != "" && (hasDistinctTerm(shared, strings.Fields(matchedSubject)) || hasDistinctPhrase(sharedFocus, strings.Fields(matchedSubject))) {
-			reason := fmt.Sprintf("Shared subject %q and focused feature.", matchedSubject)
+		primarySubject := containsString(sharedPrimarySubjects, matchedSubject) && (query.primaryTerms == nil || containsString(query.primarySubjects, matchedSubject))
+		if matchedSubject != "" && ((primarySubject && hasDistinctTerm(shared, strings.Fields(matchedSubject))) || hasDistinctPhrase(sharedFocus, strings.Fields(matchedSubject)) || hasTechnicalFeaturePhrase(sharedFocus)) {
+			reason := fmt.Sprintf("Shared subject %q and features %q.", matchedSubject, describeSharedFeatures(shared, nil))
 			if len(sharedFocus) > 0 {
 				bestPhrase := sharedFocus[0]
 				for _, phrase := range sharedFocus {
@@ -656,6 +692,84 @@ func sharedPhrases(left, right []string) []string {
 		}
 	}
 	return shared
+}
+
+// FeatureVariants returns the small set of automatic feature terms that may
+// compare as equivalent. Model identity parsing and Library search do not use
+// these variants; only the exact reset/resets pair is normalized here.
+func FeatureVariants(term string) []string {
+	switch term {
+	case "reset":
+		return []string{"reset", "resets"}
+	case "resets":
+		return []string{"resets", "reset"}
+	default:
+		return []string{term}
+	}
+}
+
+func subjectFeatureTokens(subjects []string) map[string]bool {
+	tokens := make(map[string]bool)
+	for _, subject := range subjects {
+		for _, token := range relatedTokens(subject) {
+			// These labels describe useful product features, not product names.
+			// Keep them eligible as a feature even if an upstream tag capitalized
+			// the label and it was temporarily extracted as a subject.
+			if !weakSubjectTagTerms[token.value] {
+				tokens[token.value] = true
+			}
+		}
+	}
+	// The audited country/demonym pair repeats the subject identity; it is not
+	// an additional feature connecting music with unrelated sports coverage.
+	if tokens["indonesia"] || tokens["indonesian"] {
+		tokens["indonesia"], tokens["indonesian"] = true, true
+	}
+	return tokens
+}
+
+func filterSubjectFeaturePhrases(phrases []string, subjectTokens map[string]bool) []string {
+	filtered := make([]string, 0, len(phrases))
+	for _, phrase := range phrases {
+		containsSubject := false
+		hasTechnicalFeature := false
+		for _, token := range strings.Fields(phrase) {
+			if subjectTokens[token] {
+				containsSubject = true
+			}
+			if focusedTechnicalTerms[token] {
+				hasTechnicalFeature = true
+			}
+		}
+		if !containsSubject || hasTechnicalFeature {
+			filtered = append(filtered, phrase)
+		}
+	}
+	return filtered
+}
+
+func describeSharedFeatures(features, phrases []string) string {
+	if len(features) > 0 {
+		if len(features) > 3 {
+			features = features[:3]
+		}
+		return strings.Join(features, ", ")
+	}
+	if len(phrases) > 0 {
+		return phrases[0]
+	}
+	return ""
+}
+
+func hasTechnicalFeaturePhrase(phrases []string) bool {
+	for _, phrase := range phrases {
+		for _, token := range strings.Fields(phrase) {
+			if focusedTechnicalTerms[token] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hasDistinctTerm(values, excluded []string) bool {
@@ -1185,6 +1299,24 @@ var relatedWeakTerms = map[string]bool{
 	"teams": true, "product": true, "products": true,
 	"usage": true, "user": true, "users": true, "intelligence": true,
 	"overview": true, "topic": true, "topics": true, "written": true,
+	"community": true, "communities": true, "competitive": true,
+	"competition": true, "competitions": true, "custom": true,
+	"developer": true, "developers": true, "ecosystem": true,
+	"ecosystems": true, "global": true, "globally": true,
+	"international": true, "internationally": true,
+	"milestone": true, "milestones": true, "workflow": true,
+	"workflows": true,
+	"day":       true, "days": true, "week": true, "weeks": true,
+	"month": true, "months": true, "year": true, "years": true,
+	"end": true, "one": true, "now": true, "potential": true,
+	"human": true, "long": true, "short": true,
+	"audience": true, "audiences": true, "reader": true, "readers": true,
+	"them": true, "their": true, "theirs": true, "its": true,
+	"this": true, "that": true, "these": true, "those": true,
+	"our": true, "ours": true, "his": true, "her": true, "hers": true,
+	"inform": true, "informs": true, "informed": true,
+	"note": true, "notes": true, "noted": true,
+	"reflect": true, "reflects": true, "reflected": true,
 	"announce": true, "announces": true, "announced": true, "announcing": true,
 	"announcement": true, "announcements": true, "launch": true, "launches": true,
 	"launched": true, "launching": true, "release": true, "releases": true,
@@ -1243,5 +1375,5 @@ var focusedTechnicalTerms = map[string]bool{
 // These common feature labels can corroborate a product relationship, but
 // they cannot become the subject itself through an upstream tag.
 var weakSubjectTagTerms = map[string]bool{
-	"coding": true, "performance": true,
+	"coding": true, "performance": true, "reset": true, "resets": true,
 }

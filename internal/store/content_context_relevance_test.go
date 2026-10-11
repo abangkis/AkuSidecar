@@ -52,6 +52,23 @@ func TestRelatedContextRequiresSubjectRelationshipThroughFTSWhileLibraryRemainsB
 			memories: []domain.MemoryItemInput{
 				libraryInput("company", domain.SourceX, "OpenAI usage quotas", "Anthropic is also discussed in an AI usage summary", "2026-10-08T00:00:00Z"),
 			}},
+		{name: "same country unrelated achievements", title: "Indonesian girl group Nona achieved a historic music milestone", summary: "International cultural achievement for Indonesia",
+			tags: []string{"Indonesia", "Nona", "music"}, want: 0,
+			memories: []domain.MemoryItemInput{
+				libraryInput("sport", domain.SourceX, "Indonesia weightlifter wins gold", "A major international athletic milestone for Indonesia", "2026-10-10T00:00:00Z"),
+			}},
+		{name: "same product unrelated developer workflows", title: "Codex reset schedule", summary: "Informs developers about the reset timing",
+			tags: []string{"Codex", "reset"}, want: 1,
+			memories: []domain.MemoryItemInput{
+				libraryInput("reset", domain.SourceX, "Codex resets suspended for a month", "Temporary relief from limits", "2026-10-10T00:00:00Z"),
+				libraryInput("plugins", domain.SourceX, "Codex custom plugins", "Developers build custom software workflows", "2026-10-10T00:00:00Z"),
+			}},
+		{name: "exact model but competitive commentary insufficient", title: "Opus 5.5 error rate breakdown", summary: "Competitive frontier model evaluation",
+			want: 1,
+			memories: []domain.MemoryItemInput{
+				libraryInput("error", domain.SourceX, "Opus 5.5 error rate analysis", "Benchmark failures", "2026-10-10T00:00:00Z"),
+				libraryInput("advice", domain.SourceX, "Opus 5.5 powers Dots", "Competitive advice for model selection", "2026-10-10T00:00:00Z"),
+			}},
 	}
 	for _, example := range cases {
 		t.Run(example.name, func(t *testing.T) {
@@ -94,6 +111,26 @@ func TestRelatedContextRequiresSubjectRelationshipThroughFTSWhileLibraryRemainsB
 				t.Fatal("Related Context or Library retrieval wrote actions")
 			}
 		})
+	}
+}
+
+func TestRelatedContextFeatureEquivalentsReachFTSCandidatesWithoutBroadStemming(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	for _, title := range []string{"reset", "resets", "resetting", "Step 5 Preview"} {
+		if _, err := state.CreateMemoryRecallStub(ctx, libraryInput(title, domain.SourceX, title, "Stored note", "2026-10-10T00:00:00Z")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, term := range []string{"reset", "resets"} {
+		candidates, err := state.searchMemoryContextCandidates(ctx, contentcontext.Query{Terms: []string{term}}, 24)
+		if err != nil || len(candidates) != 2 {
+			t.Fatalf("automatic %q candidates=%+v err=%v", term, candidates, err)
+		}
+	}
+	candidates, err := state.searchMemoryContextCandidates(ctx, contentcontext.Query{Terms: []string{"reset"}, Mode: contentcontext.QueryLibrarySearch}, 24)
+	if err != nil || len(candidates) != 1 || candidates[0].Item.Title != "reset" {
+		t.Fatalf("explicit search changed: %+v err=%v", candidates, err)
 	}
 }
 
