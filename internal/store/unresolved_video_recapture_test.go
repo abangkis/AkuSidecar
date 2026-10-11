@@ -23,11 +23,21 @@ func unresolvedVideoFixture(t *testing.T, state *Store) (string, domain.Block) {
 }
 
 func TestUnresolvedVideoRecaptureRequiresPlaybackAndRetainsPoster(t *testing.T) {
-	for _, mode := range []string{"poster_only", "empty", "image_only", "poster_signal_only", "safe_mp4", "unsafe_mp4", "foreign_post"} {
+	for _, mode := range []string{"poster_only", "generic_poster_only", "empty", "image_only", "poster_signal_only", "safe_mp4", "safe_generic_mp4", "unsafe_mp4", "foreign_post"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			state := openTestStore(t)
 			id, block := unresolvedVideoFixture(t, state)
+			if mode == "generic_poster_only" || mode == "safe_generic_mp4" {
+				block.Media[0]["url"] = "https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg"
+				raw, err := json.Marshal(domain.Observation{Source: domain.SourceX, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := state.db.Exec(`UPDATE observations SET observation_json=? WHERE id='observation-recapture-fixture'`, string(raw)); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if mode == "poster_signal_only" {
 				block.ContentKind = ""
 				block.MediaRecovery = nil
@@ -65,6 +75,8 @@ func TestUnresolvedVideoRecaptureRequiresPlaybackAndRetainsPoster(t *testing.T) 
 					host = "video.twimg.com.evil.test"
 				}
 				block.Media = []map[string]any{{"kind": "video", "url": "https://pbs.twimg.com/ext_tw_video_thumb/12345/pu/img/poster.jpg", "playbackMode": "inline", "playbackUrl": "https://" + host + "/ext_tw_video/12345/pu/vid/clip.mp4"}}
+			case "safe_generic_mp4":
+				block.Media = []map[string]any{{"kind": "video", "url": "https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg", "posterUrl": "https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg", "playbackMode": "inline", "playbackUrl": "https://video.twimg.com/amplify_video/67890/vid/1280x720/clip.mp4"}}
 			case "foreign_post":
 				block.Permalink = "https://x.com/other/status/99999"
 			}
@@ -79,7 +91,7 @@ func TestUnresolvedVideoRecaptureRequiresPlaybackAndRetainsPoster(t *testing.T) 
 				t.Fatal(err)
 			}
 			want := "unavailable"
-			if mode == "safe_mp4" {
+			if mode == "safe_mp4" || mode == "safe_generic_mp4" {
 				want = "recovered"
 			}
 			if job.Outcome != want {
@@ -90,6 +102,9 @@ func TestUnresolvedVideoRecaptureRequiresPlaybackAndRetainsPoster(t *testing.T) 
 				t.Fatalf("items=%d err=%v", len(items), err)
 			}
 			evidence := items[0].Evidence
+			if mode == "generic_poster_only" && (len(evidence.Media) != 1 || evidence.Media[0]["url"] != "https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg") {
+				t.Fatal("unresolved generic poster was not retained")
+			}
 			if mode == "empty" && (len(evidence.Media) != 1 || evidence.Media[0]["kind"] != "video_poster") {
 				t.Fatal("failed capture discarded saved poster")
 			}

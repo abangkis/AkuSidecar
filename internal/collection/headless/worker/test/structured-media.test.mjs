@@ -24,7 +24,7 @@ const facebookResolver = {
   runtimeRevision: 'facebook-main-world-media-resolver-v1',
 };
 
-function xArticle(id, poster, playback) {
+function xArticle(id, poster, playback, mediaType) {
   const permalink = `https://x.com/fixture/status/${id}`;
   const anchor = { href: permalink, getAttribute: () => permalink, closest: () => null };
   const article = {
@@ -36,8 +36,9 @@ function xArticle(id, poster, playback) {
   };
   Object.defineProperty(article, '__reactProps$fixture', {
     value: { tweet: { rest_id: id, extended_entities: { media: [{
+      ...(mediaType ? { type: mediaType } : {}),
       media_url_https: poster,
-      video_info: { variants: [{ videoUrl: playback }] },
+      video_info: { variants: [mediaType ? { url: playback, content_type: 'video/mp4' } : { videoUrl: playback }] },
     }] } } },
   });
   return article;
@@ -128,6 +129,74 @@ test('X resolver returns only the requested own ID and enriches matched DOM vide
     assert.equal(result.posts[0].media[0].playbackUrl, playback);
     assert.equal(result.posts[0].mediaEvidence.structuredMediaResolution.status, 'resolved');
   });
+});
+
+test('X generic DOM video poster resolves only from its own structured video entity', async () => {
+  const id = '2108999757758947485';
+  const poster = 'https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg';
+  const playback = 'https://video.twimg.com/amplify_video/123456789/vid/1280x720/own.mp4';
+  const article = xArticle(id, poster, playback, 'video');
+  await withDocument({ querySelectorAll: () => [article] }, async () => {
+    const result = await resolveStructuredMedia({
+      page: fakePage(), source: 'x', posts: [xPost(id, [poster])], resolver: xResolver,
+      deadlineAt: Date.now() + 2000,
+    });
+    assert.equal(result.summary.resolvedPosts, 1, JSON.stringify(result.summary));
+    assert.equal(result.posts[0].media[0].kind, 'video');
+    assert.equal(result.posts[0].media[0].playbackUrl, playback);
+    const block = toObservation({ source: 'x', requestedUrl: `https://x.com/fixture/status/${id}`,
+      snapshots: [{ posts: result.posts }], provenance: {}, capturedAt: '2026-10-11T00:27:10Z',
+      stopReason: 'fixture' }).snapshots[0].blocks[0];
+    assert.equal(block.mediaRecovery.outcome, 'verified_owned_playback');
+    assert.equal(block.media[0].playbackUrl, playback);
+    assert.equal(block.captureQuality.status, 'unverified');
+    assert.equal(block.media[0].pairing, 'same_video_media_entity');
+    for (const pairing of [undefined, 'observed_dom']) {
+      const unbound = structuredClone(result.posts[0]);
+      unbound.media[0].pairing = pairing;
+      const rejected = toObservation({ source: 'x', requestedUrl: `https://x.com/fixture/status/${id}`,
+        snapshots: [{ posts: [unbound] }], provenance: {}, capturedAt: '2026-10-11T00:27:10Z',
+        stopReason: 'fixture' }).snapshots[0].blocks[0];
+      assert.equal(rejected.mediaRecovery.outcome, 'unresolved');
+    }
+  });
+});
+
+test('X generic posters require entity proof, exact post and DOM poster, plus safe MP4', async () => {
+  const id = '2108999757758947485';
+  const poster = 'https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg';
+  const playback = 'https://video.twimg.com/amplify_video/123456789/vid/1280x720/own.mp4';
+  const base = { kind: 'video', url: poster, posterUrl: poster, playbackUrl: playback,
+    playbackMode: 'inline', pairing: 'same_video_media_entity' };
+  const cases = [
+    { name: 'bound exact pair', media: base, want: 1 },
+    { name: 'unbound generic pair', media: { ...base, pairing: undefined }, want: 0 },
+    { name: 'unsupported proof', media: { ...base, pairing: 'observed_dom' }, want: 0 },
+    { name: 'another DOM poster', media: { ...base, posterUrl: 'https://pbs.twimg.com/media/foreign.jpg' }, want: 0 },
+    { name: 'another post', media: base, candidateId: 'x:status:2109040106321461537', want: 0 },
+    { name: 'HLS', media: { ...base, playbackUrl: playback.replace('.mp4', '.m3u8') }, want: 0 },
+    { name: 'foreign host', media: { ...base, playbackUrl: 'https://evil.test/own.mp4' }, want: 0 },
+    { name: 'credentials', media: { ...base, posterUrl: poster.replace('https://', 'https://user@') }, want: 0 },
+    { name: 'nondefault port', media: { ...base, posterUrl: poster.replace('pbs.twimg.com', 'pbs.twimg.com:8443') }, want: 0 },
+    { name: 'wrong image format', media: { ...base, posterUrl: poster.replace('.jpg', '.html') }, want: 0 },
+  ];
+  for (const example of cases) {
+    const result = await resolveStructuredMedia({
+      page: fakePage(() => ({ runtimeRevision: xResolver.runtimeRevision,
+        candidates: [{ candidateId: example.candidateId || `x:status:${id}`, media: [example.media] }] })),
+      source: 'x', posts: [xPost(id, [poster])], resolver: xResolver, deadlineAt: Date.now() + 2000,
+    });
+    assert.equal(result.summary.resolvedPosts, example.want, example.name);
+    assert.equal(Boolean(result.posts[0].media[0].playbackUrl), example.want === 1, example.name);
+  }
+  // A generic poster can use format=jpg, but must still be bound to its exact DOM asset.
+  const formattedPoster = 'https://pbs.twimg.com/media/GlKfj-9W4AAMzDO?format=jpg&name=small';
+  const formatted = await resolveStructuredMedia({
+    page: fakePage(() => ({ runtimeRevision: xResolver.runtimeRevision,
+      candidates: [{ candidateId: `x:status:${id}`, media: [{ ...base, url: formattedPoster, posterUrl: formattedPoster }] }] })),
+    source: 'x', posts: [xPost(id, [formattedPoster])], resolver: xResolver, deadlineAt: Date.now() + 2000,
+  });
+  assert.equal(formatted.summary.resolvedPosts, 1);
 });
 
 test('X mixed posters stay unresolved, while fully accounted owned playback keeps quality unverified', async () => {

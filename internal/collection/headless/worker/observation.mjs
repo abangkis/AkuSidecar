@@ -198,9 +198,13 @@ function isVerifiedStructuredVideo(source, item) {
     const playback = new URL(item.playbackUrl);
     if ([poster, playback].some(url => url.protocol !== 'https:' || url.username || url.password || url.port)) return false;
     if (source === 'x') {
-      return poster.hostname === 'pbs.twimg.com'
-        && /^\/(?:ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//i.test(poster.pathname)
+      const imageFormat = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(poster.pathname)
+        || /^(?:avif|gif|jpe?g|png|webp)$/i.test(poster.searchParams.get('format') || '');
+      const supportedPoster = /^\/(?:ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//i.test(poster.pathname)
         && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(poster.pathname)
+        || /^\/media\//i.test(poster.pathname) && imageFormat && item.pairing === 'same_video_media_entity';
+      return poster.hostname === 'pbs.twimg.com'
+        && supportedPoster
         && playback.hostname === 'video.twimg.com'
         && /^\/(?:amplify_video|ext_tw_video|tweet_video)\//i.test(playback.pathname)
         && /\.mp4$/i.test(playback.pathname);

@@ -28,6 +28,15 @@ take output slots first, using the same Tweet ownership and media asset identity
 checks. HLS variants do not consume MP4 output slots. The resolver's default
 non-MP4 behavior is preserved.
 
+An X video can also use a `pbs.twimg.com/media/` poster. In MP4 mode this
+requires an explicit video/animated-GIF media entity in the owning Tweet, with
+the poster and progressive MP4 variants bound inside that same entity. Nearby
+images, sibling objects, quoted Tweets, replies, and HLS-only variants cannot
+supply that binding. Conflicting video assets or poster mappings remain
+unresolved. The headless validator accepts this generic poster path only with
+the resolver's `same_video_media_entity` pairing evidence and an exact native
+post/DOM poster match. Finding a valid URL still does not prove full playback.
+
 Validation covers UI click/poll behavior, API-to-store recapture, poster-only
 results, unsafe/foreign media, reason and foreground gates, and the shared
 resolver in Bridge and headless. Sidecar must be rebuilt/restarted to activate

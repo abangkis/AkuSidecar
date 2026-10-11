@@ -188,6 +188,7 @@ export async function resolveStructuredMedia({ page, source, posts, resolver, de
         posterUrl: pair.posterUrl,
         playbackUrl: pair.playbackUrl,
         playbackMode: 'inline',
+        ...(pair.pairing ? { pairing: pair.pairing } : {}),
         ...(pair.width ? { width: pair.width } : {}),
         ...(pair.height ? { height: pair.height } : {}),
         provenance: source === 'facebook' ? 'facebook_structured_json' : 'x_main_structured_state',
@@ -319,13 +320,14 @@ function verifiedVideoPairs(source, media) {
   let ambiguous = false;
   for (const item of Array.isArray(media) ? media.slice(0, 64) : []) {
     if (!item || item.kind !== 'video') continue;
-    const posterUrl = safePoster(source, item.posterUrl || item.url);
+    const posterUrl = safePoster(source, item.posterUrl || item.url, item.pairing);
     const playbackUrl = safePlayback(source, item.playbackUrl);
     const key = posterPathKey(posterUrl);
     if (!posterUrl || !playbackUrl || !key) continue;
     const pair = {
       posterUrl,
       playbackUrl,
+      ...(item.pairing === 'same_video_media_entity' ? { pairing: item.pairing } : {}),
       width: boundedDimension(item.width),
       height: boundedDimension(item.height),
     };
@@ -337,11 +339,19 @@ function verifiedVideoPairs(source, media) {
   return { byPosterPath, ambiguous };
 }
 
-function safePoster(source, value) {
+function safePoster(source, value, pairing) {
   const url = safeMediaUrl(value);
   if (!url) return null;
   const parsed = new URL(url);
   if (source === 'x') {
+    // Generic image paths can be video posters, but their path cannot prove a
+    // video asset ID. Admit them only with the shared resolver's same-entity
+    // binding; the caller still checks the exact post and DOM poster path.
+    if (parsed.hostname === 'pbs.twimg.com' && /^\/media\//i.test(parsed.pathname)) {
+      const imageFormat = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(parsed.pathname)
+        || /^(?:avif|gif|jpe?g|png|webp)$/i.test(parsed.searchParams.get('format') || '');
+      return pairing === 'same_video_media_entity' && imageFormat ? url : null;
+    }
     return parsed.hostname === 'pbs.twimg.com'
       && /^\/(?:ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//i.test(parsed.pathname)
       && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(parsed.pathname) ? url : null;

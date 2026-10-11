@@ -20,6 +20,15 @@ import (
 )
 
 func TestUnresolvedVideoHTTPRecaptureReplacesPosterWithPlayback(t *testing.T) {
+	for _, poster := range []string{"https://pbs.twimg.com/ext_tw_video_thumb/12345/pu/img/poster.jpg", "https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg"} {
+		t.Run(poster, func(t *testing.T) {
+			testUnresolvedVideoHTTPRecaptureWithPoster(t, poster)
+		})
+	}
+}
+
+func testUnresolvedVideoHTTPRecaptureWithPoster(t *testing.T, poster string) {
+	t.Helper()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "video.db")
 	state, err := store.Open(path, domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
@@ -35,7 +44,7 @@ func TestUnresolvedVideoHTTPRecaptureReplacesPosterWithPlayback(t *testing.T) {
 	native := "https://x.com/ESPNAsia/status/2108207027298435417"
 	key := "x:status:2108207027298435417"
 	now := domain.Now()
-	block := domain.Block{EvidenceKey: key, PlatformID: key, Permalink: native, ContentKind: "video", Media: []map[string]any{{"kind": "video_poster", "url": "https://pbs.twimg.com/ext_tw_video_thumb/12345/pu/img/poster.jpg"}}, MediaRecovery: map[string]any{"expected": []string{"video"}, "outcome": "unresolved"}}
+	block := domain.Block{EvidenceKey: key, PlatformID: key, Permalink: native, ContentKind: "video", Media: []map[string]any{{"kind": "video_poster", "url": poster}}, MediaRecovery: map[string]any{"expected": []string{"video"}, "outcome": "unresolved"}}
 	raw, _ := json.Marshal(domain.Observation{Source: domain.SourceX, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}})
 	if _, err = db.Exec(`INSERT INTO observations(id,run_id,command_id,source,observation_json,captured_at,created_at) VALUES('obs','run','cmd','x',?,?,?)`, string(raw), now, now); err != nil {
 		t.Fatal(err)
@@ -72,7 +81,7 @@ func TestUnresolvedVideoHTTPRecaptureReplacesPosterWithPlayback(t *testing.T) {
 		t.Fatal(err)
 	}
 	playback := "https://video.twimg.com/ext_tw_video/12345/pu/vid/clip.mp4"
-	block.Media = []map[string]any{{"kind": "video", "posterUrl": "https://pbs.twimg.com/ext_tw_video_thumb/12345/pu/img/poster.jpg", "playbackMode": "inline", "playbackUrl": playback}}
+	block.Media = []map[string]any{{"kind": "video", "posterUrl": poster, "playbackMode": "inline", "playbackUrl": playback}}
 	job, err := state.CompleteMediaRecapture(ctx, body.Recapture.ID, domain.Observation{Source: domain.SourceX, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}})
 	if err != nil {
 		t.Fatal(err)
@@ -83,5 +92,8 @@ func TestUnresolvedVideoHTTPRecaptureReplacesPosterWithPlayback(t *testing.T) {
 	items, err := state.ListTimeline(ctx, 24, 0)
 	if err != nil || len(items) != 1 || items[0].Evidence.Media[0]["playbackUrl"] != playback {
 		t.Fatalf("updated timeline=%+v err=%v", items, err)
+	}
+	if items[0].Evidence.Media[0]["posterUrl"] != poster {
+		t.Fatal("recapture changed the owned video poster")
 	}
 }
