@@ -353,6 +353,8 @@ type relatedToken struct {
 	value       string
 	original    string
 	breakBefore bool
+	start, end  int // Rune offsets retain adjacent measurement punctuation.
+	measurement bool
 }
 
 type modelIdentity struct {
@@ -910,13 +912,13 @@ func identityPhrasesFromTokens(tokens []relatedToken, excluded map[string]bool) 
 	result := make([]modelIdentity, 0, 4)
 	seen := make(map[string]bool)
 	for index, token := range tokens {
-		if !isNumericToken(token.value) || index == 0 || excluded[token.value] || excluded[tokens[index-1].value] || !modelFamilyToken(tokens[index-1].value) {
+		if !isNumericToken(token.value) || token.measurement || index == 0 || excluded[token.value] || excluded[tokens[index-1].value] || !modelFamilyToken(tokens[index-1].value) {
 			continue
 		}
 		familyIndex := index - 1
 		versionEnd := index + 1
 		versionParts := []string{token.value}
-		for versionEnd < len(tokens) && len(versionParts) < 3 && !excluded[tokens[versionEnd].value] && isNumericToken(tokens[versionEnd].value) {
+		for versionEnd < len(tokens) && len(versionParts) < 3 && !tokens[versionEnd].measurement && !excluded[tokens[versionEnd].value] && isNumericToken(tokens[versionEnd].value) {
 			versionParts = append(versionParts, tokens[versionEnd].value)
 			versionEnd++
 		}
@@ -971,6 +973,7 @@ func relatedTokens(value string) []relatedToken {
 	current := make([]rune, 0, 16)
 	currentNumeric := false
 	currentBreakBefore := false
+	currentStart, currentEnd := 0, 0
 	breakPending := false
 	flush := func() {
 		if len(current) == 0 || len(current) > MaxTermRunes {
@@ -978,10 +981,10 @@ func relatedTokens(value string) []relatedToken {
 			return
 		}
 		original := string(current)
-		result = append(result, relatedToken{value: strings.ToLower(original), original: original, breakBefore: currentBreakBefore})
+		result = append(result, relatedToken{value: strings.ToLower(original), original: original, breakBefore: currentBreakBefore, start: currentStart, end: currentEnd})
 		current = current[:0]
 	}
-	for _, char := range runes {
+	for offset, char := range runes {
 		if !unicode.IsLetter(char) && !unicode.IsNumber(char) {
 			flush()
 			if char == '.' || char == '!' || char == '?' || char == '\n' || char == '\r' || char == ';' || char == ':' {
@@ -994,14 +997,87 @@ func relatedTokens(value string) []relatedToken {
 			flush()
 		}
 		if len(current) == 0 {
+			currentStart = offset
 			currentNumeric = isNumeric
 			currentBreakBefore = breakPending
 			breakPending = false
 		}
 		current = append(current, char)
+		currentEnd = offset + 1
 	}
 	flush()
+	markRelatedMeasurements(result, runes)
 	return result
+}
+
+// Percentages and quantities with duration units are measurements, never model
+// versions. Inspect original adjacency so a unit in a later sentence does not
+// swallow a genuine decimal model identity. This applies equally to query and
+// candidate text; ordinary Library tokenization remains unchanged.
+func markRelatedMeasurements(tokens []relatedToken, runes []rune) {
+	for start := 0; start < len(tokens); start++ {
+		if !isNumericToken(tokens[start].value) {
+			continue
+		}
+		end := start + 1
+		clock := false
+		for end < len(tokens) && isNumericToken(tokens[end].value) {
+			separator := string(runes[tokens[end-1].end:tokens[end].start])
+			if separator != "." && separator != "," && separator != ":" {
+				break
+			}
+			clock = clock || separator == ":"
+			end++
+		}
+		measurement := clock
+		suffixStart := tokens[end-1].end
+		for suffixStart < len(runes) && unicode.IsSpace(runes[suffixStart]) {
+			suffixStart++
+		}
+		if suffixStart < len(runes) {
+			switch runes[suffixStart] {
+			case '%', '％', '٪':
+				measurement = true
+			}
+		}
+		if end < len(tokens) {
+			gap := string(runes[tokens[end-1].end:tokens[end].start])
+			if !tokens[end].breakBefore && strings.TrimSpace(gap) == "" {
+				unit := tokens[end].value
+				measurement = measurement || relatedDurationUnit(unit) || unit == "percent" || unit == "percentage" || unit == "persen"
+			}
+		}
+		if measurement {
+			for index := start; index < end; index++ {
+				tokens[index].measurement = true
+			}
+		}
+		start = end - 1
+	}
+}
+
+func relatedDurationUnit(value string) bool {
+	switch value {
+	case "h", "hr", "hrs", "hour", "hours", "m", "min", "mins", "minute", "minutes",
+		"s", "sec", "secs", "second", "seconds", "ms", "millisecond", "milliseconds",
+		"d", "day", "days", "week", "weeks", "month", "months", "year", "years",
+		"jam", "menit", "detik", "hari":
+		return true
+	}
+	// Real source captions may emphasize a countdown with MINNSSSSS. Accept
+	// repeated letters only when they reduce to the known minute abbreviation.
+	if strings.HasPrefix(value, "min") {
+		var normalized strings.Builder
+		var previous rune
+		for _, char := range value {
+			if char != previous {
+				normalized.WriteRune(char)
+			}
+			previous = char
+		}
+		return normalized.String() == "min" || normalized.String() == "mins"
+	}
+	return false
 }
 
 func authorTokens(authors []string) map[string]bool {
@@ -1037,7 +1113,7 @@ func relatedFeatureTerm(term string) bool {
 }
 
 func modelFamilyToken(value string) bool {
-	return relatedFeatureTerm(value) && !modelContextWords[value]
+	return relatedFeatureTerm(value) && !modelContextWords[value] && !relatedDurationUnit(value)
 }
 
 func isModelQualifier(token relatedToken) bool {

@@ -21,6 +21,53 @@ func setRelatedContextSubject(t *testing.T, state *Store, id, title, summary str
 	}
 }
 
+func TestRelatedContextResetMeasurementsReachRelevantMemoryThroughFTS(t *testing.T) {
+	for _, example := range []struct{ title, summary, text, author string }{
+		{
+			title:   "TestingCatalog reported that Codex can now use a reset on its own when explicitly requested by users when the remaining limit is 10% or less, quoting Tibo's Day 6 update.",
+			summary: "Informs developers of new autonomous reset capabilities in Codex for managing context limits.",
+			text:    "ICYMI 👀: Codex can now use a reset on its own when users explicitly ask it to do so.\n\nAllow Codex to use resets - Give Codex the ability to use a reset when you explicitly request it during a conversation and your current limit has 10% or less remaining. Resets are never used automatically.\n\nThis setting is placed in the Usage & billing section.",
+			author:  "AI News | TestingCatalog @testingcatalog · 53m",
+		},
+		{
+			title:   "Kerdo reported an upcoming Codex usage reset in approximately 8 hours and 40 minutes, teasing Claude users.",
+			summary: "Provides precise timing for Codex users anticipating their usage limits to reset.",
+			text:    "🚨 CODEX USERS: USAGE RESET IN 8 HRS 40 MINNSSSSS🔥🔥🔥\n\nim so sad for claude users tbh",
+			author:  "Kerdo @AbdoKerdawy · 1h",
+		},
+	} {
+		t.Run(example.author, func(t *testing.T) {
+			ctx := context.Background()
+			state := openTestStore(t)
+			id := insertContentContextTimelineFixture(t, state, false)
+			setRelatedContextSubject(t, state, id, example.title, example.summary, []string{"openai", "codex", "reset", "usage_reset"})
+			evidence, err := json.Marshal(domain.Block{Text: example.text, Author: example.author})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := state.db.Exec(`UPDATE timeline_items SET evidence_snapshot_json=? WHERE id=?`, string(evidence), id); err != nil {
+				t.Fatal(err)
+			}
+			input := libraryInput("reset-note", domain.SourceX,
+				"Ananth reported that Codex resets are suspended for the next month because OpenAI's dots usage is nearly unlimited right now.",
+				"Informs developers and users about temporary relief from usage limits and capacity management.", "2026-10-10T00:00:00Z")
+			input.Author = "Ananth @Ananth7e · 1h"
+			input.Tags = []string{"openai", "codex", "dots", "ai_limits"}
+			positive, err := state.CreateMemoryRecallStub(ctx, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := state.CreateMemoryRecallStub(ctx, libraryInput("plugins", domain.SourceX, "Codex plugin installation", "Developer usage workflows", "2026-10-10T00:00:00Z")); err != nil {
+				t.Fatal(err)
+			}
+			result, err := state.ContentContext(ctx, id, 3)
+			if err != nil || len(result.Matches) != 1 || result.Matches[0].Item.ID != positive.ID {
+				t.Fatalf("real reset context still omitted or unrelated memory admitted: result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
 func TestRelatedContextRequiresSubjectRelationshipThroughFTSWhileLibraryRemainsBroad(t *testing.T) {
 	cases := []struct {
 		name, title, summary string
