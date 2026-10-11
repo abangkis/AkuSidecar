@@ -60,11 +60,9 @@ type Query struct {
 	// excludedAuthors is used only by the strict automatic policy. Keeping it
 	// private prevents callers from changing the admission boundary.
 	excludedAuthors map[string]bool
-	// Ordinary feature overlaps must be corroborated in the factual title or
-	// source text, rather than generated significance alone. Nil keeps explicit
-	// internal Query construction usable without inventing source provenance.
-	primaryTerms    map[string]bool
-	primarySubjects []string
+	// Retain bounded source fields so admission can bind an issue to its local
+	// owner instead of borrowing a feature from another product in the article.
+	issueFields []memoryField
 }
 
 // Engine owns deterministic Content Context feature extraction, ranking, and
@@ -92,7 +90,6 @@ func (e Engine) Extract(item domain.TimelineItem) Query {
 	sourceFields := []string{item.Item.WhatChanged, item.Item.WhyItMatters, text}
 	excludedAuthors := authorTokens(authors)
 	identityPhrases, identityTokens := relatedIdentities(sourceFields, excludedAuthors)
-	primaryTerms, _ := relatedContentTerms([]memoryField{{value: item.Item.WhatChanged}, {value: text}}, excludedAuthors, identityTokens)
 	// Give the bounded retrieval budget to primary features. Significance-only
 	// prose cannot pass ordinary admission and must not crowd a real issue out
 	// of the FTS pool. The explicit technical vocabulary remains eligible.
@@ -104,7 +101,6 @@ func (e Engine) Extract(item domain.TimelineItem) Query {
 	}
 	tags := append(append([]string{}, item.Assessment.TopicTags...), item.Assessment.TopicFacets...)
 	subjectFeatures := relatedSubjectFeatures(sourceFields, tags, excludedAuthors, identityTokens)
-	primarySubjects := relatedContentSubjects(subjectFeatures, []memoryField{{value: item.Item.WhatChanged}, {value: text}}, excludedAuthors, identityTokens)
 	focusPhrases := relatedFocusPhrases(sourceFields, excludedAuthors, identityTokens)
 	if len(identityPhrases) > MaxIdentityPhrases {
 		identityPhrases = identityPhrases[:MaxIdentityPhrases]
@@ -116,8 +112,8 @@ func (e Engine) Extract(item domain.TimelineItem) Query {
 		Terms: strictTerms, SubjectFeatures: subjectFeatures, FocusPhrases: focusPhrases,
 		Mode: QueryRelated, IdentityPhrases: identityPhrases,
 		excludedAuthors: excludedAuthors,
-		primaryTerms:    primaryTerms,
-		primarySubjects: primarySubjects,
+		issueFields: []memoryField{{label: "title", value: item.Item.WhatChanged},
+			{label: "retained text", value: text}, {label: "summary", value: item.Item.WhyItMatters}},
 	}
 }
 
@@ -365,13 +361,7 @@ type modelIdentity struct {
 }
 
 func scoreRelatedCandidate(query Query, item domain.MemoryItem) candidateSignals {
-	queryTerms := make(map[string]bool, len(query.Terms))
-	for _, term := range uniqueTerms(query.Terms) {
-		if relatedFeatureTerm(term) {
-			queryTerms[term] = true
-		}
-	}
-	if len(queryTerms) == 0 && len(query.IdentityPhrases) == 0 && len(query.SubjectFeatures) == 0 && len(query.FocusPhrases) == 0 {
+	if len(query.Terms) == 0 && len(query.IdentityPhrases) == 0 && len(query.SubjectFeatures) == 0 && len(query.FocusPhrases) == 0 {
 		return candidateSignals{}
 	}
 
@@ -391,96 +381,56 @@ func scoreRelatedCandidate(query Query, item domain.MemoryItem) candidateSignals
 		text = append(text, field.value)
 	}
 	candidateIdentities, identityTokens := relatedIdentities(text, excluded)
-	candidateTerms, support := relatedContentTerms(fields, excluded, identityTokens)
-	primaryFields := []memoryField{{label: "title", value: item.Title}}
-	if item.FullContent != nil {
-		primaryFields = append(primaryFields, memoryField{label: "retained text", value: *item.FullContent})
-	}
-	candidatePrimaryTerms, _ := relatedContentTerms(primaryFields, excluded, identityTokens)
 	candidateFocus := relatedFocusPhrases(text, excluded, identityTokens)
 	candidateTags := append(append([]string{}, item.Tags...), item.Facets...)
-	candidateSubjects := relatedSubjectFeatures(text, candidateTags, excluded, identityTokens)
+	candidateSubjects := issueOwningSubjects(relatedSubjectFeatures(text, candidateTags, excluded, identityTokens))
+	querySubjects := issueOwningSubjects(query.SubjectFeatures)
 	featureSubjectTokens := subjectFeatureTokens(append(append([]string{}, query.SubjectFeatures...), candidateSubjects...))
-	shared := make([]string, 0, len(queryTerms))
-	for _, term := range uniqueTerms(query.Terms) {
-		if !queryTerms[term] || featureSubjectTokens[term] || (query.primaryTerms != nil && !query.primaryTerms[term] && !focusedTechnicalTerms[term]) {
-			continue
-		}
-		for _, variant := range FeatureVariants(term) {
-			if candidatePrimaryTerms[variant] || (focusedTechnicalTerms[variant] && candidateTerms[variant]) {
-				shared = append(shared, term)
-				break
-			}
-		}
-	}
-	// Performance is an evaluation category, not a concrete shared issue by
-	// itself. Coding, error analysis, pricing, etc. can still corroborate it.
-	if len(shared) == 1 && shared[0] == "performance" {
-		shared = nil
-	}
 	sharedFocus := filterSubjectFeaturePhrases(sharedPhrases(query.FocusPhrases, candidateFocus), featureSubjectTokens)
-	sharedSubjects := sharedPhrases(query.SubjectFeatures, append(candidateSubjects, relatedContentSubjects(query.SubjectFeatures, fields, excluded, identityTokens)...))
-	sharedPrimarySubjects := sharedPhrases(query.SubjectFeatures, relatedContentSubjects(query.SubjectFeatures, primaryFields, excluded, identityTokens))
+	sharedSubjects := sharedPhrases(querySubjects, append(candidateSubjects, relatedContentSubjects(querySubjects, fields, excluded, identityTokens)...))
+	// Both sides use the same ownership vocabulary. A product mentioned only in
+	// the other record can still act as a boundary, never as invented evidence.
+	owners := uniqueTerms(append(append([]string{}, querySubjects...), candidateSubjects...))
+	identities := uniqueTerms(append(append([]string{}, query.IdentityPhrases...), candidateIdentities...))
+	queryIssues := relatedIssueEvidence(query.issueFields, owners, identities, excluded)
+	candidateIssues := relatedIssueEvidence(fields, owners, identities, excluded)
 
 	if len(query.IdentityPhrases) > 0 {
 		queryIdentitySet := make(map[string]bool, len(query.IdentityPhrases))
 		for _, identity := range query.IdentityPhrases {
 			queryIdentitySet[canonicalIdentityPhrase(identity)] = true
 		}
-		exactIdentity := ""
+		var best candidateSignals
 		for _, identity := range candidateIdentities {
 			if queryIdentitySet[identity] {
-				exactIdentity = identity
-				break
+				shared := sharedOwnedIssues(queryIssues, candidateIssues, identity)
+				if len(shared) > 0 && 300+len(shared)*100 > best.strength {
+					best = candidateSignals{admitted: true, strength: 300 + len(shared)*100,
+						reason: fmt.Sprintf("Shared model identity %q and issue %q.", identity, describeSharedFeatures(shared, nil))}
+				}
 			}
 		}
-		// Model identity is the subject. A family, number, or shared feature
-		// cannot stand in for the complete version and qualifier.
-		if exactIdentity == "" || (len(shared) == 0 && !hasDistinctPhrase(sharedFocus, strings.Fields(exactIdentity))) {
-			return candidateSignals{}
-		}
-		features := describeSharedFeatures(shared, sharedFocus)
-		return candidateSignals{
-			admitted: true,
-			strength: 300 + len(shared)*100 + len(sharedFocus)*80 + len(support)*5,
-			reason:   fmt.Sprintf("Shared model identity %q and features %q.", exactIdentity, features),
-		}
+		// Exact model identity alone cannot borrow another model/product's issue.
+		return best
 	}
 
-	if len(query.SubjectFeatures) > 0 {
-		matchedSubject := ""
-		for _, subject := range uniqueTerms(query.SubjectFeatures) {
+	if len(querySubjects) > 0 {
+		var best candidateSignals
+		for _, subject := range uniqueTerms(querySubjects) {
 			if containsString(sharedSubjects, subject) {
-				if matchedSubject == "" {
-					matchedSubject = subject
-				}
-				if containsString(sharedPrimarySubjects, subject) && (query.primaryTerms == nil || containsString(query.primarySubjects, subject)) {
-					matchedSubject = subject
-					break
+				shared := sharedOwnedIssues(queryIssues, candidateIssues, subject)
+				if len(shared) > 0 && 250+len(shared)*100 > best.strength {
+					best = candidateSignals{admitted: true, strength: 250 + len(shared)*100,
+						reason: fmt.Sprintf("Shared subject %q and issue %q.", subject, describeSharedFeatures(shared, nil))}
 				}
 			}
 		}
-		namedSubjectConflict := len(candidateSubjects) > 0 && len(sharedSubjects) == 0
-		primarySubject := containsString(sharedPrimarySubjects, matchedSubject) && (query.primaryTerms == nil || containsString(query.primarySubjects, matchedSubject))
-		if matchedSubject != "" && ((primarySubject && hasDistinctTerm(shared, strings.Fields(matchedSubject))) || hasDistinctPhrase(sharedFocus, strings.Fields(matchedSubject)) || hasTechnicalFeaturePhrase(sharedFocus)) {
-			reason := fmt.Sprintf("Shared subject %q and features %q.", matchedSubject, describeSharedFeatures(shared, nil))
-			if len(sharedFocus) > 0 {
-				bestPhrase := sharedFocus[0]
-				for _, phrase := range sharedFocus {
-					if containsString(strings.Fields(phrase), matchedSubject) {
-						bestPhrase = phrase
-						break
-					}
-				}
-				reason = fmt.Sprintf("Shared focused phrase %q with subject %q.", bestPhrase, matchedSubject)
-			}
-			return candidateSignals{
-				admitted: true,
-				strength: 250 + len(shared)*100 + len(sharedFocus)*80 + len(support)*5,
-				reason:   reason,
-			}
+		if best.admitted {
+			return best
 		}
-		if namedSubjectConflict || !hasDistinctPhrase(sharedFocus, nil) {
+		// A focused phrase cannot bypass a failed named-owner check. General
+		// technical records without a named subject retain the phrase-only lane.
+		if len(sharedSubjects) > 0 || len(candidateSubjects) > 0 || len(candidateIdentities) > 0 || !hasDistinctPhrase(sharedFocus, nil) {
 			return candidateSignals{}
 		}
 	} else if len(sharedFocus) == 0 {
@@ -489,11 +439,340 @@ func scoreRelatedCandidate(query Query, item domain.MemoryItem) candidateSignals
 	if len(sharedFocus) > 0 {
 		return candidateSignals{
 			admitted: true,
-			strength: len(sharedFocus)*120 + len(shared)*50 + len(support)*5,
+			strength: len(sharedFocus) * 120,
 			reason:   fmt.Sprintf("Shared focused phrase %q.", sharedFocus[0]),
 		}
 	}
 	return candidateSignals{}
+}
+
+// ownedIssue is internal proof, not a new API field. Offsets address the bounded,
+// trimmed field and preserve the concrete issue and its owning name for tests
+// and diagnosis. Continuation records explicit pronoun/heading inheritance.
+type ownedIssue struct {
+	owner, issue, field  string
+	term                 string
+	start, end           int
+	ownerStart, ownerEnd int
+	continuation         bool
+}
+
+type issueOwnerMention struct {
+	names      []string
+	start, end int // token indexes, end exclusive
+}
+
+// Admission has a positive, deliberately bounded issue vocabulary. Unlisted
+// prose remains available for retrieval but cannot assert a relationship.
+// Add a new issue only with positive and cross-subject negative examples;
+// unknown issues fail closed rather than treating every non-stopword as one.
+var concreteRelatedIssues = map[string]bool{
+	"reset": true, "licensing": true, "coding": true, "citation": true,
+	"grounding": true, "error": true, "latency": true, "pricing": true,
+	"distribution": true, "safety": true,
+	"context window": true, "tool calling": true,
+}
+
+func concreteIssue(value string) string {
+	if value == "resets" {
+		value = "reset"
+	}
+	if concreteRelatedIssues[value] || focusedTechnicalTerms[value] {
+		return value
+	}
+	return ""
+}
+
+func issueOwningSubjects(subjects []string) []string {
+	var result []string
+	for _, subject := range subjects {
+		feature := concreteIssue(subject) != ""
+		for _, term := range strings.Fields(subject) {
+			feature = feature || concreteIssue(term) != ""
+		}
+		if !feature {
+			result = append(result, subject)
+		}
+	}
+	return result
+}
+
+func concreteIssueAt(tokens []relatedToken, index int) (string, int) {
+	if index+1 < len(tokens) && !tokens[index+1].breakBefore {
+		phrase := tokens[index].value + " " + tokens[index+1].value
+		if concreteRelatedIssues[phrase] {
+			return phrase, index + 2
+		}
+	}
+	return concreteIssue(tokens[index].value), index + 1
+}
+
+func sharedOwnedIssues(left, right []ownedIssue, owner string) []string {
+	rightIssues := make(map[string]bool)
+	for _, proof := range right {
+		if proof.owner == owner {
+			rightIssues[proof.issue] = true
+		}
+	}
+	var result []string
+	seen := make(map[string]bool)
+	for _, proof := range left {
+		if proof.owner == owner && rightIssues[proof.issue] && !seen[proof.issue] {
+			seen[proof.issue] = true
+			result = append(result, proof.term)
+		}
+	}
+	return result
+}
+
+func relatedIssueEvidence(fields []memoryField, subjects, identities []string, excluded map[string]bool) []ownedIssue {
+	definitions := uniqueTerms(append(append([]string{}, identities...), subjects...))
+	if len(definitions) > 32 {
+		definitions = definitions[:32]
+	}
+	identitySet := make(map[string]bool)
+	for _, identity := range identities {
+		identitySet[identity] = true
+	}
+	primaryOwners := make(map[string]bool)
+	for _, field := range fields {
+		if field.label == "summary" {
+			continue
+		}
+		for _, mention := range issueOwnerMentions(relatedTokens(boundedIssueField(field.value)), definitions, identitySet, excluded) {
+			for _, owner := range mention.names {
+				// Boundary-only owners cannot admit anything, but they make
+				// unattributed summary inheritance ambiguous just like a product.
+				primaryOwners[owner] = true
+			}
+		}
+	}
+	var proofs []ownedIssue
+	for _, field := range fields {
+		boundedValue := boundedIssueField(field.value)
+		tokens := relatedTokens(boundedValue)
+		mentions := issueOwnerMentions(tokens, definitions, identitySet, excluded)
+		var previous []issueOwnerMention
+		previousHadIssue := false
+		for start := 0; start < len(tokens); {
+			end := start + 1
+			for end < len(tokens) && (!tokens[end].breakBefore || withinOwnerMention(end, mentions)) {
+				end++
+			}
+			var local []issueOwnerMention
+			for _, mention := range mentions {
+				if mention.start >= start && mention.start < end {
+					local = append(local, mention)
+				}
+			}
+			inherited := false
+			if len(local) == 0 && len(previous) == 1 {
+				pronoun := tokens[start].value == "it" || tokens[start].value == "its"
+				heading := false
+				if start > 0 && !previousHadIssue {
+					runes := []rune(boundedValue)
+					heading = strings.Contains(string(runes[tokens[start-1].end:tokens[start].start]), ":")
+				}
+				if pronoun || heading {
+					local = previous
+					inherited = true
+				}
+			}
+			// A technical summary can describe the sole primary owner, but a
+			// generated summary cannot introduce a product or an ordinary issue.
+			if len(local) == 0 && field.label == "summary" && len(primaryOwners) == 1 {
+				for owner := range primaryOwners {
+					local = []issueOwnerMention{{names: []string{owner}, start: start, end: start}}
+				}
+				inherited = true
+			}
+			hadIssue := false
+			for index := start; index < end; index++ {
+				issue, issueEnd := concreteIssueAt(tokens, index)
+				if issue == "" || excluded[tokens[index].value] || tokenIsOwner(index, mentions) {
+					continue
+				}
+				hadIssue = true
+				if field.label == "summary" && !focusedTechnicalTerms[issue] {
+					continue
+				}
+				owner, ok := nearestIssueOwner(index, local, tokens, inherited)
+				if !ok {
+					continue
+				}
+				for _, name := range owner.names {
+					if !containsString(definitions, name) || (field.label == "summary" && !primaryOwners[name]) {
+						continue
+					}
+					proof := ownedIssue{owner: name, issue: issue, field: field.label,
+						term:  tokens[index].value,
+						start: tokens[index].start, end: tokens[issueEnd-1].end, continuation: inherited,
+						ownerStart: -1, ownerEnd: -1}
+					if issueEnd > index+1 {
+						proof.term = issue
+					} else if index > start && !tokens[index].breakBefore && !tokenIsOwner(index-1, mentions) && focusedPair(tokens[index-1].value, tokens[index].value) {
+						proof.term = tokens[index-1].value + " " + tokens[index].value
+					} else if index+1 < end && !tokens[index+1].breakBefore && !tokenIsOwner(index+1, mentions) && focusedPair(tokens[index].value, tokens[index+1].value) {
+						proof.term = tokens[index].value + " " + tokens[index+1].value
+					}
+					if !inherited {
+						proof.ownerStart, proof.ownerEnd = tokens[owner.start].start, tokens[owner.end-1].end
+					}
+					proofs = append(proofs, proof)
+					if len(proofs) == 64 {
+						return proofs
+					}
+				}
+			}
+			previous, previousHadIssue = local, hadIssue
+			start = end
+		}
+	}
+	return proofs
+}
+
+func boundedIssueField(value string) string {
+	value = strings.TrimSpace(value)
+	count := 0
+	for offset := range value {
+		if count == MaxFieldRunes {
+			return value[:offset]
+		}
+		count++
+	}
+	return value
+}
+
+func withinOwnerMention(index int, mentions []issueOwnerMention) bool {
+	for _, mention := range mentions {
+		if mention.start < index && index < mention.end {
+			return true // A decimal point inside an atomic model is not a clause.
+		}
+	}
+	return false
+}
+
+func tokenIsOwner(index int, mentions []issueOwnerMention) bool {
+	for _, mention := range mentions {
+		if mention.start <= index && index < mention.end {
+			return true
+		}
+	}
+	return false
+}
+
+func issueOwnerMentions(tokens []relatedToken, definitions []string, identities, excluded map[string]bool) []issueOwnerMention {
+	var result []issueOwnerMention
+	for index := 0; index < len(tokens); {
+		best := issueOwnerMention{start: index, end: index}
+		for _, name := range definitions {
+			parts := strings.Fields(name)
+			if len(parts) == 0 || index+len(parts) > len(tokens) {
+				continue
+			}
+			match := true
+			for offset, part := range parts {
+				token := tokens[index+offset]
+				if token.value != part || excluded[part] || (offset > 0 && token.breakBefore && !identities[name]) {
+					match = false
+					break
+				}
+			}
+			if match && index+len(parts) > best.end {
+				best.end, best.names = index+len(parts), []string{name}
+			}
+		}
+		if best.end > index {
+			// Complete identities may include a named family prefix. Preserve
+			// their parser-provided aliases, but not partial product names (CLI).
+			for _, name := range definitions {
+				parts := strings.Fields(name)
+				if !identities[name] || len(parts) > best.end-index || containsString(best.names, name) {
+					continue
+				}
+				match := true
+				for offset, part := range parts {
+					if tokens[best.end-len(parts)+offset].value != part {
+						match = false
+					}
+				}
+				if match {
+					best.names = append(best.names, name)
+				}
+			}
+			result = append(result, best)
+			index = best.end
+			continue
+		}
+		// An unrecognized proper name is a boundary, not a new admission
+		// subject. This prevents a known product from owning a later name's issue.
+		token := tokens[index]
+		issue, _ := concreteIssueAt(tokens, index)
+		phrasePart := false
+		if index > 0 {
+			_, end := concreteIssueAt(tokens, index-1)
+			phrasePart = end > index
+		}
+		namedBoundary := boundaryOwnerNames[token.value] || hasUppercase(token.original) && relatedFeatureTerm(token.value)
+		if namedBoundary && issue == "" && !phrasePart && !excluded[token.value] && !relatedDurationUnit(token.value) && !issueContextLabels[token.value] {
+			result = append(result, issueOwnerMention{names: []string{"boundary:" + token.value}, start: index, end: index + 1})
+		}
+		index++
+	}
+	// Only an explicit adjacent conjunction shares an issue between products.
+	// "Codex licensing and ChatGPT resets" contains an issue, so stays split.
+	var grouped []issueOwnerMention
+	for _, mention := range result {
+		if len(grouped) > 0 {
+			previous := &grouped[len(grouped)-1]
+			if mention.start == previous.end+1 && tokens[previous.end].value == "and" && !tokens[previous.end].breakBefore && !tokens[mention.start].breakBefore {
+				previous.names = append(previous.names, mention.names...)
+				previous.end = mention.end
+				continue
+			}
+		}
+		grouped = append(grouped, mention)
+	}
+	return grouped
+}
+
+// These are contexts/modifiers of an issue, not another owning product. Their
+// presence never supplies an admission issue or increases its score.
+var issueContextLabels = map[string]bool{"arena": true, "ui": true, "cli": true, "enterprise": true}
+
+// Boundary recognition is deliberately not an admission identity/alias. The
+// existing broad company exclusions still delimit ownership, as do these two
+// frequently lowercased product names. No company-only relationship is added.
+var boundaryOwnerNames = map[string]bool{
+	"codex": true, "chatgpt": true,
+	"openai": true, "anthropic": true, "google": true,
+	"microsoft": true, "meta": true, "nvidia": true,
+}
+
+func nearestIssueOwner(index int, mentions []issueOwnerMention, tokens []relatedToken, inherited bool) (issueOwnerMention, bool) {
+	if inherited && len(mentions) == 1 {
+		return mentions[0], true
+	}
+	var previous *issueOwnerMention
+	for i := range mentions {
+		mention := &mentions[i]
+		if mention.end <= index {
+			previous = mention
+			continue
+		}
+		if mention.start > index {
+			// "coding improvements for GPT-6.1" has its owner after the issue.
+			preposition := tokens[mention.start-1].value
+			if mention.start-index <= 8 && (previous == nil || preposition == "for" || preposition == "of" || preposition == "in") {
+				return *mention, true
+			}
+			break
+		}
+	}
+	if previous != nil && index-previous.end <= 16 {
+		return *previous, true
+	}
+	return issueOwnerMention{}, false
 }
 
 func relatedTerms(fields []string, excluded map[string]bool, identityTokens map[string]bool) []string {
@@ -763,30 +1042,6 @@ func describeSharedFeatures(features, phrases []string) string {
 	return ""
 }
 
-func hasTechnicalFeaturePhrase(phrases []string) bool {
-	for _, phrase := range phrases {
-		for _, token := range strings.Fields(phrase) {
-			if focusedTechnicalTerms[token] {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func hasDistinctTerm(values, excluded []string) bool {
-	excludedSet := make(map[string]bool, len(excluded))
-	for _, value := range excluded {
-		excludedSet[value] = true
-	}
-	for _, value := range values {
-		if !excludedSet[value] {
-			return true
-		}
-	}
-	return false
-}
-
 func hasDistinctPhrase(phrases, excluded []string) bool {
 	for _, phrase := range phrases {
 		excludedSet := make(map[string]bool, len(excluded))
@@ -823,21 +1078,6 @@ func hasInternalUppercase(value string) bool {
 		hasLaterUpper = hasLaterUpper || unicode.IsUpper(char)
 	}
 	return hasLower && hasLaterUpper
-}
-
-func relatedContentTerms(fields []memoryField, excluded map[string]bool, identityTokens map[string]bool) (map[string]bool, map[string]bool) {
-	terms := make(map[string]bool)
-	support := make(map[string]bool)
-	for _, field := range fields {
-		for _, token := range relatedTokens(field.value) {
-			if excluded[token.value] || identityTokens[token.value] || !relatedFeatureTerm(token.value) {
-				continue
-			}
-			terms[token.value] = true
-			support[field.label] = true
-		}
-	}
-	return terms, support
 }
 
 func relatedIdentities(fields []string, excluded map[string]bool) ([]string, map[string]bool) {

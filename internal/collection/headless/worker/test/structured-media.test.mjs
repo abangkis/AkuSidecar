@@ -162,6 +162,32 @@ test('X generic DOM video poster resolves only from its own structured video ent
   });
 });
 
+test('X headless recapture cannot enrich its poster from a flat legacy quote or repost', async () => {
+  const id = '2108999757758947485';
+  const poster = 'https://pbs.twimg.com/media/flat-quote.jpg';
+  const foreignPlayback = 'https://video.twimg.com/amplify_video/foreign/vid/640x360/quoted.mp4';
+  for (const branch of ['quoted_status', 'retweeted_status']) {
+    const article = xArticle(id, poster, undefined, 'video');
+    article.__reactProps$fixture.tweet[branch] = {
+      id_str: '2109040106321461537', full_text: 'Foreign nested Tweet',
+      extended_entities: { media: [{ type: 'video', media_url_https: poster,
+        video_info: { variants: [{ url: foreignPlayback, content_type: 'video/mp4' }] } }] },
+    };
+    await withDocument({ querySelectorAll: () => [article] }, async () => {
+      const result = await resolveStructuredMedia({ page: fakePage(), source: 'x', posts: [xPost(id, [poster])],
+        resolver: xResolver, deadlineAt: Date.now() + 2000 });
+      assert.equal(result.summary.resolvedPosts, 0, branch);
+      assert.equal(result.posts[0].media[0].kind, 'video_poster');
+      assert.equal(result.posts[0].media[0].playbackUrl, undefined);
+      const block = toObservation({ source: 'x', requestedUrl: `https://x.com/fixture/status/${id}`,
+        snapshots: [{ posts: result.posts }], provenance: {}, capturedAt: '2026-10-11T00:27:10Z',
+        stopReason: 'fixture' }).snapshots[0].blocks[0];
+      assert.equal(block.mediaRecovery.outcome, 'unresolved');
+      assert.equal(JSON.stringify(block).includes('quoted.mp4'), false);
+    });
+  }
+});
+
 test('X generic posters require entity proof, exact post and DOM poster, plus safe MP4', async () => {
   const id = '2108999757758947485';
   const poster = 'https://pbs.twimg.com/media/GlKfj-9W4AAMzDO.jpg';

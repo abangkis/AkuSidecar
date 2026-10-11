@@ -126,6 +126,9 @@ func TestRelatedContextRequiresSubjectRelationshipThroughFTSWhileLibraryRemainsB
 			var exact string
 			for index, input := range example.memories {
 				input.Tags = []string{"OpenAI", "AI", "usage"}
+				// Fixture IDs such as "reset"/"error" are issue labels, not the
+				// writer's name. Do not turn them into attribution exclusions.
+				input.Author = "Fixture writer"
 				memory, err := state.CreateMemoryRecallStub(ctx, input)
 				if err != nil {
 					t.Fatal(err)
@@ -178,6 +181,41 @@ func TestRelatedContextFeatureEquivalentsReachFTSCandidatesWithoutBroadStemming(
 	candidates, err := state.searchMemoryContextCandidates(ctx, contentcontext.Query{Terms: []string{"reset"}, Mode: contentcontext.QueryLibrarySearch}, 24)
 	if err != nil || len(candidates) != 1 || candidates[0].Item.Title != "reset" {
 		t.Fatalf("explicit search changed: %+v err=%v", candidates, err)
+	}
+}
+
+func TestRelatedContextConcreteIssueGateAfterFTSRetrieval(t *testing.T) {
+	ctx := context.Background()
+	state := openTestStore(t)
+	id := insertContentContextTimelineFixture(t, state, false)
+	setRelatedContextSubject(t, state, id, "Codex can use a reset when explicitly requested", "", []string{"Codex"})
+	var wanted string
+	for index, title := range []string{
+		"Codex resets suspended for a month",
+		"Codex coding in a software factory can use QA when needed",
+		"Codex limits can use Dots for extended usage",
+		"Synchronization when moving between Codex and ChatGPT",
+		"Dots use cases for controlling Codex through CUA",
+		"Codex licensing while chatgpt resets",
+	} {
+		input := libraryInput(domain.NewID("issue-fixture"), domain.SourceX, title, "", "2026-10-10T00:00:00Z")
+		input.Author = "Fixture writer"
+		input.Tags = []string{"Codex"}
+		memory, err := state.CreateMemoryRecallStub(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			wanted = memory.ID
+		}
+	}
+	result, err := state.ContentContext(ctx, id, 5)
+	if err != nil || len(result.Matches) != 1 || result.Matches[0].Item.ID != wanted {
+		t.Fatalf("FTS prose/cross-product candidate escaped concrete issue gate: %+v err=%v", result, err)
+	}
+	library, err := state.SearchMemoryLibrary(ctx, domain.MemoryLibraryQuery{Query: "Codex", Limit: 10})
+	if err != nil || len(library.Items) != 6 {
+		t.Fatalf("explicit Library search narrowed: items=%d err=%v", len(library.Items), err)
 	}
 }
 

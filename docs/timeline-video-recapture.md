@@ -36,6 +36,9 @@ supply that binding. Conflicting video assets or poster mappings remain
 unresolved. The headless validator accepts this generic poster path only with
 the resolver's `same_video_media_entity` pairing evidence and an exact native
 post/DOM poster match. Finding a valid URL still does not prove full playback.
+The shared ownership check also recognizes flat legacy Tweet objects carrying
+`id_str` and `full_text`, so nested quote/repost media cannot supply playback
+for the owning poster. A media entity's own ID is not treated as a Tweet ID.
 
 Validation covers UI click/poll behavior, API-to-store recapture, poster-only
 results, unsafe/foreign media, reason and foreground gates, and the shared
