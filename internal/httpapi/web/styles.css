@@ -204,6 +204,13 @@ h3 { letter-spacing: -0.02em; }
 .timeline-batch-marker.timeline-revealed-batch-marker strong { color: var(--accent); }
 .timeline-batch-marker.timeline-auto-batch-marker { border-bottom-color: rgba(183, 242, 108, 0.28); }
 .timeline-batch-marker.timeline-auto-batch-marker strong { color: var(--accent); }
+.timeline-conversation-member { position: relative; border-left: 2px solid var(--accent); padding-left: 8px; min-width: 0; }
+.timeline-conversation-reply { margin-top: -8px; }
+.timeline-conversation-cue { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 4px 0 8px; color: var(--accent); font-size: 0.76rem; }
+.timeline-conversation-cue small { color: var(--muted); font-size: 0.72rem; }
+.timeline-reply-parent { padding: 0; border: 0; border-radius: 2px; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.timeline-reply-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.timeline-conversation-member:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .presentable-item { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-raised); }
 .semantic-duplicate-item { border-color: #414b3b; background: #252d25; }
 .semantic-duplicate-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 15px 18px; }

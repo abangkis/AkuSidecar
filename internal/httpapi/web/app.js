@@ -7,6 +7,7 @@ import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
 import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
+import { planTimelineConversations, decorateTimelineConversation } from "./timeline-conversations.js";
 import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
 import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
@@ -6990,7 +6991,9 @@ function renderTimelineNow(items, latestCheck, timelineBatches = null, highlight
   const batchBySession = new Map(batchMetadata.map((batch) => [batch.sessionId, batch]));
   let previousSession = null;
   let historyBoundaryMarked = false;
-  for (const entry of items) {
+  const conversations = planTimelineConversations(items);
+  for (const group of conversations) {
+    const entry = group.anchor;
     if (entry.sessionId !== previousSession) {
       const marker = document.createElement("div");
       marker.className = "timeline-batch-marker";
@@ -7024,10 +7027,24 @@ function renderTimelineNow(items, latestCheck, timelineBatches = null, highlight
       container.append(marker);
       previousSession = entry.sessionId;
     }
-    const rendered = buildTimelineItem(entry);
-    rendered.dataset.timelineId = entry.id;
-    container.append(rendered);
-    observeTimelineItem(rendered, entry.id);
+    for (const member of group.members) {
+      const rendered = buildTimelineItem(member.entry);
+      rendered.dataset.timelineId = member.entry.id;
+      rendered.setAttribute("tabindex", "-1");
+      decorateTimelineConversation(rendered, member, group, {
+        documentRef: document,
+        formatDate,
+        checkedAt: value => batchBySession.get(value.sessionId)?.completedAt || value.createdAt,
+        navigateToParent: timelineID => {
+          const parent = [...container.querySelectorAll(":scope > [data-timeline-id]")]
+            .find(card => card.dataset.timelineId === timelineID);
+          parent?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
+          parent?.focus({ preventScroll: true });
+        },
+      });
+      container.append(rendered);
+      observeTimelineItem(rendered, member.entry.id);
+    }
   }
   syncTimelineContentContextTabs();
   scheduleBackToTop();

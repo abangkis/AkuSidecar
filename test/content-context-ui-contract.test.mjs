@@ -99,7 +99,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(app, /scheduleTimelineContentContextPosition\(\);\r?\n  scheduleBackToTop\(\);/);
   assert.match(app, /syncTimelineContentContextTabs\(\);\r?\n  scheduleBackToTop\(\);/);
   assert.match(app, /function syncBackToTopNow\(\)[\s\S]*measureTimelineContentContextTabs\(\)[\s\S]*syncBackToTopPosition\(top, measurements\);[\s\S]*syncTimelineContentContextTabs\(measurements\);/);
-  assert.match(app, /container\.append\(rendered\);\r?\n    observeTimelineItem\(rendered, entry\.id\);\r?\n  \}\r?\n  syncTimelineContentContextTabs\(\);/);
+  assert.match(app, /container\.append\(rendered\);\s+observeTimelineItem\(rendered, member\.entry\.id\);\s+\}\s+\}\s+syncTimelineContentContextTabs\(\);/);
   assert.doesNotMatch(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?scheduleTimelineContentContextPosition\(\)/);
   assert.match(app, /function handleTimelineContentContextScroll\(\)[\s\S]*?contentContextPostPassedReadingExitLine/);
   assert.match(app, /contentContextShouldCloseOnScroll/);

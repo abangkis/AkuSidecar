@@ -24,6 +24,7 @@ test('source cards omit the incomplete-text notice and preserve expansion for lo
   const app = readFileSync(new URL('../internal/httpapi/web/app.js', import.meta.url), 'utf8');
   const card = app.slice(app.indexOf('function buildSourceCard('), app.indexOf('function applyPostFreshness('));
   const expander = app.slice(app.indexOf('function buildExpandableText('), app.indexOf('function buildMedia('));
+  const recaptureReason = app.slice(app.indexOf('function mediaRecaptureReasonForEntry('), app.indexOf('function buildMediaRecaptureButton('));
   const context = vm.createContext({ document: { createElement: () => new Element() },
     sourceTextIsPartial, SOURCE_TEXT_COLLAPSE_CHARACTERS: 420, SOURCE_TEXT_COLLAPSE_LINES: 6,
     sourceDescriptor: () => ({}), sourceIdentity: () => ({ displayName: 'Theo' }),
@@ -31,7 +32,7 @@ test('source cards omit the incomplete-text notice and preserve expansion for lo
     applyPostFreshness() {}, postHeaderContexts: new WeakMap(), state: { expandedTimelineText: new Set() },
     buildQuotedPost: () => null, buildAttachments: () => null, safeSourceUrl: () => null,
     buildMedia: () => null, buildEngagement: () => null });
-  vm.runInContext(card + expander, context);
+  vm.runInContext(card + expander + recaptureReason, context);
   const find = (element, className) => [element, ...element.children.flatMap(child => find(child, className))]
     .filter(node => node.className === className);
   context.entry = { evidence: { text: 'line\n'.repeat(5) + 'a'.repeat(255), captureQuality: { textStatus: 'requires_permalink_capture' } } };

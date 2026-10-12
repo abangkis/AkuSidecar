@@ -1420,8 +1420,18 @@ type TimelineItem struct {
 	AIDetection            *TimelineAIDetection      `json:"aiDetection,omitempty"`
 	Feedback               *Feedback                 `json:"feedback,omitempty"`
 	PersonalMemory         *TimelineMemoryProjection `json:"personalMemory,omitempty"`
+	Conversation           *TimelineConversation     `json:"conversation,omitempty"`
 	Coverage               map[string]any            `json:"coverage"`
 	CreatedAt              string                    `json:"createdAt"`
+}
+
+// TimelineConversation is a page-local projection of a captured reply edge.
+// It contains no captured body or additional context payload.
+type TimelineConversation struct {
+	Kind             string `json:"kind"`
+	TargetTimelineID string `json:"targetTimelineId,omitempty"`
+	Status           string `json:"status"`
+	Provenance       string `json:"provenance"`
 }
 
 // TimelineMemoryProjection is a deliberately small read projection. It lets
