@@ -47,6 +47,8 @@ export async function sourceAssets(bridgePath, source) {
   ];
   const selected = source === 'x'
     ? [
+        { relative: 'AkuBridge/x-response-evidence-adapter.js', path: resolve(bridge, 'x-response-evidence-adapter.js'), execute: false, newDocument: true },
+        { relative: 'AkuBridge/x-media-evidence-runtime.js', path: resolve(bridge, 'x-media-evidence-runtime.js'), execute: false, newDocument: true },
         { relative: 'AkuBridge/adapters/x-adapter.js', path: resolve(bridge, 'adapters/x-adapter.js'), execute: true },
         { relative: 'worker/vendor/x-quote-identity.js', path: resolve(root, 'vendor/x-quote-identity.js'), execute: true },
         { relative: 'worker/vendor/x-extract.js', path: resolve(root, 'vendor/x-extract.js'), execute: true },
@@ -66,7 +68,7 @@ export async function sourceAssets(bridgePath, source) {
       ];
   selected.splice(selected.findIndex(asset => asset.relative === `AkuBridge/adapters/${source}-adapter.js`) + 1, 0,
     { relative: 'AkuBridge/source-freshness-runtime.js', path: resolve(bridge, 'source-freshness-runtime.js'), execute: true });
-  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {

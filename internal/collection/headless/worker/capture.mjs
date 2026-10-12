@@ -7,6 +7,7 @@ import { photoRecaptureObservation } from './photo-recapture.mjs';
 import { createXTextRecovery } from './x-text-recovery.mjs';
 import { recoverHeadlessFreshness } from './headless-freshness.mjs';
 import { sourceFreshnessContractFor } from './source-freshness-contract.mjs';
+import { prepareXPassiveEvidence, resolveXPassiveEvidence } from './x-passive-evidence.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -119,6 +120,7 @@ export async function capture(browser, assetsBySource, source, payload) {
   let requestedUrl = options.pageUrl;
   let resumeScrollY = 0;
   let frontierUrlMismatch = false;
+  if (source === 'x') await prepareXPassiveEvidence({browser, page, assets, deadlineAt: deadline});
 
   if (options.acquisitionRound === 1) {
     // Any fresh navigation invalidates the prior source checkpoint, including failed captures.
@@ -142,7 +144,7 @@ export async function capture(browser, assetsBySource, source, payload) {
     await sleep(Math.min(options.continuation.settleMs, timeLeft(deadline)));
   }
 
-  await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)},deadlineAt:${deadline}}`, timeLeft(deadline));
+  await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(browser.backend !== 'browser_quiet_hidden' && options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)},deadlineAt:${deadline}}`, timeLeft(deadline));
   let readinessDeadline = Math.min(deadline, Date.now() + options.hydrationMs);
   let photoResolution = null;
   let mediaSettleDeadline = null;
@@ -239,7 +241,7 @@ export async function capture(browser, assetsBySource, source, payload) {
     quoteIdentityProbe = resolution?.probe || null;
   }
   snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
-  snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
+  snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline, browser);
 
   if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
 
@@ -275,7 +277,7 @@ export async function capture(browser, assetsBySource, source, payload) {
         snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
         const nextError = sourceStateError(snapshot);
         if (nextError) throw nextError;
-        snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline);
+        snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline, browser);
         if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
         const currentScrollY = Number.isFinite(snapshot?.scroll?.y) ? Math.trunc(snapshot.scroll.y) : null;
         if (previousScrollY === null || currentScrollY === null) {
@@ -447,6 +449,9 @@ async function inject(page, assets, deadline) {
 
 async function collect(page, source, deadline) {
   ensureTime(deadline);
+  // Freshness qualification may provide a shorter phase deadline. In-page
+  // expansion must stop at that boundary as well as the overall capture limit.
+  await page.evaluate(`if(globalThis.AkuHeadlessCapturePolicy)globalThis.AkuHeadlessCapturePolicy.deadlineAt=${deadline}`, timeLeft(deadline));
   const targets = await page.evaluate('globalThis.XHeadlessPoC?.prepareEvidenceTargets?.() || []', timeLeft(deadline));
   if (Array.isArray(targets)) {
     for (const target of targets.slice(0, 4)) {
@@ -467,7 +472,7 @@ async function collect(page, source, deadline) {
   return snapshot;
 }
 
-async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline) {
+async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline, browser) {
   const resolveMedia=source==='instagram' || source==='linkedin' ? resolveAdditionalSourceMedia : resolveStructuredMedia;
   const resolution = await resolveMedia({
     page,
@@ -477,7 +482,9 @@ async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, de
     feedResolver: assets?.structuredFeedResolver,
     deadlineAt: deadline,
   });
-  return { ...snapshot, posts: resolution.posts, structuredMediaResolution: resolution.summary };
+  const posts = source === 'x' ? await resolveXPassiveEvidence({browser, page, assets,
+    posts: resolution.posts, deadlineAt: deadline}) : resolution.posts;
+  return { ...snapshot, posts, structuredMediaResolution: resolution.summary };
 }
 
 function sourceStateError(snapshot) {

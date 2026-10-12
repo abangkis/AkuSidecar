@@ -8,6 +8,28 @@
     try { const u = new URL(value, location.href); return /^https?:$/.test(u.protocol) ? u.href : null; }
     catch { return null; }
   };
+  const normalizeAuthoredUrl = value => {
+    if (typeof value !== 'string' || value.length > 4096) return null;
+    try {
+      const url = new URL(value, location.href);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+      url.hash = '';
+      return url.href.length <= 2048 ? url.href : null;
+    } catch { return null; }
+  };
+  function authoredLinks(root, quote) {
+    if (!root || quote?.contains(root)) return [];
+    const links = [], seen = new Set();
+    for (const anchor of root.querySelectorAll('a[href]')) {
+      if (quote?.contains(anchor) || anchor.closest?.('[data-testid="quoteTweet"]')) continue;
+      const href = normalizeAuthoredUrl(anchor.href || anchor.getAttribute?.('href') || '');
+      if (!href || seen.has(href)) continue;
+      seen.add(href);
+      links.push({ text: compactText(anchor.innerText || anchor.textContent).slice(0, 300), href });
+      if (links.length >= 20) break;
+    }
+    return links;
+  }
   const structuredText = primitives.structuredText;
   const helpers = { compactText, structuredText, normalizeHttpUrl, uniqueElements: values => [...new Set(values)] };
   const expansionStates = new WeakMap();
@@ -104,8 +126,15 @@
         }
         const permalink = urls[0];
         const selectedTextRoot = container.querySelector(adapter.contentRootSelector);
-        const text = quote?.contains(selectedTextRoot) ? '' : adapter.extractText(container, helpers);
+        const textRoots = [...(container.querySelectorAll?.(adapter.contentRootSelector) || [])];
+        if (!textRoots.length && selectedTextRoot) textRoots.push(selectedTextRoot);
+        const primaryTextRoot = textRoots.find(root => !quote?.contains(root)) || null;
+        const text = primaryTextRoot
+          ? adapter.extractText(primaryTextRoot, helpers)
+          : quote ? '' : adapter.extractText(container, helpers);
+        const links = authoredLinks(primaryTextRoot, quote);
         const semantics = adapter.extractSemantics(container, helpers);
+        const presentation = adapter.extractPresentation?.(container, helpers) || {};
         const avatar = adapter.findAvatar(container, helpers);
         const media = findMedia(adapter, container, quote);
         const mediaExpected = adapter.mediaAcquisition.detectExpectedKinds(container, { ...helpers, excludeRoot: quote });
@@ -126,10 +155,15 @@
           quotedPost.textStatus = quotedPost.textCollapsed ? 'requires_permalink_capture' : 'visible_text_no_collapse_control';
           quotedPost.textCompleteness = primitives.textCompleteness({ collapsed: quotedPost.textCollapsed, textStatus: quotedPost.textStatus });
         }
+        const directContext = typeof adapter.extractDirectContext === 'function'
+          ? adapter.extractDirectContext(container, { ...helpers, permalink, quotedPost }) : [];
         if (!text && !media.length && !quote && !mediaExpected.length) { rejected++; rejectionReasons.empty_evidence++; return []; }
         return [{ id: permalink.match(/\/status\/(\d+)/)[1], permalink, author, avatar,
           text, publishedAt: times.find(t => canonical(t.closest('a[href]')?.href) === permalink)?.dateTime || null,
-          ...semantics, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
+          ...semantics, presentation, links, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
+          directContext: Array.isArray(directContext) ? directContext.slice(0, 8) : [],
+          avatarEvidenceKeys: [`x:status:${permalink.match(/\/status\/(\d+)/)[1]}`,
+            globalThis.AkuXMediaEvidence?.avatarKeyFromContainer?.(container)].filter(Boolean).slice(0, 2),
           quotedPostObserved: Boolean(quote),
           quotedPost, textCollapsed,
           identityComparison: { legacyDecision: 'identified', sharedDecision: identity.status,

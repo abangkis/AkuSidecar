@@ -24,6 +24,7 @@
   };
   const uniqueElements = values => [...new Set(values || [])];
   const helpers = { compactText, structuredText, normalizeHttpUrl, normalizeHttpsUrl, uniqueElements };
+  const capturePrimitives = globalThis.AkuCapturePrimitives;
   const scrollState=globalThis.AkuHeadlessAdapterScrollState ||= {root:null};
   function scrollable(root) {
     if(!root || root===document.scrollingElement || root===document.body) return false;
@@ -336,12 +337,153 @@
     } };
   }
 
-  function makeExcluded(container, otherCandidates) {
+  function makeExcluded(container, otherCandidates, adapter = null) {
+    let quoted = null;
+    try { quoted = adapter?.findQuotedRoot?.(container) ?? null; } catch { quoted = null; }
     return { contains(node) {
       if (!node || !container.contains?.(node)) return true;
+      if (quoted?.contains?.(node)) return true;
       if (node.closest?.(COMMENT_SELECTOR)) return true;
       return otherCandidates.some(other => other !== container && container.contains?.(other) && other.contains?.(node));
     } };
+  }
+
+  function expansionRoot(source, adapter, container, excluded, originalText) {
+    const policy = adapter.contentExpansion;
+    if (!policy?.buttonSelector || !capturePrimitives?.expansionLabel) return null;
+    const roots = [];
+    try {
+      const resolved = adapter.resolveContentRoot?.(container);
+      if (resolved) roots.push(resolved);
+    } catch { /* An unresolved source root disables expansion. */ }
+    if (adapter.contentRootSelector) {
+      try { roots.push(...(container.querySelectorAll?.(adapter.contentRootSelector) || [])); }
+      catch { /* An invalid source selector disables expansion. */ }
+    } else if (source === 'instagram') {
+      // Instagram has no explicit contentRootSelector. Find the smallest
+      // ancestor whose text is exactly the adapter's selected caption and whose
+      // own expansion control is inside that caption.
+      for (const textNode of container.querySelectorAll?.('span[dir="auto"]') || []) {
+        for (let root = textNode.parentElement; root && root !== container; root = root.parentElement) roots.push(root);
+      }
+    }
+    const seen = new Set();
+    for (const root of roots) {
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      if (excluded.contains(root) || structuredText(adapter.extractText?.(root, helpers) ?? '') !== originalText) continue;
+      const controls = [...(root.querySelectorAll?.(policy.buttonSelector) || [])]
+        .filter(button => capturePrimitives.expansionLabel(compactText(button), 'more'));
+      const selectedControl = controls[0];
+      if (controls.length !== 1 || !selectedControl || excluded.contains(selectedControl)) continue;
+      return root;
+    }
+    return null;
+  }
+
+  function identityStillMatches(source, adapter, container, identity, explicitIdentity) {
+    try {
+      const current = postIdentity(source, adapter, container, explicitIdentity).identity;
+      return current?.id === identity.id && current?.permalink === identity.permalink;
+    } catch { return false; }
+  }
+
+  async function capturePostText(source, adapter, container, excluded, identity, explicitIdentity) {
+    const originalText = structuredText(adapter.extractText?.(container, helpers) ?? '');
+    const policy = globalThis.AkuHeadlessCapturePolicy;
+    const deadlineAt = policy?.deadlineAt;
+    const route = String(location.href || '');
+    const disabled = { text: originalText, expanded: false, collapsed: false, status: 'visible_text_no_collapse_control', identityValid: true };
+    if (!['instagram', 'linkedin'].includes(source) || !adapter.contentExpansion?.buttonSelector
+        || !capturePrimitives?.expandContent || !capturePrimitives?.restoreContent) return disabled;
+    const root = expansionRoot(source, adapter, container, excluded, originalText);
+    if (!root) return disabled;
+    const base = { text: originalText, expanded: false, collapsed: true, status: 'expansion_skipped_detect_only', identityValid: true };
+    if (policy?.allowContentExpansion !== true) return base;
+    if (!Number.isFinite(deadlineAt) || Date.now() >= deadlineAt) return { ...base, status: 'deadline_expired' };
+
+    let blockedReason = '';
+    let expansion = null;
+    let clickedControl = null;
+    const scopedAdapter = { contentExpansion: adapter.contentExpansion };
+    const readText = root => structuredText(adapter.extractText?.(root || container, helpers) ?? '');
+    try {
+      expansion = await capturePrimitives.expandContent({
+        container: root,
+        adapter: scopedAdapter,
+        readText,
+        route: () => location.href,
+        deadlineAt,
+        canExpand: button => {
+          if (Date.now() >= deadlineAt) {
+            blockedReason = 'deadline_expired';
+            return false;
+          }
+          if (String(location.href || '') !== route) {
+            blockedReason = 'route_changed';
+            return false;
+          }
+          if (!root.contains?.(button) || excluded.contains(button)) {
+            blockedReason = 'expansion_skipped_unsafe_control';
+            return false;
+          }
+          // Only the exact control we authorized may corroborate a post-click
+          // "less" state. A replacement control could belong to a new post.
+          if (capturePrimitives.expansionLabel(compactText(button), 'less')) {
+            if (button === clickedControl) return true;
+            blockedReason = 'identity_mismatch';
+            return false;
+          }
+          if (globalThis.AkuHeadlessCapturePolicy?.allowContentExpansion !== true) {
+            blockedReason = 'expansion_skipped_detect_only';
+            return false;
+          }
+          if (!identityStillMatches(source, adapter, container, identity, explicitIdentity)) {
+            blockedReason = 'identity_mismatch';
+            return false;
+          }
+          clickedControl = button;
+          return true;
+        },
+      });
+      if (!expansion.expanded) {
+        const status = blockedReason || expansion.state || 'expand_failed';
+        return { ...base, status, identityValid: !['identity_mismatch', 'route_changed'].includes(status) };
+      }
+      if (Date.now() >= deadlineAt) return { ...base, status: 'deadline_expired' };
+      if (globalThis.AkuHeadlessCapturePolicy?.allowContentExpansion !== true) {
+        return { ...base, status: 'expansion_skipped_detect_only' };
+      }
+      if (String(location.href || '') !== route) return { ...base, status: 'route_changed', identityValid: false };
+      if (!identityStillMatches(source, adapter, container, identity, explicitIdentity)) {
+        return { ...base, status: 'identity_mismatch', identityValid: false };
+      }
+      const expandedText = structuredText(adapter.extractText?.(root, helpers) ?? '');
+      if (Date.now() >= deadlineAt) return { ...base, status: 'deadline_expired' };
+      if (String(location.href || '') !== route) return { ...base, status: 'route_changed', identityValid: false };
+      if (!identityStillMatches(source, adapter, container, identity, explicitIdentity)) {
+        return { ...base, status: 'identity_mismatch', identityValid: false };
+      }
+      if (Array.from(expandedText).length <= Array.from(originalText).length) return { ...base, status: 'expand_failed' };
+      return { text: expandedText, expanded: true, collapsed: false, status: 'expanded', identityValid: true };
+    } catch {
+      const status = blockedReason || 'expand_failed';
+      return { ...base, status, identityValid: !['identity_mismatch', 'route_changed'].includes(status) };
+    } finally {
+      if (expansion?.expanded) {
+        try {
+          const sameRoute = String(location.href || '') === route;
+          const sameIdentity = identityStillMatches(source, adapter, container, identity, explicitIdentity);
+          const exactControl = expansion.button === clickedControl && root.contains?.(clickedControl)
+            && !excluded.contains(clickedControl);
+          const firstRestoreControl = [...(root.querySelectorAll?.(adapter.contentExpansion.buttonSelector) || [])]
+            .find(button => capturePrimitives.expansionLabel(compactText(button), 'less'));
+          const canRestore = sameRoute && (sameIdentity || exactControl)
+            && (sameIdentity || firstRestoreControl === clickedControl);
+          if (canRestore) await capturePrimitives.restoreContent(expansion, { route: () => location.href, deadlineAt });
+        } catch { /* Preserve the visible state if ownership or the route is no longer corroborated. */ }
+      }
+    }
   }
 
   function sourceOwnedAnchor(anchor, excluded) { return !excluded.contains(anchor); }
@@ -408,16 +550,18 @@
 
   function boundedObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
 
-  function extractPost(source, adapter, container, allCandidates, explicitIdentity = null) {
+  async function extractPost(source, adapter, container, allCandidates, explicitIdentity = null) {
     if (!isVisible(container)) return { rejection: 'not_visible' };
     const result = postIdentity(source, adapter, container, explicitIdentity);
     if (!result.identity) return { rejection: result.reason };
     if (authorAmbiguous(container, source)) return { rejection: 'ambiguous_author' };
     const author = compactText(adapter.findAuthor(container, helpers)).slice(0, 300);
     if (!author) return { rejection: 'missing_author' };
-    const excluded = makeExcluded(container, allCandidates);
+    const excluded = makeExcluded(container, allCandidates, adapter);
     const identity = result.identity;
-    const rawText = structuredText(adapter.extractText?.(container, helpers) ?? '');
+    const textEvidence = await capturePostText(source, adapter, container, excluded, identity, explicitIdentity);
+    if (textEvidence.identityValid === false) return { rejection: textEvidence.status === 'route_changed' ? 'identity_mismatch' : textEvidence.status };
+    const rawText = textEvidence.text;
     const textCharacters = Array.from(rawText);
     const textTruncated = textCharacters.length > 4000;
     const text = textCharacters.slice(0, 4000).join('');
@@ -433,9 +577,7 @@
     presentation.timestampPrecision = time.precision;
     presentation.permalinkSource = result.identitySource === 'explicit_target_route' ? 'explicit_target_route'
       : result.identitySource === 'adapter_recovery' ? 'adapter_recovery' : source === 'instagram' ? 'native_post_anchor' : 'native_urn_or_permalink';
-    const contentRoot = container.querySelector?.(adapter.contentRootSelector || '[data-testid="expandable-text-box"]');
-    const controls = contentRoot ? [...contentRoot.querySelectorAll?.(adapter.contentExpansion?.buttonSelector || 'button,[role="button"]') || []]
-      .some(button => /^(?:…\s*)?(?:more|show more|see more)$/i.test(compactText(button))) : false;
+    const controls = textEvidence.collapsed;
     const directContext = typeof adapter.extractDirectContext === 'function'
       ? adapter.extractDirectContext(container, { ...helpers, permalink: identity.permalink, quotedPost: null }) : [];
     const links = linksFor(container, excluded);
@@ -446,7 +588,7 @@
       media: media.media, mediaExpected: media.expected, mediaEvidence: {...media.evidence,
         ...(source==='linkedin' ? {playerIds:uniqueElements([...(container.querySelectorAll?.('[data-vjs-player]') || [])]
           .filter(root=>!excluded.contains(root) && isVisible(root)).map(root=>root.id).filter(id=>typeof id==='string' && id.length>0 && id.length<=240)).slice(0,16)} : {})},
-      textCollapsed: controls, textTruncated, textStatus: controls ? 'visible_text_may_be_collapsed' : 'visible_text_no_collapse_control',
+      textCollapsed: controls, textTruncated, textStatus: textEvidence.status,
       limitations: ['visible_dom_only', 'no_production_admission', ...(controls ? ['text_may_be_collapsed'] : []),
         ...(textTruncated ? ['text_truncated'] : []),
         ...(media.expected.includes('video') && media.evidence.videoStreamStatus === 'unknown' ? ['video_stream_not_resolved'] : [])],
@@ -503,7 +645,7 @@
     const records = [];
     for (const candidate of bounded) {
       try {
-        const result = extractPost(source, adapter, candidate, bounded,bindings.get(candidate));
+        const result = await extractPost(source, adapter, candidate, bounded,bindings.get(candidate));
         if (result.post) records.push({ container: candidate, post: result.post });
         else rejectionReasons[result.rejection] = (rejectionReasons[result.rejection] || 0) + 1;
       } catch { rejectionReasons.adapter_error = (rejectionReasons.adapter_error || 0) + 1; }

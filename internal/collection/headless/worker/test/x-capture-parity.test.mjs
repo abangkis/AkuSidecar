@@ -11,7 +11,8 @@ const quoteResolver = await readFile(new URL('../vendor/x-quote-identity.js', im
 function fixture({ detail = true, replaceRoute = false } = {}) {
   const permalink = 'https://x.com/owner/status/2106867448746021278';
   const location = { href: detail ? permalink : 'https://x.com/home', hostname: 'x.com', pathname: detail ? '/owner/status/2106867448746021278' : '/home' };
-  const textNode = text => ({ nodeType: 1, tagName: 'DIV', childNodes: [{ nodeType: 3, nodeValue: text }], innerText: text });
+  const textNode = text => ({ nodeType: 1, tagName: 'DIV', childNodes: [{ nodeType: 3, nodeValue: text }], innerText: text,
+    querySelectorAll: () => [] });
   let root = textNode('Short excerpt'), more = true, clicks = 0;
   const button = { innerText: '… Show more', textContent: '… Show more', click() {
     clicks++; root = textNode('Full captured text. '.repeat(25)); more = false;

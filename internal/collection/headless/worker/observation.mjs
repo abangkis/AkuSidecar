@@ -178,13 +178,13 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
     relationshipType: typeof post.relationshipType === 'string' ? post.relationshipType : 'original',
     parentPermalink: typeof post.parentPermalink === 'string' ? post.parentPermalink : '',
     quotedPost: preserveMap(post.quotedPost),
-    ...(['instagram','linkedin'].includes(source) && Array.isArray(post.directContext)
-      ? {directContext:structuredClone(post.directContext.slice(0,12))} : {}),
+    ...(['x','instagram','linkedin'].includes(source) && Array.isArray(post.directContext)
+      ? {directContext:structuredClone(post.directContext.slice(0,source==='x' ? 8 : 12))} : {}),
     engagement: preserveMap(post.engagement),
     presentation,
     attachments: ['instagram','linkedin'].includes(source) && Array.isArray(post.attachments) ? structuredClone(post.attachments.slice(0,20)) : [],
     media,
-    links: ['instagram','linkedin'].includes(source) && Array.isArray(post.links) ? structuredClone(post.links.slice(0,20)) : [],
+    links: ['x','facebook','instagram','linkedin'].includes(source) && Array.isArray(post.links) ? structuredClone(post.links.slice(0,20)) : [],
     mediaRecovery: recovery,
     captureQuality: quality,
     feedPosition,

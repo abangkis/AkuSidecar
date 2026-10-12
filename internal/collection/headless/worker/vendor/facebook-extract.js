@@ -10,6 +10,15 @@
   const structuredText = value => String(typeof value === 'string' ? value : readNode(value))
     .replace(/\r\n?/g, '\n').split('\n').map(line => line.replace(/[\t\f\v\u00a0 ]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   const normalizeHttpUrl = value => { try { const u = new URL(value, location.href); return /^https?:$/.test(u.protocol) ? u.href : null; } catch { return null; } };
+  const normalizeAuthoredUrl = value => {
+    if (typeof value !== 'string' || value.length > 4096) return null;
+    try {
+      const url = new URL(value, location.href);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+      url.hash = '';
+      return url.href.length <= 2048 ? url.href : null;
+    } catch { return null; }
+  };
   const helpers = { compactText, structuredText, normalizeHttpUrl, uniqueElements: values => [...new Set(values)] };
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const state = globalThis.FacebookHeadlessEvidenceState ||= { cache: new WeakMap(), attempts: new WeakMap(), targets: new Map(), sequence: 0 };
@@ -18,6 +27,22 @@
   const fingerprint = (adapter, container) => adapter.findAuthor(container, helpers) + ':' + adapter.extractText(container, helpers).slice(0, 120);
   function ownPostElement(element, container) {
     return boundary.owns(element,container);
+  }
+  function authoredLinks(adapter, container) {
+    const roots = [...(container.querySelectorAll(adapter.contentRootSelector) || [])]
+      .filter(root => ownPostElement(root, container));
+    const root = roots[0];
+    if (!root) return [];
+    const links = [], seen = new Set();
+    for (const anchor of root.querySelectorAll('a[href]')) {
+      if (!ownPostElement(anchor, container)) continue;
+      const href = normalizeAuthoredUrl(anchor.href || anchor.getAttribute?.('href') || '');
+      if (!href || seen.has(href)) continue;
+      seen.add(href);
+      links.push({ text: compactText(anchor.innerText || anchor.textContent).slice(0, 300), href });
+      if (links.length >= 20) break;
+    }
+    return links;
   }
   function timestampAnchors(container) {
     return [...container.querySelectorAll('a,[role="link"], abbr[data-utime], time')].filter(anchor => {
@@ -122,12 +147,13 @@
       const timestamp = timestampEvidence(container, adapter, capturedAt);
       const semantics = adapter.extractSemantics(container, helpers);
       const collapsed = Boolean(root && [...root.querySelectorAll(policy.buttonSelector)].some(b => /^(see more|show more|more)$/i.test(compactText(b))));
+      const links = authoredLinks(adapter, container);
       return { post: { id, permalink: details.url, permalinkProvenance: details.source, author, text,
         avatar: adapter.findAvatar(container, helpers), capturedAt, publishedAt: timestamp.publishedAt,
         timestampSource: timestamp.source, timestampEstimated: timestamp.estimated, timestampText: timestamp.text || presentation.timestampText,
         timestampEvidence: timestamp.evidence || null,
         hoverEvidence: state.cache.get(container)?.fingerprint === fingerprint(adapter, container) ? state.cache.get(container).diagnostics : null,
-        ...semantics, presentation, media, mediaExpected,
+        ...semantics, presentation, links, media, mediaExpected,
         mediaEvidence: { status: expectedWithoutUrl.length ? 'missing_expected_url' : media.length ? 'observed_urls_partial' : 'no_media_observed', expectedWithoutUrl },
         textCollapsed: collapsed, textStatus: expansion,
         limitations: ['visible_dom_only', 'no_production_admission', 'no_structured_media_resolver',

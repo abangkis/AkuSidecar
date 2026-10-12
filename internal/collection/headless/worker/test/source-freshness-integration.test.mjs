@@ -12,7 +12,7 @@ const runtime=await readFile(new URL('../../../../../../AkuBridge/source-freshne
 const adapterAssets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js',...['x','linkedin','instagram','facebook'].map(source=>`adapters/${source}-adapter.js`)].map(async name=>({
   relative:'AkuBridge/'+name,execute:false,content:await readFile(new URL('../../../../../../AkuBridge/'+name,import.meta.url),'utf8'),sha256:'a'.repeat(64)})));
 const oldID='2106867448746021278',newID='2106867448746021279';
-function fixture({pending=true,routeChange=false,source='x'}={}){
+function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2 posts'}={}){
   const contract=sourceFreshnessContractFor(adapterAssets,source);
   const state={clicks:0,navigations:0,freshnessEvaluations:0,posts:[oldID],url:'about:blank'};
   const sourcePost=id=>({
@@ -22,7 +22,7 @@ function fixture({pending=true,routeChange=false,source='x'}={}){
     facebook:{id:'facebook:post:'+id,permalink:'https://www.facebook.com/example/posts/'+id},
   })[source];
   class Element{
-    innerText='Show 2 posts';textContent='Show 2 posts';isConnected=true;
+    innerText=pendingLabel;textContent=pendingLabel;isConnected=true;
     getBoundingClientRect(){return {width:120,height:24,bottom:24,top:0,right:120,left:0};}
     click(){state.clicks++;state.posts=[newID,oldID];this.isConnected=false;if(routeChange)state.url='https://x.com/login';}
   }
@@ -32,7 +32,7 @@ function fixture({pending=true,routeChange=false,source='x'}={}){
   const context=vm.createContext({Element,URL,Date,setTimeout,clearTimeout,location,window:{innerHeight:900,innerWidth:1280,scrollY:0,scrollTo(){}},
     document:{visibilityState:'visible',querySelectorAll:()=>pending&&button.isConnected?[button]:[]},
     getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'}),
-    AkuSourceAdapters:{get:()=>({matchesPage:()=>state.url.startsWith('https://x.com/'),freshness:{version:'x-freshness-v1',headless:contract,revealSupported:true,rejectInsideFeedCandidate:true,pendingContentPattern:/^show \d+ posts$/i},discoverCandidates:()=>({candidates:[]})})},
+    AkuSourceAdapters:{get:()=>({matchesPage:()=>state.url.startsWith(source==='linkedin'?'https://www.linkedin.com/':'https://x.com/'),freshness:{version:`${source}-freshness-v1`,headless:contract,revealSupported:true,rejectInsideFeedCandidate:true,pendingContentPattern:source==='linkedin'?/^(?:new posts?|show new posts?)$/i:/^show \d+ posts$/i},discoverCandidates:()=>({candidates:[]})})},
     XHeadlessPoC:{collect:()=>({url:state.url,posts:state.posts.map(id=>({...sourcePost(id),author:'Example',text:'Native post '+id,limitations:[],media:[]})),scroll:{y:0,viewportHeight:900,height:2000},documentReady:true})}});
   const page={async navigate(url){state.url=url;state.navigations++;return {};},async evaluate(expression){if(/runtime\.(?:probe|activatePending)/.test(expression))state.freshnessEvaluations++;return vm.runInContext(expression,context);},async send(){return {};}};
   const asset={relative:'AkuBridge/source-freshness-runtime.js',execute:true,content:runtime,sha256:createHash('sha256').update(runtime).digest('hex')};
@@ -65,8 +65,8 @@ test('capture rejects a route-changing reveal rather than admitting original fee
   await assert.rejects(capture(f.browser,f.assets,'x',payload),error=>/route/.test(error.code||error.message));
   assert.equal(f.state.clicks,1);
 });
-test('disabled source contracts preserve capture without probing or activating pending controls',async()=>{
-  for(const source of ['linkedin','instagram','facebook']){
+test('Facebook and Instagram retain disabled contracts while preserving read-only capture',async()=>{
+  for(const source of ['instagram','facebook']){
     const f=fixture({source});
     const observation=await capture(f.browser,f.assets,source,payload);
     assert.equal(observation.coverage.freshness.workerStatus,'not_verified',source);
@@ -74,6 +74,20 @@ test('disabled source contracts preserve capture without probing or activating p
     assert.ok(observation.snapshots[0].blocks.length>0,source);
     assert.equal(f.state.clicks,0,source);assert.equal(f.state.freshnessEvaluations,0,source);
   }
+});
+test('LinkedIn uses its adapter contract to reveal a verified first-round primary and preserves round two',async()=>{
+  const f=fixture({source:'linkedin',pendingLabel:'Show new posts'});
+  const first=await capture(f.browser,f.assets,'linkedin',payload);
+  assert.equal(f.state.clicks,1);
+  assert.ok(first.snapshots[0].blocks.some(b=>b.platformId==='linkedin:activity:'+newID));
+  assert.equal(first.coverage.freshness.workerStatus,'verified');
+  const next=await capture(f.browser,f.assets,'linkedin',{...payload,acquisitionRound:2,
+    pendingContentPolicy:'detect_only',sourceFreshnessPolicy:'preserve_frontier',sameTabMutationAllowed:false,
+    continuation:{startScrollY:first.coverage.frontier.scrollY,anchorKeys:first.coverage.frontier.anchorKeys,settleMs:0}});
+  assert.ok(next.snapshots[0].blocks.some(b=>b.platformId==='linkedin:activity:'+newID));
+  assert.equal(next.coverage.freshness.workerStatus,'preserved');
+  assert.equal(next.coverage.freshness.activationCount,0);
+  assert.equal(f.state.clicks,1);
 });
 test('all sources stage shared freshness after their adapter with generic controller provenance',async()=>{
   for(const source of ['x','linkedin','instagram','facebook']){

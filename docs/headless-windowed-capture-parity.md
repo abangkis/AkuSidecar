@@ -2,6 +2,79 @@
 
 Source audit: 5 October 2026. Windowed refers to AkuBridge's visible-browser capture pipeline; native reader display alone is not a capture pipeline. Quiet/hidden browser is a separate backend. This comparison focuses on the X text incident and the shared capture boundaries, not a live parity certification for every source.
 
+## Five approved source parity improvements, 12 October 2026
+
+The follow-up implementation closes all five source gaps identified below.
+Shared parsers and source contracts remain in AkuBridge; owned headless uses
+its existing controller, page authority, deadlines and continuation frontier.
+This is offline source validation, not a live parity certification.
+
+| Capability | Implemented headless behavior | Guard or remaining limit |
+| --- | --- | --- |
+| Passive X response evidence | Installs the original shared response observer and media runtime before navigation on owned source and text-recovery pages. The shared reply parser can use exact response-only parent IDs; media/avatar fallback reuses shared validators. | Never installs hooks on borrowed Quiet pages. Cache is bounded, memory-only and worker-scoped, with the shared media/avatar TTL and count limits. No raw response body leaves the page. |
+| Collapsed Instagram/LinkedIn text | Uses shared expansion primitives and each adapter's expansion policy before capture. | Requires explicit first-round mutation authority, a live deadline, an owned text control and matching route/post identity. LinkedIn restores through the shared helper when safe; Instagram retains its existing `restorable: false` policy. |
+| X/Facebook authored links | Extracts source-owned content links and forwards them through Observation. | HTTPS-only, bounded URL/text lengths, deduplicated and capped at 20. Quote, comment and nested-post links are excluded by source ownership. |
+| X AI-origin presentation | Calls the existing X `extractPresentation` parser and preserves the result in Observation. | Platform/media labels remain presentation evidence, separate from authored text and model judgments. |
+| LinkedIn pending-feed reveal | Enables a pure headless capability contract for the canonical LinkedIn feed and exact native ID/permalink agreement, using the existing generic freshness controller. | First round only, with reveal and same-tab mutation authority. New primary identity or normalized primary text must qualify; reorder, engagement and quote-only changes do not. Round two, explicit targets and borrowed pages do not reveal. Facebook/Instagram freshness contracts remain disabled. |
+
+Passive X playback fallback upgrades only an existing unresolved DOM poster for
+the same native post and matching poster path. Progressive MP4 admission uses
+the existing resolver; a generic poster additionally needs the shared
+same-media-entity tuple proof. Foreign, duplicate, ambiguous, unsafe and adaptive
+URL evidence cannot upgrade it. Existing inline media is not attributed to a
+different poster's recovery. An observed URL remains playback-unverified.
+
+Regression fixtures cover the real X response observer/runtime through shared
+reply extraction and Observation, passive cache isolation and deadlines, actual
+adapter expansion and guarded restoration, link/presentation forwarding, and
+LinkedIn freshness qualification and continuation. Freshness collection phases
+also propagate their shorter deadline into in-page expansion. Activation needs
+Sidecar worker and Bridge asset staging/rebuild followed by a separately
+authorized restart; this pass performs no live capture, installation/upgrade
+test, stored-record rewrite or runtime change.
+
+## X reply forwarding and initial gap audit, 12 October 2026
+
+The headless X collector now invokes the same `extractDirectContext` method
+from `AkuBridge/adapters/x-adapter.js` used by windowed capture. The observation
+converter retains and clones X relations with the domain's eight-relation
+ceiling. No new reply parser or inference from authored text was introduced.
+Exact DOM reply links can identify the parent; a unique visible parent supplies
+captured text, while absent or ambiguous parent evidence remains reference-only.
+Quote and reply relations remain separate. The existing Related Context
+projection still excludes X quotes and can resolve an exact reply parent from
+retained local Timeline evidence or a full Memory copy independently of lexical
+suggestion eligibility.
+
+Source regression fixtures exercise the real X adapter, headless collector,
+Observation conversion and Related Context UI cue. They cover explicit DOM
+identity, an available shared-runtime response lookup, self/ambiguous rejection,
+quote/reply separation, cloning and bounds. The response-lookup fixture does not
+claim that owned headless installs the windowed passive observer. The separate
+passive-observer fixture added in the follow-up implementation exercises that
+installation and response-only reply path. Runtime
+activation requires rebuilding/staging and restarting Sidecar; no existing
+stored records are rewritten by this change.
+
+The initial source comparison found the following gaps before the five approved
+improvements above. This table records the diagnosis at that point; its headless
+gap column does not describe the current implemented source:
+
+| Capability | Windowed path | Headless gap and impact | Suggested priority |
+| --- | --- | --- | --- |
+| Passive X response evidence | `source-access-policy.js` installs `x-response-evidence-adapter.js` and `x-media-evidence-runtime.js` at document start. The shared X parser consults its exact reply-target lookup. | The owned headless X asset list does not install those scripts. Reply forwarding now works with available DOM evidence, but response-only parent IDs still cannot be recovered. Passive media/avatar caches are also absent; the separate structured media resolver remains available. Borrowed backends must be assessed separately. | First: exact reply identity; later: media/avatar fallback. |
+| Collapsed Instagram/LinkedIn text | `content-script.js` uses the shared bounded expansion/restoration contract before extracting each post. | `vendor/adapter-extract.js` detects collapsed text without executing the expansion contract. DOM captions/bodies may remain partial, although structured Instagram caption recovery can fill some cases. | High: reuse the expansion contract within backend authority and deadlines. |
+| X/Facebook post links | `content-script.js` extracts deduplicated links from the source content root. | The custom X/Facebook extractors do not emit primary post links, and `observation.mjs` retains links only for Instagram/LinkedIn. URLs present in authored text do not become structured link evidence. | Medium: retain source-owned content links without borrowing quote/comment links. |
+| X AI-origin presentation signals | The X adapter's `extractPresentation` supplies media-scoped platform AI labels to windowed blocks. | `vendor/x-extract.js` does not call that method or emit presentation, so those X origin signals are lost before conversion. | Medium: reuse the existing presentation parser. |
+| LinkedIn pending-feed reveal | Its shared adapter declares `revealSupported: true` for the windowed freshness controller. | Its headless freshness contract is explicitly disabled, so headless cannot use the bounded reveal/qualification path available for X. This is a deliberate capability gate awaiting LinkedIn-specific route/identity rules and validation, rather than a serialization bug. | Medium: define and verify that contract before enabling it. |
+
+Core identity, source adapters, quoted content, expected media, structured media
+resolvers, text primitives and local Related Context projection are shared or
+already supported. Backend-specific page ownership, navigation, freshness,
+frontier, leases and retry controllers remain intentional differences; this
+audit does not propose collapsing them. This is a source assessment, not live
+capture or install/upgrade acceptance.
+
 ## LinkedIn video readiness and recovery, 10 October 2026
 
 Two headless recaptures of Peter Gould's LinkedIn post
@@ -80,12 +153,12 @@ Headless injects AkuBridge's source-adapter runtime and adapters. X uses the sam
 
 | Capability | Windowed AkuBridge | Headless worker | Difference / reuse boundary |
 | --- | --- | --- | --- |
-| Text extraction and expansion | `content-script.js` calls `expandSourceContent` before extracting each block and records expansion state; restorable adapters restore their controls. | `vendor/x-extract.js` uses the X adapter policy, excludes quoted controls and expands only on the matching native detail route. Feed text that remains collapsed is marked partial. | Adapter selectors/policy are shared; click/wait orchestration is duplicated. Windowed inline expansion is not equivalent to headless detail navigation. |
+| Text extraction and expansion | `content-script.js` uses shared primitives before extracting each block and records expansion state; restorable adapters restore their controls. | X expands only on the matching native detail route; Instagram/LinkedIn use shared expansion on an authorized first-round own content root. Unresolved collapse remains partial. | Expansion rules are shared; backend authority, deadline and recovery navigation remain separate. |
 | Full X text recovery | The examined Bridge path expands the visible block. Its `recoverPermalinks` hook recovers identity URLs, not full text through a second page. | `x-text-recovery.mjs` navigates an owned temporary page, checks exact identity and accepts only longer, resolved text. | This is an additional headless capability with its own latency budget and failure modes. |
 | Primary and quoted identity | Shared X adapter extracts timestamp permalink, quoted fields and reply semantics. | Adds exactly-one-own-permalink admission and `XHeadlessQuoteIdentity` evidence/probing. | Reuse adapter parsers; do not remove headless identity safeguards in pursuit of parity. |
-| Media | Adapter media rules plus Bridge's media/quality recovery and persistent evidence integrations. | Shared selectors/expected kinds, worker DOM observations and separate structured-media resolution. | Shared selectors do not establish identical media recovery or admission. |
+| Media | Adapter media rules plus Bridge's media/quality recovery and persistent evidence integrations. | Shared selectors/expected kinds, worker DOM observations, structured-media resolution and bounded passive X response fallback. | Headless response caches stay in worker memory; this does not establish identical recovery, persistence or playback verification. |
 | Quality and retry | `content-script.js` evaluates per-block quality and retries within `qualityRetryBudget` and operation deadline. | Observation keeps explicit limitations; X text recovery has its own bounded retry and outcome cache. | Quality pipelines and diagnostic schemas differ. |
-| Freshness | Source adapter wake/reveal policies are executed by Bridge, including X wake/reveal observations. | X initial headless feed capture now probes the shared pending control, activates it once when allowed, and qualifies primary identity/content changes. Other sources remain unverified. | Headless qualification covers visible X controls and within-capture changes; it does not establish global feed freshness or full Bridge wake parity. |
+| Freshness | Source adapter wake/reveal policies are executed by Bridge, including wake/reveal observations. | X and LinkedIn initial headless feed capture probe the shared pending control, activate it once when allowed, and qualify primary identity/content changes. Facebook/Instagram remain unverified. | Qualification covers supported controls and within-capture changes; it does not establish global feed freshness or full Bridge wake parity. |
 | Feed continuation | Bridge tracks frontier and anchor matching in its tab. | Worker tracks per-source frontier, validates continuation anchors and bounds scroll rounds. Temporary text recovery leaves retained feed navigation alone. | Similar concepts, separate state and controllers. |
 | User window ownership | Captures the existing browser surface under Bridge permissions. | Owns headless pages; native-reader ownership can block profile access until explicit user closure. | Browser lifecycle must remain backend-specific; no silent closure of user windows. |
 
@@ -107,7 +180,7 @@ The increased ceiling can add up to 12 seconds to recovery compared with the old
 
 `AkuBridge/capture-primitives.js` is the single implementation for structured text, strict X permalink canonicalization, expansion-label normalization, quote-safe content expansion/restoration, text completeness, text-replacement acceptance, and primary/quote identity decisions. Bridge loads it before its source scripts; the headless worker injects the same hashed asset before its adapters. `capture-primitives.mjs` evaluates that asset in an isolated Node VM for pure recovery rules; it does not maintain a second copy.
 
-Expansion re-resolves the text root after DOM replacement, ignores quote controls, and aborts on route changes or the host deadline. Windowed retains inline expansion and restoration policy; headless retains its matching-detail-route restriction and detect-only policy. Headless recovery continues to use an owned temporary page without changing the retained feed.
+Expansion re-resolves the text root after DOM replacement, ignores quote controls, and aborts on route changes or the host deadline. Windowed retains inline expansion and restoration policy; headless X retains its matching-detail-route restriction, while Instagram/LinkedIn require explicit first-round expansion authority. Detect-only policy is preserved. Headless recovery continues to use an owned temporary page without changing the retained feed.
 
 The additive `textCompleteness` contract is `unknown`, `no_collapse_observed`, `expanded`, `recovery_verified`, `truncated`, or `partial`. No collapse control is an observation, not a universal completeness guarantee. Legacy `textStatus` and presentation expansion labels are projected for compatibility. Text replacement still requires exact identity, a resolved candidate, and more code points than the stored excerpt. Failed recovery preserves the original feed evidence.
 

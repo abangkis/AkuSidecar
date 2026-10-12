@@ -98,6 +98,15 @@ test('sourceAssets hashes the original Bridge resolver and keeps the derived fun
   assert.equal(assets.structuredMediaResolver.sha256, expectedHash);
   assert.match(assets.structuredMediaResolver.functionSource, /^function resolveXStructuredMediaInMainWorld/);
   assert.ok(assets.some(asset => asset.relative === 'worker/structured-media.mjs'));
+  for (const name of ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js']) {
+    const passive = assets.find(asset => asset.relative === `AkuBridge/${name}`);
+    const hash = createHash('sha256').update(await readFile(resolve(bridgePath, name))).digest('hex');
+    assert.equal(passive.execute, false, 'passive scripts must not be reinjected after navigation');
+    assert.equal(passive.newDocument, true);
+    assert.equal(passive.sha256, hash);
+    assert.equal(sourceProvenance(assets).sources.find(asset => asset.path === passive.relative).sha256, hash);
+  }
+  assert.ok(assets.some(asset => asset.relative === 'worker/x-passive-evidence.mjs'));
   assert.equal(sourceProvenance(assets).sources.some(asset => asset.path.includes('derived')), false);
   const facebookPath = resolve(bridgePath, 'facebook-main-world-media-resolver.js');
   const facebookHash = createHash('sha256').update(await readFile(facebookPath)).digest('hex');

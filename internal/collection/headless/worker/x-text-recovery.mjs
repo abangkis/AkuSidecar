@@ -1,4 +1,5 @@
 import { capturePrimitivesFor } from './capture-primitives.mjs';
+import { prepareXPassiveEvidence } from './x-passive-evidence.mjs';
 
 const MAX_TARGETS = 3;
 // Reserve half of each target's bounded budget for one transient retry.
@@ -80,6 +81,7 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
     try {
       stage = 'target_setup';
       const targetPage = await getPage(at);
+      await within(prepareXPassiveEvidence({browser, page: targetPage, assets, deadlineAt: at}), at);
       stage = 'navigation';
       const navigation = await within(targetPage.navigate(target.route.url, remaining(at)), at);
       if (navigation?.errorText) return failed('permalink_capture_failed');
