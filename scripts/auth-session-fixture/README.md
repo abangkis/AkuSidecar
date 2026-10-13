@@ -679,3 +679,58 @@ authentication, user runtime operation, commit or push was performed for this
 phase.
 
 Windows foreground policy: [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow).
+
+## Cold first-request continuation (validated locally, 2026-10-13)
+
+The authorized cold fixture gate uses one physical **Open explicit reader**
+button click before reader preparation, with no retry fallback. Its isolated
+native-reader preset follows the production normal initial window and initial
+target reuse, instead of preparing a second minimized window. Only this preset
+uses `--new-window` with GUI startup visible; the retained fixture preset stays
+unchanged. The original Chrome startup/bootstrap target remains in inventory
+when it is also the first reader. An independent ownership window is added only
+after the first acknowledgment and exact native readback.
+
+The cold UI is shown with `SW_SHOWNOACTIVATE` and placed once on the active monitor
+using owned-HWND-only `TOPMOST|SHOWWINDOW|NOACTIVATE` presentation. Native window,
+button and bounds readback must pass. The temporary topmost state is removed and
+verified before the physical click launches the helper. No other window is
+modified. Click **Open explicit reader (klik sekarang)** as soon as it becomes
+enabled; do not wait for a chat announcement. The button is disabled during
+preparation and the same instruction is displayed in the fixture window. Earlier
+click-gate timeouts did not execute a reader request; the owner confirmed the
+visible window was being held pending a delayed chat instruction.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyBroker -BrokerTestRegex '^TestBrokerFixtureOSColdFirstRequest$' -VerifyDefault
+```
+
+This command exited **0**. The first handler invocation accepted
+`cold_actual_success`, with no warm retry: `Applied=false`, `Readback=true`,
+`focus=exact_reader`, visible and not minimized. Independent Windows readback
+matched the exact HWND/PID. Chrome had already brought the normal initial reader
+to foreground; the broker confirmed it without an additional focus write. The
+fixture UI's startup readback was not focused and its explicit startup foreground
+call was not made. One synthetic login remained valid. Closing the initial
+reader/bootstrap left the independent window holding ownership and batch pause;
+final close led to natural root/whole-Job release before resumed capture (three
+launches and three release proofs).
+
+Five actual wrong/expired binding cases passed, as did changed UI foreground
+before a new request and native binding replay rejection. Parent/image rejection
+coverage belongs to the preceding warm OS case; it was not repeated before this
+first cold request. Tagged broker contracts, 19 synthetic cases, ordinary broker/
+appshell regressions, default five-package selection and ordinary build passed.
+The existing seven Chrome leaf cases and 30 standalone exclusive-fallback checks
+passed on the current shared launcher. Owned UI/helper/Chrome jobs were verified
+released before output removal.
+
+The previously validated warm path retains its separate scope. Broker identity,
+exact binding, UI foreground and 30-second preparation/5-second activation guards
+are unchanged. No focus grants, input injection, deadline extension or automatic
+native action replay was introduced. This resolves the cold fixture gate; it does
+not prove the installed extension/native-host journey, full production restart,
+post-claim focus/session changes, production DOM extraction or real authentication.
+This validation preceded commit/push. On 2026-10-13 the owner subsequently
+authorized commit/push of the nine-file cold delta; the preceding OS fixture
+commit `f141dc6` was already pushed with explicit owner authorization.

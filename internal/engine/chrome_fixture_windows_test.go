@@ -516,9 +516,15 @@ func (h *chromeFixtureEngineHarness) stopEngineStore() {
 	}
 }
 
-func startChromeFixtureForTest(t *testing.T, fixture *chromeFixtureHTTP) (chromeFixtureConfig, *chromeFixtureBridge) {
+func startChromeFixtureForTest(t *testing.T, fixture *chromeFixtureHTTP, nativeReaderStartup ...bool) (chromeFixtureConfig, *chromeFixtureBridge) {
 	t.Helper()
 	config := chromeFixtureConfigFromEnv(t, fixture.server.URL)
+	if len(nativeReaderStartup) > 1 {
+		t.Fatal("fixture startup preset count invalid")
+	}
+	if len(nativeReaderStartup) == 1 {
+		config.NativeReaderStartup = nativeReaderStartup[0]
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	bridge, err := startChromeFixtureBridge(ctx, config)

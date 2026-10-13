@@ -4470,6 +4470,83 @@ extension/host integration and changes after ticket claim remain unproven.
 The existing seven real-Chrome leaf cases also passed after the cleanup-marker
 change. Independent process inspection found zero remaining fixture processes.
 
+### 2026-10-13: cold first-request fixture activation (validated locally)
+
+The owner authorized commit/push of the validated OS fixture delta, then the
+proposed next step: resolve cold first-request activation within the isolated
+Chrome fixture. Commit `f141dc6` is verified on origin/main. The previous warm
+physical retry result remains valid and distinct from cold acceptance.
+
+Acceptance requires the first fresh explicit fixture intent and helper to reach
+actual exact-reader Windows foreground/readback while collector drain and reader
+ownership keep batch admission paused. Preserve one synthetic login, bootstrap
+inventory, final-window/whole-Job release and verified queue resume. Diagnose
+Chrome preparation and foreground transitions before choosing the smallest
+fixture change; do not weaken actual broker identity, ticket, binding, focus or
+expiry checks. No input injection, foreground grants, extended deadlines or
+automatic native-intent replay may make the cold test pass. A warm retry cannot
+satisfy the new cold acceptance gate.
+
+The proposed isolated cold preset matches production native-reader preparation:
+a normal initial window reused for the first reader, instead of the old fixture's
+second minimized window. A real Open explicit reader button starts the first
+helper before preparation. An independent ownership window may be added after
+the first acknowledgment to preserve multi-window coverage without changing the
+cold focus transition. The existing broker's exact-window-already-foreground
+success remains valid; distinguish Readback success from an Applied focus write.
+This is a causal hypothesis to validate, not a production activation claim.
+
+The first coordinated cold attempt reached no reader request: the owner reported
+the fixture window/button was not visible, and the physical-click gate timed out.
+That result does not evaluate native-reader startup. Correct only the owned cold
+UI presentation: one no-activation topmost placement on the current monitor work
+area, with native window/button visibility and bounds readback before waiting.
+Remove that owned topmost state on the physical click before launching the helper.
+No other window is modified and foreground is not repeatedly restored. Warm
+presentation remains unchanged. Coordinate one new live attempt after these
+visibility checks pass.
+
+The owner subsequently confirmed that the corrected window was visible but they
+waited for the chat instruction to click; that announcement arrived too late.
+Use the owned UI itself as the start signal: keep the button disabled during
+preparation, then show a cold-only instruction to click once when Open explicit
+reader becomes enabled, without waiting for chat. This changes coordination
+only; the native request begins on the physical click and retains its original
+preparation/activation lifetimes. No new foreground or desktop operation is
+needed for this observed timing gap.
+
+Validation: the exact `-VerifyBroker -BrokerTestRegex
+'^TestBrokerFixtureOSColdFirstRequest$' -VerifyDefault` helper exited 0. The first
+physical Open request accepted `cold_actual_success` with Applied false and
+Readback true, exact HWND/PID visible and not minimized; no retry was permitted.
+The normal initial reader was already foreground and the broker verified it.
+Cold UI startup was unfocused without an explicit startup foreground call; its
+temporary topmost presentation was removed before helper launch.
+
+One invented login persisted. Closing the original reader/bootstrap retained the
+independent window, owner and paused queue. Final close/natural root exit and
+whole-Job release preceded resumed capture (three launches/release proofs).
+Five wrong/expired binding cases, changed foreground before a new request and
+native binding replay rejection passed. Parent/image negatives remain covered
+by the preceding warm OS case. Tagged contracts, 19 synthetic cases, ordinary
+broker/appshell regressions, default five-package selection and ordinary build
+passed. Seven existing Chrome leaf cases and 30 standalone fallback checks
+passed on the current launcher; aggregate owned-job cleanup removed test output.
+
+The cold fixture gate is complete; installed extension/host integration, full
+production restart, changes after ticket claim and real-source authentication
+remain outside this result. No broker guard/lifetime, authentication, user runtime
+or production setting changed. This validation checkpoint preceded commit/push;
+the owner subsequently authorized commit/push of the nine-file cold delta on
+2026-10-13. The preceding approved fixture commit `f141dc6` was already pushed.
+
+Use only new project-local profiles, invented loopback sessions and privately
+owned processes/pipes. No real-source authentication, installation, registration
+or runtime operation is authorized in this phase. Commit/push was separately
+authorized after validation, as recorded above.
+Coordinate any required physical fixture click with the owner before the live
+test. Record exact accepted path, negative checks and cleanup evidence afterward.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

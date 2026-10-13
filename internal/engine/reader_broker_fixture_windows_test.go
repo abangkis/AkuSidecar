@@ -24,15 +24,26 @@ type brokerUICommand struct {
 	Op         string               `json:"op"`
 	WrongImage bool                 `json:"wrongImage"`
 	Indirect   bool                 `json:"indirect"`
+	Present    bool                 `json:"present"`
 	Request    readerbroker.Request `json:"request"`
 }
 type brokerUIState struct {
-	Ready, Focused, Applied, Armed, Clicked bool
-	PID                                     uint32
-	HWND                                    uint64
+	Ready, Focused, Applied, Armed, Clicked                                                          bool
+	PID                                                                                              uint32
+	HWND                                                                                             uint64
+	Intent                                                                                           string
+	Visible, Minimized, RectKnown, ButtonVisible, ButtonEnabled, ButtonRectKnown, Topmost, Presented bool
+	InitialVisible, InitialMinimized, InitialFocused, StartupApplied                                 bool
+	Rect, ButtonRect, WorkArea                                                                       brokerUIRect
+	Error                                                                                            string
+}
+type brokerUIRect struct{ Left, Top, Right, Bottom int32 }
+
+func (r brokerUIRect) inside(other brokerUIRect) bool {
+	return r.Right > r.Left && r.Bottom > r.Top && r.Left >= other.Left && r.Top >= other.Top && r.Right <= other.Right && r.Bottom <= other.Bottom
 }
 
-func startBrokerFixtureUI(t *testing.T, ctx context.Context) (*appshell.ReaderBrokerFixtureUI, string, brokerUIState) {
+func startBrokerFixtureUI(t *testing.T, ctx context.Context, physicalOpen ...bool) (*appshell.ReaderBrokerFixtureUI, string, brokerUIState) {
 	t.Helper()
 	if os.Getenv("AKU_BROKER_FIXTURE_ENABLED") != "1" {
 		t.Skip("explicit VerifyBroker helper required")
@@ -49,7 +60,8 @@ func startBrokerFixtureUI(t *testing.T, ctx context.Context) (*appshell.ReaderBr
 			t.Error(err)
 		}
 	})
-	if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "start"}); err != nil {
+	physical := len(physicalOpen) == 1 && physicalOpen[0]
+	if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "start", Present: physical}); err != nil {
 		t.Fatal(err)
 	}
 	var state brokerUIState
@@ -57,7 +69,14 @@ func startBrokerFixtureUI(t *testing.T, ctx context.Context) (*appshell.ReaderBr
 		t.Fatal(err)
 	}
 	if !state.Ready || state.PID != uint32(ui.Session.PID()) {
-		t.Fatal("owned fixture UI identity invalid")
+		t.Fatalf("owned fixture UI identity or presentation invalid: %+v", state)
+	}
+	if physical {
+		t.Logf("owned UI presentation: initialVisible=%t initialMinimized=%t initialFocused=%t startupApplied=%t visible=%t minimized=%t topmost=%t rect=%+v workArea=%+v", state.InitialVisible, state.InitialMinimized, state.InitialFocused, state.StartupApplied, state.Visible, state.Minimized, state.Topmost, state.Rect, state.WorkArea)
+		if !state.Presented || !state.Visible || state.Minimized || !state.Topmost || !state.RectKnown || !state.Rect.inside(state.WorkArea) {
+			t.Fatalf("cold owned UI visibility readback invalid: %+v", state)
+		}
+		return ui, pipe, state
 	}
 	if readerbroker.ForegroundPID() != state.PID {
 		t.Log("Click the owned window titled 'AkuBrowser Synthetic Reader Broker Fixture' once; waiting at most 60 seconds for OS foreground readback.")
@@ -122,12 +141,18 @@ func TestBrokerFixtureForegroundPrerequisite(t *testing.T) {
 }
 
 func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
+	runBrokerFixtureOSReaderHandoff(t, false)
+}
+func TestBrokerFixtureOSColdFirstRequest(t *testing.T) {
+	runBrokerFixtureOSReaderHandoff(t, true)
+}
+func runBrokerFixtureOSReaderHandoff(t *testing.T, coldFirst bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	ui, pipe, uiState := startBrokerFixtureUI(t, ctx)
+	ui, pipe, uiState := startBrokerFixtureUI(t, ctx, coldFirst)
 	fixture := startChromeFixtureHTTP(t)
 	defer fixture.server.Close()
-	config, bridge := startChromeFixtureForTest(t, fixture)
+	config, bridge := startChromeFixtureForTest(t, fixture, coldFirst)
 	backend := newChromeFixtureCaptureBackend(bridge, true)
 	h := newChromeFixtureEngineHarness(t, config, bridge, fixture, backend, nil, "")
 	session, err := h.engine.StartVisibleUpdate(ctx, "OS broker fixture handoff")
@@ -168,6 +193,12 @@ func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
 			owner := backend.current.Load()
 			if owner == nil {
 				return errors.New("fixture reader absent")
+			}
+			if coldFirst {
+				flags, inventoryErr := owner.FixtureBootstrapWindows(handleCtx)
+				if inventoryErr != nil || !owner.nativeReaderStartup || len(flags) < 1 || countBootstrapWindows(flags) != 1 || handlerCalls.Load() == 1 && (len(flags) != 1 || !flags[0]) {
+					return errors.New("cold initial reader/startup bootstrap identity was not retained")
+				}
 			}
 			marker := "AkuBrowser reader split_fixture_" + readerbroker.Secret()[:32]
 			if err = bridge.rpc(handleCtx, "reader_marker", map[string]any{"owner": owner.owner, "marker": marker}, nil); err != nil {
@@ -243,24 +274,60 @@ func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
 		}
 	})
 	waitBrokerFixturePipe(t, pipe)
-	focusBrokerFixtureUI(t, ui)
-	if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "read", Indirect: true, Request: brokerFixtureRequest()}); err != nil {
-		t.Fatal(err)
-	}
-	var indirect readerbroker.Reply
-	if err = readerbroker.Read(ui.Output, &indirect); err != nil {
-		t.Fatal(err)
-	}
-	if indirect.OK || indirect.Message != "AkuBrowser UI must remain foreground" || handlerCalls.Load() != 0 {
-		t.Fatalf("indirect helper parent gate failed: %+v", indirect)
-	}
-	denied := runBrokerFixtureClient(t, ui, true)
-	if denied.OK || !strings.Contains(denied.Message, "helper image mismatch") || handlerCalls.Load() != 0 {
-		t.Fatalf("wrong helper image reached handoff: %+v", denied)
-	}
-	focusBrokerFixtureUI(t, ui)
-	if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "read", Request: brokerFixtureRequest()}); err != nil {
-		t.Fatal(err)
+	if coldFirst {
+		if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "arm_open", Request: brokerFixtureRequest()}); err != nil {
+			t.Fatal(err)
+		}
+		var armed brokerUIState
+		if err = readerbroker.Read(ui.Output, &armed); err != nil || !armed.Armed {
+			t.Fatal("physical open button did not arm")
+		}
+		if !armed.Visible || armed.Minimized || !armed.Topmost || !armed.ButtonVisible || !armed.ButtonEnabled || !armed.RectKnown || !armed.ButtonRectKnown || !armed.ButtonRect.inside(armed.Rect) {
+			t.Fatalf("Open button native visibility/placement/readback invalid: %+v", armed)
+		}
+		t.Logf("Open button visible+enabled: rect=%+v UIrect=%+v", armed.ButtonRect, armed.Rect)
+		t.Log("Cold first request armed. Click 'Open explicit reader' inside 'AkuBrowser Synthetic Reader Broker Fixture' once now, then provide no additional input. No warm retry is permitted.")
+		clicked := make(chan brokerUIState, 1)
+		clickError := make(chan error, 1)
+		go func() {
+			var state brokerUIState
+			if err := readerbroker.Read(ui.Output, &state); err != nil {
+				clickError <- err
+				return
+			}
+			clicked <- state
+		}()
+		select {
+		case state := <-clicked:
+			if !state.Clicked || !state.Focused || state.Intent != "open" || state.PID != uint32(ui.Session.PID()) || state.HWND != uiState.HWND || state.Topmost || state.Error != "" {
+				t.Fatal("first physical open intent was not observed from owned UI")
+			}
+			t.Log("physical Open intent observed; own UI temporary topmost removed before direct helper launch")
+		case err := <-clickError:
+			t.Fatal(err)
+		case <-time.After(60 * time.Second):
+			t.Fatal("physical Open explicit reader click was not observed within 60 seconds")
+		}
+	} else {
+		focusBrokerFixtureUI(t, ui)
+		if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "read", Indirect: true, Request: brokerFixtureRequest()}); err != nil {
+			t.Fatal(err)
+		}
+		var indirect readerbroker.Reply
+		if err = readerbroker.Read(ui.Output, &indirect); err != nil {
+			t.Fatal(err)
+		}
+		if indirect.OK || indirect.Message != "AkuBrowser UI must remain foreground" || handlerCalls.Load() != 0 {
+			t.Fatalf("indirect helper parent gate failed: %+v", indirect)
+		}
+		denied := runBrokerFixtureClient(t, ui, true)
+		if denied.OK || !strings.Contains(denied.Message, "helper image mismatch") || handlerCalls.Load() != 0 {
+			t.Fatalf("wrong helper image reached handoff: %+v", denied)
+		}
+		focusBrokerFixtureUI(t, ui)
+		if err = readerbroker.Write(ui.Input, brokerUICommand{Op: "read", Request: brokerFixtureRequest()}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	waitChromeFixture(t, func() bool { return h.coordinator.Status().BatchPaused }, "OS reader fences batch while capture drains")
 	if collector.exited.Load() || backend.current.Load() != collector {
@@ -279,6 +346,9 @@ func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
 	}
 	path := "cold_actual_success"
 	if !result.OK {
+		if coldFirst {
+			t.Fatalf("cold first request failed; no warm retry allowed: final=%+v activation=%+v", result, outcome.reply)
+		}
 		reply := outcome.reply
 		known := reply.Message == "Reader intent expired or UI foreground changed" && (reply.FocusCategory == "other" || reply.FocusCategory == "none") && !reply.OK && !reply.Readback && !reply.Applied && reply.ReaderVisible != nil && reply.ReaderMinimized != nil
 		known = known || readerbroker.CanNavigatePostWithoutForeground(reply)
@@ -334,6 +404,9 @@ func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
 		}
 		path = "warm_retained_owner_fresh_physical_intent"
 	}
+	if coldFirst && handlerCalls.Load() != 1 {
+		t.Fatal("cold acceptance required more than the first request")
+	}
 	t.Logf("broker accepted path=%s", path)
 	exactTarget = outcome.target
 	activationResult = outcome.reply
@@ -359,6 +432,16 @@ func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
 	if !collector.exited.Load() || bridge.launchCount.Load() != 2 || !h.coordinator.Status().BatchPaused {
 		t.Fatal("reader/batch ownership was not preserved")
 	}
+	if coldFirst {
+		flags, inventoryErr := owner.FixtureBootstrapWindows(ctx)
+		if inventoryErr != nil || len(flags) != 1 || !flags[0] {
+			t.Fatal("first reader did not reuse the actual Chrome startup/bootstrap window")
+		}
+		t.Log("cold initial reader is Chrome's real startup/bootstrap window; adding independent ownership window only after first ACK and native readback")
+		if err = owner.OpenFixtureIndependentWindow(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
 	flags, err := owner.FixtureBootstrapWindows(ctx)
 	if err != nil || len(flags) != 2 || countBootstrapWindows(flags) != 1 {
 		t.Fatal("reader/independent bootstrap windows not retained")
@@ -383,7 +466,26 @@ func TestBrokerFixtureOSReaderHandoff(t *testing.T) {
 		})
 	}
 	fixtureMode.Store(0)
-	closeChromeFixtureReaderWindow(t, ctx, owner)
+	if coldFirst {
+		flags, err = owner.FixtureBootstrapWindows(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, bootstrap := range flags {
+			if bootstrap {
+				if err = owner.CloseFixtureWindow(ctx, index); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+		}
+		flags, err = owner.FixtureBootstrapWindows(ctx)
+		if err != nil || len(flags) != 1 || flags[0] {
+			t.Fatal("closing exact initial reader/startup bootstrap did not retain independent ownership window")
+		}
+	} else {
+		closeChromeFixtureReaderWindow(t, ctx, owner)
+	}
 	if owner.exited.Load() || !h.coordinator.Status().BatchPaused {
 		t.Fatal("independent remaining window did not block batch")
 	}

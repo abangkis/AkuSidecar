@@ -431,6 +431,46 @@ result. No real authentication, user runtime operation, installation, commit or
 push occurred in this phase. See the README's `-VerifyBroker` command and exact
 accepted path for reproducible scope.
 
+## Cold first-request fixture continuation (2026-10-13, validated locally)
+
+After the validated broker delta was committed and pushed as `f141dc6`, the owner
+authorized the next bounded fixture phase. Its acceptance uses one physical
+Open explicit reader action before Chrome preparation; a retry against a retained
+reader cannot satisfy this gate. The new preset follows production normal
+window startup and reuses the initial target, while preserving ownership of the
+actual startup/bootstrap target and any later independent reader window.
+
+The cold fixture passed its first actual request: `cold_actual_success`,
+Readback true and Applied false, exact native HWND/PID visible and not minimized.
+The normal initial reader was already foreground; the existing broker verified
+it without an extra activation write. One synthetic login persisted. Closing the
+initial reader/bootstrap left the independent window owning the session and
+holding batch pause; final close and natural whole-Job release preceded resumed
+capture (three launches/release proofs). Five binding negatives, changed UI
+foreground before a new request and native binding replay rejection passed.
+Parent/image negatives retain their separate preceding warm-case evidence.
+
+For coordinated input, the owned cold UI is shown without activation, placed once
+on the active monitor with temporary topmost state, and verified visible with an
+enabled button. The physical click removes that state before helper launch. Its
+in-window instruction tells the owner to click when enabled, without waiting for
+chat. Earlier timeouts reached no reader request because chat coordination was
+late; they are not failed native-reader evidence.
+
+The exact `-VerifyBroker -BrokerTestRegex '^TestBrokerFixtureOSColdFirstRequest$'
+-VerifyDefault` helper exited zero. Tagged contracts, 19 synthetic cases, ordinary
+broker/appshell regressions, five-package default selection and ordinary build
+passed; seven existing Chrome leaf cases and 30 standalone fallback checks also
+passed with the shared launcher change. Fixture jobs and output were cleaned.
+
+Production identity, focus, single-use binding and lifetime guards stay unchanged.
+The preset addresses the fixture/production preparation mismatch; it does not
+prove the installed extension/native-host flow, full production binary restart,
+changes after ticket claim, production DOM extraction or real-site compatibility.
+This phase does not register a native host, change authentication, touch an
+existing profile or operate user runtime. After validation, the owner separately
+authorized commit/push of the nine-file cold delta on 2026-10-13.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

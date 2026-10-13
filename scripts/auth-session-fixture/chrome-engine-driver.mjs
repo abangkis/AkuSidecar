@@ -92,10 +92,13 @@ async function inventory(browser) {
   throw new Error('fixture_inventory_unknown');
 }
 
-async function launch(role) {
+async function launch(role, nativeReaderStartup = false) {
   if (!['collector', 'owner'].includes(role)) throw new Error('fixture_role_invalid');
+  if (typeof nativeReaderStartup !== 'boolean' || nativeReaderStartup && role !== 'owner') {
+    throw new Error('fixture_startup_invalid');
+  }
   if (current && !current.isExited()) throw new Error('fixture_profile_still_owned');
-  const browser = await launchFixtureChrome(executable, root, role, 'shared');
+  const browser = await launchFixtureChrome(executable, root, role, 'shared', nativeReaderStartup ? 'native_reader' : 'retained');
   let page = null;
   let bootstrapPage = null;
   let bootstrapTarget = '';
@@ -110,7 +113,7 @@ async function launch(role) {
     }
     bootstrapTarget = candidates[0].targetId;
     bootstrapPage = await browser.pageForTarget(origin, bootstrapTarget);
-    page = await browser.page(origin);
+    page = nativeReaderStartup ? bootstrapPage : await browser.page(origin);
   }
   const owner = ++nextOwner;
   current = browser;
@@ -121,7 +124,7 @@ async function launch(role) {
   currentOwner = owner;
   owners.set(owner, { browser, role });
   const windows = await inventory(browser);
-  return { owner, pid: browser.pid, windowCount: windows.length,
+  return { owner, pid: browser.pid, nativeReaderStartup, windowCount: windows.length,
     bootstrapCount: windows.filter(window => window.bootstrap).length };
 }
 
@@ -139,7 +142,18 @@ async function execute(message) {
       return { marked: true };
     }
     case 'launch':
-      return await launch(message.role);
+      return await launch(message.role, message.nativeReaderStartup ?? false);
+    case 'open_independent_window': {
+      if (message.owner !== currentOwner || !current || current.role !== 'owner' || current.startup !== 'native_reader') {
+        throw new Error('fixture_independent_window_unavailable');
+      }
+      // This is an additional ownership window, never the Chrome startup
+      // bootstrap. Keep the initial reader target and its bootstrap identity.
+      const page = await current.page(origin);
+      currentPages.set(page.targetId, page);
+      const windows = await inventory(current);
+      return { windowCount: windows.length, bootstrapCount: windows.filter(window => window.bootstrap).length };
+    }
     case 'probe': {
       if (message.owner !== currentOwner) throw new Error('fixture_owner_stale');
       if (!currentPage) throw new Error('fixture_chrome_unavailable');

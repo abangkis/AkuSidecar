@@ -32,11 +32,12 @@ const (
 )
 
 type chromeFixtureConfig struct {
-	NodePath   string
-	ChromePath string
-	Root       string
-	Origin     string
-	DriverPath string
+	NodePath            string
+	ChromePath          string
+	Root                string
+	Origin              string
+	DriverPath          string
+	NativeReaderStartup bool
 }
 
 type chromeFixtureBridge struct {
@@ -71,17 +72,18 @@ type chromeFixtureReply struct {
 }
 
 type chromeFixtureProcess struct {
-	bridge           *chromeFixtureBridge
-	owner            int
-	pid              uint32
-	role             string
-	done             chan error
-	once             sync.Once
-	exited           atomic.Bool
-	rootExited       atomic.Bool
-	transportUnknown atomic.Bool
-	retiring         atomic.Bool
-	failCleanup      atomic.Bool
+	bridge              *chromeFixtureBridge
+	owner               int
+	pid                 uint32
+	role                string
+	nativeReaderStartup bool
+	done                chan error
+	once                sync.Once
+	exited              atomic.Bool
+	rootExited          atomic.Bool
+	transportUnknown    atomic.Bool
+	retiring            atomic.Bool
+	failCleanup         atomic.Bool
 }
 
 func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (*chromeFixtureBridge, error) {
@@ -391,18 +393,21 @@ func (b *chromeFixtureBridge) launch(ctx context.Context, role string) (*chromeF
 	}
 	b.releaseProofs.Add(1)
 	var launched struct {
-		Owner          int    `json:"owner"`
-		PID            uint32 `json:"pid"`
-		WindowCount    int    `json:"windowCount"`
-		BootstrapCount int    `json:"bootstrapCount"`
+		Owner               int    `json:"owner"`
+		PID                 uint32 `json:"pid"`
+		WindowCount         int    `json:"windowCount"`
+		BootstrapCount      int    `json:"bootstrapCount"`
+		NativeReaderStartup bool   `json:"nativeReaderStartup"`
 	}
-	if err := b.rpc(ctx, "launch", map[string]any{"role": role}, &launched); err != nil {
+	nativeStartup := role == "owner" && b.config.NativeReaderStartup
+	if err := b.rpc(ctx, "launch", map[string]any{"role": role, "nativeReaderStartup": nativeStartup}, &launched); err != nil {
 		return nil, err
 	}
-	if launched.Owner <= 0 || launched.PID == 0 || (role == "owner" && (launched.WindowCount < 2 || launched.BootstrapCount != 1)) {
+	badOwnerWindows := role == "owner" && (launched.BootstrapCount != 1 || nativeStartup && launched.WindowCount != 1 || !nativeStartup && launched.WindowCount < 2)
+	if launched.Owner <= 0 || launched.PID == 0 || launched.NativeReaderStartup != nativeStartup || badOwnerWindows {
 		return nil, errors.New("fixture Chrome launch evidence invalid")
 	}
-	p := &chromeFixtureProcess{bridge: b, owner: launched.Owner, pid: launched.PID, role: role, done: make(chan error, 1)}
+	p := &chromeFixtureProcess{bridge: b, owner: launched.Owner, pid: launched.PID, role: role, nativeReaderStartup: nativeStartup, done: make(chan error, 1)}
 	b.mu.Lock()
 	b.owners[p.owner] = p
 	_, exited := b.exitsEarly[p.owner]
@@ -441,6 +446,23 @@ func (p *chromeFixtureProcess) OpenExtensionsPage(ctx context.Context) error {
 	}
 	if result.WindowCount < 1 {
 		return errors.New("fixture reader window was not observed")
+	}
+	return nil
+}
+
+func (p *chromeFixtureProcess) OpenFixtureIndependentWindow(ctx context.Context) error {
+	if p.role != "owner" || !p.nativeReaderStartup {
+		return errors.New("fixture independent window requires native reader startup")
+	}
+	var result struct {
+		WindowCount    int `json:"windowCount"`
+		BootstrapCount int `json:"bootstrapCount"`
+	}
+	if err := p.bridge.rpc(ctx, "open_independent_window", map[string]any{"owner": p.owner}, &result); err != nil {
+		return err
+	}
+	if result.WindowCount != 2 || result.BootstrapCount != 1 {
+		return errors.New("additional ownership window inventory was not verified")
 	}
 	return nil
 }

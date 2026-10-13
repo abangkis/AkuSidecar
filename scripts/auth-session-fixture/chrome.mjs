@@ -24,8 +24,11 @@ function fixturePath(path) {
   return path;
 }
 
-export async function launchFixtureChrome(executable, root, role, profileName = role) {
+export async function launchFixtureChrome(executable, root, role, profileName = role, startup = 'retained') {
   if (!['owner', 'collector'].includes(role)) throw new Error('invalid_fixture_role');
+  if (!['retained', 'native_reader'].includes(startup) || startup === 'native_reader' && role !== 'owner') {
+    throw new Error('invalid_fixture_startup');
+  }
   if (!['owner', 'collector', 'shared'].includes(profileName) ||
       (profileName !== role && profileName !== 'shared')) throw new Error('invalid_fixture_profile');
   const requestedRoot = root;
@@ -49,8 +52,9 @@ export async function launchFixtureChrome(executable, root, role, profileName = 
     '--disable-component-update', '--disable-sync', '--disable-background-mode',
     '--disable-default-apps', '--no-proxy-server', '--metrics-recording-only',
     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
-    ...(role === 'collector' ? ['--headless=new', '--no-startup-window'] : ['--start-minimized', 'about:blank']),
-  ], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+    ...(role === 'collector' ? ['--headless=new', '--no-startup-window']
+      : startup === 'native_reader' ? ['--new-window', 'about:blank'] : ['--start-minimized', 'about:blank']),
+  ], { windowsHide: startup !== 'native_reader', stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
   let exited = false, transportClosed = false, sequence = 0, buffer = '';
   ownedProfiles.set(profile, () => exited);
   const pending = new Map();
@@ -243,7 +247,7 @@ export async function launchFixtureChrome(executable, root, role, profileName = 
   }
   try {
     const version = await send('Browser.getVersion');
-    return { send, sendSession, subscribeProtocol, page, pageForTarget, close, pid: child.pid, profile: resolved, role, product: version.product,
+    return { send, sendSession, subscribeProtocol, page, pageForTarget, close, pid: child.pid, profile: resolved, role, startup, product: version.product,
       isExited: () => exited,
       disconnectForFixtureTest() {
         markTransportClosed();

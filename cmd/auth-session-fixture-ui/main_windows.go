@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"golang.org/x/sys/windows"
 	"io"
@@ -22,6 +23,7 @@ type command struct {
 	Op         string               `json:"op"`
 	WrongImage bool                 `json:"wrongImage"`
 	Indirect   bool                 `json:"indirect"`
+	Present    bool                 `json:"present"`
 	Request    readerbroker.Request `json:"request"`
 }
 type message struct {
@@ -43,6 +45,46 @@ type windowClass struct {
 
 var user = windows.NewLazySystemDLL("user32.dll")
 var outputMu sync.Mutex
+
+type rect struct{ Left, Top, Right, Bottom int32 }
+
+func nativeUIFacts(hwnd, button uintptr) map[string]any {
+	visible, _, _ := user.NewProc("IsWindowVisible").Call(hwnd)
+	iconic, _, _ := user.NewProc("IsIconic").Call(hwnd)
+	var bounds, buttonBounds rect
+	boundsOK, _, _ := user.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
+	buttonBoundsOK, _, _ := user.NewProc("GetWindowRect").Call(button, uintptr(unsafe.Pointer(&buttonBounds)))
+	buttonVisible, _, _ := user.NewProc("IsWindowVisible").Call(button)
+	buttonEnabled, _, _ := user.NewProc("IsWindowEnabled").Call(button)
+	exStyle, _, _ := user.NewProc("GetWindowLongPtrW").Call(hwnd, uintptr(^uint32(19))) // GWL_EXSTYLE=-20
+	return map[string]any{"pid": os.Getpid(), "hwnd": uint64(hwnd), "focused": readerbroker.ForegroundPID() == uint32(os.Getpid()), "visible": visible != 0, "minimized": iconic != 0, "rectKnown": boundsOK != 0, "rect": bounds, "buttonVisible": buttonVisible != 0, "buttonEnabled": buttonEnabled != 0, "buttonRectKnown": buttonBoundsOK != 0, "buttonRect": buttonBounds, "topmost": exStyle&8 != 0}
+}
+func presentOwnFixtureUI(hwnd uintptr) (rect, error) {
+	var pid uint32
+	user.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if pid != uint32(os.Getpid()) {
+		return rect{}, fmt.Errorf("fixture presentation HWND ownership changed")
+	}
+	foreground, _, _ := user.NewProc("GetForegroundWindow").Call()
+	monitor, _, _ := user.NewProc("MonitorFromWindow").Call(foreground, 2)
+	info := struct {
+		Size          uint32
+		Monitor, Work rect
+		Flags         uint32
+	}{}
+	info.Size = uint32(unsafe.Sizeof(info))
+	ok, _, _ := user.NewProc("GetMonitorInfoW").Call(monitor, uintptr(unsafe.Pointer(&info)))
+	if monitor == 0 || ok == 0 || info.Work.Right-info.Work.Left < 500 || info.Work.Bottom-info.Work.Top < 220 {
+		return rect{}, fmt.Errorf("fixture presentation monitor work area unavailable")
+	}
+	x := info.Work.Left + (info.Work.Right-info.Work.Left-460)/2
+	y := info.Work.Top + (info.Work.Bottom-info.Work.Top-180)/2
+	ok, _, _ = user.NewProc("SetWindowPos").Call(hwnd, ^uintptr(0), uintptr(x), uintptr(y), 460, 180, 0x50) // TOPMOST, SHOWWINDOW|NOACTIVATE
+	if ok == 0 {
+		return info.Work, fmt.Errorf("fixture own UI presentation rejected")
+	}
+	return info.Work, nil
+}
 
 func emit(v any) { outputMu.Lock(); defer outputMu.Unlock(); _ = readerbroker.Write(os.Stdout, v) }
 func main() {
@@ -73,10 +115,22 @@ func main() {
 	var retryMu sync.Mutex
 	var retry *command
 	var retryButton uintptr
+	presented := false
 	callback := syscall.NewCallback(func(hwnd uintptr, id uint32, w, l uintptr) uintptr {
 		if id == 0x8002 {
+			retryMu.Lock()
+			next := retry
+			retryMu.Unlock()
+			label := "Retry explicit reader"
+			if next != nil && next.Op == "arm_open" {
+				label = "Open explicit reader (klik sekarang)"
+			}
+			text, _ := windows.UTF16PtrFromString(label)
+			user.NewProc("SetWindowTextW").Call(retryButton, uintptr(unsafe.Pointer(text)))
 			user.NewProc("EnableWindow").Call(retryButton, 1)
-			emit(map[string]any{"armed": true})
+			facts := nativeUIFacts(hwnd, retryButton)
+			facts["armed"] = true
+			emit(facts)
 			return 0
 		}
 		if id == 0x111 && w&0xffff == 100 && w>>16 == 0 {
@@ -85,9 +139,29 @@ func main() {
 			retry = nil
 			retryMu.Unlock()
 			user.NewProc("EnableWindow").Call(retryButton, 0)
-			if next != nil && readerbroker.ForegroundPID() == uint32(os.Getpid()) {
-				emit(map[string]any{"clicked": true, "focused": true, "pid": os.Getpid(), "hwnd": uint64(hwnd)})
-				go runHelper(*next)
+			if next != nil {
+				facts := nativeUIFacts(hwnd, retryButton)
+				facts["clicked"] = true
+				intent := "retry"
+				if next.Op == "arm_open" {
+					intent = "open"
+				}
+				facts["intent"] = intent
+				if presented {
+					ok, _, _ := user.NewProc("SetWindowPos").Call(hwnd, ^uintptr(1), 0, 0, 0, 0, 0x13) // NOTOPMOST, NOMOVE|NOSIZE|NOACTIVATE
+					readback := nativeUIFacts(hwnd, retryButton)
+					if ok == 0 || readback["topmost"] != false {
+						facts["error"] = "fixture presentation removal rejected"
+						emit(facts)
+						return 0
+					}
+					presented = false
+					facts["topmost"] = false
+				}
+				emit(facts)
+				if readerbroker.ForegroundPID() == uint32(os.Getpid()) {
+					go runHelper(*next)
+				}
 			}
 			return 0
 		}
@@ -118,15 +192,52 @@ func main() {
 		os.Exit(5)
 	}
 	buttonClass, _ := windows.UTF16PtrFromString("BUTTON")
-	buttonTitle, _ := windows.UTF16PtrFromString("Retry explicit reader")
+	buttonLabel := "Retry explicit reader"
+	if first.Present {
+		buttonLabel = "Open explicit reader (klik sekarang)"
+	}
+	buttonTitle, _ := windows.UTF16PtrFromString(buttonLabel)
 	retryButton, _, _ = user.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(buttonClass)), uintptr(unsafe.Pointer(buttonTitle)), 0x50000001, 40, 35, 340, 55, hwnd, 100, instance, 0)
 	if retryButton == 0 {
 		os.Exit(8)
 	}
+	if first.Present {
+		staticClass, _ := windows.UTF16PtrFromString("STATIC")
+		instruction, _ := windows.UTF16PtrFromString("Klik sekali saat tombol aktif; tidak perlu menunggu chat.")
+		control, _, _ := user.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(instruction)), 0x50000000, 20, 5, 400, 25, hwnd, 101, instance, 0)
+		if control == 0 {
+			os.Exit(9)
+		}
+	}
 	user.NewProc("EnableWindow").Call(retryButton, 0)
-	user.NewProc("ShowWindow").Call(hwnd, 5)
-	user.NewProc("SetForegroundWindow").Call(hwnd)
-	emit(map[string]any{"ready": true, "focused": readerbroker.ForegroundPID() == uint32(os.Getpid()), "pid": os.Getpid(), "hwnd": uint64(hwnd)})
+	showCommand := uintptr(5) // Existing warm fixture behavior.
+	if first.Present {
+		showCommand = 4
+	} // Cold presentation: SW_SHOWNOACTIVATE.
+	user.NewProc("ShowWindow").Call(hwnd, showCommand)
+	startupApplied := uintptr(0)
+	if !first.Present {
+		startupApplied, _, _ = user.NewProc("SetForegroundWindow").Call(hwnd)
+	}
+	initial := nativeUIFacts(hwnd, retryButton)
+	var work rect
+	var presentationErr error
+	if first.Present {
+		work, presentationErr = presentOwnFixtureUI(hwnd)
+		presented = presentationErr == nil
+	}
+	facts := nativeUIFacts(hwnd, retryButton)
+	facts["ready"] = presentationErr == nil
+	facts["initialVisible"] = initial["visible"]
+	facts["initialMinimized"] = initial["minimized"]
+	facts["initialFocused"] = initial["focused"]
+	facts["startupApplied"] = startupApplied != 0
+	facts["presented"] = presented
+	facts["workArea"] = work
+	if presentationErr != nil {
+		facts["error"] = presentationErr.Error()
+	}
+	emit(facts)
 	go func() {
 		for {
 			var next command
@@ -135,7 +246,7 @@ func main() {
 				return
 			}
 			switch next.Op {
-			case "arm_retry":
+			case "arm_retry", "arm_open":
 				if next.WrongImage || next.Indirect || next.Request.Validate() != nil {
 					emit(readerbroker.Reply{Message: "invalid fixture retry"})
 					continue
