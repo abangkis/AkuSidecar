@@ -432,3 +432,49 @@ are stdout-only. Failed launches without an owner handle retain their root becau
 child exit status is unknown. Locked files are left untouched; cleanup never kills
 other processes. No authentication, acceptance archive, restart, commit or push
 against the real runtime was performed for this phase.
+
+## Generic exclusive fallback fixture
+
+`exclusive-fallback.mjs` separates execution admission from authentication
+authority. Its injected adapters provide reader inventory, reader opening,
+collector pause/start and fresh session verification. The controller contains no
+platform URLs, browser APIs or reader-close callback. Concurrent admission
+requires verified cookie observation, startup coverage and ownership; missing
+coverage selects exclusive execution. A downgrade is sticky for the controller's
+lifetime. Restoring capability flags does not silently restore concurrency.
+
+Reader requests in exclusive mode invalidate collector leases immediately,
+abort/drain outstanding reads and stop the owned collector before opening the
+reader. Old-generation results are rejected; the existing in-memory fixture
+queue retains interrupted/unstarted work. Remaining reader windows keep batch
+admission closed. After the last confirmed user close, fresh authenticated account
+and session-revision checks precede collector restart and queue resume. Unknown
+inventory, changed account, lost login or failed control operations require user
+action. A timed-out start remains tracked through its late cleanup; `stop()`
+reports `cleanupPending` instead of claiming physical shutdown prematurely.
+
+```powershell
+.\runtime\dev\headless-worker\node.exe --test .\scripts\auth-session-fixture\exclusive-fallback.test.mjs .\scripts\auth-session-fixture\capture-queue.test.mjs
+.\runtime\dev\headless-worker\node.exe .\scripts\auth-session-fixture\run-exclusive-fallback.mjs --run-local-fixture --chrome 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+```
+
+Validation on 2026-10-13 at 15:03 WIB, Chrome 154.0.8037.98: **19 unit tests and
+30 browser checks across four scenarios passed**. A downgrade during active
+batch preserved the exact two reader target/window IDs and browser process,
+stopped only the fixture collector and resumed both retained jobs after the last
+reader closed. One interrupted job retried once; completed jobs did not publish
+twice. Starting exclusive also gave reader requests priority. Synthetic account
+change and logout both blocked restart. Successful handoffs retained one invented
+login. Target closure is confirmed by bounded inventory readback because the CDP
+close acknowledgment may precede disappearance.
+
+These are local execution-policy results. Capability flags are explicit synthetic
+test inputs, not new worker qualifications. The bootstrap authentication window
+remains in the owned source browser and is excluded from reader inventory; this
+does not prove production shared-profile lock handoff. Queue retention is only
+in memory, and production close-event wiring, durable jobs and actual platform
+authentication remain outside this phase. Test actors explicitly close fixture
+readers to simulate user action; the controller itself never closes readers.
+All fixture browsers exited and disposable profiles were removed, independently
+confirmed with zero remaining fixture Chrome processes/directories. Receipts are
+stdout-only; real profiles, production runtime and source data were untouched.

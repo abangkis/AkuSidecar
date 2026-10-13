@@ -298,6 +298,36 @@ Existing admission gates remain intact. The next policy phase must retain this
 distinction when choosing concurrency or the existing exclusive handoff.
 Reproduction, exact evidence scope and cleanup are in the fixture README.
 
+## Reader-priority exclusive execution fixture (2026-10-13)
+
+The approved fallback now has a generic local-fixture controller, separate from
+the authentication strategy. It consumes capability evidence and injected control
+adapters; it does not select credentials or hardcode a social platform. Concurrent
+execution needs verified cookie observation, startup coverage and ownership.
+Missing coverage downgrades to exclusive for this controller's lifetime; an
+automatic capability upgrade cannot reverse that decision.
+
+An exclusive reader request immediately fences batch leases, aborts/drains active
+reads and pauses the owned collector before reader opening. Pending work remains
+in the existing in-memory queue, and obsolete results cannot publish. Existing
+reader windows are preserved. Collection resumes only after authoritative
+inventory confirms no readers remain and fresh session verification proves the
+expected account. Account mismatch, logout, unknown inventory or control failure
+requires user action. Late partial starts are tracked and cleaned; incomplete
+physical shutdown is explicitly reported as cleanup pending.
+
+At 15:03 WIB, 19 unit tests and 30 Chrome checks passed. The real Chrome fixture
+preserved two exact reader windows during downgrade, retained/retried batch work,
+and blocked restart after synthetic account change or logout. All owned browsers
+and profiles were removed, with zero independently observed leftovers.
+
+The browser runner supplies synthetic capability flags and invented loopback
+tickets. It verifies exclusive collection scheduling, not universal worker
+coverage or production shared-profile handoff: a bootstrap authentication page
+remains open outside explicit reader inventory. Production adapters, close-event
+integration, durable queue retention and real authentication are still deferred.
+The controller has no reader-close adapter; test actors alone simulate user close.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

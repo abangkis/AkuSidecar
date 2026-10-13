@@ -4322,6 +4322,31 @@ feed. Prepare a concrete read-only fixture before requesting that scoped
 approval. Installed-app authenticated Settings/reader/auto-return remains open;
 no candidate installation, default change, commit or push occurred in this step.
 
+### 2026-10-13: generic reader-priority exclusive fallback, local only
+
+Approved scope: automatic batch pause, preserve user reader windows and resume
+after the last confirmed user close; no real authentication or production
+integration. Implemented a generic injected-adapter execution controller separate
+from auth strategies. Missing cookie/startup/ownership qualification selects
+sticky exclusive execution. Reader requests fence old leases synchronously;
+drain/stop precedes reader opening. Interrupted and unstarted jobs remain in the
+in-memory fixture queue. Fresh session/account verification gates resume.
+
+Validation at 15:03 WIB: 19 unit tests and 30 checks in Chrome 154.0.8037.98 passed.
+Downgrade preserved the same two reader windows/process, paused only the owned
+collector, and resumed retained work after the final user-close simulation.
+No duplicate publication; account change and logout denied restart. Partial and
+timed-out collector starts have tracked cleanup and explicit pending status.
+The first browser trial exposed fixture close acknowledgment preceding target
+disappearance; bounded readback fixed the harness before the final passing run.
+
+All fixture processes and profiles were removed, independently verified. No
+acceptance archive, real-profile operation or production restart was performed.
+Capability flags remain synthetic inputs. The retained bootstrap auth window is
+excluded from reader inventory, so production profile-lock handoff is not proven.
+Production control adapters, reader-close event wiring and durable queued work
+remain future integration tasks requiring a separately scoped implementation.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
