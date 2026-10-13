@@ -293,6 +293,17 @@ the PoC harness. Production integration, persistent vault storage and real-site
 testing are not part of this implementation. See the dated strategy section in
 `auth-session-reuse-design.md` for handoff gates and remaining limits.
 
+The next authorized fixture extension (2026-10-13, 10:26 WIB) passed 72 unit
+tests and 26 Chrome/DPAPI integration checks. It adds attached-page network
+observation with a per-request refresh exemption, bounded read-job retry after
+switch/refresh, and an explicit encrypted synthetic-ticket checkpoint recovered
+by a fresh coordinator process/profile pair. The entire integration run retained
+one invented login. New tabs/service workers, durable capture-job persistence,
+automatic vault updating/revocation and actual production integration remain
+outside this proof. Real authentication is still prohibited; all fixture profiles
+and ciphertext checkpoints were cleaned up. See the dated resilience section in
+`auth-session-reuse-design.md` before proposing the next scope.
+
 The native-reader launcher no longer requests minimized startup. Private CDP
 remains an inherited pipe under process-tree ownership, with normal readers now
 eligible for the existing scoped binding/retirement guard. Timing logs contain

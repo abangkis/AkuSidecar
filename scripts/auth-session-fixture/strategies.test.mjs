@@ -319,3 +319,38 @@ test('drain timeout never publishes a target and a settled operation allows an e
     await controller.revoke();
   }
 });
+
+test('external browser session mutation fences either strategy without a managed use', async t => {
+  for (const strategy of ['reader-owned', 'central-vault']) {
+    await t.test(strategy, async () => {
+      const { controller } = harness();
+      try {
+        assert.equal((await controller.start(strategy)).ok, true);
+        const lease = controller.lease('collector');
+        assert.deepEqual(controller.notifyExternalSessionChange('reader'), { ok: false, code: 'EXTERNAL_SESSION_CHANGE' });
+        assert.equal(controller.status().state, 'CONFLICT');
+        assert.equal(controller.lease('collector'), null);
+        let ran = false;
+        assert.equal((await controller.use('collector', lease, () => { ran = true; })).ok, false);
+        assert.equal(ran, false);
+        assert.equal((await controller.switchTo(strategy === 'reader-owned' ? 'central-vault' : 'reader-owned')).code, 'SESSION_CONFLICT');
+      } finally { await controller.revoke(); }
+    });
+  }
+});
+
+test('external mutation wins over an in-flight controlled refresh and cannot publish READY', async () => {
+  const { controller, clients } = harness();
+  const entered = deferred(), finish = deferred();
+  const refresh = clients.collector.refresh;
+  clients.collector.refresh = async args => { entered.resolve(); await finish.promise; return refresh(args); };
+  try {
+    assert.equal((await controller.start('central-vault')).ok, true);
+    const pending = controller.refresh(); await entered.promise;
+    controller.notifyExternalSessionChange('reader'); finish.resolve();
+    assert.equal((await pending).ok, false);
+    assert.equal(controller.status().state, 'CONFLICT');
+    assert.equal(controller.status().engine.state, 'CONFLICT');
+    assert.equal(controller.lease('reader'), null);
+  } finally { finish.resolve(); await controller.revoke(); }
+});

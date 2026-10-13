@@ -186,6 +186,7 @@ export class SessionStrategyController {
   switchTo(strategyId) {
     if (!isStrategyId(strategyId)) return Promise.resolve(failure('STRATEGY_UNKNOWN'));
     if (this.#state === 'REVOKED') return Promise.resolve(failure('SESSION_REVOKED'));
+    if (this.#state === 'CONFLICT') return Promise.resolve(failure('SESSION_CONFLICT'));
     if (this.#switchPromise || this.#refreshPromise) return Promise.resolve(failure('BUSY'));
     if (this.#active?.id === strategyId && this.#state === 'READY') {
       return Promise.resolve(Object.freeze({ ok: true, code: 'UNCHANGED' }));
@@ -193,6 +194,22 @@ export class SessionStrategyController {
     if (!this.#active && this.#state === 'IDLE') return this.#beginSwitch(strategyId, true);
     if (!this.#active && !this.#pendingCleanup) return Promise.resolve(failure('SESSION_NOT_READY'));
     return this.#beginSwitch(strategyId, false);
+  }
+
+  // Observation comes only from the explicitly attached fixture browser adapter.
+  // Fence even during refresh/handoff: a background response is not refresh authority.
+  notifyExternalSessionChange(clientId) {
+    if (!CLIENTS.includes(clientId)) return failure('CLIENT_UNKNOWN');
+    if (['IDLE', 'REVOKED', 'CONFLICT'].includes(this.#state)) return failure('SESSION_NOT_READY');
+    const handles = new Set([this.#active, this.#target, this.#strategyToFence].filter(Boolean));
+    for (const handle of handles) {
+      if (handle.id === 'central-vault') handle.engine.notifyUnexpectedRotation(clientId);
+    }
+    this.#operationEpoch += 1;
+    this.#generation += 1;
+    this.#state = 'CONFLICT';
+    this.#lastCode = 'EXTERNAL_SESSION_CHANGE';
+    return failure('EXTERNAL_SESSION_CHANGE');
   }
 
   #beginSwitch(strategyId, starting) {

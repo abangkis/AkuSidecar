@@ -188,6 +188,41 @@ acceptance archive, real credential access, production restart, commit or push
 was performed. The volatile vault, managed-request observation and real-source
 feasibility limitations above still apply.
 
+## Local resilience extension (2026-10-13, 10:26 WIB)
+
+The owner approved the next fixture steps while retaining the prohibition on
+real-auth access. The PoC now observes attached-page CDP Network responses,
+checkpoints pending read jobs across strategy changes, and explicitly checkpoints
+synthetic tickets to a DPAPI CurrentUser-encrypted vault for process recovery.
+
+An unexpected session-cookie response fences the controller and active engine,
+including an in-progress refresh. A one-use nonce binds an expected refresh to
+one actual request; simultaneous unrelated requests are not exempt. Conflicts
+cannot be escaped by switching strategy. This extends observation beyond managed
+`use()` callbacks to ordinary page navigation and fetches. It does not cover new
+tabs, worker/service-worker targets, cookie changes without a network response,
+or events before subscription. No automatic conflict reconciliation is added.
+
+Stale read jobs stay pending and can be resumed with fresh leases after a control
+operation. Attempts are bounded, foreign-account payloads are rejected, and each
+job retains one admitted result. This checkpoint is in memory, not durable Store
+admission or preservation of identical source content across repeated reads.
+
+The vault is restricted to the invented fixture account/cookie and exact local
+origin, with a 15-minute lifetime. It stores ciphertext only and requires a fresh
+server identity probe before a recovered strategy becomes ready. A new Node
+coordinator and new browser profiles recovered from it without login while the
+fixture server stayed alive. A still-decryptable ticket invalidated by the server
+was correctly rejected. Saves are explicit; production vault integration,
+automatic update/revocation policy and actual Sidecar restart remain unimplemented.
+
+Validation: 72 unit tests passed, none skipped; the real Chrome 154.0.8037.98 and
+DPAPI resilience fixture passed 26 parent/child checks using one synthetic login.
+All fixture Chrome roots/profiles and vaults were removed; independent Windows
+inspection found zero remaining. No real auth, production runtime restart,
+commit or push was performed for this extension. Reproduction and exact limits:
+`scripts/auth-session-fixture/README.md`.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

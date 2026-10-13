@@ -326,7 +326,10 @@ export class CentralSession {
   }
 
   notifyUnexpectedRotation(clientId, _observation = undefined) {
-    if (!this.#clients.has(clientId) || this.#state !== STATES.READY) return failure('SESSION_NOT_READY');
+    const client = this.#clients.get(clientId);
+    if (!client?.attached || ![STATES.READY, STATES.REFRESHING, STATES.INITIALIZING].includes(this.#state)) {
+      return failure('SESSION_NOT_READY');
+    }
     this.#failClosed('UNEXPECTED_ROTATION', STATES.CONFLICT);
     return failure('UNEXPECTED_ROTATION');
   }

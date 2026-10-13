@@ -213,3 +213,84 @@ own deadlines (private CDP calls use the fixture transport timeout); this is not
 a single hard deadline for the entire handoff. Failed cleanup can be retried,
 but there is no automatic fallback to an unverified strategy. The vault is still
 volatile and these results do not establish real-source authentication support.
+
+## Observed changes, capture retry and encrypted restart fixture
+
+The next local-only extension adds three boundaries without activating production
+authentication. Run it explicitly on Windows with the bundled Node and installed
+Chrome; it creates only disposable fixture profiles and a synthetic ticket vault:
+
+```powershell
+.\runtime\dev\headless-worker\node.exe --test .\scripts\auth-session-fixture\broker.test.mjs .\scripts\auth-session-fixture\central.test.mjs .\scripts\auth-session-fixture\strategies.test.mjs .\scripts\auth-session-fixture\observer.test.mjs .\scripts\auth-session-fixture\capture-queue.test.mjs .\scripts\auth-session-fixture\vault.test.mjs
+.\runtime\dev\headless-worker\node.exe .\scripts\auth-session-fixture\run-resilience.mjs --run-local-fixture --chrome 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+```
+
+### Attached-page session observation
+
+`observeSessionMutations(page, options)` subscribes to private CDP Network events.
+It observes `fixture_session` Set-Cookie attempts from ordinary navigation and
+page fetches, including requests made outside `session.use()`. Its synchronous
+callback fences the strategy controller and central engine even during refresh
+or handoff. Switching strategy cannot bypass a detected conflict.
+
+The sole controlled refresh request carries an ephemeral nonce. The observer
+correlates that nonce with the exact CDP request ID before exempting its response;
+another request is not exempt merely because a refresh is in progress. Signals
+and status contain counters/categories only, never raw headers, cookie values,
+URLs or nonces. Missing response evidence, ambiguous redirects, disconnects and
+blocked controlled cookies stop admission. `flush()` provides a CDP barrier and
+a bounded ExtraInfo pairing wait after an awaited request/navigation.
+
+Coverage is deliberately **attached-page Network events only**. Other tabs,
+worker/service-worker targets, cookie changes without observed network responses,
+and events before subscription are not covered. Detection occurs when CDP
+reports evidence; this is not a network interceptor or a global browser lock.
+Conservative stopping does not reconcile independently rotated credentials.
+
+### Explicit retry checkpoint
+
+`FixtureCaptureQueue` keeps a read job pending when an admitted capture loses its
+lease during refresh or switching. After the awaited control operation, calling
+`resume()` retries it using a fresh lease. There is one running attempt per ID,
+a default maximum of three attempts, and one retained admitted result. Payloads
+must belong to the verified account; rejected/stale results are never published.
+Conflicts, authentication failures, invalid responses and exhausted retries stay
+explicitly blocked/exhausted rather than looping or silently discarding the job.
+
+This queue accepts synthetic read-only post jobs, not arbitrary writes. It is an
+in-memory checkpoint across handoffs, not durable queue persistence across
+process restart, and it does not implement production Store idempotency. Repeating
+a read may return newer source content; it cannot recover an already vanished
+post. Callers explicitly resume only after the control boundary completes.
+
+### Encrypted synthetic-ticket checkpoint
+
+`FixtureVaultStore` explicitly saves/restores a checkpoint using Windows DPAPI
+CurrentUser. Its helper receives input over private stdin; no ticket is placed
+in command arguments or plaintext files. The ciphertext is atomically replaced
+under a validated project-owned `runtime/qa/auth-session-fixture/run-*` directory.
+Roots/files that are links are rejected. Format, exact loopback origin, invented
+alpha/beta account, fixture cookie shape and a 15-minute lifetime are validated.
+This uses the current Windows user's DPAPI protection; it does not protect
+against other code running as that same user. It never reads production auth.
+
+`recovery-child.mjs` creates a fresh coordinator process and fresh Chrome profiles,
+decrypts the synthetic checkpoint, and performs a fresh server identity probe
+through normal strategy initialization before admission. The fixture server
+stays alive during this test. Decryption alone cannot admit a ticket the server
+has invalidated. Checkpoint saves are explicit, not automatic background vault
+updates, and this is not an actual Sidecar restart or crash-durability guarantee.
+The helper is bounded to ten seconds. Vault files are removed with test profiles;
+there is no acceptance archive or retained credential fixture.
+
+### Validation
+
+2026-10-13 at 10:26 WIB, Chrome 154.0.8037.98: **72 unit tests passed, none skipped**
+(including the Windows junction rejection case). The resilience runner passed
+**26 checks** (18 parent and 8 child checks), with one invented login, overlapping
+reader/headless reads, correct nonce-authorized refresh, a single retry after
+both switch and refresh, real DPAPI save/restore in a new process, observed
+unmanaged page fetch, ordinary-navigation rotation fencing, and server rejection
+of the still-decryptable stale checkpoint. Both child coordinators and all
+Chrome roots exited. Independent Windows inspection confirmed zero fixture
+Chrome processes and zero remaining profile/vault directories.

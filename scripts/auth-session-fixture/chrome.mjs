@@ -6,6 +6,24 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const ownedProfiles = new Map();
 
+function fixtureOrigin(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('invalid_fixture_origin'); }
+  if (typeof value !== 'string' || url.protocol !== 'http:' || url.hostname !== '127.0.0.1' ||
+      !url.port || url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
+      value !== url.origin && value !== `${url.origin}/`) {
+    throw new Error('invalid_fixture_origin');
+  }
+  return url.origin;
+}
+
+function fixturePath(path) {
+  if (typeof path !== 'string' || !/^\/(?!\/)[a-z0-9/?=&_-]*$/i.test(path)) {
+    throw new Error('fixture_invalid_request');
+  }
+  return path;
+}
+
 export async function launchFixtureChrome(executable, root, role) {
   if (!['owner', 'collector'].includes(role)) throw new Error('invalid_fixture_role');
   root = await realpath(root);
@@ -25,33 +43,74 @@ export async function launchFixtureChrome(executable, root, role) {
     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
     ...(role === 'collector' ? ['--headless=new', '--no-startup-window'] : ['--start-minimized', 'about:blank']),
   ], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
-  let exited = false, sequence = 0, buffer = '';
+  let exited = false, transportClosed = false, sequence = 0, buffer = '';
   ownedProfiles.set(profile, () => exited);
   const pending = new Map();
+  const sessionListeners = new Map();
+  function notifyUnavailable(listeners) {
+    for (const listener of [...listeners]) {
+      try { listener.onUnavailable(); } catch { /* event callbacks must not break the private pipe */ }
+    }
+  }
+  function markTransportClosed() {
+    if (transportClosed) return;
+    transportClosed = true;
+    for (const listeners of sessionListeners.values()) notifyUnavailable(listeners);
+    rejectPending();
+  }
   const rejectPending = () => {
     for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error('fixture_chrome_closed')); }
     pending.clear();
   };
-  child.on('error', () => { exited = true; rejectPending(); });
-  child.on('exit', () => { exited = true; rejectPending(); });
-  child.stdio[3].on('error', rejectPending);
-  child.stdio[4].on('error', rejectPending);
+  child.on('error', () => { exited = true; markTransportClosed(); });
+  child.on('exit', () => { exited = true; markTransportClosed(); });
+  child.stdio[3].on('error', markTransportClosed);
+  child.stdio[4].on('error', markTransportClosed);
+  child.stdio[3].on('close', markTransportClosed);
+  child.stdio[4].on('close', markTransportClosed);
   child.stdio[4].setEncoding('utf8');
   child.stdio[4].on('data', data => {
     buffer += data;
     for (let end; (end = buffer.indexOf('\0')) >= 0;) {
       const raw = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-      let message; try { message = JSON.parse(raw); } catch { continue; }
+      let message;
+      try { message = JSON.parse(raw); } catch {
+        for (const listeners of sessionListeners.values()) notifyUnavailable(listeners);
+        continue;
+      }
+      if (!message || typeof message !== 'object') {
+        for (const listeners of sessionListeners.values()) notifyUnavailable(listeners);
+        continue;
+      }
       const item = pending.get(message.id);
-      if (!item) continue;
-      pending.delete(message.id); clearTimeout(item.timer);
-      // CDP errors can contain input secrets. Expose only the method, never protocol payloads.
-      if (message.error) item.reject(new Error(`fixture_cdp_${item.method}_failed`));
-      else item.resolve(message.result);
+      if (item) {
+        pending.delete(message.id); clearTimeout(item.timer);
+        // CDP errors can contain input secrets. Expose only the method, never protocol payloads.
+        if (message.error) item.reject(new Error(`fixture_cdp_${item.method}_failed`));
+        else item.resolve(message.result);
+        continue;
+      }
+      if (typeof message.method !== 'string') continue;
+      if (message.sessionId) {
+        const listeners = sessionListeners.get(message.sessionId);
+        if (listeners) {
+          for (const listener of [...listeners]) {
+            if (!message.method.startsWith('Network.')) continue;
+            try { listener.onEvent(message); } catch { try { listener.onUnavailable(); } catch { /* private event boundary */ } }
+          }
+        }
+      }
+      if (message.method === 'Target.detachedFromTarget' && typeof message.params?.sessionId === 'string') {
+        notifyUnavailable(sessionListeners.get(message.params.sessionId) ?? []);
+      } else if (message.method === 'Target.targetCrashed' && typeof message.params?.targetId === 'string') {
+        for (const listeners of sessionListeners.values()) {
+          if ([...listeners].some(listener => listener.targetId === message.params.targetId)) notifyUnavailable(listeners);
+        }
+      }
     }
   });
   function send(method, params = {}, sessionId) {
-    if (exited) return Promise.reject(new Error('fixture_chrome_closed'));
+    if (exited || transportClosed) return Promise.reject(new Error('fixture_chrome_closed'));
     return new Promise((resolve, reject) => {
       const id = ++sequence;
       const timer = setTimeout(() => { pending.delete(id); reject(new Error(`fixture_cdp_${method}_timeout`)); }, 8000);
@@ -66,6 +125,7 @@ export async function launchFixtureChrome(executable, root, role) {
     rejectPending();
   }
   async function page(origin, contextId) {
+    origin = fixtureOrigin(origin);
     const { targetId } = await send('Target.createTarget', {
       url: 'about:blank', background: true,
       ...(contextId ? { browserContextId: contextId } : { newWindow: true, windowState: 'minimized' }),
@@ -77,7 +137,8 @@ export async function launchFixtureChrome(executable, root, role) {
       if (result.exceptionDetails) throw new Error('fixture_evaluation_failed');
       return result.result?.value;
     }
-    const nav = await send('Page.navigate', { url: origin + '/' }, sessionId);
+    const requestPath = fixturePath('/');
+    const nav = await send('Page.navigate', { url: origin + requestPath }, sessionId);
     if (nav.errorText) throw new Error(/^net::ERR_[A-Z_]+$/.test(nav.errorText) ? 'fixture_navigation_' + nav.errorText.slice(5) : 'fixture_navigation_failed');
     let ready = false;
     for (let i = 0; i < 80; i++) {
@@ -86,11 +147,57 @@ export async function launchFixtureChrome(executable, root, role) {
       await delay(50);
     }
     if (!ready) throw new Error('fixture_page_not_ready');
+    let networkEnabled = false;
+    let enablingNetwork;
+    const listeners = new Set();
+    async function subscribeNetwork(onEvent, onUnavailable = () => {}) {
+      if (typeof onEvent !== 'function' || typeof onUnavailable !== 'function') throw new Error('fixture_invalid_network_listener');
+      if (transportClosed || exited) throw new Error('fixture_chrome_closed');
+      const listener = { onEvent, onUnavailable, targetId };
+      if (!sessionListeners.has(sessionId)) sessionListeners.set(sessionId, new Set());
+      sessionListeners.get(sessionId).add(listener);
+      listeners.add(listener);
+      if (!networkEnabled) {
+        enablingNetwork ??= send('Network.enable', {}, sessionId).then(() => { networkEnabled = true; });
+        try { await enablingNetwork; } catch (error) {
+          sessionListeners.get(sessionId)?.delete(listener); listeners.delete(listener);
+          throw error;
+        }
+      }
+      return () => {
+        sessionListeners.get(sessionId)?.delete(listener);
+        listeners.delete(listener);
+        if (sessionListeners.get(sessionId)?.size === 0) sessionListeners.delete(sessionId);
+      };
+    }
+    async function navigate(path) {
+      const safePath = fixturePath(path);
+      const result = await send('Page.navigate', { url: origin + safePath }, sessionId);
+      if (result.errorText) throw new Error(/^net::ERR_[A-Z_]+$/.test(result.errorText) ? 'fixture_navigation_' + result.errorText.slice(5) : 'fixture_navigation_failed');
+      let loaded = false;
+      for (let i = 0; i < 80; i++) {
+        loaded = await evaluate(`location.origin === ${JSON.stringify(origin)} && document.readyState === 'complete'`).catch(() => false);
+        if (loaded) break;
+        await delay(50);
+      }
+      if (!loaded) throw new Error('fixture_page_not_ready');
+      return true;
+    }
     return {
-      targetId, evaluate,
-      request(path, method = 'GET') {
-        if (!/^\/[a-z0-9/?=&_-]*$/i.test(path) || !['GET', 'POST'].includes(method)) throw new Error('fixture_invalid_request');
-        return evaluate(`fetch(${JSON.stringify(path)}, {method:${JSON.stringify(method)}, cache:'no-store'}).then(async r => ({status:r.status, body:await r.json()}))`);
+      targetId, origin, evaluate, navigate, subscribeNetwork,
+      async networkBarrier() {
+        const result = await send('Runtime.evaluate', { expression: 'void 0', returnByValue: true }, sessionId);
+        if (result.exceptionDetails) throw new Error('fixture_network_barrier_failed');
+      },
+      request(path, method = 'GET', options = {}) {
+        const safePath = fixturePath(path);
+        if (!['GET', 'POST'].includes(method) || !options || typeof options !== 'object' || Array.isArray(options) ||
+            Object.keys(options).some(key => key !== 'refreshNonce') ||
+            (options.refreshNonce !== undefined && !/^[a-f0-9]{64}$/i.test(options.refreshNonce))) {
+          throw new Error('fixture_invalid_request');
+        }
+        const headers = options.refreshNonce ? { 'x-aku-fixture-refresh-nonce': options.refreshNonce } : undefined;
+        return evaluate(`fetch(${JSON.stringify(safePath)}, {method:${JSON.stringify(method)}, cache:'no-store'${headers ? `, headers:${JSON.stringify(headers)}` : ''}}).then(async r => ({status:r.status, body:await r.json()}))`);
       },
       close: () => send('Target.closeTarget', { targetId }),
     };
