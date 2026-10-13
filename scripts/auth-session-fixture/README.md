@@ -734,3 +734,68 @@ post-claim focus/session changes, production DOM extraction or real authenticati
 This validation preceded commit/push. On 2026-10-13 the owner subsequently
 authorized commit/push of the nine-file cold delta; the preceding OS fixture
 commit `f141dc6` was already pushed with explicit owner authorization.
+
+## Full fixture process restart (validated locally, 2026-10-13)
+
+The next authorized gate replaces the entire OS fixture worker process after
+graceful shutdown or abrupt termination of the verified owned worker. Each
+dedicated fixture-tagged executable instance composes real Sidecar Engine,
+Store, Manager, Coordinator and Chrome bridge objects from scratch. This is
+distinct from the earlier same-process Engine/SQLite replacement and from
+production `cmd/akusidecar` startup. Synthetic external session authority may
+remain in the test controller; the actual browser profile and SQLite persist
+only inside the fresh owned test run.
+
+The existing Chrome Job has KILL_ON_JOB_CLOSE. Reader closure on full owner exit
+is the observed baseline, not proof of window-preserving restart.
+The controller must not keep the inner Chrome Job alive. Its independent outer
+containment bounds cleanup and verifies the old tree and old reader windows are
+released before a private one-use grant allows the same owned profile to reopen.
+Default existing-profile rejection remains in force for other launch paths.
+
+Acceptance includes persisted pause/run identities, fresh actual worker PID and
+Engine epoch, authority plus real browser account/revision before admission,
+one invented login, pending-command epoch rejection isolated from duplicate
+completion, and conservative recovery on missing proof. This lifecycle gate
+uses the retained minimized preset and does not require foreground activation
+or a physical click. No authentication, runtime, installation, registration,
+commit or push is part of this phase.
+
+The dedicated command is `cmd/auth-session-process-fixture`, gated by Windows
+and `auth_session_fixture`. Actual parent PID/creation time, staged image, directory
+identities and controller lineage restrict reuse to the same fresh run. Recovery
+consumes a persistent exclusive-create one-use grant. Both Go and Node enforce
+the project QA boundary before lineage access; the authority client rejects
+redirects. No ordinary launcher setting enables existing-profile reuse.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyProcessRestart -VerifyDefault
+```
+
+Final validation exited **0**. The lifecycle test passed in 5.03 seconds:
+graceful worker PID 36420 to 31056; abrupt worker PID 37408 to 22236. Both observed
+old root exit, zero old containment-job members and destroyed reader/bootstrap
+HWNDs before the successor started. `readerPreserved=false` and
+`innerJobDuplicated=false`. All successor components were new; the same owned
+profile/SQLite retained run IDs, account `alpha` and revision, one login and two
+source collections. A new Engine epoch rejected an otherwise valid payload
+changed only to the old epoch; duplicate current-command completion was tested
+separately. Manager generation legitimately restarted at one.
+
+Seven independent bad grant fields and persistent grant replay were denied.
+Missing external synthetic authority retained SQLite pause and collection count
+at one despite authenticated browser evidence. Restoring only invented authority
+and explicitly rechecking it let the real binder/browser hooks verify, rebind
+never-claimed work and release pause. No direct pause mutation or second login
+was used. Nineteen synthetic cases, tagged contracts, default five-package
+regressions and ordinary Sidecar build passed. Current seven Chrome leaf cases
+and 30 standalone fallback checks passed. Aggregate Job cleanup removed output;
+independent process inspection found zero fixture processes and both QA parents
+have zero run directories.
+
+This completes the fixture lifecycle test. Preserving reader windows across full
+process death remains an architectural gap. The dedicated composition does not
+prove production main, installed extension/native-host startup, production DOM
+extraction, real authentication or post-ticket-claim races. No user runtime,
+authentication, installation, registration, commit or push changed. The next
+proposal is review of independent reader-owner lifetime and secure reconnection.

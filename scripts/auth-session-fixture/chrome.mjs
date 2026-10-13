@@ -1,10 +1,53 @@
-// Fixture-only private pipe transport. Never accepts an existing profile or CDP endpoint.
+// Fixture-only private pipe transport. Ordinary launches reject existing profiles;
+// process recovery requires an owned QA lineage through gated private IPC.
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, realpath } from 'node:fs/promises';
-import { join, relative, isAbsolute } from 'node:path';
+import { lstat, mkdir, realpath, readFile, writeFile } from 'node:fs/promises';
+import { join, relative, isAbsolute, dirname, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const ownedProfiles = new Map();
+const processScopes = new Map();
+const processScopeParent = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'qa', 'auth-session-sidecar');
+async function checkedProcessRecord(root) {
+  const path = join(root, 'process-profile-lineage.json');
+  const stat = await lstat(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 || await realpath(path) !== path) {
+    throw new Error('fixture_process_record_invalid');
+  }
+  return path;
+}
+
+// Only the tagged Go process fixture calls this through its gated private RPC.
+// No ordinary launcher option permits an existing profile.
+export async function scopeProcessFixtureProfile(root, nonce, reopen) {
+  if (!/^[a-f0-9]{64}$/.test(nonce) || typeof reopen !== 'boolean' || processScopes.has(root)) {
+    throw new Error('fixture_process_scope_invalid');
+  }
+  if (await realpath(root) !== root || (await lstat(root)).isSymbolicLink()) throw new Error('fixture_process_scope_invalid');
+  const parent = await realpath(processScopeParent);
+  const rootRelative = relative(parent, root);
+  if (!rootRelative || isAbsolute(rootRelative) || rootRelative.startsWith('..') || !basename(root).startsWith('run-')) {
+    throw new Error('fixture_process_scope_outside_qa');
+  }
+  const profile = join(root, 'shared');
+  if (reopen) {
+    const record = JSON.parse(await readFile(await checkedProcessRecord(root), 'utf8'));
+    const stat = await lstat(profile, { bigint: true });
+    if (record.nonce !== nonce || record.root !== root || !Number.isSafeInteger(record.pid) ||
+        !stat.isDirectory() || stat.isSymbolicLink() || record.ino !== String(stat.ino) ||
+        record.dev !== String(stat.dev) || record.birth !== String(stat.birthtimeNs) ||
+        await realpath(profile) !== profile) throw new Error('fixture_process_profile_identity_invalid');
+    let alive = false;
+    try { process.kill(record.pid, 0); alive = true; } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    if (alive) throw new Error('fixture_process_profile_still_owned');
+    ownedProfiles.set(profile, () => true);
+  } else {
+    try { await lstat(profile); throw new Error('fixture_process_profile_not_new'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  processScopes.set(root, nonce);
+}
 
 function fixtureOrigin(value) {
   let url;
@@ -46,6 +89,17 @@ export async function launchFixtureChrome(executable, root, role, profileName = 
   const resolved = await realpath(profile);
   const rel = relative(root, resolved);
   if (isAbsolute(rel) || rel.startsWith('..')) throw new Error('invalid_fixture_profile');
+  if (processScopes.has(root)) {
+    const stat = await lstat(profile, { bigint: true });
+    const recordPath = join(root, 'process-profile-lineage.json');
+    let flag = 'wx';
+    try { await checkedProcessRecord(root); flag = 'w'; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await writeFile(recordPath, JSON.stringify({
+      root, nonce: processScopes.get(root), pid: process.pid,
+      ino: String(stat.ino), dev: String(stat.dev), birth: String(stat.birthtimeNs),
+    }), { flag, mode: 0o600 });
+  }
   const child = spawn(executable, [
     `--user-data-dir=${resolved}`, '--remote-debugging-pipe', '--no-first-run',
     '--no-default-browser-check', '--disable-extensions', '--disable-background-networking',

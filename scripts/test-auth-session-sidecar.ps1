@@ -1,4 +1,4 @@
-param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$')
+param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$')
 $ErrorActionPreference = 'Stop'
 if ($VerifyChrome -and $ChromeTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Chrome test filter contains unsupported characters.' }
 if ($VerifyBroker -and $BrokerTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Broker test filter contains unsupported characters.' }
@@ -10,7 +10,7 @@ if ($fixtureParent -ne (Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 $taskRoot = Join-Path $fixtureParent ('run-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $taskRoot | Out-Null
 $previous = @{}
-$variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE')
+$variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE','AKU_PROCESS_FIXTURE_ENABLED')
 foreach ($variable in $variables) { $previous[$variable] = [Environment]::GetEnvironmentVariable($variable, 'Process') }
 Push-Location -LiteralPath $projectRoot
 try {
@@ -25,7 +25,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Sidecar synthetic integration tests failed.' }
     & go test -tags auth_session_fixture ./internal/readerbroker ./cmd/aku-reader-broker ./cmd/auth-session-fixture-ui -count=1 -timeout=60s
     if ($LASTEXITCODE -ne 0) { throw 'Reader broker contract or fixture helper compile checks failed.' }
-    if ($VerifyChrome -or $VerifyBroker) {
+    if ($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart) {
         $node = 'C:\nvm4w\nodejs\node.exe'
         $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
         if (!(Test-Path -LiteralPath $node -PathType Leaf)) { throw 'The configured Node executable is unavailable.' }
@@ -37,6 +37,15 @@ try {
         if ($VerifyChrome) {
             & go test -tags auth_session_fixture ./internal/engine -run $ChromeTestRegex -count=1 -timeout=300s
             if ($LASTEXITCODE -ne 0) { throw 'Opt-in real Chrome fixture integration test failed.' }
+        }
+        if ($VerifyProcessRestart) {
+            if (Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf) { Remove-Item -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER }
+            $env:AKU_PROCESS_FIXTURE_ENABLED = '1'
+            & go build -tags auth_session_fixture -o (Join-Path $taskRoot 'auth-session-process-fixture.exe') ./cmd/auth-session-process-fixture
+            if ($LASTEXITCODE -ne 0) { throw 'Dedicated process fixture build failed.' }
+            & go test -tags auth_session_fixture ./internal/engine -run '^TestProcessFixtureFullOSRestart$' -count=1 -timeout=240s -v
+            if ($LASTEXITCODE -ne 0) { throw 'Opt-in full OS process restart fixture failed.' }
+            if (!(Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf)) { throw 'Process fixture did not prove all owned trees empty.' }
         }
         if ($VerifyBroker) {
             if (Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf) { Remove-Item -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER }
@@ -71,7 +80,7 @@ try {
 finally {
     Pop-Location
     foreach ($variable in $variables) { [Environment]::SetEnvironmentVariable($variable, $previous[$variable], 'Process') }
-    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
+    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
     if (!$cleanupAllowed) { Write-Warning 'The Chrome fixture did not prove its owned Job Object empty; fixture output was retained.' }
     if ($cleanupAllowed -and (Test-Path -LiteralPath $taskRoot)) {
         $resolved = (Resolve-Path -LiteralPath $taskRoot).ProviderPath

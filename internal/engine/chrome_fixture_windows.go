@@ -38,6 +38,7 @@ type chromeFixtureConfig struct {
 	Origin              string
 	DriverPath          string
 	NativeReaderStartup bool
+	processGrant        *processFixtureGrant
 }
 
 type chromeFixtureBridge struct {
@@ -161,6 +162,13 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 		b.stopBeforeChrome()
 		return nil, errors.New("fixture bridge Job Object membership is unknown")
 	}
+	if config.processGrant != nil {
+		grant := config.processGrant
+		if err = b.rpc(ctx, "process_profile_scope", map[string]any{"nonce": grant.Nonce, "reopen": grant.Reopen}, nil); err != nil {
+			b.terminateOwnedTree()
+			return nil, fmt.Errorf("fixture process profile scope: %w", err)
+		}
+	}
 	return b, nil
 }
 
@@ -199,8 +207,15 @@ func validateChromeFixtureConfig(config chromeFixtureConfig) (string, error) {
 		return "", errors.New("fixture root is outside the project QA scope")
 	}
 	profile := filepath.Join(root, "shared")
+	if config.processGrant != nil {
+		if err = validateProcessFixtureGrant(root, config.processGrant); err != nil {
+			return "", err
+		}
+	}
 	if _, err = os.Lstat(profile); !errors.Is(err, os.ErrNotExist) {
-		return "", errors.New("fixture profile must be new")
+		if config.processGrant == nil || !config.processGrant.Reopen || validateProcessFixtureGrant(root, config.processGrant) != nil {
+			return "", errors.New("fixture profile must be new")
+		}
 	}
 	return root, nil
 }

@@ -1,7 +1,7 @@
 // Narrow RPC bridge for the opt-in Go/Chrome integration. It accepts no
 // profile path, CDP endpoint, URL, cookie value, or arbitrary CDP command.
 import readline from 'node:readline';
-import { launchFixtureChrome } from './chrome.mjs';
+import { launchFixtureChrome, scopeProcessFixtureProfile } from './chrome.mjs';
 
 const [executable, root, origin] = process.argv.slice(2);
 if (process.argv.length !== 5 || !executable || !root || !origin) {
@@ -133,6 +133,10 @@ async function execute(message) {
     throw new Error('fixture_rpc_invalid');
   }
   switch (message.op) {
+    case 'process_profile_scope':
+      if (nextOwner !== 0) throw new Error('fixture_process_scope_late');
+      await scopeProcessFixtureProfile(root, message.nonce, message.reopen);
+      return { scoped: true };
     case 'reader_marker': {
       if (message.owner !== currentOwner || !current || current.role !== 'owner' || !currentPage ||
           typeof message.marker !== 'string' || !/^AkuBrowser reader split_fixture_[a-f0-9]{32}$/.test(message.marker)) {

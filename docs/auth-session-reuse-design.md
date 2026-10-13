@@ -471,6 +471,63 @@ This phase does not register a native host, change authentication, touch an
 existing profile or operate user runtime. After validation, the owner separately
 authorized commit/push of the nine-file cold delta on 2026-10-13.
 
+## Full fixture process lifetime review (2026-10-13, validated locally)
+
+The owner authorized review and testing of full Sidecar fixture process exit and
+restart after commit `cf8ea50`. The test must replace the OS process and its
+Engine, Manager and bridge, using persisted SQLite and the same profile created
+fresh for that isolated test. The earlier component restart retained all of those
+process-owned objects and does not establish this boundary.
+
+The Chrome fixture Job uses KILL_ON_JOB_CLOSE. Measure actual reader/window fate
+on graceful exit and abrupt termination; a controller must not hold that inner
+Job alive to claim survival. Bound all child processes with independent cleanup
+ownership and prove the old tree released before profile reuse. Queue pause,
+account/browser proof, fresh epoch and stale/duplicate rejection must be checked
+before recovered work is allowed to proceed. No second automatic login may
+repair a failed session check.
+
+This phase uses invented loopback authentication and only owned fixture process,
+profile and database paths. Whether the executable uses production startup or a
+tagged fixture composition must be explicit in the results. No real runtime,
+authentication, installation, registration, commit or push is authorized. A new
+process-owner architecture for surviving reader windows requires a separate
+scope decision after the baseline evidence.
+
+The reviewed implementation uses a dedicated fixture-tagged command with private
+startup IPC before browser launch. Actual parent PID/creation time, staged image,
+controller lineage and directory identity bind the newly created run. A separate
+one-use profile-reopen grant crosses that private channel only after the controller
+has observed zero old containment-job members and release of recorded reader
+windows. The ordinary new-profile launch path remains strict. Each replacement
+gets a fresh Engine epoch; Manager generation is local and may restart at one.
+Compare otherwise identical valid pending payloads to isolate old-epoch rejection
+from the independent duplicate-completion check.
+
+The dedicated `cmd/auth-session-process-fixture` command passed graceful and
+abrupt OS worker replacement. Both actual PIDs changed; old reader/bootstrap
+windows were destroyed and the complete old tree was empty before successor
+launch. No inner Chrome Job handle was held by the controller. Reader closure
+is therefore the current fixture contract, not window-preserving restart.
+
+The same owned profile/SQLite retained run IDs, account/revision, one synthetic
+login and two collections. Fresh epochs rejected an otherwise valid payload
+changed only to the old epoch; duplicate current completion was separately denied.
+Seven malformed grant fields and persistent one-use replay were denied. Missing
+external authority kept durable pause despite browser authentication; restored
+invented authority and explicit recheck allowed only real binder/browser recovery.
+Pause was cleared by existing hooks, not test-side mutation.
+
+The final `-VerifyProcessRestart -VerifyDefault` helper exited zero (lifecycle
+5.03 seconds). Nineteen synthetic cases, tagged contracts, five-package defaults
+and ordinary build passed; seven Chrome cases and 30 standalone fallback checks
+also passed. Owned jobs/output and independent process inspection were clean.
+This tests full fixture worker replacement, not production main startup. Keeping
+readers alive needs a separately reviewed owner lifetime/reconnection design;
+no keeper or production change was introduced. Authentication and user runtime
+were untouched. This validation preceded commit/push; the owner subsequently
+authorized committing and pushing this fixture delta on 2026-10-13.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	marker := os.Getenv("AKU_CHROME_FIXTURE_CLEANUP_MARKER")
 	root := os.Getenv("AKU_CHROME_FIXTURE_ROOT")
-	if marker != "" && root != "" && allChromeFixtureBridgesReleased() && !brokerFixtureCleanupFailed.Load() && samePath(filepath.Dir(marker), root) {
+	if marker != "" && root != "" && allChromeFixtureBridgesReleased() && !brokerFixtureCleanupFailed.Load() && !processFixtureCleanupFailed.Load() && samePath(filepath.Dir(marker), root) {
 		if _, err := os.Lstat(marker); errors.Is(err, os.ErrNotExist) {
 			_ = os.WriteFile(marker, []byte("verified\n"), 0600)
 		}
@@ -54,7 +54,7 @@ func allChromeFixtureBridgesReleased() bool {
 			return false
 		}
 	}
-	return len(chromeFixtureRegistry) > 0 || brokerFixtureUICount.Load() > 0
+	return len(chromeFixtureRegistry) > 0 || brokerFixtureUICount.Load() > 0 || processFixtureCount.Load() > 0
 }
 
 func registerChromeFixtureBridge(bridge *chromeFixtureBridge) {

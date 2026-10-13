@@ -4547,6 +4547,75 @@ authorized after validation, as recorded above.
 Coordinate any required physical fixture click with the owner before the live
 test. Record exact accepted path, negative checks and cleanup evidence afterward.
 
+### 2026-10-13: full fixture process restart review and tests (validated locally; reader preservation gap confirmed)
+
+After cold fixture commit `cf8ea50`, the owner authorized review and testing of
+full Sidecar fixture process shutdown/restart. This phase uses only a fresh
+project-local Chrome profile, invented loopback login, disposable fixture
+database and explicitly owned child processes. No existing authentication,
+runtime, registration, installation, production setting or commit/push is in
+scope. The previous Engine/SQLite replacement result remains distinct: it reused
+the same Manager, bridge and live browser owner.
+
+Review actual process/Job lifetime before choosing the smallest test harness.
+Require distinct OS process identities and newly constructed Engine/Manager/
+bridge state across restart; record graceful-exit and abrupt-termination reader
+window fate honestly. Do not retain the old Chrome Job handle in a controller to
+manufacture reader survival. A separate controller containment job may bound
+cleanup and prove the old tree empty before a successor uses the owned profile.
+An existing profile may be reopened only as the same freshly owned fixture
+profile after release/identity checks, never via a generic existing-profile flag.
+
+Verify persisted queue/run identities, pause/claim safety, synthetic account and
+browser proof without a second automatic login, fresh epoch/generation and
+rejection of stale/duplicate results. Unknown ownership/release/session evidence
+must keep recovery closed. State clearly whether the executable is production
+`cmd/akusidecar` or a tagged fixture worker; a test worker is not production
+startup proof. If preservation across process death needs a new owner/keeper
+architecture, report the gap and proposed contract before expanding implementation.
+No foreground activation or physical click is required for this lifecycle phase.
+
+Reviewed test contract: use a clearly named, fixture-tagged worker executable
+that composes real Engine/Store/Manager/Coordinator and Chrome bridge from scratch
+for each OS PID. The controller keeps only synthetic external authority and a
+separate containment job. Observe graceful shutdown and abrupt termination of
+the verified owned worker. The current inner kill-on-close Job is expected to
+close reader windows; this is a preservation gap to measure, not a keeper change
+to make the test appear successful. After old-tree/window release, issue a
+private one-use reopen grant bound to this controller's exact freshly created
+run/profile and process identity. Recovered commands must pass the real fixture
+authority/browser gates before stamp rebinding and pause release. Isolate epoch
+rejection by changing only the epoch of an otherwise valid pending payload;
+check duplicate completion separately. Manager generations are local and may
+restart at one; the new Engine epoch distinguishes process instances.
+
+Final validation: `scripts/test-auth-session-sidecar.ps1 -VerifyProcessRestart
+-VerifyDefault` exited 0, lifecycle 5.03 seconds. The dedicated command is
+`cmd/auth-session-process-fixture`, not production `cmd/akusidecar`. Graceful
+workers changed PID 36420 to 31056; abrupt workers 37408 to 22236. Both observed
+old root exit, complete old containment-tree release and destroyed native
+reader/bootstrap windows before successor launch. `readerPreserved=false` and
+`innerJobDuplicated=false`: full-process window preservation remains a separate
+architecture gap. No keeper was added to change that baseline.
+
+New components reopened the same owned profile/SQLite with unchanged run IDs,
+account/revision, one login and two collections. An old-epoch-only mutation of
+an otherwise valid payload and duplicate current-command completion were each
+denied. Local generation restarted at one. Seven bad grant fields and persistent
+one-use replay were rejected. Missing external authority retained SQLite pause
+and collection count one even while the browser stayed authenticated; restored
+invented authority and explicit recheck used real binder/browser hooks to verify,
+rebind never-claimed commands and release pause.
+
+Nineteen synthetic cases, tagged contracts, default five-package regressions and
+ordinary build passed. Current seven Chrome cases and 30 standalone fallback
+checks passed. Aggregate cleanup removed output; independent inspection found
+zero fixture processes and both QA parents have zero run directories. No real
+runtime, authentication, installation, registration, commit or push occurred.
+Production startup/extension/native-host flow and post-claim races remain outside
+this result. Next proposal: review independent reader-owner lifetime and secure
+reconnection before window-preserving restart implementation.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
