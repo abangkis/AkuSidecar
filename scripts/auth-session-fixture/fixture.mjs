@@ -15,6 +15,18 @@ export async function startFixture() {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
     if (url.pathname === '/') { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><title>AkuBrowser local auth fixture</title><h1>Local authentication fixture</h1>'); return; }
+    // Static, synthetic worker programs; credentials never appear in script text.
+    const rotate = "fetch('/reader-rotate', {credentials:'include', cache:'no-store'}).then(r => ({status:r.status})).catch(() => ({status:0}))";
+    const workerScripts = {
+      '/worker': `${rotate}.then(result => postMessage(result));`,
+      '/shared-worker': `onconnect = e => { const port=e.ports[0]; port.onmessage=()=>${rotate}.then(result=>port.postMessage(result)); port.start(); };`,
+      '/service-worker': `self.addEventListener('install', e => e.waitUntil(self.skipWaiting())); self.addEventListener('activate', e => e.waitUntil(self.clients.claim())); self.addEventListener('message', e => e.waitUntil(${rotate}.then(result=>e.ports[0].postMessage(result))));`,
+    };
+    if (Object.hasOwn(workerScripts, url.pathname)) {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.setHeader('Service-Worker-Allowed', '/');
+      res.end(workerScripts[url.pathname]); return;
+    }
     res.setHeader('Content-Type', 'application/json');
     const reply = (status, value) => { res.statusCode = status; res.end(JSON.stringify(value)); };
     const token = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('fixture_session='))?.slice(16);

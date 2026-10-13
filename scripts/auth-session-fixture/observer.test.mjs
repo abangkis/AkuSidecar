@@ -130,6 +130,96 @@ test('response extra info can arrive before responseReceived and still pairs at 
   observer.close();
 });
 
+test('internal request schemes are opt-in and remain fenced by request ID through ExtraInfo', async () => {
+  const strictPage = fakePage();
+  const strict = await makeObserver(strictPage);
+  strictPage.emit('Network.requestWillBeSent', {
+    requestId: 'strict-internal',
+    request: { url: 'chrome://settings/resources.js', method: 'GET', headers: {} },
+  });
+  assert.equal(strict.observer.status().state, 'faulted');
+  strict.observer.close();
+
+  const fake = fakePage();
+  const { observer, signals } = await makeObserver(fake, {
+    internalRequestSchemes: ['chrome:', 'chrome-extension:'],
+  });
+  fake.emit('Network.requestWillBeSent', {
+    requestId: 'internal-chain',
+    request: { url: 'chrome-extension://fixture/internal.js', method: 'GET', headers: {} },
+  });
+  fake.emit('Network.requestWillBeSent', {
+    requestId: 'internal-chain',
+    redirectResponse: {
+      url: 'chrome-extension://fixture/internal.js',
+      headers: { 'set-cookie': 'fixture_session=internal-redirect; Path=/' },
+    },
+    redirectHasExtraInfo: true,
+    request: { url: 'chrome-extension://fixture/internal-v2.js', method: 'GET', headers: {} },
+  });
+  fake.emit('Network.responseReceivedExtraInfo', {
+    requestId: 'internal-chain',
+    headers: { 'set-cookie': 'fixture_session=internal-redirect-extra; Path=/' },
+  });
+  // ExtraInfo may precede responseReceived; the ignored request ID consumes it
+  // without leaving an early event that can contaminate a later request.
+  fake.emit('Network.responseReceivedExtraInfo', {
+    requestId: 'internal-chain',
+    headers: { 'set-cookie': 'fixture_session=internal-final; Path=/' },
+  });
+  fake.emit('Network.responseReceived', {
+    requestId: 'internal-chain',
+    response: { headers: { 'set-cookie': 'fixture_session=internal-final; Path=/' } },
+    hasExtraInfo: true,
+  });
+  fake.emit('Network.loadingFinished', { requestId: 'internal-chain' });
+  const status = await observer.flush();
+  assert.equal(status.state, 'active');
+  assert.equal(status.ignoredInternalRequests, 2);
+  assert.equal(status.pendingExtraInfo, 0);
+  assert.deepEqual(signals, []);
+  observer.close();
+
+  const missingFake = fakePage();
+  const missing = await makeObserver(missingFake, { internalRequestSchemes: ['chrome:'] });
+  missingFake.emit('Network.requestWillBeSent', {
+    requestId: 'internal-missing-extra',
+    request: { url: 'chrome://settings/prefs.js', method: 'GET', headers: {} },
+  });
+  missingFake.emit('Network.responseReceived', {
+    requestId: 'internal-missing-extra', response: { headers: {} }, hasExtraInfo: true,
+  });
+  missingFake.emit('Network.loadingFinished', { requestId: 'internal-missing-extra' });
+  await assert.rejects(missing.observer.flush(), /fixture_observer_extra_info_incomplete/);
+  assert.equal(missing.observer.status().state, 'faulted');
+  missing.observer.close();
+});
+
+test('data resources require explicit opt-in and do not exempt foreign HTTP', async () => {
+  const strictFake = fakePage();
+  const strict = await makeObserver(strictFake);
+  strictFake.emit('Network.requestWillBeSent', {
+    requestId: 'strict-data', request: { url: 'data:text/plain,fixture', method: 'GET', headers: {} },
+  });
+  assert.equal(strict.observer.status().state, 'faulted');
+  strict.observer.close();
+  const fake = fakePage();
+  const { observer } = await makeObserver(fake, { internalRequestSchemes: ['data:'] });
+  fake.emit('Network.requestWillBeSent', {
+    requestId: 'data-resource', request: { url: 'data:text/plain,fixture', method: 'GET', headers: {} },
+  });
+  fake.emit('Network.responseReceived', {
+    requestId: 'data-resource', response: { headers: {} }, hasExtraInfo: false,
+  });
+  fake.emit('Network.loadingFinished', { requestId: 'data-resource' });
+  assert.equal((await observer.flush()).ignoredInternalRequests, 1);
+  fake.emit('Network.requestWillBeSent', {
+    requestId: 'foreign-http', request: { url: 'https://foreign.invalid/resource', method: 'GET', headers: {} },
+  });
+  assert.equal(observer.status().state, 'faulted');
+  observer.close();
+});
+
 test('blocked session cookies are evidence and cannot be hidden inside a controlled refresh', async () => {
   const fake = fakePage();
   const { observer, signals } = await makeObserver(fake);

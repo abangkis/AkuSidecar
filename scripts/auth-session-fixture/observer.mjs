@@ -4,6 +4,7 @@ const COOKIE_NAME = 'fixture_session';
 const NONCE_HEADER = 'x-aku-fixture-refresh-nonce';
 const MAX_TRACKED_REQUESTS = 512;
 const DEFAULT_FLUSH_TIMEOUT_MS = 1000;
+const INTERNAL_REQUEST_SCHEMES = new Set(['chrome:', 'chrome-extension:', 'data:']);
 
 function validateOrigin(value) {
   let url;
@@ -25,6 +26,10 @@ function validateId(value, label) {
 
 function sameOrigin(value, origin) {
   try { return new URL(value).origin === origin; } catch { return false; }
+}
+
+function urlScheme(value) {
+  try { return new URL(value).protocol; } catch { return null; }
 }
 
 function headerValues(headers, name) {
@@ -77,6 +82,7 @@ export async function observeSessionMutations(page, {
   sessionCookieName = COOKIE_NAME,
   onUnexpected,
   flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS,
+  internalRequestSchemes = [],
 } = {}) {
   origin = validateOrigin(origin);
   sessionId = validateId(sessionId, 'session');
@@ -90,6 +96,12 @@ export async function observeSessionMutations(page, {
   if (!Number.isInteger(flushTimeoutMs) || flushTimeoutMs < 1 || flushTimeoutMs > 5000) {
     throw new Error('fixture_observer_invalid_timeout');
   }
+  if (!Array.isArray(internalRequestSchemes) || internalRequestSchemes.length > INTERNAL_REQUEST_SCHEMES.size ||
+      internalRequestSchemes.some(scheme => !INTERNAL_REQUEST_SCHEMES.has(scheme)) ||
+      new Set(internalRequestSchemes).size !== internalRequestSchemes.length) {
+    throw new Error('fixture_observer_invalid_internal_schemes');
+  }
+  const ignoredInternalSchemes = new Set(internalRequestSchemes);
 
   const counts = {
     networkEvents: 0,
@@ -101,6 +113,7 @@ export async function observeSessionMutations(page, {
     unexpectedMutations: 0,
     coverageFailures: 0,
     callbackFailures: 0,
+    ignoredInternalRequests: 0,
   };
   const requests = new Map();
   const pendingExtraInfo = new Map();
@@ -215,6 +228,22 @@ export async function observeSessionMutations(page, {
     if (typeof requestId !== 'string') { loseCoverage(); return; }
     const prior = requests.get(requestId);
     if (params.redirectResponse) {
+      const internalRedirect = prior?.ignoredInternal === true &&
+        ignoredInternalSchemes.has(urlScheme(params.redirectResponse.url)) &&
+        ignoredInternalSchemes.has(urlScheme(params.request?.url));
+      if (internalRedirect) {
+        if (params.redirectHasExtraInfo === true) expectExtraInfo(requestId);
+        requests.set(requestId, {
+          ignoredInternal: true,
+          controlled: false,
+          redirected: true,
+          mutationReported: false,
+          blockedReported: false,
+          completed: false,
+        });
+        counts.ignoredInternalRequests++;
+        return;
+      }
       const evidence = hasSessionCookie(params.redirectResponse.headers, params.redirectResponse.blockedCookies, COOKIE_NAME);
       if (evidence.found) mutation(requestId, evidence.blocked);
       if (prior) {
@@ -231,6 +260,20 @@ export async function observeSessionMutations(page, {
     }
     if (prior) loseCoverage();
     const request = params.request ?? {};
+    if (ignoredInternalSchemes.has(urlScheme(request.url))) {
+      if (activeTicket && headerMatches(request.headers, NONCE_HEADER, activeTicket.nonce)) loseCoverage();
+      if (requests.size >= MAX_TRACKED_REQUESTS) { loseCoverage(); return; }
+      requests.set(requestId, {
+        ignoredInternal: true,
+        controlled: false,
+        redirected: false,
+        mutationReported: false,
+        blockedReported: false,
+        completed: false,
+      });
+      counts.ignoredInternalRequests++;
+      return;
+    }
     const allowed = sameOrigin(request.url, origin);
     const state = { controlled: false, redirected: false, mutationReported: false, blockedReported: false, completed: false };
     if (!allowed) loseCoverage();
@@ -262,12 +305,21 @@ export async function observeSessionMutations(page, {
       } else if (method === 'Network.responseReceived') {
         counts.responseEvents++;
         if (typeof params.requestId !== 'string') { loseCoverage(); return; }
+        if (requests.get(params.requestId)?.ignoredInternal) {
+          if (params.hasExtraInfo === true) expectExtraInfo(params.requestId);
+          settleWaiters();
+          return;
+        }
         const evidence = hasSessionCookie(params.response?.headers, undefined, COOKIE_NAME);
         if (evidence.found) mutation(params.requestId, false);
         if (params.hasExtraInfo === true) expectExtraInfo(params.requestId);
         settleWaiters();
       } else if (method === 'Network.responseReceivedExtraInfo') {
         if (typeof params.requestId !== 'string') { loseCoverage(); return; }
+        if (requests.get(params.requestId)?.ignoredInternal) {
+          receivedExtraInfo(params.requestId);
+          return;
+        }
         const evidence = hasSessionCookie(params.headers, params.blockedCookies, COOKIE_NAME);
         if (evidence.found) mutation(params.requestId, evidence.blocked);
         receivedExtraInfo(params.requestId);

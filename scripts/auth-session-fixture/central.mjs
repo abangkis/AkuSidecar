@@ -334,6 +334,15 @@ export class CentralSession {
     return failure('UNEXPECTED_ROTATION');
   }
 
+  notifyObservationLost(clientId) {
+    const client = this.#clients.get(clientId);
+    if (!client?.attached || ![STATES.READY, STATES.REFRESHING, STATES.INITIALIZING].includes(this.#state)) {
+      return failure('SESSION_NOT_READY');
+    }
+    this.#failClosed('SESSION_OBSERVATION_LOST');
+    return failure('SESSION_OBSERVATION_LOST');
+  }
+
   revoke() {
     if (this.#state !== STATES.REVOKED) {
       this.#state = STATES.REVOKED;

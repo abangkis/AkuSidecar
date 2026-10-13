@@ -354,3 +354,15 @@ test('external mutation wins over an in-flight controlled refresh and cannot pub
     assert.equal(controller.lease('reader'), null);
   } finally { finish.resolve(); await controller.revoke(); }
 });
+
+test('observation loss is distinguished from confirmed cookie mutation and denies all leases', async () => {
+  const { controller } = harness();
+  try {
+    assert.equal((await controller.start('central-vault')).ok, true);
+    assert.equal(controller.notifyExternalSessionChange('reader', 'coverage_lost').code, 'SESSION_OBSERVATION_LOST');
+    assert.equal(controller.status().state, 'NEEDS_USER');
+    assert.equal(controller.status().engine.code, 'SESSION_OBSERVATION_LOST');
+    assert.equal(controller.lease('collector'), null);
+    assert.equal((await controller.switchTo('reader-owned')).ok, false);
+  } finally { await controller.revoke(); }
+});

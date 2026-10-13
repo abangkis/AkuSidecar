@@ -198,18 +198,22 @@ export class SessionStrategyController {
 
   // Observation comes only from the explicitly attached fixture browser adapter.
   // Fence even during refresh/handoff: a background response is not refresh authority.
-  notifyExternalSessionChange(clientId) {
+  notifyExternalSessionChange(clientId, kind = 'mutation') {
     if (!CLIENTS.includes(clientId)) return failure('CLIENT_UNKNOWN');
+    if (!['mutation', 'coverage_lost'].includes(kind)) return failure('OBSERVATION_INVALID');
     if (['IDLE', 'REVOKED', 'CONFLICT'].includes(this.#state)) return failure('SESSION_NOT_READY');
     const handles = new Set([this.#active, this.#target, this.#strategyToFence].filter(Boolean));
     for (const handle of handles) {
-      if (handle.id === 'central-vault') handle.engine.notifyUnexpectedRotation(clientId);
+      if (handle.id === 'central-vault') {
+        if (kind === 'coverage_lost') handle.engine.notifyObservationLost(clientId);
+        else handle.engine.notifyUnexpectedRotation(clientId);
+      }
     }
     this.#operationEpoch += 1;
     this.#generation += 1;
-    this.#state = 'CONFLICT';
-    this.#lastCode = 'EXTERNAL_SESSION_CHANGE';
-    return failure('EXTERNAL_SESSION_CHANGE');
+    this.#state = kind === 'coverage_lost' ? 'NEEDS_USER' : 'CONFLICT';
+    this.#lastCode = kind === 'coverage_lost' ? 'SESSION_OBSERVATION_LOST' : 'EXTERNAL_SESSION_CHANGE';
+    return failure(this.#lastCode);
   }
 
   #beginSwitch(strategyId, starting) {

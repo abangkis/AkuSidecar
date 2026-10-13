@@ -47,6 +47,7 @@ export async function launchFixtureChrome(executable, root, role) {
   ownedProfiles.set(profile, () => exited);
   const pending = new Map();
   const sessionListeners = new Map();
+  const protocolListeners = new Set();
   function notifyUnavailable(listeners) {
     for (const listener of [...listeners]) {
       try { listener.onUnavailable(); } catch { /* event callbacks must not break the private pipe */ }
@@ -55,6 +56,7 @@ export async function launchFixtureChrome(executable, root, role) {
   function markTransportClosed() {
     if (transportClosed) return;
     transportClosed = true;
+    notifyUnavailable(protocolListeners);
     for (const listeners of sessionListeners.values()) notifyUnavailable(listeners);
     rejectPending();
   }
@@ -75,10 +77,12 @@ export async function launchFixtureChrome(executable, root, role) {
       const raw = buffer.slice(0, end); buffer = buffer.slice(end + 1);
       let message;
       try { message = JSON.parse(raw); } catch {
+        notifyUnavailable(protocolListeners);
         for (const listeners of sessionListeners.values()) notifyUnavailable(listeners);
         continue;
       }
       if (!message || typeof message !== 'object') {
+        notifyUnavailable(protocolListeners);
         for (const listeners of sessionListeners.values()) notifyUnavailable(listeners);
         continue;
       }
@@ -91,6 +95,9 @@ export async function launchFixtureChrome(executable, root, role) {
         continue;
       }
       if (typeof message.method !== 'string') continue;
+      for (const listener of [...protocolListeners]) {
+        try { listener.onEvent(message); } catch { try { listener.onUnavailable(); } catch { /* private event boundary */ } }
+      }
       if (message.sessionId) {
         const listeners = sessionListeners.get(message.sessionId);
         if (listeners) {
@@ -117,6 +124,21 @@ export async function launchFixtureChrome(executable, root, role) {
       pending.set(id, { resolve, reject, timer, method });
       child.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
     });
+  }
+  function sendSession(sessionId, method, params = {}) {
+    if (typeof sessionId !== 'string' || sessionId.length < 1 || sessionId.length > 256 ||
+        typeof method !== 'string' || !/^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/.test(method) ||
+        !params || typeof params !== 'object' || Array.isArray(params)) {
+      return Promise.reject(new Error('fixture_invalid_cdp_session_command'));
+    }
+    return send(method, params, sessionId);
+  }
+  function subscribeProtocol(onEvent, onUnavailable = () => {}) {
+    if (typeof onEvent !== 'function' || typeof onUnavailable !== 'function') throw new Error('fixture_invalid_protocol_listener');
+    if (transportClosed || exited) throw new Error('fixture_chrome_closed');
+    const listener = { onEvent, onUnavailable };
+    protocolListeners.add(listener);
+    return () => protocolListeners.delete(listener);
   }
   async function close() {
     if (!exited) await send('Browser.close').catch(() => {});
@@ -204,6 +226,6 @@ export async function launchFixtureChrome(executable, root, role) {
   }
   try {
     const version = await send('Browser.getVersion');
-    return { send, page, close, pid: child.pid, profile: resolved, role, product: version.product, isExited: () => exited };
+    return { send, sendSession, subscribeProtocol, page, close, pid: child.pid, profile: resolved, role, product: version.product, isExited: () => exited };
   } catch (error) { await close(); throw error; }
 }

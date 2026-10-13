@@ -39,11 +39,15 @@ export async function openScenario({ executable, root, origin }) {
     session = new SessionStrategyController({ origin, expectedAccountId: 'alpha', clients });
     return {
       session, clients, pages, events, observers, chrome: reader.product,
+      browsers: { reader, collector },
       async observe() {
         for (const id of ['reader', 'collector']) {
           observers[id] = await observeSessionMutations(pages[id], {
             origin, sessionId: `fixture-${id}`, clientId: id,
-            onUnexpected(event) { events.push(event); session.notifyExternalSessionChange(id); },
+            onUnexpected(event) {
+              events.push(event);
+              session.notifyExternalSessionChange(id, event.kind === 'unexpected_session_mutation' ? 'mutation' : 'coverage_lost');
+            },
           });
         }
       },

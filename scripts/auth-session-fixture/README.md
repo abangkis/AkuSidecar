@@ -241,7 +241,7 @@ URLs or nonces. Missing response evidence, ambiguous redirects, disconnects and
 blocked controlled cookies stop admission. `flush()` provides a CDP barrier and
 a bounded ExtraInfo pairing wait after an awaited request/navigation.
 
-Coverage is deliberately **attached-page Network events only**. Other tabs,
+This lower-level observer covers **attached-page Network events only**. Other tabs,
 worker/service-worker targets, cookie changes without observed network responses,
 and events before subscription are not covered. Detection occurs when CDP
 reports evidence; this is not a network interceptor or a global browser lock.
@@ -294,3 +294,74 @@ unmanaged page fetch, ordinary-navigation rotation fencing, and server rejection
 of the still-decryptable stale checkpoint. Both child coordinators and all
 Chrome roots exited. Independent Windows inspection confirmed zero fixture
 Chrome processes and zero remaining profile/vault directories.
+
+## Owned browser target supervision
+
+`observeBrowserSessionMutations` installs the shared response observer on targets
+of an explicitly launched disposable fixture browser. It discovers existing and
+new pages, dedicated workers, shared workers and service workers. Shared workers
+and HTTP/unknown service workers are discovered but explicitly deny coverage;
+they are not supported session observers. Recursive CDP auto-attachment pauses
+supported new targets until observation is ready. Each supported target has
+one authoritative observer even when Chrome exposes multiple attachment sessions.
+The controlled refresh exemption belongs to its exact target and request nonce.
+
+An observed synthetic session-cookie mutation fences admission as `CONFLICT`.
+Missing observation, unexpected detach or browser disconnect fences admission
+as `NEEDS_USER` / `SESSION_OBSERVATION_LOST`. A confirmed fixture-owned target
+closure can retire that target without discarding coverage of the remaining
+targets. Status exposes target types, lifecycle counts and evidence categories;
+it does not expose ticket values, response headers or request nonces.
+
+```powershell
+.\runtime\dev\headless-worker\node.exe --test .\scripts\auth-session-fixture\browser-observer.test.mjs
+.\runtime\dev\headless-worker\node.exe .\scripts\auth-session-fixture\run-browser-targets.mjs --run-local-fixture --chrome 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+```
+
+This remains a local PoC. Observation starts after subscription and covers network
+response evidence; it does not intercept cookie writes, recover earlier events,
+or prove real-platform authentication works. It does not change the production
+browser lifecycle, automatically update the vault, or persist capture jobs.
+
+Chrome 154 splits dedicated-worker response evidence across its parent and worker
+sessions. A bounded correlator retains provenance and pairs only unique observed
+owners within a verified attachment family. A nonce-bearing refresh cannot move
+across sessions. Ambiguous ownership, collisions, incomplete evidence and capacity
+limits stop admission. Pairing may delay a cookie signal until response ownership
+is known; callers must await `flush()` at the fixture verification boundary.
+This is not proof of immediate fencing for arbitrary live workloads or a universal
+request-ID uniqueness guarantee. Request tombstones are bounded to 512 per browser.
+
+Shared-worker rotation was observed at the fixture server without corresponding
+cookie response evidence in Chrome. HTTP service-worker initialization stalled at
+`Network.enable`; activation and positive mutation detection remain unqualified.
+These types therefore deny admission explicitly, including discovery during a
+controlled refresh. Internal service workers may be observed, but any HTTP request
+from them also denies coverage. This gate does not claim registration succeeded.
+Chrome internal `chrome:`, `chrome-extension:` and `data:` resource requests are
+handled separately; their opt-in exclusion never exempts HTTP cookie evidence.
+
+For focused reproduction, set the process environment `AKU_FIXTURE_CASE` to one
+of `new-tab`, `dedicated-worker`, `shared-worker-coverage-boundary`,
+`service-worker-refresh-race`, or `target-lifecycle`; unset it for all scenarios.
+Receipts distinguish supported mutation detection from unsupported-coverage
+checks. They are printed to stdout, without retained acceptance archives.
+
+### Browser-target validation
+
+2026-10-13 at 11:36 WIB, Chrome 154.0.8037.98: **143 unit tests passed, none
+skipped**, and the final full target runner passed **38 checks across five
+scenarios**. New pages and the first dedicated-worker request correctly detected
+session mutation. Shared workers and HTTP service workers passed explicit
+unsupported-coverage checks; service-worker discovery during a controlled refresh
+prevented publication of a fresh lease. Those checks do not establish positive
+cookie observation or successful activation for those unsupported worker types.
+
+Owned target retirement preserved the remaining coverage, including Chrome UI
+type changes and a disappearing target's pending barrier. Browser disconnection
+produced explicit coverage loss. Every scenario used one invented login; all
+fixture Chrome roots exited and all disposable profiles were removed. The existing
+resilience runner also passed 26 Chrome/DPAPI checks at 11:06 WIB, covering the
+unchanged default strict page-observer path and encrypted restart recovery.
+Production runtime and real authentication remain untouched by this fixture
+validation.

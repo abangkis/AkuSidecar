@@ -223,6 +223,56 @@ inspection found zero remaining. No real auth, production runtime restart,
 commit or push was performed for this extension. Reproduction and exact limits:
 `scripts/auth-session-fixture/README.md`.
 
+## Owned browser target observation (2026-10-13)
+
+The next approved scope extends only the local fixture: new pages and worker
+targets must be discovered automatically, network observation must be installed
+before a paused new worker runs, and losing coverage must close session admission.
+The browser is always a newly launched, privately connected fixture process;
+there is no discovery of an existing user browser or production CDP endpoint.
+
+The target manager reuses the per-target nonce-bound session observer. One
+target's expected refresh must not exempt another target's response. Duplicate
+CDP connections for the same page must not create duplicate independent refresh
+authorities. A confirmed owned close retires its target; unexpected detach,
+crash, unsupported relevant target or transport failure is a coverage failure.
+
+Controller status distinguishes `EXTERNAL_SESSION_CHANGE` (observed mutation,
+`CONFLICT`) from `SESSION_OBSERVATION_LOST` (coverage unavailable, `NEEDS_USER`).
+Both invalidate old leases and prevent further session use. Neither condition
+selects a new credential snapshot automatically. The runner is
+`scripts/auth-session-fixture/run-browser-targets.mjs`; actual validation results
+are recorded in the fixture README after execution.
+
+This phase does not add production integration, real auth, automatic vault
+refresh/revocation, or durable capture-job storage. Its scope is target lifecycle
+and response observation after monitoring starts, not interception of all cookie
+writes or proof that a real social platform's refresh protocol is supported.
+
+Chrome 154 also exposes `browser_ui` and `background_page` targets in fresh
+fixture profiles. These receive observation too; only requests proven to use
+`chrome:`, `chrome-extension:` or `data:` resource schemes are excluded from fixture
+cookie checks. HTTP requests from the same targets remain checked.
+
+Real Chrome tracing found worker response metadata split across parent and
+worker sessions. The bounded browser correlator therefore retains original
+target/session provenance and pairs evidence only within a proven attachment
+family, with unique observed request/response owners. Refresh authority must
+never move across targets with the correlated response. Ambiguous or incomplete
+evidence stops admission. Request IDs plus observed ancestry do not prove the
+absence of colliding incomplete streams; this remains a local fixture result,
+not a universal cross-target identity guarantee for production authentication.
+
+The browser trials qualified new-page and dedicated-worker mutation detection.
+They did not qualify shared-worker cookie visibility or HTTP service-worker
+initialization: shared-worker rotations lacked cookie events, and the service
+worker stalled at Network enablement. The implementation explicitly denies
+coverage for these types rather than admitting unverified sessions. Discovery
+of an unsupported service worker also invalidates an in-flight refresh. Internal
+service workers are admitted only while their requests stay non-HTTP. Buffered
+cross-target evidence requires a flush boundary; immediate global fencing is not
+established. See the fixture README for exact final checks and reproduction.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

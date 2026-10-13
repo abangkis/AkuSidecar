@@ -304,6 +304,18 @@ outside this proof. Real authentication is still prohibited; all fixture profile
 and ciphertext checkpoints were cleaned up. See the dated resilience section in
 `auth-session-reuse-design.md` before proposing the next scope.
 
+The owned-browser target extension (2026-10-13, 11:36 WIB) passed 143 unit tests
+and 38 Chrome checks across five scenarios. New pages and dedicated workers now
+qualify for local synthetic-session mutation detection. Shared workers lack
+sufficient cookie evidence, and HTTP service-worker setup could not be qualified;
+both explicitly deny session admission. Service-worker discovery during refresh
+invalidates the pending result. These negative capability checks must not be
+reported as positive worker authentication support. Confirmed target retirement
+and browser-disconnect fencing also passed. Cross-target evidence remains bounded
+and requires a flush boundary; arbitrary real-site identity/instant fencing is
+not proven. All profiles/processes were cleaned up, with no real auth or runtime
+change. Reproduction and limitations are in the fixture README.
+
 The native-reader launcher no longer requests minimized startup. Private CDP
 remains an inherited pipe under process-tree ownership, with normal readers now
 eligible for the existing scoped binding/retirement guard. Timing logs contain
