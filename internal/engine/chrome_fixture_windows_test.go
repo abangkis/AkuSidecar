@@ -29,6 +29,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
+	"golang.org/x/sys/windows"
 )
 
 var chromeFixtureRegistryMu sync.Mutex
@@ -898,6 +899,106 @@ func TestChromeFixtureUnknownInventoryFailsClosed(t *testing.T) {
 	if err := initial.ReplacementReadiness(ctx); err == nil {
 		t.Fatal("transport loss was treated as a verified empty-window inventory")
 	}
+}
+
+// The Go parent and its inner Job stay alive throughout this assertion. Only
+// the verified Node bridge is killed; deferred cleanup cannot make it pass.
+func TestChromeFixtureBridgeCrashReleasesTree(t *testing.T) {
+	fixture := startChromeFixtureHTTP(t)
+	defer fixture.server.Close()
+	config, bridge := startChromeFixtureForTest(t, fixture)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	collector, err := bridge.launch(ctx, "collector")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = collector.Login(ctx); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := collector.Evidence(ctx)
+	if err != nil || !initial.Authenticated || initial.AccountID != "alpha" {
+		t.Fatal("collector synthetic account not proved")
+	}
+	if err = collector.CloseForRetry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := bridge.launch(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := owner.Evidence(ctx)
+	if err != nil || evidence != initial || fixture.logins.Load() != 1 {
+		t.Fatal("reader synthetic account lineage not proved")
+	}
+	count, bootstrap, err := owner.FixtureInventory(ctx)
+	if err != nil || count != 2 || bootstrap != 1 {
+		t.Fatal("reader/bootstrap inventory missing")
+	}
+	handles := processFixtureWindows(uint32(owner.PID()))
+	if len(handles) != count {
+		t.Fatal("native reader inventory mismatch")
+	}
+	manager, err := captureruntime.New(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(manager.Terminate)
+	nodeIdentity, err := processFixtureProcessIdentity(bridge.pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeImage, resolveErr := filepath.EvalSymlinks(config.NodePath)
+	if resolveErr != nil {
+		t.Fatal("configured Node image cannot be resolved")
+	}
+	verifyProcessFixtureImage(t, nodeIdentity, nodeImage)
+	if err = bridge.containsPID(bridge.pid); err != nil {
+		t.Fatal(err)
+	}
+	if err = bridge.containsPID(uint32(owner.PID())); err != nil {
+		t.Fatal(err)
+	}
+	nodeHandle, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, bridge.pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(nodeHandle)
+	chromeHandle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(owner.PID()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(chromeHandle)
+	goPID := os.Getpid()
+	if err = windows.TerminateProcess(nodeHandle, 74); err != nil {
+		t.Fatal(err)
+	}
+	if status, waitErr := windows.WaitForSingleObject(nodeHandle, 3000); waitErr != nil || status != windows.WAIT_OBJECT_0 {
+		t.Fatal("verified Node root did not exit")
+	}
+	select {
+	case failure := <-manager.Done():
+		if failure == nil {
+			t.Fatal("bridge crash did not settle owner Done with failure")
+		}
+	case <-time.After(8 * time.Second):
+		pids, queryErr := bridge.jobPIDs()
+		t.Fatalf("bridge crash left owner Done unsettled before fallback cleanup: jobPIDs=%v queryError=%v oldWindowsGone=%t manager=%+v", pids, queryErr, processFixtureWindowsGone(handles), manager.Snapshot())
+	}
+	if status, waitErr := windows.WaitForSingleObject(chromeHandle, 0); waitErr != nil || status != windows.WAIT_OBJECT_0 || !bridge.cleanupVerified() || bridge.cleanupError() != nil || !processFixtureWindowsGone(handles) {
+		t.Fatalf("owner Done preceded physical release: chromeRootWait=%d waitError=%v jobEmptyVerified=%t cleanupError=%v oldWindowsGone=%t", status, waitErr, bridge.cleanupVerified(), bridge.cleanupError(), processFixtureWindowsGone(handles))
+	}
+	if snapshot := manager.Snapshot(); snapshot.State == captureruntime.Ready || manager.Accepts(snapshot.Generation) {
+		t.Fatal("crashed bridge retained Manager admission")
+	}
+	if lease, acquireErr := manager.Acquire(); acquireErr == nil {
+		lease.Release()
+		t.Fatal("crashed bridge admitted a new lease")
+	}
+	if bridge.launchCount.Load() != 2 || fixture.logins.Load() != 1 || fixture.sequence.Load() != 0 || os.Getpid() != goPID {
+		t.Fatal("bridge crash relaunched/login/captured or replaced Go parent")
+	}
+	t.Logf("nodeCrash nodePID=%d chromePID=%d goParentAlive=true oldChromeRootExited=true oldWholeTreeEmpty=true oldReaderBootstrapGone=true ownerDoneFailureAfterRelease=true managerAdmissionDenied=true launches=2 loginCount=1 noCapture=true beforeFallbackCleanup=true", bridge.pid, owner.PID())
 }
 
 func TestChromeFixtureLogoutAndAccountChangeBlockResume(t *testing.T) {

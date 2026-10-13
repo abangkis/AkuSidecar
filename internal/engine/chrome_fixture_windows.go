@@ -76,6 +76,7 @@ type chromeFixtureProcess struct {
 	bridge              *chromeFixtureBridge
 	owner               int
 	pid                 uint32
+	rootHandle          windows.Handle
 	role                string
 	nativeReaderStartup bool
 	done                chan error
@@ -311,6 +312,63 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 	b.mu.Unlock()
 	b.closeOnce.Do(func() { close(b.closed) })
 	_ = b.cmd.Wait()
+	// EOF alone is not process death. After Wait proves the Node bridge exited,
+	// release its exact owned Job before signalling any Chrome owner as done.
+	b.finishBridgeExit()
+}
+
+func (b *chromeFixtureBridge) finishBridgeExit() {
+	b.mu.Lock()
+	owners := make([]*chromeFixtureProcess, 0, len(b.owners))
+	for _, owner := range b.owners {
+		owners = append(owners, owner)
+		if !owner.exited.Load() {
+			owner.transportUnknown.Store(true)
+		}
+	}
+	b.mu.Unlock()
+	// Native windows are read only and limited to currently verified Job peers.
+	var handles []uintptr
+	if pids, err := b.jobPIDs(); err == nil {
+		for _, pid := range pids {
+			handles = append(handles, processFixtureWindows(pid)...)
+		}
+	}
+	b.terminateOwnedTree()
+	if b.cleanupError() != nil || !b.cleanupVerified() {
+		return
+	}
+	// Job accounting can become empty before the root process handle signals.
+	// Pin the handle obtained while its PID belonged to this Job; never reopen
+	// a possibly recycled PID after bridge death to manufacture exit evidence.
+	for _, owner := range owners {
+		if owner.rootHandle != 0 {
+			status, waitErr := windows.WaitForSingleObject(owner.rootHandle, 3000)
+			if waitErr != nil || status != windows.WAIT_OBJECT_0 {
+				b.mu.Lock()
+				b.cleanupErr = errors.New("fixture Chrome root exit is unverified after bridge exit")
+				b.mu.Unlock()
+				return
+			}
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if processFixtureWait(ctx, func() bool { return processFixtureWindowsGone(handles) }) != nil {
+		b.mu.Lock()
+		b.cleanupErr = errors.New("fixture bridge exited but native window release is unverified")
+		b.mu.Unlock()
+		return
+	}
+	for _, owner := range owners {
+		owner.rootExited.Store(true)
+		owner.exited.Store(true)
+		owner.once.Do(func() { owner.done <- errors.New("fixture bridge exited"); close(owner.done) })
+		if owner.rootHandle != 0 {
+			_ = windows.CloseHandle(owner.rootHandle)
+			owner.rootHandle = 0
+		}
+	}
 }
 
 func safeFixtureCode(value string) string {
@@ -422,8 +480,29 @@ func (b *chromeFixtureBridge) launch(ctx context.Context, role string) (*chromeF
 	if launched.Owner <= 0 || launched.PID == 0 || launched.NativeReaderStartup != nativeStartup || badOwnerWindows {
 		return nil, errors.New("fixture Chrome launch evidence invalid")
 	}
-	p := &chromeFixtureProcess{bridge: b, owner: launched.Owner, pid: launched.PID, role: role, nativeReaderStartup: nativeStartup, done: make(chan error, 1)}
+	if err := b.containsPID(launched.PID); err != nil {
+		return nil, errors.New("Chrome process is outside the fixture Job Object")
+	}
+	rootHandle, handleErr := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, launched.PID)
+	if handleErr != nil {
+		return nil, errors.New("fixture Chrome root handle unavailable")
+	}
+	b.jobMu.Lock()
+	var inJob int32
+	member, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob").Call(uintptr(rootHandle), uintptr(b.job), uintptr(unsafe.Pointer(&inJob)))
+	ownedHandle := b.job != 0 && member != 0 && inJob != 0
+	b.jobMu.Unlock()
+	if !ownedHandle {
+		_ = windows.CloseHandle(rootHandle)
+		return nil, errors.New("fixture Chrome root handle is outside owned Job")
+	}
+	p := &chromeFixtureProcess{bridge: b, owner: launched.Owner, pid: launched.PID, rootHandle: rootHandle, role: role, nativeReaderStartup: nativeStartup, done: make(chan error, 1)}
 	b.mu.Lock()
+	if b.isClosed() {
+		b.mu.Unlock()
+		_ = windows.CloseHandle(rootHandle)
+		return nil, errors.New("fixture bridge exited during Chrome launch")
+	}
 	b.owners[p.owner] = p
 	_, exited := b.exitsEarly[p.owner]
 	delete(b.exitsEarly, p.owner)
@@ -431,9 +510,6 @@ func (b *chromeFixtureBridge) launch(ctx context.Context, role string) (*chromeF
 	if exited {
 		p.rootExited.Store(true)
 		go p.verifyNaturalExit()
-	}
-	if err := b.containsPID(p.pid); err != nil {
-		return nil, errors.New("Chrome process is outside the fixture Job Object")
 	}
 	b.launchCount.Add(1)
 	return p, nil

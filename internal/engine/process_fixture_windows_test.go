@@ -258,9 +258,28 @@ func TestProcessFixtureFullOSRestart(t *testing.T) {
 					t.Fatal("reader HWND was not owned Chrome")
 				}
 			}
+			chromeIdentity, identityErr := processFixtureProcessIdentity(uint32(paused.ChromePID))
+			if identityErr != nil {
+				t.Fatal("old Chrome root identity unavailable before stop")
+			}
+			chromeImage, resolveErr := filepath.EvalSymlinks(config.ChromePath)
+			if resolveErr != nil {
+				t.Fatal("configured Chrome image unavailable")
+			}
+			verifyProcessFixtureImage(t, chromeIdentity, chromeImage)
+			chromeRoot, handleErr := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(paused.ChromePID))
+			if handleErr != nil {
+				t.Fatal("old Chrome root handle unavailable before stop")
+			}
+			defer windows.CloseHandle(chromeRoot)
 			t.Logf("before_stop mode=%s workerPID=%d chromePID=%d windows=%v bootstrap=%d epoch=%s loginCount=%d collected=%d", mode, first.identity.PID, paused.ChromePID, paused.Windows, paused.Bootstrap, paused.Epoch, fixture.logins.Load(), fixture.sequence.Load())
 			first.stop(t, mode == "abrupt", executable, paused.Windows)
-			t.Logf("after_stop mode=%s oldRootExited=true oldWholeTreeEmpty=true oldNativeWindowsGone=true readerPreserved=false innerJobDuplicated=false", mode)
+			// Empty Job accounting may precede process-handle signalling. Keep the
+			// actual pre-stop root handle and require both before profile reopen.
+			if status, waitErr := windows.WaitForSingleObject(chromeRoot, 3000); waitErr != nil || status != windows.WAIT_OBJECT_0 {
+				t.Fatal("old Chrome root not signalled before recovery grant")
+			}
+			t.Logf("after_stop mode=%s oldRootExited=true oldChromeRootSignalled=true oldWholeTreeEmpty=true oldNativeWindowsGone=true readerPreserved=false innerJobDuplicated=false", mode)
 			// Issue exactly one private IPC grant only after all release proofs above.
 			start.Grant.Reopen = true
 			start.Grant.Old = first.identity

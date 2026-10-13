@@ -4547,7 +4547,7 @@ authorized after validation, as recorded above.
 Coordinate any required physical fixture click with the owner before the live
 test. Record exact accepted path, negative checks and cleanup evidence afterward.
 
-### 2026-10-13: full fixture process restart review and tests (validated locally; reader preservation gap confirmed)
+### 2026-10-13: full fixture process restart review and tests (validated locally; reader closure confirmed)
 
 After cold fixture commit `cf8ea50`, the owner authorized review and testing of
 full Sidecar fixture process shutdown/restart. This phase uses only a fresh
@@ -4595,8 +4595,9 @@ Final validation: `scripts/test-auth-session-sidecar.ps1 -VerifyProcessRestart
 workers changed PID 36420 to 31056; abrupt workers 37408 to 22236. Both observed
 old root exit, complete old containment-tree release and destroyed native
 reader/bootstrap windows before successor launch. `readerPreserved=false` and
-`innerJobDuplicated=false`: full-process window preservation remains a separate
-architecture gap. No keeper was added to change that baseline.
+`innerJobDuplicated=false`: full-process window preservation was not established.
+The subsequent lifetime decision below accepts closure instead of introducing
+a keeper to preserve those windows.
 
 New components reopened the same owned profile/SQLite with unchanged run IDs,
 account/revision, one login and two collections. An old-epoch-only mutation of
@@ -4613,8 +4614,66 @@ checks passed. Aggregate cleanup removed output; independent inspection found
 zero fixture processes and both QA parents have zero run directories. No real
 runtime, authentication, installation, registration, commit or push occurred.
 Production startup/extension/native-host flow and post-claim races remain outside
-this result. Next proposal: review independent reader-owner lifetime and secure
-reconnection before window-preserving restart implementation.
+this result. The subsequent owner-lifetime review and decision are recorded below.
+
+### 2026-10-13: owner remains a child of Sidecar (approved scope)
+
+After reviewing an independent reader-owner/reconnect proposal, the owner required
+that child processes must not outlive their parent and selected ownership beneath
+Sidecar, rather than beneath AkuBrowser or an independent fixture controller.
+Normal handoff retains reader windows while Sidecar lives. Full Sidecar exit or
+crash closes owned reader/bootstrap windows and the complete browser tree;
+restart restores durable queued work, not the old windows. No standalone keeper,
+detach-to-survive path, automatic reader intent replay or foreground restoration
+is part of this design.
+
+The authorized continuation updates the design and fixture documentation, reviews
+actual hierarchy/normal/crash cleanup, and compares existing restart evidence
+with this contract. Only a concrete verification gap justifies added fixture
+testing. Baseline `f17ca37` already demonstrates full worker replacement with old
+trees/windows released and no duplicated inner Job handle. The outer controller
+Job may clean up a failed test, but must not mask a failed parent-death assertion
+or preserve browser lifetime on the worker's behalf.
+
+Recover only after full old-tree release and scoped one-use authorization for the
+same profile created fresh in that test. The replacement must pass synthetic
+authority plus actual browser account/revision checks before existing hooks can
+rebind never-claimed queued work and clear pause. Fresh Engine epochs reject old
+results; local Manager generation may restart at one. Claimed, completed or
+cancelled work is not converted into new pending work. Unknown cleanup/session
+evidence keeps admission closed, without an automatic login.
+
+This continuation uses only synthetic fixture state and project-owned processes.
+No real authentication, user runtime, installation, registration, commit or push
+is authorized. Production startup and installed host lifecycle remain unproven.
+
+Source review confirms the full-worker tests check release before any fallback
+controller force-cleanup. The added Node-crash case kept the Go parent alive and
+revealed Manager Ready/Done remaining unsettled after actual Chrome/window exit.
+A first correction exposed a second release-order issue: empty Job accounting
+preceded the Chrome root handle's signal. The tagged bridge now waits for Node
+exit, exact owned Job cleanup and pinned Chrome root signals before failed-owner
+notification. Late registration after EOF is rejected; pinned handles must belong
+to the exact Job. The test requires root/tree/recorded-window release before Done
+failure and denial of new Manager leases, without login, capture or relaunch.
+
+Graceful and abrupt process restart now each pin the old Chrome root before stop
+and wait for its signal before issuing the scoped reopen grant. Final canonical
+`-VerifyChrome -VerifyProcessRestart` exited 0: eight Chrome cases in 17.027 seconds,
+process restart in 4.99 seconds. Graceful worker PID 37208 to 38780 (old Chrome
+32300); abrupt worker 26776 to 36584 (old Chrome 52780). Both retain same owned
+profile/SQLite/account/revision/IDs, one login, two collections, fresh epoch/local
+generation one, stale/duplicate rejection, unavailable-authority pause and grant
+negative/replay checks. Nineteen synthetic cases and tagged broker contracts also
+passed. Ordinary/default and standalone-30 evidence is reused on unchanged inputs.
+Independent read-only inspection found zero matching fixture peers and zero run
+directories. Validation of three tagged Go files and three documents preceded the
+owner's subsequent commit/push authorization on 2026-10-13.
+
+Startup death before Node Job assignment remains unverified. Chrome launch is
+gated until assignment/private RPC, but Node lifetime during abrupt Go startup
+death is not established. Scope the passing lifetime result to initialized owners;
+production startup/authentication/runtime activation remains outside this phase.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or

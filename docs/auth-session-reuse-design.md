@@ -7,6 +7,26 @@ requires separate confirmation. See the bounded experiment below.
 Owner prioritizes avoiding a second login. Keep optimized shared-profile handoff
 as the working baseline and Facebook's existing Browser collector exception.
 
+## Approved lifetime boundary (2026-10-13)
+
+The owner selected browser ownership beneath Sidecar. No managed child may have
+an independent lifetime after its parent exits. In the current tagged fixture,
+Manager ownership is in the Sidecar worker; its Node bridge and Chrome processes
+are owned descendants, not a separate keeper. A child of AkuBrowser, independent
+reader owner or reconnect to a surviving old browser is not the selected design.
+
+Retain reader windows during normal collector/reader handoff while Sidecar is
+alive. Full Sidecar shutdown or crash closes its reader/bootstrap windows and
+owned browser tree. Restart recovers persisted queued work, not the old windows.
+The same fresh fixture profile may reopen only after complete old-tree release
+and scoped reopen authorization; admission still requires synthetic authority
+and actual browser-session verification. Session failure cannot trigger a second
+automatic login or automatic reader/foreground intent replay.
+
+The candidate alternatives below are historical feasibility proposals. This
+lifetime decision does not enable them or authorize production authentication,
+runtime operations, installation or registration.
+
 ## Candidate architecture
 
 Keep the existing signed-in application profile as the persistent normal Chrome
@@ -522,11 +542,86 @@ The final `-VerifyProcessRestart -VerifyDefault` helper exited zero (lifecycle
 5.03 seconds). Nineteen synthetic cases, tagged contracts, five-package defaults
 and ordinary build passed; seven Chrome cases and 30 standalone fallback checks
 also passed. Owned jobs/output and independent process inspection were clean.
-This tests full fixture worker replacement, not production main startup. Keeping
-readers alive needs a separately reviewed owner lifetime/reconnection design;
-no keeper or production change was introduced. Authentication and user runtime
-were untouched. This validation preceded commit/push; the owner subsequently
+This tests full fixture worker replacement, not production main startup. The
+subsequent approved lifetime boundary accepts reader closure on parent exit;
+keeping old readers alive is not a remaining requirement. No keeper or production
+change was introduced. Authentication and user runtime were untouched. This
+validation preceded commit/push; the owner subsequently
 authorized committing and pushing this fixture delta on 2026-10-13.
+
+## Child-Sidecar lifecycle acceptance (2026-10-13)
+
+The standalone owner/reconnect proposal was reviewed and rejected by the owner.
+Keep the existing process boundary rather than introducing a new owner process:
+
+```text
+Fixture controller (synthetic authority and test cleanup only)
+  -> Sidecar fixture worker (Engine / Store / Manager / Coordinator)
+       -> owned Node bridge
+            -> owned Chrome tree and reader/bootstrap windows
+```
+
+The controller's outer containment Job is a test cleanup guard. It must not hold
+the worker's inner Chrome Job handle, preserve an old reader, or force-clean the
+old Job before the test claims ordinary parent-death cleanup succeeded. A bounded
+wait may observe kernel/process teardown; unknown or nonempty ownership prevents
+profile reuse and successor launch.
+
+Acceptance remains distinct from same-process Engine/SQLite replacement:
+
+- Normal handoff keeps reader ownership until the last actual window, including
+  bootstrap, closes. Capture drains before reader ownership, and resume uses the
+  existing authority/browser-session checks.
+- Graceful and abrupt full worker exit must both destroy old native windows and
+  empty the old process tree before a successor receives a reopen grant.
+- Restart constructs a fresh Engine epoch and local Manager. Only never-claimed
+  pending commands can be rebound; old results, completed duplicates, cancelled
+  work and previously claimed commands cannot be revived as new work.
+- Account/revision mismatch, unavailable authority, unknown inventory or failed
+  cleanup keeps admission closed. The fixture never repairs these by login.
+
+Baseline `f17ca37` already records graceful/abrupt worker replacement,
+`readerPreserved=false`, `innerJobDuplicated=false`, whole-tree/window release,
+same owned profile/SQLite, one login, fresh-epoch and duplicate rejection, grant
+negatives and retained pause on missing authority. Reuse that evidence while
+the relevant implementation is unchanged; add a test only for a concrete gap
+against this contract. The dedicated worker does not establish production main
+or installed extension/native-host lifecycle behavior.
+
+The source review confirms that abrupt worker testing terminates only the worker
+root, then checks the old outer Job and windows before authorizing replacement.
+Controller force-cleanup is deferred until after those assertions. It therefore
+does not manufacture a passing parent-death result.
+
+The new bridge-crash case found an actual fixture defect: after killing only the
+verified Node bridge, Chrome/windows were gone but Manager remained Ready because
+the active owner's Done never settled. The first correction also exposed that an
+empty Job process list can precede the Chrome root handle's exit signal. The
+tagged adapter now waits for actual Node exit, terminates/verifies only its owned
+Job, waits on Chrome root handles pinned while membership was known, and then
+publishes owner failure. Unknown transport cannot silently retain a usable owner.
+The pinned handle is checked against the exact Job; late owner registration after
+bridge EOF is rejected under the owner-map mutex. No PID is reopened after death
+to manufacture release evidence, and no inner Job handle is duplicated.
+
+The regression observes root signal, verified empty tree and destroyed recorded
+reader/bootstrap windows before Manager Done failure; Acquire/Accepts are denied
+without relaunch, login or capture. Both process-restart cases now also wait for
+the pre-stop Chrome root handle before issuing the profile-reopen grant.
+
+Final `scripts/test-auth-session-sidecar.ps1 -VerifyChrome -VerifyProcessRestart`
+exited zero: the eight Chrome cases passed in 17.027 seconds and graceful/abrupt
+process replacement in 4.99 seconds. Nineteen synthetic cases and tagged broker
+contracts passed through the same helper. Existing ordinary-build/default and
+standalone-30-check evidence is reused because those inputs did not change.
+Independent inspection found zero matching fixture processes and zero run
+directories. This continuation changes three tagged Go files plus three documents.
+Validation preceded the owner's subsequent commit/push authorization on 2026-10-13.
+
+Startup before Node Job assignment remains unverified: Chrome cannot launch
+before assignment/private RPC, but this test does not prove Node lifetime during
+abrupt Go startup death. The initialized-owner result is not a production startup
+guarantee. Authentication and user runtime were untouched.
 
 ## Primary references
 
