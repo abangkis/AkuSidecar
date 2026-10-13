@@ -270,6 +270,29 @@ The two-profile collector/reader session-copy proposal is deferred by the owner.
 It must prove login reuse, restart persistence and token/session refresh before
 adoption; no profile or authentication-state duplication is implemented.
 
+2026-10-13 update: the owner authorized a bounded local-fixture PoC, now recorded
+in `auth-session-reuse-design.md` and `scripts/auth-session-fixture/README.md`.
+Its two isolated browsers can share one synthetic login concurrently; production
+integration and real authentication-state transfer remain deferred pending
+explicit owner confirmation. The fixture also demonstrates the refresh-conflict
+and last-owner-window-exit gates, so local success is not source acceptance.
+
+The subsequent central-vault local alternative passed one-login reader/collector
+concurrency plus coordinated refresh while the reader process was absent. It
+uses a volatile coordinator-owned snapshot and the collector as refresh executor.
+Unexpected response rotation safely stops admission; production-wide network
+observation and durable vault recovery remain open. See the dated central-vault
+section in `auth-session-reuse-design.md`; no real-auth testing was authorized.
+
+The two local alternatives now share a switchable strategy controller, selected
+as `reader-owned` or `central-vault`. The owner explicitly prohibited touching
+real authentication. At 09:58 WIB, both initial choices passed 20 Chrome fixture
+checks each with one invented login per run, including switching during work
+and switching back; 50 combined unit tests passed. Selection remains local to
+the PoC harness. Production integration, persistent vault storage and real-site
+testing are not part of this implementation. See the dated strategy section in
+`auth-session-reuse-design.md` for handoff gates and remaining limits.
+
 The native-reader launcher no longer requests minimized startup. Private CDP
 remains an inherited pipe under process-tree ownership, with normal readers now
 eligible for the existing scoped binding/retirement guard. Timing logs contain
