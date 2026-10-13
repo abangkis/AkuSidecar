@@ -130,6 +130,14 @@ async function execute(message) {
     throw new Error('fixture_rpc_invalid');
   }
   switch (message.op) {
+    case 'reader_marker': {
+      if (message.owner !== currentOwner || !current || current.role !== 'owner' || !currentPage ||
+          typeof message.marker !== 'string' || !/^AkuBrowser reader split_fixture_[a-f0-9]{32}$/.test(message.marker)) {
+        throw new Error('fixture_marker_invalid');
+      }
+      await currentPage.evaluate(`document.title = ${JSON.stringify(message.marker)}`);
+      return { marked: true };
+    }
     case 'launch':
       return await launch(message.role);
     case 'probe': {

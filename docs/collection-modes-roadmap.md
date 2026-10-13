@@ -4424,6 +4424,52 @@ binary restart, Windows foreground, OS broker, production DOM extraction and
 real-site authentication remain unproven. Cleanup fault injection is a local
 test of conservative ownership retention, not an observed real-site failure.
 
+### 2026-10-13: synthetic Chrome OS reader-broker/foreground fixture (validated with fresh physical intent)
+
+Approved next step: exercise the native reader request/broker/Windows activation
+path with an owned fresh Chrome profile and invented loopback login. Fixture
+windows may intentionally become foreground during the explicit test. Do not
+register native messaging hosts, install/reload extensions in existing profiles,
+use production pipe/port ownership, or change authentication/runtime users.
+Ordinary production URL, helper-parent/image/job, ticket, HWND/PID/property and
+foreground authorization must not be relaxed. Any isolated fixture entry points
+must be absent from ordinary builds and preserve default broker behavior.
+
+Acceptance: an actual explicit fixture UI intent launches the actual helper as
+its direct child; the Windows broker authenticates the connection, prepares the
+actual Engine-owned Chrome reader and binds the exact window, exchanges a fresh
+one-use ticket, activates it and checks actual OS foreground/visibility state.
+Browser-session proof must still match the synthetic account with no automatic
+second login. All reader/bootstrap windows retain ownership and batch pause,
+and final close resumes only after verified owned-tree release. Negative cases
+must reject wrong/expired/replayed binding and changed foreground; existing
+Chrome session-change regressions retain their separate scope.
+Use disposable project-local outputs, fresh pipe names and bounded cleanup;
+never stop user processes to make a fixture bind or test pass.
+No real-site authentication, installation, production enablement, commit/push
+or full production binary restart is part of this next implementation scope.
+
+Validation: `scripts/test-auth-session-sidecar.ps1 -VerifyBroker -BrokerTestRegex
+'^TestBrokerFixtureOSReaderHandoff$' -VerifyDefault` exited 0. Cold activation was
+honestly denied for `ui_foreground_changed` (Applied/Readback false). After
+retained-reader/paused-queue proof, a physical native Retry explicit reader button
+launched a fresh helper/request/ticket. The accepted path was
+`warm_retained_owner_fresh_physical_intent`, with actual Applied/Readback true and
+independent exact HWND/PID, visible/not-minimized checks. One login remained;
+reader/bootstrap windows held pause until final close, then natural root and
+whole-Job release preceded resumed capture (three launches/release proofs).
+
+Actual helper/pipe negatives passed for indirect parent, wrong image, changed
+foreground before a new request, wrong HWND/PID/property/value and expiry.
+Native binding replay was rejected; consumed ticket replay on a fresh exchange
+passed a separate protocol regression. Tagged broker contracts, ordinary broker/
+appshell regressions, 19 synthetic cases, default five-package selection and
+ordinary build passed. No automatic intent replay, input injection, foreground
+grant or deadline extension was added. Cold first-request activation, installed
+extension/host integration and changes after ticket claim remain unproven.
+The existing seven real-Chrome leaf cases also passed after the cleanup-marker
+change. Independent process inspection found zero remaining fixture processes.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

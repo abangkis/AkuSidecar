@@ -195,3 +195,48 @@ func TestColdPreparationDoesNotExtendActivationCapability(t *testing.T) {
 		t.Fatal("invalid target disclosed a ticket")
 	}
 }
+
+func TestReaderTicketReplayOnFreshExchangeCannotDiscloseTarget(t *testing.T) {
+	var previous string
+	for attempt := 0; attempt < 2; attempt++ {
+		server, client := net.Pipe()
+		server.SetDeadline(time.Now().Add(time.Second))
+		client.SetDeadline(time.Now().Add(time.Second))
+		done := make(chan error, 1)
+		target := Target{HWND: 1, PID: 2, Value: 3, Property: "AkuBrowser.ExplicitReader.2", Action: "split_fixture", Expires: time.Now().Add(Lifetime)}
+		go func() {
+			_, err := Exchange(context.Background(), server, target, func() error { return nil })
+			done <- err
+			server.Close()
+		}()
+		var issue Reply
+		if err := Read(client, &issue); err != nil {
+			t.Fatal(err)
+		}
+		claim := issue.Ticket
+		if attempt == 1 {
+			claim = previous
+			if issue.Ticket == previous {
+				t.Fatal("fresh exchange reused ticket")
+			}
+		}
+		if err := Write(client, Reply{Ticket: claim}); err != nil {
+			t.Fatal(err)
+		}
+		var binding Reply
+		err := Read(client, &binding)
+		if attempt == 0 {
+			if err != nil || binding.Target == nil {
+				t.Fatal("first exchange binding unavailable")
+			}
+			Write(client, Reply{OK: true, Readback: true})
+			if <-done != nil {
+				t.Fatal("first exchange failed")
+			}
+			previous = issue.Ticket
+		} else if err == nil || binding.Target != nil || <-done == nil {
+			t.Fatal("replayed consumed ticket disclosed target")
+		}
+		client.Close()
+	}
+}

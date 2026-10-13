@@ -610,3 +610,72 @@ committed or pushed by this implementation request.
 Implementation references: [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 [job process ID list](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list),
 and [Chrome debugging isolation](https://developer.chrome.com/blog/remote-debugging-port).
+
+## Isolated Windows reader-broker fixture (validated locally, 2026-10-13)
+
+`-VerifyBroker` stages a tagged helper, an owned native fixture UI and the test
+server in a unique project-local directory. The fixture uses a fresh random
+named pipe, not the production pipe or port. No native messaging host or
+extension is registered. The production request URL, direct UI parent, helper
+image/UI Job/age, server image/directory, single-use ticket and native HWND/PID/
+property checks remain in the actual broker implementation. Ordinary builds do
+not contain the isolated pipe or fixture UI entry points.
+
+The native fixture UI launches the helper directly for an explicit synthetic
+intent. The source-shaped HTTPS URL is validated request metadata only; the
+prepared Chrome page and authentication stay on the invented loopback server.
+The capture-owned Chrome Job and tracked reader/bootstrap windows are retained
+from the earlier adapter phase. The broker binds an actual native window and
+the client activation result is checked against real OS foreground, visibility
+and minimized state. Server-side activation readback and the helper's terminal
+acknowledgment are separate protocol evidence.
+
+Windows can reject the fixture UI's initial foreground request. In that case,
+the opt-in test waits up to 60 seconds for a physical click on **AkuBrowser
+Synthetic Reader Broker Fixture**. If the first reader request receives an exact
+supported activation denial, the test verifies retained reader ownership and
+batch pause, then arms **Retry explicit reader**. A physical button click within
+60 seconds launches a new direct-child helper with a fresh request and ticket.
+The completed request is never replayed, and the existing 30-second preparation
+and 5-second activation lifetimes are not extended. A missing click or rejected
+new activation fails the test. There is no injected input, focus privilege
+workaround or repeated focus restoration. This foreground exercise is explicitly
+authorized and does not run with the ordinary helper.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyBroker -BrokerTestRegex '^TestBrokerFixtureOSReaderHandoff$' -VerifyDefault
+```
+
+The command above exited **0** with a coordinated physical button click. The
+first actual activation was denied with `ui_foreground_changed`, `Applied=false`
+and `Readback=false`. The accepted path was
+`warm_retained_owner_fresh_physical_intent`: actual client activation returned
+`Applied=true`, `Readback=true`, `focus=exact_reader`, visible and not minimized.
+Independent OS checks matched the exact HWND and PID. The retained reader was
+not replaced for the retry. A single synthetic login remained valid; the reader
+and bootstrap windows held batch pause until final close. Natural root exit and
+whole-Job release preceded resumed Chrome capture (three launches and three
+release proofs).
+
+The actual helper/pipe path rejected indirect parent, wrong helper image, changed
+UI foreground before a new request, wrong HWND/PID/property/value and expired
+binding. Successful native binding verification rejected a second consumption.
+A separate protocol regression rejected a consumed ticket on a fresh exchange.
+The tagged broker contracts, ordinary broker/appshell regressions, 19 synthetic
+cases, five-package default selection and ordinary Sidecar build passed. The
+existing seven real-Chrome leaf cases also passed again after the aggregate
+Chrome/UI cleanup-marker change. Independent process inspection found zero
+remaining processes belonging to the fixture. Session
+loss/account change remain covered by the earlier Chrome suite; this OS case
+does not test a focus or session change after ticket claim.
+
+Fixture output is removed only after both Chrome and UI/helper jobs are proven
+released and the private broker server has stopped. Cold first-request activation
+remains unresolved. This result proves a fresh physical fixture intent through
+the actual helper, authenticated pipe and Windows activation path; it does not
+prove a click from the installed AkuBrowser extension, native-host registration,
+production process restart or real-site authentication. No installation, real
+authentication, user runtime operation, commit or push was performed for this
+phase.
+
+Windows foreground policy: [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow).

@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && !auth_session_fixture
 
 package main
 

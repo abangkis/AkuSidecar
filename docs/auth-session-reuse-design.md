@@ -395,6 +395,42 @@ compatibility. See the fixture README and the opt-in `-VerifyChrome` helper for
 the exact scope and validation record. No commit/push or user runtime operation
 was performed for this delta.
 
+## Isolated OS reader-broker fixture (2026-10-13, validated locally)
+
+The next authorized phase stages a real native fixture UI, broker helper and
+test server in a new project-local output directory. Tagged wrappers choose a
+fresh local pipe while reusing the production parent/image/Job authentication,
+request validation, one-use ticket and HWND/PID/property activation checks.
+Ordinary builds exclude these entry points. No host registration or existing
+browser profile is involved; source-shaped HTTPS metadata maps only to the
+invented loopback page.
+
+The actual first request failed because UI foreground changed during Chrome
+preparation. The retained Chrome reader and paused queue were verified before
+arming a native Retry explicit reader button. A coordinated physical click
+created a fresh request, helper and ticket against the same retained owner.
+Actual activation returned Applied and Readback success; independent Windows
+checks matched the exact HWND/PID, visible and not minimized. The original
+request was not replayed, its deadlines were not extended, and no input injection
+or foreground privilege delegation was used.
+
+The full opt-in broker command passed, including actual identity/binding
+rejections, single-use native binding consumption, one synthetic login, retained
+reader/bootstrap ownership and resumed capture only after natural root exit and
+whole-Job release. A separate protocol test rejects ticket replay on a new
+exchange. Default broker/appshell regressions, the 19 synthetic cases,
+five-package regression selection and ordinary Sidecar build passed. The seven
+existing Chrome leaf cases passed again with the aggregate cleanup marker;
+independent inspection found no remaining fixture processes.
+
+Cold first-request foreground activation remains unresolved. A physical fixture
+button is not proof of the installed extension/native-host journey. Changes to
+foreground or session after ticket claim, full production binary restart,
+production DOM extraction and real-site authentication remain outside this
+result. No real authentication, user runtime operation, installation, commit or
+push occurred in this phase. See the README's `-VerifyBroker` command and exact
+accepted path for reproducible scope.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

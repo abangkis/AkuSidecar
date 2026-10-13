@@ -130,7 +130,11 @@ func withFocusDiagnostics(reply Reply, uiPID uint32, readerHWND uintptr) Reply {
 // Serve obtains the caller PID from the OS pipe connection, never JSON. Each
 // conversation has a hard deadline and is serialized to bound native helpers.
 func Serve(ctx context.Context, authorize func(uint32) error, handle func(context.Context, Request, func(Target) (Reply, error)) error) error {
-	name, _ := windows.UTF16PtrFromString(PipeName)
+	return servePipe(ctx, PipeName, authorize, handle)
+}
+
+func servePipe(ctx context.Context, pipe string, authorize func(uint32) error, handle func(context.Context, Request, func(Target) (Reply, error)) error) error {
+	name, _ := windows.UTF16PtrFromString(pipe)
 	h, err := windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_FIRST_PIPE_INSTANCE|windows.FILE_FLAG_OVERLAPPED, windows.PIPE_TYPE_BYTE|windows.PIPE_READMODE_BYTE|windows.PIPE_WAIT|0x8, 1, 8192, 8192, 0, nil)
 	if err != nil {
 		return fmt.Errorf("reader broker pipe: %w", err)
@@ -187,6 +191,10 @@ func Serve(ctx context.Context, authorize func(uint32) error, handle func(contex
 }
 
 func RunClient(ctx context.Context, req Request) Reply {
+	return runClientPipe(ctx, req, PipeName)
+}
+
+func runClientPipe(ctx context.Context, req Request, pipe string) Reply {
 	if err := req.Validate(); err != nil {
 		return Reply{Message: err.Error()}
 	}
@@ -197,7 +205,7 @@ func RunClient(ctx context.Context, req Request) Reply {
 	if ForegroundPID() != parent {
 		return withFocusDiagnostics(Reply{Message: "AkuBrowser UI must remain foreground"}, parent, 0)
 	}
-	name, _ := windows.UTF16PtrFromString(PipeName)
+	name, _ := windows.UTF16PtrFromString(pipe)
 	h, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OVERLAPPED, 0)
 	if err != nil {
 		return Reply{Message: "Reader broker is unavailable or busy"}
