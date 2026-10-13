@@ -356,6 +356,45 @@ non-headless routes are rejected in this bounded fixture. Real profiles,
 production processes and authentication remain untouched. See the fixture README
 and `scripts/test-auth-session-sidecar.ps1` for reproducible commands and scope.
 
+## Owned Chrome fixture adapter (2026-10-13, validated locally)
+
+The owner authorized actual Chrome fixture processes with a new profile and
+invented loopback authentication. This phase connects the tagged Go fixture
+to a narrow Node/private-pipe adapter, without enabling ordinary startup or
+connecting to existing browser sessions. The same new profile is used by
+sequential collector and reader owners; the fixture never needs a second
+automatic login to repair a failed handoff.
+
+Windows Job Object membership is checked before profile reuse. The Node bridge
+joins the job before it can launch Chrome, every returned Chrome PID must belong
+to it, and the complete job process list must return to bridge-only before a
+successor launches. Natural browser exit is not published as owner release until
+the Chrome descendants have exited. Actual window inventory includes bootstrap;
+remaining windows keep the reader owner and batch pause intact.
+
+The fixture uses server-side synthetic authority before launch and an actual
+browser-session probe after launch, matching account and revision before queue
+admission. The original Chrome-created bootstrap target is navigated to the
+loopback fixture and stays in window inventory. Explicit final-window close
+waits boundedly for the exact root exit; Chrome descendants must still be gone
+before the Go owner publishes release.
+
+Seven real-Chrome leaf cases passed, including profile reuse, actual Engine
+capture drain and resumed Chrome capture, multiple windows, Engine/SQLite
+replacement while retaining the reader/Manager/bridge, cleanup rejection,
+unknown inventory, logout/account change and loss of the browser's fixture
+cookie while server authority remains valid. The existing 19 synthetic cases,
+five-package default regression selection and ordinary build passed. The
+standalone fallback regression passed 30 browser checks. Fixture output and
+owned Chrome/Node processes were independently confirmed cleaned up.
+
+This is a local Windows fixture result, not a production Sidecar process restart
+or real-source DOM/authentication test. It cannot establish Windows foreground
+activation, full OS broker opening, concurrent authentication reuse or real-site
+compatibility. See the fixture README and the opt-in `-VerifyChrome` helper for
+the exact scope and validation record. No commit/push or user runtime operation
+was performed for this delta.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

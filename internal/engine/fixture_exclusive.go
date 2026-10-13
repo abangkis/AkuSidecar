@@ -24,6 +24,7 @@ type syntheticExclusiveBinding struct {
 	e         *Engine
 	expected  string
 	probe     func(context.Context) (SyntheticSessionEvidence, error)
+	browserProbe func(context.Context) (SyntheticSessionEvidence, error)
 	revision  string
 	needsUser bool
 }
@@ -32,14 +33,38 @@ type syntheticExclusiveBinding struct {
 // called before coordinator/collector startup, on an isolated development Store.
 // No production config, environment variable or HTTP endpoint enables this path.
 func (e *Engine) BindSyntheticExclusive(expectedAccount string, probe func(context.Context) (SyntheticSessionEvidence, error)) error {
+	return e.bindSyntheticExclusive(expectedAccount, probe, nil)
+}
+
+// BindSyntheticExclusiveWithBrowserProbe adds an actual browser-session check
+// after a fixture owner launches. The authority probe remains available while
+// no browser process exists and must never cause an automatic login.
+func (e *Engine) BindSyntheticExclusiveWithBrowserProbe(expectedAccount string,
+	probe func(context.Context) (SyntheticSessionEvidence, error),
+	browserProbe func(context.Context) (SyntheticSessionEvidence, error)) error {
+	if browserProbe == nil {
+		return errors.New("synthetic browser probe is required")
+	}
+	return e.bindSyntheticExclusive(expectedAccount, probe, browserProbe)
+}
+
+func (e *Engine) bindSyntheticExclusive(expectedAccount string,
+	probe func(context.Context) (SyntheticSessionEvidence, error),
+	browserProbe func(context.Context) (SyntheticSessionEvidence, error)) error {
 	if !e.config.Dev || e.fixtureAdmission != nil || e.collectionRuntime == nil || e.captureOwner == nil || expectedAccount == "" || probe == nil {
 		return errors.New("synthetic fixture binding unavailable")
 	}
-	b := &syntheticExclusiveBinding{e: e, expected: expectedAccount, probe: probe}
+	b := &syntheticExclusiveBinding{e: e, expected: expectedAccount, probe: probe, browserProbe: browserProbe}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, err := b.verify(ctx); err != nil {
+	authority, err := b.verify(ctx)
+	if err != nil {
 		return err
+	}
+	if browserProbe != nil {
+		if err = b.verifyBrowser(ctx, authority); err != nil {
+			return err
+		}
 	}
 	if ids, err := e.store.ActiveMediaRecaptureIDs(ctx); err != nil || len(ids) > 0 {
 		return errors.New("synthetic fixture cannot adopt media recapture work")
@@ -64,6 +89,18 @@ func (b *syntheticExclusiveBinding) verify(ctx context.Context) (SyntheticSessio
 		return SyntheticSessionEvidence{}, errors.New("synthetic session verification required")
 	}
 	return v, nil
+}
+
+func (b *syntheticExclusiveBinding) verifyBrowser(ctx context.Context, authority SyntheticSessionEvidence) error {
+	if b.browserProbe == nil {
+		return nil
+	}
+	v, err := b.browserProbe(ctx)
+	if err != nil || !v.Authenticated || v.AccountID != authority.AccountID || v.Revision != authority.Revision {
+		b.needsUser = true
+		return errors.New("synthetic browser session verification required")
+	}
+	return nil
 }
 
 func (b *syntheticExclusiveBinding) busy() bool {
@@ -169,6 +206,9 @@ func (b *syntheticExclusiveBinding) resume(ctx context.Context, generation uint6
 	if b.revision != "" && v.Revision != b.revision {
 		b.needsUser = true
 		return errors.New("synthetic session changed during handoff")
+	}
+	if err = b.verifyBrowser(ctx, v); err != nil {
+		return err
 	}
 	ids, err := e.store.ListFixturePausedCaptureSessions(ctx)
 	if err != nil {

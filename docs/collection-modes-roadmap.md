@@ -4377,6 +4377,53 @@ with owned fresh Chrome fixture processes, before requesting any real auth test.
 Reproduction uses `scripts/test-auth-session-sidecar.ps1`; `-VerifyDefault` adds
 default regressions and a disposable compile check, without running Sidecar.
 
+### 2026-10-13: owned Chrome Sidecar fixture adapter, locally validated
+
+Approved scope: replace the synthetic process/capture boundary in an opt-in
+Sidecar fixture with owned Chrome processes, a freshly created project-local
+profile and loopback invented-account authentication. Do not connect to existing
+browsers, profiles or debugging endpoints. Keep the ordinary build and production
+startup disabled for this path. No real authentication, installation, user runtime
+operation, commit or push is authorized by this implementation request.
+
+Acceptance must exercise the real Go Coordinator/Manager/Engine/SQLite path and
+prove collector drain before reader handoff, release of the owned process tree
+before profile reuse, a single synthetic login across sequential owners, all
+remaining reader windows (including bootstrap) retaining ownership, final user
+close/natural exit, durable Engine/SQLite restart, cleanup failure and session
+change/logout blocking resume. Unknown inventory or release evidence must fail
+closed. Do not claim Windows foreground activation, full OS broker opening,
+concurrent session reuse, media recapture or real-site authentication from these
+fixture results.
+
+Implemented a fixture-tagged Windows process adapter and narrow Node/private
+CDP-pipe bridge. The bridge joins a Job Object before Chrome launch. Launched
+Chrome PIDs must be job members, and profile reuse requires complete membership
+to return to bridge-only. Bootstrap is the original Chrome-created target,
+navigated to the loopback fixture and counted with all remaining windows.
+Final-window close waits boundedly for root exit without treating pipe loss as
+release. Before-launch synthetic authority and after-launch actual browser
+proof must match account/revision before queued claims are reopened.
+
+Validation: `scripts/test-auth-session-sidecar.ps1 -VerifyChrome -VerifyDefault`
+exited 0 on Chrome 154.0.8037.98, Node 24.16.0 and Go 1.25.13 windows/amd64.
+Seven Chrome leaf cases passed: smoke, active capture/handoff/multiple windows
+and durable Engine/SQLite replacement, injected cleanup rejection, unknown
+inventory, logout, account change, and browser-cookie loss. Resumed capture
+executes Chrome HTTP against the invented source and stale/duplicate evidence
+is rejected. The 19 synthetic leaf cases, default selections in five packages
+and ordinary binary build passed. The unchanged standalone fallback scenarios
+passed 30 Chrome checks after the shared launcher update.
+
+All registered fixture jobs were verified empty before disposable output
+removal; independent process inspection found zero matching Chrome/Node
+processes and the project QA output parent is empty. No acceptance archive,
+commit, push, installation or user runtime operation was performed. Engine/Store
+replacement preserves the existing Manager/bridge/reader; a full production
+binary restart, Windows foreground, OS broker, production DOM extraction and
+real-site authentication remain unproven. Cleanup fault injection is a local
+test of conservative ownership retention, not an observed real-site failure.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

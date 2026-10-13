@@ -1,6 +1,6 @@
 // Fixture-only private pipe transport. Never accepts an existing profile or CDP endpoint.
 import { spawn } from 'node:child_process';
-import { mkdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { join, relative, isAbsolute } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -24,14 +24,22 @@ function fixturePath(path) {
   return path;
 }
 
-export async function launchFixtureChrome(executable, root, role) {
+export async function launchFixtureChrome(executable, root, role, profileName = role) {
   if (!['owner', 'collector'].includes(role)) throw new Error('invalid_fixture_role');
-  root = await realpath(root);
-  const profile = join(root, role);
+  if (!['owner', 'collector', 'shared'].includes(profileName) ||
+      (profileName !== role && profileName !== 'shared')) throw new Error('invalid_fixture_profile');
+  const requestedRoot = root;
+  const rootStat = await lstat(requestedRoot);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('invalid_fixture_root');
+  root = await realpath(requestedRoot);
+  if (root !== requestedRoot) throw new Error('invalid_fixture_root');
+  const profile = join(root, profileName);
   // Reopen only a profile created by this process after its exact child has exited.
   if (ownedProfiles.has(profile)) {
     if (!ownedProfiles.get(profile)()) throw new Error('fixture_profile_still_owned');
   } else await mkdir(profile);
+  const profileStat = await lstat(profile);
+  if (!profileStat.isDirectory() || profileStat.isSymbolicLink()) throw new Error('invalid_fixture_profile');
   const resolved = await realpath(profile);
   const rel = relative(root, resolved);
   if (isAbsolute(rel) || rel.startsWith('..')) throw new Error('invalid_fixture_profile');
@@ -152,6 +160,14 @@ export async function launchFixtureChrome(executable, root, role) {
       url: 'about:blank', background: true,
       ...(contextId ? { browserContextId: contextId } : { newWindow: true, windowState: 'minimized' }),
     });
+    return attachPage(origin, targetId);
+  }
+  async function pageForTarget(origin, targetId) {
+    origin = fixtureOrigin(origin);
+    if (typeof targetId !== 'string' || targetId.length < 1 || targetId.length > 256) throw new Error('fixture_invalid_target');
+    return attachPage(origin, targetId);
+  }
+  async function attachPage(origin, targetId) {
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
     await send('Page.enable', {}, sessionId);
     async function evaluate(expression) {
@@ -221,11 +237,17 @@ export async function launchFixtureChrome(executable, root, role) {
         const headers = options.refreshNonce ? { 'x-aku-fixture-refresh-nonce': options.refreshNonce } : undefined;
         return evaluate(`fetch(${JSON.stringify(safePath)}, {method:${JSON.stringify(method)}, cache:'no-store'${headers ? `, headers:${JSON.stringify(headers)}` : ''}}).then(async r => ({status:r.status, body:await r.json()}))`);
       },
+      clearFixtureCookie: () => send('Network.deleteCookies', { name: 'fixture_session', url: origin + '/' }, sessionId),
       close: () => send('Target.closeTarget', { targetId }),
     };
   }
   try {
     const version = await send('Browser.getVersion');
-    return { send, sendSession, subscribeProtocol, page, close, pid: child.pid, profile: resolved, role, product: version.product, isExited: () => exited };
+    return { send, sendSession, subscribeProtocol, page, pageForTarget, close, pid: child.pid, profile: resolved, role, product: version.product,
+      isExited: () => exited,
+      disconnectForFixtureTest() {
+        markTransportClosed();
+        child.stdio[3].destroy(); child.stdio[4].destroy();
+      } };
   } catch (error) { await close(); throw error; }
 }

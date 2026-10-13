@@ -537,3 +537,76 @@ the Engine borrow path; the existing HTTP close-and-resume endpoint is exercised
 Full OS reader-broker opening and real-source authentication remain untested and
 require separately scoped validation. Earlier standalone Chrome results are not
 new evidence that these Go adapters control an actual Chrome instance.
+
+## Owned Chrome adapter for Go Sidecar (opt-in, Windows)
+
+The next fixture phase uses actual Chrome processes behind the tagged Go
+process adapter and a narrow Node bridge. `-VerifyChrome` is explicit opt-in;
+ordinary Sidecar startup and the default helper do not launch this adapter.
+The helper uses a new project-local QA root and profile. Existing profiles,
+external sites and existing debugging endpoints are rejected. Chrome uses the
+private debugging pipe; the bridge exposes only named local fixture operations,
+not arbitrary URLs, cookies or CDP requests.
+
+The bridge is assigned to a Windows Job Object before it may launch Chrome.
+Every launched Chrome PID must belong to that job. Handoff requires the job's
+complete process list to contain only the known bridge process; Chrome root exit
+alone is insufficient. A subsequent successful launch and authenticated browser
+probe on the same fixture profile provide the profile-reuse evidence. Cleanup
+is restricted to the owned job, and disposable output is removed only after
+verified job cleanup. Unknown release or inventory keeps the operation blocked.
+
+The local HTTP server invents accounts and persistent cookies. Its fixture-only
+authority probe checks revocation/account state before launch, when the old
+browser may already have exited. The additional browser probe checks the actual
+new owner after launch; both account and revision must match before queue
+admission opens. A valid server-side session alone cannot resume a browser whose
+fixture cookie is missing. Neither probe performs login or exports cookie values.
+
+The smoke exercises one login, collector-to-reader-to-collector profile reuse,
+multiple actual windows including Chrome's bootstrap window, ownership while a
+window remains, and natural final-window exit. The original bootstrap target is
+navigated to the loopback fixture and counted alongside every remaining reader
+window. Page handles are selected from confirmed live fixture targets after a
+window closes. An explicitly requested final-window close can wait up to ten
+seconds for the exact Chrome root's exit after pipe closure; pipe closure alone
+never proves process exit or ownership release.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyChrome
+.\scripts\test-auth-session-sidecar.ps1 -VerifyChrome -VerifyDefault
+```
+
+Validation on 2026-10-13 with Chrome **154.0.8037.98**, Node **24.16.0** and Go
+**1.25.13 windows/amd64**: the combined helper exited **0**. The **7 real-Chrome
+leaf cases** (6 test functions, including logout/account-change subcases) passed:
+profile-reuse smoke; active collector drain, reader handoff, multiple windows,
+Engine/SQLite replacement and resumed capture; injected cleanup rejection;
+unknown inventory; logout; account change; and browser-cookie loss with otherwise
+valid server authority. The continuation uses authenticated Chrome `/collect`,
+retains its run IDs and current epoch/generation, and rejects stale/duplicate
+publication. Engine/SQLite replacement retains the existing capture Manager,
+bridge and reader process; it is not a restart of the production Sidecar binary.
+
+The existing **19 synthetic leaf cases**, selected default capture/reader
+regressions in five packages, and an ordinary Sidecar build also passed. The
+separate standalone fallback regression passed **30 browser checks** across four
+scenarios after the shared launcher change. Cleanup markers are issued only
+after all registered fixture jobs in the test run are verified released. The
+helper's output parent is empty, and independent process inspection found zero
+remaining Chrome/Node processes belonging to these fixtures. Receipts remain
+stdout-only; no acceptance archive was created.
+
+The ordinary 19 synthetic cases remain useful regression coverage. Real Chrome
+evidence is separate from their simulated process/capture effects. Windows
+foreground activation, full OS reader-broker opening, concurrent session reuse,
+media recapture and real-site authentication remain outside this fixture phase.
+Capture sends actual browser HTTP requests to the local fixture; observation
+content is invented test data, not production DOM extraction. Cleanup failure
+is deliberately injected against a live owned Chrome process. No real profiles,
+authentication, installation or user runtime were changed; this delta is not
+committed or pushed by this implementation request.
+
+Implementation references: [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+[job process ID list](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list),
+and [Chrome debugging isolation](https://developer.chrome.com/blog/remote-debugging-port).
