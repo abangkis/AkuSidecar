@@ -117,6 +117,13 @@ type processOwnership struct {
 }
 
 func newProcessOwnership() (processOwnership, error) {
+	if err := ensureLauncherLifetime(); err != nil {
+		return processOwnership{}, err
+	}
+	return createProcessOwnership()
+}
+
+func createProcessOwnership() (processOwnership, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return processOwnership{}, fmt.Errorf("create app shell Job Object: %w", err)

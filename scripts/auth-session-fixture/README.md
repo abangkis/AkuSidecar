@@ -997,3 +997,68 @@ This measures real driver bootstrap before ready and the original timeout, not
 arbitrary earlier OS-spawn/module-loading deaths, production main startup or the
 installed extension/native-host journey. Actual Node-wait completion fixes the
 observed EOF/Wait race without changing the eight-second deadline.
+
+### Main dev pilot / ordinary launcher gate (DEV-1, authorized 2026-10-13)
+
+The next milestone is a prepared main-dev pilot: DEV-1 ordinary launcher lifetime,
+DEV-2 explicit development integration of priority/pause/verified resume, and
+DEV-3 integrated synthetic acceptance. The one-to-three-working-day estimate is
+conditional planning; passing these fixtures does not activate user runtime or
+prove real-source authentication.
+
+DEV-1 uses actual `appshell.Launch` with a fresh project QA run/profile and a
+no-UI synthetic executable which creates its own synthetic child. Pause at the
+real Start/Job-assignment boundary, verify actual identities/pinned handles and
+memberships, kill only the Go fixture parent, and measure root/child release
+before outer cleanup. Source inspection found the headed path starts before
+assignment and treats failed private-CDP descendant cleanup as unverified;
+the prior Node-ready cases cannot establish this launcher boundary.
+
+Do not duplicate inner Job ownership into the controller or count fallback
+termination as a passing parent-death assertion. Correct only a demonstrated
+lifetime hole, preserving arguments/private pipe inheritance/real waits. A child
+that is suspended yet unassigned can still outlive its parent and is not enough.
+Relevant ordinary regressions, Chrome/process fixtures and build follow a shared
+launcher change. The new launcher cases use no Chrome UI, login or existing
+profile. Broader Chrome regression retains its fresh synthetic profile/login
+scope; no foreground request, user runtime, installation, registration, commit
+or push is authorized by this gate.
+
+The first baseline failed before fallback: Go 7352 exited, while synthetic root
+27548 and child 31276 each returned `WAIT_TIMEOUT` (258) and remained in the
+outer controller Job. The private per-window Job was empty. This measures the
+ordinary launcher startup gap with synthetic processes; it does not establish
+a leak from an existing user Chrome instance. The correction must also verify
+per-tree cleanup while Go remains alive.
+
+### DEV-1 result (2026-10-14)
+
+The ordinary Windows `Launch` and `StartOwnedCommand` now establish process
+lifetime containment before spawn, create the root suspended, assign/verify its
+per-tree Job, and resume only the pinned, owner-verified startup thread. The
+lifetime handle is noninherited and retained until Go exits; it is never closed
+by per-tree cleanup. Caller attributes/private CDP handles and real `Cmd.Wait`
+are preserved. Startup failure cleanup has bounded terminal-wait verification.
+
+The canonical `-VerifyDefault -VerifyChrome -VerifyProcessRestart` run exited
+zero: Chrome 16.354 seconds (7 top-level / 8 leaf cases); process suite 21.265
+seconds (7 top-level / 9 leaf cases). Four new launcher leaf cases prove only-Go
+death before assignment, rejected startup terminal cleanup while Go stays alive,
+resumed actual launcher/owned-worker descendant membership, and isolated tree
+closure followed by only-Go death. Acceptance is measured before fallback.
+Nineteen synthetic cases, broker contracts, default regressions and build passed.
+
+Relevant appshell/headless/capture checks and Linux appshell compilation passed.
+The ordinary minimized loopback CDP smoke passed against existing checksum-pinned
+CfT 152.0.7977.54 with a fresh profile (0.47 seconds), including exact target
+closure, root exit, empty Job and pipe closure after drain. One earlier Node-only
+Chrome startup failed with `fixture_chrome_closed`; its cause is unidentified,
+and the final full suite passed. Do not describe that flake as repaired.
+
+Independent inspection found zero scoped fixture peers and zero QA run/CDP
+profile directories. Ignored project-local transcripts remain at
+`runtime/qa/auth-session-sidecar/launcher-dev1-{evidence,final-validation,source-cdp-validation}.txt`.
+Disposable binaries were removed; real authentication and user runtime were
+untouched. No commit/push occurred. DEV-2 development binding and DEV-3 integrated synthetic
+pilot acceptance remain; installed-main/clean-machine parity and real-account
+compatibility are not established by this gate.

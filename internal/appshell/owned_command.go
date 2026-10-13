@@ -2,14 +2,13 @@ package appshell
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"sync"
 )
 
 // OwnedCommand assigns a worker to the same owned-tree cleanup boundary used
-// by capture Chrome. The worker must wait for stdin initialization before it
-// spawns children, so assignment finishes before Chrome can inherit the job.
+// by capture Chrome. On Windows the root starts suspended and is assigned
+// before it executes; the process-lifetime Job also covers early Go death.
 type OwnedCommand struct {
 	command     *exec.Cmd
 	owner       processOwnership
@@ -26,15 +25,9 @@ func StartOwnedCommand(command *exec.Cmd) (*OwnedCommand, error) {
 		return nil, err
 	}
 	prepareWorkerCommand(command)
-	if err := command.Start(); err != nil {
+	if err := owner.start(command, nil); err != nil {
 		owner.close()
 		return nil, err
-	}
-	if err := owner.attach(command); err != nil {
-		_ = command.Process.Kill()
-		_ = command.Wait()
-		owner.close()
-		return nil, fmt.Errorf("worker ownership: %w", err)
 	}
 	p := &OwnedCommand{command: command, owner: owner, done: make(chan error, 1), closed: make(chan struct{})}
 	go func() {

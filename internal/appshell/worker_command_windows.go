@@ -8,5 +8,10 @@ import (
 )
 
 func prepareWorkerCommand(command *exec.Cmd) {
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	attributes := syscall.SysProcAttr{}
+	if command.SysProcAttr != nil {
+		attributes = *command.SysProcAttr
+	}
+	attributes.HideWindow = true
+	command.SysProcAttr = &attributes
 }

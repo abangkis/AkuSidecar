@@ -76,6 +76,10 @@ type processFixtureReceipt struct {
 	Failure                                            string
 	HandshakeElapsedMS                                 int64
 	NodeWaitAtReturn                                   uint32
+	LauncherRoot, LauncherChild                        processFixtureIdentity
+	LauncherWorkerRoot, LauncherWorkerChild            processFixtureIdentity
+	LauncherLifetimeMember, LauncherLifetimeNoInherit  bool
+	LauncherTreeMembership, LauncherIsolationVerified  bool
 }
 
 func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
@@ -315,6 +319,9 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	}
 	if !samePath(filepath.Dir(executable), filepath.Dir(start.Grant.Root)) {
 		return errors.New("fixture worker image outside controller run")
+	}
+	if (start.StartupBarrier == "launcher_before_job" || start.StartupBarrier == "launcher_abort_before_job" || start.StartupBarrier == "launcher_resumed_tree") && !start.Grant.Reopen {
+		return runProcessFixtureLauncher(scanner, encoder, executable, start)
 	}
 	if start.StartupBarrier != "" && (start.StartupBarrier != "node_ready_before_job" && start.StartupBarrier != "node_before_ready" && start.StartupBarrier != "node_stalled_timeout" || start.Grant.Reopen) {
 		return errors.New("fixture startup barrier invalid")

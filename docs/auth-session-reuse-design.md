@@ -7,6 +7,34 @@ requires separate confirmation. See the bounded experiment below.
 Owner prioritizes avoiding a second login. Keep optimized shared-profile handoff
 as the working baseline and Facebook's existing Browser collector exception.
 
+## Current milestone: main dev pilot (2026-10-13)
+
+The owner approved a bounded main-dev pilot milestone after fixture checkpoint
+`dca33be` and the source-only lifecycle parity review. The planning estimate is
+one to three focused working days, conditional on the gates below, not a release
+date or a claim that production authentication is already compatible.
+
+1. **DEV-1: ordinary launcher lifetime.** Exercise actual `appshell.Launch` using
+   a project-owned synthetic executable with no UI and its synthetic child. Test
+   parent death at the Start/Job-assignment boundary, then close any demonstrated
+   ownership hole with a bounded shared-launcher correction and regressions.
+2. **DEV-2: explicit development integration.** Wire reader priority, drained
+   capture/reasoning, durable pause, never-claimed queue resume and account/browser
+   verification behind an explicit development opt-in. Ordinary production builds
+   remain disabled; define the source-session verification contract before
+   claiming real-account compatibility. Do not silently promote the fixture binder.
+3. **DEV-3: pilot acceptance.** Verify reader during an active batch, multiple
+   windows/bootstrap/final close, restart/failure cleanup, account/session changes,
+   cancellation and stale/duplicate rejection through the integrated dev path.
+   Use synthetic profiles/login first; media/non-headless work needs explicit
+   supported coverage or a closed admission boundary.
+
+The current continuation updates these documents and implements DEV-1 first.
+Passing a fixture does not activate a running main-dev instance. Testing actual
+accounts, restarting user runtime, installing or registering components requires
+separate explicit authorization. Commit/push is also outside this continuation.
+Browser ownership remains a child of Sidecar; no independent keeper is planned.
+
 ## Approved lifetime boundary (2026-10-13)
 
 The owner selected browser ownership beneath Sidecar. No managed child may have
@@ -736,8 +764,123 @@ instruction-level deaths before that marker (such as module loading), production
 main startup, installed native-host behavior and real-source authentication remain
 outside this result. No deadline extension or owner-survival design was introduced.
 
+## Ordinary headed launcher ownership gate (DEV-1, authorized)
+
+The read-only comparison at `dca33be` found a different startup boundary:
+ordinary headed UI/capture/native reader starts Chrome before assigning its root
+to a Sidecar-owned Job. The earlier Go/Node fixture does not exercise that path.
+On assignment failure the private-CDP launcher quarantines its pipes because
+descendant cleanup is unknown; source inspection alone did not demonstrate a
+surviving production Chrome process.
+
+Use actual `appshell.Launch` from a dedicated fixture Go process and a new
+project-owned profile/run. Its synthetic executable creates a synthetic child
+without UI, authentication or Chrome. A private, tagged startup barrier exposes
+the exact Start/assignment interval. Independently verify parent/root/child image,
+creation identity, pinned handles and membership. Hold only outer test cleanup
+containment, never an inner Job handle that would preserve children.
+
+Terminate only the verified Go parent and measure root/child fate before fallback
+cleanup. A survivor is a failed lifetime assertion, not a pass manufactured by
+the controller. If demonstrated, correct the shared launcher startup boundary
+while preserving arguments, private inherited handles, real process waits and
+conservative failure reporting. A suspended but unassigned child is still a child
+that can outlive its parent and is not sufficient proof of this invariant.
+
+After a correction, rerun relevant ordinary appshell/headless/capture regressions,
+the existing Chrome/process fixtures and ordinary build. No UI/foreground, real
+authentication, user runtime, independent owner or automatic activation belongs
+to this gate. Record exact baseline, final validation and residual limitations.
+
+The first actual-launcher baseline reproduced a failure: the verified Go parent
+PID 7352 exited, but synthetic root 27548 and child 31276 both returned
+`WAIT_TIMEOUT` (258) and remained in the outer controller Job before fallback
+cleanup. The private per-window Job was still empty. Image, creation identity,
+actual parent lineage and pinned handles were checked; no window, login or
+capture occurred. This is a measured synthetic startup failure, not evidence
+that an existing user Chrome process leaked. The correction must also preserve
+per-tree cleanup while the Go parent remains alive; process-lifetime containment
+alone does not prove that already-created descendants belong to a later Job.
+
+The bounded correction establishes an unnamed, noninherited process-lifetime
+Job containing the Go process before managed launch. Only process exit releases
+that handle; per-window cleanup must never close it because Go itself is a
+member. Children created after initialization inherit this lifetime boundary.
+The ordinary Windows `Launch` and `StartOwnedCommand` paths additionally create
+their roots suspended, assign and verify the per-tree Job, then resume the
+verified startup thread. This prevents root code from creating descendants
+before their per-tree ownership exists. It retains `exec.Cmd.Start`/`Wait`,
+arguments and private pipe inheritance rather than replacing process creation.
+
+Nested Jobs are required. No UI, resource or breakaway limits are added. Failure
+to establish ownership prevents execution; a failed startup uses bounded
+terminal-wait verification and reports unverified cleanup conservatively. The
+process-wide lifetime Job applies to children created after initialization, not
+only one reader. This source correction does not enable reader-priority binding
+or modify any running user instance. Final regression evidence is required
+before declaring DEV-1 complete.
+
+### DEV-1 final evidence (2026-10-14)
+
+DEV-1 is complete at source/fixture scope. The canonical command
+`scripts/test-auth-session-sidecar.ps1 -VerifyDefault -VerifyChrome
+-VerifyProcessRestart` exited zero after the final shared-launcher changes.
+The Chrome suite passed in 16.354 seconds: seven top-level tests / eight leaf
+cases, including separate logout and account-change cases. The process suite
+passed in 21.265 seconds: seven top-level tests / nine leaf cases.
+
+Four new launcher cases exercise the actual shared paths:
+
+- Before per-tree assignment, Go 30320 / suspended root 35036 had verified
+  lifetime membership and a noninherited lifetime handle. Only Go was killed;
+  the root signalled and the outer Job was empty before fallback (0.09 seconds).
+- Injected rejection before assignment returned after actual `Cmd.Wait` terminal
+  proof and pinned root release, while Go stayed alive. Root code never executed
+  and the inner Job stayed empty (0.06 seconds).
+- Resumed `Launch` and `StartOwnedCommand` each created a synthetic child with
+  verified inner/lifetime membership and actual lineage. Killing only Go
+  released every pinned peer before fallback.
+- `CloseForRetry` of one tree released its root and child while Go and the
+  sibling worker tree stayed alive; subsequent Go death released the remainder.
+  The two resumed cases together took 8.32 seconds, including the existing
+  eight-second graceful-before-hard-cleanup timeout for a windowless root.
+
+Nineteen synthetic leaf cases, broker contracts, five-package default regressions
+and ordinary Sidecar build passed. Relevant appshell source contracts,
+headless/capture runtime regressions and a Linux appshell compile check passed.
+The ordinary private-CDP smoke additionally used existing checksum-pinned CfT
+152.0.7977.54, a fresh profile and loopback page: pipe roundtrip, exact target
+close, clean root exit, empty per-tree Job and pipe release after drain passed
+in 0.47 seconds. This directly exercises ordinary `appshell.Launch`, unlike the
+separate Node/Chrome adapter fixture.
+
+An earlier broad run failed the Node-only shared-profile smoke at initial
+`bridge.launch` with `fixture_chrome_closed`. The other Chrome cases ran, and
+the final complete run passed. Its cause remains unidentified; no correction
+to that adapter or claim of a fixed Chrome startup flake is made. Standalone
+JavaScript inputs were unchanged, so preceding standalone evidence is reused.
+
+Independent read-only process inspection found zero matching fixture peers;
+QA run directories and disposable ordinary-CDP profile directories were empty.
+Ignored, project-local baseline/final transcripts remain under
+`runtime/qa/auth-session-sidecar/launcher-dev1-*.txt`; no disposable binary is
+retained. There are 15 source/test/document files changed, with no commit/push.
+Real authentication, user runtime, foreground operations, installation and
+registration were untouched. Clean-machine/installed-main startup parity remains
+unmeasured; the shared code correction does not enable the reader feature.
+
+The next milestone remains **DEV-2**, explicit development integration of
+priority/drain/durable pause and verified resume, followed by **DEV-3** integrated
+synthetic pilot acceptance. Actual-account verification and user runtime
+activation still require separate authorization.
+
 ## Primary references
 
+- [Windows nested Jobs and inherited membership](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
+- [Windows Job lifetime and kill on last handle close](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+- [Windows process creation flags](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
+- [Windows startup thread enumeration](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-thread32first)
+- [Windows ResumeThread suspend-count contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-resumethread)
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)
 - [CDP Network cookie contracts](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Network.pdl)
 - [CDP Storage](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Storage.pdl)

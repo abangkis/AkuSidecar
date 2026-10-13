@@ -4776,6 +4776,81 @@ Authentication, runtime, production startup/host activation
 and foreground operations were untouched. Earlier instruction-level startup
 intervals before the barrier marker remain outside this measurement.
 
+### 2026-10-13: main dev pilot milestone and ordinary launcher gate (authorized)
+
+The owner approved updating the plan toward a main-dev pilot after `dca33be`.
+Planning estimate: one to three focused working days, conditional rather than a
+promised release date. Acceptance is divided into bounded gates:
+
+- **DEV-1:** verify and close ordinary launcher parent-first lifetime using actual
+  `appshell.Launch`, a fresh QA run/profile and no-UI synthetic root/child processes.
+- **DEV-2:** explicit development-only integration of reader priority, safe drain,
+  durable pause/never-claimed resume and verified source account/browser session.
+  Production defaults stay disabled; fixture binding is not silently enabled.
+- **DEV-3:** integrated synthetic pilot covering active batch/reader, bootstrap and
+  multiple windows/final close, restart, cleanup failure, session change, stale/
+  duplicate results and cancellation. Unsupported media/non-headless work must
+  remain blocked or receive separate coverage before broader enablement.
+
+Implement DEV-1 first. Source-only review identified an ungated headed Chrome
+Start-before-Job-assignment interval; private-CDP attach failure explicitly
+quarantines pipes because descendants are unverified. That is a source-visible
+gap, not evidence of a measured production leak. A tagged/private fixture barrier
+must expose the real launcher interval. Verify actual parent/root/child identities,
+pinned handles and Job memberships, kill only Go, and assess root/child release
+before outer fallback. No UI, Chrome or authentication is needed for this first
+test. A failed assertion may justify a bounded ordinary-launcher lifetime fix.
+
+Preserve private CDP handle inheritance, arguments, real waits and fail-closed
+cleanup; a merely suspended but unassigned process is not a sufficient fix.
+Rerun relevant ordinary regressions, Chrome/process fixtures and build for any
+shared source change. Keep owner beneath Sidecar and remove no existing work.
+
+First measured DEV-1 baseline failed: only Go 7352 exited; synthetic root 27548
+and child 31276 returned `WAIT_TIMEOUT` (258), and both remained in the outer
+controller Job before fallback. The private per-window Job was empty, with
+verified actual lineage/image/creation identities and pinned handles. No UI,
+login or capture occurred. The bounded correction must cover both parent death
+before assignment and per-tree cleanup while the parent remains alive.
+
+These gates prepare source for a pilot; they do not authorize main-dev runtime
+activation, actual authentication tests, installation, registration, commit or
+push. Record each gate's evidence and remaining work instead of treating all
+fixtures as proof that the feature is active in a user's instance.
+
+### 2026-10-14: DEV-1 ordinary launcher lifetime completed in source/fixture
+
+Shared Windows `Launch` and `StartOwnedCommand` establish a noninherited
+process-lifetime Job before spawn and use suspended creation, verified per-tree
+assignment and pinned startup-thread resume. This covers an unassigned root on
+Go death and prevents descendants from being created before inner ownership.
+Per-tree close never closes the Go lifetime handle. Existing `exec.Cmd`, caller
+attributes, private CDP pipes and actual terminal waits are retained; startup
+failure cleanup has a bounded wait and conservative unverified reporting.
+
+Final canonical `-VerifyDefault -VerifyChrome -VerifyProcessRestart` exited zero:
+Chrome 16.354 seconds (7 top-level / 8 leaf cases); process 21.265 seconds
+(7 top-level / 9 leaf cases). Four new leaf cases prove pre-assignment only-Go
+death, rejected startup terminal release while Go lives, resumed actual launcher/
+owned-worker descendant membership, and isolated tree closure followed by Go
+death. Every parent-death acceptance precedes outer fallback cleanup. Nineteen
+synthetic cases, broker contracts, default regressions and ordinary build passed.
+
+Appshell/headless/capture checks, Linux appshell compilation and ordinary real
+private-CDP smoke also passed. The latter used checksum-pinned existing CfT
+152.0.7977.54, a fresh profile and minimized loopback page (0.47 seconds), proving
+roundtrip/exact target closure/root exit/Job drain/pipe-release order. The earlier
+Node-only Chrome smoke failed once at initial launch with `fixture_chrome_closed`;
+its cause is unidentified, and the final suite passed. No flake repair is claimed.
+
+Independent inspection found zero scoped fixture peers and zero QA run/CDP
+profile directories. Ignored QA transcripts retain the baseline and final proof;
+15 source/test/document files are uncommitted. No real authentication, user
+runtime, foreground operation, installation, registration, commit or push occurred.
+Clean-machine/installed-main parity is unmeasured. Proceed next to DEV-2 explicit
+development priority/pause/verified-resume binding, then DEV-3 integrated synthetic
+pilot acceptance; no reader feature has been activated by DEV-1.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

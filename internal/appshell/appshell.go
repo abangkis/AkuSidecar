@@ -381,6 +381,10 @@ func validateCandidate(ctx context.Context, candidate Candidate) (string, error)
 }
 
 func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
+	return launch(ctx, options, nil)
+}
+
+func launch(ctx context.Context, options LaunchOptions, afterStart func(*exec.Cmd, *processOwnership) error) (*Window, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -431,24 +435,16 @@ func Launch(ctx context.Context, options LaunchOptions) (*Window, error) {
 		}
 		return nil, err
 	}
-	if err := command.Start(); err != nil {
-		owner.close()
-		if capturePipe != nil {
-			_ = capturePipe.closeAfterOwnerExit()
-		}
-		return nil, fmt.Errorf("start app shell executable: %w", err)
-	}
-	if err := owner.attach(command); err != nil {
-		_ = command.Process.Kill()
-		_ = command.Wait()
-		if capturePipe != nil {
-			// The process was not admitted to the Job, so retain the private
-			// endpoints rather than claiming that its descendants have exited.
+	if err := owner.start(command, afterStart); err != nil {
+		if capturePipe != nil && errors.Is(err, errCleanupUnverified) {
 			quarantineCaptureProtocol(owner, capturePipe)
-			return nil, fmt.Errorf("%w: private capture process could not be assigned to its Job: %v", errCleanupUnverified, err)
+		} else {
+			owner.close()
+			if capturePipe != nil {
+				_ = capturePipe.closeAfterOwnerExit()
+			}
 		}
-		owner.close()
-		return nil, fmt.Errorf("%w: %v", errCleanupUnverified, err)
+		return nil, fmt.Errorf("start owned app shell executable: %w", err)
 	}
 	if capturePipe != nil {
 		if err := capturePipe.childStarted(); err != nil {
