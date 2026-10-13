@@ -4722,6 +4722,60 @@ The previous ready-before-assignment fixture uncertainty is now measured. Earlie
 pre-ready intervals, production startup, real-source authentication and installed
 host activation remain outside this result. No lifetime mechanism was changed.
 
+### 2026-10-13: before-ready parent death and stalled handshake (authorized fixture gate)
+
+Checkpoint `112f2df` was committed/pushed with explicit owner authorization. The
+owner approved the next bounded tests: kill the actual Sidecar fixture worker
+before Node sends ready, and leave Go alive with a stalled Node handshake until
+the existing eight-second timeout fails. Use a deterministic private fixture
+barrier in the actual Node bootstrap, available only to authenticated fresh
+fixture startup. No ordinary endpoint or production configuration is introduced.
+
+Verify actual process identity/direct parent, pinned handles and known missing
+inner Job membership. The pre-death outer tree must be exactly Go+Node. Only Go
+may be terminated in the death case; Node and containment must release before
+fallback. The timeout case must identify an actual timeout at the original
+deadline and verify child/tree cleanup before acceptance. No Chrome/windows,
+profile/SQLite, login/capture or reopen grant may appear in either case.
+
+Add a fixture correction only if the new test demonstrates failure. Reuse prior
+evidence while its inputs stay unchanged; rerun the relevant startup/Chrome/
+default checks for changed boundaries. No real authentication, user runtime,
+foreground activation, installation or registration is authorized. Commit/push
+was outside implementation scope and separately approved after validation below.
+
+First narrow evidence: pre-ready parent death passed in 0.12 seconds; handshake
+timeout returned at 8021 ms with NodeWaitAtReturn=WAIT_TIMEOUT while Go remained
+alive. The test rejected later parent teardown as a substitute for cleanup at
+error return. The tagged startup cleanup had waited on stdout/closed before the
+sole `cmd.Wait()` completed. A separate completion channel now records that real
+wait and startup cleanup waits for it; unknown wait is failure. The original
+eight-second deadline is unchanged.
+
+Corrected narrow tests passed: pre-ready death 0.16 seconds (Go 3252, Node 26004),
+timeout 8.07 seconds (Go 1440, Node 6508). Timeout elapsed 8042 ms, ready false,
+pinned Node already signalled while Go stayed alive and outer containment was
+exactly Go-only. No Chrome/windows/profile/SQLite/login/capture/reopen grant was
+created. Final regression and cleanup results follow below.
+
+Final canonical `-VerifyChrome -VerifyProcessRestart -VerifyDefault` exited 0:
+Chrome eight cases 17.522 seconds, process suite 13.477 seconds (full restart
+5.16; Node-ready startup 0.11; pre-ready death 0.12; timeout 8.06). Final pre-ready
+Go 51904 / Node 8172 released both root handles and outer containment before
+fallback. Final timeout Go 12908 / Node 24600 reported 8026 ms, ready false,
+pinned Node signalled at return with Go still alive and outer-only-Go, without
+browser/window/profile/SQLite/login/capture or reopen work.
+
+Nineteen synthetic cases, tagged broker contracts, five-package defaults and
+ordinary build passed. Existing browser/session/epoch/duplicate/grant negatives
+passed. Shared launcher/standalone inputs are unchanged; reuse their prior
+30-check evidence. Independent audits found zero fixture peers and zero run
+directories. Validation of three tagged Go files, one fixture driver and three
+documents preceded the owner's subsequent commit/push authorization on 2026-10-13.
+Authentication, runtime, production startup/host activation
+and foreground operations were untouched. Earlier instruction-level startup
+intervals before the barrier marker remain outside this measurement.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

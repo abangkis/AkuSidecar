@@ -1,6 +1,9 @@
 // Narrow RPC bridge for the opt-in Go/Chrome integration. It accepts no
 // profile path, CDP endpoint, URL, cookie value, or arbitrary CDP command.
 import readline from 'node:readline';
+import { lstat, realpath, readFile } from 'node:fs/promises';
+import { join, dirname, relative, isAbsolute, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { launchFixtureChrome, scopeProcessFixtureProfile } from './chrome.mjs';
 
 const [executable, root, origin] = process.argv.slice(2);
@@ -275,14 +278,42 @@ function pollExits() {
   }
 }
 
-emit({ ready: true });
 setInterval(pollExits, 50).unref();
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+let bootstrapped = false;
+async function bootstrap(message) {
+  if (message?.op !== 'fixture_bootstrap' || typeof message.withholdReady !== 'boolean') throw new Error('fixture_bootstrap_invalid');
+  if (message.withholdReady) {
+    const qa = await realpath(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'qa', 'auth-session-sidecar'));
+    const rel = relative(qa, root);
+    const stat = await lstat(root);
+    if (!rel || isAbsolute(rel) || rel.startsWith('..') || !basename(root).startsWith('run-') ||
+        !stat.isDirectory() || stat.isSymbolicLink() || await realpath(root) !== root ||
+        !/^[a-f0-9]{64}$/.test(message.nonce) || message.parentPID !== process.ppid) throw new Error('fixture_bootstrap_scope_invalid');
+    const lineagePath = join(root, 'process-controller-lineage.json');
+    const lineageStat = await lstat(lineagePath);
+    if (!lineageStat.isFile() || lineageStat.isSymbolicLink() || lineageStat.size > 4096 || await realpath(lineagePath) !== lineagePath) throw new Error('fixture_bootstrap_lineage_invalid');
+    const lineage = JSON.parse(await readFile(lineagePath, 'utf8'));
+    if (lineage.Root !== root || lineage.Nonce !== message.nonce || lineage.Parent?.PID !== message.controllerPID ||
+        lineage.Parent?.Created !== message.controllerCreated) throw new Error('fixture_bootstrap_lineage_invalid');
+    try { await lstat(join(root, 'shared')); throw new Error('fixture_bootstrap_profile_not_new'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    emit({ startup_stalled: true });
+    return;
+  }
+  bootstrapped = true;
+  emit({ ready: true });
+}
 let chain = Promise.resolve();
 input.on('line', line => {
   chain = chain.then(async () => {
     let message;
     try { message = JSON.parse(line); } catch { emit({ id: 0, ok: false, code: 'fixture_rpc_invalid' }); return; }
+    if (!bootstrapped) {
+      try { await bootstrap(message); }
+      catch (error) { process.stderr.write(cleanError(error) + '\n'); process.exitCode = 2; input.close(); process.stdin.destroy(); }
+      return;
+    }
     try { emit({ id: message?.id, ok: true, result: await execute(message) }); }
     catch (error) { emit({ id: message?.id, ok: false, code: cleanError(error) }); }
   });

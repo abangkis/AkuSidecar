@@ -40,6 +40,7 @@ type chromeFixtureConfig struct {
 	NativeReaderStartup bool
 	processGrant        *processFixtureGrant
 	beforeJobAssignment func(uint32, windows.Handle) error
+	beforeReadySignal   func(uint32, windows.Handle) error
 }
 
 type chromeFixtureBridge struct {
@@ -59,6 +60,7 @@ type chromeFixtureBridge struct {
 	owners        map[int]*chromeFixtureProcess
 	exitsEarly    map[int]struct{}
 	closed        chan struct{}
+	nodeWaited    chan struct{}
 	closeOnce     sync.Once
 	rootErr       error
 	cleanupErr    error
@@ -95,6 +97,9 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 		return nil, err
 	}
 	config.Root = root
+	if config.beforeReadySignal != nil && (config.processGrant == nil || config.processGrant.Reopen) {
+		return nil, errors.New("fixture pre-ready barrier requires fresh private process grant")
+	}
 	for _, path := range []string{config.NodePath, config.ChromePath, config.DriverPath} {
 		if !filepath.IsAbs(path) {
 			return nil, errors.New("fixture executable paths must be absolute")
@@ -137,11 +142,22 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 	}
 	b := &chromeFixtureBridge{config: config, job: job, cmd: cmd, stdin: stdin, pid: uint32(cmd.Process.Pid),
 		pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{},
-		exitsEarly: map[int]struct{}{}, closed: make(chan struct{})}
+		exitsEarly: map[int]struct{}{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
 	ready := make(chan error, 1)
 	go b.readOutput(stdout, ready)
 	wait := time.NewTimer(8 * time.Second)
 	defer wait.Stop()
+	bootstrap := map[string]any{"op": "fixture_bootstrap", "withholdReady": config.beforeReadySignal != nil}
+	if config.beforeReadySignal != nil {
+		bootstrap["nonce"] = config.processGrant.Nonce
+		bootstrap["parentPID"] = os.Getpid()
+		bootstrap["controllerPID"] = config.processGrant.Parent.PID
+		bootstrap["controllerCreated"] = config.processGrant.Parent.Created
+	}
+	if err = json.NewEncoder(stdin).Encode(bootstrap); err != nil {
+		b.stopBeforeChrome()
+		return nil, errors.New("fixture bootstrap input unavailable")
+	}
 	select {
 	case readyErr := <-ready:
 		if readyErr != nil {
@@ -276,19 +292,36 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	readySent := false
+	stallSeen := false
 	for scanner.Scan() {
 		var message struct {
-			Ready  bool            `json:"ready"`
-			ID     int64           `json:"id"`
-			OK     bool            `json:"ok"`
-			Code   string          `json:"code"`
-			Event  string          `json:"event"`
-			Owner  int             `json:"owner"`
-			Result json.RawMessage `json:"result"`
+			Ready          bool            `json:"ready"`
+			StartupStalled bool            `json:"startup_stalled"`
+			ID             int64           `json:"id"`
+			OK             bool            `json:"ok"`
+			Code           string          `json:"code"`
+			Event          string          `json:"event"`
+			Owner          int             `json:"owner"`
+			Result         json.RawMessage `json:"result"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &message) != nil {
 			if !readySent {
 				ready <- errors.New("invalid fixture bridge handshake")
+				readySent = true
+			}
+			continue
+		}
+		if message.StartupStalled {
+			if readySent || stallSeen || b.config.beforeReadySignal == nil {
+				if !readySent {
+					ready <- errors.New("invalid fixture startup marker")
+					readySent = true
+				}
+				continue
+			}
+			stallSeen = true
+			if err := b.config.beforeReadySignal(b.pid, b.job); err != nil {
+				ready <- err
 				readySent = true
 			}
 			continue
@@ -335,6 +368,7 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 	b.mu.Unlock()
 	b.closeOnce.Do(func() { close(b.closed) })
 	_ = b.cmd.Wait()
+	close(b.nodeWaited)
 	// EOF alone is not process death. After Wait proves the Node bridge exited,
 	// release its exact owned Job before signalling any Chrome owner as done.
 	b.finishBridgeExit()
@@ -930,8 +964,11 @@ func (b *chromeFixtureBridge) stopBeforeChrome() {
 	if b.cmd != nil && b.cmd.Process != nil {
 		_ = b.cmd.Process.Kill()
 		select {
-		case <-b.closed:
+		case <-b.nodeWaited:
 		case <-time.After(5 * time.Second):
+			b.mu.Lock()
+			b.cleanupErr = errors.New("fixture Node process wait is unverified before Chrome startup")
+			b.mu.Unlock()
 		}
 	}
 	b.jobMu.Lock()

@@ -323,6 +323,15 @@ func TestProcessFixtureFullOSRestart(t *testing.T) {
 }
 
 func TestProcessFixtureStartupBeforeNodeJob(t *testing.T) {
+	runProcessFixtureStartup(t, "node_ready_before_job")
+}
+func TestProcessFixtureStartupBeforeReady(t *testing.T) {
+	runProcessFixtureStartup(t, "node_before_ready")
+}
+func TestProcessFixtureHandshakeTimeout(t *testing.T) {
+	runProcessFixtureStartup(t, "node_stalled_timeout")
+}
+func runProcessFixtureStartup(t *testing.T, mode string) {
 	if os.Getenv("AKU_PROCESS_FIXTURE_ENABLED") != "1" {
 		t.Skip("requires explicit VerifyProcessRestart helper")
 	}
@@ -347,11 +356,18 @@ func TestProcessFixtureStartupBeforeNodeJob(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(config.Root, "process-controller-lineage.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	start := processFixtureStart{Grant: processFixtureGrant{processFixtureLineage: lineage}, NodePath: config.NodePath, ChromePath: config.ChromePath, DriverPath: config.DriverPath, Origin: config.Origin, AuthorityKey: lineage.Nonce, StartupBarrier: "node_ready_before_job"}
+	start := processFixtureStart{Grant: processFixtureGrant{processFixtureLineage: lineage}, NodePath: config.NodePath, ChromePath: config.ChromePath, DriverPath: config.DriverPath, Origin: config.Origin, AuthorityKey: lineage.Nonce, StartupBarrier: mode}
 	child := startProcessFixtureChild(t, executable, start)
-	barrier := child.receive(t, "node_ready_unassigned")
+	stage := "node_ready_unassigned"
+	if mode != "node_ready_before_job" {
+		stage = "node_stalled_before_ready"
+	}
+	barrier := child.receive(t, stage)
 	if barrier.PID != child.identity.PID || barrier.NodeIdentity.PID == 0 || barrier.NodeIdentity.Created == "" || barrier.NodeParent != child.identity.PID || !barrier.NodeMembershipKnown || barrier.NodeInnerJobMember || barrier.InnerJobProcesses != 0 {
 		t.Fatal("actual pre-assignment barrier proof invalid")
+	}
+	if barrier.NodeReady != (mode == "node_ready_before_job") {
+		t.Fatal("stalled marker confused with successful ready")
 	}
 	actualNode, err := processFixtureProcessIdentity(barrier.NodeIdentity.PID)
 	if err != nil || actualNode != barrier.NodeIdentity {
@@ -404,9 +420,32 @@ func TestProcessFixtureStartupBeforeNodeJob(t *testing.T) {
 	if !goFound || !nodeFound {
 		t.Fatal("unexpected pre-assignment outer Job peers")
 	}
-	t.Logf("startup_barrier goPID=%d nodePID=%d nodeCreated=%s nodeParent=%d nodeImageVerified=true innerJobMember=false innerJobProcessCount=0 outerJobMember=true outerTreeExactlyGoNode=true chromeLaunches=0 windows=0 logins=0 captures=0", child.identity.PID, actualNode.PID, actualNode.Created, nodeParent)
+	t.Logf("startup_barrier mode=%s readySeen=%t goPID=%d nodePID=%d nodeCreated=%s nodeParent=%d nodeImageVerified=true innerJobMember=false innerJobProcessCount=0 outerJobMember=true outerTreeExactlyGoNode=true chromeLaunches=0 windows=0 logins=0 captures=0", mode, barrier.NodeReady, child.identity.PID, actualNode.PID, actualNode.Created, nodeParent)
 	verifyProcessFixtureImage(t, child.identity, executable)
-	if err = windows.TerminateProcess(goHandle, 75); err != nil {
+	if mode == "node_stalled_timeout" {
+		timeout := child.receive(t, "handshake_timeout")
+		if timeout.Failure != "fixture bridge handshake timed out" || timeout.NodeReady || timeout.HandshakeElapsedMS < 8000 || timeout.HandshakeElapsedMS > 14000 {
+			t.Fatalf("original handshake timeout not observed: failure=%q elapsedMS=%d ready=%t", timeout.Failure, timeout.HandshakeElapsedMS, timeout.NodeReady)
+		}
+		if timeout.NodeWaitAtReturn != windows.WAIT_OBJECT_0 {
+			t.Fatalf("handshake timeout returned before pinned Node signal: nodeWaitAtReturn=%d elapsedMS=%d", timeout.NodeWaitAtReturn, timeout.HandshakeElapsedMS)
+		}
+		if status, waitErr := windows.WaitForSingleObject(goHandle, 0); waitErr != nil || status != uint32(windows.WAIT_TIMEOUT) {
+			t.Fatal("Go did not stay alive while reporting timeout cleanup")
+		}
+		if status, waitErr := windows.WaitForSingleObject(nodeHandle, 0); waitErr != nil || status != windows.WAIT_OBJECT_0 {
+			t.Fatal("Node cleanup not complete while Go still alive")
+		}
+		ids, queryErr := (&chromeFixtureBridge{job: child.job}).jobPIDs()
+		if queryErr != nil || len(ids) != 1 || ids[0] != child.identity.PID {
+			t.Fatalf("timeout must leave exactly live Go before exit gate: %v %v", ids, queryErr)
+		}
+		assertNoStartupWork()
+		t.Logf("handshake_timeout elapsedMS=%d originalTimeoutMS=8000 failure=handshake_timed_out readySeen=false goStillAlive=true pinnedNodeSignalledAtReturn=true outerOnlyGo=true noWork=true fallbackCleanupNotUsed=true", timeout.HandshakeElapsedMS)
+		if _, err = fmt.Fprintln(child.input, "exit_after_timeout"); err != nil {
+			t.Fatal(err)
+		}
+	} else if err = windows.TerminateProcess(goHandle, 75); err != nil {
 		t.Fatal(err)
 	}
 	if status, waitErr := windows.WaitForSingleObject(goHandle, 3000); waitErr != nil || status != windows.WAIT_OBJECT_0 {
@@ -415,7 +454,7 @@ func TestProcessFixtureStartupBeforeNodeJob(t *testing.T) {
 	select {
 	case exitErr := <-child.exited:
 		if exitErr == nil {
-			t.Fatal("startup Go fixture did not exit abruptly")
+			t.Fatal("startup Go fixture did not report expected failure exit")
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("startup Go process Wait did not finish")

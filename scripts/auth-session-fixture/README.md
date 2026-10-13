@@ -930,3 +930,70 @@ behavior fix, JavaScript change, real authentication, user
 runtime, foreground action, installation or registration was needed. Coverage is
 the actual Node-ready/before-assignment fixture boundary; earlier pre-ready
 intervals and production startup remain unverified.
+
+### Before-ready death and stalled handshake (authorized fixture gate, 2026-10-13)
+
+After the seven-file checkpoint `112f2df`, the owner authorized actual Go worker
+death before Node sends ready and a stalled handshake exercising the original
+eight-second timeout. Use the real fixture Node bootstrap and a deterministic
+private barrier bound to fresh authenticated fixture startup, not a production
+setting or arbitrary kill timing.
+
+The death case must observe verified Node image/creation/direct-parent identity,
+pinned handles, known unassigned inner Job and exact outer Go+Node before killing
+only Go. Both root handles and outer containment must release before fallback.
+The stalled case keeps Go alive until an explicit timeout, retaining its original
+deadline, then verifies exact child/tree cleanup. EOF alone cannot establish that
+release succeeded. Neither case may start Chrome/windows/profile/SQLite/login/
+capture or issue a recovery grant. Only a demonstrated failure permits a narrow
+fixture fix; no real authentication, user runtime, foreground action, installation
+or registration is part of this gate. Commit/push was excluded from implementation
+scope and subsequently authorized after validation below.
+
+The first narrow run passed actual pre-ready parent death (0.12 seconds) and
+exposed a timeout cleanup race: at 8021 ms the error had returned but the pinned
+Node handle was still WAIT_TIMEOUT while Go remained alive. EOF/closed arrived
+before the sole `cmd.Wait()` finished; later parent teardown did not count as
+successful cleanup at return. The tagged adapter now publishes a separate actual
+Node-wait completion channel and waits on it in startup cleanup. The original
+eight-second handshake timer remains unchanged; unknown wait is cleanup failure.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyProcessRestart -ProcessTestRegex '^TestProcessFixture(StartupBeforeReady|HandshakeTimeout)$'
+```
+
+Corrected narrow cases passed: pre-ready death 0.16 seconds (Go 3252, Node 26004),
+timeout 8.07 seconds (Go 1440, Node 6508). At timeout return (8042 ms), ready was
+false, failure was the handshake timeout, the pinned Node handle was signalled,
+Go was still alive and outer containment held only Go before its controlled error
+exit. Neither case created Chrome/windows/profile/SQLite/login/capture/reopen
+authority. The final wider validation and cleanup readback follows below.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyChrome -VerifyProcessRestart -VerifyDefault
+```
+
+Final validation exited **0**: eight Chrome cases in 17.522 seconds and process
+suite in 13.477 seconds (full restart 5.16, Node-ready startup 0.11, pre-ready
+death 0.12 and timeout 8.06). Pre-ready Go 51904 / Node 8172 released both roots
+and containment before fallback. Timeout Go 12908 / Node 24600 reported 8026 ms
+with ready false and Node already signalled at return while Go stayed alive;
+independent containment was exactly Go-only before its controlled error exit.
+No Chrome/window/profile/SQLite/login/capture or recovery grant occurred in the
+new cases. Normal bootstrap immediately permits ready; withholding uses only
+the private fresh-grant frame/QA-lineage/direct-parent checks, with no CLI/env
+activation and no nonce in logs, receipts or arguments.
+
+Nineteen synthetic cases, tagged broker contracts, five-package default regressions
+and ordinary Sidecar build passed, including existing session/epoch/duplicate/
+grant checks. Shared launcher and standalone JavaScript inputs were unchanged;
+their preceding 30-check evidence is reused. Independent inspection found zero
+matching fixture processes and zero run directories. Validation of three tagged Go
+files, one fixture driver and three documents preceded the owner's subsequent
+commit/push authorization on 2026-10-13. No real authentication, user runtime,
+foreground, installation or registration changed.
+
+This measures real driver bootstrap before ready and the original timeout, not
+arbitrary earlier OS-spawn/module-loading deaths, production main startup or the
+installed extension/native-host journey. Actual Node-wait completion fixes the
+observed EOF/Wait race without changing the eight-second deadline.

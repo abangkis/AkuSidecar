@@ -675,6 +675,67 @@ documents; validation preceded the owner's subsequent commit/push authorization
 on 2026-10-13. It measures Node-ready/before-assignment, not
 earlier pre-ready intervals, production startup or real-site authentication.
 
+## Before-ready death and handshake timeout (2026-10-13, authorized fixture gate)
+
+After checkpoint `112f2df`, the owner authorized testing actual Sidecar worker
+death before Node sends ready, and a stalled handshake through its existing
+eight-second timeout. These are separate gates from the preceding Node-ready,
+before-Job-assignment case. Use the actual fixture Node bootstrap and a private,
+fresh-grant-only deterministic barrier; no ordinary startup setting or public
+endpoint may activate the fault.
+
+For parent death, verify actual Node identity/direct parent and pinned handles,
+known unassigned inner membership and exact outer Go+Node peers, then terminate
+only Go. Require both process exits and empty containment before fallback, with
+no Chrome/window/profile/SQLite/login/capture or reopen grant. For timeout, keep
+Go alive and ready withheld, exercise the original eight-second deadline, and
+require explicit timeout failure plus verified child/tree cleanup. EOF is not
+process-release proof; do not change the timeout merely to make the test pass.
+
+Only a demonstrated fixture failure justifies a bounded startup correction. Real
+authentication, user runtime, installation and registration remain outside scope.
+Commit/push was excluded from implementation scope and separately authorized
+after validation, as recorded below.
+
+The first narrow run measured both gates. Actual pre-ready Go death passed
+(0.12 seconds), but the eight-second timeout exposed a release-order defect:
+the error returned at 8021 ms with the pinned Node handle still WAIT_TIMEOUT
+while Go stayed alive. `stopBeforeChrome` had waited for stdout/closed, which
+precedes the sole `cmd.Wait()` completion. Later parent teardown was not accepted
+as evidence that cleanup succeeded at return.
+
+The tagged bridge now signals a separate Node-wait channel after that real wait
+and startup cleanup waits for it. The eight-second handshake timer is unchanged;
+unverified wait is recorded as cleanup failure. Corrected narrow cases passed:
+pre-ready death 0.16 seconds (Go 3252, Node 26004); timeout 8.07 seconds (Go 1440,
+Node 6508), with 8042 ms elapsed, ready false, exact timeout classification and
+pinned Node signalled at return while only the still-live Go remained in the
+outer Job. No Chrome/window/profile/SQLite/login/capture or reopen grant occurred.
+The final broader regression and independent cleanup readback follows below.
+
+Final `scripts/test-auth-session-sidecar.ps1 -VerifyChrome -VerifyProcessRestart
+-VerifyDefault` exited zero. Eight Chrome cases passed in 17.522 seconds and the
+process suite in 13.477 seconds: full restart 5.16, Node-ready startup 0.11,
+pre-ready death 0.12 and original timeout 8.06 seconds. Final pre-ready Go 51904 /
+Node 8172 released both roots and the outer tree before fallback. Final timeout
+Go 12908 / Node 24600 reported 8026 ms, ready false, pinned Node signalled at
+return, Go still alive and exact Go-only containment before its error exit.
+Both new cases performed no browser/state/login/capture/reopen work.
+
+Nineteen synthetic cases, tagged broker contracts, five-package default regressions
+and ordinary build passed. Existing browser/session/epoch/duplicate/grant checks
+passed. Only the Go/Chrome RPC driver JavaScript changed; shared launcher and
+standalone inputs did not, so the preceding 30-check evidence is reused.
+Independent inspection found zero matching fixture peers and zero QA run
+directories. Validation of three tagged Go files, one fixture driver and three
+documents preceded the owner's subsequent commit/push authorization on 2026-10-13.
+No production code, authentication or user runtime changed.
+
+The pre-ready barrier measures actual driver bootstrap before ready emission;
+instruction-level deaths before that marker (such as module loading), production
+main startup, installed native-host behavior and real-source authentication remain
+outside this result. No deadline extension or owner-survival design was introduced.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)

@@ -72,6 +72,10 @@ type processFixtureReceipt struct {
 	NodeInnerJobMember                                 bool
 	NodeMembershipKnown                                bool
 	InnerJobProcesses                                  int
+	NodeReady                                          bool
+	Failure                                            string
+	HandshakeElapsedMS                                 int64
+	NodeWaitAtReturn                                   uint32
 }
 
 func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
@@ -312,7 +316,7 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	if !samePath(filepath.Dir(executable), filepath.Dir(start.Grant.Root)) {
 		return errors.New("fixture worker image outside controller run")
 	}
-	if start.StartupBarrier != "" && (start.StartupBarrier != "node_ready_before_job" || start.Grant.Reopen) {
+	if start.StartupBarrier != "" && (start.StartupBarrier != "node_ready_before_job" && start.StartupBarrier != "node_before_ready" && start.StartupBarrier != "node_stalled_timeout" || start.Grant.Reopen) {
 		return errors.New("fixture startup barrier invalid")
 	}
 	grantNegatives := 0
@@ -331,6 +335,44 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	bridgeConfig := chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant}
+	var barrierNode windows.Handle
+	barrierReported := make(chan struct{})
+	defer func() {
+		select {
+		case <-barrierReported:
+			if barrierNode != 0 {
+				_ = windows.CloseHandle(barrierNode)
+			}
+		default:
+		}
+	}()
+	if start.StartupBarrier == "node_before_ready" || start.StartupBarrier == "node_stalled_timeout" {
+		bridgeConfig.beforeReadySignal = func(pid uint32, job windows.Handle) error {
+			defer close(barrierReported)
+			identity, identityErr := processFixtureProcessIdentity(pid)
+			if identityErr != nil {
+				return identityErr
+			}
+			parent, parentErr := readerbroker.ParentPID(pid)
+			if parentErr != nil || parent != uint32(os.Getpid()) {
+				return errors.New("fixture Node parent mismatch")
+			}
+			var openErr error
+			barrierNode, openErr = windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, pid)
+			if openErr != nil {
+				return openErr
+			}
+			member, membershipErr := chromeFixtureJobMembership(barrierNode, job)
+			if membershipErr != nil || member {
+				return errors.New("fixture Node assigned before ready")
+			}
+			pids, queryErr := (&chromeFixtureBridge{job: job}).jobPIDs()
+			if queryErr != nil || len(pids) != 0 {
+				return errors.New("fixture inner Job not empty before ready")
+			}
+			return encoder.Encode(processFixtureReceipt{Stage: "node_stalled_before_ready", PID: uint32(os.Getpid()), NodeIdentity: identity, NodeParent: parent, NodeMembershipKnown: true, InnerJobProcesses: len(pids), NodeReady: false})
+		}
+	}
 	if start.StartupBarrier == "node_ready_before_job" {
 		bridgeConfig.beforeJobAssignment = func(pid uint32, job windows.Handle) error {
 			identity, identityErr := processFixtureProcessIdentity(pid)
@@ -354,7 +396,7 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 			if queryErr != nil || len(pids) != 0 {
 				return errors.New("fixture inner Job not empty before barrier")
 			}
-			if encodeErr := encoder.Encode(processFixtureReceipt{Stage: "node_ready_unassigned", PID: uint32(os.Getpid()), NodeIdentity: identity, NodeParent: parent, NodeInnerJobMember: member, NodeMembershipKnown: true, InnerJobProcesses: len(pids)}); encodeErr != nil {
+			if encodeErr := encoder.Encode(processFixtureReceipt{Stage: "node_ready_unassigned", PID: uint32(os.Getpid()), NodeIdentity: identity, NodeParent: parent, NodeInnerJobMember: member, NodeMembershipKnown: true, InnerJobProcesses: len(pids), NodeReady: true}); encodeErr != nil {
 				return encodeErr
 			}
 			// Deterministic private test boundary, never a timing-based sleep or
@@ -365,8 +407,28 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 			return nil
 		}
 	}
+	handshakeStarted := time.Now()
 	bridge, err := startChromeFixtureBridge(ctx, bridgeConfig)
 	if err != nil {
+		if start.StartupBarrier == "node_before_ready" || start.StartupBarrier == "node_stalled_timeout" {
+			select {
+			case <-barrierReported:
+			case <-time.After(2 * time.Second):
+				return errors.New("fixture pre-ready observation unsettled")
+			}
+		}
+		if start.StartupBarrier == "node_stalled_timeout" && err.Error() == "fixture bridge handshake timed out" && barrierNode != 0 {
+			status, waitErr := windows.WaitForSingleObject(barrierNode, 0)
+			if waitErr != nil {
+				return waitErr
+			}
+			if encodeErr := encoder.Encode(processFixtureReceipt{Stage: "handshake_timeout", PID: uint32(os.Getpid()), Failure: err.Error(), HandshakeElapsedMS: time.Since(handshakeStarted).Milliseconds(), NodeWaitAtReturn: status}); encodeErr != nil {
+				return encodeErr
+			}
+			if !scanner.Scan() || string(scanner.Bytes()) != "exit_after_timeout" {
+				return errors.New("fixture timeout exit gate missing")
+			}
+		}
 		return err
 	}
 	defer func() {
