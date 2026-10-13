@@ -365,3 +365,70 @@ resilience runner also passed 26 Chrome/DPAPI checks at 11:06 WIB, covering the
 unchanged default strict page-observer path and encrypted restart recovery.
 Production runtime and real authentication remain untouched by this fixture
 validation.
+
+## Small worker capability fixture
+
+`run-worker-capabilities.mjs` isolates worker behavior from the larger browser
+observer and session-policy controller. It launches fresh owned profiles against
+the invented loopback server, filters auto-attachment to the selected worker type,
+and accepts authority only for the exact fixture script URL. Unrelated internal
+Chrome workers are counted separately and do not become fixture authorities.
+It never connects to an existing browser/profile or transfers real credentials.
+
+```powershell
+.\runtime\dev\headless-worker\node.exe --test .\scripts\auth-session-fixture\worker-capability-probe.test.mjs
+.\runtime\dev\headless-worker\node.exe .\scripts\auth-session-fixture\run-worker-capabilities.mjs --run-local-fixture --chrome 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+```
+
+Set process environment `AKU_FIXTURE_WORKER` to `service_worker` or `shared_worker`
+for one worker; default `all` exercises both. A resume-before-Network variant is
+permitted only as one diagnostic retry after an actual enablement timeout. Its
+observation window is explicitly post-resume and cannot qualify startup coverage.
+The successful final run did not require that variant.
+
+Validation on 2026-10-13 at 14:05 WIB, Chrome 154.0.8037.98: **11 new unit tests
+and 28 browser checks passed**. The baseline service worker registered and reached
+the live `activated` state. In the scoped experiment, Network enablement completed
+before debugger resume; one fixture authority observed the first commanded
+rotation request/response, ExtraInfo and Set-Cookie. The earlier recursive
+observer stall was not reproduced, but its precise cause remains unresolved.
+The probe checks live activation because `serviceWorker.ready` may resolve while
+the active worker is still activating.
+
+| Evidence | Service worker | Shared worker |
+| --- | --- | --- |
+| First commanded rotation request/response | HTTP 200 observed | HTTP 200 observed |
+| Worker-session ExtraInfo and Set-Cookie | Observed | Not observed |
+| Explicit Storage checkpoint changes | Verified | Verified |
+| Old derived session rejects after rotation | HTTP 401 | HTTP 401 |
+| Same-account reseeding and explicit account-switch readback | Verified | Verified |
+| Initial script-fetch / universal startup coverage | Unqualified | Unqualified |
+| Existing browser observer admission | Remains denied | Remains denied |
+
+`fixtureCookieCheckpoint` compares private session-cookie fingerprints in memory;
+neither cookie values nor their fingerprints appear in receipts. Storage snapshots
+are scoped to fresh fixture contexts. Server probes separately verify account
+identity: a cookie change alone never proves the expected account. The explicit
+alpha-to-beta test copies a synthetic ticket only to prove distinguishable
+identity readback; it is not policy permission to admit another account.
+
+The Network probe handles ExtraInfo arriving before requestWillBeSent using a
+bounded 64-key boolean-only metadata buffer. Overflow reports unavailable evidence.
+Its observations are exact worker-session evidence, not a browser-wide assertion
+that a parent session could not receive additional events. The protocol does not
+guarantee ExtraInfo for every response ([CDP Network](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Network.pdl)).
+Direct snapshots are supported by [CDP Storage](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Storage.pdl).
+
+The capability decision is consequently bounded: service-worker response-cookie
+observation is feasible with one scoped connection; shared-worker mutation has
+only checkpoint verification through this path. Checkpoints do not establish
+instant fencing, and neither result qualifies the initial worker-script fetch.
+The existing browser observer gates, strategy controller and production runtime
+are unchanged. Fallback policy and Sidecar integration are separate next steps.
+
+The final run exited all owned Chrome roots and removed every disposable profile;
+independent process/directory inspection confirms no fixture leftovers. Receipts
+are stdout-only. Failed launches without an owner handle retain their root because
+child exit status is unknown. Locked files are left untouched; cleanup never kills
+other processes. No authentication, acceptance archive, restart, commit or push
+against the real runtime was performed for this phase.

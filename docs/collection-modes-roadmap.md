@@ -316,6 +316,18 @@ and requires a flush boundary; arbitrary real-site identity/instant fencing is
 not proven. All profiles/processes were cleaned up, with no real auth or runtime
 change. Reproduction and limitations are in the fixture README.
 
+The isolated worker follow-up (2026-10-13, 14:05 WIB) passed 11 new unit tests
+and 28 Chrome checks. A service worker activated and exposed rotation cookie
+evidence with one exact fixture attachment; the recursive observer stall was not
+reproduced, with its precise cause still unresolved. Shared-worker rotation
+remains worker-Network-invisible but is verifiable at a direct Storage checkpoint.
+Both paths verified stale derived-session rejection, same-account reseeding and
+an explicit synthetic account switch. Initial script-fetch coverage is unqualified.
+The existing observer gates and production strategy remain intact; capability-based
+fallback and actual Sidecar integration are separate next phases. All fresh
+profiles/processes were cleaned up. See `run-worker-capabilities.mjs` and the
+fixture README for reproduction; real authentication remains prohibited.
+
 The native-reader launcher no longer requests minimized startup. Private CDP
 remains an inherited pipe under process-tree ownership, with normal readers now
 eligible for the existing scoped binding/retirement guard. Timing logs contain

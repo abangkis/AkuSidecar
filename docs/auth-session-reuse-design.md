@@ -273,6 +273,31 @@ service workers are admitted only while their requests stay non-HTTP. Buffered
 cross-target evidence requires a flush boundary; immediate global fencing is not
 established. See the fixture README for exact final checks and reproduction.
 
+## Isolated worker capability experiments (2026-10-13)
+
+A separate small fixture now distinguishes worker functionality, response-cookie
+evidence and checkpoint capability from browser-wide admission policy. At 14:05
+WIB, 11 new unit tests and 28 Chrome checks passed. The service-worker baseline
+registered and activated; one exact fixture connection enabled Network before
+resume and observed the first commanded rotation's ExtraInfo and Set-Cookie.
+The broad recursive observer's earlier initialization stall was not reproduced;
+this comparison does not identify its precise cause or justify removing its gate.
+
+The shared worker completed its rotation without worker-session cookie evidence,
+but a direct Storage checkpoint detected the changed ticket. Both workers
+preserved the original account during rotation; derived contexts with the old
+ticket received 401, and explicit reseeding restored the expected account.
+An intentional synthetic alpha-to-beta switch verified identity distinction.
+These probes never infer account identity from a fingerprint alone.
+
+Capability decision: service-worker response observation is feasible through a
+scoped attachment; the shared worker has checkpoint verification only through
+this path. Initial worker-script fetch remains unqualified for both, and no
+instant browser-wide fencing or real-site authentication support is established.
+Existing admission gates remain intact. The next policy phase must retain this
+distinction when choosing concurrency or the existing exclusive handoff.
+Reproduction, exact evidence scope and cleanup are in the fixture README.
+
 ## Primary references
 
 - [Playwright persistent contexts and profile exclusivity](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context)
