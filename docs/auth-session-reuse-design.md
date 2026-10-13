@@ -618,10 +618,62 @@ Independent inspection found zero matching fixture processes and zero run
 directories. This continuation changes three tagged Go files plus three documents.
 Validation preceded the owner's subsequent commit/push authorization on 2026-10-13.
 
-Startup before Node Job assignment remains unverified: Chrome cannot launch
-before assignment/private RPC, but this test does not prove Node lifetime during
-abrupt Go startup death. The initialized-owner result is not a production startup
-guarantee. Authentication and user runtime were untouched.
+At that checkpoint, startup before Node Job assignment remained unverified:
+Chrome cannot launch before assignment/private RPC, but the initialized-owner
+test did not prove Node lifetime during abrupt Go startup death. The authorized
+continuation below addresses that separate fixture boundary. Production startup
+remains unproven; authentication and user runtime were untouched.
+
+## Pre-assignment startup death fixture (2026-10-13, authorized continuation)
+
+The owner authorized commit/push of the six-file child-Sidecar delta, published
+as `168cc5d`, then testing actual Sidecar worker death during startup before Node
+joins the inner Chrome Job. This is a new fixture phase, not production startup
+or permission to touch a user's authentication/runtime.
+
+Use a deterministic private startup barrier after the verified Node ready
+handshake and before Job assignment. The controller must observe the actual Node
+identity and prove it is not yet in the worker's inner Chrome Job before stopping
+only the verified Go parent. Pin the real process handles before stop; require
+Go/Node exit and empty outer containment before any fallback force-cleanup. A
+live-parent stdin-close simulation or random kill timing does not satisfy this
+gate. No Chrome launch, reader/bootstrap window, login or capture may occur.
+
+Keep existing private startup authentication, project-owned fresh run/profile
+scope and conservative recovery. Add a startup fix only if the test demonstrates
+a lifetime failure. Do not introduce an independent owner, weaken containment,
+or issue a recovery grant on unknown release. Record final results and cleanup
+after the actual OS-parent-death case runs.
+
+The narrow canonical startup command passed on its first measured attempt:
+`-VerifyProcessRestart -ProcessTestRegex '^TestProcessFixtureStartupBeforeNodeJob$'`
+(0.12 seconds). The barrier reported actual Go PID 34884 and Node PID 37312,
+verified Node image/creation/direct parent, known false inner-Job membership and
+zero inner members. Independent controller queries proved exact outer Go+Node
+membership, with no windows/profile/SQLite/login/capture before stop.
+
+Only Go was terminated. Both pre-stop process handles signalled and the outer
+tree became empty while the controller retained its outer Job, before fallback
+cleanup. No recovery grant was issued. Node exited naturally in this pre-Chrome
+fixture state; no startup lifetime fix was needed. The private barrier and test
+do not establish production startup or all possible instruction-level crash
+points. The final regression/cleanup readback follows below.
+
+Final `scripts/test-auth-session-sidecar.ps1 -VerifyChrome -VerifyProcessRestart
+-VerifyDefault` exited zero: startup 0.12 seconds (Go 40320, Node 19572), eight
+Chrome cases 17.164 seconds, full graceful/abrupt restart 5.10 seconds. The startup
+case again proved known false inner membership, exact outer Go+Node, signalled
+root handles and empty containment before fallback, with no browser/state/login/
+capture or reopen grant. Nineteen synthetic cases, tagged broker contracts, the
+five-package default regressions and ordinary Sidecar build passed. Existing
+session/epoch/duplicate/grant checks passed; the standalone-30 evidence remains
+valid on its unchanged JavaScript inputs.
+
+Independent process inspection and project QA inspection found zero fixture peers
+and zero run directories. The new delta is four fixture/helper files plus three
+documents; validation preceded the owner's subsequent commit/push authorization
+on 2026-10-13. It measures Node-ready/before-assignment, not
+earlier pre-ready intervals, production startup or real-site authentication.
 
 ## Primary references
 

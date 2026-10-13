@@ -866,7 +866,67 @@ directories. Only three tagged Go files and three documents changed. Validation
 preceded the owner's subsequent commit/push authorization on 2026-10-13; real
 authentication and user runtime were untouched.
 
-Startup before Node Job assignment remains unverified. Chrome cannot launch
-before assignment/private RPC, but abrupt Go startup death and pre-assignment
-Node lifetime need their own test. The initialized-owner result does not prove
-production startup, installed host lifecycle or post-ticket-claim races.
+At this checkpoint, startup before Node Job assignment remained unverified.
+Chrome cannot launch before assignment/private RPC, but the initialized-owner
+result did not prove abrupt Go startup death and pre-assignment Node lifetime.
+The authorized continuation below tests that separate fixture boundary; production
+startup, installed host lifecycle and post-ticket-claim races remain unproven.
+
+### Pre-assignment startup parent death (authorized fixture gate, 2026-10-13)
+
+After commit/push of the six-file child-Sidecar checkpoint `168cc5d`, the owner
+authorized actual worker death before Node enters the inner Chrome Job. Use a
+private deterministic pause after the Node ready handshake, prove actual Node
+identity and missing inner-Job membership, then kill only the verified Go parent.
+Wait for pinned Go/Node handles and outer containment to release before fallback
+cleanup; absence of Chrome launches/windows/login/capture is part of acceptance.
+Closing stdin while Go stays alive or racing an arbitrary delay is insufficient.
+
+The existing fixture startup authentication and project-local new run/profile
+guard remain in force. Unknown release blocks any reopen grant. This phase tests
+the tagged dedicated command, not production startup, and authorizes neither real
+authentication/runtime operations nor commit/push of the new delta. Record the
+actual result, command and cleanup below after execution.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyProcessRestart -ProcessTestRegex '^TestProcessFixtureStartupBeforeNodeJob$'
+```
+
+The narrow startup command passed on its first measured attempt (0.12 seconds).
+Actual Go PID 34884 and Node PID 37312 were verified by canonical executable,
+creation/direct-parent identity and process handles. The Node ready barrier proved
+known false inner-Job membership and zero inner members; independent outer queries
+found exactly Go+Node. No Chrome/windows/profile/SQLite/login/capture existed.
+
+The controller terminated only the Go root. Both pinned handles signalled and
+outer containment became empty before fallback cleanup while its outer Job stayed
+held. No profile-reopen grant was issued. Node naturally exited in this pre-Chrome
+state; no lifetime implementation fix was necessary. This is the tagged fixture
+barrier result, not production startup or every instruction-level crash point.
+The final regression and cleanup readback follows below.
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyChrome -VerifyProcessRestart -VerifyDefault
+```
+
+Final validation exited **0**: startup 0.12 seconds (Go 40320, Node 19572), eight
+Chrome cases 17.164 seconds and full OS restart 5.10 seconds. The canonical
+`-VerifyProcessRestart` selection now includes both startup and full restart;
+`-ProcessTestRegex` can select the startup case narrowly as shown above and accepts
+only the same bounded filter grammar as the other fixture selectors.
+
+The final startup observation repeated false inner membership/zero members,
+exact outer Go+Node, both pinned handles signalled and outer tree empty while the
+controller Job remained held, before fallback. No Chrome/window/profile/SQLite,
+login/capture or reopen grant occurred. Nineteen synthetic cases, tagged broker
+contracts, five-package default regressions and ordinary build passed; existing
+browser/session/epoch/duplicate/grant guards passed. The standalone JavaScript
+inputs did not change, so their preceding 30-check evidence is reused.
+
+Independent audit found zero matching fixture processes and zero QA run
+directories. Validation of four fixture/helper files plus three documents preceded
+the owner's subsequent commit/push authorization on 2026-10-13. No lifetime
+behavior fix, JavaScript change, real authentication, user
+runtime, foreground action, installation or registration was needed. Coverage is
+the actual Node-ready/before-assignment fixture boundary; earlier pre-ready
+intervals and production startup remain unverified.

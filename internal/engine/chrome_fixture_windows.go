@@ -39,6 +39,7 @@ type chromeFixtureConfig struct {
 	DriverPath          string
 	NativeReaderStartup bool
 	processGrant        *processFixtureGrant
+	beforeJobAssignment func(uint32, windows.Handle) error
 }
 
 type chromeFixtureBridge struct {
@@ -154,6 +155,16 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 		b.stopBeforeChrome()
 		return nil, errors.New("fixture bridge handshake timed out")
 	}
+	if config.beforeJobAssignment != nil {
+		if config.processGrant == nil || config.processGrant.Reopen {
+			b.stopBeforeChrome()
+			return nil, errors.New("fixture startup barrier requires fresh private process grant")
+		}
+		if err = config.beforeJobAssignment(b.pid, job); err != nil {
+			b.stopBeforeChrome()
+			return nil, err
+		}
+	}
 	if err = assignChromeFixtureProcess(job, b.pid); err != nil {
 		b.stopBeforeChrome()
 		return nil, errors.New("fixture bridge Job Object assignment failed")
@@ -247,6 +258,18 @@ func assignChromeFixtureProcess(job windows.Handle, pid uint32) error {
 	}
 	defer windows.CloseHandle(process)
 	return windows.AssignProcessToJobObject(job, process)
+}
+
+func chromeFixtureJobMembership(process, job windows.Handle) (bool, error) {
+	if process == 0 || job == 0 {
+		return false, errors.New("fixture Job membership handles unavailable")
+	}
+	var inJob int32
+	result, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob").Call(uintptr(process), uintptr(job), uintptr(unsafe.Pointer(&inJob)))
+	if result == 0 {
+		return false, errors.New("fixture Job membership query unavailable")
+	}
+	return inJob != 0, nil
 }
 
 func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
@@ -488,11 +511,9 @@ func (b *chromeFixtureBridge) launch(ctx context.Context, role string) (*chromeF
 		return nil, errors.New("fixture Chrome root handle unavailable")
 	}
 	b.jobMu.Lock()
-	var inJob int32
-	member, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob").Call(uintptr(rootHandle), uintptr(b.job), uintptr(unsafe.Pointer(&inJob)))
-	ownedHandle := b.job != 0 && member != 0 && inJob != 0
+	ownedHandle, membershipErr := chromeFixtureJobMembership(rootHandle, b.job)
 	b.jobMu.Unlock()
-	if !ownedHandle {
+	if membershipErr != nil || !ownedHandle {
 		_ = windows.CloseHandle(rootHandle)
 		return nil, errors.New("fixture Chrome root handle is outside owned Job")
 	}

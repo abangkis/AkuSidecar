@@ -25,6 +25,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 	"golang.org/x/sys/windows"
@@ -50,6 +51,7 @@ type processFixtureStart struct {
 	Grant                                                                       processFixtureGrant
 	NodePath, ChromePath, DriverPath, Origin, AuthorityKey, SessionID, OldEpoch string
 	RunIDs                                                                      []string
+	StartupBarrier                                                              string
 }
 type processFixtureReceipt struct {
 	Stage                                              string
@@ -65,6 +67,11 @@ type processFixtureReceipt struct {
 	StaleEpochDenied, DuplicateDenied, CleanupVerified bool
 	AuthorityDenied, GrantReplayDenied                 bool
 	GrantNegatives                                     int
+	NodeIdentity                                       processFixtureIdentity
+	NodeParent                                         uint32
+	NodeInnerJobMember                                 bool
+	NodeMembershipKnown                                bool
+	InnerJobProcesses                                  int
 }
 
 func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
@@ -305,6 +312,9 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	if !samePath(filepath.Dir(executable), filepath.Dir(start.Grant.Root)) {
 		return errors.New("fixture worker image outside controller run")
 	}
+	if start.StartupBarrier != "" && (start.StartupBarrier != "node_ready_before_job" || start.Grant.Reopen) {
+		return errors.New("fixture startup barrier invalid")
+	}
 	grantNegatives := 0
 	if start.Grant.Reopen {
 		grantNegatives, err = processFixtureGrantNegatives(start.Grant.Root, start.Grant)
@@ -320,7 +330,42 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	bridge, err := startChromeFixtureBridge(ctx, chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant})
+	bridgeConfig := chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant}
+	if start.StartupBarrier == "node_ready_before_job" {
+		bridgeConfig.beforeJobAssignment = func(pid uint32, job windows.Handle) error {
+			identity, identityErr := processFixtureProcessIdentity(pid)
+			if identityErr != nil {
+				return identityErr
+			}
+			parent, parentErr := readerbroker.ParentPID(pid)
+			if parentErr != nil || parent != uint32(os.Getpid()) {
+				return errors.New("fixture Node parent mismatch")
+			}
+			h, openErr := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+			if openErr != nil {
+				return openErr
+			}
+			defer windows.CloseHandle(h)
+			member, membershipErr := chromeFixtureJobMembership(h, job)
+			if membershipErr != nil || member {
+				return errors.New("fixture Node already assigned before barrier")
+			}
+			pids, queryErr := (&chromeFixtureBridge{job: job}).jobPIDs()
+			if queryErr != nil || len(pids) != 0 {
+				return errors.New("fixture inner Job not empty before barrier")
+			}
+			if encodeErr := encoder.Encode(processFixtureReceipt{Stage: "node_ready_unassigned", PID: uint32(os.Getpid()), NodeIdentity: identity, NodeParent: parent, NodeInnerJobMember: member, NodeMembershipKnown: true, InnerJobProcesses: len(pids)}); encodeErr != nil {
+				return encodeErr
+			}
+			// Deterministic private test boundary, never a timing-based sleep or
+			// an ordinary setting. The controller kills this actual Go process.
+			if !scanner.Scan() || string(scanner.Bytes()) != "continue_node_assignment" {
+				return errors.New("fixture startup barrier continuation missing")
+			}
+			return nil
+		}
+	}
+	bridge, err := startChromeFixtureBridge(ctx, bridgeConfig)
 	if err != nil {
 		return err
 	}

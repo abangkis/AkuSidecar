@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"golang.org/x/sys/windows"
 )
 
@@ -319,4 +320,121 @@ func TestProcessFixtureFullOSRestart(t *testing.T) {
 			t.Logf("negatives mode=%s lostAuthorityDenied=true durablePauseRetained=true noCollectionUntilFreshAuthority=true recoveryGrantInvalidFields=%d recoveryGrantReplayDenied=true", mode, recovered.GrantNegatives)
 		})
 	}
+}
+
+func TestProcessFixtureStartupBeforeNodeJob(t *testing.T) {
+	if os.Getenv("AKU_PROCESS_FIXTURE_ENABLED") != "1" {
+		t.Skip("requires explicit VerifyProcessRestart helper")
+	}
+	fixture := startChromeFixtureHTTP(t)
+	defer fixture.server.Close()
+	config := chromeFixtureConfigFromEnv(t, fixture.server.URL)
+	executable := filepath.Join(os.Getenv("AKU_CHROME_FIXTURE_ROOT"), "auth-session-process-fixture.exe")
+	var nonceBytes [32]byte
+	if _, err := rand.Read(nonceBytes[:]); err != nil {
+		t.Fatal(err)
+	}
+	parent, err := processFixtureProcessIdentity(uint32(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootID, err := processFixtureDirectoryID(config.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage := processFixtureLineage{Root: config.Root, RootID: rootID, Nonce: hex.EncodeToString(nonceBytes[:]), Parent: parent}
+	raw, _ := json.Marshal(lineage)
+	if err = os.WriteFile(filepath.Join(config.Root, "process-controller-lineage.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	start := processFixtureStart{Grant: processFixtureGrant{processFixtureLineage: lineage}, NodePath: config.NodePath, ChromePath: config.ChromePath, DriverPath: config.DriverPath, Origin: config.Origin, AuthorityKey: lineage.Nonce, StartupBarrier: "node_ready_before_job"}
+	child := startProcessFixtureChild(t, executable, start)
+	barrier := child.receive(t, "node_ready_unassigned")
+	if barrier.PID != child.identity.PID || barrier.NodeIdentity.PID == 0 || barrier.NodeIdentity.Created == "" || barrier.NodeParent != child.identity.PID || !barrier.NodeMembershipKnown || barrier.NodeInnerJobMember || barrier.InnerJobProcesses != 0 {
+		t.Fatal("actual pre-assignment barrier proof invalid")
+	}
+	actualNode, err := processFixtureProcessIdentity(barrier.NodeIdentity.PID)
+	if err != nil || actualNode != barrier.NodeIdentity {
+		t.Fatal("Node creation identity changed")
+	}
+	nodeImage, err := filepath.EvalSymlinks(config.NodePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyProcessFixtureImage(t, actualNode, nodeImage)
+	nodeParent, parentErr := readerbroker.ParentPID(actualNode.PID)
+	if parentErr != nil || nodeParent != child.identity.PID {
+		t.Fatal("Node was not direct child of Go fixture")
+	}
+	goHandle, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, child.identity.PID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(goHandle)
+	nodeHandle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, actualNode.PID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(nodeHandle)
+	outerMember, membershipErr := chromeFixtureJobMembership(nodeHandle, child.job)
+	if membershipErr != nil || !outerMember {
+		t.Fatal("Node outside actual outer containment")
+	}
+	assertNoStartupWork := func() {
+		t.Helper()
+		for _, name := range []string{"shared", "fixture.sqlite", "process-profile-lineage.json", "process-recovery-consumed.json"} {
+			if _, statErr := os.Lstat(filepath.Join(config.Root, name)); !os.IsNotExist(statErr) {
+				t.Fatalf("startup created unexpected profile/state/grant: %s", name)
+			}
+		}
+		if fixture.logins.Load() != 0 || fixture.sequence.Load() != 0 || len(processFixtureWindows(actualNode.PID)) != 0 || len(processFixtureWindows(child.identity.PID)) != 0 {
+			t.Fatal("startup unexpectedly opened windows/login/capture")
+		}
+	}
+	assertNoStartupWork()
+	pids, err := (&chromeFixtureBridge{job: child.job}).jobPIDs()
+	if err != nil || len(pids) != 2 {
+		t.Fatalf("pre-assignment outer tree must contain exactly Go+Node: %v %v", pids, err)
+	}
+	goFound, nodeFound := false, false
+	for _, pid := range pids {
+		goFound = goFound || pid == child.identity.PID
+		nodeFound = nodeFound || pid == actualNode.PID
+	}
+	if !goFound || !nodeFound {
+		t.Fatal("unexpected pre-assignment outer Job peers")
+	}
+	t.Logf("startup_barrier goPID=%d nodePID=%d nodeCreated=%s nodeParent=%d nodeImageVerified=true innerJobMember=false innerJobProcessCount=0 outerJobMember=true outerTreeExactlyGoNode=true chromeLaunches=0 windows=0 logins=0 captures=0", child.identity.PID, actualNode.PID, actualNode.Created, nodeParent)
+	verifyProcessFixtureImage(t, child.identity, executable)
+	if err = windows.TerminateProcess(goHandle, 75); err != nil {
+		t.Fatal(err)
+	}
+	if status, waitErr := windows.WaitForSingleObject(goHandle, 3000); waitErr != nil || status != windows.WAIT_OBJECT_0 {
+		t.Fatal("pinned Go root did not signal after termination")
+	}
+	select {
+	case exitErr := <-child.exited:
+		if exitErr == nil {
+			t.Fatal("startup Go fixture did not exit abruptly")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup Go process Wait did not finish")
+	}
+	if status, waitErr := windows.WaitForSingleObject(nodeHandle, 5000); waitErr != nil || status != windows.WAIT_OBJECT_0 {
+		ids, queryErr := (&chromeFixtureBridge{job: child.job}).jobPIDs()
+		t.Fatalf("unassigned Node survived Go death before fallback cleanup: nodeWait=%d error=%v outerPIDs=%v queryError=%v", status, waitErr, ids, queryErr)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err = processFixtureWait(ctx, func() bool {
+		ids, queryErr := (&chromeFixtureBridge{job: child.job}).jobPIDs()
+		return queryErr == nil && len(ids) == 0
+	}); err != nil {
+		t.Fatal("startup outer tree not empty before fallback cleanup")
+	}
+	assertNoStartupWork()
+	if start.Grant.Reopen || start.Grant.TreeReleased {
+		t.Fatal("startup improperly issued profile reopen authority")
+	}
+	t.Log("startup_release goRootSignalled=true nodeRootSignalled=true outerTreeEmpty=true innerJobNeverAssigned=true controllerJobRetained=true fallbackCleanupNotUsed=true noChrome=true noWindows=true noProfileOrSQLite=true loginCount=0 captures=0 reopenGrantIssued=false")
 }

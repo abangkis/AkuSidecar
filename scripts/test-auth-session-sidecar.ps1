@@ -1,7 +1,8 @@
-param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$')
+param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
 $ErrorActionPreference = 'Stop'
 if ($VerifyChrome -and $ChromeTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Chrome test filter contains unsupported characters.' }
 if ($VerifyBroker -and $BrokerTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Broker test filter contains unsupported characters.' }
+if ($VerifyProcessRestart -and $ProcessTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Process test filter contains unsupported characters.' }
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $fixtureParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $fixtureParent -Force | Out-Null
@@ -43,7 +44,7 @@ try {
             $env:AKU_PROCESS_FIXTURE_ENABLED = '1'
             & go build -tags auth_session_fixture -o (Join-Path $taskRoot 'auth-session-process-fixture.exe') ./cmd/auth-session-process-fixture
             if ($LASTEXITCODE -ne 0) { throw 'Dedicated process fixture build failed.' }
-            & go test -tags auth_session_fixture ./internal/engine -run '^TestProcessFixtureFullOSRestart$' -count=1 -timeout=240s -v
+            & go test -tags auth_session_fixture ./internal/engine -run $ProcessTestRegex -count=1 -timeout=240s -v
             if ($LASTEXITCODE -ne 0) { throw 'Opt-in full OS process restart fixture failed.' }
             if (!(Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf)) { throw 'Process fixture did not prove all owned trees empty.' }
         }

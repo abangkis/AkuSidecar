@@ -4670,10 +4670,57 @@ Independent read-only inspection found zero matching fixture peers and zero run
 directories. Validation of three tagged Go files and three documents preceded the
 owner's subsequent commit/push authorization on 2026-10-13.
 
-Startup death before Node Job assignment remains unverified. Chrome launch is
-gated until assignment/private RPC, but Node lifetime during abrupt Go startup
-death is not established. Scope the passing lifetime result to initialized owners;
-production startup/authentication/runtime activation remains outside this phase.
+At this checkpoint, startup death before Node Job assignment was not verified.
+Chrome launch is gated until assignment/private RPC, but the initialized-owner
+test did not establish Node lifetime during abrupt Go startup death. The next
+authorized gate below addresses that fixture boundary. Production startup,
+authentication and runtime activation remain outside this phase.
+
+### 2026-10-13: startup parent death before Node Job assignment (authorized fixture gate)
+
+The six-file child-Sidecar delta was committed/pushed as `168cc5d` after explicit
+owner authorization. The owner then approved actual fixture worker death during
+startup before Node joins the inner Chrome Job. Pause deterministically after
+Node ready and before assignment, retaining the existing private startup/identity
+guards. Prove the observed Node is unassigned to that inner Job, then terminate
+only the verified Go root. Require pinned Go/Node handle exit and empty outer
+containment before deferred fallback cleanup. A live-parent pipe-close test or
+random timing is not full OS-parent-death evidence.
+
+No Chrome/window/login/capture may occur before assignment. Unknown release must
+block profile reuse; no independent keeper or parent-survival path is permitted.
+Use only a fresh project QA run, synthetic authority and owned processes. A narrow
+fixture correction is allowed only for a demonstrated failure. The initial
+implementation scope did not authorize commit/push; the owner separately approved
+publishing the validated seven-file delta afterward. Real authentication, user runtime,
+installation, registration and production startup remain outside scope.
+
+First measured narrow startup run passed (0.12 seconds): actual Go PID 34884,
+Node PID 37312, canonical Node image/creation/direct-parent proof, false inner Job
+membership/zero members and exact outer Go+Node peers. Only the Go root was
+terminated; both pinned root handles signalled and outer containment emptied
+before fallback while its controller Job stayed retained. No Chrome/windows,
+profile/SQLite, login/capture or reopen grant occurred. Node exited naturally in
+this pre-Chrome fixture state, so no lifetime correction was needed. The bounded
+result does not cover production startup or arbitrary instruction-level deaths;
+the final regression and cleanup readback follows below.
+
+Final validation: `scripts/test-auth-session-sidecar.ps1 -VerifyChrome
+-VerifyProcessRestart -VerifyDefault` exited 0. Startup passed in 0.12 seconds
+(Go 40320, Node 19572), Chrome eight cases in 17.164 seconds, full OS restart in
+5.10 seconds (graceful 47876 to 52424; abrupt 3252 to 17200). Startup again proved
+unassigned Node/exact outer peers, both pinned roots signalled and outer empty
+before fallback, with no Chrome/windows/profile/SQLite/login/capture/reopen grant.
+Nineteen synthetic cases, tagged broker contracts, five-package default regressions
+and ordinary build passed. Existing browser/session, epoch, duplicate, malformed
+grant and replay checks passed; standalone JavaScript evidence remains unchanged.
+Independent audits found zero fixture peers and zero run directories. Validation
+of four fixture/helper files and three documents preceded the owner's subsequent
+commit/push authorization on 2026-10-13.
+
+The previous ready-before-assignment fixture uncertainty is now measured. Earlier
+pre-ready intervals, production startup, real-source authentication and installed
+host activation remain outside this result. No lifetime mechanism was changed.
 
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
