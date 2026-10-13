@@ -478,3 +478,62 @@ readers to simulate user action; the controller itself never closes readers.
 All fixture browsers exited and disposable profiles were removed, independently
 confirmed with zero remaining fixture Chrome processes/directories. Receipts are
 stdout-only; real profiles, production runtime and source data were untouched.
+
+## Limited Sidecar integration (synthetic build only)
+
+The Go integration now uses Sidecar's actual Coordinator, capture Manager,
+Engine, SQLite command queue and existing close-and-resume HTTP handler. It is
+compiled only with `auth_session_fixture`, additionally requires `config.Dev`
+and an explicit injected synthetic-session probe. Ordinary binaries have no
+binder, config flag or HTTP activation endpoint. Existing production config and
+startup remain unchanged; new status fields are omitted when inactive.
+
+The integration adapts the approved exclusive policy to the existing Go owner
+manager; it does not enable concurrent derived authentication. A reader intent
+closes batch admission immediately. A physically active collector step and its
+pending reasoning finish before session leases are released. This phase drains
+the current operation rather than aborting/replaying an already claimed command.
+Unstarted commands/source runs remain in the actual persistent queue. A minimal
+SQLite pause flag fences claims in the same claim transaction, without saving
+cookie values, account identities or session fingerprints.
+
+The Manager still owns replacement/readiness and verified cleanup. Reader windows
+stay open until an explicit user-close adapter or natural fixture process exit.
+Fresh expected-account verification gates headless handoff, and queued,
+never-claimed headless commands are rebound to the new Engine epoch/generation.
+Completed/cancelled commands remain terminal; late old-owner evidence and duplicate
+publication are rejected. Pause markers and queued work survive closing/reopening
+SQLite and creating a new Engine. Media recapture adoption and non-headless queued
+routes are explicitly outside this bounded fixture; they are rejected.
+
+Run from the AkuSidecar root with cached Go dependencies:
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDefault
+```
+
+The helper uses unique project-local temporary directories, restores process
+environment settings and removes its disposable outputs. Dependency download is
+disabled. `-VerifyDefault` also runs existing capture/reader regressions and builds
+an ordinary Sidecar executable without starting it. Locked outputs are retained;
+cleanup does not terminate processes. Results are printed, with no acceptance
+archive. This does not install, restart or enable anything in the user's runtime.
+
+Validation on 2026-10-13: **19 fixture leaf cases passed** (8 Engine cases, 8 Store
+cases and 3 HTTP lifecycle cases). They cover actual collector drain and automatic
+next-source resume, same queued IDs/continuation, stale/duplicate rejection,
+durable restart, cancellation, failed owner cleanup, unknown reader inventory,
+account mismatch and logout. One new loopback server exercises an invented
+HttpOnly login cookie and verifies no second login on logout rejection. Default
+capture/reader regression selections passed across five packages; an ordinary
+`cmd/akusidecar` build succeeded and Go file selection confirmed fixture binders
+are excluded.
+
+Browser/process adapters in these Go tests are synthetic. The ownership checks
+prove Manager ordering and conservative reader preservation, not Windows/Chrome
+profile-lock release or real foreground activation. Reader opening is tested via
+the Engine borrow path; the existing HTTP close-and-resume endpoint is exercised.
+Full OS reader-broker opening and real-source authentication remain untested and
+require separately scoped validation. Earlier standalone Chrome results are not
+new evidence that these Go adapters control an actual Chrome instance.

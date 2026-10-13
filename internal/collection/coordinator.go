@@ -29,6 +29,8 @@ type RuntimeStatus struct {
 	NativeReaderBlockedSince string               `json:"nativeReaderBlockedSince,omitempty"`
 	CollectionBorrowSource   domain.Source        `json:"collectionBorrowSource,omitempty"`
 	CollectionBorrowFailure  string               `json:"collectionBorrowFailure,omitempty"`
+	SyntheticExclusive       bool                 `json:"syntheticExclusive,omitempty"`
+	BatchPaused              bool                 `json:"batchPaused,omitempty"`
 }
 
 const (
@@ -84,6 +86,18 @@ type Coordinator struct {
 	wake                      chan struct{}
 	wakeAt                    time.Time
 	timingObserver            func(string, time.Duration)
+	fixtureHooks              *syntheticExclusiveHooks
+	fixtureHeadless           CaptureBackend
+	fixtureHeadlessGeneration uint64
+}
+
+// Only the auth_session_fixture build supplies a binder for these hooks.
+// Ordinary builds cannot enable the synthetic admission path.
+type syntheticExclusiveHooks struct {
+	beforeReader   func(context.Context) error
+	beforeHeadless func(context.Context) error
+	headlessReady  func(context.Context, uint64) error
+	paused         func() bool
 }
 
 // Bind once for the initial browser owner and again from its replacement
@@ -182,6 +196,11 @@ func (c *Coordinator) Status() RuntimeStatus {
 	}
 	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
 	status := RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0 || collectionBorrow > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
+	if c.fixtureHooks != nil {
+		status.SyntheticExclusive = true
+		status.BatchPaused = c.fixtureHooks.paused()
+		status.Pending = status.Pending || status.BatchPaused
+	}
 	status.NativeReaderOnly = nativeGeneration != 0 && nativeGeneration == s.Generation
 	if status.NativeReaderOnly {
 		status.Pending = true
@@ -247,6 +266,9 @@ func (c *Coordinator) reconcile(parent context.Context) {
 	s := c.owner.Snapshot()
 	retiring := c.owner.Retiring()
 	if s.State == captureruntime.Ready && s.Driver == mode && !(nativeOnly && !launchReader) {
+		if mode == "headless" && c.fixtureHooks != nil {
+			c.recordFixtureResume(parent, s.Generation)
+		}
 		return
 	}
 	if s.ActiveLeases > 0 {
@@ -257,6 +279,14 @@ func (c *Coordinator) reconcile(parent context.Context) {
 	}
 	// Validate assets before releasing a healthy authenticated owner.
 	if mode == "headless" {
+		if c.fixtureHooks != nil {
+			if err := c.fixtureHooks.beforeHeadless(parent); err != nil {
+				c.mu.Lock()
+				c.failure = "synthetic session verification required"
+				c.mu.Unlock()
+				return
+			}
+		}
 		if err := c.validate(); err != nil {
 			c.mu.Lock()
 			c.failure, c.retry = err.Error(), false
@@ -298,6 +328,9 @@ func (c *Coordinator) reconcile(parent context.Context) {
 		err = c.owner.Recover(ctx, factory)
 	} else {
 		err = c.owner.Replace(ctx, factory)
+	}
+	if err == nil && mode == "headless" && c.fixtureHooks != nil {
+		err = c.fixtureHooks.headlessReady(ctx, c.owner.Snapshot().Generation)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -361,6 +394,12 @@ func (c *Coordinator) borrowBrowser(ctx context.Context, collectionBorrow bool) 
 }
 func (c *Coordinator) borrowBrowserMode(ctx context.Context, collectionBorrow, nativeReader bool) (*captureruntime.Lease, func(), error) {
 	releaseIntent := c.beginBrowserBorrow(collectionBorrow)
+	if nativeReader && c.fixtureHooks != nil {
+		if err := c.fixtureHooks.beforeReader(ctx); err != nil {
+			releaseIntent()
+			return nil, nil, errors.New("synthetic batch could not reach a safe pause boundary")
+		}
+	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -432,6 +471,8 @@ func (c *Coordinator) Capture(ctx context.Context, source domain.Source, payload
 	var process CaptureBackend
 	if s.State == captureruntime.Ready && s.Driver == "headless" && c.headless != nil {
 		process = c.headless
+	} else if s.State == captureruntime.Ready && s.Driver == "headless" && c.fixtureHooks != nil && c.fixtureHeadlessGeneration == s.Generation {
+		process = c.fixtureHeadless
 	} else if s.State == captureruntime.Ready && s.Driver == "browser" && c.browserGeneration == s.Generation && (source == "x" || source == "facebook") {
 		process = c.browserCollector
 	}
@@ -440,4 +481,15 @@ func (c *Coordinator) Capture(ctx context.Context, source domain.Source, payload
 		return domain.Observation{}, errors.New("selected collection backend is unavailable")
 	}
 	return process.Capture(ctx, source, payload)
+}
+
+func (c *Coordinator) recordFixtureResume(ctx context.Context, generation uint64) {
+	err := c.fixtureHooks.headlessReady(ctx, generation)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err != nil {
+		c.failure = "synthetic session resume is blocked"
+	} else {
+		c.failure = ""
+	}
 }

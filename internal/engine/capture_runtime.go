@@ -275,15 +275,21 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 			if e.headlessEffective() {
 				collector, driver, workerID = collection.BackendHeadless, "headless", "aku-headless-v1"
 			}
+			if !e.beginFixtureCaptureStep() {
+				continue
+			}
 			lease, err := e.acquireCaptureLease()
 			if err != nil {
+				e.endFixtureCaptureStep()
 				continue
 			}
 			if lease == nil || lease.Driver() != driver {
 				lease.Release()
+				e.endFixtureCaptureStep()
 				continue
 			}
 			func() {
+				defer e.endFixtureCaptureStep()
 				defer lease.Release()
 				id, err := e.store.PendingRunIDForCollector(ctx, collector)
 				if err != nil || id == "" {

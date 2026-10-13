@@ -65,6 +65,7 @@ type Engine struct {
 	browserRecaptureDispatchStarted   map[string]bool
 	browserRecaptureDispatchConfirmed map[string]bool
 	collectionRuntime                 *collection.Coordinator
+	fixtureAdmission                  *fixtureAdmissionGate
 	schedule                          sync.Mutex
 	heartbeat                         *domain.BridgeHeartbeat
 	headlessAccess                    []domain.Source
@@ -663,8 +664,14 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 }
 
 func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, error) {
+	if !e.fixtureAdmissionAllowed() {
+		return nil, nil
+	}
 	e.schedule.Lock()
 	defer e.schedule.Unlock()
+	if !e.fixtureAdmissionAllowed() {
+		return nil, nil
+	}
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	session, err := e.store.GetSession(ctx, sessionID)
 	if err != nil {
@@ -1009,6 +1016,9 @@ func (e *Engine) claimCommandForDriver(ctx context.Context, runID, bridgeID, dri
 }
 
 func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, driver, collector string) (*domain.BridgeCommand, error) {
+	if !e.fixtureAdmissionAllowed() {
+		return nil, nil
+	}
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
 		return nil, err

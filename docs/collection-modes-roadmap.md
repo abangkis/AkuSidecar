@@ -4347,6 +4347,36 @@ excluded from reader inventory, so production profile-lock handoff is not proven
 Production control adapters, reader-close event wiring and durable queued work
 remain future integration tasks requiring a separately scoped implementation.
 
+### 2026-10-13: limited Sidecar synthetic integration, default disabled
+
+Approved scope: Sidecar integration with local fixture/synthetic login, no real
+authentication or default enablement. The Go Coordinator now has optional fixture
+hooks, bound only by an `auth_session_fixture` build. Engine admission closes for
+reader requests, the actual collector/reasoning drains, and a SQLite pause marker
+preserves unstarted commands/source runs before the session lease is released.
+Claims honor that flag transactionally. Existing Manager replacement preserves
+reader ownership until explicit user-close/natural exit and rejects failed
+cleanup. Fresh synthetic expected-account checks gate resume; never-claimed
+queued headless commands are rebound to the new Engine epoch/generation.
+
+Validation: 19 fixture leaf cases passed (8 Engine, 8 Store, 3 HTTP), covering
+actual collector drain/next-source resume, persistent SQLite restart, stale and
+duplicate results, cancellation, unknown inventory, failed owner cleanup,
+synthetic cookie login/logout and account mismatch. Existing default capture and
+reader selections passed across five packages. An ordinary Sidecar binary built
+successfully; file selection excludes fixture binders. No production startup,
+installation, profile/auth change or acceptance archive was performed.
+
+Current limits: Go browser/process adapters are fake; physical Chrome profile
+lock handoff and full OS reader-broker opening are not established. The existing
+HTTP close endpoint and actual Engine reader borrow are exercised. In-flight
+commands drain, rather than being cancelled and replayed; only unstarted
+headless commands are resumable. Media recapture and non-headless pending routes
+are rejected. The next bounded validation can replace these process adapters
+with owned fresh Chrome fixture processes, before requesting any real auth test.
+Reproduction uses `scripts/test-auth-session-sidecar.ps1`; `-VerifyDefault` adds
+default regressions and a disposable compile check, without running Sidecar.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

@@ -1154,6 +1154,9 @@ func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector str
 		return nil, err
 	}
 	defer tx.Rollback()
+	if paused, err := fixtureCaptureClaimPaused(ctx, tx, runID); err != nil || paused {
+		return nil, err
+	}
 	var claimed int
 	if err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*)

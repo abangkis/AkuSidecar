@@ -1,6 +1,7 @@
 # One-login collector and native reader proposal
 
-Status: Astra Medium proposal, 2026-10-04. Production integration is not implemented.
+Status: Astra Medium proposal, 2026-10-04. Production enablement is not implemented;
+limited synthetic Sidecar bindings are available only in an explicit fixture build.
 The owner authorized a local-fixture PoC on 2026-10-13; real-authentication testing
 requires separate confirmation. See the bounded experiment below.
 Owner prioritizes avoiding a second login. Keep optimized shared-profile handoff
@@ -327,6 +328,33 @@ coverage or production shared-profile handoff: a bootstrap authentication page
 remains open outside explicit reader inventory. Production adapters, close-event
 integration, durable queue retention and real authentication are still deferred.
 The controller has no reader-close adapter; test actors alone simulate user close.
+
+## Limited synthetic Sidecar bindings (2026-10-13)
+
+The approved integration reuses the real Go Coordinator/Manager/Engine and SQLite
+command path. It is gated by the `auth_session_fixture` build tag plus development
+config and an explicit injected synthetic probe; ordinary startup has no binder
+or setting that enables it. Authentication strategy selection is not changed.
+
+Reader priority closes admission before waiting for the current collector step
+and reasoning to drain. It then persists a session pause flag and releases the
+drained session lease for the existing owner handoff. Unstarted source runs and
+queued headless commands survive in the real Store. A transactional claim gate
+honors the pause flag. After verified reader release and expected-account checks,
+never-claimed queued commands get the new Engine epoch and owner generation.
+The fixture can resume these commands after Engine and SQLite replacement.
+Cancelled/completed work is not resurrected. Drain failure or invalid identity
+keeps admission closed; reader windows are never automatically closed.
+
+This adapts exclusive execution to Sidecar; it is not concurrent real auth reuse.
+Nineteen fixture leaf cases passed, plus relevant default regressions and an
+ordinary Sidecar build. A loopback invented-cookie login/logout test and the
+existing close-and-resume HTTP handler are included. Capture processes, profile
+inventory and ownership-release adapters are fake, so physical Chrome lock
+handoff and OS broker opening remain unproven. Active media recapture and queued
+non-headless routes are rejected in this bounded fixture. Real profiles,
+production processes and authentication remain untouched. See the fixture README
+and `scripts/test-auth-session-sidecar.ps1` for reproducible commands and scope.
 
 ## Primary references
 
