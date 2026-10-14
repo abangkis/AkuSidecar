@@ -32,7 +32,7 @@ type frontendTestEvidence struct {
 	DOM struct {
 		DenialNotice                                                                         bool
 		Rect                                                                                 struct{ Left, Top, Right, Bottom float64 }
-		Title, Broker, RequestID                                                             string
+		Title, Broker, RequestID, ClickRequestID                                             string
 		Ready, LinkRendered, LinkVisible, LinkEnabled, Rejected, RelayRejected, NativeOpened bool
 	}
 	Stats struct {
@@ -52,6 +52,13 @@ func TestDevelopmentFrontendActualMainHeadlessPreparation(t *testing.T) {
 func TestDevelopmentFrontendActualMainPhysicalDenial(t *testing.T) {
 	if os.Getenv("AKU_DEV_FRONTEND_ENABLED") != "1" || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" {
 		t.Skip("requires explicit VerifyDevelopmentFrontend and operational readiness")
+	}
+	runDevelopmentFrontendActualMain(t, false)
+}
+
+func TestDevelopmentFrontendActualMainAutomaticReaderLifetime(t *testing.T) {
+	if os.Getenv("AKU_DEV_FRONTEND_LIFETIME_ENABLED") != "1" || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" {
+		t.Skip("requires explicit automatic lifetime fixture")
 	}
 	runDevelopmentFrontendActualMain(t, false)
 }
@@ -102,8 +109,12 @@ func runDevelopmentFrontendActualMain(t *testing.T, headless bool) {
 		t.Fatalf("frontend real DOM/closed staging evidence invalid: %+v", evidence)
 	}
 	verifyProcessFixtureImage(t, mustDevelopmentProcessIdentity(t, ready.UIPID), filepath.Join(os.Getenv("AKU_CHROME_FIXTURE_ROOT"), "chromium", "bin", "chrome.exe"))
-	if !evidence.ExactWorkerObserved || (!headless && (ready.UIHWND == 0 || ready.UIHWND != evidence.UIWindow.HWND || !evidence.UIWindow.Visible || evidence.UIWindow.Minimized)) {
+	automaticLifetime := os.Getenv("AKU_DEV_FRONTEND_LIFETIME_ENABLED") == "1"
+	if !evidence.ExactWorkerObserved || (!headless && (ready.UIHWND == 0 || ready.UIHWND != evidence.UIWindow.HWND || (!automaticLifetime && (!evidence.UIWindow.Visible || evidence.UIWindow.Minimized)))) {
 		t.Fatal("actual staged worker/window readback invalid")
+	}
+	if automaticLifetime && (evidence.UIWindow.PID != ready.UIPID || !evidence.UIWindow.JobMember || !evidence.UIWindow.TitleMatched || evidence.UIWindow.Class != "Chrome_WidgetWin_1") {
+		t.Fatal("automatic owned UI window identity invalid")
 	}
 	if headless && (evidence.UIWindow.Visible || evidence.UIWindow.HWND != 0) {
 		t.Fatal("headless frontend unexpectedly has a visible native UI")
@@ -132,6 +143,36 @@ func runDevelopmentFrontendActualMain(t *testing.T, headless bool) {
 		}
 	}
 	checkPeers()
+	if os.Getenv("AKU_DEV_FRONTEND_LIFETIME_ENABLED") == "1" {
+		if evidence.UIWindow.PID != ready.UIPID {
+			t.Fatal("automatic raw frontend HWND ownership disagreed")
+		}
+		lifetime := receiveDevelopmentReceipt(t, child, "dev_frontend_automatic_lifetime_ready", 60*time.Second)
+		var queue nativeFrontendTestEvidence
+		var finalFrontend frontendTestEvidence
+		if json.Unmarshal(lifetime.Frontend, &finalFrontend) != nil || finalFrontend.DOM.ClickRequestID != "" || finalFrontend.DOM.RequestID != "" || finalFrontend.DOM.NativeOpened || finalFrontend.DOM.Rejected || finalFrontend.DOM.RelayRejected || finalFrontend.Stats.NativeRequests != 0 || finalFrontend.Stats.NativeAccepted != 0 || finalFrontend.Stats.NativeDenied != 0 || finalFrontend.Stats.Cancelled != 0 {
+			t.Fatal("automatic lifetime observed frontend/native action")
+		}
+		var closed struct {
+			NativeActivationClosed            bool
+			NativeHelpersStaged, ManualClicks int
+			NoKeeper                          bool
+		}
+		if json.Unmarshal(lifetime.Frontend, &queue) != nil || json.Unmarshal(lifetime.Frontend, &closed) != nil || !closed.NativeActivationClosed || closed.NativeHelpersStaged != 0 || closed.ManualClicks != 0 || !closed.NoKeeper || !lifetime.DurablePause || lifetime.CaptureCount != 1 || lifetime.SessionID != ready.SessionID || lifetime.UIPID != ready.UIPID || lifetime.Root != cfg.Root || lifetime.RunID != queue.QueuedRun.ID {
+			t.Fatal("automatic lifetime receipt did not retain closed activation/queue identity")
+		}
+		if err := ValidateDevelopmentLiveReaderQueue(queue.QueuedRun, queue.Commands); err != nil {
+			t.Fatal(err)
+		}
+		v := queue.Windows
+		if !v.InventoryKnown || v.InventoryError != "" || !hasBootstrapWindow(v.BootstrapFlags) || !v.CoordinatorPaused || !v.SQLiteKnown || !v.Pause.SQLitePaused || !v.Pause.AdmissionPaused || v.Pause.SQLiteError != "" || v.Pause.CollectorPID != int(lifetime.ReaderPID) || v.Pause.ManagerPID != int(lifetime.ReaderPID) || v.Pause.Driver != "browser" || v.Pause.Generation == 0 || v.Pause.CaptureSteps != 0 || v.Pause.ActiveWork != 0 || fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
+			t.Fatalf("automatic live-reader pause/owner/bootstrap invalid: %+v", v)
+		}
+		checkPeers()
+		verifyDevelopmentLiveReaderParentDeathCore(t, child, cfg, mainImage, lifetime, queue, fixture)
+		t.Log("automaticLifetimeComplete=true nativeActivationClosed=true helpers=0 manualClicks=0 physicalForegroundClaim=false")
+		return
+	}
 	t.Logf("actualMainPID=%d ownedUIPID=%d headless=%t exactQAOrigin=true actualAppAsset=true actualInjectedRelay=true actualStoreTimelineRendered=true trustedContentReady=true nativeHelpersStaged=0 brokerServerStarted=false nativeCallsRemoved=true independentUIProfile=true CfT=%s title=%q taskRoot=%s", ready.PID, ready.UIPID, headless, evidence.Version, evidence.Title, cfg.Root)
 	if headless {
 		if _, err = fmt.Fprintln(child.input, "finish_prepare"); err != nil {

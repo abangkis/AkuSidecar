@@ -5079,3 +5079,52 @@ multiwindow/final-close resume/parent lifetime acceptance remains open. The exac
 temporary host and disposable root were cleaned with four-view absence and zero
 scoped peers. Logs/minimal synthetic evidence retained, delta uncommitted, no
 original authentication or user runtime touched. Full details: acceptance audit.
+
+2026-10-14 multiwindow step 1 authorized and completed: before/after-bootstrap
+diagnostic receipts now separate known/error/count/bootstrap inventory from
+Coordinator and SQLite pause, with process/Manager PID, driver/generation/leases/
+work, expected reader PID and close error. Controller logging precedes assertions;
+existing lifecycle predicates are preserved. Focused tests and ordinary/dual-tag
+builds pass. No physical UI, login or registry action ran at this step, and the
+live multiwindow cause remains open pending a new synthetic physical trial.
+Delta remains uncommitted; original authentication/user runtime remain untouched.
+
+2026-10-14 multiwindow diagnostic/correction: actual snapshots proved two windows
+and bootstrap still present after one-tab close; pause and reader PID/driver were
+unchanged. Fixture window inventory now retains all target IDs and close verifies
+the whole selected window disappears, refusing moved/replacement targets and
+requiring root exit for final close. Six Node tests and actual Chrome restart/
+multiwindow regression passed. The corrected one-click frontend/native physical
+journey passed (`frontend-native-window-close-physical-trial.txt`): exact foreground,
+bootstrap 2→1, remaining-window pause, one-login final-close verified resume,
+denials, post-resume UI/headless parent death and persisted claim fence. Both
+temporary host/root cleanups were verified. No original auth/user-runtime action
+or publication occurred; 1-million native budget uses the newly configured scope.
+Separate next lifetime gate: Sidecar death while reader is still open. The current
+parent-death stage is after headless resume and must not substitute for it.
+
+## Synthetic live-reader parent-death acceptance status — 2026-10-14
+
+Implemented an isolated prepared scenario for actual-main death while reader is
+still open. Direct original-command snapshots now prove prepared/unclaimed queue
+state without exposing payload bytes; zero completed-request leases are accepted
+only with live-window/PID/driver/generation/pause/drained-work evidence. Targeted
+contracts passed. The three physical attempts exposed fixture assumptions and
+failed before parent-death-ready; abrupt UI/reader death and original SQLite row
+retention after only-main kill are still unproven. All trial/build roots and the
+single QA host were cleaned. Next gate needs a fresh prepared physical test with
+operator readiness. No production authentication, runtime, installation or new
+commit/push is covered. Detailed evidence: `auth-session-frontend-qa-acceptance.md`.
+
+## Separate synthetic lifetime and foreground gates passed — 2026-10-14
+
+The automatic actual-main lifetime test now passes without manual input or native
+registration: live reader/owned UI die after only-main termination, whole Job
+empties before fallback, and original queued command/payload/claim metadata and
+pause survive SQLite reopen. `foreground_only` separately passes the actual
+frontend/native foreground/API/UI journey with one physical click. Durations are
+3.29s and 32.42s. Prior normal bootstrap/final-close resume proof remains distinct.
+All split-test roots and the approved temporary QA host are cleaned. Next readiness
+discussion may use these fixture gates; production auth, runtime/installation,
+media recapture and non-headless collection remain outside acceptance. No new
+commit/push was performed and Git metadata is unavailable. See the acceptance doc.

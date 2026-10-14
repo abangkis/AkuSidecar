@@ -296,7 +296,15 @@ func (s *Session) DevelopmentFrontendWindowReadback() DevelopmentFrontendWindowS
 	}
 	visible, _, _ := procIsWindowVisible.Call(hwnd)
 	minimized, _, _ := isCaptureIconic.Call(hwnd)
-	return DevelopmentFrontendWindowState{HWND: uint64(hwnd), Visible: visible != 0, Minimized: minimized != 0}
+	var windowPID uint32
+	procGetWindowThreadProcess.Call(hwnd, uintptr(unsafe.Pointer(&windowPID)))
+	return DevelopmentFrontendWindowState{HWND: uint64(hwnd), PID: windowPID, Visible: visible != 0, Minimized: minimized != 0}
+}
+
+// Read the exact owned QA window even while private CDP keeps it hidden. This
+// lifetime proof never presents a window or grants foreground capability.
+func (s *Session) DevelopmentFrontendLifetimeWindowReadback() DevelopmentFrontendWindowState {
+	return s.developmentFrontendWindowState("AkuBrowser QA - Native activation DISABLED")
 }
 
 // DevelopmentFrontendProtocol borrows the existing private pipe. The fixture

@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 	"unsafe"
 )
@@ -36,6 +37,71 @@ func validateDevelopmentFrontendPause(phase string, v engine.DevelopmentPauseEvi
 		return fmt.Errorf("native frontend premature durable pause phase=%s evidence=%+v", phase, v)
 	}
 	return nil
+}
+
+// Classify only the existing window predicates; this does not loosen or add
+// lifecycle admission. SQLite/PID/driver remain separately observed metadata.
+func developmentFrontendWindowFailures(phase string, v engine.DevelopmentReaderWindowEvidence) []string {
+	failed := []string{}
+	if !v.InventoryKnown || v.InventoryError != "" {
+		failed = append(failed, "inventory_unknown")
+		return failed
+	}
+	if phase == "before_bootstrap_close" {
+		if v.WindowCount != 2 {
+			failed = append(failed, "expected_two_windows")
+		}
+		bootstrap := false
+		for _, flag := range v.BootstrapFlags {
+			bootstrap = bootstrap || flag
+		}
+		if !bootstrap {
+			failed = append(failed, "bootstrap_missing")
+		}
+	} else {
+		if v.WindowCount != 1 {
+			failed = append(failed, "expected_one_remaining_window")
+		}
+		if len(v.BootstrapFlags) > 0 && v.BootstrapFlags[0] {
+			failed = append(failed, "remaining_window_is_bootstrap")
+		}
+		if !v.CoordinatorPaused {
+			failed = append(failed, "coordinator_not_paused")
+		}
+	}
+	return failed
+}
+
+func developmentFrontendQueuedContinuation(batch domain.Session) (domain.Run, error) {
+	// Store ordinals are zero-based: the second original run has ordinal 1.
+	if len(batch.Runs) != 2 || batch.Runs[1].Ordinal != 1 || batch.Runs[1].ID == "" || batch.Runs[1].SessionID != batch.ID || batch.Runs[1].Status != "queued" {
+		return domain.Run{}, errors.New("native live-reader original queued continuation missing")
+	}
+	return batch.Runs[1], nil
+}
+
+func developmentFrontendLiveReaderFailures(v engine.DevelopmentReaderWindowEvidence, readerPID uint32) []string {
+	failed := []string{}
+	if !v.InventoryKnown || v.InventoryError != "" {
+		return append(failed, "inventory_unknown")
+	}
+	if v.WindowCount < 1 || len(v.BootstrapFlags) != v.WindowCount {
+		failed = append(failed, "reader_window_missing")
+	}
+	bootstrap := false
+	for _, flag := range v.BootstrapFlags {
+		bootstrap = bootstrap || flag
+	}
+	if !bootstrap {
+		failed = append(failed, "bootstrap_missing")
+	}
+	if !v.CoordinatorPaused {
+		failed = append(failed, "coordinator_not_paused")
+	}
+	if !v.SQLiteKnown || v.Pause.SQLiteError != "" || !v.Pause.SQLitePaused || !v.Pause.AdmissionPaused || v.Pause.CollectorPID != int(readerPID) || v.Pause.ManagerPID != int(readerPID) || v.Pause.Driver != "browser" || v.Pause.Generation == 0 || v.Pause.CaptureSteps != 0 || v.Pause.ActiveWork != 0 {
+		failed = append(failed, "reader_pause_owner_invalid")
+	}
+	return failed
 }
 
 func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.DevelopmentFixtureRuntime, server *httpapi.Server, origin string, ui *appshell.Session, protocol appshell.CaptureProtocol, uiSession string, request readerbroker.Request, helper appshell.DevelopmentReaderHelperProof, activations <-chan developmentActivation, observation *httpapi.DevelopmentFrontendObservation, batch domain.Session, collectorPID int, controls <-chan string) error {
@@ -174,6 +240,84 @@ func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.Devel
 	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_accepted", "PID": os.Getpid(), "ReaderPID": readerPID, "ReaderHWND": activation.target.HWND, "Readback": true, "ExactForeground": true, "APICompleted": true, "DurableForegroundAudit": true, "CaptureAndReasoningDrained": true, "BootstrapReused": true, "Frontend": map[string]any{"DOM": dom, "Stats": observation.Snapshot(), "HelperExitedNormally": true, "Applied": activation.reply.Applied}}); err != nil {
 		return err
 	}
+	scenario, err := engine.DevelopmentFrontendNativeScenario()
+	if err != nil {
+		return err
+	}
+	if scenario == engine.DevelopmentFrontendNativeScenarioForegroundOnly {
+		if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_foreground_complete", "PID": os.Getpid(), "ReaderPID": readerPID, "ReaderHWND": activation.target.HWND, "CaptureCount": r.CaptureCount(), "BootstrapReused": true, "ExactForeground": true}); err != nil {
+			return err
+		}
+		select {
+		case control := <-controls:
+			if control != "stop" {
+				return errors.New("foreground-only graceful stop control invalid")
+			}
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if scenario == engine.DevelopmentFrontendNativeScenarioReaderOpenParentDeath {
+		// Keep the actual source reader open and preserve its original second run.
+		// The already-completed helper and accepted action above remain the only
+		// native click/login in this scenario.
+		r.StopCollection()
+		if !r.Engine.WaitForIdle(3*time.Second) || r.CaptureCount() != 1 || r.CurrentPID() != int(readerPID) || r.Owner.PID() != int(readerPID) || r.Owner.Snapshot().Driver != "browser" {
+			return errors.New("native live-reader collection/owner state invalid")
+		}
+		originalRun, e := developmentFrontendQueuedContinuation(batch)
+		if e != nil {
+			return e
+		}
+		queuedRun, e := r.Engine.Run(ctx, originalRun.ID)
+		if e != nil || queuedRun.SessionID != batch.ID {
+			return errors.New("native live-reader original second run missing")
+		}
+		commands, e := r.State.FixtureRunCommandEvidence(ctx, queuedRun.ID)
+		if e != nil {
+			return e
+		}
+		if e = engine.ValidateDevelopmentLiveReaderQueue(queuedRun, commands); e != nil {
+			return e
+		}
+		paused, e := r.State.ClaimCommandForCollector(ctx, queuedRun.ID, "native-live-reader-probe", "headless")
+		if e != nil || paused != nil {
+			return fmt.Errorf("native live-reader paused second-run claim was not blocked: command=%+v err=%v", paused, e)
+		}
+		afterProbe, e := r.Engine.Run(ctx, queuedRun.ID)
+		if e != nil || !reflect.DeepEqual(afterProbe, queuedRun) {
+			return fmt.Errorf("native live-reader queue metadata changed during blocked claim: before=%+v after=%+v err=%v", queuedRun, afterProbe, e)
+		}
+		afterCommands, e := r.State.FixtureRunCommandEvidence(ctx, queuedRun.ID)
+		if e != nil || !reflect.DeepEqual(afterCommands, commands) {
+			return errors.New("blocked live-reader claim changed command payload/metadata")
+		}
+		windowsEvidence := r.ReaderWindowEvidence(ctx, batch.ID)
+		windowFailures := developmentFrontendLiveReaderFailures(windowsEvidence, readerPID)
+		if r.Coordinator.Status().BatchPaused != windowsEvidence.CoordinatorPaused || len(windowFailures) != 0 {
+			return fmt.Errorf("native live-reader evidence invalid failures=%v evidence=%+v", windowFailures, windowsEvidence)
+		}
+		window := ui.DevelopmentFrontendWindowReadback()
+		if window.HWND == 0 || window.PID != uint32(ui.PID()) || !window.Visible || window.Minimized {
+			return errors.New("native live-reader UI window readback invalid")
+		}
+		if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_live_reader_lifetime_ready", "PID": os.Getpid(), "UIPID": ui.PID(), "UIHWND": window.HWND, "ReaderPID": readerPID, "ReaderHWND": activation.target.HWND, "SessionID": batch.ID, "RunID": queuedRun.ID, "CaptureCount": r.CaptureCount(), "DurablePause": true, "Root": r.Root, "Frontend": map[string]any{"Scenario": scenario, "Windows": windowsEvidence, "QueuedRun": queuedRun, "Commands": commands, "HelperExitedNormally": true, "NoKeeper": true}}); err != nil {
+			return err
+		}
+		select {
+		case control := <-controls:
+			if control != "stop" {
+				return errors.New("native live-reader parent-death control invalid")
+			}
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if scenario != engine.DevelopmentFrontendNativeScenarioNormal {
+		return errors.New("native frontend scenario rejected")
+	}
 	// Post-positive actions below are API denials or owned synthetic window
 	// lifetime operations. They never manufacture another UI/native click.
 	token, err := r.State.BridgeToken(ctx)
@@ -214,10 +358,15 @@ func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.Devel
 	if err = r.OpenIndependentWindow(ctx); err != nil {
 		return err
 	}
-	flags, err = r.ReaderWindows(ctx)
-	if err != nil || len(flags) != 2 {
-		return errors.New("native frontend independent window missing")
+	beforeClose := r.ReaderWindowEvidence(ctx, batch.ID)
+	beforeFailures := developmentFrontendWindowFailures("before_bootstrap_close", beforeClose)
+	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_windows_before_close", "PID": os.Getpid(), "Frontend": map[string]any{"Windows": beforeClose, "WindowFailures": beforeFailures, "ExpectedReaderPID": readerPID}}); err != nil {
+		return err
 	}
+	if len(beforeFailures) > 0 {
+		return fmt.Errorf("native frontend pre-close window predicates failed=%v evidence=%+v", beforeFailures, beforeClose)
+	}
+	flags = beforeClose.BootstrapFlags
 	bootstrap := -1
 	for index, value := range flags {
 		if value {
@@ -227,12 +376,21 @@ func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.Devel
 	if bootstrap < 0 {
 		return errors.New("native frontend bootstrap identity missing")
 	}
-	if err = r.CloseWindow(ctx, bootstrap); err != nil {
+	closeErr := r.CloseWindow(ctx, bootstrap)
+	closeError := ""
+	if closeErr != nil {
+		closeError = closeErr.Error()
+	}
+	afterClose := r.ReaderWindowEvidence(ctx, batch.ID)
+	afterFailures := developmentFrontendWindowFailures("after_bootstrap_close", afterClose)
+	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_windows_after_close", "PID": os.Getpid(), "Frontend": map[string]any{"Windows": afterClose, "WindowFailures": afterFailures, "ExpectedReaderPID": readerPID, "ClosedBootstrapIndex": bootstrap, "BootstrapCloseError": closeError}}); err != nil {
 		return err
 	}
-	flags, err = r.ReaderWindows(ctx)
-	if err != nil || len(flags) != 1 || flags[0] || !r.Coordinator.Status().BatchPaused {
-		return errors.New("native frontend remaining window lost pause")
+	if closeErr != nil {
+		return fmt.Errorf("native frontend bootstrap close failed=%s evidence=%+v", closeError, afterClose)
+	}
+	if len(afterFailures) > 0 {
+		return fmt.Errorf("native frontend remaining window predicates failed=%v evidence=%+v", afterFailures, afterClose)
 	}
 	if err = r.CloseWindow(ctx, 0); err != nil {
 		return err

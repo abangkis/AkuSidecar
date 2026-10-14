@@ -17,6 +17,56 @@ import (
 	"strings"
 )
 
+const (
+	DevelopmentFrontendNativeScenarioNormal                = "normal"
+	DevelopmentFrontendNativeScenarioForegroundOnly        = "foreground_only"
+	DevelopmentFrontendNativeScenarioReaderOpenParentDeath = "reader_open_parent_death"
+)
+
+const developmentFrontendNativeScenarioEnv = "AKU_DEV_FRONTEND_NATIVE_SCENARIO"
+
+func developmentFrontendNativeScenario() (string, error) {
+	scenario := os.Getenv(developmentFrontendNativeScenarioEnv)
+	if scenario == "" {
+		return DevelopmentFrontendNativeScenarioNormal, nil
+	}
+	if err := validateDevelopmentFrontendNativeScenario(scenario); err != nil {
+		return "", err
+	}
+	return scenario, nil
+}
+
+func validateDevelopmentFrontendNativeScenario(scenario string) error {
+	if scenario != DevelopmentFrontendNativeScenarioNormal && scenario != DevelopmentFrontendNativeScenarioForegroundOnly && scenario != DevelopmentFrontendNativeScenarioReaderOpenParentDeath {
+		return errors.New("native frontend scenario rejected")
+	}
+	return nil
+}
+
+func DevelopmentFrontendNativeScenario() (string, error) {
+	return developmentFrontendNativeScenario()
+}
+
+func validateDevelopmentFrontendNativeStart(start processFixtureStart, scenario string) error {
+	if err := validateDevelopmentFrontendNativeScenario(scenario); err != nil {
+		return err
+	}
+	if start.NativeHost == nil || start.Grant.Reopen || os.Getenv("AKU_DEV_FRONTEND_LIFETIME_ENABLED") != "" || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" || start.NativeHost.Pipe != os.Getenv("AKU_BROKER_FIXTURE_PIPE") {
+		return errors.New("native frontend scoped startup frame rejected")
+	}
+	if err := readerbroker.ValidateFixturePipe(start.NativeHost.Pipe); err != nil {
+		return err
+	}
+	if err := start.NativeHost.ValidateApplied(filepath.Dir(start.Grant.Root)); err != nil {
+		return err
+	}
+	self, err := os.Executable()
+	if err != nil || !samePath(self, start.NativeHost.MainPath) {
+		return errors.New("native frontend main receipt identity rejected")
+	}
+	return nil
+}
+
 // RunDevelopmentSessionFixture is a concrete synthetic provider composition,
 // dispatched by the actual main binary before ordinary startup. The private
 // controller grant still validates parent creation/image and scoped fresh profile.
@@ -39,11 +89,27 @@ func RunDevelopmentSessionFrontendFixture(input io.Reader, output io.Writer, com
 	if composition == nil {
 		return errors.New("development frontend composition missing")
 	}
-	err := runAuthSessionProcessFixture(input, output, true, composition)
+	err := runAuthSessionProcessFixtureChecked(input, output, true, composition, func(start processFixtureStart) error {
+		return validateDevelopmentFrontendLifetimeStart(start)
+	})
 	if err != nil {
 		_ = json.NewEncoder(output).Encode(processFixtureReceipt{Stage: "dev_frontend_failed", Failure: err.Error()})
 	}
 	return err
+}
+
+func validateDevelopmentFrontendLifetimeStart(start processFixtureStart) error {
+	mode := os.Getenv("AKU_DEV_FRONTEND_LIFETIME_ENABLED")
+	if mode == "" {
+		if start.NativeHost != nil {
+			return errors.New("native frontend receipt requires its explicit provider")
+		}
+		return nil
+	}
+	if mode != "1" || os.Getenv("AKU_DEV_FRONTEND_ENABLED") != "1" || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" || os.Getenv("AKU_DEV_FRONTEND_NATIVE_ENABLED") != "" || os.Getenv("AKU_DEV_BROKER_ENABLED") != "" || start.NativeHost != nil || start.Grant.Reopen {
+		return errors.New("automatic frontend lifetime scoped startup rejected")
+	}
+	return nil
 }
 
 func RunDevelopmentSessionFrontendNativeFixture(input io.Reader, output io.Writer, composition func(context.Context, *DevelopmentFixtureRuntime) error) error {
@@ -51,20 +117,11 @@ func RunDevelopmentSessionFrontendNativeFixture(input io.Reader, output io.Write
 		return errors.New("native frontend requires explicit staged provider")
 	}
 	err := runAuthSessionProcessFixtureChecked(input, output, true, composition, func(start processFixtureStart) error {
-		if start.NativeHost == nil || start.Grant.Reopen || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" || start.NativeHost.Pipe != os.Getenv("AKU_BROKER_FIXTURE_PIPE") {
-			return errors.New("native frontend scoped startup frame rejected")
+		scenario, scenarioErr := developmentFrontendNativeScenario()
+		if scenarioErr != nil {
+			return scenarioErr
 		}
-		if err := readerbroker.ValidateFixturePipe(start.NativeHost.Pipe); err != nil {
-			return err
-		}
-		if err := start.NativeHost.ValidateApplied(filepath.Dir(start.Grant.Root)); err != nil {
-			return err
-		}
-		self, err := os.Executable()
-		if err != nil || !samePath(self, start.NativeHost.MainPath) {
-			return errors.New("native frontend main receipt identity rejected")
-		}
-		return nil
+		return validateDevelopmentFrontendNativeStart(start, scenario)
 	})
 	if err != nil {
 		_ = json.NewEncoder(output).Encode(processFixtureReceipt{Stage: "dev_frontend_native_failed", Failure: err.Error()})

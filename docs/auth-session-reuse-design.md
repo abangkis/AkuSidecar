@@ -1282,3 +1282,55 @@ Those individual values were not recorded, so final-close resume and frontend
 parent lifetime remain unproven. The exact QA host/tree/profile cleanup passed;
 see the acceptance audit and `frontend-native-pause-order-physical-trial.txt`.
 No original authentication/user runtime or new publication was changed.
+
+Multiwindow observation (2026-10-14): the owner authorized adding diagnostic
+receipts before/after bootstrap close. Sequential snapshots preserve unknown
+inventory versus true zero, independent Coordinator/SQLite pause, current/Manager
+PID, driver/generation/leases/work and close errors. The controller logs both
+receipts before enforcing the existing window predicates. Focused contracts and
+ordinary/dual-tag builds pass; no physical QA run or registry operation happened.
+The earlier multiwindow failure is not yet isolated by live evidence. Refer to
+the acceptance audit for the ready instrumentation and next physical boundary.
+
+The subsequent diagnostic run isolated window closure rather than lost pause:
+two windows/bootstrap remained after closing only one grouped page target, while
+Coordinator/SQLite pause and reader PID/driver were intact. The fixture now closes
+all known targets in the selected window, revalidates window membership, verifies
+window disappearance and requires natural root exit for final close. Six Node
+tests and actual Chrome restart/multiwindow regression passed. The corrected full
+physical frontend/native trial passed, including remaining-window ownership,
+final-close one-login verified resume and the existing UI/headless parent-death
+SQLite-fence stage. Live-reader parent death is a separate remaining state; do
+not describe the post-resume lifetime stage as that proof. Exact temporary-host/
+profile/root cleanup passed; original auth/user runtime/publication were unchanged.
+
+## Live-reader parent death: current synthetic evidence — 2026-10-14
+
+The isolated frontend/native scenario `reader_open_parent_death` now reads the
+original queued command directly from SQLite: exact row metadata and private
+payload hash, with null claim fields, attached to the original ordinal-1 run.
+Prepared/unclaimed is distinct from never-started. The reader request lease may
+already be zero after activation; known live windows, the browser process owner
+and replacement readiness retain the profile. Zero request leases alone are not
+permission to replace the owner. These corrections passed focused Store/Engine/
+Coordinator contracts. Three synthetic physical attempts reached accepted reader
+activation but failed fixture assumptions before abrupt parent-death proof; that
+state remains a pending gate. All new roots/QA registration are cleaned. No real
+authentication or user runtime was used; ordinary production readiness is not
+established. See `auth-session-frontend-qa-acceptance.md` for precise evidence.
+
+## Separate gates verified — 2026-10-14
+
+The owner-approved automatic lifetime gate now passes against actual tagged main,
+real scoped UI/reader processes and SQLite, without a gesture, native helper or
+registration. After only-main termination, pinned process handles and exact HWNDs
+are gone, the outer Job is empty before fallback, and the original command payload
+hash/null claim fields/durable pause are retained with one login/capture. The UI
+can remain hidden: lifetime reads its exact PID/Job/class/title without presenting
+it. Foreground remains separately verified through one real frontend/native click
+in `foreground_only`, followed by owned graceful cleanup. The tests passed in
+3.29s and 32.42s respectively; neither substitutes for the other's evidence.
+Normal multiwindow/final-close verified resume retains its earlier passing proof.
+All new profiles/binaries/private cues and the single temporary QA leaf are
+cleaned. This establishes synthetic fixture acceptance, not production auth or
+installed-runtime readiness. See `auth-session-frontend-qa-acceptance.md`.

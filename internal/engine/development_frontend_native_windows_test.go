@@ -15,9 +15,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func developmentNativeFrame(t *testing.T, origin string) (chromeFixtureConfig, processFixtureStart) {
@@ -54,18 +56,22 @@ func TestDevelopmentFrontendNativeUnregisteredStartup(t *testing.T) {
 		t.Skip("requires canonical native preparation")
 	}
 	for _, v := range []struct {
-		name, reason string
-		mutate       func(*processFixtureStart)
+		name, reason, scenario string
+		mutate                 func(*processFixtureStart)
 	}{
-		{"missing_receipt", "scoped startup frame rejected", func(s *processFixtureStart) { s.NativeHost = nil }},
-		{"foreign_pipe", "scoped startup frame rejected", func(s *processFixtureStart) {
+		{"missing_receipt", "scoped startup frame rejected", "", func(s *processFixtureStart) { s.NativeHost = nil }},
+		{"foreign_pipe", "scoped startup frame rejected", "", func(s *processFixtureStart) {
 			copy := *s.NativeHost
 			copy.Pipe = `\\.\pipe\AkuBrowser.fixture-reader.` + readerbroker.Secret()[:32]
 			s.NativeHost = &copy
 		}},
-		{"unregistered", "registration missing; Chrome startup denied", func(*processFixtureStart) {}},
+		{"unregistered", "registration missing; Chrome startup denied", "", func(*processFixtureStart) {}},
+		{"unknown_scenario", "native frontend scenario rejected", "unapproved_scenario", func(*processFixtureStart) {}},
 	} {
 		t.Run(v.name, func(t *testing.T) {
+			if v.scenario != "" {
+				t.Setenv(developmentFrontendNativeScenarioEnv, v.scenario)
+			}
 			cfg, start := developmentNativeFrame(t, "http://127.0.0.1:43219")
 			v.mutate(&start)
 			child := startProcessFixtureChild(t, filepath.Join(os.Getenv("AKU_CHROME_FIXTURE_ROOT"), "akusidecar.exe"), start)
@@ -104,6 +110,14 @@ type nativeFrontendTestEvidence struct {
 	CaptureReleased, ReasoningBlocked, CollectorRetained                                                   bool
 	Pause                                                                                                  DevelopmentPauseEvidence
 	ExpectedCollectorPID                                                                                   int
+	Windows                                                                                                DevelopmentReaderWindowEvidence
+	WindowFailures                                                                                         []string
+	ExpectedReaderPID                                                                                      uint32
+	ClosedBootstrapIndex                                                                                   int
+	BootstrapCloseError                                                                                    string
+	Scenario                                                                                               string
+	QueuedRun                                                                                              domain.Run
+	Commands                                                                                               []store.FixtureCommandEvidence
 }
 
 func validNativeFrontendPause(v nativeFrontendTestEvidence, persisted bool) bool {
@@ -115,8 +129,24 @@ func validNativeFrontendPause(v nativeFrontendTestEvidence, persisted bool) bool
 // Coordinator applies the reviewed unique QA host, launches this invocation and
 // supplies the operational cue. An early real click proceeds immediately.
 func TestDevelopmentFrontendActualMainPhysicalNative(t *testing.T) {
+	runDevelopmentFrontendActualMainPhysicalNative(t, DevelopmentFrontendNativeScenarioNormal)
+}
+
+func TestDevelopmentFrontendReaderOpenParentDeathPhysicalNative(t *testing.T) {
+	runDevelopmentFrontendActualMainPhysicalNative(t, DevelopmentFrontendNativeScenarioReaderOpenParentDeath)
+}
+
+func TestDevelopmentFrontendForegroundOnlyPhysicalNative(t *testing.T) {
+	runDevelopmentFrontendActualMainPhysicalNative(t, DevelopmentFrontendNativeScenarioForegroundOnly)
+}
+
+func runDevelopmentFrontendActualMainPhysicalNative(t *testing.T, scenario string) {
 	if os.Getenv("AKU_DEV_FRONTEND_NATIVE_ENABLED") != "1" || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" {
 		t.Skip("requires explicit registered physical native QA")
+	}
+	selectedScenario, scenarioErr := developmentFrontendNativeScenario()
+	if scenarioErr != nil || selectedScenario != scenario {
+		t.Fatalf("prepared native scenario mismatch expected=%q selected=%q err=%v", scenario, selectedScenario, scenarioErr)
 	}
 	root := os.Getenv("AKU_CHROME_FIXTURE_ROOT")
 	cue := os.Getenv("AKU_DEV_FRONTEND_CUE")
@@ -253,6 +283,58 @@ waitClick:
 		t.Fatal("full actual frontend native acceptance incomplete")
 	}
 	t.Logf("firstPhysicalFrontendClick actualChromeHelperPID=%d directUIParent=true unchangedHelperIdentityJobAge=true exactReaderPID=%d HWND=%d actualAppRelayContentWorkerNative=true readback=true APICompleted=true durableAudit=true captureReasoningDrain=true bootstrapReused=true syntheticLoginCount=1 noWarmRetry=true", click.HelperPID, accepted.ReaderPID, accepted.ReaderHWND)
+	if scenario == DevelopmentFrontendNativeScenarioForegroundOnly {
+		complete := child.receive(t, "dev_frontend_native_foreground_complete")
+		if complete.PID != ready.PID || complete.ReaderPID != accepted.ReaderPID || complete.ReaderHWND != accepted.ReaderHWND || complete.CaptureCount != 1 || !complete.BootstrapReused || !complete.ExactForeground || fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
+			t.Fatal("foreground-only completion disagreed with physical acceptance")
+		}
+		verifyProcessFixtureImage(t, child.identity, receipt.MainPath)
+		if _, err = fmt.Fprintln(child.input, "stop"); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case exitErr := <-child.exited:
+			if exitErr != nil {
+				t.Fatalf("foreground graceful actual main exit failed: %v %s", exitErr, child.stderr.String())
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("foreground graceful actual main did not exit")
+		}
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancelCleanup()
+		if err = processFixtureWait(cleanupCtx, func() bool {
+			ids, queryErr := (&chromeFixtureBridge{job: child.job}).jobPIDs()
+			return queryErr == nil && len(ids) == 0 && processFixtureWindowsGone([]uintptr{uintptr(ready.UIHWND), uintptr(accepted.ReaderHWND)})
+		}); err != nil {
+			t.Fatal("foreground owned tree/windows survived graceful exit before fallback")
+		}
+		if fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
+			t.Fatal("foreground graceful cleanup caused repeat login/capture")
+		}
+		t.Log("physicalForegroundComplete=true gracefulOwnedCleanup=true outerTreeEmptyBeforeFallback=true syntheticLoginCount=1 lifetimeClaims=false")
+		return
+	}
+	if scenario == DevelopmentFrontendNativeScenarioReaderOpenParentDeath {
+		lifetime := child.receive(t, "dev_frontend_native_live_reader_lifetime_ready")
+		verifyNativeFrontendLiveReaderParentDeath(t, child, cfg, receipt, ready, accepted, lifetime, evidence, fixture)
+		return
+	}
+	beforeClose := child.receive(t, "dev_frontend_native_windows_before_close")
+	if err = json.Unmarshal(beforeClose.Frontend, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("readerWindowPhase=before_bootstrap_close expectedReaderPID=%d evidence=%+v failedPredicates=%v", evidence.ExpectedReaderPID, evidence.Windows, evidence.WindowFailures)
+	if evidence.ExpectedReaderPID != accepted.ReaderPID || !evidence.Windows.InventoryKnown || evidence.Windows.InventoryError != "" || evidence.Windows.WindowCount != 2 || len(evidence.Windows.BootstrapFlags) != 2 || (!evidence.Windows.BootstrapFlags[0] && !evidence.Windows.BootstrapFlags[1]) || len(evidence.WindowFailures) != 0 {
+		t.Fatal("native pre-close window predicate evidence rejected")
+	}
+	afterClose := child.receive(t, "dev_frontend_native_windows_after_close")
+	if err = json.Unmarshal(afterClose.Frontend, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("readerWindowPhase=after_bootstrap_close expectedReaderPID=%d closedBootstrapIndex=%d closeError=%q evidence=%+v failedPredicates=%v", evidence.ExpectedReaderPID, evidence.ClosedBootstrapIndex, evidence.BootstrapCloseError, evidence.Windows, evidence.WindowFailures)
+	if evidence.ExpectedReaderPID != accepted.ReaderPID || evidence.BootstrapCloseError != "" || !evidence.Windows.InventoryKnown || evidence.Windows.InventoryError != "" || evidence.Windows.WindowCount != 1 || len(evidence.Windows.BootstrapFlags) != 1 || evidence.Windows.BootstrapFlags[0] || !evidence.Windows.CoordinatorPaused || len(evidence.WindowFailures) != 0 {
+		t.Fatal("native post-close window predicate evidence rejected; see phase snapshot")
+	}
 	resumed := child.receive(t, "dev_frontend_native_resumed")
 	if !resumed.RemainingWindowHeldPause || !resumed.FinalCloseVerified || !resumed.APIHeadlessReadback || resumed.CaptureCount != 2 || json.Unmarshal(resumed.Frontend, &evidence) != nil || !evidence.DuplicateStaleCancelledDenied || fixture.sequence.Load() != 2 || fixture.logins.Load() != 1 {
 		t.Fatal("native frontend multiwindow/final-close verified continuation incomplete")
@@ -300,4 +382,139 @@ waitClick:
 		t.Fatal("native frontend persisted claim fence lost", err)
 	}
 	t.Logf("onlyActualMainTerminated=true UIChromeRootSignalled=true nativeHelperExitedNormallyBeforeParentDeath=true noKeeper=true outerTreeEmptyBeforeFallback=true UIHWNDGone=true SQLitePauseNeverClaimedFence=true retainedRegistrationArtifacts=true taskRoot=%s", root)
+}
+
+func verifyNativeFrontendLiveReaderParentDeath(t *testing.T, child *processFixtureChild, cfg chromeFixtureConfig, receipt readerbroker.FixtureNativeHostReceipt, ready, accepted, lifetime processFixtureReceipt, prior nativeFrontendTestEvidence, fixture *chromeFixtureHTTP) {
+	t.Helper()
+	var evidence nativeFrontendTestEvidence
+	if json.Unmarshal(lifetime.Frontend, &evidence) != nil || lifetime.DurablePause != true || lifetime.CaptureCount != 1 || lifetime.SessionID != ready.SessionID || lifetime.RunID == "" || lifetime.UIPID != ready.UIPID || lifetime.UIHWND != ready.UIHWND || lifetime.ReaderPID != accepted.ReaderPID || lifetime.ReaderHWND != accepted.ReaderHWND || lifetime.Root != cfg.Root || evidence.Scenario != DevelopmentFrontendNativeScenarioReaderOpenParentDeath || !evidence.HelperExitedNormally || evidence.QueuedRun.ID != lifetime.RunID || evidence.QueuedRun.SessionID != lifetime.SessionID || evidence.QueuedRun.Ordinal != 1 || evidence.QueuedRun.Status != "waiting_for_bridge" {
+		t.Fatalf("live-reader parent-death stage incomplete receipt=%+v evidence=%+v", lifetime, evidence)
+	}
+	if err := ValidateDevelopmentLiveReaderQueue(evidence.QueuedRun, evidence.Commands); err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Windows.InventoryKnown != true || evidence.Windows.InventoryError != "" || evidence.Windows.WindowCount < 1 || len(evidence.Windows.BootstrapFlags) != evidence.Windows.WindowCount || !hasBootstrapWindow(evidence.Windows.BootstrapFlags) || !evidence.Windows.CoordinatorPaused || !evidence.Windows.SQLiteKnown || evidence.Windows.Pause.SQLiteError != "" || !evidence.Windows.Pause.SQLitePaused || !evidence.Windows.Pause.AdmissionPaused || evidence.Windows.Pause.Driver != "browser" || evidence.Windows.Pause.CollectorPID != int(lifetime.ReaderPID) || evidence.Windows.Pause.ManagerPID != int(lifetime.ReaderPID) || evidence.Windows.Pause.Generation == 0 || evidence.Windows.Pause.CaptureSteps != 0 || evidence.Windows.Pause.ActiveWork != 0 || prior.HelperExitedNormally != true || fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
+		t.Fatalf("live-reader pause/window/login evidence invalid windows=%+v previous=%+v logins=%d sequence=%d", evidence.Windows, prior, fixture.logins.Load(), fixture.sequence.Load())
+	}
+	t.Logf("readerOpenParentDeathReady=true scenario=%s session=%s queuedRun=%s queuedStatus=%s queuedCommandStatus=%s UI=%d/%d reader=%d/%d windows=%+v captureCount=%d syntheticLogins=%d sourceSequence=%d", evidence.Scenario, lifetime.SessionID, lifetime.RunID, evidence.QueuedRun.Status, evidence.QueuedRun.BridgeCommandStatus, lifetime.UIPID, lifetime.UIHWND, lifetime.ReaderPID, lifetime.ReaderHWND, evidence.Windows, lifetime.CaptureCount, fixture.logins.Load(), fixture.sequence.Load())
+	verifyDevelopmentLiveReaderParentDeathCore(t, child, cfg, receipt.MainPath, lifetime, evidence, fixture)
+}
+
+func verifyDevelopmentLiveReaderParentDeathCore(t *testing.T, child *processFixtureChild, cfg chromeFixtureConfig, mainPath string, lifetime processFixtureReceipt, evidence nativeFrontendTestEvidence, fixture *chromeFixtureHTTP) {
+	t.Helper()
+
+	type pinnedPeer struct {
+		pid   uint32
+		image string
+		hwnd  uint64
+	}
+	peers := []pinnedPeer{
+		{pid: lifetime.UIPID, image: filepath.Join(filepath.Dir(cfg.Root), "chromium", "bin", "chrome.exe"), hwnd: lifetime.UIHWND},
+		{pid: lifetime.ReaderPID, image: cfg.ChromePath, hwnd: lifetime.ReaderHWND},
+	}
+	handles := make([]windows.Handle, 0, len(peers))
+	defer func() {
+		for _, handle := range handles {
+			_ = windows.CloseHandle(handle)
+		}
+	}()
+	for _, peer := range peers {
+		if peer.pid == 0 || peer.hwnd == 0 {
+			t.Fatal("live UI/reader identity missing")
+		}
+		identity := mustDevelopmentProcessIdentity(t, peer.pid)
+		verifyProcessFixtureImage(t, identity, peer.image)
+		handle, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, peer.pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handles = append(handles, handle)
+		var created, exited, kernel, user windows.Filetime
+		if err = windows.GetProcessTimes(handle, &created, &exited, &kernel, &user); err != nil || fmt.Sprintf("%08x%08x", created.HighDateTime, created.LowDateTime) != identity.Created {
+			t.Fatal("live UI/reader pinned-handle creation identity changed")
+		}
+		imageBuffer := make([]uint16, 32768)
+		imageSize := uint32(len(imageBuffer))
+		if err = windows.QueryFullProcessImageName(handle, 0, &imageBuffer[0], &imageSize); err != nil || !samePath(windows.UTF16ToString(imageBuffer[:imageSize]), peer.image) {
+			t.Fatal("live UI/reader pinned-handle image changed")
+		}
+		member, err := chromeFixtureJobMembership(handle, child.job)
+		if err != nil || !member {
+			t.Fatal("live UI/reader root escaped owned outer Job")
+		}
+		isWindow, _, _ := windows.NewLazySystemDLL("user32.dll").NewProc("IsWindow").Call(uintptr(peer.hwnd))
+		var windowPID uint32
+		windows.NewLazySystemDLL("user32.dll").NewProc("GetWindowThreadProcessId").Call(uintptr(peer.hwnd), uintptr(unsafe.Pointer(&windowPID)))
+		if isWindow == 0 || windowPID != peer.pid {
+			t.Fatal("live UI/reader HWND did not belong to its pinned process root")
+		}
+	}
+	// This terminates only the already-pinned actual Sidecar main. The retained
+	// peer handles and HWNDs prove the reader and UI die before any fallback.
+	child.stop(t, true, mainPath, []uintptr{uintptr(lifetime.UIHWND), uintptr(lifetime.ReaderHWND)})
+	for _, handle := range handles {
+		if state, err := windows.WaitForSingleObject(handle, 3000); err != nil || state != windows.WAIT_OBJECT_0 {
+			t.Fatal("live reader/UI root survived actual main before fallback")
+		}
+	}
+	if fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
+		t.Fatalf("reader-open parent death caused silent resume or second login: logins=%d sequence=%d", fixture.logins.Load(), fixture.sequence.Load())
+	}
+
+	state, err := store.Open(filepath.Join(cfg.Root, "fixture.sqlite"), domain.DefaultSettings("expanded", "quiet", "guarded_live", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	paused, err := state.FixtureCaptureSessionPaused(context.Background(), lifetime.SessionID)
+	if err != nil || !paused {
+		t.Fatal("original live-reader durable pause lost after main death", err)
+	}
+	session, err := state.GetSession(context.Background(), lifetime.SessionID)
+	if err != nil || session.ID != lifetime.SessionID {
+		t.Fatal("original paused session missing after main death", err)
+	}
+	queuedRun, err := state.GetRun(context.Background(), lifetime.RunID)
+	if err != nil || !reflect.DeepEqual(queuedRun, evidence.QueuedRun) || queuedRun.Status != "waiting_for_bridge" {
+		t.Fatalf("original queued second-run metadata changed after main death: expected=%+v actual=%+v err=%v", evidence.QueuedRun, queuedRun, err)
+	}
+	matchedRun := false
+	for _, run := range session.Runs {
+		if run.ID == lifetime.RunID {
+			matchedRun = reflect.DeepEqual(run, evidence.QueuedRun)
+		}
+	}
+	if !matchedRun {
+		t.Fatal("original queued run/session relationship changed after main death")
+	}
+	commands, err := state.FixtureRunCommandEvidence(context.Background(), lifetime.RunID)
+	if err != nil || !reflect.DeepEqual(commands, evidence.Commands) {
+		t.Fatal("original queued command payload/claim metadata changed after main death", err)
+	}
+	if err = ValidateDevelopmentLiveReaderQueue(queuedRun, commands); err != nil {
+		t.Fatal(err)
+	}
+	command, err := state.ClaimCommandForCollector(context.Background(), lifetime.RunID, "must-not-claim", "headless")
+	if err != nil || command != nil {
+		t.Fatal("live-reader persisted claim fence lost after main death", err)
+	}
+	afterClaim, err := state.GetRun(context.Background(), lifetime.RunID)
+	if err != nil || !reflect.DeepEqual(afterClaim, evidence.QueuedRun) {
+		t.Fatalf("post-death blocked claim altered original queued run metadata: expected=%+v actual=%+v err=%v", evidence.QueuedRun, afterClaim, err)
+	}
+	afterCommands, err := state.FixtureRunCommandEvidence(context.Background(), lifetime.RunID)
+	if err != nil || !reflect.DeepEqual(afterCommands, evidence.Commands) {
+		t.Fatal("blocked post-death claim altered original command payload/metadata", err)
+	}
+	t.Logf("originalQueuedCommandID=%s payloadSHA256=%s status=%s nullClaimFields=true exactCommandRowRetained=true", commands[0].ID, commands[0].PayloadSHA256, commands[0].Status)
+	t.Logf("onlyActualMainTerminated=true UIReaderHandlesPinned=true creationImagesAndJobVerified=true UIReaderHWNDsGone=true outerTreeEmptyBeforeFallback=true originalSessionAndQueuedRunRetained=true queuedClaimBlocked=true durablePause=true captureCount=1 syntheticLoginCount=1 noHeadlessFallback=true taskRoot=%s", cfg.Root)
+}
+
+func hasBootstrapWindow(flags []bool) bool {
+	for _, flag := range flags {
+		if flag {
+			return true
+		}
+	}
+	return false
 }

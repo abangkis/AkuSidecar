@@ -157,3 +157,154 @@ minimal synthetic failure evidence remain. A future trial needs a fresh root and
 operator readiness, using the same approved host namespace; original auth/user
 runtime and publication remain excluded. The task continues without a budget;
 historical partial accounting is preserved and current measurement unavailable.
+
+## Multiwindow diagnostic receipts ready — 2026-10-14
+
+Authorized step 1 adds typed before/after-bootstrap-close snapshots, separating
+inventory error/count/bootstrap identity, Coordinator pause, SQLite read/pause,
+current/Manager PID, driver/generation/leases/work, expected reader PID and close
+error. The controller logs these receipts before applying the existing window
+predicates. Unknown inventory is explicit (-1/no flags), distinct from known zero.
+The after receipt survives a failed close operation; no lifecycle fence is relaxed.
+
+Focused contracts and ordinary/dual-tag builds passed; no physical execution or
+temporary registration was performed in this step. The actual failure cause is
+still unknown. A subsequent authorized trial needs fresh preparation/profiles,
+synthetic login and operator readiness, reusing the one approved QA host name.
+
+## Corrected full synthetic journey passed — 2026-10-14
+
+Diagnostic execution showed two windows/bootstrap still present after close while
+pause/PID/driver remained valid. The fixture had closed only one page target from
+a grouped window. `chrome-window-lifecycle.mjs` now closes the selected window's
+known targets, refuses moved targets, verifies window disappearance and requires
+natural root exit for final close. Its hash is included in prepared SourceInputs.
+Six Node contracts, actual Chrome restart/multiwindow regression and fresh native
+preparation passed. The one authorized causal retry passed the full physical
+frontend/native journey: bootstrap 2→1 non-bootstrap with pause retained, final
+close verified resume with one login, then the existing UI/headless parent-death
+and SQLite-fence stage. Logs: `frontend-native-window-close-*.txt`.
+
+Registry absence/zero peers and exact-root cleanup passed for both new trials;
+staged profiles/binaries/private cues were removed. Delta remains uncommitted.
+Next separate lifetime evidence is main death while the reader is still open;
+the current parent-death stage happens after final-close/headless resume and does
+not cover that state. All further execution stays synthetic and requires the
+appropriate scope/operator readiness; original auth and user runtime stay excluded.
+
+## Live-reader parent-death gate authorized — 2026-10-14
+
+The owner explicitly approved implementing and testing the next fixture-only
+case. It is a separate prepared scenario; the passing normal journey remains
+the evidence for final-close resume. Scenario selection must be allowlisted,
+pinned into prepared metadata and rejected on verification mismatch, with the
+same dual-tag/--dev/fresh native receipt/private transport boundary.
+
+The new case stops after actual frontend/native foreground/API/UI acceptance,
+while the reader is still present and the original batch's second run remains
+never-claimed. Before termination it must prove actual reader windows, browser
+driver, expected reader/Manager PID, Coordinator and SQLite pause, one capture/
+one synthetic login, normal helper exit, and the original queued run's claim fence.
+It must not close reader windows or resume collection to construct this state.
+
+The controller pins actual UI and reader process identities/handles and verifies
+their root-local image/creation/Job membership while alive. It terminates only
+the pinned actual fixture Sidecar main, then requires reader/UI handles signalled,
+both HWNDs gone and the owned outer Job empty before fallback. Reopening SQLite
+must retain the same original session/run and durable pause, reject claim, and
+show no second capture/login. This is direct live-reader lifetime evidence;
+it does not claim a still-blocked native helper was killed, because the helper
+must have already completed normally before the death stage.
+
+Use a fresh synthetic root/profile/login and the same single approved QA host;
+operator readiness is required before the physical click. Root owns host apply/
+cleanup, verifies exact ownership/empty trees/four-view absence, then removes
+the staged profiles/binaries/private cues. No original auth, user runtime,
+installation, extra registry namespace or publication is authorized.
+
+Prepared scenario usage (both invocations must select the same scenario):
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -PrepareDevelopmentFrontendNative `
+  -DevelopmentFrontendNativeScenario reader_open_parent_death `
+  -DevelopmentFrontendNativeHostName '<the single explicitly approved QA host>'
+# After owned Apply and operator readiness, with owned Cleanup in finally:
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopmentFrontendNative `
+  -DevelopmentFrontendNativeScenario reader_open_parent_death `
+  -DevelopmentFrontendNativeTaskRoot '<fresh retained prepared root>'
+```
+
+The second original run uses Store's zero-based ordinal 1. At live acceptance it
+can already be `waiting_for_bridge`, with a prepared but never-claimed `queued`
+command. The fixture requires that actual queued command and hashes its private
+payload; the controller compares original run/session identity and all command
+metadata after reopening SQLite and after a blocked claim. Do not introduce a
+replacement session or a nonexistent command to manufacture the fence.
+Preparation and an ordinal regression pass after a first physical attempt found
+the incorrect ordinal-2 assumption. The next causal physical retry still needs
+operator readiness and an explicit click cue; the prior accepted click alone
+does not prove the parent-death stage.
+
+Three physical attempts reached accepted native reader activation but failed new
+fixture assumptions before the parent-death-ready stage: second-run ordinal 2,
+never-started run status, then positive active request lease. All are corrected
+with focused contracts. The completed reader request normally has zero leases;
+known live reader windows and process/Manager identity plus replacement readiness
+retain ownership. The final predicate also requires generation and drained work.
+Actual pinned-handle/Job/HWND death and original command retention after only-main
+termination remain unproven until a fresh physical execution succeeds. All prior
+trial/build roots and the approved QA leaf are cleaned; no prepared runnable root
+remains. A future execution needs fresh preparation and operator readiness.
+
+## Owner-approved separation of lifetime and foreground gates — 2026-10-14
+
+The owner approved separating automatic lifetime coverage from physical
+foreground coverage, then continuing the physical test. Do not ask for a manual
+click to debug SQLite, window inventory or parent/child cleanup assertions.
+
+The automatic gate uses the actual tagged Sidecar main, its fresh synthetic
+frontend UI, real fixture Chrome reader and the original batch/command. Native
+activation stays closed: no native host registration/helper, no DOM/CDP click,
+no foreground capability is manufactured. The scoped Engine borrow opens the
+reader while active capture/reasoning drains and durable pause is established.
+After releasing the short request lease, prove live bootstrap window/owner,
+original never-claimed queued command, one capture/login, then terminate only
+the pinned main. Pinned UI/reader handles and HWNDs must disappear and the outer
+Job must become empty before fallback; reopening SQLite must retain the original
+run/command/payload hash/claim fields and pause. No foreground result is claimed.
+
+The physical gate retains the actual app/relay/content/configured worker/native
+helper/private broker path and one real operator click. Prove pause/drain,
+exact reader foreground/readback, UI/API completion, durable audit, bootstrap
+reuse and one login. A dedicated prepared `foreground_only` scenario completes
+after those proofs, with owned graceful fixture cleanup; it does not run the
+automatic lifetime/multiwindow assertions. Existing `normal` full-journey evidence
+remains separately scoped. Do not describe the separate gates as one physical
+end-to-end parent-death execution.
+
+Run automatic lifetime before requesting readiness for the new physical gate.
+Both use new synthetic profiles/private transport and project-local artifacts;
+only the physical gate reuses the single explicitly approved temporary QA host.
+Production auth, user runtime, installation and commit/push remain excluded.
+
+Both separate gates passed on 2026-10-14. Automatic actual-main lifetime took
+3.29s with native activation closed/no gestures/helper/registration; the exact
+owned hidden UI HWND and live reader were pinned and observed dead after only-main
+termination, with original SQLite command/pause retained. Physical
+`foreground_only` passed in 32.42s with one actual click, full foreground/API/UI
+proof and graceful owned cleanup. All split execution roots and the temporary
+leaf are cleaned. See the acceptance document for precise evidence and limitations.
+
+Repeat lifetime independently, without requesting an operator click:
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopmentReaderLifetime
+```
+
+For a separately authorized physical foreground repeat, use the existing native
+prepare/verify commands above with
+`-DevelopmentFrontendNativeScenario foreground_only` on both invocations, fresh
+profiles/root and the same explicitly approved QA host. Apply/cleanup remains
+Coordinator-owned and readiness/click cue remains physical. The historical
+combined scenario and `normal` full journey remain available for their distinct
+coverage; do not automatically run them for every lifetime correction.

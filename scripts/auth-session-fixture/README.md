@@ -1294,3 +1294,80 @@ The approved QA leaf and exact disposable root were removed after owned-tree/
 four-view/receipt checks. Stable logs, redacted window checkpoint and synthetic
 failed SQLite remain. A future physical trial needs fresh preparation/operator
 readiness; no original authentication/user runtime or new commit/push is involved.
+
+Multiwindow evidence-only step (2026-10-14): the native controller now consumes
+`dev_frontend_native_windows_before_close` and
+`dev_frontend_native_windows_after_close` after accepted reader foreground. Logs
+include inventory known/error/count/bootstrap flags, Coordinator versus SQLite
+pause/read error, current/Manager PID, driver/generation/leases/work, expected
+reader PID, bootstrap index and close error. Unknown inventory is -1/no flags,
+not zero. The after-close receipt is retained even when close itself fails.
+The unchanged window predicates report named failure reasons. Focused contracts
+passed in `frontend-native-window-evidence-contract.txt`, and both Sidecar builds
+passed. No physical trial or host application ran; next physical execution needs
+fresh profiles/login/preparation and operator readiness within synthetic QA scope.
+
+The diagnostic physical trial isolated a fixture bug: closing one target/tab
+did not close its grouped bootstrap window, while pause/PID/driver remained valid.
+The new `chrome-window-lifecycle.mjs` retains and closes every known target for
+the selected window, checks target membership/window disappearance, and requires
+natural root exit on final close. It is hash-pinned in native preparation. Six
+Node contracts plus the actual Chrome restart/multiwindow regression passed.
+
+The corrected physical frontend/native trial passed in
+`frontend-native-window-close-physical-trial.txt`: actual foreground/API/UI,
+bootstrap 2→1 non-bootstrap with pause/owner intact, final-close verified resume
+with one login/capture count two, API denials and existing post-resume UI/headless
+parent-death SQLite fence. That lifetime stage does not keep the reader open or
+the helper blocked; live-reader parent death remains a separate test. Temporary
+host absence/four-view checks, zero scoped peers and exact disposable-root deletion
+passed; stable logs/redacted evidence retained. No original auth/runtime or new
+commit/push occurred. Future trials always require new profiles/synthetic login.
+
+## Live-reader parent-death scenario (pending physical proof)
+
+Native frontend preparation/verification can both select
+`-DevelopmentFrontendNativeScenario reader_open_parent_death`; the default is
+`normal`, and a prepared mismatch is rejected before UI launch. The scoped main
+stops after accepted real frontend/native reader activation. It requires the
+original second run (zero-based ordinal 1) and its actual prepared `queued`
+headless command, with null claim metadata, and compares private-payload hashes
+and all row metadata across blocked claims/reopen. A completed request can have
+zero leases while reader windows still retain profile ownership. The controller
+must independently pin live process creation/image/Job/HWND identity before
+terminating only the fixture main, then prove whole-tree/window release before
+fallback and retained original SQLite pause/command state.
+
+Contracts passed after three physical attempts exposed incorrect fixture
+assumptions. The abrupt live-reader death stage has not yet passed; no production
+claim follows. All new QA roots/registration are cleaned, so the next approved
+physical trial requires fresh preparation, synthetic profiles/login, the same
+approved host namespace and operator readiness. See the acceptance document for
+logs and exact scope. No additional physical retry is automatic.
+
+## Separate lifetime and physical foreground tests (passed)
+
+```powershell
+# Automatic actual-main/UI/reader death and original SQLite queue fence.
+# No gesture, foreground callback, native host registration or native helper.
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopmentReaderLifetime
+```
+
+The automatic UI starts hidden through private CDP; read-only exact PID/Job/class/
+title lookup supplies HWND evidence. After opening the real source reader through
+the scoped Engine borrow, its request lease is released while its bootstrap window
+retains ownership. The controller kills only actual main, requires UI/reader
+handles and HWNDs gone plus empty Job before fallback, then verifies original
+run/command/payload hash/null claim fields and durable SQLite pause. This passed
+in 3.29s; it claims no physical foreground result. Sandbox scope probes produce
+EPERM, so Windows process-fixture execution needs the approved scoped external
+execution path; no validator is weakened to work around this.
+
+Physical preparation/verification uses
+`-DevelopmentFrontendNativeScenario foreground_only` on both existing native
+commands. It remains a separately authorized one-click/operator-cue test with a
+fresh root/profile/login and the single approved QA host. It ends after actual
+app/relay/content/worker/native/private broker foreground, UI/API/audit and drain
+proof, followed by owned graceful cleanup; it passed in 32.42s. `normal` and the
+historical combined reader-death scenario retain distinct scope. All split-trial
+roots/QA registration were cleaned. See the acceptance doc for evidence paths.

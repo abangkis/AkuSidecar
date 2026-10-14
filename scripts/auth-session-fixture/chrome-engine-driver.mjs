@@ -5,6 +5,7 @@ import { lstat, realpath, readFile } from 'node:fs/promises';
 import { join, dirname, relative, isAbsolute, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchFixtureChrome, scopeProcessFixtureProfile } from './chrome.mjs';
+import { inventoryFixtureWindows, closeFixtureWindow } from './chrome-window-lifecycle.mjs';
 
 const [executable, root, origin] = process.argv.slice(2);
 if (process.argv.length !== 5 || !executable || !root || !origin) {
@@ -55,44 +56,7 @@ function cleanError(error) {
 }
 
 async function inventory(browser) {
-  if (!browser || browser.isExited()) throw new Error('fixture_chrome_closed');
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const result = await browser.send('Target.getTargets');
-    if (!Array.isArray(result?.targetInfos)) throw new Error('fixture_inventory_unknown');
-    const windows = new Map();
-    let vanished = false;
-    for (const target of result.targetInfos) {
-      if (!target || target.type !== 'page') continue;
-      if (typeof target.targetId !== 'string' || !target.targetId || typeof target.url !== 'string') {
-        throw new Error('fixture_inventory_unknown');
-      }
-      const isBootstrap = target.targetId === currentBootstrapTarget;
-      if (target.url !== 'about:blank' && target.url !== origin && !target.url.startsWith(origin + '/')) {
-        throw new Error('fixture_inventory_unknown');
-      }
-      let located;
-      try {
-        located = await browser.send('Browser.getWindowForTarget', { targetId: target.targetId });
-      } catch {
-        const currentTargets = await browser.send('Target.getTargets');
-        if (!Array.isArray(currentTargets?.targetInfos)) throw new Error('fixture_inventory_unknown');
-        if (!currentTargets.targetInfos.some(item => item?.targetId === target.targetId)) {
-          vanished = true;
-          break;
-        }
-        throw new Error('fixture_inventory_unknown');
-      }
-      if (!Number.isInteger(located?.windowId)) throw new Error('fixture_inventory_unknown');
-      let value = windows.get(located.windowId);
-      if (!value) {
-        value = { id: located.windowId, bootstrap: false, targetId: target.targetId };
-        windows.set(located.windowId, value);
-      }
-      value.bootstrap ||= isBootstrap;
-    }
-    if (!vanished) return [...windows.values()].sort((a, b) => a.id - b.id);
-  }
-  throw new Error('fixture_inventory_unknown');
+  return inventoryFixtureWindows(browser, origin, currentBootstrapTarget);
 }
 
 async function launch(role, nativeReaderStartup = false) {
@@ -219,42 +183,13 @@ async function execute(message) {
       const selected = windows[message.index];
       if (!selected) throw new Error('fixture_window_index_invalid');
       const finalWindow = windows.length === 1;
-      let result;
-      try {
-        result = await current.send('Target.closeTarget', { targetId: selected.targetId });
-      } catch (error) {
-        if (finalWindow && error?.message === 'fixture_chrome_closed' && await waitChromeRootExit(current)) {
-          return { requested: true, exited: true };
-        }
-        throw error;
-      }
-      if (result?.success !== true) throw new Error('fixture_window_close_failed');
-      for (let attempt = 0; attempt < 80; attempt++) {
-        if (current.isExited()) {
-          if (finalWindow) return { requested: true, exited: true };
-          throw new Error('fixture_window_close_unverified');
-        }
-        let targets;
-        try { targets = await current.send('Target.getTargets'); }
-        catch (error) {
-          if (finalWindow && error?.message === 'fixture_chrome_closed' && await waitChromeRootExit(current)) {
-            return { requested: true, exited: true };
-          }
-          throw error;
-        }
-        if (!Array.isArray(targets?.targetInfos)) throw new Error('fixture_inventory_unknown');
-        if (!targets.targetInfos.some(target => target?.targetId === selected.targetId)) {
-          currentPages.delete(selected.targetId);
-          if (currentPage?.targetId === selected.targetId) {
-            const remaining = targets.targetInfos.find(target => target?.type === 'page' &&
-              currentPages.has(target.targetId) && (target.url === origin || target.url.startsWith(origin + '/')));
-            currentPage = remaining ? currentPages.get(remaining.targetId) : null;
-          }
-          return { requested: true, exited: false };
-        }
-        await new Promise(resolve => setTimeout(resolve, 25));
-      }
-      throw new Error('fixture_window_close_unverified');
+      return closeFixtureWindow(current, selected, {
+        finalWindow, inventory: () => inventory(current), waitRootExit: waitChromeRootExit,
+        onClosed: targetIds => {
+          for (const id of targetIds) currentPages.delete(id);
+          if (currentPage && targetIds.includes(currentPage.targetId)) currentPage = currentPages.values().next().value ?? null;
+        },
+      });
     }
     case 'release': {
       if (message.owner !== currentOwner) throw new Error('fixture_owner_stale');

@@ -175,6 +175,7 @@ func runDevelopmentFrontendMode(ctx context.Context, r *engine.DevelopmentFixtur
 	collectorPID := r.CurrentPID()
 	before := r.Owner.Snapshot()
 	headless := os.Getenv("AKU_DEV_FRONTEND_HEADLESS") == "1"
+	lifetime := os.Getenv("AKU_DEV_FRONTEND_LIFETIME_ENABLED") == "1"
 	args := []string{"--disable-extensions-except=" + extension, "--window-size=1440,1000"}
 	if headless {
 		args = append(args, "--headless=new")
@@ -307,7 +308,10 @@ func runDevelopmentFrontendMode(ctx context.Context, r *engine.DevelopmentFixtur
 		return errors.New("frontend real assets/batch ownership proof failed")
 	}
 	uiReadback := ui.DevelopmentFrontendWindowReadback()
-	if !headless {
+	if lifetime {
+		uiReadback = ui.DevelopmentFrontendLifetimeWindowReadback()
+	}
+	if !headless && !lifetime {
 		uiReadback, err = ui.PresentDevelopmentFrontend(ctx, title, func() bool { helperMu.Lock(); defer helperMu.Unlock(); return native && helper.PID != 0 })
 		if err != nil || !uiReadback.Visible || uiReadback.Minimized || uiReadback.HWND == 0 || !uiReadback.JobMember || !uiReadback.TitleMatched {
 			return fmt.Errorf("physical frontend window presentation/readback failed: %v safeWindow=%+v", err, uiReadback)
@@ -328,6 +332,9 @@ func runDevelopmentFrontendMode(ctx context.Context, r *engine.DevelopmentFixtur
 	}
 	if err = r.Emit(map[string]any{"Stage": stageName, "PID": os.Getpid(), "UIPID": ui.PID(), "UIHWND": uiReadback.HWND, "Root": r.Root, "SessionID": batch.ID, "Frontend": map[string]any{"Origin": origin, "Title": dom.Title, "Version": discovery.Version, "StageProof": proof, "DOM": dom, "Stats": stats, "UIWindow": uiReadback, "ExactWorkerObserved": workerSeen, "CollectorPID": collectorPID, "NormalWindow": true, "Headless": headless, "AlreadyClicked": early != nil, "NativeActivationClosed": !native, "NativeHelpersStaged": nativeHelperCount, "BrokerServerStarted": native}}); err != nil {
 		return err
+	}
+	if lifetime {
+		return verifyDevelopmentFrontendAutomaticLifetime(ctx, r, ui, protocol, session, observation, batch, collectorPID)
 	}
 	if headless {
 		if err := developmentFrontendScreenshot(ctx, protocol, session, filepath.Join(r.Root, "frontend-viewport.png")); err != nil {
