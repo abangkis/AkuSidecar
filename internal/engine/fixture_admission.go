@@ -9,10 +9,11 @@ import (
 // Nil in ordinary builds. Explicit fixture or development bindings construct
 // this gate. It tracks physical collector steps through ingestion.
 type fixtureAdmissionGate struct {
-	mu         sync.Mutex
-	paused     bool
-	running    int
-	pauseEpoch uint64
+	mu              sync.Mutex
+	paused          bool
+	running         int
+	pauseEpoch      uint64
+	developmentHold bool
 }
 
 func (e *Engine) validateDevelopmentSelection(settings domain.Settings) error {

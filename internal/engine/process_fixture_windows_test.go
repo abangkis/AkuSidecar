@@ -47,8 +47,11 @@ func startProcessFixtureChild(t *testing.T, executable string, start processFixt
 	}
 	child := &processFixtureChild{job: job, replies: make(chan processFixtureReceipt, 8), exited: make(chan error, 1)}
 	arguments := []string{}
-	if strings.EqualFold(filepath.Base(executable), "aku-sidecar-dev.exe") {
+	if strings.EqualFold(filepath.Base(executable), "aku-sidecar-dev.exe") || strings.EqualFold(filepath.Base(executable), "akusidecar.exe") {
 		arguments = []string{"--dev", "--dev-session-reuse=synthetic-fixture"}
+		if os.Getenv("AKU_DEV_BROKER_ENABLED") == "1" {
+			arguments = []string{"--dev", "--dev-session-reuse=synthetic-broker-fixture"}
+		}
 	}
 	child.cmd = exec.Command(executable, arguments...)
 	child.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -121,7 +124,7 @@ func (c *processFixtureChild) receive(t *testing.T, stage string) processFixture
 	select {
 	case reply, ok := <-c.replies:
 		if !ok || reply.Stage != stage {
-			t.Fatalf("worker receipt %q missing (received %q)", stage, reply.Stage)
+			t.Fatalf("worker receipt %q missing (received %q failure=%q)", stage, reply.Stage, reply.Failure)
 		}
 		return reply
 	case <-time.After(35 * time.Second):

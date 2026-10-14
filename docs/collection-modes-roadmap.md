@@ -4912,6 +4912,65 @@ authentication. No user runtime, real login, install/register, foreground operat
 or new commit/push occurred. Actual-account testing and user runtime activation
 remain separately authorized gates.
 
+### 2026-10-14: DEV-2 committed/pushed; DEV-3 UI/native-broker scope authorized
+
+The owner approved all 27 DEV-2 files and continuation with new profiles/login
+synthetically. Commit `0498548` was pushed and read back at `origin/main` as
+`04985483bd2b4c961e7b034826f6e8760dd48b34`; successful payload validation is reused.
+DEV-3 now requires UI intent → native helper → authorized broker → verified
+reader foreground/lifetime → paused queue/verified resume on the development
+binding. Engine-only opening and the earlier legacy fixture binder do not prove
+this path. Any physical click must receive a concrete ready cue, without an
+early-click penalty or acceptance manufactured by fallback. Original auth/user
+runtime/install/registration remain excluded. Record actual paths and untested
+ordinary web UI/installed-host parity explicitly; no new commit/push is implied.
+
+DEV-3 cold physical opening now has partial measured proof: actual dual-tag main,
+owned Win32 UI, unchanged native helper and actual HTTP server produced exact
+reader foreground/readback and durable action audit after capture/reasoning drain,
+with one synthetic login. Initial filename rejection was corrected by staging
+`akusidecar.exe`; no production native-client allowlist change was made. The next
+assertion failed because fixture runtime readback requested `/api/health` instead
+of `/api/collection/runtime`. Full multiwindow/resume/lifetime acceptance remains
+pending. Original and corrected physical transcripts are kept independently.
+The corrected endpoint passed strict actual-server contract tests. A subsequent
+fresh trial received its operator cue but no Open click receipt within 120
+seconds; user observation is pending before another physical attempt. Scoped QA
+process census and disposable run-directory inventory are empty. DEV-3 source
+changes remain uncommitted and do not activate ordinary user runtime.
+
+### 2026-10-14: DEV-3 selected synthetic native composition accepted
+
+The operator confirmed the timeout trial's window was visible but not clicked,
+then provided readiness for another fresh-profile trial. The complete selected
+Win32 development UI/actual main/API/unchanged native-helper path passed in
+6.01 seconds, exit 0. It measured exact first physical reader foreground/audit,
+capture/reasoning drain, bootstrap/multiple-window ownership, final-close verified
+headless readback, same-account/profile continuation with one login/two captures,
+and foreground/duplicate/stale-epoch/cancelled denial. Only actual main was then
+terminated: pinned UI/helper/Chrome roots, UI HWND and outer Job tree ended before
+fallback; reopened SQLite retained durable pause and never-claimed claim fence.
+The staged helper was a direct UI child with stdin blocked and no native intent.
+
+Evidence: `runtime/qa/auth-session-sidecar/dev3-physical-operator-retry-validation.txt`.
+Independent QA census and disposable run-directory inventory were both zero.
+At that acceptance checkpoint, the 23 DEV-3 files were uncommitted. This measured gate does not establish
+ordinary web frontend/installed-host parity, real-source authentication, media
+recapture or production readiness. Original auth/user runtime/install/registration
+remain untouched. Next checkpoint is review/authorized commit of this delta, then
+design the ordinary UI synthetic acceptance path before any runtime activation.
+
+### 2026-10-14: DEV-3 review and publication checkpoint
+
+The owner authorized review and commit/push of the 23-file delta. Scoped review
+found no concrete blocker. Existing physical/native and preparation validation
+is reused with unchanged implementation inputs; patch whitespace and JavaScript
+syntax checks passed. The next proposal is ordinary web UI/bridge acceptance
+under a separate QA composition, fresh profiles and synthetic login, preserving
+private transport and recording installed-host parity separately. No runtime
+activation, original authentication, installation or registration is authorized
+by this publication checkpoint.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

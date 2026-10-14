@@ -977,6 +977,128 @@ accepted-capture reasoning lane. The next gate is DEV-3 through the actual UI/
 native-broker journey with synthetic authority; real accounts and user runtime
 activation remain separately authorized gates.
 
+### DEV-2 checkpoint and DEV-3 authorization (2026-10-14)
+
+The owner explicitly authorized commit/push of all 27 DEV-2 files and DEV-3
+UI/native-broker testing with fresh profiles and synthetic login. Commit
+`0498548` was pushed to `origin/main`; local and remote readback matched
+`04985483bd2b4c961e7b034826f6e8760dd48b34`. Commit/push changed no payload inputs,
+so DEV-2 acceptance evidence remains applicable.
+
+DEV-3 must exercise explicit UI intent through the unchanged native-message
+helper, broker authorization, exact HWND/PID/marker binding, foreground readback
+and reader lifetime on the new development policy. An Engine borrow alone or
+the old fixture-only binder is insufficient. Fresh project-owned profiles,
+private IPC and loopback synthetic authority remain mandatory; no original
+authentication, user runtime, host registration or installation is authorized.
+Physical-click trials require an unambiguous ready/button cue and adequate
+waiting time; do not treat operator timing or fallback cleanup as acceptance.
+Record which actual UI/main paths run, and keep any untested ordinary web UI or
+installed-native-host parity distinct. DEV-3 changes remain uncommitted until
+a subsequent explicit checkpoint authorization.
+
+The selected DEV-3 composition runs inside actual dual-tag `cmd/akusidecar`:
+an owned Win32 development UI submits the existing authenticated split-capture
+API action and directly launches the unchanged native-message helper. Actual
+`httpapi.Server.HandleReaderBroker` performs the request handoff; production
+parent/image/Job/age authorization and HWND/property/readback logic are reused.
+Fixed invented X metadata maps only to a loopback fixture post. This establishes
+the native UI/API/helper/server path, not the ordinary web frontend or installed
+extension/native-host registration.
+
+The first positive trial requires one actual physical Open click while capture
+is active. Drain capture and hold related reasoning long enough to prove reader
+ownership has not advanced; then require first-request exact-reader foreground
+readback without a warm retry. Count the startup bootstrap and extra reader
+window in ownership; closing one must retain pause, and final close must resume
+never-claimed work under verified synthetic session/account. Unknown or foreign
+bindings are denials rather than fallback successes.
+
+After positive completion, a dev-only internal pause operation may prepare one
+durable never-claimed queue for lifetime testing. With a direct UI child helper
+blocked before reading stdin (no native intent), pin main/UI/helper/Chrome roots,
+terminate only actual main, and prove all exit plus outer-tree release before
+fallback. This separately measures helper startup ownership, not another physical
+activation. No HTTP pause/activation endpoint is added. An orchestration cue only
+starts the operator waiting deadline; it never grants broker authority, resets
+native intent expiry, or delays a physical click that already arrived.
+
+### DEV-3 physical evidence and corrections (2026-10-14)
+
+The initial cold physical trial failed before the native helper wrote its broker
+request: the staged `aku-sidecar-dev.exe` name did not satisfy the unchanged
+client's Sidecar image allowlist. The concurrent API then lacked its correlated
+broker attachment. The original generic transport error does not establish the
+exact timeout subtype. The broker fixture now stages actual main as
+`akusidecar.exe` beside its helper, keeping production client checks unchanged.
+A non-foreground test validates that filename/directory contract; another proves
+that helper rejection cancels pending API work immediately, with safe error enums.
+
+The corrected physical trial passed its first native open: actual main PID 37432,
+owned UI PID 35020, reader PID 30672/HWND 2819820, exact foreground readback,
+completed actual API, durable audit, capture/reasoning drain, bootstrap reuse and
+one synthetic login. No warm retry or simulated input established that result.
+It then failed its final-close API assertion because the fixture requested
+`/api/health`, whose contract excludes `collectionRuntime`; the corresponding
+status endpoint is `/api/collection/runtime`. This is a fixture readback defect,
+not proof that the complete resume/lifetime acceptance passed. Both physical
+transcripts remain separate; scoped post-run process census found zero peers.
+
+The runtime endpoint correction passed a real `httpapi.Server` contract test,
+including rejection of missing/null/paused/pending runtime bodies. A fresh full
+physical trial then reached READY/ARMED (main PID 30684, UI PID 39596, HWND
+983652) and received its operator cue, but no physical Open receipt arrived in
+the 120-second operator window. That timeout establishes neither a regression in
+the prior positive opening nor full acceptance of the corrected resume/lifetime
+path. Scoped cleanup census again found zero peers. User observation is required
+before another physical trial; do not manufacture input or repeat automatically.
+
+### DEV-3 synthetic native composition accepted (2026-10-14)
+
+The operator confirmed that the preceding timeout trial's window was visible
+but its button had not been clicked, then explicitly stated readiness to repeat.
+The next fresh-profile trial passed in 6.01 seconds, with helper exit 0. An early
+physical click was accepted immediately without requiring the operator cue to
+arrive first. Actual main PID 36464 owned UI PID 37308/HWND 3016214; the first
+request produced reader PID 39428/HWND 1115512 with exact foreground readback,
+actual API completion, durable action audit, capture/reasoning drain, bootstrap
+reuse and one synthetic login. No warm retry established this result.
+
+The same trial proved that an independent reader window kept ownership/pause
+after bootstrap closure, final-window natural exit allowed verified continuation
+on the same account/profile (two captures, one login), and actual
+`/api/collection/runtime` reported ready headless state. Changed-foreground helper
+replay and duplicate/stale-epoch/cancelled API admission were denied.
+
+The post-positive lifetime stage pinned actual UI/helper/Chrome roots, then
+terminated only actual main. All roots signalled, the UI HWND vanished and the
+outer Job tree was empty before fallback. The held helper was a direct UI child,
+blocked before stdin read, with no native intent. Reopened SQLite retained the
+durable pause and rejected claim of the never-started command. Independent
+post-run census found zero scoped QA processes and zero disposable `run-*`
+directories. Raw evidence is
+`runtime/qa/auth-session-sidecar/dev3-physical-operator-retry-validation.txt`.
+
+This completes the selected synthetic Win32 development UI/actual main/API/
+unchanged native-helper composition gate. Ordinary web frontend, installed
+extension/native-host registration, real-source authentication, media recapture
+and other production readiness gates remain unverified. No user runtime,
+original authentication, installation or registration was touched. At this
+acceptance checkpoint, the 23 DEV-3 source/test/helper/document files were
+uncommitted pending new authorization.
+
+### DEV-3 publication checkpoint authorized (2026-10-14)
+
+The owner subsequently authorized review and commit/push of those 23 files.
+Scoped review found no concrete blocker. The passing physical retry and strict
+actual-server preparation evidence are reused because the implementation inputs
+are unchanged; JavaScript syntax and patch whitespace checks also passed. The
+ordinary-build regression/build evidence remains applicable. This checkpoint
+does not activate the feature, register a native host or touch user runtime/auth.
+The next proposed gate is ordinary web UI/bridge acceptance in an isolated QA
+composition with fresh profiles and synthetic login. Its design must preserve
+private transport and distinguish any remaining installed-host coverage gap.
+
 ## Primary references
 
 - [Windows nested Jobs and inherited membership](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)

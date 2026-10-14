@@ -176,3 +176,30 @@ func (e *Engine) StartDevelopmentSession(ctx context.Context, owner *capturerunt
 	coordinator.Start(ctx)
 	return nil
 }
+
+// PauseDevelopmentSession prepares a bound, idle headless development runtime for
+// a lifecycle test. It grants no reader/foreground capability and has no HTTP route.
+func (e *Engine) PauseDevelopmentSession(ctx context.Context) error {
+	if e.developmentPause == nil || e.captureOwner == nil || e.collectionRuntime == nil || e.collectionRuntime.ExclusiveReaderPending() {
+		return errors.New("development pause unavailable")
+	}
+	snapshot := e.captureOwner.Snapshot()
+	if snapshot.State != captureruntime.Ready || snapshot.Driver != "headless" {
+		return errors.New("development pause requires ready headless owner")
+	}
+	// Keep this explicit lifecycle hold closed through coordinator polling. It
+	// grants no window intent; a later process requires a fresh verified binding.
+	e.fixtureAdmission.mu.Lock()
+	e.fixtureAdmission.developmentHold = true
+	e.fixtureAdmission.paused = true
+	e.fixtureAdmission.pauseEpoch++
+	e.fixtureAdmission.mu.Unlock()
+	return e.developmentPause(ctx)
+}
+
+func (e *Engine) VerifyDevelopmentReader(ctx context.Context) error {
+	if e.developmentVerifyBrowser == nil || e.captureOwner == nil || e.captureOwner.Snapshot().State != captureruntime.Ready || e.captureOwner.Snapshot().Driver != "browser" {
+		return errors.New("development reader verification unavailable")
+	}
+	return e.developmentVerifyBrowser(ctx)
+}

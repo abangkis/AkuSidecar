@@ -1111,3 +1111,68 @@ user runtime, install/register and foreground operations were untouched.
 Ordinary UI/native-broker startup remains DEV-3: the synthetic main dispatch
 bypasses ordinary startup and proves only accepted-capture reasoning recovery.
 It does not establish real-source compatibility or activate main dev for users.
+
+The owner authorized and verified commit/push of the 27 DEV-2 files as `0498548`
+on 2026-10-14, then authorized DEV-3 UI/native-broker testing with fresh profiles
+and synthetic login. DEV-3 will measure the actual UI/helper/broker/reader path
+on the new dev binding. Give a clear button-ready/click cue for physical input;
+do not count old Engine-borrow-only or fallback evidence as that acceptance.
+Real accounts, user runtime, installation and registration remain excluded.
+
+DEV-3 preparation is separate from physical acceptance:
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -PrepareDevelopmentBroker -VerifyDefault
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopmentBroker -DevelopmentBrokerTaskRoot '<fresh project QA run directory>'
+```
+
+The task root must be a fresh direct `run-*` child of
+`runtime/qa/auth-session-sidecar`. The second command requires a physical Open
+click in the owned Win32 development UI. The coordinator reads only safe fields
+from `operator-cue.json.ready.json`, gives an explicit **click now** instruction,
+and privately writes the independent operator cue. A click already received is
+accepted immediately; the cue only starts the operator deadline. It grants no
+native authority and does not reset native intent expiry. Do not print nonce,
+bridge token, capture key or full private control receipts.
+
+The first physical run failed on the staged main filename. The unchanged native
+client's allowlist is preserved by staging `akusidecar.exe` beside its helper.
+The corrected run passed cold physical opening, exact reader foreground, actual
+API/audit and capture/reasoning drain with one login, then exposed a fixture
+readback error: use `/api/collection/runtime` for `collectionRuntime`, not
+`/api/health`. These partial results do not establish full DEV-3 acceptance.
+The ordinary web frontend and installed extension/native-host registration are
+not exercised by this Win32 development composition.
+
+The corrected runtime endpoint passed strict actual-server contract checks.
+The subsequent full physical run timed out waiting for an Open click after
+120 seconds; no positive receipt was recorded in that run. Full resume/lifetime
+acceptance remains pending. Preserve the earlier opening proof separately and
+obtain the operator's observation before repeating a physical trial. The scoped
+post-run QA census was empty.
+
+The operator subsequently confirmed the window was visible but the button had
+not been clicked, then gave readiness for another fresh-profile trial. That trial
+passed the complete selected DEV-3 native composition in **6.01 seconds**,
+helper **exit 0**: physical first opening with exact reader foreground, actual
+API/durable audit, active capture/reasoning drain, bootstrap reuse, multiple
+window ownership, final-close verified headless API readback, two captures with
+one synthetic login, and negative foreground/duplicate/stale/cancelled admission.
+Terminating only actual main then released the pinned UI/helper/Chrome roots and
+outer Job tree before fallback; reopened SQLite preserved pause and claim fence.
+The held direct UI child helper had not consumed stdin/native intent.
+
+Evidence:
+`runtime/qa/auth-session-sidecar/dev3-physical-operator-retry-validation.txt`.
+Independent cleanup census: zero scoped QA peers and zero disposable run dirs.
+Earlier failed/partial transcripts remain distinct. At that checkpoint, DEV-3 changes were uncommitted;
+the ordinary web frontend, installed extension/native-host registration and
+real-source authentication remain outside the measured synthetic composition.
+
+On 2026-10-14 the owner authorized review and commit/push of the 23 DEV-3 files.
+Scoped review found no concrete blocker; the unchanged implementation reuses the
+passing physical retry and preparation evidence above. JavaScript syntax and
+patch whitespace checks passed. Publication does not activate the feature or
+touch original authentication/user runtime/install/registration. The next
+proposed acceptance path is the ordinary web UI/bridge in an isolated synthetic
+QA composition; installed native-host parity remains a distinct coverage gate.

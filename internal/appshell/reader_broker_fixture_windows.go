@@ -37,7 +37,7 @@ func LaunchReaderBrokerFixtureUI(ctx context.Context, pipe string) (*ReaderBroke
 		return nil, err
 	}
 	root := os.Getenv("AKU_CHROME_FIXTURE_ROOT")
-	if root == "" || !strings.EqualFold(filepath.Dir(self), filepath.Clean(root)) || !strings.EqualFold(filepath.Base(self), "aku-sidecar.exe") {
+	if root == "" || !strings.EqualFold(filepath.Dir(self), filepath.Clean(root)) || (!strings.EqualFold(filepath.Base(self), "aku-sidecar.exe") && !strings.EqualFold(filepath.Base(self), "aku-sidecar-dev.exe") && !(strings.EqualFold(filepath.Base(self), "akusidecar.exe") && os.Getenv("AKU_DEV_BROKER_ENABLED") == "1")) {
 		return nil, errors.New("fixture server staging identity rejected")
 	}
 	executable := filepath.Join(root, "aku-fixture-ui.exe")

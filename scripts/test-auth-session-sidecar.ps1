@@ -1,5 +1,6 @@
-param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[switch]$VerifyDevelopment,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
+param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[switch]$VerifyDevelopment,[switch]$PrepareDevelopmentBroker,[switch]$VerifyDevelopmentBroker,[string]$DevelopmentBrokerTaskRoot = '',[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
 $ErrorActionPreference = 'Stop'
+if ($PrepareDevelopmentBroker -and $VerifyDevelopmentBroker) { throw 'Preparation and physical broker acceptance are separate invocations.' }
 if ($VerifyChrome -and $ChromeTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Chrome test filter contains unsupported characters.' }
 if ($VerifyBroker -and $BrokerTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Broker test filter contains unsupported characters.' }
 if ($VerifyProcessRestart -and $ProcessTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Process test filter contains unsupported characters.' }
@@ -9,9 +10,14 @@ New-Item -ItemType Directory -Path $fixtureParent -Force | Out-Null
 $fixtureParent = (Resolve-Path -LiteralPath $fixtureParent).ProviderPath
 if ($fixtureParent -ne (Join-Path $projectRoot 'runtime\qa\auth-session-sidecar')) { throw 'Fixture parent escaped project scope.' }
 $taskRoot = Join-Path $fixtureParent ('run-' + [guid]::NewGuid().ToString('N'))
+if ($DevelopmentBrokerTaskRoot -ne '') {
+    $requestedRoot = [IO.Path]::GetFullPath($DevelopmentBrokerTaskRoot)
+    if ([IO.Path]::GetDirectoryName($requestedRoot) -ne $fixtureParent -or ![IO.Path]::GetFileName($requestedRoot).StartsWith('run-') -or (Test-Path -LiteralPath $requestedRoot)) { throw 'Development broker task root must be a fresh direct run- directory in project QA.' }
+    $taskRoot = $requestedRoot
+}
 New-Item -ItemType Directory -Path $taskRoot | Out-Null
 $previous = @{}
-$variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE','AKU_PROCESS_FIXTURE_ENABLED','AKU_DEV_SESSION_TEST_ROOT')
+$variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE','AKU_PROCESS_FIXTURE_ENABLED','AKU_DEV_SESSION_TEST_ROOT','AKU_DEV_BROKER_ENABLED','AKU_DEV_BROKER_CUE')
 foreach ($variable in $variables) { $previous[$variable] = [Environment]::GetEnvironmentVariable($variable, 'Process') }
 Push-Location -LiteralPath $projectRoot
 try {
@@ -22,11 +28,12 @@ try {
     $env:GOSUMDB = 'off'
     $env:GOTOOLCHAIN = 'local'
     $env:CGO_ENABLED = '0'
+    $env:AKU_DEV_BROKER_ENABLED = $null
     & go test -tags auth_session_fixture ./internal/engine ./internal/store ./internal/httpapi -run 'TestSyntheticExclusive|TestFixtureCapture' -count=1 -timeout=60s
     if ($LASTEXITCODE -ne 0) { throw 'Sidecar synthetic integration tests failed.' }
     & go test -tags auth_session_fixture ./internal/readerbroker ./cmd/aku-reader-broker ./cmd/auth-session-fixture-ui -count=1 -timeout=60s
     if ($LASTEXITCODE -ne 0) { throw 'Reader broker contract or fixture helper compile checks failed.' }
-    if ($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment) {
+    if ($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment -or $VerifyDevelopmentBroker -or $PrepareDevelopmentBroker) {
         $node = 'C:\nvm4w\nodejs\node.exe'
         $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
         if (!(Test-Path -LiteralPath $node -PathType Leaf)) { throw 'The configured Node executable is unavailable.' }
@@ -35,6 +42,30 @@ try {
         $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER = Join-Path $taskRoot 'cleanup-verified.marker'
         $env:AKU_TEST_NODE_PATH = $node
         $env:AKU_TEST_CHROME_PATH = $chrome
+        if ($PrepareDevelopmentBroker -or $VerifyDevelopmentBroker) {
+            & go build -tags 'auth_session_dev auth_session_fixture' -o (Join-Path $taskRoot 'akusidecar.exe') ./cmd/akusidecar
+            if ($LASTEXITCODE -ne 0) { throw 'Actual development main broker composition build failed.' }
+            & go build -tags auth_session_fixture -o (Join-Path $taskRoot 'aku-reader-broker.exe') ./cmd/aku-reader-broker
+            if ($LASTEXITCODE -ne 0) { throw 'Unchanged isolated native helper build failed.' }
+            & go build -tags auth_session_fixture -o (Join-Path $taskRoot 'aku-fixture-ui.exe') ./cmd/auth-session-fixture-ui
+            if ($LASTEXITCODE -ne 0) { throw 'Owned development UI build failed.' }
+            if ($PrepareDevelopmentBroker) {
+                & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine ./cmd/auth-session-fixture-ui ./cmd/akusidecar -run '^TestDevelopmentBrokerStaged|^TestDevelopmentActionHelper|^TestDevelopmentCollectionRuntime' -count=1 -timeout=60s -v
+                if ($LASTEXITCODE -ne 0) { throw 'Non-foreground development broker preparation contracts failed.' }
+                Write-Output 'Development broker preparation passed. No UI or physical native broker test was launched.'
+            }
+            if ($VerifyDevelopmentBroker) {
+                $env:AKU_PROCESS_FIXTURE_ENABLED = '1'
+                $env:AKU_DEV_BROKER_ENABLED = '1'
+                $env:AKU_BROKER_FIXTURE_PIPE = '\\.\pipe\AkuBrowser.fixture-reader.' + [guid]::NewGuid().ToString('N')
+                $env:AKU_DEV_BROKER_CUE = Join-Path $taskRoot 'operator-cue.json'
+                Write-Output ('DEV3 task_root=' + $taskRoot + ' cue=' + $env:AKU_DEV_BROKER_CUE + ' ready=' + $env:AKU_DEV_BROKER_CUE + '.ready.json')
+                & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestDevelopmentSessionActualMainBrokerFirstPhysicalOpen$' -count=1 -timeout=12m -v
+                if ($LASTEXITCODE -ne 0) { throw 'Actual main physical UI/native broker acceptance failed; no retry or fallback counts as acceptance.' }
+                if (!(Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf)) { throw 'Development broker did not prove all owned trees empty.' }
+                $env:AKU_DEV_BROKER_ENABLED = $null
+            }
+        }
         if ($VerifyDevelopment) {
             $env:AKU_DEV_SESSION_TEST_ROOT = $taskRoot
             $env:AKU_PROCESS_FIXTURE_ENABLED = '1'
@@ -97,7 +128,7 @@ try {
 finally {
     Pop-Location
     foreach ($variable in $variables) { [Environment]::SetEnvironmentVariable($variable, $previous[$variable], 'Process') }
-    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
+    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment -or $VerifyDevelopmentBroker) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
     if (!$cleanupAllowed) { Write-Warning 'The Chrome fixture did not prove its owned Job Object empty; fixture output was retained.' }
     if ($cleanupAllowed -and (Test-Path -LiteralPath $taskRoot)) {
         $resolved = (Resolve-Path -LiteralPath $taskRoot).ProviderPath

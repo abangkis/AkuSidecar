@@ -5,26 +5,35 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"golang.org/x/sys/windows"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
 type command struct {
-	Op         string               `json:"op"`
-	WrongImage bool                 `json:"wrongImage"`
-	Indirect   bool                 `json:"indirect"`
-	Present    bool                 `json:"present"`
-	Request    readerbroker.Request `json:"request"`
+	Op                                         string               `json:"op"`
+	WrongImage                                 bool                 `json:"wrongImage"`
+	Indirect                                   bool                 `json:"indirect"`
+	Present                                    bool                 `json:"present"`
+	Request                                    readerbroker.Request `json:"request"`
+	Development                                bool                 `json:"development,omitempty"`
+	APIAddress, Token, CaptureKey, EngineEpoch string
 }
 type message struct {
 	HWND           uintptr
@@ -160,7 +169,11 @@ func main() {
 				}
 				emit(facts)
 				if readerbroker.ForegroundPID() == uint32(os.Getpid()) {
-					go runHelper(*next)
+					if next.Development {
+						go runDevelopmentAction(*next)
+					} else {
+						go runHelper(*next)
+					}
 				}
 			}
 			return 0
@@ -204,6 +217,9 @@ func main() {
 	if first.Present {
 		staticClass, _ := windows.UTF16PtrFromString("STATIC")
 		instruction, _ := windows.UTF16PtrFromString("Klik sekali saat tombol aktif; tidak perlu menunggu chat.")
+		if first.Development {
+			instruction, _ = windows.UTF16PtrFromString("Tombol aktif. Klik sekali saat diminta; klik awal diterima.")
+		}
 		control, _, _ := user.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(instruction)), 0x50000000, 20, 5, 400, 25, hwnd, 101, instance, 0)
 		if control == 0 {
 			os.Exit(9)
@@ -259,6 +275,12 @@ func main() {
 				user.NewProc("PostMessageW").Call(hwnd, 0x8001, 0, 0)
 			case "read":
 				go runHelper(next)
+			case "hold_helper":
+				if first.Development {
+					go holdDevelopmentHelper()
+				} else {
+					emit(readerbroker.Reply{Message: "development helper staging disabled"})
+				}
 			default:
 				emit(readerbroker.Reply{Message: "invalid fixture UI operation"})
 			}
@@ -275,6 +297,9 @@ func main() {
 	}
 }
 func runHelper(c command) {
+	emit(runHelperReply(c))
+}
+func runHelperReply(c command) readerbroker.Reply {
 	self, _ := os.Executable()
 	image := "aku-reader-broker.exe"
 	if c.WrongImage {
@@ -289,17 +314,14 @@ func runHelper(c command) {
 	child.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	input, err := child.StdinPipe()
 	if err != nil {
-		emit(readerbroker.Reply{Message: "fixture helper stdin failed"})
-		return
+		return readerbroker.Reply{Message: "fixture helper stdin failed"}
 	}
 	output, err := child.StdoutPipe()
 	if err != nil {
-		emit(readerbroker.Reply{Message: "fixture helper stdout failed"})
-		return
+		return readerbroker.Reply{Message: "fixture helper stdout failed"}
 	}
 	if child.Start() != nil {
-		emit(readerbroker.Reply{Message: "fixture helper start failed"})
-		return
+		return readerbroker.Reply{Message: "fixture helper start failed"}
 	}
 	if c.Indirect {
 		_ = readerbroker.Write(input, c)
@@ -312,8 +334,85 @@ func runHelper(c command) {
 	io.Copy(io.Discard, output)
 	waitErr := child.Wait()
 	if err != nil || waitErr != nil {
-		emit(readerbroker.Reply{Message: "fixture helper failed"})
+		return readerbroker.Reply{Message: "fixture helper failed"}
+	}
+	return reply
+}
+
+func runDevelopmentAction(c command) {
+	emit(developmentActionResult(c, runHelperReply))
+}
+
+func developmentActionResult(c command, helper func(command) readerbroker.Reply) map[string]any {
+	origin, err := url.Parse(c.APIAddress)
+	if err != nil || origin.Scheme != "http" || origin.Hostname() != "127.0.0.1" || origin.Path != "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || c.Request.Source != "x" || c.Request.URL != "https://x.com/aku_fixture_only/status/1" {
+		return map[string]any{"op": "open_result", "error": "synthetic API mapping denied"}
+	}
+	type apiResult struct {
+		Status int
+		Body   json.RawMessage
+		Error  string
+	}
+	apiDone := make(chan apiResult, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), readerbroker.PreparationLifetime)
+	defer cancel()
+	started := time.Now()
+	go func() {
+		raw, _ := json.Marshal(map[string]string{"type": "open_native_post", "source": c.Request.Source, "url": c.Request.URL, "requestId": c.Request.RequestID})
+		req, err := http.NewRequestWithContext(ctx, "POST", c.APIAddress+"/api/split-capture/actions", bytes.NewReader(raw))
+		if err != nil {
+			apiDone <- apiResult{Error: "synthetic API request failed"}
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", c.APIAddress)
+		req.Header.Set("X-Aku-Bridge-Contract", domain.BridgeContractVersion)
+		req.Header.Set("X-Aku-Bridge-Token", c.Token)
+		req.Header.Set("X-Aku-Capture-Instance", c.CaptureKey)
+		req.Header.Set("X-Aku-Split-Epoch", c.EngineEpoch)
+		client := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect denied") }}
+		response, err := client.Do(req)
+		if err != nil {
+			reason := "transport_failed"
+			if errors.Is(err, context.DeadlineExceeded) {
+				reason = "deadline_exceeded"
+			} else if errors.Is(err, context.Canceled) {
+				reason = "context_cancelled"
+			}
+			apiDone <- apiResult{Error: reason}
+			return
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(response.Body, 8192))
+		result := apiResult{Status: response.StatusCode, Body: body}
+		if err != nil {
+			result.Error = "synthetic API readback failed"
+		}
+		apiDone <- result
+	}()
+	reply := helper(c)
+	if !reply.OK {
+		cancel()
+	}
+	api := <-apiDone
+	return map[string]any{"op": "open_result", "reply": reply, "apiStatus": api.Status, "apiBody": api.Body, "error": api.Error, "apiElapsedMS": time.Since(started).Milliseconds(), "apiCancelledAfterHelperRejection": !reply.OK && errors.Is(ctx.Err(), context.Canceled)}
+}
+
+func holdDevelopmentHelper() {
+	self, _ := os.Executable()
+	child := exec.Command(filepath.Join(filepath.Dir(self), "aku-reader-broker.exe"), "chrome-extension://"+readerbroker.ExtensionID+"/")
+	child.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	input, err := child.StdinPipe()
+	if err != nil {
+		emit(map[string]any{"op": "helper_staged", "error": "helper stdin unavailable"})
 		return
 	}
-	emit(reply)
+	if err := child.Start(); err != nil {
+		input.Close()
+		emit(map[string]any{"op": "helper_staged", "error": "helper start failed"})
+		return
+	}
+	emit(map[string]any{"op": "helper_staged", "helperPID": child.Process.Pid, "helperStartupBlocked": true, "nativeIntent": false})
+	_ = child.Wait()
+	input.Close()
 }

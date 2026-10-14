@@ -61,6 +61,18 @@ func (e *Engine) bindExclusiveSession(expectedAccount string,
 	}); err != nil {
 		return err
 	}
+	if development {
+		e.developmentPause = b.pause
+		e.developmentVerifyBrowser = func(ctx context.Context) error {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			authority, err := b.verify(ctx)
+			if err != nil {
+				return err
+			}
+			return b.verifyBrowser(ctx, authority)
+		}
+	}
 	return b.pause(ctx)
 }
 
@@ -168,6 +180,12 @@ func (b *exclusiveSessionBinding) resume(ctx context.Context, generation uint64)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	e := b.e
+	e.fixtureAdmission.mu.Lock()
+	developmentHold := e.fixtureAdmission.developmentHold
+	e.fixtureAdmission.mu.Unlock()
+	if developmentHold {
+		return captureruntime.ErrBusy
+	}
 	if e.fixtureAdmissionAllowed() {
 		return nil
 	}

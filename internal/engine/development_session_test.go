@@ -196,6 +196,12 @@ func TestDevelopmentSessionStartupDefersAcceptedReasoningUntilPausedBinding(t *t
 	if h.backend.calls.Load() != 0 {
 		t.Fatal("accepted capture reacquired")
 	}
+	waitSession(t, h.e, session.ID, func(saved domain.Session) bool {
+		return saved.Status == "completed" || saved.Status == "partial" || saved.Status == "failed"
+	})
+	if !h.e.WaitForIdle(time.Second) {
+		t.Fatal("resumed reasoning did not finish before Store cleanup")
+	}
 }
 
 func TestDevelopmentSessionDrainCaptureAndReasoningBeforeReader(t *testing.T) {

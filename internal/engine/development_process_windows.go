@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
@@ -18,7 +19,18 @@ import (
 // dispatched by the actual main binary before ordinary startup. The private
 // controller grant still validates parent creation/image and scoped fresh profile.
 func RunDevelopmentSessionFixture(input io.Reader, output io.Writer) error {
-	return runAuthSessionProcessFixture(input, output, true)
+	return runAuthSessionProcessFixture(input, output, true, nil)
+}
+
+func RunDevelopmentSessionBrokerFixture(input io.Reader, output io.Writer, composition func(context.Context, *DevelopmentFixtureRuntime) error) error {
+	if composition == nil {
+		return errors.New("development broker composition missing")
+	}
+	err := runAuthSessionProcessFixture(input, output, true, composition)
+	if err != nil {
+		_ = json.NewEncoder(output).Encode(processFixtureReceipt{Stage: "dev_broker_failed", Failure: err.Error()})
+	}
+	return err
 }
 
 func validateDevelopmentController(start processFixtureStart) error {

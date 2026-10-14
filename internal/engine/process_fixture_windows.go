@@ -56,33 +56,39 @@ type processFixtureStart struct {
 	ControllerImage                                                             string
 }
 type processFixtureReceipt struct {
-	Stage                                              string
-	PID                                                uint32
-	Epoch, SessionID                                   string
-	RunIDs                                             []string
-	ChromePID                                          int
-	Windows                                            []uintptr
-	Bootstrap                                          int
-	ProfileID                                          string
-	Generation                                         uint64
-	Account, Revision                                  string
-	StaleEpochDenied, DuplicateDenied, CleanupVerified bool
-	AuthorityDenied, GrantReplayDenied                 bool
-	DevelopmentSession                                 bool
-	GrantNegatives                                     int
-	NodeIdentity                                       processFixtureIdentity
-	NodeParent                                         uint32
-	NodeInnerJobMember                                 bool
-	NodeMembershipKnown                                bool
-	InnerJobProcesses                                  int
-	NodeReady                                          bool
-	Failure                                            string
-	HandshakeElapsedMS                                 int64
-	NodeWaitAtReturn                                   uint32
-	LauncherRoot, LauncherChild                        processFixtureIdentity
-	LauncherWorkerRoot, LauncherWorkerChild            processFixtureIdentity
-	LauncherLifetimeMember, LauncherLifetimeNoInherit  bool
-	LauncherTreeMembership, LauncherIsolationVerified  bool
+	Stage                                                                                                                                                                                                                                                                                                               string
+	PID                                                                                                                                                                                                                                                                                                                 uint32
+	Epoch, SessionID                                                                                                                                                                                                                                                                                                    string
+	RunIDs                                                                                                                                                                                                                                                                                                              []string
+	ChromePID                                                                                                                                                                                                                                                                                                           int
+	Windows                                                                                                                                                                                                                                                                                                             []uintptr
+	Bootstrap                                                                                                                                                                                                                                                                                                           int
+	ProfileID                                                                                                                                                                                                                                                                                                           string
+	Generation                                                                                                                                                                                                                                                                                                          uint64
+	Account, Revision                                                                                                                                                                                                                                                                                                   string
+	StaleEpochDenied, DuplicateDenied, CleanupVerified                                                                                                                                                                                                                                                                  bool
+	AuthorityDenied, GrantReplayDenied                                                                                                                                                                                                                                                                                  bool
+	DevelopmentSession                                                                                                                                                                                                                                                                                                  bool
+	UIPID, HelperPID, ReaderPID, CollectorPID                                                                                                                                                                                                                                                                           uint32
+	UIHWND, ReaderHWND                                                                                                                                                                                                                                                                                                  uint64
+	Root, Address, RunID                                                                                                                                                                                                                                                                                                string
+	UIRect, ButtonRect                                                                                                                                                                                                                                                                                                  DevelopmentFixtureRect
+	ButtonVisible, ButtonEnabled, PresentedWithoutFocus, CaptureActive, PhysicalOpen, Readback, ExactForeground, APICompleted, DurableForegroundAudit, CaptureAndReasoningDrained, BootstrapReused, RemainingWindowHeldPause, FinalCloseVerified, APIHeadlessReadback, HelperStartupBlocked, NativeIntent, DurablePause bool
+	CaptureCount                                                                                                                                                                                                                                                                                                        int64
+	GrantNegatives                                                                                                                                                                                                                                                                                                      int
+	NodeIdentity                                                                                                                                                                                                                                                                                                        processFixtureIdentity
+	NodeParent                                                                                                                                                                                                                                                                                                          uint32
+	NodeInnerJobMember                                                                                                                                                                                                                                                                                                  bool
+	NodeMembershipKnown                                                                                                                                                                                                                                                                                                 bool
+	InnerJobProcesses                                                                                                                                                                                                                                                                                                   int
+	NodeReady                                                                                                                                                                                                                                                                                                           bool
+	Failure                                                                                                                                                                                                                                                                                                             string
+	HandshakeElapsedMS                                                                                                                                                                                                                                                                                                  int64
+	NodeWaitAtReturn                                                                                                                                                                                                                                                                                                    uint32
+	LauncherRoot, LauncherChild                                                                                                                                                                                                                                                                                         processFixtureIdentity
+	LauncherWorkerRoot, LauncherWorkerChild                                                                                                                                                                                                                                                                             processFixtureIdentity
+	LauncherLifetimeMember, LauncherLifetimeNoInherit                                                                                                                                                                                                                                                                   bool
+	LauncherTreeMembership, LauncherIsolationVerified                                                                                                                                                                                                                                                                   bool
 }
 
 func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
@@ -300,14 +306,17 @@ func processFixtureWait(ctx context.Context, predicate func() bool) error {
 // RunAuthSessionProcessFixture accepts its only startup/recovery grant over
 // inherited private stdin from its verified actual controller parent.
 func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) error {
-	return runAuthSessionProcessFixture(input, output, false)
+	return runAuthSessionProcessFixture(input, output, false, nil)
 }
 
-func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development bool) (returnErr error) {
+func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development bool, composition func(context.Context, *DevelopmentFixtureRuntime) error) (returnErr error) {
 	executable, err := os.Executable()
 	expectedImage := "auth-session-process-fixture.exe"
 	if development {
 		expectedImage = "aku-sidecar-dev.exe"
+		if composition != nil {
+			expectedImage = "akusidecar.exe"
+		}
 	}
 	if err != nil || !strings.EqualFold(filepath.Base(executable), expectedImage) {
 		return errors.New("fixture worker image invalid")
@@ -358,9 +367,14 @@ func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development
 			return errors.New("replayed recovery grant accepted")
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	lifetime := 90 * time.Second
+	if composition != nil {
+		lifetime = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	defer cancel()
 	bridgeConfig := chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant}
+	bridgeConfig.NativeReaderStartup = composition != nil
 	var barrierNode windows.Handle
 	barrierReported := make(chan struct{})
 	defer func() {
@@ -497,7 +511,13 @@ func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development
 			return err
 		}
 	}
-	e := New(state, reasoning.Deterministic{}, config.Config{Dev: true, Root: start.Grant.Root, Database: config.DatabaseConfig{Path: filepath.Join(start.Grant.Root, "fixture.sqlite")}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
+	var provider reasoning.Provider = reasoning.Deterministic{}
+	var reasoningGate *developmentFixtureReasoningGate
+	if composition != nil {
+		reasoningGate = &developmentFixtureReasoningGate{entered: make(chan struct{}), release: make(chan struct{})}
+		provider = reasoningGate
+	}
+	e := New(state, provider, config.Config{Dev: true, Root: start.Grant.Root, Database: config.DatabaseConfig{Path: filepath.Join(start.Grant.Root, "fixture.sqlite")}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
 	defer e.Shutdown()
 	e.RecordHeartbeat(ExpectedHeartbeat())
 	if err = e.AttachCaptureRuntime(ctx, manager); err != nil {
@@ -588,6 +608,12 @@ func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development
 	}
 	if err = processFixtureWait(ctx, func() bool { s := coordinator.Status(); return s.Effective == "headless" && !s.BatchPaused }); err != nil {
 		return err
+	}
+	if composition != nil {
+		if !development || start.Grant.Reopen {
+			return errors.New("development broker requires fresh scoped grant")
+		}
+		return composition(ctx, &DevelopmentFixtureRuntime{Engine: e, State: state, Owner: manager, Coordinator: coordinator, Root: start.Grant.Root, backend: backend, bridge: bridge, reasoning: reasoningGate, scanner: scanner, encoder: encoder, authority: authority})
 	}
 	evidence, err := backend.current.Load().Evidence(ctx)
 	if err != nil {

@@ -148,6 +148,12 @@ async function execute(message) {
       await currentPage.evaluate(`document.title = ${JSON.stringify(message.marker)}`);
       return { marked: true };
     }
+    case 'reader_post': {
+      if (message.owner !== currentOwner || !current || current.role !== 'owner' || !currentPage) throw new Error('fixture_reader_unavailable');
+      await currentPage.navigate('/native-post');
+      const localPost = await currentPage.evaluate(`location.origin === ${JSON.stringify(origin)} && location.pathname === '/native-post' && document.getElementById('synthetic-native-post')?.textContent === 'Synthetic local post'`);
+      return { localPost: localPost === true };
+    }
     case 'launch':
       return await launch(message.role, message.nativeReaderStartup ?? false);
     case 'open_independent_window': {

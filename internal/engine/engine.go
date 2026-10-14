@@ -67,6 +67,8 @@ type Engine struct {
 	collectionRuntime                 *collection.Coordinator
 	fixtureAdmission                  *fixtureAdmissionGate
 	developmentSources                map[domain.Source]bool
+	developmentPause                  func(context.Context) error
+	developmentVerifyBrowser          func(context.Context) error
 	schedule                          sync.Mutex
 	heartbeat                         *domain.BridgeHeartbeat
 	headlessAccess                    []domain.Source
