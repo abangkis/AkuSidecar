@@ -4,7 +4,6 @@ package engine
 
 import (
 	"context"
-	"github.com/abangkis/AkuSidecar/internal/domain"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,12 +16,12 @@ func TestDevelopmentReaderUsesBoundExpectedAuthorityBeforeMarker(t *testing.T) {
 			cap := developmentCapability(h)
 			authority, browser := cap.Authority, cap.Browser
 			var changed atomic.Bool
-			cap.Authority = func(ctx context.Context, s domain.Source) (DevelopmentSessionEvidence, error) {
-				v, err := authority(ctx, s)
+			cap.Authority = func(ctx context.Context, request DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
+				v, err := authority(ctx, request)
 				if changed.Load() {
 					switch mode {
 					case "unauthenticated_authority":
-						v.Authenticated = false
+						v.AuthState = DevelopmentSessionAuthUnknown
 					case "equal_foreign_account":
 						v.AccountID = "beta"
 					case "empty_revision":
@@ -33,8 +32,8 @@ func TestDevelopmentReaderUsesBoundExpectedAuthorityBeforeMarker(t *testing.T) {
 				}
 				return v, err
 			}
-			cap.Browser = func(ctx context.Context, s domain.Source) (DevelopmentBrowserEvidence, error) {
-				v, err := browser(ctx, s)
+			cap.Browser = func(ctx context.Context, request DevelopmentSessionProbeRequest) (DevelopmentBrowserEvidence, error) {
+				v, err := browser(ctx, request)
 				if changed.Load() {
 					switch mode {
 					case "equal_foreign_account":

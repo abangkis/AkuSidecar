@@ -6,22 +6,64 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
+const (
+	// DevelopmentSessionProbeVersion versions the synthetic verifier request and response contract.
+	DevelopmentSessionProbeVersion = 1
+	// DevelopmentSessionMaxEvidenceAge bounds how long one source observation may be reused.
+	DevelopmentSessionMaxEvidenceAge = 5 * time.Second
+)
+
+type DevelopmentSessionProbeKind string
+
+const (
+	DevelopmentSessionProbeAuthority DevelopmentSessionProbeKind = "authority"
+	DevelopmentSessionProbeBrowser   DevelopmentSessionProbeKind = "browser"
+)
+
+type DevelopmentSessionAuthState string
+
+const (
+	DevelopmentSessionAuthAuthenticated DevelopmentSessionAuthState = "authenticated"
+	DevelopmentSessionAuthLoggedOut     DevelopmentSessionAuthState = "logged_out"
+	DevelopmentSessionAuthChallenge     DevelopmentSessionAuthState = "challenge"
+	DevelopmentSessionAuthUnknown       DevelopmentSessionAuthState = "unknown"
+	DevelopmentSessionAuthUnsupported   DevelopmentSessionAuthState = "unsupported"
+)
+
+// DevelopmentSessionProbeRequest is a one-use, phase-specific challenge for
+// the synthetic verifier. Authority is synthetic control evidence that may be
+// available before a browser exists; it does not prove a real browser login.
+type DevelopmentSessionProbeRequest struct {
+	Version     int
+	Source      domain.Source
+	ProfileID   string
+	Kind        DevelopmentSessionProbeKind
+	ProbeID     string
+	RequestedAt time.Time
+}
+
 // DevelopmentSessionEvidence is private verifier output, not bridge readiness.
 // The only supported domain is synthetic-fixture. Real source adapters are absent.
 type DevelopmentSessionEvidence struct {
-	Domain        string
-	Source        domain.Source
-	ProfileID     string
-	Authenticated bool
-	AccountID     string
-	Revision      string
+	Version    int
+	Kind       DevelopmentSessionProbeKind
+	ProbeID    string
+	ObservedAt time.Time
+	Domain     string
+	Source     domain.Source
+	ProfileID  string
+	AuthState  DevelopmentSessionAuthState
+	AccountID  string
+	Revision   string
 }
 
 type DevelopmentBrowserEvidence struct {
@@ -33,21 +75,26 @@ type DevelopmentBrowserEvidence struct {
 }
 
 type DevelopmentSessionCapability struct {
-	Provider  string
-	ProfileID string
-	AccountID string
-	Sources   []domain.Source
-	Authority func(context.Context, domain.Source) (DevelopmentSessionEvidence, error)
-	Browser   func(context.Context, domain.Source) (DevelopmentBrowserEvidence, error)
+	Provider         string
+	ProfileID        string
+	ExpectedAccounts map[domain.Source]string
+	Sources          []domain.Source
+	Authority        func(context.Context, DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error)
+	Browser          func(context.Context, DevelopmentSessionProbeRequest) (DevelopmentBrowserEvidence, error)
+	clock            func() time.Time
 }
 
 // BindDevelopmentSession requires both source authority and current browser proof.
 // It must precede startup resume and collection workers on a scoped development Store.
 func (e *Engine) BindDevelopmentSession(ctx context.Context, capability DevelopmentSessionCapability) error {
-	if !e.config.Dev || capability.Provider != "synthetic-fixture" || strings.TrimSpace(capability.ProfileID) == "" || strings.TrimSpace(capability.AccountID) == "" || len(capability.Sources) == 0 || capability.Authority == nil || capability.Browser == nil {
+	if !e.config.Dev || capability.Provider != "synthetic-fixture" || strings.TrimSpace(capability.ProfileID) == "" || len(capability.Sources) == 0 || capability.Authority == nil || capability.Browser == nil {
 		return errors.New("development session capability unavailable")
 	}
 	sources := append([]domain.Source(nil), capability.Sources...)
+	expectedAccounts := make(map[domain.Source]string, len(capability.ExpectedAccounts))
+	for source, accountID := range capability.ExpectedAccounts {
+		expectedAccounts[source] = accountID
+	}
 	allowed := map[domain.Source]bool{}
 	for _, source := range sources {
 		if (source != domain.SourceX && source != domain.SourceInstagram && source != domain.SourceLinkedIn) || allowed[source] {
@@ -55,9 +102,17 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 		}
 		allowed[source] = true
 	}
+	if len(expectedAccounts) != len(allowed) {
+		return errors.New("development session expected identities incomplete")
+	}
+	for source, accountID := range expectedAccounts {
+		if !allowed[source] || strings.TrimSpace(accountID) == "" {
+			return errors.New("development session expected identities unsupported")
+		}
+	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
-		return err
+		return errors.New("development session settings unavailable")
 	}
 	if settings.CollectionMode != "headless" {
 		return errors.New("development session requires headless collection")
@@ -67,38 +122,111 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 			return errors.New("development session source unsupported")
 		}
 	}
-	matches := func(v DevelopmentSessionEvidence, source domain.Source) bool {
-		return v.Domain == "synthetic-fixture" && v.Source == source && v.ProfileID == capability.ProfileID && v.Authenticated && v.AccountID == capability.AccountID && strings.TrimSpace(v.Revision) != ""
+	identitySources := append([]domain.Source(nil), sources...)
+	sort.Slice(identitySources, func(i, j int) bool { return identitySources[i] < identitySources[j] })
+	identities := make([][2]string, 0, len(identitySources))
+	for _, source := range identitySources {
+		identities = append(identities, [2]string{string(source), expectedAccounts[source]})
+	}
+	expectedIdentity, err := json.Marshal(identities)
+	if err != nil {
+		return errors.New("development session expected identities unavailable")
+	}
+	now := func() time.Time {
+		if capability.clock != nil {
+			return capability.clock().UTC()
+		}
+		return time.Now().UTC()
+	}
+	newRequest := func(source domain.Source, kind DevelopmentSessionProbeKind) DevelopmentSessionProbeRequest {
+		return DevelopmentSessionProbeRequest{
+			Version: DevelopmentSessionProbeVersion, Source: source, ProfileID: capability.ProfileID,
+			Kind: kind, ProbeID: domain.NewID("devprobe"), RequestedAt: now(),
+		}
+	}
+	matches := func(v DevelopmentSessionEvidence, request DevelopmentSessionProbeRequest, now time.Time) bool {
+		return request.Version == DevelopmentSessionProbeVersion && request.ProbeID != "" &&
+			v.Version == request.Version && v.Kind == request.Kind && v.ProbeID == request.ProbeID &&
+			!v.ObservedAt.IsZero() && !v.ObservedAt.Before(request.RequestedAt) && !v.ObservedAt.After(now) &&
+			now.Sub(v.ObservedAt) <= DevelopmentSessionMaxEvidenceAge &&
+			v.Domain == "synthetic-fixture" && v.Source == request.Source && v.ProfileID == request.ProfileID &&
+			v.AuthState == DevelopmentSessionAuthAuthenticated && v.AccountID == expectedAccounts[request.Source] &&
+			strings.TrimSpace(v.Revision) != ""
 	}
 	probe := func(probeCtx context.Context, browser bool) (sessionEvidence, error) {
-		revisions := make([]string, 0, len(sources))
+		if probeCtx.Err() != nil {
+			return sessionEvidence{}, errors.New("development source probe canceled")
+		}
+		var owner *captureruntime.Manager
+		var ownerSnapshot captureruntime.Snapshot
+		var ownerPID int
+		var ownerEpoch string
+		if browser {
+			owner = e.captureOwner
+			if owner == nil {
+				return sessionEvidence{}, errors.New("development browser owner unavailable")
+			}
+			ownerSnapshot, ownerPID, ownerEpoch = owner.Snapshot(), owner.PID(), e.Epoch()
+			if ownerSnapshot.State != captureruntime.Ready || ownerPID <= 0 {
+				return sessionEvidence{}, errors.New("development browser owner proof required")
+			}
+		}
+		revisions := make([][2]string, 0, len(sources))
+		observations := make([]struct {
+			request  DevelopmentSessionProbeRequest
+			evidence DevelopmentSessionEvidence
+		}, 0, len(sources))
 		for _, source := range sources {
+			kind := DevelopmentSessionProbeAuthority
+			if browser {
+				kind = DevelopmentSessionProbeBrowser
+			}
+			request := newRequest(source, kind)
 			var v DevelopmentSessionEvidence
 			if browser {
-				if e.captureOwner == nil {
-					return sessionEvidence{}, errors.New("development browser owner unavailable")
+				before, pid := owner.Snapshot(), owner.PID()
+				if e.captureOwner != owner || before != ownerSnapshot || pid != ownerPID {
+					return sessionEvidence{}, errors.New("development browser owner proof required")
 				}
-				before, pid := e.captureOwner.Snapshot(), e.captureOwner.PID()
-				proof, probeErr := capability.Browser(probeCtx, source)
-				after := e.captureOwner.Snapshot()
-				if probeErr != nil || before.State != captureruntime.Ready || before != after || pid <= 0 || e.captureOwner.PID() != pid || proof.EngineEpoch != e.Epoch() || proof.Generation != before.Generation || proof.PID != pid || proof.Driver != before.Driver {
+				proof, probeErr := capability.Browser(probeCtx, request)
+				after := owner.Snapshot()
+				if probeErr != nil || before.State != captureruntime.Ready || before != after || after != ownerSnapshot || pid != ownerPID || e.captureOwner != owner || owner.PID() != ownerPID || proof.EngineEpoch != ownerEpoch || proof.Generation != ownerSnapshot.Generation || proof.PID != ownerPID || proof.Driver != ownerSnapshot.Driver {
 					return sessionEvidence{}, errors.New("development browser owner proof required")
 				}
 				v = proof.DevelopmentSessionEvidence
 			} else {
-				authority, probeErr := capability.Authority(probeCtx, source)
+				authority, probeErr := capability.Authority(probeCtx, request)
 				if probeErr != nil {
 					return sessionEvidence{}, errors.New("development source authority unavailable")
 				}
 				v = authority
 			}
-			if !matches(v, source) {
+			if probeCtx.Err() != nil {
+				return sessionEvidence{}, errors.New("development source probe canceled")
+			}
+			if !matches(v, request, now()) {
 				return sessionEvidence{}, errors.New("development source identity proof required")
 			}
-			revisions = append(revisions, v.Revision)
+			revisions = append(revisions, [2]string{string(source), v.Revision})
+			observations = append(observations, struct {
+				request  DevelopmentSessionProbeRequest
+				evidence DevelopmentSessionEvidence
+			}{request: request, evidence: v})
+		}
+		finalObservedAt := now()
+		if probeCtx.Err() != nil {
+			return sessionEvidence{}, errors.New("development source probe canceled")
+		}
+		if browser && (e.captureOwner != owner || owner.Snapshot() != ownerSnapshot || owner.PID() != ownerPID || e.Epoch() != ownerEpoch) {
+			return sessionEvidence{}, errors.New("development browser owner changed during evidence collection")
+		}
+		for _, observation := range observations {
+			if !matches(observation.evidence, observation.request, finalObservedAt) {
+				return sessionEvidence{}, errors.New("development source evidence expired")
+			}
 		}
 		raw, _ := json.Marshal(revisions)
-		return sessionEvidence{Authenticated: true, AccountID: capability.AccountID, Revision: string(raw)}, nil
+		return sessionEvidence{Authenticated: true, AccountID: string(expectedIdentity), Revision: string(raw)}, nil
 	}
 	if e.captureOwner == nil || e.collectionRuntime == nil || e.collectionRuntime.ExclusiveSessionBound() {
 		return errors.New("development session startup binding unavailable")
@@ -112,11 +240,11 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 	// unsupported durable route before resume can advance or create its command.
 	ids, err := e.store.ListFixturePausedCaptureSessions(ctx)
 	if err != nil {
-		return err
+		return errors.New("development session queue unavailable")
 	}
 	active, err := e.store.ActiveSession(ctx)
 	if err != nil {
-		return err
+		return errors.New("development session state unavailable")
 	}
 	if active != nil {
 		ids = append(ids, active.ID)
@@ -124,7 +252,7 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 	for _, id := range ids {
 		saved, err := e.store.GetSession(ctx, id)
 		if err != nil {
-			return err
+			return errors.New("development session state unavailable")
 		}
 		if saved.Status != "queued" && saved.Status != "running" {
 			continue
@@ -139,7 +267,7 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 			}
 		}
 	}
-	if err := e.bindExclusiveSession(capability.AccountID, func(c context.Context) (sessionEvidence, error) { return probe(c, false) }, func(c context.Context) (sessionEvidence, error) { return probe(c, true) }, true); err != nil {
+	if err := e.bindExclusiveSession(string(expectedIdentity), func(c context.Context) (sessionEvidence, error) { return probe(c, false) }, func(c context.Context) (sessionEvidence, error) { return probe(c, true) }, true); err != nil {
 		return err
 	}
 	return nil

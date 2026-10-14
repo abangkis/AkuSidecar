@@ -1400,3 +1400,32 @@ All owned test roots were cleaned. Logs: project-local
 `runtime/qa/auth-session-sidecar/capture-pause-compatibility.txt` and
 `capture-pause-default-regressions.txt` in the same directory. Engine's synthetic
 loopback login test requires the scoped execution path outside the socket sandbox.
+
+## Synthetic account/session verifier contract
+
+The development binder uses version-1 request-correlated evidence, explicit
+authentication states, a five-second hard freshness bound and expected account
+identities per source. Unknown/logged-out/challenged evidence, cached/foreign
+responses and mismatched browser ownership leave admission closed. Expected
+identity declarations are copied at bind time; caller mutations cannot change
+the bound identity. No new configuration or ordinary-build activation is added.
+
+```powershell
+# Includes verifier/reader/pause/status contracts and actual tagged main restart
+# with fresh synthetic Chrome profiles/login. No physical click or registration.
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault
+```
+
+This remains a synthetic-only proof. The prelaunch authority callback belongs to
+the fixture control server; it is not real browser authentication. The actual
+browser callback checks the current scoped owner, and Engine verification precedes
+Store resume. Contract evidence and callback error details stay private. Real
+account/session compatibility requires a separate provider and explicit approval.
+
+The combined command passed verifier/reader/pause/status tests, canceled-probe
+denial, default-off CLI guards, synthetic contracts and default regressions/build.
+Actual tagged-main graceful and abrupt restart both passed using fresh synthetic
+profiles, one login/two captures per case, retained SQLite IDs/pause when authority
+was lost, and fresh verified owner epoch before resume. All new roots were cleaned.
+The drain regression waits for reasoning idle before database teardown. Log:
+`runtime/qa/auth-session-sidecar/session-verifier-contract-validation.txt`.

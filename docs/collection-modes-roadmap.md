@@ -5151,3 +5151,31 @@ contracts, ordinary config/main/capture-reader regressions and the default build
 All temporary synthetic databases/binaries were cleaned; the two result logs are
 retained in `runtime/qa/auth-session-sidecar/capture-pause-*.txt`. Original auth and
 user runtime remain untouched. This implementation is not yet committed/pushed.
+
+### 2026-10-14: source-scoped verifier contract, synthetic provider only
+
+Pause guard commit `d6d185e` is pushed and remote-main identity verified. The next
+authorized delta replaces a shared account identifier with copied expected
+identities per source and introduces version-1 authority/browser probe requests,
+fresh request correlation, explicit auth states and bounded observation age.
+Browser ownership still requires matching stable epoch/generation/PID/driver;
+revision disagreement and rejected proofs keep the queue/failure latch closed.
+The canonical development helper includes reader/pause and actual runtime-status
+contracts as well as automatic synthetic process restart. No physical frontend
+test or native registration is part of this continuation.
+
+The provider/domain remain synthetic-only and default-off. This does not resolve
+real-source identity extraction or prelaunch verification without a browser:
+those still need an expected-checkpoint/quarantined-startup design. Original auth,
+runtime, installation and credential/session export remain outside scope.
+
+The combined `-VerifyDevelopment -VerifyDefault` helper passed all selected
+contracts and the ordinary build. Verification includes whole-vector owner
+pinning, canceled-probe rejection, immutable expected identities, redacted errors
+and unchanged SQLite command/pause across failed resume and Retry. Actual tagged
+main's graceful/abrupt restart passed with one synthetic login and two captures
+each, complete old-tree/window release, original SQLite/profile identity and fresh
+epoch before verified resume. Drain-test teardown waits for reasoning idle.
+All new test roots were cleaned; no physical click, registration or original auth/
+runtime was used. Log: `runtime/qa/auth-session-sidecar/session-verifier-contract-validation.txt`.
+The nine verifier files remain uncommitted; guard commit `d6d185e` is published.

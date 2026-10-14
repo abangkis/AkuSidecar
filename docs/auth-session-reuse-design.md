@@ -1371,3 +1371,63 @@ and initial failed test roots were cleaned; result logs are retained at
 `runtime/qa/auth-session-sidecar/capture-pause-compatibility.txt` and
 `runtime/qa/auth-session-sidecar/capture-pause-default-regressions.txt`. No real
 authentication or user runtime was accessed, and no commit/push was authorized.
+
+## Versioned account/session verifier: synthetic adapter — 2026-10-14
+
+Persistent pause guard commit `d6d185e` is published on `main`. The next authorized
+delta defines the private development verifier contract without enabling a real
+authentication adapter. `DevelopmentSessionCapability.ExpectedAccounts` declares
+the expected account separately for each allowed source. The binder copies that
+map and the source list, rejects missing/extra/blank identities, and preserves
+source/account pairs in a private ordered aggregate. Matching an Instagram account
+never requires it to have the same identifier as an X account. Bridge permission,
+login UI presence and content-author names cannot substitute for this identity.
+
+Each callback receives a `DevelopmentSessionProbeRequest` with version 1, source,
+profile identity, authority/browser phase, a new probe ID and request time. Its
+evidence must echo that request, declare an explicit authentication state, and
+include observation time plus session revision. Only `authenticated` is accepted;
+`unknown`, `logged_out`, `challenge`, and `unsupported` remain closed. Zero/future/
+pre-request timestamps, expired observations, old probe IDs, wrong phases and
+unsupported versions are rejected. The hard maximum evidence age is five seconds,
+and the complete multisource result must remain fresh when returned. Browser
+evidence additionally matches the current stable Manager snapshot and actual
+epoch/generation/PID/driver across the entire source vector. Canceled requests
+cannot obtain or accept evidence, even when a callback returns otherwise valid
+data. No public HTTP/config option can override these checks.
+
+The synthetic process adapter performs a new authority/browser observation for
+each request and binds the response to that request. Legacy boolean evidence maps
+only a positive authenticated observation to `authenticated`; an absent/false
+observation cannot distinguish logout from unknown and remains `unknown`. Revision
+represents synthetic login/account/logout lineage, not a hash of every cookie.
+Neither evidence nor raw adapter errors may disclose account/session data through
+public status or error strings. A rejected proof keeps the existing failure latch:
+correcting evidence followed by Coordinator Retry alone cannot reopen admission.
+
+Authority before launch is the fixture's independent synthetic control authority.
+It is not proof that a real browser is currently logged in. The current development
+startup requires an already-ready scoped owner and a closed binder before recovery;
+handoff retains prelaunch authority and postlaunch browser verification. A future
+real adapter still requires a separate design for expected identity checkpoints,
+quarantined owner startup and fresh browser proof. This contract authorizes no
+credential export, cookie database access, automatic second login or real provider.
+Domain/provider remain `synthetic-fixture`, with the existing build tags, explicit
+opt-in and unsupported media/non-headless boundaries unchanged.
+
+Validation passed through `test-auth-session-sidecar.ps1 -VerifyDevelopment
+-VerifyDefault`: source-scoped identities, immutable expectations, state/version/
+phase/nonce/timestamp rejection, final vector freshness, whole-vector owner
+consistency, canceled requests, redacted errors and unchanged queued payload/null
+claim fields across failed resume/Retry. Actual tagged main passed graceful and
+abrupt full process restart with fresh synthetic profiles/login: one login and
+two captures per case, old owned tree/windows gone before reopen, same SQLite
+IDs/profile, fresh engine epoch, lost-authority pause retained, stale/duplicate
+denial and verified resume. The existing synthetic integration/default regressions
+and ordinary build also passed. The drain test now waits for resumed reasoning
+to become idle before Store cleanup, rather than treating terminal status alone
+as a completed teardown. Result log:
+`runtime/qa/auth-session-sidecar/session-verifier-contract-validation.txt`.
+All new temporary roots were cleaned, no physical click or registration was used,
+and original authentication/user runtime remain untouched. Verifier changes are
+not yet committed/pushed; only pause guard `d6d185e` was published in this step.

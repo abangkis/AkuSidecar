@@ -63,16 +63,23 @@ func TestDevelopmentCollectionRuntimeActualServerEndpointAndStrictPresence(t *te
 		t.Error("HTTP status contract must not launch a process")
 		return nil, nil
 	}, func() error { return nil })
-	capability := engine.DevelopmentSessionCapability{Provider: "synthetic-fixture", ProfileID: "invented-contract-profile", AccountID: "alpha", Sources: []domain.Source{domain.SourceX}}
-	evidence := func(source domain.Source) engine.DevelopmentSessionEvidence {
-		return engine.DevelopmentSessionEvidence{Domain: "synthetic-fixture", Source: source, ProfileID: capability.ProfileID, AccountID: "alpha", Revision: "invented-contract-revision", Authenticated: true}
+	capability := engine.DevelopmentSessionCapability{
+		Provider: "synthetic-fixture", ProfileID: "invented-contract-profile",
+		ExpectedAccounts: map[domain.Source]string{domain.SourceX: "alpha"}, Sources: []domain.Source{domain.SourceX},
 	}
-	capability.Authority = func(_ context.Context, source domain.Source) (engine.DevelopmentSessionEvidence, error) {
-		return evidence(source), nil
+	evidence := func(request engine.DevelopmentSessionProbeRequest) engine.DevelopmentSessionEvidence {
+		return engine.DevelopmentSessionEvidence{
+			Version: request.Version, Kind: request.Kind, ProbeID: request.ProbeID, ObservedAt: time.Now().UTC(),
+			Domain: "synthetic-fixture", Source: request.Source, ProfileID: request.ProfileID,
+			AccountID: "alpha", Revision: "invented-contract-revision", AuthState: engine.DevelopmentSessionAuthAuthenticated,
+		}
 	}
-	capability.Browser = func(_ context.Context, source domain.Source) (engine.DevelopmentBrowserEvidence, error) {
+	capability.Authority = func(_ context.Context, request engine.DevelopmentSessionProbeRequest) (engine.DevelopmentSessionEvidence, error) {
+		return evidence(request), nil
+	}
+	capability.Browser = func(_ context.Context, request engine.DevelopmentSessionProbeRequest) (engine.DevelopmentBrowserEvidence, error) {
 		s := owner.Snapshot()
-		return engine.DevelopmentBrowserEvidence{DevelopmentSessionEvidence: evidence(source), EngineEpoch: runtime.Epoch(), Generation: s.Generation, PID: owner.PID(), Driver: s.Driver}, nil
+		return engine.DevelopmentBrowserEvidence{DevelopmentSessionEvidence: evidence(request), EngineEpoch: runtime.Epoch(), Generation: s.Generation, PID: owner.PID(), Driver: s.Driver}, nil
 	}
 	if err := runtime.StartDevelopmentSession(ctx, owner, coordinator, capability, nil); err != nil {
 		t.Fatal(err)

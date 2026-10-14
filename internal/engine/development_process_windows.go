@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -160,26 +161,52 @@ func bindProcessSession(ctx context.Context, e *Engine, owner *captureruntime.Ma
 	if err != nil {
 		return err
 	}
-	evidence := func(v SyntheticSessionEvidence, source domain.Source) DevelopmentSessionEvidence {
-		return DevelopmentSessionEvidence{Domain: "synthetic-fixture", Source: source, ProfileID: profileID, AccountID: v.AccountID, Authenticated: v.Authenticated, Revision: v.Revision}
+	evidence := func(v SyntheticSessionEvidence, request DevelopmentSessionProbeRequest) DevelopmentSessionEvidence {
+		state := DevelopmentSessionAuthUnknown
+		if v.Authenticated {
+			state = DevelopmentSessionAuthAuthenticated
+		}
+		return DevelopmentSessionEvidence{
+			Version: request.Version, Kind: request.Kind, ProbeID: request.ProbeID, ObservedAt: time.Now().UTC(),
+			Domain: "synthetic-fixture", Source: request.Source, ProfileID: profileID,
+			AccountID: v.AccountID, AuthState: state, Revision: v.Revision,
+		}
 	}
-	capability := DevelopmentSessionCapability{Provider: "synthetic-fixture", ProfileID: profileID, AccountID: "alpha", Sources: []domain.Source{domain.SourceX, domain.SourceInstagram}}
-	capability.Authority = func(c context.Context, source domain.Source) (DevelopmentSessionEvidence, error) {
+	capability := DevelopmentSessionCapability{
+		Provider: "synthetic-fixture", ProfileID: profileID,
+		ExpectedAccounts: map[domain.Source]string{domain.SourceX: "alpha", domain.SourceInstagram: "alpha"},
+		Sources:          []domain.Source{domain.SourceX, domain.SourceInstagram},
+	}
+	capability.Authority = func(c context.Context, request DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
 		current, err := processFixtureDirectoryID(filepath.Join(start.Grant.Root, "shared"))
 		if err != nil || current != profileID {
 			return DevelopmentSessionEvidence{}, errors.New("development profile changed")
 		}
 		v, err := authority(c)
-		return evidence(v, source), err
+		if err != nil {
+			return DevelopmentSessionEvidence{}, err
+		}
+		current, err = processFixtureDirectoryID(filepath.Join(start.Grant.Root, "shared"))
+		if err != nil || current != profileID {
+			return DevelopmentSessionEvidence{}, errors.New("development profile changed")
+		}
+		return evidence(v, request), nil
 	}
-	capability.Browser = func(c context.Context, source domain.Source) (DevelopmentBrowserEvidence, error) {
+	capability.Browser = func(c context.Context, request DevelopmentSessionProbeRequest) (DevelopmentBrowserEvidence, error) {
 		current, err := processFixtureDirectoryID(filepath.Join(start.Grant.Root, "shared"))
 		if err != nil || current != profileID {
 			return DevelopmentBrowserEvidence{}, errors.New("development browser profile changed")
 		}
 		snapshot, pid := owner.Snapshot(), owner.PID()
 		v, err := browser(c)
-		return DevelopmentBrowserEvidence{DevelopmentSessionEvidence: evidence(v, source), EngineEpoch: e.Epoch(), Generation: snapshot.Generation, PID: pid, Driver: snapshot.Driver}, err
+		if err != nil {
+			return DevelopmentBrowserEvidence{}, err
+		}
+		current, err = processFixtureDirectoryID(filepath.Join(start.Grant.Root, "shared"))
+		if err != nil || current != profileID {
+			return DevelopmentBrowserEvidence{}, errors.New("development browser profile changed")
+		}
+		return DevelopmentBrowserEvidence{DevelopmentSessionEvidence: evidence(v, request), EngineEpoch: e.Epoch(), Generation: snapshot.Generation, PID: pid, Driver: snapshot.Driver}, nil
 	}
 	return e.StartDevelopmentSession(ctx, owner, coordinator, capability, nil)
 }
