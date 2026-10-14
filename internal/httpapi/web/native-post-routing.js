@@ -1,11 +1,13 @@
 // The current runtime chooses the route, not the saved collection preference.
 // A headless preference can temporarily have a Browser owner for a reader or FB.
+import { developmentReaderPriority } from "./development-reader-priority.js";
+
 export function createNativePostRouter({ readRuntime, openHeadless, openForeground }) {
   return async function open(request, { signal } = {}) {
     signal?.throwIfAborted();
     const runtime = await readRuntime();
     signal?.throwIfAborted();
-    if (!runtime?.nativeReaderOnly && (runtime?.effective === "headless" || runtime?.requested === "headless") &&
+    if (!developmentReaderPriority(runtime, request.source) && !runtime?.nativeReaderOnly && (runtime?.effective === "headless" || runtime?.requested === "headless") &&
         (runtime?.activeLeases > 0 || runtime?.collectionBorrowSource)) {
       throw new Error("Menunggu koleksi selesai. Klik native post lagi setelah koleksi selesai.");
     }

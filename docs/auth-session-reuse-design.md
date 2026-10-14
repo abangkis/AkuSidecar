@@ -1099,6 +1099,132 @@ The next proposed gate is ordinary web UI/bridge acceptance in an isolated QA
 composition with fresh profiles and synthetic login. Its design must preserve
 private transport and distinguish any remaining installed-host coverage gap.
 
+### Ordinary web frontend/bridge QA continuation authorized (2026-10-14)
+
+After DEV-3 publication at `1812d98`, the owner authorized design and testing of
+the ordinary web frontend and bridge in a separate QA instance with new profiles
+and synthetic login. This continuation must exercise production web assets and
+their real request/result correlation, rather than substituting another Win32
+button for the web frontend. The existing native fixture evidence can be reused
+only for unchanged native inputs; it cannot substitute for the new web boundary.
+
+Keep the actual server/database, browser profiles, synthetic authority and
+disposable output beneath the project-owned QA root, using private IPC and
+loopback-only source pages. Sidecar remains the parent lifetime owner. Before
+launching the UI extension, prove that native messaging cannot accidentally use
+an existing registered host or the production broker pipe. No global host
+registration, installation, original authentication or user runtime operation is
+authorized. Record real versus substituted transport segments explicitly; if
+private Windows native messaging cannot be established within these boundaries,
+do not claim full frontend-to-native acceptance. Commit/push requires a new
+checkpoint authorization.
+
+### Selected ordinary frontend/relay QA design (2026-10-14)
+
+The approved continuation is proposal step 1: design and test the real frontend
+and bridge under isolated QA. The selected composition uses actual dual-tag
+main, `httpapi.Server`, Engine, SQLite and synthetic development authority; the
+production web assets and injected `split_ui_bridge.js` serve one synthetic
+Timeline item seeded through Store. Launch project-pinned Chrome for Testing
+152.0.7977.54 through the existing owned Session/Job, with a new UI profile and
+exact ephemeral loopback origin. This UI split uses its server relay and UI broker,
+not the AkuBridge collector extension.
+
+Windows native-host discovery is registry-based; no reliable profile-local
+override was found. Therefore this composition explicitly closes native activation:
+the staged QA manifest omits `nativeMessaging` and the staged worker replaces the
+native call with an unsupported denial. Preserve trusted-click content-script
+identity/source, constrain staged origin, verify no native calls exist in the
+payload before launch, and record the worker transport substitution. Do not load
+the unchanged native-capable extension into QA and risk invoking an existing host.
+
+The only ordinary frontend behavior adjustment is a closed development-session
+guard for reader-priority availability/routing: verified development status,
+ready requested/effective headless runtime and a supported source are required.
+The development exception stays closed for ordinary/unknown/browser/pending/
+unsupported cases; existing ordinary Browser behavior is preserved. Actual server
+session/account/owner verification remains authoritative. Non-foreground checks
+precede a human click on the real rendered link. Measure actual bootstrap/render,
+relay/extension readiness, ping/probe, correlated action/cancel/audit and terminal
+unsupported UI result, then verify owned cleanup and isolated data. Private CDP
+observation must not simulate a physical click or fabricate frontend results.
+
+For the closed native boundary, a minimal dual-tag-only server registration may
+return a typed rejection after the existing bridge/source/URL/epoch validation
+and before any reader borrow. Its ordinary-build state is nil; it adds no public
+endpoint or positive capability. Assert actual rejection audit and no reader
+ownership transition/helper launch. The staged worker denial may be delayed by
+1.5 seconds solely to observe the concurrent relay POST; this is explicit QA
+orchestration, not evidence of a native ticket lifetime or native transport.
+
+The first owned headless preflight confirmed actual app/Timeline/relay/content
+readiness and an enabled link, but its rectangle was below the viewport. Treat
+rendered/enabled and in-viewport as separate facts: preparation requires the
+rendered real Store item and enabled link, while physical ARMED records viewport
+position honestly. The operator may scroll the actual page before one click.
+Do not scroll through CDP, rearrange DOM, or call an event handler to fabricate
+the user journey. The failed viewport predicate is retained as diagnostic evidence.
+
+This phase does not measure Chrome-launched native helper discovery, OS reader
+foreground, capture/reasoning handoff through the frontend, app-mode shell parity
+or an installed native host. DEV-3 native proof remains independently reusable;
+combining the two does not establish a full frontend-to-native run. Further native
+registration/runtime testing requires separate explicit authorization.
+
+### Frontend preparation accepted; physical click pending (2026-10-14)
+
+Canonical `scripts/test-auth-session-sidecar.ps1 -PrepareDevelopmentFrontend`
+passed, with raw output at
+`runtime/qa/auth-session-sidecar/frontend-preparation-final.txt`. It includes 29
+Node checks, three actual-main builds/four CLI early-rejection cases, staged
+payload checks, real-server closed admission before borrow, actual relay asset/
+bootstrap/typed background action/correlated cancellation, Store Timeline seed,
+and ordinary split reader/broker regressions. Headless ping/probe returned typed
+skips, not evidence of collector extension or source authentication parity.
+
+The final owned headless browser trial passed in 10.23 seconds: actual main PID
+24072, UI PID 36376, pinned CfT 152.0.7977.54, separate fresh profile, real
+app/relay/Timeline/content readiness, rendered/enabled link and one synthetic
+login. No native helper was staged or sampled, no broker server ran, no native
+action/cancel occurred in headless preparation, and graceful main exit left the
+outer owned process tree empty before fallback. This is graceful cleanup proof,
+not a new abrupt-parent-death or foreground-reader trial.
+
+App-only full-page screenshot
+`runtime/qa/auth-session-sidecar/frontend-preparation-viewport.png` was reviewed.
+The physical target is **Open source evidence** in the card **QA frontend: native
+activation is disabled**, below the onboarding card/initial viewport. The operator
+must scroll the actual page and click once. The UI window is distinctly titled
+**AkuBrowser QA - Native activation DISABLED**. Physical request correlation,
+terminal rejection/cancel and live window readback remain pending; no visible UI
+has been launched at this checkpoint. This continuation remains uncommitted.
+
+Independent post-preparation census found zero scoped QA processes. Two retained
+pre-Chrome staging run directories were removed only after exact path/non-reparse
+and zero-process verification; disposable `run-*` inventory is now zero. Stable
+failed/passing transcripts and the reviewed screenshot remain available.
+
+### Full native frontend QA exception authorized (2026-10-14)
+
+The full goal remains open: closed native denial cannot replace frontend-to-
+reader foreground/ownership and drain/pause/resume proof. A pinned CfT 152 source
+review confirmed registry discovery and direct-EXE feature/policy behavior. See
+`auth-session-frontend-qa-acceptance.md` and `auth-session-frontend-native-qa-plan.md`.
+
+The owner explicitly approved one temporary uniquely named QA host in
+`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.akubrowser.qa_reader_<32hex>`.
+This bounded exception permits neither production host replacement nor any other
+registration/install/policy/user-auth/runtime changes. Read-only checks confirmed
+the parent exists in both registry views. Complete/review the concrete root-local
+manifest/binary-hash/private-pipe receipt before applying only the new QA leaf;
+remove it after all owned trees exit only when contents still match the receipt.
+The Coordinator owns registry application/cleanup and human operational cues.
+Positive mode must use real native messaging with configured QA hostname/origin,
+unchanged Chrome-parent/image/Job/age/ticket/HWND/foreground checks, actual server/
+Engine authority and a fresh synthetic profile/login. No denial substitution or
+policy modification may stand in for full positive acceptance. Existing failed/
+passing negative/headless evidence remains separate. No new commit/push is approved.
+
 ## Primary references
 
 - [Windows nested Jobs and inherited membership](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
@@ -1114,3 +1240,32 @@ private transport and distinguish any remaining installed-host coverage gap.
 - [Chrome App-Bound Encryption](https://security.googleblog.com/2024/07/improving-security-of-chrome-cookies-on.html)
 - [Device-bound session credentials](https://blog.google/security/protecting-cookies-with-device-bound-session-credentials/)
 - [Chrome remote debugging restrictions](https://developer.chrome.com/blog/remote-debugging-port)
+
+## Full frontend/native QA preparation checkpoint — 2026-10-14
+
+The approved temporary QA native-host mechanism is implemented and its narrow
+preparation passed in `frontend-native-preparation-ready.txt` beneath the project
+QA directory. Configured original extension source, ordinary-build rejection,
+read-only registry ABI/provenance, actual Server metadata, Store seed and
+unregistered actual-main rejection are verified. The actual frontend click,
+Chrome-launched helper, reader foreground and composed pause/drain/resume remain
+pending operator readiness. No QA registry leaf has been applied at this checkpoint.
+Use the exact frozen receipt/commands in
+`auth-session-frontend-native-qa-plan.md` and the requirement-level evidence in
+`auth-session-frontend-qa-acceptance.md`. Native artifacts are retained until the
+owned trees stop and the one unchanged QA leaf is cleaned. Original authentication,
+user runtime and publication remain outside this continuation.
+
+Latest physical checkpoint (2026-10-14): monitor/desktop-safe no-activation QA
+presentation preparation passed. One permitted additional trial passed the real
+frontend click and Chrome-launched helper provenance, then failed the combined
+durable-pause/collector/driver check before capture drain. Full foreground,
+drain/resume, multiwindow and parent-death acceptance remains open. Review the
+harness's pre-drain persistence expectation against the binding's immediate
+admission fence and post-drain SQLite marker; no further retry was performed.
+The owned QA leaf was removed, four-view absence/zero scoped peers verified, and
+the three exact trial roots deleted. Stable logs and synthetic failure evidence
+remain; original authentication and user runtime were untouched. Current task
+budget is disabled by explicit user override; saved default remains 1,000,000.
+Historical measured usage is 921,237 at an earlier blocked cutoff; the latest
+native goal read returned null, so a native reset/new-phase count is unavailable.

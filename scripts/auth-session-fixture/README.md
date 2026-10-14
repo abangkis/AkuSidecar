@@ -1176,3 +1176,107 @@ patch whitespace checks passed. Publication does not activate the feature or
 touch original authentication/user runtime/install/registration. The next
 proposed acceptance path is the ordinary web UI/bridge in an isolated synthetic
 QA composition; installed native-host parity remains a distinct coverage gate.
+
+The owner subsequently authorized that web UI/bridge QA design and testing after
+DEV-3 commit `1812d98`. The new instance must use production web assets and real
+correlation, fresh profiles, synthetic loopback login and private transport, with
+Sidecar-owned lifetime. Before loading a native-capable extension, verify it
+cannot invoke any existing registered host or production pipe. Global native-host
+registration, installation, original authentication and user runtime operations
+remain excluded. Keep substituted transport segments and untested parity explicit;
+no additional commit/push is authorized by this testing continuation.
+
+Selected frontend phase: actual web assets, server-injected split UI relay and
+trusted-click content script, with real server/Store and synthetic authority.
+The isolated QA manifest removes `nativeMessaging`; its staged worker explicitly
+denies the native transport call. Verify both before launching pinned CfT with a
+new owned UI profile and exact loopback origin. A synthetic Timeline item is
+seeded through Store and rendered by the real frontend. A strict development-only
+availability/router guard supports the reader-priority link; that exception stays
+closed for ordinary/unknown/pending/browser/unsupported inputs, preserving the
+existing ordinary Browser path. The human clicks the real
+link; observe relay POST/cancel/audit and unsupported UI result without fabricating
+input. Private CDP is used for observation, and cleanup remains scoped to the
+owned QA process tree. Native host discovery/helper launch/foreground/handoff and
+app-mode parity remain unmeasured in this phase; DEV-3 proof is separate.
+
+The actual server may register a minimal dual-tag-only native denial after its
+normal bridge/source/URL/epoch validation, before reader borrow, with nil state
+in ordinary builds and no activation endpoint. Verify rejection audit and zero
+helper/reader transition. The staged worker's bounded 1.5-second denial allows
+the concurrent relay POST to be observed; it is explicit substituted transport
+timing, not a native-ticket or native-handoff claim.
+
+Frontend preparation distinguishes a rendered/enabled real link from an
+in-viewport link. The initial headless readback confirmed render/relay/content
+readiness but the link was below the viewport; retain that diagnostic failure.
+The physical operator may scroll the actual page and click once. ARMED must
+report viewport state honestly, without CDP scrolling/clicking or DOM rearrangement.
+
+Canonical frontend commands (separate invocations):
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -PrepareDevelopmentFrontend
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopmentFrontend -DevelopmentFrontendTaskRoot '<fresh direct project QA run directory>'
+```
+
+Final preparation passed at
+`runtime/qa/auth-session-sidecar/frontend-preparation-final.txt`: 29 Node cases,
+three main builds/four early-rejection CLI variants, staging/admission/actual
+server-relay/cancel/seed contracts, ordinary split reader/broker regressions and
+actual headless frontend readiness (10.23s, one synthetic login). Typed passive
+headless skips do not establish collector/source-auth parity. No native helper
+was staged or sampled, no broker ran or native action was made; graceful exit
+left the owned tree empty before fallback. The reviewed app-only screenshot is
+`runtime/qa/auth-session-sidecar/frontend-preparation-viewport.png`.
+
+Physical verification is still pending. In the distinct window **AkuBrowser QA -
+Native activation DISABLED**, scroll to **QA frontend: native activation is
+disabled** and click **Open source evidence** once after the coordinator's cue.
+The expected outcome is a correlated unsupported rejection/cancel, with no reader
+activation. Do not click Update now or repeat the link after denial. READY lives
+at `frontend-operator-cue.json.ready.json`; only safe title/PID/HWND/rect/viewport
+fields may be printed. The coordinator privately writes `{Nonce, MainPID}` to
+`frontend-operator-cue.json`; it only starts the 120-second operator deadline.
+An early real click proceeds immediately. Current source/doc changes are not
+committed, and no visible UI has launched at this preparation checkpoint.
+
+Independent post-preparation census: zero scoped QA processes and zero disposable
+run directories. The two retained pre-Chrome staging outputs were removed after
+exact path/non-reparse and zero-process verification; stable transcripts/PNG stay.
+
+The owner subsequently approved one temporary QA-native-host leaf under HKCU
+Google Chrome NativeMessagingHosts, with a unique `com.akubrowser.qa_reader_<32hex>`
+name. Exact staged manifest/helper/main hashes/private pipe must be reviewed before
+application; production keys and registry ancestors remain untouched. Read-only
+parent checks passed in both views. Coordinator owns apply/receipt/cleanup, and
+only deletes the owned leaf after trees exit and key contents match. No other
+registration, installation, policy, original-auth or user-runtime work is allowed.
+Full frontend native handoff/pause/drain/resume remains open; the denial/headless
+fixture must not be substituted for it. See the acceptance audit and QA-native
+plan under `docs/`. No new commit/push is authorized.
+
+Native frontend preparation checkpoint (2026-10-14):
+`scripts/test-auth-session-sidecar.ps1 -PrepareDevelopmentFrontendNative` passed;
+transcript: `runtime/qa/auth-session-sidecar/frontend-native-preparation-ready.txt`.
+The native branch preserves configured original extension source, uses an unchanged
+private-transport helper and retains its prepared root on success/failure until
+Coordinator registry cleanup. Registrar `scripts/qa-reader-host.ps1` defaults to
+preview and targets only the approved unique QA leaf. Its application and physical
+frontend/native verification have not run; operator readiness is pending. The
+physical target is **Open source evidence** under **QA native frontend: synthetic reader**
+in **AkuBrowser QA - Synthetic native reader**. Follow the exact frozen-root commands
+and ownership conditions in `docs/auth-session-frontend-native-qa-plan.md`.
+
+Latest trial/cleanup (2026-10-14): monitor-safe no-activation UI presentation
+preparation passed. The actual physical frontend click and Chrome native helper
+provenance passed; the trial failed the combined durable-pause/collector/driver
+predicate before capture drain. Foreground reader and composed resume are not
+proven. See `frontend-native-physical-monitor-trial.txt` and the acceptance audit.
+The exact approved QA leaf was removed after tree emptiness; independent cleanup
+confirmed absence in four registry views and zero scoped peers, then removed all
+three attempted roots. Historical frozen-root commands above cannot be replayed.
+Stable logs and minimal synthetic SQLite/checkpoint remain. No original auth or
+user runtime was touched and no new commit/push occurred. This task now has no
+budget by user override; the old 921,237-token measurement has partial coverage,
+and native reset/new-phase measurement is unavailable.

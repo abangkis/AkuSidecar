@@ -9,8 +9,10 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"golang.org/x/sys/windows"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -29,6 +31,43 @@ func RunDevelopmentSessionBrokerFixture(input io.Reader, output io.Writer, compo
 	err := runAuthSessionProcessFixture(input, output, true, composition)
 	if err != nil {
 		_ = json.NewEncoder(output).Encode(processFixtureReceipt{Stage: "dev_broker_failed", Failure: err.Error()})
+	}
+	return err
+}
+
+func RunDevelopmentSessionFrontendFixture(input io.Reader, output io.Writer, composition func(context.Context, *DevelopmentFixtureRuntime) error) error {
+	if composition == nil {
+		return errors.New("development frontend composition missing")
+	}
+	err := runAuthSessionProcessFixture(input, output, true, composition)
+	if err != nil {
+		_ = json.NewEncoder(output).Encode(processFixtureReceipt{Stage: "dev_frontend_failed", Failure: err.Error()})
+	}
+	return err
+}
+
+func RunDevelopmentSessionFrontendNativeFixture(input io.Reader, output io.Writer, composition func(context.Context, *DevelopmentFixtureRuntime) error) error {
+	if composition == nil || os.Getenv("AKU_DEV_FRONTEND_NATIVE_ENABLED") != "1" {
+		return errors.New("native frontend requires explicit staged provider")
+	}
+	err := runAuthSessionProcessFixtureChecked(input, output, true, composition, func(start processFixtureStart) error {
+		if start.NativeHost == nil || start.Grant.Reopen || os.Getenv("AKU_DEV_FRONTEND_HEADLESS") != "0" || start.NativeHost.Pipe != os.Getenv("AKU_BROKER_FIXTURE_PIPE") {
+			return errors.New("native frontend scoped startup frame rejected")
+		}
+		if err := readerbroker.ValidateFixturePipe(start.NativeHost.Pipe); err != nil {
+			return err
+		}
+		if err := start.NativeHost.ValidateApplied(filepath.Dir(start.Grant.Root)); err != nil {
+			return err
+		}
+		self, err := os.Executable()
+		if err != nil || !samePath(self, start.NativeHost.MainPath) {
+			return errors.New("native frontend main receipt identity rejected")
+		}
+		return nil
+	})
+	if err != nil {
+		_ = json.NewEncoder(output).Encode(processFixtureReceipt{Stage: "dev_frontend_native_failed", Failure: err.Error()})
 	}
 	return err
 }

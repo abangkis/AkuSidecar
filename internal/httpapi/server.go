@@ -54,8 +54,10 @@ type Server struct {
 	nativeTrace         nativetrace.Manager
 	appShellPID         func() int
 	splitCapture        *splitCaptureTransport
-	uiPerformanceMu     sync.RWMutex
-	uiPerformanceLatest *uiPerformanceSnapshot
+	// Set only by the tagged frontend QA composition, before Server.Start.
+	developmentNativeReaderClosed bool
+	uiPerformanceMu               sync.RWMutex
+	uiPerformanceLatest           *uiPerformanceSnapshot
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {

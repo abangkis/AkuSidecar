@@ -21,6 +21,7 @@ import (
 // DevelopmentFixtureRuntime exposes only the scoped synthetic composition. It
 // receives no user configuration and supports no arbitrary browser URL or CDP RPC.
 type DevelopmentFixtureRuntime struct {
+	NativeHost     *readerbroker.FixtureNativeHostReceipt
 	Engine         *Engine
 	State          *store.Store
 	Owner          *captureruntime.Manager

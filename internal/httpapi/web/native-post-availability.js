@@ -1,5 +1,8 @@
-export function nativePostWaitReason(runtime, session, opening = false) {
+import { developmentReaderPriority } from "./development-reader-priority.js";
+
+export function nativePostWaitReason(runtime, session, opening = false, source = null) {
   if (opening) return "Membuka native post…";
+  if (developmentReaderPriority(runtime, source)) return "";
   const hybrid = runtime?.requested === "headless" || runtime?.effective === "headless";
   if (!hybrid || runtime?.nativeReaderOnly) return "";
   const active = session && !["completed", "partial", "failed", "cancelled"].includes(session.status);

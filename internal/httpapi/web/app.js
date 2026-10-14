@@ -3047,14 +3047,14 @@ function openSourceFromSettings(source) {
 const nativePointerTraces = new WeakMap();
 let nativePostOpening = false;
 function syncNativePostLinks() {
-  const reason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders);
-  for (const link of document.querySelectorAll("[data-aku-native-post]")) syncNativePostAvailability(link, reason);
+  for (const link of document.querySelectorAll("[data-aku-native-post]")) syncNativePostAvailability(link,
+    nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, link.dataset.akuNativePost));
 }
 document.addEventListener("pointerdown", (event) => {
   if (!event.isTrusted || event.button !== 0) return;
   const link = event.target?.closest?.("a[data-aku-native-post]");
   if (!link) return;
-  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders));
+  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, link.dataset.akuNativePost));
   if (link.dataset.akuNativeWait) return;
   const pointerTrace = `pointer_${crypto.randomUUID().replaceAll("-", "")}`;
   nativePointerTraces.set(link, { trace: pointerTrace, at: Date.now() });
@@ -3065,7 +3065,7 @@ function configureNativePostLink(link, href, source) {
   link.href = href;
   link.dataset.akuNativePost = source;
   link.rel = "noopener noreferrer";
-  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders));
+  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, source));
   link.addEventListener("click", (event) => {
     const pointer = nativePointerTraces.get(link);
     nativePointerTraces.delete(link);
@@ -3075,7 +3075,7 @@ function configureNativePostLink(link, href, source) {
       return;
     }
     event.preventDefault();
-    const waitReason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders);
+    const waitReason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, source);
     syncNativePostAvailability(link, waitReason);
     if (waitReason) return;
     const brokerRequestId = link.dataset.akuReaderRequest;

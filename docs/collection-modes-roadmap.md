@@ -4971,7 +4971,99 @@ private transport and recording installed-host parity separately. No runtime
 activation, original authentication, installation or registration is authorized
 by this publication checkpoint.
 
+### 2026-10-14: ordinary web frontend/bridge synthetic QA authorized
+
+Following DEV-3 commit `1812d98`, the owner authorized design and testing of the
+ordinary web frontend and bridge in a separate QA instance, with new profiles
+and synthetic login. Use real production web assets, request/result correlation,
+an isolated server/database, private transport and Sidecar-owned process lifetime.
+No original authentication, user runtime, installation or global registration is
+authorized. Verify private native-host scoping before loading its UI extension;
+an existing registered host must never be invoked accidentally. Any substituted
+transport remains an explicit evidence boundary rather than a parity claim.
+This continuation does not authorize another commit/push.
+
+Selected step-1 design: actual frontend assets/injected relay/server/Store and
+synthetic development authority, project-pinned CfT under owned Session/Job, new
+UI profile and ephemeral loopback origin. The staged extension preserves the
+trusted-click content script but omits `nativeMessaging` and substitutes an
+explicit native-call denial, verified before launch. This prevents use of any
+existing Windows-registered host. The narrow frontend guard requires ready
+verified development headless status and a supported source; the exception stays
+closed for normal/unknown/pending/browser/unsupported cases while preserving the
+existing ordinary Browser path. Test actual render, relay ping/
+probe, physical click correlation/action/cancel/audit and terminal unsupported
+result plus owned cleanup. Native helper/foreground/handoff/app-mode/installed-
+host parity is outside this phase and must not be inferred from the separate
+DEV-3 native evidence. No physical UI run precedes preparation/root review.
+
+Closed native admission may use a minimal dual-tag-only server registration
+after real bridge/source/URL/epoch checks and before reader borrow, nil for
+ordinary builds with no new endpoint/positive capability. Assert typed rejection,
+audit and zero helper/reader transition. A bounded 1.5-second staged worker denial
+is only orchestration to observe the real concurrent relay POST; it does not prove
+native transport, ticket timing or handoff.
+
+Owned headless preflight reached actual app/Timeline/relay/content readiness and
+an enabled link, but the link was below the viewport. Separate rendered/enabled
+from in-viewport facts; physical readiness records the offscreen rectangle and
+the human scrolls the real page before clicking. No CDP scroll/click or DOM
+rearrangement substitutes for that journey. Preserve the diagnostic failure.
+
+Frontend preparation passed at `frontend-preparation-final.txt`: 29 Node checks,
+three main variants/four CLI early failures, staging/closed-before-borrow/actual
+server-relay/cancel/Store-seed contracts and ordinary reader/broker regressions.
+Typed passive headless skips are not collector/source-auth parity. Actual owned
+headless UI passed in 10.23s with real assets/Timeline/content, fresh UI profile,
+one synthetic login, no native helper/broker/action, and graceful exit leaving
+the owned tree empty before fallback. App-only screenshot was reviewed. Physical
+UI click/readback remains pending operator readiness; no visible UI has launched.
+The target is Open source evidence in the QA frontend: native activation is
+disabled card; the human must scroll the real page. Source/doc changes remain
+uncommitted. Abrupt parent death/native foreground/full-host parity are separate.
+
+### 2026-10-14: one temporary QA native host approved for full acceptance
+
+The owner approved a single uniquely named HKCU Google Chrome NativeMessagingHosts
+QA leaf (`com.akubrowser.qa_reader_<32hex>`) after the pinned-source discovery gate.
+Existing parent namespaces were checked read-only in both registry views. This
+is a bounded exception to earlier no-registration scope; other keys/ancestors,
+production hosts, install/policy/original-auth/user-runtime changes remain excluded.
+Prepare/review exact manifest/helper/main hashes, fresh root and private pipe
+before Coordinator applies the new leaf. Cleanup requires owned trees empty and
+the key contents/value still matching the ownership receipt. Full native mode
+must prove actual frontend/Chrome/helper/broker/reader, drain/pause/final-close
+verified resume and relevant failures with unchanged identity/foreground checks.
+Closed-native phase 1 is partial evidence, not completion. Detailed audit/plan:
+`auth-session-frontend-qa-acceptance.md`, `auth-session-frontend-native-qa-plan.md`.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
+
+Full frontend/native QA checkpoint (2026-10-14): the configured-original-worker
+and scoped native-host preparation passed; three main variants/helper/controller
+built, missing/foreign/unregistered startup was rejected before SQLite/Node/Chrome,
+and Root preview confirmed four-view exact-name collision absence plus zero scoped
+QA peers. The single host is authorized but has not been applied. Physical
+frontend/native handoff, pause/drain/resume, multiwindow and parent-death gates
+remain open pending operator readiness. Canonical command:
+`scripts/test-auth-session-sidecar.ps1 -VerifyDevelopmentFrontendNative -DevelopmentFrontendNativeTaskRoot <reviewed retained root>`.
+See `auth-session-frontend-qa-acceptance.md` and `auth-session-frontend-native-qa-plan.md`
+for the exact prepared receipt, evidence, apply/readback and cleanup order.
+
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not
 authorize commit, push, installation, runtime restart or release publication.
+
+Latest limited physical trial (2026-10-14):
+`frontend-native-monitor-preparation.txt` passed; real frontend click and
+Chrome-launched helper identity/parent/Job/age/handle/topmost-release checks passed.
+`frontend-native-physical-monitor-trial.txt` then failed the combined pause/owner
+predicate before capture drain. Remaining composed acceptance gates are open.
+Next review targets a harness-ordering mismatch: SQLite persistence is expected
+before capture release although the binding persists after active work drains.
+No additional physical retry occurred. Registry cleanup, four-view absence and
+zero scoped peers were verified, then all three attempted disposable roots were
+removed. Preserve stable logs/synthetic SQLite and current uncommitted changes.
+The user disabled this task's budget; saved default stays 1,000,000. Historical
+921,237-token measurement is partial and excludes resumed work; latest native
+goal read is null and no reset/replacement counter was created.

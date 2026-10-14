@@ -49,6 +49,7 @@ type processFixtureGrant struct {
 	TreeReleased bool
 }
 type processFixtureStart struct {
+	NativeHost                                                                  *readerbroker.FixtureNativeHostReceipt
 	Grant                                                                       processFixtureGrant
 	NodePath, ChromePath, DriverPath, Origin, AuthorityKey, SessionID, OldEpoch string
 	RunIDs                                                                      []string
@@ -56,6 +57,7 @@ type processFixtureStart struct {
 	ControllerImage                                                             string
 }
 type processFixtureReceipt struct {
+	Frontend                                                                                                                                                                                                                                                                                                            json.RawMessage
 	Stage                                                                                                                                                                                                                                                                                                               string
 	PID                                                                                                                                                                                                                                                                                                                 uint32
 	Epoch, SessionID                                                                                                                                                                                                                                                                                                    string
@@ -310,6 +312,10 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) error {
 }
 
 func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development bool, composition func(context.Context, *DevelopmentFixtureRuntime) error) (returnErr error) {
+	return runAuthSessionProcessFixtureChecked(input, output, development, composition, nil)
+}
+
+func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, development bool, composition func(context.Context, *DevelopmentFixtureRuntime) error, validateStart func(processFixtureStart) error) (returnErr error) {
 	executable, err := os.Executable()
 	expectedImage := "auth-session-process-fixture.exe"
 	if development {
@@ -347,6 +353,13 @@ func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development
 	}
 	if development && start.StartupBarrier != "" {
 		return errors.New("development runner rejects fault modes")
+	}
+	if validateStart != nil {
+		if err := validateStart(start); err != nil {
+			return err
+		}
+	} else if start.NativeHost != nil {
+		return errors.New("native frontend receipt requires its explicit provider")
 	}
 	if (start.StartupBarrier == "launcher_before_job" || start.StartupBarrier == "launcher_abort_before_job" || start.StartupBarrier == "launcher_resumed_tree") && !start.Grant.Reopen {
 		return runProcessFixtureLauncher(scanner, encoder, executable, start)
@@ -613,7 +626,7 @@ func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development
 		if !development || start.Grant.Reopen {
 			return errors.New("development broker requires fresh scoped grant")
 		}
-		return composition(ctx, &DevelopmentFixtureRuntime{Engine: e, State: state, Owner: manager, Coordinator: coordinator, Root: start.Grant.Root, backend: backend, bridge: bridge, reasoning: reasoningGate, scanner: scanner, encoder: encoder, authority: authority})
+		return composition(ctx, &DevelopmentFixtureRuntime{Engine: e, State: state, Owner: manager, Coordinator: coordinator, Root: start.Grant.Root, NativeHost: start.NativeHost, backend: backend, bridge: bridge, reasoning: reasoningGate, scanner: scanner, encoder: encoder, authority: authority})
 	}
 	evidence, err := backend.current.Load().Evidence(ctx)
 	if err != nil {

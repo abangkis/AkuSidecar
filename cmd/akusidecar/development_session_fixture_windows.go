@@ -13,8 +13,14 @@ func dispatchDevelopmentSession(options config.Options, input io.Reader, output 
 	if options.DevelopmentSessionReuse == "" {
 		return false, nil
 	}
-	if !options.Dev || (options.DevelopmentSessionReuse != "synthetic-fixture" && options.DevelopmentSessionReuse != "synthetic-broker-fixture") {
+	if !options.Dev || (options.DevelopmentSessionReuse != "synthetic-fixture" && options.DevelopmentSessionReuse != "synthetic-broker-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-native-fixture") {
 		return false, errors.New("development session requires --dev and supported synthetic-fixture provider")
+	}
+	if options.DevelopmentSessionReuse == "synthetic-frontend-native-fixture" {
+		return true, engine.RunDevelopmentSessionFrontendNativeFixture(input, output, runDevelopmentFrontendNative)
+	}
+	if options.DevelopmentSessionReuse == "synthetic-frontend-fixture" {
+		return true, engine.RunDevelopmentSessionFrontendFixture(input, output, runDevelopmentFrontend)
 	}
 	if options.DevelopmentSessionReuse == "synthetic-broker-fixture" {
 		return true, engine.RunDevelopmentSessionBrokerFixture(input, output, runDevelopmentBroker)

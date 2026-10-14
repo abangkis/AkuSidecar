@@ -89,31 +89,31 @@ type splitActionResult struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 }
 type pendingSplitAction struct {
-	collectionCleanupGeneration    uint64
-	browserRecaptureGeneration     uint64
-	action                         splitCaptureAction
-	queuedAt                       time.Time
-	claimed                        bool
-	result                         chan splitActionResult
-	readerPreparing                bool
-	readerPrepareCancel            context.CancelFunc
-	sourcePreparing                bool
-	sourcePrepared                 bool
-	interactionRelease             func()
-	readerForeground               func(context.Context) error
-	readerNavigatePost             func(context.Context) error
-	readerForegroundVerified       bool
-	readerManualForegroundRequired bool
+	collectionCleanupGeneration         uint64
+	browserRecaptureGeneration          uint64
+	action                              splitCaptureAction
+	queuedAt                            time.Time
+	claimed                             bool
+	result                              chan splitActionResult
+	readerPreparing                     bool
+	readerPrepareCancel                 context.CancelFunc
+	sourcePreparing                     bool
+	sourcePrepared                      bool
+	interactionRelease                  func()
+	readerForeground                    func(context.Context) error
+	readerNavigatePost                  func(context.Context) error
+	readerForegroundVerified            bool
+	readerManualForegroundRequired      bool
 	readerManualForegroundReplyConsumed bool
-	brokerReady                    chan struct{}
-	brokerDone                     chan error
-	brokerAttached                 bool
-	directReader                   bool
-	brokerTarget                   readerbroker.Target
-	runtimeLease                   *captureruntime.Lease
-	detached                       bool
-	completed                      bool
-	completionResult               *splitActionResult
+	brokerReady                         chan struct{}
+	brokerDone                          chan error
+	brokerAttached                      bool
+	directReader                        bool
+	brokerTarget                        readerbroker.Target
+	runtimeLease                        *captureruntime.Lease
+	detached                            bool
+	completed                           bool
+	completionResult                    *splitActionResult
 }
 type splitCaptureTransport struct {
 	mu                      sync.Mutex
@@ -1135,6 +1135,15 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}
 		}
 		a.ID = domain.NewID("split")
+		if a.Type == "open_native_post" && s.developmentNativeReaderClosed {
+			if err := (readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}).Validate(); err != nil {
+				return badRequest("Invalid native reader request.")
+			}
+			// The isolated frontend fixture exercises authenticated typed relay
+			// admission without borrowing a profile or invoking native code.
+			s.auditSplitAction(r.Context(), a, "result", "rejected")
+			return apiError{Status: 409, Code: "development_native_activation_closed", Message: "QA frontend: native activation is disabled."}
+		}
 		readerStarted := time.Now()
 		if a.Type == "open_native_post" && s.logger != nil {
 			defer func() {

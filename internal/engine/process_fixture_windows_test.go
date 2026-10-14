@@ -52,6 +52,12 @@ func startProcessFixtureChild(t *testing.T, executable string, start processFixt
 		if os.Getenv("AKU_DEV_BROKER_ENABLED") == "1" {
 			arguments = []string{"--dev", "--dev-session-reuse=synthetic-broker-fixture"}
 		}
+		if os.Getenv("AKU_DEV_FRONTEND_ENABLED") == "1" {
+			arguments = []string{"--dev", "--dev-session-reuse=synthetic-frontend-fixture"}
+		}
+		if os.Getenv("AKU_DEV_FRONTEND_NATIVE_ENABLED") == "1" {
+			arguments = []string{"--dev", "--dev-session-reuse=synthetic-frontend-native-fixture"}
+		}
 	}
 	child.cmd = exec.Command(executable, arguments...)
 	child.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}

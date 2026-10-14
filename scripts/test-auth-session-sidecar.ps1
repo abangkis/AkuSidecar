@@ -1,6 +1,14 @@
-param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[switch]$VerifyDevelopment,[switch]$PrepareDevelopmentBroker,[switch]$VerifyDevelopmentBroker,[string]$DevelopmentBrokerTaskRoot = '',[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
+param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[switch]$VerifyDevelopment,[switch]$PrepareDevelopmentBroker,[switch]$VerifyDevelopmentBroker,[switch]$PrepareDevelopmentFrontend,[switch]$VerifyDevelopmentFrontend,[switch]$PrepareDevelopmentFrontendNative,[switch]$VerifyDevelopmentFrontendNative,[string]$DevelopmentFrontendNativeHostName = '',[string]$DevelopmentFrontendNativeTaskRoot = '',[string]$DevelopmentFrontendTaskRoot = '',[string]$DevelopmentBrokerTaskRoot = '',[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
 $ErrorActionPreference = 'Stop'
 if ($PrepareDevelopmentBroker -and $VerifyDevelopmentBroker) { throw 'Preparation and physical broker acceptance are separate invocations.' }
+if ($PrepareDevelopmentFrontend -and $VerifyDevelopmentFrontend) { throw 'Frontend preparation and physical denial are separate invocations.' }
+$nativeFrontend = $PrepareDevelopmentFrontendNative -or $VerifyDevelopmentFrontendNative
+if ($PrepareDevelopmentFrontendNative -and $VerifyDevelopmentFrontendNative) { throw 'Native frontend preparation and physical acceptance are separate invocations.' }
+if ($nativeFrontend -and ($VerifyDefault -or $VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment -or $PrepareDevelopmentBroker -or $VerifyDevelopmentBroker -or $PrepareDevelopmentFrontend -or $VerifyDevelopmentFrontend -or $DevelopmentBrokerTaskRoot -ne '' -or $DevelopmentFrontendTaskRoot -ne '')) { throw 'Native frontend QA requires its separate narrow invocation.' }
+if (!$nativeFrontend -and $DevelopmentFrontendNativeTaskRoot -ne '') { throw 'Native frontend task root requires its explicit invocation.' }
+if ($DevelopmentFrontendNativeHostName -ne '' -and !$PrepareDevelopmentFrontendNative) { throw 'An approved native hostname can only be supplied during preparation.' }
+if ($PrepareDevelopmentFrontendNative -and $DevelopmentFrontendNativeHostName -notmatch '^com\.akubrowser\.qa_reader_[a-f0-9]{32}$') { throw 'Native preparation requires the explicit approved QA hostname.' }
+if (($PrepareDevelopmentFrontend -or $VerifyDevelopmentFrontend) -and ($VerifyDefault -or $VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment -or $PrepareDevelopmentBroker -or $VerifyDevelopmentBroker)) { throw 'Frontend QA is a separate narrow invocation.' }
 if ($VerifyChrome -and $ChromeTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Chrome test filter contains unsupported characters.' }
 if ($VerifyBroker -and $BrokerTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Broker test filter contains unsupported characters.' }
 if ($VerifyProcessRestart -and $ProcessTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Process test filter contains unsupported characters.' }
@@ -10,14 +18,26 @@ New-Item -ItemType Directory -Path $fixtureParent -Force | Out-Null
 $fixtureParent = (Resolve-Path -LiteralPath $fixtureParent).ProviderPath
 if ($fixtureParent -ne (Join-Path $projectRoot 'runtime\qa\auth-session-sidecar')) { throw 'Fixture parent escaped project scope.' }
 $taskRoot = Join-Path $fixtureParent ('run-' + [guid]::NewGuid().ToString('N'))
+if ($DevelopmentFrontendNativeTaskRoot -ne '') {
+    $taskRoot = [IO.Path]::GetFullPath($DevelopmentFrontendNativeTaskRoot)
+    if ([IO.Path]::GetDirectoryName($taskRoot) -ne $fixtureParent -or ![IO.Path]::GetFileName($taskRoot).StartsWith('run-')) { throw 'Native frontend root escaped exact project QA parent.' }
+}
+if ($VerifyDevelopmentFrontendNative -and (!(Test-Path -LiteralPath $taskRoot -PathType Container) -or $DevelopmentFrontendNativeTaskRoot -eq '')) { throw 'Physical native verification requires the retained prepared root.' }
+if ($PrepareDevelopmentFrontendNative -and (Test-Path -LiteralPath $taskRoot)) { throw 'Native preparation requires a fresh root.' }
+if ($DevelopmentFrontendTaskRoot -ne '') {
+    if (!($PrepareDevelopmentFrontend -or $VerifyDevelopmentFrontend) -or $DevelopmentBrokerTaskRoot -ne '') { throw 'Frontend task root requires the separate frontend invocation.' }
+    $DevelopmentBrokerTaskRoot = $DevelopmentFrontendTaskRoot
+}
 if ($DevelopmentBrokerTaskRoot -ne '') {
     $requestedRoot = [IO.Path]::GetFullPath($DevelopmentBrokerTaskRoot)
     if ([IO.Path]::GetDirectoryName($requestedRoot) -ne $fixtureParent -or ![IO.Path]::GetFileName($requestedRoot).StartsWith('run-') -or (Test-Path -LiteralPath $requestedRoot)) { throw 'Development broker task root must be a fresh direct run- directory in project QA.' }
     $taskRoot = $requestedRoot
 }
-New-Item -ItemType Directory -Path $taskRoot | Out-Null
+if (!$VerifyDevelopmentFrontendNative) { New-Item -ItemType Directory -Path $taskRoot | Out-Null }
 $previous = @{}
 $variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE','AKU_PROCESS_FIXTURE_ENABLED','AKU_DEV_SESSION_TEST_ROOT','AKU_DEV_BROKER_ENABLED','AKU_DEV_BROKER_CUE')
+$variables += @('AKU_DEV_FRONTEND_ENABLED','AKU_DEV_FRONTEND_HEADLESS','AKU_DEV_FRONTEND_PROJECT','AKU_DEV_FRONTEND_CUE')
+$variables += @('AKU_DEV_FRONTEND_NATIVE_ENABLED','AKU_DEV_FRONTEND_NATIVE_RECEIPT')
 foreach ($variable in $variables) { $previous[$variable] = [Environment]::GetEnvironmentVariable($variable, 'Process') }
 Push-Location -LiteralPath $projectRoot
 try {
@@ -29,6 +49,19 @@ try {
     $env:GOTOOLCHAIN = 'local'
     $env:CGO_ENABLED = '0'
     $env:AKU_DEV_BROKER_ENABLED = $null
+    $env:AKU_DEV_FRONTEND_NATIVE_ENABLED = $null
+    if ($nativeFrontend) {
+        & (Join-Path $PSScriptRoot 'test-development-frontend-native.ps1') -TaskRoot $taskRoot -ApprovedHostName $DevelopmentFrontendNativeHostName -Verify:$VerifyDevelopmentFrontendNative
+        if ($LASTEXITCODE -ne 0) { throw 'Native frontend QA failed.' }
+        Write-Output 'auth-session-sidecar native frontend validation completed exit=0; retained root requires owned registry cleanup before artifact deletion'
+        return
+    }
+    if ($PrepareDevelopmentFrontend -or $VerifyDevelopmentFrontend) {
+        & (Join-Path $PSScriptRoot 'test-development-frontend.ps1') -TaskRoot $taskRoot -Verify:$VerifyDevelopmentFrontend
+        if ($LASTEXITCODE -ne 0) { throw 'Frontend QA failed.' }
+        Write-Output 'auth-session-sidecar frontend validation completed exit=0'
+        return
+    }
     & go test -tags auth_session_fixture ./internal/engine ./internal/store ./internal/httpapi -run 'TestSyntheticExclusive|TestFixtureCapture' -count=1 -timeout=60s
     if ($LASTEXITCODE -ne 0) { throw 'Sidecar synthetic integration tests failed.' }
     & go test -tags auth_session_fixture ./internal/readerbroker ./cmd/aku-reader-broker ./cmd/auth-session-fixture-ui -count=1 -timeout=60s
@@ -128,8 +161,9 @@ try {
 finally {
     Pop-Location
     foreach ($variable in $variables) { [Environment]::SetEnvironmentVariable($variable, $previous[$variable], 'Process') }
-    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment -or $VerifyDevelopmentBroker) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
-    if (!$cleanupAllowed) { Write-Warning 'The Chrome fixture did not prove its owned Job Object empty; fixture output was retained.' }
+    $cleanupAllowed = !$nativeFrontend -and (!($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment -or $VerifyDevelopmentBroker -or $PrepareDevelopmentFrontend -or $VerifyDevelopmentFrontend) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf))
+    if ($nativeFrontend) { Write-Output ('RETAINED_NATIVE_QA_ROOT=' + $taskRoot + '; manifest/receipt/binaries retained for exact registry cleanup, including failed runs') }
+    if (!$cleanupAllowed -and !$nativeFrontend) { Write-Warning 'The Chrome fixture did not prove its owned Job Object empty; fixture output was retained.' }
     if ($cleanupAllowed -and (Test-Path -LiteralPath $taskRoot)) {
         $resolved = (Resolve-Path -LiteralPath $taskRoot).ProviderPath
         $item = Get-Item -LiteralPath $resolved
