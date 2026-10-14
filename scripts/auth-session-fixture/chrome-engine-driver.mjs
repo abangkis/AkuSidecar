@@ -102,7 +102,7 @@ async function execute(message) {
   switch (message.op) {
     case 'process_profile_scope':
       if (nextOwner !== 0) throw new Error('fixture_process_scope_late');
-      await scopeProcessFixtureProfile(root, message.nonce, message.reopen);
+      await scopeProcessFixtureProfile(root, message.nonce, message.reopen, message.prepared ?? false);
       return { scoped: true };
     case 'reader_marker': {
       if (message.owner !== currentOwner || !current || current.role !== 'owner' || !currentPage ||

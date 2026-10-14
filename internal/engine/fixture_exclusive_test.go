@@ -83,18 +83,19 @@ func syntheticObservation(source domain.Source) domain.Observation {
 }
 
 type syntheticSidecarHarness struct {
-	e       *Engine
-	state   *store.Store
-	c       *collection.Coordinator
-	m       *captureruntime.Manager
-	ctx     context.Context
-	cancel  context.CancelFunc
-	path    string
-	owners  atomic.Int64
-	reader  atomic.Pointer[syntheticProfileProcess]
-	initial *syntheticProfileProcess
-	backend *syntheticCaptureBackend
-	probe   func(context.Context) (SyntheticSessionEvidence, error)
+	coordinatorDone <-chan struct{}
+	e               *Engine
+	state           *store.Store
+	c               *collection.Coordinator
+	m               *captureruntime.Manager
+	ctx             context.Context
+	cancel          context.CancelFunc
+	path            string
+	owners          atomic.Int64
+	reader          atomic.Pointer[syntheticProfileProcess]
+	initial         *syntheticProfileProcess
+	backend         *syntheticCaptureBackend
+	probe           func(context.Context) (SyntheticSessionEvidence, error)
 }
 
 func newSyntheticSidecarHarness(t *testing.T, path string, backend *syntheticCaptureBackend) *syntheticSidecarHarness {
@@ -154,7 +155,28 @@ func newSyntheticSidecarHarness(t *testing.T, path string, backend *syntheticCap
 	h.c.SetSyntheticHeadlessCollector(1, backend)
 	h.e.AttachCollectionCoordinator(h.c)
 	h.c.Request("headless")
-	t.Cleanup(func() { h.cancel(); h.e.Shutdown(); h.m.Terminate(); _ = h.state.Close() })
+	t.Cleanup(func() {
+		h.cancel()
+		h.e.Shutdown()
+		done := h.coordinatorDone
+		if done == nil {
+			done = h.e.developmentCoordinatorDone
+		}
+		if done != nil {
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Error("synthetic coordinator did not drain before Store cleanup")
+			}
+		}
+		if !h.e.WaitForIdle(3 * time.Second) {
+			t.Error("synthetic reasoning did not drain before Store cleanup")
+		}
+		h.m.Terminate()
+		if err := h.state.Close(); err != nil {
+			t.Errorf("synthetic Store close: %v", err)
+		}
+	})
 	return h
 }
 func (h *syntheticSidecarHarness) bind(t *testing.T, probe func(context.Context) (SyntheticSessionEvidence, error)) {
@@ -163,7 +185,7 @@ func (h *syntheticSidecarHarness) bind(t *testing.T, probe func(context.Context)
 	if err := h.e.BindSyntheticExclusive("alpha", probe); err != nil {
 		t.Fatal(err)
 	}
-	h.c.Start(h.ctx)
+	h.coordinatorDone = h.c.StartWithDone(h.ctx)
 	syntheticWait(t, func() bool { return !h.c.Status().BatchPaused }, "initial verified admission")
 }
 func syntheticWait(t *testing.T, check func() bool, label string) {
@@ -177,7 +199,7 @@ func syntheticWait(t *testing.T, check func() bool, label string) {
 	}
 }
 func syntheticProbe(context.Context) (SyntheticSessionEvidence, error) {
-	return SyntheticSessionEvidence{true, "alpha", "invented-revision"}, nil
+	return SyntheticSessionEvidence{Authenticated: true, AccountID: "alpha", Revision: "invented-revision"}, nil
 }
 func (h *syntheticSidecarHarness) borrow(t *testing.T) {
 	t.Helper()
@@ -344,7 +366,7 @@ func TestSyntheticExclusiveSyntheticLoginAndLogout(t *testing.T) {
 			w.WriteHeader(401)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(SyntheticSessionEvidence{true, "alpha", "invented-local-only-revision"})
+		_ = json.NewEncoder(w).Encode(SyntheticSessionEvidence{Authenticated: true, AccountID: "alpha", Revision: "invented-local-only-revision"})
 	}))
 	defer fixture.Close()
 	jar, _ := cookiejar.New(nil)
@@ -428,7 +450,7 @@ func TestSyntheticExclusiveAccountMismatchLatchesPause(t *testing.T) {
 	var account atomic.Value
 	account.Store("alpha")
 	probe := func(context.Context) (SyntheticSessionEvidence, error) {
-		return SyntheticSessionEvidence{true, account.Load().(string), "invented-revision"}, nil
+		return SyntheticSessionEvidence{Authenticated: true, AccountID: account.Load().(string), Revision: "invented-revision"}, nil
 	}
 	h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
 	h.bind(t, probe)

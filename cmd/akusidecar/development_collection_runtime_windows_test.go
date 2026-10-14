@@ -64,7 +64,7 @@ func TestDevelopmentCollectionRuntimeActualServerEndpointAndStrictPresence(t *te
 		return nil, nil
 	}, func() error { return nil })
 	capability := engine.DevelopmentSessionCapability{
-		Provider: "synthetic-fixture", ProfileID: "invented-contract-profile",
+		Provider: "synthetic-fixture", StoreScopeID: "invented-contract-store", ProfileID: "invented-contract-profile",
 		ExpectedAccounts: map[domain.Source]string{domain.SourceX: "alpha"}, Sources: []domain.Source{domain.SourceX},
 	}
 	evidence := func(request engine.DevelopmentSessionProbeRequest) engine.DevelopmentSessionEvidence {
@@ -80,6 +80,9 @@ func TestDevelopmentCollectionRuntimeActualServerEndpointAndStrictPresence(t *te
 	capability.Browser = func(_ context.Context, request engine.DevelopmentSessionProbeRequest) (engine.DevelopmentBrowserEvidence, error) {
 		s := owner.Snapshot()
 		return engine.DevelopmentBrowserEvidence{DevelopmentSessionEvidence: evidence(request), EngineEpoch: runtime.Epoch(), Generation: s.Generation, PID: owner.PID(), Driver: s.Driver}, nil
+	}
+	if err := runtime.PrepareDevelopmentSessionCheckpoint(ctx, capability, true); err != nil {
+		t.Fatal(err)
 	}
 	if err := runtime.StartDevelopmentSession(ctx, owner, coordinator, capability, nil); err != nil {
 		t.Fatal(err)

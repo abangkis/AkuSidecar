@@ -75,6 +75,15 @@ func RunDevelopmentSessionFixture(input io.Reader, output io.Writer) error {
 	return runAuthSessionProcessFixture(input, output, true, nil)
 }
 
+func prepareDevelopmentProcessCheckpoint(ctx context.Context, e *Engine, storeScopeID, profileID string, freshEnrollment bool) error {
+	capability := DevelopmentSessionCapability{
+		Provider: "synthetic-fixture", StoreScopeID: storeScopeID, ProfileID: profileID,
+		ExpectedAccounts: map[domain.Source]string{domain.SourceX: "alpha", domain.SourceInstagram: "alpha"},
+		Sources:          []domain.Source{domain.SourceX, domain.SourceInstagram},
+	}
+	return e.PrepareDevelopmentSessionCheckpoint(ctx, capability, freshEnrollment)
+}
+
 func RunDevelopmentSessionBrokerFixture(input io.Reader, output io.Writer, composition func(context.Context, *DevelopmentFixtureRuntime) error) error {
 	if composition == nil {
 		return errors.New("development broker composition missing")
@@ -173,7 +182,7 @@ func bindProcessSession(ctx context.Context, e *Engine, owner *captureruntime.Ma
 		}
 	}
 	capability := DevelopmentSessionCapability{
-		Provider: "synthetic-fixture", ProfileID: profileID,
+		Provider: "synthetic-fixture", StoreScopeID: start.Grant.RootID, ProfileID: profileID,
 		ExpectedAccounts: map[domain.Source]string{domain.SourceX: "alpha", domain.SourceInstagram: "alpha"},
 		Sources:          []domain.Source{domain.SourceX, domain.SourceInstagram},
 	}

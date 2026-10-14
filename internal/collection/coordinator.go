@@ -258,7 +258,15 @@ func (c *Coordinator) SetBrowserCollectionFailure(leaseID, message string) {
 	c.browserCollectionFailures[leaseID] = message
 }
 func (c *Coordinator) Start(ctx context.Context) {
+	c.StartWithDone(ctx)
+}
+
+// StartWithDone exposes completion of this polling loop so scoped callers can
+// cancel and drain it before closing resources used by its callbacks.
+func (c *Coordinator) StartWithDone(ctx context.Context) <-chan struct{} {
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -272,6 +280,7 @@ func (c *Coordinator) Start(ctx context.Context) {
 			}
 		}
 	}()
+	return done
 }
 func (c *Coordinator) reconcile(parent context.Context) {
 	c.mu.Lock()

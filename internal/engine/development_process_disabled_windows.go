@@ -19,3 +19,9 @@ func bindProcessSession(_ context.Context, e *Engine, _ *captureruntime.Manager,
 func validateDevelopmentController(processFixtureStart) error {
 	return errors.New("development adapter unavailable")
 }
+
+func prepareDevelopmentProcessCheckpoint(context.Context, *Engine, string, string, bool) error {
+	return errors.New("development adapter unavailable")
+}
+
+func developmentCheckpointAuthorizedAtStartup(*Engine) bool { return false }

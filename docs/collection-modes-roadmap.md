@@ -5209,3 +5209,31 @@ The delta remains uncommitted. Owner startup ordering and verifier-to-Store proo
 binding remain the next integration gate, within a separately authorized
 synthetic fixture step.
 The complete Store suite additionally passed in all three build variants.
+
+### 2026-10-14: pre-owner fence and verifier-to-Store integration authorized
+
+The 13-file Store checkpoint is published as `8abe4e0` with exact remote SHA
+verification. The next scoped implementation prepares durable closed admission
+before synthetic development owner startup, validates persisted expectations on
+reopen, and binds fresh version 1 verifier vectors to Store authorization before
+verified recovery/resume. Reader handoff must revoke the permit after draining;
+headless return must use a fresh fence and proof. Fresh enrollment is explicit;
+reopen cannot learn accounts or log in again. Real authentication/user runtime,
+installation and registry operations remain excluded. Automatic process/session
+evidence does not replace physical foreground/native acceptance.
+
+The synthetic integration is implemented and validated: Store compatibility
+passed in three builds/seven processes; five prepared-profile guard cases passed;
+verifier/checkpoint/HTTP/default-off contracts and ordinary regressions/build
+passed. Tagged main's graceful/abrupt restart each proved fence-before-owner,
+proof-before-authorization, one synthetic login/two captures, original fixture
+SQLite/profile identity, fresh epoch, lost-authority closure and complete old-tree
+release. Pause/fence changes during proof reject resume without changing queued
+payloads. Shutdown joins coordinator polling before Store close; its intermittent
+cleanup regression passed three repetitions. Prepared Node profile scope remains
+private, requires an empty owned directory and pins its identity before Chrome.
+All owned disposable roots were cleaned; no original auth/runtime, registry,
+installation or physical-click acceptance was used. Logs are the
+`startup-checkpoint-*.txt` files under `runtime/qa/auth-session-sidecar`.
+Publication of this integration delta is authorized after scoped review; real-source verifier readiness and
+its separately authorized acceptance remain open.

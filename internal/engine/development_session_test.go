@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"strings"
@@ -25,7 +26,7 @@ func developmentCapability(h *syntheticSidecarHarness) DevelopmentSessionCapabil
 		}
 	}
 	return DevelopmentSessionCapability{
-		Provider: "synthetic-fixture", ProfileID: "scoped-fixture-profile",
+		Provider: "synthetic-fixture", StoreScopeID: "scoped-fixture-store", ProfileID: "scoped-fixture-profile",
 		ExpectedAccounts: map[domain.Source]string{domain.SourceX: "alpha", domain.SourceInstagram: "alpha"},
 		Sources:          []domain.Source{domain.SourceX, domain.SourceInstagram},
 		Authority: func(_ context.Context, request DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
@@ -38,8 +39,72 @@ func developmentCapability(h *syntheticSidecarHarness) DevelopmentSessionCapabil
 	}
 }
 
+func prepareDevelopmentHarness(t *testing.T, h *syntheticSidecarHarness, capability DevelopmentSessionCapability) {
+	t.Helper()
+	if err := h.e.PrepareDevelopmentSessionCheckpoint(h.ctx, capability, false); err == nil {
+		return
+	}
+	if err := h.e.PrepareDevelopmentSessionCheckpoint(h.ctx, capability, true); err != nil {
+		t.Fatalf("prepare synthetic development checkpoint: %v", err)
+	}
+}
+
+type developmentQueuedCommandSnapshot struct {
+	status    string
+	payload   string
+	claimedAt sql.NullString
+	claimedBy sql.NullString
+}
+
+func queueDevelopmentFixtureCommand(t *testing.T, h *syntheticSidecarHarness, intent string, pause bool) (string, string, string) {
+	t.Helper()
+	settings, err := h.state.GetSettings(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := h.state.CreateUpdateSession(h.ctx, intent, settings, domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.state.AdvanceSession(h.ctx, session.ID)
+	if err != nil || run == nil {
+		t.Fatalf("create queued development run: run=%v err=%v", run, err)
+	}
+	payload := capturePayload(*run, session.ID, settings, 1, nil, "")
+	payload["captureRuntime"] = map[string]any{"driver": "headless", "epoch": h.e.Epoch(), "generation": int(h.m.Snapshot().Generation)}
+	payload["captureCollector"] = collectorStamp("headless")
+	command, err := h.state.StartRun(h.ctx, run.ID, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pause {
+		if err := h.state.PauseFixtureCaptureSession(h.ctx, session.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return session.ID, run.ID, command.ID
+}
+
+func readDevelopmentQueuedCommandSnapshot(t *testing.T, h *syntheticSidecarHarness, commandID string) developmentQueuedCommandSnapshot {
+	t.Helper()
+	db, err := sql.Open("sqlite", h.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var row developmentQueuedCommandSnapshot
+	if err := db.QueryRowContext(h.ctx, `SELECT status,payload_json,claimed_at,claimed_by FROM bridge_commands WHERE id=?`, commandID).
+		Scan(&row.status, &row.payload, &row.claimedAt, &row.claimedBy); err != nil {
+		t.Fatal(err)
+	}
+	return row
+}
+
 func bindDevelopmentHarness(t *testing.T, h *syntheticSidecarHarness, capability DevelopmentSessionCapability) {
 	t.Helper()
+	prepareDevelopmentHarness(t, h, capability)
 	var initialized atomic.Bool
 	if err := h.e.StartDevelopmentSession(h.ctx, h.m, h.c, capability, func(context.Context) error {
 		if h.e.fixtureAdmissionAllowed() || !h.c.Status().DevelopmentSession {
@@ -70,6 +135,7 @@ func TestDevelopmentSessionCapabilityDeniesUnknownAndForeignEvidence(t *testing.
 		t.Run(invalid, func(t *testing.T) {
 			h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
 			cap := developmentCapability(h)
+			prepareDevelopmentHarness(t, h, cap)
 			authority, browser := cap.Authority, cap.Browser
 			cap.Authority = func(ctx context.Context, request DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
 				v, err := authority(ctx, request)
@@ -162,6 +228,7 @@ func TestDevelopmentSessionExpectedAccountsAreExactAndSourceScoped(t *testing.T)
 		t.Run(invalid, func(t *testing.T) {
 			h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
 			cap := developmentCapability(h)
+			prepareDevelopmentHarness(t, h, cap)
 			switch invalid {
 			case "missing":
 				delete(cap.ExpectedAccounts, domain.SourceInstagram)
@@ -270,6 +337,7 @@ func TestDevelopmentSessionRejectsEvidenceThatAgesBeforeVectorCompletion(t *test
 	cap := developmentCapability(h)
 	current := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
 	cap.clock = func() time.Time { return current }
+	prepareDevelopmentHarness(t, h, cap)
 	authority := cap.Authority
 	cap.Authority = func(ctx context.Context, request DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
 		if request.Source == domain.SourceInstagram {
@@ -341,7 +409,7 @@ func TestDevelopmentSessionCanceledProbeCannotVerify(t *testing.T) {
 			ctx, cancel := context.WithCancel(h.ctx)
 			defer cancel()
 			cap.Authority = func(c context.Context, request DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
-				if armed.Load() {
+				if armed.Load() && c == ctx {
 					calls.Add(1)
 					cancel()
 				}
@@ -373,6 +441,7 @@ func TestDevelopmentSessionVerifierErrorsDoNotExposeEvidenceOrBackendText(t *tes
 	h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
 	cap := developmentCapability(h)
 	cap.ProfileID = "C:\\private\\profile\\path"
+	prepareDevelopmentHarness(t, h, cap)
 	cap.Authority = func(_ context.Context, _ DevelopmentSessionProbeRequest) (DevelopmentSessionEvidence, error) {
 		return DevelopmentSessionEvidence{AccountID: "private-account", Revision: "private-revision"}, errors.New("private backend response")
 	}
@@ -392,6 +461,7 @@ func TestDevelopmentSessionStartupRejectsBeforeRecovery(t *testing.T) {
 		t.Run(invalid, func(t *testing.T) {
 			h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
 			cap := developmentCapability(h)
+			prepareDevelopmentHarness(t, h, cap)
 			switch invalid {
 			case "missing_provider":
 				cap.Provider = ""
@@ -415,6 +485,8 @@ func TestDevelopmentSessionRejectsUnsupportedFrozenWorkBeforeResume(t *testing.T
 	for _, invalid := range []string{"browser_plan", "facebook_plan"} {
 		t.Run(invalid, func(t *testing.T) {
 			h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
+			cap := developmentCapability(h)
+			prepareDevelopmentHarness(t, h, cap)
 			settings, _ := h.state.GetSettings(h.ctx)
 			if invalid == "browser_plan" {
 				settings.CollectionMode = "browser"
@@ -425,7 +497,7 @@ func TestDevelopmentSessionRejectsUnsupportedFrozenWorkBeforeResume(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := h.e.BindDevelopmentSession(h.ctx, developmentCapability(h)); err == nil {
+			if err := h.e.BindDevelopmentSession(h.ctx, cap); err == nil {
 				t.Fatal("unsupported frozen work adopted")
 			}
 			if h.e.fixtureAdmissionAllowed() {
@@ -439,12 +511,160 @@ func TestDevelopmentSessionRejectsUnsupportedFrozenWorkBeforeResume(t *testing.T
 	}
 }
 
+func TestDevelopmentCheckpointFenceRotationDuringReceiptFailsClosed(t *testing.T) {
+	h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
+	capability := developmentCapability(h)
+	prepareDevelopmentHarness(t, h, capability)
+	_, runID, commandID := queueDevelopmentFixtureCommand(t, h, "checkpoint fence rotation", false)
+	before := readDevelopmentQueuedCommandSnapshot(t, h, commandID)
+	var armed atomic.Bool
+	var rotated atomic.Bool
+	browser := capability.Browser
+	capability.Browser = func(ctx context.Context, request DevelopmentSessionProbeRequest) (DevelopmentBrowserEvidence, error) {
+		proof, err := browser(ctx, request)
+		if err == nil && armed.Load() && rotated.CompareAndSwap(false, true) {
+			h.e.developmentCheckpointMu.Lock()
+			revoke := h.e.developmentCheckpointRevoke
+			h.e.developmentCheckpointMu.Unlock()
+			if revoke == nil {
+				return DevelopmentBrowserEvidence{}, errors.New("checkpoint revoke callback missing")
+			}
+			if err := revoke(ctx); err != nil {
+				return DevelopmentBrowserEvidence{}, errors.New("checkpoint hold rotation failed")
+			}
+		}
+		return proof, err
+	}
+	initialized := false
+	err := h.e.StartDevelopmentSession(h.ctx, h.m, h.c, capability, func(ctx context.Context) error {
+		if command, err := h.state.ClaimCommandForCollector(ctx, runID, "checkpoint-rotation", "headless"); err != nil || command != nil {
+			return errors.New("initializer claimed work before checkpoint authorization")
+		}
+		initialized = true
+		armed.Store(true)
+		return nil
+	})
+	if err == nil || !initialized || !rotated.Load() {
+		t.Fatal("a fence rotated during receipt probes did not reject startup authorization")
+	}
+	if after := readDevelopmentQueuedCommandSnapshot(t, h, commandID); after != before {
+		t.Fatalf("failed receipt proof changed queued capture: before=%+v after=%+v", before, after)
+	}
+	if command, err := h.state.ClaimCommandForCollector(h.ctx, runID, "checkpoint-rotation-after", "headless"); err != nil || command != nil {
+		t.Fatalf("rotated checkpoint left a Store permit: command=%v err=%v", command, err)
+	}
+	db, err := sql.Open("sqlite", h.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var rawFence string
+	if err := db.QueryRowContext(h.ctx, `SELECT value FROM meta WHERE key='synthetic_account_checkpoint_fence'`).Scan(&rawFence); err != nil {
+		t.Fatal(err)
+	}
+	var fence struct {
+		State string `json:"state"`
+	}
+	if json.Unmarshal([]byte(rawFence), &fence) != nil || fence.State != "pending" {
+		t.Fatal("failed proof did not leave a durable pending fence")
+	}
+}
+
+func TestDevelopmentCheckpointAdmissionRaceLeavesPausedCommandUnchanged(t *testing.T) {
+	h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
+	capability := developmentCapability(h)
+	prepareDevelopmentHarness(t, h, capability)
+	var browserCalls atomic.Int64
+	var armed atomic.Bool
+	var admissionInvalidated atomic.Bool
+	browser := capability.Browser
+	capability.Browser = func(ctx context.Context, request DevelopmentSessionProbeRequest) (DevelopmentBrowserEvidence, error) {
+		proof, err := browser(ctx, request)
+		if err == nil && armed.Load() {
+			call := browserCalls.Add(1)
+			if call == 3 && admissionInvalidated.CompareAndSwap(false, true) {
+				h.e.fixtureAdmission.mu.Lock()
+				h.e.fixtureAdmission.pauseEpoch++
+				h.e.fixtureAdmission.mu.Unlock()
+			}
+		}
+		return proof, err
+	}
+	var initialized atomic.Bool
+	if err := h.e.StartDevelopmentSession(h.ctx, h.m, h.c, capability, func(context.Context) error {
+		initialized.Store(true)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !initialized.Load() {
+		t.Fatal("verified synthetic startup did not reach headless readiness")
+	}
+	syntheticWait(t, func() bool { return !h.c.Status().BatchPaused }, "verified synthetic startup readiness")
+	sessionID, runID, commandID := queueDevelopmentFixtureCommand(t, h, "checkpoint admission race", false)
+	h.borrow(t)
+	before := readDevelopmentQueuedCommandSnapshot(t, h, commandID)
+	if paused, err := h.state.FixtureCaptureSessionPaused(h.ctx, sessionID); err != nil || !paused {
+		t.Fatalf("reader transition did not persist the queue pause: paused=%t err=%v", paused, err)
+	}
+	browserCalls.Store(0)
+	armed.Store(true)
+	reader := h.reader.Load()
+	if reader == nil {
+		t.Fatal("synthetic reader missing before return transition")
+	}
+	reader.windows.Store(0)
+	reader.Terminate()
+	syntheticWait(t, func() bool {
+		status := h.c.Status()
+		return status.Effective == "headless" && status.BatchPaused && status.Failure != ""
+	}, "admission-invalidated headless return")
+	if !admissionInvalidated.Load() || browserCalls.Load() < 3 {
+		t.Fatal("admission pause did not occur during receipt vector probes")
+	}
+	if after := readDevelopmentQueuedCommandSnapshot(t, h, commandID); after != before {
+		t.Fatalf("admission race restamped or claimed a queued command: before=%+v after=%+v", before, after)
+	}
+	if paused, err := h.state.FixtureCaptureSessionPaused(h.ctx, sessionID); err != nil || !paused {
+		t.Fatalf("admission race cleared the durable pause: paused=%t err=%v", paused, err)
+	}
+	if command, err := h.state.ClaimCommandForCollector(h.ctx, runID, "checkpoint-admission-after", "headless"); err != nil || command != nil {
+		t.Fatalf("admission race left a Store permit: command=%v err=%v", command, err)
+	}
+}
+
+func TestDevelopmentCheckpointAuthorizedMatchingCommandCanClaim(t *testing.T) {
+	backend := &syntheticCaptureBackend{entered: make(chan struct{}), release: make(chan struct{})}
+	h := newSyntheticSidecarHarness(t, "", backend)
+	defer close(backend.release)
+	capability := developmentCapability(h)
+	prepareDevelopmentHarness(t, h, capability)
+	_, _, commandID := queueDevelopmentFixtureCommand(t, h, "authorized matching checkpoint command", false)
+	if err := h.e.StartDevelopmentSession(h.ctx, h.m, h.c, capability, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !developmentCheckpointAuthorizedAtStartup(h.e) {
+		t.Fatal("synthetic checkpoint did not authorize before headless dispatch")
+	}
+	h.e.StartHeadlessCollection(h.ctx)
+	select {
+	case <-backend.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("authorized matching command was not dispatched to the headless collector")
+	}
+	claimed := readDevelopmentQueuedCommandSnapshot(t, h, commandID)
+	if claimed.status != "claimed" || !claimed.claimedBy.Valid || claimed.claimedBy.String == "" {
+		t.Fatalf("matching synthetic command did not reach the authorized claim path: %+v", claimed)
+	}
+}
+
 func TestDevelopmentSessionStartupDefersAcceptedReasoningUntilPausedBinding(t *testing.T) {
 	h := newSyntheticSidecarHarness(t, "", &syntheticCaptureBackend{})
 	session, err := h.e.StartVisibleUpdate(h.ctx, "durable accepted capture before startup")
 	if err != nil {
 		t.Fatal(err)
 	}
+	capability := developmentCapability(h)
 	command, err := h.e.claimCommandForCollector(h.ctx, session.Runs[0].ID, "seed", "headless", "headless")
 	if err != nil || command == nil {
 		t.Fatal("seed command missing", err)
@@ -452,9 +672,10 @@ func TestDevelopmentSessionStartupDefersAcceptedReasoningUntilPausedBinding(t *t
 	if err := h.state.SaveObservation(h.ctx, command.ID, session.Runs[0].ID, syntheticObservation(domain.SourceX)); err != nil {
 		t.Fatal(err)
 	}
+	prepareDevelopmentHarness(t, h, capability)
 	provider := &hybridGateProvider{started: make(chan struct{}), release: make(chan struct{})}
 	h.e.provider = provider
-	if err := h.e.StartDevelopmentSession(h.ctx, h.m, h.c, developmentCapability(h), func(context.Context) error {
+	if err := h.e.StartDevelopmentSession(h.ctx, h.m, h.c, capability, func(context.Context) error {
 		if h.e.fixtureAdmissionAllowed() {
 			return errors.New("startup admission open")
 		}

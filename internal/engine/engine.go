@@ -46,46 +46,53 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
-	store                             *store.Store
-	provider                          reasoning.Provider
-	config                            config.Config
-	epoch                             string
-	mu                                sync.RWMutex
-	operation                         sync.Mutex
-	captureMu                         sync.Mutex
-	captureOwner                      *captureruntime.Manager
-	captureSessions                   map[string]*captureruntime.Lease
-	captureRecaptures                 map[string]*captureruntime.Lease
-	collectionIntents                 map[string]func()
-	collectionCleanupPending          map[string]bool
-	collectionCleanupDone             map[string]bool
-	browserCollectionCleanup          func(context.Context, string, uint64) error
-	browserRecaptureDispatch          func(context.Context, string, uint64) error
-	browserRecaptureDispatchRunning   map[string]bool
-	browserRecaptureDispatchStarted   map[string]bool
-	browserRecaptureDispatchConfirmed map[string]bool
-	collectionRuntime                 *collection.Coordinator
-	fixtureAdmission                  *fixtureAdmissionGate
-	developmentSources                map[domain.Source]bool
-	developmentPause                  func(context.Context) error
-	developmentVerifyBrowser          func(context.Context) error
-	schedule                          sync.Mutex
-	heartbeat                         *domain.BridgeHeartbeat
-	headlessAccess                    []domain.Source
-	bridgeOrigins                     map[string]time.Time
-	active                            map[string]context.CancelFunc
-	pending                           map[string]bool
-	cancelled                         map[string]bool
-	shuttingDown                      bool
-	logger                            Logger
-	reloads                           *ReloadActions
-	events                            *semanticengine.Engine
-	aiFast                            aidetector.FastDetector
-	aiDeep                            aidetector.Resolver
-	mediaOrigin                       mediaprovenance.Inspector
-	topics                            livingtopics.Resolver
-	autoCancel                        context.CancelFunc
-	autoWake                          chan struct{}
+	store                                    *store.Store
+	provider                                 reasoning.Provider
+	config                                   config.Config
+	epoch                                    string
+	mu                                       sync.RWMutex
+	operation                                sync.Mutex
+	captureMu                                sync.Mutex
+	captureOwner                             *captureruntime.Manager
+	captureSessions                          map[string]*captureruntime.Lease
+	captureRecaptures                        map[string]*captureruntime.Lease
+	collectionIntents                        map[string]func()
+	collectionCleanupPending                 map[string]bool
+	collectionCleanupDone                    map[string]bool
+	browserCollectionCleanup                 func(context.Context, string, uint64) error
+	browserRecaptureDispatch                 func(context.Context, string, uint64) error
+	browserRecaptureDispatchRunning          map[string]bool
+	browserRecaptureDispatchStarted          map[string]bool
+	browserRecaptureDispatchConfirmed        map[string]bool
+	collectionRuntime                        *collection.Coordinator
+	fixtureAdmission                         *fixtureAdmissionGate
+	developmentSources                       map[domain.Source]bool
+	developmentPause                         func(context.Context) error
+	developmentVerifyBrowser                 func(context.Context) error
+	developmentCheckpointMu                  sync.Mutex
+	developmentCoordinatorDone               <-chan struct{}
+	developmentCheckpoint                    *store.SyntheticAccountCheckpoint
+	developmentCheckpointFence               *store.SyntheticCheckpointFence
+	developmentCheckpointAuthorizedAtStartup bool
+	developmentCheckpointAuthorize           func(context.Context, func() error) error
+	developmentCheckpointRevoke              func(context.Context) error
+	schedule                                 sync.Mutex
+	heartbeat                                *domain.BridgeHeartbeat
+	headlessAccess                           []domain.Source
+	bridgeOrigins                            map[string]time.Time
+	active                                   map[string]context.CancelFunc
+	pending                                  map[string]bool
+	cancelled                                map[string]bool
+	shuttingDown                             bool
+	logger                                   Logger
+	reloads                                  *ReloadActions
+	events                                   *semanticengine.Engine
+	aiFast                                   aidetector.FastDetector
+	aiDeep                                   aidetector.Resolver
+	mediaOrigin                              mediaprovenance.Inspector
+	topics                                   livingtopics.Resolver
+	autoCancel                               context.CancelFunc
+	autoWake                                 chan struct{}
 }
 
 type Logger interface{ Printf(string, ...any) }

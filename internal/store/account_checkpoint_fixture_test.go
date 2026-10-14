@@ -44,6 +44,59 @@ func TestSyntheticAccountCheckpointRequiresOneSharedScope(t *testing.T) {
 	}
 }
 
+func TestSyntheticAccountCheckpointPrepareIsAtomicAndReopenFenced(t *testing.T) {
+	state := openTestStore(t)
+	ctx := context.Background()
+	identityMap := accountCheckpointTestValue(domain.SourceX, domain.SourceInstagram).ExpectedAccounts
+	checkpoint, initialFence, err := state.PrepareSyntheticAccountCheckpoint(ctx, identityMap, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.Domain != syntheticAccountCheckpointDomain || checkpoint.Version != syntheticAccountCheckpointVersion ||
+		checkpoint.Generation != 1 || checkpoint.CheckpointID == "" || len(checkpoint.AcceptedRevisions) != 0 ||
+		checkpoint.VerificationTime != "" || checkpoint.OwnerEpoch != "" || checkpoint.HeadlessGeneration != 0 || checkpoint.OwnerPID != 0 ||
+		initialFence.HoldID == "" || initialFence.CheckpointID != checkpoint.CheckpointID || initialFence.Generation != 1 {
+		t.Fatalf("fresh preparation did not produce expected-only pending state: checkpoint=%+v fence=%+v", checkpoint, initialFence)
+	}
+	values, err := readAccountCheckpointValuesTxForTest(t, state)
+	if err != nil || len(values) != 3 {
+		t.Fatalf("fresh preparation did not atomically persist all checkpoint records: keys=%v err=%v", values, err)
+	}
+
+	before := cloneAccountCheckpointValues(values)
+	wrongIdentity := copySyntheticAccounts(identityMap)
+	wrong := wrongIdentity[domain.SourceInstagram]
+	wrong.ProfileID = "foreign-profile"
+	wrongIdentity[domain.SourceInstagram] = wrong
+	if _, _, err = state.PrepareSyntheticAccountCheckpoint(ctx, wrongIdentity, false); err == nil {
+		t.Fatal("reopen preparation accepted a different physical profile")
+	}
+	if after, readErr := readAccountCheckpointValuesTxForTest(t, state); readErr != nil || !reflect.DeepEqual(after, before) {
+		t.Fatalf("mismatched reopen changed checkpoint metadata: before=%v after=%v err=%v", before, after, readErr)
+	}
+
+	reopened, reopenedFence, err := state.PrepareSyntheticAccountCheckpoint(ctx, identityMap, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.CheckpointID != checkpoint.CheckpointID || reopened.Generation != checkpoint.Generation ||
+		!reflect.DeepEqual(reopened.ExpectedAccounts, checkpoint.ExpectedAccounts) || reopenedFence.HoldID == initialFence.HoldID ||
+		reopenedFence.CheckpointID != initialFence.CheckpointID || reopenedFence.Generation != initialFence.Generation {
+		t.Fatalf("reopen did not preserve identity and create a fresh hold: checkpoint=%+v fence=%+v", reopened, reopenedFence)
+	}
+	if err := state.AuthorizeSyntheticAccountCheckpoint(ctx, initialFence, accountCheckpointReceipt(state, initialFence, checkpoint, "old-owner", 7)); err == nil {
+		t.Fatal("superseded preparation hold was accepted")
+	}
+}
+
+func cloneAccountCheckpointValues(values map[string]string) map[string]string {
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
+}
+
 func readAccountCheckpointValuesTxForTest(t *testing.T, s *Store) (map[string]string, error) {
 	t.Helper()
 	rows, err := s.db.Query(`SELECT key,value FROM meta WHERE substr(key,1,?)=?`, len(syntheticAccountCheckpointKeyPrefix), syntheticAccountCheckpointKeyPrefix)

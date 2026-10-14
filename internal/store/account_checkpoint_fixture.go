@@ -36,27 +36,32 @@ func encodeCheckpoint(value any) (string, error) {
 }
 
 func (s *Store) CreateSyntheticAccountCheckpoint(ctx context.Context, checkpoint SyntheticAccountCheckpoint) error {
+	_, err := s.createSyntheticAccountCheckpoint(ctx, checkpoint)
+	return err
+}
+
+func (s *Store) createSyntheticAccountCheckpoint(ctx context.Context, checkpoint SyntheticAccountCheckpoint) (SyntheticCheckpointFence, error) {
 	s.setAccountCheckpointPermit(nil)
 	if err := checkpointContextError(ctx); err != nil {
-		return err
+		return SyntheticCheckpointFence{}, err
 	}
 	if checkpoint.Domain != syntheticAccountCheckpointDomain || checkpoint.Version != syntheticAccountCheckpointVersion ||
 		checkpoint.Generation != 1 || len(checkpoint.AcceptedRevisions) != 0 || checkpoint.VerificationTime != "" ||
 		checkpoint.OwnerEpoch != "" || checkpoint.HeadlessGeneration != 0 || checkpoint.OwnerPID != 0 {
-		return errors.New("synthetic checkpoint enrollment requires expected-only fixture data")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment requires expected-only fixture data")
 	}
 	checkpoint.ExpectedAccounts = copySyntheticAccounts(checkpoint.ExpectedAccounts)
 	checkpoint.AcceptedRevisions = make(map[domain.Source]string)
 	if err := validateSyntheticCheckpoint(checkpoint); err != nil {
-		return errors.New("synthetic checkpoint enrollment is invalid")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment is invalid")
 	}
 	holdID, err := syntheticHoldID()
 	if err != nil {
-		return errors.New("synthetic checkpoint enrollment failed")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 	}
 	checkpointRaw, err := encodeCheckpoint(checkpoint)
 	if err != nil {
-		return errors.New("synthetic checkpoint enrollment failed")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 	}
 	checkpointHash := checkpointSHA256(checkpointRaw)
 	required := accountCheckpointRequired{
@@ -71,24 +76,24 @@ func (s *Store) CreateSyntheticAccountCheckpoint(ctx context.Context, checkpoint
 	}
 	requiredRaw, err := encodeCheckpoint(required)
 	if err != nil {
-		return errors.New("synthetic checkpoint enrollment failed")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 	}
 	fenceRaw, err := encodeCheckpoint(fence)
 	if err != nil {
-		return errors.New("synthetic checkpoint enrollment failed")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return errors.New("synthetic checkpoint enrollment failed")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 	}
 	defer tx.Rollback()
 	values, err := readAccountCheckpointValuesTx(ctx, tx)
 	if err != nil || len(values) != 0 {
-		return errors.New("synthetic checkpoint enrollment is already protected or unavailable")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment is already protected or unavailable")
 	}
 	if err := requireSyntheticCaptureWorkSafe(ctx, tx, checkpoint.ExpectedAccounts); err != nil {
-		return err
+		return SyntheticCheckpointFence{}, err
 	}
 	for key, value := range map[string]string{
 		syntheticAccountCheckpointKey:         checkpointRaw,
@@ -96,16 +101,104 @@ func (s *Store) CreateSyntheticAccountCheckpoint(ctx context.Context, checkpoint
 		syntheticAccountCheckpointFenceKey:    fenceRaw,
 	} {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES(?,?)`, key, value); err != nil {
-			return errors.New("synthetic checkpoint enrollment failed")
+			return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 		}
 	}
 	if err := checkpointContextError(ctx); err != nil {
-		return err
+		return SyntheticCheckpointFence{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return errors.New("synthetic checkpoint enrollment failed")
+		return SyntheticCheckpointFence{}, errors.New("synthetic checkpoint enrollment failed")
 	}
-	return nil
+	s.resetAccountCheckpointFenceAttempt(holdID)
+	return SyntheticCheckpointFence{
+		Domain: syntheticAccountCheckpointDomain, Version: syntheticAccountCheckpointVersion,
+		CheckpointID: checkpoint.CheckpointID, Generation: checkpoint.Generation, HoldID: holdID,
+		CheckpointSHA256: checkpointSHA256(checkpointRaw), Scope: copySyntheticScope(fence.Scope),
+	}, nil
+}
+
+// PrepareSyntheticAccountCheckpoint is the only development startup preparation
+// path. Fresh enrollment creates the expected-only checkpoint and initial hold in
+// one transaction. Reopen requires an existing exact identity map and creates a
+// new pending hold in the same transaction that validates it.
+func (s *Store) PrepareSyntheticAccountCheckpoint(ctx context.Context, expected map[domain.Source]SyntheticAccountIdentity, freshEnrollment bool) (SyntheticAccountCheckpoint, SyntheticCheckpointFence, error) {
+	s.setAccountCheckpointPermit(nil)
+	expected = copySyntheticAccounts(expected)
+	request := SyntheticAccountCheckpoint{
+		Domain: syntheticAccountCheckpointDomain, Version: syntheticAccountCheckpointVersion,
+		CheckpointID: domain.NewID("checkpoint"), Generation: 1,
+		ExpectedAccounts: expected, AcceptedRevisions: make(map[domain.Source]string),
+	}
+	if err := validateSyntheticCheckpoint(request); err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint preparation identities are invalid")
+	}
+	if freshEnrollment {
+		fence, err := s.createSyntheticAccountCheckpoint(ctx, request)
+		if err != nil {
+			return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, err
+		}
+		return request, fence, nil
+	}
+	if err := checkpointContextError(ctx); err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, err
+	}
+	holdID, err := syntheticHoldID()
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint fence failed")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint preparation failed")
+	}
+	defer tx.Rollback()
+	checkpoint, checkpointRaw, required, _, _, fenceRaw, err := loadSyntheticCheckpointTx(ctx, tx)
+	if err != nil || !syntheticAccountsEqual(checkpoint.ExpectedAccounts, expected) ||
+		required.CheckpointID != checkpoint.CheckpointID || required.Generation != checkpoint.Generation {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint identity mismatch or unavailable")
+	}
+	newFence := accountCheckpointFenceRecord{
+		Domain: syntheticAccountCheckpointDomain, Version: syntheticAccountCheckpointVersion,
+		CheckpointID: checkpoint.CheckpointID, Generation: checkpoint.Generation,
+		CheckpointSHA256: checkpointSHA256(checkpointRaw), Scope: syntheticCheckpointScope(checkpoint.ExpectedAccounts),
+		HoldID: holdID, State: "pending",
+	}
+	newRaw, err := encodeCheckpoint(newFence)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint preparation failed")
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE meta SET value=? WHERE key=? AND value=?`, newRaw, syntheticAccountCheckpointFenceKey, fenceRaw)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint preparation failed")
+	}
+	changed, _ := result.RowsAffected()
+	if changed != 1 {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint preparation lost its compare-and-swap")
+	}
+	if err := checkpointContextError(ctx); err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return SyntheticAccountCheckpoint{}, SyntheticCheckpointFence{}, errors.New("synthetic checkpoint preparation failed")
+	}
+	s.resetAccountCheckpointFenceAttempt(holdID)
+	return checkpoint, SyntheticCheckpointFence{
+		Domain: syntheticAccountCheckpointDomain, Version: syntheticAccountCheckpointVersion,
+		CheckpointID: checkpoint.CheckpointID, Generation: checkpoint.Generation, HoldID: holdID,
+		CheckpointSHA256: checkpointSHA256(checkpointRaw), Scope: copySyntheticScope(newFence.Scope),
+	}, nil
+}
+
+func syntheticAccountsEqual(left, right map[domain.Source]SyntheticAccountIdentity) bool {
+	if left == nil || right == nil || len(left) != len(right) {
+		return false
+	}
+	for source, identity := range left {
+		if right[source] != identity {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) BeginSyntheticCheckpointFence(ctx context.Context, checkpointID string, generation uint64) (SyntheticCheckpointFence, error) {

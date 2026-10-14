@@ -1,13 +1,14 @@
 // Fixture-only private pipe transport. Ordinary launches reject existing profiles;
 // process recovery requires an owned QA lineage through gated private IPC.
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, realpath, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, realpath, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative, isAbsolute, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const ownedProfiles = new Map();
 const processScopes = new Map();
+const processProfileIdentities = new Map();
 const processScopeParent = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'qa', 'auth-session-sidecar');
 async function checkedProcessRecord(root) {
   const path = join(root, 'process-profile-lineage.json');
@@ -20,8 +21,9 @@ async function checkedProcessRecord(root) {
 
 // Only the tagged Go process fixture calls this through its gated private RPC.
 // No ordinary launcher option permits an existing profile.
-export async function scopeProcessFixtureProfile(root, nonce, reopen) {
-  if (!/^[a-f0-9]{64}$/.test(nonce) || typeof reopen !== 'boolean' || processScopes.has(root)) {
+export async function scopeProcessFixtureProfile(root, nonce, reopen, prepared = false) {
+  if (!/^[a-f0-9]{64}$/.test(nonce) || typeof reopen !== 'boolean' || typeof prepared !== 'boolean' ||
+      prepared && reopen || processScopes.has(root)) {
     throw new Error('fixture_process_scope_invalid');
   }
   if (await realpath(root) !== root || (await lstat(root)).isSymbolicLink()) throw new Error('fixture_process_scope_invalid');
@@ -42,11 +44,31 @@ export async function scopeProcessFixtureProfile(root, nonce, reopen) {
     try { process.kill(record.pid, 0); alive = true; } catch (error) { if (error.code !== 'ESRCH') throw error; }
     if (alive) throw new Error('fixture_process_profile_still_owned');
     ownedProfiles.set(profile, () => true);
+    processProfileIdentities.set(root, profileIdentity(stat));
+  } else if (prepared) {
+    const stat = await checkedProfileDirectory(profile);
+    if ((await readdir(profile)).length !== 0) throw new Error('fixture_prepared_profile_not_empty');
+    const after = await checkedProfileDirectory(profile);
+    if (profileIdentity(stat) !== profileIdentity(after)) throw new Error('fixture_process_profile_identity_invalid');
+    processProfileIdentities.set(root, profileIdentity(stat));
+    ownedProfiles.set(profile, () => true);
   } else {
     try { await lstat(profile); throw new Error('fixture_process_profile_not_new'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   processScopes.set(root, nonce);
+}
+
+function profileIdentity(stat) {
+  return `${stat.dev}:${stat.ino}:${stat.birthtimeNs}`;
+}
+
+async function checkedProfileDirectory(profile) {
+  const stat = await lstat(profile, { bigint: true });
+  if (!stat.isDirectory() || stat.isSymbolicLink() || await realpath(profile) !== profile) {
+    throw new Error('fixture_process_profile_identity_invalid');
+  }
+  return stat;
 }
 
 function fixtureOrigin(value) {
@@ -80,6 +102,7 @@ export async function launchFixtureChrome(executable, root, role, profileName = 
   root = await realpath(requestedRoot);
   if (root !== requestedRoot) throw new Error('invalid_fixture_root');
   const profile = join(root, profileName);
+  if (processScopes.has(root) && profileName !== 'shared') throw new Error('fixture_process_profile_identity_invalid');
   // Reopen only a profile created by this process after its exact child has exited.
   if (ownedProfiles.has(profile)) {
     if (!ownedProfiles.get(profile)()) throw new Error('fixture_profile_still_owned');
@@ -90,7 +113,10 @@ export async function launchFixtureChrome(executable, root, role, profileName = 
   const rel = relative(root, resolved);
   if (isAbsolute(rel) || rel.startsWith('..')) throw new Error('invalid_fixture_profile');
   if (processScopes.has(root)) {
-    const stat = await lstat(profile, { bigint: true });
+    const stat = await checkedProfileDirectory(profile);
+    const expected = processProfileIdentities.get(root);
+    if (expected !== undefined && expected !== profileIdentity(stat)) throw new Error('fixture_process_profile_identity_invalid');
+    processProfileIdentities.set(root, profileIdentity(stat));
     const recordPath = join(root, 'process-profile-lineage.json');
     let flag = 'wx';
     try { await checkedProcessRecord(root); flag = 'w'; }
@@ -99,6 +125,9 @@ export async function launchFixtureChrome(executable, root, role, profileName = 
       root, nonce: processScopes.get(root), pid: process.pid,
       ino: String(stat.ino), dev: String(stat.dev), birth: String(stat.birthtimeNs),
     }), { flag, mode: 0o600 });
+    if (profileIdentity(await checkedProfileDirectory(profile)) !== profileIdentity(stat)) {
+      throw new Error('fixture_process_profile_identity_invalid');
+    }
   }
   const child = spawn(executable, [
     `--user-data-dir=${resolved}`, '--remote-debugging-pipe', '--no-first-run',

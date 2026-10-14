@@ -192,9 +192,17 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 	}
 	if config.processGrant != nil {
 		grant := config.processGrant
-		if err = b.rpc(ctx, "process_profile_scope", map[string]any{"nonce": grant.Nonce, "reopen": grant.Reopen}, nil); err != nil {
+		if err = validateProcessFixtureGrant(config.Root, grant); err != nil {
+			b.terminateOwnedTree()
+			return nil, errors.New("fixture process profile identity changed before scope")
+		}
+		if err = b.rpc(ctx, "process_profile_scope", map[string]any{"nonce": grant.Nonce, "reopen": grant.Reopen, "prepared": grant.profilePrepared}, nil); err != nil {
 			b.terminateOwnedTree()
 			return nil, fmt.Errorf("fixture process profile scope: %w", err)
+		}
+		if err = validateProcessFixtureGrant(config.Root, grant); err != nil {
+			b.terminateOwnedTree()
+			return nil, errors.New("fixture process profile identity changed during scope")
 		}
 	}
 	return b, nil
@@ -241,7 +249,7 @@ func validateChromeFixtureConfig(config chromeFixtureConfig) (string, error) {
 		}
 	}
 	if _, err = os.Lstat(profile); !errors.Is(err, os.ErrNotExist) {
-		if config.processGrant == nil || !config.processGrant.Reopen || validateProcessFixtureGrant(root, config.processGrant) != nil {
+		if config.processGrant == nil || (!config.processGrant.Reopen && !config.processGrant.profilePrepared) || validateProcessFixtureGrant(root, config.processGrant) != nil {
 			return "", errors.New("fixture profile must be new")
 		}
 	}

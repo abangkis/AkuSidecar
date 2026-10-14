@@ -1501,4 +1501,69 @@ Logs:
 `runtime/qa/auth-session-sidecar/account-checkpoint-compatibility.txt`,
 `account-checkpoint-pause-regressions.txt`, and
 `account-checkpoint-default-regressions.txt` in the same directory. Owned temporary
-databases/binaries were cleaned. This checkpoint delta remains uncommitted.
+databases/binaries were cleaned. This 13-file checkpoint delta was committed and
+pushed as `8abe4e0`; remote main was verified against the full commit SHA.
+
+## Pre-owner fence and verifier-to-Store integration — 2026-10-14
+
+The authorized continuation is synthetic development dispatch only. It must open
+the scoped Store and durably prepare closed admission before starting its Node
+bridge or Chrome owner. Fresh fixture enrollment is explicit, expected-only and
+single-use. Reopen must validate the persisted expected account map and the same
+Store/profile identity; it cannot re-enroll or log in to repair a mismatch.
+
+Once the owned browser is ready, a correlated version 1 authority/browser vector
+must precede Store authorization. The current fence, account/revision set, profile
+scope and pinned Manager/PID/epoch/generation must agree. Persisted audit values
+cannot replace a new observation. Only then may the existing verified resume
+path restamp never-claimed headless work. Every reader handoff closes admission,
+drains active capture/reasoning and fences the Store before relinquishing owner
+leases; returning headless repeats verification and authorization.
+
+Unknown, mismatched, expired or canceled evidence must preserve closed admission
+and queued payloads. Ordinary production startup and the fixture-only legacy
+launch order remain unchanged; fixture cleanup now joins coordinator polling.
+This step has no real source verifier, registry
+registration, installation or user runtime authority. Physical foreground/native
+click acceptance is separate from the automatic startup/session tests.
+
+Implemented and validated in the synthetic dev composition. Go captures the
+checkpoint/fence and Manager before probes, pins the complete observation vector,
+and rechecks fence hash/scope/HoldID and owner before authorizing Store. Receipt age
+uses the earliest authority/browser observation. Pause-epoch invalidation during
+verification prevents permit activation and queued-command restamping. Full
+Snapshot equality remains required during probes; after deliberately acquiring
+session leases, resume compares the owner identity without treating its own added
+lease count as an owner replacement. Coordinator polling exposes completion so
+fixture shutdown cancels and drains it before closing SQLite.
+
+The fresh profile directory now exists before Node. Its grant marker is private
+Go state, not an accepted controller JSON field. Go validates its physical ID
+before and after the private Node scope RPC. Node accepts that prepared profile
+only as an empty, unlinked directory under the owned QA root, pins its device/
+inode/birth identity and checks it again before Chrome spawn. Populated profiles,
+replay, prepared reopen and replaced directories are rejected; ordinary fresh
+launches still reject existing profiles. Recovery retains the prior lineage and
+old-owner-release checks. This grants no access to an original authentication
+profile or ordinary startup.
+
+Validation passed on 2026-10-14: three-build/seven-process Store compatibility,
+five Node profile-scope cases, verifier/checkpoint/HTTP/default-off contracts,
+default capture/reader regressions and ordinary build. Actual tagged-main graceful
+and abrupt restart each passed with a new synthetic profile, one initial login,
+two captures, the same SQLite/profile identity, fresh epoch, old owned tree/windows
+gone, lost authority held closed and stale/duplicate rejection. Both initial and
+reopen receipts assert a fence before owner startup and authorization after proof.
+The physical foreground/native-click test is intentionally excluded. A cleanup
+regression passed three repetitions after polling shutdown was joined.
+
+Canonical acceptance command:
+`scripts/test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault`.
+Stable logs in `runtime/qa/auth-session-sidecar`:
+`startup-checkpoint-development-validation.txt`,
+`startup-checkpoint-store-compatibility.txt`,
+`startup-checkpoint-profile-scope.txt` and
+`startup-checkpoint-teardown-regression.txt`. All owned disposable roots were
+cleaned. Original auth/user runtime were untouched; no registry/installation was
+used. Publication of this integration delta is authorized after scoped review. Production source
+verifier adapters and account/session acceptance remain a separate authorized gate.

@@ -42,11 +42,12 @@ type processFixtureLineage struct {
 }
 type processFixtureGrant struct {
 	processFixtureLineage
-	Reopen       bool
-	Old          processFixtureIdentity
-	ProfileID    string
-	Windows      []uintptr
-	TreeReleased bool
+	Reopen          bool
+	Old             processFixtureIdentity
+	ProfileID       string
+	Windows         []uintptr
+	TreeReleased    bool
+	profilePrepared bool
 }
 type processFixtureStart struct {
 	NativeHost                                                                  *readerbroker.FixtureNativeHostReceipt
@@ -71,6 +72,7 @@ type processFixtureReceipt struct {
 	StaleEpochDenied, DuplicateDenied, CleanupVerified                                                                                                                                                                                                                                                                  bool
 	AuthorityDenied, GrantReplayDenied                                                                                                                                                                                                                                                                                  bool
 	DevelopmentSession                                                                                                                                                                                                                                                                                                  bool
+	CheckpointFencedBeforeOwner, CheckpointAuthorizedAtStartup                                                                                                                                                                                                                                                          bool
 	UIPID, HelperPID, ReaderPID, CollectorPID                                                                                                                                                                                                                                                                           uint32
 	UIHWND, ReaderHWND                                                                                                                                                                                                                                                                                                  uint64
 	Root, Address, RunID                                                                                                                                                                                                                                                                                                string
@@ -215,6 +217,13 @@ func validateProcessFixtureGrant(root string, g *processFixtureGrant) error {
 		if idErr != nil || profileID != g.ProfileID {
 			return errors.New("fixture profile identity changed")
 		}
+	} else if g.profilePrepared {
+		profileID, idErr := processFixtureDirectoryID(filepath.Join(root, "shared"))
+		if idErr != nil || g.ProfileID == "" || profileID != g.ProfileID {
+			return errors.New("prepared development profile identity changed")
+		}
+	} else if g.ProfileID != "" {
+		return errors.New("fresh fixture profile identity must be empty")
 	} else if _, err = os.Lstat(filepath.Join(root, "shared")); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("fixture profile is not fresh")
 	}
@@ -386,6 +395,65 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	defer cancel()
+	settings := domain.DefaultSettings("expanded", "quiet", "guarded_live", true)
+	settings.CollectionMode = "headless"
+	settings.ActiveSources = []domain.Source{domain.SourceX, domain.SourceInstagram}
+	settings.CalibrationEnabled = false
+	var state *store.Store
+	var e *Engine
+	var coordinatorDone <-chan struct{}
+	resourcesCloseDeferred := false
+	defer func() {
+		if resourcesCloseDeferred {
+			return
+		}
+		if e != nil {
+			e.Shutdown()
+		}
+		if state != nil {
+			_ = state.Close()
+		}
+	}()
+	var provider reasoning.Provider = reasoning.Deterministic{}
+	var reasoningGate *developmentFixtureReasoningGate
+	checkpointFencedBeforeOwner := false
+	if development {
+		profilePath := filepath.Join(start.Grant.Root, "shared")
+		if !start.Grant.Reopen {
+			if err = os.Mkdir(profilePath, 0700); err != nil {
+				return errors.New("development profile preparation failed")
+			}
+			start.Grant.ProfileID, err = processFixtureDirectoryID(profilePath)
+			if err != nil {
+				return errors.New("development profile identity unavailable")
+			}
+			start.Grant.profilePrepared = true
+		} else {
+			profileID, profileErr := processFixtureDirectoryID(profilePath)
+			if profileErr != nil || profileID != start.Grant.ProfileID {
+				return errors.New("development profile identity changed")
+			}
+		}
+		state, err = store.Open(filepath.Join(start.Grant.Root, "fixture.sqlite"), settings)
+		if err != nil {
+			return err
+		}
+		if !start.Grant.Reopen {
+			if _, err = state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+				return err
+			}
+		}
+		if composition != nil {
+			reasoningGate = &developmentFixtureReasoningGate{entered: make(chan struct{}), release: make(chan struct{})}
+			provider = reasoningGate
+		}
+		e = New(state, provider, config.Config{Dev: true, Root: start.Grant.Root, Database: config.DatabaseConfig{Path: filepath.Join(start.Grant.Root, "fixture.sqlite")}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
+		e.RecordHeartbeat(ExpectedHeartbeat())
+		if err = prepareDevelopmentProcessCheckpoint(ctx, e, start.Grant.RootID, start.Grant.ProfileID, !start.Grant.Reopen); err != nil {
+			return fmt.Errorf("development checkpoint preparation failed: %w", err)
+		}
+		checkpointFencedBeforeOwner = true
+	}
 	bridgeConfig := chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant}
 	bridgeConfig.NativeReaderStartup = composition != nil
 	var barrierNode windows.Handle
@@ -400,6 +468,9 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		}
 	}()
 	if start.StartupBarrier == "node_before_ready" || start.StartupBarrier == "node_stalled_timeout" {
+		if development && !checkpointFencedBeforeOwner {
+			return errors.New("development checkpoint did not fence before Node startup")
+		}
 		bridgeConfig.beforeReadySignal = func(pid uint32, job windows.Handle) error {
 			defer close(barrierReported)
 			identity, identityErr := processFixtureProcessIdentity(pid)
@@ -460,6 +531,9 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 			return nil
 		}
 	}
+	if development && !checkpointFencedBeforeOwner {
+		return errors.New("development checkpoint did not fence before Node startup")
+	}
 	handshakeStarted := time.Now()
 	bridge, err := startChromeFixtureBridge(ctx, bridgeConfig)
 	if err != nil {
@@ -510,29 +584,45 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		return err
 	}
 	defer manager.Terminate()
-	settings := domain.DefaultSettings("expanded", "quiet", "guarded_live", true)
-	settings.CollectionMode = "headless"
-	settings.ActiveSources = []domain.Source{domain.SourceX, domain.SourceInstagram}
-	settings.CalibrationEnabled = false
-	state, err := store.Open(filepath.Join(start.Grant.Root, "fixture.sqlite"), settings)
-	if err != nil {
-		return err
-	}
-	defer state.Close()
-	if !start.Grant.Reopen {
-		if _, err = state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+	if !development {
+		state, err = store.Open(filepath.Join(start.Grant.Root, "fixture.sqlite"), settings)
+		if err != nil {
 			return err
 		}
+		if !start.Grant.Reopen {
+			if _, err = state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
+				return err
+			}
+		}
+		if composition != nil {
+			reasoningGate = &developmentFixtureReasoningGate{entered: make(chan struct{}), release: make(chan struct{})}
+			provider = reasoningGate
+		}
+		e = New(state, provider, config.Config{Dev: true, Root: start.Grant.Root, Database: config.DatabaseConfig{Path: filepath.Join(start.Grant.Root, "fixture.sqlite")}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
+		e.RecordHeartbeat(ExpectedHeartbeat())
 	}
-	var provider reasoning.Provider = reasoning.Deterministic{}
-	var reasoningGate *developmentFixtureReasoningGate
-	if composition != nil {
-		reasoningGate = &developmentFixtureReasoningGate{entered: make(chan struct{}), release: make(chan struct{})}
-		provider = reasoningGate
-	}
-	e := New(state, provider, config.Config{Dev: true, Root: start.Grant.Root, Database: config.DatabaseConfig{Path: filepath.Join(start.Grant.Root, "fixture.sqlite")}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
-	defer e.Shutdown()
-	e.RecordHeartbeat(ExpectedHeartbeat())
+	defer func() {
+		cancel()
+		e.Shutdown()
+		done := coordinatorDone
+		if done == nil {
+			done = e.developmentCoordinatorDone
+		}
+		if done != nil {
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				returnErr = errors.New("fixture coordinator shutdown incomplete")
+			}
+		}
+		if !e.WaitForIdle(3 * time.Second) {
+			returnErr = errors.New("fixture reasoning shutdown incomplete")
+		}
+		if err := state.Close(); err != nil {
+			returnErr = errors.New("fixture Store shutdown incomplete")
+		}
+	}()
+	resourcesCloseDeferred = true
 	if err = e.AttachCaptureRuntime(ctx, manager); err != nil {
 		return err
 	}
@@ -605,7 +695,7 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 			return errors.New("authority denial lost persisted pause or browser lineage")
 		}
 		authorityDenied = true
-		if err = encoder.Encode(processFixtureReceipt{Stage: "authority_denied", PID: uint32(os.Getpid()), Epoch: e.Epoch(), AuthorityDenied: true}); err != nil {
+		if err = encoder.Encode(processFixtureReceipt{Stage: "authority_denied", PID: uint32(os.Getpid()), Epoch: e.Epoch(), AuthorityDenied: true, CheckpointFencedBeforeOwner: checkpointFencedBeforeOwner}); err != nil {
 			return err
 		}
 		if !scanner.Scan() || string(scanner.Bytes()) != "authorize" {
@@ -615,8 +705,12 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 	if err = bindProcessSession(ctx, e, manager, coordinator, start, authority, browserProbe, development); err != nil {
 		return fmt.Errorf("fixture binder: %w", err)
 	}
+	checkpointAuthorizedAtStartup := developmentCheckpointAuthorizedAtStartup(e)
+	if development && !checkpointAuthorizedAtStartup {
+		return errors.New("development checkpoint authorization missing after startup binding")
+	}
 	if !development {
-		coordinator.Start(ctx)
+		coordinatorDone = coordinator.StartWithDone(ctx)
 		coordinator.Request("headless")
 	}
 	if err = processFixtureWait(ctx, func() bool { s := coordinator.Status(); return s.Effective == "headless" && !s.BatchPaused }); err != nil {
@@ -632,7 +726,7 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 	if err != nil {
 		return err
 	}
-	receipt := processFixtureReceipt{PID: uint32(os.Getpid()), Epoch: e.Epoch(), Generation: manager.Snapshot().Generation, Account: evidence.AccountID, Revision: evidence.Revision, AuthorityDenied: authorityDenied, GrantNegatives: grantNegatives, GrantReplayDenied: start.Grant.Reopen, DevelopmentSession: coordinator.Status().DevelopmentSession}
+	receipt := processFixtureReceipt{PID: uint32(os.Getpid()), Epoch: e.Epoch(), Generation: manager.Snapshot().Generation, Account: evidence.AccountID, Revision: evidence.Revision, AuthorityDenied: authorityDenied, GrantNegatives: grantNegatives, GrantReplayDenied: start.Grant.Reopen, DevelopmentSession: coordinator.Status().DevelopmentSession, CheckpointFencedBeforeOwner: checkpointFencedBeforeOwner, CheckpointAuthorizedAtStartup: checkpointAuthorizedAtStartup}
 	if !start.Grant.Reopen {
 		session, startErr := e.StartVisibleUpdate(ctx, "full fixture OS process restart")
 		if startErr != nil {

@@ -30,13 +30,14 @@ var processFixtureCount atomic.Int64
 var processFixtureCleanupFailed atomic.Bool
 
 type processFixtureChild struct {
-	cmd      *exec.Cmd
-	input    io.WriteCloser
-	replies  chan processFixtureReceipt
-	exited   chan error
-	stderr   strings.Builder
-	job      windows.Handle
-	identity processFixtureIdentity
+	cmd         *exec.Cmd
+	input       io.WriteCloser
+	replies     chan processFixtureReceipt
+	exited      chan error
+	stderr      strings.Builder
+	diagnostics strings.Builder
+	job         windows.Handle
+	identity    processFixtureIdentity
 }
 
 func startProcessFixtureChild(t *testing.T, executable string, start processFixtureStart) *processFixtureChild {
@@ -99,6 +100,14 @@ func startProcessFixtureChild(t *testing.T, executable string, start processFixt
 			var reply processFixtureReceipt
 			if json.Unmarshal(scanner.Bytes(), &reply) == nil {
 				child.replies <- reply
+			} else if child.diagnostics.Len() < 4096 {
+				line := scanner.Text()
+				remaining := 4096 - child.diagnostics.Len()
+				if len(line) > remaining {
+					line = line[:remaining]
+				}
+				child.diagnostics.WriteString(line)
+				child.diagnostics.WriteByte('\n')
 			}
 		}
 		close(child.replies)
@@ -129,6 +138,14 @@ func (c *processFixtureChild) receive(t *testing.T, stage string) processFixture
 	t.Helper()
 	select {
 	case reply, ok := <-c.replies:
+		if !ok {
+			select {
+			case exitErr := <-c.exited:
+				t.Fatalf("worker receipt %q missing: exited=%v stderr=%s diagnostics=%s", stage, exitErr, c.stderr.String(), c.diagnostics.String())
+			case <-time.After(2 * time.Second):
+				t.Fatalf("worker receipt %q missing: stdout closed before exit settled", stage)
+			}
+		}
 		if !ok || reply.Stage != stage {
 			t.Fatalf("worker receipt %q missing (received %q failure=%q)", stage, reply.Stage, reply.Failure)
 		}
@@ -263,6 +280,9 @@ func runProcessFixtureFullOSRestart(t *testing.T, image string) {
 			if paused.DevelopmentSession != (image == "aku-sidecar-dev.exe") {
 				t.Fatal("worker used the wrong integration binder")
 			}
+			if image == "aku-sidecar-dev.exe" && (!paused.CheckpointFencedBeforeOwner || !paused.CheckpointAuthorizedAtStartup) {
+				t.Fatal("development checkpoint did not fence before owner startup and authorize from verified startup")
+			}
 			if paused.Epoch == "" || paused.SessionID == "" || len(paused.RunIDs) != 2 || len(paused.Windows) != 2 || paused.Bootstrap != 1 || paused.Account != "alpha" || fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
 				t.Fatal("first worker actual persisted/capture evidence invalid")
 			}
@@ -323,6 +343,9 @@ func runProcessFixtureFullOSRestart(t *testing.T, image string) {
 			if !denied.AuthorityDenied || fixture.sequence.Load() != 1 || fixture.logins.Load() != 1 {
 				t.Fatal("lost authority admitted restart continuation")
 			}
+			if image == "aku-sidecar-dev.exe" && (!denied.CheckpointFencedBeforeOwner || denied.CheckpointAuthorizedAtStartup) {
+				t.Fatal("development checkpoint did not remain closed after lost authority")
+			}
 			fixture.authority.Lock()
 			fixture.active = savedAuthority
 			fixture.authority.Unlock()
@@ -332,6 +355,9 @@ func runProcessFixtureFullOSRestart(t *testing.T, image string) {
 			recovered := second.receive(t, "recovered")
 			if recovered.DevelopmentSession != (image == "aku-sidecar-dev.exe") {
 				t.Fatal("recovery used the wrong integration binder")
+			}
+			if image == "aku-sidecar-dev.exe" && (!recovered.CheckpointFencedBeforeOwner || !recovered.CheckpointAuthorizedAtStartup) {
+				t.Fatal("development checkpoint did not close before reopen owner and authorize after fresh proof")
 			}
 			if second.identity.PID == first.identity.PID || recovered.Epoch == paused.Epoch || !recovered.StaleEpochDenied || !recovered.DuplicateDenied || recovered.Account != paused.Account || recovered.Revision != paused.Revision || fixture.logins.Load() != 1 || fixture.sequence.Load() != 2 {
 				t.Fatal("new process restart recovery contract failed")
@@ -345,6 +371,9 @@ func runProcessFixtureFullOSRestart(t *testing.T, image string) {
 			second.stop(t, false, executable, nil)
 			t.Logf("recovered mode=%s workerPID=%d distinctPID=true freshEpoch=%s generation=%d sameProfile=true sameSQLiteIDs=true account=%s sameRevision=true loginCount=%d collected=%d staleEpochOnlyDenied=%t duplicateCurrentDenied=%t pauseClearedByVerifiedHooks=true allOwnedTreesEmpty=true", mode, second.identity.PID, recovered.Epoch, recovered.Generation, recovered.Account, fixture.logins.Load(), fixture.sequence.Load(), recovered.StaleEpochDenied, recovered.DuplicateDenied)
 			t.Logf("negatives mode=%s lostAuthorityDenied=true durablePauseRetained=true noCollectionUntilFreshAuthority=true recoveryGrantInvalidFields=%d recoveryGrantReplayDenied=true", mode, recovered.GrantNegatives)
+			if image == "aku-sidecar-dev.exe" {
+				t.Logf("checkpoint mode=%s startupFencedBeforeOwner=%t startupAuthorized=%t reopenFencedBeforeOwner=%t lostAuthorityKeptClosed=%t freshProofAuthorized=%t", mode, paused.CheckpointFencedBeforeOwner, paused.CheckpointAuthorizedAtStartup, recovered.CheckpointFencedBeforeOwner, !denied.CheckpointAuthorizedAtStartup, recovered.CheckpointAuthorizedAtStartup)
+			}
 		})
 	}
 }

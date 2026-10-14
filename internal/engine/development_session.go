@@ -13,6 +13,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 const (
@@ -76,6 +77,7 @@ type DevelopmentBrowserEvidence struct {
 
 type DevelopmentSessionCapability struct {
 	Provider         string
+	StoreScopeID     string
 	ProfileID        string
 	ExpectedAccounts map[domain.Source]string
 	Sources          []domain.Source
@@ -84,10 +86,137 @@ type DevelopmentSessionCapability struct {
 	clock            func() time.Time
 }
 
+type developmentCheckpointProof struct {
+	checkpoint store.SyntheticAccountCheckpoint
+	fence      store.SyntheticCheckpointFence
+	receipt    store.SyntheticVerifiedReceipt
+	owner      *captureruntime.Manager
+}
+
+func developmentCheckpointFenceEqual(a, b store.SyntheticCheckpointFence) bool {
+	if a.Domain != b.Domain || a.Version != b.Version || a.CheckpointID != b.CheckpointID || a.Generation != b.Generation ||
+		a.HoldID != b.HoldID || a.CheckpointSHA256 != b.CheckpointSHA256 || len(a.Scope) != len(b.Scope) {
+		return false
+	}
+	for source, scope := range a.Scope {
+		if b.Scope[source] != scope {
+			return false
+		}
+	}
+	return true
+}
+
+func syntheticCheckpointExpectedEqual(a, b map[domain.Source]store.SyntheticAccountIdentity) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for source, identity := range a {
+		if b[source] != identity {
+			return false
+		}
+	}
+	return len(a) > 0
+}
+
+func syntheticCheckpointStateEqual(a, b store.SyntheticAccountCheckpoint) bool {
+	if a.Domain != b.Domain || a.Version != b.Version || a.CheckpointID != b.CheckpointID || a.Generation != b.Generation ||
+		a.VerificationTime != b.VerificationTime || a.OwnerEpoch != b.OwnerEpoch || a.HeadlessGeneration != b.HeadlessGeneration || a.OwnerPID != b.OwnerPID ||
+		!syntheticCheckpointExpectedEqual(a.ExpectedAccounts, b.ExpectedAccounts) || len(a.AcceptedRevisions) != len(b.AcceptedRevisions) {
+		return false
+	}
+	for source, revision := range a.AcceptedRevisions {
+		if b.AcceptedRevisions[source] != revision {
+			return false
+		}
+	}
+	return true
+}
+
+// PrepareDevelopmentSessionCheckpoint fences capture before a synthetic owner
+// is created. Fresh enrollment is available only to the explicitly granted
+// development fixture; reopen loads and matches the persisted identity map.
+func (e *Engine) PrepareDevelopmentSessionCheckpoint(ctx context.Context, capability DevelopmentSessionCapability, freshEnrollment bool) error {
+	if !e.config.Dev || e.store == nil || capability.Provider != "synthetic-fixture" ||
+		strings.TrimSpace(capability.StoreScopeID) == "" || strings.TrimSpace(capability.ProfileID) == "" ||
+		len(capability.Sources) == 0 || len(capability.ExpectedAccounts) != len(capability.Sources) {
+		return errors.New("development checkpoint preparation unavailable")
+	}
+	sources := make(map[domain.Source]bool, len(capability.Sources))
+	expected := make(map[domain.Source]store.SyntheticAccountIdentity, len(capability.Sources))
+	for _, source := range capability.Sources {
+		if !supportedDevelopmentSource(source) || sources[source] {
+			return errors.New("development checkpoint source unsupported")
+		}
+		sources[source] = true
+		accountID := capability.ExpectedAccounts[source]
+		if strings.TrimSpace(accountID) == "" || accountID != strings.TrimSpace(accountID) {
+			return errors.New("development checkpoint identity incomplete")
+		}
+		expected[source] = store.SyntheticAccountIdentity{AccountID: accountID, StoreScopeID: capability.StoreScopeID, ProfileID: capability.ProfileID}
+	}
+	for source := range capability.ExpectedAccounts {
+		if !sources[source] {
+			return errors.New("development checkpoint identity unsupported")
+		}
+	}
+	settings, err := e.store.GetSettings(ctx)
+	if err != nil || settings.CollectionMode != "headless" {
+		return errors.New("development checkpoint requires headless collection")
+	}
+	for _, source := range settings.ActiveSources {
+		if !sources[source] {
+			return errors.New("development checkpoint active source unsupported")
+		}
+	}
+	checkpoint, fence, err := e.store.PrepareSyntheticAccountCheckpoint(ctx, expected, freshEnrollment)
+	if err != nil {
+		return err
+	}
+	checkpoint.ExpectedAccounts = copyDevelopmentCheckpointAccounts(checkpoint.ExpectedAccounts)
+	checkpoint.AcceptedRevisions = copyDevelopmentCheckpointRevisions(checkpoint.AcceptedRevisions)
+	fence.Scope = copyDevelopmentCheckpointScope(fence.Scope)
+	e.developmentCheckpointMu.Lock()
+	e.developmentCheckpoint = &checkpoint
+	e.developmentCheckpointFence = &fence
+	e.developmentCheckpointAuthorizedAtStartup = false
+	e.developmentCheckpointAuthorize = nil
+	e.developmentCheckpointRevoke = nil
+	e.developmentCheckpointMu.Unlock()
+	return nil
+}
+
+func supportedDevelopmentSource(source domain.Source) bool {
+	return source == domain.SourceX || source == domain.SourceInstagram || source == domain.SourceLinkedIn
+}
+
+func copyDevelopmentCheckpointAccounts(in map[domain.Source]store.SyntheticAccountIdentity) map[domain.Source]store.SyntheticAccountIdentity {
+	out := make(map[domain.Source]store.SyntheticAccountIdentity, len(in))
+	for source, identity := range in {
+		out[source] = identity
+	}
+	return out
+}
+
+func copyDevelopmentCheckpointRevisions(in map[domain.Source]string) map[domain.Source]string {
+	out := make(map[domain.Source]string, len(in))
+	for source, revision := range in {
+		out[source] = revision
+	}
+	return out
+}
+
+func copyDevelopmentCheckpointScope(in map[domain.Source]store.SyntheticAccountScope) map[domain.Source]store.SyntheticAccountScope {
+	out := make(map[domain.Source]store.SyntheticAccountScope, len(in))
+	for source, scope := range in {
+		out[source] = scope
+	}
+	return out
+}
+
 // BindDevelopmentSession requires both source authority and current browser proof.
 // It must precede startup resume and collection workers on a scoped development Store.
 func (e *Engine) BindDevelopmentSession(ctx context.Context, capability DevelopmentSessionCapability) error {
-	if !e.config.Dev || capability.Provider != "synthetic-fixture" || strings.TrimSpace(capability.ProfileID) == "" || len(capability.Sources) == 0 || capability.Authority == nil || capability.Browser == nil {
+	if !e.config.Dev || capability.Provider != "synthetic-fixture" || strings.TrimSpace(capability.StoreScopeID) == "" || strings.TrimSpace(capability.ProfileID) == "" || len(capability.Sources) == 0 || capability.Authority == nil || capability.Browser == nil {
 		return errors.New("development session capability unavailable")
 	}
 	sources := append([]domain.Source(nil), capability.Sources...)
@@ -97,7 +226,7 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 	}
 	allowed := map[domain.Source]bool{}
 	for _, source := range sources {
-		if (source != domain.SourceX && source != domain.SourceInstagram && source != domain.SourceLinkedIn) || allowed[source] {
+		if !supportedDevelopmentSource(source) || allowed[source] {
 			return errors.New("development session source unsupported")
 		}
 		allowed[source] = true
@@ -109,6 +238,18 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 		if !allowed[source] || strings.TrimSpace(accountID) == "" {
 			return errors.New("development session expected identities unsupported")
 		}
+	}
+	preparedExpected := make(map[domain.Source]store.SyntheticAccountIdentity, len(expectedAccounts))
+	for source, accountID := range expectedAccounts {
+		preparedExpected[source] = store.SyntheticAccountIdentity{AccountID: accountID, StoreScopeID: capability.StoreScopeID, ProfileID: capability.ProfileID}
+	}
+	e.developmentCheckpointMu.Lock()
+	prepared := e.developmentCheckpoint
+	preparedOK := prepared != nil && e.developmentCheckpointFence != nil &&
+		syntheticCheckpointExpectedEqual(prepared.ExpectedAccounts, preparedExpected)
+	e.developmentCheckpointMu.Unlock()
+	if !preparedOK {
+		return errors.New("development session checkpoint preparation required")
 	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
@@ -226,7 +367,163 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 			}
 		}
 		raw, _ := json.Marshal(revisions)
-		return sessionEvidence{Authenticated: true, AccountID: string(expectedIdentity), Revision: string(raw)}, nil
+		observedAt := time.Time{}
+		for _, observation := range observations {
+			if observedAt.IsZero() || observation.evidence.ObservedAt.Before(observedAt) {
+				observedAt = observation.evidence.ObservedAt.UTC()
+			}
+		}
+		return sessionEvidence{
+			Authenticated: true, AccountID: string(expectedIdentity), Revision: string(raw), ObservedAt: observedAt,
+			OwnerEpoch: ownerEpoch, OwnerGeneration: ownerSnapshot.Generation, OwnerPID: ownerPID, OwnerDriver: ownerSnapshot.Driver,
+		}, nil
+	}
+	receiptProbe := func(probeCtx context.Context) (developmentCheckpointProof, error) {
+		e.developmentCheckpointMu.Lock()
+		var checkpoint *store.SyntheticAccountCheckpoint
+		var capturedFence *store.SyntheticCheckpointFence
+		if e.developmentCheckpoint != nil && e.developmentCheckpointFence != nil {
+			copyCheckpoint := *e.developmentCheckpoint
+			copyCheckpoint.ExpectedAccounts = copyDevelopmentCheckpointAccounts(e.developmentCheckpoint.ExpectedAccounts)
+			copyCheckpoint.AcceptedRevisions = copyDevelopmentCheckpointRevisions(e.developmentCheckpoint.AcceptedRevisions)
+			copyFence := *e.developmentCheckpointFence
+			copyFence.Scope = copyDevelopmentCheckpointScope(e.developmentCheckpointFence.Scope)
+			checkpoint, capturedFence = &copyCheckpoint, &copyFence
+		}
+		e.developmentCheckpointMu.Unlock()
+		if checkpoint == nil || capturedFence == nil {
+			return developmentCheckpointProof{}, errors.New("development checkpoint fence unavailable")
+		}
+		owner := developmentCurrentOwner(e)
+		if owner == nil {
+			return developmentCheckpointProof{}, errors.New("development browser owner unavailable")
+		}
+		ownerSnapshot, ownerPID, ownerEpoch := owner.Snapshot(), owner.PID(), e.Epoch()
+		authority, probeErr := probe(probeCtx, false)
+		if probeErr != nil {
+			return developmentCheckpointProof{}, probeErr
+		}
+		browser, probeErr := probe(probeCtx, true)
+		if probeErr != nil || authority.AccountID != browser.AccountID || authority.Revision != browser.Revision {
+			return developmentCheckpointProof{}, errors.New("development checkpoint vectors do not match")
+		}
+		if browser.OwnerEpoch == "" || browser.OwnerPID <= 0 || browser.OwnerDriver != "headless" ||
+			browser.OwnerGeneration == 0 || browser.OwnerGeneration > uint64(1<<53-1) {
+			return developmentCheckpointProof{}, errors.New("development checkpoint owner proof required")
+		}
+		if developmentCurrentOwner(e) != owner || ownerSnapshot.State != captureruntime.Ready || ownerSnapshot.Driver != "headless" ||
+			ownerSnapshot.Generation != browser.OwnerGeneration || ownerPID != browser.OwnerPID || ownerEpoch != browser.OwnerEpoch ||
+			owner.Snapshot() != ownerSnapshot || owner.PID() != ownerPID || e.Epoch() != ownerEpoch {
+			return developmentCheckpointProof{}, errors.New("development checkpoint owner changed")
+		}
+		var revisionPairs [][2]string
+		if json.Unmarshal([]byte(browser.Revision), &revisionPairs) != nil || len(revisionPairs) != len(expectedAccounts) {
+			return developmentCheckpointProof{}, errors.New("development checkpoint revision vector unavailable")
+		}
+		revisions := make(map[domain.Source]string, len(revisionPairs))
+		for _, pair := range revisionPairs {
+			source := domain.Source(pair[0])
+			if !allowed[source] || revisions[source] != "" || strings.TrimSpace(pair[1]) == "" {
+				return developmentCheckpointProof{}, errors.New("development checkpoint revision vector invalid")
+			}
+			revisions[source] = pair[1]
+		}
+		if len(revisions) != len(expectedAccounts) {
+			return developmentCheckpointProof{}, errors.New("development checkpoint revision vector incomplete")
+		}
+		capturedAt := authority.ObservedAt
+		if capturedAt.IsZero() || browser.ObservedAt.IsZero() {
+			return developmentCheckpointProof{}, errors.New("development checkpoint evidence time unavailable")
+		}
+		if browser.ObservedAt.Before(capturedAt) {
+			capturedAt = browser.ObservedAt
+		}
+		capturedAt = capturedAt.UTC()
+		verifiedNow := now()
+		if capturedAt.After(verifiedNow) || verifiedNow.Sub(capturedAt) > DevelopmentSessionMaxEvidenceAge {
+			return developmentCheckpointProof{}, errors.New("development checkpoint evidence expired")
+		}
+		e.developmentCheckpointMu.Lock()
+		currentCheckpoint, currentFence := e.developmentCheckpoint, e.developmentCheckpointFence
+		checkpointUnchanged := currentCheckpoint != nil && currentFence != nil &&
+			syntheticCheckpointStateEqual(*currentCheckpoint, *checkpoint) &&
+			developmentCheckpointFenceEqual(*currentFence, *capturedFence)
+		receipt := store.SyntheticVerifiedReceipt{
+			Domain: "synthetic-fixture", CheckpointID: capturedFence.CheckpointID, Generation: capturedFence.Generation, HoldID: capturedFence.HoldID,
+			Accounts: make(map[domain.Source]string, len(expectedAccounts)), StoreScopeIDs: make(map[domain.Source]string, len(expectedAccounts)),
+			ProfileIDs: make(map[domain.Source]string, len(expectedAccounts)), Revisions: revisions,
+			OwnerEpoch: browser.OwnerEpoch, HeadlessGeneration: browser.OwnerGeneration, OwnerPID: browser.OwnerPID,
+			CapturedAt: capturedAt,
+		}
+		for source, accountID := range expectedAccounts {
+			receipt.Accounts[source] = accountID
+			receipt.StoreScopeIDs[source] = capability.StoreScopeID
+			receipt.ProfileIDs[source] = capability.ProfileID
+		}
+		e.developmentCheckpointMu.Unlock()
+		if !checkpointUnchanged || developmentCurrentOwner(e) != owner || owner.Snapshot() != ownerSnapshot || owner.PID() != ownerPID || e.Epoch() != ownerEpoch {
+			return developmentCheckpointProof{}, errors.New("development checkpoint changed during verification")
+		}
+		return developmentCheckpointProof{checkpoint: *checkpoint, fence: *capturedFence, receipt: receipt, owner: owner}, nil
+	}
+	e.developmentCheckpointAuthorize = func(authorizeCtx context.Context, admissionGuard func() error) error {
+		proof, receiptErr := receiptProbe(authorizeCtx)
+		if receiptErr != nil {
+			return receiptErr
+		}
+		if admissionGuard != nil && admissionGuard() != nil {
+			return errors.New("development checkpoint admission changed during verification")
+		}
+		receipt := proof.receipt
+		e.captureMu.Lock()
+		defer e.captureMu.Unlock()
+		if e.captureOwner != proof.owner || proof.owner == nil || proof.owner.PID() != receipt.OwnerPID ||
+			proof.owner.Snapshot().Generation != receipt.HeadlessGeneration || e.epoch != receipt.OwnerEpoch {
+			return errors.New("development checkpoint owner changed during authorization")
+		}
+		e.developmentCheckpointMu.Lock()
+		defer e.developmentCheckpointMu.Unlock()
+		currentCheckpoint, currentFence := e.developmentCheckpoint, e.developmentCheckpointFence
+		fenceUnchanged := currentCheckpoint != nil && currentFence != nil && syntheticCheckpointStateEqual(*currentCheckpoint, proof.checkpoint) &&
+			developmentCheckpointFenceEqual(*currentFence, proof.fence)
+		if !fenceUnchanged {
+			return errors.New("development checkpoint fence changed during verification")
+		}
+		if authorizeErr := e.store.AuthorizeSyntheticAccountCheckpoint(authorizeCtx, proof.fence, receipt); authorizeErr != nil {
+			e.developmentCheckpointFence = nil
+			return authorizeErr
+		}
+		if e.developmentCheckpoint == nil || e.developmentCheckpoint.CheckpointID != receipt.CheckpointID || e.developmentCheckpoint.Generation != receipt.Generation ||
+			e.developmentCheckpointFence == nil || !developmentCheckpointFenceEqual(*e.developmentCheckpointFence, proof.fence) {
+			e.developmentCheckpointFence = nil
+			return errors.New("development checkpoint changed during authorization")
+		}
+		checkpoint := *e.developmentCheckpoint
+		checkpoint.Generation++
+		checkpoint.AcceptedRevisions = copyDevelopmentCheckpointRevisions(receipt.Revisions)
+		checkpoint.VerificationTime = receipt.CapturedAt.UTC().Format(time.RFC3339Nano)
+		checkpoint.OwnerEpoch = receipt.OwnerEpoch
+		checkpoint.HeadlessGeneration = receipt.HeadlessGeneration
+		checkpoint.OwnerPID = receipt.OwnerPID
+		e.developmentCheckpoint = &checkpoint
+		e.developmentCheckpointFence = nil
+		e.developmentCheckpointAuthorizedAtStartup = true
+		return nil
+	}
+	e.developmentCheckpointRevoke = func(revokeCtx context.Context) error {
+		e.developmentCheckpointMu.Lock()
+		defer e.developmentCheckpointMu.Unlock()
+		checkpoint := e.developmentCheckpoint
+		if checkpoint == nil {
+			return errors.New("development checkpoint unavailable")
+		}
+		e.developmentCheckpointFence = nil
+		fence, fenceErr := e.store.BeginSyntheticCheckpointFence(revokeCtx, checkpoint.CheckpointID, checkpoint.Generation)
+		if fenceErr != nil {
+			return fenceErr
+		}
+		e.developmentCheckpointFence = &fence
+		return nil
 	}
 	if e.captureOwner == nil || e.collectionRuntime == nil || e.collectionRuntime.ExclusiveSessionBound() {
 		return errors.New("development session startup binding unavailable")
@@ -273,6 +570,15 @@ func (e *Engine) BindDevelopmentSession(ctx context.Context, capability Developm
 	return nil
 }
 
+func developmentCheckpointAuthorizedAtStartup(e *Engine) bool {
+	if e == nil {
+		return false
+	}
+	e.developmentCheckpointMu.Lock()
+	defer e.developmentCheckpointMu.Unlock()
+	return e.developmentCheckpointAuthorizedAtStartup
+}
+
 // StartDevelopmentSession is the shared integrated startup boundary. All recovery
 // callbacks execute only after binding a paused queue. The scoped owner must be
 // ready before this call; initialize configures that verified owner and does not
@@ -292,16 +598,39 @@ func (e *Engine) StartDevelopmentSession(ctx context.Context, owner *capturerunt
 	if err := e.BindDevelopmentSession(ctx, capability); err != nil {
 		return err
 	}
+	closeCheckpoint := func() {
+		e.developmentCheckpointMu.Lock()
+		revoke := e.developmentCheckpointRevoke
+		e.developmentCheckpointMu.Unlock()
+		if revoke != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = revoke(cleanupCtx)
+		}
+	}
 	if initialize != nil {
 		if err := initialize(ctx); err != nil {
+			closeCheckpoint()
 			return err
 		}
 	}
+	e.developmentCheckpointMu.Lock()
+	authorize := e.developmentCheckpointAuthorize
+	e.developmentCheckpointMu.Unlock()
+	if authorize == nil {
+		closeCheckpoint()
+		return errors.New("development checkpoint authorization unavailable")
+	}
+	if err := authorize(ctx, nil); err != nil {
+		closeCheckpoint()
+		return err
+	}
 	if _, err := e.ResumePendingReasoning(ctx); err != nil {
+		closeCheckpoint()
 		return err
 	}
 	coordinator.Request("headless")
-	coordinator.Start(ctx)
+	e.developmentCoordinatorDone = coordinator.StartWithDone(ctx)
 	return nil
 }
 

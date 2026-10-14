@@ -1464,3 +1464,47 @@ remains denied. Stable logs are `account-checkpoint-compatibility.txt`,
 `account-checkpoint-default-regressions.txt` under
 `runtime/qa/auth-session-sidecar`. Owned disposable roots were cleaned.
 The complete Store suite also passed in ordinary, fixture and development builds.
+
+## Development owner startup checkpoint and Store authorization
+
+Store checkpoint commit `8abe4e0` is published. The authorized next integration
+prepares the scoped development Store fence before Node/Chrome startup, then
+derives a Store receipt from correlated version 1 authority/browser observations.
+Fresh enrollment uses explicit synthetic expectations; reopening the database
+requires the same stored account/scope/profile identities and performs no login.
+Initialization remains closed; post-initialization verification precedes
+authorization and recovery. Reader handoff drains capture/reasoning and fences
+before releasing leases. Headless resume verifies a new fence/owner before
+restamping never-claimed commands. Changed fences, replaced owners, expired or
+canceled probes and failed initialization/resume must stay closed.
+
+The canonical automatic acceptance command is:
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault
+```
+
+This command uses newly scoped synthetic Chrome profiles and loopback login;
+no physical click or native-host registry registration is part of this gate.
+It also checks default-off dispatch and ordinary regressions/build. Passing
+startup/session tests does not establish real source authentication or replace
+the separate physical foreground/native-reader acceptance test.
+
+Acceptance passed on 2026-10-14. Store compatibility passed across three builds
+and seven processes. The command above passed five prepared-profile Node cases,
+the correlated verifier/checkpoint/HTTP/default-off contracts, tagged-main graceful
+and abrupt restart, selected default regressions and ordinary build. Each restart
+case used one synthetic login/two captures and retained fixture SQLite/profile
+identity while replacing the process/epoch, fencing before owner launch and
+authorizing only after proof. Lost authority and stale/duplicate evidence stayed
+closed. Fence/admission races kept queued payloads unchanged. The former cleanup
+race is guarded by joining coordinator polling before Store close, with three
+targeted repetitions passing. Private prepared-profile scope accepts only an
+empty owned directory and rejects reuse/replacement before Chrome starts.
+
+Logs are `startup-checkpoint-development-validation.txt`,
+`startup-checkpoint-store-compatibility.txt`,
+`startup-checkpoint-profile-scope.txt`, and
+`startup-checkpoint-teardown-regression.txt` under
+`runtime/qa/auth-session-sidecar`. Owned disposable roots were cleaned. This new
+integration is approved for publication after review; source-provider authentication is still synthetic.

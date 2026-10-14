@@ -108,6 +108,10 @@ try {
             }
         }
         if ($VerifyDevelopment) {
+            & $node --test (Join-Path $projectRoot 'scripts\auth-session-fixture\chrome-profile-scope.test.mjs')
+            if ($LASTEXITCODE -ne 0) { throw 'Prepared fixture profile scope contracts failed.' }
+            & go test -tags auth_session_dev ./internal/store -run '^TestAccountCheckpoint|^TestSyntheticAccountCheckpoint' -count=1 -timeout=60s
+            if ($LASTEXITCODE -ne 0) { throw 'Development checkpoint Store contracts failed.' }
             $env:AKU_DEV_SESSION_TEST_ROOT = $taskRoot
             $env:AKU_PROCESS_FIXTURE_ENABLED = '1'
             & go build -o (Join-Path $taskRoot 'aku-sidecar-default-check.exe') ./cmd/akusidecar
@@ -116,7 +120,7 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'Dev without adapter build failed.' }
             & go build -tags 'auth_session_dev auth_session_fixture' -o (Join-Path $taskRoot 'aku-sidecar-dev.exe') ./cmd/akusidecar
             if ($LASTEXITCODE -ne 0) { throw 'Actual main synthetic integration build failed.' }
-            & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/engine -run '^TestDevelopmentSession|^TestDevelopmentReader|^TestDevelopmentPause|^TestDevelopmentCollectionRuntime' -count=1 -timeout=120s -v
+            & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/engine -run '^TestDevelopmentSession|^TestDevelopmentCheckpoint|^TestDevelopmentReader|^TestDevelopmentPause|^TestDevelopmentCollectionRuntime' -count=1 -timeout=120s -v
             if ($LASTEXITCODE -ne 0) { throw 'Explicit development integration validation failed.' }
             if (!(Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf)) { throw 'Development integration did not prove all owned trees empty.' }
         }
