@@ -1371,3 +1371,32 @@ app/relay/content/worker/native/private broker foreground, UI/API/audit and drai
 proof, followed by owned graceful cleanup; it passed in 32.42s. `normal` and the
 historical combined reader-death scenario retain distinct scope. All split-trial
 roots/QA registration were cleaned. See the acceptance doc for evidence paths.
+
+## Persistent pause: ordinary/fixture/development build compatibility
+
+```powershell
+.\scripts\test-capture-pause-compatibility.ps1
+```
+
+This automatic Store-only test compiles ordinary, fixture, and development test
+binaries. Five separate processes reopen the same synthetic SQLite database:
+development pause -> ordinary blocked claim -> fixture inspection -> fixture
+resume -> ordinary claim. It verifies preserved queued payload/claim fields,
+all runs/routes of the paused session, unrelated session admission, unknown marker
+and query-error rejection, resume rollback/duplicate handling, and cancellation.
+Successful runs clean their exact project QA database/binaries; failed artifacts
+remain under the reported project QA root. No Chrome, native registration, login,
+or user Sidecar runtime is involved.
+
+The claim guard is common to all builds, but pause/resume activation remains
+tagged and default-off. Rollback targets must include this guard: an older binary
+that ignores pause markers remains unsafe for the same paused database. This test
+does not prove real-account verification or full main startup/browser ownership.
+
+The compatibility command passed all five stages and both common guard cases in
+each build. `test-auth-session-sidecar.ps1 -VerifyDefault` also passed the existing
+synthetic contracts/default capture-reader regressions and ordinary Sidecar build.
+All owned test roots were cleaned. Logs: project-local
+`runtime/qa/auth-session-sidecar/capture-pause-compatibility.txt` and
+`capture-pause-default-regressions.txt` in the same directory. Engine's synthetic
+loopback login test requires the scoped execution path outside the socket sandbox.

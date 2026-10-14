@@ -5128,3 +5128,26 @@ All split-test roots and the approved temporary QA host are cleaned. Next readin
 discussion may use these fixture gates; production auth, runtime/installation,
 media recapture and non-headless collection remain outside acceptance. No new
 commit/push was performed and Git metadata is unavailable. See the acceptance doc.
+
+### 2026-10-14: persistent capture pause across build configurations
+
+The authorized rollback correction moves the SQLite transactional claim guard
+into every build while retaining tag-only pause/resume APIs and default-off
+development activation. The existing marker key/schema remain compatible. Any
+marker value blocks the paused session's runs before claim mutation, and query
+errors fail closed. Tagged APIs reject unknown values without clearing the fence.
+
+The dedicated `scripts/test-capture-pause-compatibility.ps1` harness builds ordinary,
+fixture, and development Store test binaries and exchanges one synthetic SQLite
+database across five separate processes, including downgrade-blocked claim and
+upgrade resume. No original authentication, browser, registration, or user runtime
+is accessed. A rollback binary must itself contain the common guard; historical
+unguarded binaries remain unsuitable. Real-source verification and full ordinary
+main startup/ownership acceptance are subsequent gates, not covered by Store tests.
+
+Validation passed: two guard cases across three builds plus five cross-build
+stages; the canonical `-VerifyDefault` helper passed synthetic integration/broker
+contracts, ordinary config/main/capture-reader regressions and the default build.
+All temporary synthetic databases/binaries were cleaned; the two result logs are
+retained in `runtime/qa/auth-session-sidecar/capture-pause-*.txt`. Original auth and
+user runtime remain untouched. This implementation is not yet committed/pushed.

@@ -11,14 +11,6 @@ import (
 	"strings"
 )
 
-const fixtureCapturePausePrefix = "fixture_capture_pause:"
-
-func fixtureCaptureClaimPaused(ctx context.Context, tx *sql.Tx, runID string) (bool, error) {
-	var count int
-	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta m JOIN runs r ON m.key=? || r.session_id WHERE r.id=?`, fixtureCapturePausePrefix, runID).Scan(&count)
-	return count != 0, err
-}
-
 // FixtureCaptureSessionPaused is also used by the fixture claim admission gate.
 func (s *Store) FixtureCaptureSessionPaused(ctx context.Context, sessionID string) (bool, error) {
 	var count int
@@ -88,19 +80,32 @@ func (s *Store) PauseFixtureCaptureSession(ctx context.Context, sessionID string
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM sessions WHERE id=?`, sessionID).Scan(&status); err != nil {
 		return err
 	}
+	var marker string
+	markerErr := tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, fixtureCapturePausePrefix+sessionID).Scan(&marker)
+	markerExists := markerErr == nil
+	if markerErr != nil && !errors.Is(markerErr, sql.ErrNoRows) {
+		return markerErr
+	}
+	if markerExists && marker != "1" {
+		return errors.New("unsupported fixture capture pause marker")
+	}
 	if status != "queued" && status != "running" {
 		// Terminal work can leave a marker after cancellation during a reader.
 		// Clearing it is safe; no command or session state is changed.
-		if _, err := tx.ExecContext(ctx, `DELETE FROM meta WHERE key=?`, fixtureCapturePausePrefix+sessionID); err != nil {
-			return err
+		if markerExists {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM meta WHERE key=?`, fixtureCapturePausePrefix+sessionID); err != nil {
+				return err
+			}
 		}
 		return tx.Commit()
 	}
 	if _, err := fixtureCaptureCommands(ctx, tx, sessionID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES(?,'1') ON CONFLICT(key) DO UPDATE SET value='1'`, fixtureCapturePausePrefix+sessionID); err != nil {
-		return err
+	if !markerExists {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES(?,'1') ON CONFLICT(key) DO UPDATE SET value='1'`, fixtureCapturePausePrefix+sessionID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -117,6 +122,9 @@ func (s *Store) ResumeFixtureCaptureSession(ctx context.Context, sessionID, epoc
 	var marker, status string
 	if err := tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, fixtureCapturePausePrefix+sessionID).Scan(&marker); err != nil {
 		return err
+	}
+	if marker != "1" {
+		return errors.New("unsupported fixture capture pause marker")
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM sessions WHERE id=?`, sessionID).Scan(&status); err != nil {
 		return err

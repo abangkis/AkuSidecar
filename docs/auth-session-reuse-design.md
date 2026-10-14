@@ -1334,3 +1334,40 @@ Normal multiwindow/final-close verified resume retains its earlier passing proof
 All new profiles/binaries/private cues and the single temporary QA leaf are
 cleaned. This establishes synthetic fixture acceptance, not production auth or
 installed-runtime readiness. See `auth-session-frontend-qa-acceptance.md`.
+
+## Persistent pause guard across builds — 2026-10-14
+
+The SQLite claim guard now compiles in ordinary, `auth_session_fixture`, and
+`auth_session_dev` builds. It honors the existing `fixture_capture_pause:<session>`
+key inside the claim transaction, before any command is claimed. Marker presence
+blocks every run/collector route in that session regardless of marker value;
+query failure also blocks claim. An unmarked session retains normal admission.
+The schema and marker format are unchanged. Pause/resume mutators and development
+activation remain tagged and default-off; an ordinary build cannot clear the
+marker through these APIs. Tagged pause/resume reject unsupported marker values
+without replacing or deleting them.
+
+`scripts/test-capture-pause-compatibility.ps1` compiles three Store test binaries
+and runs five separate processes against one fresh synthetic database: development
+pause, ordinary-build blocked claim, fixture reopen/inspection, fixture resume,
+then ordinary-build claim. The harness also runs common guard/error tests in each
+build and cleans its owned database/binaries after success. It launches no browser,
+native host, or Sidecar runtime and accesses no authentication state.
+
+This downgrade boundary requires a target binary containing the common guard.
+Historical binaries without it still ignore these markers and are not safe rollback
+targets for a paused database. Store compatibility does not establish normal main
+startup/browser ownership or real-account verification. Account verification stays
+in the Engine binder before resume; the Store harness supplies synthetic owner
+epoch/generation parameters only. Restart continues to close owned reader windows
+under the selected Sidecar-parent lifetime; it does not preserve old windows.
+
+Validation passed: two common guard cases in each of the three builds and all
+five cross-build stages; existing synthetic Engine/Store/HTTP and reader-broker
+contracts, ordinary config/main and capture/reader regressions, and ordinary
+Sidecar build via `test-auth-session-sidecar.ps1 -VerifyDefault`. Synthetic loopback
+Engine tests required execution outside the socket-restricted sandbox. Successful
+and initial failed test roots were cleaned; result logs are retained at
+`runtime/qa/auth-session-sidecar/capture-pause-compatibility.txt` and
+`runtime/qa/auth-session-sidecar/capture-pause-default-regressions.txt`. No real
+authentication or user runtime was accessed, and no commit/push was authorized.
