@@ -1,4 +1,4 @@
-param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
+param([switch]$VerifyDefault,[switch]$VerifyChrome,[switch]$VerifyBroker,[switch]$VerifyProcessRestart,[switch]$VerifyDevelopment,[string]$ChromeTestRegex = '^TestChromeFixture',[string]$BrokerTestRegex = '^TestBrokerFixtureOSReaderHandoff$',[string]$ProcessTestRegex = '^TestProcessFixture')
 $ErrorActionPreference = 'Stop'
 if ($VerifyChrome -and $ChromeTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Chrome test filter contains unsupported characters.' }
 if ($VerifyBroker -and $BrokerTestRegex -notmatch '^[A-Za-z0-9_.$|()^]+$') { throw 'Broker test filter contains unsupported characters.' }
@@ -11,7 +11,7 @@ if ($fixtureParent -ne (Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 $taskRoot = Join-Path $fixtureParent ('run-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $taskRoot | Out-Null
 $previous = @{}
-$variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE','AKU_PROCESS_FIXTURE_ENABLED')
+$variables = @('TEMP','TMP','GOTMPDIR','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH','AKU_BROKER_FIXTURE_ENABLED','AKU_BROKER_FIXTURE_PIPE','AKU_PROCESS_FIXTURE_ENABLED','AKU_DEV_SESSION_TEST_ROOT')
 foreach ($variable in $variables) { $previous[$variable] = [Environment]::GetEnvironmentVariable($variable, 'Process') }
 Push-Location -LiteralPath $projectRoot
 try {
@@ -26,7 +26,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Sidecar synthetic integration tests failed.' }
     & go test -tags auth_session_fixture ./internal/readerbroker ./cmd/aku-reader-broker ./cmd/auth-session-fixture-ui -count=1 -timeout=60s
     if ($LASTEXITCODE -ne 0) { throw 'Reader broker contract or fixture helper compile checks failed.' }
-    if ($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart) {
+    if ($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment) {
         $node = 'C:\nvm4w\nodejs\node.exe'
         $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
         if (!(Test-Path -LiteralPath $node -PathType Leaf)) { throw 'The configured Node executable is unavailable.' }
@@ -35,6 +35,19 @@ try {
         $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER = Join-Path $taskRoot 'cleanup-verified.marker'
         $env:AKU_TEST_NODE_PATH = $node
         $env:AKU_TEST_CHROME_PATH = $chrome
+        if ($VerifyDevelopment) {
+            $env:AKU_DEV_SESSION_TEST_ROOT = $taskRoot
+            $env:AKU_PROCESS_FIXTURE_ENABLED = '1'
+            & go build -o (Join-Path $taskRoot 'aku-sidecar-default-check.exe') ./cmd/akusidecar
+            if ($LASTEXITCODE -ne 0) { throw 'Default main build failed.' }
+            & go build -tags auth_session_dev -o (Join-Path $taskRoot 'aku-sidecar-dev-unavailable.exe') ./cmd/akusidecar
+            if ($LASTEXITCODE -ne 0) { throw 'Dev without adapter build failed.' }
+            & go build -tags 'auth_session_dev auth_session_fixture' -o (Join-Path $taskRoot 'aku-sidecar-dev.exe') ./cmd/akusidecar
+            if ($LASTEXITCODE -ne 0) { throw 'Actual main synthetic integration build failed.' }
+            & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/engine -run '^TestDevelopmentSession' -count=1 -timeout=120s -v
+            if ($LASTEXITCODE -ne 0) { throw 'Explicit development integration validation failed.' }
+            if (!(Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf)) { throw 'Development integration did not prove all owned trees empty.' }
+        }
         if ($VerifyChrome) {
             & go test -tags auth_session_fixture ./internal/engine -run $ChromeTestRegex -count=1 -timeout=300s
             if ($LASTEXITCODE -ne 0) { throw 'Opt-in real Chrome fixture integration test failed.' }
@@ -72,16 +85,19 @@ try {
         }
     }
     if ($VerifyDefault) {
+        & go test ./internal/config ./cmd/akusidecar -count=1 -timeout=90s
+        if ($LASTEXITCODE -ne 0) { throw 'Default config/main startup regressions failed.' }
         & go test ./internal/captureruntime ./internal/collection ./internal/engine ./internal/store ./internal/httpapi -run 'Test.*(CaptureRuntime|CaptureGeneration|Hybrid|NativeReader|HeadlessNative|SwitchWaits|RetainedPopup|Collector|ClaimCommand|Borrow|IdleHold|Manager|Replacement|AdditionalHeadless|SplitCapture)' -count=1 -timeout=120s
         if ($LASTEXITCODE -ne 0) { throw 'Default capture/reader regression tests failed.' }
         & go build -o (Join-Path $taskRoot 'aku-sidecar-default-check.exe') ./cmd/akusidecar
         if ($LASTEXITCODE -ne 0) { throw 'Default Sidecar build failed.' }
     }
+    Write-Output 'auth-session-sidecar validation completed exit=0'
 }
 finally {
     Pop-Location
     foreach ($variable in $variables) { [Environment]::SetEnvironmentVariable($variable, $previous[$variable], 'Process') }
-    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
+    $cleanupAllowed = !($VerifyChrome -or $VerifyBroker -or $VerifyProcessRestart -or $VerifyDevelopment) -or (Test-Path -LiteralPath (Join-Path $taskRoot 'cleanup-verified.marker') -PathType Leaf)
     if (!$cleanupAllowed) { Write-Warning 'The Chrome fixture did not prove its owned Job Object empty; fixture output was retained.' }
     if ($cleanupAllowed -and (Test-Path -LiteralPath $taskRoot)) {
         $resolved = (Resolve-Path -LiteralPath $taskRoot).ProviderPath

@@ -30,6 +30,7 @@ type RuntimeStatus struct {
 	CollectionBorrowSource   domain.Source        `json:"collectionBorrowSource,omitempty"`
 	CollectionBorrowFailure  string               `json:"collectionBorrowFailure,omitempty"`
 	SyntheticExclusive       bool                 `json:"syntheticExclusive,omitempty"`
+	DevelopmentSession       bool                 `json:"developmentSession,omitempty"`
 	BatchPaused              bool                 `json:"batchPaused,omitempty"`
 }
 
@@ -87,12 +88,14 @@ type Coordinator struct {
 	wakeAt                    time.Time
 	timingObserver            func(string, time.Duration)
 	fixtureHooks              *syntheticExclusiveHooks
+	developmentSession        bool
+	developmentSources        []domain.Source
 	fixtureHeadless           CaptureBackend
 	fixtureHeadlessGeneration uint64
 }
 
-// Only the auth_session_fixture build supplies a binder for these hooks.
-// Ordinary builds cannot enable the synthetic admission path.
+// Explicit auth_session_fixture or auth_session_dev builds supply these hooks.
+// Ordinary builds cannot enable this admission path.
 type syntheticExclusiveHooks struct {
 	beforeReader   func(context.Context) error
 	beforeHeadless func(context.Context) error
@@ -141,6 +144,12 @@ func (c *Coordinator) notify() {
 // Bound before Start: retained permissions must be confirmed before handoff.
 func (c *Coordinator) SetHeadlessReadiness(check func() error) { c.readiness = check }
 func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) error {
+	c.mu.Lock()
+	development := c.developmentSession
+	c.mu.Unlock()
+	if development && mode != "headless" {
+		return errors.New("development session requires headless collection")
+	}
 	if mode != "browser" && mode != "headless" {
 		return errors.New("unsupported collection mode")
 	}
@@ -158,6 +167,11 @@ func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) er
 }
 func (c *Coordinator) Request(mode string) {
 	c.mu.Lock()
+	if c.developmentSession && mode != "headless" {
+		c.failure = "development session requires headless collection"
+		c.mu.Unlock()
+		return
+	}
 	c.requested = mode
 	c.retry = true
 	c.failure = ""
@@ -176,6 +190,8 @@ func (c *Coordinator) Retry() {
 func (c *Coordinator) Status() RuntimeStatus {
 	c.mu.Lock()
 	requested, interactive, collectionBorrow, failure, available := c.requested, c.interactive, c.browserCollection, c.failure, c.headlessAvailable
+	development := c.developmentSession
+	developmentSources := append([]domain.Source(nil), c.developmentSources...)
 	nativeGeneration := c.nativeReaderGeneration
 	nativeSince := c.nativeReaderSince
 	backend, generation := c.browserCollector, c.browserGeneration
@@ -197,9 +213,18 @@ func (c *Coordinator) Status() RuntimeStatus {
 	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
 	status := RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0 || collectionBorrow > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
 	if c.fixtureHooks != nil {
-		status.SyntheticExclusive = true
+		status.SyntheticExclusive = !development
+		status.DevelopmentSession = development
 		status.BatchPaused = c.fixtureHooks.paused()
 		status.Pending = status.Pending || status.BatchPaused
+	}
+	if development && c.fixtureHooks == nil {
+		status.DevelopmentSession = true
+		status.BatchPaused = true
+		status.Pending = true
+	}
+	if development {
+		status.SupportedSources = developmentSources
 	}
 	status.NativeReaderOnly = nativeGeneration != 0 && nativeGeneration == s.Generation
 	if status.NativeReaderOnly {
@@ -393,6 +418,12 @@ func (c *Coordinator) borrowBrowser(ctx context.Context, collectionBorrow bool) 
 	return c.borrowBrowserMode(ctx, collectionBorrow, false)
 }
 func (c *Coordinator) borrowBrowserMode(ctx context.Context, collectionBorrow, nativeReader bool) (*captureruntime.Lease, func(), error) {
+	c.mu.Lock()
+	development := c.developmentSession
+	c.mu.Unlock()
+	if development && !nativeReader {
+		return nil, func() {}, errors.New("development session browser collection unavailable")
+	}
 	releaseIntent := c.beginBrowserBorrow(collectionBorrow)
 	if nativeReader && c.fixtureHooks != nil {
 		if err := c.fixtureHooks.beforeReader(ctx); err != nil {

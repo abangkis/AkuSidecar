@@ -46,7 +46,11 @@ func startProcessFixtureChild(t *testing.T, executable string, start processFixt
 		t.Fatal(err)
 	}
 	child := &processFixtureChild{job: job, replies: make(chan processFixtureReceipt, 8), exited: make(chan error, 1)}
-	child.cmd = exec.Command(executable)
+	arguments := []string{}
+	if strings.EqualFold(filepath.Base(executable), "aku-sidecar-dev.exe") {
+		arguments = []string{"--dev", "--dev-session-reuse=synthetic-fixture"}
+	}
+	child.cmd = exec.Command(executable, arguments...)
 	child.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	child.cmd.Stderr = &child.stderr
 	stdout, err := child.cmd.StdoutPipe()
@@ -186,11 +190,15 @@ func (c *processFixtureChild) stop(t *testing.T, abrupt bool, executable string,
 }
 
 func TestProcessFixtureFullOSRestart(t *testing.T) {
+	runProcessFixtureFullOSRestart(t, "auth-session-process-fixture.exe")
+}
+
+func runProcessFixtureFullOSRestart(t *testing.T, image string) {
 	if os.Getenv("AKU_PROCESS_FIXTURE_ENABLED") != "1" {
 		t.Skip("requires explicit VerifyProcessRestart helper")
 	}
 	taskRoot := os.Getenv("AKU_CHROME_FIXTURE_ROOT")
-	executable := filepath.Join(taskRoot, "auth-session-process-fixture.exe")
+	executable := filepath.Join(taskRoot, image)
 	if _, err := os.Stat(executable); err != nil {
 		t.Fatal("dedicated fixture worker not built")
 	}
@@ -236,9 +244,16 @@ func TestProcessFixtureFullOSRestart(t *testing.T) {
 			if err = os.WriteFile(filepath.Join(config.Root, "process-controller-lineage.json"), raw, 0600); err != nil {
 				t.Fatal(err)
 			}
-			start := processFixtureStart{Grant: processFixtureGrant{processFixtureLineage: lineage}, NodePath: config.NodePath, ChromePath: config.ChromePath, DriverPath: config.DriverPath, Origin: config.Origin, AuthorityKey: nonce}
+			controllerImage, imageErr := os.Executable()
+			if imageErr != nil {
+				t.Fatal(imageErr)
+			}
+			start := processFixtureStart{Grant: processFixtureGrant{processFixtureLineage: lineage}, NodePath: config.NodePath, ChromePath: config.ChromePath, DriverPath: config.DriverPath, Origin: config.Origin, AuthorityKey: nonce, ControllerImage: controllerImage}
 			first := startProcessFixtureChild(t, executable, start)
 			paused := first.receive(t, "paused_reader")
+			if paused.DevelopmentSession != (image == "aku-sidecar-dev.exe") {
+				t.Fatal("worker used the wrong integration binder")
+			}
 			if paused.Epoch == "" || paused.SessionID == "" || len(paused.RunIDs) != 2 || len(paused.Windows) != 2 || paused.Bootstrap != 1 || paused.Account != "alpha" || fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
 				t.Fatal("first worker actual persisted/capture evidence invalid")
 			}
@@ -306,6 +321,9 @@ func TestProcessFixtureFullOSRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 			recovered := second.receive(t, "recovered")
+			if recovered.DevelopmentSession != (image == "aku-sidecar-dev.exe") {
+				t.Fatal("recovery used the wrong integration binder")
+			}
 			if second.identity.PID == first.identity.PID || recovered.Epoch == paused.Epoch || !recovered.StaleEpochDenied || !recovered.DuplicateDenied || recovered.Account != paused.Account || recovered.Revision != paused.Revision || fixture.logins.Load() != 1 || fixture.sequence.Load() != 2 {
 				t.Fatal("new process restart recovery contract failed")
 			}

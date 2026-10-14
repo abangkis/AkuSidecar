@@ -1,14 +1,33 @@
 package engine
 
-import "sync"
+import (
+	"errors"
+	"github.com/abangkis/AkuSidecar/internal/domain"
+	"sync"
+)
 
-// Nil in ordinary builds. Only the explicitly tagged synthetic fixture binder
-// constructs this gate. It tracks physical collector steps through ingestion.
+// Nil in ordinary builds. Explicit fixture or development bindings construct
+// this gate. It tracks physical collector steps through ingestion.
 type fixtureAdmissionGate struct {
 	mu         sync.Mutex
 	paused     bool
 	running    int
 	pauseEpoch uint64
+}
+
+func (e *Engine) validateDevelopmentSelection(settings domain.Settings) error {
+	if e.developmentSources == nil {
+		return nil
+	}
+	if settings.CollectionMode != "headless" {
+		return errors.New("development session requires headless collection")
+	}
+	for _, source := range settings.ActiveSources {
+		if !e.developmentSources[source] {
+			return errors.New("development session source unsupported")
+		}
+	}
+	return nil
 }
 
 func (e *Engine) fixtureAdmissionAllowed() bool {

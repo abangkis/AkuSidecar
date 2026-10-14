@@ -1062,3 +1062,52 @@ Disposable binaries were removed; real authentication and user runtime were
 untouched. No commit/push occurred. DEV-2 development binding and DEV-3 integrated synthetic
 pilot acceptance remain; installed-main/clean-machine parity and real-account
 compatibility are not established by this gate.
+
+The owner subsequently authorized DEV-1 commit/push and continuation on
+2026-10-14. Commit `7740deb` was pushed and verified at `origin/main`. DEV-2
+development opt-in/session-verifier integration proceeds with synthetic tests;
+no real authentication or running user instance is authorized, and DEV-2 code
+will remain uncommitted pending its next reviewable checkpoint.
+
+### DEV-2 explicit development integration (2026-10-14)
+
+Use the canonical helper from the project root:
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopment
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault -VerifyChrome -VerifyProcessRestart
+```
+
+The helper builds three actual `cmd/akusidecar` variants in a fresh project QA
+run. Only Windows `auth_session_dev auth_session_fixture` plus
+`--dev --dev-session-reuse=synthetic-fixture` dispatches to the isolated concrete
+provider, before ordinary config/Store/provider/browser startup. Manual opt-in
+without its private scoped controller grant fails. Default builds, missing dev,
+unsupported provider, unavailable adapter and missing grant are tested rejections
+before ordinary state exists. No setting or HTTP endpoint enables this path.
+
+The new development binding checks source/profile/account/revision, Engine
+epoch, actual owner generation/PID/driver and physical profile identity; it does
+not use the legacy fixture binder or Bridge readiness as login proof. Lifecycle
+primitives are shared with fixture wrappers. Reader priority drains capture and
+related accepted-capture reasoning; SQLite pause/restamp/restart and paused
+cancellation retain work correctly. Foreign/unknown evidence stays closed, and
+mismatch does not silently recover. Media/passive-media/Browser routes and old
+frozen plans outside declared headless sources are rejected before resume.
+
+The full command exited zero: new dev suite 13.220 seconds, existing Chrome
+16.632 seconds, process 21.439 seconds, synthetic/default/config/main regressions
+and three builds. Final development-only frozen-plan refinement was revalidated
+with `-VerifyDevelopment`, exit zero, 12.293 seconds (actual-main graceful/abrupt
+restart 4.67 seconds). Shared/default inputs did not change afterward.
+Twelve invalid evidence cases, startup ordering/negative gates, active drain,
+durable restart, paused cancellation and unsupported frozen plans passed.
+
+Exact commands/results and initial corrected assertion failures are indexed in
+`runtime/qa/auth-session-sidecar/dev2-validation-index.txt`. Independent inspection
+found zero matching fixture peers and zero disposable run directories. All 27
+DEV-2 files remain uncommitted; DEV-1 `7740deb` is pushed. Real authentication,
+user runtime, install/register and foreground operations were untouched.
+Ordinary UI/native-broker startup remains DEV-3: the synthetic main dispatch
+bypasses ordinary startup and proves only accepted-capture reasoning recovery.
+It does not establish real-source compatibility or activate main dev for users.

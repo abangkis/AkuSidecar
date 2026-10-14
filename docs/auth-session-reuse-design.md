@@ -874,6 +874,109 @@ priority/drain/durable pause and verified resume, followed by **DEV-3** integrat
 synthetic pilot acceptance. Actual-account verification and user runtime
 activation still require separate authorization.
 
+### DEV-1 checkpoint and DEV-2 authorization (2026-10-14)
+
+After validation, the owner explicitly authorized commit/push and continuation.
+All 15 DEV-1 files were committed as `7740deb` and pushed to `origin/main`; remote
+readback matched `7740deb565c1ffd1099d40db4005339215bbec5b`. Existing validated
+payload evidence remains applicable because commit/push changed no code.
+
+DEV-2 source implementation is now authorized: explicit development opt-in,
+reader priority/drain, durable pause and verified resume with synthetic tests.
+Define the account/browser session capability before enabling the policy; Bridge
+permission readiness cannot substitute for session authority. Missing or unknown
+verification must deny admission/resume. Ordinary defaults stay disabled; real
+authentication, running user instances, installation/registration and foreground
+operations remain outside scope. DEV-2 changes require a subsequent commit/push
+authorization after their reviewable result.
+
+The bounded implementation uses a distinct `auth_session_dev` capability and
+explicit development opt-in. The concrete synthetic runner also requires the
+fixture adapters (`auth_session_dev` plus `auth_session_fixture`) and dispatches
+from the actual Sidecar executable before ordinary runtime startup. It accepts
+only private, fresh project-QA grants with verified process/profile lineage.
+This runner shares the new development binding/startup contract and the existing
+Chrome/Engine/SQLite/Coordinator orchestration; it must not call the old fixture
+binder as a substitute for the new development policy. Ordinary builds, non-dev
+launch and missing/unsupported session providers reject opt-in before state or
+runtime mutation. Real-source adapters remain unavailable.
+
+Evidence distinguishes synthetic and real sessions and binds source/profile/
+account/revision to the current browser owner, including its actual generation
+and process identity. Unknown, stale or conflicting authority denies admission
+and resume without login. Unsupported media and non-headless routes remain
+closed. Actual ordinary UI/native-broker acceptance belongs to DEV-3 rather than
+being inferred from an Engine borrow or this isolated runner.
+
+### DEV-2 source/synthetic result (2026-10-14)
+
+DEV-2 is complete within the selected source/synthetic contract, based on pushed
+DEV-1 `7740deb`. Actual `cmd/akusidecar` dispatches the explicit
+`--dev --dev-session-reuse=synthetic-fixture` mode only in a Windows build with
+`auth_session_dev auth_session_fixture`. The default build rejects the opt-in,
+and an `auth_session_dev` build without a concrete adapter rejects it as
+unavailable. These rejections precede ordinary config, Store, provider and
+browser startup. The successful provider accepts private grants only from the
+verified actual `engine.test.exe` controller under the same fresh QA task root;
+it validates image, creation identity and profile lineage before work.
+
+The new `DevelopmentSessionCapability`/`StartDevelopmentSession` contract uses
+source/profile/account/revision plus current browser generation/PID/driver and
+Engine epoch. Browser evidence comes from the actual queried owner, revalidated
+before/after the probe and against physical profile directory identity. Invalid
+evidence leaves capture admission closed; mismatch during handoff latches pause
+and does not recover merely through Coordinator Retry. Bridge permission is not
+session proof. The shared lifecycle retains the old fixture wrappers separately;
+development status identifies this binding and reports its declared source scope.
+
+Active capture and associated accepted-capture reasoning drain before reader
+ownership. Durable pause gates SQLite claim transactionally, restart restamps
+only never-claimed work, and cancel while paused does not revive capture. New
+media/Browser work is rejected before creation/claim, including passive media
+mutation. Previously frozen Browser/Facebook plans are rejected before startup
+resume even if newer settings are headless. There is no real-source verifier.
+
+Canonical validation from the project root:
+
+```powershell
+.\scripts\test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault -VerifyChrome -VerifyProcessRestart
+```
+
+That command exited zero: dev engine suite 13.220 seconds, existing Chrome suite
+16.632 seconds (8 leaf cases), existing process suite 21.439 seconds (9 leaf
+cases), 19 synthetic cases, broker contracts, config/main tests and default
+five-package regressions/build. All three actual-main variants compiled. After
+the final development-only frozen-plan guard, `-VerifyDevelopment` exited zero
+again in 12.293 seconds, including actual-main graceful/abrupt restart in 4.67
+seconds. Shared/default inputs were unchanged after the complete run.
+
+Physical actual-main restart proved old Chrome roots/windows and whole trees
+released before fallback, persisted SQLite IDs/profile, a fresh Engine epoch,
+one synthetic login across restart, rejection of old/duplicate results and no
+capture until renewed authority. Twelve foreign/unknown evidence cases, startup
+missing-provider/non-dev/not-ready rejection, accepted-reasoning deferral,
+capture/reasoning drain, mismatch latch, durable restart, paused cancellation
+and two unsupported frozen-plan cases passed. Five CLI rejection variants
+proved ordinary state stayed absent.
+
+Initial unit failures were incorrect assertions: a pending-reader busy failure
+was mistaken for verifier denial; a weak post-cancel tail observed the expected
+stale-owner denial. The predicates were corrected, and cancellation was replaced
+with a dedicated paused-cancel proof. An initial sandbox loopback-denial run was
+retried outside the sandbox within the authorized synthetic scope. Exact
+commands, initial failures and final success remain in the ignored project-local
+`runtime/qa/auth-session-sidecar/dev2-validation-index.txt` and linked transcripts.
+
+Independent read-only inspection found zero matching fixture peers and zero
+disposable QA run directories; `git diff --check` passed. There are 27 uncommitted
+source/test/helper/document files after DEV-1. No DEV-2 commit/push, real
+authentication, user runtime, installation, registration or foreground operation
+occurred. Ordinary UI/native-broker startup and all reasoning lanes are not
+proved: this synthetic dispatch bypasses ordinary main startup and covers the
+accepted-capture reasoning lane. The next gate is DEV-3 through the actual UI/
+native-broker journey with synthetic authority; real accounts and user runtime
+activation remain separately authorized gates.
+
 ## Primary references
 
 - [Windows nested Jobs and inherited membership](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)

@@ -66,6 +66,7 @@ type Engine struct {
 	browserRecaptureDispatchConfirmed map[string]bool
 	collectionRuntime                 *collection.Coordinator
 	fixtureAdmission                  *fixtureAdmissionGate
+	developmentSources                map[domain.Source]bool
 	schedule                          sync.Mutex
 	heartbeat                         *domain.BridgeHeartbeat
 	headlessAccess                    []domain.Source
@@ -126,6 +127,9 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	value.Normalize()
+	if err := e.validateDevelopmentSelection(value); err != nil {
+		return domain.Settings{}, err
+	}
 	if e.collectionRuntime != nil {
 		if err := e.collectionRuntime.ValidateSelection(value.CollectionMode, value.ActiveSources); err != nil {
 			return domain.Settings{}, err
@@ -643,6 +647,9 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, noGrantedActiveSourceError()
 	}
 	settings.ActiveSources = validSources
+	if err := e.validateDevelopmentSelection(settings); err != nil {
+		return domain.Session{}, err
+	}
 	e.cancelDeepDetections()
 	var lease *captureruntime.Lease
 	if settings.CollectionMode != "headless" {
@@ -1016,6 +1023,9 @@ func (e *Engine) claimCommandForDriver(ctx context.Context, runID, bridgeID, dri
 }
 
 func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, driver, collector string) (*domain.BridgeCommand, error) {
+	if e.developmentSources != nil && (driver != "headless" || collector != collection.BackendHeadless) {
+		return nil, errors.New("development session collector unavailable")
+	}
 	if !e.fixtureAdmissionAllowed() {
 		return nil, nil
 	}
@@ -1026,6 +1036,9 @@ func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, 
 	run, err := e.store.GetRun(ctx, runID)
 	if err != nil {
 		return nil, err
+	}
+	if e.developmentSources != nil && !e.developmentSources[run.Source] {
+		return nil, errors.New("development session source unsupported")
 	}
 	session, err := e.store.GetSession(ctx, run.SessionID)
 	if err != nil {
@@ -2389,6 +2402,9 @@ func (e *Engine) QueueMediaRecapture(ctx context.Context, timelineID string, mod
 }
 
 func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID string, mode domain.MediaRecaptureMode, reason domain.MediaRecaptureReason) (domain.MediaRecapture, error) {
+	if e.developmentSources != nil {
+		return domain.MediaRecapture{}, errors.New("development session media recapture unavailable")
+	}
 	e.operation.Lock()
 	defer e.operation.Unlock()
 	item, err := e.store.TimelineItem(ctx, timelineID)
@@ -2485,6 +2501,9 @@ func (e *Engine) claimMediaRecaptureForDriver(ctx context.Context, id, bridgeID,
 }
 
 func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridgeID, driver, collector string) (domain.MediaRecapture, error) {
+	if e.developmentSources != nil {
+		return domain.MediaRecapture{}, errors.New("development session media recapture unavailable")
+	}
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	job, err := e.store.MediaRecapture(ctx, id)
 	if err != nil {
@@ -2604,6 +2623,9 @@ func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure doma
 }
 
 func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bridgeID string, value domain.PassiveXMediaEvidence) (domain.MediaRecapture, bool, error) {
+	if e.developmentSources != nil {
+		return domain.MediaRecapture{}, false, errors.New("development session passive media recapture unavailable")
+	}
 	defer e.releaseTerminalCaptureSessions(context.Background())
 	e.operation.Lock()
 	defer e.operation.Unlock()

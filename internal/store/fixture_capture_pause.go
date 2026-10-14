@@ -1,4 +1,4 @@
-//go:build auth_session_fixture
+//go:build auth_session_fixture || auth_session_dev
 
 package store
 

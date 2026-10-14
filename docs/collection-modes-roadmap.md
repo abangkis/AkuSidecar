@@ -4851,6 +4851,67 @@ Clean-machine/installed-main parity is unmeasured. Proceed next to DEV-2 explici
 development priority/pause/verified-resume binding, then DEV-3 integrated synthetic
 pilot acceptance; no reader feature has been activated by DEV-1.
 
+### 2026-10-14: DEV-1 committed/pushed, DEV-2 source integration authorized
+
+The owner authorized commit/push and continuation after the DEV-1 reviewable
+result. Commit `7740deb` contains all 15 validated files; local HEAD and remote
+`origin/main` both read back `7740deb565c1ffd1099d40db4005339215bbec5b`.
+No payload code changed during commit/push, so the existing acceptance evidence
+remains applicable. DEV-2 now proceeds at source/synthetic scope with explicit
+development opt-in and a defined session verifier; Bridge readiness alone is
+insufficient. Real authentication and user runtime remain excluded. DEV-2 will
+be left reviewable, without a new commit/push until separately authorized.
+
+DEV-2 implementation contract: `auth_session_dev` plus explicit dev opt-in;
+the working synthetic main-entry runner additionally requires fixture adapters
+and a private verified fresh QA grant. Ordinary builds/non-dev/missing providers
+reject before state/runtime side effects. The runner must invoke the new strict
+development binding, share actual Engine/SQLite/Coordinator/Chrome orchestration,
+and distinguish synthetic source/profile/account/revision/current-owner evidence
+from real authentication. Unsupported media/non-headless admission remains closed.
+Ordinary UI/native-broker acceptance remains DEV-3.
+
+### 2026-10-14: DEV-2 completed at source/synthetic scope; DEV-3 remains
+
+Actual `cmd/akusidecar` now dispatches explicit dev synthetic integration before
+ordinary startup. Windows dual tags `auth_session_dev auth_session_fixture`,
+`--dev --dev-session-reuse=synthetic-fixture` and a private fresh-QA grant from
+the verified actual test-controller image/creation identity are required. Three
+build variants and five early CLI rejections proved defaults, non-dev, missing/
+unsupported providers and missing grants cannot mutate ordinary state.
+
+New development capability checks source/profile/account/revision, physical
+profile identity, current owner generation/PID/driver and Engine epoch; browser
+proof is tied to the actual queried process. Fixture wrappers remain distinct.
+Reader requests drain capture/related reasoning, transactional pause fences
+claims, restart restamps never-claimed work, and paused cancel does not revive
+it. Unsupported media/passive-media/Browser admission and frozen Browser/
+Facebook source plans are rejected before resume. No real-source verifier exists.
+
+`scripts/test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault
+-VerifyChrome -VerifyProcessRestart` exited zero: dev 13.220 seconds, Chrome
+16.632 seconds (8 leaf cases), process 21.439 seconds (9 leaf cases), synthetic,
+config/main and default five-package regressions/build. Final development-only
+frozen-plan changes passed `-VerifyDevelopment` again, exit zero, 12.293 seconds,
+including actual-main graceful/abrupt restart 4.67 seconds. Shared/default inputs
+were unchanged after the full gate.
+
+Physical main restarts proved old windows/Chrome roots/trees released before
+fallback, durable SQLite/profile reuse, fresh epoch, one synthetic login,
+stale/duplicate denial and fresh-authority admission. Invalid evidence/startup,
+drain, mismatch latch, restart, paused cancellation and frozen-plan tests passed.
+Initial faulty test predicates were corrected without weakening the invariants;
+exact commands/failed and final runs are indexed in ignored project QA evidence.
+Independent inspection found zero scoped peers and zero disposable run dirs;
+diff check passed. All 27 DEV-2 files remain uncommitted after pushed `7740deb`.
+
+DEV-3 must prove actual ordinary UI/native-broker entry and acceptance with
+synthetic authority. Current dispatch bypasses ordinary main startup and covers
+only accepted-capture reasoning recovery, not every reasoning lane or real-source
+authentication. No user runtime, real login, install/register, foreground operation
+or new commit/push occurred. Actual-account testing and user runtime activation
+remain separately authorized gates.
+
 Update this ledger with exact validation and unresolved gaps after each phase.
 A phase is complete only when its acceptance gate passes. Changes to scope or
 invariants must be recorded here before implementation. This roadmap does not

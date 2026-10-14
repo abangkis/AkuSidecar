@@ -2,8 +2,9 @@
 
 package engine
 
-// This is a deliberately separate fixture composition. It never runs the
-// production main, loads saved user configuration, or registers a native host.
+// This is a deliberately separate fixture composition. An explicit development
+// dispatch can invoke it from cmd/akusidecar before ordinary startup. It never
+// loads saved user configuration or registers a native host.
 import (
 	"bufio"
 	"context"
@@ -52,6 +53,7 @@ type processFixtureStart struct {
 	NodePath, ChromePath, DriverPath, Origin, AuthorityKey, SessionID, OldEpoch string
 	RunIDs                                                                      []string
 	StartupBarrier                                                              string
+	ControllerImage                                                             string
 }
 type processFixtureReceipt struct {
 	Stage                                              string
@@ -66,6 +68,7 @@ type processFixtureReceipt struct {
 	Account, Revision                                  string
 	StaleEpochDenied, DuplicateDenied, CleanupVerified bool
 	AuthorityDenied, GrantReplayDenied                 bool
+	DevelopmentSession                                 bool
 	GrantNegatives                                     int
 	NodeIdentity                                       processFixtureIdentity
 	NodeParent                                         uint32
@@ -296,9 +299,17 @@ func processFixtureWait(ctx context.Context, predicate func() bool) error {
 
 // RunAuthSessionProcessFixture accepts its only startup/recovery grant over
 // inherited private stdin from its verified actual controller parent.
-func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr error) {
+func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) error {
+	return runAuthSessionProcessFixture(input, output, false)
+}
+
+func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development bool) (returnErr error) {
 	executable, err := os.Executable()
-	if err != nil || !strings.EqualFold(filepath.Base(executable), "auth-session-process-fixture.exe") {
+	expectedImage := "auth-session-process-fixture.exe"
+	if development {
+		expectedImage = "aku-sidecar-dev.exe"
+	}
+	if err != nil || !strings.EqualFold(filepath.Base(executable), expectedImage) {
 		return errors.New("fixture worker image invalid")
 	}
 	scanner := bufio.NewScanner(input)
@@ -317,8 +328,16 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	if err = validateProcessFixtureGrant(start.Grant.Root, &start.Grant); err != nil {
 		return err
 	}
+	if development {
+		if err = validateDevelopmentController(start); err != nil {
+			return err
+		}
+	}
 	if !samePath(filepath.Dir(executable), filepath.Dir(start.Grant.Root)) {
 		return errors.New("fixture worker image outside controller run")
+	}
+	if development && start.StartupBarrier != "" {
+		return errors.New("development runner rejects fault modes")
 	}
 	if (start.StartupBarrier == "launcher_before_job" || start.StartupBarrier == "launcher_abort_before_job" || start.StartupBarrier == "launcher_resumed_tree") && !start.Grant.Reopen {
 		return runProcessFixtureLauncher(scanner, encoder, executable, start)
@@ -532,11 +551,19 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 		}
 	}
 	browserProbe := func(probeCtx context.Context) (SyntheticSessionEvidence, error) {
-		return backend.current.Load().Evidence(probeCtx)
+		process := backend.current.Load()
+		if process == nil || (development && process.PID() != manager.PID()) {
+			return SyntheticSessionEvidence{}, errors.New("development actual browser owner mismatch")
+		}
+		v, err := process.Evidence(probeCtx)
+		if development && (backend.current.Load() != process || process.PID() != manager.PID()) {
+			return SyntheticSessionEvidence{}, errors.New("development actual browser owner changed")
+		}
+		return v, err
 	}
 	authorityDenied := false
 	if start.Grant.Reopen {
-		if err = e.BindSyntheticExclusiveWithBrowserProbe("alpha", authority, browserProbe); err == nil || err.Error() != "synthetic session verification required" {
+		if err = bindProcessSession(ctx, e, manager, coordinator, start, authority, browserProbe, development); err == nil || err.Error() != "synthetic session verification required" {
 			return errors.New("lost authority did not deny restart binding")
 		}
 		paused, pauseErr := state.ListFixturePausedCaptureSessions(ctx)
@@ -552,13 +579,13 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 			return errors.New("fixture fresh authority gate missing")
 		}
 	}
-	if err = e.BindSyntheticExclusiveWithBrowserProbe("alpha", authority, func(probeCtx context.Context) (SyntheticSessionEvidence, error) {
-		return backend.current.Load().Evidence(probeCtx)
-	}); err != nil {
+	if err = bindProcessSession(ctx, e, manager, coordinator, start, authority, browserProbe, development); err != nil {
 		return fmt.Errorf("fixture binder: %w", err)
 	}
-	coordinator.Start(ctx)
-	coordinator.Request("headless")
+	if !development {
+		coordinator.Start(ctx)
+		coordinator.Request("headless")
+	}
 	if err = processFixtureWait(ctx, func() bool { s := coordinator.Status(); return s.Effective == "headless" && !s.BatchPaused }); err != nil {
 		return err
 	}
@@ -566,7 +593,7 @@ func RunAuthSessionProcessFixture(input io.Reader, output io.Writer) (returnErr 
 	if err != nil {
 		return err
 	}
-	receipt := processFixtureReceipt{PID: uint32(os.Getpid()), Epoch: e.Epoch(), Generation: manager.Snapshot().Generation, Account: evidence.AccountID, Revision: evidence.Revision, AuthorityDenied: authorityDenied, GrantNegatives: grantNegatives, GrantReplayDenied: start.Grant.Reopen}
+	receipt := processFixtureReceipt{PID: uint32(os.Getpid()), Epoch: e.Epoch(), Generation: manager.Snapshot().Generation, Account: evidence.AccountID, Revision: evidence.Revision, AuthorityDenied: authorityDenied, GrantNegatives: grantNegatives, GrantReplayDenied: start.Grant.Reopen, DevelopmentSession: coordinator.Status().DevelopmentSession}
 	if !start.Grant.Reopen {
 		session, startErr := e.StartVisibleUpdate(ctx, "full fixture OS process restart")
 		if startErr != nil {

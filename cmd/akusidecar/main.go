@@ -41,6 +41,10 @@ func requiresDatabaseDecision(deployment config.DeploymentConfig) bool {
 func main() {
 	logger := log.New(os.Stdout, "AkuSidecar ", log.LstdFlags|log.LUTC|log.Lmsgprefix)
 	options := config.ParseFlags()
+	if handled, err := dispatchDevelopmentSession(options, os.Stdin, os.Stdout); handled || err != nil {
+		fatal(logger, err)
+		return
+	}
 	if options.DiscoverCodex {
 		os.Exit(discoverCodex(options))
 	}
