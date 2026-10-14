@@ -1429,3 +1429,38 @@ profiles, one login/two captures per case, retained SQLite IDs/pause when author
 was lost, and fresh verified owner epoch before resume. All new roots were cleaned.
 The drain regression waits for reasoning idle before database teardown. Log:
 `runtime/qa/auth-session-sidecar/session-verifier-contract-validation.txt`.
+
+## Account checkpoint and cold-open Store fence
+
+```powershell
+.\scripts\test-account-checkpoint-compatibility.ps1
+```
+
+This Store-only harness builds ordinary, fixture and development test binaries
+and runs seven separate processes against one synthetic SQLite database:
+fixture enrollment -> ordinary closed -> dev authorization -> ordinary cold closed
+-> fixture cold closed -> fixture reauthorization -> ordinary final closed.
+It also runs checkpoint/guard unit contracts in each applicable build. Success
+cleans the exact owned QA database/binaries; failure retains the reported QA root.
+No browser, login, native registration, physical click or Sidecar runtime runs.
+
+Enrollment stores expected identities only. Authorization uses a simulated
+synthetic owner/session receipt and grants a permit only to that Store handle;
+persisted checkpoint state cannot substitute for a fresh permit after cold-open.
+The required marker stays durable, old permits are invalidated by a new fence/
+generation, and existing session pause and unsupported media/collector boundaries
+remain closed. This is metadata/claim compatibility, not Engine/Chrome startup
+integration or real-authentication proof. Normal databases without the protected
+metadata preserve existing behavior. Ordinary rollback binaries must incorporate
+the new guard to recognize these stable keys.
+
+Validated on 2026-10-14: all three unit builds and seven database stages passed;
+the five-stage pause compatibility helper and `test-auth-session-sidecar.ps1
+-VerifyDefault` also passed. The reauthorization stage simulates draining its
+previous claim with a terminal failure; it does not perform a browser capture.
+New-owner authorization preserves old-stamped queued payloads, and their claim
+remains denied. Stable logs are `account-checkpoint-compatibility.txt`,
+`account-checkpoint-pause-regressions.txt`, and
+`account-checkpoint-default-regressions.txt` under
+`runtime/qa/auth-session-sidecar`. Owned disposable roots were cleaned.
+The complete Store suite also passed in ordinary, fixture and development builds.

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -21,9 +22,14 @@ import (
 )
 
 type Store struct {
-	db    *sql.DB
-	path  string
-	clock Clock
+	db                *sql.DB
+	path              string
+	clock             Clock
+	capturePermitMu   sync.RWMutex
+	capturePermit     *accountCheckpointPermit
+	fenceAttemptMu    sync.Mutex
+	issuedFenceHoldID string
+	consumedFence     bool
 }
 
 // FeedbackTiming records the stages of one routine Timeline feedback request.
@@ -1154,7 +1160,8 @@ func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector str
 		return nil, err
 	}
 	defer tx.Rollback()
-	if paused, err := fixtureCaptureClaimPaused(ctx, tx, runID); err != nil || paused {
+	gate, err := s.captureCommandClaimGate(ctx, tx, runID)
+	if err != nil || gate.paused || gate.protected && !gate.allowed {
 		return nil, err
 	}
 	var claimed int
@@ -1182,6 +1189,15 @@ func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector str
 	command.Payload, err = decodeCapturePayload(raw)
 	if err != nil {
 		return nil, err
+	}
+	if gate.protected {
+		var source string
+		if err := tx.QueryRowContext(ctx, `SELECT source FROM runs WHERE id=?`, command.RunID).Scan(&source); err != nil {
+			return nil, errors.New("capture checkpoint route lookup failed")
+		}
+		if !accountCheckpointCommandEligible(gate.snapshot, domain.Source(source), command.Payload) {
+			return nil, nil
+		}
 	}
 	if collector != "" {
 		route, err := CaptureCollector(command.Payload)

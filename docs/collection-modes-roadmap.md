@@ -5179,3 +5179,33 @@ epoch before verified resume. Drain-test teardown waits for reasoning idle.
 All new test roots were cleaned; no physical click, registration or original auth/
 runtime was used. Log: `runtime/qa/auth-session-sidecar/session-verifier-contract-validation.txt`.
 The nine verifier files remain uncommitted; guard commit `d6d185e` is published.
+
+### 2026-10-14: expected-account checkpoint and Store-only admission fence
+
+Verifier `060d431` is pushed. The next authorized Store delta adds a private
+versioned synthetic expected-account checkpoint, durable required/fence markers
+and a volatile authorization permit. All-build command/media claim guards keep
+protected databases closed without a matching current handle permit, including
+cold-open and downgrade. Ordinary builds have no activation API; unprotected
+databases preserve their existing path. A fresh fence and monotonically advanced
+checkpoint generation invalidate old handles. Pause remains authoritative, and
+unsupported media/non-headless work is not enabled by a receipt.
+
+`test-account-checkpoint-compatibility.ps1` uses three test binaries and seven
+separate processes on one synthetic database. Receipt/owner values are simulated;
+the step does not launch Chrome or alter Engine startup order, touch original
+authentication/user runtime, install/register anything, or publish changes.
+The subsequent integration must persist closed admission before owner launch and
+bind actual v1 verifier evidence before any recovery/capture permission.
+
+Store checkpoint validation is complete: ordinary/fixture/dev unit contracts and
+seven separate-process database stages passed, together with prior pause
+compatibility, selected default regressions and the ordinary build. Reauthorization
+uses a simulated terminal drain; owner/session receipts are not live browser
+evidence. A valid new owner can authorize without mutating old-stamped queued work,
+which stays unclaimable. The logs are the three `account-checkpoint-*.txt` files
+under `runtime/qa/auth-session-sidecar`; owned temporary roots were cleaned.
+The delta remains uncommitted. Owner startup ordering and verifier-to-Store proof
+binding remain the next integration gate, within a separately authorized
+synthetic fixture step.
+The complete Store suite additionally passed in all three build variants.

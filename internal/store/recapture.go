@@ -502,6 +502,23 @@ func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeI
 	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
+	var sessionID sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT session_id FROM timeline_items WHERE id=?`, job.TimelineID).Scan(&sessionID); err != nil {
+		return domain.MediaRecapture{}, errors.New("media recapture session lookup failed")
+	}
+	session := ""
+	if sessionID.Valid {
+		session = sessionID.String
+	}
+	gate, err := s.captureMediaClaimGate(ctx, tx, session)
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if gate.paused || gate.protected {
+		// Synthetic account checkpoints deliberately do not activate media
+		// recapture, even for the handle holding a command claim permit.
+		return domain.MediaRecapture{}, nil
+	}
 	if job.Status != "queued" {
 		return domain.MediaRecapture{}, fmt.Errorf("media recapture is %s, not queued", job.Status)
 	}

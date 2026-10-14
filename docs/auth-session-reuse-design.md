@@ -1431,3 +1431,74 @@ as a completed teardown. Result log:
 All new temporary roots were cleaned, no physical click or registration was used,
 and original authentication/user runtime remain untouched. Verifier changes are
 not yet committed/pushed; only pause guard `d6d185e` was published in this step.
+
+## Account checkpoint and Store fence: synthetic scope — 2026-10-14
+
+Verifier commit `060d431` is published. The next authorized step adds Store-only
+checkpoint/fence primitives; it does not reorder initial owner launch or connect
+the Engine verifier to Store authorization yet. No browser, login, native host or
+user runtime is required by the Store compatibility harness.
+
+The private checkpoint records version 1, checkpoint ID/generation, declared
+Store/profile scope, expected accounts for a nonempty supported subset of X,
+Instagram and LinkedIn, and accepted session revisions after authorization.
+Explicit fixture enrollment creates expected-only metadata; it neither proves
+authentication nor learns accounts from a probe. Expected identities are copied,
+existing enrollment cannot be overwritten, and later revision/account/scope
+disagreement is rejected rather than silently updating expectations. No cookies,
+credentials or bearer tokens belong in this record.
+
+Stable meta keys `synthetic_account_checkpoint`,
+`synthetic_account_checkpoint_required`, and `synthetic_account_checkpoint_fence`
+carry the records; versions live in the values, not renamed keys. Any protected
+metadata presence requires closed admission if the required record/checkpoint is
+missing, malformed or unsupported. Both command and media claim paths consult the
+common guard transactionally in every build before claim mutation. Databases
+without these keys retain their existing behavior.
+
+The required-verification marker survives authorization. A fresh durable HoldID
+fences startup, and only the Store handle that accepts a matching synthetic
+receipt receives a volatile permit. Cold-open, read-only open, another handle,
+process restart and ordinary-build downgrade inherit no permit. Reauthorization
+advances persisted generation so an older handle cannot reuse its permit even
+with identical account/revision/time values. Existing per-session pause still
+wins. Protected media and unsupported command collectors/sources remain blocked.
+Authorization does not restamp queued command payloads in this Store-only step.
+An eligible headless command must already carry the same owner epoch/generation
+as the accepted synthetic receipt; an old stamp stays queued until a separate
+verified Engine resume step restamps it.
+Authorization itself may accept a fresh new owner while a drained, supported
+queue still carries the old owner's stamp. Rejecting that receipt solely because
+the queue stamp is old would prevent cold restart. It grants no permission to
+claim the old-stamped command: the transactional claim gate still enforces exact
+owner epoch/generation, and authorization leaves its raw payload unchanged.
+
+The tagged synthetic authorization API validates checkpoint/fence identity,
+declared scope, exact account/revision sets, owner receipt fields, observation age
+and cancellation before its transaction commits. Invalid receipts, stale HoldID/
+generation and database failure preserve the checkpoint/fence and queued payload/
+null claim fields. Receipt values here are supplied by a trusted synthetic test
+caller; they do not prove actual Chrome ownership, filesystem profile identity or
+real account authentication. Wiring verified Engine evidence and the reordered
+closed-admission owner startup remains a subsequent authorized step.
+
+Ordinary builds contain the guard but no enrollment/fence/permit-activation API,
+and no HTTP route/config setting activates it. Downgrade targets must include
+this new guard; historical binaries cannot be assumed to honor protected metadata.
+
+Validation passed on 2026-10-14: the checkpoint helper ran unit contracts in
+ordinary/fixture/development builds and seven separate processes against the same
+synthetic SQLite database. Cold-open and ordinary downgrade remained closed,
+failed authorization left metadata/queue rows unchanged, and a new owner receipt
+left old-stamped work queued and unclaimable. The cross-build test drains its
+earlier claimed row with a simulated terminal failure; this is not proof of an
+actual capture completing. Existing pause compatibility (three builds/five
+processes), `test-auth-session-sidecar.ps1 -VerifyDefault`, selected regressions
+and the ordinary Sidecar build also passed.
+The complete Store test suite additionally passed in all three build variants,
+covering the existing media and command paths beyond the selected regressions.
+Logs:
+`runtime/qa/auth-session-sidecar/account-checkpoint-compatibility.txt`,
+`account-checkpoint-pause-regressions.txt`, and
+`account-checkpoint-default-regressions.txt` in the same directory. Owned temporary
+databases/binaries were cleaned. This checkpoint delta remains uncommitted.
