@@ -24,6 +24,20 @@ import (
 // This full journey uses the existing DEV3 Engine/SQLite/native preparation and
 // OS broker contracts. It creates no reader through DOM/CDP input and never
 // navigates the canonical X permalink; PrepareNativePost maps it to loopback.
+func validateDevelopmentFrontendPause(phase string, v engine.DevelopmentPauseEvidence, collectorPID int) error {
+	if v.SQLiteError != "" || !v.AdmissionPaused || v.CollectorPID != collectorPID || v.ManagerPID != collectorPID || v.Driver != "headless" || v.Generation == 0 || v.ActiveLeases < 1 {
+		return fmt.Errorf("native frontend pause evidence invalid phase=%s expectedCollectorPID=%d evidence=%+v", phase, collectorPID, v)
+	}
+	if phase == "persisted_before_lease_release" {
+		if !v.SQLitePaused || !v.BeforeLeaseRelease || v.CaptureSteps != 0 || v.ActiveWork != 0 {
+			return fmt.Errorf("native frontend durable pause before lease release invalid evidence=%+v", v)
+		}
+	} else if v.SQLitePaused || v.BeforeLeaseRelease {
+		return fmt.Errorf("native frontend premature durable pause phase=%s evidence=%+v", phase, v)
+	}
+	return nil
+}
+
 func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.DevelopmentFixtureRuntime, server *httpapi.Server, origin string, ui *appshell.Session, protocol appshell.CaptureProtocol, uiSession string, request readerbroker.Request, helper appshell.DevelopmentReaderHelperProof, activations <-chan developmentActivation, observation *httpapi.DevelopmentFrontendObservation, batch domain.Session, collectorPID int, controls <-chan string) error {
 	if request.Validate() != nil || request.Source != "x" || request.URL != "https://x.com/aku_fixture_only/status/1" || helper.PID == 0 || helper.Parent != uint32(ui.PID()) || helper.Image != r.NativeHost.HelperPath || !helper.JobMember || !helper.TopmostReleased || helper.Created == "" || helper.AgeMS < 0 || helper.AgeMS >= readerbroker.PreparationLifetime.Milliseconds() {
 		return errors.New("actual native frontend helper identity disagreement")
@@ -55,9 +69,21 @@ func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.Devel
 	if err = developmentWait(ctx, func() bool { return r.Coordinator.Status().BatchPaused }); err != nil {
 		return err
 	}
-	paused, err := r.State.FixtureCaptureSessionPaused(ctx, batch.ID)
-	if err != nil || !paused || r.CurrentPID() != collectorPID || r.Owner.Snapshot().Driver != "headless" {
-		return errors.New("native frontend did not persist pause before capture drain")
+	persisted, err := r.ObservePauseBeforeLeaseRelease(batch.ID)
+	if err != nil {
+		return err
+	}
+	admission := r.PauseEvidence(ctx, batch.ID)
+	if err = validateDevelopmentFrontendPause("capture_blocked", admission, collectorPID); err != nil {
+		return err
+	}
+	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_admission_paused", "PID": os.Getpid(), "Frontend": map[string]any{"Pause": admission, "ExpectedCollectorPID": collectorPID}}); err != nil {
+		return err
+	}
+	select {
+	case <-activations:
+		return errors.New("native activation preceded capture drain")
+	default:
 	}
 	r.ReleaseCapture()
 	reasoningCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -66,18 +92,31 @@ func verifyDevelopmentFrontendNativeJourney(ctx context.Context, r *engine.Devel
 	if err != nil {
 		return err
 	}
-	if r.CurrentPID() != collectorPID || r.Owner.Snapshot().Driver != "headless" {
-		return errors.New("native frontend owner replaced before reasoning drain")
+	reasoning := r.PauseEvidence(ctx, batch.ID)
+	if err = validateDevelopmentFrontendPause("reasoning_blocked", reasoning, collectorPID); err != nil {
+		return err
 	}
 	select {
 	case <-activations:
 		return errors.New("native activation preceded reasoning drain")
 	default:
 	}
-	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_draining", "PID": os.Getpid(), "SessionID": batch.ID, "CaptureAndReasoningDrained": false, "DurablePause": true, "Frontend": map[string]any{"CaptureReleased": true, "ReasoningBlocked": true, "CollectorRetained": true}}); err != nil {
+	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_draining", "PID": os.Getpid(), "SessionID": batch.ID, "CaptureAndReasoningDrained": false, "DurablePause": false, "Frontend": map[string]any{"CaptureReleased": true, "ReasoningBlocked": true, "CollectorRetained": true, "Pause": reasoning, "ExpectedCollectorPID": collectorPID}}); err != nil {
 		return err
 	}
 	r.ReleaseReasoning()
+	var durable engine.DevelopmentPauseEvidence
+	select {
+	case durable = <-persisted:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err = validateDevelopmentFrontendPause("persisted_before_lease_release", durable, collectorPID); err != nil {
+		return err
+	}
+	if err = r.Emit(map[string]any{"Stage": "dev_frontend_native_pause_persisted", "PID": os.Getpid(), "DurablePause": true, "CaptureAndReasoningDrained": true, "Frontend": map[string]any{"Pause": durable, "ExpectedCollectorPID": collectorPID}}); err != nil {
+		return err
+	}
 	var activation developmentActivation
 	select {
 	case activation = <-activations:

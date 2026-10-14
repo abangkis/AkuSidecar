@@ -133,6 +133,14 @@ func (b *exclusiveSessionBinding) pause(ctx context.Context) error {
 				if session != nil {
 					err = e.store.PauseFixtureCaptureSession(ctx, session.ID)
 					if err == nil {
+						e.fixtureAdmission.mu.Lock()
+						observer := e.fixtureAdmission.pauseObserver
+						e.fixtureAdmission.mu.Unlock()
+						if observer != nil {
+							err = observer(ctx, session.ID)
+						}
+					}
+					if err == nil {
 						e.releaseSessionCaptureLease(session.ID)
 					}
 				}

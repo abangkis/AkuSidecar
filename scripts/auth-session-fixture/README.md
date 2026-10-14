@@ -1280,3 +1280,17 @@ Stable logs and minimal synthetic SQLite/checkpoint remain. No original auth or
 user runtime was touched and no new commit/push occurred. This task now has no
 budget by user override; the old 921,237-token measurement has partial coverage,
 and native reset/new-phase measurement is unavailable.
+
+Pause-order correction trial (2026-10-14):
+`frontend-native-pause-order-contract.txt` and preparation/regression transcripts
+record the corrected admission → capture/reasoning drain → SQLite commit before
+original session-lease release. The physical transcript
+`frontend-native-pause-order-physical-trial.txt` records pause/read error/PID/
+driver/lease/work per phase, then accepted real frontend/helper/reader foreground
+and terminal API/UI with one synthetic login. Full acceptance still fails at the
+remaining-window combined predicate after bootstrap close; do not claim verified
+resume or frontend parent-death acceptance. No automatic additional trial ran.
+The approved QA leaf and exact disposable root were removed after owned-tree/
+four-view/receipt checks. Stable logs, redacted window checkpoint and synthetic
+failed SQLite remain. A future physical trial needs fresh preparation/operator
+readiness; no original authentication/user runtime or new commit/push is involved.

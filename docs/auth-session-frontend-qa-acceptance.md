@@ -8,13 +8,13 @@ failure-path evidence; it does not replace a frontend-to-reader handoff.
 | Requirement | Current evidence | Status |
 | --- | --- | --- |
 | Actual frontend and split UI relay | Real Server assets, Store-seeded Timeline and owned CfT DOM/readback in `frontend-preparation-final.txt`; reviewed app-only PNG | Proven at preparation scope |
-| Separate QA instance, fresh profiles, synthetic login | Recorded headless preparation used an actual tagged main/CfT run, fresh UI profile and isolated Store/authority; one synthetic login | Proven at that scope; native physical run pending |
+| Separate QA instance, fresh profiles, synthetic login | Corrected physical trial used actual tagged main/CfT, fresh source/UI profiles, isolated Store/authority and one synthetic login | Proven at synthetic physical scope |
 | Ordinary builds stay closed | Three actual-main builds, four early CLI rejections before ordinary startup, strict development UI guard; ordinary reader/broker regressions | Proven at recorded contract scope |
-| Typed relay/authentication/cancellation | Actual relay bytes and real Server contract; credentials/epoch/source/request validation, native 409, rejected audit and correlated cancel before borrow | Proven by contract; physical browser request still pending |
-| Trusted human click on rendered link | Final monitor trial passed the actual-click receipt and correlation checks after the explicit cue; no simulated input | Proven through native helper, later drain gate failed |
+| Typed relay/authentication/cancellation | Real contracts plus corrected physical app/relay/native completion; subsequent duplicate/stale/cancelled API denials ran before the multiwindow failure | Proven at those boundaries; session-change physical scope remains open |
+| Trusted human click on rendered link | Corrected physical trial passed actual click correlation and terminal app/relay/API acceptance after the explicit cue; no simulated input | Proven at synthetic physical scope |
 | Frontend invokes Chrome-launched native helper | Final monitor trial passed exact helper image, direct UI parent, Job, creation-age, retained handle and topmost-release checks | Proven at helper invocation scope |
-| Actual frontend reader foreground and ownership | Separate DEV-3 Win32 native trial exists, but it is not this frontend composition | Not proven |
-| Frontend pause/drain/verified resume | Native denial runs before borrow; old native/Engine proof remains separate | Not proven |
+| Actual frontend reader foreground and ownership | Corrected physical trial accepted exact PID/HWND foreground, bootstrap reuse, terminal app/API and durable audit | First handoff proven; multiwindow retention remains open |
+| Frontend pause/drain/verified resume | Three pause/PID/driver/lease/work phases and actual foreground after drain passed; trial failed at remaining-window predicate | Pause/drain proven; final-close verified resume remains open |
 | Failure handling and cleanup | Closed-admission owner/leases/queue contract; graceful headless main exit and outer tree empty before fallback | Proven at these boundaries; physical terminal UI and abrupt frontend-parent death remain pending |
 | No original auth/runtime/install changes | One explicitly approved temporary QA registry leaf was applied and removed; final four-view absence, zero scoped QA peers, exact disposable roots removed | Preserved with the recorded QA registration exception |
 | No commit/push without another authorization | Current working changes are not published | Preserved |
@@ -186,3 +186,78 @@ development-priority/native availability/routing Node tests passed, and the
 ordinary Sidecar build passed. These checks do not replace the failed physical
 pause/drain acceptance. Runtime evidence/profiles/binaries remain untracked and
 excluded from publication.
+
+## Authorized pause-order correction — 2026-10-14
+
+The owner authorized correcting the fixture, adding separate pause/PID/driver
+evidence and repeating the physical synthetic frontend trial. Admission and
+reasoning-blocked receipts now require the original headless collector/Manager
+PID, a held lease, closed admission and no premature SQLite marker. After
+reasoning is released, a buffered fixture observer records the actual SQLite
+commit inside the tagged binding before its original session lease is released.
+That receipt requires SQLite pause, zero active capture/work, the original
+headless owner/PID and a live lease. It neither adds a replacement lease nor
+blocks the handoff; ordinary bindings have no observer installed.
+
+Each phase reports SQLite read errors separately from pause, collector/Manager
+PID, driver, generation, active leases and active work. The controller verifies
+the expected collector against the READY receipt, then consumes the three phase
+receipts before accepting foreground/terminal UI. Native clocks, physical input,
+identity/ownership and resume verification remain intact. The focused Engine
+drain test proves no SQLite marker before capture/reasoning drain and a committed
+marker while the original lease is still held. The new pause-evidence validator
+rejects read errors, PID/driver changes, missing leases and undrained work.
+
+Both focused tests passed in `frontend-native-pause-order-contract.txt`. Physical
+acceptance is pending new preparation and operator readiness. Reuse only the
+previously approved QA hostname with new root/profiles/synthetic login; do not
+touch original authentication or user runtime, and do not commit/push this delta
+without another authorization. The inherited task override remains no budget;
+historical partial usage is retained rather than reset.
+
+### Corrected physical trial result
+
+`frontend-native-pause-order-preparation.txt` passed with the new phase contract,
+five affected packages, three main build variants and actual-main rejection of
+missing/foreign/unregistered startup. Broader synthetic Engine/Store/HTTP checks
+ran in `frontend-native-pause-order-regression.txt`: Store/HTTP passed; two Engine
+cases hit a sandbox loopback denial and SQLite cleanup lock, respectively. Both
+passed when specifically re-run outside the sandbox in
+`frontend-native-pause-order-regression-environment-retry.txt`.
+
+The operator confirmed readiness and performed one actual link click after the
+explicit cue. `frontend-native-pause-order-physical-trial.txt` proves:
+
+| Phase | SQLite pause | Collector/Manager PID | Driver | Held leases | Active capture/work |
+| --- | --- | --- | --- | --- | --- |
+| Capture blocked, admission fenced | false; no read error | 32720 / 32720 | headless | 2 | 1 / 0 |
+| Reasoning blocked | false; no read error | 32720 / 32720 | headless | 1 | reasoning work 1 |
+| After drain, before original lease release | true; no read error | 32720 / 32720 | headless | 1 | 0 / 0 |
+
+The same physical click then completed actual app/relay/content/worker/native
+helper/private broker/reader. Helper PID 24912 had the exact direct UI parent,
+image/Job/age and retained-handle proof. Reader PID 22132, HWND 9438718 passed
+exact foreground/readback; actual API and terminal UI completed, durable audit
+was present, bootstrap was reused, and synthetic login count remained one.
+No extra/warm click or simulated input was used. This directly closes the earlier
+pause-order and first physical frontend handoff gaps at synthetic QA scope.
+
+The full test still failed after closing the bootstrap ownership window:
+`native frontend remaining window lost pause`, before `dev_frontend_native_resumed`.
+That separate combined predicate checks inventory error, remaining window count,
+bootstrap flag and Coordinator pause; individual values were not recorded.
+Do not infer that SQLite pause cleared or that the extra window disappeared.
+Multiwindow retention, final-close verified resume and abrupt-parent lifetime
+were not accepted in this frontend composition. Next investigation must isolate
+these values and the reader PID/driver before changing lifecycle behavior; no
+automatic additional physical trial was attempted.
+
+The same approved temporary QA host was removed by Root finally after tree
+emptiness (`frontend-native-pause-order-registry-cleanup.txt`). Independent
+four-view absence, zero scoped peers, exact-root/non-reparse/REMOVED-receipt checks
+passed, then the root `run-a71bd2d9496a4ff1a94ae6e2d990e541` was deleted. Stable
+logs, redacted HWND evidence in `frontend-native-pause-order-final-checkpoint.json`
+and the synthetic failed SQLite remain; profiles/binaries/private cue files do
+not. Source remains uncommitted, base `da58e68`; original auth and user runtime
+were untouched. Latest goal read remains null: no budget is the task override,
+921,237 is historical partial usage, and current actual usage is unavailable.

@@ -102,6 +102,13 @@ type nativeFrontendTestEvidence struct {
 	RequestID                                                                                              string
 	ActualFrontendClick, HelperHandlePinned, HelperExitedNormally, NoKeeper, DuplicateStaleCancelledDenied bool
 	CaptureReleased, ReasoningBlocked, CollectorRetained                                                   bool
+	Pause                                                                                                  DevelopmentPauseEvidence
+	ExpectedCollectorPID                                                                                   int
+}
+
+func validNativeFrontendPause(v nativeFrontendTestEvidence, persisted bool) bool {
+	p := v.Pause
+	return v.ExpectedCollectorPID > 0 && p.CollectorPID == v.ExpectedCollectorPID && p.ManagerPID == v.ExpectedCollectorPID && p.Driver == "headless" && p.Generation > 0 && p.ActiveLeases > 0 && p.AdmissionPaused && p.SQLiteError == "" && p.SQLitePaused == persisted && p.BeforeLeaseRelease == persisted && (!persisted || (p.CaptureSteps == 0 && p.ActiveWork == 0))
 }
 
 // This test has no synthetic UI input and cannot run during preparation. The
@@ -169,6 +176,7 @@ func TestDevelopmentFrontendActualMainPhysicalNative(t *testing.T) {
 		t.Fatalf("native actual frontend readiness invalid: %+v", evidence)
 	}
 	wstate := evidence.UIWindow
+	expectedCollectorPID := evidence.CollectorPID
 	if wstate.PID != ready.UIPID || !wstate.JobMember || !wstate.TitleMatched || wstate.Class != "Chrome_WidgetWin_1" || !wstate.MonitorKnown || !wstate.WorkAreaIntersection || !wstate.WithinWorkArea || (!wstate.Topmost && !wstate.AuthorizedHelperBegan) || !wstate.CloakKnown || wstate.Cloaked || !wstate.SessionKnown || wstate.WindowSession != wstate.ProcessSession || !wstate.InputDesktopKnown || !wstate.InputDesktopMatch {
 		t.Fatalf("physical monitor/desktop/owned QA HWND proof incomplete: %+v", wstate)
 	}
@@ -225,10 +233,21 @@ waitClick:
 	}
 	// The source retained/revalidated this process handle while it was live.
 	// Reopening the PID after its normal reply could refer to a recycled PID.
+	admission := child.receive(t, "dev_frontend_native_admission_paused")
+	if json.Unmarshal(admission.Frontend, &evidence) != nil || evidence.ExpectedCollectorPID != expectedCollectorPID || !validNativeFrontendPause(evidence, false) {
+		t.Fatalf("native admission pause evidence invalid: %+v", evidence)
+	}
+	t.Logf("pausePhase=capture_blocked admissionPaused=%t sqlitePaused=%t sqliteError=%q collectorPID=%d managerPID=%d expectedCollectorPID=%d driver=%s activeLeases=%d captureSteps=%d activeWork=%d", evidence.Pause.AdmissionPaused, evidence.Pause.SQLitePaused, evidence.Pause.SQLiteError, evidence.Pause.CollectorPID, evidence.Pause.ManagerPID, evidence.ExpectedCollectorPID, evidence.Pause.Driver, evidence.Pause.ActiveLeases, evidence.Pause.CaptureSteps, evidence.Pause.ActiveWork)
 	draining := child.receive(t, "dev_frontend_native_draining")
-	if !draining.DurablePause || draining.CaptureAndReasoningDrained || json.Unmarshal(draining.Frontend, &evidence) != nil || !evidence.CaptureReleased || !evidence.ReasoningBlocked || !evidence.CollectorRetained {
+	if draining.DurablePause || draining.CaptureAndReasoningDrained || json.Unmarshal(draining.Frontend, &evidence) != nil || evidence.ExpectedCollectorPID != expectedCollectorPID || !evidence.CaptureReleased || !evidence.ReasoningBlocked || !evidence.CollectorRetained || !validNativeFrontendPause(evidence, false) {
 		t.Fatal("frontend actual capture/reasoning drain boundary not proved")
 	}
+	t.Logf("pausePhase=reasoning_blocked admissionPaused=%t sqlitePaused=%t sqliteError=%q collectorPID=%d managerPID=%d driver=%s activeLeases=%d activeWork=%d", evidence.Pause.AdmissionPaused, evidence.Pause.SQLitePaused, evidence.Pause.SQLiteError, evidence.Pause.CollectorPID, evidence.Pause.ManagerPID, evidence.Pause.Driver, evidence.Pause.ActiveLeases, evidence.Pause.ActiveWork)
+	durable := child.receive(t, "dev_frontend_native_pause_persisted")
+	if !durable.DurablePause || !durable.CaptureAndReasoningDrained || json.Unmarshal(durable.Frontend, &evidence) != nil || evidence.ExpectedCollectorPID != expectedCollectorPID || !validNativeFrontendPause(evidence, true) {
+		t.Fatalf("native durable pause before owner lease release invalid: %+v", evidence)
+	}
+	t.Logf("pausePhase=persisted_before_lease_release admissionPaused=%t sqlitePaused=%t sqliteError=%q collectorPID=%d managerPID=%d driver=%s activeLeases=%d captureSteps=%d activeWork=%d beforeLeaseRelease=%t", evidence.Pause.AdmissionPaused, evidence.Pause.SQLitePaused, evidence.Pause.SQLiteError, evidence.Pause.CollectorPID, evidence.Pause.ManagerPID, evidence.Pause.Driver, evidence.Pause.ActiveLeases, evidence.Pause.CaptureSteps, evidence.Pause.ActiveWork, evidence.Pause.BeforeLeaseRelease)
 	accepted := child.receive(t, "dev_frontend_native_accepted")
 	if !accepted.Readback || !accepted.ExactForeground || !accepted.APICompleted || !accepted.DurableForegroundAudit || !accepted.CaptureAndReasoningDrained || !accepted.BootstrapReused || json.Unmarshal(accepted.Frontend, &evidence) != nil || !evidence.HelperExitedNormally || !evidence.DOM.NativeOpened || evidence.DOM.Rejected || evidence.DOM.RequestID == "" || evidence.DOM.RequestID != evidence.Stats.RequestID || evidence.Stats.NativeAccepted != 1 || evidence.Stats.NativeRequests != 1 || fixture.logins.Load() != 1 || fixture.sequence.Load() != 1 {
 		t.Fatal("full actual frontend native acceptance incomplete")

@@ -225,6 +225,17 @@ func TestDevelopmentSessionDrainCaptureAndReasoningBeforeReader(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("capture not active")
 	}
+	pauseProof := make(chan error, 1)
+	h.e.fixtureAdmission.mu.Lock()
+	h.e.fixtureAdmission.pauseObserver = func(ctx context.Context, id string) error {
+		paused, err := h.state.FixtureCaptureSessionPaused(ctx, id)
+		if err == nil && (id != session.ID || !paused || h.initial.closed.Load() || h.m.Snapshot().Driver != "headless" || h.m.Snapshot().ActiveLeases < 1) {
+			err = errors.New("durable pause observer ran after collector lease release or without SQLite commit")
+		}
+		pauseProof <- err
+		return err
+	}
+	h.e.fixtureAdmission.mu.Unlock()
 	opened := make(chan error, 1)
 	go func() {
 		l, r, err := h.e.BorrowNativeReader(h.ctx)
@@ -238,6 +249,9 @@ func TestDevelopmentSessionDrainCaptureAndReasoningBeforeReader(t *testing.T) {
 	if h.initial.closed.Load() {
 		t.Fatal("capture owner closed before capture drain")
 	}
+	if paused, err := h.state.FixtureCaptureSessionPaused(h.ctx, session.ID); err != nil || paused {
+		t.Fatal("durable pause before capture drain", paused, err)
+	}
 	close(backend.release)
 	select {
 	case <-provider.started:
@@ -247,6 +261,14 @@ func TestDevelopmentSessionDrainCaptureAndReasoningBeforeReader(t *testing.T) {
 	if h.initial.closed.Load() || h.reader.Load() != nil {
 		t.Fatal("reader replaced owner before reasoning drain")
 	}
+	if paused, err := h.state.FixtureCaptureSessionPaused(h.ctx, session.ID); err != nil || paused {
+		t.Fatal("durable pause before reasoning drain", paused, err)
+	}
+	select {
+	case <-pauseProof:
+		t.Fatal("pause observer ran before reasoning drained")
+	default:
+	}
 	select {
 	case err := <-opened:
 		t.Fatal("reader returned before reasoning drain", err)
@@ -255,6 +277,14 @@ func TestDevelopmentSessionDrainCaptureAndReasoningBeforeReader(t *testing.T) {
 	close(provider.release)
 	if err := <-opened; err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case err := <-pauseProof:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("durable pause before lease release not observed")
 	}
 	if backend.calls.Load() != 1 {
 		t.Fatal("later capture admitted before reader")

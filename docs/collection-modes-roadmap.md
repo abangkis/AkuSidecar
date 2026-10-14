@@ -5067,3 +5067,15 @@ removed. Preserve stable logs/synthetic SQLite and current uncommitted changes.
 The user disabled this task's budget; saved default stays 1,000,000. Historical
 921,237-token measurement is partial and excludes resumed work; latest native
 goal read is null and no reset/replacement counter was created.
+
+2026-10-14 pause-order correction: authorized and implemented separate admission,
+reasoning-blocked and post-drain SQLite/pre-lease-release evidence. Focused
+regression and preparation passed. The physical frontend trial now proves real
+Chrome helper → exact reader foreground → app/relay/API terminal completion with
+one synthetic login, and correct pause/PID/driver/lease ordering. It then fails
+the remaining-window combined predicate after bootstrap close. Isolate inventory
+error/count/bootstrap and Coordinator pause before changing ownership behavior;
+multiwindow/final-close resume/parent lifetime acceptance remains open. The exact
+temporary host and disposable root were cleaned with four-view absence and zero
+scoped peers. Logs/minimal synthetic evidence retained, delta uncommitted, no
+original authentication or user runtime touched. Full details: acceptance audit.

@@ -1269,3 +1269,16 @@ remain; original authentication and user runtime were untouched. Current task
 budget is disabled by explicit user override; saved default remains 1,000,000.
 Historical measured usage is 921,237 at an earlier blocked cutoff; the latest
 native goal read returned null, so a native reset/new-phase count is unavailable.
+
+Pause-order correction (2026-10-14): the authorized fixture now distinguishes
+immediate admission fencing from SQLite persistence after capture/reasoning
+drain. A nonblocking buffered observation at the tagged binding's commit point
+records the original headless PID/driver/lease before session-lease release.
+The physical frontend trial proved these three phases and actual reader
+foreground, terminal app/relay/API completion, durable audit, bootstrap reuse and
+one synthetic login. It subsequently failed the combined remaining-window
+inventory/count/bootstrap/Coordinator-pause predicate after bootstrap close.
+Those individual values were not recorded, so final-close resume and frontend
+parent lifetime remain unproven. The exact QA host/tree/profile cleanup passed;
+see the acceptance audit and `frontend-native-pause-order-physical-trial.txt`.
+No original authentication/user runtime or new publication was changed.

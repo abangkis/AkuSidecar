@@ -133,3 +133,27 @@ and the visibility retry root were deleted after exact-path/non-reparse/ownershi
 checks; stable logs and minimal synthetic failure evidence remain. No commands
 referencing those removed roots should be replayed. See the acceptance audit for
 the final failure boundary and partial budget accounting.
+
+## Pause-order correction trial — 2026-10-14
+
+The owner authorized the correction and a new physical trial. The fixture now
+separates admission fencing from post-drain SQLite persistence and records
+pause/read error/collector PID/Manager PID/driver/leases/work in three phases.
+An observation inside the tagged pause binding captures the commit before the
+existing session lease is released, with no added lease or blocking handoff.
+Focused regression and fresh native preparation passed.
+
+`frontend-native-pause-order-physical-trial.txt` proves all three corrected pause
+phases and first actual frontend-to-reader foreground/API/UI completion with one
+synthetic login. It then fails the separate remaining-window combined predicate
+after bootstrap close. Inventory error/count/bootstrap flag versus Coordinator
+pause have not been isolated; no lifecycle cause or full resume claim is justified.
+Next scope is that remaining-window evidence, followed by final-close resume and
+parent lifetime acceptance. No additional physical retry was run.
+
+The prepared/trial root `run-a71bd2d9496a4ff1a94ae6e2d990e541` was removed after
+owned registry cleanup, four-view absence and zero scoped peers. Stable logs and
+minimal synthetic failure evidence remain. A future trial needs a fresh root and
+operator readiness, using the same approved host namespace; original auth/user
+runtime and publication remain excluded. The task continues without a budget;
+historical partial accounting is preserved and current measurement unavailable.

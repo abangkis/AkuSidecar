@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"sync"
@@ -14,6 +15,8 @@ type fixtureAdmissionGate struct {
 	running         int
 	pauseEpoch      uint64
 	developmentHold bool
+	// Set only by the synthetic fixture to observe committed pause before lease release.
+	pauseObserver func(context.Context, string) error
 }
 
 func (e *Engine) validateDevelopmentSelection(settings domain.Settings) error {

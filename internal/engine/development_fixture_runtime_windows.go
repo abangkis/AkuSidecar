@@ -39,6 +39,59 @@ type DevelopmentFixtureRuntime struct {
 
 type DevelopmentFixtureRect struct{ Left, Top, Right, Bottom int32 }
 
+// Fixed synthetic metadata; contains no credentials, URLs or profile contents.
+type DevelopmentPauseEvidence struct {
+	AdmissionPaused, SQLitePaused, BeforeLeaseRelease                bool
+	SQLiteError, Driver                                              string
+	CollectorPID, ManagerPID, ActiveLeases, CaptureSteps, ActiveWork int
+	Generation                                                       uint64
+}
+
+func (r *DevelopmentFixtureRuntime) PauseEvidence(ctx context.Context, sessionID string) DevelopmentPauseEvidence {
+	v := DevelopmentPauseEvidence{CollectorPID: r.CurrentPID(), ManagerPID: r.Owner.PID()}
+	s := r.Owner.Snapshot()
+	v.Driver, v.Generation, v.ActiveLeases = s.Driver, s.Generation, s.ActiveLeases
+	r.Engine.fixtureAdmission.mu.Lock()
+	v.AdmissionPaused, v.CaptureSteps = r.Engine.fixtureAdmission.paused, r.Engine.fixtureAdmission.running
+	r.Engine.fixtureAdmission.mu.Unlock()
+	r.Engine.mu.RLock()
+	v.ActiveWork = len(r.Engine.active) + len(r.Engine.pending)
+	r.Engine.mu.RUnlock()
+	var err error
+	v.SQLitePaused, err = r.State.FixtureCaptureSessionPaused(ctx, sessionID)
+	if err != nil {
+		v.SQLiteError = err.Error()
+	}
+	return v
+}
+
+// Observe inside the real pause path after SQLite commit and before releasing
+// its existing session lease. The buffered receipt waits for no controller ack
+// and adds no replacement lease; observer failure retains the original lease.
+func (r *DevelopmentFixtureRuntime) ObservePauseBeforeLeaseRelease(sessionID string) (<-chan DevelopmentPauseEvidence, error) {
+	gate := r.Engine.fixtureAdmission
+	if gate == nil || sessionID == "" {
+		return nil, errors.New("fixture pause observer unavailable")
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	if gate.pauseObserver != nil {
+		return nil, errors.New("fixture pause observer already installed")
+	}
+	receipts := make(chan DevelopmentPauseEvidence, 1)
+	var once sync.Once
+	gate.pauseObserver = func(ctx context.Context, id string) error {
+		if id != sessionID {
+			return nil
+		}
+		v := r.PauseEvidence(ctx, id)
+		v.BeforeLeaseRelease = true
+		once.Do(func() { receipts <- v })
+		return nil
+	}
+	return receipts, nil
+}
+
 type developmentFixtureReasoningGate struct {
 	reasoning.Deterministic
 	entered, release         chan struct{}

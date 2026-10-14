@@ -50,7 +50,7 @@ $env:AKU_BROKER_FIXTURE_PIPE = $receipt.Pipe
 $env:AKU_DEV_BROKER_ENABLED = $null
 $env:AKU_DEV_SESSION_TEST_ROOT = $root
 if (!$Verify) {
-    & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/readerbroker ./internal/httpapi ./internal/engine ./internal/appshell -run '^TestDevelopmentFrontendNative(Staging|CLI|Observed|Seed)|^TestDevelopmentFrontend(Staging|Presentation)|^TestFixtureNativeHost' -count=1 -timeout=60s -v
+    & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/readerbroker ./internal/httpapi ./internal/engine ./internal/appshell -run '^TestDevelopmentFrontendNative(Staging|CLI|Observed|Seed|PauseEvidence)|^TestDevelopmentFrontend(Staging|Presentation)|^TestFixtureNativeHost|^TestDevelopmentSessionDrainCaptureAndReasoningBeforeReader$' -count=1 -timeout=60s -v
     if ($LASTEXITCODE -ne 0) { throw 'Native configured-source/manifest/CLI read-only contracts failed.' }
     Push-Location -LiteralPath (Join-Path $project 'internal\engine')
     try { & (Join-Path $root 'engine.test.exe') '-test.run=^TestDevelopmentFrontendNativeUnregisteredStartup$' '-test.count=1' '-test.timeout=60s' '-test.v=true' }
