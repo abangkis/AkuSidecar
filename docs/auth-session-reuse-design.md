@@ -1567,3 +1567,32 @@ Stable logs in `runtime/qa/auth-session-sidecar`:
 cleaned. Original auth/user runtime were untouched; no registry/installation was
 used. Publication of this integration delta is authorized after scoped review. Production source
 verifier adapters and account/session acceptance remain a separate authorized gate.
+
+### Startup failure acceptance after the durable fence (2026-10-15)
+
+`TestDevelopmentSessionMainStartupFailures` exercises the actual tagged main
+with three fresh profiles and loopback synthetic login: parent death while the
+first authority request is pending, a stalled authority request canceled by the
+binding's two-second deadline, and authority reporting a different account.
+Faults are injected by the test's loopback server; no startup bypass, setting or
+production runtime change was added. The existing five-second HTTP timeout is
+not the effective deadline here: the binding context expires first.
+
+At the pending authority boundary the test reads the durable expected-only
+checkpoint and pending fence, pins handles for the owned process tree, and seeds
+a queued headless command through Store APIs. Claims are denied before the fault
+and on two subsequent Store cold-opens of the same database. After failure the
+checkpoint account map and command payload/claim fields are unchanged. Each case
+proved one synthetic login, zero captures, 12 owned process handles signalled and
+an empty containment Job before cold-open. Parent-death uses the verified fixture
+Sidecar PID/image/creation identity; normal verifier failures exit on their own.
+
+Validation passed with `scripts/test-auth-session-sidecar.ps1 -VerifyDevelopment
+-VerifyDefault`, including existing actual-main restart acceptance, development
+contracts, default capture/reader regressions and ordinary build. Log:
+`runtime/qa/auth-session-sidecar/startup-failure-validation.txt`. Owned disposable
+roots were cleaned. No physical click, registry, original authentication or user
+runtime was involved. These new cases prove Store cold-open after failure, not
+successful full Sidecar recovery from this pre-authorization state, a new
+cross-build downgrade matrix, or a real account verifier. The next design gate
+is source-specific verifier/enrollment, default-off activation and rollback.

@@ -1508,3 +1508,26 @@ Logs are `startup-checkpoint-development-validation.txt`,
 `startup-checkpoint-teardown-regression.txt` under
 `runtime/qa/auth-session-sidecar`. Owned disposable roots were cleaned. This new
 integration is approved for publication after review; source-provider authentication is still synthetic.
+
+### Actual development startup failure cases (2026-10-15)
+
+`-VerifyDevelopment` now also runs
+`TestDevelopmentSessionMainStartupFailures`: parent death during the first
+authority probe, stalled authority, and changed account. It needs no operator
+click or native host registration. Each case uses a fresh profile and a synthetic
+loopback login; the real tagged main is contained in the existing fixture Job.
+The server stalls the probe without adding a runtime fault flag. The verifier's
+two-second context deadline cancels the request before the HTTP client's
+five-second timeout.
+
+The test checks pending durable metadata before the fault, zero capture, owned
+process handles signalled and Job empty, then two Store cold-opens of the same
+SQLite database. Claim stays denied and command payload/claim fields plus the
+expected account checkpoint remain unchanged. This is Store cold-open failure
+acceptance, not successful full Sidecar recovery from this state or another
+upgrade/downgrade matrix.
+
+All three cases and the full `-VerifyDevelopment -VerifyDefault` invocation
+passed. Log: `runtime/qa/auth-session-sidecar/startup-failure-validation.txt`.
+Owned disposable roots were cleaned; original authentication and user runtime
+were not accessed.

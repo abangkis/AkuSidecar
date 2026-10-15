@@ -5237,3 +5237,21 @@ installation or physical-click acceptance was used. Logs are the
 `startup-checkpoint-*.txt` files under `runtime/qa/auth-session-sidecar`.
 Publication of this integration delta is authorized after scoped review; real-source verifier readiness and
 its separately authorized acceptance remain open.
+
+### Synthetic startup failure matrix — 2026-10-15
+
+Added automatic actual-main coverage for Sidecar death during pending account
+verification, stalled authority cancellation at the two-second binding deadline,
+and changed-account rejection. All three passed with new profiles and one
+synthetic login each: zero captures, all 12 owned processes signalled, Job empty,
+expected account checkpoint unchanged, and queued command payload/claim fields
+unchanged after two Store cold-opens of the same SQLite database. No fault switch
+was added to runtime; the test controls only its loopback authority.
+
+`test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault` passed, including
+the existing restart and default regression checks. Evidence is
+`runtime/qa/auth-session-sidecar/startup-failure-validation.txt`; disposable roots
+were cleaned. This step does not establish successful Sidecar recovery after
+pre-authorization failure or new cross-build downgrade acceptance. Source-specific
+verifier/enrollment, default-off activation and rollback design remains next;
+original authentication and user runtime remain outside this acceptance.
