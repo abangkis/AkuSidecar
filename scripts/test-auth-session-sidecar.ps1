@@ -120,7 +120,7 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'Dev without adapter build failed.' }
             & go build -tags 'auth_session_dev auth_session_fixture' -o (Join-Path $taskRoot 'aku-sidecar-dev.exe') ./cmd/akusidecar
             if ($LASTEXITCODE -ne 0) { throw 'Actual main synthetic integration build failed.' }
-            & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/engine -run '^TestDevelopmentSession|^TestDevelopmentCheckpoint|^TestDevelopmentReader|^TestDevelopmentPause|^TestDevelopmentCollectionRuntime' -count=1 -timeout=120s -v
+            & go test -tags 'auth_session_dev auth_session_fixture' ./cmd/akusidecar ./internal/engine -run '^TestDevelopmentSession|^TestDevelopmentCheckpoint|^TestDevelopmentPolicy|^TestDevelopmentReader|^TestDevelopmentPause|^TestDevelopmentCollectionRuntime' -count=1 -timeout=120s -v
             if ($LASTEXITCODE -ne 0) { throw 'Explicit development integration validation failed.' }
             if (!(Test-Path -LiteralPath $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER -PathType Leaf)) { throw 'Development integration did not prove all owned trees empty.' }
         }

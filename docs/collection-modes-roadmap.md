@@ -5278,3 +5278,24 @@ passed three builds/seven processes. This evidence is Store-level only: no real
 authentication, browser, registry, installed runtime or actual user opt-in was used.
 The next step is controller integration of the policy/enrollment contract with
 synthetic observations and confirmation actions, before any real provider adapter.
+
+### Direct synthetic policy controller — 2026-10-15
+
+The dual-tag fixture controller now joins provisional enrollment fencing,
+request-bound account observation, one-use confirmation, disabled enrollment,
+confirmed opt-in and the existing Engine startup verifier. Legacy migration is
+explicit. Cold resume uses persisted opt-in with fresh owner/session proof; it
+does not perform enrollment or login again. Opt-out disables claims durably before
+draining active work and stopping the owner; canceled drain remains closed and
+does not kill active capture. Outstanding reader leases are not forcibly closed.
+
+Acceptance uses simulated ownership and synthetic observations, with direct
+controller calls and SQLite. It covers stale/canceled/replayed decisions, identity
+and owner changes, failed post-confirm proof, active drain, cold resume, disabled
+successor, immutable enrollment and atomic rollback. Canonical narrow command:
+`scripts/test-development-policy-controller.ps1`. No browser, physical click,
+registry, real account or user runtime is used. Normal main remains unchanged.
+
+Next: add a separate synthetic main composition using this controller and test
+real fixture-owned Chrome startup, confirmation, opt-out and restart. Actual
+confirmation UI and real-provider verifier remain later gates.

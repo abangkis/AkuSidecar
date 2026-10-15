@@ -99,6 +99,10 @@ type syntheticSidecarHarness struct {
 }
 
 func newSyntheticSidecarHarness(t *testing.T, path string, backend *syntheticCaptureBackend) *syntheticSidecarHarness {
+	return newSyntheticSidecarHarnessBeforeOwner(t, path, backend, nil)
+}
+
+func newSyntheticSidecarHarnessBeforeOwner(t *testing.T, path string, backend *syntheticCaptureBackend, beforeOwner func(*syntheticSidecarHarness)) *syntheticSidecarHarness {
 	t.Helper()
 	if path == "" {
 		path = filepath.Join(t.TempDir(), "synthetic.db")
@@ -118,6 +122,9 @@ func newSyntheticSidecarHarness(t *testing.T, path string, backend *syntheticCap
 	h.ctx, h.cancel = context.WithCancel(context.Background())
 	h.e = New(state, reasoning.Deterministic{}, config.Config{Dev: true, Root: filepath.Dir(path), Database: config.DatabaseConfig{Path: path}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
 	h.e.RecordHeartbeat(ExpectedHeartbeat())
+	if beforeOwner != nil {
+		beforeOwner(h)
+	}
 	launch := func(mode string) (*syntheticProfileProcess, error) {
 		if h.owners.Add(1) != 1 {
 			h.owners.Add(-1)

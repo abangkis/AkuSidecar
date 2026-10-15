@@ -1558,3 +1558,30 @@ human confirmation, session-reset flow or real provider adapter is supplied.
 Successful runs remove their owned database, copied source and binaries; failed
 runs print their exact retained QA root. Validation log:
 `runtime/qa/auth-session-sidecar/account-session-policy-validation.txt`.
+
+### Direct policy controller acceptance (2026-10-15)
+
+Run `scripts/test-development-policy-controller.ps1`. The helper clears Chrome
+and full-process opt-ins, redirects temp/Go output to a new owned QA root, and
+uses simulated owners, synthetic request-bound probes and SQLite only. Controller
+confirmation is an explicit test action, not a physical click or human-consent
+receipt. No browser, login, registry or user Sidecar runtime is launched.
+
+The controller persists a provisional enrollment hold before creating its owner.
+Preview/cancel/expiry/replay never creates an account checkpoint. Affirmative
+confirmation reobserves the identity and atomically creates disabled enrollment;
+another enable confirmation and fresh Engine startup proof are required before
+claim. Migration is explicit and default-off. Cold resume retains opted-in policy
+but requires new owner proof without enrollment/login. Opt-out preserves active
+work until drain, then stops its owner. A canceled drain leaves policy disabled
+and the active owner alive until cleanup can complete.
+
+Acceptance includes account/session/owner changes, stale observations/checkpoint,
+canceled context, foreign and consumed confirmation IDs, post-confirm proof failure,
+active capture completion, disabled successor rejection, verified cold resume,
+request versus runtime lifetime, Store cold-open and transaction rollback.
+No main/controller routing, production settings or actual confirmation UI is
+activated. Real Chrome/OS lifecycle acceptance of this controller is still pending.
+
+The helper cleans its owned roots on success and prints the retained root on
+failure. Stable log: `runtime/qa/auth-session-sidecar/policy-controller-validation.txt`.

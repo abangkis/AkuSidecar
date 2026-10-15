@@ -1714,3 +1714,86 @@ default regressions and ordinary build). Logs under `runtime/qa/auth-session-sid
 retained source snapshot, were cleaned after test processes exited. No original
 authentication or user runtime was accessed. Publication of this 13-file delta
 was subsequently authorized; controller integration remains a separate step.
+
+## Synthetic policy controller integration — 2026-10-15
+
+`SyntheticPolicyController` now composes the durable policy with existing Engine
+startup verification. It is available only with both `auth_session_dev` and
+`auth_session_fixture`, `config.Dev`, and an injected `synthetic-fixture` capability.
+No normal main dispatch, HTTP/native IPC route, setting, real source adapter or
+foreground UI activates it. This step tests the controller directly with simulated
+process ownership and versioned synthetic observations, not a full Chrome/OS run.
+
+Before creating an enrollment owner the controller closes Engine admission and
+persists `synthetic_account_checkpoint_enrollment_hold`. This provisional record
+contains only a random hold and Store/profile scope, not account IDs. All guarded
+builds treat it as incomplete protected metadata and refuse claims, including on
+cold-open. Normal startup never erases it. A canceled enrollment leaves the hold
+closed rather than reverting to an unprotected database. Recovery from an abandoned
+provisional hold is a subsequent explicit workflow; no auto-reset is provided.
+
+Enrollment preview requires fresh authority/browser probes for the exact declared
+sources and expected accounts, bound to the stable owner pointer, epoch, PID,
+generation, driver and profile. The complete vector must remain fresh. Returned
+account maps are copies. A two-minute private confirmation ID is tied to the
+observed owner and session revisions; it is consumed by any confirmation attempt,
+including cancellation, expiry or a wrong ID. Confirmation performs another fresh
+observation and rejects an account, revision, owner, scope or checkpoint change.
+The confirmation interval does not extend evidence freshness: it always probes
+again instead of accepting a two-minute-old login observation.
+
+Only a matching affirmative confirmation atomically replaces the provisional hold
+with expected-only checkpoint/required/pending records and a disabled policy at
+generation 1. Invalid, foreign, canceled or stale completion and failed SQLite
+writes preserve the hold; there is no transactionally visible unguarded gap.
+Enrollment does not authorize work. A separate enable preview/confirmation applies
+opt-in using the exact checkpoint and policy revision, then calls the existing
+`PrepareDevelopmentSessionCheckpoint` / `StartDevelopmentSession` verifier again.
+Thus a successful preview and confirmation cannot substitute for startup proof.
+Legacy checkpoints have an explicit confirmed migration action that creates a
+disabled policy; enable cannot skip migration.
+
+Persisted opt-in can be resumed by a successor controller without repeating
+enrollment or login. It still fences the database before owner startup and requires
+fresh Engine account/session/owner proof. Disabled policy cannot resume; explicit
+confirmation is needed to enable it again. The controller's lifetime owns polling;
+completion/cancellation of a successful confirmation request does not own or stop
+the runtime. Failure or cancellation during startup keeps admission closed and
+renews the durable fence where possible.
+
+Opt-out first closes local admission and persists disabled policy with a fresh
+hold. Existing capture/reasoning drains through the existing pause binding before
+coordinator polling is joined and the scoped owner is terminated. Cancellation
+or incomplete drain reports a partial shutdown, preserves the disabled policy and
+active work, and never force-kills the active owner. Outstanding reader/owner
+leases remain held; no reader window is forcibly closed by this path. Re-enable
+after shutdown uses a successor controller/owner. Synthetic tests cover the idle
+and active headless path; actual reader-window opt-out and OS process cleanup
+require separate acceptance.
+
+The new helper is `scripts/test-development-policy-controller.ps1`. It runs direct
+controller/Store acceptance plus existing non-OS development regressions with
+Chrome/process fixture environment opt-ins cleared. Full OS fixture cases are
+skipped deliberately. `test-auth-session-sidecar.ps1 -VerifyDevelopment` also
+selects the new controller cases when a separately authorized complete fixture
+run is wanted. No physical click or registry is required by the controller helper.
+
+This phase does not implement a human confirmation UI, real account observation,
+normal runtime wiring or an installed feature toggle. Physical profile identity,
+Windows foreground and real Chrome lock release are not established by simulated
+owner tests. The next gate is wiring this controller into a separate synthetic
+main composition and proving the same enrollment/opt-out boundaries with a real
+fixture-owned Chrome process, before any real authentication integration.
+
+Validation passed with the narrow controller helper: eight controller test
+functions (including nine changed/stale/canceled decision cases), four enrollment
+Store test functions and existing non-OS development/checkpoint/policy regressions.
+Existing checkpoint compatibility passed three builds/seven separate processes,
+and `test-auth-session-sidecar.ps1 -VerifyDefault` passed synthetic integration,
+default regressions and the ordinary build. Logs are
+`runtime/qa/auth-session-sidecar/policy-controller-validation.txt`,
+`policy-controller-checkpoint-compatibility.txt`, and
+`policy-controller-default-validation.txt`. All owned disposable test roots were
+cleaned after test exit; unrelated `experiments/` remains untouched. Publication
+of this 12-file delta is authorized after review. No original authentication/user
+runtime was used.

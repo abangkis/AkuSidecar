@@ -7,6 +7,54 @@ import (
 	"errors"
 )
 
+// LoadSyntheticAccountPolicy returns the current expected-only checkpoint,
+// stored policy generation, and enabled state. Generation zero means no policy
+// has been stored yet. The read does not change capture authorization state.
+func (s *Store) LoadSyntheticAccountPolicy(ctx context.Context) (SyntheticAccountCheckpoint, uint64, bool, error) {
+	if err := checkpointContextError(ctx); err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, errors.New("account session policy lookup failed")
+	}
+	defer tx.Rollback()
+	values, err := readAccountCheckpointValuesTx(ctx, tx)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, err
+	}
+	if len(values) == 0 {
+		if err := checkpointContextError(ctx); err != nil {
+			return SyntheticAccountCheckpoint{}, 0, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return SyntheticAccountCheckpoint{}, 0, false, errors.New("account session policy lookup failed")
+		}
+		return SyntheticAccountCheckpoint{}, 0, false, nil
+	}
+	checkpoint, _, _, _, _, _, err := loadSyntheticCheckpointTx(ctx, tx)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, errors.New("account session policy metadata is unavailable")
+	}
+	policy, err := readAccountSessionPolicy(values, checkpoint)
+	if err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, err
+	}
+	var generation uint64
+	var enabled bool
+	if policy != nil {
+		generation = policy.Generation
+		enabled = policy.Enabled
+	}
+	if err := checkpointContextError(ctx); err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return SyntheticAccountCheckpoint{}, 0, false, errors.New("account session policy lookup failed")
+	}
+	return checkpoint, generation, enabled, nil
+}
+
 // ApplySyntheticAccountPolicy simulates an explicitly confirmed enrollment
 // policy operation. The caller supplies the exact checkpoint and policy revision
 // shown for confirmation. It is not a public endpoint or proof of human consent.
