@@ -444,3 +444,52 @@ Do not fabricate a media reason or write a database override to qualify this
 case. A dedicated context-only operation must validate the exact native post,
 establish comment ownership from the observed profile URL and comment ID, and
 merge only direct context while preserving the post's existing text and media.
+
+## LinkedIn account-matched comment context (prepared, not activated)
+
+The prepared `source-adapters-v114` / `linkedin-dom-v22` contract records all
+visible comments whose observed author profile URL exactly matches the linked
+account in the feed label. Each relation has `matchBasis: actor_profile`; this
+is account association, not evidence of which comment caused feed placement.
+Top-level comments and nested replies follow observed DOM ancestry, regardless
+of the wording in the feed label. Mentions and similar display names do not
+establish ownership. Identical copies of one comment ID are deduplicated;
+conflicting positive evidence retains only a reference with an explicit reason.
+Missing clone text and display-name variation alone do not contradict an exact
+profile match. Empty body candidates are ignored; identical nonempty text is
+deduplicated. Distinct nonempty bodies, known author URLs or incompatible parent
+identities remain conflicts. A body is never borrowed from an unverified author.
+
+The existing bound remains eight direct relations. `omittedCommentCount` on
+the first matched relation discloses additional matching comments beyond that
+capture bound. Usable bodies take precedence over empty references when choosing
+the bounded set; selected rows keep their relative DOM order. Store merges and
+resolves duplicate evidence before applying the same body-preserving capacity
+rule across retained observations. This is a count for that observation, not a claim about every
+comment on LinkedIn or a count of currently unretained historical evidence.
+
+Reference-only comment objects may carry `captureReason`:
+
+- `actor_identity_unresolved`: the linked label account could not be established.
+- `comments_not_observed`: no comment root was observed in the capture scope.
+- `comments_not_visible`: roots existed but none were visible.
+- `matching_comments_not_observed`: visible authors did not match the label account.
+- `comment_author_unresolved`: some authors were unresolved and no match was established.
+- `comment_body_not_observed`: the comment was identified but no visible text was observed.
+- `comment_body_ambiguous`: separate body regions prevented reliable extraction.
+- `comment_identity_ambiguous`: copies of the same ID conflicted.
+- `comment_read_failed`: comment elements could not be read reliably.
+
+Failures are isolated per comment. `commentReadErrorCount` on the first relation
+counts unreadable observed comment elements, without claiming those elements
+matched the banner account. It contains no raw error or page content. If optional
+context extraction fails as a whole, both collectors retain the independently
+captured post and set `presentation.directContextStatus: extraction_failed`.
+
+Missing reasons on old captures remain unknown in the UI. A missing DOM root
+does not prove that comments failed to load. Store preserves already captured
+body evidence and its original capture time when a later observation contains
+only a reference. No schema migration, external lookup, targeted recapture,
+login change, session-reuse activation, or runtime restart accompanies this
+source implementation. Verify and activate the compatible Bridge/Sidecar pair
+together before allowing the new payload into main dev.

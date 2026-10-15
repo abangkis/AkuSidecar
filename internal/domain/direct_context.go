@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -14,24 +15,29 @@ const DirectContextLimit = 8
 // post; target is its quote/parent or the feed actor's comment, and parent is
 // at most one ancestor comment. It does not assert acquaintance or feed rank.
 type DirectContext struct {
-	Kind         string         `json:"kind"`
-	Actor        string         `json:"actor,omitempty"`
-	ActorURL     string         `json:"actorUrl,omitempty"`
-	ObservedText string         `json:"observedText,omitempty"`
-	Provenance   string         `json:"provenance"`
-	CapturedAt   string         `json:"capturedAt,omitempty"`
-	Target       ContextObject  `json:"target"`
-	Parent       *ContextObject `json:"parent,omitempty"`
+	Kind         string `json:"kind"`
+	Actor        string `json:"actor,omitempty"`
+	ActorURL     string `json:"actorUrl,omitempty"`
+	ObservedText string `json:"observedText,omitempty"`
+	// MatchBasis describes account association, never the cause of a feed banner.
+	MatchBasis            string         `json:"matchBasis,omitempty"`
+	OmittedCommentCount   int            `json:"omittedCommentCount,omitempty"`
+	CommentReadErrorCount int            `json:"commentReadErrorCount,omitempty"`
+	Provenance            string         `json:"provenance"`
+	CapturedAt            string         `json:"capturedAt,omitempty"`
+	Target                ContextObject  `json:"target"`
+	Parent                *ContextObject `json:"parent,omitempty"`
 }
 
 type ContextObject struct {
-	Kind         string `json:"kind"`
-	ID           string `json:"id,omitempty"`
-	Permalink    string `json:"permalink,omitempty"`
-	Author       string `json:"author,omitempty"`
-	Text         string `json:"text,omitempty"`
-	HasMedia     bool   `json:"hasMedia,omitempty"`
-	Availability string `json:"availability"`
+	Kind          string `json:"kind"`
+	ID            string `json:"id,omitempty"`
+	Permalink     string `json:"permalink,omitempty"`
+	Author        string `json:"author,omitempty"`
+	Text          string `json:"text,omitempty"`
+	HasMedia      bool   `json:"hasMedia,omitempty"`
+	Availability  string `json:"availability"`
+	CaptureReason string `json:"captureReason,omitempty"`
 	// EvidenceOrigin is set by local resolution, never by a provider.
 	EvidenceOrigin string `json:"evidenceOrigin,omitempty"`
 	CapturedAt     string `json:"capturedAt,omitempty"`
@@ -42,6 +48,15 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 		return errors.New("too many direct context relations")
 	}
 	for _, value := range values {
+		if value.CommentReadErrorCount < 0 || value.CommentReadErrorCount > 1000000 || value.CommentReadErrorCount > 0 && source != SourceLinkedIn {
+			return errors.New("invalid comment read error count")
+		}
+		if value.MatchBasis != "" && (source != SourceLinkedIn || value.MatchBasis != "actor_profile" || value.ActorURL == "") {
+			return errors.New("invalid direct context match basis")
+		}
+		if value.OmittedCommentCount < 0 || value.OmittedCommentCount > 1000000 || value.OmittedCommentCount > 0 && (source != SourceLinkedIn || value.MatchBasis != "actor_profile") {
+			return errors.New("invalid omitted comment count")
+		}
 		if source == SourceX && value.Kind != "quotes" && value.Kind != "replies_to" ||
 			source == SourceLinkedIn && value.Kind != "feed_comment" && value.Kind != "feed_reply" ||
 			source != SourceX && source != SourceLinkedIn {
@@ -72,6 +87,9 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 			objects = append(objects, *value.Parent)
 		}
 		for _, object := range objects {
+			if object.CaptureReason != "" && (source != SourceLinkedIn || object.Availability != "reference_only" || !validCommentCaptureReason(object.CaptureReason)) {
+				return errors.New("invalid comment capture reason")
+			}
 			expected := "post"
 			if source == SourceLinkedIn {
 				expected = "comment"
@@ -116,6 +134,14 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 }
 
 var directStatusIDPattern = regexp.MustCompile(`^\d{5,30}$`)
+
+func validCommentCaptureReason(reason string) bool {
+	switch reason {
+	case "actor_identity_unresolved", "comments_not_observed", "comments_not_visible", "matching_comments_not_observed", "comment_author_unresolved", "comment_body_not_observed", "comment_body_ambiguous", "comment_identity_ambiguous", "comment_read_failed":
+		return true
+	}
+	return false
+}
 
 // ContextObjectIdentity folds X username/i URL aliases to the actual status ID.
 // Unknown identities remain empty, so missing IDs never bind unrelated bodies.
@@ -192,12 +218,28 @@ func MergeDirectContext(previous, current []DirectContext) []DirectContext {
 				}
 				continue
 			}
-			if len(result) == DirectContextLimit {
-				continue
-			}
 			seen[key] = len(result)
 			result = append(result, value)
 		}
+	}
+	if len(result) > DirectContextLimit {
+		// Resolve duplicate evidence before applying capacity. Empty current
+		// references must not displace independently retained comment bodies.
+		indices := make([]int, len(result))
+		for i := range indices {
+			indices[i] = i
+		}
+		hasCommentBody := func(i int) bool {
+			return result[i].Target.Kind == "comment" && (strings.TrimSpace(result[i].Target.Text) != "" || result[i].Target.HasMedia)
+		}
+		sort.SliceStable(indices, func(i, j int) bool { return hasCommentBody(indices[i]) && !hasCommentBody(indices[j]) })
+		indices = indices[:DirectContextLimit]
+		sort.Ints(indices) // Preserve relative observation order among retained rows.
+		bounded := make([]DirectContext, 0, DirectContextLimit)
+		for _, i := range indices {
+			bounded = append(bounded, result[i])
+		}
+		return bounded
 	}
 	return result
 }

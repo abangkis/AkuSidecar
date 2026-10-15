@@ -16,6 +16,28 @@ func directFixture(t *testing.T, s *Store, id string, b domain.Block) {
 	}
 }
 
+func TestDirectContextLinkedInMultipleAccountCommentsAndReasons(t *testing.T) {
+	s := openTestStore(t)
+	id := insertContentContextTimelineFixture(t, s, false)
+	if _, err := s.db.Exec(`UPDATE timeline_items SET source='linkedin' WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	first := domain.DirectContext{Kind: "feed_comment", Actor: "Synthetic account", ActorURL: "https://www.linkedin.com/in/synthetic", MatchBasis: "actor_profile", ObservedText: "Synthetic account commented", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "comment", ID: "12345", Text: "First observed comment", Availability: "captured"}}
+	second := first
+	second.Target.ID = "67890"
+	second.Target.Text = "Second observed comment"
+	missing := first
+	missing.Target = domain.ContextObject{Kind: "comment", ID: "99999", Availability: "reference_only", CaptureReason: "comment_body_not_observed"}
+	directFixture(t, s, id, domain.Block{Permalink: "https://www.linkedin.com/feed/update/urn:li:activity:1234567890123456789/", DirectContext: []domain.DirectContext{first, second, missing}})
+	result, err := s.ContentContext(context.Background(), id, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DirectContext) != 3 || result.DirectContext[0].Target.Text != first.Target.Text || result.DirectContext[1].Target.Text != second.Target.Text || result.DirectContext[2].Target.CaptureReason != "comment_body_not_observed" || result.DirectContext[0].MatchBasis != "actor_profile" {
+		t.Fatalf("comments or diagnostics lost: %+v", result)
+	}
+}
+
 func TestDirectContextWithoutLexicalTermsRefreshesEvidenceAndRejectsSelf(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
@@ -159,6 +181,55 @@ func TestDirectContextReadsLaterRetainedInteractionWithoutReevaluation(t *testin
 	var count int
 	if err = s.db.QueryRow(`SELECT count(*) FROM timeline_items`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("context read changed timeline: %d %v", count, err)
+	}
+}
+
+func TestDirectContextLaterReferencesCannotEvictRetainedCommentBody(t *testing.T) {
+	s := openTestStore(t)
+	id := insertContentContextTimelineFixture(t, s, false)
+	if _, err := s.db.Exec(`UPDATE timeline_items SET source='linkedin' WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	retained := domain.DirectContext{Kind: "feed_comment", ActorURL: "https://www.linkedin.com/in/synthetic", MatchBasis: "actor_profile", Provenance: "observed_dom", CapturedAt: "2026-10-15T00:00:00Z", Target: domain.ContextObject{Kind: "comment", ID: "99999", Text: "Retained valid comment", Availability: "captured"}}
+	original := domain.Block{EvidenceKey: "linkedin:activity:1234567", PlatformID: "linkedin:activity:1234567", Permalink: "https://www.linkedin.com/feed/update/urn:li:activity:1234567", DirectContext: []domain.DirectContext{retained}}
+	directFixture(t, s, id, original)
+	var runID string
+	if err := s.db.QueryRow(`SELECT run_id FROM timeline_items WHERE id=?`, id).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	candidate := original
+	candidate.DirectContext = nil
+	for i := 0; i < domain.DirectContextLimit; i++ {
+		reference := retained
+		reference.CapturedAt = "2026-10-16T00:00:00Z"
+		reference.Target = domain.ContextObject{Kind: "comment", ID: fmt.Sprint(10000 + i), Availability: "reference_only", CaptureReason: "comment_body_not_observed"}
+		candidate.DirectContext = append(candidate.DirectContext, reference)
+	}
+	raw, err := json.Marshal(domain.Observation{Source: domain.SourceLinkedIn, Snapshots: []domain.Snapshot{{Blocks: []domain.Block{candidate}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO bridge_commands(id,run_id,type,status,payload_json,created_at) VALUES('bounded-context-command',?,'collect_visible','completed','{}',?)`, runID, domain.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO observations(id,run_id,command_id,source,observation_json,captured_at,created_at) VALUES('bounded-context-observation',?,'bounded-context-command','linkedin',?,'2026-10-16T00:00:00Z',?)`, runID, string(raw), domain.Now()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.ContentContext(context.Background(), id, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DirectContext) != domain.DirectContextLimit {
+		t.Fatalf("%+v", result)
+	}
+	found := false
+	for _, relation := range result.DirectContext {
+		if relation.Target.ID == retained.Target.ID {
+			found = relation.Target.Text == retained.Target.Text && relation.Target.CapturedAt == retained.CapturedAt
+		}
+	}
+	if !found {
+		t.Fatalf("new empty references displaced retained body: %+v", result)
 	}
 }
 

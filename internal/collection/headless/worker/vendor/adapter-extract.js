@@ -578,8 +578,16 @@
     presentation.permalinkSource = result.identitySource === 'explicit_target_route' ? 'explicit_target_route'
       : result.identitySource === 'adapter_recovery' ? 'adapter_recovery' : source === 'instagram' ? 'native_post_anchor' : 'native_urn_or_permalink';
     const controls = textEvidence.collapsed;
-    const directContext = typeof adapter.extractDirectContext === 'function'
-      ? adapter.extractDirectContext(container, { ...helpers, permalink: identity.permalink, quotedPost: null }) : [];
+    let directContext = [];
+    try {
+      const observed = typeof adapter.extractDirectContext === 'function'
+        ? adapter.extractDirectContext(container, { ...helpers, permalink: identity.permalink, quotedPost: null }) : [];
+      if (!Array.isArray(observed)) throw new Error('invalid_direct_context_result');
+      directContext = observed.slice(0, 8);
+    } catch {
+      // Preserve independently captured post evidence when optional context fails.
+      presentation.directContextStatus = 'extraction_failed';
+    }
     const links = linksFor(container, excluded);
     if (!text && !media.media.length && !attachments.length) return { rejection: 'empty_evidence' };
     return { post: {

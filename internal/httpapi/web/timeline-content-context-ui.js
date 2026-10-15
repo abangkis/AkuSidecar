@@ -1,7 +1,7 @@
 import { setAttributeValue } from "./ui-frame.js";
 import {
   contentContextKnownTypes, contentContextKnownTypesDescription,
-  contentContextRelationLabel, contentContextObjectCaptureLabel,
+  contentContextRelationLabel, contentContextObjectCaptureLabel, contentContextObjectCaptureReason,
 } from "./timeline-content-context-state.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -63,6 +63,21 @@ export function renderTimelineDirectContext(relation, source, { documentRef = do
   if (relation?.observedText) {
     const observed = documentRef.createElement("p"); observed.textContent = "Platform label: " + relation.observedText; article.append(observed);
   }
+  if (source === "linkedin" && relation?.matchBasis === "actor_profile") {
+    const association = documentRef.createElement("p");
+    association.textContent = "Matched by account profile. The platform label does not identify which comment prompted the feed.";
+    article.append(association);
+  }
+  if (source === "linkedin" && Number.isInteger(relation?.omittedCommentCount) && relation.omittedCommentCount > 0) {
+    const omitted = documentRef.createElement("p");
+    omitted.textContent = `${relation.omittedCommentCount} additional matching comments exceeded the capture limit of 8.`;
+    article.append(omitted);
+  }
+  if (source === "linkedin" && Number.isInteger(relation?.commentReadErrorCount) && relation.commentReadErrorCount > 0) {
+    const errors = documentRef.createElement("p");
+    errors.textContent = `${relation.commentReadErrorCount} comment ${relation.commentReadErrorCount === 1 ? "element" : "elements"} could not be read reliably. Other available evidence is retained.`;
+    article.append(errors);
+  }
   const appendObject = (object, label) => {
     if (!object) return;
     const box = documentRef.createElement("div"); box.className = "timeline-direct-context-object";
@@ -71,6 +86,8 @@ export function renderTimelineDirectContext(relation, source, { documentRef = do
     const captureLabel = contentContextObjectCaptureLabel(object);
     status.classList.add(captureLabel === "Content not captured" ? "is-not-captured" : captureLabel === "Partial capture" ? "is-partial" : "is-captured");
     status.textContent = captureLabel; box.append(status);
+    const captureReason = contentContextObjectCaptureReason(object);
+    if (captureReason) { const reason = documentRef.createElement("p"); reason.textContent = captureReason; box.append(reason); }
     if (object.text || object.hasMedia) { const text = documentRef.createElement("p"); text.textContent = object.text || "Media captured with this post."; box.append(text); }
     const url = safeSourceUrl(object.permalink, source);
     if (url) { const link = documentRef.createElement("a"); link.className = "source-link"; link.href = url; configureNativePostLink(link, url, source); link.textContent = "Open source"; box.append(link); }

@@ -78,6 +78,21 @@ export function contentContextObjectCaptureLabel(object) {
   if (Boolean(typeof object?.text === "string" && object.text.trim()) || object?.hasMedia === true) return "Captured evidence";
   return "Content not captured";
 }
+
+export function contentContextObjectCaptureReason(object) {
+  if (object?.kind !== "comment" || object.availability !== "reference_only") return "";
+  return ({
+    actor_identity_unresolved: "The account in the platform label could not be verified.",
+    comments_not_observed: "No comment elements were observed in this capture.",
+    comments_not_visible: "Comment elements were present, but none were visible in this capture.",
+    matching_comments_not_observed: "No visible comments matched the account in the platform label.",
+    comment_author_unresolved: "Some visible comment authors could not be verified; no matching account was established.",
+    comment_body_not_observed: "The comment was identified, but its text was not observed.",
+    comment_body_ambiguous: "Multiple separate text regions prevented a reliable comment capture.",
+    comment_identity_ambiguous: "Conflicting observations of the same comment prevented a reliable capture.",
+    comment_read_failed: "Comment elements could not be read reliably during this capture.",
+  })[object.captureReason] || "The reason was not recorded in this capture.";
+}
 export function normalizeContentContextUpScrollMode(value) {
   return value === CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE
     ? CONTENT_CONTEXT_UP_SCROLL_MODE_PRESERVE

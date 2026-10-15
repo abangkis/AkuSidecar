@@ -210,3 +210,56 @@ func TestContentContextHTTPReturnsDirectEvidenceWithoutLexicalTerms(t *testing.T
 		t.Fatalf("quote capture not retained on Timeline: %+v %v", timelineItem.Evidence, timelineErr)
 	}
 }
+
+func TestContentContextHTTPReturnsAllMatchingAccountComments(t *testing.T) {
+	server, state := openLibraryHTTPFixture(t)
+	ctx := context.Background()
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceLinkedIn}
+	session, err := state.CreateUpdateSession(ctx, "synthetic comments", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session.Runs[0]
+	command, err := state.StartRun(ctx, run.ID, map[string]any{"source": run.Source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = state.ClaimCommand(ctx, run.ID, "synthetic-comments-test"); err != nil {
+		t.Fatal(err)
+	}
+	first := domain.DirectContext{Kind: "feed_comment", Actor: "Synthetic account", ActorURL: "https://www.linkedin.com/in/synthetic", MatchBasis: "actor_profile", ObservedText: "Synthetic account commented", Provenance: "observed_dom", Target: domain.ContextObject{Kind: "comment", ID: "12345", Text: "First observed comment", Availability: "captured"}}
+	second := first
+	second.Target.ID = "67890"
+	second.Target.Text = "Second observed comment"
+	missing := first
+	missing.Target = domain.ContextObject{Kind: "comment", ID: "99999", Availability: "reference_only", CaptureReason: "comment_body_not_observed"}
+	first.CommentReadErrorCount = 1
+	key := "linkedin:activity:1234567890123456789"
+	block := domain.Block{EvidenceKey: key, PlatformID: key, Permalink: "https://www.linkedin.com/feed/update/urn:li:activity:1234567890123456789/", Text: "Synthetic post", DirectContext: []domain.DirectContext{first, second, missing}}
+	if err = state.SaveObservation(ctx, command.ID, run.ID, domain.Observation{Source: run.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}, Coverage: map[string]any{"status": "complete"}}); err != nil {
+		t.Fatal(err)
+	}
+	item := domain.ReasonedItem{EvidenceKey: key, Source: run.Source, SourceURL: block.Permalink}
+	if err = state.CompleteRun(ctx, run, domain.ReasoningResult{Items: []domain.ReasonedItem{item}}, []store.ScoredAssessment{{Assessment: domain.CandidateAssessment{EvidenceKey: key}, Selected: true}}, []domain.TimelineItem{{ID: "comments-http", SessionID: session.ID, RunID: run.ID, Source: run.Source, EvidenceKey: key, Item: item}}, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = state.FinalizeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.api().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/timeline/comments-http/content-context", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d %s", response.Code, response.Body.String())
+	}
+	var result domain.ContentContextResult
+	if err = json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DirectContext) != 3 || result.DirectContext[0].Target.Text != first.Target.Text || result.DirectContext[1].Target.Text != second.Target.Text || result.DirectContext[2].Target.CaptureReason != "comment_body_not_observed" || result.DirectContext[0].MatchBasis != "actor_profile" || result.DirectContext[0].CommentReadErrorCount != 1 {
+		t.Fatalf("comments or diagnostics lost: %+v", result)
+	}
+}

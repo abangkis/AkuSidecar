@@ -125,6 +125,21 @@ function baseAdapter(source, candidates) {
   };
 }
 
+test('LinkedIn post survives optional context failures without being rejected as adapter_error', async () => {
+  for (const extractDirectContext of [() => { throw Error('private DOM failure detail'); }, () => ({ unexpected: true })]) {
+    const own = candidate({ urn: 'urn:li:activity:1234567890123456789', body: 'Valid post despite context failure' });
+    const adapter = { ...baseAdapter('linkedin', [own]), extractDirectContext };
+    const result = await run('linkedin', adapter, 'https://www.linkedin.com/feed/').collect();
+    assert.equal(result.posts.length, 1);
+    assert.equal(result.posts[0].id, 'linkedin:activity:1234567890123456789');
+    assert.equal(result.posts[0].text, 'Valid post despite context failure');
+    assert.equal(result.posts[0].directContext.length, 0);
+    assert.equal(result.posts[0].presentation.directContextStatus, 'extraction_failed');
+    assert.equal(result.rejectionReasons.adapter_error, undefined);
+    assert.ok(!JSON.stringify(result).includes('private DOM failure detail'));
+  }
+});
+
 test('Instagram admits visible own native posts and refuses hidden or identifier-free text', async () => {
   const shortcode = 'Dd-VoSSpoav';
   const media = element({ tagName: 'IMG', attrs: { src: 'https://scontent.cdninstagram.com/media/post.jpg',
