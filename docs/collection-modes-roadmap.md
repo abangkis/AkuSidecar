@@ -5255,3 +5255,26 @@ were cleaned. This step does not establish successful Sidecar recovery after
 pre-authorization failure or new cross-build downgrade acceptance. Source-specific
 verifier/enrollment, default-off activation and rollback design remains next;
 original authentication and user runtime remain outside this acceptance.
+
+### Production policy contract with synthetic acceptance — 2026-10-15
+
+The session design now fixes expected identity versus fresh browser proof,
+confirmed enrollment, conservative session revision continuity, explicit opt-in
+and opt-out, and the supported rollback boundary. Store already rejected changed
+accepted revisions; this step preserves that rule rather than adding automatic
+session adoption. Actual source observation, confirmation UI, recovery from a
+new session and runtime opt-out/drain wiring remain separate work.
+
+The tagged synthetic adapter adds an explicit policy migration under the existing
+guard prefix. Migration starts disabled; enable never grants a permit without
+fresh verification; disable preserves queued/claimed work and rotates the fence.
+The current ordinary guard understands the policy but cannot mutate it. Older
+guard-aware builds reject the extra record. No marker is removed on opt-out.
+
+`scripts/test-account-session-policy.ps1` passed five builds and 26 separate stage
+processes against the same synthetic SQLite database, including historical
+default/fixture guard code from `9fc79f3`. Existing checkpoint compatibility also
+passed three builds/seven processes. This evidence is Store-level only: no real
+authentication, browser, registry, installed runtime or actual user opt-in was used.
+The next step is controller integration of the policy/enrollment contract with
+synthetic observations and confirmation actions, before any real provider adapter.

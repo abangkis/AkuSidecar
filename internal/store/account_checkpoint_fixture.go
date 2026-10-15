@@ -279,6 +279,14 @@ func (s *Store) AuthorizeSyntheticAccountCheckpoint(ctx context.Context, capture
 	if err != nil {
 		return errors.New("synthetic checkpoint authorization is unavailable")
 	}
+	values, err := readAccountCheckpointValuesTx(ctx, tx)
+	if err != nil {
+		return errors.New("account session policy unavailable")
+	}
+	policy, err := readAccountSessionPolicy(values, checkpoint)
+	if err != nil || policy != nil && !policy.Enabled {
+		return errors.New("account session policy is not enabled")
+	}
 	if err := validateCapturedFence(captured, checkpoint, checkpointRaw, required, fence); err != nil {
 		return errors.New("synthetic checkpoint fence is stale")
 	}
@@ -381,7 +389,7 @@ func readAccountCheckpointValuesTx(ctx context.Context, tx *sql.Tx) (map[string]
 
 func loadSyntheticCheckpointTx(ctx context.Context, tx *sql.Tx) (SyntheticAccountCheckpoint, string, accountCheckpointRequired, accountCheckpointFenceRecord, string, string, error) {
 	values, err := readAccountCheckpointValuesTx(ctx, tx)
-	if err != nil || len(values) != 3 {
+	if err != nil || !accountCheckpointRecordCountValid(values) {
 		return SyntheticAccountCheckpoint{}, "", accountCheckpointRequired{}, accountCheckpointFenceRecord{}, "", "", errors.New("account checkpoint metadata is incomplete")
 	}
 	checkpointRaw, checkpointOK := values[syntheticAccountCheckpointKey]
@@ -400,6 +408,9 @@ func loadSyntheticCheckpointTx(ctx context.Context, tx *sql.Tx) (SyntheticAccoun
 		return SyntheticAccountCheckpoint{}, "", accountCheckpointRequired{}, accountCheckpointFenceRecord{}, "", "", errors.New("account checkpoint metadata is invalid")
 	}
 	checkpoint.ExpectedAccounts = copySyntheticAccounts(checkpoint.ExpectedAccounts)
+	if _, err := readAccountSessionPolicy(values, checkpoint); err != nil {
+		return SyntheticAccountCheckpoint{}, "", accountCheckpointRequired{}, accountCheckpointFenceRecord{}, "", "", err
+	}
 	checkpoint.AcceptedRevisions = copySyntheticRevisions(checkpoint.AcceptedRevisions)
 	fence.Scope = copySyntheticScope(fence.Scope)
 	return checkpoint, checkpointRaw, required, fence, requiredRaw, fenceRaw, nil

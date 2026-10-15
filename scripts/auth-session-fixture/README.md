@@ -1531,3 +1531,30 @@ All three cases and the full `-VerifyDevelopment -VerifyDefault` invocation
 passed. Log: `runtime/qa/auth-session-sidecar/startup-failure-validation.txt`.
 Owned disposable roots were cleaned; original authentication and user runtime
 were not accessed.
+
+### Session policy and historical guard compatibility (2026-10-15)
+
+Run `scripts/test-account-session-policy.ps1` from the Sidecar root. This helper
+uses only Store test binaries and one synthetic SQLite database: no browser,
+login, native host registration or Sidecar process is launched. It compiles current
+default/dev/fixture builds plus default/fixture builds from local immutable commit
+`9fc79f38921752628e13e23428683199833631cd`. Only the two compatibility probe test
+files are added to that historical source copy; its guard implementation is unchanged.
+No remote Git operation or dependency download is needed.
+
+Six mutation stages (enroll, migrate disabled, enable/verify, reject changed
+session, disable, re-enable/verify) are interleaved with twenty cold-open probes.
+Both historical binaries refuse claims when the new policy record exists; the
+historical tagged binary also refuses fence issuance. All queue payload/claim
+fields remain unchanged by downgrade probes. New guard unit tests additionally
+cover malformed/future/foreign policy, mismatched confirmation, stale policy
+revision, transactional migration failure, actual second-handle invalidation,
+successful authorized claim and opt-out preserving an active claim.
+
+The policy key stays under `synthetic_account_checkpoint`, and is retained on
+opt-out. A build predating that prefix's guard is not a supported rollback target.
+Mutation APIs remain tagged and synthetic; no production activation UI, actual
+human confirmation, session-reset flow or real provider adapter is supplied.
+Successful runs remove their owned database, copied source and binaries; failed
+runs print their exact retained QA root. Validation log:
+`runtime/qa/auth-session-sidecar/account-session-policy-validation.txt`.

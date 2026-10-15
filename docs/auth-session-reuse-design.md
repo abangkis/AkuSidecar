@@ -1596,3 +1596,121 @@ runtime was involved. These new cases prove Store cold-open after failure, not
 successful full Sidecar recovery from this pre-authorization state, a new
 cross-build downgrade matrix, or a real account verifier. The next design gate
 is source-specific verifier/enrollment, default-off activation and rollback.
+
+## Production contract decision, synthetic policy adapter — 2026-10-15
+
+This section fixes the next production contract; it does not activate a real
+source adapter. Executable acceptance remains a tagged synthetic Store adapter.
+Ordinary builds read the policy guard but expose no policy mutator or activation
+endpoint. The earlier review's revision concern needs clarification: Store already
+rejects a revision different from `AcceptedRevisions`. That strict rule remains.
+
+### Identity, proof and enrollment
+
+An enrollment binds one database scope and one owned profile identity to an exact
+map of source -> stable account ID. Display names, content authors, cookie
+presence, bridge readiness and a previously saved checkpoint are not current
+authentication evidence. No passwords, cookies, bearer tokens or raw responses
+belong in checkpoint metadata or logs. IDs are private metadata, not public status.
+
+The production controller must first close capture admission, obtain fresh
+source-specific browser observations, present the account map for explicit user
+confirmation, then compare that confirmation against the same scope and identity
+before persisting expected-only enrollment. A canceled/stale confirmation writes
+no enrollment. Initial enrollment does not authorize work; another fresh proof is
+required. There is no automatic learning, overwrite, or substitution of an account.
+Changing account requires a separate confirmed enrollment workflow, with old-account
+work retained under its old identity or explicitly canceled; never reassign it.
+That workflow and its UI are not implemented in this step.
+
+The adapter receives a versioned, one-use source/phase/probe challenge and must
+derive the account from a fresh supported observation in the owned browser. The
+trusted controller pins profile, source origin, owner process identity, epoch,
+generation and driver across the vector. Only authenticated, complete, current
+evidence may produce a private Store receipt; unknown, challenge, logout,
+unsupported, canceled, expired, account mismatch or owner change remain closed.
+Receipt structs are trusted internal transport, not a public attestation API.
+Production must replace synthetic control authority with expected checkpoint
+identity plus fresh browser proof; replaying the same observation through two
+callbacks is not independent authority. The five-second freshness ceiling and
+two-second binding deadline are current limits, not a guarantee all real sources
+can meet them; adapter qualification must establish that before activation.
+
+`Revision` represents source-specific authentication/session lineage, not every
+cookie update and not an arbitrary new value minted for each probe. Both probe
+phases must agree and later authorization must match persisted accepted revisions.
+Routine cookie rotation cannot silently be treated as either session change or
+proof of continuity. Until an adapter can distinguish those cases, it is unsupported.
+Observed logout/account/session change revokes admission; a real session change
+requires an explicit recovery design and fresh confirmation. No session revision
+reset or automatic relogin is introduced here. Point-in-time verification does not
+claim continuous coverage of all workers or concurrent session changes; retain
+exclusive handoff until that coverage is independently established.
+
+### Durable policy and guard migration
+
+The three legacy keys and their guarded prefix remain stable. Migration adds
+`synthetic_account_checkpoint_policy` under the same prefix, with domain
+`aku.account-session-policy`, version 1, provider, checkpoint ID, SHA-256 of the
+expected account/scope map, monotonic policy generation and enabled flag. This
+hash binds confirmation to the map; it is not authentication or encryption.
+Version 1 currently accepts only provider `synthetic-fixture`. Real provider
+support requires a separately reviewed adapter and versioned schema support;
+changing that string alone is not an activation path.
+
+`ApplySyntheticAccountPolicy` simulates trusted confirmed actions for acceptance.
+It takes the exact captured checkpoint and policy generation. Migration inserts
+disabled policy and rotates the durable pending hold in one transaction. Enable
+requires the matching checkpoint/policy revision and drained supported work; it
+rotates the hold but grants no permit. Disable rotates the hold and persists
+disabled policy immediately; existing claimed work is left for normal drain.
+All successful actions revoke previous receipts and handle permits through the
+new hold. A subsequent enable still requires fresh verification. A stale action,
+unexpected identity or invalid policy is rejected. Transaction failure rolls back
+all durable changes and revokes the caller's volatile permit; failed opt-out must
+be reported as failure, not claimed globally complete if other handles exist.
+
+New guards accept three-record legacy synthetic checkpoints for compatibility.
+Four-record policy checkpoints additionally require a valid enabled policy,
+current owner receipt and handle-local permit. Missing, corrupt, unknown-version,
+foreign-provider or extra records fail closed. Policy creation is explicit; no
+database is migrated by ordinary open/startup. The synthetic policy method is
+not wired into normal Engine startup or production settings in this step.
+
+### Opt-out and rollback
+
+Opt-out preserves the policy, required marker, checkpoint and queue. It stops new
+claims, then the controller drains active capture/reasoning and closes only its
+owned process tree. Reader lifetime remains bounded by Sidecar. A new owner must
+start with admission closed; opt-in never restores a persisted permit.
+
+Rollback is permitted only to a guard-aware build. Pre-policy guard code rejects
+the fourth key and cannot issue a new fence; leaving this compatibility record
+in place is essential even when disabled. Historical builds before the checkpoint
+guard remain unsupported. Deleting the policy/required marker or renaming keys is
+not rollback. This is a supported-binary compatibility boundary, not protection
+against an administrator editing SQLite or running arbitrary old executables.
+Before shipping real-provider metadata, repeat the historical binary matrix with
+that exact format and establish an installer/runtime minimum-version gate.
+
+Synthetic acceptance covers confirmed checkpoint matching, default-off migration,
+explicit enable plus fresh proof, changed revision rejection, opt-out while work
+is queued/claimed, re-enable, stale permit rejection and transactional write
+failure. Historical downgrade tests compile the unchanged guard from commit
+`9fc79f38921752628e13e23428683199833631cd` with test-only probes added. Current
+default/development/fixture and historical default/fixture binaries operate on one
+synthetic database. This does not test actual browser identity, human confirmation,
+full runtime opt-out/drain, or real-provider rollback acceptance.
+
+Validation passed: `scripts/test-account-session-policy.ps1` (five builds, 26
+separate stage processes on the same database), existing
+`scripts/test-account-checkpoint-compatibility.ps1` (three builds/seven processes),
+full default and development Store suites, and
+`scripts/test-auth-session-sidecar.ps1 -VerifyDefault` (synthetic integration,
+default regressions and ordinary build). Logs under `runtime/qa/auth-session-sidecar`:
+`account-session-policy-validation.txt`, `policy-legacy-compatibility.txt`,
+`policy-store-default.txt`, `policy-store-dev.txt`, and
+`policy-default-validation.txt`. Disposable roots, including the failed test's
+retained source snapshot, were cleaned after test processes exited. No original
+authentication or user runtime was accessed. Publication of this 13-file delta
+was subsequently authorized; controller integration remains a separate step.

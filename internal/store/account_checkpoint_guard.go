@@ -305,7 +305,7 @@ func (s *Store) currentAccountCheckpointClaimGate(ctx context.Context, tx *sql.T
 		return accountCheckpointClaimGate{}, nil
 	}
 	gate := accountCheckpointClaimGate{protected: true}
-	if len(values) != 3 {
+	if !accountCheckpointRecordCountValid(values) {
 		return gate, errors.New("capture checkpoint metadata is incomplete")
 	}
 	checkpointRaw, checkpointOK := values[syntheticAccountCheckpointKey]
@@ -325,6 +325,13 @@ func (s *Store) currentAccountCheckpointClaimGate(ctx context.Context, tx *sql.T
 		required.CheckpointID != checkpoint.CheckpointID || required.Generation != checkpoint.Generation ||
 		!validFence(fence, checkpoint, checkpointRaw) {
 		return gate, errors.New("capture checkpoint fence is invalid")
+	}
+	policy, policyErr := readAccountSessionPolicy(values, checkpoint)
+	if policyErr != nil {
+		return gate, policyErr
+	}
+	if policy != nil && !policy.Enabled {
+		return gate, nil
 	}
 	if fence.State != "authorized" {
 		return gate, nil
