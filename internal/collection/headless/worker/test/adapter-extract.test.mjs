@@ -146,17 +146,18 @@ test('Instagram admits visible own native posts and refuses hidden or identifier
   assert.equal(JSON.stringify(api.prepareEvidenceTargets()), '[]');
 });
 
-test('LinkedIn preserves own attachments and presentation while excluding ambiguous posts and comment media', async () => {
+for (const commentMarker of ['comments-comment-item', 'id^="replaceableComment_urn:li:comment:"', 'componentkey^="replaceableComment_urn:li:comment:"']) {
+test(`LinkedIn preserves own attachments and excludes comment media (${commentMarker})`, async () => {
   const nativeId = '7512001669308555265';
   const ownImage = element({ tagName: 'IMG', attrs: { src: 'https://media.licdn.com/dms/image/own.jpg',
     currentSrc: 'https://media.licdn.com/dms/image/own.jpg', alt: 'Project cover', naturalWidth: 1200, naturalHeight: 700 } });
   const commentImage = element({ tagName: 'IMG', attrs: { src: 'https://media.licdn.com/dms/image/comment.jpg',
     currentSrc: 'https://media.licdn.com/dms/image/comment.jpg', alt: 'Comment image', naturalWidth: 900, naturalHeight: 600 } });
   const commentRoot = { contains: node => node === commentImage || node === commentLink };
-  commentImage.closest = selector => selector.includes('comments-comment-item') ? commentRoot : null;
+  commentImage.closest = selector => selector.includes(commentMarker) ? commentRoot : null;
   const preview = anchor('https://example.org/article', 'Read the article');
   const commentLink = anchor('https://comment.example/article', 'Comment link');
-  commentLink.closest = selector => selector.includes('comments-comment-item') ? commentRoot : null;
+  commentLink.closest = selector => selector.includes(commentMarker) ? commentRoot : null;
   const own = candidate({ urn: `urn:li:ugcPost:${nativeId}`, anchors: [
     anchor(`https://www.linkedin.com/feed/update/urn:li:ugcPost:${nativeId}/`), preview, commentLink,
   ], images: [ownImage], commentImages: [commentImage], body: 'Shipping update.', contentLinks: [preview, commentLink] });
@@ -178,6 +179,7 @@ test('LinkedIn preserves own attachments and presentation while excluding ambigu
   assert.equal(result.rejectionReasons.ambiguous_identity, 1);
   assert.equal(JSON.stringify(api.prepareEvidenceTargets()), '[]');
 });
+}
 
 test('Instagram explicit target binds only one article and rejects ambiguity or conflicting identity',async()=>{
   const root=candidate({body:'Native target caption'});

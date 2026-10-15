@@ -420,3 +420,27 @@ explicit executable setting). Engine and reasoning suites pass except
 cleanup-generation mismatch also reproduces against pre-change HEAD through an
 isolated Go overlay. Authenticated account qualification of the telemetry patch
 remains pending runtime activation and subsequent user updates.
+
+## LinkedIn comment parser activation and recapture gap
+
+The development runtime now expects Bridge `source-adapters-v113` and LinkedIn
+`linkedin-dom-v21`. The ordinary, untagged `restart-dev.ps1` build was activated
+through AkuSupervisor after idle readiness. The restarted service is healthy,
+retains Headless mode, and has no session-reuse startup argument or
+`auth_session_dev` / `auth_session_fixture` build tag. No login flow was changed.
+The canonical runtime identity check and its five regression cases pass.
+
+This activates the SDUI parser support, but does not establish an end-to-end
+comment refresh. For the reported UltraBERT post, the live Related Context API
+still returns the previously captured `feed_comment` as `reference_only`.
+
+There is currently no item-scoped context recapture operation. The existing
+Timeline recapture endpoint admits only missing-media, playback-error, or
+unresolved-video jobs; this post already has valid image evidence. Normal
+updates capture feeds rather than a nominated item, and the headless collector
+does not accept an explicit LinkedIn detail URL. The observed detail page also
+has no feed interaction banner, and its comments are siblings of the post root.
+Do not fabricate a media reason or write a database override to qualify this
+case. A dedicated context-only operation must validate the exact native post,
+establish comment ownership from the observed profile URL and comment ID, and
+merge only direct context while preserving the post's existing text and media.

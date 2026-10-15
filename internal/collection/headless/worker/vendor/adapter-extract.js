@@ -3,7 +3,7 @@
 (() => {
   const MAX_CANDIDATES = 80;
   const MAX_MEDIA = 20;
-  const COMMENT_SELECTOR = '.comments-comment-item, .comments-comment-entity, [data-id^="urn:li:comment:"], [data-comment-id]';
+  const COMMENT_SELECTOR = '.comments-comment-item, .comments-comment-entity, [data-id^="urn:li:comment:"], [data-comment-id], [id^="replaceableComment_urn:li:comment:"], [componentkey^="replaceableComment_urn:li:comment:"]';
   const compactText = value => String(typeof value === 'object' && value !== null
     ? value.innerText ?? value.textContent ?? '' : value ?? '').replace(/\s+/g, ' ').trim();
   const readNode = node => !node ? '' : node.nodeType === 3 ? node.nodeValue || '' : node.nodeType !== 1 ? ''
