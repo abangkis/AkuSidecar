@@ -7699,15 +7699,22 @@ function buildSourceCard(entry) {
     social.textContent = presentation.socialContext;
     content.append(social);
   }
-  content.append(buildExpandableText(evidence.text || item.whatChanged, {
-    characterLimit: SOURCE_TEXT_COLLAPSE_CHARACTERS,
-    lineLimit: SOURCE_TEXT_COLLAPSE_LINES,
-    label: "post",
-    expansionKey: entry.id ? `${entry.id}|post` : null,
-  }));
+  const hasCapturedContent = typeof evidence.text === "string"
+    || (Array.isArray(evidence.media) && evidence.media.length > 0)
+    || (Array.isArray(evidence.attachments) && evidence.attachments.length > 0)
+    || (evidence.quotedPost && Object.keys(evidence.quotedPost).length > 0);
+  const sourceText = hasCapturedContent ? evidence.text : item.whatChanged;
+  if (typeof sourceText === "string" && sourceText.trim()) {
+    content.append(buildExpandableText(sourceText, {
+      characterLimit: SOURCE_TEXT_COLLAPSE_CHARACTERS,
+      lineLimit: SOURCE_TEXT_COLLAPSE_LINES,
+      label: "post",
+      expansionKey: entry.id ? `${entry.id}|post` : null,
+    }));
+  }
   const quote = buildQuotedPost(evidence.quotedPost, source, entry.id ? `${entry.id}|quote` : null);
   if (quote) content.append(quote);
-  card.append(content);
+  if (content.children.length) card.append(content);
   const attachments = buildAttachments(evidence.attachments, source);
   if (attachments) card.append(attachments);
   const nativePostUrl = safeSourceUrl(item.sourceUrl || evidence.permalink, source);
@@ -7779,7 +7786,9 @@ function buildAvatar(url, source, author) {
 }
 
 function buildQuotedPost(value, source, expansionKey = null) {
-  if (!value?.text) return null;
+  const text = typeof value?.text === "string" ? value.text : "";
+  const media = buildMedia(value?.media, source, value?.contentKind, safeSourceUrl(value?.permalink, source));
+  if (!text.trim() && !media) return null;
   const quote = document.createElement("section");
   quote.className = "source-quote-card";
   const header = document.createElement("header");
@@ -7791,12 +7800,16 @@ function buildQuotedPost(value, source, expansionKey = null) {
   timestamp.textContent = formatDate(value.publishedAt);
   identity.append(author, timestamp);
   header.append(avatar, identity);
-  quote.append(header, buildExpandableText(value.text, {
-    characterLimit: QUOTE_TEXT_COLLAPSE_CHARACTERS,
-    lineLimit: QUOTE_TEXT_COLLAPSE_LINES,
-    label: "quoted post",
-    expansionKey,
-  }));
+  quote.append(header);
+  if (text.trim()) {
+    quote.append(buildExpandableText(text, {
+      characterLimit: QUOTE_TEXT_COLLAPSE_CHARACTERS,
+      lineLimit: QUOTE_TEXT_COLLAPSE_LINES,
+      label: "quoted post",
+      expansionKey,
+    }));
+  }
+  if (media) quote.append(media);
   return quote;
 }
 

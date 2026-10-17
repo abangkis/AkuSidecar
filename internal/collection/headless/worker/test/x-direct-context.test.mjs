@@ -14,32 +14,53 @@ const ownID = '2106867448746021278';
 const parentID = '2106867448746021279';
 const url = id => `https://x.com/owner/status/${id}`;
 const plain = value => JSON.parse(JSON.stringify(value));
-const textNode = text => ({nodeType: 1, tagName: 'DIV', innerText: text,
-  childNodes: [{nodeType: 3, nodeValue: text}], getAttribute: () => null, closest: () => null,
+const textNode = (text, testId = 'tweetText') => ({nodeType: 1, tagName: 'DIV', innerText: text,
+  childNodes: [{nodeType: 3, nodeValue: text}], getAttribute: name => name === 'data-testid' ? testId : null, closest: () => null,
   querySelector: () => null, querySelectorAll: () => []});
 
 function marker(links = [], label = 'Replying to @parent') {
   return {innerText: label, closest: () => null, querySelector: () => null,
     querySelectorAll: () => links.map(href => ({href}))};
 }
-function article(id, body, {markers = [], quote = null} = {}) {
-  const text = textNode(body), author = textNode('Owner');
+function image(src) {
+  return {tagName: 'IMG', currentSrc: src, src, alt: 'Photo', complete: true, naturalWidth: 640, naturalHeight: 480,
+    getAttribute: name => name === 'data-testid' ? 'tweetPhoto' : null, closest: () => null,
+    querySelectorAll: () => []};
+}
+function article(id, body, {markers = [], quote = null, media = [], surfaceText} = {}) {
+  const text = body === null ? null : textNode(body), author = textNode('Owner', 'User-Name');
   const time = {dateTime: '2026-10-12T00:00:00Z', closest: () => ({href: url(id)}),
     getAttribute: () => '2026-10-12T00:00:00Z'};
   const root = {
-    innerText: body, getBoundingClientRect: () => ({height: 200, top: 0, bottom: 200}), getClientRects: () => [{}],
-    contains: node => node === root || node === text || node === time || markers.includes(node),
-    getAttribute: name => name === 'data-testid' ? 'quoteTweet' : null,
-    querySelector: selector => selector === '[data-testid="tweetText"]' || selector.startsWith('[data-testid="tweetText"],') ? text
-      : selector === '[data-testid="User-Name"]' ? author : selector === 'time' ? time
-        : selector === '[data-testid="quoteTweet"]' ? quote : null,
-    querySelectorAll: selector => selector === 'time' ? [time] : selector === '[data-testid="tweetText"]' ? [text]
-      : selector.includes('replyingTo') ? markers : [],
+    innerText: surfaceText ?? [body, '12 likes', 'Reply'].filter(Boolean).join('\n'),
+    getBoundingClientRect: () => ({height: 200, top: 0, bottom: 200}), getClientRects: () => [{}],
+    contains: target => target === root || target === text || target === time || markers.includes(target) || media.includes(target) || Boolean(quote?.contains(target)),
+    getAttribute: name => name === 'data-testid' ? (quote ? 'quoteTweet' : 'tweet') : null,
+    querySelector(selector) {
+      if (selector === '[data-testid="tweetText"]' || selector.startsWith('[data-testid="tweetText"],') ||
+          selector === '[data-testid="twitterArticleReadView"]') {
+        return text || quote?.querySelector(selector) || null;
+      }
+      if (selector === '[data-testid="User-Name"]') return author;
+      if (selector === 'time') return time;
+      if (selector === '[data-testid="quoteTweet"]') return quote;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === 'time') return [time, ...(quote?.querySelectorAll('time') ?? [])];
+      if (selector.includes('tweetPhoto')) return [...media, ...(quote?.querySelectorAll(selector) ?? [])];
+      if (selector.includes('tweetText')) {
+        return [...(text ? [text] : []), ...(quote?.querySelectorAll(selector) ?? [])];
+      }
+      if (selector.includes('video')) return quote?.querySelectorAll(selector) ?? [];
+      if (selector.includes('replyingTo')) return markers;
+      return [];
+    },
   };
   return root;
 }
-async function collect({markers = [], responseID, parents = [], quote = null, body = 'Reply body'} = {}) {
-  const child = article(ownID, body, {markers, quote});
+async function collect({markers = [], responseID, parents = [], quote = null, body = 'Reply body', media = [], surfaceText} = {}) {
+  const child = article(ownID, body, {markers, quote, media, surfaceText});
   const articles = [child, ...parents];
   const location = new URL('https://x.com/home');
   const context = vm.createContext({URL, setTimeout, location, window: {location},
@@ -108,6 +129,33 @@ test('quote and reply remain separate captured relations for the existing Relate
   assert.equal(block.quotedPost.text, 'Quoted body');
   assert.equal(block.text, 'Reply body');
   assert.deepEqual(contentContextKnownTypes({source: 'x', directContext: block.directContext}), ['Reply to post']);
+});
+
+test('headless uses the real X adapter for image-only posts, captions and quoted media', async () => {
+  const ownImage = image('https://pbs.twimg.com/media/own-photo.jpg');
+  const quotedImage = image('https://pbs.twimg.com/media/quoted-photo.jpg');
+  const imageOnly = await collect({body: null, media: [ownImage], surfaceText: 'Owner\n12 likes\nReply\n1 repost'});
+  assert.equal(imageOnly.post.text, '');
+  assert.equal(imageOnly.block.text, '');
+  assert.deepEqual(imageOnly.post.media.map(value => value.url), [ownImage.src]);
+
+  const caption = 'My 2026 photo has 42 blue doors.';
+  const quotedText = 'The original says 9 doors were painted.';
+  const mediaOnlyQuote = article(parentID, null, {
+    surfaceText: 'Quoted author\n5 likes\nReply', media: [quotedImage],
+  });
+  const quoteOnly = await collect({body: null, surfaceText: 'Owner\n8 likes\nReply', quote: mediaOnlyQuote});
+  assert.equal(quoteOnly.post.text, '');
+  assert.equal(quoteOnly.post.quotedPost.text, '');
+  assert.deepEqual(quoteOnly.post.quotedPost.media.map(value => value.url), [quotedImage.src]);
+
+  const quotedPost = article(parentID, quotedText, {media: [quotedImage]});
+  const ownAndQuoted = await collect({body: caption, media: [ownImage], quote: quotedPost});
+  assert.equal(ownAndQuoted.post.text, caption);
+  assert.deepEqual(ownAndQuoted.post.media.map(value => value.url), [ownImage.src]);
+  assert.equal(ownAndQuoted.post.quotedPost.text, quotedText);
+  assert.deepEqual(ownAndQuoted.post.quotedPost.media.map(value => value.url), [quotedImage.src]);
+  assert.equal(ownAndQuoted.block.text, caption);
 });
 
 test('X relation forwarding is bounded and cloned while unsupported sources remain excluded', () => {

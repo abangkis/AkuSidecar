@@ -144,7 +144,8 @@ test('capture grants expansion only to an owned round-one mutation-authorized pa
 
 function domArticle() {
   const text = {nodeType: 1, tagName: 'DIV', innerText: 'DOM caption', childNodes: [{nodeType: 3, nodeValue: 'DOM caption'}],
-    getAttribute: () => null, querySelector: () => null, querySelectorAll: () => [], closest: () => null};
+    getAttribute: name => name === 'data-testid' ? 'tweetText' : null,
+    querySelector: () => null, querySelectorAll: () => [], closest: () => null};
   const time = {dateTime: '2026-10-12T00:00:00Z', closest: () => ({href: native})};
   return {innerText: 'DOM caption', getClientRects: () => [{}], getBoundingClientRect: () => ({height: 200, top: 0, bottom: 200}),
     querySelector: selector => selector === '[data-testid="User-Name"]' ? {innerText: 'Owner'} : selector.includes('tweetText') ? text : null,

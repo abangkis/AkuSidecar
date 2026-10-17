@@ -149,7 +149,7 @@ and the capture/frontier integration. Existing stored posts are not rewritten.
 
 ## Shared contracts and separate controllers
 
-Headless injects AkuBridge's source-adapter runtime and adapters. X uses the same `x-dom-v22` selector, text/quote parser, expansion policy (12 attempts at 40 ms), and expected-media rules. Headless does not execute the complete `AkuBridge/content-script.js` controller. It supplies separate discovery, admission, hydration, navigation, recovery and serialization in its worker.
+Headless injects AkuBridge's source-adapter runtime and adapters. X uses the same `x-dom-v23` selector, text/quote parser, expansion policy (12 attempts at 40 ms), and expected-media rules. Headless does not execute the complete `AkuBridge/content-script.js` controller. It supplies separate discovery, admission, hydration, navigation, recovery and serialization in its worker.
 
 | Capability | Windowed AkuBridge | Headless worker | Difference / reuse boundary |
 | --- | --- | --- | --- |
@@ -493,3 +493,24 @@ only a reference. No schema migration, external lookup, targeted recapture,
 login change, session-reuse activation, or runtime restart accompanies this
 source implementation. Verify and activate the compatible Bridge/Sidecar pair
 together before allowing the new payload into main dev.
+
+### X image-only source content (prepared v115)
+
+The `source-adapters-v115` / `x-dom-v23` parser reads only authored tweet text
+or an X Article read-view. The same roots can be passed directly by the
+headless collector. A missing authored text root produces an empty body;
+author labels, media accessibility labels and engagement counters are never
+used as a whole-card text fallback. Quoted content remains nested, including
+when the parent has no authored text.
+
+Source-layout rendering treats captured empty text as valid evidence and does
+not replace it with the AI brief. Images and media-only quotes remain visible;
+captions preserve their original paragraphs and numbers. The legacy summary
+fallback remains available when source content is unavailable altogether.
+
+Regression coverage exercises the actual adapter, headless collector and
+source-card renderer for image-only posts, captions, quote ownership and
+direct tweet/article roots. This source-only change does not rewrite existing
+captures or activate the runtime. Already polluted captures require a later,
+separately authorized recapture or evidence-backed repair; the renderer does
+not guess which words in historical text are UI labels.
