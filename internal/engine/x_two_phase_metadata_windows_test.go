@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -211,11 +212,20 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	caseRoot := filepath.Join(os.Getenv("AKU_CHROME_FIXTURE_ROOT"), "run-x-two-phase-"+hex.EncodeToString(scopeNonce[:]))
 	accountSettingsEnabled := os.Getenv("AKU_X_ACCOUNT_SETTINGS_ENABLED") == "1"
 	retainedEnabled := os.Getenv("AKU_X_RETAINED_QA_ENABLED") == "1"
+	bootstrapEnabled := os.Getenv("AKU_X_BOOTSTRAP_SELF_ENABLED") == "1"
+	if bootstrapEnabled && (!retainedEnabled || accountSettingsEnabled) {
+		t.Fatal("bootstrap probe requires retained QA and no body mode")
+	}
 	var lease *xRetainedQAProfile
 	cleanupVerified := false
 	if retainedEnabled {
-		if !accountSettingsEnabled {
-			t.Fatal("retained QA requires bounded account-settings mode")
+		if !accountSettingsEnabled && !bootstrapEnabled {
+			t.Fatal("retained QA requires a fixed diagnostic mode")
+		}
+		if bootstrapEnabled {
+			if _, err := os.Lstat(filepath.Join(qaParent, xRetainedQAProfileManifestName)); err != nil {
+				t.Fatal("bootstrap probe requires the existing retained QA profile")
+			}
 		}
 		lease, err = acquireXRetainedQAProfile(project)
 		if err != nil {
@@ -231,6 +241,10 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		t.Fatal("two-phase case root unavailable")
 	}
 	reused := lease != nil && lease.Existing
+	if bootstrapEnabled && !reused {
+		cleanupVerified = true // No process has started; do not initiate a login.
+		t.Fatal("bootstrap probe requires an existing retained QA profile")
+	}
 	var directories []windows.Handle
 	t.Cleanup(func() {
 		for _, directory := range directories {
@@ -254,6 +268,9 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	if retainedEnabled {
 		config.DriverPath = filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-account-settings-driver.mjs")
 		config.qaProfileLease = lease
+	}
+	if bootstrapEnabled {
+		config.DriverPath = filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-bootstrap-driver.mjs")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
 	defer cancel()
@@ -391,6 +408,8 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		Diagnostic                  string                   `json:"diagnostic"`
 		Observation                 *xNativeMetadataReport   `json:"observation,omitempty"`
 		AccountSettings             *xAccountSettingsCapture `json:"accountSettings,omitempty"`
+		BootstrapCurrentSelf        *xBootstrapCurrentSelf   `json:"bootstrapCurrentSelf,omitempty"`
+		BootstrapGuardsVerified     bool                     `json:"bootstrapGuardsVerified,omitempty"`
 		CanAuthorize                bool                     `json:"canAuthorize"`
 		RetainedQAProfile           bool                     `json:"retainedQAProfile"`
 		ReusedQAProfile             bool                     `json:"reusedQAProfile"`
@@ -401,6 +420,9 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	report.RetainedQAProfile, report.ReusedQAProfile = retainedEnabled, reused
 	if retainedEnabled {
 		report.Schema = "aku.x.retained-account-settings.v1"
+	}
+	if bootstrapEnabled {
+		report.Schema = "aku.x.retained-bootstrap.v1"
 	}
 	if reused {
 		report.ManualSource = "retained_qa_profile"
@@ -466,6 +488,13 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		t.Fatal("QA profile identity changed before Home check")
 	}
 	report.ProfileDirectorySame = true
+	if bootstrapEnabled {
+		var rejected json.RawMessage
+		gateErr := bridge.rpc(ctx, "bootstrap_current_self", map[string]any{"owner": second.owner}, &rejected)
+		if gateErr == nil || !strings.Contains(gateErr.Error(), "bootstrap_gate_closed") {
+			t.Fatal("bootstrap probe was not rejected before the Home gate")
+		}
+	}
 	stage("phase2_checking_home")
 	deadline = time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
@@ -489,36 +518,60 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		}
 		t.Fatal("Home unavailable after reopen; no second login attempted")
 	}
-	stage("phase2_observing")
-	var raw json.RawMessage
-	if err := bridge.rpc(ctx, "start_observation", map[string]any{"owner": second.owner}, &raw); err != nil {
-		report.Diagnostic = "phase2_observation_failed"
-		t.Fatal("two-phase observation failed:", err)
-	}
-	var metadata xNativeMetadataReport
-	if accountSettingsEnabled {
-		var capture xAccountSettingsCapture
-		metadata, capture, err = decodeXAccountSettingsEnvelope(raw)
-		if err == nil {
-			report.AccountSettings = &capture
+	if bootstrapEnabled {
+		stage("bootstrap_current_self")
+		var raw json.RawMessage
+		if bridge.rpc(ctx, "bootstrap_current_self", map[string]any{"owner": second.owner}, &raw) != nil {
+			report.Diagnostic = "bootstrap_probe_failed"
+			t.Fatal("bootstrap probe failed; no source data exported")
 		}
+		projection, err := decodeXBootstrapCurrentSelf(raw)
+		if err != nil {
+			report.Diagnostic = "bootstrap_projection_rejected"
+			t.Fatal("bootstrap diagnostic output rejected")
+		}
+		report.BootstrapCurrentSelf = &projection
+		var rejected json.RawMessage
+		replayErr := bridge.rpc(ctx, "bootstrap_current_self", map[string]any{"owner": second.owner}, &rejected)
+		networkErr := bridge.rpc(ctx, "start_observation", map[string]any{"owner": second.owner}, &rejected)
+		if replayErr == nil || !strings.Contains(replayErr.Error(), "bootstrap_gate_closed") ||
+			networkErr == nil || !strings.Contains(networkErr.Error(), "network_observation_not_available") {
+			t.Fatal("bootstrap replay or Network-mode rejection was not verified")
+		}
+		report.BootstrapGuardsVerified = true
+		report.Diagnostic = "bootstrap_observed"
 	} else {
-		metadata, err = decodeXNativeMetadata(raw)
+		stage("phase2_observing")
+		var raw json.RawMessage
+		if err := bridge.rpc(ctx, "start_observation", map[string]any{"owner": second.owner}, &raw); err != nil {
+			report.Diagnostic = "phase2_observation_failed"
+			t.Fatal("two-phase observation failed:", err)
+		}
+		var metadata xNativeMetadataReport
+		if accountSettingsEnabled {
+			var capture xAccountSettingsCapture
+			metadata, capture, err = decodeXAccountSettingsEnvelope(raw)
+			if err == nil {
+				report.AccountSettings = &capture
+			}
+		} else {
+			metadata, err = decodeXNativeMetadata(raw)
+		}
+		if err != nil {
+			report.Diagnostic = "metadata_projection_rejected"
+			t.Fatal("two-phase metadata failed private output boundary")
+		}
+		report.Observation = &metadata
+		if accountSettingsEnabled && (report.AccountSettings == nil || report.AccountSettings.Diagnostic != "projected") {
+			report.Diagnostic = "account_settings_projection_unavailable"
+			t.Fatal("account-settings shape projection unavailable; fixed diagnostics retained")
+		}
+		if metadata.CandidateCount == 0 {
+			report.Diagnostic = "no_native_operations_seen"
+			t.Fatal("two-phase metadata sample contained no native operations")
+		}
+		report.Diagnostic = "metadata_observed"
 	}
-	if err != nil {
-		report.Diagnostic = "metadata_projection_rejected"
-		t.Fatal("two-phase metadata failed private output boundary")
-	}
-	report.Observation = &metadata
-	if accountSettingsEnabled && (report.AccountSettings == nil || report.AccountSettings.Diagnostic != "projected") {
-		report.Diagnostic = "account_settings_projection_unavailable"
-		t.Fatal("account-settings shape projection unavailable; fixed diagnostics retained")
-	}
-	if metadata.CandidateCount == 0 {
-		report.Diagnostic = "no_native_operations_seen"
-		t.Fatal("two-phase metadata sample contained no native operations")
-	}
-	report.Diagnostic = "metadata_observed"
 	// Close gracefully so the retained QA profile can flush its browser-managed
 	// state. The cleanup hook still proves the entire Job is empty before reuse.
 	if retainedEnabled {
@@ -530,6 +583,8 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 			t.Fatal("retained QA Chrome graceful exit unavailable")
 		}
 	}
-	t.Logf("Two-phase metadata: %d candidates, %d dropped; no authorization or lineage proof", metadata.CandidateCount, metadata.DroppedCandidates)
+	if report.Observation != nil {
+		t.Logf("Two-phase metadata: %d candidates, %d dropped; no authorization or lineage proof", report.Observation.CandidateCount, report.Observation.DroppedCandidates)
+	}
 	stage("complete")
 }

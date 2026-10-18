@@ -5654,3 +5654,22 @@ or session continuity. It must not authorize Store or be supplemented by guessin
 an ID from a handle. MVP-1's remaining delta is a direct current-self source with
 the required semantics, assessed using the retained QA session. Main-dev and
 MVP-2 activation remain gated; original login/runtime and Store policy are unchanged.
+
+Current-self bootstrap checkpoint (2026-10-18): an explicit
+`-TwoPhase -RetainQA -BootstrapSelf` mode now requires the existing retained QA
+lease. It permits one fixed post-Home page evaluation with side-effect rejection,
+returns only fixed shape/consistency diagnostics, and independently validates the
+DTO in Node and Go. Network observation, body retrieval, caller-supplied expressions,
+new-profile login and repeated probes are rejected. A direct session-ID lookup
+checks only two fixed user-map paths; there is no author/handle lookup. Field
+booleans remain unqualified observations and no Store policy changed.
+
+Thirty-five Node tests and six Go top-level tests passed, including eleven nested
+lease/window-state checks. Native run `a8558eb505d44f32a4e0bf5055c6de45` reused the
+same QA directory identities without login, detected Home, verified pre-Home and
+replay rejection plus Network denial, and completed cleanup. Its source diagnostic
+is `bootstrap_missing` after Home, with no ID candidate or authentication field
+observed. This is not a logged-out result and does not distinguish format from
+earlier-page timing. The retained profile is clean; native identity/login/lineage
+remain unqualified. Next source assessment should resolve that timing/format
+uncertainty with a bounded probe, without widening source reads implicitly.

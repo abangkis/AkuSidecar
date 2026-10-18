@@ -3,6 +3,7 @@ param(
     [switch]$TwoPhase,
     [switch]$AccountSettings,
     [switch]$RetainQA,
+    [switch]$BootstrapSelf,
     [switch]$LocalPopup,
     [switch]$PhysicalPopup,
     [ValidatePattern('^[a-f0-9]{32}$')][string]$CompleteRun,
@@ -17,7 +18,8 @@ if ((Get-Item -LiteralPath $qaParent).Attributes -band [IO.FileAttributes]::Repa
 if ($LocalPopup -and ($TwoPhase -or $CompleteRun -or $Outcome -or $PopupObservation)) { throw 'LocalPopup is an accountless standalone mode.' }
 if ($PhysicalPopup -and !$LocalPopup) { throw 'PhysicalPopup requires LocalPopup.' }
 if ($AccountSettings -and !$TwoPhase) { throw 'AccountSettings requires the two-phase workflow.' }
-if ($RetainQA -and (!$TwoPhase -or !$AccountSettings -or $LocalPopup)) { throw 'RetainQA requires TwoPhase AccountSettings only.' }
+if ($BootstrapSelf -and (!$RetainQA -or !$TwoPhase -or $AccountSettings -or $LocalPopup)) { throw 'BootstrapSelf requires TwoPhase RetainQA without AccountSettings.' }
+if ($RetainQA -and (!$TwoPhase -or (!$AccountSettings -and !$BootstrapSelf) -or $LocalPopup)) { throw 'RetainQA requires a fixed TwoPhase diagnostic mode.' }
 if ($PopupObservation -and (!$TwoPhase -or !$CompleteRun)) { throw 'PopupObservation requires TwoPhase CompleteRun.' }
 $artifactPrefix = if ($LocalPopup) { 'x-local-popup' } elseif ($TwoPhase) { 'x-two-phase' } else { 'x-standard-chrome' }
 if ($CompleteRun) {
@@ -58,7 +60,7 @@ $variables = @('TEMP','TMP','GOTMPDIR','GOCACHE','GOMODCACHE','GOPROXY','GOSUMDB
     'AKU_X_STANDARD_CONTROL_ENABLED','AKU_X_STANDARD_PROGRESS_PATH','AKU_X_STANDARD_RESULT_PATH','AKU_X_STANDARD_REPORT_PATH',
     'AKU_X_TWO_PHASE_ENABLED','AKU_X_TWO_PHASE_PROGRESS_PATH','AKU_X_TWO_PHASE_RESULT_PATH','AKU_X_TWO_PHASE_REPORT_PATH',
     'AKU_X_LOCAL_POPUP_ENABLED','AKU_X_LOCAL_POPUP_REPORT_PATH','AKU_X_LOCAL_POPUP_PHYSICAL','AKU_X_LOCAL_POPUP_PROGRESS_PATH',
-    'AKU_X_ACCOUNT_SETTINGS_ENABLED','AKU_X_RETAINED_QA_ENABLED')
+    'AKU_X_ACCOUNT_SETTINGS_ENABLED','AKU_X_RETAINED_QA_ENABLED','AKU_X_BOOTSTRAP_SELF_ENABLED')
 $previous = @{}
 foreach ($variable in $variables) { $previous[$variable] = [Environment]::GetEnvironmentVariable($variable, 'Process') }
 $safeCleanup = $true
@@ -80,6 +82,7 @@ try {
     $env:AKU_X_LOCAL_POPUP_PHYSICAL = '0'
     $env:AKU_X_ACCOUNT_SETTINGS_ENABLED = '0'
     $env:AKU_X_RETAINED_QA_ENABLED = '0'
+    $env:AKU_X_BOOTSTRAP_SELF_ENABLED = '0'
     $env:AKU_CHROME_FIXTURE_ROOT = $taskRoot
     Write-Output ('Control log: ' + $logPath)
     $nodeTests = @('scripts/auth-session-fixture/x-standard-chrome-control.test.mjs')
@@ -93,10 +96,12 @@ try {
         $nodeTests += 'scripts/auth-session-fixture/x-account-settings-capture.test.mjs'
     }
     if ($RetainQA) { $nodeTests += 'scripts/auth-session-fixture/x-retained-account-settings-driver.test.mjs' }
+    if ($BootstrapSelf) { $nodeTests += 'scripts/auth-session-fixture/x-bootstrap-current-self.test.mjs' }
     & $nodePath --test --test-timeout=10000 --test-reporter=tap @nodeTests 2>&1 | Tee-Object -FilePath $logPath
     if ($LASTEXITCODE -ne 0) { throw 'Control launch-only checks failed.' }
     $offlinePattern = if ($LocalPopup) { '^TestX(LocalPopup|PopupDiagnostics|TwoPhaseMetadata)Offline$' } elseif ($AccountSettings) { '^TestX(AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' } elseif ($TwoPhase) { '^TestX(TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' } else { '^TestXStandardChromeControlOffline$' }
     if ($RetainQA) { $offlinePattern = '^TestX(RetainedQAProfile|AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' }
+    if ($BootstrapSelf) { $offlinePattern = '^TestX(BootstrapCurrentSelf|RetainedQAProfile|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' }
     & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run $offlinePattern -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $logPath -Append
     if ($LASTEXITCODE -ne 0) { throw 'Control manual-outcome preflight failed.' }
     if ($NoChrome) { Write-Output 'Control offline preflight passed; no Chrome or network started.' }
@@ -113,6 +118,7 @@ try {
         } elseif ($TwoPhase) {
             $env:AKU_X_ACCOUNT_SETTINGS_ENABLED = if ($AccountSettings) { '1' } else { '0' }
             $env:AKU_X_RETAINED_QA_ENABLED = if ($RetainQA) { '1' } else { '0' }
+            $env:AKU_X_BOOTSTRAP_SELF_ENABLED = if ($BootstrapSelf) { '1' } else { '0' }
             $env:AKU_X_TWO_PHASE_ENABLED = '1'
             $env:AKU_X_TWO_PHASE_PROGRESS_PATH = $progressPath
             $env:AKU_X_TWO_PHASE_RESULT_PATH = $resultPath
@@ -127,6 +133,7 @@ try {
         Write-Output ('Progress: ' + $progressPath)
         if ($LocalPopup -and $PhysicalPopup) { Write-Output 'Opening AkuBrowser Local Popup QA: loopback only, no account or login. Wait for the ready instruction, click Open local popup once, then leave both QA windows open for automatic cleanup; two-minute click deadline.' }
         elseif ($LocalPopup) { Write-Output 'Opening AkuBrowser Local Popup QA: loopback pages only, no account or login. The test queues scoped mouse messages to its owned browser window without moving the cursor or forcing foreground, records bounded diagnostics, then closes its Job.' }
+        elseif ($BootstrapSelf) { Write-Output 'Opening existing retained X QA for one bootstrap shape diagnostic after Home. No Network observation or response-body reads. No login attempt; fixed diagnostic output only; no Store authority.' }
         elseif ($RetainQA) { Write-Output 'Opening dedicated retained X QA: first run requires manual login without CDP; later runs check the same owned profile automatically. Only this QA profile persists. Node/Chrome close each run; body values are not exported; no Store authority.' }
         elseif ($TwoPhase -and $AccountSettings) { Write-Output 'Opening AkuBrowser X QA Two Phase: manual phone login, then same-profile reopen. After Home detection, one natural account-settings response may be read once through the bounded shape projector; only fixed diagnostics are saved. No raw body/values are exported; no Store authority.' }
         elseif ($TwoPhase) { Write-Output 'Opening AkuBrowser X QA Two Phase: log in manually in standard Chrome; report Home in chat. The helper will close only owned windows, verify release, then reopen the same QA profile for bounded observation without a second login.' }

@@ -274,12 +274,19 @@ func validateChromeFixtureConfig(config chromeFixtureConfig) (string, error) {
 	}
 	profile := filepath.Join(root, "shared")
 	if config.qaProfileLease != nil {
+		retainedDriver := samePath(config.DriverPath, filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-account-settings-driver.mjs")) ||
+			samePath(config.DriverPath, filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-bootstrap-driver.mjs"))
 		if config.processGrant != nil || config.processStart != nil || config.NativeReaderStartup ||
-			!samePath(config.DriverPath, filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-account-settings-driver.mjs")) {
+			!retainedDriver {
 			return "", errors.New("retained QA scope cannot mix fixture permissions")
 		}
 		if err = config.qaProfileLease.validateFixtureProfile(root); err != nil {
 			return "", errors.New("retained QA profile identity unavailable")
+		}
+		if samePath(config.DriverPath, filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-bootstrap-driver.mjs")) {
+			if _, existing := config.qaProfileLease.fixtureProfileScope(); !existing {
+				return "", errors.New("bootstrap probe requires the existing retained QA profile")
+			}
 		}
 	}
 	if config.processGrant != nil {

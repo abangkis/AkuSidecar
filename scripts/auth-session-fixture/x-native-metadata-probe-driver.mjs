@@ -12,6 +12,9 @@ import { parseStrictJSON } from './x-evidence-ingress.mjs';
 import { standardChromeArgs } from './x-standard-chrome-control.mjs';
 import { projectAccountSettingsBody } from './x-account-settings-body.mjs';
 import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
+import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+
+const retainedQAMode = mode => mode === 'retained_account_settings' || mode === 'retained_bootstrap';
 
 const HOME_URL = 'https://x.com/home';
 const X_ORIGIN = 'https://x.com';
@@ -495,7 +498,7 @@ function isTargetURL(rawURL) {
   } catch { return false; }
 }
 
-function projectCDPResult(method, result) {
+function projectCDPResult(method, result, projectionKind = null) {
   if (!isObject(result)) throw probeError('cdp_result_invalid');
   switch (method) {
     case 'Network.getResponseBody':
@@ -515,6 +518,14 @@ function projectCDPResult(method, result) {
       if (!safeId(result.sessionId)) throw probeError('target_session_invalid');
       return { sessionId: result.sessionId };
     case 'Runtime.evaluate': {
+      if (projectionKind === 'bootstrap_current_self') {
+        if (driverMode !== 'retained_bootstrap' || own(result, 'exceptionDetails') ||
+            !isObject(result.result) || result.result.type !== 'object' || !isObject(result.result.value)) {
+          throw probeError('bootstrap_runtime_result_invalid');
+        }
+        try { return validateBootstrapCurrentSelf(result.result.value); }
+        catch { throw probeError('bootstrap_projection_invalid'); }
+      }
       if (own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'boolean' ||
           typeof result.result.value !== 'boolean') throw probeError('runtime_result_invalid');
       return { value: result.result.value };
@@ -626,13 +637,25 @@ function send(method, params = {}, sessionId = undefined) {
   }
   if (method === 'Network.setCacheDisabled' && (!accountSettingsBodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
+  let projectionKind = null;
+  if (method === 'Runtime.evaluate') {
+    const bootstrap = params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION;
+    const keys = bootstrap ? ['expression', 'returnByValue', 'awaitPromise', 'userGesture', 'throwOnSideEffect', 'timeout'] :
+      ['expression', 'returnByValue', 'awaitPromise', 'userGesture'];
+    if (Object.keys(params).length !== keys.length || Object.keys(params).some(key => !keys.includes(key)) ||
+        params.returnByValue !== true || params.awaitPromise !== false || params.userGesture !== false || sessionId !== active?.sessionId ||
+        bootstrap && (driverMode !== 'retained_bootstrap' || !active?.bootstrapAttempted || !active.gate.loginVisible ||
+          active.gate.observationStarted || params.throwOnSideEffect !== true || params.timeout !== 1500) ||
+        !bootstrap && params.expression !== ACCOUNT_READY_EXPRESSION) return Promise.reject(probeError('runtime_expression_not_authorized'));
+    if (bootstrap) projectionKind = 'bootstrap_current_self';
+  }
   const id = ++nextCommandId;
   if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(probeError('cdp_command_limit'));
   return new Promise((resolvePromise, rejectPromise) => {
     const timer = setTimeout(() => {
       if (pending.has(id)) failCDP(`${CDP_METHODS[method]}_timeout`);
     }, COMMAND_TIMEOUT_MS);
-    pending.set(id, { method, sessionId: sessionId ?? null, resolve: resolvePromise, reject: rejectPromise, timer });
+    pending.set(id, { method, projectionKind, sessionId: sessionId ?? null, resolve: resolvePromise, reject: rejectPromise, timer });
     try { cdpWrite({ id, method, params, ...(sessionId ? { sessionId } : {}) }); }
     catch (error) {
       pending.delete(id);
@@ -705,7 +728,7 @@ function dispatchCDP(raw) {
     item.reject(probeError(`${CDP_METHODS[item.method]}_failed`));
     return;
   }
-  try { item.resolve(projectCDPResult(item.method, raw.result)); }
+  try { item.resolve(projectCDPResult(item.method, raw.result, item.projectionKind)); }
   catch (error) { item.reject(/^xnp_[a-z0-9_]{1,80}$/u.test(error?.message ?? '') ? error : probeError('cdp_result_invalid')); }
 }
 
@@ -769,7 +792,7 @@ async function validatePaths(mode = 'single_phase', allowOwnedProfile = false) {
   const origin = parseControlOrigin(controlOrigin);
   const profile = join(rootReal, 'shared');
   if (allowOwnedProfile) {
-    if (driverMode !== 'retained_account_settings' || mode !== 'two_phase' ||
+    if (!retainedQAMode(driverMode) || mode !== 'two_phase' ||
         !retainedQAScope?.reuse || !sameWindowsPath(dirname(rootReal), expectedParentReal)) {
       throw probeError('retained_scope_required');
     }
@@ -782,10 +805,11 @@ async function validatePaths(mode = 'single_phase', allowOwnedProfile = false) {
 }
 
 async function acceptRetainedQAScope(message) {
-  if (driverMode !== 'retained_account_settings' || retainedQAScope || child || protocolOwner || twoPhaseState ||
+  if (!retainedQAMode(driverMode) || retainedQAScope || child || protocolOwner || twoPhaseState ||
       typeof message.nonce !== 'string' || !/^[a-f0-9]{64}$/u.test(message.nonce) || typeof message.reuse !== 'boolean') {
     throw probeError('retained_scope_invalid');
   }
+  if (driverMode === 'retained_bootstrap' && !message.reuse) throw probeError('retained_profile_required');
   // This private pipe message arrives only after Node is inside its owner's Job.
   // Identity is pinned by the Go lease; no profile path comes from the message.
   const rootIdentity = await ordinaryDirectoryIdentity(qaRoot);
@@ -970,7 +994,7 @@ async function launchTwoPhaseChrome(message) {
 }
 
 async function launchChrome(message) {
-  if (driverMode === 'retained_account_settings') return launchRetainedQAChrome(message);
+  if (retainedQAMode(driverMode)) return launchRetainedQAChrome(message);
   return driverMode === 'two_phase' || accountSettingsBodyMode(driverMode)
     ? launchTwoPhaseChrome(message)
     : launchSinglePhaseChrome(message);
@@ -1012,6 +1036,15 @@ async function loginState(message) {
   return { ready: result.value };
 }
 
+async function bootstrapCurrentSelf(message) {
+  if (driverMode !== 'retained_bootstrap' || !retainedQAScope?.reuse) throw probeError('bootstrap_mode_required');
+  const current = requireOwner(message);
+  if (!current.gate.loginVisible || current.gate.observationStarted || current.bootstrapAttempted) throw probeError('bootstrap_gate_closed');
+  current.bootstrapAttempted = true;
+  return send('Runtime.evaluate', { expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION, returnByValue: true,
+    awaitPromise: false, userGesture: false, throwOnSideEffect: true, timeout: 1500 }, current.sessionId);
+}
+
 function validCandidate(candidate) {
   if (!isObject(candidate) || !/^r(?:[1-9]|[1-5][0-9]|6[0-4])$/u.test(candidate.alias) ||
       !isSafeOperationCode(candidate.operation) ||
@@ -1048,6 +1081,7 @@ function safeReport(metadata, eventLimitReached) {
 }
 
 async function startObservation(message) {
+  if (driverMode === 'retained_bootstrap') throw probeError('network_observation_not_available');
   const current = requireOwner(message);
   if (!current.gate.loginVisible) throw probeError('login_required');
   current.gate.beginObservation();
@@ -1097,6 +1131,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'bootstrap_current_self':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return bootstrapCurrentSelf(message);
     case 'qa_profile_scope':
       exactKeys(message, ['id', 'op', 'nonce', 'reuse'], 'rpc_fields_invalid');
       return acceptRetainedQAScope(message);
@@ -1179,7 +1216,7 @@ function shutdown() {
 }
 
 export async function runNativeMetadataProbe(mode = 'single_phase') {
-  if (!['single_phase', 'two_phase', 'two_phase_account_settings', 'retained_account_settings'].includes(mode) || driverMode !== 'single_phase' || child || twoPhaseState) {
+  if (!['single_phase', 'two_phase', 'two_phase_account_settings', 'retained_account_settings', 'retained_bootstrap'].includes(mode) || driverMode !== 'single_phase' || child || twoPhaseState) {
     throw probeError('driver_mode_invalid');
   }
   driverMode = mode;

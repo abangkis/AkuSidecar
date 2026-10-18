@@ -39,3 +39,24 @@ test('ordinary two-phase driver cannot acquire the retained-profile exception', 
   assert.equal(replies[1].ok, false);
   assert.equal(replies[1].code, 'retained_scope_invalid');
 });
+
+test('bootstrap entrypoint requires existing-profile scope and cannot start Network observation', () => {
+  const replies = control('./x-retained-bootstrap-driver.mjs', [
+    { id: 1, op: 'launch', role: 'collector', nativeReaderStartup: false },
+    { id: 2, op: 'qa_profile_scope', nonce: 'a'.repeat(64), reuse: false },
+    { id: 3, op: 'start_observation', owner: 1 },
+    { id: 4, op: 'bootstrap_current_self', owner: 1 },
+  ]);
+  assert.deepEqual(replies.slice(1).map(value => value.code), [
+    'retained_scope_required', 'retained_profile_required', 'network_observation_not_available', 'bootstrap_mode_required',
+  ]);
+  assert.ok(replies.slice(1).every(value => value.ok === false));
+});
+
+test('account-settings entrypoint cannot request a bootstrap probe or pass an expression', () => {
+  const replies = control('./x-retained-account-settings-driver.mjs', [
+    { id: 1, op: 'bootstrap_current_self', owner: 1 },
+    { id: 2, op: 'bootstrap_current_self', owner: 1, expression: 'private' },
+  ]);
+  assert.deepEqual(replies.slice(1).map(value => value.code), ['bootstrap_mode_required', 'rpc_fields_invalid']);
+});

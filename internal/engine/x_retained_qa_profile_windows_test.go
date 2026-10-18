@@ -717,6 +717,12 @@ func TestXRetainedQAProfileOffline(t *testing.T) {
 			}
 		}
 		freshConfig := fixtureConfig(first)
+		freshBootstrap := freshConfig
+		freshBootstrap.DriverPath = filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-bootstrap-driver.mjs")
+		if _, configErr := validateChromeFixtureConfig(freshBootstrap); configErr == nil {
+			_ = first.Release(false)
+			t.Fatal("bootstrap probe accepted a fresh profile instead of the retained profile")
+		}
 		if got, configErr := validateChromeFixtureConfig(freshConfig); configErr != nil || !samePath(got, first.Root) {
 			_ = first.Release(false)
 			t.Fatal("fresh retained QA fixture config was rejected")
@@ -765,6 +771,11 @@ func TestXRetainedQAProfileOffline(t *testing.T) {
 			t.Fatal("unchanged retained profile was rejected")
 		}
 		reusedConfig := fixtureConfig(second)
+		reusedBootstrap := reusedConfig
+		reusedBootstrap.DriverPath = filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-bootstrap-driver.mjs")
+		if _, configErr := validateChromeFixtureConfig(reusedBootstrap); configErr != nil {
+			t.Fatal("bootstrap probe rejected the owned retained profile")
+		}
 		if got, configErr := validateChromeFixtureConfig(reusedConfig); configErr != nil || !samePath(got, firstRoot) {
 			t.Fatal("reused retained QA fixture config was rejected")
 		}

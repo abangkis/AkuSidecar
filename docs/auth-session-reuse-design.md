@@ -2739,3 +2739,86 @@ state `clean`. No raw body/source values were exported by the helper. All
 reports retain `canAuthorize:false` and `permitInherited:false`; no Store or
 production verifier authority was created. Google login success in this run
 does not establish the cause of earlier Google button failures.
+
+### Bounded current-self bootstrap probe
+
+The explicitly authorized `-TwoPhase -RetainQA -BootstrapSelf` mode requires
+the existing retained QA profile and its exclusive identity-pinned lease. It
+does not create a new login profile or initiate reauthentication. After the
+owned page passes the Home UI gate, the fixed driver permits one bootstrap
+evaluation. The expression, return-by-value behavior, side-effect rejection and
+timeout are fixed internally; RPC callers cannot supply JavaScript. The mode
+rejects Network observation and response-body reads. The account-settings mode
+cannot invoke the bootstrap RPC.
+
+The projection reads only `window.__INITIAL_STATE__`, its own `session`
+properties `user_id`/`user_id_str`, and the fixed boolean fields `loggedIn`,
+`isAuthenticated`, `authenticated` and `isActive`. It checks only the direct
+current-session ID entries under `entities.users.entities` and `users.entities`;
+there is no entity scan, feed-author inference or lookup by mutable handle.
+These paths are diagnostic hypotheses until observed in native QA. Missing,
+removed, accessor-backed, malformed or conflicting state remains explicit in
+the result. Accessor-backed source properties are not invoked. A candidate ID
+must be a positive decimal string of at most twenty characters. Numbers are
+not converted into IDs. Source values and other fields never leave the page.
+
+The fixed `aku.x.bootstrap-current-self.v1` DTO reports only field kinds,
+candidate counts, agreement, enum-valued boolean observations and entity ID
+comparison outcomes. Strict Node validation runs before CDP promise resolution;
+Go independently validates the bounded DTO before writing the report. No raw
+bootstrap object, account value, handle, cookie, token or input field is exported.
+`isActive:true` is an unqualified application field observation and must not be
+renamed to authenticated status. Even an observed ID/entity match is not yet a
+production identity contract or continuity proof. `canAuthorize:false` and
+`continuityProven:false` are mandatory; Store and provider policy are unchanged.
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -RetainQA -BootstrapSelf -NoChrome
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -RetainQA -BootstrapSelf
+```
+
+The live run checks Home automatically on the retained profile and stops if it
+is unavailable. The existing cleanup verifies the Job and pinned Chrome roots
+have stopped before recording a clean retained lease. A missing bootstrap is a
+valid negative diagnostic, not permission to scan broader page data or to resume
+batch work. Native results and regression evidence are recorded after validation.
+
+Bootstrap preflight passed thirty-five Node tests and six Go top-level tests,
+including eleven nested lease/window-state checks. The pure page/DTO suite has
+sixteen regression cases for valid and conflicting IDs, missing/invalid state,
+accessors, exceptions, numeric/malformed values, nested-author exclusion, fixed
+output validation and a Window-like native location accessor. The wrapper reads
+only native location fields for origin/path binding and copies the own bootstrap
+descriptor without invoking a source accessor. Canonical preflight evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-234c9b17af7f4e05a3d060e4b2f5e151.log.txt`.
+
+Native run `a8558eb505d44f32a4e0bf5055c6de45` passed on the same retained profile,
+without login or additional user input. Home was detected automatically. The
+probe was rejected before the Home gate; one post-Home evaluation then returned
+`bootstrap_missing`, with no candidate ID and unknown entity checks. A second
+probe was rejected and Network observation was denied. The report records
+`bootstrapGuardsVerified:true`, `canAuthorize:false`, `continuityProven:false`
+and `permitInherited:false`. Evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-a8558eb505d44f32a4e0bf5055c6de45.report.json`
+and its log/progress companions. Job/root exit and ephemeral-root cleanup passed;
+the same retained manifest is clean.
+
+This is a completed negative diagnostic at the post-Home sampling point. It
+does not prove that the field never existed earlier, that another format is
+absent, or that the session is unauthenticated. No fallback scans or extra native
+reads were attempted. The next source assessment must distinguish earlier-page
+bootstrap timing from an alternate current-self representation within a separately
+bounded probe; this result does not qualify native identity/login/continuity or
+authorize main-dev integration.
+
+The final independent Go validation also checks diagnostic/state/count/entity
+consistency and rejects missing or null authority flags. Its offline regression
+includes the exact value-free shape of the native `bootstrap_missing` result.
+The final bootstrap preflight passed at
+`runtime/qa/auth-session-sidecar/x-two-phase-1add5ace50d8402c90608132cdc09686.log.txt`.
+Compatibility preflight for retained account-settings passed thirty-two Node and
+six Go top-level tests at
+`runtime/qa/auth-session-sidecar/x-two-phase-a2ac9a78489a44a5b94267815a7bc494.log.txt`.
+Ten protected configuration/runtime/Store/verifier/other-fixture hashes match the
+baseline; only the authorized fixture bridge guard changed among those eleven
+files. No source values or runtime activation artifacts were committed.
