@@ -32,7 +32,7 @@ function formatFilename(filename, index, total) {
   return `${stem}-${String(index + 1).padStart(2, "0")}.png`;
 }
 
-export function createPostScreenshotUI({ request, document = globalThis.document, window = globalThis.window } = {}) {
+export function createPostScreenshotUI({ request, getOriginalUrl = () => null, document = globalThis.document, window = globalThis.window } = {}) {
   if (typeof request !== "function") throw new TypeError("A request function is required.");
   if (!document || !window) throw new TypeError("A document and window are required.");
 
@@ -262,7 +262,18 @@ export function createPostScreenshotUI({ request, document = globalThis.document
     const action = createElement(document, "button", "post-screenshot-menu-item", "Screenshot full post");
     action.type = "button";
     action.setAttribute("role", "menuitem");
-    menu.append(action);
+    const copyURL = createElement(document, "button", "post-screenshot-menu-item post-original-url-copy", "Copy original URL");
+    copyURL.type = "button";
+    copyURL.setAttribute("role", "menuitem");
+    copyURL.disabled = !getOriginalUrl(entry);
+    copyURL.title = copyURL.disabled ? "Original post URL unavailable" : "Copy the source post link without opening it";
+    const copyStatus = createElement(document, "p", "post-original-url-status");
+    copyStatus.setAttribute("role", "status");
+    copyStatus.setAttribute("aria-live", "polite");
+    copyStatus.hidden = true;
+    let copyingURL = false;
+    const availableActions = () => [action, copyURL].filter((item) => !item.disabled);
+    menu.append(action, copyURL, copyStatus);
     root.append(button, menu);
     const control = { root, button, menu, action, entry };
     button.addEventListener("click", () => {
@@ -285,13 +296,40 @@ export function createPostScreenshotUI({ request, document = globalThis.document
         menu.hidden = false;
         button.setAttribute("aria-expanded", "true");
       }
-      action.focus();
+      const choices = availableActions();
+      (event.key === "ArrowUp" ? choices.at(-1) : choices[0]).focus();
     });
     action.addEventListener("click", () => openDialog(entry, button));
-    action.addEventListener("keydown", (event) => {
+    copyURL.addEventListener("click", async () => {
+      const url = getOriginalUrl(entry);
+      if (!url || copyingURL) return;
+      copyingURL = true;
+      copyURL.setAttribute("aria-busy", "true");
+      copyStatus.hidden = false;
+      appendText(copyStatus, "Copying URL…");
+      try {
+        if (!window.navigator?.clipboard?.writeText) throw new Error("Clipboard unavailable");
+        await window.navigator.clipboard.writeText(url);
+        appendText(copyStatus, "Original URL copied.");
+      } catch {
+        appendText(copyStatus, "Could not copy URL. Check clipboard permission.");
+      } finally {
+        copyingURL = false;
+        copyURL.setAttribute("aria-busy", "false");
+        copyURL.disabled = !getOriginalUrl(entry);
+      }
+    });
+    for (const item of [action, copyURL]) item.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
         closeMenu(control, { focus: true });
+      } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const choices = availableActions();
+        const index = choices.indexOf(item);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1
+          : (index + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length;
+        choices[next].focus();
       }
     });
     return root;

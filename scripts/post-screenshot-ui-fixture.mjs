@@ -9,8 +9,8 @@ const [chromePath, root, artifacts] = process.argv.slice(2);
 assert.ok(chromePath && root && artifacts);
 const web = resolve(import.meta.dirname, '../internal/httpapi/web');
 let requests = 0;
-const source = { id:'synthetic-post', evidence:{text:'Synthetic content'}, source:'x' };
-const fixture = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/styles.css"></head><body style="padding:24px"><main style="max-width:760px;margin:auto"><h1 style="font-size:24px">Post screenshot QA</h1><article class="presentable-item"><div class="item-presentation-toolbar"><span class="item-signal-slot">X · AI signal · Neutral</span><span class="presentation-label">Source layout</span><div id="actions" class="item-presentation-actions"><button class="presentation-toggle">Switch to brief</button></div></div><div class="source-layout-content"><p>Captured synthetic post. Opening the menu must leave this card and its state unchanged.</p><button id="expansion">Show more</button><span id="playing">Video state retained</span></div></article><div style="height:1800px"></div></main><script type="module">import {createPostScreenshotUI} from '/post-screenshot-ui.js'; const ui=createPostScreenshotUI({request:async(path,options)=>{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(options.body),signal:options.signal});return response.json();}}); document.querySelector('#actions').append(ui.createMenu(${JSON.stringify(source)}));window.qaReady=true;</script></body></html>`;
+const source = { id:'synthetic-post', evidence:{text:'Synthetic content'}, source:'x', original:'https://x.com/fixture/status/123' };
+const fixture = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/styles.css"></head><body style="padding:24px"><main style="max-width:760px;margin:auto"><h1 style="font-size:24px">Post screenshot QA</h1><article class="presentable-item"><div class="item-presentation-toolbar"><span class="item-signal-slot">X · AI signal · Neutral</span><span class="presentation-label">Source layout</span><div id="actions" class="item-presentation-actions"><button class="presentation-toggle">Switch to brief</button></div></div><div class="source-layout-content"><p>Captured synthetic post. Opening the menu must leave this card and its state unchanged.</p><button id="expansion">Show more</button><span id="playing">Video state retained</span></div></article><div style="height:1800px"></div></main><script type="module">import {createPostScreenshotUI} from '/post-screenshot-ui.js'; const ui=createPostScreenshotUI({getOriginalUrl:entry=>entry.original,request:async(path,options)=>{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(options.body),signal:options.signal});return response.json();}}); document.querySelector('#actions').append(ui.createMenu(${JSON.stringify(source)}));window.qaReady=true;</script></body></html>`;
 const server = createServer(async(req,res)=>{
   try {
     if(req.url==='/') {res.setHeader('Content-Type','text/html');return res.end(fixture);}
@@ -34,12 +34,23 @@ try {
   for(const [label,width,height] of [['desktop',1100,850],['mobile',390,844]]) {
     await page.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     await until('window.qaReady===true');
+    await page.evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(value)=>{window.qaCopiedURL=value;}}})`);
     await click('.post-screenshot-menu-button');
     assert.equal(await page.evaluate(`document.querySelector('.post-screenshot-menu-button').getAttribute('aria-expanded')`),'true');
     if(label==='mobile') assert.ok(await page.evaluate(`document.querySelector('.item-presentation-toolbar').getBoundingClientRect().height<65`),'compact mobile toolbar');
     await writeFile(join(artifacts,`menu-${label}.png`),Buffer.from((await page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     await page.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
     assert.equal(await page.evaluate(`document.querySelector('.post-screenshot-menu-button').getAttribute('aria-expanded')`),'false');
+    const requestsBeforeCopy=requests;
+    await click('.post-screenshot-menu-button');
+    await click('.post-original-url-copy');
+    await until(`document.querySelector('.post-original-url-status').textContent==='Original URL copied.'`);
+    assert.equal(await page.evaluate('window.qaCopiedURL'),source.original);
+    assert.equal(await page.evaluate(`getComputedStyle(document.querySelector('.presentable-item')).overflow`),'visible','menu feedback must not be clipped by a short post');
+    assert.equal(requests,requestsBeforeCopy,'copy URL must not dispatch a screenshot request');
+    assert.equal(await page.evaluate(`Boolean(document.querySelector('.post-screenshot-dialog[open]'))`),false);
+    await writeFile(join(artifacts,`copy-url-${label}.png`),Buffer.from((await page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await page.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
     await click('.post-screenshot-menu-button');await click('.post-screenshot-menu-item');
     await until(`document.querySelector('.post-screenshot-image')?.src?.startsWith('data:image/png')`);
     assert.equal(await page.evaluate(`getComputedStyle(document.querySelector('.post-screenshot-part-navigation')).display`),'none');

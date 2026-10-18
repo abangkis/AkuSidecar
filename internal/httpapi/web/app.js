@@ -283,6 +283,7 @@ const settingsDirty = createDirtyStateTracker({
 const $ = (selector) => document.querySelector(selector);
 const postScreenshotUI = createPostScreenshotUI({
   request: (path, options) => api(path, options),
+  getOriginalUrl: (entry) => originalPostUrl(entry),
 });
 const timelineScrollIdle = createScrollIdleGate();
 const scrollPerformanceTrace = createScrollPerformanceTrace({ onStop: saveScrollPerformanceTrace });
@@ -9042,13 +9043,17 @@ function showCorrectionNotice(correction) {
 }
 
 function buildSourceLink(entry) {
-  const href = safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, entry.source || entry.item?.source);
+  const href = originalPostUrl(entry);
   if (!href) return null;
   const link = document.createElement("a");
   link.className = "source-link";
   configureNativePostLink(link, href, entry.source || entry.item?.source);
   link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
   return link;
+}
+
+function originalPostUrl(entry) {
+  return safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, entry.source || entry.item?.source);
 }
 
 function safeSourceUrl(value, source) {

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPostScreenshotUI } from "../internal/httpapi/web/post-screenshot-ui.js";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 class FakeElement {
   constructor(tagName, document) {
@@ -111,7 +113,7 @@ class FakeDocument {
 
 }
 
-function fixture({ request, clipboard, ClipboardItem } = {}) {
+function fixture({ request, clipboard, ClipboardItem, getOriginalUrl } = {}) {
   const document = new FakeDocument();
   const window = {
     Blob,
@@ -122,12 +124,72 @@ function fixture({ request, clipboard, ClipboardItem } = {}) {
   const ui = createPostScreenshotUI({
     document,
     window,
+    getOriginalUrl,
     request: request || (async () => ({ parts: [{ data: "iVBORw0KGgo=", width: 10, height: 20 }], warnings: [], filename: "post.png" })),
   });
   const findByClass = (root, name) => [root, ...root.children.flatMap((child) => flatten(child))].find((element) => element.className.split(" ").includes(name));
   const flatten = (root) => [root, ...root.children.flatMap((child) => flatten(child))];
   return { ui, document, window, findByClass };
 }
+
+test("Copy original URL copies text independently without opening native reader or screenshot", async () => {
+  const copied = [];
+  const {ui,document,findByClass}=fixture({
+    request:()=>assert.fail("URL copy must not generate a screenshot"),
+    getOriginalUrl:entry=>entry.original,
+    clipboard:{writeText:async value=>{copied.push(value);}},
+  });
+  const root=ui.createMenu({original:"https://x.com/example/status/123"});document.body.append(root);
+  const trigger=findByClass(root,"post-screenshot-menu-button");
+  const copy=findByClass(root,"post-original-url-copy");
+  await trigger.dispatch("click");
+  await copy.dispatch("click");
+  assert.deepEqual(copied,["https://x.com/example/status/123"]);
+  assert.equal(findByClass(root,"post-original-url-status").textContent,"Original URL copied.");
+  assert.equal(ui.dialog.open,false);
+  assert.equal(copy.disabled,false);
+  await copy.dispatch("keydown",{key:"ArrowUp"});
+  assert.equal(document.activeElement,findByClass(root,"post-screenshot-menu-item"));
+  await trigger.dispatch("keydown",{key:"ArrowUp"});
+  assert.equal(document.activeElement,copy);
+});
+
+test("URL copy is disabled without a validated original URL and skips it during keyboard navigation", async () => {
+  const {ui,document,findByClass}=fixture({getOriginalUrl:()=>null,clipboard:{writeText:()=>assert.fail("missing URL copied")}});
+  const root=ui.createMenu({});document.body.append(root);
+  const copy=findByClass(root,"post-original-url-copy");
+  assert.equal(copy.disabled,true);
+  assert.equal(copy.title,"Original post URL unavailable");
+  await copy.dispatch("click");
+  await findByClass(root,"post-screenshot-menu-button").dispatch("keydown",{key:"ArrowUp"});
+  assert.equal(document.activeElement,findByClass(root,"post-screenshot-menu-item"));
+});
+
+test("URL clipboard denial or missing API stays visible and permits retry", async () => {
+  for(const clipboard of [{writeText:async()=>{throw new Error("denied");}},undefined]){
+    const {ui,document,findByClass}=fixture({getOriginalUrl:()=>"https://x.com/example/status/123",clipboard});
+    const root=ui.createMenu({});document.body.append(root);
+    await findByClass(root,"post-screenshot-menu-button").dispatch("click");
+    const copy=findByClass(root,"post-original-url-copy");
+    await copy.dispatch("click");
+    assert.equal(findByClass(root,"post-original-url-status").hidden,false);
+    assert.match(findByClass(root,"post-original-url-status").textContent,/Could not copy URL/);
+    assert.equal(copy.disabled,false);
+    assert.equal(copy.getAttribute("aria-busy"),"false");
+    assert.equal(ui.dialog.open,false);
+  }
+});
+
+test("Copy URL and Open native post share the actual source URL validator and permalink selection",()=>{
+  const app=readFileSync(new URL("../internal/httpapi/web/app.js",import.meta.url),"utf8");
+  const context=vm.createContext({URL,safeMediaUrl:value=>{try {const u=new URL(value);return u.protocol==="https:"?u.href:null;}catch{return null;}},sourceDescriptor:source=>source==="x"?{nativeHosts:["x.com","twitter.com"],nativePathTokens:["/status/"]}:null});
+  vm.runInContext(app.slice(app.indexOf("function originalPostUrl("),app.indexOf("function mediaRecaptureReasonForEntry(")),context);
+  assert.equal(context.originalPostUrl({source:"x",item:{sourceUrl:"https://twitter.com/author/status/123/photo/1?tracking=1"}}),"https://x.com/author/status/123");
+  assert.equal(context.originalPostUrl({source:"x",evidence:{permalink:"https://x.com/author/status/456"}}),"https://x.com/author/status/456");
+  for(const url of ["javascript:alert(1)","https://attacker.test/author/status/123","https://x.com/home",""]){assert.equal(context.originalPostUrl({source:"x",item:{sourceUrl:url}}),null);}
+  assert.match(app,/getOriginalUrl:\s*\(entry\) => originalPostUrl\(entry\)/);
+  assert.match(app,/function buildSourceLink\(entry\)\s*\{\s*const href = originalPostUrl\(entry\)/);
+});
 
 test("menu stays single-open, supports keyboard dismissal, and returns focus", () => {
   const { ui, document, findByClass } = fixture();

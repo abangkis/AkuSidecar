@@ -1,7 +1,13 @@
 # Full post screenshots
 
 Each expanded Timeline post has a persistent vertical `⋮` menu beside the
-presentation toggle. The menu contains **Screenshot full post**. A modal previews
+presentation toggle. The menu contains **Screenshot full post** and
+**Copy original URL**. Copying uses the same validated source-post link as Open
+native post, including its canonicalization rules, but only writes URL text to the
+clipboard: it never opens a reader or generates an image. Missing/invalid URLs
+disable the copy item; clipboard failures stay visible in the menu and allow retry.
+The open menu can extend outside a short card without clipping its copy status.
+Arrow keys/Home/End navigate available actions. A modal previews
 the generated PNG, with **Save PNG** and **Copy image**. Multiple parts have
 individual numbered downloads and a part selector; copying copies the selected
 part. Clipboard denial leaves the PNG download available and displays an error.
