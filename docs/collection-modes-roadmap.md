@@ -5354,3 +5354,26 @@ Proposed next step: one-source production verifier and metadata/migration contra
 developed against offline synthetic/sanitized evidence first. Follow with confirmed
 enrollment, default-off activation, rollback and active-capture crash acceptance.
 Real-account observation and a main-dev pilot remain separately authorized gates.
+
+### 2026-10-18: one-source offline verifier prototype
+
+Added an isolated X verifier under both `auth_session_dev` and
+`auth_session_fixture`, without changing controller, Store, ordinary main or saved
+settings. It separates stable account identity, login state and continuity, with
+one-use request bindings and freshness checks. All results remain non-authorizing.
+
+The repository has no qualified native X current-account/session corpus. The
+route, schema and lineage counters are explicitly invented fixture contracts.
+Matching identity alone leaves continuity unsupported; complete synthetic lineage
+is compared with the accepted fixture generation. This does not qualify live X
+authentication, cookie rotation or session continuity.
+
+`scripts/test-x-session-verifier.ps1` passed 15 top-level tests and 41 subtests,
+including completion-time expiry, relogin, replay and malformed evidence. Both-tag
+exclusion and ordinary-main dependency isolation passed. Six protected hashes were
+unchanged; no browser, authentication or user-runtime operation was performed.
+Evidence: `runtime/qa/auth-session-sidecar/x-offline-verifier-validation.txt`.
+
+Next: qualify native source evidence and its continuity contract before adapting
+this prototype to the controller. Real-account observation and activation still
+require separate authorization. Do not treat the offline result as main-dev readiness.

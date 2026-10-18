@@ -1927,3 +1927,68 @@ guard-aware rollback to the existing controller. Include active authorized-captu
 crash recovery in that acceptance scope. Real-account observation and enabling a
 pilot on the user's runtime require separate explicit authorization; publication
 of this synthetic package grants neither.
+
+## X verifier prototype with offline fixtures — 2026-10-18
+
+This authorized step implements one-source verification logic without observing
+an actual account or enabling a production provider. The new X package is isolated
+behind both development/fixture build tags and is not wired into Engine, Store,
+ordinary main, native IPC, HTTP or saved settings. Its outputs cannot authorize
+capture. The published controller integration remains unchanged.
+
+The repository has no qualified native X current-account/session observation
+corpus. Therefore `x.browser-self.fixture/v1`, schema
+`aku.x.browser-self.fixture.v1`, and path `/__fixture__/x/account-self/v1` are
+explicitly invented offline contracts, not discovered X endpoints. Exact
+`data.id_str` extraction models a stable string identity; fixture status markers
+model login/challenge observations. Neither is a claim about live X browser wire
+format. Content authors, public profile lookup, handles and display names cannot
+substitute for the observed current account.
+
+The official X SDK documents `/2/users/me` as a user-token API operation, not
+evidence of the browser profile's login. That route is deliberately not accepted
+as browser-session proof. Reference:
+[X SDK requesting-user operation](https://github.com/xdevplatform/twitter-api-java-sdk/blob/main/docs/UsersApi.md#findmyuser).
+No API credentials, OAuth setup or authenticated request is added by this step.
+
+Identity, authentication state and continuity are separate outputs. A complete
+synthetic lineage witness is supplied through a trusted fixture interface outside
+the response JSON; it never comes from an invented native `session_id`, a cookie
+hash, a display name or a random revision per probe. Ordinary response-only
+observations cannot establish session continuity and must remain unsupported or
+unavailable. The same account after logout/login must not be accepted as the same
+session; cookie rotation alone proves neither continuity nor a session change.
+
+Fixture acceptance checks challenge consumption, exact source/origin/operation,
+freshness and declared fixture profile/owner/epoch/generation; two phases must agree before
+synthetic continuity can be classified. Missing, malformed, ambiguous, stale,
+changed or incomplete evidence remains closed. A fixture success is not a Store
+permit, a qualified native-source verifier or continuous browser-worker coverage.
+
+The accepted synthetic lineage generation is separate from owner generation.
+Both request-bound lineage observations must match that accepted generation for
+`same`; a different generation is `changed`, even for the same account. Missing
+lineage is `unsupported`; revoked or incomplete coverage is `unavailable`. These
+labels describe fixture inputs, not independently observed native lifecycle events.
+Each verifier has a random challenge namespace, bounded one-use challenges and a
+five-second issuance/evidence lifetime. Pair completion rechecks freshness and
+clears identity flags on expiry. This offline harness is serial-use only.
+
+Validation: `scripts/test-x-session-verifier.ps1` passed 15 top-level tests and
+41 subtests. Coverage includes identity rename, content-author substitution,
+malformed/duplicate/oversized bodies, missing identity, login/challenge/unknown,
+account changes, replay (including across verifier instances), stale/future proof,
+profile/owner mismatch, incomplete coverage, synthetic rotation versus relogin,
+and expiry between observation and pair completion. The helper also verified that
+both tags are required and the package is absent from ordinary main dependencies.
+It disables module downloads, uses project-local temporary/cache directories and
+cleans its owned temporary root. Log:
+`runtime/qa/auth-session-sidecar/x-offline-verifier-validation.txt`.
+Six protected runtime/config/source hashes remained unchanged.
+
+Next gate: qualify a native browser current-account schema and a trustworthy
+session-continuity observation contract from authorized, sanitized evidence.
+Do not substitute OAuth identity, content authors or response-only identity for
+browser-session continuity. Native observation still requires separate permission.
+Until that evidence exists, this package remains an offline prototype, excluded
+from controller/Store authorization and default-off production activation.

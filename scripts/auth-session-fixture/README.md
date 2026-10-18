@@ -1650,3 +1650,29 @@ The final source does not inspect Chrome's cookie database. The canonical
 `-VerifyDevelopment -VerifyDefault` helper passed, including existing native
 restart/default regressions and the ordinary build. Final log:
 `runtime/qa/auth-session-sidecar/policy-controller-restart-final-01955b2e025247f2a1f3f2bd635c84e5.txt`.
+
+### X offline verifier prototype (2026-10-18)
+
+Run `scripts/test-x-session-verifier.ps1` from the repository root. This separate
+offline suite needs no Chrome, login, native host, registry or account access.
+The helper uses project-local temporary/build/module caches, disables downloads,
+restores process environment variables and removes its owned temporary root on
+success. A populated project-local Go module cache is required for the ordinary
+main dependency inspection; a missing dependency fails without downloading it.
+
+The package requires both `auth_session_dev` and `auth_session_fixture`. It is
+absent from ordinary main dependencies and has no controller/Store authorization
+wiring. The X route, schema, login markers and lineage generations are invented
+fixtures, not a qualified native X provider. Outputs never authorize capture.
+
+Final acceptance passed 15 top-level tests and 41 subtests, plus both-tag exclusion
+and ordinary-main isolation. Identity matching, login state and synthetic lineage
+are separate outcomes; missing lineage is unsupported. Negative vectors cover
+public/content-author identity, malformed/duplicate bodies, stale/future proofs,
+scope mismatch, one-use replay, incomplete coverage and same-account relogin.
+The completion-time expiry case clears previously matched identity flags.
+Log: `runtime/qa/auth-session-sidecar/x-offline-verifier-validation.txt`.
+
+Native schema and session-continuity qualification remain a later evidence gate.
+Passing these invented fixtures does not authorize real-account observation or
+user-runtime activation.
