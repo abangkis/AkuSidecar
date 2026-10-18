@@ -5605,3 +5605,52 @@ is only a candidate. Current-self identity, explicit authentication and lineage
 remain unqualified, and `canAuthorize`/permit inheritance remain false. Do not
 expand this result into production activation or native body-reading approval.
 MVP-2 and main-dev activation remain gated on those evidence contracts.
+
+Account-settings projection implementation: the explicitly authorized
+`-TwoPhase -AccountSettings` mode adds one-use body selection for one naturally
+observed, completed settings GET, bound to the owned page session. Cache,
+redirect, ambiguity, overflow, malformed input and expired tickets reject the
+capture. The QA page's cache is disabled for the new mode only. Body parsing is
+bounded to 16 KiB/depth eight/1,024 tokens and returns only approved field type
+labels/counts; source IDs, handles, settings values, error text and unknown keys
+are not exported. Projection occurs before CDP promise resolution, and a second
+Go validator checks the value-free report. Normal metadata modes cannot read
+bodies. Twenty-six Node tests and five Go preflight tests passed, plus four
+window-state subtests. No Store or native-provider authority is introduced;
+even an observed body boolean is not automatically qualified authentication.
+
+QA login-effort correction: the first body-mode sample stopped before reading
+any body because a separate OPTIONS preflight was counted as a second GET
+candidate. The GET-only correction and both preflight-order regressions passed.
+The user then authorized one retained dedicated QA profile with an ownership
+guard. `-TwoPhase -AccountSettings -RetainQA` uses a fixed manifest, exclusive
+Windows lock, pinned directory identities and verified prior Job cleanup; a
+dirty or replaced profile is rejected rather than silently adopted. The first
+run uses normal manual login and the verified two-phase handoff. Later runs
+check Home automatically on the same QA profile, stopping for explicit
+reauthentication only if required. Processes still close each run; only the QA
+directory persists until user-requested deletion. No main login/runtime or
+Store policy change is included. Native body/reuse validation is recorded below.
+Retained-mode preflight passed thirty Node tests and six Go top-level tests,
+with eleven nested lease/window-state checks. Its temporary synthetic directories
+were removed; no Chrome/network/login was started. Ten protected hashes matched;
+the fixture bridge changed only for the private retained-profile guard. Native
+validation subsequently passed after one initial manual login into this profile.
+
+Retained-profile native checkpoint (2026-10-18): initial run
+`58567ad44c7f4fa2ba16383c0231b13b` passed after user-reported Google login, verified
+old Chrome exit and same-profile Home reopen. Automatic repeat
+`bb14739411bf43e7b2b6bd1008596ced` also passed, reusing the same directory identities
+with `manualPhaseOneOutcome:not_required` and no further login/input. Each run
+read one completed settings GET and projected a 1,977-byte body without exporting
+raw values. Metadata had twenty-one/thirty-five candidates and zero dropped.
+Both Jobs/root processes stopped, ephemeral roots were removed, and the single
+retained-profile manifest is clean.
+
+The projection contains a `screen_name` string and six settings fields, but the
+four inspected ID fields and `authenticated` are absent. This candidate therefore
+does not qualify stable current-self identity, explicit native login semantics
+or session continuity. It must not authorize Store or be supplemented by guessing
+an ID from a handle. MVP-1's remaining delta is a direct current-self source with
+the required semantics, assessed using the retained QA session. Main-dev and
+MVP-2 activation remain gated; original login/runtime and Store policy are unchanged.

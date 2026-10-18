@@ -2577,3 +2577,165 @@ evidence source. `account-settings` is an observed candidate, not an approved
 identity/authentication source based on its operation name or HTTP status.
 Any native body projection must be separately scoped and retain the existing
 sanitization and missing-lineage gate; no real-provider activation is implied.
+
+### Opt-in bounded account-settings body shape projection
+
+The separately authorized `-TwoPhase -AccountSettings` QA mode reuses the normal
+manual-login phase and verified same-profile handoff. A fixed driver entrypoint
+enables the body mode; the original metadata modes reject body retrieval and
+cache-disable commands. No Store policy, provider revision or user runtime is
+changed. After Home detection in phase two, the mode disables the QA page's
+network cache, enables bounded Network observation, and reloads Home once.
+
+Only one naturally observed GET to an explicitly allowed X account-settings
+route may yield a body read. The request must belong to the attached page
+session, have a nonredirected response on the same allowed origin, status 200,
+JSON MIME, explicit false disk/service-worker/prefetch cache flags, and a
+successful loading completion with an encoded length of 1–16,384 bytes. Missing
+facts, cache events, failures, redirects, reused IDs or multiple matching
+requests deny selection or invalidate the final projection. Event-limit overflow
+also invalidates a selected capture. There is one read attempt with a private
+four-second monotonic one-use ticket, no retry, and no invented API request.
+This diagnostic gate does not claim that the unobserved ExtraInfo/cache facts
+or session history meet production freshness/continuity requirements.
+
+`Network.getResponseBody` is projected at the CDP dispatch boundary before its
+promise resolves; neither the Go process nor RPC/log output receives a raw body.
+Decoded bodies are capped at 16 KiB; the existing CDP frame cap is 256 KiB, which
+also bounds an oversized response before rejection. Strict UTF-8, Unicode,
+canonical base64 and JSON parsing enforce depth eight, 1,024 tokens, duplicate
+key rejection and an object root. Owned byte buffers are cleared after parsing;
+immutable runtime strings are transient, with no claim of guaranteed memory
+erasure. The helper persists no raw body. Chrome's disposable profile and owned
+process tree are removed after verified cleanup.
+
+The shape DTO exposes only fixed type labels for top-level `id_str`, `id`,
+`user_id`, `user_id_str`, `screen_name`, `authenticated`, `error`, `errors` and
+`challenge`; counts of decimal-string ID candidates and six fixed settings
+fields; agreement between ID candidate strings; and the literal presence/value
+category of an `authenticated` boolean. No source values or unknown field names
+are exported. Nested author/profile IDs are ignored. A boolean named
+`authenticated` is merely an unqualified field observation, not proof of native
+login semantics. Every DTO has `canAuthorize:false`; missing IDs remain missing
+and no username lookup fills the gap.
+
+The Go envelope validator independently restricts schemas, fields, enum labels,
+counts, body lengths and non-authorizing status before saving a report. Body
+mode reports use `aku.x.two-phase-account-settings.v1`; metadata reports retain
+their existing shape. Canonical commands:
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -AccountSettings -NoChrome
+# After confirming readiness for one manual login in a new QA profile:
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -AccountSettings
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -AccountSettings -CompleteRun <run-id> -Outcome home_visible
+```
+
+Preflight passed twenty-six Node tests and five Go tests, including the private
+value exclusion boundary, malformed/oversized/duplicate input, numeric versus
+string IDs, nested-author exclusion, cache/redirect/ambiguity rejection, ticket
+expiry/replay and invalidated capture results. Four window-state subtests also
+passed. The JS body/capture dispatch boundary received a bounded independent
+source review before live QA.
+
+The first authorized native body-mode attempt reached Home after same-profile
+reopen but stopped with `ambiguous`, two matching requests and zero body-read
+attempts. Metadata identified one completed GET and one separate OPTIONS
+preflight for account-settings. The selector had incorrectly counted the
+preflight as another body candidate. No response body was read or projected.
+The owned Job/root/profile cleanup passed. Sanitized evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-a2af9074d2c0493d8d3c7a2d712afd5c.report.json`.
+
+The correction counts only GET operations as body candidates. Separate OPTIONS
+preflights are ignored before and after candidate selection; reuse of the
+selected request ID remains ambiguous regardless of method, and a second GET
+still invalidates capture. The added regression passed both preflight orders,
+preflight completion and selected-ID reuse. No eligibility or privacy guard was
+relaxed for the selected GET.
+
+### One retained native QA profile with an exclusive ownership lease
+
+The user authorized retaining one dedicated QA profile between runs to avoid
+repeated phone/SMS logins. This supersedes per-run profile deletion only for
+the explicitly selected `-TwoPhase -AccountSettings -RetainQA` mode. Existing
+metadata/default modes still require fresh profiles. The fixed manifest
+`runtime/qa/auth-session-sidecar/x-retained-native-qa.json` points only to a
+harness-created `run-x-two-phase-<32hex>/shared` directory under the same QA
+parent. No main profile is adopted, copied, or read.
+
+A Windows file lock excludes concurrent harness runs. The strict, bounded
+manifest records only directory identities, a generated root basename, version
+and active/clean state. Directory handles prevent root/profile replacement
+while leased; identity changes, malformed manifests and unverified prior cleanup
+deny reuse. An active/dirty record is never automatically cleared, killed or
+deleted. The private fixture exception requires the fixed retained driver,
+collector role and a held lease; it cannot combine with synthetic process/Store
+grants or native-reader startup. A fresh private scope is delivered after Node
+joins its kill-on-close Job. The nonce stays in memory and grants no account or
+Store authority.
+
+The first run uses normal Chrome without CDP for manual login, then the existing
+verified same-profile handoff. Later clean runs reuse that directory, reopen for
+observation and check Home automatically. If Home is unavailable, they stop with
+`manual_login_required` and do not attempt another login. Graceful close is
+attempted before Job cleanup even on observation failure; only verified Job/root
+exit can mark the lease clean. All Node/Chrome processes close each run. The
+directory remains until the user requests deletion. Chrome-managed QA login data
+therefore persists deliberately; the helper still exports no cookies/tokens or
+raw response bodies. This does not prove production session continuity.
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -AccountSettings -RetainQA -NoChrome
+# First run requires one manual login; subsequent valid-session runs do not:
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -AccountSettings -RetainQA
+```
+
+Offline guard tests use isolated synthetic directories under the disposable
+helper root. They never open or modify the fixed retained-profile manifest.
+Native reuse and projected account-settings shape were subsequently validated
+in the two runs recorded below.
+
+Retained-mode preflight passed thirty Node tests and six Go top-level tests,
+including four window-state and seven lease subtests. Coverage includes an
+exclusive lock collision, clean same-directory reuse with a fresh nonce,
+dirty cleanup rejection, root/profile replacement, malformed/duplicate/traversal
+manifests and rejection of mixed fixture permissions. Canonical evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-08beb1dfd5ef4f0aaf799eb37976d3e8.log.txt`.
+No Chrome or network was started by this preflight; its isolated directories
+were removed. Ten protected configuration/runtime/Store/verifier/other-fixture
+hashes matched the baseline. The eleventh file, `chrome_fixture_windows.go`,
+changed intentionally to enforce the explicitly authorized private QA lease.
+
+Native retained-profile validation passed on 2026-10-18:
+
+- Initial run `58567ad44c7f4fa2ba16383c0231b13b`: the user reported successful
+  Google login in normal Chrome. One owned window closed, the old root and tree
+  exited with zero residual processes terminated, and the same profile reopened
+  for observation. Home was detected without a second login. The sample yielded
+  twenty-one metadata candidates, zero dropped, and one projected settings GET.
+- Automatic repeat `bb14739411bf43e7b2b6bd1008596ced`: the lease reused the same
+  root/profile identities, skipped the manual-login phase (`not_required`), and
+  detected Home automatically. Thirty-five candidates and zero dropped were
+  observed. One settings GET was projected again with no additional user input.
+
+Each run made exactly one body-read attempt and projected a 1,977-byte JSON body
+to the fixed value-free shape. The inspected top-level `id_str`, `id`, `user_id`
+and `user_id_str` fields were absent; `screen_name` was a string, the six fixed
+settings fields were present, and `authenticated` was absent. No observed ID
+candidate or explicit authentication boolean is available from this projection.
+This does not assert that the response has no other fields; those fields are
+deliberately outside the approved projection. `account-settings` remains
+insufficient for qualifying stable current-self identity or explicit login
+semantics, and it supplies no session-lineage proof. A handle lookup must not
+fill that gap. The next evidence-source assessment should reuse this QA profile
+and qualify a direct current-self source before expanding any collector.
+
+Both live tests and their preflights passed. Their sanitized `.report.json`,
+`.progress.jsonl` and `.log.txt` files are under
+`runtime/qa/auth-session-sidecar/x-two-phase-<run-id>.*`. Both owned Jobs and pinned
+Chrome roots were verified stopped, and both ephemeral control roots were
+removed. The single retained profile remains under the fixed manifest with
+state `clean`. No raw body/source values were exported by the helper. All
+reports retain `canAuthorize:false` and `permitInherited:false`; no Store or
+production verifier authority was created. Google login success in this run
+does not establish the cause of earlier Google button failures.

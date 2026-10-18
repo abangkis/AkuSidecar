@@ -209,9 +209,28 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		t.Fatal("two-phase scope unavailable")
 	}
 	caseRoot := filepath.Join(os.Getenv("AKU_CHROME_FIXTURE_ROOT"), "run-x-two-phase-"+hex.EncodeToString(scopeNonce[:]))
-	if os.Mkdir(caseRoot, 0700) != nil {
+	accountSettingsEnabled := os.Getenv("AKU_X_ACCOUNT_SETTINGS_ENABLED") == "1"
+	retainedEnabled := os.Getenv("AKU_X_RETAINED_QA_ENABLED") == "1"
+	var lease *xRetainedQAProfile
+	cleanupVerified := false
+	if retainedEnabled {
+		if !accountSettingsEnabled {
+			t.Fatal("retained QA requires bounded account-settings mode")
+		}
+		lease, err = acquireXRetainedQAProfile(project)
+		if err != nil {
+			t.Fatal("retained QA ownership lease unavailable:", err)
+		}
+		caseRoot = lease.Root
+		t.Cleanup(func() {
+			if err := lease.Release(cleanupVerified); err != nil {
+				t.Error("retained QA lease release unverified:", err)
+			}
+		})
+	} else if os.Mkdir(caseRoot, 0700) != nil {
 		t.Fatal("two-phase case root unavailable")
 	}
+	reused := lease != nil && lease.Existing
 	var directories []windows.Handle
 	t.Cleanup(func() {
 		for _, directory := range directories {
@@ -229,6 +248,13 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	}
 	config := chromeFixtureConfig{NodePath: os.Getenv("AKU_TEST_NODE_PATH"), ChromePath: os.Getenv("AKU_TEST_CHROME_PATH"),
 		Root: caseRoot, Origin: server.URL, DriverPath: filepath.Join(project, "scripts", "auth-session-fixture", "x-two-phase-metadata-driver.mjs")}
+	if accountSettingsEnabled {
+		config.DriverPath = filepath.Join(project, "scripts", "auth-session-fixture", "x-two-phase-account-settings-driver.mjs")
+	}
+	if retainedEnabled {
+		config.DriverPath = filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-account-settings-driver.mjs")
+		config.qaProfileLease = lease
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
 	defer cancel()
 	bridge, err := startChromeFixtureBridge(ctx, config)
@@ -237,14 +263,26 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	}
 	registerChromeFixtureBridge(bridge)
 	var roots []windows.Handle
+	var cleanupOwner *chromeFixtureProcess
 	t.Cleanup(func() {
+		if retainedEnabled && cleanupOwner != nil {
+			// Best effort on failure paths too; Job proof remains mandatory.
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), 7*time.Second)
+			var released struct {
+				Exited bool `json:"exited"`
+			}
+			_ = bridge.rpc(closeCtx, "release", map[string]any{"owner": cleanupOwner.owner}, &released)
+			closeCancel()
+		}
 		bridge.terminateOwnedTree()
+		cleanupVerified = bridge.cleanupError() == nil && bridge.cleanupVerified()
 		if bridge.cleanupError() != nil || !bridge.cleanupVerified() {
 			t.Error("two-phase owned Job cleanup unverified")
 		}
 		for _, root := range roots {
 			state, waitErr := windows.WaitForSingleObject(root, 5000)
 			if waitErr != nil || state != windows.WAIT_OBJECT_0 {
+				cleanupVerified = false
 				t.Error("two-phase Chrome root exit unverified")
 			}
 			_ = windows.CloseHandle(root)
@@ -268,7 +306,11 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		t.Fatal("two-phase normal Chrome launch failed:", err)
 	}
 	firstRoot := pin(first)
+	cleanupOwner = first
 	verifyXChromeFixtureImage(t, bridge.pid, config.NodePath)
+	if lease != nil && lease.RememberProfile() != nil {
+		t.Fatal("retained QA profile identity could not be recorded")
+	}
 	profileDirectory, err := pinXTwoPhaseDirectory(filepath.Join(caseRoot, "shared"))
 	if err != nil {
 		t.Fatal("two-phase profile pin unavailable")
@@ -279,72 +321,90 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		t.Fatal("two-phase new profile identity unavailable")
 	}
 	var baseline map[uintptr]xPopupWindowState
-	baselineVisible := false
-	baselineDeadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(baselineDeadline) {
-		baseline, err = xPopupWindowSnapshot(bridge, firstRoot, uint32(first.PID()))
-		visible := false
-		for _, state := range baseline {
-			visible = visible || state.visible
-		}
-		if err == nil && visible {
-			baselineVisible = true
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	tracker := newXPopupWindowTracker(baseline)
-	if err != nil || !baselineVisible {
-		tracker.failed = true
-	}
-	stage("phase1_manual_login")
-	manual := "timeout"
+	manual := "not_required"
 	manualPopup := "not_observed"
-	deadline := time.Now().Add(5 * time.Minute)
-	for time.Now().Before(deadline) {
-		snapshot, inventoryErr := xPopupWindowSnapshot(bridge, firstRoot, uint32(first.PID()))
-		tracker.sample(snapshot, inventoryErr)
-		info, err := os.Lstat(resultPath)
-		if err == nil {
-			if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > 128 {
-				t.Fatal("two-phase manual result invalid")
+	var deadline time.Time
+	tracker := newXPopupWindowTracker(baseline)
+	if !reused {
+		baselineVisible := false
+		baselineDeadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(baselineDeadline) {
+			baseline, err = xPopupWindowSnapshot(bridge, firstRoot, uint32(first.PID()))
+			visible := false
+			for _, state := range baseline {
+				visible = visible || state.visible
 			}
-			file, openErr := os.Open(resultPath)
-			if openErr != nil {
-				t.Fatal("two-phase manual result unavailable")
+			if err == nil && visible {
+				baselineVisible = true
+				break
 			}
-			raw, readErr := io.ReadAll(io.LimitReader(file, 129))
-			_ = file.Close()
-			if readErr != nil {
-				t.Fatal("two-phase manual result read failed")
-			}
-			manual, manualPopup, err = decodeXTwoPhaseOutcome(raw)
-			if err != nil {
-				t.Fatal("two-phase manual result rejected")
-			}
-			break
-		} else if !errors.Is(err, os.ErrNotExist) {
-			t.Fatal("two-phase manual result scope unavailable")
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(200 * time.Millisecond)
+		tracker = newXPopupWindowTracker(baseline)
+		if err != nil || !baselineVisible {
+			tracker.failed = true
+		}
+		stage("phase1_manual_login")
+		manual = "timeout"
+		deadline = time.Now().Add(5 * time.Minute)
+		for time.Now().Before(deadline) {
+			snapshot, inventoryErr := xPopupWindowSnapshot(bridge, firstRoot, uint32(first.PID()))
+			tracker.sample(snapshot, inventoryErr)
+			info, err := os.Lstat(resultPath)
+			if err == nil {
+				if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > 128 {
+					t.Fatal("two-phase manual result invalid")
+				}
+				file, openErr := os.Open(resultPath)
+				if openErr != nil {
+					t.Fatal("two-phase manual result unavailable")
+				}
+				raw, readErr := io.ReadAll(io.LimitReader(file, 129))
+				_ = file.Close()
+				if readErr != nil {
+					t.Fatal("two-phase manual result read failed")
+				}
+				manual, manualPopup, err = decodeXTwoPhaseOutcome(raw)
+				if err != nil {
+					t.Fatal("two-phase manual result rejected")
+				}
+				break
+			} else if !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("two-phase manual result scope unavailable")
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 	report := struct {
-		Schema                      string                 `json:"schema"`
-		ManualPhaseOneOutcome       string                 `json:"manualPhaseOneOutcome"`
-		ManualSource                string                 `json:"manualSource"`
-		OldRootExited               bool                   `json:"oldRootExited"`
-		OldChromeTreeReleased       bool                   `json:"oldChromeTreeReleased"`
-		ClosedWindowCount           int                    `json:"closedWindowCount"`
-		ResidualProcessesTerminated int                    `json:"residualProcessesTerminated"`
-		ProfileDirectorySame        bool                   `json:"profileDirectorySame"`
-		WindowDiagnostics           xPopupWindowSummary    `json:"windowDiagnostics"`
-		ManualPopupObservation      string                 `json:"manualPopupObservation"`
-		PhaseTwoHomeObserved        bool                   `json:"phaseTwoHomeObserved"`
-		PermitInherited             bool                   `json:"permitInherited"`
-		Diagnostic                  string                 `json:"diagnostic"`
-		Observation                 *xNativeMetadataReport `json:"observation,omitempty"`
-		CanAuthorize                bool                   `json:"canAuthorize"`
+		Schema                      string                   `json:"schema"`
+		ManualPhaseOneOutcome       string                   `json:"manualPhaseOneOutcome"`
+		ManualSource                string                   `json:"manualSource"`
+		OldRootExited               bool                     `json:"oldRootExited"`
+		OldChromeTreeReleased       bool                     `json:"oldChromeTreeReleased"`
+		ClosedWindowCount           int                      `json:"closedWindowCount"`
+		ResidualProcessesTerminated int                      `json:"residualProcessesTerminated"`
+		ProfileDirectorySame        bool                     `json:"profileDirectorySame"`
+		WindowDiagnostics           xPopupWindowSummary      `json:"windowDiagnostics"`
+		ManualPopupObservation      string                   `json:"manualPopupObservation"`
+		PhaseTwoHomeObserved        bool                     `json:"phaseTwoHomeObserved"`
+		PermitInherited             bool                     `json:"permitInherited"`
+		Diagnostic                  string                   `json:"diagnostic"`
+		Observation                 *xNativeMetadataReport   `json:"observation,omitempty"`
+		AccountSettings             *xAccountSettingsCapture `json:"accountSettings,omitempty"`
+		CanAuthorize                bool                     `json:"canAuthorize"`
+		RetainedQAProfile           bool                     `json:"retainedQAProfile"`
+		ReusedQAProfile             bool                     `json:"reusedQAProfile"`
 	}{Schema: "aku.x.two-phase-metadata.v2", ManualPhaseOneOutcome: manual, ManualSource: "manual_user_report", WindowDiagnostics: tracker.summary(), ManualPopupObservation: manualPopup}
+	if accountSettingsEnabled {
+		report.Schema = "aku.x.two-phase-account-settings.v1"
+	}
+	report.RetainedQAProfile, report.ReusedQAProfile = retainedEnabled, reused
+	if retainedEnabled {
+		report.Schema = "aku.x.retained-account-settings.v1"
+	}
+	if reused {
+		report.ManualSource = "retained_qa_profile"
+	}
 	if manual == "timeout" {
 		report.ManualSource = "harness_deadline"
 	}
@@ -359,44 +419,51 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 			t.Error("two-phase report write failed")
 		}
 	}()
-	if manual != "home_visible" {
-		report.Diagnostic = "phase1_login_not_confirmed"
-		t.Fatal("two-phase normal login was not confirmed")
+	second := first
+	if !reused {
+		if manual != "home_visible" {
+			report.Diagnostic = "phase1_login_not_confirmed"
+			t.Fatal("two-phase normal login was not confirmed")
+		}
+		stage("phase1_closing")
+		windowsClosed, residuals, err := closeXTwoPhaseChrome(bridge, firstRoot, uint32(first.PID()))
+		report.ClosedWindowCount, report.ResidualProcessesTerminated = windowsClosed, residuals
+		if err != nil {
+			report.Diagnostic = "phase1_release_failed"
+			t.Fatal("two-phase old Chrome release failed:", err)
+		}
+		report.OldRootExited, report.OldChromeTreeReleased = true, true
+		if validateXTwoPhaseDirectory(caseRoot, rootID, profileID) != nil {
+			report.Diagnostic = "profile_identity_changed"
+			t.Fatal("two-phase profile changed before grant")
+		}
+		stage("phase1_released")
+		var nonce [32]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			t.Fatal("two-phase private handoff nonce unavailable")
+		}
+		var authorization struct {
+			Authorized bool `json:"authorized"`
+		}
+		if bridge.rpc(ctx, "authorize_observation", map[string]any{"owner": first.owner, "oldPID": first.PID(), "nonce": hex.EncodeToString(nonce[:])}, &authorization) != nil || !authorization.Authorized {
+			report.Diagnostic = "handoff_grant_rejected"
+			t.Fatal("two-phase private handoff grant rejected")
+		}
+		stage("phase2_starting")
+		second, err = bridge.launch(ctx, "collector")
+		if err != nil {
+			report.Diagnostic = "phase2_start_failed"
+			t.Fatal("two-phase observed Chrome launch failed:", err)
+		}
+		pin(second)
+		cleanupOwner = second
+		if second.PID() == first.PID() || validateXTwoPhaseDirectory(caseRoot, rootID, profileID) != nil {
+			report.Diagnostic = "phase2_identity_mismatch"
+			t.Fatal("two-phase new process or same-profile proof failed")
+		}
 	}
-	stage("phase1_closing")
-	windowsClosed, residuals, err := closeXTwoPhaseChrome(bridge, firstRoot, uint32(first.PID()))
-	report.ClosedWindowCount, report.ResidualProcessesTerminated = windowsClosed, residuals
-	if err != nil {
-		report.Diagnostic = "phase1_release_failed"
-		t.Fatal("two-phase old Chrome release failed:", err)
-	}
-	report.OldRootExited, report.OldChromeTreeReleased = true, true
 	if validateXTwoPhaseDirectory(caseRoot, rootID, profileID) != nil {
-		report.Diagnostic = "profile_identity_changed"
-		t.Fatal("two-phase profile changed before grant")
-	}
-	stage("phase1_released")
-	var nonce [32]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		t.Fatal("two-phase private handoff nonce unavailable")
-	}
-	var authorization struct {
-		Authorized bool `json:"authorized"`
-	}
-	if bridge.rpc(ctx, "authorize_observation", map[string]any{"owner": first.owner, "oldPID": first.PID(), "nonce": hex.EncodeToString(nonce[:])}, &authorization) != nil || !authorization.Authorized {
-		report.Diagnostic = "handoff_grant_rejected"
-		t.Fatal("two-phase private handoff grant rejected")
-	}
-	stage("phase2_starting")
-	second, err := bridge.launch(ctx, "collector")
-	if err != nil {
-		report.Diagnostic = "phase2_start_failed"
-		t.Fatal("two-phase observed Chrome launch failed:", err)
-	}
-	pin(second)
-	if second.PID() == first.PID() || validateXTwoPhaseDirectory(caseRoot, rootID, profileID) != nil {
-		report.Diagnostic = "phase2_identity_mismatch"
-		t.Fatal("two-phase new process or same-profile proof failed")
+		t.Fatal("QA profile identity changed before Home check")
 	}
 	report.ProfileDirectorySame = true
 	stage("phase2_checking_home")
@@ -417,6 +484,9 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	}
 	if !report.PhaseTwoHomeObserved {
 		report.Diagnostic = "phase2_home_not_ready"
+		if reused {
+			report.Diagnostic = "manual_login_required"
+		}
 		t.Fatal("Home unavailable after reopen; no second login attempted")
 	}
 	stage("phase2_observing")
@@ -425,17 +495,41 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		report.Diagnostic = "phase2_observation_failed"
 		t.Fatal("two-phase observation failed:", err)
 	}
-	metadata, err := decodeXNativeMetadata(raw)
+	var metadata xNativeMetadataReport
+	if accountSettingsEnabled {
+		var capture xAccountSettingsCapture
+		metadata, capture, err = decodeXAccountSettingsEnvelope(raw)
+		if err == nil {
+			report.AccountSettings = &capture
+		}
+	} else {
+		metadata, err = decodeXNativeMetadata(raw)
+	}
 	if err != nil {
 		report.Diagnostic = "metadata_projection_rejected"
 		t.Fatal("two-phase metadata failed private output boundary")
 	}
 	report.Observation = &metadata
+	if accountSettingsEnabled && (report.AccountSettings == nil || report.AccountSettings.Diagnostic != "projected") {
+		report.Diagnostic = "account_settings_projection_unavailable"
+		t.Fatal("account-settings shape projection unavailable; fixed diagnostics retained")
+	}
 	if metadata.CandidateCount == 0 {
 		report.Diagnostic = "no_native_operations_seen"
 		t.Fatal("two-phase metadata sample contained no native operations")
 	}
 	report.Diagnostic = "metadata_observed"
+	// Close gracefully so the retained QA profile can flush its browser-managed
+	// state. The cleanup hook still proves the entire Job is empty before reuse.
+	if retainedEnabled {
+		var released struct {
+			Exited bool `json:"exited"`
+		}
+		if bridge.rpc(ctx, "release", map[string]any{"owner": second.owner}, &released) != nil || !released.Exited {
+			report.Diagnostic = "retained_chrome_close_failed"
+			t.Fatal("retained QA Chrome graceful exit unavailable")
+		}
+	}
 	t.Logf("Two-phase metadata: %d candidates, %d dropped; no authorization or lineage proof", metadata.CandidateCount, metadata.DroppedCandidates)
 	stage("complete")
 }

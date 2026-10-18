@@ -1,7 +1,8 @@
-// Opt-in, headful X metadata-only probe. Bounded CDP frames are parsed
-// transiently. The driver makes no explicit body/header retrieval calls and
-// retains or exports only a metadata projection. It never reads page text, input values,
-// screenshots, or cookies.
+// Opt-in, headful X QA. Default modes export metadata only. The fixed
+// account-settings mode may read one completed response body and immediately
+// project it to value-free shape diagnostics before resolving the CDP promise.
+// Bounded frames/body strings are transient; no raw body is persisted/exported.
+// No mode retrieves headers, page text, input values, screenshots or cookies.
 import { spawn } from 'node:child_process';
 import { mkdir, lstat, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -9,6 +10,8 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseStrictJSON } from './x-evidence-ingress.mjs';
 import { standardChromeArgs } from './x-standard-chrome-control.mjs';
+import { projectAccountSettingsBody } from './x-account-settings-body.mjs';
+import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
 
 const HOME_URL = 'https://x.com/home';
 const X_ORIGIN = 'https://x.com';
@@ -43,6 +46,8 @@ const CDP_METHODS = Object.freeze({
   'Runtime.evaluate': 'runtime_evaluate',
   'Network.enable': 'network_enable',
   'Network.disable': 'network_disable',
+  'Network.getResponseBody': 'account_settings_body',
+  'Network.setCacheDisabled': 'account_settings_cache',
   'Browser.close': 'browser_close',
 });
 const CDP_FRAME_LIMITS = Object.freeze({ maxJSONDepth: 20, maxJSONTokens: 8_192 });
@@ -493,6 +498,9 @@ function isTargetURL(rawURL) {
 function projectCDPResult(method, result) {
   if (!isObject(result)) throw probeError('cdp_result_invalid');
   switch (method) {
+    case 'Network.getResponseBody':
+      if (!accountSettingsBodyMode(driverMode)) throw probeError('body_mode_required');
+      return projectAccountSettingsBody(result);
     case 'Target.getTargets': {
       if (!Array.isArray(result.targetInfos) || result.targetInfos.length > 128) throw probeError('target_inventory_invalid');
       const matches = [];
@@ -515,6 +523,7 @@ function projectCDPResult(method, result) {
     case 'Page.reload':
     case 'Network.enable':
     case 'Network.disable':
+    case 'Network.setCacheDisabled':
     case 'Browser.close':
       return { acknowledged: true };
     default:
@@ -551,6 +560,7 @@ let controlOrigin = '';
 let profilePath = '';
 let driverMode = 'single_phase';
 let twoPhaseState = null;
+let retainedQAScope = null;
 let child = null;
 let childExited = false;
 let cdpFailure = null;
@@ -610,6 +620,12 @@ function send(method, params = {}, sessionId = undefined) {
   if (!Object.hasOwn(CDP_METHODS, method) || !isObject(params) || pending.size >= MAX_PENDING_COMMANDS) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
+  if (method === 'Network.getResponseBody' && (!accountSettingsBodyMode(driverMode) || !active?.gate.networkEnabled ||
+      sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
+    return Promise.reject(probeError('account_body_not_authorized'));
+  }
+  if (method === 'Network.setCacheDisabled' && (!accountSettingsBodyMode(driverMode) || sessionId !== active?.sessionId ||
+      Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
   const id = ++nextCommandId;
   if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(probeError('cdp_command_limit'));
   return new Promise((resolvePromise, rejectPromise) => {
@@ -657,6 +673,7 @@ function dispatchCDP(raw) {
         active.gate.networkEnabled && Date.now() <= active.observationEndsAt) {
       if (active.networkEventCount >= MAX_NETWORK_EVENTS) {
         active.eventLimitReached = true;
+        active.accountSettings?.invalidate();
         return;
       }
       active.networkEventCount++;
@@ -667,6 +684,9 @@ function dispatchCDP(raw) {
       active.pageLoad.resolve(true);
       active.pageLoad = null;
     } else if (event.type === 'network' && event.sessionId === active.sessionId) {
+      if (active.gate.networkEnabled && active.metadata && Date.now() <= active.observationEndsAt) {
+        active.accountSettings?.observe(raw.method, raw.params);
+      }
       handleNetworkEvent(event.event);
     }
     return;
@@ -728,7 +748,7 @@ function deferred() {
   return { promise, resolve: resolvePromise, reject: rejectPromise };
 }
 
-async function validatePaths(mode = 'single_phase') {
+async function validatePaths(mode = 'single_phase', allowOwnedProfile = false) {
   if (!isAbsolute(executable) || !isAbsolute(qaRoot)) throw probeError('arguments_invalid');
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const resolvedProject = await realpath(projectRoot).catch(() => '');
@@ -748,8 +768,63 @@ async function validatePaths(mode = 'single_phase') {
       !executableStat?.isFile() || executableStat.isSymbolicLink()) throw probeError('paths_invalid');
   const origin = parseControlOrigin(controlOrigin);
   const profile = join(rootReal, 'shared');
-  if (await lstat(profile).then(() => true, () => false)) throw probeError('profile_not_new');
+  if (allowOwnedProfile) {
+    if (driverMode !== 'retained_account_settings' || mode !== 'two_phase' ||
+        !retainedQAScope?.reuse || !sameWindowsPath(dirname(rootReal), expectedParentReal)) {
+      throw probeError('retained_scope_required');
+    }
+    const identity = await ordinaryDirectoryIdentity(profile);
+    const rootIdentity = await ordinaryDirectoryIdentity(rootReal);
+    if (!sameDirectoryIdentity(identity, retainedQAScope.profileIdentity) ||
+        !sameDirectoryIdentity(rootIdentity, retainedQAScope.rootIdentity)) throw probeError('owned_profile_changed');
+  } else if (await lstat(profile).then(() => true, () => false)) throw probeError('profile_not_new');
   return { root: rootReal, profile, origin };
+}
+
+async function acceptRetainedQAScope(message) {
+  if (driverMode !== 'retained_account_settings' || retainedQAScope || child || protocolOwner || twoPhaseState ||
+      typeof message.nonce !== 'string' || !/^[a-f0-9]{64}$/u.test(message.nonce) || typeof message.reuse !== 'boolean') {
+    throw probeError('retained_scope_invalid');
+  }
+  // This private pipe message arrives only after Node is inside its owner's Job.
+  // Identity is pinned by the Go lease; no profile path comes from the message.
+  const rootIdentity = await ordinaryDirectoryIdentity(qaRoot);
+  const project = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'));
+  const parent = await realpath(join(project, 'runtime', 'qa', 'auth-session-sidecar'));
+  if (!sameWindowsPath(dirname(qaRoot), parent) || !/^run-x-two-phase-[a-f0-9]{32}$/u.test(qaRoot.split(/[\\/]/u).at(-1))) {
+    throw probeError('retained_scope_invalid');
+  }
+  const profileIdentity = message.reuse ? await ordinaryDirectoryIdentity(join(qaRoot, 'shared')) : null;
+  if (!message.reuse && await lstat(join(qaRoot, 'shared')).then(() => true, () => false)) throw probeError('profile_not_new');
+  retainedQAScope = { reuse: message.reuse, rootIdentity, profileIdentity, consumed: false };
+  return { scoped: true };
+}
+
+async function launchRetainedQAChrome(message) {
+  const scope = retainedQAScope;
+  if (!scope || scope.consumed || message.role !== 'collector' || message.nativeReaderStartup !== false) {
+    throw probeError('retained_scope_required');
+  }
+  if (!scope.reuse) {
+    if (!sameDirectoryIdentity(await ordinaryDirectoryIdentity(qaRoot), scope.rootIdentity)) throw probeError('owned_profile_changed');
+    return launchTwoPhaseChrome(message);
+  }
+  scope.consumed = true;
+  if (child || protocolOwner || cdpFailure || twoPhaseState) throw probeError('collector_launch_invalid');
+  const paths = await validatePaths('two_phase', true);
+  qaRoot = paths.root;
+  profilePath = paths.profile;
+  controlOrigin = paths.origin;
+  twoPhaseState = { root: qaRoot, profile: profilePath, rootIdentity: scope.rootIdentity,
+    profileIdentity: scope.profileIdentity, phase2Started: true };
+  if (!(await verifyTwoPhaseDirectories())) throw probeError('owned_profile_changed');
+  const processChild = spawn(executable, twoPhaseChromeArgs(profilePath, true),
+    { windowsHide: false, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+  child = processChild;
+  childExited = false;
+  bindChrome(processChild);
+  if (!Number.isSafeInteger(processChild.pid) || processChild.pid <= 0) throw probeError('chrome_spawn_failed');
+  return initializeChromeSession(processChild, profilePath);
 }
 
 async function initializeChromeSession(processChild, profileReal) {
@@ -895,13 +970,14 @@ async function launchTwoPhaseChrome(message) {
 }
 
 async function launchChrome(message) {
-  return driverMode === 'two_phase'
+  if (driverMode === 'retained_account_settings') return launchRetainedQAChrome(message);
+  return driverMode === 'two_phase' || accountSettingsBodyMode(driverMode)
     ? launchTwoPhaseChrome(message)
     : launchSinglePhaseChrome(message);
 }
 
 async function authorizeObservation(message) {
-  if (driverMode !== 'two_phase' || !twoPhaseState || twoPhaseState.phase2Started) {
+  if (driverMode !== 'two_phase' && !accountSettingsBodyMode(driverMode) || !twoPhaseState || twoPhaseState.phase2Started) {
     throw probeError('workflow_not_available');
   }
   const state = twoPhaseState;
@@ -983,6 +1059,11 @@ async function startObservation(message) {
     maxPostDataSize: 0,
   }, current.sessionId);
   current.gate.markNetworkEnabled();
+  if (accountSettingsBodyMode(driverMode)) {
+    await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
+    current.accountSettings = new AccountSettingsCapture({ readBody: requestId =>
+      send('Network.getResponseBody', { requestId }, current.sessionId) });
+  }
   current.metadata = new MetadataWindow();
   current.observationEndsAt = Date.now() + OBSERVATION_MS;
   current.pageLoad = deferred();
@@ -995,13 +1076,15 @@ async function startObservation(message) {
   if (remaining > 0) await new Promise(resolvePromise => setTimeout(resolvePromise, remaining));
   const metadata = current.metadata.finish();
   current.metadata = null;
+  const accountSettings = current.accountSettings ? await current.accountSettings.finish() : null;
   await send('Network.disable', {}, current.sessionId);
-  return safeReport(metadata, current.eventLimitReached);
+  const report = safeReport(metadata, current.eventLimitReached);
+  return accountSettingsBodyMode(driverMode) ? { metadata: report, accountSettings } : report;
 }
 
 async function closeChrome() {
   if (!child || childExited) return { exited: true };
-  if (driverMode === 'two_phase' && !twoPhaseState?.phase2Started) return { exited: false };
+  if ((driverMode === 'two_phase' || accountSettingsBodyMode(driverMode)) && !twoPhaseState?.phase2Started) return { exited: false };
   try { await send('Browser.close'); } catch { /* The enclosing Job remains the owner. */ }
   for (let attempt = 0; attempt < 200 && !childExited; attempt++) {
     await new Promise(resolvePromise => setTimeout(resolvePromise, 25));
@@ -1014,6 +1097,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qa_profile_scope':
+      exactKeys(message, ['id', 'op', 'nonce', 'reuse'], 'rpc_fields_invalid');
+      return acceptRetainedQAScope(message);
     case 'launch':
       exactKeys(message, ['id', 'op', 'role', 'nativeReaderStartup'], 'rpc_fields_invalid');
       return launchChrome(message);
@@ -1093,7 +1179,7 @@ function shutdown() {
 }
 
 export async function runNativeMetadataProbe(mode = 'single_phase') {
-  if (!['single_phase', 'two_phase'].includes(mode) || driverMode !== 'single_phase' || child || twoPhaseState) {
+  if (!['single_phase', 'two_phase', 'two_phase_account_settings', 'retained_account_settings'].includes(mode) || driverMode !== 'single_phase' || child || twoPhaseState) {
     throw probeError('driver_mode_invalid');
   }
   driverMode = mode;

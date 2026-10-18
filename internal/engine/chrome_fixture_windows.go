@@ -31,6 +31,12 @@ const (
 	chromeFixtureMaxJobProcesses           = 4096
 )
 
+// Private QA reuse scope; it grants no Store or account-verifier authority.
+type chromeFixtureQAProfileLease interface {
+	validateFixtureProfile(string) error
+	fixtureProfileScope() (string, bool)
+}
+
 type chromeFixtureConfig struct {
 	NodePath            string
 	ChromePath          string
@@ -40,6 +46,7 @@ type chromeFixtureConfig struct {
 	NativeReaderStartup bool
 	processGrant        *processFixtureGrant
 	processStart        *processFixtureStart
+	qaProfileLease      chromeFixtureQAProfileLease
 	beforeJobAssignment func(uint32, windows.Handle) error
 	beforeReadySignal   func(uint32, windows.Handle) error
 }
@@ -213,6 +220,21 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 			return nil, errors.New("fixture process profile identity changed during scope")
 		}
 	}
+	if config.qaProfileLease != nil {
+		if err = config.qaProfileLease.validateFixtureProfile(config.Root); err != nil {
+			b.terminateOwnedTree()
+			return nil, errors.New("retained QA profile scope changed")
+		}
+		nonce, reuse := config.qaProfileLease.fixtureProfileScope()
+		if err = b.rpc(ctx, "qa_profile_scope", map[string]any{"nonce": nonce, "reuse": reuse}, nil); err != nil {
+			b.terminateOwnedTree()
+			return nil, errors.New("retained QA profile scope rejected")
+		}
+		if err = config.qaProfileLease.validateFixtureProfile(config.Root); err != nil {
+			b.terminateOwnedTree()
+			return nil, errors.New("retained QA profile scope changed")
+		}
+	}
 	return b, nil
 }
 
@@ -251,6 +273,15 @@ func validateChromeFixtureConfig(config chromeFixtureConfig) (string, error) {
 		return "", errors.New("fixture root is outside the project QA scope")
 	}
 	profile := filepath.Join(root, "shared")
+	if config.qaProfileLease != nil {
+		if config.processGrant != nil || config.processStart != nil || config.NativeReaderStartup ||
+			!samePath(config.DriverPath, filepath.Join(project, "scripts", "auth-session-fixture", "x-retained-account-settings-driver.mjs")) {
+			return "", errors.New("retained QA scope cannot mix fixture permissions")
+		}
+		if err = config.qaProfileLease.validateFixtureProfile(root); err != nil {
+			return "", errors.New("retained QA profile identity unavailable")
+		}
+	}
 	if config.processGrant != nil {
 		if config.processStart != nil {
 			err = validateProcessFixtureStartScope(root, *config.processStart)
@@ -272,7 +303,8 @@ func validateChromeFixtureConfig(config chromeFixtureConfig) (string, error) {
 				valid = validateProcessFixtureGrant(root, config.processGrant) == nil
 			}
 		}
-		if config.processGrant == nil || (!preserve && !prepared) || !valid {
+		retained := config.qaProfileLease != nil && config.qaProfileLease.validateFixtureProfile(root) == nil
+		if !retained && (config.processGrant == nil || (!preserve && !prepared) || !valid) {
 			return "", errors.New("fixture profile must be new")
 		}
 	}
@@ -546,6 +578,9 @@ func (b *chromeFixtureBridge) handleChromeExit(owner int) {
 }
 
 func (b *chromeFixtureBridge) launch(ctx context.Context, role string) (*chromeFixtureProcess, error) {
+	if b.config.qaProfileLease != nil && (role != "collector" || b.config.qaProfileLease.validateFixtureProfile(b.config.Root) != nil) {
+		return nil, errors.New("retained QA launch scope unavailable")
+	}
 	if role != "collector" && role != "owner" {
 		return nil, errors.New("fixture role invalid")
 	}
