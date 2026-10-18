@@ -5377,3 +5377,30 @@ Evidence: `runtime/qa/auth-session-sidecar/x-offline-verifier-validation.txt`.
 Next: qualify native source evidence and its continuity contract before adapting
 this prototype to the controller. Real-account observation and activation still
 require separate authorization. Do not treat the offline result as main-dev readiness.
+
+### 2026-10-18: three-proof offline contract
+
+Separate current-self identity, authentication and baseline-to-recheck continuity
+as distinct claims with explicit evidence provenance. A self-response may support
+the first two claims without becoming two independent authorities. Enrollment
+and the controller's synthetic `Authority` remain policy inputs, not proof of a
+currently authenticated browser.
+
+Continuity requires a separately qualified synthetic lifecycle witness spanning
+the accepted baseline and verification. Equal snapshots cannot hide startup,
+restart, detach, overflow or worker-coverage gaps. Same-account relogin changes
+the modeled lifecycle; cookie presence/equality and owner/request IDs are not
+session proof. Cache, stale, replayed, mismatched or ambiguous evidence fails
+closed without erasing independently valid authentication observations.
+
+This delta stays inside the dual-tag offline X package with no controller,
+Store, ordinary-main or runtime activation. All results are non-authorizing.
+Next gate remains native-source schema and lifecycle qualification under
+separate authorization, followed by a reviewed adapter and synthetic controller
+acceptance. No real authentication or user-runtime operation is included here.
+
+`Verifier.VerifyThreeProof` now implements this isolated contract. The canonical
+offline helper passed 37 top-level tests and 65 subtests (22 top-level tests and
+24 subtests added), both-tag exclusion and ordinary-main dependency isolation.
+Four protected runtime/configuration hashes remained unchanged. Evidence:
+`runtime/qa/auth-session-sidecar/x-three-proof-validation.txt`.

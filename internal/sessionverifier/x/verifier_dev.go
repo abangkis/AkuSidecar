@@ -168,6 +168,11 @@ type Observation struct {
 	challenge         string
 	observedAt        time.Time
 	issuedAt          time.Time
+	explicitAuthState AuthState
+	explicitAuthValid bool
+	identityID        string
+	identityIDValid   bool
+	responseValidated bool
 	lineageGeneration uint64
 	lineageObservedAt time.Time
 	lineageReason     Reason
@@ -298,6 +303,12 @@ func (v *Verifier) Observe(attempt Attempt) Observation {
 	if wire.Schema != FixtureSchema {
 		base.State, base.Reason = Unsupported, ReasonSchemaUnsupported
 		return base
+	}
+	base.explicitAuthState, base.explicitAuthValid = explicitFixtureAuthState(wire, attempt.Envelope.StatusCode)
+	base.responseValidated = base.explicitAuthValid
+	if base.responseValidated && wire.Data != nil {
+		base.identityID = wire.Data.IDStr
+		base.identityIDValid = validAccountID(wire.Data.IDStr)
 	}
 	switch wire.State {
 	case string(Authenticated):

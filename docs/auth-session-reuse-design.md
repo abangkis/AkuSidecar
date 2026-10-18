@@ -1992,3 +1992,67 @@ Do not substitute OAuth identity, content authors or response-only identity for
 browser-session continuity. Native observation still requires separate permission.
 Until that evidence exists, this package remains an offline prototype, excluded
 from controller/Store authorization and default-off production activation.
+
+## Three-proof offline contract — 2026-10-18
+
+The next offline layer separates three claims: current-self account identity,
+current authentication state, and continuity from an accepted session baseline.
+Enrollment and the synthetic controller's `Authority` callback describe policy
+expectations; neither independently proves that the browser is logged in now.
+One qualified self-response may support identity and authentication, but those
+claims must retain the same provenance rather than count as two independent
+authorities. The legacy response-pair prototype remains fixture machinery, not
+a controller authorization path.
+
+Identity requires the exact stable current-self account ID. A renamed handle or
+display name does not change it; a content author or viewed profile is not a
+substitute. Missing identity must not erase an otherwise valid explicit
+authentication observation. Conversely, HTTP 200, a cookie hint, cached content,
+an error response or agreement with enrollment does not establish authentication.
+Fixture login markers and HTTP mappings remain invented, not native X semantics.
+
+Continuity additionally requires a separately identified synthetic lifecycle
+witness with coverage from the accepted baseline through verification. Matching
+endpoint snapshots or generations cannot repair a coverage gap: logout/login
+followed by restoration of the same account or apparent value remains possible.
+Startup gaps, detach/restart, overflow and unsupported worker coverage therefore
+keep continuity unavailable or unsupported. A covered same-account logout/login
+changes the lifecycle generation; modeled cookie rotation may preserve it.
+Cookie equality, hashes and request/process identifiers prove neither case.
+
+Evidence is bound to its schema, provenance, kind, request, phase, profile,
+owner, freshness and cache status. One-use challenges and completion-time expiry
+remain mandatory. Synthetic lifecycle evidence is out of band from response
+JSON and cannot be replaced by an echo of the self-response or policy callback.
+This is a serial-use offline contract, not continuous browser observation.
+
+The interval baseline in this fixture is the accepted initial self observation,
+bound to the trusted fixture pin's accepted lifecycle generation. It does not
+import a persisted Store checkpoint. Evidence authority labels describe declared
+fixture provenance; their count does not establish independent native sources.
+Policy expectations must agree with the verifier pin rather than override it.
+Unknown authentication is not evidence that a session changed.
+
+All outcomes remain non-authorizing, including complete synthetic success.
+Both `auth_session_dev` and `auth_session_fixture` are required. No Engine,
+controller, Store, ordinary-main, settings or HTTP wiring is added. Native X
+schema and lifecycle qualification still require separately authorized evidence;
+the offline fixture cannot establish readiness for a real-account pilot.
+
+Implementation entry point: `Verifier.VerifyThreeProof(ThreeProofInput)` in
+`internal/sessionverifier/x/three_proof_dev.go`. Per-phase authentication remains
+visible in `Initial` and `Recheck`; the aggregate `State` reports agreement across
+the two phases. The existing strict parser and challenge consumption are reused,
+with private parsed-authentication fields preserving the legacy pair API's
+behavior. `ThreeProofResult.CanAuthorize()` is always false.
+
+Validation passed through `scripts/test-x-session-verifier.ps1`: 37 top-level
+tests and 65 subtests, including 22 new top-level tests and 24 new subtests.
+Coverage includes a nonzero accepted interval, same-account relogin, missing
+identity with explicit login, account/policy mismatch, cache hits, declared
+coverage gaps, replay/echo, invalid provenance/binding, and final-time expiry.
+Both-tag exclusion and ordinary-main dependency isolation passed. Four protected
+runtime/configuration files matched their pre-test hashes; no browser, real
+authentication or user-runtime operation occurred. The helper cleaned its owned
+temporary root. Evidence:
+`runtime/qa/auth-session-sidecar/x-three-proof-validation.txt`.

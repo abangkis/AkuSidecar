@@ -1676,3 +1676,34 @@ Log: `runtime/qa/auth-session-sidecar/x-offline-verifier-validation.txt`.
 Native schema and session-continuity qualification remain a later evidence gate.
 Passing these invented fixtures does not authorize real-account observation or
 user-runtime activation.
+
+### Three-proof offline contract (2026-10-18)
+
+The same offline helper also exercises distinct current-self identity,
+authentication and continuity claims. These are three claims, not a promise of
+three independent source authorities. Identity/authentication retain shared
+self-response provenance; enrollment is an expected account, not login proof.
+Missing identity does not discard a valid explicit authentication state.
+
+Continuity uses a separate synthetic lifecycle witness whose coverage spans the
+accepted baseline through verification. Equal endpoint snapshots cannot repair
+an observation gap or rule out change-and-restore. Logout/login, cache/error,
+restart/detach, worker-coverage gaps, replay and completion-time expiry are
+negative fixture cases. Cookie hints and hashes never supply lineage.
+
+All fixture outcomes remain non-authorizing and require both build tags. No
+browser, real account, runtime, controller, Store or ordinary-main activation is
+part of this test. The JSON contract and lifecycle generation remain invented
+fixtures; native-source qualification is still an independent evidence gate.
+
+Call `Verifier.VerifyThreeProof(ThreeProofInput)` for the new fixture contract.
+The lifecycle interval starts at the accepted initial self observation; it does
+not import a persisted Store checkpoint. Authentication `Initial`/`Recheck`
+retain each phase's observation; aggregate `State` requires agreement. Authority
+counts deduplicate declared fixture labels and do not prove source independence.
+
+The canonical helper passed 37 top-level tests and 65 subtests, including 22 new
+top-level tests and 24 new subtests. Both-tag exclusion and ordinary-main isolation
+passed, all four protected runtime/configuration hashes matched, and the owned
+temporary root was cleaned. Log:
+`runtime/qa/auth-session-sidecar/x-three-proof-validation.txt`.
