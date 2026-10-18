@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {prepareXPassiveEvidence, resolveXPassiveEvidence} from '../x-passive-evidence.mjs';
+import {mergeXReplyDirectContext, prepareXPassiveEvidence, resolveXPassiveEvidence} from '../x-passive-evidence.mjs';
 import {capture} from '../capture.mjs';
+import {toObservation} from '../observation.mjs';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
 const names = ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js', 'capture-primitives.js',
@@ -123,6 +124,126 @@ test('expired deadline and borrowed backend cannot perform a passive evidence re
   assert.equal(state.reads, 0);
 });
 
+test('late exact reply evidence is added to the requested post and serialized with its quote context', async () => {
+  const quoteID = '2106867448746021280';
+  const quote = {kind: 'quotes', provenance: 'observed_dom', capturedAt: '2026-10-12T00:00:00.000Z',
+    target: {kind: 'post', id: quoteID, permalink: `https://x.com/i/status/${quoteID}`, text: 'Quoted text',
+      author: 'Quoted author', hasMedia: false, availability: 'captured'}};
+  const {browser, page, value, state} = await registered();
+  state.result = envelope([candidate({media: [], avatarUrl: undefined, replyToId: parentID})]);
+  const quoteParent = `https://x.com/i/status/${quoteID}`;
+  const input = post({media: [], mediaExpected: [], relationshipType: 'quote', parentPermalink: quoteParent,
+    directContext: [quote]});
+  const [merged] = await resolveXPassiveEvidence({browser, page, assets: value, posts: [input], deadlineAt: Date.now() + 1000});
+  assert.equal(merged.relationshipType, 'quote');
+  assert.equal(merged.parentPermalink, quoteParent, 'reply enrichment must preserve the quote legacy edge');
+  assert.deepEqual(merged.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.equal(merged.directContext[0].target.id, quoteID);
+  assert.deepEqual(merged.directContext[1], {
+    kind: 'replies_to', provenance: 'observed_response', capturedAt: merged.directContext[1].capturedAt,
+    target: {kind: 'post', id: parentID, permalink: `https://x.com/i/status/${parentID}`,
+      text: '', author: '', availability: 'reference_only'},
+  });
+  assert.equal(Number.isNaN(Date.parse(merged.directContext[1].capturedAt)), false);
+  const observation = toObservation({source: 'x', requestedUrl: 'https://x.com/home',
+    snapshots: [{posts: [merged]}], provenance: {}, capturedAt: '2026-10-12T00:00:00.000Z'});
+  const block = observation.snapshots[0].blocks[0];
+  assert.deepEqual(block.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.equal(block.directContext[1].target.id, parentID);
+  assert.equal(block.directContext[1].target.availability, 'reference_only');
+  assert.equal(JSON.stringify(observation).includes('PRIVATE_GRAPHQL_BODY'), false);
+
+  state.result = envelope([]);
+  const [uncached] = await resolveXPassiveEvidence({browser, page, assets: value,
+    posts: [post({media: [], mediaExpected: []})], deadlineAt: Date.now() + 1000});
+  assert.equal(uncached.directContext?.some(relation => relation.kind === 'replies_to') ?? false, false,
+    'reply identity must not be learned into the Sidecar session cache');
+});
+
+test('foreign, duplicate, conflicting, self, unsafe and malformed reply identities are rejected safely', async () => {
+  const otherID = '2106867448746021280';
+  const reply = candidate({media: [], avatarUrl: undefined, replyToId: parentID});
+  const cases = [
+    {name: 'foreign owner', values: [candidate({candidateId: `x:status:${otherID}`, media: [], avatarUrl: undefined, replyToId: parentID})]},
+    {name: 'mismatched requested post identity', values: [reply], input: post({id: otherID, media: [], mediaExpected: []})},
+    {name: 'duplicate owner evidence', values: [reply, reply]},
+    {name: 'self identity', values: [candidate({media: [], avatarUrl: undefined, replyToId: ownID})]},
+    {name: 'unsafe permalink-shaped identity', values: [candidate({media: [], avatarUrl: undefined, replyToId: `https://x.com/i/status/${parentID}`})]},
+    {name: 'malformed short identity', values: [candidate({media: [], avatarUrl: undefined, replyToId: '1234'})]},
+    {name: 'no observed identity', values: []},
+  ];
+  for (const item of cases) {
+    const {browser, page, value, state} = await registered();
+    state.result = envelope(item.values);
+    const [result] = await resolveXPassiveEvidence({browser, page, assets: value,
+      posts: [item.input || post({media: [], mediaExpected: []})], deadlineAt: Date.now() + 1000});
+    assert.equal(result.directContext?.some(relation => relation.kind === 'replies_to') ?? false, false, item.name);
+  }
+
+  const {browser: duplicateBrowser, page: duplicatePage, value: duplicateAssets, state: duplicateState} = await registered();
+  duplicateState.result = envelope([
+    candidate({media: [], avatarUrl: undefined, replyToId: parentID}),
+    candidate({media: [], avatarUrl: undefined, replyToId: otherID}),
+  ]);
+  const [duplicateConflict] = await resolveXPassiveEvidence({browser: duplicateBrowser, page: duplicatePage,
+    assets: duplicateAssets, posts: [post({media: [], mediaExpected: []})], deadlineAt: Date.now() + 1000});
+  assert.equal(duplicateConflict.directContext?.some(relation => relation.kind === 'replies_to') ?? false, false);
+  assert.equal(duplicateConflict.presentation.directContextStatus, 'ambiguous');
+
+  const conflictingReply = {kind: 'replies_to', provenance: 'observed_dom', capturedAt: '2026-10-12T00:00:00.000Z',
+    observedText: 'Replying to @parent', target: {kind: 'post', id: otherID,
+      permalink: `https://x.com/owner/status/${otherID}`, text: 'Conflicting DOM parent', author: 'Parent', availability: 'captured'}};
+  const quote = {kind: 'quotes', provenance: 'observed_dom', capturedAt: '2026-10-12T00:00:00.000Z',
+    target: {kind: 'post', id: '2106867448746021281', permalink: 'https://x.com/owner/status/2106867448746021281',
+      text: '', author: '', availability: 'reference_only'}};
+  const {browser, page, value, state} = await registered();
+  state.result = envelope([reply]);
+  const [conflicted] = await resolveXPassiveEvidence({browser, page, assets: value,
+    posts: [post({media: [], mediaExpected: [], directContext: [quote, conflictingReply]})], deadlineAt: Date.now() + 1000});
+  assert.deepEqual(conflicted.directContext.map(relation => relation.kind), ['quotes']);
+  assert.equal(conflicted.presentation.directContextStatus, 'ambiguous');
+
+  const {browser: parentBrowser, page: parentPage, value: parentAssets, state: parentState} = await registered();
+  parentState.result = envelope([reply]);
+  const [parentConflict] = await resolveXPassiveEvidence({browser: parentBrowser, page: parentPage,
+    assets: parentAssets, posts: [post({media: [], mediaExpected: [], relationshipType: 'reply',
+      parentPermalink: `https://x.com/owner/status/${otherID}`, directContext: []})], deadlineAt: Date.now() + 1000});
+  assert.deepEqual(parentConflict.directContext, []);
+  assert.equal(parentConflict.parentPermalink, '', 'ambiguous evidence must not retain a selected reply parent');
+  assert.equal(parentConflict.presentation.directContextStatus, 'ambiguous');
+});
+
+test('malformed optional reply evidence cannot erase a valid existing edge', () => {
+  const capturedAt = '2026-10-12T00:00:00.000Z';
+  const existing = {kind: 'replies_to', provenance: 'observed_dom', capturedAt,
+    target: {kind: 'post', id: parentID, permalink: `https://x.com/owner/status/${parentID}`,
+      text: 'Verified parent body', author: 'Parent', availability: 'captured'}};
+  const malformed = {...existing, provenance: 'observed_response', target: {...existing.target,
+    permalink: `https://x.com/owner/status/${ownID}`}};
+  const original = post({relationshipType: 'reply', parentPermalink: existing.target.permalink,
+    directContext: [existing]});
+  for (const incoming of [[malformed], [existing, malformed]]) {
+    const merged = mergeXReplyDirectContext(original, incoming);
+    assert.deepEqual(merged, original);
+    assert.equal(merged.directContext[0].target.id, parentID);
+    assert.equal(merged.parentPermalink, existing.target.permalink);
+  }
+});
+
+test('reply enrichment respects the eight-relation observation cap', async () => {
+  const existing = Array.from({length: 8}, (_, index) => {
+    const id = String(2106867448746021300 + index);
+    return {kind: 'quotes', provenance: 'observed_dom', capturedAt: '2026-10-12T00:00:00.000Z',
+      target: {kind: 'post', id, permalink: `https://x.com/owner/status/${id}`, text: '', author: '', availability: 'reference_only'}};
+  });
+  const {browser, page, value, state} = await registered();
+  state.result = envelope([candidate({media: [], avatarUrl: undefined, replyToId: parentID})]);
+  const [result] = await resolveXPassiveEvidence({browser, page, assets: value,
+    posts: [post({media: [], mediaExpected: [], directContext: existing})], deadlineAt: Date.now() + 1000});
+  assert.equal(result.directContext.length, 8);
+  assert.ok(result.directContext.every(relation => relation.kind === 'quotes'));
+});
+
 test('capture grants expansion only to an owned round-one mutation-authorized page', async () => {
   for (const [backend, options, expected] of [
     ['headless_worker', {}, true], ['browser_quiet_hidden', {}, false],
@@ -152,9 +273,9 @@ function domArticle() {
     querySelectorAll: selector => selector === 'time' ? [time] : selector === '[data-testid="tweetText"]' ? [text] : []};
 }
 
-test('real GraphQL observer and shared parser carry a response-only reply through capture', async () => {
+test('real GraphQL observer carries a reply that arrives after DOM collection through capture', async () => {
   const value = assets(), article = domArticle(), listeners = [], events = [];
-  let context, boot;
+  let context, boot, responseSent = false;
   const graphURL = 'https://x.com/i/api/graphql/query/HomeTimeline';
   const payload = {data: {tweet: {__typename: 'Tweet', rest_id: ownID,
     legacy: {full_text: 'PRIVATE_GRAPHQL_BODY', in_reply_to_status_id_str: parentID},
@@ -177,21 +298,35 @@ test('real GraphQL observer and shared parser carry a response-only reply throug
       });
       context.window = context;
       vm.runInContext(boot, context);
-      await vm.runInContext(`fetch(${JSON.stringify(graphURL)})`, context);
-      await new Promise(resolve => setTimeout(resolve, 30));
-      assert.equal(vm.runInContext(`AkuXMediaEvidenceRuntime.lookupReplyTo('x:status:${ownID}')`, context), parentID,
-        JSON.stringify(vm.runInContext('AkuXMediaEvidenceRuntime.responseDiagnostics()', context)));
       return {};
     },
-    async evaluate(expression) {return JSON.parse(JSON.stringify(await vm.runInContext(expression, context) ?? null));},
+    async evaluate(expression) {
+      const evaluated = await vm.runInContext(expression, context);
+      if (expression.includes('XHeadlessPoC.collect()') && !responseSent) {
+        const beforeResponse = JSON.parse(evaluated);
+        assert.equal(beforeResponse.posts[0].directContext.some(relation => relation.kind === 'replies_to'), false,
+          'the DOM snapshot must be collected before the response edge arrives');
+        events.push('collect');
+        responseSent = true;
+        await vm.runInContext(`fetch(${JSON.stringify(graphURL)})`, context);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.equal(vm.runInContext(`AkuXMediaEvidenceRuntime.lookupReplyTo('x:status:${ownID}')`, context), parentID,
+          JSON.stringify(vm.runInContext('AkuXMediaEvidenceRuntime.responseDiagnostics()', context)));
+        events.push('response');
+      }
+      return JSON.parse(JSON.stringify(evaluated ?? null));
+    },
   };
   const browser = {backend: 'headless_worker', forSource: async () => page};
   const output = await capture(browser, {x: value}, 'x', {scrolls: 0, captureTimeoutMs: 3000, sourceHydrationTimeoutMs: 1000});
   const block = output.snapshots[0].blocks[0];
   assert.deepEqual(events.slice(0, 2), ['register', 'navigate']);
+  assert.deepEqual(events.slice(2, 4), ['collect', 'response']);
   assert.equal(block.directContext[0].target.id, parentID);
   assert.equal(block.directContext[0].provenance, 'observed_response');
   assert.equal(block.directContext[0].target.availability, 'reference_only');
+  assert.equal(block.relationshipType, 'reply');
+  assert.equal(block.parentPermalink, `https://x.com/i/status/${parentID}`);
   assert.equal(block.avatarUrl, avatar);
   assert.equal(block.text, 'DOM caption');
   assert.equal(JSON.stringify(output).includes('PRIVATE_GRAPHQL_BODY'), false);

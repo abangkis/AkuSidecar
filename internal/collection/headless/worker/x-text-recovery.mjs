@@ -1,5 +1,5 @@
 import { capturePrimitivesFor } from './capture-primitives.mjs';
-import { prepareXPassiveEvidence } from './x-passive-evidence.mjs';
+import { mergeXReplyDirectContext, prepareXPassiveEvidence } from './x-passive-evidence.mjs';
 
 const MAX_TARGETS = 3;
 // Reserve half of each target's bounded budget for one transient retry.
@@ -161,7 +161,8 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
         if (codePointLength(text) >= 4000) {
           return { kind: 'truncated', text: [...text].slice(0, 4000).join(''), stage };
         }
-        return { kind: 'verified', text, stage };
+        return { kind: 'verified', text, stage,
+          directContext: Array.isArray(matches[0].directContext) ? matches[0].directContext : [] };
       }
       return failed(lastLimitation === 'permalink_capture_failed' ? 'permalink_capture_timeout' : lastLimitation);
     } catch (error) {
@@ -187,7 +188,11 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
         outcome = await recoverTarget(target, post);
         outcomes.set(target.key, outcome);
       }
-      posts.push(outcome && !preservesCurrentText(post, outcome) ? applyOutcome(post, outcome, helpers()) : post);
+      if (outcome && preservesCurrentText(post, outcome)) {
+        posts.push(outcome.kind === 'verified' ? mergeXReplyDirectContext(post, outcome.directContext) : post);
+      } else {
+        posts.push(outcome ? applyOutcome(post, outcome, helpers()) : post);
+      }
     }
     return { ...snapshot, posts };
   }
@@ -247,7 +252,7 @@ function codePointLength(value) {
 function applyOutcome(post, outcome, primitives) {
   const limitations = Array.isArray(post.limitations) ? post.limitations.filter(value => typeof value === 'string') : [];
   if (outcome.kind === 'verified') {
-    return {
+    const recovered = {
       ...post,
       textRecovery: outcome.diagnostics,
       textCompleteness: primitives.textCompleteness({ recoveryVerified: true }),
@@ -256,6 +261,7 @@ function applyOutcome(post, outcome, primitives) {
       textCollapsed: false,
       limitations: unique(limitations.filter(value => !['text_may_be_collapsed', 'text_may_be_truncated', 'text_truncated'].includes(value))),
     };
+    return mergeXReplyDirectContext(recovered, outcome.directContext);
   }
   const textLimitations = outcome.kind === 'truncated'
     ? ['text_may_be_truncated', 'text_truncated'] : [outcome.limitation];

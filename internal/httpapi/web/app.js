@@ -7034,12 +7034,17 @@ function renderTimelineNow(items, latestCheck, timelineBatches = null, highlight
       decorateTimelineConversation(rendered, member, group, {
         documentRef: document,
         formatDate,
+        formatAuthor: (author, source) => sourceIdentity(author, source).displayName,
         checkedAt: value => batchBySession.get(value.sessionId)?.completedAt || value.createdAt,
         navigateToParent: timelineID => {
           const parent = [...container.querySelectorAll(":scope > [data-timeline-id]")]
             .find(card => card.dataset.timelineId === timelineID);
           parent?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
           parent?.focus({ preventScroll: true });
+          if (parent) {
+            parent.classList.add("timeline-conversation-target");
+            window.setTimeout(() => parent.classList.remove("timeline-conversation-target"), 1600);
+          }
         },
       });
       container.append(rendered);

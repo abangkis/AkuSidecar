@@ -78,6 +78,36 @@ function detail(id, text, extra = {}) {
   };
 }
 
+test('verified detail text recovery retains an exact reply edge from its bounded snapshot', async () => {
+  const id = '2106847019319062819';
+  const parentID = '2106847019319062820';
+  const quoteID = '2106847019319062821';
+  const quote = {kind: 'quotes', provenance: 'observed_dom', capturedAt: '2026-10-12T00:00:00.000Z',
+    target: {kind: 'post', id: quoteID, permalink: `https://x.com/theo/status/${quoteID}`,
+      text: '', author: '', availability: 'reference_only'}};
+  const recoveredReply = {kind: 'replies_to', provenance: 'observed_response', capturedAt: '2026-10-12T00:00:00.000Z',
+    target: {kind: 'post', id: parentID, permalink: `https://x.com/i/status/${parentID}`,
+      text: '', author: '', availability: 'reference_only'}};
+  const {browser} = makeHarness({documents: {[id]: detail(id, `Verified detail text. ${'R'.repeat(320)}`,
+    {directContext: [quote, recoveredReply]})}});
+  const recovery = createXTextRecovery({browser, assets, deadlineAt: Date.now() + 1000, perTargetMs: 300, totalMs: 300});
+  const original = feedPost(id, {directContext: [quote]});
+  const result = (await recovery.recoverSnapshot({posts: [original]})).posts[0];
+  assert.equal(result.textStatus, 'permalink_text_verified');
+  assert.deepEqual(result.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.equal(result.directContext[0].target.id, quoteID);
+  assert.equal(result.directContext[1].target.id, parentID);
+  assert.equal(result.directContext[1].target.availability, 'reference_only');
+  const laterComplete = feedPost(id, {text: 'Later complete feed text.', textCollapsed: false,
+    textStatus: 'visible_text_no_collapse_control', limitations: ['visible_dom_only'], directContext: [quote]});
+  const preserved = (await recovery.recoverSnapshot({posts: [laterComplete]})).posts[0];
+  assert.equal(preserved.text, laterComplete.text, 'a cached verified relation must not replace later complete text');
+  assert.equal(preserved.textStatus, laterComplete.textStatus);
+  assert.deepEqual(preserved.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.equal(preserved.directContext[1].target.id, parentID);
+  await recovery.close();
+});
+
 test('recovers longer text only from a hydrated exact permalink and preserves feed evidence', async () => {
   const id = '2106847019319062819';
   const fullText = `${'Long post line.\n'.repeat(24)}🧵`;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {toObservation} from '../observation.mjs';
+import {mergeXReplyDirectContext} from '../x-passive-evidence.mjs';
 import {contentContextKnownTypes} from '../../../../httpapi/web/timeline-content-context-state.js';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
@@ -98,6 +99,26 @@ test('shared parser preserves available response identity without requiring pare
   assert.equal(block.directContext[0].target.permalink, `https://x.com/i/status/${parentID}`);
   assert.equal(block.directContext[0].target.availability, 'reference_only');
   assert.equal(block.directContext[0].provenance, 'observed_response');
+});
+
+test('response identity can pair with an exact bounded DOM-captured parent body', async () => {
+  const {post} = await collect({responseID: parentID, parents: [article(parentID, 'Original parent')]});
+  const relation = post.directContext.find(value => value.kind === 'replies_to');
+  assert.equal(relation.provenance, 'observed_response');
+  assert.equal(relation.target.availability, 'captured');
+  assert.equal(relation.target.text, 'Original parent');
+
+  const owner = {...post, relationshipType: 'original', parentPermalink: '', directContext: []};
+  const enriched = mergeXReplyDirectContext(owner, [relation]);
+  assert.equal(enriched.directContext[0].target.text, 'Original parent');
+  assert.equal(enriched.directContext[0].target.availability, 'captured');
+  assert.equal(enriched.relationshipType, 'reply');
+  assert.equal(enriched.parentPermalink, relation.target.permalink);
+
+  const oversized = {...relation, target: {...relation.target, text: 'P'.repeat(4001)}};
+  const rejected = mergeXReplyDirectContext(owner, [oversized]);
+  assert.deepEqual(rejected.directContext, []);
+  assert.equal(rejected.presentation.directContextStatus, 'ambiguous');
 });
 
 test('headless does not invent reply identity from body, self or ambiguous marker links', async () => {

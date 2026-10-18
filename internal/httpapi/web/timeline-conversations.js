@@ -72,40 +72,64 @@ export function planTimelineConversations(items = []) {
 
 export function decorateTimelineConversation(card, member, group, {
   documentRef = document, formatDate = value => value || "", checkedAt = entry => entry.createdAt,
-  navigateToParent = () => {},
+  navigateToParent = () => {}, formatAuthor = value => value,
 } = {}) {
   const { entry, parentID } = member;
   const grouped = group.members.length > 1;
   const relation = entry.conversation;
   const knownReply = relation?.kind === "replies_to" && REPLY_PROVENANCE.has(relation.provenance);
-  if (!grouped && !knownReply) return;
-  const cue = documentRef.createElement("div");
-  cue.className = "timeline-conversation-cue";
+  const ambiguousCapture = entry.source === "x" && entry.evidence?.presentation?.directContextStatus === "ambiguous";
+  if (!grouped && !knownReply && !ambiguousCapture) return;
   if (grouped) {
     card.classList.add("timeline-conversation-member");
     card.dataset.conversationId = group.members[0].entry.id;
     card.dataset.conversationDepth = String(member.depth);
     card.classList.add(parentID ? "timeline-conversation-reply" : "timeline-conversation-root");
   }
-  if (parentID) {
-    const parent = group.members.find(value => value.entry.id === parentID)?.entry;
-    const author = parent?.evidence?.author || parent?.item?.author || "post";
-    const link = documentRef.createElement("button");
-    link.type = "button"; link.className = "timeline-reply-parent";
-    link.textContent = `Reply to ${author}`;
-    link.addEventListener("click", () => navigateToParent(parentID));
-    cue.append(link);
-  } else {
-    const label = documentRef.createElement("span");
-    label.textContent = grouped ? `Conversation · ${group.members.length} posts`
-      : relation.status === "ambiguous" || relation.status === "resolved"
-        ? "Reply · parent could not be matched in this view" : "Reply · parent not in this view";
-    cue.append(label);
-  }
-  if (entry.sessionId !== group.anchor.sessionId) {
-    const date = documentRef.createElement("small");
-    date.textContent = `From another check · ${formatDate(checkedAt(entry))}`;
-    cue.append(date);
-  }
-  card.prepend(cue);
+  const buildCue = () => {
+    const cue = documentRef.createElement("div");
+    cue.className = "timeline-conversation-cue";
+    if (parentID) {
+      const parent = group.members.find(value => value.entry.id === parentID)?.entry;
+      const author = formatAuthor(parent?.evidence?.author || parent?.item?.author || "post", parent?.source);
+      const link = documentRef.createElement("button");
+      link.type = "button"; link.className = "timeline-reply-parent";
+      link.title = `View parent post by ${author}`;
+      link.setAttribute("aria-label", link.title);
+      const arrow = documentRef.createElement("span");
+      arrow.className = "timeline-reply-arrow";
+      arrow.textContent = "↳";
+      arrow.setAttribute("aria-hidden", "true");
+      const name = documentRef.createElement("span");
+      name.className = "timeline-reply-name";
+      name.textContent = `Reply to ${author}`;
+      const hint = documentRef.createElement("span");
+      hint.className = "timeline-reply-action";
+      hint.textContent = "View parent";
+      hint.setAttribute("aria-hidden", "true");
+      link.append(arrow, name, hint);
+      link.addEventListener("click", () => navigateToParent(parentID));
+      cue.append(link);
+    } else {
+      const label = documentRef.createElement("span");
+      label.className = grouped ? "timeline-conversation-label" : "timeline-conversation-unresolved";
+      label.textContent = grouped ? `Conversation · ${group.members.length} posts`
+        : ambiguousCapture || relation?.status === "ambiguous" ? "Reply · parent identity is ambiguous"
+          : relation?.status === "resolved" ? "Reply · parent could not be matched in this view" : "Reply · parent not in this view";
+      cue.append(label);
+    }
+    if (entry.sessionId !== group.anchor.sessionId) {
+      const date = documentRef.createElement("small");
+      date.textContent = `From another check · ${formatDate(checkedAt(entry))}`;
+      cue.append(date);
+    }
+    return cue;
+  };
+  // Both presentation modes retain the cue; only their visible copy is exposed.
+  const identity = !card.classList.contains("semantic-duplicate-item")
+    && card.querySelector?.(".source-layout-card > header > div");
+  if (identity) {
+    identity.append(buildCue());
+    card.querySelector(":scope > .item-layout-view")?.prepend(buildCue());
+  } else card.prepend(buildCue());
 }

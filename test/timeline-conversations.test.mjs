@@ -67,7 +67,8 @@ test("conversation cues use safe text, preserve older-check provenance and navig
     documentRef, navigateToParent: id => navigated.push(id),
   }));
   const cue = cards[1].children[0];
-  assert.equal(cue.children[0].textContent, "Reply to <img onerror=unsafe>");
+  assert.equal(cue.children[0].children[1].textContent, "Reply to <img onerror=unsafe>");
+  assert.equal(cue.children[0].attributes["aria-label"], "View parent post by <img onerror=unsafe>");
   cue.children[0].listeners.click();
   assert.deepEqual(navigated, ["root"]);
   assert.equal(cards[0].children[0].children[1].textContent, "From another check · 2026-10-12");
@@ -82,10 +83,11 @@ const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.u
 function render(items, mode = "drawer") {
   const elements = new Map();
   const $ = selector => { if (!elements.has(selector)) elements.set(selector, element()); return elements.get(selector); };
-  const observed = [], drawer = [];
+  const observed = [], drawer = [], timers = [];
   const state = { bootstrap: { settings: { aiDetectionPresentation: mode } }, seenTimelineItems: new Set(),
     passiveMediaEvidenceAttempts: new Map(), expandedTimelineText: new Set(), expandedAIDetails: new Set(), expandedAIFeedbackOptions: new Set(), timelineContentContext: new Map() };
-  const context = { $, state, document: documentRef, window: { matchMedia: () => ({ matches: true }) }, planTimelineConversations, decorateTimelineConversation,
+  const context = { $, state, document: documentRef, window: { matchMedia: () => ({ matches: true }), setTimeout: callback => timers.push(callback) }, planTimelineConversations, decorateTimelineConversation,
+    sourceIdentity: author => ({ displayName: author }),
     schedulePassiveMediaEnrichment() {}, renderTimelineSidePane: values => drawer.push(...values), scheduleAIDeepRefresh() {}, stopObservingInlineVideoVisibilityWithin() {},
     formatTimelineCheckSummary: () => "2 updates", formatDate: value => value, renderTimelineActions() {},
     buildTimelineItem: () => element("article"), observeTimelineItem: (_, id) => observed.push(id), syncTimelineContentContextTabs() {}, scheduleBackToTop() {}, scheduleTimelineContentContextPosition() {} };
@@ -94,7 +96,7 @@ function render(items, mode = "drawer") {
   vm.runInContext(app.slice(app.indexOf("function renderTimelineNow("), app.indexOf("function renderTimelineActions(")), context);
   context.items = items;
   vm.runInContext('renderTimelineNow(items, {sessionId:"new",completedAt:"new-time"}, [{sessionId:"new",completedAt:"new-time"},{sessionId:"old",completedAt:"old-time"}])', context);
-  return { elements, state, observed, drawer };
+  return { elements, state, observed, drawer, timers };
 }
 
 test("actual Timeline rendering preserves batch boundaries, observes each card and keeps AI filtering authoritative", () => {
@@ -111,8 +113,54 @@ test("actual Timeline rendering preserves batch boundaries, observes each card a
   cards[1].children[0].children[0].listeners.click();
   assert.equal(cards[0].scrollOptions.behavior, "instant");
   assert.equal(cards[0].focusOptions.preventScroll, true);
+  assert.equal(cards[0].classList.contains("timeline-conversation-target"), true);
+  rendered.timers[0]();
+  assert.equal(cards[0].classList.contains("timeline-conversation-target"), false);
   const filtered = render([...items.slice(0, 2), { ...parent, aiDetection: { routeToSignals: true } }]);
   assert.deepEqual(filtered.observed, ["reply", "unrelated"]);
   assert.deepEqual(filtered.drawer.map(entry => entry.id), ["root"]);
   assert.deepEqual(filtered.state.timelineItems.map(entry => entry.id), ["reply", "unrelated", "root"]);
+});
+
+test("reply chips stay beside source identity and remain available in brief mode", () => {
+  const group = planTimelineConversations([post("reply", "root"), post("root")])[0];
+  const card = element("article"), identity = element(), brief = element();
+  card.querySelector = selector => selector === ".source-layout-card > header > div" ? identity
+    : selector === ":scope > .item-layout-view" ? brief : null;
+  const visited = [];
+  decorateTimelineConversation(card, group.members[1], group, { documentRef,
+    navigateToParent: id => visited.push(id), formatAuthor: name => name.toUpperCase() });
+  assert.equal(identity.children.length, 1);
+  assert.equal(brief.children.length, 1);
+  const button = identity.children[0].children[0];
+  assert.equal(button.children[1].textContent, "Reply to ROOT");
+  assert.equal(button.children[2].textContent, "View parent");
+  assert.equal(button.type, "button");
+  button.listeners.click(); brief.children[0].children[0].listeners.click();
+  assert.deepEqual(visited, ["root", "root"]);
+});
+
+test("branch chips name their immediate parent while unresolved replies have no connector or guessed destination", () => {
+  const group = planTimelineConversations([post("leaf", "middle"), post("sibling", "root"), post("middle", "root"), post("root")])[0];
+  for (const member of group.members.filter(value => value.parentID)) {
+    const card = element(); decorateTimelineConversation(card, member, group, { documentRef });
+    assert.equal(card.children[0].children[0].children[1].textContent, `Reply to ${member.parentID}`);
+  }
+  for (const status of ["not_in_view", "ambiguous"]) {
+    const entry = post("orphan", "", {conversation:{kind:"replies_to",status,provenance:"observed_dom"}});
+    const single = planTimelineConversations([entry])[0], card = element();
+    decorateTimelineConversation(card, single.members[0], single, {documentRef});
+    assert.equal(card.classList.contains("timeline-conversation-member"), false);
+    assert.equal(card.children[0].children[0].tag, "span");
+    assert.equal(card.children[0].children[0].className, "timeline-conversation-unresolved");
+  }
+});
+
+test("conflicting native reply capture has a neutral label without a fabricated parent edge", () => {
+  const entry = { ...post("conflict"), source: "x", evidence: { presentation: { directContextStatus: "ambiguous" } } };
+  const group = planTimelineConversations([entry, { ...post("other"), source: "x" }])[0];
+  const card = element(); decorateTimelineConversation(card, group.members[0], group, { documentRef });
+  assert.equal(card.classList.contains("timeline-conversation-member"), false);
+  assert.equal(card.children[0].children[0].textContent, "Reply · parent identity is ambiguous");
+  assert.equal(card.children[0].children[0].tag, "span");
 });
