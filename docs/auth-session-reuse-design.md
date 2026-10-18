@@ -2210,3 +2210,370 @@ operation occurred. Versions observed: Chrome 155.0.8059.84, Node v24.16.0,
 Go go1.25.13 windows/amd64. Logs:
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.
+
+## MVP-1: native X qualification boundary — 2026-10-18
+
+The three-step critical path is recorded in `collection-modes-roadmap.md`.
+The selected MVP includes verified batch resume after an exclusive reader
+handoff. Its feasibility gate is native evidence, not another synthetic case.
+The published synthetic baseline `0670ae6` remains useful without establishing
+any of the following native claims.
+
+| Claim | Evidence currently available | Qualification state |
+| --- | --- | --- |
+| Stable current-self account identity | Existing extractors identify post authors. The signed-in UI exposes an account-switcher and a mutable profile-handle route. | Unqualified: neither a content author nor a mutable handle supplies a stable current-self ID. |
+| Explicit authenticated status | The account-switcher and profile navigation are visible in one existing signed-in page. | UI indication only: no qualified current-self response or authentication semantics observed. |
+| Session continuity | Existing adapter revisions identify code; feed freshness identifies content. | Unknown: neither is authentication lineage, and equal snapshots cannot cover an observation gap. |
+| Observation coverage | Connected browser tooling exposes DOM/UI access, not native response capture. | Single-page UI inspection only; worker/startup coverage is unverified. |
+
+The official [X current-user endpoint](https://docs.x.com/x-api/users/get-my-user)
+returns a user identity for an authorized API request. The official
+[user-context example](https://github.com/xdevplatform/samples/blob/main/python/users/get_users_me.py)
+uses OAuth user authorization. These sources do not establish that an API token
+represents the current browser-cookie session or supplies its continuity. This
+pilot does not introduce an OAuth application, export credentials or call a
+guessed endpoint to bypass native qualification.
+
+Content-author identities are independent of the current-self identity. Other
+authors in a feed are expected; an author/current-self mismatch is not a reason
+to reject the login. A native evidence source must identify the signed-in
+account separately and bind that observation to the owned browser session.
+
+### Approved minimal probe
+
+The user authorized a separate owned QA Chrome instance, a new profile and
+manual X login. Existing profiles and user runtime remain outside the probe.
+Chrome must enter the existing fixture kill-on-close Windows Job before any
+page starts. The parent remains the test process; no reader or helper may
+survive its owner. Cleanup must verify the Job is empty before profile removal.
+
+During manual sign-in, network observation is disabled. A read-only DOM boolean
+checks whether the account-switcher and profile-navigation UI are visible;
+it does not read login fields, account text, cookies or storage. Once that UI
+indication is present, a single-page observation may enable network events and
+reload Home once. The first stage records only bounded projected operation
+names, method/status, transport completion, cache facts and lengths. Request
+queries, identifiers, headers, credentials and body contents are excluded.
+Unknown paths receive fixed categories. No response-body command is enabled.
+
+This is operation discovery, not a verifier or permission source. A candidate
+operation still needs a separately reviewed bounded reader and qualified
+identity/authentication semantics. An observed operation name, HTTP success or
+visible logged-in UI does not supply session lineage. Probe loss and truncation
+must be reported; a partial single-page sample cannot claim all-target coverage.
+The result must end in a qualified path or a named blocker/scope decision.
+
+The fresh QA profile necessarily contains Chrome-managed login state while it
+exists. The probe must not export that state or persist it as evidence; local
+profile deletion does not itself revoke the new server-side X session. Store,
+`AcceptedRevisions`, controller permits and runtime activation remain unchanged.
+No native identity values, handles, bodies or screenshots belong in committed
+documentation.
+
+Run `scripts/probe-x-native-evidence.ps1 -NoChrome` for offline framing,
+projection and Go report-boundary checks. The live form, without `-NoChrome`,
+is limited to the separately approved manual-login QA workflow. It allows five
+minutes for manual sign-in, then records one 20-second Home reload sample.
+Sanitized progress, report and logs stay under
+`runtime/qa/auth-session-sidecar/x-native-metadata-<run-id>.*`. The helper deletes
+the task/profile root on both success and observation failure once the existing
+Job harness proves cleanup. Missing cleanup proof retains that owned root for
+diagnosis rather than deleting a possibly live profile. The report is explicitly
+non-authorizing and records partial target/ExtraInfo coverage and any sample cap.
+
+### Initial QA attempt
+
+Offline preflight passed seven Node tests plus the Go report-boundary test.
+The live attempt reached `bridge_ready` and `manual_login`. The user later
+clarified that the login screen was visible but they did not perform login.
+The signed-in Home selector did not become ready within five minutes. The test
+therefore failed before `start_observation`: Network was never enabled and no
+native metadata report or body was collected. This is a readiness timeout, not
+evidence that X rejected the login or that the account was logged out.
+
+The existing harness proved its owned Job empty and the helper removed the
+entire task/profile root. All eleven protected configuration, runtime,
+Store/controller and existing fixture/verifier hashes matched the pre-run
+baseline. Sanitized attempt evidence:
+`runtime/qa/auth-session-sidecar/x-native-metadata-df8d542cf1444020bb0968d936aaf39d.log.txt`
+and its `.progress.jsonl` companion. This attempt did not exercise signed-in
+Home detection. Confirm the user's readiness for manual login before opening
+another fresh QA profile. MVP-1 remains open; no native provider or resume
+permit is qualified.
+
+### Second QA attempt: sign-in rejection
+
+After explicitly confirming readiness, the user attempted manual Google sign-in
+in another fresh QA profile. Google displayed "This browser or app may not be
+secure". The user then tried the phone route in X; X displayed "Sorry, you are
+not allowed to log in at this time." These are user-observed UI results, not
+captured response bodies or qualified logged-out evidence.
+
+The probe launches Chrome with a private remote-debugging pipe before sign-in;
+disabling Network observation during credential entry does not remove that
+debugging connection. Google's [supported-browser guidance](https://support.google.com/accounts/answer/7675428?hl=en)
+identifies software-controlled browsers as a possible sign-in restriction.
+Automation/browser trust is therefore a plausible cause, not a confirmed cause
+of both failures. X's generic rejection does not identify which risk condition
+triggered it; its [browser support page](https://help.x.com/en/using-x/x-supported-browsers)
+supports recent Chrome versions without establishing approval for this probe.
+
+Do not repeat sign-ins on the rejected instance. The next proposed diagnostic
+is a separate fresh-profile Chrome control without CDP or observation software,
+with manual login and the same owner/cleanup boundary. A difference would help
+isolate the probe configuration; it would not qualify native identity/session
+proof or permit reusing a production profile. Do not substitute copied cookies,
+concealed automation, weakened browser protections or a fabricated lineage.
+
+The second attempt ended at the five-minute signed-in Home deadline, before
+`start_observation`. No Network observation or native metadata report occurred.
+The existing Job cleanup proof passed and the helper removed the task/profile
+root. Sanitized evidence:
+`runtime/qa/auth-session-sidecar/x-native-metadata-5cfa2a794b664c88b6f401188f27e20e.log.txt`
+and its `.progress.jsonl` companion. MVP-1 is blocked at native QA sign-in;
+the standard-Chrome control was the next proposed diagnostic at that checkpoint.
+
+### Standard-Chrome control: manual login succeeded
+
+The user authorized and completed one new-profile control without CDP. The
+launch-only helper starts normal headful Chrome with the new profile, Home URL
+and first-run/default-browser suppression. It installs no extension, connects
+to no browser debugging API and reads no page, network event, input or cookie.
+It uses the existing Node-before-Chrome Job assignment and process-image checks;
+browser ownership and cleanup are independent of browser observation.
+
+The user reported that login succeeded and X Home was visible. The helper
+accepted only the fixed `home_visible` outcome, then stopped the owned Job,
+verified the pinned root's exit and removed the entire task/profile root.
+The result is explicitly `manual_user_report`, `loginQualified:false` and
+`canAuthorize:false`. No native stable account ID, authentication response or
+session-continuity proof was captured. All eleven protected hashes matched.
+
+Offline acceptance passed two Node tests and the Go manual-outcome boundary
+test; the live control lifecycle also passed. Commands:
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -NoChrome
+.\scripts\test-x-standard-chrome-control.ps1
+# After receiving the user's observation, submit only a fixed outcome:
+.\scripts\test-x-standard-chrome-control.ps1 -CompleteRun <run-id> -Outcome home_visible
+```
+
+The result channel also accepts fixed Google/X rejection, other-error,
+not-attempted and cancellation outcomes; it does not accept account values or
+raw error text. It stops the control promptly after a manual result, with a
+five-minute maximum lifetime if no result arrives. Outcome reports are kept
+outside the disposable profile. This is not an automatic login detector.
+
+Sanitized evidence:
+`runtime/qa/auth-session-sidecar/x-standard-chrome-ad7308481c824d878ef14becaa282ecb.report.json`,
+its `.log.txt` and `.progress.jsonl` companions, and
+`runtime/qa/auth-session-sidecar/x-standard-chrome-protected-after.json`.
+
+The control establishes that manual login is possible in a fresh isolated
+Chrome profile under the same ownership boundary. It narrows the investigation
+to compatibility with the earlier probe configuration. It does not isolate CDP
+as the sole cause: the minimal control also omits the probe's additional launch
+switches, and the attempts used distinct profiles/times. The next MVP-1 task is
+a compatible evidence-observation design that preserves normal manual login;
+native source semantics and continuity still need qualification. No Store
+policy, original login, user runtime or production-provider activation changed.
+
+### Two-phase QA: normal login, then same-profile observation
+
+The separately authorized two-phase helper creates one new QA profile and uses
+it for both phases inside a single Node/kill-on-close Job scope. Phase one uses
+the standard-control Chrome arguments without CDP or page/network observation.
+The user supplies only a fixed manual outcome after login. A `home_visible`
+report advances the experiment; it is not authentication evidence or a Store
+permit. Rejection, cancellation or the five-minute deadline ends the experiment.
+
+Before phase two, the harness sends `WM_CLOSE` only to windows of the pinned QA
+Chrome root, requires its exit, and proves that the Job contains only Node. If
+Chrome descendants remain after the root exits gracefully, only verified Job
+members may be terminated; the sanitized report records their count. Failure
+to prove release blocks reopening. Windows directory handles prevent root and
+profile replacement during the handoff; file identities are checked again.
+
+A private one-use workflow grant binds the old owner/PID and unchanged
+directories, expires after ten monotonic seconds, and is never persisted as
+session lineage. Invalid or regressing clock reads disable the grant. The
+existing fresh-profile fixture startup guard remains unchanged: profile reuse
+is confined to this live two-phase QA scope, not a general existing-profile
+option. The second launch adds only `--remote-debugging-pipe` to the same
+standard arguments. There is no second login attempt. A bounded Home predicate
+must become true within thirty seconds before a single reload and twenty-second
+metadata sample can run.
+
+The observer retains only fixed operation names, status classes and bounded
+structural diagnostics. It does not request response bodies, cookie/storage
+values, credentials, account values or raw headers. Output passes the existing
+strict Go metadata-report validator. The report cannot authorize work; matching
+profile directories and a successful reopen do not establish session lineage.
+Job/root exit is verified before the entire QA task/profile is removed. Local
+deletion does not revoke any server-side QA login session.
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -NoChrome
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase
+# Only after receiving the user's fixed manual observation:
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -CompleteRun <run-id> -Outcome home_visible
+```
+
+Offline acceptance: fourteen Node checks and three Go preflight tests passed,
+including same-path directory replacement rejection, a pinned-directory move
+failure, released-handle cleanup, expired/replayed grants and clock regression.
+
+The first live two-phase attempt stopped during phase one. The user reported
+that the Google sign-in button did not respond while other controls remained
+clickable, then requested termination because login was unsuccessful. This
+phase had no CDP connection or page/network observer. The fixed outcome was
+`other_error`, with diagnostic `phase1_login_not_confirmed`; the harness failed
+the login prerequisite and did not request or start phase two. This is not a
+server rejection diagnosis, and does not identify the reason the button failed.
+
+Owned Job/root cleanup was verified and the entire task/profile root was
+removed. All eleven protected file hashes matched the baseline. The report's
+false handoff booleans describe the unexecuted phase-one-to-phase-two release,
+not a failed final Job cleanup. Sanitized evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-e6f9f7dc148a45288d9c49e3d4bead97.report.json`,
+its `.log.txt` and `.progress.jsonl` companions, and
+`runtime/qa/auth-session-sidecar/x-two-phase-protected-after.json`.
+
+Same-profile observation remains unproven and MVP-1 remains open. The previous
+successful standard-control login and this unsuccessful normal-login attempt
+show that login compatibility cannot currently be attributed to CDP alone.
+Do not retry sign-in automatically, weaken Chrome protections, change Store
+policy or use the user's main profile to bypass this prerequisite. A next
+manual QA attempt requires renewed readiness after reviewing the login failure.
+
+### Accountless popup preflight and bounded window diagnostics
+
+The local popup mode uses a new QA profile, the same Node-before-Chrome Job,
+and the same directory pins as two-phase QA. It launches normal Chrome without
+CDP. Only the final Home URL is replaced with a loopback page. The page has one
+button which calls `window.open` directly from its click handler; a cooperating
+local child page acknowledges its load. Neither page loads external resources
+or accepts account input. Fresh private header nonces bind the bounded local
+callbacks; callback bodies contain only three booleans (trusted input, active
+user activation, returned window handle). Unknown fields, duplicates, nonboolean
+values, oversized bodies and trailing JSON are rejected. No nonce is persisted.
+
+The report separates missing events (`null`) from negative results (`false`).
+It also records whether ordinary create/rename/delete operations within the
+profile succeeded while the root/profile directory pins were held. This checks
+basic file operations, not every operation used by Chrome or Google sign-in.
+
+The automatic diagnostic queues native mouse messages only to the pinned QA
+window; it never moves the cursor or calls foreground activation. On this host
+the first attempt stopped at render-target selection/input; after removing the
+dependency on a child render HWND, the second attempt queued input but the page
+did not acknowledge a click. This is an input-delivery limitation, not evidence
+of a blocked popup. Both owned Jobs/profiles were cleaned up. The second report
+is `runtime/qa/auth-session-sidecar/x-local-popup-0d92c13d1164483b88ec82c3117da86a.report.json`.
+Basic profile file operations passed; click/load evidence remained unknown.
+
+The separate physical mode sends no synthetic input and waits up to two minutes
+for one user click after an explicit ready instruction. It must observe trusted
+input, active user activation, a returned handle, the local child acknowledgement
+and an additional owned window to pass. A successful local popup would rule out
+a blanket inability to open this controlled popup under the fixture guards; it
+would not qualify Google's iframe/FedCM flow, native login or session lineage.
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -LocalPopup -NoChrome
+# Automatic input-delivery diagnostic; not a physical-click acceptance test:
+.\scripts\test-x-standard-chrome-control.ps1 -LocalPopup
+# After confirming user readiness; no account or login:
+.\scripts\test-x-standard-chrome-control.ps1 -LocalPopup -PhysicalPopup
+```
+
+Two-phase QA reports now use `aku.x.two-phase-metadata.v2` and add bounded
+OS-window diagnostics during phase-one manual login. The observer samples at
+200 ms, binds the pinned root and Job, filters only its Chrome top-level window
+class and retains at most 32 additional HWNDs privately. Only counts and fixed
+classifications are exported: no additional window observed, an additional
+window observed foreground, visible without observed foreground, not visible,
+or incomplete inventory. Minimized windows are counted separately. Visibility
+is the Win32 flag, not proof of an unoccluded on-screen surface. States describe
+what was observed during sampling, not necessarily the final state. A transient
+window may be missed, HWNDs can be reused, and inline/FedCM UI may not create a
+top-level window. No window is attributed to Google from these observations.
+
+No additional window is not proof of popup blocking. The optional fixed
+`PopupObservation` is stored separately as a manual user observation:
+`not_observed`, `no_visible_change`, `blocked_icon_visible`, or
+`popup_hidden_or_blank`. The original outcome-only payload remains accepted;
+missing popup observations remain unknown. No address-bar inspection, titles,
+URLs, page bodies, credentials or browser settings are read or changed.
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -CompleteRun <run-id> -Outcome other_error -PopupObservation no_visible_change
+```
+
+These fixtures cannot authorize Store work and do not modify the default-off
+integration, the user's original authentication or main-dev runtime.
+
+Physical local acceptance passed on 2026-10-18 after the user confirmed readiness
+and received the ready instruction. The page reported `trusted:true`,
+`active:true` and `returned:true`; the cooperating child loaded and the OS
+observer saw one additional owned window in the foreground. Profile file
+operations passed with the same directory pins active. The owned Job/root exit
+was verified, the entire profile was removed, and all eleven protected hashes
+matched. Evidence:
+`runtime/qa/auth-session-sidecar/x-local-popup-ecd97f933d9d49a089e70a753c41d3d2.report.json`
+and its `.log.txt`/`.progress.jsonl` companions, plus
+`runtime/qa/auth-session-sidecar/x-local-popup-protected-after.json`.
+
+This establishes that these guards do not categorically prevent a same-origin
+popup from a trusted click. It does not explain Google's unresponsive sign-in
+button, prove Google's resources were ready, or test its cross-origin/FedCM
+flow. No X login was repeated and no native session proof was qualified.
+
+### Two-phase QA with window diagnostics: successful same-profile reopen
+
+On 2026-10-18 the user authorized one fresh-profile two-phase run and confirmed
+readiness for manual login. The Google button again produced no visible change,
+but the user successfully logged into X using the phone route. The fixed manual
+outcome was `home_visible` with `no_visible_change` as the separate popup
+observation. The window observer recorded one baseline window and no additional
+owned top-level Chrome window during phase one. Popup blocking remains
+`unobserved`: no extra window does not establish whether Google's script,
+iframe, FedCM or popup mechanism failed.
+
+The harness closed one owned Chrome window and verified the old root's exit.
+Four residual processes remained in the owned Job after graceful root exit;
+the harness verified their membership, terminated them, and proved only Node
+remained before reopening. This was a verified release with residual cleanup,
+not an entirely natural Chrome-tree exit. Root/profile directory identity was
+unchanged. Phase two reopened the same QA profile with the minimal CDP-pipe
+addition, observed the Home predicate, and performed the single twenty-second
+Home-reload metadata sample without another login.
+
+The strict metadata projection accepted thirty candidates, zero dropped, with
+the event limit not reached. All thirty recorded status 200: one
+`graphql:HomeTimeline`, one `rest:account-settings`, fourteen `graphql:other`
+and fourteen `rest:other`. Unknown operations remain grouped; their original
+names/URLs are not exported. Coverage remains one page/reload and ExtraInfo
+coverage remains `not_observed`. The sample requested no response bodies,
+cookie/storage values or credentials and does not qualify a current-self ID,
+explicit authentication semantics or session lineage. The workflow grant and
+same-profile Home reopen do not create a Store permit (`canAuthorize:false`,
+`permitInherited:false`).
+
+The live test, fourteen Node preflight checks and four Go preflight tests passed
+(with four window-state subtests). Final Job/root cleanup passed, the entire QA
+profile was deleted, and all eleven protected hashes matched. Original login,
+Store policy and the user runtime were unchanged. Sanitized evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-9d71e1cafc534f36bc25201466ba8445.report.json`,
+its `.log.txt`/`.progress.jsonl` companions, and
+`runtime/qa/auth-session-sidecar/x-two-phase-protected-after.json`.
+
+This proves one compatible QA path: normal manual phone login, verified
+release, same-profile reopen and post-login CDP metadata observation. It does
+not explain the Google button failure or guarantee future login compatibility.
+MVP-1 can now move from observation feasibility to qualifying a minimal native
+evidence source. `account-settings` is an observed candidate, not an approved
+identity/authentication source based on its operation name or HTTP status.
+Any native body projection must be separately scoped and retain the existing
+sanitization and missing-lineage gate; no real-provider activation is implied.

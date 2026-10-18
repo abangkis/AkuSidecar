@@ -5456,3 +5456,152 @@ verification retains CDP completion and the independent 4 KiB reader limit.
 All owned Jobs/profile roots were cleaned and eleven protected hashes matched.
 Evidence: `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.
+
+## Session-reuse MVP: three-step critical path (2026-10-18)
+
+Target: an explicitly enabled X-only pilot for one enrolled account and one
+owned profile, using exclusive collector/reader handoff. Preserve reader
+priority, durable pending work and a reader lifetime bounded by Sidecar. A
+usable pilot includes verified close-and-resume; reader-only permanent pause is
+not the selected release scope. Store's accepted-revision rule stays unchanged.
+
+| Step | Concrete deliverable | Exit gate | Status |
+| --- | --- | --- | --- |
+| MVP-1: qualify native X evidence | A minimal, sanitized evidence record and a feasibility decision for stable current-self identity, explicit authentication and session lineage | Each claim has an observed source, binding/freshness semantics and limitations; missing lineage is a no-go for verified resume | In progress |
+| MVP-2: wire the qualified provider | A real-source adapter, versioned provider metadata/migration and controller integration, with default-off opt-in | Existing revision matching, fresh verification and durable guards remain enforced; synthetic evidence cannot authorize real work | Pending MVP-1 |
+| MVP-3: narrow acceptance and activation | A selected dev profile/database, focused acceptance evidence and a guard-aware rollback procedure | Reader open/close/resume, logout/account mismatch, opt-out/rollback pass; explicit runtime-activation authorization | Pending MVP-2 |
+
+### Execution rules for speed
+
+- Reuse the published baseline at `0670ae6`: bounded Chrome ingress/body,
+  synthetic three-proof verification, ownership/Job cleanup and existing
+  controller/checkpoint sequencing. Re-run only checks affected by new wiring.
+- Defer extra Chrome fault permutations, additional sources, concurrent
+  collectors, seamless restart and broad media support until after the MVP.
+- Keep MVP-1 to the smallest native feasibility probe. Do not add another
+  synthetic test campaign to substitute for missing native evidence.
+- End MVP-1 with either a qualified evidence path or a named blocker and an
+  explicit scope/policy decision. Do not keep inventing revision values or
+  expand collection indefinitely when lineage is unavailable.
+- Technical support for a real provider needs versioned metadata work; this
+  does not authorize relaxing `AcceptedRevisions`, re-enrolling silently or
+  converting user confirmation into missing authentication/session proof.
+
+### MVP-1: minimum work and authorization boundary
+
+1. Inventory existing source code and observe one already authenticated X UI
+   read-only. Record only structural diagnostics; keep account values private.
+2. Identify a supported current-self response and explicit authentication
+   semantics. A content author, display handle, account-switcher element,
+   code-version string or feed fingerprint is not sufficient proof.
+3. Establish whether a trustworthy lineage source can meet exclusive handoff
+   and the existing Store revision contract. Equal account snapshots do not
+   establish continuity across an unobserved gap.
+4. Record the source/observation matrix, the minimum native probe needed and a
+   go/no-go result. Unknown and unavailable claims remain distinct from logout.
+
+The user subsequently authorized one separate QA Chrome probe with a new
+profile and manual X login. The probe must not attach to the existing browser,
+copy its profile or inspect its credentials. Network observation stays disabled
+while the user signs in; the first observation records only bounded, sanitized
+metadata from natural browser traffic after the authenticated UI is detected.
+It neither reads response bodies nor sends invented API requests. This approval
+creates a real X session only in the QA profile. Original authentication,
+source-policy changes, native-provider activation and user-runtime
+start/stop/restart remain outside this step. Local profile cleanup is not proof
+that X revoked the server-side session.
+
+No native account IDs, handles, credentials, request/response bodies or account
+screenshots belong in committed evidence. Record only sanitized claims and
+fixed diagnostics. Real profile/database activation remains a separate action
+after MVP-3 preparation, not a consequence of publishing source code.
+
+MVP-1 checkpoint: the isolated metadata probe and offline checks are ready
+(seven Node tests and Go report-boundary preflight passed). One approved fresh
+QA run reached the visible manual-login window but did not detect signed-in
+Home within five minutes. It stopped before Network observation, proved the
+owned Job empty and removed its profile. Eleven protected hashes matched.
+The user clarified that the login screen was visible but no login was performed;
+this attempt did not test signed-in Home detection. No native identity,
+authentication or continuity proof has been collected. Confirm readiness for
+manual login before another QA run.
+
+Second QA checkpoint: after confirming readiness, the user attempted Google
+sign-in and then X's phone route in a new profile. Both were rejected by the
+respective sign-in UI. The probe never reached signed-in Home or enabled
+Network observation; the owned Job/profile cleanup passed. Native sign-in in
+the software-controlled QA browser is now a named blocker for MVP-1.
+Browser trust/debugging is a hypothesis, not a proven cause. The proposed next
+diagnostic is one fresh-profile standard-Chrome control without CDP; no new
+login run, security workaround or production-profile reuse is implied.
+
+Standard-Chrome control checkpoint: the separately authorized no-CDP control
+completed with a new profile. The user reported successful login and visible X
+Home. Two Node checks, the Go outcome-boundary preflight and live owned-process
+lifecycle passed; Job/root exit and profile cleanup were verified, and all
+eleven protected hashes matched. The saved result is a non-authorizing manual
+observation, not verifier evidence. Fresh-profile login is feasible; MVP-1 now
+needs a compatible observation path and qualification of the three native
+claims. This result implicates the earlier probe configuration as a candidate
+but does not isolate CDP from its other launch switches. MVP-2 remains gated.
+
+Two-phase QA checkpoint: the authorized helper now supports normal manual
+login followed by a verified old-Chrome release and reopening the same new QA
+profile with only a private CDP-pipe argument added. Fourteen Node checks and
+three Go preflight tests passed. The live attempt stopped at phase one: the
+user reported an unresponsive Google sign-in button, could not complete login,
+and requested cleanup. The fixed `other_error` outcome failed the prerequisite;
+phase two, Home detection after reopen and Network observation were not run.
+The owned Job/root cleanup passed, the profile was removed and eleven protected
+hashes matched. The sanitized report is
+`runtime/qa/auth-session-sidecar/x-two-phase-e6f9f7dc148a45288d9c49e3d4bead97.report.json`.
+This attempt had no CDP during login and does not establish a browser-trust or
+server-rejection cause. MVP-1 still needs one successful, compatible same-profile
+observation and qualification of identity/authentication/lineage. MVP-2 and
+main-dev activation remain gated; no repeated login campaign is authorized.
+
+Accountless popup checkpoint: a loopback-only popup fixture and bounded
+phase-one window diagnostics are implemented. Local preflight passed four Node
+checks and three Go tests (plus four window-state subtests). The two-phase
+preflight passed fourteen Node checks and four Go tests. The diagnostics reject
+duplicate/private manual fields, preserve missing evidence as unknown, cap
+window accumulation, and distinguish foreground/background/minimized/hidden
+observations without inspecting titles, URLs or page contents. No new window
+does not imply popup blocking; a blocked-icon observation is separate manual
+evidence. The new two-phase report revision is diagnostic-only and leaves Store
+policy unchanged.
+
+Automatic local input attempts did not qualify popup behavior: the initial
+attempt stopped at input-target handling, and one corrected attempt queued
+input but the page observed no click. Profile create/rename/delete operations
+passed while directory pins were held. Both Jobs/profiles were cleaned up;
+eleven protected hashes matched. The separate `-LocalPopup -PhysicalPopup` mode
+subsequently passed after one physical click following the ready instruction:
+trusted input and active user activation, a returned handle, loaded local child,
+and one additional foreground QA window were observed. The owned Job/profile
+cleanup passed and all eleven protected hashes remained unchanged. Evidence:
+`runtime/qa/auth-session-sidecar/x-local-popup-ecd97f933d9d49a089e70a753c41d3d2.report.json`.
+The fixture guards permit this controlled local popup; Google-specific readiness,
+popup/FedCM behavior and same-profile observation remain unqualified. No X login
+was retried. The next authorized QA can use the bounded window diagnostics and
+explicit manual popup outcomes without changing browser protection settings.
+
+Two-phase repeat with diagnostics passed on 2026-10-18. The user reported that
+the Google button still produced no visible change, but phone login succeeded.
+The observer saw no additional owned top-level Chrome window; blocked-popup
+evidence remains unknown. The old Chrome root exited after one window close;
+four verified Job-owned residual processes were terminated before the Job-only-
+Node release proof. The same profile reopened with the private CDP pipe, Home
+was observed without another login, and the twenty-second sample yielded thirty
+status-200 candidates with zero dropped: one HomeTimeline, one account-settings,
+and twenty-eight fixed `other` projections. ExtraInfo remains unobserved and no
+response bodies were requested. Final Job/root/profile cleanup passed and
+eleven protected hashes matched. Evidence:
+`runtime/qa/auth-session-sidecar/x-two-phase-9d71e1cafc534f36bc25201466ba8445.report.json`.
+
+MVP-1 now has one compatible login/reopen/observation path; the next delta is
+native evidence-source qualification. The observed account-settings operation
+is only a candidate. Current-self identity, explicit authentication and lineage
+remain unqualified, and `canAuthorize`/permit inheritance remain false. Do not
+expand this result into production activation or native body-reading approval.
+MVP-2 and main-dev activation remain gated on those evidence contracts.
