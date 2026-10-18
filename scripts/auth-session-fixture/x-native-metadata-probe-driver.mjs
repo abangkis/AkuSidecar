@@ -13,7 +13,7 @@ import { standardChromeArgs } from './x-standard-chrome-control.mjs';
 import { projectAccountSettingsBody } from './x-account-settings-body.mjs';
 import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
+import { BootstrapHandoffCapture } from './x-bootstrap-breakpoint-handoff.mjs';
 
 const retainedQAMode = mode => mode === 'retained_account_settings' || mode === 'retained_bootstrap';
 
@@ -60,15 +60,17 @@ const CDP_METHODS = Object.freeze({
   'Debugger.enable': 'early_debugger_enable',
   'Debugger.disable': 'early_debugger_disable',
   'Debugger.setInstrumentationBreakpoint': 'early_instrumentation',
+  'Debugger.setBreakpoint': 'early_normal_breakpoint',
   'Debugger.removeBreakpoint': 'early_remove_breakpoint',
   'Debugger.resume': 'early_resume',
 });
 const EARLY_CDP_METHODS = new Set(['Page.getFrameTree', 'Runtime.enable', 'Runtime.disable', 'Debugger.enable',
-  'Debugger.disable', 'Debugger.setInstrumentationBreakpoint', 'Debugger.removeBreakpoint', 'Debugger.resume']);
+  'Debugger.disable', 'Debugger.setInstrumentationBreakpoint', 'Debugger.setBreakpoint', 'Debugger.removeBreakpoint', 'Debugger.resume']);
 const EARLY_COMMAND_LABELS = Object.freeze({ 'Page.getFrameTree': 'frameTree', 'Runtime.enable': 'runtimeEnable',
   'Debugger.enable': 'debuggerEnable', 'Debugger.setInstrumentationBreakpoint': 'breakpointSet', 'Page.reload': 'reload',
   'Debugger.resume': 'resume', 'Debugger.removeBreakpoint': 'breakpointRemove', 'Debugger.disable': 'debuggerDisable',
-  'Runtime.disable': 'runtimeDisable' });
+  'Runtime.disable': 'runtimeDisable', 'Debugger.setBreakpoint': 'normalBreakpointSet', 'Debugger.evaluateOnCallFrame': 'pausedRead' });
+const EARLY_LABELS = Object.freeze([...Object.values(EARLY_COMMAND_LABELS), 'normalBreakpointRemove']);
 const CDP_FRAME_LIMITS = Object.freeze({ maxJSONDepth: 20, maxJSONTokens: 8_192 });
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
@@ -524,7 +526,19 @@ function projectCDPResult(method, result, projectionKind = null) {
     }
     case 'Debugger.setInstrumentationBreakpoint':
       if (!safeId(result.breakpointId)) throw probeError('early_breakpoint_invalid');
+      active.earlyInstrumentationId = result.breakpointId;
       return { breakpointId: result.breakpointId };
+    case 'Debugger.setBreakpoint': {
+      const handoff = active?.earlyCapture?.handoff;
+      if (!handoff) throw probeError('early_normal_breakpoint_invalid');
+      handoff.created(result.breakpointId);
+      const location = result.actualLocation;
+      const requested = handoff.installing;
+      if (!requested || !isObject(location) || location.scriptId !== requested.scriptId ||
+          !Number.isSafeInteger(location.lineNumber) || location.lineNumber < 0 || location.lineNumber > 1000000 ||
+          !Number.isSafeInteger(location.columnNumber) || location.columnNumber < 0 || location.columnNumber > 1000000) throw probeError('early_normal_breakpoint_invalid');
+      return { breakpointId: result.breakpointId, actualLocation: { scriptId: location.scriptId, lineNumber: location.lineNumber, columnNumber: location.columnNumber } };
+    }
     case 'Network.getResponseBody':
       if (!accountSettingsBodyMode(driverMode)) throw probeError('body_mode_required');
       return projectAccountSettingsBody(result);
@@ -709,11 +723,13 @@ export function isEarlyBootstrapCallFrameRead(params, capture) {
     params.includeCommandLineAPI === false && params.generatePreview === false;
 }
 
-function send(method, params = {}, sessionId = undefined) {
+function send(method, params = {}, sessionId = undefined, purpose = null) {
   if (cdpFailure) return Promise.reject(probeError(cdpFailure));
   if (!Object.hasOwn(CDP_METHODS, method) || !isObject(params) || pending.size >= MAX_PENDING_COMMANDS) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
+  if (purpose !== null && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
+      active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
   if (method === 'Network.getResponseBody' && (!accountSettingsBodyMode(driverMode) || !active?.gate.networkEnabled ||
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
@@ -724,7 +740,9 @@ function send(method, params = {}, sessionId = undefined) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
-    if (method === 'Debugger.removeBreakpoint') valid = keys.length === 1 && safeId(params.breakpointId);
+    if (method === 'Debugger.removeBreakpoint') valid = keys.length === 1 && safeId(params.breakpointId) &&
+      (purpose === 'normal_remove' ? active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId) : params.breakpointId === active?.earlyInstrumentationId);
+    if (method === 'Debugger.setBreakpoint') valid = keys.length === 1 && keys[0] === 'location' && active?.earlyCapture?.handoff.canInstall(params.location);
     if (method === 'Page.reload') valid = keys.length === 1 && params.ignoreCache === false;
     if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || sessionId !== active.sessionId || !valid) {
       return Promise.reject(probeError('early_command_not_authorized'));
@@ -805,7 +823,7 @@ function dispatchCDP(raw) {
     const event = projectCDPEvent(raw);
     if (!event || !active) return;
     if (event.type === 'early' && event.sessionId === active.sessionId && active.earlyRunning) {
-      active.earlyCapture?.observe(event.event);
+      active.earlyCapture?.observe(event.event, raw.params);
     } else if (event.type === 'page_load' && event.sessionId === active.sessionId && active.pageLoad) {
       active.pageLoad.resolve(true);
       active.pageLoad = null;
@@ -1128,6 +1146,7 @@ function requireOwner(message) {
 
 async function loginState(message) {
   const current = requireOwner(message);
+  if (current.earlyRunning || current.earlyAttempted && !current.earlyCleanupVerified) throw probeError('early_cleanup_required');
   if (current.gate.observationStarted) throw probeError('login_poll_closed');
   const result = await send('Runtime.evaluate', {
     expression: ACCOUNT_READY_EXPRESSION,
@@ -1143,7 +1162,7 @@ async function bootstrapCurrentSelf(message) {
   if (driverMode !== 'retained_bootstrap' || !retainedQAScope?.reuse) throw probeError('bootstrap_mode_required');
   const current = requireOwner(message);
   if (!current.gate.loginVisible || current.gate.observationStarted || current.bootstrapAttempted || current.earlyRunning ||
-      current.earlyAttempted && !current.earlyCleanupVerified) throw probeError('bootstrap_gate_closed');
+      current.earlyAttempted && (!current.earlyCleanupVerified || !current.earlyHandoffAccepted)) throw probeError('bootstrap_gate_closed');
   current.bootstrapAttempted = true;
   return send('Runtime.evaluate', { expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION, returnByValue: true,
     awaitPromise: false, userGesture: false, throwOnSideEffect: true, timeout: 1500 }, current.sessionId);
@@ -1157,29 +1176,23 @@ async function earlyBootstrapCurrentSelf(message) {
   }
   current.earlyAttempted = true;
   current.earlyRunning = true;
-  current.earlyCommandStatus = Object.fromEntries(Object.values(EARLY_COMMAND_LABELS).map(label => [label, 'not_attempted']));
-  current.earlyCapture = new EarlyBootstrapCapture({
-    send: async (method, params) => {
-      const label = EARLY_COMMAND_LABELS[method];
+  current.earlyCommandStatus = Object.fromEntries(EARLY_LABELS.map(label => [label, 'not_attempted']));
+  current.earlyCapture = new BootstrapHandoffCapture({
+    send: async (method, params, purpose = null) => {
+      const label = purpose === 'normal_remove' ? 'normalBreakpointRemove' : EARLY_COMMAND_LABELS[method];
       if (!label) throw probeError('early_command_not_authorized');
       if (current.earlyCommandStatus[label] !== 'failed') current.earlyCommandStatus[label] = 'sent';
       try {
-        const result = await send(method, params, current.sessionId);
+        const result = await send(method, params, current.sessionId, purpose);
         if (current.earlyCommandStatus[label] !== 'failed') current.earlyCommandStatus[label] = 'acknowledged';
         return result;
       } catch (error) { current.earlyCommandStatus[label] = 'failed'; throw error; }
     },
-    readBootstrap: (contextId, callFrameId) => {
-      if (!current.earlyCapture.canRead(contextId) || !current.earlyCapture.canReadCallFrame(callFrameId)) {
-        throw probeError('early_call_frame_not_authorized');
-      }
-      return send('Debugger.evaluateOnCallFrame', { callFrameId, expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
-        returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
-        includeCommandLineAPI: false, generatePreview: false }, current.sessionId);
-    },
   });
   try {
     const result = await current.earlyCapture.run();
+    current.earlyHandoffDiagnostics = current.earlyCapture.diagnostics();
+    current.earlyHandoffAccepted = current.earlyHandoffDiagnostics.handoffRejected === false;
     current.earlyCleanupVerified = result.cleanupVerified === true;
     return result;
   } finally {
@@ -1193,7 +1206,7 @@ function earlyBootstrapDiagnostics(message) {
   if (driverMode !== 'retained_bootstrap' || !active || message.owner !== active.owner ||
       !active.earlyAttempted || active.earlyRunning || !active.earlyCommandStatus) throw probeError('early_diagnostics_unavailable');
   const commands = {};
-  for (const label of Object.values(EARLY_COMMAND_LABELS)) {
+  for (const label of EARLY_LABELS) {
     const status = active.earlyCommandStatus[label];
     if (!['not_attempted', 'sent', 'acknowledged', 'failed'].includes(status)) throw probeError('early_diagnostics_invalid');
     commands[label] = status;
@@ -1201,7 +1214,29 @@ function earlyBootstrapDiagnostics(message) {
   const failureCategory = !cdpFailure ? 'none' : cdpFailure === 'cdp_frame_count_exceeded' ? 'frame_count_limit' :
     ['cdp_frame_too_large', 'cdp_input_invalid', 'cdp_json_invalid', 'cdp_utf8_invalid'].includes(cdpFailure) ? 'frame_invalid' :
     cdpFailure.endsWith('_timeout') ? 'command_timeout' : 'other';
-  return { schema: 'aku.x.early-bootstrap-transport.v1', commands, failureCategory, canAuthorize: false };
+  return { schema: 'aku.x.early-bootstrap-transport.v2', commands, failureCategory,
+    capture: sanitizeEarlyHandoffDiagnostics(active.earlyHandoffDiagnostics), canAuthorize: false };
+}
+
+export function sanitizeEarlyHandoffDiagnostics(value) {
+  // Reconstruct fixed fields only; no private correlator objects cross RPC.
+  if (!value || value.mode !== 'instrumentation_to_normal_breakpoint' || value.pauseAdapter !== 'verified_normal_breakpoint_as_capture_eligible') throw probeError('early_diagnostics_invalid');
+  const handoff = {};
+  for (const key of ['installAttempts', 'installed', 'matched', 'unexpected', 'mismatched', 'stale', 'replayed', 'removed']) {
+    const count = value.handoff?.[key];
+    if (!Number.isSafeInteger(count) || count < 0 || count > (['installAttempts', 'installed', 'matched', 'removed'].includes(key) ? 8 : 64)) throw probeError('early_diagnostics_invalid');
+    handoff[key] = count;
+  }
+  if (typeof value.handoff.normalCleanupVerified !== 'boolean' || !['not_started', 'waiting_for_normal', 'normal_hit_verified', 'install_failed', 'hit_rejected', 'cleanup_failed', 'no_normal_hit', 'normal_breakpoint_limit'].includes(value.handoff.outcome)) throw probeError('early_diagnostics_invalid');
+  handoff.normalCleanupVerified = value.handoff.normalCleanupVerified;
+  handoff.outcome = value.handoff.outcome;
+  if (typeof value.handoffRejected !== 'boolean') throw probeError('early_diagnostics_invalid');
+  const result = { mode: value.mode, pauseAdapter: value.pauseAdapter, handoffRejected: value.handoffRejected };
+  for (const key of ['actualInstrumentationPauses', 'actualOtherPauses', 'pausedEvaluationAttempts']) {
+    if (!Number.isSafeInteger(value[key]) || value[key] < 0 || value[key] > (key === 'pausedEvaluationAttempts' ? 8 : 64)) throw probeError('early_diagnostics_invalid');
+    result[key] = value[key];
+  }
+  return { ...result, handoff };
 }
 
 function validCandidate(candidate) {

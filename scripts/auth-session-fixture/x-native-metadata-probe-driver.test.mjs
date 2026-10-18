@@ -7,11 +7,29 @@ import {
   classifyXOperation,
   isEarlyBootstrapCallFrameRead,
   projectCDPEvent,
+  sanitizeEarlyHandoffDiagnostics,
   projectNetworkEvent,
 } from './x-native-metadata-probe-driver.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+
+test('native handoff diagnostics export only fixed counters and keep partial coverage separate from cleanup', () => {
+  const value = { mode: 'instrumentation_to_normal_breakpoint', pauseAdapter: 'verified_normal_breakpoint_as_capture_eligible',
+    actualInstrumentationPauses: 9, actualOtherPauses: 8, pausedEvaluationAttempts: 8, handoffRejected: false,
+    privateContext: 'PRIVATE', handoff: { installAttempts: 8, installed: 8, matched: 8, unexpected: 0, mismatched: 0,
+      stale: 0, replayed: 0, removed: 8, normalCleanupVerified: true, outcome: 'normal_breakpoint_limit', scriptId: 'PRIVATE', lineNumber: 7 } };
+  const dto = sanitizeEarlyHandoffDiagnostics(value);
+  assert.equal(dto.handoff.outcome, 'normal_breakpoint_limit');
+  assert.equal(dto.handoffRejected, false);
+  assert.equal(dto.handoff.normalCleanupVerified, true);
+  assert.equal(JSON.stringify(dto).includes('PRIVATE'), false);
+  assert.equal(Object.hasOwn(dto.handoff, 'scriptId'), false);
+  assert.equal(Object.hasOwn(dto.handoff, 'lineNumber'), false);
+  assert.throws(() => sanitizeEarlyHandoffDiagnostics({ ...value, handoffRejected: null }));
+  assert.throws(() => sanitizeEarlyHandoffDiagnostics({ ...value, handoff: { ...value.handoff, installed: 9 } }));
+  assert.throws(() => sanitizeEarlyHandoffDiagnostics({ ...value, handoff: { ...value.handoff, outcome: 'PRIVATE' } }));
+});
 
 test('paused evaluation accepts only the fixed by-value side-effect-checked expression and active call frame', () => {
   const capture = { canReadCallFrame: id => id === 'active-call' };

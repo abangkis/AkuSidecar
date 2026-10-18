@@ -100,7 +100,10 @@ try {
     }
     if ($RetainQA) { $nodeTests += 'scripts/auth-session-fixture/x-retained-account-settings-driver.test.mjs' }
     if ($BootstrapSelf) { $nodeTests += 'scripts/auth-session-fixture/x-bootstrap-current-self.test.mjs' }
-    if ($BootstrapEarly) { $nodeTests += 'scripts/auth-session-fixture/x-early-bootstrap-capture.test.mjs' }
+    if ($BootstrapEarly) {
+        $nodeTests += 'scripts/auth-session-fixture/x-early-bootstrap-capture.test.mjs'
+        $nodeTests += 'scripts/auth-session-fixture/x-bootstrap-breakpoint-handoff.test.mjs'
+    }
     & $nodePath --test --test-timeout=10000 --test-reporter=tap @nodeTests 2>&1 | Tee-Object -FilePath $logPath
     if ($LASTEXITCODE -ne 0) { throw 'Control launch-only checks failed.' }
     $offlinePattern = if ($LocalPopup) { '^TestX(LocalPopup|PopupDiagnostics|TwoPhaseMetadata)Offline$' } elseif ($AccountSettings) { '^TestX(AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' } elseif ($TwoPhase) { '^TestX(TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' } else { '^TestXStandardChromeControlOffline$' }
@@ -139,7 +142,7 @@ try {
         Write-Output ('Progress: ' + $progressPath)
         if ($LocalPopup -and $PhysicalPopup) { Write-Output 'Opening AkuBrowser Local Popup QA: loopback only, no account or login. Wait for the ready instruction, click Open local popup once, then leave both QA windows open for automatic cleanup; two-minute click deadline.' }
         elseif ($LocalPopup) { Write-Output 'Opening AkuBrowser Local Popup QA: loopback pages only, no account or login. The test queues scoped mouse messages to its owned browser window without moving the cursor or forcing foreground, records bounded diagnostics, then closes its Job.' }
-        elseif ($BootstrapEarly) { Write-Output 'Opening existing retained X QA: after Home, reload once with bounded before-script instrumentation (64 pauses/5 seconds), remove debugger, recheck Home and compare a late bootstrap shape. No Network/body/source reads; no new login; fixed diagnostics only.' }
+        elseif ($BootstrapEarly) { Write-Output 'Opening existing retained X QA: after Home, one bounded reload uses instrumentation only to install up to eight normal breakpoints; fixed guarded projection runs only at verified normal hits (64 pauses/5 seconds). Both breakpoint classes must be cleaned before a fresh Home check and late projection. No Network/body/source reads or new login; partial coverage remains diagnostic only.' }
         elseif ($BootstrapSelf) { Write-Output 'Opening existing retained X QA for one bootstrap shape diagnostic after Home. No Network observation or response-body reads. No login attempt; fixed diagnostic output only; no Store authority.' }
         elseif ($RetainQA) { Write-Output 'Opening dedicated retained X QA: first run requires manual login without CDP; later runs check the same owned profile automatically. Only this QA profile persists. Node/Chrome close each run; body values are not exported; no Store authority.' }
         elseif ($TwoPhase -and $AccountSettings) { Write-Output 'Opening AkuBrowser X QA Two Phase: manual phone login, then same-profile reopen. After Home detection, one natural account-settings response may be read once through the bounded shape projector; only fixed diagnostics are saved. No raw body/values are exported; no Store authority.' }

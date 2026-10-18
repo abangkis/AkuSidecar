@@ -170,7 +170,7 @@ func decodeXLocalBootstrapRepro(raw []byte) (xLocalBootstrapRepro, error) {
 			h.Unexpected < 0 || h.Unexpected > 64 || h.Mismatched < 0 || h.Mismatched > 64 || h.Stale < 0 || h.Stale > 64 || h.Replayed < 0 || h.Replayed > 64 ||
 			h.Installed > value.Mechanism.ActualInstrumentationPauses || h.Matched > value.Mechanism.ActualOtherPauses ||
 			value.Mechanism.PausedEvaluationAttempts > h.Matched || h.NormalCleanupVerified && h.Removed != h.Installed ||
-			!oneOf(h.Outcome, "not_started", "waiting_for_normal", "normal_hit_verified", "install_failed", "hit_rejected", "cleanup_failed", "no_normal_hit") {
+			!oneOf(h.Outcome, "not_started", "waiting_for_normal", "normal_hit_verified", "install_failed", "hit_rejected", "cleanup_failed", "no_normal_hit", "normal_breakpoint_limit") {
 			return value, invalid
 		}
 		for _, key := range []string{"installAttempts", "installed", "matched", "unexpected", "mismatched", "stale", "replayed", "removed"} {
@@ -193,7 +193,7 @@ func decodeXLocalBootstrapRepro(raw []byte) (xLocalBootstrapRepro, error) {
 				"breakpointSet", "breakpointRemove", "normalBreakpointSet", "normalBreakpointRemove", "reload", "resume", "pausedRead", "pausedReadRuntime", "lateRead", "browserClose", "initialFrame", "lateFrame")
 		}
 		return entry.Kind == "event" && oneOf(entry.Status, "observed", "error") && oneOf(entry.Label,
-			"rootHome", "rootOther", "contextCreated", "contextsCleared", "contextDestroyed", "scriptParsed", "instrumentationPause", "otherPause", "resumed", "pageLoaded", "protocol", "initialHomePending", "initialHomeReady", "initialHomeUnavailable", "instrumentationOmitted", "breakpointRemovalOmitted", "handoffInstalled", "handoffHitMatched", "handoffHitRejected", "handoffHitMissing", "lateHomeUnavailable")
+			"rootHome", "rootOther", "contextCreated", "contextsCleared", "contextDestroyed", "scriptParsed", "instrumentationPause", "otherPause", "resumed", "pageLoaded", "protocol", "initialHomePending", "initialHomeReady", "initialHomeUnavailable", "instrumentationOmitted", "breakpointRemovalOmitted", "handoffInstalled", "handoffHitMatched", "handoffHitRejected", "handoffHitMissing", "handoffLimitReached", "lateHomeUnavailable")
 	}
 	var first *xLocalBootstrapEntry
 	for index, entry := range value.Chronology {

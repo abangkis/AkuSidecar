@@ -5746,3 +5746,20 @@ and retained/protected hashes were unchanged. The prior four-script constant
 control remains accepted. This completes accountless local mechanism acceptance;
 X QA driver integration and native account-source qualification remain separate
 unfinished steps, with Store/runtime activation still gated.
+
+Retained X QA integration checkpoint (2026-10-19): the preceding 16-file delta
+was reviewed and pushed as `b495c9a` with remote SHA verification. A subsequent
+working-tree delta extracts the verified correlator into a neutral module and
+connects the retained early RPC to the same handoff. Offline checks passed
+76 Node/seven Go tests; local extraction checks passed 37 Node/one Go tests.
+Native run `35bcb23af6164b14981bb585077f8045` reused the same QA profile without
+login, captured a valid string session.user_id candidate matching its normalized
+user entity, completed both breakpoint cleanups and fresh Home verification,
+then observed bootstrap_missing in the late probe. Two normal breakpoints were
+installed/matched/removed, with no rejected hits; replay/Network guards passed.
+All auth fields were absent and continuity remains unproven. This completes
+retained-QA handoff/source-availability acceptance for the sampled reload, not
+explicit login/lineage qualification or Store authorization. Owned processes and
+ephemeral root were cleaned, retained identities/manifest stayed clean and all
+protected hashes were unchanged. No main login or user-runtime operation occurred;
+main-dev activation remains gated on the remaining verifier evidence/contract.

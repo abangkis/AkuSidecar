@@ -541,6 +541,15 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 			earlyCtx, earlyCancel := context.WithTimeout(ctx, 45*time.Second)
 			earlyErr := bridge.rpc(earlyCtx, "bootstrap_early_current_self", map[string]any{"owner": second.owner}, &raw)
 			earlyCancel()
+			// Persist fixed handoff diagnostics before handling a failed capture.
+			var diagnosticRaw json.RawMessage
+			diagnosticCtx, diagnosticCancel := context.WithTimeout(ctx, 5*time.Second)
+			diagnosticRPCErr := bridge.rpc(diagnosticCtx, "bootstrap_early_diagnostics", map[string]any{"owner": second.owner}, &diagnosticRaw)
+			diagnosticCancel()
+			diagnostics, diagnosticErr := decodeXEarlyBootstrapDiagnostics(diagnosticRaw)
+			if diagnosticRPCErr == nil && diagnosticErr == nil {
+				report.BootstrapEarlyDiagnostics = &diagnostics
+			}
 			if earlyErr != nil {
 				report.Diagnostic = "early_bootstrap_failed"
 				t.Fatal("early bootstrap failed; no source data exported:", earlyErr)
@@ -551,18 +560,25 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 				t.Fatal("early bootstrap output rejected")
 			}
 			report.BootstrapEarly = &capture
-			var diagnosticRaw json.RawMessage
-			if bridge.rpc(ctx, "bootstrap_early_diagnostics", map[string]any{"owner": second.owner}, &diagnosticRaw) != nil {
+			if diagnosticRPCErr != nil {
 				t.Fatal("early transport diagnostics unavailable")
 			}
-			diagnostics, diagnosticErr := decodeXEarlyBootstrapDiagnostics(diagnosticRaw)
 			if diagnosticErr != nil {
 				t.Fatal("early transport diagnostics rejected")
 			}
 			report.BootstrapEarlyDiagnostics = &diagnostics
-			if !capture.CleanupVerified {
+			if !capture.CleanupVerified || !diagnostics.Capture.Handoff.NormalCleanupVerified {
 				report.Diagnostic = "early_bootstrap_cleanup_unverified"
 				t.Fatal("early instrumentation cleanup unverified")
+			}
+			if diagnostics.Capture.PausedEvaluationAttempts > capture.ReadAttempts ||
+				capture.StopReason == "captured" && (diagnostics.Capture.Handoff.Matched == 0 ||
+					diagnostics.Capture.Handoff.Unexpected+diagnostics.Capture.Handoff.Mismatched+diagnostics.Capture.Handoff.Stale+diagnostics.Capture.Handoff.Replayed != 0) {
+				t.Fatal("early normal-breakpoint binding diagnostics inconsistent")
+			}
+			if diagnostics.Capture.HandoffRejected {
+				report.Diagnostic = "early_bootstrap_handoff_rejected"
+				t.Fatal("early normal-breakpoint handoff rejected; late probe unavailable")
 			}
 			switch capture.StopReason {
 			case "setup_failed", "evaluation_failed", "wrong_page", "unexpected_pause":
@@ -619,6 +635,9 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		}
 		report.BootstrapGuardsVerified = true
 		report.Diagnostic = "bootstrap_observed"
+		if earlyBootstrapEnabled && report.BootstrapEarly != nil && report.BootstrapEarlyDiagnostics != nil {
+			report.Diagnostic = classifyXEarlyBootstrapCoverage(*report.BootstrapEarly, *report.BootstrapEarlyDiagnostics)
+		}
 	} else {
 		stage("phase2_observing")
 		var raw json.RawMessage

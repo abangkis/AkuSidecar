@@ -3104,3 +3104,64 @@ the local handoff/full-projection acceptance only. The handoff adapter has not
 been installed in the X QA driver; native X bootstrap availability, account
 semantics and session continuity remain unqualified. Local results retain
 `canAuthorize:false` and `continuityProven:false`.
+
+### Retained X QA handoff integration (2026-10-19)
+
+After review, the preceding 16-file diagnostic/local-acceptance delta was pushed
+as `b495c9a0bb8f9b4e5da8ceb985a3394308d0ccb4`; the remote main SHA was verified.
+The subsequent adapter integration is a separate working-tree delta.
+
+The verified correlator now lives in
+`scripts/auth-session-fixture/x-bootstrap-breakpoint-handoff.mjs`, shared by the
+local adapter and retained X QA adapter. The retained early RPC uses
+`BootstrapHandoffCapture`: instrumentation can install only at the eligible
+current script position; only the matched normal breakpoint can evaluate the
+fixed projector. Normal removal accepts known IDs only. Owner/session, new-root
+default-context generation, exact hit/location, full evaluation guards and
+one-use retained-profile/Home gates remain enforced. No debugger statement or
+source/body retrieval is introduced into X.
+
+The unchanged observation bounds are eight normal breakpoint installations,
+64 pauses and five seconds. Hitting the normal-breakpoint cap now records
+`normal_breakpoint_limit`, without reporting a mismatched hit or logged-out
+account. The native `aku.x.early-bootstrap-transport.v2` envelope reconstructs
+12 fixed command states and closed handoff counters/status. Actual
+instrumentation/ordinary pause counts, handoff rejection and normal cleanup are
+separate. Go independently validates those fields and retains diagnostics before
+handling early-stage failures. Both cleanup classes and a nonrejected handoff
+gate late projection; unverified cleanup also prevents renewed Home reads.
+Clean source absence, missing self candidates and cap exhaustion are partial
+coverage diagnostics, never authentication conclusions.
+
+The retained early canonical offline preflight passed 76 Node tests and seven
+Go top-level tests. The local extraction preflight passed 37 Node tests and one
+Go test. Native run `35bcb23af6164b14981bb585077f8045` then reused the same
+retained root/profile directory identities, reached Home without manual login
+and completed a controlled reload with diagnostic
+`bootstrap_early_handoff_observed`. Its early projection observed:
+
+- An object bootstrap and session, with one valid string candidate at
+  `session.user_id`; `user_id_str` was absent, so ID agreement remained unknown.
+- A matching direct normalized-user entity; the alternate root-user map was
+  absent. No handle/author lookup was performed.
+- All four inspected authentication fields absent. No explicit login flag or
+  session-continuity assertion was obtained.
+
+Nine instrumentation pauses and two actual ordinary pauses were observed; only
+two normal breakpoints were installed, matched, evaluated and removed. All
+unexpected/mismatched/stale/replayed counts were zero, all 12 command states
+were acknowledged, and both cleanup classes passed. A fresh Home check passed;
+the late projection returned bootstrap_missing. Early/late replay rejection and
+Network-mode denial passed. This directly resolves the earlier timing question:
+the fixed current-self candidate was available early in this sampled reload,
+although the post-Home probe did not observe it.
+
+No account values were exported or persisted by the helper, and the result
+retains `canAuthorize:false` and `continuityProven:false`. The runtime evidence
+qualifies source availability and internal ID/entity consistency in this sample;
+it does not yet qualify explicit login semantics, account enrollment, session
+lineage, full startup coverage or Store authorization. The outer Job stopped
+all owned processes, the ephemeral control root was removed and the retained
+manifest remained clean with the same identities/hash. All eleven protected
+file hashes were unchanged. Main login, Store policy, production controller and
+user-runtime lifecycle were not changed or activated.
