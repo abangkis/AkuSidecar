@@ -2822,3 +2822,285 @@ six Go top-level tests at
 Ten protected configuration/runtime/Store/verifier/other-fixture hashes match the
 baseline; only the authorized fixture bridge guard changed among those eleven
 files. No source values or runtime activation artifacts were committed.
+
+### Earlier bootstrap sampling during a controlled Home reload
+
+The user authorized an earlier bootstrap probe on the same retained QA profile.
+`-TwoPhase -RetainQA -BootstrapSelf -BootstrapEarly` first confirms Home, then
+enables a fixed `beforeScriptExecution` instrumentation breakpoint for one
+controlled reload. The [official CDP schema](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/json/js_protocol.json)
+defines this instrumentation mode. The probe never rewrites the bootstrap
+property or installs an accessor, timer, binding or mutation observer in the page.
+It does not request script source, network bodies, credentials or storage.
+
+The capture permits at most sixty-four pauses over a five-second observation
+window. Cleanup commands have their own bounded transport timeouts. Each
+eligible pause evaluates the existing fixed, value-free projection with
+side-effect rejection. A new top-level Home navigation and its exact default
+execution context are required; contexts from the previous document or an
+iframe cannot authorize evaluation. Context loss/navigation invalidates pending
+results. Unexpected pauses and command failures stop the capture. Every pause
+must be resumed and the breakpoint/debugger/runtime observation removed, even
+on failure. Instrumentation is confined to the owned QA target and may delay its
+scripts briefly while sampling.
+
+The fixed `aku.x.early-bootstrap-capture.v1` envelope records only a stop reason,
+bounded pause/read counts, whether a bootstrap object was observed, one sanitized
+snapshot and cleanup status. Frame/context/breakpoint identifiers are correlation
+data held privately and never exported. Node performs projection before promise
+resolution; Go independently rejects private fields, invalid counts, missing
+authority flags or inconsistent snapshot claims. Cleanup failure prevents a
+successful fixture result; the enclosing Job remains responsible for process
+cleanup. All results retain `canAuthorize:false` and `continuityProven:false`.
+
+After instrumentation is removed, the fixture requires a fresh Home check and
+one ordinary late bootstrap snapshot. This separates early availability from
+post-Home availability without exporting account values. It does not compare
+secret IDs across snapshots or establish session continuity. Replaying the
+early capture is denied both before and after the renewed Home gate. Other
+diagnostic modes cannot invoke it; Network observation remains disabled.
+
+```powershell
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -RetainQA -BootstrapSelf -BootstrapEarly -NoChrome
+.\scripts\test-x-standard-chrome-control.ps1 -TwoPhase -RetainQA -BootstrapSelf -BootstrapEarly
+```
+
+The first native early attempt (`84ba527883a5463fa158b9d8213d2a57`) failed in
+setup with zero pauses/reads and unverified instrumentation cleanup. The outer
+Job/root cleanup passed and the retained profile remained clean. A helper-side
+250 ms timeout was shorter than the driver's four-second CDP deadline, allowing
+pending enable commands to race cleanup. The wrapper was aligned to the transport
+deadline and a delayed-enable/disable acknowledgment regression was added.
+
+The corrected attempt (`561fea9a866442b3b3632ec4beb6c9a6`) acknowledged frame
+discovery, runtime/debugger enable, breakpoint setup and reload. It reached five
+pauses and one read attempt, but that read ended in a CDP command timeout; later
+instrumentation cleanup acknowledgments failed after the transport became
+unavailable. The fixed-label transport report records these command states
+without error text or identifiers. No bootstrap snapshot was returned. The
+outer Job/root cleanup again passed and the same profile remained clean, without
+a login retry. This is a paused-evaluation failure, not a negative identity/login
+observation. Correct evaluation and context binding during an instrumentation
+pause must be resolved before another native source-qualification attempt.
+
+The paused-read correction uses the fixed projection with
+`Debugger.evaluateOnCallFrame`, retaining return-by-value, side-effect rejection
+and a bounded evaluation timeout. Only the top paused callframe may qualify.
+Its script ID must map through `Debugger.scriptParsed` to the default context of
+the new root Home document and agree with the Runtime context observation.
+Missing, stale or child-frame mappings cannot authorize a read. These private
+IDs never enter reports. The existing post-Home probe continues using its
+original Runtime evaluation path after instrumentation has been removed.
+
+Acceptance after the callframe change (2026-10-18): the canonical early-mode
+offline preflight passed 68 Node tests and seven Go top-level tests. The retained
+account-settings compatibility preflight passed 35 Node tests and six Go
+top-level tests. Native run `01c2ff20d13e41819099d5cfb057d2a3` reused the same
+guarded profile and reached Home without manual login. It acknowledged setup
+and reload, then reached eight pauses and one read attempt before a command
+timeout. No snapshot was returned, and debugger cleanup remained unverified.
+Changing the paused evaluation API therefore did not resolve the native failure;
+the transport evidence alone does not establish its root cause. The enclosing
+Job stopped all owned processes, the ephemeral control root was removed and the
+retained lease returned to clean. No renewed-Home or late comparison was reached.
+Source qualification remains blocked on an explained paused-read-stage failure;
+this result is not evidence of logout or missing current-self fields. Current
+transport diagnostics do not identify the first timed-out command or pause event
+ordering, so evaluation versus subsequent resume cannot yet be distinguished.
+Further retained-session attempts should wait for an accountless local Chrome
+reproduction using synthetic bootstrap state and value-free command/phase
+chronology. Source inspection alone has not established a protocol deadlock.
+
+### Accountless paused-read reproduction (2026-10-19)
+
+`scripts/test-x-local-bootstrap-repro.ps1` runs two sequential loopback cases:
+a fixed `true` expression control and the existing bootstrap projection. Each
+case starts a new disposable profile in its own registered Windows Job. It does
+not acquire or open the retained QA profile. Static inline/external local scripts
+create a synthetic bootstrap object, then delete it before the final script.
+The local projection adapter changes only the two fixed origin comparisons to
+the bound `http://127.0.0.1:<port>` origin; it checks the actual local location
+and retains `/home`. The X driver and its origin restrictions are unchanged.
+
+Both cases reuse `EarlyBootstrapCapture`, CDP frame decoding and structural
+event projection. Network observation, body/source retrieval, cookies and
+storage reads are excluded. Local CSP and Chrome resolver rules restrict the
+fixture to loopback. Reports contain bounded, enum-only command/event chronology,
+the first failed command, sanitized snapshots and separate outer cleanup status.
+Go reconstructs snapshots and checks the first failure against the chronology.
+
+```powershell
+.\scripts\test-x-local-bootstrap-repro.ps1 -NoChrome
+.\scripts\test-x-local-bootstrap-repro.ps1
+```
+
+The first native run (`d0923e6eb5c1417a9b99cef083fb6b6c`) found a local harness
+startup race: target inventory already named `/home`, but frame inspection ran
+before `rootHome` and `pageLoaded`. Neither case reached a pause or read. The
+local readiness gate now waits for root navigation and rechecks the committed
+frame; it does not use a fixed sleep. A regression covers pending target URL
+versus committed frame state, and pre-read failures are reported separately.
+
+The corrected offline preflight passed eight Node tests and one Go top-level
+test. Native run `29b9993d7701489d8faf9feb0ca4315c` used Chrome `155.0.8059.84`
+and Node `v24.16.0`. Both cases acknowledged setup/reload, reached one
+instrumentation pause and attempted one callframe evaluation. Their first
+failure was `pausedRead` / `timeout` in `paused_read` (chronology sequence 37).
+Even the fixed `true` control timed out. Subsequent resume/removal/disable
+commands were rejected locally because the transport had failed closed; they
+were not the initial failure. No snapshot or late read was obtained.
+
+The two native subtests passed as diagnostic executions because the failure was
+reproduced and reported, not because capture succeeded. Instrumentation cleanup
+remained unverified. Both outer Jobs verified process termination, and the helper
+removed both fresh profiles and the owned root. All eleven protected file hashes
+and the retained-profile manifest hash matched their pre-run values. No main
+login operation, Store policy change or user-runtime lifecycle operation was
+performed.
+
+This establishes that an account, X network traffic and a complex projection are
+not required to reproduce the timeout. It does not establish the cause inside
+Chrome/CDP or prove that the earlier X timeout had the identical cause. Further
+investigation should vary the paused-evaluation mechanism locally before another
+retained-session source assessment. No capture authority or continuity claim is
+granted by this diagnostic result.
+
+### Local paused-evaluation variants (2026-10-19)
+
+The same helper accepts an explicit `-Variants` switch. Its four fixed cases use
+only literal `true` for actual evaluations, including late checks. They never
+read bootstrap state. Each case still receives a new profile and registered
+Windows Job. The original constant/projection pair remains the default mode.
+No X driver, production guard or retained-session configuration was changed.
+
+```powershell
+.\scripts\test-x-local-bootstrap-repro.ps1 -Variants -NoChrome
+.\scripts\test-x-local-bootstrap-repro.ps1 -Variants
+```
+
+The local result schema is now `aku.x.local-bootstrap-repro.v2`. Its closed
+mechanism metadata records the configured pause source/evaluation, actual CDP
+instrumentation/other pause counts, actual evaluation attempts and nullable late
+constant result. For the resume-only control, the shared capture receives a
+synthetic missing DTO without issuing a page evaluation; that placeholder is
+not an observation of absent bootstrap state. For the ordinary-pause case, the
+static local document contains `debugger;` and no instrumentation breakpoint is
+installed. An explicitly reported local eligibility adapter lets the shared
+capture process that pause. Actual CDP pause counts and chronology remain
+unmodified, so it is never reported as an instrumentation pause.
+
+Offline validation passed 13 Node tests and one Go top-level test. Native run
+`1ce7ee84f5174b50aa6d113ad9619f96` on Chrome `155.0.8059.84` completed four cases:
+
+| Local case | Paused evaluation | Native outcome |
+| --- | --- | --- |
+| `instrumentation_resume_only` | None; resume each instrumentation pause | Four pauses resumed; debugger cleanup verified; late `true` succeeded |
+| `instrumentation_minimal` | Callframe `true`, with only callFrameId/expression/returnByValue | First `pausedRead` timed out; one actual instrumentation pause and one evaluation attempt |
+| `ordinary_full` | Callframe `true`, same full parameters as the original control | One actual ordinary pause; evaluation, resume, debugger cleanup and late `true` succeeded |
+| `instrumentation_runtime` | Runtime `true` in the matched root context, with side-effect rejection, disableBreaks and 1500 ms evaluation timeout | First `pausedReadRuntime` timed out; one actual instrumentation pause and one evaluation attempt |
+
+The full callframe parameters remain return-by-value, side-effect rejection,
+1500 ms timeout, silent mode, no command-line API and no preview. Removing those
+optional parameters did not resolve the instrumentation timeout. The minimal
+case is a literal-constant diagnostic only; it does not weaken projection or
+account-source guards. Runtime and callframe APIs require different parameters,
+so their comparison does not isolate each individual Runtime option.
+
+These results narrow the observed failure to evaluation during instrumentation
+pause in this Chrome/harness combination: instrumentation resume alone works,
+and ordinary paused evaluation with the original full parameters works. They
+do not establish an internal Chrome root cause, prove a general CDP limitation,
+or qualify native X bootstrap capture. The two failed cases still had unverified
+instrumentation cleanup after their fail-closed transport; all four outer Jobs
+verified process termination. All disposable profiles/root were removed. The
+retained QA manifest and eleven protected file hashes were unchanged.
+
+A next local candidate is to use instrumentation only to discover a script,
+then hand off to a normal breakpoint before evaluating. That handoff and its
+coverage are not implemented or proven by this matrix. Keep any further work
+accountless until it can capture transient synthetic bootstrap with the full
+projection guards; no retained-session retry is justified by the ordinary
+constant control alone.
+
+### Local instrumentation-to-breakpoint handoff (2026-10-19)
+
+The explicit `-Handoff` mode selects a full-guard constant control and transient
+synthetic bootstrap projection, each in a fresh profile/Job. It is mutually
+exclusive with `-Variants`; the default and variant cases remain available.
+At an eligible instrumentation pause, the local adapter only installs a normal
+breakpoint at the current root-script location, then resumes. It evaluates only
+at a later ordinary pause whose hit ID and script/position match the returned
+breakpoint ID and actualLocation, in the same root/default-context generation.
+No debugger statement is injected into these documents, and no source is read.
+Unexpected, mismatched, stale and replayed hits reject authorization to read.
+Actual instrumentation and ordinary pause counts remain distinct in reports.
+
+The callframe projection retains return-by-value, side-effect rejection, 1500 ms
+timeout, silent mode, no command-line API and no preview. Normal breakpoints are
+retired before resume; remaining normal breakpoints and instrumentation must be
+removed before a fresh local frame/Home check gates the late read. The local
+v3 DTO adds closed handoff counters/status, never IDs or source positions.
+Installation callbacks count toward the shared capture's readAttempts, while
+pausedEvaluationAttempts records actual evaluations separately.
+
+The handoff-only document supplies two agreeing synthetic string IDs and matching
+entries in both fixed entity maps, then deletes bootstrap state. Projection
+acceptance requires both ID fields to be strings, two candidates, agreement,
+both entity matches and absent auth fields, followed by late bootstrap_missing.
+These remain synthetic observations with no account or continuity authority.
+
+Offline checks passed 20 Node tests and one Go top-level test, including wrong
+hit, stale context, replay, cleanup and private-output rejection. Native run
+`5fc9b5e5661640daaa84fa0602767974` passed the constant control: four installed,
+matched and removed normal breakpoints, four full-guard evaluations, verified
+instrumentation/normal cleanup and late bootstrap_missing. The projection's
+first empty-state evaluation succeeded, but its second evaluation with populated
+state returned a pausedRead error rather than timing out. Both installed normal
+breakpoints were matched/removed; instrumentation and outer Job cleanup passed,
+late bootstrap was missing, and both disposable profiles/root were removed.
+This proves the handoff control, not populated projection acceptance. The next
+delta is to classify and resolve the populated projection failure without
+relaxing side-effect checks or reading a retained session.
+
+The populated-path failure was isolated with an inspector session attached only
+to a fresh Node test process: the exact guarded projector was rejected, and the
+descriptor-copy operation `Object.defineProperty(page, '__INITIAL_STATE__',
+descriptor)` reproduced that rejection. Regex, array accumulation and descriptor
+reads passed independently. The correction passes the native own-property
+descriptor directly into the internal projector instead of redefining the
+temporary page property. It does not disable the side-effect guard. Public
+inspect/validator APIs, DTO shape, numeric-string validation and accessor denial
+remain unchanged. A real V8 inspector regression now checks populated, missing
+and accessor cases with side-effect rejection enabled and zero getter calls.
+VM execution alone had not exercised that boundary.
+
+The corrected canonical preflight passed 37 Node tests and one Go top-level
+test. A single projection-only causal retry,
+`a0eaf3c7a5504c12bd2007d19ab027ec`, then passed in native Chrome with diagnostic
+`handoff_transient_bootstrap_captured`. It performed two full-guard ordinary
+breakpoint evaluations: the first observed missing bootstrap, the second
+captured the synthetic object/session with two string ID candidates, agreement
+and both entity matches. All auth observations remained absent. Two normal
+breakpoints were installed, matched and removed, with zero unexpected,
+mismatched, stale or replayed hits. A third instrumentation pause arrived during
+shutdown; it did not authorize another evaluation. Instrumentation and normal
+cleanup were verified before the fresh frame check and late bootstrap_missing.
+The four-script constant control from the prior native run remains valid: its
+literal true evaluations and empty-state late projection did not exercise the
+corrected populated descriptor-copy path, so it was not rerun unnecessarily.
+
+```powershell
+.\scripts\test-x-local-bootstrap-repro.ps1 -Handoff -NoChrome
+.\scripts\test-x-local-bootstrap-repro.ps1 -Handoff
+# A fixed retry of the projection case only; requires Handoff.
+.\scripts\test-x-local-bootstrap-repro.ps1 -Handoff -ProjectionOnly
+```
+
+Both native runs verified outer Job termination and removed their disposable
+profiles/root. The eleven protected hashes and retained QA manifest hash matched
+the pre-run baseline. No original login operation, retained-profile access,
+Store policy change or user-runtime lifecycle operation occurred. This completes
+the local handoff/full-projection acceptance only. The handoff adapter has not
+been installed in the X QA driver; native X bootstrap availability, account
+semantics and session continuity remain unqualified. Local results retain
+`canAuthorize:false` and `continuityProven:false`.

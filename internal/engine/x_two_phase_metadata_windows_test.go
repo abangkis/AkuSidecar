@@ -213,6 +213,10 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	accountSettingsEnabled := os.Getenv("AKU_X_ACCOUNT_SETTINGS_ENABLED") == "1"
 	retainedEnabled := os.Getenv("AKU_X_RETAINED_QA_ENABLED") == "1"
 	bootstrapEnabled := os.Getenv("AKU_X_BOOTSTRAP_SELF_ENABLED") == "1"
+	earlyBootstrapEnabled := os.Getenv("AKU_X_BOOTSTRAP_EARLY_ENABLED") == "1"
+	if earlyBootstrapEnabled && !bootstrapEnabled {
+		t.Fatal("early bootstrap requires bootstrap mode")
+	}
 	if bootstrapEnabled && (!retainedEnabled || accountSettingsEnabled) {
 		t.Fatal("bootstrap probe requires retained QA and no body mode")
 	}
@@ -393,26 +397,29 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		}
 	}
 	report := struct {
-		Schema                      string                   `json:"schema"`
-		ManualPhaseOneOutcome       string                   `json:"manualPhaseOneOutcome"`
-		ManualSource                string                   `json:"manualSource"`
-		OldRootExited               bool                     `json:"oldRootExited"`
-		OldChromeTreeReleased       bool                     `json:"oldChromeTreeReleased"`
-		ClosedWindowCount           int                      `json:"closedWindowCount"`
-		ResidualProcessesTerminated int                      `json:"residualProcessesTerminated"`
-		ProfileDirectorySame        bool                     `json:"profileDirectorySame"`
-		WindowDiagnostics           xPopupWindowSummary      `json:"windowDiagnostics"`
-		ManualPopupObservation      string                   `json:"manualPopupObservation"`
-		PhaseTwoHomeObserved        bool                     `json:"phaseTwoHomeObserved"`
-		PermitInherited             bool                     `json:"permitInherited"`
-		Diagnostic                  string                   `json:"diagnostic"`
-		Observation                 *xNativeMetadataReport   `json:"observation,omitempty"`
-		AccountSettings             *xAccountSettingsCapture `json:"accountSettings,omitempty"`
-		BootstrapCurrentSelf        *xBootstrapCurrentSelf   `json:"bootstrapCurrentSelf,omitempty"`
-		BootstrapGuardsVerified     bool                     `json:"bootstrapGuardsVerified,omitempty"`
-		CanAuthorize                bool                     `json:"canAuthorize"`
-		RetainedQAProfile           bool                     `json:"retainedQAProfile"`
-		ReusedQAProfile             bool                     `json:"reusedQAProfile"`
+		Schema                      string                      `json:"schema"`
+		ManualPhaseOneOutcome       string                      `json:"manualPhaseOneOutcome"`
+		ManualSource                string                      `json:"manualSource"`
+		OldRootExited               bool                        `json:"oldRootExited"`
+		OldChromeTreeReleased       bool                        `json:"oldChromeTreeReleased"`
+		ClosedWindowCount           int                         `json:"closedWindowCount"`
+		ResidualProcessesTerminated int                         `json:"residualProcessesTerminated"`
+		ProfileDirectorySame        bool                        `json:"profileDirectorySame"`
+		WindowDiagnostics           xPopupWindowSummary         `json:"windowDiagnostics"`
+		ManualPopupObservation      string                      `json:"manualPopupObservation"`
+		PhaseTwoHomeObserved        bool                        `json:"phaseTwoHomeObserved"`
+		PermitInherited             bool                        `json:"permitInherited"`
+		Diagnostic                  string                      `json:"diagnostic"`
+		Observation                 *xNativeMetadataReport      `json:"observation,omitempty"`
+		AccountSettings             *xAccountSettingsCapture    `json:"accountSettings,omitempty"`
+		BootstrapCurrentSelf        *xBootstrapCurrentSelf      `json:"bootstrapCurrentSelf,omitempty"`
+		BootstrapGuardsVerified     bool                        `json:"bootstrapGuardsVerified,omitempty"`
+		BootstrapEarly              *xEarlyBootstrapCapture     `json:"bootstrapEarly,omitempty"`
+		BootstrapEarlyDiagnostics   *xEarlyBootstrapDiagnostics `json:"bootstrapEarlyDiagnostics,omitempty"`
+		PostEarlyHomeObserved       bool                        `json:"postEarlyHomeObserved,omitempty"`
+		CanAuthorize                bool                        `json:"canAuthorize"`
+		RetainedQAProfile           bool                        `json:"retainedQAProfile"`
+		ReusedQAProfile             bool                        `json:"reusedQAProfile"`
 	}{Schema: "aku.x.two-phase-metadata.v2", ManualPhaseOneOutcome: manual, ManualSource: "manual_user_report", WindowDiagnostics: tracker.summary(), ManualPopupObservation: manualPopup}
 	if accountSettingsEnabled {
 		report.Schema = "aku.x.two-phase-account-settings.v1"
@@ -423,6 +430,9 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 	}
 	if bootstrapEnabled {
 		report.Schema = "aku.x.retained-bootstrap.v1"
+	}
+	if earlyBootstrapEnabled {
+		report.Schema = "aku.x.retained-early-bootstrap.v1"
 	}
 	if reused {
 		report.ManualSource = "retained_qa_profile"
@@ -494,6 +504,12 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		if gateErr == nil || !strings.Contains(gateErr.Error(), "bootstrap_gate_closed") {
 			t.Fatal("bootstrap probe was not rejected before the Home gate")
 		}
+		if earlyBootstrapEnabled {
+			gateErr = bridge.rpc(ctx, "bootstrap_early_current_self", map[string]any{"owner": second.owner}, &rejected)
+			if gateErr == nil || !strings.Contains(gateErr.Error(), "early_bootstrap_gate_closed") {
+				t.Fatal("early bootstrap accepted before Home gate")
+			}
+		}
 	}
 	stage("phase2_checking_home")
 	deadline = time.Now().Add(30 * time.Second)
@@ -519,6 +535,69 @@ func TestXTwoPhaseMetadata(t *testing.T) {
 		t.Fatal("Home unavailable after reopen; no second login attempted")
 	}
 	if bootstrapEnabled {
+		if earlyBootstrapEnabled {
+			stage("bootstrap_early_current_self")
+			var raw json.RawMessage
+			earlyCtx, earlyCancel := context.WithTimeout(ctx, 45*time.Second)
+			earlyErr := bridge.rpc(earlyCtx, "bootstrap_early_current_self", map[string]any{"owner": second.owner}, &raw)
+			earlyCancel()
+			if earlyErr != nil {
+				report.Diagnostic = "early_bootstrap_failed"
+				t.Fatal("early bootstrap failed; no source data exported:", earlyErr)
+			}
+			capture, err := decodeXEarlyBootstrap(raw)
+			if err != nil {
+				report.Diagnostic = "early_bootstrap_output_rejected"
+				t.Fatal("early bootstrap output rejected")
+			}
+			report.BootstrapEarly = &capture
+			var diagnosticRaw json.RawMessage
+			if bridge.rpc(ctx, "bootstrap_early_diagnostics", map[string]any{"owner": second.owner}, &diagnosticRaw) != nil {
+				t.Fatal("early transport diagnostics unavailable")
+			}
+			diagnostics, diagnosticErr := decodeXEarlyBootstrapDiagnostics(diagnosticRaw)
+			if diagnosticErr != nil {
+				t.Fatal("early transport diagnostics rejected")
+			}
+			report.BootstrapEarlyDiagnostics = &diagnostics
+			if !capture.CleanupVerified {
+				report.Diagnostic = "early_bootstrap_cleanup_unverified"
+				t.Fatal("early instrumentation cleanup unverified")
+			}
+			switch capture.StopReason {
+			case "setup_failed", "evaluation_failed", "wrong_page", "unexpected_pause":
+				report.Diagnostic = "early_bootstrap_probe_unavailable"
+				t.Fatal("early bootstrap stage failed:", capture.StopReason)
+			}
+			var rejected json.RawMessage
+			replayErr := bridge.rpc(ctx, "bootstrap_early_current_self", map[string]any{"owner": second.owner}, &rejected)
+			if replayErr == nil || !strings.Contains(replayErr.Error(), "early_bootstrap_gate_closed") {
+				t.Fatal("early bootstrap replay accepted")
+			}
+			stage("bootstrap_early_rechecking_home")
+			deadline = time.Now().Add(30 * time.Second)
+			for time.Now().Before(deadline) {
+				var state struct {
+					Ready bool `json:"ready"`
+				}
+				if bridge.rpc(ctx, "login_state", map[string]any{"owner": second.owner}, &state) != nil {
+					t.Fatal("post-early Home check failed")
+				}
+				if state.Ready {
+					report.PostEarlyHomeObserved = true
+					break
+				}
+				time.Sleep(time.Second)
+			}
+			if !report.PostEarlyHomeObserved {
+				report.Diagnostic = "post_early_home_unavailable"
+				t.Fatal("Home unavailable after early probe")
+			}
+			replayErr = bridge.rpc(ctx, "bootstrap_early_current_self", map[string]any{"owner": second.owner}, &rejected)
+			if replayErr == nil || !strings.Contains(replayErr.Error(), "early_bootstrap_gate_closed") {
+				t.Fatal("early bootstrap replay accepted after fresh Home verification")
+			}
+		}
 		stage("bootstrap_current_self")
 		var raw json.RawMessage
 		if bridge.rpc(ctx, "bootstrap_current_self", map[string]any{"owner": second.owner}, &raw) != nil {

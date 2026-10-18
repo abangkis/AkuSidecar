@@ -5,8 +5,84 @@ import {
   LoginObservationGate,
   MetadataWindow,
   classifyXOperation,
+  isEarlyBootstrapCallFrameRead,
+  projectCDPEvent,
   projectNetworkEvent,
 } from './x-native-metadata-probe-driver.mjs';
+import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
+import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
+import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+
+test('paused evaluation accepts only the fixed by-value side-effect-checked expression and active call frame', () => {
+  const capture = { canReadCallFrame: id => id === 'active-call' };
+  const params = { callFrameId: 'active-call', expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
+    returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
+    includeCommandLineAPI: false, generatePreview: false };
+  assert.equal(isEarlyBootstrapCallFrameRead(params, capture), true);
+  for (const change of [{ callFrameId: 'other-call' }, { expression: 'globalThis' }, { returnByValue: false },
+    { throwOnSideEffect: false }, { timeout: 0 }, { silent: false }, { includeCommandLineAPI: true },
+    { generatePreview: true }, { awaitPromise: false }, { userGesture: false }, { contextId: 10 }]) {
+    assert.equal(isEarlyBootstrapCallFrameRead({ ...params, ...change }, capture), false);
+  }
+  assert.equal(isEarlyBootstrapCallFrameRead(params, null), false);
+});
+
+test('CDP pause correlation projects only top frame IDs and root-default script context metadata', async () => {
+  const sessionId = 'private-session';
+  const script = projectCDPEvent({ method: 'Debugger.scriptParsed', sessionId, params: {
+    scriptId: 'top-script', executionContextId: 301,
+    executionContextAuxData: { isDefault: true, frameId: 'root-frame', privateValue: 'PRIVATE' },
+    url: 'PRIVATE', hash: 'PRIVATE', stackTrace: { description: 'PRIVATE' },
+  } });
+  const paused = projectCDPEvent({ method: 'Debugger.paused', sessionId, params: {
+    reason: 'instrumentation', data: { privateValue: 'PRIVATE' }, callFrames: [{
+      callFrameId: 'top-call', location: { scriptId: 'top-script', lineNumber: 0 },
+      url: 'PRIVATE', scopeChain: [{ object: { value: 'PRIVATE' } }], this: { value: 'PRIVATE' },
+    }, { callFrameId: 'lower-call', location: { scriptId: 'lower-script' } }],
+  } });
+  assert.deepEqual(script.event, { type: 'script_parsed', scriptId: 'top-script', contextId: 301,
+    frameId: 'root-frame', isDefault: true });
+  assert.deepEqual(paused.event, { type: 'paused', reason: 'instrumentation', callFrameId: 'top-call', scriptId: 'top-script' });
+  assert.equal(JSON.stringify([script, paused]).includes('PRIVATE'), false);
+  for (const aux of [undefined, { isDefault: false, frameId: 'root-frame' }, { isDefault: true }]) {
+    assert.equal(projectCDPEvent({ method: 'Debugger.scriptParsed', params: {
+      scriptId: 'other', executionContextId: 301, executionContextAuxData: aux,
+    } }), null);
+  }
+  const noTop = projectCDPEvent({ method: 'Debugger.paused', params: { reason: 'instrumentation', callFrames: [] } });
+  assert.equal(noTop.event.callFrameId, null);
+  assert.equal(noTop.event.scriptId, null);
+  let readCount = 0;
+  const capture = new EarlyBootstrapCapture({
+    send: async method => {
+      if (method === 'Page.getFrameTree') return { frameId: 'root-frame' };
+      if (method === 'Debugger.setInstrumentationBreakpoint') return { breakpointId: 'breakpoint' };
+      if (method === 'Page.reload') {
+        capture.observe({ type: 'frame_navigated', frameId: 'root-frame', isHome: true });
+        capture.observe({ type: 'context_created', frameId: 'root-frame', contextId: 301, isDefault: true });
+        capture.observe(script.event);
+        capture.observe(paused.event);
+      }
+      return { acknowledged: true };
+    },
+    readBootstrap: async (contextId, callFrameId) => {
+      assert.equal(contextId, 301);
+      assert.equal(callFrameId, 'top-call');
+      assert.equal(capture.canReadCallFrame(callFrameId), true);
+      readCount += 1;
+      return inspectBootstrapCurrentSelf({ location: { origin: 'https://x.com', pathname: '/home' },
+        __INITIAL_STATE__: { session: { user_id_str: '123456' } } });
+    },
+  });
+  const result = await capture.run();
+  assert.equal(readCount, 1);
+  assert.equal(result.stopReason, 'captured');
+  assert.equal(result.cleanupVerified, true);
+  assert.equal(capture.canReadCallFrame('top-call'), false);
+  for (const privateValue of ['top-call', 'top-script', sessionId, '123456']) {
+    assert.equal(JSON.stringify(result).includes(privateValue), false);
+  }
+});
 
 test('CDP decoder accepts fragmented NUL frames and clears framed bytes', () => {
   const decoder = new CDPFrameDecoder();

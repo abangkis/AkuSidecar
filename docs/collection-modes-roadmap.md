@@ -5673,3 +5673,76 @@ observed. This is not a logged-out result and does not distinguish format from
 earlier-page timing. The retained profile is clean; native identity/login/lineage
 remain unqualified. Next source assessment should resolve that timing/format
 uncertainty with a bounded probe, without widening source reads implicitly.
+
+Earlier bootstrap implementation: the authorized `-BootstrapEarly` addition
+uses the same retained-profile bootstrap mode after an initial Home check. One
+controlled reload is sampled at fixed before-script breakpoints, limited to
+sixty-four pauses/five seconds and the new top-level default execution context.
+Only the existing sanitized bootstrap DTO may be returned. Source/Network/body
+retrieval and page-state mutation are excluded. Instrumentation must be removed
+before a fresh Home check and late snapshot; replay and cleanup failures reject
+success. This work remains diagnostic and introduces no Store/session permit.
+
+Early-mode acceptance (2026-10-18): 68 Node and seven Go top-level offline tests
+passed; retained account-settings compatibility passed 35 Node and six Go tests.
+The latest native attempt reused the existing QA profile and reached Home without
+login, but the paused-read stage still encountered a command timeout after
+switching to a bound Debugger callframe. The first timed-out command is not yet
+identified. No snapshot or late comparison was obtained. Instrumentation
+cleanup was unverified; outer Job/root cleanup succeeded and the retained lease
+is clean. Resolve the paused-read mechanism before further source qualification;
+main-dev activation remains gated and Store policy is unchanged. The next
+diagnostic should reproduce this mechanism with accountless local HTML and
+synthetic bootstrap state before another retained-session attempt.
+
+Accountless reproduction checkpoint (2026-10-19): the separate
+`scripts/test-x-local-bootstrap-repro.ps1` helper now runs a tiny `true` control
+and the full projector in two fresh profile/Job cases against loopback HTML.
+Eight Node tests and one Go offline test passed. After correcting an observed
+initial-frame readiness race, native run `29b9993d7701489d8faf9feb0ca4315c`
+reproduced the first `pausedRead` command timeout in both cases (one pause/read
+each). Resume had not caused the initial failure. No snapshot or late comparison
+was obtained; passing native subtests mean diagnostic execution/cleanup passed,
+not that capture qualified. Outer Job cleanup and fresh-profile removal passed;
+the retained QA manifest and eleven protected files were unchanged. Next isolate
+the paused-evaluation mechanism using local synthetic data. Do not repeat login
+or infer account/session failure from this result; main-dev activation stays gated.
+
+Local mechanism isolation (2026-10-19): explicit `-Variants` mode passed 13 Node
+and one Go offline tests, then ran four fresh profile/Job cases in native run
+`1ce7ee84f5174b50aa6d113ad9619f96`. Instrumentation resume-only passed, and a
+fixed ordinary `debugger;` pause allowed `true` evaluation with the original full
+callframe parameters, cleanup and late `true`. Instrumentation evaluation still
+timed out with minimal callframe parameters and with matched-context Runtime
+evaluation. This narrows the observed problem to evaluation at instrumentation
+pause in the tested Chrome/harness; it does not identify an internal Chrome cause
+or qualify account evidence. All four outer Jobs stopped, disposable profiles were
+removed, and retained/protected hashes were unchanged. A possible next local test
+is instrumentation-to-normal-breakpoint handoff, followed by transient bootstrap
+capture with full projection guards. The handoff is not yet implemented; retain
+the main-dev activation gate and do not request another login for this diagnosis.
+
+Local handoff checkpoint (2026-10-19): `-Handoff` now tests exact normal breakpoint
+hit/location/context binding after instrumentation discovery, with full original
+projection guards. Twenty Node and one Go offline tests passed. Native run
+`5fc9b5e5661640daaa84fa0602767974` passed the four-script constant control and
+all cleanup checks. Populated synthetic projection reached a verified normal
+pause but returned an evaluation/projection error after an earlier empty-state
+read succeeded; the old timeout did not recur. Its concrete DTO acceptance is
+still pending. Classify and resolve that populated-path failure locally before
+considering any retained QA source assessment; no Store/runtime activation occurs.
+
+Local handoff acceptance completed: real Node/V8 inspection isolated the
+populated-path failure to copying the bootstrap descriptor with
+Object.defineProperty during guarded evaluation. Direct descriptor consumption
+removed that operation while preserving side-effect rejection, public DTO and
+accessor denial. The corrected preflight passed 37 Node and one Go tests. Native
+projection-only retry `a0eaf3c7a5504c12bd2007d19ab027ec` captured two agreeing
+synthetic string IDs and both matching entities at verified ordinary breakpoints,
+then observed late bootstrap_missing after complete instrumentation/normal
+cleanup and a fresh local frame check. Both normal breakpoints matched and were
+removed; all rejection counters were zero. Outer Job/root/profile cleanup passed,
+and retained/protected hashes were unchanged. The prior four-script constant
+control remains accepted. This completes accountless local mechanism acceptance;
+X QA driver integration and native account-source qualification remain separate
+unfinished steps, with Store/runtime activation still gated.

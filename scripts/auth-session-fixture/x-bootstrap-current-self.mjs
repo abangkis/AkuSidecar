@@ -1,4 +1,4 @@
-function bootstrapCurrentSelfProjection(page) {
+function bootstrapCurrentSelfProjection(page, bootstrapDescriptor) {
   const makeDto = (diagnostic) => ({
     schema: 'aku.x.bootstrap-current-self.v1',
     diagnostic,
@@ -21,14 +21,14 @@ function bootstrapCurrentSelfProjection(page) {
   const isRecord = (value) =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 
-  const readOwn = (record, key) => {
-    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  const readDescriptor = (descriptor) => {
     if (descriptor === undefined) return { kind: 'absent' };
 
     const valueDescriptor = Object.getOwnPropertyDescriptor(descriptor, 'value');
     if (valueDescriptor === undefined) return { kind: 'accessor' };
     return { kind: 'value', value: valueDescriptor.value };
   };
+  const readOwn = (record, key) => readDescriptor(Object.getOwnPropertyDescriptor(record, key));
 
   const stableId = (value) =>
     typeof value === 'string' &&
@@ -115,7 +115,7 @@ function bootstrapCurrentSelfProjection(page) {
       return makeDto('wrong_page');
     }
 
-    const bootstrapField = readOwn(page, '__INITIAL_STATE__');
+    const bootstrapField = bootstrapDescriptor === undefined ? readOwn(page, '__INITIAL_STATE__') : readDescriptor(bootstrapDescriptor);
     if (bootstrapField.kind === 'absent') return makeDto('bootstrap_missing');
     if (bootstrapField.kind === 'accessor') {
       dto.bootstrapState = 'accessor';
@@ -208,10 +208,9 @@ export const BOOTSTRAP_CURRENT_SELF_EXPRESSION = `(() => {
       },
     };
     const bootstrapDescriptor = Object.getOwnPropertyDescriptor(globalThis, '__INITIAL_STATE__');
-    if (bootstrapDescriptor !== undefined) {
-      Object.defineProperty(page, '__INITIAL_STATE__', bootstrapDescriptor);
-    }
-    return inspect(page);
+    // Consume the descriptor without redefining a property during guarded
+    // evaluation. Accessors remain observations and are never invoked.
+    return inspect(page, bootstrapDescriptor);
   } catch {
     return failed();
   }

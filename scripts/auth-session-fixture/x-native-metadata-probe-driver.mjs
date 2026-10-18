@@ -13,6 +13,7 @@ import { standardChromeArgs } from './x-standard-chrome-control.mjs';
 import { projectAccountSettingsBody } from './x-account-settings-body.mjs';
 import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 
 const retainedQAMode = mode => mode === 'retained_account_settings' || mode === 'retained_bootstrap';
 
@@ -47,12 +48,27 @@ const CDP_METHODS = Object.freeze({
   'Page.enable': 'page_enable',
   'Page.reload': 'page_reload',
   'Runtime.evaluate': 'runtime_evaluate',
+  'Debugger.evaluateOnCallFrame': 'early_evaluate_call_frame',
   'Network.enable': 'network_enable',
   'Network.disable': 'network_disable',
   'Network.getResponseBody': 'account_settings_body',
   'Network.setCacheDisabled': 'account_settings_cache',
   'Browser.close': 'browser_close',
+  'Page.getFrameTree': 'early_frame_tree',
+  'Runtime.enable': 'early_runtime_enable',
+  'Runtime.disable': 'early_runtime_disable',
+  'Debugger.enable': 'early_debugger_enable',
+  'Debugger.disable': 'early_debugger_disable',
+  'Debugger.setInstrumentationBreakpoint': 'early_instrumentation',
+  'Debugger.removeBreakpoint': 'early_remove_breakpoint',
+  'Debugger.resume': 'early_resume',
 });
+const EARLY_CDP_METHODS = new Set(['Page.getFrameTree', 'Runtime.enable', 'Runtime.disable', 'Debugger.enable',
+  'Debugger.disable', 'Debugger.setInstrumentationBreakpoint', 'Debugger.removeBreakpoint', 'Debugger.resume']);
+const EARLY_COMMAND_LABELS = Object.freeze({ 'Page.getFrameTree': 'frameTree', 'Runtime.enable': 'runtimeEnable',
+  'Debugger.enable': 'debuggerEnable', 'Debugger.setInstrumentationBreakpoint': 'breakpointSet', 'Page.reload': 'reload',
+  'Debugger.resume': 'resume', 'Debugger.removeBreakpoint': 'breakpointRemove', 'Debugger.disable': 'debuggerDisable',
+  'Runtime.disable': 'runtimeDisable' });
 const CDP_FRAME_LIMITS = Object.freeze({ maxJSONDepth: 20, maxJSONTokens: 8_192 });
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
@@ -501,6 +517,14 @@ function isTargetURL(rawURL) {
 function projectCDPResult(method, result, projectionKind = null) {
   if (!isObject(result)) throw probeError('cdp_result_invalid');
   switch (method) {
+    case 'Page.getFrameTree': {
+      const frame = result.frameTree?.frame;
+      if (!isObject(frame) || !safeId(frame.id) || !isHomeTarget(frame.url)) throw probeError('early_frame_invalid');
+      return { frameId: frame.id };
+    }
+    case 'Debugger.setInstrumentationBreakpoint':
+      if (!safeId(result.breakpointId)) throw probeError('early_breakpoint_invalid');
+      return { breakpointId: result.breakpointId };
     case 'Network.getResponseBody':
       if (!accountSettingsBodyMode(driverMode)) throw probeError('body_mode_required');
       return projectAccountSettingsBody(result);
@@ -517,6 +541,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Target.attachToTarget':
       if (!safeId(result.sessionId)) throw probeError('target_session_invalid');
       return { sessionId: result.sessionId };
+    case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
       if (projectionKind === 'bootstrap_current_self') {
         if (driverMode !== 'retained_bootstrap' || own(result, 'exceptionDetails') ||
@@ -536,17 +561,60 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Network.disable':
     case 'Network.setCacheDisabled':
     case 'Browser.close':
+    case 'Runtime.enable':
+    case 'Runtime.disable':
+    case 'Debugger.enable':
+    case 'Debugger.disable':
+    case 'Debugger.removeBreakpoint':
+    case 'Debugger.resume':
       return { acknowledged: true };
     default:
       throw probeError('cdp_method_invalid');
   }
 }
 
-function projectCDPEvent(message) {
+export function projectCDPEvent(message) {
   if (typeof message.method !== 'string' || message.method.length > 128 || !isObject(message.params)) {
     throw probeError('cdp_event_invalid');
   }
   switch (message.method) {
+    case 'Page.frameNavigated': {
+      const frame = message.params.frame;
+      if (!isObject(frame) || own(frame, 'parentId') || !safeId(frame.id)) return null;
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null,
+        event: { type: 'frame_navigated', frameId: frame.id, isHome: isHomeTarget(frame.url) } };
+    }
+    case 'Runtime.executionContextCreated': {
+      const context = message.params.context;
+      if (!isObject(context) || !Number.isSafeInteger(context.id) || context.id <= 0 ||
+          context.auxData?.isDefault !== true || !safeId(context.auxData.frameId)) return null;
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null,
+        event: { type: 'context_created', contextId: context.id, frameId: context.auxData.frameId, isDefault: true } };
+    }
+    case 'Runtime.executionContextsCleared':
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null, event: { type: 'contexts_cleared' } };
+    case 'Runtime.executionContextDestroyed':
+      if (!Number.isSafeInteger(message.params.executionContextId) || message.params.executionContextId <= 0) return null;
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null,
+        event: { type: 'context_destroyed', contextId: message.params.executionContextId } };
+    case 'Debugger.scriptParsed': {
+      const params = message.params;
+      if (!safeId(params.scriptId) || !Number.isSafeInteger(params.executionContextId) || params.executionContextId <= 0 ||
+          params.executionContextAuxData?.isDefault !== true || !safeId(params.executionContextAuxData.frameId)) return null;
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null,
+        event: { type: 'script_parsed', scriptId: params.scriptId, contextId: params.executionContextId,
+          frameId: params.executionContextAuxData.frameId, isDefault: true } };
+    }
+    case 'Debugger.paused': {
+      // Correlate only the top frame's opaque IDs. Never project its locals, scopes, URLs or source.
+      const top = Array.isArray(message.params.callFrames) ? message.params.callFrames[0] : null;
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null,
+        event: { type: 'paused', reason: message.params.reason === 'instrumentation' ? 'instrumentation' : 'other',
+          callFrameId: safeId(top?.callFrameId) ? top.callFrameId : null,
+          scriptId: safeId(top?.location?.scriptId) ? top.location.scriptId : null } };
+    }
+    case 'Debugger.resumed':
+      return { type: 'early', sessionId: safeId(message.sessionId) ? message.sessionId : null, event: { type: 'resumed' } };
     case 'Page.loadEventFired':
       return { type: 'page_load', sessionId: safeId(message.sessionId) ? message.sessionId : null };
     case 'Network.requestWillBeSent':
@@ -564,6 +632,11 @@ function projectCDPEvent(message) {
 }
 
 const ACCOUNT_READY_EXPRESSION = `(()=>{const visible=e=>!!e&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden'&&getComputedStyle(e).display!=='none';return location.origin==='https://x.com'&&location.pathname==='/home'&&visible(document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]'))&&visible(document.querySelector('a[data-testid="AppTabBar_Profile_Link"]'))})()`;
+
+function isHomeTarget(value) {
+  if (!isTargetURL(value)) return false;
+  try { return new URL(value).pathname === '/home'; } catch { return false; }
+}
 
 let executable = '';
 let qaRoot = '';
@@ -626,6 +699,16 @@ function cdpWrite(message) {
   }
 }
 
+export function isEarlyBootstrapCallFrameRead(params, capture) {
+  const keys = ['callFrameId', 'expression', 'returnByValue', 'throwOnSideEffect', 'timeout',
+    'silent', 'includeCommandLineAPI', 'generatePreview'];
+  return isObject(params) && Object.keys(params).length === keys.length &&
+    Object.keys(params).every(key => keys.includes(key)) && capture?.canReadCallFrame(params.callFrameId) === true &&
+    params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION && params.returnByValue === true &&
+    params.throwOnSideEffect === true && params.timeout === 1500 && params.silent === true &&
+    params.includeCommandLineAPI === false && params.generatePreview === false;
+}
+
 function send(method, params = {}, sessionId = undefined) {
   if (cdpFailure) return Promise.reject(probeError(cdpFailure));
   if (!Object.hasOwn(CDP_METHODS, method) || !isObject(params) || pending.size >= MAX_PENDING_COMMANDS) {
@@ -637,16 +720,34 @@ function send(method, params = {}, sessionId = undefined) {
   }
   if (method === 'Network.setCacheDisabled' && (!accountSettingsBodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
+  if (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap') {
+    const keys = Object.keys(params);
+    let valid = keys.length === 0;
+    if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
+    if (method === 'Debugger.removeBreakpoint') valid = keys.length === 1 && safeId(params.breakpointId);
+    if (method === 'Page.reload') valid = keys.length === 1 && params.ignoreCache === false;
+    if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || sessionId !== active.sessionId || !valid) {
+      return Promise.reject(probeError('early_command_not_authorized'));
+    }
+  }
   let projectionKind = null;
+  if (method === 'Debugger.evaluateOnCallFrame') {
+    if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || active.gate.observationStarted ||
+        sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture)) {
+      return Promise.reject(probeError('early_call_frame_not_authorized'));
+    }
+    projectionKind = 'bootstrap_current_self';
+  }
   if (method === 'Runtime.evaluate') {
     const bootstrap = params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION;
     const keys = bootstrap ? ['expression', 'returnByValue', 'awaitPromise', 'userGesture', 'throwOnSideEffect', 'timeout'] :
       ['expression', 'returnByValue', 'awaitPromise', 'userGesture'];
     if (Object.keys(params).length !== keys.length || Object.keys(params).some(key => !keys.includes(key)) ||
         params.returnByValue !== true || params.awaitPromise !== false || params.userGesture !== false || sessionId !== active?.sessionId ||
-        bootstrap && (driverMode !== 'retained_bootstrap' || !active?.bootstrapAttempted || !active.gate.loginVisible ||
+        bootstrap && (driverMode !== 'retained_bootstrap' ||
+          (!active?.bootstrapAttempted || !active.gate.loginVisible || active.earlyRunning) ||
           active.gate.observationStarted || params.throwOnSideEffect !== true || params.timeout !== 1500) ||
-        !bootstrap && params.expression !== ACCOUNT_READY_EXPRESSION) return Promise.reject(probeError('runtime_expression_not_authorized'));
+        !bootstrap && (params.expression !== ACCOUNT_READY_EXPRESSION || active?.earlyRunning)) return Promise.reject(probeError('runtime_expression_not_authorized'));
     if (bootstrap) projectionKind = 'bootstrap_current_self';
   }
   const id = ++nextCommandId;
@@ -703,7 +804,9 @@ function dispatchCDP(raw) {
     }
     const event = projectCDPEvent(raw);
     if (!event || !active) return;
-    if (event.type === 'page_load' && event.sessionId === active.sessionId && active.pageLoad) {
+    if (event.type === 'early' && event.sessionId === active.sessionId && active.earlyRunning) {
+      active.earlyCapture?.observe(event.event);
+    } else if (event.type === 'page_load' && event.sessionId === active.sessionId && active.pageLoad) {
       active.pageLoad.resolve(true);
       active.pageLoad = null;
     } else if (event.type === 'network' && event.sessionId === active.sessionId) {
@@ -1039,10 +1142,66 @@ async function loginState(message) {
 async function bootstrapCurrentSelf(message) {
   if (driverMode !== 'retained_bootstrap' || !retainedQAScope?.reuse) throw probeError('bootstrap_mode_required');
   const current = requireOwner(message);
-  if (!current.gate.loginVisible || current.gate.observationStarted || current.bootstrapAttempted) throw probeError('bootstrap_gate_closed');
+  if (!current.gate.loginVisible || current.gate.observationStarted || current.bootstrapAttempted || current.earlyRunning ||
+      current.earlyAttempted && !current.earlyCleanupVerified) throw probeError('bootstrap_gate_closed');
   current.bootstrapAttempted = true;
   return send('Runtime.evaluate', { expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION, returnByValue: true,
     awaitPromise: false, userGesture: false, throwOnSideEffect: true, timeout: 1500 }, current.sessionId);
+}
+
+async function earlyBootstrapCurrentSelf(message) {
+  if (driverMode !== 'retained_bootstrap' || !retainedQAScope?.reuse) throw probeError('bootstrap_mode_required');
+  const current = requireOwner(message);
+  if (!current.gate.loginVisible || current.gate.observationStarted || current.bootstrapAttempted || current.earlyAttempted) {
+    throw probeError('early_bootstrap_gate_closed');
+  }
+  current.earlyAttempted = true;
+  current.earlyRunning = true;
+  current.earlyCommandStatus = Object.fromEntries(Object.values(EARLY_COMMAND_LABELS).map(label => [label, 'not_attempted']));
+  current.earlyCapture = new EarlyBootstrapCapture({
+    send: async (method, params) => {
+      const label = EARLY_COMMAND_LABELS[method];
+      if (!label) throw probeError('early_command_not_authorized');
+      if (current.earlyCommandStatus[label] !== 'failed') current.earlyCommandStatus[label] = 'sent';
+      try {
+        const result = await send(method, params, current.sessionId);
+        if (current.earlyCommandStatus[label] !== 'failed') current.earlyCommandStatus[label] = 'acknowledged';
+        return result;
+      } catch (error) { current.earlyCommandStatus[label] = 'failed'; throw error; }
+    },
+    readBootstrap: (contextId, callFrameId) => {
+      if (!current.earlyCapture.canRead(contextId) || !current.earlyCapture.canReadCallFrame(callFrameId)) {
+        throw probeError('early_call_frame_not_authorized');
+      }
+      return send('Debugger.evaluateOnCallFrame', { callFrameId, expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
+        returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
+        includeCommandLineAPI: false, generatePreview: false }, current.sessionId);
+    },
+  });
+  try {
+    const result = await current.earlyCapture.run();
+    current.earlyCleanupVerified = result.cleanupVerified === true;
+    return result;
+  } finally {
+    current.earlyRunning = false;
+    current.earlyCapture = null;
+    current.gate.setLoginVisible(false); // The reload requires a fresh Home check.
+  }
+}
+
+function earlyBootstrapDiagnostics(message) {
+  if (driverMode !== 'retained_bootstrap' || !active || message.owner !== active.owner ||
+      !active.earlyAttempted || active.earlyRunning || !active.earlyCommandStatus) throw probeError('early_diagnostics_unavailable');
+  const commands = {};
+  for (const label of Object.values(EARLY_COMMAND_LABELS)) {
+    const status = active.earlyCommandStatus[label];
+    if (!['not_attempted', 'sent', 'acknowledged', 'failed'].includes(status)) throw probeError('early_diagnostics_invalid');
+    commands[label] = status;
+  }
+  const failureCategory = !cdpFailure ? 'none' : cdpFailure === 'cdp_frame_count_exceeded' ? 'frame_count_limit' :
+    ['cdp_frame_too_large', 'cdp_input_invalid', 'cdp_json_invalid', 'cdp_utf8_invalid'].includes(cdpFailure) ? 'frame_invalid' :
+    cdpFailure.endsWith('_timeout') ? 'command_timeout' : 'other';
+  return { schema: 'aku.x.early-bootstrap-transport.v1', commands, failureCategory, canAuthorize: false };
 }
 
 function validCandidate(candidate) {
@@ -1131,6 +1290,12 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'bootstrap_early_diagnostics':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return earlyBootstrapDiagnostics(message);
+    case 'bootstrap_early_current_self':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return earlyBootstrapCurrentSelf(message);
     case 'bootstrap_current_self':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return bootstrapCurrentSelf(message);

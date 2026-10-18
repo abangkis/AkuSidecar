@@ -57,6 +57,17 @@ test('account-settings entrypoint cannot request a bootstrap probe or pass an ex
   const replies = control('./x-retained-account-settings-driver.mjs', [
     { id: 1, op: 'bootstrap_current_self', owner: 1 },
     { id: 2, op: 'bootstrap_current_self', owner: 1, expression: 'private' },
+    { id: 3, op: 'bootstrap_early_current_self', owner: 1 },
   ]);
-  assert.deepEqual(replies.slice(1).map(value => value.code), ['bootstrap_mode_required', 'rpc_fields_invalid']);
+  assert.deepEqual(replies.slice(1).map(value => value.code), ['bootstrap_mode_required', 'rpc_fields_invalid', 'bootstrap_mode_required']);
+});
+
+test('early bootstrap rejects pre-owner calls and caller-provided timing or scripts', () => {
+  const replies = control('./x-retained-bootstrap-driver.mjs', [
+    { id: 1, op: 'bootstrap_early_current_self', owner: 1 },
+    { id: 2, op: 'bootstrap_early_current_self', owner: 1, expression: 'private' },
+    { id: 3, op: 'bootstrap_early_current_self', owner: 1, maxPauses: 9999 },
+    { id: 4, op: 'bootstrap_early_diagnostics', owner: 1 },
+  ]);
+  assert.deepEqual(replies.slice(1).map(value => value.code), ['bootstrap_mode_required', 'rpc_fields_invalid', 'rpc_fields_invalid', 'early_diagnostics_unavailable']);
 });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
+import { Session } from 'node:inspector';
 
 import {
   BOOTSTRAP_CURRENT_SELF_EXPRESSION,
@@ -415,4 +416,55 @@ test('serialized expression returns fixed inspection failure when native locatio
   assert.equal(dto.bootstrapState, 'absent');
   assert.equal(calls.bootstrap, 0);
   assert.equal(JSON.stringify(dto).includes('PRIVATE-LOCATION-ERROR'), false);
+});
+
+test('actual V8 inspector accepts populated, missing and accessor projections with side-effect rejection enabled', async () => {
+  // This connects only to this fresh Node test worker; no port or other
+  // process is opened. VM execution alone does not enforce V8's guard.
+  const previousLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+  const previousBootstrap = Object.getOwnPropertyDescriptor(globalThis, '__INITIAL_STATE__');
+  const session = new Session();
+  session.connect();
+  const evaluate = () => new Promise((accept, reject) => {
+    session.post('Runtime.evaluate', { expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
+      returnByValue: true, awaitPromise: false, userGesture: false, throwOnSideEffect: true, disableBreaks: true, timeout: 1500 },
+    (error, result) => {
+      if (error) { reject(new Error('inspector_command_failed')); return; }
+      if (Object.hasOwn(result, 'exceptionDetails')) { reject(new Error('guarded_projection_rejected')); return; }
+      try { accept(validateBootstrapCurrentSelf(result.result?.value)); }
+      catch { reject(new Error('inspector_projection_invalid')); }
+    });
+  });
+  try {
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { ...TARGET_LOCATION } });
+    const id = '123456';
+    Object.defineProperty(globalThis, '__INITIAL_STATE__', { configurable: true, value: {
+      session: { user_id: id, user_id_str: id },
+      entities: { users: { entities: { [id]: { id_str: id } } } },
+      users: { entities: { [id]: { id_str: id } } },
+    } });
+    const populated = await evaluate();
+    assert.equal(populated.diagnostic, 'projected');
+    assert.equal(populated.bootstrapState, 'object');
+    assert.equal(populated.sessionState, 'object');
+    assert.deepEqual(populated.idFields, { user_id: 'string', user_id_str: 'string' });
+    assert.equal(populated.stableIdStringCandidates, 2);
+    assert.equal(populated.sessionIdsAgree, true);
+    assert.deepEqual(populated.entityChecks, { normalizedUsers: 'match', rootUsers: 'match' });
+    assert.equal(JSON.stringify(populated).includes(id), false);
+    delete globalThis.__INITIAL_STATE__;
+    assert.equal((await evaluate()).diagnostic, 'bootstrap_missing');
+    let getterCalls = 0;
+    Object.defineProperty(globalThis, '__INITIAL_STATE__', { configurable: true, get() { getterCalls += 1; throw new Error('private getter'); } });
+    const accessor = await evaluate();
+    assert.equal(accessor.diagnostic, 'bootstrap_invalid');
+    assert.equal(accessor.bootstrapState, 'accessor');
+    assert.equal(getterCalls, 0);
+  } finally {
+    session.disconnect();
+    if (previousLocation === undefined) delete globalThis.location;
+    else Object.defineProperty(globalThis, 'location', previousLocation);
+    if (previousBootstrap === undefined) delete globalThis.__INITIAL_STATE__;
+    else Object.defineProperty(globalThis, '__INITIAL_STATE__', previousBootstrap);
+  }
 });
