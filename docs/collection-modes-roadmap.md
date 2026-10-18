@@ -5299,3 +5299,58 @@ registry, real account or user runtime is used. Normal main remains unchanged.
 Next: add a separate synthetic main composition using this controller and test
 real fixture-owned Chrome startup, confirmation, opt-out and restart. Actual
 confirmation UI and real-provider verifier remain later gates.
+
+### Actual main policy + Chrome fixture — 2026-10-15
+
+The controller delta was reviewed and published as `82e40c7`. A separate explicit
+dual-tag main provider now runs the policy controller with a fresh fixture Chrome
+profile and synthetic loopback login. Private hooks establish the enrollment
+hold before Node/Chrome; scoped decision frames exercise cancel, confirm,
+changed-authority rejection, opt-in and opt-out. These frames simulate decisions
+and do not establish human consent or a production confirmation UI.
+
+Acceptance pins actual Chrome/Node identity and handles, checks the pre-owner
+Go-only Job, durable policy disable while capture ingestion is held, completion
+after drain, retained unstarted source work, root process signals and whole-Job
+cleanup. CLI default-off/missing-grant rejection and legacy fixture regressions
+remain part of the canonical development helper. Normal user startup, original
+authentication, registry and foreground remain outside this composition.
+
+The new provider is fresh-only. The next step is a scoped headless recovery-grant
+design and actual controller cold-restart acceptance, preserving existing
+reader/window release grants. Real-provider verification and confirmation UI
+remain later gates.
+
+### 2026-10-18: controller cold restart authorized, synthetic only
+
+Extend the actual-main policy fixture with a separate headless recovery grant,
+retaining the same physical SQLite database and Chrome profile. The successor
+must fence before owner startup, obtain fresh authority/browser proof and resume
+persisted opt-in without enrollment, confirmation or login again. The older
+native-window reopen grant remains unchanged. Validate old-process cleanup,
+one-use recovery, unchanged enrollment and queued work, and explicit denial when
+the account/session proof changes. This authorization excludes real accounts,
+user runtime, registration, installation and activation in ordinary main dev.
+
+Actual-main cold-restart acceptance now passes: graceful enabled-idle shutdown,
+unavailable-authority denial with full queued payload preserved, abrupt failed
+recovery-owner cleanup, then fresh verified resume of the same queued command on
+the same physical SQLite/profile. One synthetic login and one capture; expected
+accounts/revisions and policy remain unchanged. Only an unclaimed command's
+runtime epoch/generation is rebound after successful proof. Old process roots
+signal, all owned Jobs empty, and grant replay is denied. No cookie export,
+injection, second login or browser-cookie schema dependency is used.
+
+The canonical development/default helper passed, including legacy native restart
+and ordinary regression/build checks. Evidence:
+`runtime/qa/auth-session-sidecar/policy-controller-restart-final-01955b2e025247f2a1f3f2bd635c84e5.txt`.
+Publication of the combined 11-file integration is authorized after review.
+Real-provider verifier/enrollment UI and opt-in
+activation remain later gates; abrupt controller death during authorized active
+capture is not established by this new cold-restart case. User runtime and
+authentication remain unchanged.
+
+Proposed next step: one-source production verifier and metadata/migration contract,
+developed against offline synthetic/sanitized evidence first. Follow with confirmed
+enrollment, default-off activation, rollback and active-capture crash acceptance.
+Real-account observation and a main-dev pilot remain separately authorized gates.

@@ -44,17 +44,18 @@ type syntheticPolicyPending struct {
 // Engine verifier. It is compiled only for the dual-tag synthetic adapter. No
 // constructor or action is exposed by normal main, settings, HTTP or native IPC.
 type SyntheticPolicyController struct {
-	mu         sync.Mutex
-	e          *Engine
-	capability DevelopmentSessionCapability
-	expected   map[domain.Source]store.SyntheticAccountIdentity
-	enrollment *store.SyntheticEnrollmentFence
-	pending    *syntheticPolicyPending
-	running    bool
-	stopped    bool
-	cancel     context.CancelFunc
-	lifetime   context.Context
-	clock      func() time.Time
+	mu               sync.Mutex
+	e                *Engine
+	capability       DevelopmentSessionCapability
+	expected         map[domain.Source]store.SyntheticAccountIdentity
+	enrollment       *store.SyntheticEnrollmentFence
+	pending          *syntheticPolicyPending
+	running          bool
+	stopped          bool
+	cancel           context.CancelFunc
+	lifetime         context.Context
+	clock            func() time.Time
+	lastStartFailure string
 }
 
 func NewSyntheticPolicyController(ctx context.Context, e *Engine, capability DevelopmentSessionCapability, fresh bool) (*SyntheticPolicyController, error) {
@@ -248,6 +249,7 @@ func (c *SyntheticPolicyController) Confirm(ctx context.Context, id string, acce
 
 func (c *SyntheticPolicyController) start(ctx context.Context, owner *captureruntime.Manager, coordinator *collection.Coordinator) error {
 	if err := c.e.PrepareDevelopmentSessionCheckpoint(ctx, c.capability, false); err != nil {
+		c.lastStartFailure = "checkpoint_fence"
 		return errors.New("synthetic policy startup fence unavailable")
 	}
 	runCtx, cancel := context.WithCancel(c.lifetime)
@@ -262,6 +264,14 @@ func (c *SyntheticPolicyController) start(ctx context.Context, owner *capturerun
 	})
 	stoppedRequest := stopRequest()
 	if err != nil || !stoppedRequest || ctx.Err() != nil {
+		switch {
+		case err != nil:
+			c.lastStartFailure = syntheticPolicyStartFailureClass(err)
+		case !stoppedRequest:
+			c.lastStartFailure = "request_lifetime"
+		default:
+			c.lastStartFailure = "context_canceled"
+		}
 		cancel()
 		c.hold()
 		c.e.developmentCheckpointMu.Lock()
@@ -275,9 +285,31 @@ func (c *SyntheticPolicyController) start(ctx context.Context, owner *capturerun
 		c.stopped = true
 		return errors.New("synthetic policy startup verification failed")
 	}
+	c.lastStartFailure = ""
 	c.cancel = cancel
 	c.running = true
 	return nil
+}
+
+func syntheticPolicyStartFailureClass(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "authority"):
+		return "authority_probe"
+	case strings.Contains(message, "browser") || strings.Contains(message, "owner proof"):
+		return "browser_proof"
+	case strings.Contains(message, "session verification required"):
+		return "session_verification"
+	case strings.Contains(message, "checkpoint"):
+		return "checkpoint_authorization"
+	case strings.Contains(message, "reasoning"):
+		return "pending_reasoning"
+	default:
+		return "development_session_start"
+	}
 }
 
 // Resume uses persisted opt-in but never a persisted capture permit. It performs
@@ -285,12 +317,15 @@ func (c *SyntheticPolicyController) start(ctx context.Context, owner *capturerun
 func (c *SyntheticPolicyController) Resume(ctx context.Context, owner *captureruntime.Manager, coordinator *collection.Coordinator) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.lastStartFailure = ""
 	if c.stopped || c.lifetime.Err() != nil || c.running || c.enrollment != nil || coordinator == nil {
+		c.lastStartFailure = "resume_precondition"
 		return errors.New("synthetic policy resume unavailable")
 	}
 	c.pending = nil
 	cp, _, enabled, err := c.e.store.LoadSyntheticAccountPolicy(ctx)
 	if err != nil || !enabled || !syntheticCheckpointExpectedEqual(cp.ExpectedAccounts, c.expected) {
+		c.lastStartFailure = "resume_policy_scope"
 		return errors.New("synthetic policy opt-in required")
 	}
 	return c.start(ctx, owner, coordinator)

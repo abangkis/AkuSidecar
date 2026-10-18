@@ -1585,3 +1585,68 @@ activated. Real Chrome/OS lifecycle acceptance of this controller is still pendi
 
 The helper cleans its owned roots on success and prints the retained root on
 failure. Stable log: `runtime/qa/auth-session-sidecar/policy-controller-validation.txt`.
+
+### Actual main policy provider and Chrome (2026-10-15)
+
+`scripts/test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault` now
+includes `TestDevelopmentPolicyMainChromeFixture`, which launches the actual
+dual-tag main using `--dev --dev-session-reuse=synthetic-policy-fixture`. It uses
+the existing verified parent/root/profile grant, an outer containment Job, a fresh
+profile and one loopback synthetic login. Ordinary/default-off CLI rejection is
+also checked. No host registration or physical click is used.
+
+The test stops at the provisional fence before Node/Chrome, proves the outer Job
+contains only Go, seeds a queued command and verifies claim is denied. Private
+frames cancel one enrollment, confirm a second, and reject a changed authority
+account while the policy remains disabled. Explicit enable then starts a verified
+capture. The physical `/collect` already occurred when ingestion is held: count is
+one and the command remains claimed, not completed. Opt-out must become durable
+before that hold is released; capture/ingestion/reasoning drains without a second
+capture, and the other unstarted source run remains retained.
+
+The test pins Chrome and Node process identities/images/handles. After opt-out,
+both roots must be signalled and the outer Job must contain only Go. After the
+stop handshake the Go root must signal and the Job must be empty. Profile/root
+physical identities and the controller lineage file remain unchanged throughout.
+The receipt's startup-authorization flag is historical; the persisted policy flag
+and claim checks determine current admission.
+
+This initial scenario uses fresh non-native grants. Actual controller cold
+restart/headless recovery is a separate acceptance case below. Real account
+observation, human confirmation UI and foreground/native reader acceptance
+remain outside this test. Existing reader
+reopen grants still require their native-window release evidence. Stable log:
+`runtime/qa/auth-session-sidecar/policy-main-chrome-validation.txt`.
+
+### Actual main policy cold restart (2026-10-18)
+
+`TestDevelopmentPolicyMainChromeFixtureColdRestart` extends the same dual-tag
+provider with a private headless recovery grant. It is selected by the existing
+`scripts/test-auth-session-sidecar.ps1 -VerifyDevelopment` helper. Each invocation
+starts in a fresh owned QA root; process replacements within that invocation keep
+the same physical SQLite database and Chrome profile. No registry, user profile,
+real authentication or interactive input is involved.
+
+The grant binds prior Go/Node/Chrome identities, database/profile file identities,
+checkpoint/policy generation, last authorized epoch and the queued session/run/command. It
+is consumed once before owner startup. The successor fences admission before
+Node/Chrome, reuses persisted opt-in, and requires fresh authority/browser proof
+through the controller's `Resume` method. No enrollment or login is repeated.
+Legacy native/window reopen grants retain their separate release requirements.
+
+Acceptance checks eligible queued work before owner startup and before proof,
+preservation on unavailable authority, old-process cleanup, and successful drain
+after valid revalidation. Private decision frames remain simulated confirmation;
+this is not real-provider or human-consent acceptance.
+
+Acceptance passed: one synthetic login, one physical capture, the same SQLite
+file/profile identities, fresh successor proof, failed-authority admission held,
+grant replay denied and the preserved command completed after resume. Only the
+successful unclaimed-command epoch/generation rebind is permitted. The scenario
+combines graceful enabled-idle shutdown with abrupt cleanup of a denied recovery
+owner; it does not simulate abrupt death during an authorized active capture.
+
+The final source does not inspect Chrome's cookie database. The canonical
+`-VerifyDevelopment -VerifyDefault` helper passed, including existing native
+restart/default regressions and the ordinary build. Final log:
+`runtime/qa/auth-session-sidecar/policy-controller-restart-final-01955b2e025247f2a1f3f2bd635c84e5.txt`.

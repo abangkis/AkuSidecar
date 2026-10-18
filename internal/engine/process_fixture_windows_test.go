@@ -41,6 +41,10 @@ type processFixtureChild struct {
 }
 
 func startProcessFixtureChild(t *testing.T, executable string, start processFixtureStart) *processFixtureChild {
+	return startProcessFixtureChildWithProvider(t, executable, start, "")
+}
+
+func startProcessFixtureChildWithProvider(t *testing.T, executable string, start processFixtureStart, provider string) *processFixtureChild {
 	t.Helper()
 	job, err := newChromeFixtureJob()
 	if err != nil {
@@ -59,6 +63,9 @@ func startProcessFixtureChild(t *testing.T, executable string, start processFixt
 		if os.Getenv("AKU_DEV_FRONTEND_NATIVE_ENABLED") == "1" {
 			arguments = []string{"--dev", "--dev-session-reuse=synthetic-frontend-native-fixture"}
 		}
+	}
+	if provider != "" {
+		arguments = []string{"--dev", "--dev-session-reuse=" + provider}
 	}
 	child.cmd = exec.Command(executable, arguments...)
 	child.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}

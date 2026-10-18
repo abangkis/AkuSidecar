@@ -49,9 +49,22 @@ type processFixtureGrant struct {
 	TreeReleased    bool
 	profilePrepared bool
 }
+
+// processFixturePolicyRecoveryGrant is a separate headless-only startup
+// authority. It never changes the legacy native/window Reopen contract.
+type processFixturePolicyRecoveryGrant struct {
+	Nonce, RootID, ProfileID, StoreFileID   string
+	OldWorker, OldNode, OldChrome           processFixtureIdentity
+	CheckpointID, PreviousEpoch             string
+	CheckpointGeneration, PolicyGeneration  uint64
+	Enabled                                 bool
+	SessionID, QueuedRunID, QueuedCommandID string
+	RunIDs                                  []string
+}
 type processFixtureStart struct {
 	NativeHost                                                                  *readerbroker.FixtureNativeHostReceipt
 	Grant                                                                       processFixtureGrant
+	PolicyRecovery                                                              *processFixturePolicyRecoveryGrant
 	NodePath, ChromePath, DriverPath, Origin, AuthorityKey, SessionID, OldEpoch string
 	RunIDs                                                                      []string
 	StartupBarrier                                                              string
@@ -71,8 +84,12 @@ type processFixtureReceipt struct {
 	Account, Revision                                                                                                                                                                                                                                                                                                   string
 	StaleEpochDenied, DuplicateDenied, CleanupVerified                                                                                                                                                                                                                                                                  bool
 	AuthorityDenied, GrantReplayDenied                                                                                                                                                                                                                                                                                  bool
+	GracefulBrowserRelease                                                                                                                                                                                                                                                                                              bool
 	DevelopmentSession                                                                                                                                                                                                                                                                                                  bool
 	CheckpointFencedBeforeOwner, CheckpointAuthorizedAtStartup                                                                                                                                                                                                                                                          bool
+	CheckpointID                                                                                                                                                                                                                                                                                                        string
+	CheckpointGeneration, PolicyGeneration                                                                                                                                                                                                                                                                              uint64
+	StoreFileID                                                                                                                                                                                                                                                                                                         string
 	UIPID, HelperPID, ReaderPID, CollectorPID                                                                                                                                                                                                                                                                           uint32
 	UIHWND, ReaderHWND                                                                                                                                                                                                                                                                                                  uint64
 	Root, Address, RunID                                                                                                                                                                                                                                                                                                string
@@ -93,6 +110,10 @@ type processFixtureReceipt struct {
 	LauncherWorkerRoot, LauncherWorkerChild                                                                                                                                                                                                                                                                             processFixtureIdentity
 	LauncherLifetimeMember, LauncherLifetimeNoInherit                                                                                                                                                                                                                                                                   bool
 	LauncherTreeMembership, LauncherIsolationVerified                                                                                                                                                                                                                                                                   bool
+	PreOwnerClaimDenied, PreProofClaimDenied, QueueCompleted                                                                                                                                                                                                                                                            bool
+	PreResumeBrowserProbeOK, PreResumeBrowserAuthenticated                                                                                                                                                                                                                                                              bool
+	PreResumeBrowserAccountMatch, PreResumeBrowserRevision                                                                                                                                                                                                                                                              bool
+	QueuedRunID, QueuedCommandID                                                                                                                                                                                                                                                                                        string
 }
 
 func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
@@ -101,8 +122,16 @@ func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
 		return processFixtureIdentity{}, err
 	}
 	defer windows.CloseHandle(h)
+	return processFixtureIdentityFromHandle(h)
+}
+
+func processFixtureIdentityFromHandle(h windows.Handle) (processFixtureIdentity, error) {
 	var created, exited, kernel, user windows.Filetime
-	if err = windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
+	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
+		return processFixtureIdentity{}, err
+	}
+	pid, err := windows.GetProcessId(h)
+	if err != nil {
 		return processFixtureIdentity{}, err
 	}
 	return processFixtureIdentity{pid, fmt.Sprintf("%08x%08x", created.HighDateTime, created.LowDateTime)}, nil
@@ -131,6 +160,33 @@ func processFixtureDirectoryID(path string) (string, error) {
 	}
 	if data.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 		return "", errors.New("fixture directory is a reparse point")
+	}
+	return fmt.Sprintf("%08x:%08x%08x:%08x%08x", data.VolumeSerialNumber, data.FileIndexHigh, data.FileIndexLow, data.CreationTime.HighDateTime, data.CreationTime.LowDateTime), nil
+}
+func processFixtureFileID(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("fixture file identity unavailable")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || !samePath(path, resolved) {
+		return "", errors.New("fixture file resolves elsewhere")
+	}
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return "", err
+	}
+	h, err := windows.CreateFile(p, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return "", err
+	}
+	defer windows.CloseHandle(h)
+	var data windows.ByHandleFileInformation
+	if err = windows.GetFileInformationByHandle(h, &data); err != nil {
+		return "", err
+	}
+	if data.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || data.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		return "", errors.New("fixture file identity is not an ordinary file")
 	}
 	return fmt.Sprintf("%08x:%08x%08x:%08x%08x", data.VolumeSerialNumber, data.FileIndexHigh, data.FileIndexLow, data.CreationTime.HighDateTime, data.CreationTime.LowDateTime), nil
 }
@@ -163,25 +219,32 @@ func processFixtureWindowsGone(handles []uintptr) bool {
 	}
 	return true
 }
-func validateProcessFixtureGrant(root string, g *processFixtureGrant) error {
+func validateProcessFixtureLineage(root string, g *processFixtureGrant) error {
+	parent, err := processFixtureProcessIdentity(uint32(os.Getppid()))
+	if err != nil {
+		return errors.New("fixture parent identity unavailable")
+	}
+	return validateProcessFixtureLineageForParent(root, g, parent)
+}
+
+func validateProcessFixtureLineageForParent(root string, g *processFixtureGrant, parentIdentity processFixtureIdentity) error {
 	project, scopeErr := filepath.Abs(filepath.Join("..", ".."))
 	if scopeErr != nil {
 		return errors.New("fixture project root unavailable")
 	}
-	parent := filepath.Join(project, "runtime", "qa", "auth-session-sidecar")
-	resolvedParent, scopeErr := filepath.EvalSymlinks(parent)
-	if scopeErr != nil || !samePath(parent, resolvedParent) {
+	qaParent := filepath.Join(project, "runtime", "qa", "auth-session-sidecar")
+	resolvedParent, scopeErr := filepath.EvalSymlinks(qaParent)
+	if scopeErr != nil || !samePath(qaParent, resolvedParent) {
 		return errors.New("fixture QA parent unavailable")
 	}
-	rel, scopeErr := filepath.Rel(parent, root)
+	rel, scopeErr := filepath.Rel(qaParent, root)
 	if scopeErr != nil || !filepath.IsAbs(root) || filepath.IsAbs(rel) || strings.Contains(rel, "..") || !strings.HasPrefix(filepath.Base(root), "run-") {
 		return errors.New("fixture lineage outside project QA scope")
 	}
 	if g == nil || g.Root != root || len(g.Nonce) != 64 || strings.Trim(g.Nonce, "0123456789abcdef") != "" {
 		return errors.New("fixture lineage invalid")
 	}
-	actual, err := processFixtureProcessIdentity(uint32(os.Getppid()))
-	if err != nil || actual != g.Parent {
+	if parentIdentity.PID == 0 || parentIdentity.Created == "" || parentIdentity != g.Parent {
 		return errors.New("fixture parent identity changed")
 	}
 	rootID, err := processFixtureDirectoryID(root)
@@ -205,6 +268,13 @@ func validateProcessFixtureGrant(root string, g *processFixtureGrant) error {
 	if json.Unmarshal(raw, &saved) != nil || saved != g.processFixtureLineage {
 		return errors.New("fixture lineage does not belong to parent")
 	}
+	return nil
+}
+func validateProcessFixtureGrant(root string, g *processFixtureGrant) error {
+	if err := validateProcessFixtureLineage(root, g); err != nil {
+		return err
+	}
+	var err error
 	if g.Reopen {
 		if !g.TreeReleased || g.Old.PID == 0 || g.Old.Created == "" || len(g.Windows) < 2 || !processFixtureWindowsGone(g.Windows) {
 			return errors.New("fixture release proof incomplete")
@@ -228,6 +298,162 @@ func validateProcessFixtureGrant(root string, g *processFixtureGrant) error {
 		return errors.New("fixture profile is not fresh")
 	}
 	return nil
+}
+
+func fixturePolicyRecoveryConsumedPath(root, nonce string) string {
+	return filepath.Join(root, "process-policy-recovery-consumed-"+nonce+".json")
+}
+
+func processFixtureIdentityReleased(expected processFixtureIdentity) error {
+	if expected.PID == 0 || expected.Created == "" {
+		return errors.New("policy recovery old process identity missing")
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, expected.PID)
+	if err != nil {
+		return errors.New("policy recovery old process release unavailable")
+	}
+	defer windows.CloseHandle(h)
+	actual, err := processFixtureIdentityFromHandle(h)
+	if err != nil || actual != expected {
+		return errors.New("policy recovery old process identity changed")
+	}
+	status, err := windows.WaitForSingleObject(h, 0)
+	if err != nil || status != uint32(windows.WAIT_OBJECT_0) {
+		return errors.New("policy recovery old process still active")
+	}
+	return nil
+}
+
+func validateProcessFixturePolicyRecoveryGrant(root string, start processFixtureStart) error {
+	parent, err := processFixtureProcessIdentity(uint32(os.Getppid()))
+	if err != nil {
+		return errors.New("policy recovery parent identity unavailable")
+	}
+	return validateProcessFixturePolicyRecoveryGrantForParent(root, start, parent)
+}
+
+func validateProcessFixturePolicyRecoveryGrantForParent(root string, start processFixtureStart, parentIdentity processFixtureIdentity) error {
+	g := start.PolicyRecovery
+	if g == nil || start.NativeHost != nil || start.Grant.Reopen || start.Grant.Old != (processFixtureIdentity{}) || len(start.Grant.Windows) != 0 || start.Grant.TreeReleased || start.Grant.profilePrepared ||
+		start.SessionID != "" || len(start.RunIDs) != 0 || start.StartupBarrier != "" || start.OldEpoch != g.PreviousEpoch || g.Nonce == "" || len(g.Nonce) != 64 || strings.Trim(g.Nonce, "0123456789abcdef") != "" ||
+		g.RootID == "" || g.ProfileID == "" || g.StoreFileID == "" || g.CheckpointID == "" || g.PreviousEpoch == "" ||
+		g.CheckpointGeneration == 0 || g.PolicyGeneration == 0 || !g.Enabled || g.SessionID == "" || g.QueuedRunID == "" || g.QueuedCommandID == "" || len(g.RunIDs) == 0 {
+		return errors.New("policy recovery grant incomplete")
+	}
+	if len(g.RunIDs) > 8 {
+		return errors.New("policy recovery run binding invalid")
+	}
+	if err := validateProcessFixtureLineageForParent(root, &start.Grant, parentIdentity); err != nil {
+		return err
+	}
+	rootID, err := processFixtureDirectoryID(root)
+	if err != nil || rootID != g.RootID || rootID != start.Grant.RootID {
+		return errors.New("policy recovery root identity changed")
+	}
+	profileID, err := processFixtureDirectoryID(filepath.Join(root, "shared"))
+	if err != nil || profileID != g.ProfileID || start.Grant.ProfileID != g.ProfileID {
+		return errors.New("policy recovery physical profile changed")
+	}
+	storePath := filepath.Join(root, "fixture.sqlite")
+	storeID, err := processFixtureFileID(storePath)
+	if err != nil || storeID != g.StoreFileID {
+		return errors.New("policy recovery physical Store changed")
+	}
+	if g.OldWorker == g.OldNode || g.OldWorker == g.OldChrome || g.OldNode == g.OldChrome {
+		return errors.New("policy recovery old process identities overlap")
+	}
+	for _, identity := range []processFixtureIdentity{g.OldWorker, g.OldNode, g.OldChrome} {
+		if err := processFixtureIdentityReleased(identity); err != nil {
+			return err
+		}
+	}
+	state, err := store.OpenReadOnly(storePath)
+	if err != nil {
+		return errors.New("policy recovery Store unavailable")
+	}
+	defer state.Close()
+	checkpoint, policyGeneration, enabled, err := state.LoadSyntheticAccountPolicy(context.Background())
+	if err != nil || checkpoint.CheckpointID != g.CheckpointID || checkpoint.Generation != g.CheckpointGeneration || checkpoint.OwnerEpoch != g.PreviousEpoch ||
+		policyGeneration != g.PolicyGeneration || enabled != g.Enabled {
+		return errors.New("policy recovery checkpoint changed")
+	}
+	if !checkpointAccountsMatchPhysicalScope(checkpoint.ExpectedAccounts, rootID, profileID) {
+		return errors.New("policy recovery checkpoint scope changed")
+	}
+	session, err := state.GetSession(context.Background(), g.SessionID)
+	if err != nil || len(session.Runs) != len(g.RunIDs) {
+		return errors.New("policy recovery queued session changed")
+	}
+	queuedRunBound := false
+	for i, runID := range g.RunIDs {
+		if session.Runs[i].ID != runID {
+			return errors.New("policy recovery queued run changed")
+		}
+		queuedRunBound = queuedRunBound || runID == g.QueuedRunID
+	}
+	if !queuedRunBound {
+		return errors.New("policy recovery command run is outside the queued session")
+	}
+	queuedRun, err := state.GetRun(context.Background(), g.QueuedRunID)
+	if err != nil || queuedRun.SessionID != g.SessionID || queuedRun.BridgeCommandStatus != "queued" {
+		return errors.New("policy recovery work is not durably queued")
+	}
+	commands, err := state.FixtureRunCommandEvidence(context.Background(), g.QueuedRunID)
+	if err != nil || len(commands) != 1 || commands[0].ID != g.QueuedCommandID || commands[0].Status != "queued" ||
+		commands[0].Collector != "headless" || commands[0].Driver != "headless" || commands[0].ClaimedAt.Valid || commands[0].ClaimedBy.Valid {
+		return errors.New("policy recovery queued command changed")
+	}
+	return nil
+}
+
+func checkpointAccountsMatchPhysicalScope(accounts map[domain.Source]store.SyntheticAccountIdentity, rootID, profileID string) bool {
+	if len(accounts) != 2 {
+		return false
+	}
+	for _, source := range []domain.Source{domain.SourceX, domain.SourceInstagram} {
+		identity, ok := accounts[source]
+		if !ok || identity.AccountID != "alpha" || identity.StoreScopeID != rootID || identity.ProfileID != profileID {
+			return false
+		}
+	}
+	return true
+}
+
+func consumeProcessFixturePolicyRecoveryGrant(root string, start processFixtureStart) error {
+	if err := validateProcessFixturePolicyRecoveryGrant(root, start); err != nil {
+		return err
+	}
+	return consumeProcessFixturePolicyRecoveryGrantAfterValidation(root, start)
+}
+
+func consumeProcessFixturePolicyRecoveryGrantForParent(root string, start processFixtureStart, parentIdentity processFixtureIdentity) error {
+	if err := validateProcessFixturePolicyRecoveryGrantForParent(root, start, parentIdentity); err != nil {
+		return err
+	}
+	return consumeProcessFixturePolicyRecoveryGrantAfterValidation(root, start)
+}
+
+func consumeProcessFixturePolicyRecoveryGrantAfterValidation(root string, start processFixtureStart) error {
+	claim, err := os.OpenFile(fixturePolicyRecoveryConsumedPath(root, start.PolicyRecovery.Nonce), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return errors.New("policy recovery grant already consumed")
+	}
+	defer claim.Close()
+	return json.NewEncoder(claim).Encode(struct {
+		Nonce     string
+		WorkerPID int
+	}{start.PolicyRecovery.Nonce, os.Getpid()})
+}
+
+func processFixturePreservesProfile(start processFixtureStart) bool {
+	return start.Grant.Reopen || start.PolicyRecovery != nil
+}
+
+func validateProcessFixtureStartScope(root string, start processFixtureStart) error {
+	if start.PolicyRecovery != nil {
+		return validateProcessFixturePolicyRecoveryGrant(root, start)
+	}
+	return validateProcessFixtureGrant(root, &start.Grant)
 }
 
 func consumeProcessFixtureGrant(root string, g *processFixtureGrant) error {
@@ -325,6 +551,20 @@ func runAuthSessionProcessFixture(input io.Reader, output io.Writer, development
 }
 
 func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, development bool, composition func(context.Context, *DevelopmentFixtureRuntime) error, validateStart func(processFixtureStart) error) (returnErr error) {
+	return runAuthSessionProcessFixtureConfigured(input, output, development, composition, validateStart, nil)
+}
+
+// Private hooks let the dual-tag policy composition fence before Node and own
+// startup instead of passing through the already-authorized legacy binder.
+type processFixturePolicyHooks struct {
+	prepare func(context.Context, *Engine, processFixtureStart, *bufio.Scanner, *json.Encoder) error
+	run     func(context.Context, *DevelopmentFixtureRuntime, processFixtureStart) error
+}
+
+func runAuthSessionProcessFixtureConfigured(input io.Reader, output io.Writer, development bool, composition func(context.Context, *DevelopmentFixtureRuntime) error, validateStart func(processFixtureStart) error, policy *processFixturePolicyHooks) (returnErr error) {
+	if policy != nil && (!development || composition != nil || policy.prepare == nil || policy.run == nil) {
+		return errors.New("fixture policy composition invalid")
+	}
 	executable, err := os.Executable()
 	expectedImage := "auth-session-process-fixture.exe"
 	if development {
@@ -349,7 +589,10 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 	if err = json.Unmarshal(scanner.Bytes(), &start); err != nil {
 		return errors.New("fixture startup frame invalid")
 	}
-	if err = validateProcessFixtureGrant(start.Grant.Root, &start.Grant); err != nil {
+	if start.PolicyRecovery != nil && policy == nil {
+		return errors.New("policy recovery grant requires its isolated main composition")
+	}
+	if err = validateProcessFixtureStartScope(start.Grant.Root, start); err != nil {
 		return err
 	}
 	if development {
@@ -377,6 +620,7 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		return errors.New("fixture startup barrier invalid")
 	}
 	grantNegatives := 0
+	policyGrantReplayDenied := false
 	if start.Grant.Reopen {
 		grantNegatives, err = processFixtureGrantNegatives(start.Grant.Root, start.Grant)
 		if err != nil {
@@ -388,6 +632,14 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		if consumeProcessFixtureGrant(start.Grant.Root, &start.Grant) == nil {
 			return errors.New("replayed recovery grant accepted")
 		}
+	} else if start.PolicyRecovery != nil {
+		if err = consumeProcessFixturePolicyRecoveryGrant(start.Grant.Root, start); err != nil {
+			return err
+		}
+		if consumeProcessFixturePolicyRecoveryGrant(start.Grant.Root, start) == nil {
+			return errors.New("replayed policy recovery grant accepted")
+		}
+		policyGrantReplayDenied = true
 	}
 	lifetime := 90 * time.Second
 	if composition != nil {
@@ -419,7 +671,7 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 	checkpointFencedBeforeOwner := false
 	if development {
 		profilePath := filepath.Join(start.Grant.Root, "shared")
-		if !start.Grant.Reopen {
+		if !processFixturePreservesProfile(start) {
 			if err = os.Mkdir(profilePath, 0700); err != nil {
 				return errors.New("development profile preparation failed")
 			}
@@ -438,7 +690,7 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		if err != nil {
 			return err
 		}
-		if !start.Grant.Reopen {
+		if !processFixturePreservesProfile(start) {
 			if _, err = state.CompleteOnboarding(ctx, settings.ActiveSources); err != nil {
 				return err
 			}
@@ -449,12 +701,20 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		}
 		e = New(state, provider, config.Config{Dev: true, Root: start.Grant.Root, Database: config.DatabaseConfig{Path: filepath.Join(start.Grant.Root, "fixture.sqlite")}, Capture: config.CaptureConfig{MaxAcquisitionRounds: 1}}, log.New(io.Discard, "", 0))
 		e.RecordHeartbeat(ExpectedHeartbeat())
-		if err = prepareDevelopmentProcessCheckpoint(ctx, e, start.Grant.RootID, start.Grant.ProfileID, !start.Grant.Reopen); err != nil {
+		if policy != nil {
+			if start.PolicyRecovery != nil && !policyGrantReplayDenied {
+				return errors.New("policy recovery replay denial was not proven")
+			}
+			err = policy.prepare(ctx, e, start, scanner, encoder)
+		} else {
+			err = prepareDevelopmentProcessCheckpoint(ctx, e, start.Grant.RootID, start.Grant.ProfileID, !processFixturePreservesProfile(start))
+		}
+		if err != nil {
 			return fmt.Errorf("development checkpoint preparation failed: %w", err)
 		}
 		checkpointFencedBeforeOwner = true
 	}
-	bridgeConfig := chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant}
+	bridgeConfig := chromeFixtureConfig{NodePath: start.NodePath, ChromePath: start.ChromePath, DriverPath: start.DriverPath, Root: start.Grant.Root, Origin: start.Origin, processGrant: &start.Grant, processStart: &start}
 	bridgeConfig.NativeReaderStartup = composition != nil
 	var barrierNode windows.Handle
 	barrierReported := make(chan struct{})
@@ -568,7 +828,7 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 	if err != nil {
 		return err
 	}
-	if !start.Grant.Reopen {
+	if !processFixturePreservesProfile(start) {
 		if err = initial.Login(ctx); err != nil {
 			return err
 		}
@@ -663,6 +923,9 @@ func runAuthSessionProcessFixtureChecked(input io.Reader, output io.Writer, deve
 		var evidence SyntheticSessionEvidence
 		requestErr = json.NewDecoder(io.LimitReader(reply.Body, 4096)).Decode(&evidence)
 		return evidence, requestErr
+	}
+	if policy != nil {
+		return policy.run(ctx, &DevelopmentFixtureRuntime{Engine: e, State: state, Owner: manager, Coordinator: coordinator, Root: start.Grant.Root, backend: backend, bridge: bridge, scanner: scanner, encoder: encoder, authority: authority}, start)
 	}
 	if start.Grant.Reopen {
 		paused, pausedErr := state.ListFixturePausedCaptureSessions(ctx)

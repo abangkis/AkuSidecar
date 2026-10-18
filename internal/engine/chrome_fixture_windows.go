@@ -39,6 +39,7 @@ type chromeFixtureConfig struct {
 	DriverPath          string
 	NativeReaderStartup bool
 	processGrant        *processFixtureGrant
+	processStart        *processFixtureStart
 	beforeJobAssignment func(uint32, windows.Handle) error
 	beforeReadySignal   func(uint32, windows.Handle) error
 }
@@ -192,15 +193,22 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 	}
 	if config.processGrant != nil {
 		grant := config.processGrant
-		if err = validateProcessFixtureGrant(config.Root, grant); err != nil {
+		validateScope := func() error {
+			if config.processStart != nil {
+				return validateProcessFixtureStartScope(config.Root, *config.processStart)
+			}
+			return validateProcessFixtureGrant(config.Root, grant)
+		}
+		if err = validateScope(); err != nil {
 			b.terminateOwnedTree()
 			return nil, errors.New("fixture process profile identity changed before scope")
 		}
-		if err = b.rpc(ctx, "process_profile_scope", map[string]any{"nonce": grant.Nonce, "reopen": grant.Reopen, "prepared": grant.profilePrepared}, nil); err != nil {
+		preserve := grant.Reopen || config.processStart != nil && config.processStart.PolicyRecovery != nil
+		if err = b.rpc(ctx, "process_profile_scope", map[string]any{"nonce": grant.Nonce, "reopen": preserve, "prepared": grant.profilePrepared}, nil); err != nil {
 			b.terminateOwnedTree()
 			return nil, fmt.Errorf("fixture process profile scope: %w", err)
 		}
-		if err = validateProcessFixtureGrant(config.Root, grant); err != nil {
+		if err = validateScope(); err != nil {
 			b.terminateOwnedTree()
 			return nil, errors.New("fixture process profile identity changed during scope")
 		}
@@ -244,12 +252,27 @@ func validateChromeFixtureConfig(config chromeFixtureConfig) (string, error) {
 	}
 	profile := filepath.Join(root, "shared")
 	if config.processGrant != nil {
-		if err = validateProcessFixtureGrant(root, config.processGrant); err != nil {
+		if config.processStart != nil {
+			err = validateProcessFixtureStartScope(root, *config.processStart)
+		} else {
+			err = validateProcessFixtureGrant(root, config.processGrant)
+		}
+		if err != nil {
 			return "", err
 		}
 	}
 	if _, err = os.Lstat(profile); !errors.Is(err, os.ErrNotExist) {
-		if config.processGrant == nil || (!config.processGrant.Reopen && !config.processGrant.profilePrepared) || validateProcessFixtureGrant(root, config.processGrant) != nil {
+		preserve := config.processGrant != nil && (config.processGrant.Reopen || config.processStart != nil && config.processStart.PolicyRecovery != nil)
+		prepared := config.processGrant != nil && config.processGrant.profilePrepared
+		valid := false
+		if config.processGrant != nil {
+			if config.processStart != nil {
+				valid = validateProcessFixtureStartScope(root, *config.processStart) == nil
+			} else {
+				valid = validateProcessFixtureGrant(root, config.processGrant) == nil
+			}
+		}
+		if config.processGrant == nil || (!preserve && !prepared) || !valid {
 			return "", errors.New("fixture profile must be new")
 		}
 	}

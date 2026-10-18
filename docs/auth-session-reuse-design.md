@@ -1797,3 +1797,133 @@ default regressions and the ordinary build. Logs are
 cleaned after test exit; unrelated `experiments/` remains untouched. Publication
 of this 12-file delta is authorized after review. No original authentication/user
 runtime was used.
+
+## Actual-main policy composition with synthetic Chrome — 2026-10-15
+
+Controller commit `82e40c7` is published. The dual-tag Windows main now has the
+explicit provider `--dev --dev-session-reuse=synthetic-policy-fixture`. Ordinary
+builds and development builds without the fixture adapter reject this provider;
+dispatch still precedes ordinary config, saved Store, real providers and app-shell
+startup. The provider requires the existing private test-controller grant with
+parent creation/image, owned QA root/profile identity and Job containment checks.
+It registers no native host and exposes no public policy endpoint.
+
+Private prepare/run hooks in the common process fixture allow this composition
+to construct the controller before Node/Chrome, rather than first authorizing
+through the legacy binder. The controller persists its provisional enrollment
+hold before an owner-launch frame is accepted. The actual browser adapter checks
+the pinned physical profile directory before and after observations, queries the
+loopback synthetic authority and current Chrome session through the private Node
+bridge, and binds browser evidence to the actual Manager PID/generation/epoch.
+
+Confirmation actions use scoped controller-to-child stdin and private receipt
+IDs. They simulate user decisions; no human confirmation UI or physical click is
+claimed. The fresh-profile scenario cancels one enrollment, confirms a new one,
+rejects a mismatched authority before opt-in, then confirms opt-in with fresh
+Engine proof. It holds a real queued capture while opt-out becomes durable, drains
+that capture, and checks the bridge-owned Chrome/Node tree is empty. OS process
+handles provide evidence beyond Manager status.
+
+This provider intentionally rejects reopen and native-host grants. Existing
+reopen grants require retained native-window release proof; this headless scenario
+does not weaken that contract or invent such windows. Controller restart using
+simulated ownership remains separate evidence. A subsequent design/fixture step
+must provide a scoped headless recovery grant and repeat cold resume with actual
+Chrome before claiming that this new provider supports process restart.
+
+Acceptance passed with actual main and Chrome: pre-owner Go-only Job plus durable
+claim denial; canceled enrollment retains its hold; changed authority is rejected;
+confirmed opt-in admits exactly one physical synthetic collect; policy disables
+before ingestion/reasoning drain; completed capture and unstarted source IDs are
+retained; Chrome/Node handles signal and the outer Job empties after Go shutdown.
+There was one synthetic login and one capture. The complete development/default
+helper passed; a final development run with the additional unstarted-source check
+also passed. Latest detailed log:
+`runtime/qa/auth-session-sidecar/policy-main-chrome-validation.txt`.
+Owned run/compile artifacts were cleaned after their processes exited. No original
+authentication, user runtime, native registration or physical input was used.
+At this acceptance checkpoint the main-integration delta was uncommitted.
+Publication of the combined integration/restart package was authorized after the
+subsequent review described below.
+
+## Policy controller cold restart: synthetic acceptance — 2026-10-18
+
+The authorized recovery step keeps the same fixture-owned SQLite database and
+physical Chrome profile across full Sidecar process replacement. Persisted opt-in
+is intent, not a reusable capture permit. The successor controller loads existing
+enrollment, persists closed admission before launching its owner, and calls
+`Resume` with fresh synthetic authority and browser evidence. It does not repeat
+enrollment, confirmation or login. A new Engine epoch prevents previous process
+receipts from authorizing the successor.
+
+Headless recovery uses a separate private grant. It must not weaken the existing
+native-reader reopen requirement for retained-window release proof. The trusted
+fixture controller must establish old-tree cleanup before issuing a one-use
+recovery grant bound to the original root, profile, database, checkpoint and run
+scope. A changed physical object, live old owner, mixed native grant or replay
+must be rejected. Revalidation failure keeps admission closed and must not adopt
+the changed account, log in again or execute queued capture.
+
+Acceptance must distinguish same path from same physical database/profile, and
+old process cleanup from a new Manager's status. Login and capture counters,
+pinned process handles, Job inventories, Store readback and pre/post-proof claim
+checks provide the required evidence. Ordinary startup, installed settings,
+real-provider verification and the user's running development instance remain
+outside this fixture step.
+
+Graceful fixture shutdown must stop admission/polling and drain work before using
+the existing Chrome `Browser.close` path and waiting for profile release. Killing
+the containment Job proves process cleanup, not persistence of newly issued
+browser cookies. Cold-restart acceptance must observe the browser's authentication
+state directly; it must not export/reinject cookies or perform a second login to
+make recovery pass. A missing browser session remains a closed-admission result.
+
+Queued commands remain byte-for-byte unchanged while admission is closed or fresh
+proof fails. After successful verification, an unclaimed headless command may
+receive the new owner's `captureRuntime.epoch` and `captureRuntime.generation`,
+as required by the existing restart contract. Session/run/command identity and
+all other payload fields remain unchanged. This permitted rebind is distinct
+from changing enrollment, adopting another account/session revision or reusing
+an old owner's capture permit.
+
+Acceptance passed on 2026-10-18 through actual tagged main and fixture-owned Chrome.
+An enabled idle owner closes gracefully; a successor with unavailable authority
+keeps the checkpoint and full queued payload unchanged, then is terminated
+abruptly. A further successor reuses the same physical database/profile, performs
+fresh verification and completes the same command without re-enrollment or login.
+The test proves pre-owner Go-only containment, pre-owner/pre-proof claim denial,
+invalid/replayed recovery denial, stable expected accounts/accepted revisions,
+fresh owner epoch/generation and empty owned Jobs. Counters are one synthetic
+login and one physical capture across the complete scenario.
+
+The targeted test passed, followed by the canonical
+`scripts/test-auth-session-sidecar.ps1 -VerifyDevelopment -VerifyDefault` with no
+cookie-database observation in the final test source. Existing legacy native
+graceful/abrupt restart cases and default config/main, capture/reader/Store/HTTP
+regressions also passed; the ordinary build succeeded. Final log:
+`runtime/qa/auth-session-sidecar/policy-controller-restart-final-01955b2e025247f2a1f3f2bd635c84e5.txt`.
+Synthetic-only failure diagnostics distinguish generic verification failure from
+known authority/browser failure and never expose cookie or token values.
+
+This does not establish controller recovery after abrupt death during an
+authorized active capture, real-source session persistence or human consent.
+The abrupt case here terminates a failed-verification recovery owner. Enrollment,
+opt-in and window/reader lifecycle tests from earlier steps retain their own
+separate evidence. The main-development executable/provenance and Sidecar and
+Supervisor configuration hashes are unchanged. Publication of the combined
+11-file integration is authorized after review; normal runtime activation and
+real authentication remain excluded.
+
+### Proposed next gate toward a limited main-dev pilot
+
+Implement a source-specific verifier for one pilot source, initially tested only
+against synthetic or sanitized offline fixtures. It must distinguish stable
+account identity, authenticated state and session continuity; missing, ambiguous
+or changed proof keeps admission closed. Define the production metadata/provider
+format and guard-aware migration before persisting real account expectations.
+
+Then connect enrollment/confirmation, a default-off development toggle and
+guard-aware rollback to the existing controller. Include active authorized-capture
+crash recovery in that acceptance scope. Real-account observation and enabling a
+pilot on the user's runtime require separate explicit authorization; publication
+of this synthetic package grants neither.

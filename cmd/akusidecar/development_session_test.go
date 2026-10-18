@@ -34,6 +34,10 @@ func TestDevelopmentSessionCLIRejectionBeforeOrdinaryStartup(t *testing.T) {
 		{"aku-sidecar-dev.exe", []string{"--dev-session-reuse=synthetic-fixture"}, "requires --dev"},
 		{"aku-sidecar-dev.exe", []string{"--dev", "--dev-session-reuse=real-source"}, "supported synthetic-fixture provider"},
 		{"aku-sidecar-dev.exe", []string{"--dev", "--dev-session-reuse=synthetic-fixture"}, "startup grant missing"},
+		{"aku-sidecar-default-check.exe", []string{"--dev", "--dev-session-reuse=synthetic-policy-fixture"}, "requires an auth_session_dev build"},
+		{"aku-sidecar-dev-unavailable.exe", []string{"--dev", "--dev-session-reuse=synthetic-policy-fixture"}, "provider unavailable"},
+		{"aku-sidecar-dev.exe", []string{"--dev-session-reuse=synthetic-policy-fixture"}, "requires --dev"},
+		{"aku-sidecar-dev.exe", []string{"--dev", "--dev-session-reuse=synthetic-policy-fixture"}, "startup grant missing"},
 	} {
 		t.Run(test.image+test.reason, func(t *testing.T) {
 			database := filepath.Join(root, "must-not-exist", test.image+".sqlite")
