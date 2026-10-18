@@ -2128,3 +2128,85 @@ clock rollback passed their regression vectors. Nine protected runtime,
 configuration, Store/controller and verifier hashes remained unchanged. The
 helper cleaned its owned temporary root. Evidence:
 `runtime/qa/auth-session-sidecar/x-ingress-validation.txt`.
+
+## Bounded Chrome-fixture body path — 2026-10-18
+
+The next isolated adapter connects actual fixture-owned headless Chrome to the
+bounded ingress, a private body reader and the existing three-proof verifier.
+Run `scripts/test-x-evidence-chrome.ps1`; it uses new project-local profiles and
+one synthetic loopback login per case. Node starts before Chrome, enters the
+existing kill-on-close Windows Job, then launches Chrome through a private CDP
+pipe. The helper verifies process image identity, Job membership and empty Jobs
+after cleanup. It never attaches to an existing browser or user profile.
+
+`x-evidence-chrome-driver.mjs` has its own bounded CDP and control framing; it does
+not reuse the older unbounded Chrome transport. Strict parsing and allowlist
+projection precede application queues and promise resolution. A one-use ingress
+ticket permits `Network.getResponseBody` only after a matching, completed,
+non-cache fixture request within the same owner/target/session window. Expiry,
+loss, ambiguity, duplicate requests and clock rollback invalidate that path.
+The decoded body is limited to 4,096 UTF-8 bytes; encoded/base64 size, Unicode,
+JSON depth/tokens, duplicate keys and the invented schema are independently
+checked. Only the schema, explicit authentication state and optional numeric
+account ID leave the private body boundary. Optional name/username fields are
+validated and stripped; headers, credentials and raw errors are not exported.
+These are memory/transport boundaries, not deterministic memory-erasure claims.
+
+The controlled Go server serializes and caps every fixture body at 64 KiB before
+writing, with an exact `Content-Length`. The synthetic page trigger checks that
+declared length, consumes/discards `response.arrayBuffer()` and returns only a
+boolean. Its allocation bound comes from the capped trusted fixture server, not
+from a post-allocation client check or a remote server's untrusted header.
+Verification still uses the 4 KiB CDP reader. Direct stream consumption caused
+intermittent `ERR_ABORTED` on the fixture Chrome build. Astra's source review
+identified a plausible loader close/cancel race, corroborated by the terminal-
+state ordering fix in the
+[Chromium loader](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/platform/loader/fetch/response_body_loader.cc).
+The installed build's precise source/fix match is unverified; this fixture
+correction does not change or upgrade Chrome.
+Transport arrival order and event timestamps are separate facts. The observed
+Chrome fixture can deliver `loadingFinished` after response metadata while its
+network-end timestamp precedes the renderer response-event timestamp. The
+[Chromium implementation](https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/inspector/inspector_network_agent.cc)
+uses the supplied finish time for the former and `TimeTicks::Now()` for the
+latter. Preserve both offsets; do not clamp or synthesize ordering. A completed
+request still needs a previously delivered matching response and timestamps
+inside the original window, with no timestamp preceding request initiation.
+
+The loopback-only Go constructor binds the verifier to the actual observed
+`http://127.0.0.1:<port>/x-fixture-operation` and operation
+`x.loopback-self.fixture/v1`; it never relabels that traffic as a native X origin.
+The observation window is locally bound, not a server-authenticated challenge.
+Go-issued timestamps retain nanosecond precision for final verification. The
+fixture clock adapter waits at most 50 ms for a coarse local wall clock to reach
+the issued time; it never uses a still-future request. The ingress deadline is
+the original issue time plus five seconds, conservatively rounded down to a
+whole millisecond. Catch-up, browser preparation and body reads cannot extend
+that deadline. Invalid or regressing clocks fail closed.
+The driver acknowledges cache and service-worker bypass before opening each
+window. Absent response cache flags remain `unreported`; the test adapter maps
+the separately acknowledged fixture bypass to verifier cache provenance.
+
+Continuity is supplied separately by the controlled Go server's synthetic
+lifecycle generation. The body cannot supply its own lineage. Tests exercise
+two browser self requests after one login, independent missing-identity/login
+claims, logout, account switch, malformed/oversized bodies and replay rejection.
+This does not prove native X semantics, all-worker coverage, persisted-profile
+restart or continuity across a real observation gap. Every result remains
+non-authorizing; Store policy, controller wiring and user runtime are unchanged.
+The Go adapter still requires both `auth_session_dev` and `auth_session_fixture`.
+
+Final acceptance passed `scripts/test-x-evidence-chrome.ps1`: 30 Node ingress,
+body and clock tests, 40 top-level Go verifier tests with 65 subtests, both-tag
+exclusion and ordinary-main isolation, one real-HTTP capped-JSON contract test,
+and all six actual Chrome cases. Each browser case performed one synthetic
+login and two self requests in a new profile. Oversized JSON additionally passed
+three fresh-profile samples requiring exactly `body_oversized`, not an unrelated
+transport failure. Node/Chrome image identity and inherited Job membership were
+checked; all owned Jobs were empty and all task profile roots were removed.
+Eleven protected runtime/configuration, Store/controller and existing fixture/
+verifier files retained their baseline hashes. No real account or user-runtime
+operation occurred. Versions observed: Chrome 155.0.8059.84, Node v24.16.0,
+Go go1.25.13 windows/amd64. Logs:
+`runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
+`runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.

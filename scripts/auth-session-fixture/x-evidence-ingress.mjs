@@ -53,6 +53,8 @@ const REASONS = new Set([
   'extra_info_duplicate', 'extra_info_missing', 'extra_info_ambiguous',
   'response_missing', 'response_conflict', 'response_status_ambiguous',
   'response_url_unsupported', 'event_order_ambiguous', 'terminal_conflict',
+  'response_before_request', 'loading_failed_before_response',
+  'loading_finished_before_request', 'loading_failed_before_request',
   'correlation_expired', 'incomplete_operation',
 ]);
 
@@ -102,7 +104,7 @@ function normalizeWindow(window, now, limits) {
       !Number.isFinite(window.endTimestamp) || window.startTimestamp < 0 ||
       window.endTimestamp <= window.startTimestamp ||
       (window.endTimestamp - window.startTimestamp) * 1000 > limits.maxWindowMs ||
-      !Number.isSafeInteger(window.openedAtMs) || !Number.isSafeInteger(window.expiresAtMs) ||
+      !Number.isSafeInteger(window.openedAtMs) || !Number.isFinite(window.expiresAtMs) ||
       window.expiresAtMs <= window.openedAtMs ||
       window.expiresAtMs - window.openedAtMs > limits.maxWindowMs || now < window.openedAtMs) throw fixedError();
   return {
@@ -126,7 +128,7 @@ function isValidUnicode(value) {
   return true;
 }
 
-function parseStrictJSON(text, limits) {
+export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
   let index = 0;
   let tokens = 0;
 
@@ -266,6 +268,7 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
   let finished = false;
   let closed = false;
   let recordSequence = 0;
+  const bodyTickets = new WeakMap();
 
   const aliasFor = (kind, raw) => {
     let byValue = aliases.get(kind);
@@ -441,6 +444,7 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
       terminalOffsetMs: null,
       terminalTimestamp: null,
       createdAtMs: arrivalMs,
+      bodyClaimed: false,
     };
     const early = orphanExtraInfo.get(requestId);
     if (early) {
@@ -466,7 +470,7 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
     }
     const responseOffsetMs = projectedOffset(params.timestamp);
     if (responseOffsetMs === null || unavailableReason) return;
-    if (params.timestamp < correlation.requestTimestamp) { markUnavailable('event_order_ambiguous'); return; }
+    if (params.timestamp < correlation.requestTimestamp) { markUnavailable('response_before_request'); return; }
     for (const key of ['fromDiskCache', 'fromServiceWorker']) {
       if (own(response, key) && typeof response[key] !== 'boolean') { markUnavailable('response_conflict'); return; }
     }
@@ -580,8 +584,15 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
     const phase = method === 'Network.loadingFinished' ? 'completed' : 'failed';
     const offset = projectedOffset(params.timestamp);
     if (offset === null || unavailableReason) return;
-    const previousTimestamp = correlation.responseSeen ? correlation.responseTimestamp : correlation.requestTimestamp;
-    if (params.timestamp < previousTimestamp) { markUnavailable('event_order_ambiguous'); return; }
+    const compareTimestamp = method === 'Network.loadingFinished'
+      ? correlation.requestTimestamp
+      : correlation.responseSeen ? correlation.responseTimestamp : correlation.requestTimestamp;
+    if (params.timestamp < compareTimestamp) {
+      const eventName = method === 'Network.loadingFinished' ? 'loading_finished' : 'loading_failed';
+      const previousName = method === 'Network.loadingFinished' || !correlation.responseSeen ? 'request' : 'response';
+      markUnavailable(`${eventName}_before_${previousName}`);
+      return;
+    }
     if (correlation.completed) {
       if (correlation.terminalPhase !== phase || correlation.terminalTimestamp !== params.timestamp) {
         markUnavailable('terminal_conflict');
@@ -712,6 +723,45 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
     return status();
   }
 
+  function claimCompletedBodyRequest(requestId) {
+    if (closed || finished || unavailableReason || !validRequestId(requestId)) return null;
+    if (!tick()) return null;
+    const correlation = correlations.get(requestId);
+    if (!correlation || !correlation.completed || correlation.terminalPhase !== 'completed' ||
+        !correlation.responseSeen || correlation.bodyClaimed || correlation.cacheKind !== 'unreported') return null;
+    correlation.bodyClaimed = true;
+    const ticket = Object.freeze(Object.create(null));
+    bodyTickets.set(ticket, { requestId, correlation, used: false });
+    return ticket;
+  }
+
+  function withBodyRequest(ticket, callback) {
+    if (!ticket || typeof ticket !== 'object' || typeof callback !== 'function') {
+      throw new TypeError('fixture_body_ticket_invalid');
+    }
+    const binding = bodyTickets.get(ticket);
+    if (!binding || binding.used) throw new TypeError('fixture_body_ticket_invalid');
+    binding.used = true;
+    const assertCurrent = () => {
+      if (closed || finished || unavailableReason) throw new TypeError('fixture_body_ticket_expired');
+      const current = readClock();
+      if (current === null || !tick(current) || correlations.get(binding.requestId) !== binding.correlation ||
+          !binding.correlation.completed || binding.correlation.terminalPhase !== 'completed') {
+        throw new TypeError('fixture_body_ticket_expired');
+      }
+    };
+    assertCurrent();
+    const result = callback(binding.requestId);
+    if (result && typeof result.then === 'function') {
+      return Promise.resolve(result).then(value => {
+        assertCurrent();
+        return value;
+      });
+    }
+    assertCurrent();
+    return result;
+  }
+
   function finish() {
     if (closed || finished) return status();
     tick();
@@ -721,8 +771,10 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
       for (const correlation of correlations.values()) {
         if (unavailableReason) break;
         if (correlation.completed) continue;
-        markUnavailable(correlation.extraExpected === true && correlation.extraInfoStatus === null
-          ? 'extra_info_missing' : 'incomplete_operation');
+        if (!correlation.responseSeen) markUnavailable('response_missing');
+        else if (correlation.extraExpected === true && correlation.extraInfoStatus === null) {
+          markUnavailable('extra_info_missing');
+        } else markUnavailable('incomplete_operation');
         break;
       }
     }
@@ -761,5 +813,6 @@ export function createFixtureXEvidenceIngress({ scope: rawScope, window: rawWind
     });
   }
 
-  return Object.freeze({ push, finish, expire, loss, close, drain, status, changeOwner });
+  return Object.freeze({ push, finish, expire, loss, close, drain, status, changeOwner,
+    claimCompletedBodyRequest, withBodyRequest });
 }

@@ -5426,3 +5426,33 @@ cache conflicts, malformed UTF-8/JSON, bounded work/queues, configuration limits
 expiry and clock rollback. Nine protected runtime/configuration and
 Store/controller/verifier hashes matched; no existing runtime import was added.
 Log: `runtime/qa/auth-session-sidecar/x-ingress-validation.txt`.
+
+### 2026-10-18: bounded body path through actual fixture Chrome
+
+Connect the isolated ingress to a dedicated headless Chrome driver, a bounded
+private body reader and the existing dual-tag synthetic verifier. The canonical
+helper is `scripts/test-x-evidence-chrome.ps1`. New profiles, one synthetic
+loopback login per case, private CDP pipes and the existing inherited Windows Job
+keep this separate from user runtime. Process identity and empty-Job cleanup are
+part of acceptance.
+
+Only qualified completed requests can redeem a one-use body ticket. Bound frames
+before parsing, reject loss/expiry/replay/cache ambiguity, limit decoded bodies
+to 4,096 bytes and strip optional names/handles before IPC. Preserve the actual
+loopback origin instead of relabeling fixture evidence as native X. A separate
+controlled server generation supplies fixture continuity; body data does not.
+
+All results remain non-authorizing. This step changes neither Store policy nor
+controller/main runtime wiring. Native X current-self/authentication semantics
+and continuity coverage still require separately authorized qualification before
+an account adapter or main-dev pilot can be approved.
+
+Final canonical acceptance passed 30 Node ingress/body/clock tests, 40 Go
+verifier top-level tests and 65 subtests, both-tag/default-main isolation, one
+capped-JSON wire-contract test, and six actual Chrome cases. Three additional
+fresh-profile oversized samples required the exact body-size rejection. The
+page trigger uses a controlled server cap and high-level body consumption;
+verification retains CDP completion and the independent 4 KiB reader limit.
+All owned Jobs/profile roots were cleaned and eleven protected hashes matched.
+Evidence: `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
+`runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.

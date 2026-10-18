@@ -225,7 +225,7 @@ test('redirect reuse, request ID collisions, and cross-session events fail close
   assert.equal(crossSession.status().reason, 'scope_mismatch');
 });
 
-test('response URL and event timestamp ordering stay bound to the initiating request', () => {
+test('response and terminal timestamps remain bounded by the initiating request', () => {
   const urlMismatch = createIngress().ingress;
   pushEvents(urlMismatch, request('url-mismatch'), response('url-mismatch', {
     extra: { url: `${origin}/x-fixture-operation?fixture_secret_query` },
@@ -237,14 +237,41 @@ test('response URL and event timestamp ordering stay bound to the initiating req
   pushEvents(responseBeforeRequest,
     request('ordered-response', { timestamp: 100.2 }),
     response('ordered-response', { timestamp: 100.1 }));
-  assert.equal(responseBeforeRequest.status().reason, 'event_order_ambiguous');
+  assert.equal(responseBeforeRequest.status().reason, 'response_before_request');
 
-  const terminalBeforeResponse = createIngress().ingress;
-  pushEvents(terminalBeforeResponse,
-    request('ordered-terminal'),
-    response('ordered-terminal', { timestamp: 100.25 }),
-    terminal('ordered-terminal', 100.2));
-  assert.equal(terminalBeforeResponse.status().reason, 'event_order_ambiguous');
+  const earlyNetworkFinish = createIngress().ingress;
+  pushEvents(earlyNetworkFinish,
+    request('early-network-finish', { timestamp: 100.1 }),
+    response('early-network-finish', { timestamp: 100.25, hasExtraInfo: true }),
+    terminal('early-network-finish', 100.2),
+    extraInfo('early-network-finish'));
+  assert.equal(earlyNetworkFinish.status().unavailable, false);
+  const [earlyRecord] = earlyNetworkFinish.drain();
+  assert.equal(earlyRecord.phase, 'completed');
+  assert.equal(earlyRecord.requestOffsetMs, (100.1 - 100) * 1000);
+  assert.equal(earlyRecord.completionOffsetMs, (100.2 - 100) * 1000);
+  assert.equal(earlyRecord.responseOffsetMs, (100.25 - 100) * 1000);
+  const ticket = earlyNetworkFinish.claimCompletedBodyRequest('early-network-finish');
+  assert.ok(ticket);
+  assert.equal(earlyNetworkFinish.withBodyRequest(ticket, requestId => requestId), 'early-network-finish');
+
+  const finishedBeforeRequest = createIngress().ingress;
+  pushEvents(finishedBeforeRequest,
+    request('finish-before-request', { timestamp: 100.2 }),
+    response('finish-before-request', { timestamp: 100.3 }),
+    terminal('finish-before-request', 100.1));
+  assert.equal(finishedBeforeRequest.status().reason, 'loading_finished_before_request');
+
+  const missingResponse = createIngress().ingress;
+  pushEvents(missingResponse, request('missing-response'), terminal('missing-response', 100.2));
+  assert.equal(missingResponse.status().reason, 'response_missing');
+
+  const failedBeforeResponse = createIngress().ingress;
+  pushEvents(failedBeforeResponse,
+    request('failed-before-response'),
+    response('failed-before-response', { timestamp: 100.25 }),
+    terminal('failed-before-response', 100.2, 'Network.loadingFailed'));
+  assert.equal(failedBeforeResponse.status().reason, 'loading_failed_before_response');
 
   const conflictingCacheFlags = createIngress().ingress;
   pushEvents(conflictingCacheFlags,
@@ -262,6 +289,85 @@ test('response URL and event timestamp ordering stay bound to the initiating req
   assert.ok(record.requestOffsetMs < record.responseOffsetMs);
   assert.ok(record.responseOffsetMs < record.completionOffsetMs);
 });
+
+test('body access tickets exist only for completed qualified requests and are single use', () => {
+  const { ingress } = createIngress();
+  pushEvents(ingress, request('body-request'), response('body-request', { hasExtraInfo: true }));
+  assert.equal(ingress.claimCompletedBodyRequest('body-request'), null);
+  pushEvents(ingress, terminal('body-request'));
+  assert.equal(ingress.claimCompletedBodyRequest('body-request'), null);
+  pushEvents(ingress, extraInfo('body-request'));
+  const ticket = ingress.claimCompletedBodyRequest('body-request');
+  assert.ok(ticket);
+  assert.deepEqual(Object.keys(ticket), []);
+  assert.equal(ingress.withBodyRequest(ticket, requestId => requestId), 'body-request');
+  assert.throws(() => ingress.withBodyRequest(ticket, () => 'replay'), /fixture_body_ticket_invalid/u);
+  assert.equal(ingress.claimCompletedBodyRequest('unrelated-request'), null);
+
+  const ignored = createIngress().ingress;
+  pushEvents(ignored, request('other-request', { url: `${origin}/elsewhere` }),
+    response('other-request', { extra: { url: `${origin}/elsewhere` } }), terminal('other-request'));
+  assert.equal(ignored.claimCompletedBodyRequest('other-request'), null);
+});
+
+test('body access tickets are denied for cache-backed responses and after finish', () => {
+  const cached = createIngress().ingress;
+  complete(cached, 'cached-body-request', { cached: true });
+  assert.equal(cached.claimCompletedBodyRequest('cached-body-request'), null);
+
+  const revalidated = createIngress().ingress;
+  complete(revalidated, 'revalidated-body-request', { responseStatus: 200, extraStatus: 304 });
+  assert.equal(revalidated.drain()[0].cache, 'revalidated');
+  assert.equal(revalidated.claimCompletedBodyRequest('revalidated-body-request'), null);
+
+  const finished = createIngress().ingress;
+  complete(finished, 'finished-body-request');
+  assert.equal(finished.finish().state, 'finished');
+  assert.equal(finished.claimCompletedBodyRequest('finished-body-request'), null);
+});
+
+test('body access tickets expire with the phase scope and are rechecked after async body reads', async () => {
+  const expired = createIngress({ maxWindowMs: 1_000, maxAgeMs: 1_000 });
+  complete(expired.ingress, 'expired-body-request');
+  const expiredTicket = expired.ingress.claimCompletedBodyRequest('expired-body-request');
+  assert.ok(expiredTicket);
+  expired.setNow(11_000);
+  assert.throws(() => expired.ingress.withBodyRequest(expiredTicket, () => 'late-body'),
+    /fixture_body_ticket_expired/u);
+
+  const lost = createIngress();
+  complete(lost.ingress, 'lost-body-request');
+  const lostTicket = lost.ingress.claimCompletedBodyRequest('lost-body-request');
+  const deferred = createDeferred();
+  const read = lost.ingress.withBodyRequest(lostTicket, () => deferred.promise);
+  lost.ingress.loss();
+  deferred.resolve('late-body');
+  await assert.rejects(read, /fixture_body_ticket_expired/u);
+
+  const expiring = createIngress({ maxWindowMs: 1_000, maxAgeMs: 1_000 });
+  complete(expiring.ingress, 'expiring-body-request');
+  const expiringTicket = expiring.ingress.claimCompletedBodyRequest('expiring-body-request');
+  const expiringBody = createDeferred();
+  const expiryRead = expiring.ingress.withBodyRequest(expiringTicket, () => expiringBody.promise);
+  expiring.setNow(11_000);
+  expiringBody.resolve('late-body');
+  await assert.rejects(expiryRead, /fixture_body_ticket_expired/u);
+
+  const closed = createIngress();
+  complete(closed.ingress, 'closed-body-request');
+  const closedTicket = closed.ingress.claimCompletedBodyRequest('closed-body-request');
+  const pendingBody = createDeferred();
+  const closeRead = closed.ingress.withBodyRequest(closedTicket, () => pendingBody.promise);
+  closed.ingress.close();
+  pendingBody.resolve('late-body');
+  await assert.rejects(closeRead, /fixture_body_ticket_expired/u);
+});
+
+function createDeferred() {
+  let resolve;
+  const promise = new Promise(ok => { resolve = ok; });
+  return { promise, resolve };
+}
 
 test('owner change, target loss, detach, and source loss remain sticky through drain', () => {
   const cases = [

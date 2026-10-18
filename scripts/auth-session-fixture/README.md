@@ -1749,3 +1749,55 @@ runtime/configuration, Store/controller and verifier files matched their baselin
 hashes, and the owned temporary root was cleaned. No Chrome, network or native X
 qualification was performed. Log:
 `runtime/qa/auth-session-sidecar/x-ingress-validation.txt`.
+
+### Bounded Chrome body to verifier fixture (2026-10-18)
+
+Run `scripts/test-x-evidence-chrome.ps1` from the repository root on Windows.
+The dedicated helper runs ingress/body unit regressions, the existing offline
+verifier and build-tag isolation checks, then actual headless Chrome through the
+existing Windows Job harness. Each case creates a new owned profile, performs
+one loopback-only synthetic login and makes initial/recheck browser requests.
+It verifies Node/Chrome image identity, inherited Job membership and empty owned
+Jobs after cleanup. No existing browser, login, registry or runtime is used.
+
+The separate `x-evidence-chrome-driver.mjs` bounds raw CDP and control frames
+before parsing. `x-evidence-body.mjs` requires a one-use qualified ingress ticket,
+enforces a 4,096-byte decoded body limit, rejects malformed/duplicate/unknown
+fields, and emits only invented schema/state/numeric-ID claims. Names and handles
+are stripped before IPC. Tickets cannot survive observation loss or expiry.
+The local freshness window does not constitute a server-authenticated challenge.
+
+The dual-tag Go loopback constructor preserves the actual origin and operation;
+it does not claim traffic came from X. A separately controlled server generation
+supplies synthetic continuity. Happy, missing-identity, logout, account-switch,
+malformed and oversized cases all remain non-authorizing. Native account proof,
+all-worker lifecycle coverage, Store/controller wiring and production readiness
+remain separate gates. A successful run cleans its owned profile root and keeps
+the project-local build cache; a failure retains artifacts for diagnosis.
+
+Use `-ChromeOnly` only when the prerequisite ingress/body and verifier/isolation
+evidence is already valid for unchanged relevant inputs. The default command
+runs every stage. Chrome loopback acceptance needs the scoped execution path
+outside the socket sandbox; this does not authorize any user-runtime operation.
+The Go server caps serialized wire bodies at 64 KiB and sets exact
+`Content-Length`. The page trigger checks that length and consumes/discards
+`arrayBuffer()` to avoid a direct stream close/cancel path observed in fixture
+Chrome. This allocation bound relies on the controlled server; a remote header
+alone would not establish it. No body leaves the page trigger; verification
+still reads the body only through the qualified CDP ticket and 4 KiB parser.
+
+`-Case oversized -Count 3 -ChromeOnly` isolates a bounded stability check with
+three new profiles. The helper stops on the first failure and limits `Count` to
+five. Request-clock regressions inject wall/elapsed clocks and sleep rather than
+opening Chrome. A local catch-up wait never extends the original five-second
+Go proof lifetime.
+
+Final canonical acceptance passed 30 Node tests, 40 Go verifier top-level tests
+and 65 subtests, tag/main isolation, the capped-JSON HTTP contract, and all six
+actual Chrome cases. Oversized JSON also passed three fresh-profile samples
+with exact size rejection. Every browser case used one login and two self
+requests; physical process identity, inherited Job membership and empty-Job
+cleanup were checked. Eleven protected file hashes were unchanged, and all
+task profile roots were cleaned. Logs:
+`runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
+`runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.

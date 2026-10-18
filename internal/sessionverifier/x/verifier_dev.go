@@ -1,10 +1,10 @@
 //go:build auth_session_dev && auth_session_fixture
 
-// Package x contains an offline-only, synthetic X browser-self verifier
+// Package x contains a fixture-only, synthetic X browser-self verifier
 // prototype. Its route, login-state markers, lineage generations, and wire
 // schema are invented fixtures, not measured X behavior or claims about X's
-// native endpoints. Nothing here is wired to Store, capture admission, a
-// browser, or a production provider.
+// native endpoints. Offline and explicitly gated loopback Chrome tests share
+// this parser. Nothing here grants Store/capture admission or a production provider.
 package x
 
 import (
@@ -195,11 +195,12 @@ func (PairResult) CanAuthorize() bool { return false }
 // Verifier is serial-use fixture machinery. Callers must not issue or consume
 // challenges concurrently; the offline harness runs each vector sequentially.
 type Verifier struct {
-	pin       Pin
-	now       func() time.Time
-	namespace string
-	next      uint64
-	pending   map[string]Request
+	pin            Pin
+	now            func() time.Time
+	namespace      string
+	next           uint64
+	pending        map[string]Request
+	loopbackOrigin string
 }
 
 func NewVerifier(pin Pin, now func() time.Time) (*Verifier, error) {
@@ -234,11 +235,12 @@ func (v *Verifier) Issue(phase Phase) (Request, error) {
 	}
 	v.next++
 	sequence := strconv.FormatUint(v.next, 10)
+	origin, path, operation := v.fixtureTransport()
 	request := Request{
-		Version: 1, Source: "x", Operation: FixtureOperation, Phase: phase,
+		Version: 1, Source: "x", Operation: operation, Phase: phase,
 		Challenge: "fixture-" + v.namespace + "-challenge-" + sequence,
 		RequestID: "fixture-" + v.namespace + "-request-" + sequence,
-		Origin:    FixtureOrigin, Path: FixturePath, ProfileID: v.pin.ProfileID,
+		Origin:    origin, Path: path, ProfileID: v.pin.ProfileID,
 		OwnerID: v.pin.OwnerID, OwnerEpoch: v.pin.OwnerEpoch,
 		OwnerGeneration: v.pin.OwnerGeneration, IssuedAt: issued,
 	}
@@ -274,7 +276,7 @@ func (v *Verifier) Observe(attempt Attempt) Observation {
 		base.State, base.Reason = Unsupported, ReasonRedirect
 		return base
 	}
-	if !validFinalURL(attempt.Envelope.FinalURL) {
+	if !v.validFixtureFinalURL(attempt.Envelope.FinalURL) {
 		base.State, base.Reason = Unsupported, ReasonWrongOriginOrPath
 		return base
 	}
@@ -661,7 +663,7 @@ func fixtureEnvelope(request Request, observedAt time.Time, status int) Envelope
 		Source: request.Source, Operation: request.Operation, Phase: request.Phase,
 		Challenge: request.Challenge, RequestID: request.RequestID,
 		RequestOrigin: request.Origin, RequestPath: request.Path,
-		FinalURL: FixtureOrigin + FixturePath, ProfileID: request.ProfileID,
+		FinalURL: request.Origin + request.Path, ProfileID: request.ProfileID,
 		OwnerID: request.OwnerID, OwnerEpoch: request.OwnerEpoch,
 		OwnerGeneration: request.OwnerGeneration, CoverageComplete: true,
 		StatusCode: status, ObservedAt: observedAt.UTC(),
