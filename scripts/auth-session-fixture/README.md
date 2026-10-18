@@ -1707,3 +1707,45 @@ top-level tests and 24 new subtests. Both-tag exclusion and ordinary-main isolat
 passed, all four protected runtime/configuration hashes matched, and the owned
 temporary root was cleaned. Log:
 `runtime/qa/auth-session-sidecar/x-three-proof-validation.txt`.
+
+### Bounded offline ingress and projection (2026-10-18)
+
+Run `scripts/test-x-evidence-ingress.ps1` from the repository root. The separate
+Node-only suite feeds synthetic CDP-shaped byte streams into
+`x-evidence-ingress.mjs`; it does not launch Chrome, use a profile, connect to a
+network, retrieve a response body, change Store policy or operate user runtime.
+The helper uses a unique project-local temporary root and restores its process
+environment before cleaning the owned root after success.
+
+The module projects allowed transport metadata before correlation/output queues.
+Its bounded raw framing/parsing boundary is temporary memory, not a promise of
+deterministic erasure. Fixed diagnostics exclude headers, credentials, full URLs,
+queries, request bodies, content and raw errors. Fixture aliases preserve local
+relationships but are not anonymous or native-qualified identities. All outcomes
+remain non-authorizing, including a completed synthetic observation.
+
+The local window must reject pre-window request initiation; it is not a
+server-authenticated challenge. Loss, ambiguity and overflow remain unavailable.
+Existing Chrome transport/observer and the three-proof verifier are unchanged
+and are not connected to this module. Native collection and confirmed-baseline
+recovery remain separate evidence and policy gates.
+
+API: `createFixtureXEvidenceIngress({ scope, window, clock, limits })`. `push`
+accepts UTF-8 byte chunks containing NUL-delimited CDP-shaped messages. `drain`
+returns copied/frozen metadata; `finish`, `expire`, `changeOwner`, `loss` and
+`close` manage observation lifetime. Scope is one trusted fixture session/target
+and the invented loopback `POST /x-fixture-operation`, not all browser workers.
+The injected clock is synthetic context without native Chrome clock calibration.
+
+Default frame capacity is 256 KiB, capped at 1 MiB. Input chunk/frame-count,
+parser depth/token, alias, correlation, orphan and output limits are separate.
+The offline age/window limits do not relax the Go verifier's proof lifetime.
+Expected ExtraInfo can arrive after loading finishes; unresolved evidence fails
+at finish/expiry. Absent cache flags are `unreported`; only matching statuses or
+the modeled 200/304 pair avoid a status-conflict verdict. No status means login.
+
+Final helper acceptance passed 16 tests with no failures. Nine protected
+runtime/configuration, Store/controller and verifier files matched their baseline
+hashes, and the owned temporary root was cleaned. No Chrome, network or native X
+qualification was performed. Log:
+`runtime/qa/auth-session-sidecar/x-ingress-validation.txt`.

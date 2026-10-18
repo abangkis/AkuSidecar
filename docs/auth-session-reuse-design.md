@@ -2056,3 +2056,75 @@ runtime/configuration files matched their pre-test hashes; no browser, real
 authentication or user-runtime operation occurred. The helper cleaned its owned
 temporary root. Evidence:
 `runtime/qa/auth-session-sidecar/x-three-proof-validation.txt`.
+
+## Bounded offline evidence ingress — 2026-10-18
+
+This step implements the privacy boundary recommended by the Astra design
+consultation. It is an isolated byte-stream prototype, not a native X collector
+or a new source verifier. It consumes synthetic CDP-shaped input with an invented
+loopback operation. It never launches or attaches to a browser, sends network
+requests, retrieves response bodies or produces Store authorization. Existing
+transport, observer, verifier, controller, checkpoint and runtime paths are not
+wired to the new module.
+
+The ingress bounds byte framing before strict UTF-8/JSON parsing, then projects
+only allowed transport metadata before correlation and output queues. Raw protocol
+headers, URLs/query strings, request bodies, content and errors are not retained
+in those queues or returned as diagnostics. Raw bytes and parsed values must
+exist transiently inside the ingress boundary; this is not a guarantee of
+deterministic JavaScript memory erasure. Queue, alias, age and frame limits are
+part of the contract. Overflow or ambiguous evidence makes the observation
+unavailable; draining outputs cannot repair a coverage loss.
+
+The local observation window is a freshness binding, not a challenge echoed or
+authenticated by X. A request that started before the window cannot qualify
+merely because its response arrived recently. Early/late extra information,
+cache status, redirect reuse, session/target scope and terminal events must
+remain distinguishable after projection. An unavailable observation does not
+mean that the account is logged out.
+
+Outputs use bounded fixture aliases and fixed reason codes. Aliases retain
+within-bundle relationships but do not establish anonymity, native provenance
+or independent authority. This module does not export a native account corpus
+or parse identity/authentication bodies. A later qualified body reader must
+remain inside the bounded ingress boundary and release only the required
+private claims; unknown endpoints and raw body retrieval are not enabled here.
+
+Store policy is unchanged: automatic resume still requires the approved session
+lineage contract. Confirmed recovery into a new baseline without another login
+remains a separate proposal requiring policy approval. No source revision is
+minted, reset or silently adopted by this prototype.
+
+The only recognized operation is the invented loopback
+`POST /x-fixture-operation`. The injected clock and observation-window timestamps
+are fixture context; no native Chrome clock calibration is implemented. Queue
+age limits do not replace or relax the verifier's separate five-second proof
+lifetime. Cache labels describe observed transport facts, not qualified proof of
+server freshness or a logged-in account. No body parser, account alias exporter
+or continuous worker-coverage claim is added.
+
+The standalone API is `createFixtureXEvidenceIngress({ scope, window, clock,
+limits })`. It consumes NUL-delimited UTF-8 bytes through `push`, exposes only
+copied/frozen projected records through `drain`, and has explicit stream finish,
+expiry, owner-change, loss and close operations. The scope is one trusted fixture
+session/target, not an assertion that all browser targets are observed. Default
+frame storage is 256 KiB (hard maximum 1 MiB); chunk work, frame counts, parser
+depth/tokens, aliases, pending/orphan correlations and output counts also have
+independent caps. A regressing injected clock invalidates the observation.
+
+Expected ExtraInfo may arrive after the terminal event; the projected terminal
+fact waits for it until finish/expiry. Matching statuses and the modeled 200/304
+revalidation pair are supported; a cache flag cannot explain arbitrary status
+conflicts. Missing cache flags are `unreported`, not a verified cache miss.
+Relative output times preserve sub-millisecond ordering. Strict parsing rejects
+duplicate keys, invalid UTF-8, BOM normalization, malformed protocol shapes and
+depth/token excess without returning raw input or exception text.
+
+Final acceptance passed `scripts/test-x-evidence-ingress.ps1`: 16 tests, zero
+failures. Synthetic secrets stayed out of projected records/status; fragmentation,
+early/late/missing extra information, malformed input, configuration/frame/queue
+caps, pre-window requests, cache conflicts, redirects, owner loss, expiry and
+clock rollback passed their regression vectors. Nine protected runtime,
+configuration, Store/controller and verifier hashes remained unchanged. The
+helper cleaned its owned temporary root. Evidence:
+`runtime/qa/auth-session-sidecar/x-ingress-validation.txt`.

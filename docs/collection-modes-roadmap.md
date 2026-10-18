@@ -5404,3 +5404,25 @@ offline helper passed 37 top-level tests and 65 subtests (22 top-level tests and
 24 subtests added), both-tag exclusion and ordinary-main dependency isolation.
 Four protected runtime/configuration hashes remained unchanged. Evidence:
 `runtime/qa/auth-session-sidecar/x-three-proof-validation.txt`.
+
+### 2026-10-18: bounded offline ingress and projection
+
+Add an isolated synthetic CDP byte-stream boundary with bounded framing/parsing,
+allowlist projection before application queues, and bounded correlation. Test
+secret exclusion, fragmentation, malformed input, stale/pre-window requests,
+cache/extra-info ordering, scope changes and exhaustion. All outputs remain
+non-authorizing transport metadata; no native X body reader or browser/runtime
+integration is introduced. Existing Store, verifier and controller policy stay
+unchanged. The original strict lineage requirement for automatic resume remains;
+confirmed recovery into a new baseline is an unapproved policy proposal.
+
+Native current-self/authentication semantics and timing qualification still
+require separately authorized evidence collection after the ingress boundary is
+validated. Fixture aliases and sanitization do not establish native authenticity.
+
+The isolated module and `scripts/test-x-evidence-ingress.ps1` are implemented.
+Final acceptance passed 16 tests, including secret exclusion, late ExtraInfo,
+cache conflicts, malformed UTF-8/JSON, bounded work/queues, configuration limits,
+expiry and clock rollback. Nine protected runtime/configuration and
+Store/controller/verifier hashes matched; no existing runtime import was added.
+Log: `runtime/qa/auth-session-sidecar/x-ingress-validation.txt`.
