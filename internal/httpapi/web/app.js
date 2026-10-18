@@ -83,6 +83,7 @@ import {
 } from "./living-topics-state.js";
 import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
 import { buildTimelineContentContextTab, renderTimelineDirectContext, syncTimelineContentContextTab } from "./timeline-content-context-ui.js";
+import { createPostScreenshotUI } from "./post-screenshot-ui.js";
 import {
   backToTopBoundaryBottom,
   beginTimelineContentContextLookup,
@@ -280,6 +281,9 @@ const settingsDirty = createDirtyStateTracker({
   onChange: renderSettingsDirtyState,
 });
 const $ = (selector) => document.querySelector(selector);
+const postScreenshotUI = createPostScreenshotUI({
+  request: (path, options) => api(path, options),
+});
 const timelineScrollIdle = createScrollIdleGate();
 const scrollPerformanceTrace = createScrollPerformanceTrace({ onStop: saveScrollPerformanceTrace });
 const scrollUIFrames = createFrameTaskQueue({
@@ -7385,7 +7389,10 @@ function buildExpandedTimelineItem(entry) {
     layout = layout === "source" ? "brief" : "source";
     render();
   });
-  toolbar.append(signalSlot, label, toggle);
+  const presentationActions = document.createElement("div");
+  presentationActions.className = "item-presentation-actions";
+  presentationActions.append(toggle, postScreenshotUI.createMenu(entry));
+  toolbar.append(signalSlot, label, presentationActions);
   container.append(toolbar);
   container.append(ai.details);
   container.append(brief, source, actions);

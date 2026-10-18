@@ -58,6 +58,8 @@ type Server struct {
 	developmentNativeReaderClosed bool
 	uiPerformanceMu               sync.RWMutex
 	uiPerformanceLatest           *uiPerformanceSnapshot
+	postScreenshotGate            chan struct{}
+	postScreenshotRenderer        func(context.Context, domain.TimelineItem, string) (postScreenshotResult, error)
 }
 
 func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *log.Logger) (*Server, error) {
@@ -69,7 +71,8 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 		config: cfg, store: state, engine: runtime, logger: logger,
 		credentials: credentials.ForRuntime(cfg.Root, cfg.Dev),
 		started:     time.Now(), shutdownRequested: make(chan struct{}),
-		nativeReaderGate: make(chan struct{}, 1),
+		nativeReaderGate:   make(chan struct{}, 1),
+		postScreenshotGate: make(chan struct{}, 1),
 	}
 	if cfg.WindowsCaptureSplit && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
@@ -205,6 +208,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		p = "/"
 	}
 	switch {
+	case r.Method == http.MethodPost && p == "/api/post-screenshots":
+		return s.createPostScreenshot(w, r)
 	case r.Method == http.MethodPost && p == "/api/app-shell/startup-ready":
 		return s.acknowledgeAppShellStartup(w, r)
 	case r.Method == http.MethodPost && p == "/api/app-shell/open-extensions":
