@@ -7,6 +7,44 @@ connects to production CDP, reads a social cookie store, calls Sidecar APIs, or
 loads extensions. The broker rejects non-loopback origins. No production module
 imports this experiment.
 
+## Offline concurrency harness (2026-10-19)
+
+The concurrency-first MVP now has a separate offline harness in
+`x-concurrency-harness.mjs`, exercised by `x-concurrency-harness.test.mjs`.
+Its dependency-injected adapters simulate owned reader and collector contexts;
+they do not launch Chrome, connect to X, open a listener, inspect a retained
+profile or access Store. Loopback origin and explicit synthetic provenance are
+mandatory. There is no native adapter or native-transfer opt-in in this harness.
+
+From AkuSidecar, run only the offline suite:
+
+```powershell
+.\runtime\dev\headless-worker\node.exe --test .\scripts\auth-session-fixture\x-concurrency-harness.test.mjs
+```
+
+This validates one-way manifest-bound transfer, distinct owner/context binding,
+bounded overlapping adapter reads, stale-result rejection and cleanup behavior.
+In-memory overlap proves harness scheduling, not real browser overlap or native
+X compatibility. Injected observation capabilities and account evidence remain
+synthetic inputs; reports cannot authorize work or establish native refresh or
+session lineage. Arbitrary in-process adapters are trusted test code, not a
+sandbox for untrusted code.
+
+The exported `runXSyntheticConcurrencyHarness(options)` consumes explicit
+synthetic owner/reader evidence, a coverage record, an exact cookie manifest,
+an injected monotonic clock, cancellation/deadline bounds and adapter callbacks.
+Adapters provide observation subscription, reader inventory, collector creation,
+cookie selection/seed, paired reads and collector cleanup. There is no reverse
+transfer callback. The returned receipt is an immutable snapshot;
+`cleanupStatus()` reports subsequent late-effect cleanup, while
+`waitForCleanup()` is only useful when the test controls eventual settlement.
+Pending or failed cleanup must not be reported as complete.
+
+The [minimal native experiment](../../docs/x-concurrency-mvp-experiment.md)
+still requires a qualified native transfer manifest, source evidence and separate
+execution permission. The browser commands below document older synthetic Chrome
+experiments; the offline continuation does not execute or newly authorize them.
+
 From AkuSidecar (Node 24 and an existing Chrome executable):
 
 ```powershell

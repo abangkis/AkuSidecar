@@ -174,3 +174,27 @@ scope; otherwise fence collection and retain the queue. Reopening an owner needs
 a newly observed/verified generation. Central-vault has synthetic reader-absent
 refresh evidence but no native qualification. Invisible owner lifetime, seamless
 restart, broader platforms and media remain separate work, not implicit promises.
+
+## Offline harness checkpoint (2026-10-19)
+
+After the planning documents were reviewed and published as `d1db051`, the owner
+authorized an offline harness and its tests only. The implementation is
+`scripts/auth-session-fixture/x-concurrency-harness.mjs`, with the canonical
+offline command documented in the [fixture README](../scripts/auth-session-fixture/README.md#offline-concurrency-harness-2026-10-19).
+
+The targeted suite passed 16 tests, zero failures/skips, using the bundled Node
+runtime. It covers one exact synthetic seed, two in-memory overlapping read
+pairs, primitive/data-only manifest bounds, account/profile/generation binding,
+replay, evidence freshness/deadlines, fixed error redaction, observation loss,
+cancellation and cleanup after late effects. Reader inventory is reported as
+retained, changed or unverified; pending/failed cleanup is separate from success.
+Static owner evidence expires after five seconds and is rechecked before
+dispatch; the 60-second experiment ceiling does not extend that evidence's life.
+
+All adapters in this suite are trusted in-process synthetic test code. No Chrome,
+network listener, native X transfer, retained-profile access, Store access or
+user-runtime operation occurred. The receipt remains non-authorizing and native
+unqualified, with `refresh_not_observed`. This is harness scheduling/contract
+evidence; the native transfer allowlist, browser adapter and coverage qualification
+remain unfinished. No existing synthetic capability flag is promoted to native
+evidence by these tests.
