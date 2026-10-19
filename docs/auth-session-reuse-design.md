@@ -1,13 +1,50 @@
 # One-login collector and native reader proposal
 
-Status: Astra Medium proposal, 2026-10-04. Production enablement is not implemented;
-limited synthetic Sidecar bindings are available only in an explicit fixture build.
-The owner authorized a local-fixture PoC on 2026-10-13; real-authentication testing
-requires separate confirmation. See the bounded experiment below.
-Owner prioritizes avoiding a second login. Keep optimized shared-profile handoff
-as the working baseline and Facebook's existing Browser collector exception.
+Status: concurrency-first MVP planning, updated 2026-10-19 after the owner's
+scope correction and Astra Medium consultation. Production enablement is not
+implemented; the current Go bindings implement synthetic exclusive handoff.
+The primary target is simultaneous true-headless collection and visible native
+reading with one login. Exclusive shared-profile handoff is a fallback, not the
+primary MVP or its release gate. Facebook's existing Browser exception remains.
+This documentation update authorizes neither implementation nor test execution.
 
-## Current milestone: main dev pilot (2026-10-13)
+## Current milestone: concurrency-first main-dev pilot (2026-10-19)
+
+The current three-stage plan is the [concurrency-first critical path](collection-modes-roadmap.md#session-reuse-mvp-concurrency-first-critical-path-2026-10-19).
+The canonical next experiment and data boundary are in
+[Minimal X concurrency experiment](x-concurrency-mvp-experiment.md).
+
+1. **MVP-1: qualify native concurrency.** Reuse the existing separate-profile
+   synthetic overlap and native current-self discovery. Qualify authenticated
+   account binding, one-way transfer, overlapping reads and mutation coverage
+   for X. The exclusive close/reopen observation gap is not a prerequisite for
+   this experiment. Required native evidence and Store revision semantics still
+   apply before production work can be admitted.
+2. **MVP-2: integrate concurrency.** Route distinct reader and headless owners
+   without draining/stopping batch merely because a reader opens. Reuse lifetime,
+   queue, ingress and stale-result guards; keep default-off opt-in. The existing
+   synthetic provider and exclusive hooks are not a production concurrent adapter.
+   Plan explicit authority-to-derived-profile binding; never present two different
+   profiles as one identity to bypass the current single-profile checkpoint.
+3. **MVP-3: accept and explicitly activate a narrow dev pilot.** Prove integrated
+   overlap, preserved windows, failure closure, queue retention and parent death;
+   define last-reader-close behavior, opt-out and guard-aware rollback. Activation
+   requires separate authorization after the evidence is ready.
+
+Reader-owned transfer is the smallest first native qualification experiment,
+not a permanent authority decision. The central-vault candidate remains relevant
+to the owner's central-ticket preference and to refresh without a reader.
+Choose its native refresh authority only after source behavior is known. A vault
+cannot prevent autonomous site requests or repair missing observation coverage.
+
+Existing evidence is retained: initial broker overlap, central coordinated
+refresh, synthetic lifecycle/queue integration and early native self discovery.
+None qualifies X credential portability, native login semantics, all-target
+mutation coverage or real Store authorization. No firm ETA is supported until
+those source-specific gates are resolved. Extra fallback permutations and broad
+bootstrap searches are not the next work item.
+
+## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint
 `dca33be` and the source-only lifecycle parity review. The planning estimate is
@@ -29,7 +66,8 @@ date or a claim that production authentication is already compatible.
    Use synthetic profiles/login first; media/non-headless work needs explicit
    supported coverage or a closed admission boundary.
 
-The current continuation updates these documents and implements DEV-1 first.
+This historical phase implemented DEV-1 before the later fixture integrations.
+Its estimate and ordering do not describe the current concurrency critical path.
 Passing a fixture does not activate a running main-dev instance. Testing actual
 accounts, restarting user runtime, installing or registering components requires
 separate explicit authorization. Commit/push is also outside this continuation.
@@ -51,14 +89,16 @@ and scoped reopen authorization; admission still requires synthetic authority
 and actual browser-session verification. Session failure cannot trigger a second
 automatic login or automatic reader/foreground intent replay.
 
-The candidate alternatives below are historical feasibility proposals. This
-lifetime decision does not enable them or authorize production authentication,
-runtime operations, installation or registration.
+The lifetime boundary applies to both concurrency candidates and fallback.
+Historical experiments below do not enable a candidate or authorize production
+authentication, runtime operations, installation or registration.
 
 ## Candidate architecture
 
-Keep the existing signed-in application profile as the persistent normal Chrome
-authentication owner and reader. Give true headless a different user-data-dir.
+For the first qualification, use only the separately enrolled, retained QA
+profile as normal Chrome authentication owner and reader, after explicit transfer
+authorization. Selecting a future dev profile is a separate action; do not use
+the main login for this experiment. Give true headless a different user-data-dir.
 A Sidecar AuthSessionBroker exports only approved source authentication state
 through the private CDP pipe and seeds disposable headless browser contexts.
 Do not copy the entire profile or read/decrypt Chrome's cookie database.
@@ -96,7 +136,10 @@ or restart without blinking. Test cold start, closing the last reader window,
 and keeping the auth owner available before promising background-only startup.
 Do not claim a true-headless process can emit normal visible native windows.
 
-## Bounded PoC proposal
+## Historical broad PoC proposal
+
+The current minimum X experiment is specified separately above. This earlier
+multi-source campaign is not the next execution queue or new authorization.
 
 Separate authorization before real auth export, new profiles or foreground tests.
 Start with local fixture cookies/partitioning, rotation, logout, account switching,
@@ -2211,11 +2254,14 @@ Go go1.25.13 windows/amd64. Logs:
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.
 
-## MVP-1: native X qualification boundary — 2026-10-18
+## Historical MVP-1: exclusive native X qualification boundary — 2026-10-18
 
 The three-step critical path is recorded in `collection-modes-roadmap.md`.
-The selected MVP includes verified batch resume after an exclusive reader
-handoff. Its feasibility gate is native evidence, not another synthetic case.
+This section records the superseded exclusive-MVP scope and its evidence as of
+2026-10-18. It required verified batch resume after an exclusive reader handoff.
+The current concurrency-first scope and experiment are linked at the top of this
+document; the historical close/reopen gate must not block first concurrent
+overlap. Native identity/authentication and required session proof remain relevant.
 The published synthetic baseline `0670ae6` remains useful without establishing
 any of the following native claims.
 

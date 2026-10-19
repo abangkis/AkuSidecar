@@ -5457,48 +5457,81 @@ All owned Jobs/profile roots were cleaned and eleven protected hashes matched.
 Evidence: `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.
 
-## Session-reuse MVP: three-step critical path (2026-10-18)
+## Session-reuse MVP: concurrency-first critical path (2026-10-19)
 
-Target: an explicitly enabled X-only pilot for one enrolled account and one
-owned profile, using exclusive collector/reader handoff. Preserve reader
-priority, durable pending work and a reader lifetime bounded by Sidecar. A
-usable pilot includes verified close-and-resume; reader-only permanent pause is
-not the selected release scope. Store's accepted-revision rule stays unchanged.
+Target: an explicitly enabled X-only pilot for one enrolled account, with a
+visible native reader and true-headless collector running concurrently in
+separate owned profiles. Preserve user windows, durable pending work and the
+Sidecar-bounded lifetime of both browser trees. One login must serve both roles.
+Exclusive reader-priority handoff is fallback, not the primary deliverable.
+Successful exclusive close-and-resume is not a prerequisite for the first
+concurrency experiment. Store's accepted-revision rule stays unchanged.
+
+This replaces the exclusive-MVP planning scope from 2026-10-18, not its measured
+evidence. No progress is reset: synthetic broker/central overlap, process cleanup,
+queue/fence tests and early native self discovery remain reusable within their
+verified scope. The [minimal experiment and transfer boundary](x-concurrency-mvp-experiment.md)
+are the canonical next-step plan; this update runs nothing and authorizes no
+native credential transfer, implementation or runtime activation.
 
 | Step | Concrete deliverable | Exit gate | Status |
 | --- | --- | --- | --- |
-| MVP-1: qualify native X evidence | A minimal, sanitized evidence record and a feasibility decision for stable current-self identity, explicit authentication and session lineage | Each claim has an observed source, binding/freshness semantics and limitations; missing lineage is a no-go for verified resume | In progress |
-| MVP-2: wire the qualified provider | A real-source adapter, versioned provider metadata/migration and controller integration, with default-off opt-in | Existing revision matching, fresh verification and durable guards remain enforced; synthetic evidence cannot authorize real work | Pending MVP-1 |
-| MVP-3: narrow acceptance and activation | A selected dev profile/database, focused acceptance evidence and a guard-aware rollback procedure | Reader open/close/resume, logout/account mismatch, opt-out/rollback pass; explicit runtime-activation authorization | Pending MVP-2 |
+| MVP-1: qualify native X concurrency | Source-qualified account/login evidence, minimum approved one-way transfer, actual overlapping authenticated reads, and mutation/refresh feasibility | Same enrolled account without a second login; no observed cross-browser invalidation; coverage and native revision requirements fit unchanged policy; partial overlap is not durable-refresh qualification | In progress: synthetic concurrency proved; native portability and proof remain unqualified |
+| MVP-2: wire concurrent owners and provider | Separate reader/collector lifecycle and routing, real-source provider metadata and compatibility plan, default-off integration | Reader open does not stop active batch; required verification, Store revisions, durable fences and stale-result rejection remain enforced | Pending native qualification; reuse exclusive safety assets |
+| MVP-3: narrow concurrent dev acceptance and activation | Focused integrated overlap/failure evidence, defined reader-close behavior, opt-out and guard-aware rollback | Preserved windows, retained queue, mutation/coverage-loss failure closure and parent death pass; separate explicit runtime-activation authorization | Pending MVP-2 |
 
 ### Execution rules for speed
 
-- Reuse the published baseline at `0670ae6`: bounded Chrome ingress/body,
-  synthetic three-proof verification, ownership/Job cleanup and existing
-  controller/checkpoint sequencing. Re-run only checks affected by new wiring.
-- Defer extra Chrome fault permutations, additional sources, concurrent
-  collectors, seamless restart and broad media support until after the MVP.
-- Keep MVP-1 to the smallest native feasibility probe. Do not add another
-  synthetic test campaign to substitute for missing native evidence.
-- End MVP-1 with either a qualified evidence path or a named blocker and an
-  explicit scope/policy decision. Do not keep inventing revision values or
-  expand collection indefinitely when lineage is unavailable.
+- Reuse original broker/central concurrency evidence and the later ingress,
+  synthetic verifier, ownership/Job cleanup, queue and checkpoint guards. The
+  latest reviewed source baseline is `d397cdd`; publishing it did not enable
+  native concurrency. Re-run only checks affected by future wiring.
+- Keep one reader role and one collector role. Defer additional platforms,
+  multiple collectors, seamless restart, broad media and extra exclusive
+  close/reopen permutations. Do not defer reader-plus-collector concurrency.
+- Qualify one-way reader-to-headless transfer first. This does not select the
+  permanent auth authority or discard the central-vault alternative.
+- Stop additional bootstrap timing probes unless a specific concurrency proof
+  requires them. Synthetic evidence must not substitute for native compatibility.
+- End each bounded experiment with its qualified claims or a named native
+  blocker. A short overlap without observed rotation is partial, not permission
+  to activate a durable pilot; do not extend samples indefinitely to await refresh.
 - Technical support for a real provider needs versioned metadata work; this
   does not authorize relaxing `AcceptedRevisions`, re-enrolling silently or
   converting user confirmation into missing authentication/session proof.
 
-### MVP-1: minimum work and authorization boundary
+### MVP-1: minimum concurrency work and authorization boundary
 
-1. Inventory existing source code and observe one already authenticated X UI
-   read-only. Record only structural diagnostics; keep account values private.
-2. Identify a supported current-self response and explicit authentication
-   semantics. A content author, display handle, account-switcher element,
-   code-version string or feed fingerprint is not sufficient proof.
-3. Establish whether a trustworthy lineage source can meet exclusive handoff
-   and the existing Store revision contract. Equal account snapshots do not
-   establish continuity across an unobserved gap.
-4. Record the source/observation matrix, the minimum native probe needed and a
-   go/no-go result. Unknown and unavailable claims remain distinct from logout.
+1. Freeze the existing evidence and define one bounded concurrent experiment;
+   use the retained QA owner and a fresh derived headless profile, never main login.
+2. Qualify current-self/authenticated semantics in both roles and enumerate the
+   exact transferable cookie tuples. Do not infer account identity from a handle,
+   content author, UI label or cookie fingerprint. The allowlist is currently
+   unqualified; absent fields remain unknown rather than logged out.
+3. After separate implementation and native-transfer authorization, seed once
+   and prove overlapping authenticated reads, preserved reader windows, and
+   mutation/coverage-loss behavior. Never copy derived changes back to the reader.
+4. Assess native refresh and startup/target coverage against the accepted policy,
+   then select reader-owned versus central refresh authority. Keep the Store's
+   native evidence/revision gate; do not mint a substitute local lineage.
+5. Report overlap, login, refresh, continuity and coverage separately. The
+   exclusive close/reopen gap belongs to fallback qualification, not this test.
+
+The plan is specified in [Minimal X concurrency experiment](x-concurrency-mvp-experiment.md).
+MVP-2 must explicitly map the enrolled authority profile to its distinct derived
+profile/context; existing single-profile checkpoints do not authorize treating
+both as the same profile. Any needed compatibility/version change must be
+proposed separately without silently changing Store policy.
+No test command is newly approved by this documentation change. The prior QA
+read-only observation permission did not authorize exporting or planting native
+login state; any transfer run needs an exact reviewed manifest and separate
+authorization. No main login, Store or user-runtime operation is in scope.
+
+### Historical exclusive-MVP qualification record (superseded planning scope)
+
+The following checkpoints preserve the permissions and evidence of their dated
+runs. References to the old MVP-1 or exclusive resume do not replace the current
+concurrency-first gates above or expand their historical authorization.
 
 The user subsequently authorized one separate QA Chrome probe with a new
 profile and manual X login. The probe must not attach to the existing browser,
