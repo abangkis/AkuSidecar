@@ -16,7 +16,7 @@ import { projectAccountSettingsBody } from './x-account-settings-body.mjs';
 import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { BootstrapHandoffCapture } from './x-bootstrap-breakpoint-handoff.mjs';
-import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookieRequest } from './x-qa-source-qualification.mjs';
+import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookieRequest, finishQASourceQualification } from './x-qa-source-qualification.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -1338,15 +1338,20 @@ async function qualifySource(message) {
   if (!current.gate.loginVisible || current.qualificationAttempted) throw probeError('qualification_gate_closed');
   current.qualificationAttempted = true;
   const { accountSettings: source } = await startObservation(message);
-  let cookies = null;
-  const home = await loginState(message);
-  if (home.ready && source.diagnostic === 'projected' && source.route && !cdpFailure) {
-    current.qaSourceRoute = source.route;
-    current.qaCookieRequested = true;
-    cookies = await send('Network.getCookies', qaCookieRequest(source.route), current.sessionId);
-  }
-  return { schema: 'aku.x.qa-source-qualification.v1', source, cookies,
-    canAuthorize: false, sessionTransferred: false };
+  return finishQASourceQualification(source, {
+    readHome: async () => {
+      requireOwner(message);
+      const result = await send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION,
+        returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId);
+      return result.value;
+    },
+    readCookies: async route => {
+      requireOwner(message);
+      current.qaSourceRoute = route;
+      current.qaCookieRequested = true;
+      return send('Network.getCookies', qaCookieRequest(route), current.sessionId);
+    },
+  });
 }
 
 async function closeChrome() {

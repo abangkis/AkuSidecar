@@ -294,6 +294,22 @@ and attributes and propose the narrow protected-source comparison; do not infer
 that two present cookies or a matching settings body closes MVP-1. Native value
 transfer remains a later separately authorized boundary.
 
+The subsequently authorized native metadata run is recorded in the
+[QA checkpoint](../scripts/auth-session-fixture/README.md#native-metadata-checkpoint-2026-10-19).
+Preparation commit `a85cb7f` was pushed and verified before execution. After two
+local harness-order corrections, run `e44f91354b004039bf2a48ba9c7d69d2` passed
+38 Node/seven Go preflight cases and the 22.85-second QA case. It reused the same
+retained login, pinned `api_v1`, projected exactly one settings response and
+observed both candidate cookie tuples with metadata only. No transfer occurred.
+The six-field settings contract did not match; authentication remains unknown,
+the negative control is not run, and no native account/lineage proof is added.
+The next source assessment should project only the six fixed field kinds and
+fixed mismatch labels to localize this shape failure, rather than guessing a
+new success rule or scanning other endpoints. A protected-source control and
+review of CDP attribute/import compatibility remain required before transfer.
+The Job was verified empty, the retained lease returned clean and the disposable
+root was removed. The post-commit harness fixes and this checkpoint remain local.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

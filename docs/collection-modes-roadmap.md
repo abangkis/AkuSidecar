@@ -5560,6 +5560,17 @@ while authentication remains unknown and the guest control remains not run.
 This advances preparation within MVP-1; source semantics, native portability,
 coverage and explicit transfer authorization are still required before MVP-2.
 
+Subsequent native metadata execution was explicitly authorized after preparation
+commit `a85cb7f` was pushed. Following local Home/cleanup-order fixes, QA run
+`e44f91354b004039bf2a48ba9c7d69d2` passed using the same retained login, one exact
+settings GET and the two scoped cookie-attribute projections, without transfer.
+Offline coverage was 38 Node/seven Go cases. The settings type contract did not
+match; authentication remains unknown and the guest control is not run. Next
+localize that mismatch with fixed field kinds, then qualify protected semantics;
+do not infer login or expand transfer from cookie presence. Job cleanup, clean
+retained lease and disposable-root deletion were verified. These are partial
+native findings inside MVP-1, not main-dev activation or Store authorization.
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated

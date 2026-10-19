@@ -70,6 +70,21 @@ func xQAFields(raw json.RawMessage, count int) bool {
 	var fields map[string]json.RawMessage
 	return json.Unmarshal(raw, &fields) == nil && len(fields) == count
 }
+
+// A successful Browser.close reply is not proof that every Chrome descendant
+// left the Job. End this diagnostic's entire owned Job before saving evidence;
+// do not wait on a bridge-only predicate until the outer request expires.
+func finishXQASourceRun(closeOwned func() bool, stopOwned func(), verified func() bool, save func() error) (bool, error) {
+	graceful := closeOwned()
+	stopOwned()
+	if !verified() {
+		return graceful, errors.New("QA Job release unverified")
+	}
+	if err := save(); err != nil {
+		return graceful, errors.New("QA report write failed")
+	}
+	return graceful, nil
+}
 func decodeXQASourceQualification(raw []byte) (xQASourceQualification, error) {
 	var result xQASourceQualification
 	bad := errors.New("QA source qualification report rejected")
@@ -152,6 +167,18 @@ func decodeXQASourceQualification(raw []byte) (xQASourceQualification, error) {
 }
 
 func TestXQASourceQualificationOffline(t *testing.T) {
+	for _, verified := range []bool{false, true} {
+		steps := []string{}
+		graceful, err := finishXQASourceRun(func() bool { steps = append(steps, "root_close"); return true },
+			func() { steps = append(steps, "owned_job_stop") }, func() bool { return verified },
+			func() error { steps = append(steps, "save"); return nil })
+		if !graceful || (err == nil) != verified || len(steps) != 2+map[bool]int{false: 0, true: 1}[verified] {
+			t.Fatal("report was saved before verified owned-Job cleanup")
+		}
+		if steps[0] != "root_close" || steps[1] != "owned_job_stop" {
+			t.Fatal("QA cleanup order changed")
+		}
+	}
 	raw := []byte(`{"schema":"aku.x.qa-source-qualification.v1","source":{"schema":"aku.x.qa-source-capture.v1","route":null,"diagnostic":"not_observed","matchingRequests":0,"bodyReadAttempts":0,"bodyContractMatches":null,"authentication":"unknown","negativeControl":"not_run","canAuthorize":false},"cookies":null,"canAuthorize":false,"sessionTransferred":false}`)
 	if _, err := decodeXQASourceQualification(raw); err != nil {
 		t.Fatal(err)
@@ -274,25 +301,31 @@ func TestXQASourceQualification(t *testing.T) {
 	if err != nil {
 		t.Fatal("QA diagnostic report rejected")
 	}
-	var exited struct {
-		Exited bool `json:"exited"`
-	}
-	if bridge.rpc(ctx, "release", map[string]any{"owner": owner.owner}, &exited) != nil || !exited.Exited || bridge.assertBridgeOnly(ctx) != nil {
-		t.Fatal("QA Chrome release unverified")
-	}
-	bridge.terminateOwnedTree()
-	clean = bridge.cleanupError() == nil && bridge.cleanupVerified()
-	if !clean {
-		t.Fatal("QA Job release unverified")
-	}
-	out, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	graceful, err := finishXQASourceRun(func() bool {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 7*time.Second)
+		defer closeCancel()
+		var exited struct {
+			Exited bool `json:"exited"`
+		}
+		return bridge.rpc(closeCtx, "release", map[string]any{"owner": owner.owner}, &exited) == nil && exited.Exited
+	}, bridge.terminateOwnedTree, func() bool {
+		clean = bridge.cleanupError() == nil && bridge.cleanupVerified()
+		return clean
+	}, func() error {
+		out, openErr := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if openErr != nil {
+			return openErr
+		}
+		writeErr := json.NewEncoder(out).Encode(report)
+		closeErr := out.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		return closeErr
+	})
 	if err != nil {
-		t.Fatal("QA report unavailable")
+		t.Fatal(err)
 	}
-	err = json.NewEncoder(out).Encode(report)
-	_ = out.Close()
-	if err != nil {
-		t.Fatal("QA report write failed")
-	}
+	t.Logf("QA root graceful close acknowledged=%t; complete owned-Job cleanup verified", graceful)
 	t.Log("QA source metadata recorded; login semantics and native admission remain unqualified; no session transferred")
 }

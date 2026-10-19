@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { QASourceCapture, qaSourceRoute, qaCookieRequest, projectQASourceBody, projectQACookieMetadata } from './x-qa-source-qualification.mjs';
+import { QASourceCapture, qaSourceRoute, qaCookieRequest, projectQASourceBody, projectQACookieMetadata, finishQASourceQualification } from './x-qa-source-qualification.mjs';
+import { LoginObservationGate } from './x-native-metadata-probe-driver.mjs';
 
 const URL = 'https://api.x.com/1.1/account/settings.json';
 const body = () => ({ body: JSON.stringify({ language: 'en', time_zone: null, protected: false,
@@ -77,6 +78,28 @@ test('metadata keeps only two approved tuples and exact attributes, never values
   assert.equal(result.tuples[0].attributes.hostOnly, false);
   for (const value of ['PRIVATE_COOKIE_VALUE', 'unlisted', '"value"']) assert.equal(JSON.stringify(result).includes(value), false);
   assert.equal(result.sessionTransferred, false); assert.equal(result.valuesPersisted, false); assert.equal(result.canAuthorize, false);
+});
+test('post-observation fixed Home read precedes one scoped cookie read without reopening initial polling', async () => {
+  const { selected } = capture(); selected.observe('Network.requestWillBeSent', request()); complete(selected);
+  const source = await selected.finish();
+  const gate = new LoginObservationGate(); gate.setLoginVisible(true); gate.beginObservation(); gate.markNetworkEnabled(); gate.markReloaded();
+  const calls = [];
+  const result = await finishQASourceQualification(source, {
+    readHome: async () => { assert.equal(gate.observationStarted, true); calls.push('fixed_home'); return true; },
+    readCookies: async route => { calls.push(route); return projectQACookieMetadata({ cookies: [cookie(), cookie('ct0')] }); },
+  });
+  assert.deepEqual(calls, ['fixed_home', 'api_v1']); assert.notEqual(result.cookies, null);
+  assert.throws(() => gate.beginObservation(), /observation_gate_closed/);
+  assert.equal(result.sessionTransferred, false); assert.equal(result.canAuthorize, false);
+  for (const ready of [false, null]) {
+    let reads = 0;
+    const operation = finishQASourceQualification(source, { readHome: async () => ready, readCookies: async () => { reads++; } });
+    if (ready === false) assert.equal((await operation).cookies, null);
+    else await assert.rejects(operation, /qa_source_finalization_failed/);
+    assert.equal(reads, 0);
+  }
+  await assert.rejects(finishQASourceQualification(source, { readHome: async () => { throw new Error('PRIVATE'); }, readCookies() {} }),
+    error => error.message === 'qa_source_finalization_failed');
 });
 test('cookie absence, scope shadows, expiry and unsupported state remain separate named outcomes', () => {
   const cases = [[[], 'missing'], [[cookie(), cookie()], 'ambiguous'],

@@ -149,6 +149,44 @@ top-level cases (including isolated lease/window subtests), with no failures or
 skips. It opened no Chrome, listener or retained profile and removed its temporary
 root. Its sanitized log is under `runtime/qa/auth-session-sidecar/x-qa-source-<run-id>.log.txt`.
 
+### Native metadata checkpoint (2026-10-19)
+
+The owner authorized the twelve-file preparation commit/push (`a85cb7f`, remote
+verified), followed by this retained-QA diagnostic only, without transfer.
+Two harness-order findings required local fixes after that commit: initial Home
+polling was incorrectly reused after its observation gate closed, and the final
+bridge-only wait preceded Job cleanup and could consume the outer timeout.
+The fixed path uses the same bounded Home expression as a separate final read,
+keeps initial polling closed, bounds graceful close to seven seconds, and saves
+the decoded report only after complete owned-Job termination is verified.
+Regression tests cover ordering, skipped cookie reads and denied persistence on
+unverified cleanup. These fixes are not part of the published preparation commit.
+
+Native run `e44f91354b004039bf2a48ba9c7d69d2` then passed in 22.85 seconds, after
+38 Node and seven Go offline cases. Home succeeded on the same retained QA
+profile without a manual login. Exactly one natural settings GET and one body
+read were observed at `api_v1` (`https://api.x.com/1.1/account/settings.json`).
+The bounded body was projected, but `bodyContractMatches:false`; this report
+does not identify which of the six fixed field types differed. Do not guess or
+relax the success predicate from a generic HTTP 200.
+
+Both selected tuples were present as candidates at `.x.com`, path `/`, domain
+scope, Secure, persistent fractional expiry and no partition. `auth_token` had
+HttpOnly and SameSite None; `ct0` had no HttpOnly and SameSite Lax. Both reported
+priority Medium, source scheme Secure and source port 443. These are attribute
+observations, not credential sufficiency, identity, native lineage or transfer
+qualification. Values were not retained or transferred. Authentication stays
+unknown and the signed-out control remains not run.
+
+The root acknowledged graceful close; the full owned Job was then stopped and
+verified empty. The retained lease returned clean and the disposable control
+root was removed. Sanitized artifacts are
+`runtime/qa/auth-session-sidecar/x-qa-source-e44f91354b004039bf2a48ba9c7d69d2.{report.json,log.txt}`.
+The earlier runs `34a91c28540f450cb554072406ef2033` (post-Home gate) and
+`7bc9e15e6fb9483095faec16d6380cad` (release wait) failed; both Jobs were cleaned,
+both leases returned clean and no raw credential/body report was retained.
+Main login, Store and the user runtime were outside all three runs.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

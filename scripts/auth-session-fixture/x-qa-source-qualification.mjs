@@ -27,6 +27,28 @@ export function qaCookieRequest(route) {
   return { urls: ['https://x.com/home', ROUTES[route]] };
 }
 
+// Post-observation verification is a separate fixed read, not initial login
+// polling (which must remain closed after beginObservation).
+export async function finishQASourceQualification(source, { readHome, readCookies }) {
+  try {
+    const sample = data(source, ['schema', 'route', 'diagnostic', 'matchingRequests', 'bodyReadAttempts',
+      'bodyContractMatches', 'authentication', 'negativeControl', 'canAuthorize']);
+    if (sample.schema !== 'aku.x.qa-source-capture.v1' || sample.authentication !== 'unknown' ||
+        sample.negativeControl !== 'not_run' || sample.canAuthorize !== false ||
+        typeof readHome !== 'function' || typeof readCookies !== 'function') fail();
+    const home = await readHome();
+    if (typeof home !== 'boolean') fail();
+    let cookies = null;
+    if (home && sample.diagnostic === 'projected' && Object.hasOwn(ROUTES, sample.route)) {
+      cookies = await readCookies(sample.route);
+      if (cookies?.schema !== 'aku.x.qa-cookie-metadata.v1' || cookies.canAuthorize !== false ||
+          cookies.sessionTransferred !== false || cookies.valuesPersisted !== false) fail();
+    }
+    return Object.freeze({ schema: 'aku.x.qa-source-qualification.v1', source, cookies,
+      canAuthorize: false, sessionTransferred: false });
+  } catch { throw new TypeError('qa_source_finalization_failed'); }
+}
+
 export function projectQASourceBody(value) {
   const shape = projectAccountSettingsBody(value);
   let contractMatches = null;

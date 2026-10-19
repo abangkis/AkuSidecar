@@ -67,8 +67,12 @@ This changes no Store or runtime behavior.
 The [retained-QA source/attribute adapter](../scripts/auth-session-fixture/README.md#retained-qa-source-and-cookie-attribute-adapter-2026-10-19)
 is prepared with an offline-by-default helper, existing-profile-only lease,
 one settings-body projection and one scoped cookie-metadata projection. Its
-native branch has not run; login semantics stay unknown until the protected-source
-comparison is qualified. No credential transfer or production integration is added.
+native branch was subsequently run under explicit authorization, using the same
+retained login without transfer. Both cookie attribute tuples were observed,
+but the bounded settings body did not match the selected type contract; login
+semantics stay unknown. See the [native QA checkpoint](../scripts/auth-session-fixture/README.md#native-metadata-checkpoint-2026-10-19).
+Protected-source comparison and native continuity remain unqualified. No
+production integration is added.
 
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
