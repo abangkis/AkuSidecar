@@ -64,6 +64,12 @@ private ID comparison, one-use attempts and non-authorizing reports. Native
 metadata qualification and value transfer remain separately authorized stages.
 This changes no Store or runtime behavior.
 
+The [retained-QA source/attribute adapter](../scripts/auth-session-fixture/README.md#retained-qa-source-and-cookie-attribute-adapter-2026-10-19)
+is prepared with an offline-by-default helper, existing-profile-only lease,
+one settings-body projection and one scoped cookie-metadata projection. Its
+native branch has not run; login semantics stay unknown until the protected-source
+comparison is qualified. No credential transfer or production integration is added.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

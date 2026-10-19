@@ -2,7 +2,9 @@
 // account-settings mode may read one completed response body and immediately
 // project it to value-free shape diagnostics before resolving the CDP promise.
 // Bounded frames/body strings are transient; no raw body is persisted/exported.
-// No mode retrieves headers, page text, input values, screenshots or cookies.
+// A separate retained-source mode can project scoped cookie attributes at the
+// private dispatch boundary. It never returns or transfers cookie values.
+// No mode retrieves headers, page text, input values or screenshots.
 import { spawn } from 'node:child_process';
 import { mkdir, lstat, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -14,8 +16,11 @@ import { projectAccountSettingsBody } from './x-account-settings-body.mjs';
 import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { BootstrapHandoffCapture } from './x-bootstrap-breakpoint-handoff.mjs';
+import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookieRequest } from './x-qa-source-qualification.mjs';
 
-const retainedQAMode = mode => mode === 'retained_account_settings' || mode === 'retained_bootstrap';
+const qualificationMode = mode => mode === 'retained_source_qualification';
+const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
+const retainedQAMode = mode => mode === 'retained_account_settings' || mode === 'retained_bootstrap' || qualificationMode(mode);
 
 const HOME_URL = 'https://x.com/home';
 const X_ORIGIN = 'https://x.com';
@@ -52,6 +57,7 @@ const CDP_METHODS = Object.freeze({
   'Network.enable': 'network_enable',
   'Network.disable': 'network_disable',
   'Network.getResponseBody': 'account_settings_body',
+  'Network.getCookies': 'qa_cookie_metadata',
   'Network.setCacheDisabled': 'account_settings_cache',
   'Browser.close': 'browser_close',
   'Page.getFrameTree': 'early_frame_tree',
@@ -540,8 +546,11 @@ function projectCDPResult(method, result, projectionKind = null) {
       return { breakpointId: result.breakpointId, actualLocation: { scriptId: location.scriptId, lineNumber: location.lineNumber, columnNumber: location.columnNumber } };
     }
     case 'Network.getResponseBody':
-      if (!accountSettingsBodyMode(driverMode)) throw probeError('body_mode_required');
-      return projectAccountSettingsBody(result);
+      if (!bodyMode(driverMode)) throw probeError('body_mode_required');
+      return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
+    case 'Network.getCookies':
+      if (!qualificationMode(driverMode) || !active?.qaCookieIssued) throw probeError('cookie_mode_required');
+      return projectQACookieMetadata(result);
     case 'Target.getTargets': {
       if (!Array.isArray(result.targetInfos) || result.targetInfos.length > 128) throw probeError('target_inventory_invalid');
       const matches = [];
@@ -730,11 +739,16 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (purpose !== null && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
-  if (method === 'Network.getResponseBody' && (!accountSettingsBodyMode(driverMode) || !active?.gate.networkEnabled ||
+  if (method === 'Network.getCookies' && (!qualificationMode(driverMode) || !active?.qaCookieRequested || active.qaCookieIssued ||
+      sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest(active.qaSourceRoute)))) {
+    return Promise.reject(probeError('cookie_read_not_authorized'));
+  }
+  if (method === 'Network.getCookies') active.qaCookieIssued = true;
+  if (method === 'Network.getResponseBody' && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
   }
-  if (method === 'Network.setCacheDisabled' && (!accountSettingsBodyMode(driverMode) || sessionId !== active?.sessionId ||
+  if (method === 'Network.setCacheDisabled' && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
   if (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap') {
     const keys = Object.keys(params);
@@ -744,7 +758,10 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       (purpose === 'normal_remove' ? active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId) : params.breakpointId === active?.earlyInstrumentationId);
     if (method === 'Debugger.setBreakpoint') valid = keys.length === 1 && keys[0] === 'location' && active?.earlyCapture?.handoff.canInstall(params.location);
     if (method === 'Page.reload') valid = keys.length === 1 && params.ignoreCache === false;
-    if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || sessionId !== active.sessionId || !valid) {
+    const qualificationFrame = qualificationMode(driverMode) && method === 'Page.getFrameTree' &&
+      active?.qualificationAttempted && active.gate.observationStarted && keys.length === 0;
+    if (!qualificationFrame && (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || sessionId !== active.sessionId || !valid) ||
+        qualificationFrame && sessionId !== active.sessionId) {
       return Promise.reject(probeError('early_command_not_authorized'));
     }
   }
@@ -796,6 +813,7 @@ function failCDP(code) {
   if (!cdpFailure) cdpFailure = /^[a-z0-9_]{1,80}$/u.test(code) ? code : 'cdp_protocol_failed';
   cdpFrames.reset();
   rejectPending(cdpFailure);
+  active?.accountSettings?.invalidate();
   if (active?.pageLoad) {
     active.pageLoad.reject(probeError(cdpFailure));
     active.pageLoad = null;
@@ -930,7 +948,7 @@ async function acceptRetainedQAScope(message) {
       typeof message.nonce !== 'string' || !/^[a-f0-9]{64}$/u.test(message.nonce) || typeof message.reuse !== 'boolean') {
     throw probeError('retained_scope_invalid');
   }
-  if (driverMode === 'retained_bootstrap' && !message.reuse) throw probeError('retained_profile_required');
+  if ((driverMode === 'retained_bootstrap' || qualificationMode(driverMode)) && !message.reuse) throw probeError('retained_profile_required');
   // This private pipe message arrives only after Node is inside its owner's Job.
   // Identity is pinned by the Go lease; no profile path comes from the message.
   const rootIdentity = await ordinaryDirectoryIdentity(qaRoot);
@@ -1276,6 +1294,7 @@ function safeReport(metadata, eventLimitReached) {
 
 async function startObservation(message) {
   if (driverMode === 'retained_bootstrap') throw probeError('network_observation_not_available');
+  if (qualificationMode(driverMode) && !active?.qualificationAttempted) throw probeError('qualification_mode_required');
   const current = requireOwner(message);
   if (!current.gate.loginVisible) throw probeError('login_required');
   current.gate.beginObservation();
@@ -1287,10 +1306,13 @@ async function startObservation(message) {
     maxPostDataSize: 0,
   }, current.sessionId);
   current.gate.markNetworkEnabled();
-  if (accountSettingsBodyMode(driverMode)) {
+  if (bodyMode(driverMode)) {
     await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
-    current.accountSettings = new AccountSettingsCapture({ readBody: requestId =>
-      send('Network.getResponseBody', { requestId }, current.sessionId) });
+    const readBody = requestId => send('Network.getResponseBody', { requestId }, current.sessionId);
+    if (qualificationMode(driverMode)) {
+      const { frameId } = await send('Page.getFrameTree', {}, current.sessionId);
+      current.accountSettings = new QASourceCapture({ readBody, frameId });
+    } else current.accountSettings = new AccountSettingsCapture({ readBody });
   }
   current.metadata = new MetadataWindow();
   current.observationEndsAt = Date.now() + OBSERVATION_MS;
@@ -1307,7 +1329,24 @@ async function startObservation(message) {
   const accountSettings = current.accountSettings ? await current.accountSettings.finish() : null;
   await send('Network.disable', {}, current.sessionId);
   const report = safeReport(metadata, current.eventLimitReached);
-  return accountSettingsBodyMode(driverMode) ? { metadata: report, accountSettings } : report;
+  return bodyMode(driverMode) ? { metadata: report, accountSettings } : report;
+}
+
+async function qualifySource(message) {
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse) throw probeError('qualification_mode_required');
+  const current = requireOwner(message);
+  if (!current.gate.loginVisible || current.qualificationAttempted) throw probeError('qualification_gate_closed');
+  current.qualificationAttempted = true;
+  const { accountSettings: source } = await startObservation(message);
+  let cookies = null;
+  const home = await loginState(message);
+  if (home.ready && source.diagnostic === 'projected' && source.route && !cdpFailure) {
+    current.qaSourceRoute = source.route;
+    current.qaCookieRequested = true;
+    cookies = await send('Network.getCookies', qaCookieRequest(source.route), current.sessionId);
+  }
+  return { schema: 'aku.x.qa-source-qualification.v1', source, cookies,
+    canAuthorize: false, sessionTransferred: false };
 }
 
 async function closeChrome() {
@@ -1325,6 +1364,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_source':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifySource(message);
     case 'bootstrap_early_diagnostics':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return earlyBootstrapDiagnostics(message);
@@ -1416,7 +1458,7 @@ function shutdown() {
 }
 
 export async function runNativeMetadataProbe(mode = 'single_phase') {
-  if (!['single_phase', 'two_phase', 'two_phase_account_settings', 'retained_account_settings', 'retained_bootstrap'].includes(mode) || driverMode !== 'single_phase' || child || twoPhaseState) {
+  if (!['single_phase', 'two_phase', 'two_phase_account_settings', 'retained_account_settings', 'retained_bootstrap', 'retained_source_qualification'].includes(mode) || driverMode !== 'single_phase' || child || twoPhaseState) {
     throw probeError('driver_mode_invalid');
   }
   driverMode = mode;

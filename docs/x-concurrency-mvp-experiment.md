@@ -275,6 +275,25 @@ manifest before requesting value transfer. No extra manual login is expected
 while that retained QA session remains valid. The incidental credential-decoding
 permission boundary above still applies to any future metadata probe.
 
+The [retained QA adapter](../scripts/auth-session-fixture/README.md#retained-qa-source-and-cookie-attribute-adapter-2026-10-19)
+is now prepared under subsequent explicit implementation authorization. Its
+default command `scripts/test-x-qa-source.ps1` runs offline only. Preflight
+`c848552abe5d4dd182a2db61ce3a9408` passed 37 Node and seven Go top-level cases.
+No retained profile, Chrome or listener was opened. The prepared native branch
+requires an existing leased QA profile, Home readiness, a bounded exact-route
+response and a one-use scoped cookie-attribute projection at the CDP boundary.
+It cannot set cookies, seed a context or transfer a session. It preserves raw
+value secrecy in reports, not a claim that Chrome/CDP never decodes values.
+
+This adapter samples the selected source and attributes only. The signed-out
+comparison required for protected-login semantics is not implemented/executed by
+this phase, and no private account-ID join or full mutation coverage is claimed.
+Reports explicitly retain authentication `unknown`, negative control `not_run`
+and non-authorizing flags. After an approved metadata run, assess the exact route
+and attributes and propose the narrow protected-source comparison; do not infer
+that two present cookies or a matching settings body closes MVP-1. Native value
+transfer remains a later separately authorized boundary.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

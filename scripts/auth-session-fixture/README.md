@@ -86,6 +86,69 @@ native proof. `isActive` is never a login flag. All results retain
 `canAuthorize:false`, `nativeQualified:false`, `realAuthTested:false` and
 `refresh_not_observed`; synthetic coverage is not native session lineage.
 
+## Retained QA source and cookie-attribute adapter (2026-10-19)
+
+The dedicated `x-retained-source-qualification-driver.mjs` entrypoint extends
+only the private QA transport. The Go fixture must supply the existing retained
+profile lease after Node enters its kill-on-close Job. A new/missing profile,
+foreign/replaced directory, dirty lease or expired Home login stops the run;
+the adapter never initiates login, logout or profile migration. Ordinary modes
+cannot issue this diagnostic or read cookies. No transfer command exists.
+
+```powershell
+# Default: offline projections, protocol denials, lease and Go decoder checks.
+.\scripts\test-x-qa-source.ps1
+
+# FUTURE native run only after explicit cookie-read/execution approval:
+# .\scripts\test-x-qa-source.ps1 -RunNativeQA -AllowCookieMetadataRead
+```
+
+The native path is prepared, not run by this checkpoint. It would reopen only
+the retained QA profile, require Home within thirty seconds, then observe one
+twenty-second Home reload. One completed uncached main-frame settings GET may
+be read once (16 KiB decoded body, strict JSON limits). The exact route is retained
+as a fixed enum: `web_i_api`, `api_v1` or `api_i_api`, mapping respectively to
+the three reviewed routes in the native contract. Query strings and values are
+not exported. Frame mismatch, reused IDs (including OPTIONS collisions), route
+changes, duplicate candidates, cache ambiguity and observation overflow reject
+the sample. A separate OPTIONS preflight is ignored.
+
+After a projected response and a fresh Home check, one fixed scoped
+`Network.getCookies` call uses Home and that pinned route. The bounded CDP decoder
+handles at most 262,144 bytes per frame; the projection accepts at most 64 cookies.
+CDP includes values in those replies, including incidental nonallowlisted cookies.
+Native approval must explicitly cover that transient private decoding even though
+only attributes are retained. Do not describe this as a value-free browser read.
+The projector never returns values, credential hashes or nonallowlisted cookies;
+its selected names are exactly `auth_token` and `ct0`. It rejects duplicate/name
+shadows, unknown attributes, partitioned or unsupported state and oversized tuples.
+Cookie values are never persisted by the helper, sent to another context or
+placed in arguments/environment/logs. Parsed strings can remain until garbage
+collection; no secure-erasure or disk-free Chrome guarantee is made.
+
+The fixed report separates missing, ambiguous, scope mismatch, unsupported,
+expired and candidate tuples. Candidate metadata preserves Secure/HttpOnly,
+SameSite absence, fractional expiry, session status and known CDP priority/source
+attributes. Those extra attributes still need a reviewed native import mapping;
+this adapter does not update the offline transfer schema to ignore them.
+An independent closed Go decoder rejects secret-bearing/unknown fields, missing
+guards, authorization claims and invalid attribute combinations before persistence.
+
+This phase records source availability and whether the bounded body matches the
+selected settings types. It does **not** run a guest/signed-out control, compare
+private account IDs or establish native lineage. Consequently authentication
+stays `unknown`, negative control stays `not_run`, and `canAuthorize` plus
+`sessionTransferred` stay false. A matching body/cookie pair is not qualification
+of protected login semantics. No Store admission or production setting is added.
+The owned Chrome tree/Job must exit before the report is saved and the lease is
+marked clean. Only the disposable control root is removed; the retained profile
+remains. Unverified cleanup retains the root/dirty ownership state for diagnosis.
+
+Offline run `c848552abe5d4dd182a2db61ce3a9408` passed 37 Node tests and seven Go
+top-level cases (including isolated lease/window subtests), with no failures or
+skips. It opened no Chrome, listener or retained profile and removed its temporary
+root. Its sanitized log is under `runtime/qa/auth-session-sidecar/x-qa-source-<run-id>.log.txt`.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

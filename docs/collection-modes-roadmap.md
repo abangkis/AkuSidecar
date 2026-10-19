@@ -5552,6 +5552,14 @@ repeat fallback/bootstrapping campaigns. The earlier documentation checkpoint
 ran no tests; its later offline implementation runs only synthetic regression
 checks. Native transfer and main-dev activation remain unqualified.
 
+The retained-QA source/attribute adapter is prepared next, with a canonical
+offline-only default (`scripts/test-x-qa-source.ps1`); 37 Node and seven Go
+top-level cases passed without opening the retained profile. Native execution
+has not run. Its output pins exact route categories and two-cookie attributes,
+while authentication remains unknown and the guest control remains not run.
+This advances preparation within MVP-1; source semantics, native portability,
+coverage and explicit transfer authorization are still required before MVP-2.
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated
