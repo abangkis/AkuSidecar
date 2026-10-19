@@ -143,6 +143,14 @@ test('synchronous serial reads do not qualify overlap and reader window order ma
   assert.equal(result.receipt.readerWindowIdentity, 'retained');
 });
 
+test('fractional cookie expiry survives manifest matching and one-way seed exactly', async () => {
+  const item = { ...cookie(), expires: 2000000000.125 };
+  const fixture = makeFixture({ manifestEntries: [manifestCookie(item)], sourceCookies: [item] });
+  const result = await runXSyntheticConcurrencyHarness(fixture.input);
+  assert.equal(result.receipt.outcome, 'overlap_qualified');
+  assert.equal(fixture.calls.seeded[0].expires, item.expires);
+});
+
 test('native, non-loopback, and non-synthetic scope is rejected before every adapter side effect', async () => {
   for (const change of [
     input => { input.origin = 'https://x.com'; },

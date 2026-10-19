@@ -103,7 +103,8 @@ function cookieAttrs(source, origin, code, withValue) {
       Buffer.byteLength(item.path, 'utf8') > 256 || /[\u0000-\u001f\u007f*?]/u.test(item.path) ||
       typeof item.hostOnly !== 'boolean' || typeof item.secure !== 'boolean' || typeof item.httpOnly !== 'boolean' ||
       !['Strict', 'Lax', 'None', 'Unspecified'].includes(item.sameSite) ||
-      !(item.expires === null || item.expires === -1 || (Number.isSafeInteger(item.expires) && item.expires >= 0))) throw fail(code);
+      !(item.expires === null || item.expires === -1 || (Number.isFinite(item.expires) &&
+        item.expires >= 0 && item.expires <= Number.MAX_SAFE_INTEGER))) throw fail(code);
   const partitionKey = frozenPartition(item.partitionKey, origin, code);
   if (withValue && typeof item.value !== 'string') throw fail(code);
   return Object.freeze({

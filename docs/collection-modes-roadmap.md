@@ -5474,6 +5474,14 @@ verified scope. The [minimal experiment and transfer boundary](x-concurrency-mvp
 are the canonical next-step plan; this update runs nothing and authorizes no
 native credential transfer, implementation or runtime activation.
 
+Subsequent explicit authorization implemented the offline harness and a
+fresh-profile synthetic Chrome adapter. The [Chrome checkpoint](x-concurrency-mvp-experiment.md#synthetic-chrome-adapter-checkpoint-2026-10-19)
+records 27 passing Node cases, one Go report case and three actual-browser cases:
+overlap, cookie mutation and collector target loss. Each used one invented login
+and independent server-observed overlap; reader windows and owned-Job cleanup
+were verified. This is completed synthetic concurrency evidence, not native X
+qualification, a real provider, Store admission or main-dev activation.
+
 | Step | Concrete deliverable | Exit gate | Status |
 | --- | --- | --- | --- |
 | MVP-1: qualify native X concurrency | Source-qualified account/login evidence, minimum approved one-way transfer, actual overlapping authenticated reads, and mutation/refresh feasibility | Same enrolled account without a second login; no observed cross-browser invalidation; coverage and native revision requirements fit unchanged policy; partial overlap is not durable-refresh qualification | In progress: synthetic concurrency proved; native portability and proof remain unqualified |

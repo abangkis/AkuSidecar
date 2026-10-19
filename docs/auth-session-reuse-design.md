@@ -44,6 +44,13 @@ mutation coverage or real Store authorization. No firm ETA is supported until
 those source-specific gates are resolved. Extra fallback permutations and broad
 bootstrap searches are not the next work item.
 
+The [2026-10-19 Chrome adapter checkpoint](x-concurrency-mvp-experiment.md#synthetic-chrome-adapter-checkpoint-2026-10-19)
+adds a current, actual-browser qualification of the synthetic concurrency harness:
+27 Node tests, one Go report check and three Chrome cases passed with independent
+server overlap, mutation/target-loss fencing and complete owned-Job cleanup.
+This advances the concurrency path without promoting synthetic evidence to
+native X admission or changing the primary target back to exclusive fallback.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

@@ -43,7 +43,45 @@ Pending or failed cleanup must not be reported as complete.
 The [minimal native experiment](../../docs/x-concurrency-mvp-experiment.md)
 still requires a qualified native transfer manifest, source evidence and separate
 execution permission. The browser commands below document older synthetic Chrome
-experiments; the offline continuation does not execute or newly authorize them.
+experiments; the offline continuation did not execute or newly authorize them.
+
+## Synthetic Chrome concurrency adapter (2026-10-19)
+
+A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated
+private-RPC driver. They connect the existing harness to a fresh normal Chrome
+reader and a separate true-headless Chrome collector. Only invented loopback
+authentication is transferred; no retained X profile or main login is inspected.
+The Go test owns the HTTP server and a kill-on-close Job containing Node and both
+browser trees. The driver cannot launch Chrome before the bootstrap handshake
+and a subsequent Go request, after Job assignment.
+
+```powershell
+# Offline harness/adapter and Go report-boundary checks only.
+.\scripts\test-x-concurrency-fixture.ps1 -NoChrome
+
+# The same preflight, then fresh synthetic Chrome cases; no manual login/clicks.
+.\scripts\test-x-concurrency-fixture.ps1
+```
+
+The positive case requires exactly one invented login and independently observed
+simultaneous server requests. The mutation and target-loss cases wait for the
+server's `/read-barrier` before rotating the invented cookie or closing the exact
+owned collector target. Observation must fence the run before successful results
+can publish. These are controlled fixture operations, not extra endpoints or
+mutations approved for the native X experiment.
+
+The adapter must preserve the whole reader window inventory, including the
+startup/bootstrap target. It exports only the fixed fixture cookie through the
+private connection, with exact attributes and explicit scope. Browser PID/image
+and Job membership are checked before the run. Profile roots and helpers remain
+project-local; cleanup removes disposable roots only after the owned Job is
+verified empty. A failed cleanup retains the scoped root for diagnosis.
+
+This qualifies only the controlled loopback page topology. Startup/worker
+capabilities remain synthetic inputs; it does not establish arbitrary X target,
+worker or transport coverage. A target-loss case is not a transport-disconnect
+test. Reports retain `canAuthorize:false`, `nativeQualified:false` and
+`realAuthTested:false`; native transfer and Store admission remain disabled.
 
 From AkuSidecar (Node 24 and an existing Chrome executable):
 

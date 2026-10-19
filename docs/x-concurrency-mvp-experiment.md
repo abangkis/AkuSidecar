@@ -198,3 +198,53 @@ unqualified, with `refresh_not_observed`. This is harness scheduling/contract
 evidence; the native transfer allowlist, browser adapter and coverage qualification
 remain unfinished. No existing synthetic capability flag is promoted to native
 evidence by these tests.
+
+## Synthetic Chrome adapter checkpoint (2026-10-19)
+
+The offline harness delta was reviewed and published as
+`9b62f12fd2d2844a08c23a561074575b4d9c3a3c`. The subsequent authorization covered
+fresh synthetic Chrome profiles and loopback tests only, not native X transfer.
+`x-concurrency-chrome-adapter.mjs` now connects the same harness to a normal
+Chrome reader and a separate true-headless Chrome tree through private pipes.
+The gated driver launches only after the Go harness has assigned Node to its
+kill-on-close Job. Go verifies the Node/Chrome images and Job membership before
+running the experiment; no Store or production controller is opened.
+
+Canonical command: `scripts/test-x-concurrency-fixture.ps1`; `-NoChrome` selects
+offline checks, while `-Scenario` can isolate one named browser case. Browser
+execution on this host required an unsandboxed tool invocation; no permission or
+authentication guard was removed. All test data stayed inside the project QA
+root and all native account/login/runtime boundaries remained unchanged.
+
+Final run `f8a1306db4b64b91b4c9a00ca9d8166e` passed 27 Node cases, one Go report
+boundary case and three Chrome cases on Chrome 155.0.8059.84:
+
+| Case | Observed result |
+| --- | --- |
+| Concurrent reads | One invented login, one exact seed, four authenticated same-account reads; independent Go server observed two simultaneous requests. Reader/bootstrap windows were retained. |
+| Cookie mutation | After the server confirmed active overlap, the reader rotated its invented cookie. The response observer fenced the run with `unexpected_mutation`; no successful pair was published. Reader windows remained. |
+| Collector target loss | After the same server barrier, the exact collector target was closed. Actual target/observer events fenced the run with `coverage_unqualified`; context disposal completed and reader windows remained. |
+
+Each browser case used its own new pair of profiles and exactly one synthetic
+login. The final Go browser suite completed in 2.80 seconds. Job cleanup was
+verified and the helper removed the disposable root. Sanitized command output is
+in `runtime/qa/auth-session-sidecar/x-concurrency-f8a1306db4b64b91b4c9a00ca9d8166e.log.txt`.
+No raw credential/body artifact or additional acceptance archive was created.
+
+Two compatibility findings were corrected with relevant coverage. CDP can
+return fractional cookie-expiry seconds; both manifest validation and the adapter
+now preserve the finite value exactly instead of requiring/rounding to an
+integer. This follows the [CDP Cookie definition](https://github.com/ChromeDevTools/devtools-protocol/blob/master/pdl/domains/Network.pdl),
+where expiry is a number. Destroying a target can leave its pending evaluation
+without a response: the adapter now retires a collector read only after the exact
+target's destruction event, while retaining tracking for creation/seed effects
+and verifying physical context disposal. Neither correction changes Store policy.
+
+These results qualify only this controlled, worker-free loopback page topology.
+The target-loss case does not prove arbitrary transport-loss handling, startup
+worker coverage or instantaneous global revocation. The deliberate synthetic
+rotation proves failure closure, not a native refresh/reconciliation protocol.
+Reports retain `canAuthorize:false`, `nativeQualified:false`, `realAuthTested:false`
+and `refresh_not_observed` for the unqualified durable-refresh claim. Native X
+allowlist/authentication/lineage and source-specific observation coverage remain
+the unfinished MVP-1 gate. The production concurrent controller is not activated.
