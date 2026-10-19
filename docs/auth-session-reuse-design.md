@@ -51,6 +51,19 @@ server overlap, mutation/target-loss fencing and complete owned-Job cleanup.
 This advances the concurrency path without promoting synthetic evidence to
 native X admission or changing the primary target back to exclusive fallback.
 
+The [selected native evidence contract](x-concurrency-mvp-experiment.md#selected-native-evidence-contract-2026-10-19)
+now fixes the next implementation boundary: guarded early current-session ID
+for identity, one pinned account-settings response as the protected-login source
+candidate, and independent continuity/coverage. Login semantics remain unqualified;
+neither absent flags nor a settings-shaped HTTP 200 is authentication proof.
+The candidate transfer ceiling is exactly `auth_token` and `ct0` at `.x.com`,
+path `/`, unpartitioned, with attributes frozen before export authorization.
+Native tuple presence/sufficiency is not established. The closed plan validator
+and evidence combiner are now implemented offline with synthetic-only schemas,
+private ID comparison, one-use attempts and non-authorizing reports. Native
+metadata qualification and value transfer remain separately authorized stages.
+This changes no Store or runtime behavior.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

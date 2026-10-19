@@ -45,6 +45,47 @@ still requires a qualified native transfer manifest, source evidence and separat
 execution permission. The browser commands below document older synthetic Chrome
 experiments; the offline continuation did not execute or newly authorize them.
 
+## Offline native-plan contract and evidence combiner (2026-10-19)
+
+`x-native-plan-offline.mjs` exercises the selected
+[native evidence/transfer plan](../../docs/x-concurrency-mvp-experiment.md#selected-native-evidence-contract-2026-10-19)
+using trusted invented inputs only. It imports the existing pure bootstrap
+projector and strict JSON parser, not a browser, filesystem, network or Store API.
+It cannot read a retained profile, transfer state, enroll a provider or authorize
+production work. Native-source qualification assertions are not accepted.
+
+```powershell
+# Only the new contract/combiner regression tests:
+.\runtime\dev\headless-worker\node.exe --test .\scripts\auth-session-fixture\x-native-plan-offline.test.mjs
+# Canonical combined offline preflight; no Chrome or network listener:
+.\scripts\test-x-concurrency-fixture.ps1 -NoChrome
+```
+
+`validateXOfflineContract(plan)` returns a frozen, value-free validity report.
+`createXOfflineEvidenceCombiner(plan)` validates and privately snapshots the plan;
+its `evaluate(evidence)` method consumes one attempt even on failure, and `close()`
+discards an unused attempt. Attempt IDs cannot be reused in the same module
+instance; its bounded registry stops after 1,024 attempts rather than evicting
+replay protection. This is process-local test behavior, not durable native replay
+protection. Both public reports and errors use fixed fields/categories.
+
+The closed synthetic plan pins distinct owner/profile bindings, one exact settings
+route, expected account ID, synthetic source qualification and the two exact
+`auth_token`/`ct0` attribute tuples. Invented values must have a `synthetic:`
+marker; the marker and provenance are misuse guards, not proof about arbitrary
+caller-supplied data. Each complete serialized tuple is bounded to 8 KiB, the pair
+to 16 KiB. No cookie values are retained by the combiner or returned in receipts.
+
+Each role supplies a scoped bootstrap sample, bounded settings response and
+synthetic coverage witness. The private comparison requires the actual validated
+IDs to match, not two shape-only DTOs. Five-second freshness, exact bindings,
+strict settings types/JSON and mutation/gap closure are mandatory. Matching IDs,
+HTTP 200 or `authenticated:true` cannot replace qualified protected-source
+semantics. A synthetic positive/negative control exercises that rule; it is not
+native proof. `isActive` is never a login flag. All results retain
+`canAuthorize:false`, `nativeQualified:false`, `realAuthTested:false` and
+`refresh_not_observed`; synthetic coverage is not native session lineage.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

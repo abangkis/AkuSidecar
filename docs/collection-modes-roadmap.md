@@ -5514,8 +5514,12 @@ qualification, a real provider, Store admission or main-dev activation.
    use the retained QA owner and a fresh derived headless profile, never main login.
 2. Qualify current-self/authenticated semantics in both roles and enumerate the
    exact transferable cookie tuples. Do not infer account identity from a handle,
-   content author, UI label or cookie fingerprint. The allowlist is currently
-   unqualified; absent fields remain unknown rather than logged out.
+   content author, UI label or cookie fingerprint. The selected contract is the
+   guarded current-session bootstrap plus one pinned account-settings source;
+   protected-login semantics remain unqualified. The candidate transfer ceiling
+   is two exact cookies (`auth_token`, `ct0`, `.x.com`, `/`, unpartitioned), not
+   a claim of native presence or sufficiency. Freeze observed attributes before
+   export authorization; absent evidence remains unknown rather than logged out.
 3. After separate implementation and native-transfer authorization, seed once
    and prove overlapping authenticated reads, preserved reader windows, and
    mutation/coverage-loss behavior. Never copy derived changes back to the reader.
@@ -5534,6 +5538,19 @@ No test command is newly approved by this documentation change. The prior QA
 read-only observation permission did not authorize exporting or planting native
 login state; any transfer run needs an exact reviewed manifest and separate
 authorization. No main login, Store or user-runtime operation is in scope.
+
+The [selected native contract](x-concurrency-mvp-experiment.md#selected-native-evidence-contract-2026-10-19)
+and exact candidate tuple ceiling are now documented against synthetic commit
+`86b4113`. The offline-only plan validator/evidence combiner is now implemented
+with synthetic-only inputs and non-authorizing results. Next is separately
+authorized retained-QA source/attribute qualification, then the already planned
+one-way overlap experiment after explicit value-transfer approval. These are
+bounded work items inside MVP-1, not new macro stages or a restart of the plan.
+If the selected protected source or two-cookie plan fails qualification, name the
+failure and review a specific alternative; do not silently broaden access or
+repeat fallback/bootstrapping campaigns. The earlier documentation checkpoint
+ran no tests; its later offline implementation runs only synthetic regression
+checks. Native transfer and main-dev activation remain unqualified.
 
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 

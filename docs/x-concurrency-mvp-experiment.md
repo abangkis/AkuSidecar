@@ -48,22 +48,178 @@ a later candidate only if the native behavior supports it.
   sample, not authenticated semantics or continuity. Account-settings and absent
   login flags must not be promoted to stronger evidence.
 
+## Selected native evidence contract (2026-10-19)
+
+Plan identifier: `aku.x.native-concurrency-evidence-plan.v1`. This selects sources
+and a transfer ceiling for implementation review; it is not an implemented DTO,
+native qualification, enrollment or permission to read/export credentials.
+The synthetic baseline is `86b411369e309924a2864716efa116c3a4d2fe57`.
+No browser, native observation or test is run by this documentation update.
+
+### Account identity: fixed current-session bootstrap
+
+Select the existing guarded early projection of `window.__INITIAL_STATE__` on
+exact `https://x.com/home`. The identity candidate is the own data property
+`session.user_id`, a positive decimal string of at most twenty characters, with
+the same ID at `entities.users.entities[session.user_id].id_str` or `.id`.
+If both entity ID fields exist, both must be valid strings and agree. An optional
+`session.user_id_str`, if present, must also agree. Do not coerce numeric IDs,
+invoke accessors, scan entity maps or fall back to a handle/content author.
+Conflicting supported paths invalidate the observation rather than selecting
+the convenient match. An absent source is unavailable, not logged out.
+
+Native run `35bcb23af6164b14981bb585077f8045` observed this candidate and direct
+entity agreement; the four inspected auth fields were absent. This establishes
+availability in that sample, not trustworthy login semantics by itself. Keep the
+existing one-use handoff, exact frame/context generation, evaluation guards,
+pause limits and verified debugger cleanup. Do not restart broad timing searches.
+
+For a future cross-browser comparison, the fixed adapter may pass only this one
+validated ID to a private in-memory comparator, then retain match/mismatch/unknown
+outside it. The current value-free projector cannot compare two browsers merely
+because both report one candidate and an entity match; that private comparison
+boundary still needs implementation and review. Never export IDs in public RPC,
+reports, logs or screenshots. Pin the owner ID for this QA attempt only; equality
+with the derived ID proves same-owner binding, not enrollment of a named account.
+Any separately supplied expected QA identity must agree. Production enrollment
+and Store authorization remain separate and unchanged.
+
+### Login: qualified protected-response semantics, not a guessed flag
+
+Select the already observed account-settings operation as the sole initial login
+source candidate. The existing diagnostic selector has this closed route set:
+
+| Method | Exact origin | Exact path |
+| --- | --- | --- |
+| GET | `https://x.com` | `/i/api/1.1/account/settings.json` |
+| GET | `https://api.x.com` | `/1.1/account/settings.json` |
+| GET | `https://api.x.com` | `/i/api/1.1/account/settings.json` |
+
+These are existing selector alternatives, not three routes qualified by a native
+sample. Existing reports preserve an operation category, not the exact route.
+Before transfer, pin exactly one naturally observed method/origin/path in the
+reviewable source manifest. No fallback across alternatives during a transfer
+attempt, endpoint guessing, manually reconstructed requests or header replay.
+OPTIONS is never a competing GET candidate or login proof. Query text is neither
+persisted nor treated as identity; changes relevant to semantics require review.
+
+The login claim requires all of the following, in the same role and observation
+window as the current-self candidate:
+
+- A fresh, uniquely correlated, completed response from the pinned route: HTTP
+  200, JSON, no redirect, cache/service-worker/prefetch reuse or transport gap.
+  Unknown cache/correlation state does not pass. Bind owner, browser context,
+  target/frame, request, observation window and active session baseline.
+- A bounded success projection with the six existing settings fields present
+  at their expected types: `language` string, `time_zone` string or null, and
+  `protected`, `always_use_https`, `discoverable_by_email`,
+  `discoverable_by_mobile_phone` booleans. Reject malformed/duplicate-key JSON,
+  errors, challenges and conflicting auth fields. A renamed/removed field is
+  source drift, not permission to loosen the selector.
+- A versioned qualification of that route's user-authenticated semantics,
+  including an appropriate signed-out/guest comparison. A failed request due
+  to networking, rate limiting, CSRF or anti-abuse is not a successful negative
+  control. No request observed in a guest context is not a negative response.
+  Such a future comparison must use a separate empty QA context, natural web
+  actions and separate execution authorization; never log out the retained owner.
+- Current-self identity agrees with the attempt's expected owner identity, with
+  no relevant mutation or observation gap between these two observations.
+
+The settings fields are a candidate success discriminator, not proof that this
+body is exclusive to authenticated users. The native samples did not establish
+the last two requirements, field-type qualification or protected-route semantics.
+Accordingly `authenticated` remains unknown until those requirements pass.
+An explicit boolean is not mandatory if protected semantics are qualified, but
+neither HTTP 200, a settings shape, a Home screen, `isActive`, nor possession of
+a cookie alone may be relabeled as authenticated. Do not change the existing
+fixture verifier to accept a native composite observation implicitly.
+
+Keep the existing body ceiling of 16,384 decoded bytes, depth eight and 1,024
+JSON tokens. Project once at the private response boundary and discard raw body
+references before producing an external result. Only fixed field types,
+success/error categories and match states leave that boundary. Ordinary Home
+reads establish concurrent activity separately; feed authors are not self proof.
+
+### Continuity and admission remain independent
+
+Keep the current native lineage/coverage requirement. Bind identity and login
+observations before dispatch and recheck within the existing five-second
+freshness limit. Relevant mutation, account change, challenge, target/startup
+gap, detach, overflow or timeout fences affected work. Pre/post cookie equality
+and a local nonce/generation cannot qualify a gap or mint a Store revision.
+A short successful transfer with no observed refresh reports
+`refresh_not_observed`; it does not qualify an unrestricted concurrent pilot.
+
 ## Transfer manifest and data boundary
 
-The native allowlist is **not yet qualified**. A future reviewed manifest must
-enumerate exact cookie names, domain/host-only scope, paths and partition context,
-plus the owned source/destination context and expected account binding. No native
-transfer may run with an empty, inferred, wildcard or dynamically expanded list.
-Do not guess the required cookie set from synthetic cookie names.
-Proposed transport ceilings are 16 tuples, 8 KiB per serialized tuple and 64 KiB
-total. Enforce bounds before publication; overflow stops the run rather than
-truncating credentials or raising limits automatically. These are experiment
-limits to review with the exact manifest, not claims about X's required state.
+Select the following **two-tuple candidate ceiling**,
+`aku.x.native-transfer-plan.v1`. Selection is complete; native presence,
+attributes, portability and sufficiency are **not yet qualified**. This plan
+does not authorize reading or transferring either value now.
+
+| Exact name | Exact cookie domain | Path | Host-only | Partition | Treatment |
+| --- | --- | --- | --- | --- | --- |
+| `auth_token` | `.x.com` | `/` | false | none | One required nonempty value; never inspect its contents as identity or lineage. |
+| `ct0` | `.x.com` | `/` | false | none | One required nonempty value; transfer as a cookie only, never extract/replay a CSRF header. |
+
+The name choices are supported by X's [cookie help page](https://help.x.com/en/rules-and-policies/x-cookies)
+and its linked [cookie-description list](https://help.x.com/content/dam/help-twitter/rules-and-policies/cookie-description-lists/cookie-description-list-en.pdf),
+which describe account-login/authentication cookies. The linked PDF still uses
+`.twitter.com`; it does not qualify a modern `.x.com` tuple or prove that these
+two cookies alone are sufficient. `.x.com` above is a deliberately narrow
+candidate scope to verify in QA, not a fact inferred from that older table.
+No `.twitter.com`, host-only `x.com`, alternative path or partition is substituted
+automatically. Any mismatch stops with `transfer_manifest_unqualified`.
+
+Before export authorization, a metadata-only QA qualification must freeze the
+exact `secure`, `httpOnly`, `sameSite`, session/persistent expiry representation
+and supported CDP attributes of each tuple. Require Secure; preserve the
+remaining observed attributes exactly, including fractional expiry and omitted
+SameSite. Unknown attributes, opaque/partitioned state, duplicates/shadowing or
+expired values stop rather than coercing them. Non-secret attributes may be
+reviewed; values and credential-derived fingerprints may not. The frozen run
+manifest must also bind the owned source/destination, exact source route,
+expected account and one-use attempt. No unresolved field or wildcard is valid
+at execution time. Existing fixture-only schemas/adapters cannot be relabeled
+native to bypass these requirements.
+
+Limit the native attempt to exactly these two tuples, at most 8 KiB per complete
+serialized tuple and 16 KiB total. These are stricter than the generic synthetic
+harness ceilings of 16 tuples/64 KiB; no code limit changes are made here.
+Overflow stops instead of truncating credentials or raising limits. Read through
+the owned private browser connection scoped to the pinned HTTPS source URLs,
+never a whole-profile cookie API/database. If the protocol returns additional
+cookies for those URLs, enforce a bounded frame before decoding, immediately
+discard nonallowlisted values at the private boundary and publish only the two
+exact tuples. Reject ambiguous same-name scope variants rather than selecting
+one. This is incidental private decoding, not permission to collect, log or
+transfer other cookie values. An implementation unable to enforce the boundary
+must stop before export.
+
+"Metadata-only qualification" describes its retained output, not a claim that
+CDP cannot deliver values. If the chosen cookie API returns values alongside
+attributes, its future approval must explicitly cover incidental private
+in-memory decoding and immediate value discard, even when no transfer follows.
+Do not use a metadata label to inherit credential-read permission from earlier
+body/bootstrap observation. This document grants neither permission.
+
+Only the explicitly pinned X web/source origins are eligible for the experiment;
+the preserved `.x.com` cookie scope is not permission to browse arbitrary
+subdomains. New cookies produced by X itself in the derived profile are not
+additional imports. Observe session-relevant changes under the reviewed coverage
+contract; unknown relevant mutations close the attempt instead of expanding the
+allowlist or syncing anything back.
+
+Exclude `twid` (including ID inference), `auth_multi`, `kdt`, `guest_id`,
+`personalization_id`, other device/anti-abuse state and every unlisted cookie from
+helper export/import. This does not assert those cookies are unnecessary for X.
+If the two selected tuples are insufficient, report `additional_state_required`
+and review the exact missing requirement; do not retry with all cookies.
 
 | Data | Permitted boundary for a separately authorized run |
 | --- | --- |
 | Approved login cookies | Read only the enumerated tuples through the owned private browser connection; send values directly to the owned derived context in process memory/private IPC. Preserve Secure, HttpOnly, SameSite, expiry, domain/path and partition attributes; reject unsupported representation instead of broadening scope. |
-| Origin scope | Start with explicitly reviewed X origin/domain tuples. No blanket subdomain, cross-site or all-cookie export. Any additional required origin needs manifest review and authorization before access. Google/Apple login-provider state is never part of the transfer. |
+| Origin scope | Only the pinned X web/source origins and the two exact candidate cookie tuples above. No cross-site or all-cookie export. Additional origins or tuple variants need manifest review and authorization. Google/Apple login-provider state is never part of the transfer. |
 | Identity/authentication evidence | Read only the fixed, bounded source projection needed for current-self and authenticated semantics. Compare account values transiently; export only match/mismatch/unknown and qualified source/version categories. |
 | Runtime binding | Carry private owner/context identity, observation freshness, one-use transfer nonce and local generation. These bind operations and reject replay; they do not create native session lineage. |
 | Persistent evidence | Fixed diagnostics, bounds, enum outcomes, coarse lengths/counts, overlap timing and cleanup status only. No native account IDs/handles, cookie values or reversible/credential-derived fingerprints. |
@@ -87,6 +243,42 @@ Keep the retained owner's profile under its existing retention authorization.
 Remove only disposable task artifacts after proven Job/context cleanup. If cleanup
 is unproven, retain that scoped root and report failure; never kill unrelated
 Chrome processes. Local disposal/deletion does not prove server-side revocation.
+
+### Offline implementation and next boundary
+
+Subsequent explicit authorization implemented
+`scripts/auth-session-fixture/x-native-plan-offline.mjs` and its regression suite.
+It validates the closed synthetic plan and combines per-role identity, settings
+and coverage witnesses. It reuses only the pure bootstrap projector and strict
+JSON parser. It implements no browser/network/profile access, transfer callback,
+provider or Store integration. See the [offline API and canonical commands](../scripts/auth-session-fixture/README.md#offline-native-plan-contract-and-evidence-combiner-2026-10-19).
+
+The combiner privately snapshots metadata, consumes an attempt once, checks exact
+tuple attributes and serialized limits, and compares validated IDs privately.
+Its fixed reports contain no IDs, bindings, cookie values or body content.
+Authentication/coverage success has synthetic provenance only; source-control
+assertions are trusted invented inputs, not native qualification. Every result
+remains non-authorizing with `refresh_not_observed`. Native schemas/values cannot
+be supplied as a supported mode; no new opt-in reaches real authentication.
+
+Canonical offline preflight `scripts/test-x-concurrency-fixture.ps1 -NoChrome`
+passed 45 Node tests (18 new contract/combiner cases) and one Go report-boundary
+test, with no failures or skips. Run `ed5aa4c683ed4a22b204419968fe7192` is recorded
+in `runtime/qa/auth-session-sidecar/x-concurrency-ed5aa4c683ed4a22b204419968fe7192.log.txt`.
+It started no Chrome or network listener and removed its disposable root. This
+is offline contract evidence only; it does not qualify X source semantics,
+credential sufficiency, actual transfer, native continuity or Store admission.
+
+The next boundary is separately authorized metadata/source qualification on the
+retained QA profile, after implementation review. Freeze its attribute/route
+manifest before requesting value transfer. No extra manual login is expected
+while that retained QA session remains valid. The incidental credential-decoding
+permission boundary above still applies to any future metadata probe.
+
+Native source failure is a named feasibility result, not a reason to repeat broad
+bootstrap probes or another fallback campaign. If account-settings cannot meet
+the protected-source contract, stop with `login_source_unqualified` and propose
+one specific alternative with evidence; no automatic endpoint scan is allowed.
 
 ## Proposed bounded procedure
 

@@ -45,7 +45,8 @@ try {
     Write-Output ('Synthetic concurrency run ID: ' + $runId)
     & $nodePath --test --test-timeout=10000 --test-reporter=tap `
         scripts/auth-session-fixture/x-concurrency-harness.test.mjs `
-        scripts/auth-session-fixture/x-concurrency-chrome-adapter.test.mjs 2>&1 | Tee-Object -FilePath $logPath
+        scripts/auth-session-fixture/x-concurrency-chrome-adapter.test.mjs `
+        scripts/auth-session-fixture/x-native-plan-offline.test.mjs 2>&1 | Tee-Object -FilePath $logPath
     if ($LASTEXITCODE -ne 0) { throw 'Concurrency offline Node checks failed.' }
     & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestXConcurrencyFixtureReportOffline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $logPath -Append
     if ($LASTEXITCODE -ne 0) { throw 'Concurrency report boundary check failed.' }
