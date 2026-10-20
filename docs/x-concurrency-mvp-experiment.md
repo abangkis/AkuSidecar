@@ -340,6 +340,19 @@ control as inconclusive; no negative response, login-source qualification or
 transfer permission follows. Choose a meaningful scoped guest-response mechanism
 or replacement source before proceeding. No additional login was needed.
 
+Subsequent explicit authorization
+implemented a separate fixed direct-navigation A/B control, retaining the
+Home-only control above unchanged. It permits exactly the already observed
+api_v1 URL in a retained-context tab and a fresh empty-context tab, without
+header/cookie extraction or transfer. This is a scoped authorization beyond the
+earlier natural-Home-only action, not permission for arbitrary API construction.
+The [native checkpoint](../scripts/auth-session-fixture/README.md#direct-navigation-ab-checkpoint-2026-10-20)
+returned A=403/aborted, B=400/completed and zero body reads, with QA Home surviving
+and full ownership cleanup verified. The positive control failed. Neither error
+cause nor native login semantics is inferred. Stop this mechanism; the next
+decision must concern the working natural web-client path or another qualified
+source, not additional login or automatic header replay.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

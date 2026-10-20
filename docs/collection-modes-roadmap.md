@@ -5595,6 +5595,19 @@ native continuity; choose a bounded guest-response mechanism or replacement
 source rather than rerunning the same empty Home control. See the
 [checkpoint](../scripts/auth-session-fixture/README.md#timezone-contract-and-empty-context-control-2026-10-20).
 
+After `5e2eaa9` published the 13-file delta, the authorized direct-navigation
+A/B harness was implemented and tested. Offline checks passed 75 Node/eight Go
+cases; native run `ad7d6db6db2b4386bafb8bb78d5ebc34` completed in 5.06 seconds.
+A (retained QA) returned HTTP 403/aborted, B (empty context) HTTP 400/completed,
+with zero body reads and outcome positive_control_failed. Home survived and all
+owned tabs/context/Job plus clean lease/disposable-root cleanup were verified.
+This closes direct navigation as an unsuccessful comparison mechanism, not
+MVP-1 authentication qualification. Do not repeat login, infer an error cause
+or reconstruct headers. The remaining decision is a scoped control on the
+working natural web-client request path or a replacement source. No session
+transfer or main login/Store/runtime access occurred. See the
+[checkpoint](../scripts/auth-session-fixture/README.md#direct-navigation-ab-checkpoint-2026-10-20).
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated

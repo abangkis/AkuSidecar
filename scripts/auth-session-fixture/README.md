@@ -297,6 +297,83 @@ a separately scoped protected-source comparison mechanism that can actually
 produce a meaningful guest response, or replacement of this login-source
 candidate. Session transfer remains unauthorized.
 
+### Direct-navigation A/B checkpoint (2026-10-20)
+
+The 13-file timezone/empty-Home delta was published as `5e2eaa9` (remote SHA
+verified). Subsequent authorization adds one deliberately fixed direct-navigation
+comparison, not endpoint discovery or production authentication integration:
+
+```powershell
+# Offline only by default:
+.\scripts\test-x-qa-source.ps1
+# Explicit authorization required; retained QA login is reused:
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -DirectAuthenticationAB
+```
+
+The closed `qualify_direct_ab` RPC accepts only its owner binding. A opens one
+about:blank tab in the retained QA context; B opens one tab in a fresh empty
+BrowserContext. Each navigates once to the previously observed, pinned
+`https://api.x.com/1.1/account/settings.json`. Browser-managed credentials stay
+within their own context. No cookie getter/setter, header extraction/replay,
+arbitrary URL/expression, profile copy, login/logout or transfer operation is
+available. The original QA Home tab is preserved and checked before/after.
+The earlier Home-only control and its schema are unchanged.
+
+Each page observes at most 4,096 network events over ten seconds and selects
+one same-frame GET with no redirect/duplicate/cache ambiguity. The optional
+one-use body read requires a completed fresh JSON response, a 16 KiB encoded
+length ceiling and status 200/401/403/429. Its four-second read deadline and
+strict decoded-body/depth/token limits also apply. HTTP 400, HTML, failed,
+oversized and incomplete responses remain metadata only. Body projection occurs
+inside private CDP dispatch before promise resolution; only settings_match,
+error_envelope, challenge, other_json or unreadable categories are returned.
+No IDs, setting values, arbitrary error codes/messages, headers or raw bodies
+are exported. Chrome may abort an error navigation; this does not relax the
+completed-response prerequisite for body access.
+
+The new closed report `aku.x.qa-direct-ab.v1` contains separate A/B metadata,
+optional value-free body categories, Home checks and verified tab/context
+disposal. Go independently validates fields, cardinalities, status/body limits
+and recomputes the outcome before saving, after complete owned-Job cleanup.
+Both observations run even if A fails, to record the bounded comparison. Only
+fresh HTTP 200 plus settings_match on A and surviving QA Home can pass the
+positive discriminator. Two 401s, a failed A or lost Home cannot qualify it.
+Even a positive A with a JSON error-envelope 401 on B is only
+negative_response_candidate: route authentication semantics/identity/continuity
+are not automatically qualified. All reports retain authentication unknown,
+canAuthorize false and sessionTransferred false.
+
+Initial offline run `e0046fdf7bba4694b07f64ab4239e8bb` passed 75 Node/eight Go
+top-level cases. Native run `ad7d6db6db2b4386bafb8bb78d5ebc34` passed the harness
+in 5.06 seconds and produced two actual server responses:
+
+| Observation | HTTP | Completion | Body reads | Classification |
+| --- | --- | --- | --- | --- |
+| A: retained QA context | 403 | aborted / candidate_rejected | 0 | positive control failed |
+| B: empty context | 400 | completed / other_response | 0 | unqualified response |
+
+The paired outcome is positive_control_failed. This proves direct navigation
+reaches the selected operation in both contexts; it does not prove that this
+mechanism is suitable for authentication comparison. The reason for the 403/400
+is unknown; no header/credential/challenge cause is inferred. No raw body or
+cookie was read, no extra login requested, and no state transferred. QA Home
+before/after, A tab close, B context disposal, root graceful-close acknowledgment
+and complete owned-Job cleanup were all true. The retained lease returned clean
+and the disposable control root was removed. Main login, Store and user runtime
+were untouched. Sanitized report:
+`runtime/qa/auth-session-sidecar/x-qa-source-ad7d6db6db2b4386bafb8bb78d5ebc34.report.json`.
+
+Final offline run `8eecdff9333047fdb3dd745db683948e` passed 76 Node/eight Go
+cases, including the observed aborted-403/completed-400 pair and dedicated RPC
+denials for caller URLs/headers. The implementation used for the native run was
+unchanged; only regression coverage and documentation were added afterward.
+
+Stop this direct-navigation feasibility branch with that result. Do not repeat
+login or reconstruct/add application headers to turn it into a passing test.
+The next design decision must compare the already successful natural web-client
+request path, or select another qualified source, under a separately reviewed
+boundary. Native login semantics and continuity remain unresolved within MVP-1.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

@@ -18,6 +18,7 @@ import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from 
 import { BootstrapHandoffCapture } from './x-bootstrap-breakpoint-handoff.mjs';
 import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookieRequest, finishQASourceQualification } from './x-qa-source-qualification.mjs';
 import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } from './x-qa-auth-control.mjs';
+import { QADirectCapture, qaABCommand, QA_AB_URL, projectQADirectBody, finishQADirectAB } from './x-qa-direct-ab.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -51,6 +52,7 @@ const SAFE_REST_OPERATIONS = new Set([
 const CDP_METHODS = Object.freeze({
   'Target.getTargets': 'target_get_targets',
   'Target.attachToTarget': 'target_attach',
+  'Target.closeTarget': 'qa_ab_close_target',
   'Target.createBrowserContext': 'qa_guest_context',
   'Target.createTarget': 'qa_guest_target',
   'Target.disposeBrowserContext': 'qa_guest_dispose',
@@ -532,7 +534,7 @@ function projectCDPResult(method, result, projectionKind = null) {
   switch (method) {
     case 'Page.getFrameTree': {
       const frame = result.frameTree?.frame;
-      if (!isObject(frame) || !safeId(frame.id) || !(projectionKind === 'qa_guest' ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
+      if (!isObject(frame) || !safeId(frame.id) || !(['qa_guest', 'qa_ab'].includes(projectionKind) ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
       return { frameId: frame.id };
     }
     case 'Target.createBrowserContext':
@@ -542,6 +544,11 @@ function projectCDPResult(method, result, projectionKind = null) {
       if (!safeId(result.targetId)) throw probeError('qa_guest_target_invalid');
       return { targetId: result.targetId };
     case 'Page.navigate':
+      if (projectionKind === 'qa_ab') {
+        if (!safeId(result.frameId) || result.frameId !== active?.ab?.frameId ||
+            own(result, 'errorText') && result.errorText !== 'net::ERR_HTTP_RESPONSE_CODE_FAILURE') throw probeError('qa_ab_navigation_failed');
+        return { acknowledged: true };
+      }
       if (own(result, 'errorText') || !safeId(result.frameId) || result.frameId !== active?.guest?.frameId) throw probeError('qa_guest_navigation_invalid');
       return { acknowledged: true };
     case 'Debugger.setInstrumentationBreakpoint':
@@ -561,6 +568,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     }
     case 'Network.getResponseBody':
       if (!bodyMode(driverMode)) throw probeError('body_mode_required');
+      if (projectionKind === 'qa_ab') return projectQADirectBody(result);
       return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
     case 'Network.getCookies':
       if (!qualificationMode(driverMode) || !active?.qaCookieIssued) throw probeError('cookie_mode_required');
@@ -578,6 +586,9 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Target.attachToTarget':
       if (!safeId(result.sessionId)) throw probeError('target_session_invalid');
       return { sessionId: result.sessionId };
+    case 'Target.closeTarget':
+      if (result.success !== true) throw probeError('qa_ab_close_failed');
+      return { acknowledged: true };
     case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
       if (projectionKind === 'bootstrap_current_self') {
@@ -756,7 +767,11 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   const guestSession = !!active?.guest?.sessionId && sessionId === active.guest.sessionId;
   const guestAttach = method === 'Target.attachToTarget' && active?.authControlAttempted;
   const guestCommand = guestMethod || guestSession || guestAttach;
-  if (guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
+  const abCommand = !!active?.directABRunning && (guestMethod || method === 'Target.attachToTarget' ||
+    method === 'Target.closeTarget' || !!active.ab?.sessionId && sessionId === active.ab.sessionId);
+  if (method === 'Target.closeTarget' && !abCommand) return Promise.reject(probeError('qa_ab_command_not_authorized'));
+  if (abCommand && (!qualificationMode(driverMode) || !qaABCommand(method, params, sessionId, active.ab))) return Promise.reject(probeError('qa_ab_command_not_authorized'));
+  if (!abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
   if (purpose !== null && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
@@ -765,13 +780,13 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cookie_read_not_authorized'));
   }
   if (method === 'Network.getCookies') active.qaCookieIssued = true;
-  if (method === 'Network.getResponseBody' && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
+  if (method === 'Network.getResponseBody' && !abCommand && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
   }
-  if (method === 'Network.setCacheDisabled' && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
+  if (method === 'Network.setCacheDisabled' && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap')) {
+  if (!abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap')) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -786,7 +801,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       return Promise.reject(probeError('early_command_not_authorized'));
     }
   }
-  let projectionKind = guestCommand ? 'qa_guest' : null;
+  let projectionKind = abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
   if (method === 'Debugger.evaluateOnCallFrame') {
     if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || active.gate.observationStarted ||
         sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture)) {
@@ -836,6 +851,7 @@ function failCDP(code) {
   rejectPending(cdpFailure);
   active?.accountSettings?.invalidate();
   active?.guest?.capture?.invalidate();
+  active?.ab?.capture?.invalidate();
   if (active?.pageLoad) {
     active.pageLoad.reject(probeError(cdpFailure));
     active.pageLoad = null;
@@ -851,6 +867,16 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    if (active?.ab?.sessionId && raw.sessionId === active.ab.sessionId) {
+      const ab = active.ab;
+      if (!ab.closed && Date.now() <= ab.endsAt && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
+        if (++ab.events > MAX_NETWORK_EVENTS) ab.capture?.invalidate();
+        else ab.capture?.observe(raw.method, raw.params);
+      }
+      if (raw.method === 'Inspector.detached' && !ab.disposing) ab.capture?.invalidate();
+      return;
+    }
+    if (raw.method === 'Target.detachedFromTarget' && raw.params?.sessionId === active?.ab?.sessionId && !active?.ab?.disposing) active?.ab?.capture?.invalidate();
     if (active?.guest?.sessionId && raw.sessionId === active.guest.sessionId) {
       const guest = active.guest;
       if (!guest.closed && Date.now() <= guest.endsAt && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
@@ -1427,6 +1453,61 @@ async function qualifyAuthControl(message) {
   return finishQAAuthControl(signedIn, report, before, await home(), disposed);
 }
 
+async function runDirectABPage(current, role) {
+  const state = current.ab = { role, navigated: false, closed: false, disposing: false, events: 0 };
+  let report;
+  try {
+    if (role === 'b') state.contextId = (await send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId;
+    state.targetId = (await send('Target.createTarget', role === 'a' ? { url: 'about:blank' } :
+      { url: 'about:blank', browserContextId: state.contextId })).targetId;
+    state.sessionId = (await send('Target.attachToTarget', { targetId: state.targetId, flatten: true })).sessionId;
+    if (state.sessionId === current.sessionId) throw probeError('qa_ab_session_collision');
+    await send('Page.enable', {}, state.sessionId);
+    state.frameId = (await send('Page.getFrameTree', {}, state.sessionId)).frameId;
+    state.capture = new QADirectCapture(role, state.frameId, requestId => send('Network.getResponseBody', { requestId }, state.sessionId));
+    await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
+      maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, state.sessionId);
+    await send('Network.setCacheDisabled', { cacheDisabled: true }, state.sessionId);
+    state.endsAt = Date.now() + 10000;
+    await send('Page.navigate', { url: QA_AB_URL }, state.sessionId);
+    state.navigated = true;
+    let timer;
+    try { await Promise.race([state.capture.done, new Promise(resolve => { timer = setTimeout(resolve, Math.max(0, state.endsAt - Date.now())); })]); }
+    finally { clearTimeout(timer); }
+    report = await state.capture.finish();
+    await send('Network.disable', {}, state.sessionId);
+  } finally {
+    state.disposing = true;
+    if (role === 'a' && state.targetId) await send('Target.closeTarget', { targetId: state.targetId });
+    if (role === 'b' && state.contextId) await send('Target.disposeBrowserContext', { browserContextId: state.contextId });
+    state.closed = true;
+  }
+  return report;
+}
+
+async function qualifyDirectAB(message) {
+  const current = requireOwner(message);
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
+      current.directABAttempted || current.gate.observationStarted) throw probeError('qa_direct_ab_gate_closed');
+  current.directABAttempted = true;
+  current.gate.beginObservation();
+  const home = async () => {
+    requireOwner(message);
+    return (await send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION,
+      returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId)).value;
+  };
+  const before = await home();
+  if (!before) throw probeError('qa_direct_ab_home_required');
+  current.directABRunning = true;
+  try {
+    const a = await runDirectABPage(current, 'a');
+    // Both observations are useful diagnostics even if A fails. Such a pair
+    // must retain positive_control_failed, never an authentication claim.
+    const b = await runDirectABPage(current, 'b');
+    return finishQADirectAB(a, b, before, await home(), true, true);
+  } finally { current.directABRunning = false; }
+}
+
 async function closeChrome() {
   if (!child || childExited) return { exited: true };
   if ((driverMode === 'two_phase' || accountSettingsBodyMode(driverMode)) && !twoPhaseState?.phase2Started) return { exited: false };
@@ -1442,6 +1523,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_direct_ab':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyDirectAB(message);
     case 'qualify_auth_control':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifyAuthControl(message);

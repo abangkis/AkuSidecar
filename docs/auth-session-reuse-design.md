@@ -91,6 +91,16 @@ the lease returned clean. No cookie reads/transfer, Store changes or user runtim
 operations occurred. Login semantics/continuity remain unqualified within MVP-1;
 review a meaningful guest-response mechanism before transfer or main-dev wiring.
 
+The subsequent [direct-navigation A/B checkpoint](../scripts/auth-session-fixture/README.md#direct-navigation-ab-checkpoint-2026-10-20)
+published the 13-file delta as `5e2eaa9` and tested the authorized fixed endpoint
+in retained QA and an empty context. A returned 403/aborted and B 400/completed;
+both body-read counts were zero. The positive control failed despite QA Home
+remaining ready before/after. Both responses are real, but neither error cause
+nor protected-login semantics is established. Tabs/context, graceful root close,
+owned Job and lease cleanup were verified. No transfer, Store or main-runtime
+change occurred. Stop direct-navigation retries; review a meaningful comparison
+of the successful natural web-client path or a replacement source.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

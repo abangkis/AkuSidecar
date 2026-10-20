@@ -185,6 +185,10 @@ test('authentication control denies pre-owner calls, caller URLs and direct cont
   const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
     { id: 1, op: 'qualify_auth_control', owner: 1 },
     { id: 2, op: 'qualify_auth_control', owner: 1, url: 'https://evil.test' },
-    { id: 3, op: 'Target.createBrowserContext' }]);
-  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
+    { id: 3, op: 'Target.createBrowserContext' },
+    { id: 4, op: 'qualify_direct_ab', owner: 1 },
+    { id: 5, op: 'qualify_direct_ab', owner: 1, url: 'https://evil.test' },
+    { id: 6, op: 'qualify_direct_ab', owner: 1, headers: {} }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_operation_unsupported',
+    'owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid']);
 });
