@@ -310,6 +310,20 @@ review of CDP attribute/import compatibility remain required before transfer.
 The Job was verified empty, the retained lease returned clean and the disposable
 root was removed. The post-commit harness fixes and this checkpoint remain local.
 
+Those eight files were later reviewed and published as `9ad4ab9`. A subsequent
+authorized settings-only V2 projection then localized the mismatch in native run
+`2fc104cde2444bc891a2f105b3da08a4`: only `time_zone` was object-shaped, while
+the selected predicate allows string/null. Language was a string and the four
+other fixed settings were booleans, all matching. Forty Node/seven Go offline
+cases and the 24.22-second QA passed. No cookie reads, nested timezone inspection,
+raw value persistence, login attempt or transfer occurred. The Job was emptied,
+the retained lease returned clean and the disposable root was removed.
+See the [fixed type checkpoint](../scripts/auth-session-fixture/README.md#fixed-settings-type-checkpoint-2026-10-19).
+The source predicate is unchanged and still fails; authentication and native
+continuity remain unqualified. Next review whether the metadata predicate should
+accept this observed type, then qualify protected-source semantics. Do not infer
+login from a shape adjustment or repeat broad body/source discovery.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

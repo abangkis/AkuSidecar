@@ -187,6 +187,53 @@ The earlier runs `34a91c28540f450cb554072406ef2033` (post-Home gate) and
 both leases returned clean and no raw credential/body report was retained.
 Main login, Store and the user runtime were outside all three runs.
 
+### Fixed settings-type checkpoint (2026-10-19)
+
+The eight-file finalization/checkpoint delta was subsequently reviewed and pushed
+as `9ad4ab9` (remote SHA verified). The owner then authorized identifying the
+settings mismatch through a bounded projection on the same retained QA profile.
+The local diagnostic envelope is now `aku.x.qa-source-qualification.v2`, with
+`aku.x.qa-source-capture.v2` adding only `settingsFields`: the six fixed names,
+each with an enum `kind` and boolean `matches`. V1 artifacts remain historical;
+they are not silently interpreted as V2 results. The independent Go decoder
+rejects unknown keys/types, missing pairs, reflected values and inconsistent
+match flags before persistence. No production API or verifier schema changes.
+
+```powershell
+# Explicitly authorized native type projection only; no cookie-read permission:
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -SettingsTypesOnly
+```
+
+SettingsTypesOnly dispatches the fixed `qualify_settings_types` RPC and disables
+the cookie-reader callback even after Home succeeds. Combining it with
+AllowCookieMetadataRead is rejected. The default command remains offline only.
+Body/frame/correlation/one-use/cleanup limits remain unchanged; object/array
+contents and unknown settings keys are not projected. Source errors, malformed
+or ambiguous responses retain null diagnostics instead of inventing field types.
+
+Run `2fc104cde2444bc891a2f105b3da08a4` passed forty Node tests, seven Go offline
+cases and the native QA case (24.22 seconds). Home reused the retained login.
+One `api_v1` settings GET and one body read produced:
+
+| Fixed field | Observed kind | Existing predicate |
+| --- | --- | --- |
+| `language` | string | match |
+| `time_zone` | object | mismatch: only string/null accepted |
+| `protected` | boolean | match |
+| `always_use_https` | boolean | match |
+| `discoverable_by_email` | boolean | match |
+| `discoverable_by_mobile_phone` | boolean | match |
+
+No actual timezone, nested key, setting value, ID or raw body was exported. The
+cookie result is null: no cookie read or transfer occurred. The predicate was
+deliberately left unchanged, so bodyContractMatches remains false, authentication
+unknown, negativeControl not_run and canAuthorize/sessionTransferred false.
+The root acknowledged close, the entire Job was verified empty, the retained
+lease returned clean and the disposable root was removed. Sanitized report/log:
+`runtime/qa/auth-session-sidecar/x-qa-source-2fc104cde2444bc891a2f105b3da08a4.{report.json,log.txt}`.
+Contract adjustment is a separate next decision; accepting object-shaped
+timezone metadata alone would still not prove authenticated-source semantics.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

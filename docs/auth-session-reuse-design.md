@@ -74,6 +74,13 @@ semantics stay unknown. See the [native QA checkpoint](../scripts/auth-session-f
 Protected-source comparison and native continuity remain unqualified. No
 production integration is added.
 
+The [fixed settings-type probe](../scripts/auth-session-fixture/README.md#fixed-settings-type-checkpoint-2026-10-19)
+later identified `time_zone` as the sole mismatch: object observed versus the
+current string/null predicate. The other five fixed fields matched. This
+settings-only QA read no cookies or nested values and preserved the existing
+predicate. A metadata contract adjustment and protected-source qualification
+remain separate next decisions; login/continuity/Store authority stay unknown.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

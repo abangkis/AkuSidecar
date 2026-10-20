@@ -19,15 +19,28 @@ import (
 )
 
 type xQASourceCapture struct {
-	Schema              string  `json:"schema"`
-	Route               *string `json:"route"`
-	Diagnostic          string  `json:"diagnostic"`
-	MatchingRequests    int     `json:"matchingRequests"`
-	BodyReadAttempts    int     `json:"bodyReadAttempts"`
-	BodyContractMatches *bool   `json:"bodyContractMatches"`
-	Authentication      string  `json:"authentication"`
-	NegativeControl     string  `json:"negativeControl"`
-	CanAuthorize        *bool   `json:"canAuthorize"`
+	Schema              string             `json:"schema"`
+	Route               *string            `json:"route"`
+	Diagnostic          string             `json:"diagnostic"`
+	MatchingRequests    int                `json:"matchingRequests"`
+	BodyReadAttempts    int                `json:"bodyReadAttempts"`
+	BodyContractMatches *bool              `json:"bodyContractMatches"`
+	SettingsFields      *xQASettingsFields `json:"settingsFields"`
+	Authentication      string             `json:"authentication"`
+	NegativeControl     string             `json:"negativeControl"`
+	CanAuthorize        *bool              `json:"canAuthorize"`
+}
+type xQAFieldType struct {
+	Kind    string `json:"kind"`
+	Matches *bool  `json:"matches"`
+}
+type xQASettingsFields struct {
+	Language      *xQAFieldType `json:"language"`
+	TimeZone      *xQAFieldType `json:"time_zone"`
+	Protected     *xQAFieldType `json:"protected"`
+	AlwaysHTTPS   *xQAFieldType `json:"always_use_https"`
+	DiscoverEmail *xQAFieldType `json:"discoverable_by_email"`
+	DiscoverPhone *xQAFieldType `json:"discoverable_by_mobile_phone"`
 }
 type xQACookieAttributes struct {
 	Domain       string          `json:"domain"`
@@ -94,13 +107,13 @@ func decodeXQASourceQualification(raw []byte) (xQASourceQualification, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF ||
-		result.Schema != "aku.x.qa-source-qualification.v1" || !xQAFalse(result.CanAuthorize) || !xQAFalse(result.SessionTransferred) || result.Source == nil {
+		result.Schema != "aku.x.qa-source-qualification.v2" || !xQAFalse(result.CanAuthorize) || !xQAFalse(result.SessionTransferred) || result.Source == nil {
 		return result, bad
 	}
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
 	s := result.Source
-	if !xQAFields(fields["source"], 9) || s.Schema != "aku.x.qa-source-capture.v1" || !xQAFalse(s.CanAuthorize) ||
+	if !xQAFields(fields["source"], 10) || s.Schema != "aku.x.qa-source-capture.v2" || !xQAFalse(s.CanAuthorize) ||
 		s.Authentication != "unknown" || s.NegativeControl != "not_run" || s.MatchingRequests < 0 || s.MatchingRequests > 2 || s.BodyReadAttempts < 0 || s.BodyReadAttempts > 1 {
 		return result, bad
 	}
@@ -115,6 +128,45 @@ func decodeXQASourceQualification(raw []byte) (xQASourceQualification, error) {
 	if s.Diagnostic == "projected" && (s.Route == nil || s.MatchingRequests != 1 || s.BodyReadAttempts != 1 || s.BodyContractMatches == nil) ||
 		s.Diagnostic != "projected" && s.BodyContractMatches != nil {
 		return result, bad
+	}
+	if s.Diagnostic != "projected" && s.SettingsFields != nil || s.Diagnostic == "projected" && s.SettingsFields == nil {
+		return result, bad
+	}
+	if f := s.SettingsFields; f != nil {
+		var sourceFields map[string]json.RawMessage
+		_ = json.Unmarshal(fields["source"], &sourceFields)
+		if !xQAFields(sourceFields["settingsFields"], 6) {
+			return result, bad
+		}
+		var fieldEntries map[string]json.RawMessage
+		_ = json.Unmarshal(sourceFields["settingsFields"], &fieldEntries)
+		entries := []*xQAFieldType{f.Language, f.TimeZone, f.Protected, f.AlwaysHTTPS, f.DiscoverEmail, f.DiscoverPhone}
+		keys := []string{"language", "time_zone", "protected", "always_use_https", "discoverable_by_email", "discoverable_by_mobile_phone"}
+		allMatch := true
+		for index, entry := range entries {
+			if entry == nil || entry.Matches == nil || !xQAFields(fieldEntries[keys[index]], 2) {
+				return result, bad
+			}
+			switch entry.Kind {
+			case "absent", "null", "string", "boolean", "number", "object", "array":
+			default:
+				return result, bad
+			}
+			matches := entry.Kind == "boolean"
+			if index == 0 {
+				matches = entry.Kind == "string"
+			}
+			if index == 1 {
+				matches = entry.Kind == "string" || entry.Kind == "null"
+			}
+			if *entry.Matches != matches {
+				return result, bad
+			}
+			allMatch = allMatch && matches
+		}
+		if *s.BodyContractMatches && !allMatch {
+			return result, bad
+		}
 	}
 	if result.Cookies == nil {
 		return result, nil
@@ -179,7 +231,7 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 			t.Fatal("QA cleanup order changed")
 		}
 	}
-	raw := []byte(`{"schema":"aku.x.qa-source-qualification.v1","source":{"schema":"aku.x.qa-source-capture.v1","route":null,"diagnostic":"not_observed","matchingRequests":0,"bodyReadAttempts":0,"bodyContractMatches":null,"authentication":"unknown","negativeControl":"not_run","canAuthorize":false},"cookies":null,"canAuthorize":false,"sessionTransferred":false}`)
+	raw := []byte(`{"schema":"aku.x.qa-source-qualification.v2","source":{"schema":"aku.x.qa-source-capture.v2","route":null,"diagnostic":"not_observed","matchingRequests":0,"bodyReadAttempts":0,"bodyContractMatches":null,"settingsFields":null,"authentication":"unknown","negativeControl":"not_run","canAuthorize":false},"cookies":null,"canAuthorize":false,"sessionTransferred":false}`)
 	if _, err := decodeXQASourceQualification(raw); err != nil {
 		t.Fatal(err)
 	}
@@ -190,6 +242,8 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 		{`"matchingRequests":0`, `"matchingRequests":1`}, {`"bodyReadAttempts":0`, `"bodyReadAttempts":1`}, {`"bodyContractMatches":null`, `"bodyContractMatches":true`}} {
 		positive = bytes.Replace(positive, []byte(change[0]), []byte(change[1]), 1)
 	}
+	fieldTypes := `{"language":{"kind":"string","matches":true},"time_zone":{"kind":"null","matches":true},"protected":{"kind":"boolean","matches":true},"always_use_https":{"kind":"boolean","matches":true},"discoverable_by_email":{"kind":"boolean","matches":true},"discoverable_by_mobile_phone":{"kind":"boolean","matches":true}}`
+	positive = bytes.Replace(positive, []byte(`"settingsFields":null`), []byte(`"settingsFields":`+fieldTypes), 1)
 	if report, err := decodeXQASourceQualification(positive); err != nil || report.Cookies == nil || *report.Cookies.Tuples[0].Attributes.Expires != 4102444800.125 {
 		t.Fatal("valid attribute-only diagnostic rejected")
 	}
@@ -197,7 +251,10 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 		{`"expires":4102444800.125`, `"expires":0`}, {`"sourcePort":443`, `"sourcePort":65536`},
 		{`"domain":".x.com"`, `"domain":".twitter.com"`}, {`"partitionKey":null`, `"partitionKey":{}`},
 		{`"valuesPersisted":false`, `"valuesPersisted":true`}, {`"name":"ct0"`, `"name":"auth_token"`},
-		{`"sameSite":"Unspecified"`, `"sameSite":"invalid"`}, {`"priority":"Medium"`, `"priority":"Medium","value":"PRIVATE"`}} {
+		{`"sameSite":"Unspecified"`, `"sameSite":"invalid"`}, {`"priority":"Medium"`, `"priority":"Medium","value":"PRIVATE"`},
+		{`"kind":"string"`, `"kind":"PRIVATE"`}, {`"kind":"string","matches":true`, `"kind":"string","matches":false`},
+		{`"kind":"string","matches":true`, `"kind":"string","matches":true,"value":"PRIVATE"`},
+		{`"time_zone":{"kind":"null","matches":true}`, `"time_zone":{"kind":"object","matches":false}`}} {
 		bad := bytes.Replace(positive, []byte(change[0]), []byte(change[1]), 1)
 		if _, err := decodeXQASourceQualification(bad); err == nil {
 			t.Fatal("unsafe cookie metadata accepted")
@@ -215,7 +272,8 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 }
 
 func TestXQASourceQualification(t *testing.T) {
-	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
+	typesOnly := os.Getenv("AKU_X_QA_SETTINGS_TYPES_ONLY") == "1"
+	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || !typesOnly && os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
 		t.Skip("requires explicit retained QA cookie-read authorization")
 	}
 	_, file, _, _ := runtime.Caller(0)
@@ -294,12 +352,19 @@ func TestXQASourceQualification(t *testing.T) {
 		t.Fatal("retained QA login unavailable; no login attempted")
 	}
 	var raw json.RawMessage
-	if bridge.rpc(ctx, "qualify_source", map[string]any{"owner": owner.owner}, &raw) != nil {
+	op := "qualify_source"
+	if typesOnly {
+		op = "qualify_settings_types"
+	}
+	if bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
 		t.Fatal("bounded QA qualification failed")
 	}
 	report, err := decodeXQASourceQualification(raw)
 	if err != nil {
 		t.Fatal("QA diagnostic report rejected")
+	}
+	if typesOnly && report.Cookies != nil {
+		t.Fatal("settings-only run returned unexpected cookie metadata")
 	}
 	graceful, err := finishXQASourceRun(func() bool {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 7*time.Second)

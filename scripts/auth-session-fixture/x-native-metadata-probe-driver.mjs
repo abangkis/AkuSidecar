@@ -1332,13 +1332,14 @@ async function startObservation(message) {
   return bodyMode(driverMode) ? { metadata: report, accountSettings } : report;
 }
 
-async function qualifySource(message) {
+async function qualifySource(message, typesOnly = false) {
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse) throw probeError('qualification_mode_required');
   const current = requireOwner(message);
   if (!current.gate.loginVisible || current.qualificationAttempted) throw probeError('qualification_gate_closed');
   current.qualificationAttempted = true;
   const { accountSettings: source } = await startObservation(message);
   return finishQASourceQualification(source, {
+    inspectCookies: !typesOnly,
     readHome: async () => {
       requireOwner(message);
       const result = await send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION,
@@ -1369,6 +1370,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_settings_types':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifySource(message, true);
     case 'qualify_source':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifySource(message);

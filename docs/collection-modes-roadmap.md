@@ -5571,6 +5571,15 @@ do not infer login or expand transfer from cookie presence. Job cleanup, clean
 retained lease and disposable-root deletion were verified. These are partial
 native findings inside MVP-1, not main-dev activation or Store authorization.
 
+After that eight-file delta was published as `9ad4ab9`, the authorized fixed
+type probe localized the mismatch: `time_zone` is an object; the existing
+predicate accepts only string/null. All other five settings types matched.
+Run `2fc104cde2444bc891a2f105b3da08a4` passed forty Node/seven Go offline cases
+and native QA without cookie reads, nested-value projection or login attempts.
+Cleanup and clean retained ownership were verified. The predicate is deliberately
+unchanged. Next review this observed metadata type, then qualify protected-source
+semantics; this is remaining work within MVP-1, not a new roadmap or activation.
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated

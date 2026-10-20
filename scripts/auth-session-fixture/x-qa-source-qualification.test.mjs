@@ -48,6 +48,25 @@ test('bounded settings projection checks types but never claims authentication o
     assert.equal(projectQASourceBody({ body: text, base64Encoded: false }).contractMatches, null);
   }
 });
+test('six fixed field kinds identify mismatches without values, object keys or contract relaxation', () => {
+  const value = JSON.parse(body().body);
+  value.time_zone = { PRIVATE_TIMEZONE_KEY: 'PRIVATE_TIMEZONE_VALUE' };
+  value.protected = 'PRIVATE_STRING';
+  delete value.discoverable_by_email;
+  value.discoverable_by_mobile_phone = ['PRIVATE_ARRAY_ITEM'];
+  const result = projectQASourceBody({ body: JSON.stringify(value), base64Encoded: false });
+  assert.deepEqual(result.settingsFields, {
+    language: { kind: 'string', matches: true }, time_zone: { kind: 'object', matches: false },
+    protected: { kind: 'string', matches: false }, always_use_https: { kind: 'boolean', matches: true },
+    discoverable_by_email: { kind: 'absent', matches: false }, discoverable_by_mobile_phone: { kind: 'array', matches: false },
+  });
+  assert.equal(result.contractMatches, false);
+  assert.equal(JSON.stringify(result).includes('PRIVATE'), false);
+  const encoded = projectQASourceBody({ body: Buffer.from(JSON.stringify(value)).toString('base64'), base64Encoded: true });
+  assert.deepEqual(encoded.settingsFields, result.settingsFields);
+  const malformed = projectQASourceBody({ body: '{', base64Encoded: false });
+  assert.equal(malformed.settingsFields, null);
+});
 test('one same-frame natural response pins the exact route, ignores separate OPTIONS and consumes one read', async () => {
   const { selected, reads } = capture();
   selected.observe('Network.requestWillBeSent', request('options', URL, 'OPTIONS'));
@@ -100,6 +119,16 @@ test('post-observation fixed Home read precedes one scoped cookie read without r
   }
   await assert.rejects(finishQASourceQualification(source, { readHome: async () => { throw new Error('PRIVATE'); }, readCookies() {} }),
     error => error.message === 'qa_source_finalization_failed');
+});
+test('settings-only finalization cannot invoke a cookie reader even when the source and Home succeed', async () => {
+  const { selected } = capture(); selected.observe('Network.requestWillBeSent', request()); complete(selected);
+  const source = await selected.finish(); let reads = 0;
+  const result = await finishQASourceQualification(source, { inspectCookies: false, readHome: async () => true,
+    readCookies() { reads++; throw new Error('cookie read forbidden'); } });
+  assert.equal(reads, 0); assert.equal(result.cookies, null);
+  assert.equal(result.schema, 'aku.x.qa-source-qualification.v2');
+  assert.deepEqual(result.source.settingsFields, projectQASourceBody(body()).settingsFields);
+  assert.equal(result.canAuthorize, false); assert.equal(result.sessionTransferred, false);
 });
 test('cookie absence, scope shadows, expiry and unsupported state remain separate named outcomes', () => {
   const cases = [[[], 'missing'], [[cookie(), cookie()], 'ambiguous'],
