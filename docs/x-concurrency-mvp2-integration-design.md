@@ -1,11 +1,14 @@
 # X concurrency MVP-2 integration design
 
-Status: the first offline synthetic controller increment was explicitly authorized,
-implemented and validated on 2026-10-21. Native observation/session transfer,
-database access, Store modification, main/broker wiring, installation and
-user-runtime operations remain excluded. The integration surfaces marked proposed
-below are future interfaces, not available flags or endpoints. This document
-does not itself grant execution permission.
+Status: the first offline synthetic controller increment was reviewed and
+published as `e87c1b27e730b61d0d4c99a819b43035332a40d8`, with origin/main
+verified. On 2026-10-21 the user additionally authorized default-off
+main/broker/Coordinator wiring and integrated synthetic testing. That increment
+is implemented with in-memory owners and admission; see its validation checkpoint
+below. Native observation/session transfer, database access, Store
+modification, installation and user-runtime operations remain excluded. Proposed
+native integration surfaces below remain unavailable. This document does not
+itself grant execution permission.
 
 ## Accepted baseline and immediate outcome
 
@@ -221,10 +224,10 @@ retains windows; parent death leaves no child; failed cleanup blocks replacement
 Reuse existing lease/queue/Job evidence where unchanged, but do not claim a fake
 backend tests Chrome locking, foreground behavior or durable Store transactions.
 
-After that controller qualifies, separately authorize tagged main/broker/Coordinator
-wiring and integrated synthetic acceptance. Any use of a disposable database,
-Store interaction or new native transfer requires an explicit scoped approval;
-none is inferred from approval of this design. The native provider/metadata
+The controller qualified and the user subsequently authorized tagged
+main/broker/Coordinator wiring and integrated synthetic acceptance. Any use of a
+disposable database, Store interaction or new native transfer still requires an
+explicit scoped approval; none is inferred from that authorization. The native provider/metadata
 compatibility decision remains a release gate, not a reason to repeat completed
 MVP-1 experiments. MVP-3 still owns focused integrated acceptance and separately
 approved main-dev activation. No calendar estimate is implied by these milestones.
@@ -272,3 +275,66 @@ only the explicit synthetic independent-collector capability plus a fresh proof
 and permit can reopen collection. It does not establish native session continuity.
 Parent cancellation exercises the fake ownership contract, not actual process
 termination. Queued work is retained only in memory, without restart durability.
+
+## Main, broker and Coordinator synthetic wiring (2026-10-21)
+
+The next authorized increment adds the exact provider
+`--dev --dev-session-reuse=synthetic-concurrent-fixture` to the existing early
+Windows fixture dispatch. It requires both `auth_session_dev` and
+`auth_session_fixture`; ordinary and single-tag executables reject the provider.
+The dispatch runs before `config.Load`, Store initialization, provider startup
+and app-shell launch. The strict, size-limited input selects only built-in
+synthetic scenarios. Its fixture grant is an explicit synthetic selector, not a
+native credential or an account/session attestation. No environment-only switch
+or saved setting activates this path.
+
+The Engine facade reuses the private controller with two actual capture Managers
+backed by invented in-memory Processes. Coordinator's new route defaults to nil;
+its binding API exists only in the dual-tag fixture. The separate reader Manager
+supplies native-reader leases while the collector's Manager and generation stay
+fixed. Concurrent binding rejects exclusive/development strategies, browser
+collection and non-X source selection. A blocked synthetic CaptureBackend and
+memory sink exercise the dispatch/result boundary without Store access.
+
+The tagged broker adapter reuses the existing bounded frame and Request
+validation, then calls the synthetic reader route. Its reply contains only a
+synthetic acceptance flag. It does not expose a native target or claim foreground
+activation, and opens no OS pipe, native messaging host, registry key or listener.
+The invented X post URL is validated as data and is never navigated.
+
+`scripts/test-concurrency-integration.ps1` builds actual main executables in four
+tag modes under a unique project-local QA root. Explicit rejection cases and
+positive synthetic scenarios use missing configuration/database sentinel paths;
+those paths must stay absent. This tests early executable dispatch and real
+Coordinator/Manager code with fake owners. It cannot establish Chrome behavior,
+OS child/Job termination, durable ingestion or native provider authority. Source
+publication and these synthetic tests do not activate the user's dev runtime.
+
+Run the integration helper from the repository root:
+
+```powershell
+.\scripts\test-concurrency-integration.ps1
+```
+
+The helper executes built-in scenarios for active capture/reader overlap,
+bootstrap and multiple-window accounting, fresh independent continuation and
+dependent denial after last close, expired proof, cancellation, revocation,
+parent cancellation, opt-out, collector exit and strategy/broker rejection. It
+checks that a parent cancellation reaches the blocked backend, and that the real
+Manager exit observer fences an unexpectedly exited fake collector. Success is
+emitted only after capture/reconciliation drain and verification of fake process,
+window, owner and lease cleanup. No model result is promoted to native authority.
+
+Accepted integrated run `e7e4f5da31f442a59fcf09ce3c00a2a0` passed four actual-main
+build modes, 11 early-dispatch rejection cases, 11 synthetic scenarios, the
+absent-config/database sentinel check and three focused ordinary Coordinator
+regressions. The retained log is
+`runtime/qa/auth-session-sidecar/concurrent-integration-e7e4f5da31f442a59fcf09ce3c00a2a0.log.txt`;
+the owned temporary executable/build root was removed. The unchanged controller
+source and controller-only helper retain their earlier accepted evidence.
+
+Both strategy bind directions and the legacy headless-backend setter/alias reject
+mutation after concurrent binding. The next ownership-backend increment must
+qualify actual Chrome behavior on this routing without treating the fake PID or
+Done event as OS tree cleanup. Native provider/profile/revision compatibility
+still needs its separate decision before Store-backed or real-session ingestion.

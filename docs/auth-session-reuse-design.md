@@ -10,6 +10,12 @@ No Store or native permit is involved. Native profile-pair,
 provider/version and accepted-revision compatibility must be reviewed separately
 before real ingestion. Main-dev activation remains separately authorized work.
 
+The subsequent authorized synthetic wiring now reaches actual main's early
+dispatch, framed broker validation and Coordinator with separate Managers and
+fake Processes; see the
+[wiring checkpoint](x-concurrency-mvp2-integration-design.md#main-broker-and-coordinator-synthetic-wiring-2026-10-21).
+It still uses memory-only work and result state, with no database or Store calls.
+
 Short native feasibility is now accepted (2026-10-20): synchronized QA run
 `90f3e12182b2494ba7933511ac3150a5` used the unchanged two-cookie manifest,
 passed four private same-account/login checkpoints without another login,

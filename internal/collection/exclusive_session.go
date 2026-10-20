@@ -19,17 +19,23 @@ type ExclusiveSessionHooks struct {
 }
 
 func (c *Coordinator) BindExclusiveSession(h ExclusiveSessionHooks) error {
-	if c.fixtureHooks != nil || h.BeforeReader == nil || h.BeforeHeadless == nil || h.HeadlessReady == nil || h.Paused == nil {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.concurrentSession != nil || c.fixtureHooks != nil || h.BeforeReader == nil || h.BeforeHeadless == nil || h.HeadlessReady == nil || h.Paused == nil {
 		return errors.New("invalid synthetic exclusive hooks")
 	}
 	c.fixtureHooks = &syntheticExclusiveHooks{h.BeforeReader, h.BeforeHeadless, h.HeadlessReady, h.Paused}
 	return nil
 }
 
-func (c *Coordinator) SetExclusiveHeadlessCollector(generation uint64, backend CaptureBackend) {
+func (c *Coordinator) SetExclusiveHeadlessCollector(generation uint64, backend CaptureBackend) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.concurrentSession != nil {
+		return errors.New("concurrent strategy already bound")
+	}
 	c.fixtureHeadlessGeneration, c.fixtureHeadless = generation, backend
+	return nil
 }
 
 func (c *Coordinator) ExclusiveReaderPending() bool {
@@ -38,11 +44,15 @@ func (c *Coordinator) ExclusiveReaderPending() bool {
 	return c.interactive > 0 || (c.nativeReaderGeneration != 0 && c.nativeReaderGeneration == c.owner.Snapshot().Generation)
 }
 
-func (c *Coordinator) SetDevelopmentSession(enabled bool, sources ...domain.Source) {
+func (c *Coordinator) SetDevelopmentSession(enabled bool, sources ...domain.Source) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.concurrentSession != nil {
+		return errors.New("concurrent strategy already bound")
+	}
 	c.developmentSession = enabled
 	c.developmentSources = append([]domain.Source(nil), sources...)
+	return nil
 }
 
 func (c *Coordinator) ExclusiveSessionBound() bool { return c.fixtureHooks != nil }

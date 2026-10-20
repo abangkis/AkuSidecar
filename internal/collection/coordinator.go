@@ -92,6 +92,14 @@ type Coordinator struct {
 	developmentSources        []domain.Source
 	fixtureHeadless           CaptureBackend
 	fixtureHeadlessGeneration uint64
+	concurrentSession         *syntheticConcurrentHooks
+}
+
+// Only dual-tag fixture wiring can populate this default-nil route.
+type syntheticConcurrentHooks struct {
+	reader        *captureruntime.Manager
+	beforeReader  func(context.Context) error
+	beforeCapture func(context.Context) error
 }
 
 // Explicit auth_session_fixture or auth_session_dev builds supply these hooks.
@@ -146,7 +154,13 @@ func (c *Coordinator) SetHeadlessReadiness(check func() error) { c.readiness = c
 func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) error {
 	c.mu.Lock()
 	development := c.developmentSession
+	concurrent := c.concurrentSession != nil
 	c.mu.Unlock()
+	if concurrent {
+		if mode != "headless" || len(sources) != 1 || sources[0] != domain.SourceX {
+			return errors.New("synthetic concurrency requires X headless collection")
+		}
+	}
 	if development && mode != "headless" {
 		return errors.New("development session requires headless collection")
 	}
@@ -167,7 +181,7 @@ func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) er
 }
 func (c *Coordinator) Request(mode string) {
 	c.mu.Lock()
-	if c.developmentSession && mode != "headless" {
+	if (c.developmentSession || c.concurrentSession != nil) && mode != "headless" {
 		c.failure = "development session requires headless collection"
 		c.mu.Unlock()
 		return
@@ -284,6 +298,12 @@ func (c *Coordinator) StartWithDone(ctx context.Context) <-chan struct{} {
 }
 func (c *Coordinator) reconcile(parent context.Context) {
 	c.mu.Lock()
+	if c.concurrentSession != nil {
+		// Concurrent fixture ownership is fixed. Reader intent and retries cannot
+		// replace, recover or adopt the collector through exclusive reconciliation.
+		c.mu.Unlock()
+		return
+	}
 	wakeAt := c.wakeAt
 	c.wakeAt = time.Time{}
 	mode := c.requested
@@ -382,6 +402,18 @@ func (c *Coordinator) BorrowBrowser(ctx context.Context) (*captureruntime.Lease,
 
 func (c *Coordinator) BorrowNativeReader(ctx context.Context) (*captureruntime.Lease, func(), error) {
 	c.mu.Lock()
+	concurrent := c.concurrentSession
+	if concurrent != nil {
+		c.mu.Unlock()
+		if err := concurrent.beforeReader(ctx); err != nil {
+			return nil, nil, err
+		}
+		lease, err := concurrent.reader.Acquire()
+		if err != nil {
+			return nil, nil, err
+		}
+		return lease, func() {}, nil
+	}
 	c.nativeReaders++
 	c.mu.Unlock()
 	lease, release, err := c.borrowBrowserMode(ctx, false, true)
@@ -417,6 +449,12 @@ func (c *Coordinator) BorrowBrowserCollection(ctx context.Context, source domain
 // must drain/release its previous session lease before waiting for replacement;
 // acquiring a Browser lease while retaining a headless lease would deadlock.
 func (c *Coordinator) BeginBrowserCollection(source domain.Source) (func(), error) {
+	c.mu.Lock()
+	concurrent := c.concurrentSession != nil
+	c.mu.Unlock()
+	if concurrent {
+		return nil, errors.New("synthetic concurrency browser collection unavailable")
+	}
 	if source != domain.SourceFacebook {
 		return nil, errors.New("source has no browser collection exception")
 	}
@@ -429,7 +467,11 @@ func (c *Coordinator) borrowBrowser(ctx context.Context, collectionBorrow bool) 
 func (c *Coordinator) borrowBrowserMode(ctx context.Context, collectionBorrow, nativeReader bool) (*captureruntime.Lease, func(), error) {
 	c.mu.Lock()
 	development := c.developmentSession
+	concurrent := c.concurrentSession != nil
 	c.mu.Unlock()
+	if concurrent {
+		return nil, nil, errors.New("synthetic concurrency exclusive browser unavailable")
+	}
 	if development && !nativeReader {
 		return nil, func() {}, errors.New("development session browser collection unavailable")
 	}
@@ -507,11 +549,22 @@ func (c *Coordinator) beginBrowserBorrow(collectionBorrow bool) func() {
 }
 func (c *Coordinator) Capture(ctx context.Context, source domain.Source, payload map[string]any) (domain.Observation, error) {
 	c.mu.Lock()
+	concurrent := c.concurrentSession
+	c.mu.Unlock()
+	if concurrent != nil {
+		if source != domain.SourceX {
+			return domain.Observation{}, errors.New("synthetic concurrency requires X")
+		}
+		if err := concurrent.beforeCapture(ctx); err != nil {
+			return domain.Observation{}, err
+		}
+	}
+	c.mu.Lock()
 	s := c.owner.Snapshot()
 	var process CaptureBackend
 	if s.State == captureruntime.Ready && s.Driver == "headless" && c.headless != nil {
 		process = c.headless
-	} else if s.State == captureruntime.Ready && s.Driver == "headless" && c.fixtureHooks != nil && c.fixtureHeadlessGeneration == s.Generation {
+	} else if s.State == captureruntime.Ready && s.Driver == "headless" && (c.fixtureHooks != nil || concurrent != nil) && c.fixtureHeadlessGeneration == s.Generation {
 		process = c.fixtureHeadless
 	} else if s.State == captureruntime.Ready && s.Driver == "browser" && c.browserGeneration == s.Generation && (source == "x" || source == "facebook") {
 		process = c.browserCollector

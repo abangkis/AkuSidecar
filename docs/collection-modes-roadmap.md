@@ -1,5 +1,23 @@
 # Browser and headless collection roadmap
 
+### MVP-2 synthetic main/broker/Coordinator wiring (2026-10-21)
+
+The offline controller was reviewed and published as `e87c1b2`, with remote main
+verified. The next user-authorized increment wires it through actual main's early
+dual-tag fixture dispatch, bounded framed broker routing and Coordinator with
+two real Managers backed by fake Processes. The collector remains headless and
+fixed while reader leases come from the other Manager. Use
+`scripts/test-concurrency-integration.ps1` and the
+[wiring checkpoint](x-concurrency-mvp2-integration-design.md#main-broker-and-coordinator-synthetic-wiring-2026-10-21)
+for the integrated synthetic evidence and limits. No Store interaction, native
+session transfer or user-runtime activation is included. Actual Chrome behavior
+on this new wiring, native provider/profile/revision compatibility and eventual
+explicit pilot activation remain separate acceptance work inside MVP-2/MVP-3.
+
+Integrated run `e7e4f5da31f442a59fcf09ce3c00a2a0` passed four actual-main build
+modes, 11 rejection cases, 11 synthetic scenarios, absent-config/database
+sentinels and three ordinary Coordinator regressions; owned QA cleanup passed.
+
 ### MVP-2 offline controller increment (2026-10-21)
 
 The first private synthetic controller and regression tests are implemented;

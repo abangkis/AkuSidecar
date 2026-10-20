@@ -1,5 +1,26 @@
 # Local one-login concurrency fixture
 
+## Synthetic main, broker and Coordinator integration
+
+Run `.\scripts\test-concurrency-integration.ps1` from the repository root. This
+offline helper builds actual main in four tag modes and tests the explicit
+`--dev --dev-session-reuse=synthetic-concurrent-fixture` early fixture dispatch.
+It uses only built-in synthetic input and two capture Managers with invented
+Processes, framed broker buffers and memory work/results. It opens no Store,
+database, Chrome/profile, native messaging host, listener, registry entry or UI.
+Missing configuration/database sentinel paths must remain absent. Owned QA
+executables are hidden, bounded and removed after exit; the synthetic log remains.
+The [wiring checkpoint](../../docs/x-concurrency-mvp2-integration-design.md#main-broker-and-coordinator-synthetic-wiring-2026-10-21)
+records validation and limits. This does not activate the user's dev runtime or
+establish native foreground, Chrome ownership or durable admission guarantees.
+
+Accepted run `e7e4f5da31f442a59fcf09ce3c00a2a0` passed four actual-main build
+modes, 11 rejection cases, 11 synthetic scenarios, the absent-config/database
+sentinel check and three ordinary Coordinator regressions. Its log is
+`runtime/qa/auth-session-sidecar/concurrent-integration-e7e4f5da31f442a59fcf09ce3c00a2a0.log.txt`;
+the unique temporary build root was removed. The earlier controller-only evidence
+below is reused because that controller and its helper are unchanged.
+
 ## Offline synthetic pair controller
 
 `scripts/test-concurrency-controller.ps1` is the separate controller-only
