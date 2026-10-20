@@ -1,9 +1,11 @@
 # X concurrency MVP-2 integration design
 
-Status: design only, 2026-10-20. No implementation, native observation, session
-transfer, database access, Store modification, installation or user-runtime
-operation is authorized by this document. All names marked proposed below are
-future interfaces, not available flags or endpoints.
+Status: the first offline synthetic controller increment was explicitly authorized,
+implemented and validated on 2026-10-21. Native observation/session transfer,
+database access, Store modification, main/broker wiring, installation and
+user-runtime operations remain excluded. The integration surfaces marked proposed
+below are future interfaces, not available flags or endpoints. This document
+does not itself grant execution permission.
 
 ## Accepted baseline and immediate outcome
 
@@ -201,13 +203,13 @@ unaware builds, and never delete required markers to make collection resume.
 The exact future format needs its guard-aware upgrade/downgrade matrix before
 native activation. No rollback, migration or runtime opt-out is executed here.
 
-## Small implementation proposal and acceptance
+## First implementation and acceptance boundary
 
-The next proposed change is an offline synthetic pair controller with fake
-processes, verifier, reader router and in-memory capture sink. Likely new tagged
-files are `internal/engine/development_concurrent_session.go` and its tests;
-final locations should follow the actual interface extraction. No existing
-single-profile contract is modified to accept two profiles.
+The first implementation is an offline synthetic pair controller with fake
+processes, verifier, reader router and in-memory capture sink. Its private tagged
+source is `internal/engine/development_concurrent_session.go`, with a separate
+regression test file. No existing single-profile contract is modified to accept
+two profiles.
 
 Required behavioral cases are: default/unsupported mode has zero side effects;
 distinct profile ownership; admission closed before startup; reader opens during
@@ -226,3 +228,47 @@ none is inferred from approval of this design. The native provider/metadata
 compatibility decision remains a release gate, not a reason to repeat completed
 MVP-1 experiments. MVP-3 still owns focused integrated acceptance and separately
 approved main-dev activation. No calendar estimate is implied by these milestones.
+
+## Offline controller implementation checkpoint (2026-10-21)
+
+The authorized increment contains only private synthetic controller/test sources
+under both `auth_session_dev` and `auth_session_fixture`, plus the local regression
+helper `scripts/test-concurrency-controller.ps1`. There is no new main option,
+HTTP/native activation endpoint, environment switch or production binding. The
+first harness uses invented values, fake owner/process/verifier ports, memory
+work state and a memory result sink. No browser/profile/database is opened.
+
+The helper checks source inclusion in ordinary, development-only, fixture-only
+and dual-tag builds. It then runs named-file tests for just the new controller
+and its test file, deliberately excluding other Engine/Store tests and package
+initializers. Named-file testing alone would not establish build-tag exclusion;
+the separate four-mode source inspection supplies that check. Build artifacts
+stay in a unique project-local QA root, with a retained synthetic log and guarded
+temporary-root cleanup. There is no native-run mode in this helper.
+
+Accepted offline run `106377b1916348b3b40b0b81c32f1322` passed all four tag
+gates, 14 top-level tests and 34 subtests. The retained evidence is
+`runtime/qa/auth-session-sidecar/concurrent-controller-106377b1916348b3b40b0b81c32f1322.log.txt`;
+the unique temporary build root was removed. Coverage includes reader opens
+during active work, bootstrap/multiple-window ownership, fresh independent
+collector continuation, proof/challenge/account/revision rejection, owner and
+cross-controller ticket fencing, duplicate/cancelled/stale results, collector
+loss, opt-out, parent cancellation during a blocked probe, foreign-owner safety
+and cleanup failure. Pending permit revocation blocks continuation; late failure
+atomically fences admission and active results. Negative cleanup cases explicitly
+expect unverified cleanup instead of accepting an uncertain owner as absent.
+
+These tests qualify the new in-memory state machine and lifecycle contract.
+They cannot qualify actual Manager/Coordinator/main wiring, Windows Job behavior,
+Chrome profile locking, foreground UI, durable queue transactions, real provider
+revision semantics or native authorization. Existing accepted X overlap evidence
+is unchanged and must not be rerun merely for this increment.
+
+This increment has no automatic proof refresh, collector replacement or reader
+reopening after its owner has retired. Ticket issuance, claims, reader opens and
+result acceptance check proof freshness; expiry holds admission rather than
+refreshing credentials. Last-reader closure fences active work before retirement;
+only the explicit synthetic independent-collector capability plus a fresh proof
+and permit can reopen collection. It does not establish native session continuity.
+Parent cancellation exercises the fake ownership contract, not actual process
+termination. Queued work is retained only in memory, without restart durability.

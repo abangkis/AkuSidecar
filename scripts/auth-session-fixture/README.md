@@ -1,5 +1,21 @@
 # Local one-login concurrency fixture
 
+## Offline synthetic pair controller
+
+`scripts/test-concurrency-controller.ps1` is the separate controller-only
+regression helper. It has no native-run option and uses no account, profile,
+browser, Store or database. It checks the dual build-tag boundary, then tests
+only the named controller/test files with fake lifecycle/verifier ports and an
+in-memory work/result sink. No production or main/broker integration is enabled.
+The [MVP-2 implementation checkpoint](../../docs/x-concurrency-mvp2-integration-design.md#offline-controller-implementation-checkpoint-2026-10-21)
+records scope and remaining integration limits. These model tests do not replace
+the existing actual-Chrome overlap/cleanup evidence below.
+
+Offline run `106377b1916348b3b40b0b81c32f1322` passed four build-tag gates,
+14 top-level tests and 34 subtests. Its synthetic log is retained under
+`runtime/qa/auth-session-sidecar/concurrent-controller-106377b1916348b3b40b0b81c32f1322.log.txt`;
+the owned temporary build root was removed.
+
 ## Separate retained-X short concurrency feasibility (2026-10-20)
 
 Latest accepted result: opt-in `-SynchronizeCheckpoints`, combined with

@@ -3,10 +3,12 @@
 The current MVP-2 design is [X concurrency integration](x-concurrency-mvp2-integration-design.md).
 It selects a separate default-off pair controller and reader route while keeping
 the Engine/Coordinator capture manager dedicated to headless work. The first
-proposed implementation is an offline synthetic controller with an in-memory
-admission/sink port; no Store or native permit is involved. Native profile-pair,
+offline synthetic controller increment is authorized and isolated behind both
+fixture/development build tags, with an in-memory admission/sink port; see its
+[implementation checkpoint](x-concurrency-mvp2-integration-design.md#offline-controller-implementation-checkpoint-2026-10-21).
+No Store or native permit is involved. Native profile-pair,
 provider/version and accepted-revision compatibility must be reviewed separately
-before real ingestion. This design does not implement or activate the feature.
+before real ingestion. Main-dev activation remains separately authorized work.
 
 Short native feasibility is now accepted (2026-10-20): synchronized QA run
 `90f3e12182b2494ba7933511ac3150a5` used the unchanged two-cookie manifest,

@@ -1,5 +1,16 @@
 # Browser and headless collection roadmap
 
+### MVP-2 offline controller increment (2026-10-21)
+
+The first private synthetic controller and regression tests are implemented;
+offline validation passed four build-tag gates, 14 top-level tests and 34 subtests.
+It is isolated behind both fixture/development build tags, with fake owner and
+verifier ports and in-memory admission/work/result state. Follow the
+[implementation checkpoint](x-concurrency-mvp2-integration-design.md#offline-controller-implementation-checkpoint-2026-10-21)
+for validation and limits. This advances the controller subtask inside MVP-2;
+main/broker/Coordinator wiring and integrated synthetic acceptance remain next.
+It does not authorize Store access, a native transfer or runtime activation.
+
 ### MVP-2 default-off integration design (2026-10-20)
 
 The synchronized 16-file delta was reviewed and published as
