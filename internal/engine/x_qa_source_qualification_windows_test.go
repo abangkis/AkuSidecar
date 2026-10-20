@@ -411,6 +411,7 @@ func TestXQASourceQualification(t *testing.T) {
 	authControl := os.Getenv("AKU_X_QA_AUTH_CONTROL") == "1"
 	directAB := os.Getenv("AKU_X_QA_DIRECT_AB") == "1"
 	webABA := os.Getenv("AKU_X_QA_WEB_ABA") == "1"
+	web401 := os.Getenv("AKU_X_QA_WEB_401") == "1"
 	typesOnly = typesOnly || authControl || directAB || webABA
 	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || !typesOnly && os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
 		t.Skip("requires explicit retained QA cookie-read authorization")
@@ -504,10 +505,17 @@ func TestXQASourceQualification(t *testing.T) {
 	if webABA {
 		op = "qualify_web_aba"
 	}
+	if web401 {
+		op = "qualify_web_401"
+	}
 	if bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
 		t.Fatal("bounded QA qualification failed")
 	}
-	if webABA {
+	if web401 {
+		if _, err := decodeXQAWeb401(raw); err != nil {
+			t.Fatal("QA bounded rejection comparison rejected")
+		}
+	} else if webABA {
 		if _, err := decodeXQAWebABA(raw); err != nil {
 			t.Fatal("QA web A/B/A comparison rejected")
 		}

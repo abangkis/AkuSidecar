@@ -20,6 +20,7 @@ import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookie
 import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } from './x-qa-auth-control.mjs';
 import { QADirectCapture, qaABCommand, QA_AB_URL, projectQADirectBody, finishQADirectAB } from './x-qa-direct-ab.mjs';
 import { qaWebCommand, QA_WEB_INSTALL, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE, validateQAWebHook, finishQAWebABA } from './x-qa-web-aba.mjs';
+import { projectQA401Body, finishQAWeb401 } from './x-qa-401-projection.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -574,6 +575,12 @@ function projectCDPResult(method, result, projectionKind = null) {
     }
     case 'Network.getResponseBody':
       if (!bodyMode(driverMode)) throw probeError('body_mode_required');
+      if (projectionKind === 'qa_web_401') {
+        if (!active?.webABA?.qualify401 || active.webABA.rejection !== null) throw probeError('qa_rejection_read_replayed');
+        const projected = projectQA401Body(result);
+        active.webABA.rejection = projected.rejection;
+        return projected.body;
+      }
       if (projectionKind === 'qa_ab' || projectionKind === 'qa_web') return projectQADirectBody(result);
       return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
     case 'Network.getCookies':
@@ -818,6 +825,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     }
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  if (webCommand && method === 'Network.getResponseBody' && webState.qualify401 && webState.stage === 'b') projectionKind = 'qa_web_401';
   if (method === 'Debugger.evaluateOnCallFrame') {
     if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || active.gate.observationStarted ||
         sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture)) {
@@ -1546,7 +1554,7 @@ async function webABAPhase(current, stage, frameId, action) {
   return state.capture.finish();
 }
 
-async function qualifyWebABA(message) {
+async function qualifyWebABA(message, qualify401 = false) {
   const current = requireOwner(message);
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
       current.gate.observationStarted || current.webABAAttempted) throw probeError('qa_web_aba_gate_closed');
@@ -1557,7 +1565,7 @@ async function qualifyWebABA(message) {
     returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId);
   const before = await home();
   if (!before) throw probeError('qa_web_home_required');
-  const state = current.webABA = { running: true, stage: 'setup', reloaded: false, bStarted: false };
+  const state = current.webABA = { running: true, stage: 'setup', reloaded: false, bStarted: false, qualify401, rejection: null };
   let a, b = null, aAgain, hook, removed = false;
   try {
     state.scriptId = (await send('Page.addScriptToEvaluateOnNewDocument', { source: QA_WEB_INSTALL }, current.sessionId)).identifier;
@@ -1583,7 +1591,8 @@ async function qualifyWebABA(message) {
     await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: state.scriptId }, current.sessionId);
     state.scriptId = null; removed = disposed.value && hook.disposed;
     aAgain = await webABAPhase(current, 'a_again', frameId, reload);
-    return finishQAWebABA(a, b, aAgain, hook, before, await home(), removed);
+    const base = finishQAWebABA(a, b, aAgain, hook, before, await home(), removed);
+    return qualify401 ? finishQAWeb401(base, state.rejection) : base;
   } finally {
     // The owned Job remains the final cleanup authority on any partial failure.
     if (state.scriptId) {
@@ -1609,6 +1618,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_web_401':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyWebABA(message, true);
     case 'qualify_web_aba':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifyWebABA(message);

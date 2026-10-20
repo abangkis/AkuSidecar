@@ -365,6 +365,18 @@ authentication unknown until a bounded rejection projection rules out the
 relevant alternatives. No new login, Store policy or user runtime access is
 needed for this control. Account binding and native continuity remain separate.
 
+The authorized [bounded rejection projection](../scripts/auth-session-fixture/README.md#bounded-401-rejection-checkpoint-2026-10-20)
+later reproduced 200/401/200 with a single code-32 envelope and a private canonical
+message match on B. The V2 report records provider_authentication_error and
+cookie_auth_rejection_observed without native messages, arbitrary codes or raw
+bodies. This resolves the rejection-meaning checkpoint for the tested request-
+local no-cookie control. Unknown codes, message drift, conflicts and invalid
+brackets fail closed. It does not establish fully guest semantics, account
+binding, durable native continuity or sufficiency of only the two candidate
+cookies; B omitted all browser-managed cookies. Store/production authority and
+session transfer remain unauthorized. Reuse this result when integrating the
+remaining evidence, rather than repeating broad source discovery.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

@@ -456,6 +456,71 @@ were unchanged; no extra QA or login repetition was needed. Next qualify the
 to authenticated-source evidence. Actual account binding, continuity and any
 session transfer remain separate authorization/evidence gates within MVP-1.
 
+### Bounded 401 rejection checkpoint (2026-10-20)
+
+The natural-web 11-file delta was reviewed and published as `2696b5a` (remote
+SHA verified). Subsequent authorization adds a value-free rejection projection
+to the same retained-QA A/B/A sequence; the hook/request/header boundaries and
+number of body reads are unchanged:
+
+```powershell
+# Offline regression checks only:
+.\scripts\test-x-qa-source.ps1
+# Explicit retained-QA authorization; reuse the existing login:
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -WebAuthenticationABA -Web401Projection
+```
+
+The new fixed `qualify_web_401` RPC accepts only its owner. It projects B's one
+eligible response at private CDP dispatch before returning the existing body
+category to the capture. The projector reuses strict 16 KiB UTF-8/base64 and
+duplicate-key/depth/token validation. Only a root containing exactly one errors
+entry with exactly numeric code/message fields can qualify. The code must be
+32, and the bounded message must privately match the reviewed canonical form.
+The [official legacy X error table](https://developer.x.com/en/support/twitter-api/error-troubleshooting)
+classifies code 32 as a request-authentication-data error. This fixture predicate
+is deliberately stricter than code-only matching: message drift remains unknown.
+
+Projection `aku.x.qa-rejection.v1` has only schema, shape, codeClass, messageMatch
+and classification. The only disclosed numeric-code identity is the fixed enum
+code_32; other valid numbers collapse to other. Unknown/mixed error arrays,
+extra root/entry fields, nonnumeric codes, message drift, malformed and oversized
+bodies cannot produce provider_authentication_error. No message, arbitrary code,
+body key, account ID or credential-derived fingerprint is exported or persisted.
+The existing WebAuthenticationABA mode/report remains V1; it is not silently
+reinterpreted. The opt-in projection emits `aku.x.qa-web-aba.v2`, with an extra
+rejection DTO. Independent Go validation rejects unknown/reflected fields,
+recomputes the DTO classification and validates the original A/B/A bracket.
+
+Only a fresh valid 200/settings_match A, a 401/error_envelope B with the narrow
+provider error, another 200/settings_match A, completed non-rejected hook and
+verified hook removal can yield cookie_auth_rejection_observed. This qualifies
+the provider-reported meaning of B in this tested control. It does not prove
+every internal reason for the provider's response, a wholly guest request,
+specific-account binding, native continuity or the sufficiency of auth_token/ct0
+alone: B omitted all browser-managed cookies, while opaque application headers
+remained inside Chrome. Authentication stays unknown and canAuthorize plus
+sessionTransferred stay false. No Store policy or production activation changes.
+
+Initial offline run `652ee99c37c047ce9caf56b17c5acc8c` passed 89 Node/ten Go
+top-level cases. Native run `cd2ea57f2b384e2f93e4f1659d6b5d76` passed in
+32.82 seconds using the retained login without input. It reproduced 200/401/200,
+one matching fresh completed GET and one body read in each phase. B projected:
+single_error, code_32, messageMatch true, provider_authentication_error. The paired
+outcome was cookie_auth_rejection_observed. Hook transport was xhr, completed,
+disposed and not rejected; Home before/after and hook removal were true.
+Graceful root close, empty owned Job, clean retained lease and disposable-root
+removal were verified. No raw message/body, cookie inspection, header export,
+session transfer, main-login, Store or user-runtime operation occurred. Report:
+`runtime/qa/auth-session-sidecar/x-qa-source-cd2ea57f2b384e2f93e4f1659d6b5d76.report.json`.
+
+Final offline run `e645b274666943cc91de4c587a3c09cd` passed 90 Node/ten Go
+cases after dedicated RPC denial and failed-bracket promotion checks were added.
+Native implementation inputs remained unchanged, so no extra QA/login run was
+needed. The 401-meaning checkpoint is now resolved for this bounded control;
+account binding, continuity and any credential transfer still need their own
+evidence/authorization within MVP-1. Do not restart broad source discovery or
+infer that all native-authentication gates have passed.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

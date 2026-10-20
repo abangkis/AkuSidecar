@@ -200,3 +200,11 @@ test('web A/B/A RPC denies pre-owner execution, caller scripts/URLs and direct s
     { id: 4, op: 'Page.addScriptToEvaluateOnNewDocument', source: 'PRIVATE' }]);
   assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
 });
+test('bounded 401 RPC denies pre-owner execution and caller rejection messages, scripts or URLs', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'qualify_web_401', owner: 1 },
+    { id: 2, op: 'qualify_web_401', owner: 1, message: 'PRIVATE' },
+    { id: 3, op: 'qualify_web_401', owner: 1, expression: 'PRIVATE' },
+    { id: 4, op: 'qualify_web_401', owner: 1, url: 'https://evil.test' }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_fields_invalid']);
+});

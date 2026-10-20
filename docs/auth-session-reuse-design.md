@@ -112,6 +112,16 @@ CSRF/challenge, established a fully guest request, account binding or continuity
 Offline checks passed 83 Node/nine Go cases; native cleanup and clean retained
 lease were verified. No session transfer, Store or main-runtime operation occurred.
 
+The [bounded 401 checkpoint](../scripts/auth-session-fixture/README.md#bounded-401-rejection-checkpoint-2026-10-20)
+subsequently published that 11-file delta as `2696b5a` and reproduced 200/401/200
+with one error-code-32 envelope and a privately matching canonical message on B.
+This resolves the provider-reported rejection meaning for the tested no-cookie
+control: cookie_auth_rejection_observed. Native messages/arbitrary codes were not
+retained; independent decoding and complete ownership cleanup passed. Final
+offline checks passed 90 Node/ten Go cases. Specific-account binding, continuity,
+fully guest semantics and two-cookie transfer sufficiency remain separate; no
+Store, production-authentication or runtime authority follows from this result.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

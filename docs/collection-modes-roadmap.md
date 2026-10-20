@@ -5621,6 +5621,20 @@ category before claiming authenticated semantics, account binding or continuity.
 No login repetition, session transfer, main login/Store/runtime operation occurred.
 See the [checkpoint](../scripts/auth-session-fixture/README.md#natural-web-aba-checkpoint-2026-10-20).
 
+After `2696b5a` published the 11-file web-control delta, the authorized bounded
+401 projection produced native 200/401/200 in run
+`cd2ea57f2b384e2f93e4f1659d6b5d76` (32.82 seconds). B had a single code-32
+envelope with a privately matching canonical message, yielding
+provider_authentication_error and cookie_auth_rejection_observed. The provider-
+reported rejection meaning is now established for this control; do not repeat
+generic error-envelope discovery. Final offline checks passed 90 Node/ten Go
+cases. Hook removal, surviving Home, graceful root close, owned-Job cleanup,
+clean lease and disposable-root removal were verified. No native message/body,
+arbitrary code, credential/header export, transfer or main login/Store/runtime
+operation occurred. Account binding, native continuity and sufficiency of the
+two allowed cookies remain within MVP-1 and are not implied by this checkpoint.
+See the [bounded projection](../scripts/auth-session-fixture/README.md#bounded-401-rejection-checkpoint-2026-10-20).
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated
