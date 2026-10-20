@@ -18,7 +18,7 @@ function plan() {
     cookies: ['auth_token', 'ct0'].map(name => ({ name, domain: '.x.com', path: '/', hostOnly: false,
       secure: true, httpOnly: name === 'auth_token', sameSite: 'Lax', session: false,
       expires: UNIX + 1000.125, partitionKey: null })),
-    qualification: { version: 'account-settings-protected.fixture.v1', source: { ...SOURCE },
+    qualification: { version: 'account-settings-protected.fixture.v2', source: { ...SOURCE },
       signedIn: 'settings_success', signedOut: 'authentication_required' } };
 }
 function settings(patch = {}) {
@@ -66,6 +66,16 @@ test('closed contract and positive synthetic composite remain non-authorizing', 
   assert.equal(result.continuity, 'synthetic_covered');
   noAuthority(result);
 });
+test('timezone metadata accepts object string and null but rejects absent array boolean and number', () => {
+  for (const [value, valid] of [[{ PRIVATE: 'PRIVATE' }, true], ['PRIVATE', true], [null, true],
+    [[], false], [true, false], [42, false]]) {
+    const result = evaluate(e => e.reader.login.body = settings({ time_zone: value }));
+    assert.equal(result.reason, valid ? 'synthetic_evidence_qualified' : 'body_invalid');
+    assert.equal(JSON.stringify(result).includes('PRIVATE'), false); noAuthority(result);
+  }
+  const result = evaluate(e => { const b = JSON.parse(settings()); delete b.time_zone; e.reader.login.body = JSON.stringify(b); });
+  assert.equal(result.reason, 'body_invalid');
+});
 
 test('all three exact existing source alternatives can be pinned individually', () => {
   for (const [origin, path] of [['https://x.com', '/i/api/1.1/account/settings.json'],
@@ -79,7 +89,8 @@ test('all three exact existing source alternatives can be pinned individually', 
 
 test('native provenance, authority fields and wrong schema cannot enter the offline contract', () => {
   for (const mutate of [p => p.provenance = 'native', p => p.schema = 'aku.x.native-transfer-plan.v1',
-    p => p.canAuthorize = true, p => p.cookies[0].value = 'real-token', p => p.expectedAccountId = 123]) {
+    p => p.canAuthorize = true, p => p.cookies[0].value = 'real-token', p => p.expectedAccountId = 123,
+    p => p.qualification.version = 'account-settings-protected.fixture.v1']) {
     const p = plan(); mutate(p);
     assert.equal(validateXOfflineContract(p).reason, 'contract_invalid');
     assert.throws(() => createXOfflineEvidenceCombiner(p), error => error.message === 'offline_x_contract_invalid');

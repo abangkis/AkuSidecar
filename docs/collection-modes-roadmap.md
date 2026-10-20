@@ -5580,6 +5580,21 @@ Cleanup and clean retained ownership were verified. The predicate is deliberatel
 unchanged. Next review this observed metadata type, then qualify protected-source
 semantics; this is remaining work within MVP-1, not a new roadmap or activation.
 
+The fixed-type nine-file delta was subsequently published as `ae17d91`. The
+2026-10-20 authorized V3 predicate accepts object/string/null timezone metadata
+and rejects other kinds without exporting nested data. Offline preflight passed
+67 Node/seven Go cases; retained-QA control run
+`51e6e4560844477bb16fd819347600b1` passed with all six signed-in types matching.
+The separate empty BrowserContext observed no settings request on natural Home:
+this is inconclusive, not a successful negative authentication response. Home
+before/after, context disposal, complete Job cleanup, clean retained lease and
+disposable-root removal were verified. Normal-close acknowledgment was false;
+cleanup depended on the owned Job. No cookie reads/transfer or Store/main-runtime
+change occurred. MVP-1 still needs meaningful protected-source qualification and
+native continuity; choose a bounded guest-response mechanism or replacement
+source rather than rerunning the same empty Home control. See the
+[checkpoint](../scripts/auth-session-fixture/README.md#timezone-contract-and-empty-context-control-2026-10-20).
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated

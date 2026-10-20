@@ -56,7 +56,7 @@ test('six fixed field kinds identify mismatches without values, object keys or c
   value.discoverable_by_mobile_phone = ['PRIVATE_ARRAY_ITEM'];
   const result = projectQASourceBody({ body: JSON.stringify(value), base64Encoded: false });
   assert.deepEqual(result.settingsFields, {
-    language: { kind: 'string', matches: true }, time_zone: { kind: 'object', matches: false },
+    language: { kind: 'string', matches: true }, time_zone: { kind: 'object', matches: true },
     protected: { kind: 'string', matches: false }, always_use_https: { kind: 'boolean', matches: true },
     discoverable_by_email: { kind: 'absent', matches: false }, discoverable_by_mobile_phone: { kind: 'array', matches: false },
   });
@@ -66,6 +66,17 @@ test('six fixed field kinds identify mismatches without values, object keys or c
   assert.deepEqual(encoded.settingsFields, result.settingsFields);
   const malformed = projectQASourceBody({ body: '{', base64Encoded: false });
   assert.equal(malformed.settingsFields, null);
+});
+test('timezone object string and null match without exposing nested data; other types fail', () => {
+  for (const [value, matches] of [[{ PRIVATE: ['PRIVATE'] }, true], ['PRIVATE', true], [null, true],
+    [[], false], [true, false], [42, false]]) {
+    const text = JSON.parse(body().body); text.time_zone = value;
+    const result = projectQASourceBody({ body: JSON.stringify(text), base64Encoded: false });
+    assert.equal(result.contractMatches, matches); assert.equal(result.settingsFields.time_zone.matches, matches);
+    assert.equal(JSON.stringify(result).includes('PRIVATE'), false);
+  }
+  const absent = JSON.parse(body().body); delete absent.time_zone;
+  assert.equal(projectQASourceBody({ body: JSON.stringify(absent), base64Encoded: false }).contractMatches, false);
 });
 test('one same-frame natural response pins the exact route, ignores separate OPTIONS and consumes one read', async () => {
   const { selected, reads } = capture();
@@ -126,7 +137,7 @@ test('settings-only finalization cannot invoke a cookie reader even when the sou
   const result = await finishQASourceQualification(source, { inspectCookies: false, readHome: async () => true,
     readCookies() { reads++; throw new Error('cookie read forbidden'); } });
   assert.equal(reads, 0); assert.equal(result.cookies, null);
-  assert.equal(result.schema, 'aku.x.qa-source-qualification.v2');
+  assert.equal(result.schema, 'aku.x.qa-source-qualification.v3');
   assert.deepEqual(result.source.settingsFields, projectQASourceBody(body()).settingsFields);
   assert.equal(result.canAuthorize, false); assert.equal(result.sessionTransferred, false);
 });
@@ -159,11 +170,21 @@ test('dedicated entrypoint denies arbitrary commands, new profiles and pre-owner
     { id: 3, op: 'qualify_source', owner: 1 }, { id: 4, op: 'Network.getCookies' },
     { id: 5, op: 'qualify_source', owner: 1, url: 'https://evil.test' },
     { id: 6, op: 'start_observation', owner: 1 }, { id: 7, op: 'Storage.setCookies', cookies: [] }];
+  const replies = invokeDriver(messages);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['retained_profile_required', 'retained_scope_required',
+    'qualification_mode_required', 'rpc_operation_unsupported', 'rpc_fields_invalid', 'qualification_mode_required', 'rpc_operation_unsupported']);
+});
+function invokeDriver(messages) {
   const result = spawnSync(process.execPath, [fileURLToPath(new globalThis.URL('./x-retained-source-qualification-driver.mjs', import.meta.url)),
     process.execPath, process.cwd(), 'http://127.0.0.1:12345'], { input: messages.map(m => JSON.stringify(m)).join('\n') + '\n',
     encoding: 'utf8', timeout: 3000, maxBuffer: 65536, windowsHide: true });
   assert.equal(result.error, undefined); assert.equal(result.status, 0); assert.equal(result.stderr, '');
-  const replies = result.stdout.trim().split('\n').map(line => JSON.parse(line));
-  assert.deepEqual(replies.slice(1).map(r => r.code), ['retained_profile_required', 'retained_scope_required',
-    'qualification_mode_required', 'rpc_operation_unsupported', 'rpc_fields_invalid', 'qualification_mode_required', 'rpc_operation_unsupported']);
+  return result.stdout.trim().split('\n').map(line => JSON.parse(line));
+}
+test('authentication control denies pre-owner calls, caller URLs and direct context commands', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'qualify_auth_control', owner: 1 },
+    { id: 2, op: 'qualify_auth_control', owner: 1, url: 'https://evil.test' },
+    { id: 3, op: 'Target.createBrowserContext' }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
 });

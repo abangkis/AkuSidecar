@@ -81,6 +81,16 @@ settings-only QA read no cookies or nested values and preserved the existing
 predicate. A metadata contract adjustment and protected-source qualification
 remain separate next decisions; login/continuity/Store authority stay unknown.
 
+The later [timezone/control checkpoint](../scripts/auth-session-fixture/README.md#timezone-contract-and-empty-context-control-2026-10-20)
+publishes that fixed-type delta as `ae17d91` and implements the authorized V3
+object/string/null predicate. Native retained-QA settings now match all six types.
+A separate empty BrowserContext's one natural Home navigation made no matching
+settings request; it is an inconclusive control, not proof of protected access.
+The retained Home survived, the context was disposed, the Job verified empty and
+the lease returned clean. No cookie reads/transfer, Store changes or user runtime
+operations occurred. Login semantics/continuity remain unqualified within MVP-1;
+review a meaningful guest-response mechanism before transfer or main-dev wiring.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

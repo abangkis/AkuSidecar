@@ -17,6 +17,7 @@ import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-set
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { BootstrapHandoffCapture } from './x-bootstrap-breakpoint-handoff.mjs';
 import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookieRequest, finishQASourceQualification } from './x-qa-source-qualification.mjs';
+import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } from './x-qa-auth-control.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -50,6 +51,10 @@ const SAFE_REST_OPERATIONS = new Set([
 const CDP_METHODS = Object.freeze({
   'Target.getTargets': 'target_get_targets',
   'Target.attachToTarget': 'target_attach',
+  'Target.createBrowserContext': 'qa_guest_context',
+  'Target.createTarget': 'qa_guest_target',
+  'Target.disposeBrowserContext': 'qa_guest_dispose',
+  'Page.navigate': 'qa_guest_home',
   'Page.enable': 'page_enable',
   'Page.reload': 'page_reload',
   'Runtime.evaluate': 'runtime_evaluate',
@@ -527,9 +532,18 @@ function projectCDPResult(method, result, projectionKind = null) {
   switch (method) {
     case 'Page.getFrameTree': {
       const frame = result.frameTree?.frame;
-      if (!isObject(frame) || !safeId(frame.id) || !isHomeTarget(frame.url)) throw probeError('early_frame_invalid');
+      if (!isObject(frame) || !safeId(frame.id) || !(projectionKind === 'qa_guest' ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
       return { frameId: frame.id };
     }
+    case 'Target.createBrowserContext':
+      if (!safeId(result.browserContextId)) throw probeError('qa_guest_context_invalid');
+      return { browserContextId: result.browserContextId };
+    case 'Target.createTarget':
+      if (!safeId(result.targetId)) throw probeError('qa_guest_target_invalid');
+      return { targetId: result.targetId };
+    case 'Page.navigate':
+      if (own(result, 'errorText') || !safeId(result.frameId) || result.frameId !== active?.guest?.frameId) throw probeError('qa_guest_navigation_invalid');
+      return { acknowledged: true };
     case 'Debugger.setInstrumentationBreakpoint':
       if (!safeId(result.breakpointId)) throw probeError('early_breakpoint_invalid');
       active.earlyInstrumentationId = result.breakpointId;
@@ -584,6 +598,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Network.disable':
     case 'Network.setCacheDisabled':
     case 'Browser.close':
+    case 'Target.disposeBrowserContext':
     case 'Runtime.enable':
     case 'Runtime.disable':
     case 'Debugger.enable':
@@ -737,6 +752,12 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   if (!Object.hasOwn(CDP_METHODS, method) || !isObject(params) || pending.size >= MAX_PENDING_COMMANDS) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
+  const guestMethod = ['Target.createBrowserContext', 'Target.createTarget', 'Target.disposeBrowserContext', 'Page.navigate'].includes(method);
+  const guestSession = !!active?.guest?.sessionId && sessionId === active.guest.sessionId;
+  const guestAttach = method === 'Target.attachToTarget' && active?.authControlAttempted;
+  const guestCommand = guestMethod || guestSession || guestAttach;
+  if (guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
+      !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
   if (purpose !== null && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
   if (method === 'Network.getCookies' && (!qualificationMode(driverMode) || !active?.qaCookieRequested || active.qaCookieIssued ||
@@ -748,9 +769,9 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
   }
-  if (method === 'Network.setCacheDisabled' && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
+  if (method === 'Network.setCacheDisabled' && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap') {
+  if (!guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap')) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -765,7 +786,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       return Promise.reject(probeError('early_command_not_authorized'));
     }
   }
-  let projectionKind = null;
+  let projectionKind = guestCommand ? 'qa_guest' : null;
   if (method === 'Debugger.evaluateOnCallFrame') {
     if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || active.gate.observationStarted ||
         sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture)) {
@@ -814,6 +835,7 @@ function failCDP(code) {
   cdpFrames.reset();
   rejectPending(cdpFailure);
   active?.accountSettings?.invalidate();
+  active?.guest?.capture?.invalidate();
   if (active?.pageLoad) {
     active.pageLoad.reject(probeError(cdpFailure));
     active.pageLoad = null;
@@ -829,6 +851,15 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    if (active?.guest?.sessionId && raw.sessionId === active.guest.sessionId) {
+      const guest = active.guest;
+      if (!guest.closed && Date.now() <= guest.endsAt && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
+        if (++guest.events > MAX_NETWORK_EVENTS) guest.capture?.invalidate();
+        else guest.capture?.observe(raw.method, raw.params);
+      }
+      if (raw.method === 'Inspector.detached') guest.capture?.invalidate();
+      return;
+    }
     if (typeof raw.method === 'string' && raw.method.startsWith('Network.') && active?.metadata &&
         active.gate.networkEnabled && Date.now() <= active.observationEndsAt) {
       if (active.networkEventCount >= MAX_NETWORK_EVENTS) {
@@ -1355,6 +1386,47 @@ async function qualifySource(message, typesOnly = false) {
   });
 }
 
+async function qualifyAuthControl(message) {
+  const current = requireOwner(message);
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || current.authControlAttempted) throw probeError('qa_auth_control_gate_closed');
+  current.authControlAttempted = true;
+  const signedIn = await qualifySource(message, true);
+  const home = async () => {
+    requireOwner(message);
+    return (await send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION,
+      returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId)).value;
+  };
+  const before = await home();
+  if (!before || signedIn.source.route !== 'api_v1' || signedIn.source.diagnostic !== 'projected' || signedIn.source.bodyContractMatches !== true) throw probeError('qa_positive_control_required');
+  const guest = current.guest = { events: 0, navigated: false, closed: false };
+  let report, disposed = false;
+  try {
+    guest.contextId = (await send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId;
+    guest.targetId = (await send('Target.createTarget', { url: 'about:blank', browserContextId: guest.contextId })).targetId;
+    guest.sessionId = (await send('Target.attachToTarget', { targetId: guest.targetId, flatten: true })).sessionId;
+    if (guest.sessionId === current.sessionId) throw probeError('qa_guest_session_collision');
+    await send('Page.enable', {}, guest.sessionId);
+    guest.frameId = (await send('Page.getFrameTree', {}, guest.sessionId)).frameId;
+    guest.capture = new QAGuestCapture('api_v1', guest.frameId);
+    await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
+      maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, guest.sessionId);
+    await send('Network.setCacheDisabled', { cacheDisabled: true }, guest.sessionId);
+    guest.endsAt = Date.now() + OBSERVATION_MS;
+    await send('Page.navigate', { url: QA_GUEST_HOME }, guest.sessionId);
+    guest.navigated = true;
+    await new Promise(resolvePromise => setTimeout(resolvePromise, Math.max(0, guest.endsAt - Date.now())));
+    report = guest.capture.finish();
+    await send('Network.disable', {}, guest.sessionId);
+  } finally {
+    if (guest.contextId) {
+      await send('Target.disposeBrowserContext', { browserContextId: guest.contextId });
+      disposed = true;
+    }
+    guest.closed = true;
+  }
+  return finishQAAuthControl(signedIn, report, before, await home(), disposed);
+}
+
 async function closeChrome() {
   if (!child || childExited) return { exited: true };
   if ((driverMode === 'two_phase' || accountSettingsBodyMode(driverMode)) && !twoPhaseState?.phase2Started) return { exited: false };
@@ -1370,6 +1442,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_auth_control':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyAuthControl(message);
     case 'qualify_settings_types':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifySource(message, true);

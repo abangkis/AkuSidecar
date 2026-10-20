@@ -234,6 +234,69 @@ lease returned clean and the disposable root was removed. Sanitized report/log:
 Contract adjustment is a separate next decision; accepting object-shaped
 timezone metadata alone would still not prove authenticated-source semantics.
 
+### Timezone contract and empty-context control (2026-10-20)
+
+The nine-file fixed-type delta above was reviewed and published as `ae17d91`
+(remote SHA verified). Under subsequent authorization, the QA source/root schemas
+are now V3: `time_zone` accepts object, string or null. Arrays, booleans, numbers
+and absence fail. No nested timezone keys/values are exported. The independent
+Go decoder recomputes the same predicate; older V2 reports remain historical,
+not silently reinterpreted. The synthetic combiner uses qualification version
+`account-settings-protected.fixture.v2`; native authority is still unsupported.
+
+```powershell
+# Offline regression preflight, including timezone and guest-control guards:
+.\scripts\test-x-qa-source.ps1
+# Explicitly authorized retained-QA control; no cookie metadata/value reads:
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -AuthenticationControl
+```
+
+AuthenticationControl is mutually exclusive with cookie inspection and
+SettingsTypesOnly. The fixed `qualify_auth_control` RPC first requires one fresh,
+matching settings projection from the retained owner's natural Home reload. It
+then creates one empty BrowserContext, attaches a new about:blank page, enables
+bounded metadata observation and navigates once to Home. Only the pinned
+`api_v1` settings route participates. No credential copying, cookie/body read
+in the guest, constructed API call, header replay or logout is available. The
+guest command guard rejects extra parameters, other contexts/URLs and replays.
+The context must be disposed and the whole owned Job verified empty before
+saving the strict, independently validated comparison report. The retained QA
+Home is checked before and after the comparison; no user login is requested.
+
+The wrapper `aku.x.qa-auth-control.v1` preserves separate signedIn and guest
+results. No request means `not_observed`, not an authentication rejection.
+HTTP 200 remains `http_200_unqualified`; HTTP 401 is only
+`authentication_rejection_candidate`, because metadata alone cannot exclude
+every anti-abuse failure. Incomplete, cached/ambiguous and other status responses
+remain separate. All results retain authentication unknown and authority/transfer
+false. The nested signedIn negativeControl stays not_run because that individual
+capture has no control; the wrapper records the actual comparison separately.
+
+Offline run `a219c298ab794daf8c4ebe723e15d5e0` passed 67 Node and seven Go
+top-level cases. Native run `51e6e4560844477bb16fd819347600b1` reused the QA
+login and passed in 49.44 seconds. One api_v1 GET and one signed-in body read
+matched all six types, including object-shaped time_zone. The guest made zero
+matching requests: status/freshness remain null, body reads zero, completed
+false. Home before/after and contextDisposed were true, cookies null, no session
+transferred. Source login semantics and native continuity remain unqualified.
+Chrome's normal-close acknowledgment was false; the enclosing Job was then
+terminated and verified empty. The lease returned clean and the disposable root
+was removed. Main login, Store and user runtime were untouched. Sanitized report:
+`runtime/qa/auth-session-sidecar/x-qa-source-51e6e4560844477bb16fd819347600b1.report.json`.
+
+Final offline run `d5fbcba0686342f29fdc280137f5fca5` passed 68 Node/seven Go
+cases after adding entrypoint denial checks and explicit non-authorizing status
+decoder cases. The observed native `not_observed` path was unchanged; no second
+native run or manual login was needed. An earlier test expansion exceeded the
+existing eight-command input-chunk limit; splitting that test into separate
+bounded invocations fixed the test without relaxing the driver guard.
+
+This finishes the authorized natural-Home control with an inconclusive result.
+Do not repeat it expecting absent requests to become proof. The next decision is
+a separately scoped protected-source comparison mechanism that can actually
+produce a meaningful guest response, or replacement of this login-source
+candidate. Session transfer remains unauthorized.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

@@ -111,23 +111,31 @@ window as the current-self candidate:
   Unknown cache/correlation state does not pass. Bind owner, browser context,
   target/frame, request, observation window and active session baseline.
 - A bounded success projection with the six existing settings fields present
-  at their expected types: `language` string, `time_zone` string or null, and
+  at their expected types: `language` string, `time_zone` object, string or null, and
   `protected`, `always_use_https`, `discoverable_by_email`,
   `discoverable_by_mobile_phone` booleans. Reject malformed/duplicate-key JSON,
   errors, challenges and conflicting auth fields. A renamed/removed field is
-  source drift, not permission to loosen the selector.
+  source drift, not permission to loosen the selector. The V3 QA projection adds
+  the observed object alternative without projecting timezone contents; arrays,
+  numbers, booleans and absence still fail. Offline qualification fixtures use
+  `account-settings-protected.fixture.v2` for this predicate.
 - A versioned qualification of that route's user-authenticated semantics,
   including an appropriate signed-out/guest comparison. A failed request due
   to networking, rate limiting, CSRF or anti-abuse is not a successful negative
   control. No request observed in a guest context is not a negative response.
-  Such a future comparison must use a separate empty QA context, natural web
-  actions and separate execution authorization; never log out the retained owner.
+  A comparison must use a separate empty QA context, natural web actions and
+  separate execution authorization; never log out the retained owner. The
+  authorized metadata-only control now opens one fresh BrowserContext on Home
+  with no cookie import or constructed API request. It only observes the pinned
+  `api_v1` route, reads no guest body and preserves unknown authentication even
+  for HTTP 401, which remains an unqualified rejection candidate.
 - Current-self identity agrees with the attempt's expected owner identity, with
   no relevant mutation or observation gap between these two observations.
 
 The settings fields are a candidate success discriminator, not proof that this
 body is exclusive to authenticated users. The native samples did not establish
-the last two requirements, field-type qualification or protected-route semantics.
+the last two requirements or protected-route semantics. A field-type match alone
+cannot close them.
 Accordingly `authenticated` remains unknown until those requirements pass.
 An explicit boolean is not mandatory if protected semantics are qualified, but
 neither HTTP 200, a settings shape, a Home screen, `isActive`, nor possession of
@@ -323,6 +331,14 @@ The source predicate is unchanged and still fails; authentication and native
 continuity remain unqualified. Next review whether the metadata predicate should
 accept this observed type, then qualify protected-source semantics. Do not infer
 login from a shape adjustment or repeat broad body/source discovery.
+
+The authorized 2026-10-20
+[V3 timezone/control checkpoint](../scripts/auth-session-fixture/README.md#timezone-contract-and-empty-context-control-2026-10-20)
+now matches all six settings types in retained QA. A separate empty context made
+no settings request during its natural Home navigation. This closes that bounded
+control as inconclusive; no negative response, login-source qualification or
+transfer permission follows. Choose a meaningful scoped guest-response mechanism
+or replacement source before proceeding. No additional login was needed.
 
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet

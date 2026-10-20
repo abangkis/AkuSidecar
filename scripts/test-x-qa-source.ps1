@@ -1,7 +1,8 @@
-param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly)
+param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly, [switch]$AuthenticationControl)
 $ErrorActionPreference = 'Stop'
+if ($AuthenticationControl -and (!$RunNativeQA -or $AllowCookieMetadataRead -or $SettingsTypesOnly)) { throw 'AuthenticationControl requires native QA and forbids cookie access or combined modes.' }
 if ($AllowCookieMetadataRead -and (!$RunNativeQA -or $SettingsTypesOnly)) { throw 'Cookie metadata permission requires native execution without SettingsTypesOnly.' }
-if ($RunNativeQA -and !$SettingsTypesOnly -and !$AllowCookieMetadataRead) { throw 'Native cookie inspection requires explicit AllowCookieMetadataRead. Use SettingsTypesOnly for no cookie access.' }
+if ($RunNativeQA -and !$AuthenticationControl -and !$SettingsTypesOnly -and !$AllowCookieMetadataRead) { throw 'Native cookie inspection requires explicit AllowCookieMetadataRead. Use SettingsTypesOnly for no cookie access.' }
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
@@ -23,7 +24,7 @@ $log = Join-Path $qaParent ('x-qa-source-' + $runId + '.log.txt')
 $report = Join-Path $qaParent ('x-qa-source-' + $runId + '.report.json')
 $variables = @('TEMP','TMP','GOTMPDIR','GOCACHE','GOMODCACHE','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','GOFLAGS',
     'AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH',
-    'AKU_X_QA_SOURCE_QUALIFICATION_ENABLED','AKU_X_QA_COOKIE_METADATA_ALLOWED','AKU_X_QA_SETTINGS_TYPES_ONLY','AKU_X_QA_SOURCE_REPORT_PATH')
+    'AKU_X_QA_SOURCE_QUALIFICATION_ENABLED','AKU_X_QA_COOKIE_METADATA_ALLOWED','AKU_X_QA_SETTINGS_TYPES_ONLY','AKU_X_QA_AUTH_CONTROL','AKU_X_QA_SOURCE_REPORT_PATH')
 $previous = @{}
 foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $safeCleanup = $true
@@ -36,10 +37,13 @@ try {
     $env:AKU_TEST_NODE_PATH = $node; $env:AKU_TEST_CHROME_PATH = $chrome
     $env:AKU_X_QA_SOURCE_QUALIFICATION_ENABLED = '0'; $env:AKU_X_QA_COOKIE_METADATA_ALLOWED = '0'
     $env:AKU_X_QA_SETTINGS_TYPES_ONLY = '0'
+    $env:AKU_X_QA_AUTH_CONTROL = '0'
     $env:AKU_X_QA_SOURCE_REPORT_PATH = $report
     Write-Output ('QA source preflight run: ' + $runId)
     & $node --test --test-timeout=10000 --test-reporter=tap `
         scripts/auth-session-fixture/x-qa-source-qualification.test.mjs `
+        scripts/auth-session-fixture/x-qa-auth-control.test.mjs `
+        scripts/auth-session-fixture/x-native-plan-offline.test.mjs `
         scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs `
         scripts/auth-session-fixture/x-retained-account-settings-driver.test.mjs `
         scripts/auth-session-fixture/x-account-settings-body.test.mjs `
@@ -48,11 +52,13 @@ try {
     & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestX(QASourceQualification|RetainedQAProfile|AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'QA source Go preflight failed.' }
     if ($RunNativeQA) {
-        if ($SettingsTypesOnly) { Write-Output 'Opening only retained QA for six fixed settings field types. Cookie reads disabled. No raw values, transfer, new login, logout or Store operation.' }
+        if ($AuthenticationControl) { Write-Output 'Retained QA plus one new empty BrowserContext for natural Home comparison. No cookie reads, transfer, constructed API request, logout, new login or Store operation.' }
+        elseif ($SettingsTypesOnly) { Write-Output 'Opening only retained QA for six fixed settings field types. Cookie reads disabled. No raw values, transfer, new login, logout or Store operation.' }
         else { Write-Output 'Opening only retained QA. Scoped CDP cookie replies include transient values; only attributes are retained. No transfer, new login, logout or Store operation.' }
         $env:AKU_X_QA_SOURCE_QUALIFICATION_ENABLED = '1'
         $env:AKU_X_QA_COOKIE_METADATA_ALLOWED = if ($AllowCookieMetadataRead) { '1' } else { '0' }
         $env:AKU_X_QA_SETTINGS_TYPES_ONLY = if ($SettingsTypesOnly) { '1' } else { '0' }
+        $env:AKU_X_QA_AUTH_CONTROL = if ($AuthenticationControl) { '1' } else { '0' }
         $safeCleanup = $false
         & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestXQASourceQualification$' -count=1 -timeout=2m -v 2>&1 | Tee-Object -FilePath $log -Append
         $testCode = $LASTEXITCODE

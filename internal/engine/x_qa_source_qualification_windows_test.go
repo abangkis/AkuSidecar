@@ -77,6 +77,93 @@ type xQASourceQualification struct {
 	SessionTransferred *bool              `json:"sessionTransferred"`
 }
 
+type xQAGuestSource struct {
+	Schema             string `json:"schema"`
+	Route              string `json:"route"`
+	Diagnostic         string `json:"diagnostic"`
+	MatchingRequests   int    `json:"matchingRequests"`
+	Status             *int   `json:"status"`
+	ResponseFresh      *bool  `json:"responseFresh"`
+	Completed          *bool  `json:"completed"`
+	BodyReadAttempts   int    `json:"bodyReadAttempts"`
+	CanAuthorize       *bool  `json:"canAuthorize"`
+	SessionTransferred *bool  `json:"sessionTransferred"`
+}
+type xQAAuthControl struct {
+	Schema             string          `json:"schema"`
+	SignedIn           json.RawMessage `json:"signedIn"`
+	Guest              *xQAGuestSource `json:"guest"`
+	Isolation          string          `json:"isolation"`
+	Navigation         string          `json:"navigation"`
+	OwnerHomeBefore    *bool           `json:"ownerHomeBefore"`
+	OwnerHomeAfter     *bool           `json:"ownerHomeAfter"`
+	ContextDisposed    *bool           `json:"contextDisposed"`
+	Authentication     string          `json:"authentication"`
+	CanAuthorize       *bool           `json:"canAuthorize"`
+	SessionTransferred *bool           `json:"sessionTransferred"`
+}
+
+func decodeXQAAuthControl(raw []byte) (xQAAuthControl, error) {
+	var result xQAAuthControl
+	bad := errors.New("QA authentication control rejected")
+	if len(raw) > 16384 || !xQAFields(raw, 11) {
+		return result, bad
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if d.Decode(&result) != nil || d.Decode(new(any)) != io.EOF || result.Schema != "aku.x.qa-auth-control.v1" ||
+		result.Isolation != "fresh_browser_context" || result.Navigation != "home" || result.Authentication != "unknown" ||
+		!xQATrue(result.OwnerHomeBefore) || result.OwnerHomeAfter == nil || !xQATrue(result.ContextDisposed) ||
+		!xQAFalse(result.CanAuthorize) || !xQAFalse(result.SessionTransferred) {
+		return result, bad
+	}
+	positive, err := decodeXQASourceQualification(result.SignedIn)
+	if err != nil || positive.Cookies != nil || positive.Source.Route == nil || *positive.Source.Route != "api_v1" ||
+		positive.Source.Diagnostic != "projected" || !xQATrue(positive.Source.BodyContractMatches) {
+		return result, bad
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &fields)
+	g := result.Guest
+	if g == nil || !xQAFields(fields["guest"], 10) || g.Schema != "aku.x.qa-guest-source.v1" || g.Route != "api_v1" ||
+		g.MatchingRequests < 0 || g.MatchingRequests > 2 || g.BodyReadAttempts != 0 || g.Completed == nil ||
+		!xQAFalse(g.CanAuthorize) || !xQAFalse(g.SessionTransferred) || g.Status != nil && (*g.Status < 100 || *g.Status > 599) {
+		return result, bad
+	}
+	if g.Diagnostic == "candidate_rejected" {
+		return result, nil
+	}
+	if g.MatchingRequests == 0 {
+		if g.Diagnostic != "not_observed" || g.Status != nil || g.ResponseFresh != nil || *g.Completed {
+			return result, bad
+		}
+		return result, nil
+	}
+	if g.MatchingRequests != 1 || g.ResponseFresh != nil && !*g.ResponseFresh {
+		return result, bad
+	}
+	if !*g.Completed {
+		if g.Diagnostic != "incomplete" {
+			return result, bad
+		}
+		return result, nil
+	}
+	if g.Status == nil || !xQATrue(g.ResponseFresh) {
+		return result, bad
+	}
+	expected := "other_response"
+	if *g.Status == 200 {
+		expected = "http_200_unqualified"
+	}
+	if *g.Status == 401 {
+		expected = "authentication_rejection_candidate"
+	}
+	if g.Diagnostic != expected {
+		return result, bad
+	}
+	return result, nil
+}
+
 func xQAFalse(value *bool) bool { return value != nil && !*value }
 func xQATrue(value *bool) bool  { return value != nil && *value }
 func xQAFields(raw json.RawMessage, count int) bool {
@@ -107,13 +194,13 @@ func decodeXQASourceQualification(raw []byte) (xQASourceQualification, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF ||
-		result.Schema != "aku.x.qa-source-qualification.v2" || !xQAFalse(result.CanAuthorize) || !xQAFalse(result.SessionTransferred) || result.Source == nil {
+		result.Schema != "aku.x.qa-source-qualification.v3" || !xQAFalse(result.CanAuthorize) || !xQAFalse(result.SessionTransferred) || result.Source == nil {
 		return result, bad
 	}
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
 	s := result.Source
-	if !xQAFields(fields["source"], 10) || s.Schema != "aku.x.qa-source-capture.v2" || !xQAFalse(s.CanAuthorize) ||
+	if !xQAFields(fields["source"], 10) || s.Schema != "aku.x.qa-source-capture.v3" || !xQAFalse(s.CanAuthorize) ||
 		s.Authentication != "unknown" || s.NegativeControl != "not_run" || s.MatchingRequests < 0 || s.MatchingRequests > 2 || s.BodyReadAttempts < 0 || s.BodyReadAttempts > 1 {
 		return result, bad
 	}
@@ -157,7 +244,7 @@ func decodeXQASourceQualification(raw []byte) (xQASourceQualification, error) {
 				matches = entry.Kind == "string"
 			}
 			if index == 1 {
-				matches = entry.Kind == "string" || entry.Kind == "null"
+				matches = entry.Kind == "string" || entry.Kind == "null" || entry.Kind == "object"
 			}
 			if *entry.Matches != matches {
 				return result, bad
@@ -231,7 +318,7 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 			t.Fatal("QA cleanup order changed")
 		}
 	}
-	raw := []byte(`{"schema":"aku.x.qa-source-qualification.v2","source":{"schema":"aku.x.qa-source-capture.v2","route":null,"diagnostic":"not_observed","matchingRequests":0,"bodyReadAttempts":0,"bodyContractMatches":null,"settingsFields":null,"authentication":"unknown","negativeControl":"not_run","canAuthorize":false},"cookies":null,"canAuthorize":false,"sessionTransferred":false}`)
+	raw := []byte(`{"schema":"aku.x.qa-source-qualification.v3","source":{"schema":"aku.x.qa-source-capture.v3","route":null,"diagnostic":"not_observed","matchingRequests":0,"bodyReadAttempts":0,"bodyContractMatches":null,"settingsFields":null,"authentication":"unknown","negativeControl":"not_run","canAuthorize":false},"cookies":null,"canAuthorize":false,"sessionTransferred":false}`)
 	if _, err := decodeXQASourceQualification(raw); err != nil {
 		t.Fatal(err)
 	}
@@ -244,6 +331,54 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 	}
 	fieldTypes := `{"language":{"kind":"string","matches":true},"time_zone":{"kind":"null","matches":true},"protected":{"kind":"boolean","matches":true},"always_use_https":{"kind":"boolean","matches":true},"discoverable_by_email":{"kind":"boolean","matches":true},"discoverable_by_mobile_phone":{"kind":"boolean","matches":true}}`
 	positive = bytes.Replace(positive, []byte(`"settingsFields":null`), []byte(`"settingsFields":`+fieldTypes), 1)
+	objectPositive := bytes.Replace(positive, []byte(`"time_zone":{"kind":"null","matches":true}`), []byte(`"time_zone":{"kind":"object","matches":true}`), 1)
+	if _, err := decodeXQASourceQualification(objectPositive); err != nil {
+		t.Fatal("object timezone rejected")
+	}
+	var positiveFields map[string]json.RawMessage
+	_ = json.Unmarshal(objectPositive, &positiveFields)
+	positiveFields["cookies"] = json.RawMessage(`null`)
+	positiveNoCookies, _ := json.Marshal(positiveFields)
+	control := map[string]any{"schema": "aku.x.qa-auth-control.v1", "signedIn": json.RawMessage(positiveNoCookies),
+		"guest": map[string]any{"schema": "aku.x.qa-guest-source.v1", "route": "api_v1", "diagnostic": "not_observed", "matchingRequests": 0,
+			"status": nil, "responseFresh": nil, "completed": false, "bodyReadAttempts": 0, "canAuthorize": false, "sessionTransferred": false},
+		"isolation": "fresh_browser_context", "navigation": "home", "ownerHomeBefore": true, "ownerHomeAfter": true, "contextDisposed": true,
+		"authentication": "unknown", "canAuthorize": false, "sessionTransferred": false}
+	controlRaw, _ := json.Marshal(control)
+	if _, err := decodeXQAAuthControl(controlRaw); err != nil {
+		t.Fatal(err)
+	}
+	guestFields := control["guest"].(map[string]any)
+	for _, sample := range []struct {
+		status     int
+		diagnostic string
+	}{
+		{200, "http_200_unqualified"}, {401, "authentication_rejection_candidate"}, {429, "other_response"},
+	} {
+		guestFields["matchingRequests"] = 1
+		guestFields["status"] = sample.status
+		guestFields["responseFresh"] = true
+		guestFields["completed"] = true
+		guestFields["diagnostic"] = sample.diagnostic
+		encoded, _ := json.Marshal(control)
+		if _, err := decodeXQAAuthControl(encoded); err != nil {
+			t.Fatal("valid non-authorizing status comparison rejected")
+		}
+	}
+	for _, change := range [][2]string{
+		{`"authentication":"unknown"`, `"authentication":"authenticated"`},
+		{`"contextDisposed":true`, `"contextDisposed":false`},
+		{`"ownerHomeBefore":true`, `"ownerHomeBefore":false`},
+		{`"bodyReadAttempts":0`, `"bodyReadAttempts":1`},
+		{`"diagnostic":"not_observed"`, `"diagnostic":"authentication_rejection_candidate"`},
+		{`"status":null`, `"status":401`},
+		{`"guest":{`, `"guest":{"value":"PRIVATE",`},
+	} {
+		bad := bytes.Replace(controlRaw, []byte(change[0]), []byte(change[1]), 1)
+		if _, err := decodeXQAAuthControl(bad); err == nil {
+			t.Fatal("unsafe authentication control accepted")
+		}
+	}
 	if report, err := decodeXQASourceQualification(positive); err != nil || report.Cookies == nil || *report.Cookies.Tuples[0].Attributes.Expires != 4102444800.125 {
 		t.Fatal("valid attribute-only diagnostic rejected")
 	}
@@ -273,6 +408,8 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 
 func TestXQASourceQualification(t *testing.T) {
 	typesOnly := os.Getenv("AKU_X_QA_SETTINGS_TYPES_ONLY") == "1"
+	authControl := os.Getenv("AKU_X_QA_AUTH_CONTROL") == "1"
+	typesOnly = typesOnly || authControl
 	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || !typesOnly && os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
 		t.Skip("requires explicit retained QA cookie-read authorization")
 	}
@@ -356,15 +493,24 @@ func TestXQASourceQualification(t *testing.T) {
 	if typesOnly {
 		op = "qualify_settings_types"
 	}
+	if authControl {
+		op = "qualify_auth_control"
+	}
 	if bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
 		t.Fatal("bounded QA qualification failed")
 	}
-	report, err := decodeXQASourceQualification(raw)
-	if err != nil {
-		t.Fatal("QA diagnostic report rejected")
-	}
-	if typesOnly && report.Cookies != nil {
-		t.Fatal("settings-only run returned unexpected cookie metadata")
+	if authControl {
+		if _, err := decodeXQAAuthControl(raw); err != nil {
+			t.Fatal("QA authentication comparison rejected")
+		}
+	} else {
+		report, err := decodeXQASourceQualification(raw)
+		if err != nil {
+			t.Fatal("QA diagnostic report rejected")
+		}
+		if typesOnly && report.Cookies != nil {
+			t.Fatal("settings-only run returned unexpected cookie metadata")
+		}
 	}
 	graceful, err := finishXQASourceRun(func() bool {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 7*time.Second)
@@ -381,7 +527,7 @@ func TestXQASourceQualification(t *testing.T) {
 		if openErr != nil {
 			return openErr
 		}
-		writeErr := json.NewEncoder(out).Encode(report)
+		writeErr := json.NewEncoder(out).Encode(raw)
 		closeErr := out.Close()
 		if writeErr != nil {
 			return writeErr

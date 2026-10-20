@@ -6,7 +6,7 @@ import { parseStrictJSON } from './x-evidence-ingress.mjs';
 const ROUTES = Object.freeze({ web_i_api: 'https://x.com/i/api/1.1/account/settings.json',
   api_v1: 'https://api.x.com/1.1/account/settings.json', api_i_api: 'https://api.x.com/i/api/1.1/account/settings.json' });
 const names = ['auth_token', 'ct0'];
-const SETTINGS_TYPES = Object.freeze({ language: 'string', time_zone: 'nullable-string', protected: 'boolean',
+const SETTINGS_TYPES = Object.freeze({ language: 'string', time_zone: 'nullable-string-object', protected: 'boolean',
   always_use_https: 'boolean', discoverable_by_email: 'boolean', discoverable_by_mobile_phone: 'boolean' });
 const fail = () => { throw new TypeError('qa_source_input_invalid'); };
 function data(value, allowed, required = allowed) {
@@ -35,7 +35,7 @@ export async function finishQASourceQualification(source, { readHome, readCookie
   try {
     const sample = data(source, ['schema', 'route', 'diagnostic', 'matchingRequests', 'bodyReadAttempts',
       'bodyContractMatches', 'settingsFields', 'authentication', 'negativeControl', 'canAuthorize']);
-    if (sample.schema !== 'aku.x.qa-source-capture.v2' || sample.authentication !== 'unknown' ||
+    if (sample.schema !== 'aku.x.qa-source-capture.v3' || sample.authentication !== 'unknown' ||
         sample.negativeControl !== 'not_run' || sample.canAuthorize !== false ||
         typeof readHome !== 'function' || typeof inspectCookies !== 'boolean' || inspectCookies && typeof readCookies !== 'function') fail();
     const home = await readHome();
@@ -46,7 +46,7 @@ export async function finishQASourceQualification(source, { readHome, readCookie
       if (cookies?.schema !== 'aku.x.qa-cookie-metadata.v1' || cookies.canAuthorize !== false ||
           cookies.sessionTransferred !== false || cookies.valuesPersisted !== false) fail();
     }
-    return Object.freeze({ schema: 'aku.x.qa-source-qualification.v2', source, cookies,
+    return Object.freeze({ schema: 'aku.x.qa-source-qualification.v3', source, cookies,
       canAuthorize: false, sessionTransferred: false });
   } catch { throw new TypeError('qa_source_finalization_failed'); }
 }
@@ -64,7 +64,7 @@ export function projectQASourceBody(value) {
         const present = Object.hasOwn(body, key);
         const value = present ? body[key] : undefined;
         const kind = !present ? 'absent' : value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
-        const matches = expected === 'nullable-string' ? ['null', 'string'].includes(kind) : kind === expected;
+        const matches = expected === 'nullable-string-object' ? ['null', 'string', 'object'].includes(kind) : kind === expected;
         return [key, Object.freeze({ kind, matches })];
       })));
       contractMatches = Object.values(settingsFields).every(field => field.matches) &&
@@ -103,7 +103,7 @@ export class QASourceCapture {
   async finish() {
     this.closed = true;
     const capture = await this.base.finish();
-    return Object.freeze({ schema: 'aku.x.qa-source-capture.v2', route: this.route,
+    return Object.freeze({ schema: 'aku.x.qa-source-capture.v3', route: this.route,
       diagnostic: this.invalid ? 'candidate_rejected' : capture.diagnostic,
       matchingRequests: capture.matchingRequests, bodyReadAttempts: capture.bodyReadAttempts,
       bodyContractMatches: !this.invalid && capture.diagnostic === 'projected' ? capture.projection.contractMatches : null,

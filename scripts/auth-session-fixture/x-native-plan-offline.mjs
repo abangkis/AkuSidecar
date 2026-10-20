@@ -14,7 +14,7 @@ const SOURCES = new Set([
   'https://api.x.com/i/api/1.1/account/settings.json',
 ]);
 const USED_ATTEMPTS = new Set();
-const SETTINGS = { language: 'string', time_zone: 'nullable-string', protected: 'boolean',
+const SETTINGS = { language: 'string', time_zone: 'nullable-string-object', protected: 'boolean',
   always_use_https: 'boolean', discoverable_by_email: 'boolean', discoverable_by_mobile_phone: 'boolean' };
 
 const invalid = () => { throw new TypeError('offline_x_input_invalid'); };
@@ -91,7 +91,7 @@ function normalizePlan(input) {
   const q = record(plan.qualification, ['version', 'source', 'signedIn', 'signedOut']);
   q.source = source(q.source);
   if (!same(plan.source, q.source, ['method', 'origin', 'path']) ||
-      !['unqualified', 'account-settings-protected.fixture.v1'].includes(q.version) ||
+      !['unqualified', 'account-settings-protected.fixture.v2'].includes(q.version) ||
       !['unknown', 'settings_success'].includes(q.signedIn) ||
       !['unknown', 'authentication_required', 'no_request', 'network_error', 'rate_limited', 'csrf_error', 'challenge'].includes(q.signedOut)) invalid();
   plan.qualification = Object.freeze(q);
@@ -155,12 +155,12 @@ function inspectRole(value, expected, plan, now) {
       ['error', 'errors', 'challenge'].some(field => Object.hasOwn(body, field)) ||
       Object.hasOwn(body, 'authenticated') && body.authenticated !== true ||
       Object.entries(SETTINGS).some(([field, type]) => !Object.hasOwn(body, field) ||
-        (type === 'nullable-string' ? body[field] !== null && typeof body[field] !== 'string' : typeof body[field] !== type))) return { reason: 'body_invalid', identity: 'match' };
+        (type === 'nullable-string-object' ? body[field] !== null && typeof body[field] !== 'string' && (typeof body[field] !== 'object' || Array.isArray(body[field])) : typeof body[field] !== type))) return { reason: 'body_invalid', identity: 'match' };
   for (const field of ['id_str', 'id', 'user_id', 'user_id_str']) {
     if (Object.hasOwn(body, field) && (!id(body[field]) || body[field] !== accountId)) return { reason: 'identity_mismatch' };
   }
   const q = plan.qualification;
-  if (q.version !== 'account-settings-protected.fixture.v1' || q.signedIn !== 'settings_success' ||
+  if (q.version !== 'account-settings-protected.fixture.v2' || q.signedIn !== 'settings_success' ||
       q.signedOut !== 'authentication_required') return { reason: 'login_source_unqualified', identity: 'match' };
   return { reason: 'synthetic_role_qualified', identity: 'match' };
 }
