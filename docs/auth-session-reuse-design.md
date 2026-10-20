@@ -1,5 +1,16 @@
 # One-login collector and native reader proposal
 
+Short native feasibility is now accepted (2026-10-20): synchronized QA run
+`90f3e12182b2494ba7933511ac3150a5` used the unchanged two-cookie manifest,
+passed four private same-account/login checkpoints without another login,
+preserved the visible reader target/window and observed 447.68 ms of actual
+protected-request overlap with a separate true-headless collector. Complete
+owned cleanup passed. The original V1 bindings and durable continuity remain
+unknown after cookie writes; refresh and production enrollment/revision authority
+are unqualified. Reuse this accepted short experiment for scoped integration
+design instead of repeating login or cookie/source discovery. Main-dev activation
+still requires its separate integration/acceptance and explicit authorization.
+
 Latest scope adjustment, 2026-10-20: the user approved a short concurrency
 feasibility milestone with cookie-mutation/continuity qualification deferred.
 Use four fresh account/login checkpoints and a private same-ID comparison,

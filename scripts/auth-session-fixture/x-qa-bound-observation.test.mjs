@@ -40,9 +40,11 @@ test('explicit short QA defers only the mutation gate and keeps private identity
   let privateResult;
   const s = setup({ deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } });
   s.document(); s.time(100); s.identity(); s.request(); s.time(200);
+  assert.equal(s.b.identityReady(), true);
   s.emit('Network.responseReceivedExtraInfo', { headers: { 'Set-Cookie': 'PRIVATE_SECRET' } });
   s.response();
   const r = await s.b.finish(true);
+  assert.equal(s.b.identityReady(), false);
   assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(r.binding, 'unknown');
   assert.equal(r.login, 'protected_response_observed'); assert.equal(s.reads(), 1);
   assert.deepEqual(privateResult, { accountId: '12345', start: 100, end: 200, networkInterval: null });
@@ -50,6 +52,7 @@ test('explicit short QA defers only the mutation gate and keeps private identity
   assert.equal(JSON.stringify(r).includes('12345'), false); assert.equal(JSON.stringify(r).includes('PRIVATE_SECRET'), false);
   const lost = setup({ deferCookieMutation: true, onPrivateResult: () => {} });
   lost.document(); lost.identity(); lost.emit('Runtime.executionContextsCleared', {}); lost.request(); lost.response();
+  assert.equal(lost.b.identityReady(), false);
   assert.equal((await lost.b.finish(true)).diagnostic, 'scope_lost'); assert.equal(lost.reads(), 0);
 });
 

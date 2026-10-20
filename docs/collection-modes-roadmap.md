@@ -23,6 +23,17 @@ the parallel after pair's actual request intervals did not intersect. Preserve
 or completed durable MVP-1. Context/root/whole-Job cleanup and retained-lease release
 passed. No automatic retry, main-login, Store or user-runtime operation occurred.
 
+The subsequent explicitly approved synchronized run
+`90f3e12182b2494ba7933511ac3150a5` closes the short native feasibility milestone:
+184 Node/14 Go preflight tests passed, four same-account/login checkpoints passed,
+the reader target/window was preserved, and natural protected request lifetimes
+overlapped for 447.682861328125 ms. No second login was needed. The 11.48-second
+experiment and complete context/root/Job cleanup passed. The two-cookie ceiling
+did not change. Continuity, refresh and wider coverage remain unknown/deferred,
+and production provider/revision enrollment remains unauthorized. Next is scoped
+MVP-2 integration design; do not reopen the completed short experiment or make
+deferred cookie-writer qualification a prerequisite for that design work.
+
 ### Explicit reader closure and Auto Update recovery (2026-10-05)
 
 The Timeline shows a persistent reader notice while Auto Update is enabled and
@@ -5507,8 +5518,8 @@ qualification, a real provider, Store admission or main-dev activation.
 
 | Step | Concrete deliverable | Exit gate | Status |
 | --- | --- | --- | --- |
-| MVP-1: qualify native X concurrency | Source-qualified account/login evidence, minimum approved one-way transfer, actual overlapping authenticated reads, and mutation/refresh feasibility | Same enrolled account without a second login; no observed cross-browser invalidation; coverage and native revision requirements fit unchanged policy; partial overlap is not durable-refresh qualification | In progress: synthetic concurrency proved; native portability and proof remain unqualified |
-| MVP-2: wire concurrent owners and provider | Separate reader/collector lifecycle and routing, real-source provider metadata and compatibility plan, default-off integration | Reader open does not stop active batch; required verification, Store revisions, durable fences and stale-result rejection remain enforced | Pending native qualification; reuse exclusive safety assets |
+| MVP-1: qualify native X concurrency | Source-qualified account/login evidence, minimum approved one-way transfer, actual overlapping authenticated reads, and mutation/refresh feasibility | Same enrolled account without a second login; no observed cross-browser invalidation; coverage and native revision requirements fit unchanged policy; partial overlap is not durable-refresh qualification | Short feasibility accepted on 2026-10-20: four matched checkpoints, two-cookie seed, 447.68 ms overlap, preserved reader and verified cleanup. Durable mutation/refresh/coverage qualification remains explicitly deferred; no production authority granted |
+| MVP-2: wire concurrent owners and provider | Separate reader/collector lifecycle and routing, real-source provider metadata and compatibility plan, default-off integration | Reader open does not stop active batch; required verification, Store revisions, durable fences and stale-result rejection remain enforced | Ready for scoped integration design using accepted short-QA evidence; provider/enrollment/runtime gates remain unchanged |
 | MVP-3: narrow concurrent dev acceptance and activation | Focused integrated overlap/failure evidence, defined reader-close behavior, opt-out and guard-aware rollback | Preserved windows, retained queue, mutation/coverage-loss failure closure and parent death pass; separate explicit runtime-activation authorization | Pending MVP-2 |
 
 ### Execution rules for speed

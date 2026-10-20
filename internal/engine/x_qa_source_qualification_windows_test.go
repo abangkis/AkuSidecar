@@ -416,6 +416,10 @@ func TestXQASourceQualification(t *testing.T) {
 	cookieWriteScope := os.Getenv("AKU_X_QA_COOKIE_WRITE_SCOPE") == "1"
 	shortPreparation := os.Getenv("AKU_X_QA_SHORT_PREPARATION") == "1"
 	shortConcurrency := os.Getenv("AKU_X_QA_SHORT_CONCURRENCY") == "1"
+	shortSynchronized := os.Getenv("AKU_X_QA_SHORT_SYNCHRONIZED") == "1"
+	if shortSynchronized && !shortConcurrency {
+		t.Fatal("synchronized QA requires short concurrency")
+	}
 	if (shortPreparation || shortConcurrency) && (typesOnly || authControl || directAB || webABA || web401 || boundIdentityLogin || cookieWriteScope || os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") == "1") {
 		t.Fatal("short QA cannot combine qualification modes")
 	}
@@ -541,8 +545,14 @@ func TestXQASourceQualification(t *testing.T) {
 			if err != nil {
 				t.Fatal("short QA preparation encoding failed")
 			}
-		} else if bridge.rpc(ctx, "qualify_short_concurrency", map[string]any{"owner": owner.owner}, &raw) != nil {
-			t.Fatal("short QA concurrency failed")
+		} else {
+			operation := "qualify_short_concurrency"
+			if shortSynchronized {
+				operation = "qualify_synchronized_short_concurrency"
+			}
+			if bridge.rpc(ctx, operation, map[string]any{"owner": owner.owner}, &raw) != nil {
+				t.Fatal("short QA concurrency failed")
+			}
 		}
 	}
 	op := "qualify_source"
@@ -573,6 +583,10 @@ func TestXQASourceQualification(t *testing.T) {
 	if shortPreparation {
 		if _, err := decodeXQAShortPreparation(raw); err != nil {
 			t.Fatal("short QA preparation rejected")
+		}
+	} else if shortSynchronized {
+		if _, err := decodeXQASynchronizedConcurrency(raw); err != nil {
+			t.Fatal("synchronized QA concurrency report rejected")
 		}
 	} else if shortConcurrency {
 		if _, err := decodeXQAShortConcurrency(raw); err != nil {

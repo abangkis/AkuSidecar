@@ -2,6 +2,31 @@
 
 ## Separate retained-X short concurrency feasibility (2026-10-20)
 
+Latest accepted result: opt-in `-SynchronizeCheckpoints`, combined with
+`-RunNativeQA -ShortConcurrency -AllowQASessionTransfer`, aligns only the after
+pair at existing guarded ordinary breakpoints. Each validated role waits at most
+1,000 ms for the other before natural page execution continues; timeout rejects
+acceptance and does not expand the five-second capture budget. No X response is
+held/replayed and no extra cookie/header is introduced. The synchronized wrapper
+reports rendezvous state, reader-window state and private account comparison
+independently while retaining the original non-authorizing V1 experiment.
+
+Offline run `10997e6cb6c541be95ce881e4983964b` passed 184 Node and 14 Go
+top-level tests. After fresh explicit approval for one repeat, native run
+`90f3e12182b2494ba7933511ac3150a5` repeated that preflight and returned
+`short_overlap_observed`: both roles reached the rendezvous, all four fresh
+account/login checks matched, the reader target/window was preserved and the
+protected request lifetimes overlapped by 447.682861328125 ms. The experiment
+took 11,478.8404 ms, with a 15.65-second complete native case. The exact seed
+was acknowledged once, without another login. Collector context/root and complete
+Job cleanup, retained lease release and disposable-root removal passed. The
+sanitized report is
+`runtime/qa/auth-session-sidecar/x-qa-source-90f3e12182b2494ba7933511ac3150a5.report.json`.
+This closes short-QA feasibility only. Cookie writes were observed in all four
+original V1 samples; binding/continuity remain unknown, refresh unqualified and
+Store/native admission unauthorized. The one-repeat approval is consumed. No
+main login, Store or user-runtime process was touched.
+
 This opt-in native QA path is separate from the loopback fixture described below.
 It reuses only the identity-pinned retained QA profile and creates a fresh
 headless profile plus disposable BrowserContext under an owned fixture Job.

@@ -66,8 +66,11 @@ test('failed precheck never seeds; mismatch, lack of overlap, cleanup and uncert
   assert.equal((await before.run()).sessionTransferred, false); assert.equal(before.calls.includes('seed'), false);
   const mismatch = harness({ mutateSample: s => { if (s.step > 0) s.accountId = '54321'; } });
   assert.equal((await mismatch.run()).outcome, 'account_mismatch');
-  const noOverlap = harness({ mutateSample: s => { s.networkInterval.start = s.networkInterval.end - 10; } });
+  let windowChecked = false;
+  const noOverlap = harness({ mutateSample: s => { s.networkInterval.start = s.networkInterval.end - 10; },
+    readerPreserved: async () => { windowChecked = true; return true; } });
   assert.equal((await noOverlap.run()).outcome, 'overlap_not_observed');
+  assert.equal(windowChecked, true);
   const lostAck = await harness({ seedOnce: async () => { throw new Error('PRIVATE_COOKIE'); } }).run();
   assert.equal(lostAck.seedAttempted, true); assert.equal(lostAck.sessionTransferred, null);
   assert.equal(JSON.stringify(lostAck).includes('PRIVATE_COOKIE'), false);

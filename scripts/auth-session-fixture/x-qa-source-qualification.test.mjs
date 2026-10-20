@@ -239,3 +239,12 @@ test('short QA RPC has no caller data channel and denies pre-owner seed, arbitra
   assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'owner_unavailable', 'rpc_fields_invalid',
     'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported', 'rpc_operation_unsupported']);
 });
+
+test('synchronized short QA denies pre-owner calls and any caller timing, identity or script', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'qualify_synchronized_short_concurrency', owner: 1 },
+    { id: 2, op: 'qualify_synchronized_short_concurrency', owner: 1, timeout: 60000 },
+    { id: 3, op: 'qualify_synchronized_short_concurrency', owner: 1, accountId: 'PRIVATE' },
+    { id: 4, op: 'qualify_synchronized_short_concurrency', owner: 1, expression: 'PRIVATE' }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_fields_invalid']);
+});

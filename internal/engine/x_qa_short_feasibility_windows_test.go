@@ -274,7 +274,7 @@ func decodeXQAShortConcurrency(raw []byte) (xQAShortConcurrencyReport, error) {
 		report.Outcome == "collector_checkpoint_rejected" && (transferred == nil || !*transferred) ||
 		report.Outcome == "account_mismatch" && (!report.SeedAttempted || transferred == nil || !*transferred) ||
 		report.Outcome == "overlap_not_observed" && (overlapMS != 0 || report.CompletedCheckpoints != 4) ||
-		report.Outcome == "reader_window_changed" && (overlapMS <= 0 || report.CompletedCheckpoints != 4) {
+		report.Outcome == "reader_window_changed" && report.CompletedCheckpoints != 4 {
 		return report, bad
 	}
 	if report.Outcome == "cleanup_unverified" {

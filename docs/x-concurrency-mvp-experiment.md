@@ -1,11 +1,66 @@
 # Minimal X concurrency experiment
 
-Status: bounded short-QA implementation in progress, 2026-10-20. The user authorized
+Status: bounded short-QA concurrency accepted, 2026-10-20. The user authorized
 deferring mutation/continuity qualification for this feasibility milestone.
 Native state export/import still requires a separate,
 explicit authorization after the exact transfer manifest and implementation are
 reviewable. Main login, Store data/policy and user-runtime lifecycle are excluded.
 Planning approval must not be described as execution approval.
+
+## Synchronized checkpoint continuation (2026-10-20)
+
+The preceding 18-file QA implementation/evidence was published as
+`d32768e7e176685a77f13846388e7879ae6a75c3`; remote main was verified. The user
+requested publication and continuation of the proposed timing alignment, then
+gave fresh explicit permission for one synchronized transfer after automatic
+approval review required that clarification. The rejected attempt started no
+process. This continuation covers one bounded repeat of the same two-cookie QA
+experiment after offline regression checks. It does not broaden the manifest or authorize
+main login, Store or user-runtime work. No automatic sequence of native retries.
+
+Only the parallel after pair uses a private two-role rendezvous. After a guarded
+call-frame read accepts a strong identity, that browser waits at its existing
+ordinary breakpoint for the other role, for at most 1,000 ms. Both then continue
+the natural page execution. Empty/weak identity cannot arrive. Existing five-second
+capture/pause deadlines and all cleanup requirements still apply. No response is
+held, rewritten, replayed or synthesized, and no arbitrary request/header is sent.
+Timeout or an unsuccessful checkpoint stops acceptance rather than extending
+the pause budget or retrying with more cookies.
+
+The separate `aku.x.qa-synchronized-concurrency.v1` wrapper retains the original
+V1 experiment unchanged and adds closed rendezvous status, reader-window status
+and a private account-comparison result. Four completed checkpoints establish
+`accountComparison:match` independently of overlap; this does not rewrite the old
+captured report's conservative `accountMatch:unknown`. Reader target/window
+ownership is now checked before applying the overlap gate, so zero overlap cannot
+skip that observation. Missing window acknowledgement is not reported as preserved.
+Neither wrapper nor experiment can authorize Store/native admission.
+
+Command: `scripts/test-x-qa-source.ps1 -RunNativeQA -ShortConcurrency -AllowQASessionTransfer -SynchronizeCheckpoints`.
+This is the only approved native repeat in this continuation. Preserve the result
+and stop at a named blocker if synchronization does not establish overlap.
+
+Acceptance evidence: offline run `10997e6cb6c541be95ce881e4983964b` passed
+184 Node and 14 Go top-level tests. Native run
+`90f3e12182b2494ba7933511ac3150a5` repeated the full preflight and passed
+with `short_overlap_observed`. Both roles reached the rendezvous and were
+released within the 1,000 ms bound. Four fresh protected-settings 200/body-match
+checkpoints and the private account comparison passed without another login.
+The reader retained the same target/window; the after-pair request lifetimes
+overlapped for **447.682861328125 ms**. The experiment took 11,478.8404 ms,
+and the whole native case took 15.65 seconds. The exact two-cookie seed was
+acknowledged once. Collector context/root closure, complete owned-Job cleanup,
+clean retained-lease release and disposable-root removal were verified.
+
+The sanitized report is
+`runtime/qa/auth-session-sidecar/x-qa-source-90f3e12182b2494ba7933511ac3150a5.report.json`.
+All original V1 observations still report cookie writes and unknown binding;
+`continuity:unknown`, `refresh:not_qualified`, `nativeQualified:false` and
+`canAuthorize:false` remain unchanged. This closes the agreed short native
+concurrency feasibility question, not durable refresh/startup coverage, enrollment,
+provider revision acceptance or main-dev activation. Do not repeat login, source
+discovery, tuple qualification or this successful overlap experiment merely to
+publish changes. Reuse this evidence for the next scoped integration design.
 
 ## Short feasibility milestone: approved deferral (2026-10-20)
 

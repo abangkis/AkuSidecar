@@ -87,6 +87,10 @@ export class QABoundObservation {
     if (this.#id !== null && this.#id !== id) { this.invalidate(); return; }
     this.#id = id; this.#identityAt ??= t; this.#projection = projection;
   }
+  identityReady() {
+    return !this.#closed && this.#id !== null && (!this.#failure ||
+      this.#failure === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation);
+  }
   observe(raw, scope) {
     if (this.#closed) return;
     this.#tick();

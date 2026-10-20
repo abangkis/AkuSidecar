@@ -95,8 +95,9 @@ export async function runQAShortFeasibility(adapter, now = () => performance.now
     if (pair.some(v => v.status !== 'fulfilled')) throw fail();
     const [reader, collector] = pair.map(v => v.value);
     overlapMS = Math.max(0, Math.min(reader.end, collector.end) - Math.max(reader.start, collector.start));
-    if (overlapMS <= 0) { outcome = 'overlap_not_observed'; throw fail(); }
+    outcome = 'reader_checkpoint_rejected';
     if (!await bounded(() => adapter.readerPreserved())) { outcome = 'reader_window_changed'; throw fail(); }
+    if (overlapMS <= 0) { outcome = 'overlap_not_observed'; throw fail(); }
     outcome = 'short_overlap_observed';
   } catch { /* Fixed categories only; do not reflect browser or input errors. */ }
   stopped = true;

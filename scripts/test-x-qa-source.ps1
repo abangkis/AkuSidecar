@@ -1,5 +1,6 @@
-param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly, [switch]$AuthenticationControl, [switch]$DirectAuthenticationAB, [switch]$WebAuthenticationABA, [switch]$Web401Projection, [switch]$BoundIdentityLogin, [switch]$CookieWriteScope, [switch]$PrepareShortConcurrency, [switch]$ShortConcurrency, [switch]$AllowQASessionTransfer)
+param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly, [switch]$AuthenticationControl, [switch]$DirectAuthenticationAB, [switch]$WebAuthenticationABA, [switch]$Web401Projection, [switch]$BoundIdentityLogin, [switch]$CookieWriteScope, [switch]$PrepareShortConcurrency, [switch]$ShortConcurrency, [switch]$AllowQASessionTransfer, [switch]$SynchronizeCheckpoints)
 $ErrorActionPreference = 'Stop'
+if ($SynchronizeCheckpoints -and (!$RunNativeQA -or !$ShortConcurrency -or !$AllowQASessionTransfer)) { throw 'Synchronization requires explicitly authorized native short concurrency.' }
 if (($PrepareShortConcurrency -or $ShortConcurrency) -and (!$RunNativeQA -or $AllowCookieMetadataRead -or $SettingsTypesOnly -or $AuthenticationControl -or $DirectAuthenticationAB -or $WebAuthenticationABA -or $Web401Projection -or $BoundIdentityLogin -or $CookieWriteScope)) { throw 'Short QA requires native QA without other modes.' }
 if (($PrepareShortConcurrency -and $ShortConcurrency) -or ($ShortConcurrency -ne $AllowQASessionTransfer) -or ($PrepareShortConcurrency -and $AllowQASessionTransfer)) { throw 'Short transfer requires exactly ShortConcurrency and explicit AllowQASessionTransfer; preparation never transfers.' }
 if ($CookieWriteScope -and (!$RunNativeQA -or !$BoundIdentityLogin)) { throw 'CookieWriteScope requires native BoundIdentityLogin; no cookie-store API is enabled.' }
@@ -31,7 +32,7 @@ $log = Join-Path $qaParent ('x-qa-source-' + $runId + '.log.txt')
 $report = Join-Path $qaParent ('x-qa-source-' + $runId + '.report.json')
 $variables = @('TEMP','TMP','GOTMPDIR','GOCACHE','GOMODCACHE','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','GOFLAGS',
     'AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH',
-    'AKU_X_QA_SOURCE_QUALIFICATION_ENABLED','AKU_X_QA_COOKIE_METADATA_ALLOWED','AKU_X_QA_SETTINGS_TYPES_ONLY','AKU_X_QA_AUTH_CONTROL','AKU_X_QA_DIRECT_AB','AKU_X_QA_WEB_ABA','AKU_X_QA_WEB_401','AKU_X_QA_BOUND_IDENTITY_LOGIN','AKU_X_QA_COOKIE_WRITE_SCOPE','AKU_X_QA_SHORT_PREPARATION','AKU_X_QA_SHORT_CONCURRENCY','AKU_X_QA_SHORT_TRANSFER_ALLOWED','AKU_X_QA_SOURCE_REPORT_PATH')
+    'AKU_X_QA_SOURCE_QUALIFICATION_ENABLED','AKU_X_QA_COOKIE_METADATA_ALLOWED','AKU_X_QA_SETTINGS_TYPES_ONLY','AKU_X_QA_AUTH_CONTROL','AKU_X_QA_DIRECT_AB','AKU_X_QA_WEB_ABA','AKU_X_QA_WEB_401','AKU_X_QA_BOUND_IDENTITY_LOGIN','AKU_X_QA_COOKIE_WRITE_SCOPE','AKU_X_QA_SHORT_PREPARATION','AKU_X_QA_SHORT_CONCURRENCY','AKU_X_QA_SHORT_TRANSFER_ALLOWED','AKU_X_QA_SHORT_SYNCHRONIZED','AKU_X_QA_SOURCE_REPORT_PATH')
 $previous = @{}
 foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $safeCleanup = $true
@@ -53,6 +54,7 @@ try {
     $env:AKU_X_QA_SHORT_PREPARATION = '0'
     $env:AKU_X_QA_SHORT_CONCURRENCY = '0'
     $env:AKU_X_QA_SHORT_TRANSFER_ALLOWED = '0'
+    $env:AKU_X_QA_SHORT_SYNCHRONIZED = '0'
     $env:AKU_X_QA_SOURCE_REPORT_PATH = $report
     Write-Output ('QA source preflight run: ' + $runId)
     & $node --test --test-timeout=10000 --test-reporter=tap `
@@ -64,6 +66,7 @@ try {
         scripts/auth-session-fixture/x-qa-bound-observation.test.mjs `
         scripts/auth-session-fixture/x-qa-cookie-writes.test.mjs `
         scripts/auth-session-fixture/x-qa-short-feasibility.test.mjs `
+        scripts/auth-session-fixture/x-qa-checkpoint-rendezvous.test.mjs `
         scripts/auth-session-fixture/x-qa-feasibility-collector.test.mjs `
         scripts/auth-session-fixture/x-bootstrap-current-self.test.mjs `
         scripts/auth-session-fixture/x-early-bootstrap-capture.test.mjs `
@@ -74,7 +77,7 @@ try {
         scripts/auth-session-fixture/x-account-settings-body.test.mjs `
         scripts/auth-session-fixture/x-account-settings-capture.test.mjs 2>&1 | Tee-Object -FilePath $log
     if ($LASTEXITCODE -ne 0) { throw 'QA source Node preflight failed.' }
-    & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestX(QAShortFeasibility|QACookieWriteScope|QABoundObservation|QAWeb401|QAWebABA|QADirectAB|QASourceQualification|RetainedQAProfile|AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
+    & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestX(QASynchronizedConcurrency|QAShortFeasibility|QACookieWriteScope|QABoundObservation|QAWeb401|QAWebABA|QADirectAB|QASourceQualification|RetainedQAProfile|AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'QA source Go preflight failed.' }
     if ($RunNativeQA) {
         if ($PrepareShortConcurrency) { Write-Output 'Preparing a blank isolated headless collector and one retained-QA reader checkpoint. No cookie read or transfer. Mutation continuity remains unknown; no Store operation.' }
@@ -99,6 +102,7 @@ try {
         $env:AKU_X_QA_SHORT_PREPARATION = if ($PrepareShortConcurrency) { '1' } else { '0' }
         $env:AKU_X_QA_SHORT_CONCURRENCY = if ($ShortConcurrency) { '1' } else { '0' }
         $env:AKU_X_QA_SHORT_TRANSFER_ALLOWED = if ($AllowQASessionTransfer) { '1' } else { '0' }
+        $env:AKU_X_QA_SHORT_SYNCHRONIZED = if ($SynchronizeCheckpoints) { '1' } else { '0' }
         $safeCleanup = $false
         & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestXQASourceQualification$' -count=1 -timeout=2m -v 2>&1 | Tee-Object -FilePath $log -Append
         $testCode = $LASTEXITCODE

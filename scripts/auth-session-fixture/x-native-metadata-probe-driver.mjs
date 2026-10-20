@@ -24,6 +24,7 @@ import { projectQA401Body, finishQAWeb401 } from './x-qa-401-projection.mjs';
 import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
 import { QACookieWriteCapture, finishQACookieWriteScope } from './x-qa-cookie-writes.mjs';
 import { shortQACheckpoint, selectQAShortCookies, runQAShortFeasibility } from './x-qa-short-feasibility.mjs';
+import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-rendezvous.mjs';
 import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
@@ -1586,7 +1587,7 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
   return boundCheckpoint(current, cookieWriteScope);
 }
 
-async function boundCheckpoint(current, cookieWriteScope = false, pointOptions) {
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   try {
@@ -1599,8 +1600,15 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions) 
     await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
       maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
     await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
+    let synchronized = false;
     current.earlyCapture = new BootstrapHandoffCapture({ boundIdentity: true,
-      send: (method, params, purpose) => send(method, params, current.sessionId, purpose),
+      send: async (method, params, purpose) => {
+        const result = await send(method, params, current.sessionId, purpose);
+        if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && bound.binder.identityReady()) {
+          synchronized = true; await afterIdentity();
+        }
+        return result;
+      },
       beforeRuntimeDisable: async () => {
         // Finish this one document's request before disabling context-loss
         // observation. No second reload, negative control or cookie inspection.
@@ -1677,7 +1685,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-async function collectorShortCheckpoint(current) {
+async function collectorShortCheckpoint(current, afterIdentity) {
   const s = current.shortFeasibility;
   if (!s.navigated) {
     s.navigated = true;
@@ -1694,7 +1702,7 @@ async function collectorShortCheckpoint(current) {
     }
     if (!ready) return { checkpoint: shortQACheckpoint(null), accountId: null, start: null, end: null };
   }
-  let binder, capture, instrumentationId, sampling = false, networkDisabled = false, privateResult = {};
+  let binder, capture, instrumentationId, sampling = false, networkDisabled = false, synchronized = false, privateResult = {};
   const scope = { owner: current.owner + 1, profileId: 'derived-headless-owned-context', sessionId: s.sessionId, targetId: s.targetId };
   const project = (method, r) => {
     if (!isObject(r)) throw probeError('qa_short_collector_invalid');
@@ -1721,12 +1729,16 @@ async function collectorShortCheckpoint(current) {
     if (method === 'Network.getResponseBody') return projectQADirectBody(r);
     return { acknowledged: true };
   };
-  const command = (method, params = {}, purpose) => {
+  const command = async (method, params = {}, purpose) => {
     if (method === 'Debugger.setBreakpoint' && !capture?.handoff.canInstall(params.location)) throw probeError('qa_short_collector_invalid');
     if (method === 'Network.getResponseBody' && !binder?.capture.consumeRead(params.requestId)) throw probeError('qa_short_collector_invalid');
     if (method === 'Debugger.evaluateOnCallFrame' && !isEarlyBootstrapCallFrameRead(params, capture, true)) throw probeError('qa_short_collector_invalid');
     if (method === 'Debugger.removeBreakpoint' && !(purpose === 'normal_remove' ? capture.handoff.breakpoints.has(params.breakpointId) : params.breakpointId === instrumentationId)) throw probeError('qa_short_collector_invalid');
-    return s.transport.send(method, params, s.sessionId, r => project(method, r));
+    const result = await s.transport.send(method, params, s.sessionId, r => project(method, r));
+    if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && binder.identityReady()) {
+      synchronized = true; await afterIdentity();
+    }
+    return result;
   };
   const unsubscribe = s.transport.subscribe(raw => {
     if (!sampling) return;
@@ -1761,17 +1773,21 @@ async function collectorShortCheckpoint(current) {
   }
 }
 
-async function runShortConcurrency(message) {
+async function runShortConcurrency(message, synchronize = false) {
   const current = requireOwner(message), s = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !s || s.closed || s.ran || !current.gate.loginVisible ||
-      process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1') throw probeError('qa_short_transfer_denied');
+      process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1' || synchronize && process.env.AKU_X_QA_SHORT_SYNCHRONIZED !== '1') throw probeError('qa_short_transfer_denied');
   s.ran = true; current.gate.beginObservation(); current.earlyAttempted = true;
-  return runQAShortFeasibility({
+  const rendezvous = synchronize ? new QACheckpointRendezvous() : null;
+  const counts = { reader: 0, collector: 0 };
+  let readerWindow = 'not_checked';
+  const experiment = await runQAShortFeasibility({
     prepareCollector: async () => {},
     check: async role => {
-      if (role === 'collector') return collectorShortCheckpoint(current);
+      const afterIdentity = rendezvous && counts[role]++ === 1 ? () => rendezvous.arrive(role) : undefined;
+      if (role === 'collector') return collectorShortCheckpoint(current, afterIdentity);
       let privateResult = {};
-      const observation = await boundCheckpoint(current, false, { deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } });
+      const observation = await boundCheckpoint(current, false, { deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } }, afterIdentity);
       return { checkpoint: shortQACheckpoint(observation), ...privateResult };
     },
     seedOnce: async () => {
@@ -1785,11 +1801,14 @@ async function runShortConcurrency(message) {
     },
     readerPreserved: async () => {
       const targets = await send('Target.getTargets');
-      return targets.targetIds.length === 1 && targets.targetIds[0] === current.targetId &&
+      const preserved = targets.targetIds.length === 1 && targets.targetIds[0] === current.targetId &&
         (await send('Browser.getWindowForTarget', { targetId: current.targetId })).windowId === s.windowId;
+      readerWindow = preserved ? 'preserved' : 'changed';
+      return preserved;
     },
     closeCollector: () => closeShortCollector(current),
   });
+  return rendezvous ? synchronizedQAReport(experiment, rendezvous, readerWindow) : experiment;
 }
 
 async function webABAPhase(current, stage, frameId, action) {
@@ -1876,6 +1895,9 @@ async function execute(message) {
     case 'qualify_short_concurrency':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return runShortConcurrency(message);
+    case 'qualify_synchronized_short_concurrency':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return runShortConcurrency(message, true);
     case 'close_short_collector':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return { closed: await closeShortCollector(requireOwner(message)) };
