@@ -7,6 +7,10 @@ explicit authorization after the exact transfer manifest and implementation are
 reviewable. Main login, Store data/policy and user-runtime lifecycle are excluded.
 Planning approval must not be described as execution approval.
 
+The synchronized evidence is published in `2fbf338bf0258140f56cb1da567a1145834c5fd8`.
+Continue with [the default-off MVP-2 integration design](x-concurrency-mvp2-integration-design.md),
+reusing this accepted result. No additional native run is part of that design.
+
 ## Synchronized checkpoint continuation (2026-10-20)
 
 The preceding 18-file QA implementation/evidence was published as

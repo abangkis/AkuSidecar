@@ -1,5 +1,25 @@
 # Browser and headless collection roadmap
 
+### MVP-2 default-off integration design (2026-10-20)
+
+The synchronized 16-file delta was reviewed and published as
+`2fbf338bf0258140f56cb1da567a1145834c5fd8`, with remote main verified. Existing
+184 Node/14 Go and native overlap/cleanup evidence was reused; publication did
+not repeat session transfer or activate main dev.
+
+The [MVP-2 design](x-concurrency-mvp2-integration-design.md) selects a private
+pair controller with a separate reader owner/router. Engine and Coordinator
+retain the collector manager; a reader open does not take its lease, pause its
+batch or replace its driver. The next proposed implementation is an offline
+synthetic controller and in-memory admission/sink harness, outside Store. Normal
+builds and startup stay default-off, and native permit creation is unsupported.
+Do not relabel the two physical profiles as one `ProfileID` or mint a lineage
+revision from the accepted QA sample. Exact provider/profile/revision compatibility
+and subsequent integrated acceptance remain required before separately approved
+main-dev activation. No implementation, Store access or runtime operation is
+authorized by this documentation update. These are remaining items inside MVP-2,
+not a new macro roadmap or a reopening of accepted MVP-1 short feasibility.
+
 ### Immediate concurrency feasibility milestone (2026-10-20)
 
 The three macro steps remain unchanged. Within MVP-1, prioritize one short

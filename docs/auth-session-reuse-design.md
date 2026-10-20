@@ -1,5 +1,13 @@
 # One-login collector and native reader proposal
 
+The current MVP-2 design is [X concurrency integration](x-concurrency-mvp2-integration-design.md).
+It selects a separate default-off pair controller and reader route while keeping
+the Engine/Coordinator capture manager dedicated to headless work. The first
+proposed implementation is an offline synthetic controller with an in-memory
+admission/sink port; no Store or native permit is involved. Native profile-pair,
+provider/version and accepted-revision compatibility must be reviewed separately
+before real ingestion. This design does not implement or activate the feature.
+
 Short native feasibility is now accepted (2026-10-20): synchronized QA run
 `90f3e12182b2494ba7933511ac3150a5` used the unchanged two-cookie manifest,
 passed four private same-account/login checkpoints without another login,
