@@ -19,6 +19,7 @@ import { BootstrapHandoffCapture } from './x-bootstrap-breakpoint-handoff.mjs';
 import { QASourceCapture, projectQASourceBody, projectQACookieMetadata, qaCookieRequest, finishQASourceQualification } from './x-qa-source-qualification.mjs';
 import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } from './x-qa-auth-control.mjs';
 import { QADirectCapture, qaABCommand, QA_AB_URL, projectQADirectBody, finishQADirectAB } from './x-qa-direct-ab.mjs';
+import { qaWebCommand, QA_WEB_INSTALL, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE, validateQAWebHook, finishQAWebABA } from './x-qa-web-aba.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -59,6 +60,8 @@ const CDP_METHODS = Object.freeze({
   'Page.navigate': 'qa_guest_home',
   'Page.enable': 'page_enable',
   'Page.reload': 'page_reload',
+  'Page.addScriptToEvaluateOnNewDocument': 'qa_web_install',
+  'Page.removeScriptToEvaluateOnNewDocument': 'qa_web_remove',
   'Runtime.evaluate': 'runtime_evaluate',
   'Debugger.evaluateOnCallFrame': 'early_evaluate_call_frame',
   'Network.enable': 'network_enable',
@@ -532,6 +535,9 @@ function isTargetURL(rawURL) {
 function projectCDPResult(method, result, projectionKind = null) {
   if (!isObject(result)) throw probeError('cdp_result_invalid');
   switch (method) {
+    case 'Page.addScriptToEvaluateOnNewDocument':
+      if (!safeId(result.identifier)) throw probeError('qa_web_identifier_invalid');
+      return { identifier: result.identifier };
     case 'Page.getFrameTree': {
       const frame = result.frameTree?.frame;
       if (!isObject(frame) || !safeId(frame.id) || !(['qa_guest', 'qa_ab'].includes(projectionKind) ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
@@ -568,7 +574,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     }
     case 'Network.getResponseBody':
       if (!bodyMode(driverMode)) throw probeError('body_mode_required');
-      if (projectionKind === 'qa_ab') return projectQADirectBody(result);
+      if (projectionKind === 'qa_ab' || projectionKind === 'qa_web') return projectQADirectBody(result);
       return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
     case 'Network.getCookies':
       if (!qualificationMode(driverMode) || !active?.qaCookieIssued) throw probeError('cookie_mode_required');
@@ -591,6 +597,10 @@ function projectCDPResult(method, result, projectionKind = null) {
       return { acknowledged: true };
     case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
+      if (projectionKind === 'qa_web_hook') {
+        if (own(result, 'exceptionDetails') || !isObject(result.result) || !isObject(result.result.value)) throw probeError('qa_web_hook_unavailable');
+        try { return validateQAWebHook(result.result.value); } catch { throw probeError('qa_web_hook_invalid'); }
+      }
       if (projectionKind === 'bootstrap_current_self') {
         if (driverMode !== 'retained_bootstrap' || own(result, 'exceptionDetails') ||
             !isObject(result.result) || result.result.type !== 'object' || !isObject(result.result.value)) {
@@ -605,6 +615,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     }
     case 'Page.enable':
     case 'Page.reload':
+    case 'Page.removeScriptToEvaluateOnNewDocument':
     case 'Network.enable':
     case 'Network.disable':
     case 'Network.setCacheDisabled':
@@ -763,6 +774,11 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   if (!Object.hasOwn(CDP_METHODS, method) || !isObject(params) || pending.size >= MAX_PENDING_COMMANDS) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
+  const webState = active?.webABA;
+  const webMethod = ['Page.addScriptToEvaluateOnNewDocument', 'Page.removeScriptToEvaluateOnNewDocument'].includes(method);
+  const webCommand = !!webState?.running && sessionId === active.sessionId && (method !== 'Runtime.evaluate' ||
+    [QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE].includes(params.expression));
+  if (webMethod && !webCommand || webCommand && (!qualificationMode(driverMode) || !qaWebCommand(method, params, webState))) return Promise.reject(probeError('qa_web_command_not_authorized'));
   const guestMethod = ['Target.createBrowserContext', 'Target.createTarget', 'Target.disposeBrowserContext', 'Page.navigate'].includes(method);
   const guestSession = !!active?.guest?.sessionId && sessionId === active.guest.sessionId;
   const guestAttach = method === 'Target.attachToTarget' && active?.authControlAttempted;
@@ -780,13 +796,13 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cookie_read_not_authorized'));
   }
   if (method === 'Network.getCookies') active.qaCookieIssued = true;
-  if (method === 'Network.getResponseBody' && !abCommand && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
+  if (method === 'Network.getResponseBody' && !webCommand && !abCommand && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
   }
-  if (method === 'Network.setCacheDisabled' && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
+  if (method === 'Network.setCacheDisabled' && !webCommand && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap')) {
+  if (!webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap')) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -801,7 +817,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       return Promise.reject(probeError('early_command_not_authorized'));
     }
   }
-  let projectionKind = abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
   if (method === 'Debugger.evaluateOnCallFrame') {
     if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || active.gate.observationStarted ||
         sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture)) {
@@ -809,7 +825,9 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     }
     projectionKind = 'bootstrap_current_self';
   }
-  if (method === 'Runtime.evaluate') {
+  if (method === 'Runtime.evaluate' && webCommand) {
+    projectionKind = params.expression === QA_WEB_SNAPSHOT ? 'qa_web_hook' : 'qa_web';
+  } else if (method === 'Runtime.evaluate') {
     const bootstrap = params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION;
     const keys = bootstrap ? ['expression', 'returnByValue', 'awaitPromise', 'userGesture', 'throwOnSideEffect', 'timeout'] :
       ['expression', 'returnByValue', 'awaitPromise', 'userGesture'];
@@ -852,6 +870,7 @@ function failCDP(code) {
   active?.accountSettings?.invalidate();
   active?.guest?.capture?.invalidate();
   active?.ab?.capture?.invalidate();
+  active?.webABA?.capture?.invalidate();
   if (active?.pageLoad) {
     active.pageLoad.reject(probeError(cdpFailure));
     active.pageLoad = null;
@@ -867,6 +886,14 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    if (active?.webABA?.running && raw.sessionId === active.sessionId && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
+      const state = active.webABA;
+      if (Date.now() <= state.endsAt) {
+        if (++state.events > MAX_NETWORK_EVENTS) state.capture?.invalidate();
+        else state.capture?.observe(raw.method, raw.params);
+      }
+      return;
+    }
     if (active?.ab?.sessionId && raw.sessionId === active.ab.sessionId) {
       const ab = active.ab;
       if (!ab.closed && Date.now() <= ab.endsAt && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
@@ -1508,6 +1535,65 @@ async function qualifyDirectAB(message) {
   } finally { current.directABRunning = false; }
 }
 
+async function webABAPhase(current, stage, frameId, action) {
+  const state = current.webABA;
+  state.stage = stage; state.reloaded = false; state.events = 0;
+  state.capture = new QADirectCapture(stage === 'b' ? 'b' : 'a', frameId,
+    requestId => send('Network.getResponseBody', { requestId }, current.sessionId));
+  state.endsAt = Date.now() + 10000;
+  await action();
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, state.endsAt - Date.now())));
+  return state.capture.finish();
+}
+
+async function qualifyWebABA(message) {
+  const current = requireOwner(message);
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
+      current.gate.observationStarted || current.webABAAttempted) throw probeError('qa_web_aba_gate_closed');
+  current.webABAAttempted = true; current.gate.beginObservation();
+  const home = async () => (await send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION,
+    returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId)).value;
+  const readHook = () => send('Runtime.evaluate', { expression: QA_WEB_SNAPSHOT,
+    returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId);
+  const before = await home();
+  if (!before) throw probeError('qa_web_home_required');
+  const state = current.webABA = { running: true, stage: 'setup', reloaded: false, bStarted: false };
+  let a, b = null, aAgain, hook, removed = false;
+  try {
+    state.scriptId = (await send('Page.addScriptToEvaluateOnNewDocument', { source: QA_WEB_INSTALL }, current.sessionId)).identifier;
+    await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
+      maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
+    await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
+    const { frameId } = await send('Page.getFrameTree', {}, current.sessionId);
+    const reload = async () => { await send('Page.reload', { ignoreCache: false }, current.sessionId); state.reloaded = true; };
+    a = await webABAPhase(current, 'a', frameId, reload);
+    hook = await readHook();
+    if (a.status === 200 && a.body?.category === 'settings_match' && a.diagnostic === 'http_200_unqualified' &&
+        hook.candidates === 1 && hook.prepared && !hook.attempted && !hook.rejected) {
+      b = await webABAPhase(current, 'b', frameId, async () => {
+        const started = await send('Runtime.evaluate', { expression: QA_WEB_START, returnByValue: true,
+          awaitPromise: false, userGesture: false }, current.sessionId);
+        state.bStarted = true;
+        if (!started.value) throw probeError('qa_web_b_not_started');
+      });
+    }
+    const disposed = await send('Runtime.evaluate', { expression: QA_WEB_DISPOSE,
+      returnByValue: true, awaitPromise: false, userGesture: false }, current.sessionId);
+    hook = await readHook();
+    await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: state.scriptId }, current.sessionId);
+    state.scriptId = null; removed = disposed.value && hook.disposed;
+    aAgain = await webABAPhase(current, 'a_again', frameId, reload);
+    return finishQAWebABA(a, b, aAgain, hook, before, await home(), removed);
+  } finally {
+    // The owned Job remains the final cleanup authority on any partial failure.
+    if (state.scriptId) {
+      await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: state.scriptId }, current.sessionId).catch(() => {});
+    }
+    await send('Network.disable', {}, current.sessionId).catch(() => {});
+    state.running = false;
+  }
+}
+
 async function closeChrome() {
   if (!child || childExited) return { exited: true };
   if ((driverMode === 'two_phase' || accountSettingsBodyMode(driverMode)) && !twoPhaseState?.phase2Started) return { exited: false };
@@ -1523,6 +1609,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_web_aba':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyWebABA(message);
     case 'qualify_direct_ab':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifyDirectAB(message);

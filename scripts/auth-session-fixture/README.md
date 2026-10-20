@@ -374,6 +374,88 @@ The next design decision must compare the already successful natural web-client
 request path, or select another qualified source, under a separately reviewed
 boundary. Native login semantics and continuity remain unresolved within MVP-1.
 
+### Natural web A/B/A checkpoint (2026-10-20)
+
+The direct-navigation 11-file delta was reviewed and published as `fc6bf3e`
+(remote SHA verified). Subsequent authorization adds a browser-local, request-
+specific no-cookie comparison on the previously successful natural web path:
+
+```powershell
+# Offline only by default:
+.\scripts\test-x-qa-source.ps1
+# Explicit retained-QA authorization; no login prompt or session transfer:
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -WebAuthenticationABA
+```
+
+The closed `qualify_web_aba` RPC accepts only its owner. A fixed main-world hook
+is installed only for the owned QA Home document and exact api_v1 settings GET.
+It passes the original Fetch/XHR call and return value through unchanged, while
+privately snapshotting at most one request inside Chrome. Fetch uses a native
+Request snapshot; XHR records only its actual application-supplied headers in a
+page-local closure (at most 32 entries/8,192 string code units), then snapshots
+them into a native Request. The temporary XHR record is discarded after send.
+No cookie getter/setter, storage read, arbitrary endpoint/header reconstruction
+or request-header export to Node/Go is provided. Opaque authorization/CSRF header
+values, if present in the application's own request, remain inside QA Chrome.
+This expressly authorized browser-local copy does not authorize cross-context
+or browser-to-headless session transfer.
+
+The bounded sequence is:
+
+1. A: one natural Home reload, fresh unique completed settings HTTP 200 and
+   settings_match projection. A's result is delivered normally to the app.
+2. B: only after A and a unique prepared hook snapshot pass, one fixed action
+   sends the captured request through the original native Fetch with
+   credentials:omit, no-store, redirect:error and a four-second abort timer.
+   B's response/promise never reaches application callbacks. Its response stream
+   is drained/discarded in-page with a 16 KiB ceiling; credentials:omit also
+   ignores response cookies. Original cookie storage is not cleared or changed
+   by the hook. This is a no-cookie request control, not an empty guest context.
+3. Dispose the page hook and remove its new-document script, then A again:
+   reload Home normally and require another fresh settings_match HTTP 200.
+
+Fetch and XHR selection are supported. B uses Fetch even when A uses XHR; that
+transport difference remains explicit rather than claiming two identical calls.
+Each phase has a ten-second window, a 4,096-event ceiling and the existing
+single-frame, unique GET/cache/redirect/body/read-deadline constraints. Preflight
+tests reject foreign origins/methods, ambiguity, over-limit XHR state, replay,
+caller scripts/URLs and direct CDP operations. Runtime expressions and installed
+source are fixed constants; arbitrary caller evaluation remains unsupported.
+
+Report `aku.x.qa-web-aba.v1` contains separate A/B/A-again phase DTOs, a closed
+value-free hook snapshot, Home readiness and hook-removal checks. Go independently
+validates all phases using the existing response decoder and recomputes the
+outcome. Missing B, failed A/A-again, lost Home or unresolved rejection remains
+distinct. A 200/401/200 with an error envelope is only cookie_dependency_candidate:
+the generic envelope has not excluded CSRF/challenge or established a fully
+guest request, named-account binding or native continuity. Authentication stays
+unknown, canAuthorize/sessionTransferred false. No Store policy is changed.
+
+Initial offline run `1cb594483dda400e8662cbb2ac13ee64` passed 82 Node/nine Go
+top-level cases. Native run `c08b440dc64c4097a023569b83640829` passed the harness
+in 32.81 seconds on the retained QA login, without manual input:
+
+| Phase | HTTP | Body category | Body reads |
+| --- | --- | --- | --- |
+| A: original XHR | 200 | settings_match | 1 |
+| B: browser-local Fetch, credentials:omit | 401 | error_envelope | 1 |
+| A again: normal web request | 200 | settings_match | 1 |
+
+Every phase had one matching GET, completed and fresh cache flags. Hook transport
+was xhr, candidates one, attempted/completed true, disposed true, prepared false
+and rejected false. Home before/after, hook removal, graceful root close and
+whole owned-Job cleanup were verified. The lease returned clean and the disposable
+control root was removed. No login, cookie inspection, header/body value export,
+transfer, main login, Store or user-runtime operation occurred. Sanitized report:
+`runtime/qa/auth-session-sidecar/x-qa-source-c08b440dc64c4097a023569b83640829.report.json`.
+
+Final offline run `98dd4e4e99164053a701e3ecbe50ddbf` passed 83 Node/nine Go
+cases after adding dedicated RPC denial coverage. Native implementation inputs
+were unchanged; no extra QA or login repetition was needed. Next qualify the
+401 rejection category with a bounded projection before promoting this result
+to authenticated-source evidence. Actual account binding, continuity and any
+session transfer remain separate authorization/evidence gates within MVP-1.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

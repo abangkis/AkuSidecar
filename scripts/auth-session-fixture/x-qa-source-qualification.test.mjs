@@ -192,3 +192,11 @@ test('authentication control denies pre-owner calls, caller URLs and direct cont
   assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_operation_unsupported',
     'owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid']);
 });
+test('web A/B/A RPC denies pre-owner execution, caller scripts/URLs and direct script installation', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'qualify_web_aba', owner: 1 },
+    { id: 2, op: 'qualify_web_aba', owner: 1, expression: 'PRIVATE' },
+    { id: 3, op: 'qualify_web_aba', owner: 1, url: 'https://evil.test' },
+    { id: 4, op: 'Page.addScriptToEvaluateOnNewDocument', source: 'PRIVATE' }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
+});

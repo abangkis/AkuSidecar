@@ -353,6 +353,18 @@ cause nor native login semantics is inferred. Stop this mechanism; the next
 decision must concern the working natural web-client path or another qualified
 source, not additional login or automatic header replay.
 
+The subsequent authorized [natural web A/B/A control](../scripts/auth-session-fixture/README.md#natural-web-aba-checkpoint-2026-10-20)
+now preserves the working application request and copies it only within the same
+QA Chrome page with credentials:omit for B. A and A again stay normal. The
+reviewed exception is this one browser-local copy of an observed request, not
+helper header extraction, arbitrary reconstruction or cross-context transfer.
+Native 200/401/200 was observed with the original XHR versus Fetch for B, and
+all cleanup checks passed. The result is cookie_dependency_candidate; generic
+error-envelope 401 is not yet an explicit authentication rejection. Keep
+authentication unknown until a bounded rejection projection rules out the
+relevant alternatives. No new login, Store policy or user runtime access is
+needed for this control. Account binding and native continuity remain separate.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

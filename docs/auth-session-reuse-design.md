@@ -101,6 +101,17 @@ owned Job and lease cleanup were verified. No transfer, Store or main-runtime
 change occurred. Stop direct-navigation retries; review a meaningful comparison
 of the successful natural web-client path or a replacement source.
 
+The [natural web A/B/A checkpoint](../scripts/auth-session-fixture/README.md#natural-web-aba-checkpoint-2026-10-20)
+later reused the retained QA login and observed 200/settings_match,
+401/error_envelope on a browser-local credentials:omit copy, then another
+200/settings_match normal request. The original transport was XHR; B used Fetch.
+Headers remained inside Chrome, B's response was not delivered to the app, and
+the hook was removed before the final reload. This is cookie_dependency_candidate,
+not authenticated-source qualification: the generic 401 envelope has not excluded
+CSRF/challenge, established a fully guest request, account binding or continuity.
+Offline checks passed 83 Node/nine Go cases; native cleanup and clean retained
+lease were verified. No session transfer, Store or main-runtime operation occurred.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

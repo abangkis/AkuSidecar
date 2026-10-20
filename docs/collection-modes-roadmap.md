@@ -5608,6 +5608,19 @@ working natural web-client request path or a replacement source. No session
 transfer or main login/Store/runtime access occurred. See the
 [checkpoint](../scripts/auth-session-fixture/README.md#direct-navigation-ab-checkpoint-2026-10-20).
 
+After `fc6bf3e` published the 11-file direct-navigation delta, the authorized
+natural-web A/B/A control produced native 200/401/200 in run
+`c08b440dc64c4097a023569b83640829` (32.81 seconds). The original XHR and final
+normal request matched settings; one browser-local Fetch copy with credentials:
+omit produced an error envelope without delivering it to app callbacks. Header
+values stayed in Chrome. Hook removal, surviving Home, graceful root close,
+owned-Job cleanup, clean lease and disposable-root removal were verified. Final
+offline preflight passed 83 Node/nine Go cases. This advances the working web
+path inside MVP-1, but remains cookie_dependency_candidate: qualify the 401
+category before claiming authenticated semantics, account binding or continuity.
+No login repetition, session transfer, main login/Store/runtime operation occurred.
+See the [checkpoint](../scripts/auth-session-fixture/README.md#natural-web-aba-checkpoint-2026-10-20).
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated

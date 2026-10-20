@@ -1,9 +1,10 @@
-param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly, [switch]$AuthenticationControl, [switch]$DirectAuthenticationAB)
+param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly, [switch]$AuthenticationControl, [switch]$DirectAuthenticationAB, [switch]$WebAuthenticationABA)
 $ErrorActionPreference = 'Stop'
+if ($WebAuthenticationABA -and (!$RunNativeQA -or $AllowCookieMetadataRead -or $SettingsTypesOnly -or $AuthenticationControl -or $DirectAuthenticationAB)) { throw 'WebAuthenticationABA requires native QA and forbids combined modes or cookie access.' }
 if ($DirectAuthenticationAB -and (!$RunNativeQA -or $AllowCookieMetadataRead -or $SettingsTypesOnly -or $AuthenticationControl)) { throw 'DirectAuthenticationAB requires native QA and forbids combined modes or cookie access.' }
 if ($AuthenticationControl -and (!$RunNativeQA -or $AllowCookieMetadataRead -or $SettingsTypesOnly)) { throw 'AuthenticationControl requires native QA and forbids cookie access or combined modes.' }
 if ($AllowCookieMetadataRead -and (!$RunNativeQA -or $SettingsTypesOnly)) { throw 'Cookie metadata permission requires native execution without SettingsTypesOnly.' }
-if ($RunNativeQA -and !$DirectAuthenticationAB -and !$AuthenticationControl -and !$SettingsTypesOnly -and !$AllowCookieMetadataRead) { throw 'Native cookie inspection requires explicit AllowCookieMetadataRead. Use SettingsTypesOnly for no cookie access.' }
+if ($RunNativeQA -and !$WebAuthenticationABA -and !$DirectAuthenticationAB -and !$AuthenticationControl -and !$SettingsTypesOnly -and !$AllowCookieMetadataRead) { throw 'Native cookie inspection requires explicit AllowCookieMetadataRead. Use SettingsTypesOnly for no cookie access.' }
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
@@ -25,7 +26,7 @@ $log = Join-Path $qaParent ('x-qa-source-' + $runId + '.log.txt')
 $report = Join-Path $qaParent ('x-qa-source-' + $runId + '.report.json')
 $variables = @('TEMP','TMP','GOTMPDIR','GOCACHE','GOMODCACHE','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','GOFLAGS',
     'AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_TEST_NODE_PATH','AKU_TEST_CHROME_PATH',
-    'AKU_X_QA_SOURCE_QUALIFICATION_ENABLED','AKU_X_QA_COOKIE_METADATA_ALLOWED','AKU_X_QA_SETTINGS_TYPES_ONLY','AKU_X_QA_AUTH_CONTROL','AKU_X_QA_DIRECT_AB','AKU_X_QA_SOURCE_REPORT_PATH')
+    'AKU_X_QA_SOURCE_QUALIFICATION_ENABLED','AKU_X_QA_COOKIE_METADATA_ALLOWED','AKU_X_QA_SETTINGS_TYPES_ONLY','AKU_X_QA_AUTH_CONTROL','AKU_X_QA_DIRECT_AB','AKU_X_QA_WEB_ABA','AKU_X_QA_SOURCE_REPORT_PATH')
 $previous = @{}
 foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 $safeCleanup = $true
@@ -40,22 +41,25 @@ try {
     $env:AKU_X_QA_SETTINGS_TYPES_ONLY = '0'
     $env:AKU_X_QA_AUTH_CONTROL = '0'
     $env:AKU_X_QA_DIRECT_AB = '0'
+    $env:AKU_X_QA_WEB_ABA = '0'
     $env:AKU_X_QA_SOURCE_REPORT_PATH = $report
     Write-Output ('QA source preflight run: ' + $runId)
     & $node --test --test-timeout=10000 --test-reporter=tap `
         scripts/auth-session-fixture/x-qa-source-qualification.test.mjs `
         scripts/auth-session-fixture/x-qa-auth-control.test.mjs `
         scripts/auth-session-fixture/x-qa-direct-ab.test.mjs `
+        scripts/auth-session-fixture/x-qa-web-aba.test.mjs `
         scripts/auth-session-fixture/x-native-plan-offline.test.mjs `
         scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs `
         scripts/auth-session-fixture/x-retained-account-settings-driver.test.mjs `
         scripts/auth-session-fixture/x-account-settings-body.test.mjs `
         scripts/auth-session-fixture/x-account-settings-capture.test.mjs 2>&1 | Tee-Object -FilePath $log
     if ($LASTEXITCODE -ne 0) { throw 'QA source Node preflight failed.' }
-    & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestX(QADirectAB|QASourceQualification|RetainedQAProfile|AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
+    & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestX(QAWebABA|QADirectAB|QASourceQualification|RetainedQAProfile|AccountSettingsProjection|TwoPhaseMetadata|StandardChromeControl|NativeMetadataProbe|PopupDiagnostics)Offline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'QA source Go preflight failed.' }
     if ($RunNativeQA) {
-        if ($DirectAuthenticationAB) { Write-Output 'Fixed direct-navigation A/B: retained QA context and one empty BrowserContext. Two bounded response projections; no cookie/header extraction, session transfer, login, logout or Store operation.' }
+        if ($WebAuthenticationABA) { Write-Output 'Natural web A/B/A: one browser-local no-cookie copy. Application headers stay inside Chrome. Fixed response categories only; no session transfer, login, logout or Store operation.' }
+        elseif ($DirectAuthenticationAB) { Write-Output 'Fixed direct-navigation A/B: retained QA context and one empty BrowserContext. Two bounded response projections; no cookie/header extraction, session transfer, login, logout or Store operation.' }
         elseif ($AuthenticationControl) { Write-Output 'Retained QA plus one new empty BrowserContext for natural Home comparison. No cookie reads, transfer, constructed API request, logout, new login or Store operation.' }
         elseif ($SettingsTypesOnly) { Write-Output 'Opening only retained QA for six fixed settings field types. Cookie reads disabled. No raw values, transfer, new login, logout or Store operation.' }
         else { Write-Output 'Opening only retained QA. Scoped CDP cookie replies include transient values; only attributes are retained. No transfer, new login, logout or Store operation.' }
@@ -64,6 +68,7 @@ try {
         $env:AKU_X_QA_SETTINGS_TYPES_ONLY = if ($SettingsTypesOnly) { '1' } else { '0' }
         $env:AKU_X_QA_AUTH_CONTROL = if ($AuthenticationControl) { '1' } else { '0' }
         $env:AKU_X_QA_DIRECT_AB = if ($DirectAuthenticationAB) { '1' } else { '0' }
+        $env:AKU_X_QA_WEB_ABA = if ($WebAuthenticationABA) { '1' } else { '0' }
         $safeCleanup = $false
         & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestXQASourceQualification$' -count=1 -timeout=2m -v 2>&1 | Tee-Object -FilePath $log -Append
         $testCode = $LASTEXITCODE
