@@ -4,8 +4,11 @@ Status: the first offline synthetic controller increment was reviewed and
 published as `e87c1b27e730b61d0d4c99a819b43035332a40d8`, with origin/main
 verified. On 2026-10-21 the user additionally authorized default-off
 main/broker/Coordinator wiring and integrated synthetic testing. That increment
-is implemented with in-memory owners and admission; see its validation checkpoint
-below. Native observation/session transfer, database access, Store
+was reviewed and published as `dfbb08d9a8fb5fff3b4273a69600b5cc8e7dd301`, with
+origin/main verified. The user then authorized a fresh-profile, loopback-only
+Chrome adapter and tests on this routing; its eight synthetic scenarios are now
+validated as recorded below.
+Native observation/session transfer, database access, Store
 modification, installation and user-runtime operations remain excluded. Proposed
 native integration surfaces below remain unavailable. This document does not
 itself grant execution permission.
@@ -338,3 +341,104 @@ mutation after concurrent binding. The next ownership-backend increment must
 qualify actual Chrome behavior on this routing without treating the fake PID or
 Done event as OS tree cleanup. Native provider/profile/revision compatibility
 still needs its separate decision before Store-backed or real-session ingestion.
+
+## Chrome ownership adapter increment (authorized 2026-10-21)
+
+The user authorized a loopback-only Chrome adapter on the published synthetic
+routing, with fresh profiles and automatic synthetic login. The implementation
+now adds the exact early-dispatch provider
+`--dev --dev-session-reuse=synthetic-concurrent-chrome-fixture`, available only in
+Windows dual-tag fixture builds. The topology uses two independently owned fixture
+bridges/Windows Jobs, one per role, and distinct new profile directories. This
+retains the existing single-owner bridge cleanup contract and makes selective
+collector cleanup observable without closing the reader's Job.
+
+The adapter must reuse the same private controller, Coordinator, capture Managers
+and framed broker route. It must bind real process handles, creation identity,
+image, Job membership and directory identity to the synthetic role registry.
+Proof still has the existing five-second age and two-second binding limits.
+The controlled server supplies one synthetic reader login and one narrowly scoped
+invented-cookie seed to the empty collector profile. Neither retained QA nor
+native account/session data is part of this adapter.
+
+Acceptance requires independent server evidence that a protected collector
+request remains active while the broker opens a reader window and that reader
+makes its own authenticated loopback request. Preserve the collector's actual
+PID, generation, driver and lease throughout. All reader windows, including the
+bootstrap and every target within a window, count toward ownership.
+
+Selective close, role failure and final cleanup must verify the full owned Job
+boundary. A parent-death test must observe the child's browser/helper trees gone
+before emergency outer-Job cleanup; fallback termination cannot make that test
+pass. Unknown cleanup rejects acceptance and retains disposable roots. These
+tests still grant no Store access, native provider authority, foreground claim,
+registry change or main-dev/user-runtime activation.
+
+The canonical helper is `scripts/test-concurrency-chrome-integration.ps1`.
+Without switches it runs offline command/input, actual-main build and rejection
+gates. `-VerifyChrome` additionally runs the eight built-in Chrome scenarios;
+`-Scenario` restricts that set for a causal recheck. Chrome paths are normalized
+to their real image locations; profile/root paths must remain new ordinary
+directories under the exact project QA parent, with pinned directory identities.
+The command accepts no native origin, account ID, profile reuse, cookie name or
+cookie attributes. The seed is exactly one server-generated `fixture_session`
+value passed privately to the empty collector, with loopback-only attributes.
+The broker's invented X URL is validated but never navigated; browser requests
+go only to the controlled loopback server.
+
+Duplicate login/seed calls must reject and leave the same private synthetic
+account/revision evidence intact. Reports contain only the fixed scenario,
+acceptance/cleanup/overlap flags and login/seed counts. `canAuthorize` and
+`nativeQualified` must both remain false. Expiry uses a controlled clock offset;
+it does not alter the production proof-age or binding deadlines.
+
+Profile retirement requires more than empty Job accounting. After terminating
+an owned role, the adapter also waits for the existing bridge's `Process.Done`
+publication, which follows pinned-handle/window release, then rechecks cleanup
+before walking and deleting the exact owned root. An intentional last-reader
+exit must leave its bridge alive until the close-window RPC has returned.
+The existing shared Chrome launcher/driver and accepted standalone X feasibility
+evidence are unchanged.
+
+Accepted actual-main Chrome cases, with no real account login or cookie transfer:
+
+| Run | Qualified cases |
+| --- | --- |
+| `43ee70a67f9342e6ad1909b0ca96bf94` | Protected overlap, bootstrap/multiple windows, reader retention after capture, final-reader close and fresh independent collector capture (`overlap-last-close`) |
+| `3932122bc03645128931a851a68da108` | Opt-out, actual collector bridge death with reader retention, denied dependent continuation, account mismatch, proof expiry and parent cancellation |
+| `5af9217aba664ddd96fa256fe1b0fd7a` | Actual Sidecar QA child death: empty outer Job observed before fallback termination, pinned peer handles signaled, strict profile retirement |
+
+Logs use `runtime/qa/auth-session-sidecar/concurrent-chrome-integration-<run>.log.txt`.
+The first log's old generic completion sentence mentions parent death; only its
+explicit `overlap-last-close` PASS line qualifies that run. The six accepted cases
+in the second log remain valid even though the then-unfixed final parent-death
+retirement case failed. The third run independently closes that remaining case.
+The helper now names only selected scenarios in its completion sentence. Narrow
+later corrections changed only parent-handle wait budgeting and offline receipt
+validation; accepted role/backend behavior is unchanged and is reused.
+
+Default-sandbox Chrome exited before `Browser.getVersion`; the authorized
+outside-sandbox comparison reached actual Chrome. Accepted live runs used that
+environment, without changing the shared launcher. Offline gates cover command,
+seed, input and report boundaries, four actual-main build modes, required dev
+opt-in, existing-root rejection and lexical canonical-path alias rejection.
+A physical junction-negative case was unavailable under sandbox permissions;
+the actual no-reparse/directory-identity guard remains enforced.
+
+Final offline run `7f37e0d6a6e043a6bea0cb58cd0413f4` passed three Node tests,
+one named-file Go input test, 17 malformed-report cases plus a valid report,
+four actual-main builds and seven early rejection/root gates. It includes strict
+string types for provider/scenario, preventing PowerShell array comparison from
+accepting a one-element array as a matching scalar. No Chrome launched in that
+final run; its helper build root was removed. Its retained log follows the same
+`concurrent-chrome-integration-<run>.log.txt` convention above.
+
+Successful acceptance roots were removed only after full cleanup. Four earlier
+failed-run roots remain retained because profile retirement lacked its required
+proof at that time: `run-concurrent-chrome-26ad1e90b24d4d15bde9148915616595`,
+`run-concurrent-chrome-2f5f014562474091ba6a8f82ab386ea5`,
+`run-concurrent-chrome-3f1da0c3296845389744c2a77c3b36d5` and
+`run-concurrent-chrome-ce81a77b60094b8fb852fb02e3629db9`, all under the project
+QA parent. Metadata inspection did not read cookie/database file contents.
+Do not promote later successful cleanup to proof for those failed runs or remove
+the retained roots by bypassing the retirement guard.

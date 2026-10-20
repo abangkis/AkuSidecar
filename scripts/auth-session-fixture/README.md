@@ -1,5 +1,42 @@
 # Local one-login concurrency fixture
 
+## Chrome-backed main, broker and Coordinator integration
+
+The separate `scripts/test-concurrency-chrome-integration.ps1` helper tests the
+new default-off provider `synthetic-concurrent-chrome-fixture`. Its default mode
+is offline. Add `-VerifyChrome` to run the built-in cases using fresh reader and
+headless profiles, automatic loopback synthetic login and two independently
+owned Windows Jobs. No manual login/click is needed. `-Scenario` limits a causal
+recheck to selected built-in cases.
+
+```powershell
+.\scripts\test-concurrency-chrome-integration.ps1
+.\scripts\test-concurrency-chrome-integration.ps1 -VerifyChrome
+```
+
+This adapter uses the same private controller, actual main early dispatch,
+Coordinator, capture Managers and framed broker route. It handles no native
+session data and opens no Store/database, user profile, production runtime,
+registry key or activation endpoint. See the
+[Chrome ownership checkpoint](../../docs/x-concurrency-mvp2-integration-design.md#chrome-ownership-adapter-increment-authorized-2026-10-21)
+for evidence and limits. Unknown cleanup retains the failed disposable roots;
+emergency cleanup cannot turn a failed lifetime case into a pass.
+
+Eight Chrome scenarios passed across runs `43ee70a67f9342e6ad1909b0ca96bf94`
+(overlap/last-close), `3932122bc03645128931a851a68da108` (six failure/lifetime
+cases) and `5af9217aba664ddd96fa256fe1b0fd7a` (actual parent-process death).
+Accepted live runs executed outside the restrictive sandbox after sandbox
+startup exited before browser readiness. Successful roots were removed; four
+earlier failed-run profile roots remain retained as listed in the checkpoint.
+The physical junction-negative test was unavailable in the sandbox; lexical
+alias/reuse gates passed and the runtime no-reparse guard remains enforced.
+
+Final offline run `7f37e0d6a6e043a6bea0cb58cd0413f4` passed three Node tests,
+one Go input test, 17 malformed-report rejections, four actual-main builds and
+seven rejection/root gates. The report validator rejects unknown fields, false
+cleanup/overlap, authority claims, missing/wrong scalar types and invalid counts.
+The helper build root was removed without launching Chrome in this final run.
+
 ## Synthetic main, broker and Coordinator integration
 
 Run `.\scripts\test-concurrency-integration.ps1` from the repository root. This

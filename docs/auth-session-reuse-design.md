@@ -16,6 +16,13 @@ fake Processes; see the
 [wiring checkpoint](x-concurrency-mvp2-integration-design.md#main-broker-and-coordinator-synthetic-wiring-2026-10-21).
 It still uses memory-only work and result state, with no database or Store calls.
 
+The Chrome-backed adapter on that routing now passes eight synthetic scenarios,
+including actual QA Sidecar process death and selective role cleanup. It uses
+fresh profiles and controlled loopback login only; see the
+[Chrome checkpoint](x-concurrency-mvp2-integration-design.md#chrome-ownership-adapter-increment-authorized-2026-10-21).
+Native provider authority, Store-backed ingestion and main-dev activation remain
+separate acceptance work.
+
 Short native feasibility is now accepted (2026-10-20): synchronized QA run
 `90f3e12182b2494ba7933511ac3150a5` used the unchanged two-cookie manifest,
 passed four private same-account/login checkpoints without another login,

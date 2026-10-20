@@ -1,5 +1,22 @@
 # Browser and headless collection roadmap
 
+### MVP-2 Chrome-backed synthetic routing (2026-10-21)
+
+The 12-file synthetic wiring was reviewed and published as `dfbb08d`, with
+origin/main verified. Its subsequent default-off Chrome adapter now qualifies
+eight actual-main synthetic scenarios using two fresh profiles, separate owned
+Jobs, one loopback login and one invented-cookie seed. Protected overlap,
+collector invariants, reader window retention, fresh/denied continuation,
+opt-out, collector loss, mismatch, expiry, parent cancellation and actual
+Sidecar QA process death are covered. The
+[Chrome checkpoint](x-concurrency-mvp2-integration-design.md#chrome-ownership-adapter-increment-authorized-2026-10-21)
+records the three accepted runs, retained failed artifacts and exact limits.
+
+No native session, Store, user login or dev-runtime activation is included.
+Native provider/profile/revision compatibility and Store-backed integration
+remain a separate decision before a narrowly authorized real-source pilot.
+These are remaining work inside MVP-2/MVP-3, not a new macro roadmap.
+
 ### MVP-2 synthetic main/broker/Coordinator wiring (2026-10-21)
 
 The offline controller was reviewed and published as `e87c1b2`, with remote main

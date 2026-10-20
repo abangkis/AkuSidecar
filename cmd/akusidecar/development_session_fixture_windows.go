@@ -13,8 +13,11 @@ func dispatchDevelopmentSession(options config.Options, input io.Reader, output 
 	if options.DevelopmentSessionReuse == "" {
 		return false, nil
 	}
-	if !options.Dev || (options.DevelopmentSessionReuse != "synthetic-concurrent-fixture" && options.DevelopmentSessionReuse != "synthetic-fixture" && options.DevelopmentSessionReuse != "synthetic-policy-fixture" && options.DevelopmentSessionReuse != "synthetic-broker-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-native-fixture") {
+	if !options.Dev || (options.DevelopmentSessionReuse != "synthetic-concurrent-chrome-fixture" && options.DevelopmentSessionReuse != "synthetic-concurrent-fixture" && options.DevelopmentSessionReuse != "synthetic-fixture" && options.DevelopmentSessionReuse != "synthetic-policy-fixture" && options.DevelopmentSessionReuse != "synthetic-broker-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-native-fixture") {
 		return false, errors.New("development session requires --dev and supported synthetic-fixture provider")
+	}
+	if options.DevelopmentSessionReuse == "synthetic-concurrent-chrome-fixture" {
+		return true, engine.RunDevelopmentConcurrentChromeFixture(input, output)
 	}
 	if options.DevelopmentSessionReuse == "synthetic-concurrent-fixture" {
 		return true, engine.RunDevelopmentConcurrentFixture(input, output)
