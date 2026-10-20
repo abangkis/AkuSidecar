@@ -5635,6 +5635,21 @@ operation occurred. Account binding, native continuity and sufficiency of the
 two allowed cookies remain within MVP-1 and are not implied by this checkpoint.
 See the [bounded projection](../scripts/auth-session-fixture/README.md#bounded-401-rejection-checkpoint-2026-10-20).
 
+The subsequent [same-document binding checkpoint](../scripts/auth-session-fixture/README.md#same-document-identitylogin-binding-checkpoint-2026-10-20)
+implements a one-reload retained-QA composite observation and private account
+comparison, with strict document/context, request ordering, freshness, ExtraInfo
+and cleanup guards. Offline checks passed 154 Node/eleven Go cases. Native runs
+reused the retained login with no input; both released clean leases and empty
+owned Jobs. The corrected run `0184891780c8447e994d6ea7ad172117` observed the
+self-ID/entity match and fresh completed settings HTTP 200, but a post-identity
+Set-Cookie observation fenced the body read. Binding/login remain unknown;
+this checkpoint has NOT passed the native exit gate. The write's cookie identity
+and session relevance are unknown, not proven account/session mutation. Next
+qualify that write with a bounded value-free name/scope projection; do not retry
+the unchanged sample or restart source discovery. No transfer, Store, main-login
+or runtime operation occurred. This remains work within MVP-1, not a new macro
+roadmap or a reason to substitute exclusive fallback for concurrency.
+
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 
 The following checkpoints preserve the permissions and evidence of their dated

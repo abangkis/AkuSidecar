@@ -412,7 +412,8 @@ func TestXQASourceQualification(t *testing.T) {
 	directAB := os.Getenv("AKU_X_QA_DIRECT_AB") == "1"
 	webABA := os.Getenv("AKU_X_QA_WEB_ABA") == "1"
 	web401 := os.Getenv("AKU_X_QA_WEB_401") == "1"
-	typesOnly = typesOnly || authControl || directAB || webABA
+	boundIdentityLogin := os.Getenv("AKU_X_QA_BOUND_IDENTITY_LOGIN") == "1"
+	typesOnly = typesOnly || authControl || directAB || webABA || boundIdentityLogin
 	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || !typesOnly && os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
 		t.Skip("requires explicit retained QA cookie-read authorization")
 	}
@@ -508,10 +509,17 @@ func TestXQASourceQualification(t *testing.T) {
 	if web401 {
 		op = "qualify_web_401"
 	}
+	if boundIdentityLogin {
+		op = "qualify_bound_observation"
+	}
 	if bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
 		t.Fatal("bounded QA qualification failed")
 	}
-	if web401 {
+	if boundIdentityLogin {
+		if _, err := decodeXQABoundObservation(raw); err != nil {
+			t.Fatal("QA bound identity/login observation rejected")
+		}
+	} else if web401 {
 		if _, err := decodeXQAWeb401(raw); err != nil {
 			t.Fatal("QA bounded rejection comparison rejected")
 		}
@@ -562,5 +570,5 @@ func TestXQASourceQualification(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("QA root graceful close acknowledged=%t; complete owned-Job cleanup verified", graceful)
-	t.Log("QA source metadata recorded; login semantics and native admission remain unqualified; no session transferred")
+	t.Log("QA bounded observation recorded; native admission remains unauthorized; no session transferred")
 }

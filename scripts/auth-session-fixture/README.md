@@ -521,6 +521,64 @@ account binding, continuity and any credential transfer still need their own
 evidence/authorization within MVP-1. Do not restart broad source discovery or
 infer that all native-authentication gates have passed.
 
+### Same-document identity/login binding checkpoint (2026-10-20)
+
+The opt-in `-BoundIdentityLogin` mode reuses the existing retained-QA lease and
+performs one Home reload. It combines the verified instrumentation-to-normal
+breakpoint handoff with one fresh natural GET on the pinned `api_v1` settings
+route. It does not repeat the accepted A/B/A source qualification, read cookies,
+transfer credentials, log in/out, or change Store/main runtime behavior.
+
+```powershell
+.\scripts\test-x-qa-source.ps1
+# Separately authorized retained-QA observation only:
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -BoundIdentityLogin
+```
+
+The fixed paused expression privately returns only the validated self ID beside
+the existing bootstrap projection. CDP dispatch consumes the ID before resolving
+the promise and returns only the value-free projection. The direct entity ID,
+optional second session ID, and all present supported entity paths must agree;
+numeric/coerced IDs, accessors, conflicting fields and explicit false/invalid
+authentication fields cannot establish identity. The private comparator pins
+that account for this attempt only; it does not enroll a named account.
+
+An observation binds the retained owner/profile, target/CDP session, root frame,
+new document loader and default execution context. The settings request must
+start after the identity baseline, complete within five seconds, have known
+freshness and consistent required ExtraInfo, and pass the existing bounded body
+projection. Context/target/document loss, stale/overflowed observations, cache,
+redirects, duplicates and any observed post-baseline cookie write reject binding.
+Startup cookie writes are recorded separately and cannot excuse later writes.
+Runtime context-loss observation stays enabled until the bounded response drain;
+actual debugger/Runtime/Network cleanup must then complete. No fake cleanup
+acknowledgment or observation-domain disable/re-enable gap is introduced.
+
+The closed 15-field `aku.x.qa-bound-observation.v1` report contains only fixed
+claims and sanitized bootstrap/source DTOs. Independent Go decoding rejects
+duplicates, excessive nesting, reflected values and contradictory claims.
+Enrollment remains not_verified, continuity unknown, and canAuthorize plus
+sessionTransferred false, including for a successful same-document sample.
+
+Final offline acceptance passed 154 Node cases and eleven Go top-level tests.
+The initial native run `914b0a63a26943c8b07601bb151d707f` (7.10 seconds) was
+rejected by the initial reload-wide cookie-write guard. After baseline ordering
+and ExtraInfo regressions passed, run `0184891780c8447e994d6ea7ad172117`
+(5.83 seconds) still reported observed_cookie_write, now with
+startupCookieWriteObserved false. Both observed a valid self-ID/entity match
+and one fresh completed settings HTTP 200; the mutation fence prevented the body
+read, so login/binding remain unknown. Passing native test execution means
+diagnostic/ownership cleanup succeeded, not that binding qualified.
+
+This establishes a post-identity Set-Cookie observation, not a proven account or
+session change: the guard currently inspects header-name presence only. Stop
+native retries and qualify that write using a bounded value-free cookie-name/
+scope projection before deciding whether it is relevant. Do not silently ignore
+unknown writes or weaken Store continuity. Both runs reused the retained login
+without input, verified graceful root/whole-Job cleanup and clean lease release,
+and removed disposable control roots. No native ID/body/header value was saved.
+Reports/logs use the run IDs above under `runtime/qa/auth-session-sidecar`.
+
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 
 A later authorization adds `x-concurrency-chrome-adapter.mjs` and its gated

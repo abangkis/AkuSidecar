@@ -1,6 +1,7 @@
 // Shared private QA breakpoint correlation. No browser/profile operations or source reads.
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { QA_BOUND_BOOTSTRAP_EXPRESSION } from './x-qa-bound-observation.mjs';
 const fail = () => new Error('bootstrap_handoff_failed');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const safeId = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value);
@@ -173,14 +174,15 @@ export class BootstrapBreakpointHandoff {
 // Native QA adapter. Instrumentation only installs; verified normal hits alone
 // receive the fixed projector with all original evaluation guards.
 export class BootstrapHandoffCapture {
-  constructor({ send, record = () => {} } = {}) {
-    if (typeof send !== 'function' || typeof record !== 'function') throw fail();
+  constructor({ send, record = () => {}, boundIdentity = false, beforeRuntimeDisable } = {}) {
+    if (typeof send !== 'function' || typeof record !== 'function' || typeof boundIdentity !== 'boolean') throw fail();
     this.instrumentationPauses = 0;
     this.otherPauses = 0;
     this.evaluationAttempts = 0;
     this.transport = { send, record, capture: null };
     this.handoff = new BootstrapBreakpointHandoff(this.transport);
     this.capture = new EarlyBootstrapCapture({
+      beforeRuntimeDisable,
       send: async (method, params) => {
         if (method === 'Debugger.removeBreakpoint') {
           let result;
@@ -199,7 +201,7 @@ export class BootstrapHandoffCapture {
         }
         this.evaluationAttempts += 1;
         try {
-          return await send('Debugger.evaluateOnCallFrame', { callFrameId, expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
+          return await send('Debugger.evaluateOnCallFrame', { callFrameId, expression: boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION,
             returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
             includeCommandLineAPI: false, generatePreview: false });
         } finally { await this.handoff.afterRead(callFrameId); }

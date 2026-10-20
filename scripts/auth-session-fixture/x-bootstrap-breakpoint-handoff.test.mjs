@@ -3,8 +3,9 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { BootstrapHandoffCapture, BootstrapBreakpointHandoff } from './x-bootstrap-breakpoint-handoff.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
 
-function fixture(fault) {
+function fixture(fault, boundIdentity = false) {
   let capture;
   let index = 0;
   let phase = 'instrumentation';
@@ -13,6 +14,7 @@ function fixture(fault) {
   let evaluations = 0;
   const context = vm.createContext({ location: { origin: 'https://x.com', pathname: '/home' } });
   const scripts = ['globalThis.__INITIAL_STATE__={session:{user_id_str:"123456"}}', 'void 0', 'delete globalThis.__INITIAL_STATE__', 'void 0'];
+  if (boundIdentity) scripts[0] = 'globalThis.__INITIAL_STATE__={session:{user_id:"123456"},entities:{users:{entities:{"123456":{id_str:"123456"}}}}}';
   const observe = (event, raw = {}) => capture.observe(event, raw);
   const pause = (ordinary = false) => {
     phase = ordinary ? 'normal' : 'instrumentation';
@@ -28,6 +30,7 @@ function fixture(fault) {
     else while (index < scripts.length) vm.runInContext(scripts[index++], context);
   };
   capture = new BootstrapHandoffCapture({
+    boundIdentity,
     send: async (method, params, purpose) => {
       if (method === 'Page.getFrameTree') return { frameId: 'private-root' };
       if (method === 'Debugger.setInstrumentationBreakpoint') return { breakpointId: 'private-instrumentation' };
@@ -60,7 +63,7 @@ function fixture(fault) {
       if (method === 'Debugger.evaluateOnCallFrame') {
         assert.equal(phase, 'normal');
         assert.equal(capture.canReadCallFrame(params.callFrameId), true);
-        assert.equal(params.expression, BOOTSTRAP_CURRENT_SELF_EXPRESSION);
+        assert.equal(params.expression, boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION);
         assert.equal(params.throwOnSideEffect, true);
         assert.equal(params.timeout, 1500);
         assert.equal(params.returnByValue, true);
@@ -68,7 +71,12 @@ function fixture(fault) {
         assert.equal(params.includeCommandLineAPI, false);
         assert.equal(params.generatePreview, false);
         evaluations += 1;
-        const dto = validateBootstrapCurrentSelf(vm.runInContext(params.expression, context));
+        const raw = vm.runInContext(params.expression, context);
+        // CDP JSON dispatch removes VM prototypes before either projection.
+        const projected = JSON.parse(JSON.stringify(raw));
+        const dto = boundIdentity ? projectBoundBootstrap(projected, id => {
+          assert.ok(id === null || id === '123456');
+        }) : validateBootstrapCurrentSelf(projected);
         if (fault === 'replay') pause(true);
         return dto;
       }
@@ -92,6 +100,14 @@ test('native handoff adapter reads only verified normal hits with the fixed guar
   assert.equal(diagnostics.handoff.normalCleanupVerified, true);
   await assert.rejects(capture.run(), /early_bootstrap_capture_replay_denied/u);
   for (const value of ['private-root', 'private-script', 'private-call', 'private-normal', '123456']) assert.equal(JSON.stringify([result, diagnostics]).includes(value), false);
+});
+
+test('bound private ID projection retains the same verified normal-hit and side-effect guards', async () => {
+  const { capture } = fixture(undefined, true);
+  const result = await capture.run();
+  assert.equal(result.stopReason, 'captured'); assert.equal(result.cleanupVerified, true);
+  assert.equal(result.snapshot.entityChecks.normalizedUsers, 'match');
+  assert.equal(JSON.stringify(result).includes('123456'), false);
 });
 
 for (const fault of ['wrong_hit', 'stale', 'replay', 'cleanup']) {

@@ -122,6 +122,19 @@ offline checks passed 90 Node/ten Go cases. Specific-account binding, continuity
 fully guest semantics and two-cookie transfer sufficiency remain separate; no
 Store, production-authentication or runtime authority follows from this result.
 
+The [same-document binding checkpoint](../scripts/auth-session-fixture/README.md#same-document-identitylogin-binding-checkpoint-2026-10-20)
+now combines the guarded self-ID read and one natural settings request in the
+same retained-QA document, with private comparison, post-identity request
+ordering, loader/context correlation, five-second freshness and real cleanup.
+Offline acceptance passed 154 Node/eleven Go cases. Native validation remains
+unqualified: the corrected run observed a Set-Cookie header after the identity
+baseline and rejected the sample before reading its completed HTTP-200 body.
+Identity was observed; login/binding and continuity remain unknown. Header
+presence does not identify the cookie or establish a session change. Qualify
+that write's bounded name/scope before another binding run; do not repeat broad
+identity/login source discovery or relax Store policy. No transfer or main
+login/runtime operation occurred.
+
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 
 The owner approved a bounded main-dev pilot milestone after fixture checkpoint

@@ -30,7 +30,7 @@ function twoIdDto(id = '987654') {
   });
 }
 
-function harness({ onSend, readBootstrap, now } = {}) {
+function harness({ onSend, readBootstrap, now, beforeRuntimeDisable } = {}) {
   const calls = [];
   let capture;
   const send = async (method, params) => {
@@ -47,6 +47,7 @@ function harness({ onSend, readBootstrap, now } = {}) {
     send,
     readBootstrap: readBootstrap ?? (async () => missingDto()),
     now,
+    beforeRuntimeDisable,
   });
   return { capture, calls };
 }
@@ -69,6 +70,24 @@ function pause(capture, reason = 'instrumentation') {
 function methods(calls) {
   return calls.map(({ method }) => method);
 }
+
+test('bounded composite drain precedes actual Runtime disable and drain failure never skips cleanup', async () => {
+  for (const fail of [false, true]) {
+    let drained = false;
+    const { capture, calls } = harness({
+      onSend(method, _params, current) {
+        if (method === 'Page.reload') { home(current); context(current, 1); pause(current); }
+        if (method === 'Runtime.disable') assert.equal(drained, true);
+      },
+      readBootstrap: async () => oneIdDto(),
+      beforeRuntimeDisable: async () => { drained = true; if (fail) throw new Error('PRIVATE'); },
+    });
+    const result = await capture.run();
+    assert.equal(result.cleanupVerified, !fail);
+    assert.equal(methods(calls).filter(m => m === 'Runtime.disable').length, 1);
+    assert.equal(JSON.stringify(result).includes('PRIVATE'), false);
+  }
+});
 
 test('waits for delayed enable and disable acknowledgments instead of abandoning pending commands', async () => {
   const { capture } = harness({

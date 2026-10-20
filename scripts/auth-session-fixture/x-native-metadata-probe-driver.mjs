@@ -21,6 +21,7 @@ import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } fr
 import { QADirectCapture, qaABCommand, QA_AB_URL, projectQADirectBody, finishQADirectAB } from './x-qa-direct-ab.mjs';
 import { qaWebCommand, QA_WEB_INSTALL, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE, validateQAWebHook, finishQAWebABA } from './x-qa-web-aba.mjs';
 import { projectQA401Body, finishQAWeb401 } from './x-qa-401-projection.mjs';
+import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -581,6 +582,7 @@ function projectCDPResult(method, result, projectionKind = null) {
         active.webABA.rejection = projected.rejection;
         return projected.body;
       }
+      if (projectionKind === 'qa_bound') return projectQADirectBody(result);
       if (projectionKind === 'qa_ab' || projectionKind === 'qa_web') return projectQADirectBody(result);
       return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
     case 'Network.getCookies':
@@ -609,9 +611,12 @@ function projectCDPResult(method, result, projectionKind = null) {
         try { return validateQAWebHook(result.result.value); } catch { throw probeError('qa_web_hook_invalid'); }
       }
       if (projectionKind === 'bootstrap_current_self') {
-        if (driverMode !== 'retained_bootstrap' || own(result, 'exceptionDetails') ||
+        if (!(driverMode === 'retained_bootstrap' || active?.bound?.running) || own(result, 'exceptionDetails') ||
             !isObject(result.result) || result.result.type !== 'object' || !isObject(result.result.value)) {
           throw probeError('bootstrap_runtime_result_invalid');
+        }
+        if (active?.bound?.running) {
+          return projectBoundBootstrap(result.result.value, (id, projection) => active.bound.binder.acceptIdentity(id, projection));
         }
         try { return validateBootstrapCurrentSelf(result.result.value); }
         catch { throw probeError('bootstrap_projection_invalid'); }
@@ -766,12 +771,12 @@ function cdpWrite(message) {
   }
 }
 
-export function isEarlyBootstrapCallFrameRead(params, capture) {
+export function isEarlyBootstrapCallFrameRead(params, capture, boundIdentity = false) {
   const keys = ['callFrameId', 'expression', 'returnByValue', 'throwOnSideEffect', 'timeout',
     'silent', 'includeCommandLineAPI', 'generatePreview'];
   return isObject(params) && Object.keys(params).length === keys.length &&
     Object.keys(params).every(key => keys.includes(key)) && capture?.canReadCallFrame(params.callFrameId) === true &&
-    params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION && params.returnByValue === true &&
+    params.expression === (boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION) && params.returnByValue === true &&
     params.throwOnSideEffect === true && params.timeout === 1500 && params.silent === true &&
     params.includeCommandLineAPI === false && params.generatePreview === false;
 }
@@ -782,6 +787,14 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
+  const bound = active?.bound;
+  const boundNetwork = bound?.running && sessionId === active.sessionId && method.startsWith('Network.');
+  if (boundNetwork) {
+    const valid = method === 'Network.getResponseBody' ? Object.keys(params).join(',') === 'requestId' && bound.binder?.capture.consumeRead(params.requestId) :
+      method === 'Network.enable' ? JSON.stringify(params) === JSON.stringify({ maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }) :
+      method === 'Network.setCacheDisabled' ? JSON.stringify(params) === '{"cacheDisabled":true}' : method === 'Network.disable' && Object.keys(params).length === 0;
+    if (!qualificationMode(driverMode) || !valid) return Promise.reject(probeError('qa_bound_command_not_authorized'));
+  }
   const webMethod = ['Page.addScriptToEvaluateOnNewDocument', 'Page.removeScriptToEvaluateOnNewDocument'].includes(method);
   const webCommand = !!webState?.running && sessionId === active.sessionId && (method !== 'Runtime.evaluate' ||
     [QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE].includes(params.expression));
@@ -803,13 +816,13 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cookie_read_not_authorized'));
   }
   if (method === 'Network.getCookies') active.qaCookieIssued = true;
-  if (method === 'Network.getResponseBody' && !webCommand && !abCommand && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
+  if (method === 'Network.getResponseBody' && !boundNetwork && !webCommand && !abCommand && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
   }
   if (method === 'Network.setCacheDisabled' && !webCommand && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && driverMode === 'retained_bootstrap')) {
+  if (!webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -819,16 +832,17 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     if (method === 'Page.reload') valid = keys.length === 1 && params.ignoreCache === false;
     const qualificationFrame = qualificationMode(driverMode) && method === 'Page.getFrameTree' &&
       active?.qualificationAttempted && active.gate.observationStarted && keys.length === 0;
-    if (!qualificationFrame && (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || sessionId !== active.sessionId || !valid) ||
+    if (!qualificationFrame && (!(driverMode === 'retained_bootstrap' || bound?.running) || !active?.earlyRunning || sessionId !== active.sessionId || !valid) ||
         qualificationFrame && sessionId !== active.sessionId) {
       return Promise.reject(probeError('early_command_not_authorized'));
     }
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  if (boundNetwork && method === 'Network.getResponseBody') projectionKind = 'qa_bound';
   if (webCommand && method === 'Network.getResponseBody' && webState.qualify401 && webState.stage === 'b') projectionKind = 'qa_web_401';
   if (method === 'Debugger.evaluateOnCallFrame') {
-    if (driverMode !== 'retained_bootstrap' || !active?.earlyRunning || active.gate.observationStarted ||
-        sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture)) {
+    if (!(driverMode === 'retained_bootstrap' || bound?.running) || !active?.earlyRunning || active.gate.observationStarted && !bound?.running ||
+        sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture, bound?.running === true)) {
       return Promise.reject(probeError('early_call_frame_not_authorized'));
     }
     projectionKind = 'bootstrap_current_self';
@@ -872,6 +886,7 @@ function rejectPending(code) {
 }
 
 function failCDP(code) {
+  active?.bound?.binder?.invalidate();
   if (!cdpFailure) cdpFailure = /^[a-z0-9_]{1,80}$/u.test(code) ? code : 'cdp_protocol_failed';
   cdpFrames.reset();
   rejectPending(cdpFailure);
@@ -894,6 +909,7 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    if (active?.bound?.sampling) active.bound.binder?.observe(raw, boundScope(active));
     if (active?.webABA?.running && raw.sessionId === active.sessionId && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
       const state = active.webABA;
       if (Date.now() <= state.endsAt) {
@@ -1543,6 +1559,50 @@ async function qualifyDirectAB(message) {
   } finally { current.directABRunning = false; }
 }
 
+function boundScope(current) {
+  return { owner: current.owner, profileId: current.profileId, sessionId: current.sessionId, targetId: current.targetId };
+}
+
+async function qualifyBoundObservation(message) {
+  const current = requireOwner(message);
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
+      current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted) throw probeError('qa_bound_gate_closed');
+  current.gate.beginObservation(); current.earlyAttempted = true; current.earlyRunning = true;
+  const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
+  try {
+    const { frameId } = await send('Page.getFrameTree', {}, current.sessionId);
+    bound.binder = new QABoundObservation(boundScope(current), frameId,
+      requestId => send('Network.getResponseBody', { requestId }, current.sessionId));
+    bound.sampling = true;
+    await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
+      maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
+    await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
+    current.earlyCapture = new BootstrapHandoffCapture({ boundIdentity: true,
+      send: (method, params, purpose) => send(method, params, current.sessionId, purpose),
+      beforeRuntimeDisable: async () => {
+        // Finish this one document's request before disabling context-loss
+        // observation. No second reload, negative control or cookie inspection.
+        let timer;
+        try { await Promise.race([bound.binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]); }
+        finally { clearTimeout(timer); bound.sampling = false; }
+      },
+    });
+    const early = await current.earlyCapture.run();
+    const handoff = current.earlyCapture.diagnostics();
+    current.earlyCleanupVerified = early.cleanupVerified;
+    current.earlyHandoffAccepted = !handoff.handoffRejected;
+    if (early.stopReason !== 'captured' || handoff.handoffRejected) bound.binder.invalidate();
+    await send('Network.disable', {}, current.sessionId);
+    bound.networkDisabled = true;
+    return await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
+  } finally {
+    bound.sampling = false;
+    if (!bound.networkDisabled) await send('Network.disable', {}, current.sessionId).catch(() => { bound.binder?.invalidate(); });
+    bound.running = false; current.earlyRunning = false; current.earlyCapture = null;
+    current.gate.setLoginVisible(false);
+  }
+}
+
 async function webABAPhase(current, stage, frameId, action) {
   const state = current.webABA;
   state.stage = stage; state.reloaded = false; state.events = 0;
@@ -1618,6 +1678,9 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'qualify_bound_observation':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyBoundObservation(message);
     case 'qualify_web_401':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifyWebABA(message, true);

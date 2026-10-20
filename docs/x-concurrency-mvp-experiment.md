@@ -377,6 +377,22 @@ cookies; B omitted all browser-managed cookies. Store/production authority and
 session transfer remain unauthorized. Reuse this result when integrating the
 remaining evidence, rather than repeating broad source discovery.
 
+The [same-document binding adapter](../scripts/auth-session-fixture/README.md#same-document-identitylogin-binding-checkpoint-2026-10-20)
+now privately compares the strong current-self ID and correlates the next natural
+settings GET within one retained-QA document and five seconds. Runtime observation
+continues through response draining; required ExtraInfo and actual cleanup are
+checked. Source semantics reuse the reviewed request-local A/B/A checkpoint;
+neither a new negative control nor credential transfer is performed.
+Offline checks passed 154 Node/eleven Go cases. Native binding remains unknown:
+the corrected run observed a cookie write after the identity baseline, fencing
+the HTTP-200 settings body read. Identity was observed; this does not prove a
+session change or make login unknown equivalent to logged out. Qualify the
+write's name/scope through a bounded value-free projection before another native
+attempt. The present header-presence guard cannot distinguish session cookies
+from unrelated cookies; never silently classify unknown writes as harmless.
+Enrollment, native continuity, Store authority and transfer permission remain
+separate. No main login, Store or user runtime was accessed.
+
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet
 the protected-source contract, stop with `login_source_unqualified` and propose

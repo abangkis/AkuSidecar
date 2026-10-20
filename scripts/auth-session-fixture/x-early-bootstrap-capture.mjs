@@ -150,6 +150,7 @@ function hasAcknowledged(value) {
 
 export class EarlyBootstrapCapture {
   #send;
+  #beforeRuntimeDisable;
   #readBootstrap;
   #now;
   #state = 'idle';
@@ -188,11 +189,12 @@ export class EarlyBootstrapCapture {
   #lastClock = null;
   #deadlineTimer = null;
 
-  constructor({ send, readBootstrap, now = () => performance.now() } = {}) {
-    if (typeof send !== 'function' || typeof readBootstrap !== 'function' || typeof now !== 'function') {
+  constructor({ send, readBootstrap, now = () => performance.now(), beforeRuntimeDisable = async () => {} } = {}) {
+    if (typeof send !== 'function' || typeof readBootstrap !== 'function' || typeof now !== 'function' || typeof beforeRuntimeDisable !== 'function') {
       throw new TypeError('early_bootstrap_capture_invalid_dependencies');
     }
     this.#send = send;
+    this.#beforeRuntimeDisable = beforeRuntimeDisable;
     this.#readBootstrap = readBootstrap;
     this.#now = now;
   }
@@ -665,6 +667,10 @@ export class EarlyBootstrapCapture {
     }
 
     if (this.#runtimeEnableAttempted) {
+      // A composite observation can finish its bounded response while Runtime
+      // context-loss events are still enabled. Always perform real cleanup.
+      const drained = await withTimeout(this.#beforeRuntimeDisable);
+      if (!drained.ok) certain = false;
       const disabled = await withTimeout(() => this.#send('Runtime.disable', {}));
       if (!disabled.ok || !hasAcknowledged(disabled.value)) certain = false;
     }

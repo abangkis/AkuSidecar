@@ -208,3 +208,12 @@ test('bounded 401 RPC denies pre-owner execution and caller rejection messages, 
     { id: 4, op: 'qualify_web_401', owner: 1, url: 'https://evil.test' }]);
   assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_fields_invalid']);
 });
+test('bound observation RPC rejects pre-owner calls, supplied IDs, scripts, URLs and cookie operations', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'qualify_bound_observation', owner: 1 },
+    { id: 2, op: 'qualify_bound_observation', owner: 1, accountId: 'PRIVATE' },
+    { id: 3, op: 'qualify_bound_observation', owner: 1, expression: 'PRIVATE' },
+    { id: 4, op: 'qualify_bound_observation', owner: 1, url: 'https://evil.test' },
+    { id: 5, op: 'Network.getCookies', owner: 1 }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
+});
