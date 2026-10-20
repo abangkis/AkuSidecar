@@ -217,3 +217,25 @@ test('bound observation RPC rejects pre-owner calls, supplied IDs, scripts, URLs
     { id: 5, op: 'Network.getCookies', owner: 1 }]);
   assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
 });
+test('cookie-write scope RPC rejects caller headers, cookie values, custom URLs and cookie-store reads', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'qualify_bound_cookie_writes', owner: 1 },
+    { id: 2, op: 'qualify_bound_cookie_writes', owner: 1, headers: { 'Set-Cookie': 'PRIVATE' } },
+    { id: 3, op: 'qualify_bound_cookie_writes', owner: 1, value: 'PRIVATE' },
+    { id: 4, op: 'qualify_bound_cookie_writes', owner: 1, url: 'https://evil.test' },
+    { id: 5, op: 'Network.getCookies', owner: 1 }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported']);
+});
+
+test('short QA RPC has no caller data channel and denies pre-owner seed, arbitrary cookie or context operations', () => {
+  const replies = invokeDriver([{ op: 'fixture_bootstrap', withholdReady: false },
+    { id: 1, op: 'prepare_short_concurrency', owner: 1 },
+    { id: 2, op: 'qualify_short_concurrency', owner: 1 },
+    { id: 3, op: 'qualify_short_reader_checkpoint', owner: 1, accountId: 'PRIVATE' },
+    { id: 4, op: 'qualify_short_concurrency', owner: 1, cookies: [] },
+    { id: 5, op: 'prepare_short_concurrency', owner: 1, url: 'https://evil.test' },
+    { id: 6, op: 'Network.setCookies', owner: 1, cookies: [] },
+    { id: 7, op: 'Target.createBrowserContext', owner: 1 }]);
+  assert.deepEqual(replies.slice(1).map(r => r.code), ['owner_unavailable', 'owner_unavailable', 'rpc_fields_invalid',
+    'rpc_fields_invalid', 'rpc_fields_invalid', 'rpc_operation_unsupported', 'rpc_operation_unsupported']);
+});

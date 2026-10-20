@@ -22,6 +22,9 @@ import { QADirectCapture, qaABCommand, QA_AB_URL, projectQADirectBody, finishQAD
 import { qaWebCommand, QA_WEB_INSTALL, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE, validateQAWebHook, finishQAWebABA } from './x-qa-web-aba.mjs';
 import { projectQA401Body, finishQAWeb401 } from './x-qa-401-projection.mjs';
 import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
+import { QACookieWriteCapture, finishQACookieWriteScope } from './x-qa-cookie-writes.mjs';
+import { shortQACheckpoint, selectQAShortCookies, runQAShortFeasibility } from './x-qa-short-feasibility.mjs';
+import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -72,6 +75,7 @@ const CDP_METHODS = Object.freeze({
   'Network.getCookies': 'qa_cookie_metadata',
   'Network.setCacheDisabled': 'account_settings_cache',
   'Browser.close': 'browser_close',
+  'Browser.getWindowForTarget': 'qa_short_window',
   'Page.getFrameTree': 'early_frame_tree',
   'Runtime.enable': 'early_runtime_enable',
   'Runtime.disable': 'early_runtime_disable',
@@ -586,6 +590,7 @@ function projectCDPResult(method, result, projectionKind = null) {
       if (projectionKind === 'qa_ab' || projectionKind === 'qa_web') return projectQADirectBody(result);
       return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
     case 'Network.getCookies':
+      if (projectionKind === 'qa_short_cookies') return selectQAShortCookies(result);
       if (!qualificationMode(driverMode) || !active?.qaCookieIssued) throw probeError('cookie_mode_required');
       return projectQACookieMetadata(result);
     case 'Target.getTargets': {
@@ -598,6 +603,9 @@ function projectCDPResult(method, result, projectionKind = null) {
       }
       return { targetIds: matches };
     }
+    case 'Browser.getWindowForTarget':
+      if (!Number.isSafeInteger(result.windowId) || result.windowId < 1) throw probeError('qa_short_window_invalid');
+      return { windowId: result.windowId };
     case 'Target.attachToTarget':
       if (!safeId(result.sessionId)) throw probeError('target_session_invalid');
       return { sessionId: result.sessionId };
@@ -787,6 +795,9 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
+  const shortCookieExport = method === 'Network.getCookies' && active?.shortFeasibility?.exporting === true;
+  if (method === 'Browser.getWindowForTarget' && (!active?.shortFeasibility || sessionId !== undefined ||
+      Object.keys(params).join(',') !== 'targetId' || params.targetId !== active.targetId)) return Promise.reject(probeError('qa_short_window_denied'));
   const bound = active?.bound;
   const boundNetwork = bound?.running && sessionId === active.sessionId && method.startsWith('Network.');
   if (boundNetwork) {
@@ -811,11 +822,14 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
   if (purpose !== null && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
-  if (method === 'Network.getCookies' && (!qualificationMode(driverMode) || !active?.qaCookieRequested || active.qaCookieIssued ||
+  if (shortCookieExport && (process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1' || active.shortFeasibility.exportIssued ||
+      sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest('api_v1')))) return Promise.reject(probeError('qa_short_transfer_denied'));
+  if (method === 'Network.getCookies' && !shortCookieExport && (!qualificationMode(driverMode) || !active?.qaCookieRequested || active.qaCookieIssued ||
       sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest(active.qaSourceRoute)))) {
     return Promise.reject(probeError('cookie_read_not_authorized'));
   }
   if (method === 'Network.getCookies') active.qaCookieIssued = true;
+  if (shortCookieExport) active.shortFeasibility.exportIssued = true;
   if (method === 'Network.getResponseBody' && !boundNetwork && !webCommand && !abCommand && (!bodyMode(driverMode) || !active?.gate.networkEnabled ||
       sessionId !== active.sessionId || Object.keys(params).join(',') !== 'requestId' || !active.accountSettings?.consumeRead(params.requestId))) {
     return Promise.reject(probeError('account_body_not_authorized'));
@@ -838,6 +852,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     }
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  if (shortCookieExport) projectionKind = 'qa_short_cookies';
   if (boundNetwork && method === 'Network.getResponseBody') projectionKind = 'qa_bound';
   if (webCommand && method === 'Network.getResponseBody' && webState.qualify401 && webState.stage === 'b') projectionKind = 'qa_web_401';
   if (method === 'Debugger.evaluateOnCallFrame') {
@@ -1563,16 +1578,23 @@ function boundScope(current) {
   return { owner: current.owner, profileId: current.profileId, sessionId: current.sessionId, targetId: current.targetId };
 }
 
-async function qualifyBoundObservation(message) {
+async function qualifyBoundObservation(message, cookieWriteScope = false) {
   const current = requireOwner(message);
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
       current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted) throw probeError('qa_bound_gate_closed');
   current.gate.beginObservation(); current.earlyAttempted = true; current.earlyRunning = true;
+  return boundCheckpoint(current, cookieWriteScope);
+}
+
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions) {
+  current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   try {
     const { frameId } = await send('Page.getFrameTree', {}, current.sessionId);
+    const writes = cookieWriteScope ? new QACookieWriteCapture(frameId) : null;
     bound.binder = new QABoundObservation(boundScope(current), frameId,
-      requestId => send('Network.getResponseBody', { requestId }, current.sessionId));
+      requestId => send('Network.getResponseBody', { requestId }, current.sessionId), () => performance.now(),
+      writes ? (raw, phase, loader) => writes.observe(raw, phase, loader) : undefined, pointOptions);
     bound.sampling = true;
     await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
       maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
@@ -1594,13 +1616,180 @@ async function qualifyBoundObservation(message) {
     if (early.stopReason !== 'captured' || handoff.handoffRejected) bound.binder.invalidate();
     await send('Network.disable', {}, current.sessionId);
     bound.networkDisabled = true;
-    return await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
+    const observation = await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
+    return writes ? finishQACookieWriteScope(observation, writes.finish()) : observation;
   } finally {
     bound.sampling = false;
     if (!bound.networkDisabled) await send('Network.disable', {}, current.sessionId).catch(() => { bound.binder?.invalidate(); });
     bound.running = false; current.earlyRunning = false; current.earlyCapture = null;
     current.gate.setLoginVisible(false);
   }
+}
+
+async function shortReaderCheckpoint(message) {
+  const current = requireOwner(message);
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible || current.gate.observationStarted) throw probeError('qa_short_gate_closed');
+  current.gate.beginObservation(); current.earlyAttempted = true;
+  const observation = await boundCheckpoint(current, false, { deferCookieMutation: true, onPrivateResult: () => {} });
+  return shortQACheckpoint(observation);
+}
+
+async function prepareShortConcurrency(message) {
+  const current = requireOwner(message);
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
+      current.gate.observationStarted || current.shortFeasibility) throw probeError('qa_short_gate_closed');
+  const transport = createQAFeasibilityCollector({ executable, root: process.env.AKU_CHROME_FIXTURE_ROOT,
+    FrameDecoder: CDPFrameDecoder, allowedExpressions: [ACCOUNT_READY_EXPRESSION, QA_BOUND_BOOTSTRAP_EXPRESSION] });
+  const state = current.shortFeasibility = { transport, exportIssued: false, exporting: false, contextId: null, closed: false, ran: false };
+  const launched = await transport.launch();
+  if (!Number.isSafeInteger(launched.pid) || launched.pid <= 0 || launched.pid === current.pid) throw probeError('qa_short_collector_invalid');
+  const context = await transport.send('Target.createBrowserContext', { disposeOnDetach: true }, undefined, result => {
+    if (!safeId(result.browserContextId)) throw probeError('qa_short_collector_invalid');
+    return { id: result.browserContextId };
+  });
+  state.contextId = context.id;
+  const target = await transport.send('Target.createTarget', { url: 'about:blank', browserContextId: context.id }, undefined, result => {
+    if (!safeId(result.targetId)) throw probeError('qa_short_collector_invalid');
+    return { id: result.targetId };
+  });
+  state.targetId = target.id;
+  const attached = await transport.send('Target.attachToTarget', { targetId: target.id, flatten: true }, undefined, result => {
+    if (!safeId(result.sessionId)) throw probeError('qa_short_collector_invalid');
+    return { id: result.sessionId };
+  });
+  state.sessionId = attached.id;
+  await transport.send('Page.enable', {}, state.sessionId, () => ({ acknowledged: true }));
+  state.windowId = (await send('Browser.getWindowForTarget', { targetId: current.targetId })).windowId;
+  return { collectorPID: launched.pid, headless: true, isolatedContext: true, distinctProfile: true, seedAttempted: false };
+}
+
+async function closeShortCollector(current) {
+  const s = current.shortFeasibility;
+  if (!s || s.closed) return true;
+  let disposed = false;
+  try {
+    if (s.contextId) {
+      await s.transport.send('Target.disposeBrowserContext', { browserContextId: s.contextId }, undefined, () => ({ acknowledged: true }));
+      disposed = await s.transport.send('Target.getBrowserContexts', {}, undefined,
+        r => Array.isArray(r.browserContextIds) && !r.browserContextIds.includes(s.contextId));
+    } else disposed = true;
+  } finally { await s.transport.close(); s.closed = true; }
+  return disposed && s.closed;
+}
+
+async function collectorShortCheckpoint(current) {
+  const s = current.shortFeasibility;
+  if (!s.navigated) {
+    s.navigated = true;
+    await s.transport.send('Page.navigate', { url: HOME_URL }, s.sessionId, r => {
+      if (r.errorText || !safeId(r.frameId)) throw probeError('qa_short_collector_invalid');
+      return { acknowledged: true };
+    });
+    const until = Date.now() + 15000;
+    let ready = false;
+    while (!ready && Date.now() < until) {
+      ready = await s.transport.send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION, returnByValue: true, awaitPromise: false, userGesture: false }, s.sessionId,
+        r => r.result?.type === 'boolean' && r.result.value === true);
+      if (!ready) await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (!ready) return { checkpoint: shortQACheckpoint(null), accountId: null, start: null, end: null };
+  }
+  let binder, capture, instrumentationId, sampling = false, networkDisabled = false, privateResult = {};
+  const scope = { owner: current.owner + 1, profileId: 'derived-headless-owned-context', sessionId: s.sessionId, targetId: s.targetId };
+  const project = (method, r) => {
+    if (!isObject(r)) throw probeError('qa_short_collector_invalid');
+    if (method === 'Page.getFrameTree') {
+      if (!safeId(r.frameTree?.frame?.id) || !isHomeTarget(r.frameTree.frame.url)) throw probeError('qa_short_collector_invalid');
+      return { frameId: r.frameTree.frame.id };
+    }
+    if (method === 'Debugger.setInstrumentationBreakpoint') {
+      if (!safeId(r.breakpointId)) throw probeError('qa_short_collector_invalid');
+      instrumentationId = r.breakpointId; return { breakpointId: r.breakpointId };
+    }
+    if (method === 'Debugger.setBreakpoint') {
+      capture.handoff.created(r.breakpointId);
+      const requested = capture.handoff.installing, location = r.actualLocation;
+      if (!requested || !location || location.scriptId !== requested.scriptId || !Number.isSafeInteger(location.lineNumber) ||
+          !Number.isSafeInteger(location.columnNumber) || location.lineNumber < 0 || location.columnNumber < 0 ||
+          location.lineNumber > 1000000 || location.columnNumber > 1000000) throw probeError('qa_short_collector_invalid');
+      return { breakpointId: r.breakpointId, actualLocation: { scriptId: location.scriptId, lineNumber: location.lineNumber, columnNumber: location.columnNumber } };
+    }
+    if (method === 'Debugger.evaluateOnCallFrame') {
+      if (r.exceptionDetails || r.result?.type !== 'object') throw probeError('qa_short_collector_invalid');
+      return projectBoundBootstrap(r.result.value, (id, p) => binder.acceptIdentity(id, p));
+    }
+    if (method === 'Network.getResponseBody') return projectQADirectBody(r);
+    return { acknowledged: true };
+  };
+  const command = (method, params = {}, purpose) => {
+    if (method === 'Debugger.setBreakpoint' && !capture?.handoff.canInstall(params.location)) throw probeError('qa_short_collector_invalid');
+    if (method === 'Network.getResponseBody' && !binder?.capture.consumeRead(params.requestId)) throw probeError('qa_short_collector_invalid');
+    if (method === 'Debugger.evaluateOnCallFrame' && !isEarlyBootstrapCallFrameRead(params, capture, true)) throw probeError('qa_short_collector_invalid');
+    if (method === 'Debugger.removeBreakpoint' && !(purpose === 'normal_remove' ? capture.handoff.breakpoints.has(params.breakpointId) : params.breakpointId === instrumentationId)) throw probeError('qa_short_collector_invalid');
+    return s.transport.send(method, params, s.sessionId, r => project(method, r));
+  };
+  const unsubscribe = s.transport.subscribe(raw => {
+    if (!sampling) return;
+    try {
+      binder.observe(raw, scope);
+      const event = projectCDPEvent(raw);
+      if (event?.type === 'early' && event.sessionId === s.sessionId) capture?.observe(event.event, raw.params);
+    } catch { binder?.invalidate(); }
+  });
+  try {
+    const { frameId } = await command('Page.getFrameTree');
+    binder = new QABoundObservation(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
+      () => performance.now(), undefined, { deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } });
+    sampling = true;
+    await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
+    await command('Network.setCacheDisabled', { cacheDisabled: true });
+    capture = new BootstrapHandoffCapture({ boundIdentity: true, send: command, beforeRuntimeDisable: async () => {
+      let timer;
+      try { await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]); }
+      finally { clearTimeout(timer); sampling = false; }
+    } });
+    const early = await capture.run();
+    const rejected = capture.diagnostics().handoffRejected;
+    if (early.stopReason !== 'captured' || rejected) binder.invalidate();
+    await command('Network.disable');
+    networkDisabled = true;
+    const observation = await binder.finish(early.cleanupVerified && !rejected);
+    return { checkpoint: shortQACheckpoint(observation), ...privateResult };
+  } finally {
+    sampling = false; unsubscribe();
+    if (!networkDisabled) await command('Network.disable').catch(() => {});
+  }
+}
+
+async function runShortConcurrency(message) {
+  const current = requireOwner(message), s = current.shortFeasibility;
+  if (!qualificationMode(driverMode) || !s || s.closed || s.ran || !current.gate.loginVisible ||
+      process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1') throw probeError('qa_short_transfer_denied');
+  s.ran = true; current.gate.beginObservation(); current.earlyAttempted = true;
+  return runQAShortFeasibility({
+    prepareCollector: async () => {},
+    check: async role => {
+      if (role === 'collector') return collectorShortCheckpoint(current);
+      let privateResult = {};
+      const observation = await boundCheckpoint(current, false, { deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } });
+      return { checkpoint: shortQACheckpoint(observation), ...privateResult };
+    },
+    seedOnce: async () => {
+      let selected;
+      try {
+        s.exporting = true;
+        selected = await send('Network.getCookies', qaCookieRequest('api_v1'), current.sessionId);
+        s.exporting = false;
+        await s.transport.send('Network.setCookies', { cookies: selected }, s.sessionId, () => ({ acknowledged: true }));
+      } finally { s.exporting = false; selected = null; }
+    },
+    readerPreserved: async () => {
+      const targets = await send('Target.getTargets');
+      return targets.targetIds.length === 1 && targets.targetIds[0] === current.targetId &&
+        (await send('Browser.getWindowForTarget', { targetId: current.targetId })).windowId === s.windowId;
+    },
+    closeCollector: () => closeShortCollector(current),
+  });
 }
 
 async function webABAPhase(current, stage, frameId, action) {
@@ -1678,6 +1867,21 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   switch (message.op) {
+    case 'prepare_short_concurrency':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return prepareShortConcurrency(message);
+    case 'qualify_short_reader_checkpoint':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return shortReaderCheckpoint(message);
+    case 'qualify_short_concurrency':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return runShortConcurrency(message);
+    case 'close_short_collector':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return { closed: await closeShortCollector(requireOwner(message)) };
+    case 'qualify_bound_cookie_writes':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyBoundObservation(message, true);
     case 'qualify_bound_observation':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return qualifyBoundObservation(message);
@@ -1726,6 +1930,7 @@ async function execute(message) {
     case 'release': {
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       requireOwner(message);
+      if (active.shortFeasibility && !active.shortFeasibility.closed) await closeShortCollector(active);
       const result = await closeChrome();
       if (!result.exited) throw probeError('chrome_exit_unverified');
       active = null;

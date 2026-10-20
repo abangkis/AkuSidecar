@@ -1,5 +1,28 @@
 # Browser and headless collection roadmap
 
+### Immediate concurrency feasibility milestone (2026-10-20)
+
+The three macro steps remain unchanged. Within MVP-1, prioritize one short
+concurrency feasibility attempt rather than require complete cookie setter and
+continuity qualification first. The user approved that deferral; do not restart
+the macro checklist or describe this experiment as completed durable MVP-1.
+Four fresh reader/collector account/login checkpoints, private account equality,
+actual request overlap, the exact two-cookie transfer ceiling and owned-process
+cleanup remain required. Continuity/refresh stay unknown and Store admission
+stays unauthorized. Implement/offline-test the adapter, perform no-transfer
+preparation, then request specific approval for the real QA export/import.
+Main login, Store and user-runtime operations remain excluded. The exact plan and
+limits are in [the short-QA milestone](x-concurrency-mvp-experiment.md#short-feasibility-milestone-approved-deferral-2026-10-20).
+
+Execution checkpoint: 180 Node and 13 Go offline tests passed. One specifically
+approved QA transfer (`45f648c0cfd348239ac95a07b79ec192`) seeded exactly two cookies
+and passed four fresh private same-account/login checkpoints without another login.
+Both separate Chrome processes remained available through the sampled activity;
+the parallel after pair's actual request intervals did not intersect. Preserve
+`overlap_not_observed` as partial acceptance, not a native authentication failure
+or completed durable MVP-1. Context/root/whole-Job cleanup and retained-lease release
+passed. No automatic retry, main-login, Store or user-runtime operation occurred.
+
 ### Explicit reader closure and Auto Update recovery (2026-10-05)
 
 The Timeline shows a persistent reader notice while Auto Update is enabled and
@@ -5649,6 +5672,20 @@ qualify that write with a bounded value-free name/scope projection; do not retry
 the unchanged sample or restart source discovery. No transfer, Store, main-login
 or runtime operation occurred. This remains work within MVP-1, not a new macro
 roadmap or a reason to substitute exclusive fallback for concurrency.
+
+The [cookie-write qualification follow-up](../scripts/auth-session-fixture/README.md#cookie-write-namescope-qualification-checkpoint-2026-10-20)
+published the 15-file binding delta as `b906bd1`, then collected value-free name
+and declared-scope metadata in the retained QA profile. Five projected entries
+were __cf_bm, domain x.com/path /, Secure/HttpOnly, SameSite none, unpartitioned.
+The second run correlated all five setters, including the pinned settings
+response, but still reported partial/unresolved 2. The request-only counter was
+corrected and validated offline (165 Node/twelve Go tests); no third native run
+was made and historical partial reports are not upgraded. The cookie's documented
+bot-management role is distinct from account identity but can affect access.
+Do not add it to the transfer ceiling or silently ignore it. Next finish bounded
+write classification, then review a fixture-only distinction while preserving
+unknown/account-write fences. Same-document binding/login and overall MVP-1
+remain unqualified; no Store, main login/runtime or transfer operation occurred.
 
 ### Historical exclusive-MVP qualification record (superseded planning scope)
 

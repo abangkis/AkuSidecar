@@ -52,11 +52,17 @@ export class QABoundObservation {
   #identityAt = null; #sourceAt = null; #projection = null; #failure = null; #events = 0; #closed = false;
   #startupCookieWriteObserved = false;
   #needsExtra = null; #extraStatus = null; #resolveDone;
-  constructor(scope, frameId, readBody, now = () => performance.now()) {
+  #observeCookieWrites;
+  #pointOptions; #requestAt = null; #networkRequest = null; #networkInterval = null;
+  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }) {
     if (!scope || Object.keys(scope).sort().join(',') !== 'owner,profileId,sessionId,targetId' ||
         !Number.isSafeInteger(scope.owner) || scope.owner <= 0 || !['profileId', 'sessionId', 'targetId'].every(k => safe(scope[k])) ||
-        !safe(frameId) || typeof now !== 'function') throw error();
+        !safe(frameId) || typeof now !== 'function' || typeof observeCookieWrites !== 'function' ||
+        !pointOptions || Object.keys(pointOptions).sort().join(',') !== 'deferCookieMutation,onPrivateResult' ||
+        typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function') throw error();
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
+    this.#observeCookieWrites = observeCookieWrites;
+    this.#pointOptions = Object.freeze({ ...pointOptions });
     this.#start = this.#last = now();
     if (!Number.isFinite(this.#start)) throw error();
     this.capture = new QADirectCapture('a', frameId, readBody, now);
@@ -67,7 +73,12 @@ export class QABoundObservation {
     if (!Number.isFinite(t) || t < this.#last || t - this.#start > 10000) this.invalidate('stale_observation');
     this.#last = t; return t;
   }
-  invalidate(reason = 'scope_lost') { if (!this.#failure) this.#failure = reason; this.capture.invalidate(); }
+  invalidate(reason = 'scope_lost') {
+    if (!this.#failure || this.#failure === 'observed_cookie_write' && reason !== 'observed_cookie_write') this.#failure = reason;
+    // Only the separately gated short-QA mode can retain a source observation
+    // across cookie writes. The V1 binding remains rejected and non-authorizing.
+    if (!(reason === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation)) this.capture.invalidate();
+  }
   acceptIdentity(id, projection) {
     const t = this.#tick();
     if (this.#closed || !this.#context || !this.#loader) { this.invalidate(); return; }
@@ -99,6 +110,7 @@ export class QABoundObservation {
       else this.#context = p.context.id;
     }
     if (!raw.method?.startsWith('Network.')) return;
+    this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
     if (!this.#loader) return; // Do not adopt old-document requests.
     // The baseline begins at the first valid identity. Startup writes can
     // precede it; the selected request MUST begin after it. Every observed
@@ -121,15 +133,27 @@ export class QABoundObservation {
       else this.#extraStatus = p.statusCode;
     }
     this.capture.observe(raw.method, p);
-    if (raw.method === 'Network.loadingFinished' && p.requestId === this.capture.chosen) this.#sourceAt = this.#tick();
+    if (raw.method === 'Network.requestWillBeSent' && p.requestId === this.capture.chosen && this.#requestAt === null) {
+      this.#requestAt = this.#tick();
+      if (Number.isFinite(p.timestamp) && Number.isFinite(p.wallTime) && p.timestamp > 0 && p.wallTime > 0 &&
+          Math.abs(Date.now() - p.wallTime * 1000) <= 5000) this.#networkRequest = { timestamp: p.timestamp, wallTime: p.wallTime };
+    }
+    if (raw.method === 'Network.loadingFinished' && p.requestId === this.capture.chosen) {
+      this.#sourceAt = this.#tick();
+      const n = this.#networkRequest;
+      if (n && Number.isFinite(p.timestamp) && p.timestamp > n.timestamp && p.timestamp - n.timestamp <= 5) {
+        this.#networkInterval = { start: n.wallTime * 1000, end: (n.wallTime + p.timestamp - n.timestamp) * 1000 };
+      }
+    }
     if (this.capture.completed && (this.#needsExtra === false || this.#needsExtra === true && this.#extraStatus !== null)) this.#resolveDone();
   }
   async finish(cleanupVerified) {
     if (this.#closed) throw error();
-    const t = this.#tick();
+    this.#tick();
     if (this.capture.matching && (this.#needsExtra === null || this.#needsExtra === true && this.#extraStatus !== this.capture.status ||
         this.#needsExtra === false && this.#extraStatus !== null)) this.invalidate();
     const source = await this.capture.finish();
+    const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
     const fresh = this.#identityAt !== null && this.#sourceAt !== null &&
@@ -138,7 +162,8 @@ export class QABoundObservation {
       source.responseFresh === true && source.completed && source.bodyReadAttempts === 1 && source.body?.category === 'settings_match';
     const diagnostic = this.#failure ?? (!cleanupVerified ? 'cleanup_unverified' : !identity ? 'identity_unavailable' :
       !login ? 'source_unavailable' : !fresh ? 'stale_observation' : 'bound');
-    this.#id = null; this.#scope = null;
+    try { this.#pointOptions.onPrivateResult({ accountId: this.#id, start: this.#requestAt, end: this.#sourceAt, networkInterval: this.#networkInterval }); }
+    finally { this.#id = null; this.#scope = null; this.#networkRequest = null; this.#networkInterval = null; }
     return Object.freeze({ schema: 'aku.x.qa-bound-observation.v1', sourceQualification: QA_BOUND_QUALIFICATION,
       diagnostic, identity: identity ? 'current_self_observed' : 'unknown', login: login ? 'protected_response_observed' : 'unknown',
       binding: diagnostic === 'bound' ? 'same_document_observed' : 'unknown', freshness: fresh ? 'within_5s' : 'unknown',

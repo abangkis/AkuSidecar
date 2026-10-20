@@ -1,5 +1,19 @@
 # One-login collector and native reader proposal
 
+Latest scope adjustment, 2026-10-20: the user approved a short concurrency
+feasibility milestone with cookie-mutation/continuity qualification deferred.
+Use four fresh account/login checkpoints and a private same-ID comparison,
+separate visible/headless Chrome processes, fixed one-way two-cookie scope and
+actual request overlap. Continuity, refresh and production authorization remain
+unknown/unqualified. This is an explicit experiment exception, not a relaxation
+of Store policy or the production verifier. Native export/import still awaits
+specific approval after the implementation and exact manifest are reviewable.
+The user subsequently approved one attempt: exact two-cookie seed and four fresh
+same-account checkpoints passed without another login. Request interval overlap
+was not observed, so the short experiment did not reach its full acceptance gate.
+Cleanup passed and no retry was made; see the linked plan for the retained evidence.
+See [the superseding short-QA plan](x-concurrency-mvp-experiment.md#short-feasibility-milestone-approved-deferral-2026-10-20).
+
 Status: concurrency-first MVP planning, updated 2026-10-19 after the owner's
 scope correction and Astra Medium consultation. Production enablement is not
 implemented; the current Go bindings implement synthetic exclusive handoff.
@@ -134,6 +148,20 @@ presence does not identify the cookie or establish a session change. Qualify
 that write's bounded name/scope before another binding run; do not repeat broad
 identity/login source discovery or relax Store policy. No transfer or main
 login/runtime operation occurred.
+
+The [cookie name/scope follow-up](../scripts/auth-session-fixture/README.md#cookie-write-namescope-qualification-checkpoint-2026-10-20)
+published that 15-file delta as `b906bd1` and projected five __cf_bm entries after
+identity, declared domain x.com/path /, Secure/HttpOnly and SameSite none. The
+second QA sample bound all five setters, including one api.x.com settings
+response, but retained partial status with two unresolved observations. The
+request-only unresolved counter was corrected offline (165 Node/twelve Go tests);
+no subsequent native run requalified that correction. Preserve both historical
+partial artifacts. Header metadata does not establish cookie acceptance or value
+rotation. Cloudflare documents __cf_bm as independently generated bot state;
+this is not permission to ignore its writes or change the two-cookie transfer
+ceiling. Binding/login remain unknown under the unchanged fixture fence; Store
+and main runtime are untouched. Complete bounded classification before reviewing
+any fixture-only distinction between bot state and account-session mutation.
 
 ## Historical implementation milestone: main dev pilot (2026-10-13)
 

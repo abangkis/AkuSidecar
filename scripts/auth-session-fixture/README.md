@@ -1,5 +1,62 @@
 # Local one-login concurrency fixture
 
+## Separate retained-X short concurrency feasibility (2026-10-20)
+
+This opt-in native QA path is separate from the loopback fixture described below.
+It reuses only the identity-pinned retained QA profile and creates a fresh
+headless profile plus disposable BrowserContext under an owned fixture Job.
+The user approved deferring cookie-mutation/continuity qualification for a short
+experiment. That does not grant Store authorization or main-dev activation.
+
+Run `scripts/test-x-qa-source.ps1` for offline validation.
+Run `scripts/test-x-qa-source.ps1 -RunNativeQA -PrepareShortConcurrency` for a
+blank headless collector lifecycle and a fresh reader account/login checkpoint;
+this mode cannot read/import cookies. The real short experiment additionally
+requires `-ShortConcurrency -AllowQASessionTransfer` and specific user approval.
+Its [fixed manifest and experiment limits](../../docs/x-concurrency-mvp-experiment.md#short-feasibility-milestone-approved-deferral-2026-10-20)
+allow exactly `auth_token` and `ct0`, once, reader to isolated headless context.
+Never broaden to all cookies when a request fails. No main login, Store policy
+or user-runtime process is involved. A short pass reports continuity unknown,
+refresh unqualified and no production authority. Preparation and real-transfer
+results must be reported separately; passing offline tests is not native proof.
+
+Preparation evidence: canonical offline run `c8d29cdb8a3348e7af30672f7b626c2d`
+passed 180 Node and 13 Go top-level tests. Native preparation run
+`711de0092ff844ffaf936879b39973fa` repeated that preflight and completed the
+native case in 6.91 seconds. The fresh blank headless process used a distinct
+profile and disposable context; its image/Job membership and context/root
+closure passed. The retained reader checkpoint observed current-self and one
+fresh completed settings 200/body match, with `passed:true` only in the separate
+short wrapper. Its V1 binding remains unknown because a cookie write occurred.
+No cookie-store read or export/import was executed. Whole-Job cleanup, clean
+lease release and disposable-root removal passed. The sanitized report is
+`runtime/qa/auth-session-sidecar/x-qa-source-711de0092ff844ffaf936879b39973fa.report.json`.
+This validates preparation, not concurrency or two-cookie sufficiency.
+
+The user then explicitly authorized one bounded real-QA transfer. Run
+`45f648c0cfd348239ac95a07b79ec192` completed the native case in 13.73 seconds
+(the bounded experiment itself took 10,344.0848 ms). The exact two-cookie seed
+was acknowledged. All four reader/collector checkpoints passed: each observed
+the private current-self candidate and fresh completed settings 200/body match.
+All four passed the private same-account comparator before their completed count
+was incremented. The after pair ran concurrently at the harness level, but the
+Chrome request intervals did not overlap (`overlapMS:0`), so the recorded outcome
+is `overlap_not_observed`, not `short_overlap_observed`. The V1 report conservatively
+keeps `accountMatch:unknown` unless the entire experiment succeeds; do not relabel
+that captured field. The final target/window comparison was not reached because
+the overlap gate failed. The after-reader checkpoint does prove that the retained
+reader remained authenticated after headless activity in this sampled interval.
+
+This proves sampled two-cookie sufficiency and successful before/after access
+from both separately running Chrome processes without a second login. It does
+not prove literal simultaneous settings requests, refresh, durable continuity,
+full worker coverage or production admission. All four original V1 bindings remain
+unknown after observed cookie writes. Collector context/root and complete owned
+Job cleanup passed, the retained lease was released cleanly and the disposable
+root was removed. No raw values/body/native IDs were reported or retained by the
+helper. The report is `runtime/qa/auth-session-sidecar/x-qa-source-45f648c0cfd348239ac95a07b79ec192.report.json`.
+The one-transfer approval is consumed; no automatic repeat was performed.
+
 This opt-in experiment launches two **new, isolated** Chrome profiles: a minimized
 headed owner/reader and a true-headless collector. A fresh loopback HTTP server
 provides invented accounts and credentials. It never reads production config,
@@ -578,6 +635,70 @@ unknown writes or weaken Store continuity. Both runs reused the retained login
 without input, verified graceful root/whole-Job cleanup and clean lease release,
 and removed disposable control roots. No native ID/body/header value was saved.
 Reports/logs use the run IDs above under `runtime/qa/auth-session-sidecar`.
+
+### Cookie-write name/scope qualification checkpoint (2026-10-20)
+
+The preceding 15-file binding delta is published as `b906bd1` with exact remote
+SHA verification. The separately authorized follow-up adds the opt-in fixed
+`qualify_bound_cookie_writes` RPC and the command below. The existing bound V1
+report and its post-identity cookie-write fence are unchanged.
+
+```powershell
+.\scripts\test-x-qa-source.ps1
+.\scripts\test-x-qa-source.ps1 -RunNativeQA -BoundIdentityLogin -CookieWriteScope
+```
+
+`aku.x.qa-cookie-write-scope.v1` wraps the original observation and a closed
+cookie metadata projection. It projects Set-Cookie at the private page-session
+event boundary: recognized names, normalized declared domain, host-only/default
+scope, a fixed path category, Secure/HttpOnly/SameSite/Partitioned attributes,
+pre/post-identity phase, setter origin category, request role and event channel.
+Unknown names/domains/paths collapse to fixed labels; malformed/duplicate scope
+attributes and missing correlation remain partial. No value, raw cookie line,
+expiry, arbitrary attribute, URL, request ID or unknown native name leaves the
+projection. Limits are 16 KiB per header, 4 KiB per line, 32 lines/attributes,
+128 X request bindings, 32 retained entries and 64 header events. Getter-backed
+input is not invoked. Foreign asset requests cannot exhaust X correlation.
+
+Setter correlation includes already-observed X requests in the owned page CDP
+session, including child-frame requests that can write cookies. It does not
+attach to more targets, inspect more profiles, or make those requests root
+identity/login evidence. Cookie-store APIs, extra response-body reads, session
+transfer and Store/main-runtime operations remain unavailable. Metadata records
+the attempted header scope only (`acceptance: header_only`); it does not prove
+browser acceptance, the final cookie jar, value rotation or server revocation.
+
+Native run `559dbda6d7e94d0988a4daf421361698` (6.97 seconds) projected five
+entries, all named __cf_bm with normalized domain x.com, hostOnly false, path /,
+Secure/HttpOnly true, SameSite none and Partitioned false, after identity. Three
+setters were unbound and one diagnostic remained unresolved. After broader
+already-observed X setter correlation and an offline regression, run
+`add59a158c09423aaa382a523c87007b` (6.23 seconds) projected five matching entries:
+four x.com/other_x and one api.x.com/settings. All setters were correlated, but
+the projection still reported partial with unresolved 2. Both runs reused the
+retained login without input; graceful root close, empty owned Job, clean lease
+release and disposable-root removal passed. Identity was observed and settings
+HTTP 200 completed, but the unchanged mutation fence prevented the body read;
+login/binding remain unknown. No auth_token/ct0 entry was projected; partial
+coverage does not prove their absence or that no other write occurred.
+
+The counter was then corrected offline: ambiguous/over-limit requests without
+Set-Cookie no longer count as unresolved cookie writes; an actual header from an
+ambiguous setter still produces unknown scope and a partial result. Final
+preflight passed 165 Node cases and twelve Go top-level tests, including strict
+15/7/12-field nested validation, null/duplicate/reflection denial and preservation
+of the original fence. No third native run was made. Do not retroactively upgrade
+either partial artifact or claim that the counter correction explains all
+unresolved native observations. Revalidate corrected correlation separately.
+
+[Cloudflare's cookie reference](https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/)
+identifies __cf_bm as Bot Management state generated independently of the
+customer application's user ID. This supports distinguishing its role from the
+two candidate account cookies, not treating it as harmless: bot protection can
+affect request acceptance. The transfer ceiling remains auth_token/ct0; no
+cookie exception or Store-continuity relaxation is implemented. The next
+bounded gate is complete write classification, followed by review of any
+fixture-only bot-state distinction while unknown/account writes still fence.
 
 ## Synthetic Chrome concurrency adapter (2026-10-19)
 

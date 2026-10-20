@@ -413,7 +413,19 @@ func TestXQASourceQualification(t *testing.T) {
 	webABA := os.Getenv("AKU_X_QA_WEB_ABA") == "1"
 	web401 := os.Getenv("AKU_X_QA_WEB_401") == "1"
 	boundIdentityLogin := os.Getenv("AKU_X_QA_BOUND_IDENTITY_LOGIN") == "1"
-	typesOnly = typesOnly || authControl || directAB || webABA || boundIdentityLogin
+	cookieWriteScope := os.Getenv("AKU_X_QA_COOKIE_WRITE_SCOPE") == "1"
+	shortPreparation := os.Getenv("AKU_X_QA_SHORT_PREPARATION") == "1"
+	shortConcurrency := os.Getenv("AKU_X_QA_SHORT_CONCURRENCY") == "1"
+	if (shortPreparation || shortConcurrency) && (typesOnly || authControl || directAB || webABA || web401 || boundIdentityLogin || cookieWriteScope || os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") == "1") {
+		t.Fatal("short QA cannot combine qualification modes")
+	}
+	if shortPreparation && shortConcurrency || shortConcurrency && os.Getenv("AKU_X_QA_SHORT_TRANSFER_ALLOWED") != "1" || shortPreparation && os.Getenv("AKU_X_QA_SHORT_TRANSFER_ALLOWED") == "1" {
+		t.Fatal("short QA transfer permission mismatch")
+	}
+	if cookieWriteScope && !boundIdentityLogin {
+		t.Fatal("QA cookie scope requires bound observation")
+	}
+	typesOnly = typesOnly || authControl || directAB || webABA || boundIdentityLogin || shortPreparation || shortConcurrency
 	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || !typesOnly && os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
 		t.Skip("requires explicit retained QA cookie-read authorization")
 	}
@@ -493,6 +505,46 @@ func TestXQASourceQualification(t *testing.T) {
 		t.Fatal("retained QA login unavailable; no login attempted")
 	}
 	var raw json.RawMessage
+	if shortPreparation || shortConcurrency {
+		var prepared struct {
+			CollectorPID    uint32 `json:"collectorPID"`
+			Headless        bool   `json:"headless"`
+			IsolatedContext bool   `json:"isolatedContext"`
+			DistinctProfile bool   `json:"distinctProfile"`
+			SeedAttempted   bool   `json:"seedAttempted"`
+		}
+		if bridge.rpc(ctx, "prepare_short_concurrency", map[string]any{"owner": owner.owner}, &prepared) != nil || prepared.CollectorPID == 0 ||
+			prepared.CollectorPID == uint32(owner.PID()) || !prepared.Headless || !prepared.IsolatedContext || !prepared.DistinctProfile || prepared.SeedAttempted {
+			t.Fatal("short QA collector preparation rejected")
+		}
+		verifyXChromeFixtureImage(t, prepared.CollectorPID, config.ChromePath)
+		if bridge.containsPID(prepared.CollectorPID) != nil {
+			t.Fatal("headless QA collector outside owned Job")
+		}
+		if shortPreparation {
+			var checkpoint json.RawMessage
+			if bridge.rpc(ctx, "qualify_short_reader_checkpoint", map[string]any{"owner": owner.owner}, &checkpoint) != nil {
+				t.Fatal("short QA reader checkpoint failed")
+			}
+			if _, err := decodeXQAShortCheckpoint(checkpoint); err != nil {
+				t.Fatal("short QA checkpoint report rejected")
+			}
+			var closed struct {
+				Closed bool `json:"closed"`
+			}
+			if bridge.rpc(ctx, "close_short_collector", map[string]any{"owner": owner.owner}, &closed) != nil || !closed.Closed {
+				t.Fatal("headless QA collector cleanup unverified")
+			}
+			raw, err = json.Marshal(map[string]any{"schema": "aku.x.qa-short-preparation.v1", "collectorCreated": true,
+				"headless": true, "isolatedContext": true, "distinctProfile": true, "checkpoint": checkpoint,
+				"collectorClosed": true, "sessionTransferred": false, "canAuthorize": false})
+			if err != nil {
+				t.Fatal("short QA preparation encoding failed")
+			}
+		} else if bridge.rpc(ctx, "qualify_short_concurrency", map[string]any{"owner": owner.owner}, &raw) != nil {
+			t.Fatal("short QA concurrency failed")
+		}
+	}
 	op := "qualify_source"
 	if typesOnly {
 		op = "qualify_settings_types"
@@ -512,10 +564,25 @@ func TestXQASourceQualification(t *testing.T) {
 	if boundIdentityLogin {
 		op = "qualify_bound_observation"
 	}
-	if bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
+	if cookieWriteScope {
+		op = "qualify_bound_cookie_writes"
+	}
+	if !shortPreparation && !shortConcurrency && bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
 		t.Fatal("bounded QA qualification failed")
 	}
-	if boundIdentityLogin {
+	if shortPreparation {
+		if _, err := decodeXQAShortPreparation(raw); err != nil {
+			t.Fatal("short QA preparation rejected")
+		}
+	} else if shortConcurrency {
+		if _, err := decodeXQAShortConcurrency(raw); err != nil {
+			t.Fatal("short QA concurrency report rejected")
+		}
+	} else if cookieWriteScope {
+		if _, err := decodeXQACookieWriteScope(raw); err != nil {
+			t.Fatal("QA cookie-write scope projection rejected")
+		}
+	} else if boundIdentityLogin {
 		if _, err := decodeXQABoundObservation(raw); err != nil {
 			t.Fatal("QA bound identity/login observation rejected")
 		}
@@ -570,5 +637,9 @@ func TestXQASourceQualification(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("QA root graceful close acknowledged=%t; complete owned-Job cleanup verified", graceful)
-	t.Log("QA bounded observation recorded; native admission remains unauthorized; no session transferred")
+	if shortConcurrency {
+		t.Log("QA short concurrency recorded; continuity and native admission remain unqualified")
+	} else {
+		t.Log("QA bounded observation recorded; native admission remains unauthorized; no session transferred")
+	}
 }

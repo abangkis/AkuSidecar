@@ -1,10 +1,108 @@
 # Minimal X concurrency experiment
 
-Status: documentation-only plan, 2026-10-19. No implementation or test execution
-is authorized by this document. Native state export/import requires a separate,
+Status: bounded short-QA implementation in progress, 2026-10-20. The user authorized
+deferring mutation/continuity qualification for this feasibility milestone.
+Native state export/import still requires a separate,
 explicit authorization after the exact transfer manifest and implementation are
 reviewable. Main login, Store data/policy and user-runtime lifecycle are excluded.
 Planning approval must not be described as execution approval.
+
+## Short feasibility milestone: approved deferral (2026-10-20)
+
+The immediate question is whether two separately owned Chrome processes can use
+the same QA account concurrently for a short observation. Cookie setter coverage,
+refresh/fanout and durable continuity qualification are deferred for this first
+experiment. They are recorded as unknown, rather than inferred from a successful
+request or from the apparently incidental name of a cookie. This narrows the
+first experiment; it does not complete durable MVP-1 or authorize main-dev use.
+
+The separate `aku.x.qa-short-checkpoint.v1` wrapper may accept a fresh private
+current-self candidate plus the already qualified protected settings response
+across an observed cookie write. The original V1 observation continues to report
+`binding:unknown` and `diagnostic:observed_cookie_write` in that case. Context,
+document, target, owner, cache, malformed response, duplicate request, freshness
+and debugger-cleanup failures still reject the checkpoint. Store policy and the
+production verifier are unchanged. No native qualification revision is minted.
+
+### Reviewable one-way transfer ceiling
+
+The fixed implementation manifest is `QA_SHORT_MANIFEST` in
+`scripts/auth-session-fixture/x-qa-short-feasibility.mjs`:
+
+| Name | Domain | Path | Secure | HttpOnly | SameSite |
+| --- | --- | --- | --- | --- | --- |
+| `auth_token` | `.x.com` | `/` | true | true | None |
+| `ct0` | `.x.com` | `/` | true | false | Lax |
+
+Both must be unique, unpartitioned, non-session cookies with a finite future
+expiry, Medium priority, Secure source scheme and source port 443. Preserve the
+freshly observed expiry exactly; reject a changed static attribute instead of
+widening the manifest. `sameParty` may be absent or false. Limit each serialized
+tuple to 8 KiB and the pair to 16 KiB. No credential fingerprints are produced.
+
+One scoped `Network.getCookies` request uses only `https://x.com/home` and
+`https://api.x.com/1.1/account/settings.json`. Chrome may return other applicable
+cookies in that private CDP reply; discard those entries without reading their
+value properties or exporting them. Only the two approved values/attributes may
+reach one `Network.setCookies` command in a fresh true-headless Chrome process
+and isolated disposable BrowserContext. No Cloudflare, Google or Apple cookies,
+storage, profile files, database, application headers or reverse merge are allowed.
+Values stay inside Node/Chrome and private pipes, outside RPC/reports/logs/argv/env;
+JavaScript garbage collection is not a guaranteed memory-zeroization primitive.
+
+The parent fixture Job owns both Chrome trees. Verify the new Chrome image and
+Job membership before any export/import. Take reader-before and collector-before
+checkpoints, then one parallel reader-after/collector-after pair. Compare the four
+raw validated account IDs only inside the private Node comparator; export only
+match/mismatch/unknown. Require actual protected-request interval overlap,
+unchanged reader target/window ownership, no second login, four accepted checks
+and verified collector-context/root cleanup. Overlap uses each Chrome request's
+wallTime plus its monotonic request-to-loadingFinished duration; delayed delivery
+of events through two pipes is not itself overlap proof. Missing, stale or invalid
+timing rejects the sample. A 60-second experiment deadline,
+challenge/rejection, identity drift or a failed checkpoint ends the attempt;
+do not broaden cookie scope or automatically retry with all cookies.
+
+`aku.x.qa-short-concurrency.v1` always retains `continuity:unknown`,
+`refresh:not_qualified`, `canAuthorize:false` and `nativeQualified:false`.
+An acknowledged seed is distinguished from an attempted seed with a lost reply.
+The final Go Job cleanup remains authoritative before saving a sanitized report
+or removing the disposable profile/control root. The retained QA lease is released
+only after cleanup verification; no main-login/runtime process is involved.
+
+Preparation command (no cookie read or transfer):
+`scripts/test-x-qa-source.ps1 -RunNativeQA -PrepareShortConcurrency`.
+The separate transfer command is deliberately gated by both `-ShortConcurrency`
+and `-AllowQASessionTransfer`; do not execute it before the user's specific approval.
+
+Preparation checkpoint: offline 180 Node/13 Go tests passed. Native no-transfer
+run `711de0092ff844ffaf936879b39973fa` completed in 6.91 seconds with a valid
+short reader checkpoint, distinct blank headless profile/context, verified
+collector closure, whole-Job cleanup and clean retained lease. Its original V1
+binding remains unknown after an observed cookie write. No cookie-store read or
+transfer occurred; concurrent authenticated requests are not yet proven.
+
+One specifically authorized transfer was subsequently executed in run
+`45f648c0cfd348239ac95a07b79ec192`. The exact seed was acknowledged and all four
+fresh reader/collector checkpoints passed, including the private same-ID checks.
+No second login was needed. The experiment took 10,344.0848 ms; the full native
+case took 13.73 seconds. Its parallel after pair produced no intersection of
+the actual settings-request intervals, so the preserved report says
+`outcome:overlap_not_observed`, `overlapMS:0`, `accountMatch:unknown`. In V1 that
+last field is emitted as match only on overall experiment success, even though
+four completed checkpoints require all private IDs to have agreed. Do not rewrite
+the captured report to imply stronger acceptance. The final window-ID comparison
+was not reached after the overlap failure. The after-reader checkpoint passed
+after the collector-before checkpoint while both browser processes were alive.
+
+This establishes sampled cookie sufficiency and before/after authenticated access
+from both processes, not literal request overlap or durable continuity. All four
+V1 bindings remain unknown after cookie writes; Store/native admission is still
+unauthorized. Collector context/root closure, whole-Job cleanup, clean retained
+lease release and disposable-root removal passed. The one-transfer approval was
+consumed and no automatic second transfer was performed. Preserve this evidence;
+if stronger simultaneous-request proof is required next, address phase timing
+without expanding cookie scope, delaying/replaying X responses or repeating login.
 
 This is the MVP-1 experiment in the [concurrency-first roadmap](collection-modes-roadmap.md#session-reuse-mvp-concurrency-first-critical-path-2026-10-19).
 It refines the [one-login design](auth-session-reuse-design.md), reusing the
@@ -392,6 +490,21 @@ attempt. The present header-presence guard cannot distinguish session cookies
 from unrelated cookies; never silently classify unknown writes as harmless.
 Enrollment, native continuity, Store authority and transfer permission remain
 separate. No main login, Store or user runtime was accessed.
+
+The [cookie-write qualification adapter](../scripts/auth-session-fixture/README.md#cookie-write-namescope-qualification-checkpoint-2026-10-20)
+now projects recognized names and declared scope from already-observed page
+responses, without cookie values, raw headers, jar reads or more body reads.
+Both QA samples projected five post-identity __cf_bm entries with domain x.com,
+path /, Secure/HttpOnly, SameSite none and no Partitioned attribute. The second
+sample correlated every setter but still reported partial/unresolved 2. Its
+request-only counter was subsequently corrected offline; final checks passed
+165 Node/twelve Go cases, without another native run or retrospective artifact
+promotion. Metadata is header-only, not final storage/value-change proof.
+The independently documented bot-management role does not authorize ignoring
+these writes, enlarging the auth_token/ct0 ceiling, or changing Store policy.
+Complete write classification before reviewing a narrow fixture-only distinction
+between bot-state writes and account-session mutation; unknown writes must still
+fence. Native identity/login binding remains unknown under the existing guard.
 
 Native source failure is a named feasibility result, not a reason to repeat broad
 bootstrap probes or another fallback campaign. If account-settings cannot meet

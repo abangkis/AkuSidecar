@@ -11,12 +11,13 @@ function page(id = '12345') {
     session: { user_id: id }, entities: { users: { entities: { [id]: { id_str: id } } } },
   } };
 }
-function setup() {
+function setup(pointOptions, readDelay) {
   let now = 0, bodyReads = 0, b;
   b = new QABoundObservation(scope, 'frame', async id => {
     bodyReads++; assert.equal(b.capture.consumeRead(id), true);
+    if (readDelay) now += readDelay;
     return { schema: 'aku.x.qa-direct-body.v1', category: 'settings_match', settingsMatch: true };
-  }, () => now);
+  }, () => now, undefined, pointOptions);
   const emit = (method, params, binding = scope) => b.observe({ method, params, sessionId: scope.sessionId }, binding);
   const document = () => {
     emit('Page.frameNavigated', { frame: { id: 'frame', loaderId: 'loader', url: 'https://x.com/home' } });
@@ -26,14 +27,49 @@ function setup() {
     (value, projection) => b.acceptIdentity(value, projection));
   const request = (patch = {}) => emit('Network.requestWillBeSent', { requestId: 'request', frameId: 'frame', loaderId: 'loader',
     request: { method: 'GET', url: QA_AB_URL }, ...patch });
-  const response = (patch = {}) => {
+  const response = (patch = {}, finishedPatch = {}) => {
     emit('Network.responseReceived', { requestId: 'request', frameId: 'frame', loaderId: 'loader', hasExtraInfo: true, response: {
       url: QA_AB_URL, status: 200, mimeType: 'application/json', fromDiskCache: false, fromServiceWorker: false, fromPrefetchCache: false }, ...patch });
     if (patch.hasExtraInfo !== false) emit('Network.responseReceivedExtraInfo', { requestId: 'request', statusCode: 200, headers: {} });
-    emit('Network.loadingFinished', { requestId: 'request', encodedDataLength: 512 });
+    emit('Network.loadingFinished', { requestId: 'request', encodedDataLength: 512, ...finishedPatch });
   };
   return { b, emit, document, identity, request, response, time: v => { now = v; }, reads: () => bodyReads };
 }
+
+test('explicit short QA defers only the mutation gate and keeps private identity out of the observation', async () => {
+  let privateResult;
+  const s = setup({ deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } });
+  s.document(); s.time(100); s.identity(); s.request(); s.time(200);
+  s.emit('Network.responseReceivedExtraInfo', { headers: { 'Set-Cookie': 'PRIVATE_SECRET' } });
+  s.response();
+  const r = await s.b.finish(true);
+  assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(r.binding, 'unknown');
+  assert.equal(r.login, 'protected_response_observed'); assert.equal(s.reads(), 1);
+  assert.deepEqual(privateResult, { accountId: '12345', start: 100, end: 200, networkInterval: null });
+  assert.equal(r.continuity, 'unknown'); assert.equal(r.canAuthorize, false);
+  assert.equal(JSON.stringify(r).includes('12345'), false); assert.equal(JSON.stringify(r).includes('PRIVATE_SECRET'), false);
+  const lost = setup({ deferCookieMutation: true, onPrivateResult: () => {} });
+  lost.document(); lost.identity(); lost.emit('Runtime.executionContextsCleared', {}); lost.request(); lost.response();
+  assert.equal((await lost.b.finish(true)).diagnostic, 'scope_lost'); assert.equal(lost.reads(), 0);
+});
+
+test('freshness is checked again after asynchronous body projection', async () => {
+  const s = setup(undefined, 5100); s.document(); s.identity(); s.time(100); s.request(); s.time(200); s.response();
+  assert.equal((await s.b.finish(true)).diagnostic, 'stale_observation');
+});
+
+test('private request interval uses Chrome wallTime plus monotonic duration, not pipe delivery overlap', async () => {
+  let captured;
+  const s = setup({ deferCookieMutation: true, onPrivateResult: r => { captured = r; } });
+  const wall = Date.now() / 1000;
+  s.document(); s.identity();
+  s.request({ wallTime: wall, timestamp: 100 });
+  s.response({}, { timestamp: 100.2 });
+  const r = await s.b.finish(true);
+  assert.ok(Math.abs(captured.networkInterval.start - wall * 1000) < 1);
+  assert.ok(Math.abs(captured.networkInterval.end - captured.networkInterval.start - 200) < 1);
+  assert.equal(Object.hasOwn(r, 'networkInterval'), false);
+});
 
 test('one reload binds current-self and protected settings without exporting any private scope or ID', async () => {
   const s = setup(); s.document(); s.time(100); s.identity(); s.request(); s.time(200); s.response();
