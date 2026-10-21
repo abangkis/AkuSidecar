@@ -407,6 +407,7 @@ func TestXQASourceQualificationOffline(t *testing.T) {
 }
 
 func TestXQASourceQualification(t *testing.T) {
+	liveCurrentSelf := os.Getenv("AKU_X_QA_LIVE_SELF") == "1"
 	typesOnly := os.Getenv("AKU_X_QA_SETTINGS_TYPES_ONLY") == "1"
 	authControl := os.Getenv("AKU_X_QA_AUTH_CONTROL") == "1"
 	directAB := os.Getenv("AKU_X_QA_DIRECT_AB") == "1"
@@ -417,6 +418,9 @@ func TestXQASourceQualification(t *testing.T) {
 	shortPreparation := os.Getenv("AKU_X_QA_SHORT_PREPARATION") == "1"
 	shortConcurrency := os.Getenv("AKU_X_QA_SHORT_CONCURRENCY") == "1"
 	shortSynchronized := os.Getenv("AKU_X_QA_SHORT_SYNCHRONIZED") == "1"
+	if liveCurrentSelf && (typesOnly || authControl || directAB || webABA || web401 || boundIdentityLogin || cookieWriteScope || shortPreparation || shortConcurrency || shortSynchronized || os.Getenv("AKU_X_QA_SHORT_TRANSFER_ALLOWED") == "1" || os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") == "1") {
+		t.Fatal("live current-self qualification cannot combine modes or transfer permission")
+	}
 	if shortSynchronized && !shortConcurrency {
 		t.Fatal("synchronized QA requires short concurrency")
 	}
@@ -429,7 +433,7 @@ func TestXQASourceQualification(t *testing.T) {
 	if cookieWriteScope && !boundIdentityLogin {
 		t.Fatal("QA cookie scope requires bound observation")
 	}
-	typesOnly = typesOnly || authControl || directAB || webABA || boundIdentityLogin || shortPreparation || shortConcurrency
+	typesOnly = typesOnly || authControl || directAB || webABA || boundIdentityLogin || shortPreparation || shortConcurrency || liveCurrentSelf
 	if os.Getenv("AKU_X_QA_SOURCE_QUALIFICATION_ENABLED") != "1" || !typesOnly && os.Getenv("AKU_X_QA_COOKIE_METADATA_ALLOWED") != "1" {
 		t.Skip("requires explicit retained QA cookie-read authorization")
 	}
@@ -577,10 +581,17 @@ func TestXQASourceQualification(t *testing.T) {
 	if cookieWriteScope {
 		op = "qualify_bound_cookie_writes"
 	}
+	if liveCurrentSelf {
+		op = "qualify_live_self"
+	}
 	if !shortPreparation && !shortConcurrency && bridge.rpc(ctx, op, map[string]any{"owner": owner.owner}, &raw) != nil {
 		t.Fatal("bounded QA qualification failed")
 	}
-	if shortPreparation {
+	if liveCurrentSelf {
+		if _, err := decodeXQALiveSelf(raw); err != nil {
+			t.Fatal("live current-self report rejected")
+		}
+	} else if shortPreparation {
 		if _, err := decodeXQAShortPreparation(raw); err != nil {
 			t.Fatal("short QA preparation rejected")
 		}

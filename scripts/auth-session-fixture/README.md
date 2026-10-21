@@ -1,5 +1,39 @@
 # Local one-login concurrency fixture
 
+## No-reload current-self source qualification
+
+`scripts/test-x-qa-source.ps1 -LiveCurrentSelf` runs offline preflight only.
+Add `-RunNativeQA` only for an authorized retained-QA run. The independent mode
+cannot combine with cookie reads, seeding, concurrency or other source modes.
+It acquires the existing identity-pinned retained-profile lease and owned Job;
+it starts no login or headless collector and never changes the main profile.
+
+The single candidate is a fresh `GET https://x.com/home` HTML response fetched
+inside the existing Home document. It uses browser-owned same-origin credentials,
+`cache:no-store`, `redirect:error`, no custom headers and a two-second abort.
+The helper reads at most 16,385 bytes (the extra byte detects the fixed 16 KiB
+limit), rejects oversize responses without parsing them and never widens the cap.
+Only one literal `window.__INITIAL_STATE__ = <JSON>;` script in an inert,
+uninserted template is eligible; no script executes and no resource is loaded.
+Only that bounded JSON may enter private CDP projection. Raw HTML, identity
+values, headers and arbitrary errors never enter RPC/reports/logs.
+
+The transport requires one exact request, matching target/frame/loader, fresh
+non-cache/non-service-worker response, completion and unchanged document before
+reporting a fresh identity candidate. It issues no reload, navigation, debugger
+or cookie command. A negative candidate is not logout. All authorization/native
+qualification/transfer flags stay false, including on a positive single response;
+two-browser renewal timing and broader source controls remain separate.
+
+Accepted negative native run `50a535ebbaa94311b8684b48ea5e9642` passed 39 Node
+tests and one Go preflight test, then recorded HTTP 200 with `body_limit` at the
+16,385-byte detection bound after 424.2414 ms. No initializer or account value
+was parsed. The original document remained intact, the owned Job was emptied,
+the retained lease returned `clean` and the disposable root was removed.
+The successful test means bounded diagnostics and cleanup passed; the source
+remains unqualified. See the
+[source checkpoint](../../docs/x-concurrency-dev-pilot-contract.md#fresh-current-self-source-candidate-2026-10-21).
+
 ## Offline bounded dev snapshot pilot
 
 The separate pilot model follows

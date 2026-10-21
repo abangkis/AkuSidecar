@@ -255,3 +255,48 @@ Its unique owned temporary build root was removed. No browser, profile, session
 transfer, native-source request, Store/database, network listener or user runtime
 was opened. Native timing, refreshed account proof without reload, persistent
 ingestion compatibility and actual runtime lifetime remain unqualified.
+
+## Fresh current-self source candidate (2026-10-21)
+
+The user authorized qualification of one no-reload identity source in the retained
+QA profile. The selected candidate is a fresh same-origin Home document fetch,
+not a reread of the existing document's bootstrap. The bounded mode is documented
+in the [fixture README](../scripts/auth-session-fixture/README.md#no-reload-current-self-source-qualification).
+It has one fixed GET, no custom authentication headers, no transfer, a two-second
+abort and the existing 16 KiB body ceiling. The optional extra byte detects
+overflow, never becomes parsed source data and does not authorize a larger read.
+Only one inert literal bootstrap initializer and its exact current-self ID/entity
+projection may qualify as a candidate, with response/cache/frame/loader guards.
+An oversized, absent, ambiguous or unqualified response stops this candidate;
+it does not authorize endpoint scanning, broader body reads or a login attempt.
+This diagnostic does not change the pilot/Store policy, qualify two-browser timing
+or register a native provider.
+
+Offline preflight run `30f4a1ed16ae408bbf565bcde37bcdec` passed 39 Node tests
+and one Go report-validation test. The separately authorized native run
+`50a535ebbaa94311b8684b48ea5e9642` repeated that narrow preflight and completed
+on the same retained login, with no user input or additional login. One exact
+Fetch returned HTTP 200; its body exceeded 16 KiB. BYOB reading stopped at
+16,385 bytes (one overflow-detection byte), aborted/cancelled the stream and
+returned `outcome:body_limit`, `identity:unavailable`, `projection:null` and
+`responseFresh:false`. No HTML was parsed, and no identity value was projected.
+The document/frame/loader remained unchanged. The measured 424.2414 ms is time
+to this bounded negative result, not successful identity or two-browser timing.
+The native Go case took 5.43 seconds including owner startup/cleanup.
+
+The report is
+`runtime/qa/auth-session-sidecar/x-qa-source-50a535ebbaa94311b8684b48ea5e9642.report.json`;
+the same prefix has its sanitized log. Graceful QA closure, whole-Job cleanup,
+retained lease state `clean` and removal of the disposable control root were
+verified. The retained profile remains available under its existing authorization.
+No cookie API, transfer, authentication attempt, main-profile/runtime operation,
+Store access or durable authority was introduced. `canAuthorize`,
+`nativeQualified` and `sessionTransferred` remain false.
+
+This candidate is **unqualified under the existing read ceiling**. The result
+does not establish that fresh Home HTML lacks a current-self initializer, nor
+that the retained session is logged out. No larger read, alternate endpoint or
+automatic retry was run. A larger HTML envelope or different source requires a
+separately reviewed data contract before another native attempt; the existing
+16 KiB limit was not silently reinterpreted as only a report-size limit. Keep
+the accepted MVP-1 concurrency result and offline pilot evidence unchanged.

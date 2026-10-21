@@ -26,6 +26,8 @@ import { QACookieWriteCapture, finishQACookieWriteScope } from './x-qa-cookie-wr
 import { shortQACheckpoint, selectQAShortCookies, runQAShortFeasibility } from './x-qa-short-feasibility.mjs';
 import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-rendezvous.mjs';
 import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
+import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs';
+import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -548,6 +550,10 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Page.getFrameTree': {
       const frame = result.frameTree?.frame;
       if (!isObject(frame) || !safeId(frame.id) || !(['qa_guest', 'qa_ab'].includes(projectionKind) ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
+      if (projectionKind === 'qa_live_self') {
+        if (!safeId(frame.loaderId)) throw probeError('qa_live_document_invalid');
+        return { frameId: frame.id, loaderId: frame.loaderId };
+      }
       return { frameId: frame.id };
     }
     case 'Target.createBrowserContext':
@@ -615,6 +621,10 @@ function projectCDPResult(method, result, projectionKind = null) {
       return { acknowledged: true };
     case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
+      if (projectionKind === 'qa_live_self') {
+        if (!active?.liveSelf?.running || own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'object') throw probeError('qa_live_result_invalid');
+        try { return projectQALiveSelf(result.result.value); } catch { throw probeError('qa_live_projection_invalid'); }
+      }
       if (projectionKind === 'qa_web_hook') {
         if (own(result, 'exceptionDetails') || !isObject(result.result) || !isObject(result.result.value)) throw probeError('qa_web_hook_unavailable');
         try { return validateQAWebHook(result.result.value); } catch { throw probeError('qa_web_hook_invalid'); }
@@ -796,6 +806,9 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
+  const liveCommand = active?.liveSelf?.running === true;
+  if (liveCommand && (!qualificationMode(driverMode) || process.env.AKU_X_QA_LIVE_SELF !== '1' ||
+      sessionId !== active.sessionId || purpose !== null || !qaLiveSelfCommand(method, params, QA_LIVE_SELF_EXPRESSION))) return Promise.reject(probeError('qa_live_command_denied'));
   const shortCookieExport = method === 'Network.getCookies' && active?.shortFeasibility?.exporting === true;
   if (method === 'Browser.getWindowForTarget' && (!active?.shortFeasibility || sessionId !== undefined ||
       Object.keys(params).join(',') !== 'targetId' || params.targetId !== active.targetId)) return Promise.reject(probeError('qa_short_window_denied'));
@@ -837,7 +850,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (method === 'Network.setCacheDisabled' && !webCommand && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
+  if (!liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -853,6 +866,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     }
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  if (liveCommand) projectionKind = 'qa_live_self';
   if (shortCookieExport) projectionKind = 'qa_short_cookies';
   if (boundNetwork && method === 'Network.getResponseBody') projectionKind = 'qa_bound';
   if (webCommand && method === 'Network.getResponseBody' && webState.qualify401 && webState.stage === 'b') projectionKind = 'qa_web_401';
@@ -865,7 +879,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (method === 'Runtime.evaluate' && webCommand) {
     projectionKind = params.expression === QA_WEB_SNAPSHOT ? 'qa_web_hook' : 'qa_web';
-  } else if (method === 'Runtime.evaluate') {
+  } else if (method === 'Runtime.evaluate' && !liveCommand) {
     const bootstrap = params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION;
     const keys = bootstrap ? ['expression', 'returnByValue', 'awaitPromise', 'userGesture', 'throwOnSideEffect', 'timeout'] :
       ['expression', 'returnByValue', 'awaitPromise', 'userGesture'];
@@ -925,6 +939,7 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    if (active?.liveSelf?.running) active.liveSelf.capture?.observe(raw);
     if (active?.bound?.sampling) active.bound.binder?.observe(raw, boundScope(active));
     if (active?.webABA?.running && raw.sessionId === active.sessionId && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
       const state = active.webABA;
@@ -1579,6 +1594,28 @@ function boundScope(current) {
   return { owner: current.owner, profileId: current.profileId, sessionId: current.sessionId, targetId: current.targetId };
 }
 
+async function qualifyLiveSelf(message) {
+  const current = requireOwner(message);
+  if (process.env.AKU_X_QA_LIVE_SELF !== '1' || !qualificationMode(driverMode) || !retainedQAScope?.reuse ||
+      !current.gate.loginVisible || current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted || current.liveSelf) throw probeError('qa_live_gate_closed');
+  current.gate.beginObservation();
+  const state = current.liveSelf = { running: true, capture: null };
+  try {
+    const before = await send('Page.getFrameTree', {}, current.sessionId);
+    state.capture = new QALiveSelfTransport(current.sessionId, before.frameId, before.loaderId);
+    await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
+      maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
+    const start = performance.now();
+    const observation = await send('Runtime.evaluate', { expression: QA_LIVE_SELF_EXPRESSION,
+      returnByValue: true, awaitPromise: true, userGesture: false }, current.sessionId);
+    const after = await send('Page.getFrameTree', {}, current.sessionId);
+    return finishQALiveSelf(observation, state.capture.finish(after.frameId, after.loaderId), performance.now() - start);
+  } finally {
+    await send('Network.disable', {}, current.sessionId).catch(() => {});
+    state.running = false;
+  }
+}
+
 async function qualifyBoundObservation(message, cookieWriteScope = false) {
   const current = requireOwner(message);
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
@@ -1885,7 +1922,11 @@ async function execute(message) {
   if (!isObject(message) || !Number.isSafeInteger(message.id) || message.id <= 0 || typeof message.op !== 'string') {
     throw probeError('rpc_invalid');
   }
+  if (process.env.AKU_X_QA_LIVE_SELF === '1' && !['qa_profile_scope', 'launch', 'login_state', 'qualify_live_self', 'release'].includes(message.op)) throw probeError('qa_live_mode_operation_denied');
   switch (message.op) {
+    case 'qualify_live_self':
+      exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
+      return qualifyLiveSelf(message);
     case 'prepare_short_concurrency':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
       return prepareShortConcurrency(message);
