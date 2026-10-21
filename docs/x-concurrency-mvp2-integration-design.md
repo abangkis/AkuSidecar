@@ -9,6 +9,12 @@ offline documentation decision, not implementation, Store compatibility or runti
 activation. Pair-authorized synthetic main/Chrome integration is published as
 `bc64be767dae93f8607a12fff194523400f6d119`; reuse its accepted evidence.
 
+The subsequent authorized
+[offline pilot model](x-concurrency-dev-pilot-contract.md#offline-pilot-model-implementation-checkpoint-2026-10-21)
+passed 18 top-level tests and 57 subtests, four tag gates and Engine compilation.
+It is a separate private model with no main/broker/Chrome or Store integration;
+native in-place evidence and timing remain unqualified.
+
 Status: the first offline synthetic controller increment was reviewed and
 published as `e87c1b27e730b61d0d4c99a819b43035332a40d8`, with origin/main
 verified. On 2026-10-21 the user additionally authorized default-off

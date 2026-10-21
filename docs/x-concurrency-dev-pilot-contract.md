@@ -1,7 +1,8 @@
 # X bounded dev pilot contract
 
-Decision date: 2026-10-21. Status: selected policy/design only; not implemented or
-activated. The user authorized an offline definition of a limited dev pilot and
+Decision date: 2026-10-21. Status: selected policy with an implemented offline
+synthetic model; native adapter and runtime activation remain unavailable. The
+user authorized an offline definition of a limited dev pilot and
 minimum evidence renewal without reload, deferring complete refresh/rotation
 qualification. This change opens no browser/profile, transfers no session,
 modifies no Store code/policy/schema and performs no user-runtime operation.
@@ -192,3 +193,65 @@ separately authorized, bounded in-place source/timing QA with the retained QA
 profile, not a repeated login/source-control/overlap campaign. Complete native
 refresh, rotation, fanout and writer/startup coverage remain deferred from this
 pilot gate and required before claiming the strict production contract.
+
+## Offline pilot model implementation checkpoint (2026-10-21)
+
+The three policy/design/roadmap documents were reviewed and published as
+`b86e355728af5353f4a47758413e03f6a0ceaa43`, with origin/main verified. The user
+then authorized this model and offline regressions, still excluding native login,
+Store and user-runtime operations. This checkpoint is not native activation.
+
+The independent model lives in
+`internal/engine/development_concurrent_pilot.go`, with a separate model test and
+cross-policy boundary test. All three files require both `auth_session_dev` and
+`auth_session_fixture`. Types and methods are private. There is no new main,
+broker, Coordinator or Chrome binding, provider registration, runtime setting or
+activation endpoint. The existing strict authority and its fixtures are unchanged.
+
+Explicit fixture grants, opt-in and limitation acknowledgement are required
+before accepting a single attempt-bound invented seed receipt or probing either
+role. The injected clock starts the absolute cap before either operation. A
+probe-only callback returns invented live-identity/settings evidence with exact
+owner/context/target/frame/document, request and source-qualification bindings.
+Request replay keys include role/owner/context, so identical lexical CDP request
+IDs in distinct browsers are not falsely treated as the same request.
+
+Renewal probes execute outside the state mutex. Publication rechecks cancellation,
+the unchanged pair, policy/consent, pinned owner bindings, previous permit and
+deadlines under the state lock. Ordinary non-final inventory changes preserve
+renewal and the collector. Modeled expiry/revocation invalidates unfinished work
+and retires the collector while retaining reader windows; modeled parent exit
+ends both owners. These are memory-state transitions, not OS exit/cleanup proof.
+Original tickets survive only successful uninterrupted local permission renewal;
+cancelled commands cannot be resurrected by issuing a new ticket for the same ID.
+
+The model checks expiry at its API/report barriers. It runs no background native
+scheduler. Source callbacks receive a bounded context and must cooperate with
+cancellation; arbitrary Go callbacks cannot be forcibly interrupted. Late outputs
+are rejected at publication, including cancellation while waiting for its mutex.
+Future transport/scheduling and live in-place identity availability still require
+their own qualification. No fabricated native revision or future timestamp is used.
+
+The canonical helper is `scripts/test-concurrency-pilot.ps1`. Accepted run
+`a718f7419b5440afaa41065e48e5071e` passed **18 top-level tests and 57 subtests**,
+four source/test build-tag gates and combined dual-tag Engine compilation. Only
+named stdlib sources execute; Engine initializers and Store/database tests do not.
+Old authority test helpers support the cross-policy case, but its old test cases
+are excluded by the `TestConcurrentPilot` selection.
+
+The suite includes a twelve-second fake-clock capture through four renewals:
+ten per-role observations, original ticket version one, current evidence version
+five and one accepted result. It covers exact two-second rejection, five-second
+and earlier-source deadlines, absolute 60-second expiry, clock rollback, future
+seed receipts, role/owner/source/request replay and drift, stale bootstrap,
+known-channel/cookie invalidations versus deferred coverage, cancellation at
+publication, blocked-renewal races, window changes and bounded report privacy.
+Native/production/Store authorization and existing `canAuthorize` flags remain
+false even while model-only pilot eligibility is true.
+
+The log is
+`runtime/qa/auth-session-sidecar/concurrent-pilot-a718f7419b5440afaa41065e48e5071e.log.txt`.
+Its unique owned temporary build root was removed. No browser, profile, session
+transfer, native-source request, Store/database, network listener or user runtime
+was opened. Native timing, refreshed account proof without reload, persistent
+ingestion compatibility and actual runtime lifetime remain unqualified.

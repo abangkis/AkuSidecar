@@ -1,5 +1,45 @@
 # Local one-login concurrency fixture
 
+## Offline bounded dev snapshot pilot
+
+The separate pilot model follows
+[`aku.x.dev-pilot.snapshot.v1`](../../docs/x-concurrency-dev-pilot-contract.md).
+Run `.\scripts\test-concurrency-pilot.ps1` from the repository root. This helper
+has no native/browser switch. It uses invented account/owner/process references,
+an injected clock, a probe-only synthetic source and an in-memory work/result sink.
+It opens no profile, login, browser, network listener, Store/database or user runtime.
+
+The model is private and dual-tagged (`auth_session_dev && auth_session_fixture`).
+It is independent from the strict pair authority and has no main/broker/controller
+wiring, runtime option, provider registration or activation endpoint. Its pilot
+eligibility can be true while global coverage stays partial, continuity unknown
+and refresh unqualified. Native, production, Store and existing `canAuthorize`
+flags remain false. A local permission-version chain does not establish X lineage.
+
+The helper checks the new source/tests in all four build-tag modes, runs only
+`TestConcurrentPilot*` cases as named-file Go tests, and compiles the dual-tag
+Engine without executing its initializers or package tests. Old strict-authority
+test helpers support the cross-policy regression; their existing test cases are
+not repeated. Build/cache paths stay project-local. Logs use
+`runtime/qa/auth-session-sidecar/concurrent-pilot-<run>.log.txt`; the unique owned
+temporary build root is guarded and removed after the run.
+
+Tests exercise the absolute 60-second attempt cap, five-second freshness and
+joint two-second acquisition/publication limit, same-document renewal without
+reload, immutable work tickets, known invalidation versus deferred coverage,
+mode/policy isolation, cancellation and bounded public reports. These model
+checks cannot qualify native in-place identity/login sources, timing or OS cleanup.
+
+Accepted run `a718f7419b5440afaa41065e48e5071e` passed 18 top-level tests and
+57 subtests, four tag gates and combined Engine compilation. A twelve-second
+fake-clock capture used four renewals and ten per-role observations, preserving
+the original ticket version one through current evidence version five. Its log
+follows the prefix above; the owned temporary build root was removed. See the
+[implementation checkpoint](../../docs/x-concurrency-dev-pilot-contract.md#offline-pilot-model-implementation-checkpoint-2026-10-21).
+Expiry is checked at model API/report barriers; no native renewal scheduler runs.
+Source callbacks must cooperate with their bounded context; late outputs cannot
+publish authority, but arbitrary blocked callbacks are not forcibly interrupted.
+
 ## Pair-authorized main and Chrome fixtures
 
 The existing fixture providers now accept explicit `authorized-*` scenarios.
