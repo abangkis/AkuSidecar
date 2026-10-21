@@ -409,3 +409,33 @@ The native V2 rejection cause remains unknown. A separately authorized single
 retained-QA V3 probe can identify its current fixed failure category, without
 retaining content or relaxing parser acceptance; offline success alone does not
 qualify a native identity source or enable main dev.
+
+## V3 retained-QA result (2026-10-21)
+
+The nine-file V3 diagnostic change was reviewed and published as
+`6449cfc79c9057c1761653e170bc3804479a7b55`, then the user authorized one
+retained-QA probe. Run `9c71cf93547a405b9dcd9bebd1372552` repeated the 84 Node
+tests and one Go preflight test with eight category subcases; all passed.
+The native case completed in 4.67 seconds including startup and cleanup.
+
+One fresh HTTP 200 Home response completed with preserved document/frame/loader.
+HTML was 311,797 bytes and the selected initializer 198,561 bytes, within the
+unchanged caps. After 536.7426 ms, the closed observation returned
+`parser_rejected` / `parserRejection:unsafe_number`, identity unavailable and
+projection null. This establishes the rejection category for this V3 observation,
+not the field, value, numeric subtype or the cause of the historical V2 result.
+The category covers nonfinite conversions and integers outside JavaScript's safe
+integer range. It does not establish that an account ID itself was numeric or
+that the retained session was logged out. Raw content and numeric lexemes were
+not retained, and no parser acceptance rule was relaxed.
+
+Sanitized report:
+`runtime/qa/auth-session-sidecar/x-qa-source-9c71cf93547a405b9dcd9bebd1372552.report.json`;
+the same prefix has its log. Graceful closure and complete owned-Job cleanup were
+verified, retained-profile state returned to `clean`, and the disposable control
+root was removed. There was no second native attempt, transfer, new login, main
+login access, Store operation or user runtime change. All authority/transfer flags
+remain false. A next offline review may examine precision-preserving numeric
+handling confined to the QA projection without relaxing shared parser acceptance
+or the requirement that stable current-self IDs be original strings. This result
+does not authorize that implementation or another native probe.

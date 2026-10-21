@@ -45,7 +45,18 @@ Offline run `784ee64c8314441ba6180fdc02e78a81` passed 84 Node tests and one Go
 test with eight category subcases. It covered category production, thrown parser/
 projection faults, closed-schema/privacy checks, legacy parser behavior and the
 existing byte/deadline regressions. No Chrome, retained profile, listener, network
-probe or user runtime was opened for this change. V3 has no native result yet.
+probe or user runtime was opened for that offline change.
+
+After publication as `6449cfc`, the separately authorized single V3 native run
+`9c71cf93547a405b9dcd9bebd1372552` repeated the preflight successfully and
+returned `parser_rejected` / `unsafe_number` after 536.7426 ms. HTML/initializer
+were 311,797/198,561 bytes; the fresh HTTP 200 response completed without changing
+the document. No field/value or numeric subtype is established by this category,
+and the historical V2 rejection is not retrospectively classified. Identity remains
+unavailable. Graceful closure, complete owned-Job cleanup, retained state `clean`
+and disposable-root removal were verified. No retry, transfer, raw-content
+retention, new login, Store or main runtime operation occurred. See the
+[V3 native checkpoint](../../docs/x-concurrency-dev-pilot-contract.md#v3-retained-qa-result-2026-10-21).
 
 The transport requires one exact request, matching target/frame/loader, fresh
 non-cache/non-service-worker response, completion and unchanged document before
