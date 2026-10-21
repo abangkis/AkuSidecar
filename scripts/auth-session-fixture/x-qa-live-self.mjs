@@ -9,10 +9,11 @@ const MAX_REPORTED_INITIALIZER_BYTES = MAX_INITIALIZER_BYTES + 1;
 const MAX_JSON_DEPTH = 24;
 const MAX_JSON_VALUES = 16_384;
 const MAX_DURATION_MS = 2_000;
-const RESULT_SCHEMA = 'aku.x.qa-live-self.v2';
+const RESULT_SCHEMA = 'aku.x.qa-live-self.v3';
 const RESULT_KEYS = [
   'schema',
   'outcome',
+  'parserRejection',
   'identity',
   'bodyBytes',
   'initializerBytes',
@@ -52,11 +53,12 @@ function strongCurrentSelf(projection) {
     !entityValues.some((value) => value === 'mismatch' || value === 'accessor' || value === 'invalid');
 }
 
-function buildQALiveSelfDiagnostic(outcome, bodyBytes, initializerBytes, status, projection) {
+function buildQALiveSelfDiagnostic(outcome, bodyBytes, initializerBytes, status, projection, parserRejection = null) {
   const candidate = outcome === 'candidate';
   return {
-    schema: 'aku.x.qa-live-self.v2',
+    schema: 'aku.x.qa-live-self.v3',
     outcome,
+    parserRejection,
     identity: candidate ? 'candidate' : 'unavailable',
     bodyBytes,
     initializerBytes,
@@ -118,17 +120,17 @@ async function qaLiveSelfPageProbe(helpers) {
       }
     };
 
-    const boundedDiagnostic = (outcome, projection) => {
+    const boundedDiagnostic = (outcome, projection, parserRejection) => {
       let diagnostic;
       try {
-        diagnostic = buildDiagnostic(outcome, bodyBytes, initializerBytes, status, projection);
+        diagnostic = buildDiagnostic(outcome, bodyBytes, initializerBytes, status, projection, parserRejection);
         const serialized = JSON.stringify(diagnostic);
         if (new TextEncoder().encode(serialized).byteLength <= diagnosticLimit) return diagnostic;
       } catch {}
-      return buildDiagnostic('parser_rejected', bodyBytes, initializerBytes, status, null);
+      return buildDiagnostic('parser_rejected', bodyBytes, initializerBytes, status, null, 'projection_failed');
     };
 
-    const finish = (outcome, projection = null) => {
+    const finish = (outcome, projection = null, parserRejection = null) => {
       if (settled) return;
       let finalOutcome = outcome;
       let finalProjection = projection;
@@ -136,8 +138,9 @@ async function qaLiveSelfPageProbe(helpers) {
         finalOutcome = 'response_rejected';
         finalProjection = null;
         initializerBytes = 0;
+        parserRejection = null;
       }
-      const diagnostic = boundedDiagnostic(finalOutcome, finalProjection);
+      const diagnostic = boundedDiagnostic(finalOutcome, finalProjection, parserRejection);
       settled = true;
       if (diagnostic.outcome !== 'candidate') {
         try { controller?.abort(); } catch {}
@@ -416,7 +419,7 @@ async function qaLiveSelfPageProbe(helpers) {
           const sourceJSON = candidateJSON[0];
           let sourceLength;
           try { sourceLength = new TextEncoder().encode(sourceJSON).byteLength; } catch {
-            finish('parser_rejected');
+            finish('parser_rejected', null, 'parser_internal');
             return;
           }
           initializerBytes = sourceLength > initializerLimit ? initializerLimit + 1 : sourceLength;
@@ -429,17 +432,22 @@ async function qaLiveSelfPageProbe(helpers) {
           if (!withinDeadline()) return;
           let parsed;
           let parseFailed = false;
+          let parserRejection = 'parser_internal';
           try {
             parsed = parseStrictJSON(sourceJSON, {
               maxJSONDepth: parseDepth,
               maxJSONTokens: parseValues,
+            }, (reason) => {
+              if (['malformed_json', 'duplicate_key', 'invalid_unicode', 'unsafe_number', 'depth_limit', 'value_limit'].includes(reason)) {
+                parserRejection = reason;
+              }
             });
           } catch {
             parseFailed = true;
           }
           if (!withinDeadline()) return;
           if (parseFailed) {
-            finish('parser_rejected');
+            finish('parser_rejected', null, parserRejection);
             return;
           }
 
@@ -456,7 +464,7 @@ async function qaLiveSelfPageProbe(helpers) {
           }
           if (!withinDeadline()) return;
           if (projectionFailed) {
-            finish('parser_rejected');
+            finish('parser_rejected', null, 'projection_failed');
             return;
           }
 
@@ -516,6 +524,9 @@ export function validateQALiveSelfDiagnostic(value) {
   try {
     const result = exactDataRecord(value, RESULT_KEYS);
     if (result.schema !== RESULT_SCHEMA || !OUTCOMES.includes(result.outcome)) invalidReport();
+    if (result.outcome === 'parser_rejected') {
+      if (!['malformed_json', 'duplicate_key', 'invalid_unicode', 'unsafe_number', 'depth_limit', 'value_limit', 'parser_internal', 'projection_failed'].includes(result.parserRejection)) invalidReport();
+    } else if (result.parserRejection !== null) invalidReport();
     if (!['candidate', 'unavailable'].includes(result.identity)) invalidReport();
     if (!Number.isInteger(result.bodyBytes) || result.bodyBytes < 0 || result.bodyBytes > MAX_REPORTED_BODY_BYTES) invalidReport();
     if (!Number.isInteger(result.initializerBytes) || result.initializerBytes < 0 ||
@@ -571,6 +582,7 @@ export function validateQALiveSelfDiagnostic(value) {
     const sanitized = {
       schema: RESULT_SCHEMA,
       outcome: result.outcome,
+      parserRejection: result.parserRejection,
       identity: result.identity,
       bodyBytes: result.bodyBytes,
       initializerBytes: result.initializerBytes,
@@ -588,8 +600,7 @@ export function validateQALiveSelfDiagnostic(value) {
   }
 }
 
-// Retained as the public validation entry point; only the closed v2 DTO is
-// accepted. Raw page HTML, initializer JSON and historical v1 reports fail.
+// Only the closed v3 DTO is accepted. Raw source and historical reports fail.
 export function validateQALiveSelfReport(value) {
   return validateQALiveSelfDiagnostic(value);
 }

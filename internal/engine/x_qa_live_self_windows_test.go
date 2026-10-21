@@ -35,7 +35,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 	var report xQALiveSelf
 	invalid := errors.New("live current-self projection rejected")
 	fields, ok := xQAShortDecodeExact(raw, 4096, []string{"schema", "source", "outcome", "observation", "transport", "elapsedMS", "canAuthorize", "nativeQualified", "sessionTransferred"}, &report)
-	if !ok || report.Schema != "aku.x.qa-live-self-run.v2" || report.Source != "home_document_fetch.v2" ||
+	if !ok || report.Schema != "aku.x.qa-live-self-run.v3" || report.Source != "home_document_fetch.v3" ||
 		!bytes.Equal(fields["canAuthorize"], []byte("false")) || !bytes.Equal(fields["nativeQualified"], []byte("false")) || !bytes.Equal(fields["sessionTransferred"], []byte("false")) {
 		return report, invalid
 	}
@@ -60,6 +60,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 	var observation struct {
 		Schema             string          `json:"schema"`
 		Outcome            string          `json:"outcome"`
+		ParserRejection    *string         `json:"parserRejection"`
 		Identity           string          `json:"identity"`
 		BodyBytes          int             `json:"bodyBytes"`
 		InitializerBytes   int             `json:"initializerBytes"`
@@ -70,8 +71,20 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 		NativeQualified    bool            `json:"nativeQualified"`
 		SessionTransferred bool            `json:"sessionTransferred"`
 	}
-	obs, ok := xQAShortDecodeExact(report.Observation, 4096, []string{"schema", "outcome", "identity", "bodyBytes", "initializerBytes", "status", "projection", "freshness", "canAuthorize", "nativeQualified", "sessionTransferred"}, &observation)
-	if !ok || observation.Schema != "aku.x.qa-live-self.v2" {
+	obs, ok := xQAShortDecodeExact(report.Observation, 4096, []string{"schema", "outcome", "parserRejection", "identity", "bodyBytes", "initializerBytes", "status", "projection", "freshness", "canAuthorize", "nativeQualified", "sessionTransferred"}, &observation)
+	if !ok || observation.Schema != "aku.x.qa-live-self.v3" {
+		return report, invalid
+	}
+	if observation.Outcome == "parser_rejected" {
+		if observation.ParserRejection == nil {
+			return report, invalid
+		}
+		switch *observation.ParserRejection {
+		case "malformed_json", "duplicate_key", "invalid_unicode", "unsafe_number", "depth_limit", "value_limit", "parser_internal", "projection_failed":
+		default:
+			return report, invalid
+		}
+	} else if !bytes.Equal(obs["parserRejection"], []byte("null")) {
 		return report, invalid
 	}
 	for _, key := range []string{"canAuthorize", "nativeQualified", "sessionTransferred"} {
@@ -172,9 +185,37 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 }
 
 func TestXQALiveSelfOffline(t *testing.T) {
-	const negative = `{"schema":"aku.x.qa-live-self-run.v2","source":"home_document_fetch.v2","outcome":"body_limit","observation":{"schema":"aku.x.qa-live-self.v2","outcome":"body_limit","identity":"unavailable","bodyBytes":524289,"initializerBytes":0,"status":200,"projection":null,"freshness":"unqualified","canAuthorize":false,"nativeQualified":false,"sessionTransferred":false},"transport":{"requests":1,"completed":false,"documentPreserved":true,"responseFresh":false},"elapsedMS":500,"canAuthorize":false,"nativeQualified":false,"sessionTransferred":false}`
+	const negative = `{"schema":"aku.x.qa-live-self-run.v3","source":"home_document_fetch.v3","outcome":"body_limit","observation":{"schema":"aku.x.qa-live-self.v3","outcome":"body_limit","parserRejection":null,"identity":"unavailable","bodyBytes":524289,"initializerBytes":0,"status":200,"projection":null,"freshness":"unqualified","canAuthorize":false,"nativeQualified":false,"sessionTransferred":false},"transport":{"requests":1,"completed":false,"documentPreserved":true,"responseFresh":false},"elapsedMS":500,"canAuthorize":false,"nativeQualified":false,"sessionTransferred":false}`
 	if _, err := decodeXQALiveSelf([]byte(negative)); err != nil {
 		t.Fatal("bounded negative source diagnostic rejected")
+	}
+	for _, reason := range []string{"malformed_json", "duplicate_key", "invalid_unicode", "unsafe_number", "depth_limit", "value_limit", "parser_internal", "projection_failed"} {
+		t.Run(reason, func(t *testing.T) {
+			var diagnostic map[string]any
+			_ = json.Unmarshal([]byte(negative), &diagnostic)
+			diagnostic["outcome"] = "parser_rejected"
+			observation := diagnostic["observation"].(map[string]any)
+			observation["outcome"] = "parser_rejected"
+			observation["bodyBytes"] = 1000
+			observation["initializerBytes"] = 500
+			observation["parserRejection"] = reason
+			raw, _ := json.Marshal(diagnostic)
+			if _, err := decodeXQALiveSelf(raw); err != nil {
+				t.Fatal("closed parser category rejected")
+			}
+			for _, unsafe := range []any{nil, "", "PRIVATE_RAW_ERROR", 7, map[string]any{"message": "PRIVATE"}, []string{reason}} {
+				observation["parserRejection"] = unsafe
+				raw, _ = json.Marshal(diagnostic)
+				if _, err := decodeXQALiveSelf(raw); err == nil {
+					t.Fatal("arbitrary parser category accepted")
+				}
+			}
+			delete(observation, "parserRejection")
+			raw, _ = json.Marshal(diagnostic)
+			if _, err := decodeXQALiveSelf(raw); err == nil {
+				t.Fatal("missing parser category accepted")
+			}
+		})
 	}
 	for _, change := range []struct{ before, after string }{
 		{`"canAuthorize":false`, `"canAuthorize":true`},
@@ -185,11 +226,14 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		{`"responseFresh":false`, `"responseFresh":true`},
 		{`"outcome":"body_limit"`, `"outcome":"fresh_identity_observed"`},
 		{`"elapsedMS":500`, `"elapsedMS":null`},
-		{`"source":"home_document_fetch.v2"`, `"source":"other"`},
+		{`"source":"home_document_fetch.v3"`, `"source":"other"`},
 		{`"status":200`, `"status":null`},
 		{`"requests":1`, `"requests":1,"requests":1`},
 		{`"initializerBytes":0`, `"initializerBytes":262146`},
-		{`"schema":"aku.x.qa-live-self-run.v2"`, `"schema":"aku.x.qa-live-self-run.v1"`},
+		{`"schema":"aku.x.qa-live-self-run.v3"`, `"schema":"aku.x.qa-live-self-run.v1"`},
+		{`"schema":"aku.x.qa-live-self-run.v3"`, `"schema":"aku.x.qa-live-self-run.v2"`},
+		{`"parserRejection":null`, `"parserRejection":"malformed_json"`},
+		{`"parserRejection":null`, `"parserRejection":null,"parserRejection":null`},
 	} {
 		if _, err := decodeXQALiveSelf(bytes.Replace([]byte(negative), []byte(change.before), []byte(change.after), 1)); err == nil {
 			t.Fatal("unsafe or inconsistent live-self report accepted")
@@ -242,6 +286,9 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		diagnostic["outcome"] = outcome
 		observation := diagnostic["observation"].(map[string]any)
 		observation["outcome"] = outcome
+		if outcome == "parser_rejected" {
+			observation["parserRejection"] = "malformed_json"
+		}
 		observation["bodyBytes"] = xQALiveHTMLMax
 		if outcome == "initializer_limit" {
 			observation["initializerBytes"] = xQALiveInitializerMax + 1

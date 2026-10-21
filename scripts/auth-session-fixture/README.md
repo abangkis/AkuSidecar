@@ -11,7 +11,7 @@ it starts no login or headless collector and never changes the main profile.
 The single candidate is a fresh `GET https://x.com/home` HTML response fetched
 inside the existing Home document. It uses browser-owned same-origin credentials,
 `cache:no-store`, `redirect:error`, no custom headers and a two-second abort.
-The V2 helper reads at most 524,289 decoded response-body bytes (the extra byte
+The V3 helper reads at most 524,289 decoded response-body bytes (the extra byte
 detects the fixed 512 KiB HTML ceiling). It independently limits the initializer
 to 256 KiB UTF-8 before strict JSON parsing, with depth 24 and 16,384 value nodes.
 It rejects oversize data and never widens either cap automatically.
@@ -28,6 +28,24 @@ the two-second acceptance deadline. The timer cannot preempt synchronous parsing
 the four-second command watchdog remains failure/cleanup protection. Fixed failure
 categories distinguish HTML overflow, initializer overflow, HTML parsing rejection
 and strict-parser rejection. This is source qualification, not a renewal cadence.
+
+The closed V3 observation (`aku.x.qa-live-self.v3`) adds `parserRejection`:
+`malformed_json`, `duplicate_key`, `invalid_unicode`, `unsafe_number`,
+`depth_limit`, `value_limit`, `parser_internal` or `projection_failed` only when
+the outcome is `parser_rejected`; all other outcomes require JSON null. The
+wrapper/source are `aku.x.qa-live-self-run.v3`/`home_document_fetch.v3`.
+Both Node and Go reject missing/unknown/inconsistent categories and older schema
+versions. No error message, stack, input offset, field name, source fragment or
+raw content is returned. Legacy parser callers still receive the fixed
+`SyntaxError('invalid_json')`; the optional trusted callback receives only a fixed
+category. Parser acceptance rules, limits and authorization remain unchanged.
+V1/V2 native reports remain historical and are not assigned inferred categories.
+
+Offline run `784ee64c8314441ba6180fdc02e78a81` passed 84 Node tests and one Go
+test with eight category subcases. It covered category production, thrown parser/
+projection faults, closed-schema/privacy checks, legacy parser behavior and the
+existing byte/deadline regressions. No Chrome, retained profile, listener, network
+probe or user runtime was opened for this change. V3 has no native result yet.
 
 The transport requires one exact request, matching target/frame/loader, fresh
 non-cache/non-service-worker response, completion and unchanged document before

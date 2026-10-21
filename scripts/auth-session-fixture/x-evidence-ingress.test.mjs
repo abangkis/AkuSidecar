@@ -1,6 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFixtureXEvidenceIngress } from './x-evidence-ingress.mjs';
+import { createFixtureXEvidenceIngress, parseStrictJSON } from './x-evidence-ingress.mjs';
+
+test('optional parser diagnostics preserve fixed errors and existing parse behavior', () => {
+  const limits = { maxJSONDepth: 24, maxJSONTokens: 16_384 };
+  for (const [source, expected] of [
+    ['{"PRIVATE_FIELD":', 'malformed_json'],
+    ['{"PRIVATE_FIELD":1,"PRIVATE_FIELD":2}', 'duplicate_key'],
+    ['{"PRIVATE_FIELD":"\\uD800"}', 'invalid_unicode'],
+    ['{"PRIVATE_FIELD":9007199254740992}', 'unsafe_number'],
+    [`${'['.repeat(25)}0${']'.repeat(25)}`, 'depth_limit'],
+    [`[${Array.from({ length: 16_384 }, () => '0').join(',')}]`, 'value_limit'],
+  ]) {
+    const observed = [];
+    assert.throws(() => parseStrictJSON(source, limits, (...args) => observed.push(args)), { name: 'SyntaxError', message: 'invalid_json' });
+    assert.deepEqual(observed, [[expected]]);
+    assert.throws(() => parseStrictJSON(source, limits), { name: 'SyntaxError', message: 'invalid_json' });
+  }
+  let rejected = false;
+  const parsed = parseStrictJSON('{"ok":[1,true,null]}', limits, () => { rejected = true; });
+  assert.deepEqual(parsed.ok, [1, true, null]);
+  assert.equal(rejected, false);
+});
 
 const origin = 'http://127.0.0.1:43127';
 const sessionId = 'synthetic-session';

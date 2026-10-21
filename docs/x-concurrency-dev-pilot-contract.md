@@ -365,3 +365,47 @@ and transfer flags remain false. A future probe should first define fixed,
 privacy-preserving parser rejection categories and offline regression cases;
 another native run needs its own authorization. Reuse the accepted MVP-1 overlap
 evidence rather than repeating session transfer.
+
+## V3 closed parser diagnostics (offline, 2026-10-21)
+
+The V2 implementation/evidence was reviewed and published as
+`fe599eaec1788f4daf86d7ecf1dccd8765459d9b`. The next authorized change adds only
+closed rejection diagnostics and offline regressions. Observation schema
+`aku.x.qa-live-self.v3` requires `parserRejection`, with wrapper/source
+`aku.x.qa-live-self-run.v3`/`home_document_fetch.v3`. Historical V1/V2 reports
+are unchanged and cannot be replayed as V3 or retrospectively classified.
+
+| Category | Meaning |
+| --- | --- |
+| `malformed_json` | The selected initializer violates strict JSON syntax |
+| `duplicate_key` | An object repeats a decoded key |
+| `invalid_unicode` | A decoded JSON string contains an unpaired surrogate |
+| `unsafe_number` | A number is nonfinite or an integer is not safely representable |
+| `depth_limit` | A value exceeds depth 24 |
+| `value_limit` | A value exceeds the 16,384-value budget |
+| `parser_internal` | Sizing or parsing failed without a recognized parser category |
+| `projection_failed` | Projection or closed diagnostic construction failed |
+
+Only `parser_rejected` may carry a category, and it must carry exactly one of
+the fixed strings; all other outcomes require JSON null. Page code maps only
+trusted parser callback values. Node reconstructs the exact sanitized DTO and
+Go independently enforces the closed category/outcome contract. Neither reads or
+serializes thrown error messages, stacks, field/key names, input positions, raw
+HTML/initializer, credential values or account identifiers. No extra byte counts,
+hashes or content-derived diagnostics were added. The strict parser's acceptance
+rules and legacy fixed error remain unchanged. HTML/initializer/projection limits
+stay 512/256/4 KiB; timing, privacy, Store and authority boundaries stay unchanged.
+
+Offline preflight `784ee64c8314441ba6180fdc02e78a81` passed 84 Node tests and one
+Go test with eight category subcases. Synthetic tests exercise all categories,
+private thrown messages, callback compatibility, arbitrary/missing/accessor and
+inconsistent fields, historical schemas, and existing size/deadline guards. The
+sanitized log is
+`runtime/qa/auth-session-sidecar/x-qa-source-784ee64c8314441ba6180fdc02e78a81.log.txt`;
+the disposable control root was removed. No native probe, retained-profile access,
+session transfer, main login, Store or user runtime operation was performed.
+
+The native V2 rejection cause remains unknown. A separately authorized single
+retained-QA V3 probe can identify its current fixed failure category, without
+retaining content or relaxing parser acceptance; offline success alone does not
+qualify a native identity source or enable main dev.

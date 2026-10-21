@@ -128,11 +128,15 @@ function isValidUnicode(value) {
   return true;
 }
 
-export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
+export function parseStrictJSON(text, limits = DEFAULT_LIMITS, onReject = undefined) {
   let index = 0;
   let tokens = 0;
 
-  const fail = () => { throw new SyntaxError('invalid_json'); };
+  // Only repository-owned categories leave the parser; no input or offsets.
+  const fail = (reason = 'malformed_json') => {
+    if (typeof onReject === 'function') onReject(reason);
+    throw new SyntaxError('invalid_json');
+  };
   const whitespace = () => {
     while (index < text.length && (text[index] === ' ' || text[index] === '\t' ||
       text[index] === '\r' || text[index] === '\n')) index++;
@@ -146,7 +150,7 @@ export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
         index++;
         let value;
         try { value = JSON.parse(text.slice(start, index)); } catch { fail(); }
-        if (typeof value !== 'string' || !isValidUnicode(value)) fail();
+        if (typeof value !== 'string' || !isValidUnicode(value)) fail('invalid_unicode');
         return value;
       }
       if (code < 0x20) fail();
@@ -166,7 +170,8 @@ export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
   };
   const value = depth => {
     whitespace();
-    if (depth > limits.maxJSONDepth || ++tokens > limits.maxJSONTokens) fail();
+    if (depth > limits.maxJSONDepth) fail('depth_limit');
+    if (++tokens > limits.maxJSONTokens) fail('value_limit');
     const first = text[index];
     if (first === '"') return string();
     if (first === '{') {
@@ -178,7 +183,7 @@ export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
       while (index < text.length) {
         whitespace();
         const key = string();
-        if (keys.has(key)) fail();
+        if (keys.has(key)) fail('duplicate_key');
         keys.add(key);
         whitespace();
         if (text[index++] !== ':') fail();
@@ -224,7 +229,7 @@ export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
       while (text[index] >= '0' && text[index] <= '9') index++;
     }
     const number = Number(text.slice(start, index));
-    if (!Number.isFinite(number) || (Number.isInteger(number) && !Number.isSafeInteger(number))) fail();
+    if (!Number.isFinite(number) || (Number.isInteger(number) && !Number.isSafeInteger(number))) fail('unsafe_number');
     return number;
   };
 

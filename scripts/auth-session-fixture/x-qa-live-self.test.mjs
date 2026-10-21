@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
+import { STRICT_JSON_PARSER_SOURCE } from './x-evidence-ingress.mjs';
+import { BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE } from './x-bootstrap-current-self.mjs';
 
 import {
   QA_LIVE_SELF_EXPRESSION,
@@ -259,10 +261,11 @@ test('executes one fixed GET and returns a bounded diagnostic from an inert temp
   assert.equal(harness.templateState.queried, 1);
   assert.deepEqual(innerResultFields(result), [
     'bodyBytes', 'canAuthorize', 'freshness', 'identity', 'initializerBytes', 'nativeQualified',
-    'outcome', 'projection', 'schema', 'sessionTransferred', 'status',
+    'outcome', 'parserRejection', 'projection', 'schema', 'sessionTransferred', 'status',
   ]);
-  assert.equal(result.schema, 'aku.x.qa-live-self.v2');
+  assert.equal(result.schema, 'aku.x.qa-live-self.v3');
   assert.equal(result.outcome, 'candidate');
+  assert.equal(result.parserRejection, null);
   assert.equal(result.bodyBytes, Buffer.byteLength(html));
   assert.equal(result.initializerBytes, Buffer.byteLength(sourceJSON));
   assert.equal(JSON.stringify(result).includes(sourceJSON), false);
@@ -373,6 +376,65 @@ test('strictly rejects malformed, duplicate-key, unsafe-number, invalid-Unicode,
   const valueBoundary = `[${Array.from({ length: 16_383 }, () => '0').join(',')}]`;
   const acceptedValues = await runPageProbe({ fetch: async () => responseFor(htmlForJSON(valueBoundary)).response });
   assert.equal(acceptedValues.result.outcome, 'self_unqualified');
+});
+
+test('returns only closed rejection categories for synthetic parser failures', async () => {
+  const cases = [
+    ['', 'malformed_json'],
+    ['{"PRIVATE_FIELD":', 'malformed_json'],
+    ['{"PRIVATE_FIELD":1,"PRIVATE_FIELD":2}', 'duplicate_key'],
+    ['{"PRIVATE_FIELD":"\\uD800"}', 'invalid_unicode'],
+    ['{"PRIVATE_FIELD":9007199254740992}', 'unsafe_number'],
+    ['{"PRIVATE_FIELD":1e400}', 'unsafe_number'],
+    [`${'['.repeat(25)}0${']'.repeat(25)}`, 'depth_limit'],
+    [`[${Array.from({ length: 16_384 }, () => '0').join(',')}]`, 'value_limit'],
+  ];
+  for (const [source, reason] of cases) {
+    const page = await runPageProbe({ fetch: async () => responseFor(htmlForJSON(source)).response });
+    const result = projectQALiveSelf(page.result);
+    assert.equal(result.outcome, 'parser_rejected');
+    assert.equal(result.parserRejection, reason);
+    assert.equal(result.projection, null);
+    const encoded = JSON.stringify(result);
+    assert.ok(Buffer.byteLength(encoded) <= 4096);
+    assert.equal(encoded.includes('PRIVATE_FIELD'), false);
+    assert.equal(encoded.includes('9007199254740992'), false);
+    assert.equal(result.canAuthorize, false);
+  }
+});
+
+test('unexpected parser and projection faults never expose thrown messages', async () => {
+  for (const [helper, reason] of [
+    [STRICT_JSON_PARSER_SOURCE, 'parser_internal'],
+    [BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE, 'projection_failed'],
+  ]) {
+    const expression = QA_LIVE_SELF_EXPRESSION.replace(helper, '(() => { throw new Error("PRIVATE_THROWN_MESSAGE"); })');
+    assert.notEqual(expression, QA_LIVE_SELF_EXPRESSION);
+    const harness = makeContext({ fetch: async () => responseFor(htmlForJSON(validSelfJSON())).response });
+    const result = projectQALiveSelf(await vm.runInNewContext(expression, harness.context, { timeout: 1_000 }));
+    assert.equal(result.parserRejection, reason);
+    assert.equal(result.outcome, 'parser_rejected');
+    assert.equal(JSON.stringify(result).includes('PRIVATE_THROWN_MESSAGE'), false);
+  }
+});
+
+test('rejects missing, arbitrary, accessor and unrelated rejection categories', async () => {
+  const page = await runPageProbe({ fetch: async () => responseFor(htmlForJSON('{broken')).response });
+  const valid = projectQALiveSelf(page.result);
+  for (const reason of [null, '', 'PRIVATE_RAW_ERROR', {}, 7, ['malformed_json']]) {
+    assert.throws(() => validateQALiveSelfDiagnostic({ ...valid, parserRejection: reason }), /qa_live_self_report_invalid/);
+  }
+  const missing = { ...valid };
+  delete missing.parserRejection;
+  assert.throws(() => validateQALiveSelfDiagnostic(missing), /qa_live_self_report_invalid/);
+  const accessor = { ...valid };
+  let reads = 0;
+  Object.defineProperty(accessor, 'parserRejection', { enumerable: true, get() { reads++; throw new Error('PRIVATE'); } });
+  assert.throws(() => validateQALiveSelfDiagnostic(accessor), /qa_live_self_report_invalid/);
+  assert.equal(reads, 0);
+  const other = await runPageProbe({ fetch: async () => responseFor('<html></html>').response });
+  assert.throws(() => validateQALiveSelfDiagnostic({ ...other.result, parserRejection: 'malformed_json' }), /qa_live_self_report_invalid/);
+  assert.throws(() => validateQALiveSelfDiagnostic({ ...valid, schema: 'aku.x.qa-live-self.v2' }), /qa_live_self_report_invalid/);
 });
 
 test('does not infer identity from numeric IDs, auth-false data, mismatches, or feed authors', async () => {
@@ -661,10 +723,10 @@ test('does not reload, navigate, enable debugger access, or reread the existing 
   assert.equal(forbiddenReads, 0);
 });
 
-test('closes v2 reports against raw source fields, extra keys, getters, and unsafe nested projections', async () => {
+test('closes v3 reports against raw source fields, extra keys, getters, and unsafe nested projections', async () => {
   const page = await runPageProbe({ fetch: async () => responseFor('<html></html>').response });
   const valid = projectQALiveSelf(page.result);
-  assert.equal(validateQALiveSelfReport(valid).schema, 'aku.x.qa-live-self.v2');
+  assert.equal(validateQALiveSelfReport(valid).schema, 'aku.x.qa-live-self.v3');
   assert.throws(() => validateQALiveSelfReport({ ...valid, sourceJSON: '{"private":true}' }), /qa_live_self_report_invalid/);
   assert.throws(() => validateQALiveSelfReport({ ...valid, privateID: 'must not pass' }), /qa_live_self_report_invalid/);
 

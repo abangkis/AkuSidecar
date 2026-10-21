@@ -58,7 +58,7 @@ export function finishQALiveSelf(observation, transport, elapsedMS) {
   const identity = observation?.identity === 'candidate' && transport.responseFresh && timely;
   const outcome = ['body_limit', 'initializer_limit', 'parser_rejected'].includes(observation?.outcome) ? observation.outcome :
     !transport.documentPreserved ? 'source_unqualified' : !timely || observation?.outcome === 'timeout' ? 'deadline' : identity ? 'fresh_identity_observed' : 'identity_unavailable';
-  const report = { schema: 'aku.x.qa-live-self-run.v2', source: 'home_document_fetch.v2',
+  const report = { schema: 'aku.x.qa-live-self-run.v3', source: 'home_document_fetch.v3',
     outcome, observation, transport, elapsedMS: Number.isFinite(elapsedMS) && elapsedMS >= 0 ? Math.min(60000, elapsedMS) : 60000,
     canAuthorize: false, nativeQualified: false, sessionTransferred: false };
   if (Buffer.byteLength(JSON.stringify(report), 'utf8') > 4096) throw new Error('qa_live_projection_limit');
