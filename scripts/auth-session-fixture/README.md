@@ -11,12 +11,23 @@ it starts no login or headless collector and never changes the main profile.
 The single candidate is a fresh `GET https://x.com/home` HTML response fetched
 inside the existing Home document. It uses browser-owned same-origin credentials,
 `cache:no-store`, `redirect:error`, no custom headers and a two-second abort.
-The helper reads at most 16,385 bytes (the extra byte detects the fixed 16 KiB
-limit), rejects oversize responses without parsing them and never widens the cap.
+The V2 helper reads at most 524,289 decoded response-body bytes (the extra byte
+detects the fixed 512 KiB HTML ceiling). It independently limits the initializer
+to 256 KiB UTF-8 before strict JSON parsing, with depth 24 and 16,384 value nodes.
+It rejects oversize data and never widens either cap automatically.
 Only one literal `window.__INITIAL_STATE__ = <JSON>;` script in an inert,
 uninserted template is eligible; no script executes and no resource is loaded.
-Only that bounded JSON may enter private CDP projection. Raw HTML, identity
-values, headers and arbitrary errors never enter RPC/reports/logs.
+Strict parsing and fixed current-self projection occur inside the QA page.
+Only a validated diagnostic of at most 4 KiB UTF-8 crosses CDP; the combined RPC
+report is also capped at 4 KiB. Raw HTML, initializer, identity values, headers and
+arbitrary errors never cross this projection boundary or enter reports/logs.
+Shared CDP frame/chunk limits and the account-settings 16 KiB ceiling are unchanged.
+
+Monotonic checks before/after synchronous processing and driver publication enforce
+the two-second acceptance deadline. The timer cannot preempt synchronous parsing;
+the four-second command watchdog remains failure/cleanup protection. Fixed failure
+categories distinguish HTML overflow, initializer overflow, HTML parsing rejection
+and strict-parser rejection. This is source qualification, not a renewal cadence.
 
 The transport requires one exact request, matching target/frame/loader, fresh
 non-cache/non-service-worker response, completion and unchanged document before
@@ -25,7 +36,7 @@ or cookie command. A negative candidate is not logout. All authorization/native
 qualification/transfer flags stay false, including on a positive single response;
 two-browser renewal timing and broader source controls remain separate.
 
-Accepted negative native run `50a535ebbaa94311b8684b48ea5e9642` passed 39 Node
+Previous V1 negative native run `50a535ebbaa94311b8684b48ea5e9642` passed 39 Node
 tests and one Go preflight test, then recorded HTTP 200 with `body_limit` at the
 16,385-byte detection bound after 424.2414 ms. No initializer or account value
 was parsed. The original document remained intact, the owned Job was emptied,
@@ -33,6 +44,16 @@ the retained lease returned `clean` and the disposable root was removed.
 The successful test means bounded diagnostics and cleanup passed; the source
 remains unqualified. See the
 [source checkpoint](../../docs/x-concurrency-dev-pilot-contract.md#fresh-current-self-source-candidate-2026-10-21).
+
+V2 run `77a8a92cb2044f319875b775f4e2983c` passed 80 Node/one Go preflight
+tests and the native cleanup case. One fresh HTTP 200 response contained 311,797
+HTML bytes and a 198,561-byte initializer, within both caps. The result was
+`parser_rejected`, identity unavailable and projection null after 609.5355 ms;
+the fixed diagnostic does not establish the parser's specific rejection cause.
+The document was preserved, the owned Job emptied, retained state returned to
+`clean` and the disposable control root was removed. No raw content was retained,
+no transfer/new login occurred and no second native attempt ran. See the
+[V2 evidence](../../docs/x-concurrency-dev-pilot-contract.md#v2-html-envelope-implementation-2026-10-21).
 
 ## Offline bounded dev snapshot pilot
 

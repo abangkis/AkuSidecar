@@ -1611,8 +1611,8 @@ async function qualifyLiveSelf(message) {
     const after = await send('Page.getFrameTree', {}, current.sessionId);
     return finishQALiveSelf(observation, state.capture.finish(after.frameId, after.loaderId), performance.now() - start);
   } finally {
-    await send('Network.disable', {}, current.sessionId).catch(() => {});
-    state.running = false;
+    try { await send('Network.disable', {}, current.sessionId); }
+    finally { state.running = false; }
   }
 }
 

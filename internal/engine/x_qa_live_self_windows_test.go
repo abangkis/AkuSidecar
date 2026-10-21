@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+const (
+	xQALiveHTMLMax        = 512 * 1024
+	xQALiveInitializerMax = 256 * 1024
+)
+
 type xQALiveSelf struct {
 	Schema      string          `json:"schema"`
 	Source      string          `json:"source"`
@@ -29,8 +34,8 @@ type xQALiveSelf struct {
 func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 	var report xQALiveSelf
 	invalid := errors.New("live current-self projection rejected")
-	fields, ok := xQAShortDecodeExact(raw, 8192, []string{"schema", "source", "outcome", "observation", "transport", "elapsedMS", "canAuthorize", "nativeQualified", "sessionTransferred"}, &report)
-	if !ok || report.Schema != "aku.x.qa-live-self-run.v1" || report.Source != "home_document_fetch.v1" ||
+	fields, ok := xQAShortDecodeExact(raw, 4096, []string{"schema", "source", "outcome", "observation", "transport", "elapsedMS", "canAuthorize", "nativeQualified", "sessionTransferred"}, &report)
+	if !ok || report.Schema != "aku.x.qa-live-self-run.v2" || report.Source != "home_document_fetch.v2" ||
 		!bytes.Equal(fields["canAuthorize"], []byte("false")) || !bytes.Equal(fields["nativeQualified"], []byte("false")) || !bytes.Equal(fields["sessionTransferred"], []byte("false")) {
 		return report, invalid
 	}
@@ -57,6 +62,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 		Outcome            string          `json:"outcome"`
 		Identity           string          `json:"identity"`
 		BodyBytes          int             `json:"bodyBytes"`
+		InitializerBytes   int             `json:"initializerBytes"`
 		Status             *int            `json:"status"`
 		Projection         json.RawMessage `json:"projection"`
 		Freshness          string          `json:"freshness"`
@@ -64,8 +70,8 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 		NativeQualified    bool            `json:"nativeQualified"`
 		SessionTransferred bool            `json:"sessionTransferred"`
 	}
-	obs, ok := xQAShortDecodeExact(report.Observation, 4096, []string{"schema", "outcome", "identity", "bodyBytes", "status", "projection", "freshness", "canAuthorize", "nativeQualified", "sessionTransferred"}, &observation)
-	if !ok || observation.Schema != "aku.x.qa-live-self.v1" {
+	obs, ok := xQAShortDecodeExact(report.Observation, 4096, []string{"schema", "outcome", "identity", "bodyBytes", "initializerBytes", "status", "projection", "freshness", "canAuthorize", "nativeQualified", "sessionTransferred"}, &observation)
+	if !ok || observation.Schema != "aku.x.qa-live-self.v2" {
 		return report, invalid
 	}
 	for _, key := range []string{"canAuthorize", "nativeQualified", "sessionTransferred"} {
@@ -73,7 +79,10 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 			return report, invalid
 		}
 	}
-	if _, ok := xQAShortJSONInteger(obs["bodyBytes"]); !ok || observation.BodyBytes < 0 || observation.BodyBytes > 16385 {
+	if _, ok := xQAShortJSONInteger(obs["bodyBytes"]); !ok || observation.BodyBytes < 0 || observation.BodyBytes > xQALiveHTMLMax+1 {
+		return report, invalid
+	}
+	if _, ok := xQAShortJSONInteger(obs["initializerBytes"]); !ok || observation.InitializerBytes < 0 || observation.InitializerBytes > xQALiveInitializerMax+1 || observation.InitializerBytes > observation.BodyBytes {
 		return report, invalid
 	}
 	if !bytes.Equal(obs["status"], []byte("null")) {
@@ -99,7 +108,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 		strong = strong && (value == "absent" || value == "true")
 	}
 	if candidate {
-		if observation.Identity != "candidate" || observation.Freshness != "server-response-candidate" || observation.Status == nil || *observation.Status != 200 || observation.BodyBytes > 16384 || !strong {
+		if observation.Identity != "candidate" || observation.Freshness != "server-response-candidate" || observation.Status == nil || *observation.Status != 200 || observation.BodyBytes > xQALiveHTMLMax || observation.InitializerBytes == 0 || observation.InitializerBytes > xQALiveInitializerMax || !strong {
 			return report, invalid
 		}
 	} else {
@@ -108,36 +117,50 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 		}
 		switch observation.Outcome {
 		case "self_unqualified":
-			if bytes.Equal(observation.Projection, []byte("null")) || strong {
+			if bytes.Equal(observation.Projection, []byte("null")) || strong || observation.InitializerBytes == 0 || observation.InitializerBytes > xQALiveInitializerMax {
 				return report, invalid
 			}
 		case "body_limit":
-			if observation.BodyBytes != 16385 || observation.Status == nil || *observation.Status != 200 {
+			if observation.BodyBytes != xQALiveHTMLMax+1 || observation.InitializerBytes != 0 || observation.Status == nil || *observation.Status != 200 {
 				return report, invalid
 			}
 			fallthrough
-		case "timeout", "fetch_failed", "response_rejected", "source_absent", "source_ambiguous", "projection_invalid":
+		case "timeout", "fetch_failed", "response_rejected", "source_absent", "source_ambiguous", "initializer_limit", "parser_rejected", "html_rejected":
 			if !bytes.Equal(observation.Projection, []byte("null")) {
 				return report, invalid
 			}
 		default:
 			return report, invalid
 		}
-		if observation.Outcome != "body_limit" && observation.BodyBytes > 16384 {
+		if observation.Outcome != "body_limit" && observation.Outcome != "timeout" && observation.BodyBytes > xQALiveHTMLMax {
 			return report, invalid
 		}
-		if observation.Outcome == "source_absent" || observation.Outcome == "source_ambiguous" || observation.Outcome == "projection_invalid" || observation.Outcome == "self_unqualified" {
+		if observation.Outcome == "source_absent" || observation.Outcome == "source_ambiguous" || observation.Outcome == "parser_rejected" || observation.Outcome == "self_unqualified" || observation.Outcome == "initializer_limit" || observation.Outcome == "html_rejected" {
 			if observation.Status == nil || *observation.Status != 200 {
+				return report, invalid
+			}
+		}
+		if observation.Outcome == "initializer_limit" && observation.InitializerBytes != xQALiveInitializerMax+1 {
+			return report, invalid
+		}
+		if observation.Outcome != "initializer_limit" && observation.Outcome != "timeout" && observation.InitializerBytes > xQALiveInitializerMax {
+			return report, invalid
+		}
+		if observation.Outcome == "html_rejected" && observation.InitializerBytes != 0 {
+			return report, invalid
+		}
+		if observation.Outcome == "timeout" && (observation.BodyBytes > xQALiveHTMLMax || observation.InitializerBytes > xQALiveInitializerMax) {
+			if observation.Status == nil || *observation.Status != 200 || (observation.BodyBytes > xQALiveHTMLMax && observation.InitializerBytes != 0) {
 				return report, invalid
 			}
 		}
 	}
 	want := "identity_unavailable"
-	if observation.Outcome == "body_limit" {
-		want = "body_limit"
+	if observation.Outcome == "body_limit" || observation.Outcome == "initializer_limit" || observation.Outcome == "parser_rejected" {
+		want = observation.Outcome
 	} else if !report.Transport.DocumentPreserved {
 		want = "source_unqualified"
-	} else if report.ElapsedMS >= 2000 {
+	} else if report.ElapsedMS >= 2000 || observation.Outcome == "timeout" {
 		want = "deadline"
 	} else if candidate && report.Transport.ResponseFresh {
 		want = "fresh_identity_observed"
@@ -149,7 +172,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 }
 
 func TestXQALiveSelfOffline(t *testing.T) {
-	const negative = `{"schema":"aku.x.qa-live-self-run.v1","source":"home_document_fetch.v1","outcome":"body_limit","observation":{"schema":"aku.x.qa-live-self.v1","outcome":"body_limit","identity":"unavailable","bodyBytes":16385,"status":200,"projection":null,"freshness":"unqualified","canAuthorize":false,"nativeQualified":false,"sessionTransferred":false},"transport":{"requests":1,"completed":false,"documentPreserved":true,"responseFresh":false},"elapsedMS":500,"canAuthorize":false,"nativeQualified":false,"sessionTransferred":false}`
+	const negative = `{"schema":"aku.x.qa-live-self-run.v2","source":"home_document_fetch.v2","outcome":"body_limit","observation":{"schema":"aku.x.qa-live-self.v2","outcome":"body_limit","identity":"unavailable","bodyBytes":524289,"initializerBytes":0,"status":200,"projection":null,"freshness":"unqualified","canAuthorize":false,"nativeQualified":false,"sessionTransferred":false},"transport":{"requests":1,"completed":false,"documentPreserved":true,"responseFresh":false},"elapsedMS":500,"canAuthorize":false,"nativeQualified":false,"sessionTransferred":false}`
 	if _, err := decodeXQALiveSelf([]byte(negative)); err != nil {
 		t.Fatal("bounded negative source diagnostic rejected")
 	}
@@ -157,14 +180,16 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		{`"canAuthorize":false`, `"canAuthorize":true`},
 		{`"sessionTransferred":false`, `"sessionTransferred":true`},
 		{`"nativeQualified":false`, `"nativeQualified":null`},
-		{`"bodyBytes":16385`, `"bodyBytes":16386`},
+		{`"bodyBytes":524289`, `"bodyBytes":524290`},
 		{`"projection":null`, `"projection":{"accountID":"private"}`},
 		{`"responseFresh":false`, `"responseFresh":true`},
 		{`"outcome":"body_limit"`, `"outcome":"fresh_identity_observed"`},
 		{`"elapsedMS":500`, `"elapsedMS":null`},
-		{`"source":"home_document_fetch.v1"`, `"source":"other"`},
+		{`"source":"home_document_fetch.v2"`, `"source":"other"`},
 		{`"status":200`, `"status":null`},
 		{`"requests":1`, `"requests":1,"requests":1`},
+		{`"initializerBytes":0`, `"initializerBytes":262146`},
+		{`"schema":"aku.x.qa-live-self-run.v2"`, `"schema":"aku.x.qa-live-self-run.v1"`},
 	} {
 		if _, err := decodeXQALiveSelf(bytes.Replace([]byte(negative), []byte(change.before), []byte(change.after), 1)); err == nil {
 			t.Fatal("unsafe or inconsistent live-self report accepted")
@@ -178,6 +203,7 @@ func TestXQALiveSelfOffline(t *testing.T) {
 	observation["outcome"] = "candidate"
 	observation["identity"] = "candidate"
 	observation["bodyBytes"] = 1024
+	observation["initializerBytes"] = 500
 	observation["freshness"] = "server-response-candidate"
 	observation["projection"] = json.RawMessage(projection)
 	transport := positive["transport"].(map[string]any)
@@ -192,6 +218,8 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		func() { transport["documentPreserved"] = false },
 		func() { transport["responseFresh"] = false },
 		func() { observation["identity"] = "unavailable" },
+		func() { observation["initializerBytes"] = 0 },
+		func() { observation["initializerBytes"] = xQALiveInitializerMax + 1 },
 		func() {
 			observation["projection"] = json.RawMessage(bytes.Replace([]byte(projection), []byte(`"normalizedUsers":"match"`), []byte(`"normalizedUsers":"absent"`), 1))
 		},
@@ -204,5 +232,47 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		if _, err := decodeXQALiveSelf(bad); err == nil {
 			t.Fatal("unqualified candidate acquired fresh identity status")
 		}
+	}
+	if _, err := decodeXQALiveSelf(append(encoded, bytes.Repeat([]byte(" "), 4097)...)); err == nil {
+		t.Fatal("oversized aggregate projection accepted")
+	}
+	for _, outcome := range []string{"initializer_limit", "parser_rejected"} {
+		var diagnostic map[string]any
+		_ = json.Unmarshal([]byte(negative), &diagnostic)
+		diagnostic["outcome"] = outcome
+		observation := diagnostic["observation"].(map[string]any)
+		observation["outcome"] = outcome
+		observation["bodyBytes"] = xQALiveHTMLMax
+		if outcome == "initializer_limit" {
+			observation["initializerBytes"] = xQALiveInitializerMax + 1
+		} else {
+			observation["initializerBytes"] = xQALiveInitializerMax
+		}
+		raw, _ := json.Marshal(diagnostic)
+		if _, err := decodeXQALiveSelf(raw); err != nil {
+			t.Fatal("separate initializer/parser diagnostic rejected")
+		}
+		observation["initializerBytes"] = 0
+		raw, _ = json.Marshal(diagnostic)
+		if _, err := decodeXQALiveSelf(raw); (outcome == "initializer_limit") != (err != nil) {
+			t.Fatal("empty initializer parse rejection or overflow counter classified incorrectly")
+		}
+	}
+	var timedOut map[string]any
+	_ = json.Unmarshal([]byte(negative), &timedOut)
+	timedOut["outcome"] = "deadline"
+	timeoutObservation := timedOut["observation"].(map[string]any)
+	timeoutObservation["outcome"] = "timeout"
+	timeoutObservation["bodyBytes"] = xQALiveHTMLMax
+	timeoutObservation["initializerBytes"] = xQALiveInitializerMax + 1
+	timeoutJSON, _ := json.Marshal(timedOut)
+	if _, err := decodeXQALiveSelf(timeoutJSON); err != nil {
+		t.Fatal("deadline crossing initializer sizing rejected as malformed metadata")
+	}
+	timeoutObservation["bodyBytes"] = xQALiveHTMLMax + 1
+	timeoutObservation["initializerBytes"] = 0
+	timeoutJSON, _ = json.Marshal(timedOut)
+	if _, err := decodeXQALiveSelf(timeoutJSON); err != nil {
+		t.Fatal("deadline crossing body overflow rejected as malformed metadata")
 	}
 }

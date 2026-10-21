@@ -300,3 +300,68 @@ automatic retry was run. A larger HTML envelope or different source requires a
 separately reviewed data contract before another native attempt; the existing
 16 KiB limit was not silently reinterpreted as only a report-size limit. Keep
 the accepted MVP-1 concurrency result and offline pilot evidence unchanged.
+
+## V2 HTML envelope implementation (2026-10-21)
+
+After review/publication of V1 in `29bf7a5d407a25959279ba1f23390a84b9b5bcde`,
+the user explicitly authorized implementation, offline regressions and one retained
+QA probe with a larger, separate HTML envelope. This supersedes the V1 HTML-only
+ceiling for this diagnostic; it does not change account-settings or Store policy.
+
+| Boundary | V2 limit |
+| --- | --- |
+| Decoded response-body HTML bytes, before fatal UTF-8 decoding | 512 KiB, with one extra overflow-detection byte |
+| Selected literal initializer, before strict JSON parsing | 256 KiB UTF-8; an overflow report uses the 262,145-byte detection sentinel |
+| Strict initializer parser | Depth 24 and 16,384 value nodes; duplicate keys, invalid Unicode and unsafe/nonfinite numbers rejected |
+| Page-to-CDP diagnostic and combined RPC report | Each at most 4 KiB serialized UTF-8; no raw initializer/HTML/account value |
+| Existing account-settings JSON | Unchanged at 16 KiB |
+| Existing shared CDP framing | Unchanged: 262,144-byte frame, 1,048,576-byte input chunk, depth 20/8,192 value nodes |
+| Acquisition and publication | Two-second acceptance deadline; four-second transport watchdog only for failure/cleanup |
+
+Schema `aku.x.qa-live-self.v2` adds the fixed `initializerBytes` counter and
+separates HTML, initializer and parser failures. Its wrapper is
+`aku.x.qa-live-self-run.v2`, source `home_document_fetch.v2`. V1 reports and
+historical evidence are retained unchanged. The strict parser and guarded
+bootstrap projector are serialized from trusted local helper implementations
+into the fixed expression, not supplied by RPC or fetched from X. Both execute
+inside the page. The Node boundary and Go decoder independently validate the
+small diagnostic before persistence. The live document's bootstrap is never read.
+
+BYOB reads remain at most 4 KiB with independent 256-nonempty/256-empty read
+guards. Overflow is checked before parsing. An inert, uninserted template selects
+one exact literal initializer; fetched JavaScript is never executed. Monotonic
+checks around synchronous decode/template/JSON/projection stages reject late or
+regressed-clock results; timer delivery is not a CPU preemption guarantee.
+Network-disable acknowledgement and whole-Job cleanup precede a saved result.
+
+512 KiB is an experimental ceiling, not an observed native HTML size or promise
+that the initializer fits. One exact same-origin GET, no reload/navigation/debugger,
+no custom authentication headers, no cookie APIs/transfer, no new login and no
+automatic retry/source/cap escalation remain mandatory. Native/Store authority
+flags stay false. The retained profile is reused only under its existing pinned
+ownership lease. This change does not qualify two-browser timing, runtime renewal
+cadence, session lineage or main-dev activation.
+
+Offline preflight `15aa9a800e8b48a5bb105d4b7ebbfaf7` passed 80 Node tests and
+one Go report-validation test. The one authorized V2 retained-QA run
+`77a8a92cb2044f319875b775f4e2983c` repeated that preflight and completed the
+native Go case in 3.23 seconds, including startup and cleanup. Its single HTTP
+200 response completed with fresh transport correlation and an unchanged document.
+HTML was 311,797 bytes and the selected initializer was 198,561 UTF-8 bytes;
+both fit the authorized ceilings. Strict processing returned `parser_rejected`,
+`identity:unavailable`, `projection:null` after 609.5355 ms. This fixed category
+does not distinguish malformed input, duplicate keys, numeric/Unicode rejection,
+parser budget exhaustion or projection-stage failure; no particular cause is
+established by the report. No rejected content was retained for retrospective
+inspection. The result is not logout or successful identity qualification.
+
+The sanitized report is
+`runtime/qa/auth-session-sidecar/x-qa-source-77a8a92cb2044f319875b775f4e2983c.report.json`;
+the same prefix has its log. Graceful closure, complete owned-Job cleanup,
+retained-profile state `clean` and removal of the disposable control root were
+verified. No retry, limit increase, alternate source, session transfer or new login
+was performed. Main login, Store and user runtime were untouched; all authority
+and transfer flags remain false. A future probe should first define fixed,
+privacy-preserving parser rejection categories and offline regression cases;
+another native run needs its own authorization. Reuse the accepted MVP-1 overlap
+evidence rather than repeating session transfer.

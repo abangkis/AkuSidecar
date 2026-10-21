@@ -60,7 +60,7 @@ try {
     $env:AKU_X_QA_SOURCE_REPORT_PATH = $report
     Write-Output ('QA source preflight run: ' + $runId)
     if ($LiveCurrentSelf) {
-        & $node --test --test-timeout=10000 --test-reporter=tap scripts/auth-session-fixture/x-qa-live-self.test.mjs scripts/auth-session-fixture/x-qa-live-self-transport.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs 2>&1 | Tee-Object -FilePath $log
+        & $node --test --test-timeout=10000 --test-reporter=tap scripts/auth-session-fixture/x-qa-live-self.test.mjs scripts/auth-session-fixture/x-qa-live-self-transport.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-bootstrap-current-self.test.mjs scripts/auth-session-fixture/x-evidence-ingress.test.mjs 2>&1 | Tee-Object -FilePath $log
         if ($LASTEXITCODE -ne 0) { throw 'Live current-self Node preflight failed.' }
         & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestXQALiveSelfOffline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
         if ($LASTEXITCODE -ne 0) { throw 'Live current-self Go preflight failed.' }
@@ -89,7 +89,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'QA source Go preflight failed.' }
     }
     if ($RunNativeQA) {
-        if ($LiveCurrentSelf) { Write-Output 'One fresh Home HTML fetch in retained QA, without reload/navigation/debugger or custom authentication headers. Fixed 16 KiB body cap and two-second deadline; no cookie API, transfer or Store operation. Negative source diagnostics remain unqualified.' }
+        if ($LiveCurrentSelf) { Write-Output 'One fresh Home HTML fetch in retained QA, without reload/navigation/debugger or custom authentication headers. HTML cap 512 KiB, initializer cap 256 KiB, in-page strict projection cap 4 KiB; two-second acceptance deadline. No cookie API, transfer or Store operation. Negative source diagnostics remain unqualified.' }
         elseif ($PrepareShortConcurrency) { Write-Output 'Preparing a blank isolated headless collector and one retained-QA reader checkpoint. No cookie read or transfer. Mutation continuity remains unknown; no Store operation.' }
         elseif ($ShortConcurrency) { Write-Output 'Explicit short QA: exactly auth_token and ct0 copied once into a fresh headless disposable context. Four account/login checkpoints; no raw values or native identity retained. No Store operation. Continuity remains unknown.' }
         elseif ($CookieWriteScope) { Write-Output 'One retained-QA reload projects recognized Set-Cookie names and declared scope only. No cookie value/header line, cookie-store read, transfer, login/logout or Store operation. The mutation fence remains unchanged.' }

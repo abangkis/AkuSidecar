@@ -56,9 +56,11 @@ export class QALiveSelfTransport {
 export function finishQALiveSelf(observation, transport, elapsedMS) {
   const timely = Number.isFinite(elapsedMS) && elapsedMS >= 0 && elapsedMS < 2000;
   const identity = observation?.identity === 'candidate' && transport.responseFresh && timely;
-  const outcome = observation?.outcome === 'body_limit' ? 'body_limit' :
-    !transport.documentPreserved ? 'source_unqualified' : !timely ? 'deadline' : identity ? 'fresh_identity_observed' : 'identity_unavailable';
-  return Object.freeze({ schema: 'aku.x.qa-live-self-run.v1', source: 'home_document_fetch.v1',
+  const outcome = ['body_limit', 'initializer_limit', 'parser_rejected'].includes(observation?.outcome) ? observation.outcome :
+    !transport.documentPreserved ? 'source_unqualified' : !timely || observation?.outcome === 'timeout' ? 'deadline' : identity ? 'fresh_identity_observed' : 'identity_unavailable';
+  const report = { schema: 'aku.x.qa-live-self-run.v2', source: 'home_document_fetch.v2',
     outcome, observation, transport, elapsedMS: Number.isFinite(elapsedMS) && elapsedMS >= 0 ? Math.min(60000, elapsedMS) : 60000,
-    canAuthorize: false, nativeQualified: false, sessionTransferred: false });
+    canAuthorize: false, nativeQualified: false, sessionTransferred: false };
+  if (Buffer.byteLength(JSON.stringify(report), 'utf8') > 4096) throw new Error('qa_live_projection_limit');
+  return Object.freeze(report);
 }

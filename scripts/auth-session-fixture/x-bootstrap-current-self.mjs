@@ -220,6 +220,10 @@ export function inspectBootstrapCurrentSelf(page) {
   return bootstrapCurrentSelfProjection(page);
 }
 
+// Trusted fixed source for isolated in-page projection. The expression embeds
+// this repository-owned function body; response data is only parsed JSON.
+export const BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE = `(${bootstrapCurrentSelfProjection.toString()})`;
+
 const INVALID_MESSAGE = 'bootstrap_projection_invalid';
 const BOOTSTRAP_STATES = ['absent', 'object', 'invalid', 'accessor'];
 const ID_KINDS = ['absent', 'accessor', 'null', 'string', 'number', 'boolean', 'object', 'array', 'invalid'];

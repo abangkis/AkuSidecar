@@ -10,16 +10,32 @@ import {
 } from './x-qa-live-self.mjs';
 
 const TARGET_URL = 'https://x.com/home';
+const BODY_LIMIT = 512 * 1024;
+const INITIALIZER_LIMIT = 256 * 1024;
+const ID = '12345678901234567890';
 
-function asBytes(value) {
-  return new TextEncoder().encode(value);
+function bytes(value) {
+  return typeof value === 'string' ? new TextEncoder().encode(value) : value;
 }
 
-function responseFor(html, { status = 200, type = 'basic', redirected = false, url = TARGET_URL, contentType = 'text/html; charset=utf-8', chunks } = {}) {
-  const sourceChunks = chunks ?? [asBytes(html)];
+function responseFor(source, {
+  status = 200,
+  type = 'basic',
+  redirected = false,
+  url = TARGET_URL,
+  contentType = 'text/html; charset=utf-8',
+  chunks,
+  getReaderError = null,
+} = {}) {
+  const sourceBytes = bytes(source);
+  const sourceChunks = chunks ?? [sourceBytes];
   const state = {
-    index: 0, offset: 0, cancelled: false, bodyCancelled: false, reads: 0,
-    viewLengths: [], detachedViews: [],
+    reads: 0,
+    requested: [],
+    delivered: 0,
+    cancelled: false,
+    bodyCancelled: false,
+    readerCancelCalls: 0,
   };
   const response = {
     status,
@@ -32,40 +48,42 @@ function responseFor(html, { status = 200, type = 'basic', redirected = false, u
       getReader(options) {
         assert.equal(options?.mode, 'byob');
         assert.deepEqual(Object.keys(options).sort(), ['mode']);
+        if (getReaderError !== null) throw getReaderError;
+        let chunkIndex = 0;
+        let chunkOffset = 0;
         return {
           async read(view) {
             state.reads += 1;
             assert.ok(view instanceof Uint8Array);
-            state.viewLengths.push(view.byteLength);
-            while (state.index < sourceChunks.length) {
-              const source = sourceChunks[state.index];
-              const remaining = source.byteLength - state.offset;
-              if (remaining === 0) {
-                state.index += 1;
-                state.offset = 0;
-                const empty = new Uint8Array(0);
+            state.requested.push(view.byteLength);
+            while (chunkIndex < sourceChunks.length) {
+              const current = bytes(sourceChunks[chunkIndex]);
+              if (current.byteLength === 0) {
+                chunkIndex += 1;
+                chunkOffset = 0;
                 structuredClone(view.buffer, { transfer: [view.buffer] });
-                state.detachedViews.push(view.byteLength === 0);
-                return { done: false, value: empty };
+                return { done: false, value: new Uint8Array(0) };
               }
-              const count = Math.min(view.byteLength, remaining);
-              const output = new Uint8Array(count);
-              output.set(source.subarray(state.offset, state.offset + count));
-              state.offset += count;
-              if (state.offset === source.byteLength) {
-                state.index += 1;
-                state.offset = 0;
+              const count = Math.min(view.byteLength, current.byteLength - chunkOffset);
+              const value = new Uint8Array(count);
+              value.set(current.subarray(chunkOffset, chunkOffset + count));
+              chunkOffset += count;
+              state.delivered += count;
+              if (chunkOffset === current.byteLength) {
+                chunkIndex += 1;
+                chunkOffset = 0;
               }
               structuredClone(view.buffer, { transfer: [view.buffer] });
-              state.detachedViews.push(view.byteLength === 0);
-              return { done: false, value: output };
+              return { done: false, value };
             }
-            const empty = new Uint8Array(0);
             structuredClone(view.buffer, { transfer: [view.buffer] });
-            state.detachedViews.push(view.byteLength === 0);
-            return { done: true, value: empty };
+            return { done: true, value: new Uint8Array(0) };
           },
-          cancel() { state.cancelled = true; return Promise.resolve(); },
+          cancel() {
+            state.cancelled = true;
+            state.readerCancelCalls += 1;
+            return Promise.resolve();
+          },
         };
       },
     },
@@ -81,19 +99,32 @@ function extractScripts(html, selector) {
   return scripts;
 }
 
-function fakeTemplateDocument() {
-  const state = { created: 0, assigned: 0, inserted: 0 };
+function fakeTemplateDocument({ innerHTMLFailure = null, contentFailure = null } = {}) {
+  const state = { created: 0, assignments: 0, inserted: 0, htmlBytes: 0, queried: 0 };
   const document = {
     createElement(tagName) {
       assert.equal(tagName, 'template');
       state.created += 1;
-      const template = { content: null, isConnected: false };
+      const template = { isConnected: false };
       Object.defineProperty(template, 'innerHTML', {
-        configurable: true,
         enumerable: true,
         set(html) {
-          state.assigned += 1;
-          template.content = { querySelectorAll: (selector) => extractScripts(html, selector) };
+          state.assignments += 1;
+          state.htmlBytes = Buffer.byteLength(html, 'utf8');
+          if (innerHTMLFailure !== null) throw innerHTMLFailure;
+          Object.defineProperty(template, 'content', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              if (contentFailure !== null) throw contentFailure;
+              return {
+                querySelectorAll(selector) {
+                  state.queried += 1;
+                  return extractScripts(html, selector);
+                },
+              };
+            },
+          });
         },
       });
       return template;
@@ -102,9 +133,17 @@ function fakeTemplateDocument() {
   return { document, state };
 }
 
-function makeContext({ fetch, timeoutMode = 'real', locationHref = TARGET_URL, document } = {}) {
+function makeContext({
+  fetch,
+  timeoutMode = 'manual',
+  locationHref = TARGET_URL,
+  document,
+  TextDecoderImpl = TextDecoder,
+  clock,
+} = {}) {
   let timeoutCallback = null;
   let timeoutId = 0;
+  let tick = 0;
   const aborts = [];
   const templateHarness = document === undefined ? fakeTemplateDocument() : null;
   const activeDocument = document === undefined ? templateHarness.document : document;
@@ -119,10 +158,18 @@ function makeContext({ fetch, timeoutMode = 'real', locationHref = TARGET_URL, d
   const context = {
     location,
     document: activeDocument,
-    TextDecoder,
+    TextDecoder: TextDecoderImpl,
+    TextEncoder,
     Uint8Array,
     AbortController: TestAbortController,
     fetch,
+    performance: {
+      now() {
+        if (clock !== undefined) return clock();
+        tick += 1;
+        return tick;
+      },
+    },
     setTimeout(callback, milliseconds) {
       assert.equal(milliseconds, 2_000);
       timeoutCallback = callback;
@@ -146,30 +193,42 @@ function makeContext({ fetch, timeoutMode = 'real', locationHref = TARGET_URL, d
 
 async function runPageProbe(options = {}) {
   const { context, ...state } = makeContext(options);
-  const promise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, context, { timeout: 1_000 });
-  const result = await promise;
+  const result = await vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, context, { timeout: 1_000 });
   return { result, ...state };
 }
 
-function validSelfJSON({ session = {}, includeNormalized = true, extra = {} } = {}) {
-  const id = '12345678901234567890';
-  const state = {
-    session: { user_id_str: id, ...session },
+function validSelfJSON({ session = {}, extra = {} } = {}) {
+  return JSON.stringify({
+    session: { user_id_str: ID, ...session },
+    entities: { users: { entities: { [ID]: { id_str: ID } } } },
     ...extra,
-  };
-  if (includeNormalized) {
-    state.entities = { users: { entities: { [id]: { id_str: id } } } };
-  }
-  return JSON.stringify(state);
+  });
 }
 
 function htmlForJSON(sourceJSON) {
   return `<html><body><script>window.__INITIAL_STATE__ = ${sourceJSON};</script></body></html>`;
 }
 
-test('uses one fixed same-origin GET, streams a bounded body, and returns only the initializer JSON', async () => {
+function fixedByteInitializer(byteLength, includeMultibyte = false) {
+  const prefix = `{"session":{"user_id_str":"${ID}"},"entities":{"users":{"entities":{"${ID}":{"id_str":"${ID}"}}}},"filler":"`;
+  const suffix = '"}';
+  const remaining = byteLength - Buffer.byteLength(prefix + suffix, 'utf8');
+  assert.ok(remaining >= 0);
+  const filler = includeMultibyte && remaining >= 2
+    ? `${'x'.repeat(remaining - 2)}é`
+    : 'x'.repeat(remaining);
+  const value = prefix + filler + suffix;
+  assert.equal(Buffer.byteLength(value, 'utf8'), byteLength);
+  return value;
+}
+
+function innerResultFields(result) {
+  return Object.keys(result).sort();
+}
+
+test('executes one fixed GET and returns a bounded diagnostic from an inert template', async () => {
   const sourceJSON = validSelfJSON();
-  const html = `<img src="https://images.invalid/track"><iframe src="https://frames.invalid/embed"></iframe>${htmlForJSON(sourceJSON)}`;
+  const html = `<img src="https://images.invalid/pixel"><iframe src="https://frames.invalid/embed"></iframe>${htmlForJSON(sourceJSON)}`;
   const { response, state } = responseFor(html);
   let calls = 0;
   const harness = makeContext({ fetch: async (...args) => {
@@ -192,25 +251,28 @@ test('uses one fixed same-origin GET, streams a bounded body, and returns only t
 
   assert.equal(calls, 1);
   assert.equal(state.cancelled, false);
-  assert.ok(state.viewLengths.every((length) => length > 0 && length <= 4_096));
-  assert.ok(state.detachedViews.every(Boolean));
+  assert.ok(state.requested.every((length) => length > 0 && length <= 4_096));
+  assert.ok(state.requested.reduce((sum, length) => sum + length, 0) <= BODY_LIMIT + 1 + 4_096);
   assert.equal(harness.templateState.created, 1);
-  assert.equal(harness.templateState.assigned, 1);
+  assert.equal(harness.templateState.assignments, 1);
   assert.equal(harness.templateState.inserted, 0);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    schema: 'aku.x.qa-live-self-page.v1',
-    category: 'fetched',
-    status: 200,
-    bytesRead: Buffer.byteLength(html),
-    sourceJSON,
-  });
+  assert.equal(harness.templateState.queried, 1);
+  assert.deepEqual(innerResultFields(result), [
+    'bodyBytes', 'canAuthorize', 'freshness', 'identity', 'initializerBytes', 'nativeQualified',
+    'outcome', 'projection', 'schema', 'sessionTransferred', 'status',
+  ]);
+  assert.equal(result.schema, 'aku.x.qa-live-self.v2');
+  assert.equal(result.outcome, 'candidate');
+  assert.equal(result.bodyBytes, Buffer.byteLength(html));
+  assert.equal(result.initializerBytes, Buffer.byteLength(sourceJSON));
+  assert.equal(JSON.stringify(result).includes(sourceJSON), false);
+  assert.equal(JSON.stringify(result).includes(ID), false);
 });
 
-test('projects a strong current-self entity match as a candidate without granting authority', async () => {
-  const sourceJSON = validSelfJSON();
-  const { response } = responseFor(htmlForJSON(sourceJSON));
-  const { result } = await runPageProbe({ fetch: async () => response });
-  const diagnostic = projectQALiveSelf(result);
+test('projects only a strong current-self entity match and keeps all authority flags false', async () => {
+  const { response } = responseFor(htmlForJSON(validSelfJSON()));
+  const pageResult = await runPageProbe({ fetch: async () => response });
+  const diagnostic = projectQALiveSelf(pageResult.result);
 
   assert.equal(diagnostic.outcome, 'candidate');
   assert.equal(diagnostic.identity, 'candidate');
@@ -219,91 +281,217 @@ test('projects a strong current-self entity match as a candidate without grantin
   assert.equal(diagnostic.canAuthorize, false);
   assert.equal(diagnostic.nativeQualified, false);
   assert.equal(diagnostic.sessionTransferred, false);
-  assert.equal(JSON.stringify(diagnostic).includes('12345678901234567890'), false);
+  assert.equal(JSON.stringify(diagnostic).includes(ID), false);
   assert.deepEqual(validateQALiveSelfDiagnostic(diagnostic), diagnostic);
 });
 
-test('returns source_absent for a missing initializer and source_ambiguous for duplicate markers', async () => {
-  const noMarker = responseFor('<html><script>window.other = {};</script></html>');
-  const absent = await runPageProbe({ fetch: async () => noMarker.response });
-  assert.equal(absent.result.category, 'source_absent');
-  assert.equal(absent.result.sourceJSON, null);
-  assert.equal(projectQALiveSelf(absent.result).identity, 'unavailable');
+test('accepts semicolons inside JSON strings and rejects statements after the initializer', async () => {
+  const semicolonString = validSelfJSON({ extra: { note: 'semi;colon' } });
+  const valid = await runPageProbe({ fetch: async () => responseFor(htmlForJSON(semicolonString)).response });
+  assert.equal(valid.result.outcome, 'candidate');
+
+  const trailingCode = await runPageProbe({
+    fetch: async () => responseFor(`<script>window.__INITIAL_STATE__ = ${validSelfJSON()}; alert(1);</script>`).response,
+  });
+  assert.equal(trailingCode.result.outcome, 'parser_rejected');
+  assert.equal(trailingCode.result.projection, null);
+});
+
+test('distinguishes no exact initializer, duplicate markers, and HTML decode/template failures', async () => {
+  const absent = responseFor('<html><script>window.other = {};</script></html>');
+  const absentRun = await runPageProbe({ fetch: async () => absent.response });
+  assert.equal(absentRun.result.outcome, 'source_absent');
+  assert.equal(absentRun.result.bodyBytes, Buffer.byteLength('<html><script>window.other = {};</script></html>'));
+  assert.equal(absentRun.result.initializerBytes, 0);
+  assert.equal(absentRun.templateState.queried, 1);
+
+  const nonExact = responseFor('<script>window.__INITIAL_STATE__ = {}; sideEffect();</script>');
+  const nonExactRun = await runPageProbe({ fetch: async () => nonExact.response });
+  assert.equal(nonExactRun.result.outcome, 'parser_rejected');
+
+  const unterminated = responseFor('<script>window.__INITIAL_STATE__ = {"session":{}}</script>');
+  const unterminatedRun = await runPageProbe({ fetch: async () => unterminated.response });
+  assert.equal(unterminatedRun.result.outcome, 'source_absent');
 
   const duplicate = responseFor(
     `<script>window.__INITIAL_STATE__ = {"session":{}};</script><script>window.__INITIAL_STATE__ = {"session":{}};</script>`,
   );
   const ambiguous = await runPageProbe({ fetch: async () => duplicate.response });
-  assert.equal(ambiguous.result.category, 'source_ambiguous');
-  assert.equal(ambiguous.result.sourceJSON, null);
+  assert.equal(ambiguous.result.outcome, 'source_ambiguous');
+
+  const invalidUTF8 = responseFor(new Uint8Array([0xc3, 0x28]));
+  const decodeRejected = await runPageProbe({ fetch: async () => invalidUTF8.response });
+  assert.equal(decodeRejected.result.outcome, 'html_rejected');
+  assert.equal(decodeRejected.result.initializerBytes, 0);
+
+  const decodeThrow = await runPageProbe({
+    fetch: async () => responseFor('<html></html>').response,
+    TextDecoderImpl: class { decode() { throw new Error('private decoder detail'); } },
+  });
+  assert.equal(decodeThrow.result.outcome, 'html_rejected');
+  assert.equal(JSON.stringify(decodeThrow.result).includes('private decoder detail'), false);
+
+  const throwingDocument = fakeTemplateDocument({ innerHTMLFailure: new Error('trusted types detail') });
+  const templateThrow = await runPageProbe({
+    fetch: async () => responseFor('<html></html>').response,
+    document: throwingDocument.document,
+  });
+  assert.equal(templateThrow.result.outcome, 'html_rejected');
+  assert.equal(templateThrow.result.initializerBytes, 0);
+  assert.equal(JSON.stringify(templateThrow.result).includes('trusted types detail'), false);
+
+  const contentThrow = fakeTemplateDocument({ contentFailure: new Error('content detail') });
+  const contentRejected = await runPageProbe({
+    fetch: async () => responseFor('<html></html>').response,
+    document: contentThrow.document,
+  });
+  assert.equal(contentRejected.result.outcome, 'html_rejected');
 });
 
-test('rejects malformed initializer JSON and strict-parser duplicate object keys without leaking source', async () => {
-  const malformed = responseFor(htmlForJSON('{broken'));
-  const malformedResult = await runPageProbe({ fetch: async () => malformed.response });
-  assert.equal(malformedResult.result.category, 'source_absent');
-  assert.equal(malformedResult.result.sourceJSON, null);
+test('strictly rejects malformed, duplicate-key, unsafe-number, invalid-Unicode, depth, and token-budget JSON', async () => {
+  const rejected = [
+    '',
+    '{broken',
+    '{"session":{},"session":{}}',
+    '{"unsafe":9007199254740992}',
+    '{"invalid":"\\uD800"}',
+    `${'['.repeat(25)}0${']'.repeat(25)}`,
+    `[${Array.from({ length: 16_384 }, () => '0').join(',')}]`,
+  ];
+  for (const source of rejected) {
+    const { response } = responseFor(htmlForJSON(source));
+    const result = await runPageProbe({ fetch: async () => response });
+    assert.equal(result.result.outcome, 'parser_rejected');
+    assert.equal(result.result.projection, null);
+    assert.equal(result.result.initializerBytes, Buffer.byteLength(source));
+  }
 
-  const duplicateKey = responseFor(htmlForJSON('{"session":{},"session":{}}'));
-  const duplicateResult = await runPageProbe({ fetch: async () => duplicateKey.response });
-  assert.equal(duplicateResult.result.category, 'fetched');
-  const diagnostic = projectQALiveSelf(duplicateResult.result);
-  assert.equal(diagnostic.outcome, 'projection_invalid');
-  assert.equal(diagnostic.projection, null);
-  assert.equal(JSON.stringify(diagnostic).includes('"session":{}'), false);
+  const depth24 = `${'['.repeat(24)}0${']'.repeat(24)}`;
+  const acceptedDepth = await runPageProbe({ fetch: async () => responseFor(htmlForJSON(depth24)).response });
+  assert.equal(acceptedDepth.result.outcome, 'self_unqualified');
+
+  const valueBoundary = `[${Array.from({ length: 16_383 }, () => '0').join(',')}]`;
+  const acceptedValues = await runPageProbe({ fetch: async () => responseFor(htmlForJSON(valueBoundary)).response });
+  assert.equal(acceptedValues.result.outcome, 'self_unqualified');
 });
 
-test('rejects numeric IDs, auth-false evidence, conflicting entities, and feed-author-only identity', async () => {
+test('does not infer identity from numeric IDs, auth-false data, mismatches, or feed authors', async () => {
+  const mismatched = JSON.parse(validSelfJSON());
+  mismatched.entities.users.entities[ID].id_str = '999';
   const cases = [
     {
-      name: 'numeric ID',
+      name: 'numeric session ID',
       value: { session: { user_id: 123456789 }, entities: { users: { entities: {} } } },
     },
-    {
-      name: 'auth false',
-      value: JSON.parse(validSelfJSON({ session: { loggedIn: false } })),
-    },
-    {
-      name: 'entity mismatch',
-      value: JSON.parse(validSelfJSON()),
-      mutate(value) { value.entities.users.entities['12345678901234567890'].id_str = '999'; },
-    },
-    {
-      name: 'feed author only',
-      value: {
-        session: {},
-        feed: { entries: [{ author_id: '12345678901234567890' }] },
-      },
-    },
+    { name: 'auth false', value: JSON.parse(validSelfJSON({ session: { loggedIn: false } })) },
+    { name: 'normalized entity mismatch', value: mismatched },
+    { name: 'feed author only', value: { session: {}, feed: { entries: [{ author_id: ID }] } } },
   ];
 
   for (const item of cases) {
-    const value = structuredClone(item.value);
-    item.mutate?.(value);
-    const { response } = responseFor(htmlForJSON(JSON.stringify(value)));
-    const pageResult = await runPageProbe({ fetch: async () => response });
-    const diagnostic = projectQALiveSelf(pageResult.result);
-    assert.equal(diagnostic.outcome, 'self_unqualified', item.name);
-    assert.equal(diagnostic.identity, 'unavailable', item.name);
+    const { response } = responseFor(htmlForJSON(JSON.stringify(item.value)));
+    const result = await runPageProbe({ fetch: async () => response });
+    assert.equal(result.result.outcome, 'self_unqualified', item.name);
+    assert.equal(result.result.identity, 'unavailable', item.name);
   }
 });
 
-test('rejects non-home, redirected, non-HTML, and non-200 responses without reading their body', async () => {
+test('keeps the complete DTO under 4 KiB and never exposes initializer, HTML, or account IDs', async () => {
+  const source = validSelfJSON({ extra: { largeOpaqueState: 'PRIVATE_HTML_OR_ID '.repeat(8_000) } });
+  const html = `<!-- PRIVATE_HTML_MARKER -->${htmlForJSON(source)}`;
+  assert.ok(Buffer.byteLength(source) < INITIALIZER_LIMIT);
+  const { response } = responseFor(html);
+  const pageResult = await runPageProbe({ fetch: async () => response });
+  const diagnostic = projectQALiveSelf(pageResult.result);
+  const serialized = JSON.stringify(diagnostic);
+  assert.ok(Buffer.byteLength(serialized, 'utf8') <= 4_096);
+  for (const secret of [source, ID, 'PRIVATE_HTML_MARKER', 'PRIVATE_HTML_OR_ID']) {
+    assert.equal(serialized.includes(secret), false);
+  }
+});
+
+test('accepts a 512 KiB HTML body, probes only one overflow byte, and rejects 512 KiB plus one', async () => {
+  const source = validSelfJSON();
+  const base = htmlForJSON(source);
+  const exactHTML = `${base}<!--${'x'.repeat(BODY_LIMIT - Buffer.byteLength(base) - 7)}-->`;
+  assert.equal(Buffer.byteLength(exactHTML), BODY_LIMIT);
+  const exact = responseFor(exactHTML);
+  const exactResult = await runPageProbe({ fetch: async () => exact.response });
+  assert.equal(exactResult.result.outcome, 'candidate');
+  assert.equal(exactResult.result.bodyBytes, BODY_LIMIT);
+  assert.equal(exact.state.delivered, BODY_LIMIT);
+  assert.equal(exact.state.requested.at(-1), 1);
+  assert.equal(exact.state.requested.length, 129);
+  assert.ok(exact.state.requested.every((length) => length > 0 && length <= 4_096));
+
+  const overHTML = `${exactHTML}x`;
+  assert.equal(Buffer.byteLength(overHTML), BODY_LIMIT + 1);
+  const over = responseFor(overHTML);
+  const overRun = await runPageProbe({ fetch: async () => over.response });
+  assert.equal(overRun.result.outcome, 'body_limit');
+  assert.equal(overRun.result.bodyBytes, BODY_LIMIT + 1);
+  assert.equal(overRun.result.initializerBytes, 0);
+  assert.equal(over.state.delivered, BODY_LIMIT + 1);
+  assert.equal(over.state.requested.at(-1), 1);
+  assert.equal(over.state.cancelled, true);
+  assert.equal(overRun.aborts[0].signal.aborted, true);
+
+  const deadlineOver = responseFor(overHTML);
+  const deadlineHarness = makeContext({
+    fetch: async () => deadlineOver.response,
+    clock: () => deadlineOver.state.delivered > BODY_LIMIT ? 2_000 : 0,
+  });
+  const deadlineResult = await vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, deadlineHarness.context, { timeout: 1_000 });
+  assert.equal(deadlineResult.outcome, 'timeout');
+  assert.equal(deadlineResult.bodyBytes, BODY_LIMIT + 1);
+  assert.equal(deadlineResult.initializerBytes, 0);
+  assert.equal(validateQALiveSelfDiagnostic(deadlineResult).bodyBytes, BODY_LIMIT + 1);
+});
+
+test('scans a near-cap whitespace-only initializer without regex backtracking', { timeout: 3_000 }, async () => {
+  const shell = '<html><script>window.__INITIAL_STATE__ =</script></html>';
+  const padding = ' '.repeat(BODY_LIMIT - Buffer.byteLength(shell));
+  const html = `<html><script>window.__INITIAL_STATE__ =${padding}</script></html>`;
+  assert.equal(Buffer.byteLength(html), BODY_LIMIT);
+  const response = responseFor(html);
+  const result = await runPageProbe({ fetch: async () => response.response });
+  assert.equal(result.result.outcome, 'source_absent');
+  assert.equal(result.result.bodyBytes, BODY_LIMIT);
+  assert.equal(result.result.initializerBytes, 0);
+});
+
+test('enforces the UTF-8 initializer cap at 256 KiB plus one detection byte', async () => {
+  const exactJSON = fixedByteInitializer(INITIALIZER_LIMIT, true);
+  const exact = await runPageProbe({ fetch: async () => responseFor(htmlForJSON(exactJSON)).response });
+  assert.equal(exact.result.outcome, 'candidate');
+  assert.equal(exact.result.initializerBytes, INITIALIZER_LIMIT);
+
+  const overJSON = fixedByteInitializer(INITIALIZER_LIMIT + 1);
+  const overResponse = responseFor(htmlForJSON(overJSON));
+  const over = await runPageProbe({ fetch: async () => overResponse.response });
+  assert.equal(over.result.outcome, 'initializer_limit');
+  assert.equal(over.result.bodyBytes, Buffer.byteLength(htmlForJSON(overJSON)));
+  assert.equal(over.result.initializerBytes, INITIALIZER_LIMIT + 1);
+  assert.equal(over.result.projection, null);
+  assert.equal(overResponse.state.cancelled, true);
+});
+
+test('rejects wrong page and unsafe response metadata before reading, cancelling every rejected body', async () => {
   const cases = [
     { name: 'wrong page', locationHref: 'https://x.com/home?tab=1', response: responseFor('<script></script>') },
     { name: 'redirect', response: responseFor('<script></script>', { redirected: true }) },
+    { name: 'redirected URL', response: responseFor('<script></script>', { url: 'https://x.com/login' }) },
+    { name: 'opaque type', response: responseFor('<script></script>', { type: 'opaque' }) },
     { name: 'non-HTML', response: responseFor('<script></script>', { contentType: 'application/json' }) },
     { name: 'non-200', response: responseFor('<script></script>', { status: 503 }) },
   ];
-
   for (const item of cases) {
     const run = await runPageProbe({
       locationHref: item.locationHref,
       fetch: async () => item.response.response,
     });
-    const { result } = run;
-    assert.equal(result.category, 'response_rejected', item.name);
-    assert.equal(result.sourceJSON, null, item.name);
+    assert.equal(run.result.outcome, 'response_rejected', item.name);
+    assert.equal(run.result.initializerBytes, 0, item.name);
     assert.equal(item.response.state.reads, 0, item.name);
     if (item.name !== 'wrong page') {
       assert.equal(item.response.state.bodyCancelled, true, item.name);
@@ -312,103 +500,59 @@ test('rejects non-home, redirected, non-HTML, and non-200 responses without read
   }
 });
 
-test('aborts and cancels when the streamed response exceeds 16 KiB', async () => {
-  const large = new Uint8Array(16_385);
-  const { response, state } = responseFor('', { chunks: [large] });
-  const { result, aborts } = await runPageProbe({ fetch: async () => response });
-
-  assert.equal(result.category, 'body_limit');
-  assert.equal(result.bytesRead, 16_385);
-  assert.equal(result.sourceJSON, null);
-  assert.equal(state.cancelled, true);
-  assert.ok(state.viewLengths.every((length) => length > 0 && length <= 4_096));
-  assert.ok(state.detachedViews.every(Boolean));
-  assert.deepEqual(state.viewLengths, [4_096, 4_096, 4_096, 4_096, 1]);
-  assert.equal(aborts[0].signal.aborted, true);
-});
-
-test('fails closed without BYOB support and bounds nonempty and zero-length read loops', async () => {
-  let getReaderCalls = 0;
-  let bodyCancelled = false;
-  const unsupported = {
-    status: 200,
-    type: 'basic',
-    redirected: false,
-    url: TARGET_URL,
-    headers: { get: () => 'text/html' },
-    body: {
-      cancel() { bodyCancelled = true; return Promise.resolve(); },
-      getReader(options) {
-        getReaderCalls += 1;
-        assert.equal(options?.mode, 'byob');
-        assert.deepEqual(Object.keys(options).sort(), ['mode']);
-        throw new Error('BYOB unavailable');
-      },
-    },
-  };
-  const unsupportedResult = await runPageProbe({ fetch: async () => unsupported });
-  assert.equal(unsupportedResult.result.category, 'fetch_failed');
-  assert.equal(getReaderCalls, 1);
-  assert.equal(bodyCancelled, true);
-  assert.equal(unsupportedResult.aborts[0].signal.aborted, true);
+test('fails closed without BYOB support and bounds nonempty and zero-read loops', async () => {
+  const unsupported = responseFor('<html></html>', { getReaderError: new Error('private BYOB detail') });
+  const unsupportedRun = await runPageProbe({ fetch: async () => unsupported.response });
+  assert.equal(unsupportedRun.result.outcome, 'fetch_failed');
+  assert.equal(unsupported.state.bodyCancelled, true);
+  assert.equal(unsupportedRun.aborts[0].signal.aborted, true);
+  assert.equal(JSON.stringify(unsupportedRun.result).includes('private BYOB detail'), false);
 
   for (const [name, chunks] of [
     ['nonempty', Array.from({ length: 257 }, () => new Uint8Array([1]))],
-    ['zero-length', Array.from({ length: 257 }, () => new Uint8Array(0))],
+    ['zero-read', Array.from({ length: 257 }, () => new Uint8Array(0))],
   ]) {
-    const { response, state } = responseFor('', { chunks });
-    const run = await runPageProbe({ fetch: async () => response });
-    assert.equal(run.result.category, 'fetch_failed', name);
-    assert.equal(run.result.sourceJSON, null, name);
-    assert.equal(state.reads, 257, name);
-    assert.equal(state.cancelled, true, name);
+    const response = responseFor('', { chunks });
+    const run = await runPageProbe({ fetch: async () => response.response });
+    assert.equal(run.result.outcome, 'fetch_failed', name);
+    assert.equal(response.state.reads, 257, name);
+    assert.equal(response.state.cancelled, true, name);
     assert.equal(run.aborts[0].signal.aborted, true, name);
   }
 });
 
-test('enforces the two-second timeout and aborts a pending request', async () => {
+test('times out pending fetches and streams, cancels late responses, and rejects a regressing clock', async () => {
   let rejectFetch;
-  const { context, aborts, fireTimeout } = makeContext({
-    timeoutMode: 'manual',
+  const pendingFetch = makeContext({
     fetch: () => new Promise((_resolve, reject) => { rejectFetch = reject; }),
   });
-  const promise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, context, { timeout: 1_000 });
+  const pendingPromise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, pendingFetch.context, { timeout: 1_000 });
   await Promise.resolve();
-  fireTimeout();
-  const result = await promise;
+  pendingFetch.fireTimeout();
+  const timedOutFetch = await pendingPromise;
   rejectFetch?.(new Error('private timeout marker'));
+  assert.equal(timedOutFetch.outcome, 'timeout');
+  assert.equal(pendingFetch.aborts[0].signal.aborted, true);
+  assert.equal(JSON.stringify(timedOutFetch).includes('private timeout marker'), false);
 
-  assert.equal(result.category, 'timeout');
-  assert.equal(result.sourceJSON, null);
-  assert.equal(aborts[0].signal.aborted, true);
-  assert.equal(JSON.stringify(result).includes('private timeout marker'), false);
-});
-
-test('cancels a response body that arrives after the timeout has already completed', async () => {
   let resolveFetch;
-  const { context, aborts, fireTimeout } = makeContext({
-    timeoutMode: 'manual',
+  const pendingResponse = makeContext({
     fetch: () => new Promise((resolve) => { resolveFetch = resolve; }),
   });
-  const promise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, context, { timeout: 1_000 });
+  const pendingResponsePromise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, pendingResponse.context, { timeout: 1_000 });
   await Promise.resolve();
-  fireTimeout();
-  const result = await promise;
+  pendingResponse.fireTimeout();
+  const lateResult = await pendingResponsePromise;
   const late = responseFor(htmlForJSON(validSelfJSON()));
   resolveFetch(late.response);
   await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(result.category, 'timeout');
-  assert.equal(aborts[0].signal.aborted, true);
+  assert.equal(lateResult.outcome, 'timeout');
   assert.equal(late.state.bodyCancelled, true);
   assert.equal(late.state.reads, 0);
-});
 
-test('cancels and aborts a stream that stalls before the same two-second deadline', async () => {
   let markReadStarted;
   const readStarted = new Promise((resolve) => { markReadStarted = resolve; });
-  let cancelled = false;
-  const response = {
+  const stalledResponse = {
     status: 200,
     type: 'basic',
     redirected: false,
@@ -417,43 +561,84 @@ test('cancels and aborts a stream that stalls before the same two-second deadlin
     body: {
       getReader: () => ({
         read() { markReadStarted(); return new Promise(() => {}); },
-        cancel() { cancelled = true; return Promise.resolve(); },
+        cancel() { return Promise.resolve(); },
       }),
     },
   };
-  const { context, aborts, fireTimeout } = makeContext({ timeoutMode: 'manual', fetch: async () => response });
-  const promise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, context, { timeout: 1_000 });
+  const stalled = makeContext({ fetch: async () => stalledResponse });
+  const stalledPromise = vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, stalled.context, { timeout: 1_000 });
   await readStarted;
-  fireTimeout();
-  const result = await promise;
+  stalled.fireTimeout();
+  const stalledResult = await stalledPromise;
+  assert.equal(stalledResult.outcome, 'timeout');
+  assert.equal(stalled.aborts[0].signal.aborted, true);
 
-  assert.equal(result.category, 'timeout');
-  assert.equal(result.bytesRead, 0);
-  assert.equal(aborts[0].signal.aborted, true);
-  assert.equal(cancelled, true);
+  let calls = 0;
+  const regressing = await runPageProbe({
+    fetch: async () => responseFor('<html></html>').response,
+    clock: () => [10, 11, 9][calls++] ?? 9,
+  });
+  assert.equal(regressing.result.outcome, 'timeout');
 });
 
-test('rejects a location or document change before returning a source', async () => {
-  const sourceJSON = validSelfJSON();
-  const { response } = responseFor(htmlForJSON(sourceJSON));
+test('checks deadline immediately after a decode stage crosses two seconds', async () => {
+  let now = 0;
+  class CrossingDecoder extends TextDecoder {
+    decode(...args) {
+      const decoded = super.decode(...args);
+      now = 2_000;
+      return decoded;
+    }
+  }
+  const crossed = await runPageProbe({
+    fetch: async () => responseFor(htmlForJSON(validSelfJSON())).response,
+    clock: () => now,
+    TextDecoderImpl: CrossingDecoder,
+  });
+  assert.equal(crossed.result.outcome, 'timeout');
+  assert.equal(crossed.result.projection, null);
+});
+
+test('keeps the closed timeout DTO valid if initializer sizing reaches its overflow sentinel at the deadline', async () => {
+  let now = 0;
+  class CrossingEncoder extends TextEncoder {
+    encode(input = '') {
+      const encoded = super.encode(input);
+      if (typeof input === 'string' && input.length > INITIALIZER_LIMIT) now = 2_000;
+      return encoded;
+    }
+  }
+  const overJSON = fixedByteInitializer(INITIALIZER_LIMIT + 1);
+  const harness = makeContext({
+    fetch: async () => responseFor(htmlForJSON(overJSON)).response,
+    clock: () => now,
+  });
+  harness.context.TextEncoder = CrossingEncoder;
+  const result = await vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, harness.context, { timeout: 1_000 });
+  assert.equal(result.outcome, 'timeout');
+  assert.equal(result.initializerBytes, INITIALIZER_LIMIT + 1);
+  assert.equal(result.status, 200);
+  assert.equal(validateQALiveSelfDiagnostic(result).outcome, 'timeout');
+});
+
+test('rejects a location or document change before returning the fetched source', async () => {
+  const source = htmlForJSON(validSelfJSON());
   const changedLocation = makeContext({ fetch: async () => {
     changedLocation.location.href = 'https://x.com/messages';
-    return response;
+    return responseFor(source).response;
   } });
   const locationResult = await vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, changedLocation.context, { timeout: 1_000 });
-  assert.equal(locationResult.category, 'response_rejected');
-  assert.equal(locationResult.sourceJSON, null);
+  assert.equal(locationResult.outcome, 'response_rejected');
 
   const changedDocument = makeContext({ fetch: async () => {
     changedDocument.context.document = {};
-    return response;
+    return responseFor(source).response;
   } });
   const documentResult = await vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, changedDocument.context, { timeout: 1_000 });
-  assert.equal(documentResult.category, 'response_rejected');
-  assert.equal(documentResult.sourceJSON, null);
+  assert.equal(documentResult.outcome, 'response_rejected');
 });
 
-test('does not reload, navigate, enable debugger access, or reread the page bootstrap', async () => {
+test('does not reload, navigate, enable debugger access, or reread the existing bootstrap', async () => {
   let forbiddenReads = 0;
   let fetches = 0;
   const { response } = responseFor('<html><script>window.other = {};</script></html>');
@@ -462,7 +647,7 @@ test('does not reload, navigate, enable debugger access, or reread the page boot
     enumerable: true,
     get() { forbiddenReads += 1; throw new Error('reload must not be read'); },
   });
-  for (const key of ['__INITIAL_STATE__', 'Debugger', 'history', 'window']) {
+  for (const key of ['__INITIAL_STATE__', 'Debugger', 'history', 'window', 'DOMParser']) {
     Object.defineProperty(context, key, {
       configurable: true,
       enumerable: true,
@@ -471,37 +656,40 @@ test('does not reload, navigate, enable debugger access, or reread the page boot
   }
 
   const result = await vm.runInNewContext(QA_LIVE_SELF_EXPRESSION, context, { timeout: 1_000 });
-  assert.equal(result.category, 'source_absent');
+  assert.equal(result.outcome, 'source_absent');
   assert.equal(fetches, 1);
   assert.equal(forbiddenReads, 0);
 });
 
-test('closes page reports and diagnostics against extra fields, accessors, and unsafe projections', () => {
-  const validPageReport = {
-    schema: 'aku.x.qa-live-self-page.v1',
-    category: 'source_absent',
-    status: 200,
-    bytesRead: 12,
-    sourceJSON: null,
+test('closes v2 reports against raw source fields, extra keys, getters, and unsafe nested projections', async () => {
+  const page = await runPageProbe({ fetch: async () => responseFor('<html></html>').response });
+  const valid = projectQALiveSelf(page.result);
+  assert.equal(validateQALiveSelfReport(valid).schema, 'aku.x.qa-live-self.v2');
+  assert.throws(() => validateQALiveSelfReport({ ...valid, sourceJSON: '{"private":true}' }), /qa_live_self_report_invalid/);
+  assert.throws(() => validateQALiveSelfReport({ ...valid, privateID: 'must not pass' }), /qa_live_self_report_invalid/);
+
+  const getterReport = { ...valid };
+  Object.defineProperty(getterReport, 'projection', { enumerable: true, get() { throw new Error('private'); } });
+  assert.throws(() => validateQALiveSelfDiagnostic(getterReport), /qa_live_self_report_invalid/);
+
+  const unsafeNested = structuredClone(valid);
+  unsafeNested.projection = {
+    schema: 'aku.x.bootstrap-current-self.v1',
+    privateID: 'must not pass',
   };
-  assert.deepEqual(validateQALiveSelfReport(validPageReport), validPageReport);
-  assert.throws(() => validateQALiveSelfReport({ ...validPageReport, privateID: 'must not pass' }), /qa_live_self_report_invalid/);
+  assert.throws(() => validateQALiveSelfDiagnostic(unsafeNested), /bootstrap_projection_invalid|qa_live_self_report_invalid/);
 
-  const getterReport = { ...validPageReport };
-  Object.defineProperty(getterReport, 'sourceJSON', { enumerable: true, get() { throw new Error('private'); } });
-  assert.throws(() => validateQALiveSelfReport(getterReport), /qa_live_self_report_invalid/);
-
-  const unsafeProjection = {
-    schema: 'aku.x.qa-live-self.v1',
-    outcome: 'source_absent',
+  const statusMismatch = {
+    ...valid,
+    outcome: 'body_limit',
     identity: 'unavailable',
-    bodyBytes: 12,
-    status: 200,
-    projection: { schema: 'aku.x.bootstrap-current-self.v1', privateID: 'must not pass' },
+    bodyBytes: BODY_LIMIT,
+    initializerBytes: 0,
+    projection: null,
     freshness: 'unqualified',
-    canAuthorize: false,
-    nativeQualified: false,
-    sessionTransferred: false,
   };
-  assert.throws(() => validateQALiveSelfDiagnostic(unsafeProjection), /bootstrap_projection_invalid|qa_live_self_report_invalid/);
+  assert.throws(() => validateQALiveSelfDiagnostic(statusMismatch), /qa_live_self_report_invalid/);
+
+  const impossibleLengths = { ...valid, bodyBytes: 1, initializerBytes: 2 };
+  assert.throws(() => validateQALiveSelfDiagnostic(impossibleLengths), /qa_live_self_report_invalid/);
 });

@@ -234,6 +234,15 @@ export function parseStrictJSON(text, limits = DEFAULT_LIMITS) {
   return parsed;
 }
 
+// Trusted fixed source for the bounded in-page projection expression. The
+// caller supplies explicit depth and token limits; this source never executes
+// page-provided code or data.
+export const STRICT_JSON_PARSER_SOURCE = `(() => {
+  const isValidUnicode = (${isValidUnicode.toString()});
+  const DEFAULT_LIMITS = Object.freeze({ maxJSONDepth: 32, maxJSONTokens: 16_384 });
+  return (${parseStrictJSON.toString()});
+})()`;
+
 function recordStatus(value) {
   return Number.isInteger(value) && value >= 0 && value <= 599 ? value : null;
 }
