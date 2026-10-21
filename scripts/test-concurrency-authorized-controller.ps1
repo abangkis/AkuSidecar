@@ -10,7 +10,8 @@ foreach ($relative in @('runtime', 'runtime\qa', 'runtime\qa\auth-session-sideca
 $legacy = @('internal/engine/development_concurrent_session.go', 'internal/engine/development_concurrent_session_test.go')
 $authority = @('internal/engine/development_concurrent_authorization.go', 'internal/engine/development_concurrent_authorization_test.go')
 $bridge = @('internal/engine/development_concurrent_authorized_controller.go', 'internal/engine/development_concurrent_authorized_controller_test.go')
-$sources = $legacy + $authority + $bridge
+$fixture = @('internal/engine/development_concurrent_authorized_fixture.go', 'internal/engine/development_concurrent_authorized_fixture_test.go')
+$sources = $legacy + $authority + $bridge + $fixture
 foreach ($relative in $sources) {
     if (!(Test-Path -LiteralPath (Join-Path $projectRoot $relative) -PathType Leaf)) { throw 'Authorized controller source unavailable.' }
 }

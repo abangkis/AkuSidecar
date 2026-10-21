@@ -515,6 +515,14 @@ func safeFixtureCode(value string) string {
 func (b *chromeFixtureBridge) rpc(ctx context.Context, op string, fields map[string]any, out any) error {
 	b.rpcMu.Lock()
 	defer b.rpcMu.Unlock()
+	return b.rpcRoundTrip(ctx, op, fields, out)
+}
+
+// rpc retains the existing serialized control contract. Only the separately
+// granted dual-tag concurrent fixture may hold one protected collect roundtrip
+// alongside those controls. Correlation, pipe writes and cancellation retain
+// the same locks and pending-response handling in both paths.
+func (b *chromeFixtureBridge) rpcRoundTrip(ctx context.Context, op string, fields map[string]any, out any) error {
 	if b.isClosed() {
 		return errors.New("fixture bridge is closed")
 	}

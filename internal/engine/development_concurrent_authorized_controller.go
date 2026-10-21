@@ -24,6 +24,7 @@ type authorizedConcurrentFixture struct {
 	PolicyEnabled     bool
 	Grant             fixtureGrant
 	Collect           evidenceCollector
+	LifecycleBarrier  syntheticLifecycleBarrier
 }
 
 type authorizedConcurrentAdapter struct {
@@ -176,7 +177,7 @@ func (a *authorizedConcurrentAdapter) authorizationConfig(binding concurrentAuth
 			controllerEpochID: mapSyntheticIdentity("epoch", fmt.Sprint(binding.Epoch)), sidecarLifetimeID: mapSyntheticIdentity("sidecar", binding.ParentID),
 			generation: binding.PairGeneration,
 		},
-		reader: reader, collector: collector, policyEnabled: f.PolicyEnabled,
+		reader: reader, collector: collector, policyEnabled: f.PolicyEnabled, lifecycleBarrier: f.LifecycleBarrier,
 	}, nil
 }
 

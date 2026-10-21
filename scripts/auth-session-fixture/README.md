@@ -1,5 +1,66 @@
 # Local one-login concurrency fixture
 
+## Pair-authorized main and Chrome fixtures
+
+The existing fixture providers now accept explicit `authorized-*` scenarios.
+They select the private pair authority through actual main early dispatch,
+the framed broker, Coordinator and capture Managers. The ordinary runtime and
+single-tag builds still cannot select this path. The older scenarios keep their
+legacy authority and remain a separate compatibility baseline.
+
+```powershell
+.\scripts\test-concurrency-authorized-controller.ps1
+.\scripts\test-concurrency-integration.ps1
+.\scripts\test-concurrency-chrome-integration.ps1
+.\scripts\test-concurrency-chrome-integration.ps1 -VerifyChrome -Scenario @(
+  'authorized-renewal', 'authorized-renewal-delay', 'authorized-renewal-failure',
+  'authorized-account-drift', 'authorized-policy-drift', 'authorized-coverage-gap',
+  'authorized-opt-out', 'authorized-last-close-denied', 'authorized-parent-process-death'
+)
+```
+
+The Chrome helper remains offline unless `-VerifyChrome` is present; its default
+live selection remains the eight legacy cases. The explicit selection above uses
+fresh loopback-only profiles and automatic synthetic login, with no manual click.
+There is no native account/session input, Store/database access, retained QA
+profile, registry write or user-runtime activation.
+
+The authorized long-capture case holds one protected request for at least ten
+seconds on the real clock. A fixture-owned 1.5-second timer automatically renews
+both roles while that original request and ticket remain active. A bounded Node
+dispatcher allows one pending collection alongside serialized control/probe
+commands, with a maximum 64 waiting commands. Acceptance requires at least three
+renewals, probes during collection, the original evidence-version-one ticket,
+unchanged collector PID/generation/driver/lease, retained reader windows, and
+rejection of stale/duplicate completion. The five-second proof age and two-second
+binding window are unchanged.
+
+Only the invented loopback service has a local, controlled lifecycle witness.
+It holds its source mutation lock through dispatch/claim/result commit, rejecting
+scope/account/policy/owner/revision drift and coverage gaps. It neither extends
+evidence timestamps nor proves native X cookie-writer coverage. Timer cancellation
+and joining precede final retirement. Chrome death testing still requires empty
+owned Jobs and settled pinned handles before any emergency fallback can count as
+cleanup; unsuccessful cases retain their profile roots.
+
+Strict receipts retain `canAuthorize=false` and `nativeQualified=false`. Authorized
+Chrome receipts additionally record renewal/probe counts, original/final evidence
+versions, protected-request duration and stale/duplicate checks. See the
+[authorized integration checkpoint](../../docs/x-concurrency-mvp2-integration-design.md#pair-authorized-main-and-chrome-integration-2026-10-21)
+for accepted runs and limits.
+
+Accepted core run `d93664019d734a86be7988763e7fd8c6` passed 51 top-level tests
+and 87 subtests; main run `4fba3d718e424999aa4b8cd9feb57be8` passed 20 scenarios
+and three Coordinator regressions. Chrome offline run
+`4ff65aee51474fa3b72f61a2cfb8271e` passed nine Node cases and strict receipt,
+input, build and root gates. Actual Chrome run
+`8357c06e63fe4a84ae92188c2d022d3f` passed the nine authorized cases plus legacy
+`overlap-last-close`, including actual QA parent-process death. Its long capture
+measured 11,104 ms, seven automatic renewals and 14 in-flight probes, with the
+original ticket version one completing against evidence version eight.
+Successful profile/build roots were removed. The first failed live root remains
+retained; its exact scope and corrective evidence are recorded in the checkpoint.
+
 ## Offline controller with pair authorization
 
 Run `.\scripts\test-concurrency-authorized-controller.ps1` from the repository

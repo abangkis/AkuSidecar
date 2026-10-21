@@ -740,3 +740,130 @@ proof at that time: `run-concurrent-chrome-26ad1e90b24d4d15bde9148915616595`,
 QA parent. Metadata inspection did not read cookie/database file contents.
 Do not promote later successful cleanup to proof for those failed runs or remove
 the retained roots by bypassing the retirement guard.
+
+## Pair-authorized main and Chrome integration (2026-10-21)
+
+After publication of controller wiring as
+`ccfefa8828d0f84f6ef172d92232d7ae5d08a158`, the user authorized extending that
+authority into the existing fixture main/broker/Coordinator route and the
+synthetic Chrome adapter. This increment excludes native login/session transfer,
+retained QA profiles, Store code/API/schema/databases and the user's runtime.
+It adds no normal-runtime setting, provider or activation endpoint.
+
+The two existing early-dispatch fixture providers select
+`newAuthorizedConcurrentController` only for exact built-in `authorized-*`
+scenarios. The selected route has no legacy verifier or unconditional permit
+port. It uses independent role revisions, challenged probes, a consumed invented
+derivation receipt and the original ticket's complete evidence-version chain.
+The old scenarios retain their separately tested legacy authority. Default and
+either single-tag build still exclude the fixture code.
+
+### Real-clock synthetic coverage and renewal
+
+The controlled loopback service now supplies a private synthetic lifecycle
+witness. This is possible because the fixture owns every writer of the invented
+session. At dispatch, claim, Snapshot/admission checking and result acceptance,
+it checks the enrolled source/scope/account, policy/hold generations, exact pair,
+both pinned owners, distinct role revisions, and uninterrupted local coverage.
+It does not move probe observations into the future or relax the five-second
+proof age or two-second acquisition/binding window. A gap or source generation
+change invalidates that enrollment instead of being repaired by account equality.
+
+Lock order is controller, authority, then controlled-source lifecycle mutex.
+A successful local witness holds its mutation mutex through the corresponding
+claim or in-memory result commit; the release is mandatory. Witness callbacks
+perform no IO or controller/authority re-entry, and source writers release their
+mutex before calling the controller. Browser identity/authentication still require
+the actual role probes outside those locks. The optional witness is limited to
+the private granted synthetic source; it is not a native continuity adapter.
+
+An automatically started fixture timer renews both roles every 1.5 seconds once
+the protected request has entered. It stops and joins before final retirement.
+The long-capture case holds that request for eleven real seconds, across several
+proof windows, while the broker opens a second reader window. The collector's
+PID, generation, driver and active lease remain unchanged. Completion uses the
+original evidence-version-one ticket, with stale and duplicate results rejected.
+
+The separate Node driver permits exactly one pending collection alongside a
+serialized control/probe lane, bounded to 64 waiting commands. Previously, one
+held collection serialized every subsequent probe behind it. Dispatch tests cover
+probe progress, duplicate collection, failures/drain, successor collection and
+backlog rejection. The common browser launcher and native/retained drivers are
+unchanged.
+
+The Go concurrent adapter likewise sends only its protected collection outside
+the bridge's serial control lock. Response IDs, pending-response routing,
+serialized stdin writes and cancellation still use the same bridge transport.
+All existing callers keep the original serial RPC behavior. Parallel collection
+is not enabled by a normal-runtime setting or by bypassing ownership checks.
+
+The long request is a real page-side loopback fetch. Short CDP evaluations poll
+only its fixed completion/status/item projection, bounded to 30 seconds and
+1,200 polls, then delete the owned page state. This preserves the shared
+eight-second per-CDP deadline; it does not lengthen a shared transport timeout
+or replace the browser request with a synthetic wait. Failure cleanup closes
+the exact owned browser and cancels the server request.
+
+### Scenarios and bounded reports
+
+Both integration helpers cover automatic renewal, delayed/failed renewal,
+account/policy drift, coverage loss, opt-out and denied last-reader continuation.
+The offline main helper additionally tests parent cancellation with fake owners.
+The Chrome helper separately kills its actual owned Sidecar QA child only after
+an authorized pair and active overlap have been reported. It still requires
+empty outer-Job accounting and settled pinned peer handles before fallback
+termination, then strict profile retirement. Parent cancellation is not reported
+as proof of actual parent-process death.
+
+Authorized receipts select an exact additional schema. Chrome reports only
+authority-selection, renewal/probe counts, original/final evidence versions,
+protected-request duration and stale/duplicate-check flags in addition to the
+previous bounded cleanup/overlap/login/seed fields. The long case requires at
+least three automatic renewals, at least two protected-request probes per
+renewal, an original version of one, a sufficient final version, and a request
+duration between ten and 45 seconds. Unperformed checks in other scenarios remain
+false rather than inheriting the long case's result. Both native qualification
+flags remain false. Unknown fields or scalar/array/type/count mismatches reject.
+
+The helpers and commands are documented in the
+[fixture README](../scripts/auth-session-fixture/README.md#pair-authorized-main-and-chrome-fixtures).
+Chrome remains opt-in with `-VerifyChrome`; explicitly select `authorized-*` to
+exercise the new route. Successful roots are removed only after full ownership
+and bridge settlement; failed cases retain their disposable roots even if process
+cleanup subsequently succeeds.
+
+These tests establish synthetic main/broker/Coordinator ownership and in-memory
+acceptance across real-time renewals. They do not qualify X session-writer
+coverage, native evidence latency, durable Store acceptance or main-dev use.
+
+### Accepted validation
+
+| Run | Evidence |
+| --- | --- |
+| `d93664019d734a86be7988763e7fd8c6` | Core authority/controller: 51 top-level tests and 87 subtests, four tag gates, two standalone compile-compatibility gates and combined Engine compilation |
+| `4fba3d718e424999aa4b8cd9feb57be8` | Actual-main offline integration: 11 legacy plus nine authorized scenarios, four build modes, 13 malformed authorized reports, absent config/database sentinels and three ordinary Coordinator regressions |
+| `4ff65aee51474fa3b72f61a2cfb8271e` | Chrome offline gates: nine Node cases, one Go input test, 17 legacy plus 17 authorized malformed-report cases, four main build modes and seven early rejection/root gates |
+| `8357c06e63fe4a84ae92188c2d022d3f` | Outside-sandbox actual Chrome: all nine authorized scenarios and legacy `overlap-last-close`, including actual QA Sidecar death and strict ownership/profile cleanup |
+
+The accepted Chrome long case measured **11,104 ms**, **seven automatic renewals**
+and **14 probes during collection**, advancing current evidence from one to eight
+while completing the unchanged original-version-one ticket. Stale and duplicate
+completion were rejected. Every successful case used exactly one invented login
+and one seed, reported verified cleanup and removed its owned profile root. No
+native or durable authorization flag was enabled.
+
+The first live attempt (`97bc01bfc0384a42bcacdb2286b03fe7`) correctly failed the
+renewal-count gate: the Go serial RPC lock still held probes behind collection,
+despite the already separated Node lanes. The scoped collection-only transport
+correction above was then tested in the accepted full selection. That failed
+attempt's root, `run-concurrent-chrome-a622487dca85485a95a0cf85bb1cfac3`, remains
+retained under the QA parent. The earlier four failed roots also remain retained;
+accepted later cleanup does not retroactively qualify or delete them.
+
+Logs use the existing project-local `concurrent-authorized-controller-`,
+`concurrent-integration-` and `concurrent-chrome-integration-` prefixes followed by
+the run IDs above and `.log.txt`. Earlier failed offline trials exposed singleton
+JSON-array unwrapping and mutable-window inventory incorrectly included in the
+source's process identity pin. Strict non-enumerating receipt parsing and stable
+process identity comparison were corrected before the accepted runs; the
+authority retains responsibility for window inventory and last-close revocation.

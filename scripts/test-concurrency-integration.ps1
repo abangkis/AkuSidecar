@@ -15,6 +15,26 @@ $variables = @('TEMP', 'TMP', 'GOTMPDIR', 'GOCACHE', 'GOMODCACHE', 'GOWORK', 'GO
 $previous = @{}
 foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 
+function Convert-ConcurrentFixtureReceipt([string]$Raw, [string]$ExpectedScenario) {
+    $reply = $Raw | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
+    if ($null -eq $reply -or $reply -is [array]) { throw 'Synthetic acceptance object rejected.' }
+    $authorized = $ExpectedScenario.StartsWith('authorized-', [StringComparison]::Ordinal)
+    $allowed = @('passed','provider','scenario')
+    if ($authorized) { $allowed += @('authoritySelected','automaticRenewals','originalTicketVersion','finalEvidenceVersion','canAuthorize','nativeQualified') }
+    $fields = @($reply.PSObject.Properties.Name | Sort-Object)
+    if (($fields -join ',') -ne (($allowed | Sort-Object) -join ',') -or $reply.provider -isnot [string] -or $reply.scenario -isnot [string] -or $reply.passed -isnot [bool] -or !$reply.passed -or $reply.provider -ne 'synthetic-concurrent-fixture' -or $reply.scenario -ne $ExpectedScenario) { throw 'Synthetic acceptance response rejected.' }
+    if ($authorized) {
+        foreach ($name in @('authoritySelected','canAuthorize','nativeQualified')) { if ($reply.$name -isnot [bool]) { throw 'Synthetic authorized flag type rejected.' } }
+        if (!$reply.authoritySelected -or $reply.canAuthorize -or $reply.nativeQualified) { throw 'Synthetic authority boundary rejected.' }
+        foreach ($name in @('automaticRenewals','originalTicketVersion','finalEvidenceVersion')) {
+            if (($reply.$name -isnot [int] -and $reply.$name -isnot [long]) -or $reply.$name -lt 0 -or $reply.$name -gt 100000) { throw 'Synthetic authorized counter rejected.' }
+        }
+        if ($reply.finalEvidenceVersion -lt $reply.originalTicketVersion) { throw 'Synthetic evidence version rejected.' }
+        if ($ExpectedScenario -eq 'authorized-renewal' -and ($reply.automaticRenewals -lt 3 -or $reply.originalTicketVersion -ne 1 -or $reply.finalEvidenceVersion -lt (1 + $reply.automaticRenewals))) { throw 'Synthetic renewal evidence rejected.' }
+    }
+    return $reply
+}
+
 function Invoke-Fixture([string]$Executable, [string[]]$Arguments, [string]$Payload, [bool]$Accepted, [string]$Label) {
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = $Executable
@@ -36,9 +56,8 @@ function Invoke-Fixture([string]$Executable, [string[]]$Arguments, [string]$Payl
         $result = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
         if ($Accepted) {
             if ($process.ExitCode -ne 0) { throw ('Fixture failed: ' + $Label + ' ' + $result) }
-            $reply = $result | ConvertFrom-Json
             $expected = $Payload | ConvertFrom-Json
-            if ($reply.passed -ne $true -or $reply.provider -ne 'synthetic-concurrent-fixture' -or $reply.scenario -ne $expected.scenario) { throw 'Synthetic acceptance response rejected.' }
+            Convert-ConcurrentFixtureReceipt $result $expected.scenario | Out-Null
         } elseif ($process.ExitCode -eq 0 -or $result -notmatch '(development session|synthetic concurrent)') {
             throw ('Fixture rejection gate failed: ' + $Label + ' ' + $result)
         }
@@ -57,6 +76,31 @@ try {
     $env:GOWORK = 'off'; $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'
     $env:GOTOOLCHAIN = 'local'; $env:CGO_ENABLED = '0'; $env:GOFLAGS = ''
     Write-Output ('Offline synthetic concurrency integration run: ' + $runId) | Tee-Object -FilePath $log
+    $receipt = @{ provider='synthetic-concurrent-fixture'; scenario='authorized-renewal'; passed=$true; authoritySelected=$true; automaticRenewals=3; originalTicketVersion=1; finalEvidenceVersion=4; canAuthorize=$false; nativeQualified=$false }
+    Convert-ConcurrentFixtureReceipt ($receipt | ConvertTo-Json -Compress) 'authorized-renewal' | Out-Null
+    foreach ($change in @('unselected','authority','missingFlag','wrongFlagType','stringCount','fractionCount','negativeCount','tooFewRenewals','retaggedTicket','brokenChain','privateField','arrayRoot','arrayScenario')) {
+        $invalid = $receipt.Clone()
+        switch ($change) {
+            'unselected' { $invalid.authoritySelected = $false }
+            'authority' { $invalid.canAuthorize = $true }
+            'missingFlag' { $invalid.Remove('nativeQualified') }
+            'wrongFlagType' { $invalid.passed = 'true' }
+            'stringCount' { $invalid.automaticRenewals = '3' }
+            'fractionCount' { $invalid.automaticRenewals = 3.5 }
+            'negativeCount' { $invalid.finalEvidenceVersion = -1 }
+            'tooFewRenewals' { $invalid.automaticRenewals = 2 }
+            'retaggedTicket' { $invalid.originalTicketVersion = 2 }
+            'brokenChain' { $invalid.finalEvidenceVersion = 3 }
+            'privateField' { $invalid.accountId = 'unavailable' }
+            'arrayScenario' { $invalid.scenario = @('authorized-renewal') }
+        }
+        $raw = $invalid | ConvertTo-Json -Compress
+        if ($change -eq 'arrayRoot') { $raw = '[' + $raw + ']' }
+        $rejected = $false
+        try { Convert-ConcurrentFixtureReceipt $raw 'authorized-renewal' | Out-Null } catch { $rejected = $true }
+        if (!$rejected) { throw 'Malformed synthetic authority receipt accepted.' }
+    }
+    Write-Output 'PASS: strict authorized receipt and 13 malformed-report rejections' | Tee-Object -FilePath $log -Append
     $missingConfig = Join-Path $taskRoot 'absent-config\sidecar.json'
     $missingDatabase = Join-Path $taskRoot 'absent-database\sidecar.db'
     $baseArguments = @('--dev-session-reuse', 'synthetic-concurrent-fixture', '--config', $missingConfig, '--database', $missingDatabase)
@@ -76,7 +120,7 @@ try {
             Invoke-Fixture $executable ($baseArguments + '--dev') $payload $false 'strict bounded input rejects ungranted/unsupported payload'
         }
         Invoke-Fixture $executable @('--dev', '--dev-session-reuse', 'native-concurrent', '--config', $missingConfig, '--database', $missingDatabase) $valid $false 'native provider unavailable'
-        foreach ($scenario in @('overlap', 'last-close', 'last-close-denied', 'stale', 'cancel', 'revoked', 'parent-death', 'opt-out', 'strategy-gates', 'broker-gates', 'collector-loss')) {
+        foreach ($scenario in @('overlap', 'last-close', 'last-close-denied', 'stale', 'cancel', 'revoked', 'parent-death', 'opt-out', 'strategy-gates', 'broker-gates', 'collector-loss', 'authorized-renewal', 'authorized-renewal-delay', 'authorized-renewal-failure', 'authorized-account-drift', 'authorized-policy-drift', 'authorized-coverage-gap', 'authorized-opt-out', 'authorized-last-close-denied', 'authorized-parent-cancel')) {
             $payload = @{ grant = 'synthetic-owned-fixture'; scenario = $scenario } | ConvertTo-Json -Compress
             Invoke-Fixture $executable ($baseArguments + '--dev') $payload $true ('actual main ' + $scenario)
         }

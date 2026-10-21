@@ -39,6 +39,18 @@ type concurrentChromeReceipt struct {
 	OverlapVerified bool   `json:"overlapVerified"`
 	CanAuthorize    bool   `json:"canAuthorize"`
 	NativeQualified bool   `json:"nativeQualified"`
+	*concurrentChromeAuthorizationReceipt
+}
+
+type concurrentChromeAuthorizationReceipt struct {
+	AuthoritySelected      bool   `json:"authoritySelected"`
+	AutomaticRenewals      uint64 `json:"automaticRenewals"`
+	ProbesDuringCollect    int    `json:"probesDuringCollect"`
+	OriginalTicketVersion  uint64 `json:"originalTicketVersion"`
+	FinalEvidenceVersion   uint64 `json:"finalEvidenceVersion"`
+	ProtectedRequestMillis int64  `json:"protectedRequestMillis"`
+	StaleDenied            bool   `json:"staleDenied"`
+	DuplicateDenied        bool   `json:"duplicateDenied"`
 }
 
 // RunDevelopmentConcurrentChromeFixture is an explicit early-dispatch QA
@@ -59,7 +71,7 @@ func RunDevelopmentConcurrentChromeFixture(input io.Reader, output io.Writer) er
 	if err != nil {
 		return err
 	}
-	if request.Scenario == "parent-process-death" {
+	if request.Scenario == "parent-process-death" || request.Scenario == "authorized-parent-process-death" {
 		return runConcurrentChromeParentDeath(request, output)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -68,8 +80,12 @@ func RunDevelopmentConcurrentChromeFixture(input io.Reader, output io.Writer) er
 	if err != nil {
 		return err
 	}
-	if request.Scenario == "death-child" {
+	if request.Scenario == "death-child" || request.Scenario == "authorized-death-child" {
 		if err = f.overlap(ctx, false); err == nil {
+			if err = f.renewal.stop(ctx); err != nil {
+				return errors.Join(err, f.close())
+			}
+			f.finalVersion = fixtureAuthorityVersion(f.c)
 			f.server.mu.Lock()
 			logins, overlap := f.server.logins, f.server.overlap
 			f.server.mu.Unlock()
@@ -78,7 +94,8 @@ func RunDevelopmentConcurrentChromeFixture(input io.Reader, output io.Writer) er
 				LoginCount      int    `json:"loginCount"`
 				SeedCount       int    `json:"seedCount"`
 				OverlapVerified bool   `json:"overlapVerified"`
-			}{"owned-pair-ready", logins, f.seeds, overlap})
+				*concurrentChromeAuthorizationReceipt
+			}{"owned-pair-ready", logins, f.seeds, overlap, f.authorizationReceipt()})
 		}
 		if err == nil {
 			<-ctx.Done()
@@ -87,6 +104,7 @@ func RunDevelopmentConcurrentChromeFixture(input io.Reader, output io.Writer) er
 	} else {
 		err = f.run(ctx, request.Scenario)
 	}
+	f.retireRoot = err == nil
 	cleanupErr := f.close()
 	if cleanupErr != nil {
 		cleanupErr = fmt.Errorf("final owned cleanup: %w", cleanupErr)
@@ -100,7 +118,7 @@ func RunDevelopmentConcurrentChromeFixture(input io.Reader, output io.Writer) er
 	if logins != 1 || f.seeds != 1 {
 		return errors.New("synthetic concurrent Chrome login/seed ceiling failed")
 	}
-	return json.NewEncoder(output).Encode(concurrentChromeReceipt{Provider: "synthetic-concurrent-chrome-fixture", Scenario: request.Scenario, Passed: true, CleanupVerified: true, LoginCount: logins, SeedCount: f.seeds, OverlapVerified: overlap})
+	return json.NewEncoder(output).Encode(concurrentChromeReceipt{Provider: "synthetic-concurrent-chrome-fixture", Scenario: request.Scenario, Passed: true, CleanupVerified: true, LoginCount: logins, SeedCount: f.seeds, OverlapVerified: overlap, concurrentChromeAuthorizationReceipt: f.authorizationReceipt()})
 }
 
 func validateConcurrentChromeRoot(request concurrentChromeInput) error {
@@ -139,20 +157,22 @@ func validateConcurrentChromeRoot(request concurrentChromeInput) error {
 }
 
 type concurrentChromeServer struct {
-	mu              sync.Mutex
-	server          *httptest.Server
-	token           string
-	account         string
-	logins          int
-	activeCollector bool
-	overlap         bool
-	entered         chan struct{}
-	release         chan struct{}
-	releaseOnce     sync.Once
+	*controlledSyntheticLifecycle
+	server              *httptest.Server
+	token               string
+	logins              int
+	activeCollector     bool
+	overlap             bool
+	entered             chan struct{}
+	release             chan struct{}
+	releaseOnce         sync.Once
+	probesDuringCollect int
+	collectStarted      time.Time
+	collectEnded        time.Time
 }
 
 func newConcurrentChromeServer() *concurrentChromeServer {
-	f := &concurrentChromeServer{account: "alpha", entered: make(chan struct{}, 1), release: make(chan struct{})}
+	f := &concurrentChromeServer{controlledSyntheticLifecycle: newControlledSyntheticLifecycle("alpha"), entered: make(chan struct{}, 1), release: make(chan struct{})}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -202,9 +222,13 @@ func (f *concurrentChromeServer) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.URL.Path == "/probe" && r.Method == "GET":
+		if f.activeCollector {
+			f.probesDuringCollect++
+		}
 		f.mu.Unlock()
 	case r.URL.Path == "/collect" && r.Method == "POST":
 		f.activeCollector = true
+		f.collectStarted = time.Now()
 		f.mu.Unlock()
 		select {
 		case f.entered <- struct{}{}:
@@ -216,6 +240,7 @@ func (f *concurrentChromeServer) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		f.mu.Lock()
 		f.activeCollector = false
+		f.collectEnded = time.Now()
 		f.mu.Unlock()
 	case r.URL.Path == "/reader" && r.Method == "GET":
 		f.overlap = f.overlap || f.activeCollector
@@ -242,29 +267,35 @@ type concurrentChromeRecord struct {
 }
 
 type concurrentChromeFixture struct {
-	request                concurrentChromeInput
-	ctx                    context.Context
-	cancel                 context.CancelFunc
-	server                 *concurrentChromeServer
-	c                      *concurrentController
-	mu                     sync.Mutex
-	records                map[concurrentRole]*concurrentChromeRecord
-	windows                map[string]int
-	coordinator            *collection.Coordinator
-	loopDone               <-chan struct{}
-	captureDone            <-chan struct{}
-	clockOffset            atomic.Int64
-	seeds                  int
-	grants                 int
-	gateWork               string
-	collectorExited        chan struct{}
-	launches               atomic.Int64
-	heldLease              *captureruntime.Lease
-	rootID                 string
-	diagnostics            []string
-	collectorExitEvents    atomic.Int64
-	readerRetiringEvents   atomic.Int64
-	readerUnexpectedEvents atomic.Int64
+	request                       concurrentChromeInput
+	ctx                           context.Context
+	cancel                        context.CancelFunc
+	server                        *concurrentChromeServer
+	c                             *concurrentController
+	mu                            sync.Mutex
+	records                       map[concurrentRole]*concurrentChromeRecord
+	windows                       map[string]int
+	coordinator                   *collection.Coordinator
+	loopDone                      <-chan struct{}
+	captureDone                   <-chan struct{}
+	clockOffset                   atomic.Int64
+	seeds                         int
+	grants                        int
+	gateWork                      string
+	collectorExited               chan struct{}
+	launches                      atomic.Int64
+	heldLease                     *captureruntime.Lease
+	rootID                        string
+	diagnostics                   []string
+	collectorExitEvents           atomic.Int64
+	readerRetiringEvents          atomic.Int64
+	readerUnexpectedEvents        atomic.Int64
+	authorized                    bool
+	renewal                       *fixtureRenewalLoop
+	originalVersion, finalVersion uint64
+	staleDenied, duplicateDenied  bool
+	retireRoot                    bool
+	collectionRPCInFlight         atomic.Bool
 }
 
 func newConcurrentChromeFixture(parent context.Context, request concurrentChromeInput) (*concurrentChromeFixture, error) {
@@ -275,6 +306,7 @@ func newConcurrentChromeFixture(parent context.Context, request concurrentChrome
 	ctx, cancel := context.WithCancel(parent)
 	f := &concurrentChromeFixture{request: request, ctx: ctx, cancel: cancel, server: newConcurrentChromeServer(), records: make(map[concurrentRole]*concurrentChromeRecord), windows: make(map[string]int), collectorExited: make(chan struct{})}
 	f.rootID = rootID
+	f.authorized = isAuthorizedFixtureScenario(request.Scenario)
 	readerRoot, collectorRoot := filepath.Join(request.Root, "run-reader"), filepath.Join(request.Root, "run-collector")
 	for _, root := range []string{readerRoot, collectorRoot} {
 		if err := os.Mkdir(root, 0700); err != nil {
@@ -295,7 +327,13 @@ func newConcurrentChromeFixture(parent context.Context, request concurrentChrome
 		cancel()
 		return nil, err
 	}
-	f.c, err = newConcurrentController(ctx, concurrentConfig{Enabled: true, DevBuild: true, FixtureBuild: true, OwnerGrant: true, ControllerGrant: true, Provider: concurrentProvider, AttemptID: "synthetic:attempt:chrome", ParentID: "synthetic:parent:chrome", ExpectedAccountID: "synthetic:account:alpha", ExpectedRevision: "synthetic:revision:fixture-1", ReaderProfileID: "synthetic:profile:chrome-reader", ReaderDirectoryID: "synthetic:directory:" + readerID, CollectorProfileID: "synthetic:profile:chrome-collector", CollectorDirectoryID: "synthetic:directory:" + collectorID, IndependentCollector: request.Scenario != "last-close-denied", now: f.now}, concurrentPorts{owners: f, verifier: f, permit: f})
+	cfg := concurrentConfig{Enabled: true, DevBuild: true, FixtureBuild: true, OwnerGrant: true, ControllerGrant: true, Provider: concurrentProvider, AttemptID: "synthetic:attempt:chrome", ParentID: "synthetic:parent:chrome", ExpectedAccountID: "synthetic:account:alpha", ExpectedRevision: "synthetic:revision:fixture-1", ReaderProfileID: "synthetic:profile:chrome-reader", ReaderDirectoryID: "synthetic:directory:" + readerID, CollectorProfileID: "synthetic:profile:chrome-collector", CollectorDirectoryID: "synthetic:directory:" + collectorID, IndependentCollector: request.Scenario != "last-close-denied", now: f.now}
+	if f.authorized {
+		cfg.now, cfg.ExpectedRevision, cfg.IndependentCollector = time.Now, "", false
+		f.c, err = newAuthorizedConcurrentController(ctx, cfg, concurrentPorts{owners: f}, controlledFixtureAuthorization("alpha", f.server.controlledSyntheticLifecycle, f.collectAuthorized))
+	} else {
+		f.c, err = newConcurrentController(ctx, cfg, concurrentPorts{owners: f, verifier: f, permit: f})
+	}
 	if err != nil {
 		f.server.server.Close()
 		cancel()
@@ -701,7 +739,12 @@ func (f *concurrentChromeFixture) Capture(ctx context.Context, source domain.Sou
 		return domain.Observation{}, errConcurrentUnavailable
 	}
 	record := f.records[concurrentCollector]
-	err := record.bridge.collect(ctx, record.process.owner)
+	var err error
+	if f.authorized {
+		err = f.collectAuthorizedRPC(ctx, record)
+	} else {
+		err = record.bridge.collect(ctx, record.process.owner)
+	}
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
@@ -794,6 +837,10 @@ func (f *concurrentChromeFixture) overlap(ctx context.Context, complete bool) er
 	if err != nil {
 		return err
 	}
+	if f.authorized {
+		f.originalVersion = ticket.EvidenceVersion
+		f.renewal = startFixtureRenewalLoop(f.ctx, f.c)
+	}
 	if complete {
 		defer lease.Release()
 	} else {
@@ -838,6 +885,9 @@ func (f *concurrentChromeFixture) overlap(ctx context.Context, complete bool) er
 }
 
 func (f *concurrentChromeFixture) run(ctx context.Context, scenario string) error {
+	if f.authorized {
+		return f.runAuthorized(ctx, scenario)
+	}
 	if err := f.duplicateGates(ctx); err != nil {
 		return err
 	}
@@ -1010,6 +1060,9 @@ func (f *concurrentChromeFixture) close() error {
 	f.server.unblock()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	if err := f.renewal.stop(ctx); err != nil {
+		return err
+	}
 	var failures []error
 	if f.loopDone != nil {
 		select {
@@ -1058,6 +1111,9 @@ func (f *concurrentChromeFixture) close() error {
 	f.server.server.Close()
 	if len(failures) > 0 {
 		return errors.Join(failures...)
+	}
+	if !f.retireRoot {
+		return nil
 	}
 	if err := removeConcurrentChromeRoot(f.request.Root, f.rootID); err != nil {
 		return fmt.Errorf("profile root retirement: %w", err)
@@ -1175,24 +1231,37 @@ func runConcurrentChromeParentDeath(request concurrentChromeInput, output io.Wri
 	if err != nil || len(pids) != 1 || pids[0] != identity.PID {
 		return errors.New("synthetic concurrent Chrome parent observer initial membership invalid")
 	}
+	authorized := request.Scenario == "authorized-parent-process-death"
+	scenario := request.Scenario
 	request.Scenario = "death-child"
+	if authorized {
+		request.Scenario = "authorized-death-child"
+	}
 	if err = json.NewEncoder(stdin).Encode(request); err != nil {
 		return err
 	}
 	_ = stdin.Close()
 	ready := make(chan error, 1)
+	var childAuthority concurrentChromeAuthorizationReceipt
 	go func() {
 		var receipt struct {
 			Stage           string `json:"stage"`
 			LoginCount      int    `json:"loginCount"`
 			SeedCount       int    `json:"seedCount"`
 			OverlapVerified bool   `json:"overlapVerified"`
+			*concurrentChromeAuthorizationReceipt
+		}
+		if authorized {
+			receipt.concurrentChromeAuthorizationReceipt = &concurrentChromeAuthorizationReceipt{}
 		}
 		decoder := json.NewDecoder(io.LimitReader(stdout, 1024))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&receipt); err != nil || receipt.Stage != "owned-pair-ready" || receipt.LoginCount != 1 || receipt.SeedCount != 1 || !receipt.OverlapVerified {
+		if err := decoder.Decode(&receipt); err != nil || receipt.Stage != "owned-pair-ready" || receipt.LoginCount != 1 || receipt.SeedCount != 1 || !receipt.OverlapVerified || (receipt.concurrentChromeAuthorizationReceipt != nil) != authorized || (authorized && (!receipt.AuthoritySelected || receipt.OriginalTicketVersion == 0 || receipt.FinalEvidenceVersion < receipt.OriginalTicketVersion)) {
 			ready <- errors.New("synthetic concurrent Chrome parent child readiness rejected")
 		} else {
+			if authorized {
+				childAuthority = *receipt.concurrentChromeAuthorizationReceipt
+			}
 			ready <- nil
 		}
 	}()
@@ -1286,5 +1355,9 @@ func runConcurrentChromeParentDeath(request concurrentChromeInput, output io.Wri
 	if err = removeConcurrentChromeRoot(request.Root, rootID); err != nil {
 		return err
 	}
-	return json.NewEncoder(output).Encode(concurrentChromeReceipt{Provider: "synthetic-concurrent-chrome-fixture", Scenario: "parent-process-death", Passed: true, CleanupVerified: true, LoginCount: 1, SeedCount: 1, OverlapVerified: true})
+	var authorityReceipt *concurrentChromeAuthorizationReceipt
+	if authorized {
+		authorityReceipt = &childAuthority
+	}
+	return json.NewEncoder(output).Encode(concurrentChromeReceipt{Provider: "synthetic-concurrent-chrome-fixture", Scenario: scenario, Passed: true, CleanupVerified: true, LoginCount: 1, SeedCount: 1, OverlapVerified: true, concurrentChromeAuthorizationReceipt: authorityReceipt})
 }

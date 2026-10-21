@@ -34,6 +34,9 @@ func parseConcurrentChromeInput(input io.Reader) (concurrentChromeInput, error) 
 		return request, invalid
 	}
 	allowed := map[string]bool{"overlap-last-close": true, "opt-out": true, "collector-loss": true, "last-close-denied": true, "mismatch": true, "expiry": true, "parent-cancel": true, "parent-process-death": true, "death-child": true}
+	for _, name := range []string{"authorized-renewal", "authorized-renewal-delay", "authorized-renewal-failure", "authorized-account-drift", "authorized-policy-drift", "authorized-coverage-gap", "authorized-opt-out", "authorized-last-close-denied", "authorized-parent-process-death", "authorized-death-child"} {
+		allowed[name] = true
+	}
 	if !allowed[request.Scenario] {
 		return request, invalid
 	}

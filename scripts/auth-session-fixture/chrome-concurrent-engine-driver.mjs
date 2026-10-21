@@ -4,6 +4,8 @@ import readline from 'node:readline';
 import { launchFixtureChrome } from './chrome.mjs';
 import { inventoryFixtureWindows, closeFixtureWindow } from './chrome-window-lifecycle.mjs';
 import { concurrentEngineCommand, concurrentFixtureCookie } from './concurrent-engine-commands.mjs';
+import { createConcurrentDriverDispatch } from './concurrent-driver-dispatch.mjs';
+import { collectProtectedFixture } from './concurrent-protected-collection.mjs';
 
 const [executable, root, origin] = process.argv.slice(2);
 if (process.argv.length !== 5) process.exit(2);
@@ -50,8 +52,7 @@ async function execute(message) {
     }
     case 'collect': {
       if (browser.role !== 'collector' || !seeded) throw new Error('fixture_concurrent_collection_invalid');
-      const response = await page.request('/collect', 'POST');
-      return { status: response?.status === 200 ? 200 : 0, item: response?.body?.postId === 'fixture-post-1' };
+      return collectProtectedFixture(page);
     }
     case 'reader_request': {
       if (browser.role !== 'owner') throw new Error('fixture_concurrent_reader_invalid');
@@ -84,24 +85,28 @@ async function execute(message) {
 }
 setInterval(() => { if (browser?.isExited() && owner && !exitSent) { exitSent = true; emit({ event: 'chrome_exit', owner }); } }, 25).unref();
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-let chain = Promise.resolve();
+const dispatch = createConcurrentDriverDispatch(async message => {
+  if (!ready) {
+    if (message.op !== 'fixture_bootstrap') throw new Error('fixture_concurrent_bootstrap_invalid');
+    ready = true; return undefined;
+  }
+  if (message.op === 'fixture_bootstrap') throw new Error('fixture_concurrent_bootstrap_reuse');
+  return execute(message);
+});
 input.on('line', line => {
-  chain = chain.then(async () => {
+  void (async () => {
     let message;
     try {
       if (line.length > 8192) throw new Error('fixture_concurrent_frame_invalid');
       message = concurrentEngineCommand(JSON.parse(line));
-      if (!ready) {
-        if (message.op !== 'fixture_bootstrap') throw new Error('fixture_concurrent_bootstrap_invalid');
-        ready = true; emit({ ready: true }); return;
-      }
-      if (message.op === 'fixture_bootstrap') throw new Error('fixture_concurrent_bootstrap_reuse');
-      emit({ id: message.id, ok: true, result: await execute(message) });
+      const result = await dispatch(message);
+      if (message.op === 'fixture_bootstrap') emit({ ready: true });
+      else emit({ id: message.id, ok: true, result });
     } catch (error) {
       const fixed = typeof error?.message === 'string' && /^(fixture|invalid_fixture)_[a-z0-9_]+$/.test(error.message) ? error.message : '';
       const cdp = /^fixture_cdp_([A-Za-z]+)\.([A-Za-z]+)_(failed|timeout)$/.exec(error?.message ?? '');
       const code = fixed || (cdp ? `fixture_concurrent_cdp_${cdp[1].toLowerCase()}_${cdp[2].toLowerCase()}_${cdp[3]}` : 'fixture_concurrent_command_rejected');
       emit({ id: Number.isSafeInteger(message?.id) ? message.id : 0, ok: false, code });
     }
-  });
+  })();
 });

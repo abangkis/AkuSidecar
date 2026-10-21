@@ -1,4 +1,4 @@
-param([switch]$VerifyChrome,[Alias('Scenario')][ValidateSet('overlap-last-close','opt-out','collector-loss','last-close-denied','mismatch','expiry','parent-cancel','parent-process-death')][string[]]$SelectedScenarios = @('overlap-last-close','opt-out','collector-loss','last-close-denied','mismatch','expiry','parent-cancel','parent-process-death'))
+param([switch]$VerifyChrome,[Alias('Scenario')][ValidateSet('overlap-last-close','opt-out','collector-loss','last-close-denied','mismatch','expiry','parent-cancel','parent-process-death','authorized-renewal','authorized-renewal-delay','authorized-renewal-failure','authorized-account-drift','authorized-policy-drift','authorized-coverage-gap','authorized-opt-out','authorized-last-close-denied','authorized-parent-process-death')][string[]]$SelectedScenarios = @('overlap-last-close','opt-out','collector-loss','last-close-denied','mismatch','expiry','parent-cancel','parent-process-death'))
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
@@ -19,13 +19,25 @@ $previous = @{}
 foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
 
 function Convert-ConcurrentChromeReceipt([string]$Raw,[string]$ExpectedScenario) {
-    $reply = $Raw | ConvertFrom-Json -ErrorAction Stop
+    $reply = $Raw | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
+    if ($null -eq $reply -or $reply -is [array]) { throw 'Concurrent Chrome receipt object rejected.' }
     $fields = @($reply.PSObject.Properties.Name | Sort-Object)
     $allowed = @('canAuthorize','cleanupVerified','loginCount','nativeQualified','overlapVerified','passed','provider','scenario','seedCount' | Sort-Object)
+    $authorized = $ExpectedScenario.StartsWith('authorized-', [StringComparison]::Ordinal)
+    if ($authorized) { $allowed = @($allowed + @('authoritySelected','automaticRenewals','probesDuringCollect','originalTicketVersion','finalEvidenceVersion','protectedRequestMillis','staleDenied','duplicateDenied') | Sort-Object) }
     if (($fields -join ',') -ne ($allowed -join ',') -or $reply.provider -isnot [string] -or $reply.scenario -isnot [string] -or $reply.provider -ne 'synthetic-concurrent-chrome-fixture' -or $reply.scenario -ne $ExpectedScenario) { throw 'Concurrent Chrome bounded receipt fields rejected.' }
     foreach ($name in @('passed','cleanupVerified','overlapVerified','canAuthorize','nativeQualified')) { if ($reply.$name -isnot [bool]) { throw 'Concurrent Chrome receipt boolean type rejected.' } }
     if (!$reply.passed -or !$reply.cleanupVerified -or !$reply.overlapVerified -or $reply.canAuthorize -or $reply.nativeQualified) { throw 'Concurrent Chrome receipt authority/acceptance rejected.' }
     foreach ($name in @('loginCount','seedCount')) { if (($reply.$name -isnot [int] -and $reply.$name -isnot [long]) -or $reply.$name -ne 1) { throw 'Concurrent Chrome receipt one-login/seed ceiling rejected.' } }
+    if ($authorized) {
+        foreach ($name in @('authoritySelected','staleDenied','duplicateDenied')) { if ($reply.$name -isnot [bool]) { throw 'Authorized Chrome receipt flag type rejected.' } }
+        if (!$reply.authoritySelected) { throw 'Authorized Chrome authority selection rejected.' }
+        foreach ($name in @('automaticRenewals','probesDuringCollect','originalTicketVersion','finalEvidenceVersion','protectedRequestMillis')) {
+            if (($reply.$name -isnot [int] -and $reply.$name -isnot [long]) -or $reply.$name -lt 0 -or $reply.$name -gt 100000) { throw 'Authorized Chrome receipt counter rejected.' }
+        }
+        if ($reply.protectedRequestMillis -gt 45000 -or $reply.originalTicketVersion -lt 1 -or $reply.finalEvidenceVersion -lt $reply.originalTicketVersion) { throw 'Authorized Chrome receipt duration/version rejected.' }
+        if ($ExpectedScenario -eq 'authorized-renewal' -and ($reply.automaticRenewals -lt 3 -or $reply.probesDuringCollect -lt (2 * $reply.automaticRenewals) -or $reply.originalTicketVersion -ne 1 -or $reply.finalEvidenceVersion -lt ($reply.originalTicketVersion + $reply.automaticRenewals) -or $reply.protectedRequestMillis -lt 10000 -or !$reply.staleDenied -or !$reply.duplicateDenied)) { throw 'Authorized Chrome uninterrupted renewal evidence rejected.' }
+    }
     return $reply
 }
 
@@ -47,6 +59,7 @@ function Invoke-ConcurrentChrome([string]$Executable,[string[]]$Arguments,[strin
             $expected = $Payload | ConvertFrom-Json
             $reply = Convert-ConcurrentChromeReceipt $result $expected.scenario
             if (Test-Path -LiteralPath $expected.root) { throw 'Successful fixture retained an unverified profile root.' }
+            if ($expected.scenario.StartsWith('authorized-', [StringComparison]::Ordinal)) { Write-Output ('RECEIPT: ' + ($reply | ConvertTo-Json -Compress)) | Tee-Object -FilePath $log -Append }
         } elseif ($process.ExitCode -eq 0 -or $result -notmatch '(development session|synthetic concurrent)') { throw ('Concurrent Chrome rejection gate failed: ' + $Label + ' ' + $result) }
         Write-Output ('PASS: ' + $Label) | Tee-Object -FilePath $log -Append
     } finally {
@@ -89,8 +102,45 @@ try {
         if (!$rejected) { throw 'Malformed concurrent Chrome receipt accepted.' }
     }
     Write-Output 'PASS: fixed receipt fields/types, one-login/seed ceiling, false authority and malformed-report rejections' | Tee-Object -FilePath $log -Append
+    $authorizedReceipt = $receipt.Clone()
+    $authorizedReceipt.scenario = 'authorized-renewal'
+    $authorizedReceipt.authoritySelected = $true; $authorizedReceipt.automaticRenewals = 3; $authorizedReceipt.probesDuringCollect = 6
+    $authorizedReceipt.originalTicketVersion = 1; $authorizedReceipt.finalEvidenceVersion = 4; $authorizedReceipt.protectedRequestMillis = 10000
+    $authorizedReceipt.staleDenied = $true; $authorizedReceipt.duplicateDenied = $true
+    Convert-ConcurrentChromeReceipt ($authorizedReceipt | ConvertTo-Json -Compress) 'authorized-renewal' | Out-Null
+    foreach ($change in @('unselected','missingRenewals','renewalsString','renewalsFraction','negativeProbes','insufficientRenewals','insufficientProbes','retaggedTicket','brokenVersionChain','shortCapture','overlongCapture','staleNotDenied','duplicateNotDenied','authority','privateField','arrayRoot','flagArray')) {
+        $invalid = $authorizedReceipt.Clone()
+        switch ($change) {
+            'unselected' { $invalid.authoritySelected = $false }
+            'missingRenewals' { $invalid.Remove('automaticRenewals') }
+            'renewalsString' { $invalid.automaticRenewals = '3' }
+            'renewalsFraction' { $invalid.automaticRenewals = 3.5 }
+            'negativeProbes' { $invalid.probesDuringCollect = -1 }
+            'insufficientRenewals' { $invalid.automaticRenewals = 2 }
+            'insufficientProbes' { $invalid.probesDuringCollect = 5 }
+            'retaggedTicket' { $invalid.originalTicketVersion = 2 }
+            'brokenVersionChain' { $invalid.finalEvidenceVersion = 3 }
+            'shortCapture' { $invalid.protectedRequestMillis = 9999 }
+            'overlongCapture' { $invalid.protectedRequestMillis = 45001 }
+            'staleNotDenied' { $invalid.staleDenied = $false }
+            'duplicateNotDenied' { $invalid.duplicateDenied = $false }
+            'authority' { $invalid.canAuthorize = $true }
+            'privateField' { $invalid.accountId = 'unavailable' }
+            'flagArray' { $invalid.authoritySelected = @($true) }
+        }
+        $raw = $invalid | ConvertTo-Json -Compress
+        if ($change -eq 'arrayRoot') { $raw = '[' + $raw + ']' }
+        $rejected = $false
+        try { Convert-ConcurrentChromeReceipt $raw 'authorized-renewal' | Out-Null } catch { $rejected = $true }
+        if (!$rejected) { throw 'Malformed authorized Chrome receipt accepted.' }
+    }
+    Write-Output 'PASS: authorized receipt exact fields/types, renewal/probe/version/duration thresholds and 17 malformed-report rejections' | Tee-Object -FilePath $log -Append
     & $node --test scripts/auth-session-fixture/concurrent-engine-commands.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Concurrent Chrome offline RPC boundaries failed.' }
+    & $node --test scripts/auth-session-fixture/concurrent-driver-dispatch.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
+    if ($LASTEXITCODE -ne 0) { throw 'Concurrent Chrome bounded dispatch regression failed.' }
+    & $node --test scripts/auth-session-fixture/concurrent-protected-collection.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
+    if ($LASTEXITCODE -ne 0) { throw 'Concurrent Chrome protected collection regression failed.' }
     & go test -tags 'auth_session_dev auth_session_fixture' -count=1 -timeout=30s -v internal/engine/development_concurrent_chrome_input.go internal/engine/development_concurrent_chrome_input_test.go 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Concurrent Chrome offline input boundaries failed.' }
     $executable = Join-Path $taskRoot 'akusidecar.exe'

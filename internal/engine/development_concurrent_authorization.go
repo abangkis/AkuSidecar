@@ -147,7 +147,25 @@ type authorizationConfig struct {
 	reader        processOwner
 	collector     processOwner
 	policyEnabled bool
+	// Only an explicitly granted controlled synthetic source may install this
+	// local lifecycle barrier. Identity/authentication still require probes.
+	lifecycleBarrier syntheticLifecycleBarrier
 }
+
+type syntheticLifecycleRequest struct {
+	enrollment                         enrollment
+	pair                               pairIdentity
+	reader, collector                  processOwner
+	readerRevision, collectorRevision  string
+	readerFrom, collectorFrom, barrier time.Time
+}
+
+// Lock order is controller -> authority -> controlled-source lifecycle mutex.
+// The callback performs bounded local checks only: no IO, controller/authority
+// calls, or re-entry. On success it holds the source mutation lock until the
+// returned release runs after the dispatch/claim/sink transition. Source writers
+// never call authority while holding that lock. Nil preserves offline semantics.
+type syntheticLifecycleBarrier func(syntheticLifecycleRequest) (release func(), covered bool)
 
 type derivationReceipt struct {
 	instanceID             string
@@ -1031,9 +1049,11 @@ func (a *concurrentAuthorization) dispatch(command workCommand) (workTicket, err
 	if err := a.validateChainLocked(a.permit.evidenceVersion, a.permit.evidenceVersion); err != nil {
 		return workTicket{}, err
 	}
-	if !a.coverageAtBarrierLocked(a.lastClock) {
+	release, covered := a.acquireCoverageBarrierLocked(a.lastClock)
+	if !covered {
 		return workTicket{}, authError(reasonCoverageGap)
 	}
+	defer release()
 	if ticketExistsForCommand(a.tickets, command.id) {
 		return workTicket{}, authError(reasonDuplicateResult)
 	}
@@ -1081,9 +1101,11 @@ func (a *concurrentAuthorization) claimWithCommit(ticket workTicket, commit func
 	if err := a.requireCurrentPermitLocked(); err != nil {
 		return err
 	}
-	if !a.coverageAtBarrierLocked(a.lastClock) {
+	release, covered := a.acquireCoverageBarrierLocked(a.lastClock)
+	if !covered {
 		return authError(reasonCoverageGap)
 	}
+	defer release()
 	record, err := a.ticketRecordLocked(ticket)
 	if err != nil {
 		return err
@@ -1123,9 +1145,11 @@ func (a *concurrentAuthorization) completeWithCommit(ticket workTicket, result f
 	if err := a.requireCurrentPermitLocked(); err != nil {
 		return err
 	}
-	if !a.coverageAtBarrierLocked(a.lastClock) {
+	release, covered := a.acquireCoverageBarrierLocked(a.lastClock)
+	if !covered {
 		return authError(reasonCoverageGap)
 	}
+	defer release()
 	record, err := a.ticketRecordLocked(ticket)
 	if err != nil {
 		return err
@@ -1242,6 +1266,28 @@ func (a *concurrentAuthorization) coverageAtBarrierLocked(barrier time.Time) boo
 	return !a.coverageThrough[readerRole].Before(barrier) && !a.coverageThrough[collectorRole].Before(barrier) && !a.permit.readerCoverageThrough.Before(barrier) && !a.permit.collectorCoverageThrough.Before(barrier)
 }
 
+func (a *concurrentAuthorization) acquireCoverageBarrierLocked(barrier time.Time) (func(), bool) {
+	if a.config.lifecycleBarrier == nil {
+		return func() {}, a.coverageAtBarrierLocked(barrier)
+	}
+	if a.permit == nil || !validFixtureGrant(a.grant) || a.config.enrollment.sourceID != fixtureSourceID {
+		return nil, false
+	}
+	release, covered := a.config.lifecycleBarrier(syntheticLifecycleRequest{
+		enrollment: a.config.enrollment, pair: a.config.pair,
+		reader: cloneOwner(a.permit.readerOwner), collector: cloneOwner(a.permit.collectorOwner),
+		readerRevision: a.permit.readerRevision, collectorRevision: a.permit.collectorRevision,
+		readerFrom: a.permit.readerCoverageThrough, collectorFrom: a.permit.collectorCoverageThrough, barrier: barrier,
+	})
+	if !covered || release == nil {
+		if release != nil {
+			release()
+		}
+		return nil, false
+	}
+	return release, true
+}
+
 func (a *concurrentAuthorization) check() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1254,7 +1300,18 @@ func (a *concurrentAuthorization) check() error {
 		}
 		return nil
 	}
-	return a.requireCurrentPermitLocked()
+	if err := a.requireCurrentPermitLocked(); err != nil {
+		return err
+	}
+	if a.config.lifecycleBarrier != nil {
+		release, covered := a.acquireCoverageBarrierLocked(a.lastClock)
+		if !covered {
+			a.revokeLocked(reasonCoverageGap)
+			return authError(reasonCoverageGap)
+		}
+		release()
+	}
+	return nil
 }
 
 func (a *concurrentAuthorization) revoke() {
