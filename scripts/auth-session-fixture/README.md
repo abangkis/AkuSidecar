@@ -177,6 +177,23 @@ runtime is used. The temporary build root was removed. Details and native
 acceptance limits are in the
 [owner/broker checkpoint](../../docs/x-native-manual-pilot.md#ownerbroker-startup-binding-2026-10-21).
 
+For actual Windows/Chrome ownership with invented loopback account data, run
+`.\scripts\test-native-manual-pilot-chrome.ps1 -VerifyChrome`. Without that switch
+the helper runs only three Node boundary tests, four tag checks and standalone
+compilation. Chrome execution creates fresh role profiles, checks actual
+process/image/creation/parent/Job and physical-directory identities, and freezes
+real startup document pins before acquisition. The named-file binary excludes
+Engine initialization and Store; exact source/extraction hashes are retained.
+Run `881a30d5861441589ed3ad981adb3819` passed both Chrome cases: reader/collector
+ownership with bootstrap/last-window handling and one result, plus rejection of
+startup context loss. Owned Jobs were verified empty and fresh profiles removed.
+Logs/provenance remain in project-local QA; no user click or login is required.
+
+This fixture remains offline for authorization. It contacts no X endpoint, uses
+no retained profile and transfers no real session. It neither registers a main
+provider nor touches Store or user runtime. Full evidence and limits are in the
+[Windows/Chrome checkpoint](../../docs/x-native-manual-pilot.md#windowschrome-synthetic-ownership-checkpoint-2026-10-22).
+
 ## Offline bounded dev snapshot pilot (V1 reference)
 
 The separate pilot model follows

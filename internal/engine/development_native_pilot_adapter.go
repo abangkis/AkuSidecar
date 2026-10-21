@@ -191,7 +191,10 @@ func validNativePilotBinding(b nativePilotBinding) bool {
 			return false
 		}
 	}
-	return nativePilotAccount(b.account) && b.policy > 0 && b.consent > 0 && validNativePilotOwner(r, "reader") && validNativePilotOwner(c, "collector") && r.owner != c.owner && r.profile != c.profile && r.directory != c.directory && r.pid != c.pid && r.context != c.context && r.parent == c.parent
+	// CDP context IDs are scoped to their pinned process/session. Equal lexical
+	// values in distinct owned processes do not merge those contexts. Per-role
+	// receipt validation still compares the entire owner/process/context tuple.
+	return nativePilotAccount(b.account) && b.policy > 0 && b.consent > 0 && validNativePilotOwner(r, "reader") && validNativePilotOwner(c, "collector") && r.owner != c.owner && r.profile != c.profile && r.directory != c.directory && r.pid != c.pid && r.parent == c.parent
 }
 func nativePilotAccount(s string) bool {
 	if len(s) < 1 || len(s) > 20 || s[0] < '1' || s[0] > '9' {

@@ -1,0 +1,47 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+// Fixed source allowlist; never stage Engine initialization or Store imports.
+const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const task = path.resolve(process.argv[2] ?? '');
+const parent = path.join(project, 'runtime', 'qa', 'auth-session-sidecar');
+const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+if (!same(path.dirname(task), parent) || !path.basename(task).startsWith('run-') ||
+    !fs.statSync(task).isDirectory() || !same(fs.realpathSync(task), task)) throw new Error('standalone_stage_scope_invalid');
+const stage = path.join(task, 'go-src');
+fs.mkdirSync(stage);
+const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+const files = ['chrome_fixture_windows.go', 'development_native_pilot_adapter.go',
+  'development_native_pilot_startup.go', 'development_native_pilot_controller.go',
+  'development_native_pilot_broker.go', 'native_manual_pilot_chrome_windows_test.go'];
+const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
+for (const file of files) {
+  const relative = `internal/engine/${file}`, bytes = fs.readFileSync(path.join(project, relative));
+  fs.writeFileSync(path.join(stage, file), bytes, { flag: 'wx' });
+  manifest.copied.push({ source: relative, sha256: hash(bytes) });
+}
+const original = fs.readFileSync(path.join(project, 'internal/engine/process_fixture_windows.go'), 'utf8');
+const extract = name => {
+  const start = original.indexOf(`func ${name}(`);
+  if (start < 0 || original.indexOf(`func ${name}(`, start + 1) >= 0) throw new Error('standalone_function_unavailable');
+  const end = original.indexOf('\nfunc ', start + 1);
+  if (end < 0) throw new Error('standalone_function_unbounded');
+  const text = original.slice(start, end).trimEnd() + '\n';
+  manifest.extracted.push({ source: 'internal/engine/process_fixture_windows.go', name, sha256: hash(text) });
+  return text;
+};
+const names = ['processFixtureProcessIdentity', 'processFixtureIdentityFromHandle', 'processFixtureDirectoryID',
+  'processFixtureWindowPID', 'processFixtureWindows', 'processFixtureWindowsGone', 'processFixtureWait'];
+const declaration = 'var processFixtureUser = windows.NewLazySystemDLL("user32.dll")';
+if (!original.includes(declaration)) throw new Error('standalone_window_source_unavailable');
+const templatePath = path.join(project, 'scripts/auth-session-fixture/native-manual-chrome-support.go.txt');
+const template = fs.readFileSync(templatePath, 'utf8');
+const support = `${template}\n${declaration}\n\n${names.map(extract).join('\n')}`;
+fs.writeFileSync(path.join(stage, 'native_manual_chrome_support_windows.go'), support, { flag: 'wx' });
+manifest.originalProcessSourceSHA256 = hash(original);
+manifest.supportTemplateSHA256 = hash(template);
+manifest.generatedSupportSHA256 = hash(support);
+fs.writeFileSync(path.join(task, 'staging-provenance.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+process.stdout.write(JSON.stringify({ stage, files: [...files, 'native_manual_chrome_support_windows.go'] }) + '\n');

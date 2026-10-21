@@ -21,12 +21,25 @@ identity acquisition: both roles prepare at a held normal pause, Go freezes the
 inspected pair, and random-challenge acquisition releases the same handles without
 reloading. Accountless acceptance passed 44 Node tests, 7 Go tests/20 subcases,
 four tag gates and two Engine builds. Partial/late cleanup and changed documents
-fail closed. This is offline binding evidence with invented OS ownership, not
-native Windows/Chrome acceptance or runtime activation. The private driver hook
-remains default-off; no main provider is registered. Native owner/transport
-instantiation and bounded QA acceptance remain before dev activation. Do not
+fail closed. That initial binding acceptance used invented OS ownership;
+the subsequent actual Windows/Chrome synthetic check is recorded below.
+The private driver hook remains default-off; no main provider is registered.
+Native X owner/transport composition and bounded QA acceptance remain before dev activation. Do not
 reopen the deferred no-reload identity/parser investigation. See the
 [owner/broker checkpoint](x-native-manual-pilot.md#ownerbroker-startup-binding-2026-10-21).
+The owner/broker increment is now published as `80b73a6`. Subsequent fresh-profile
+Windows/Chrome synthetic acceptance passed in run
+`881a30d5861441589ed3ad981adb3819`: actual process/Job/physical-directory and
+paused-document ownership, preserved collector during a second reader window,
+bootstrap/last-window handling, exactly-once in-memory completion, context-loss
+rejection and verified owned-tree cleanup. Three Node boundary tests and four
+tag checks also passed. An adapter regression fixes process-scoped CDP context
+IDs without relaxing complete owner/receipt binding (12 tests/67 subcases,
+four tag checks and two compilation modes). See the
+[Windows/Chrome checkpoint](x-native-manual-pilot.md#windowschrome-synthetic-ownership-checkpoint-2026-10-22).
+This closes synthetic OS ownership only. Native X owner-port composition and its
+separate QA authorization remain before main-dev activation; all authority flags
+stay false, with no main provider, Store or user-runtime change.
 The published synthetic integration is `6320295`; its snapshot V1 policy remains
 unchanged and is not silently reinterpreted as manual V2.
 

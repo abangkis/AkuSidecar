@@ -1,0 +1,38 @@
+//go:build windows && auth_session_dev && auth_session_fixture
+
+package engine
+
+// Standalone named-file support for the unchanged private Chrome fixture bridge.
+// Exact process/directory/window functions are appended from their original
+// source by stage-native-manual-chrome.mjs, with SHA-256 provenance. No Engine,
+// Store, runtime dispatch or retained-profile implementation is imported.
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+type processFixtureIdentity struct { PID uint32; Created string }
+type processFixtureGrant struct {
+	Nonce string
+	Parent processFixtureIdentity
+	Reopen, profilePrepared bool
+}
+type processFixtureStart struct { Grant processFixtureGrant; PolicyRecovery *struct{} }
+type SyntheticSessionEvidence struct { Authenticated bool; AccountID, Revision string }
+
+// Native grants/recovery are intentionally unavailable in this standalone
+// synthetic harness. Unused bridge branches must fail rather than fake success.
+func validateProcessFixtureGrant(string, *processFixtureGrant) error {
+	return errors.New("standalone-process-grant-unavailable")
+}
+func validateProcessFixtureStartScope(string, processFixtureStart) error {
+	return errors.New("standalone-process-grant-unavailable")
+}

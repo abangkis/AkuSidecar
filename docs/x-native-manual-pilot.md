@@ -243,3 +243,65 @@ user runtime was used. The owner/broker binding code is connected and verified
 offline; native Windows ownership/transport instantiation and bounded native QA
 acceptance remain unproven. Main-dev activation still requires its own explicit
 authorization, with the existing Store compatibility boundary unchanged.
+
+## Windows/Chrome synthetic ownership checkpoint (2026-10-22)
+
+The preceding 16-file owner/broker increment was reviewed and published as
+`80b73a6ca491e8313bf0cac1c500f57f48cec9e5`, with origin/main verified. The next
+authorized test instantiates that private broker using real Windows process,
+Job, physical-directory and Chrome document checks, while all account/login
+evidence remains invented loopback data with explicit offline provenance.
+
+Run `scripts/test-native-manual-pilot-chrome.ps1` for three Node boundary tests,
+four build-tag checks and standalone compilation. Add `-VerifyChrome` to run the
+two accountless Chrome scenarios. Each scenario creates fresh, distinct reader
+and headless profiles, one synthetic loopback login and one invented-cookie seed.
+The original bridge and selected process/window functions are staged unchanged
+with SHA-256 provenance. Engine initialization, Store and user-runtime dispatch
+are excluded from the named-file test binary; unused grant/recovery branches
+reject rather than simulate native authority.
+
+Canonical Chrome run `881a30d5861441589ed3ad981adb3819` passed both scenarios
+(2.69 seconds total), the three Node tests and four tag checks:
+
+- Actual Node/Chrome executable paths, PID creation identities, parent chain,
+  separate Windows Jobs and distinct physical profile directories are checked.
+  Node is assigned to its Job before Chrome can launch. Both startup documents
+  pause normally, and actual target/frame/loader/context pins are frozen before
+  challenge-bound acquisition. The original joint two-second evidence bound,
+  five-second initial age and absolute 60-second attempt limit are unchanged.
+- Opening another real reader window preserves the collector's process,
+  generation, profile and document. Bootstrap remains in the window inventory.
+  The in-memory work/result sink accepts exactly one completion and rejects its
+  duplicate. Closing the independent window preserves bootstrap; closing the
+  final reader window revokes offline admission.
+- Destroying the prepared startup target rejects acquisition. Every role tree
+  is retired, Node/root exit is observed and owned Jobs are verified empty before
+  disposable profile deletion. This tests explicit owned-tree cleanup; it does
+  not add a new abrupt Sidecar-parent-death acceptance claim.
+
+Real Chrome exposed one adapter assumption: execution-context IDs are scoped to
+their owning process/session, so both roles can legitimately report the bare
+value `2`. Distinct PID/owner/profile/physical-directory checks remain mandatory;
+per-role receipts still bind the complete owner/context tuple. The new regression
+accepts equal bare IDs only in separate owners and rejects wrong-process,
+wrong-role and same-process vectors. Canonical adapter run
+`bfc987d9ae89473caa9c5dea54ae986c` passed 12 top-level tests/67 subcases, four tag
+checks and two Engine compilation modes.
+
+The fixture also had to consume its settings fetch body: discarding the response
+left both roles waiting for `Network.loadingFinished`. A fixture-only 1,750 ms
+watchdog now returns a fixed phase category before the unchanged Go deadline;
+late private receipt buffers are zeroed. Failed runs remain represented by their
+bounded logs/provenance, while their disposable roots were removed after owned
+cleanup proof or verified rejection before process launch.
+
+Evidence: `runtime/qa/auth-session-sidecar/native-manual-chrome-881a30d5861441589ed3ad981adb3819.log.txt`
+and the adjacent `.provenance.json`. No real X request, retained QA profile,
+real-session transfer, main login, Store or user runtime was used. All native
+qualification, manual eligibility, `canAuthorize` and Store flags remain false.
+No main provider or activation endpoint is registered. This closes the fresh
+synthetic Windows/Chrome ownership check, not native X evidence or main-dev
+activation. The next bounded step is review of the native-X owner-port composition
+and its explicit QA authorization boundary; the deferred renewal/rotation work
+does not become a prerequisite for this manual policy.

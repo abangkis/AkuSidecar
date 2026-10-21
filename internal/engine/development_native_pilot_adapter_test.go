@@ -145,6 +145,49 @@ func TestNativePilotManualHorizonAndNoRenewal(t *testing.T) {
 	}
 }
 
+func TestNativePilotProcessScopedContextIDs(t *testing.T) {
+	for _, kind := range []string{"equal-context", "wrong-process-receipt", "wrong-role-receipt", "same-process"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			f.cfg.binding.reader.context, f.cfg.binding.collector.context = "2", "2"
+			f.state.binding = f.cfg.binding
+			if kind == "same-process" {
+				f.cfg.binding.collector.pid = f.cfg.binding.reader.pid
+				a, d := newNativePilotAdapter(f.cfg, f.ports)
+				assertNativePilotClosed(t, d, "invalid-configuration")
+				if a != nil {
+					t.Fatal("two roles sharing a process accepted")
+				}
+				return
+			}
+			f.change = func(c nativePilotChallenge, receipt *nativePilotReceipt) {
+				if c.role != "reader" {
+					return
+				}
+				switch kind {
+				case "wrong-process-receipt":
+					receipt.identity.challenge.owner.pid = c.binding.collector.pid
+				case "wrong-role-receipt":
+					receipt.identity.challenge.owner = c.binding.collector
+				}
+			}
+			a := f.adapter(t)
+			v, d := a.initialEvidence(context.Background())
+			if kind == "equal-context" {
+				assertNativePilotClosed(t, d, "startup-validated")
+				if v == nil || !d.OfflineValidated {
+					t.Fatal("distinct process-scoped contexts rejected")
+				}
+			} else {
+				assertNativePilotClosed(t, d, "evidence-invalid")
+				if v != nil {
+					t.Fatal("wrong process or role escaped exact tuple validation")
+				}
+			}
+		})
+	}
+}
+
 func TestNativePilotAttemptStartBeforeSeedCannotReset(t *testing.T) {
 	f := newTestNativePilotFixture()
 	f.advance(59 * time.Second)
