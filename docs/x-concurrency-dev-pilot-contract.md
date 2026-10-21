@@ -1,14 +1,24 @@
 # X bounded dev pilot contract
 
-Decision date: 2026-10-21. Status: selected policy with an implemented synthetic
-model, controller bridge and main/broker/Coordinator fixture path; native adapter
+Current MVP decision (2026-10-21): the user selected
+[`aku.x.dev-pilot.manual-startup.v2`](x-native-manual-pilot.md), a manual attempt of
+at most 60 seconds with strict initial account/login verification and no automatic
+identity renewal. Its acknowledged post-start observation gap replaces V1 renewal
+as the MVP gate. The V1 model and integration below remain validated historical
+reference contracts; they are not silently reinterpreted or relaxed. Parser
+research remains deferred. This policy change alone does not activate native
+capture, authorize transfer or change Store admission.
+
+Decision date: 2026-10-21. V1 reference status: implemented synthetic model,
+controller bridge and main/broker/Coordinator fixture path. Manual V2 now has a
+private offline-tested receipt adapter; native producer/controller registration
 and runtime activation remain unavailable. The
 user authorized an offline definition of a limited dev pilot and
 minimum evidence renewal without reload, deferring complete refresh/rotation
 qualification. This change opens no browser/profile, transfers no session,
 modifies no Store code/policy/schema and performs no user-runtime operation.
 
-The selected contract is `aku.x.dev-pilot.snapshot.v1`, with proposed provider
+The earlier snapshot contract is `aku.x.dev-pilot.snapshot.v1`, with proposed provider
 identifier `x-dev-pilot-snapshot`. Neither identifier is registered. It is
 separate from the strict production contract `aku.x.concurrent-authorization.v1`.
 Pilot observations never satisfy that contract by relabeling unknown continuity.

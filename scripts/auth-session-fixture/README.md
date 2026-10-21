@@ -119,7 +119,34 @@ The document was preserved, the owned Job emptied, retained state returned to
 no transfer/new login occurred and no second native attempt ran. See the
 [V2 evidence](../../docs/x-concurrency-dev-pilot-contract.md#v2-html-envelope-implementation-2026-10-21).
 
-## Offline bounded dev snapshot pilot
+## Offline manual startup pilot adapter
+
+Current MVP policy is
+[`aku.x.dev-pilot.manual-startup.v2`](../../docs/x-native-manual-pilot.md), explicitly
+selected by the user: strict initial account/login evidence for both roles and a
+manual attempt capped at 60 seconds from before initial acquisition or seeding.
+Initial freshness/joint timing remain strict. No automatic identity renewal is
+required by this policy; observed invalidations still stop use. Account/session
+changes after the checkpoint can remain undetected until observation or expiry.
+This supersedes V1 renewal as the MVP gate without changing V1 fixture behavior.
+
+Run `.\scripts\test-native-manual-pilot-adapter.ps1` for the new dev-only private
+receipt adapter. It performs named-file standard-library offline tests, four tag
+gates and dev/combined Engine compilation without package runtime execution.
+Run `8c439688d6f64d95be8f6ee85cb9a917` passed 11 tests/63 subcases and all gates;
+the owned temporary build root was removed. Evidence:
+`runtime/qa/auth-session-sidecar/native-manual-adapter-8c439688d6f64d95be8f6ee85cb9a917.log.txt`.
+Tests cover strict identity/pins, receipt replay, owner drift, absolute expiry,
+cancellation/revocation races and private diagnostics. Offline vectors cannot
+yield native eligibility. All native/Store authority flags stay false.
+
+No native producer, controller provider or activation endpoint is registered by
+this adapter. Connecting the accepted startup recipe and manual controller, then
+separately authorized QA acceptance, remain unfinished. This helper opens no
+Chrome/profile/login/listener, transfers no session and accesses no Store/user
+runtime. The snapshot V1 helper and its evidence below remain unchanged.
+
+## Offline bounded dev snapshot pilot (V1 reference)
 
 The separate pilot model follows
 [`aku.x.dev-pilot.snapshot.v1`](../../docs/x-concurrency-dev-pilot-contract.md).

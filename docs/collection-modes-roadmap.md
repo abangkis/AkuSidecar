@@ -1,5 +1,26 @@
 # Browser and headless collection roadmap
 
+### Current MVP gate: manual startup pilot (2026-10-21)
+
+The user explicitly selected [`aku.x.dev-pilot.manual-startup.v2`](x-native-manual-pilot.md):
+one manually initiated attempt of at most 60 seconds, with strict initial
+account/login verification for both roles. Initial samples remain at most five
+seconds old and their joint acquisition/publication must finish in less than two
+seconds. Identity renewal is deferred; initial sample expiry does not truncate the
+selected manual window. Observed invalidations still revoke use. Account/session
+changes after the checkpoint can remain undetected until observation or expiry.
+
+The private default-off, dev-tagged receipt adapter and offline checks are now
+implemented: 11 tests/63 subcases, four tag gates and two Engine builds passed in
+run `8c439688d6f64d95be8f6ee85cb9a917`. Offline vectors cannot become native
+eligibility or Store authority. Startup producer/controller registration remains
+unfinished; no browser, retained profile, transfer, Store or user runtime ran.
+The next implementation is the minimum accepted startup-recipe producer and
+manual controller connection, followed by separately authorized bounded QA
+acceptance. Do not reopen the deferred no-reload identity/parser investigation.
+The published synthetic integration is `6320295`; its snapshot V1 policy remains
+unchanged and is not silently reinterpreted as manual V2.
+
 ### MVP-2 Chrome-backed synthetic routing (2026-10-21)
 
 The 12-file synthetic wiring was reviewed and published as `dfbb08d`, with
@@ -5561,7 +5582,7 @@ Evidence: `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 
 ### Current limited-pilot decision (2026-10-21)
 
-The user selected the separate
+The earlier decision selected the separate
 [bounded dev snapshot pilot contract](x-concurrency-dev-pilot-contract.md),
 `aku.x.dev-pilot.snapshot.v1`. The immediate MVP path defers complete native
 refresh/rotation, fanout and global startup/worker/writer coverage qualification.
@@ -5570,6 +5591,9 @@ known-channel failure closure, fixed owner pairs and a 60-second absolute attemp
 limit. Partial global coverage remains explicit; it is not promoted to native
 lineage. The strict production contract still requires complete qualified
 continuity and is not weakened or automatically selected by the pilot.
+
+The later explicit manual V2 choice above supersedes snapshot V1 renewal as the
+MVP gate. V1 evidence and implementation below remain historical reference.
 
 The policy decision is documentation-only. No implementation, native QA/transfer,
 login/main-profile access, Store change, runtime activation or rollback occurs.
@@ -5604,7 +5628,7 @@ qualification, a real provider, Store admission or main-dev activation.
 | Step | Concrete deliverable | Exit gate | Status |
 | --- | --- | --- | --- |
 | MVP-1: qualify short native X concurrency | Qualified sampled account/login evidence, one approved seed and actual overlapping authenticated reads | No second login, same private account comparison, preserved reader and verified owned cleanup; no durability/rotation claim | Short feasibility accepted on 2026-10-20: four matched checkpoints, two-cookie seed and 447.68 ms overlap. Reuse it; complete refresh/coverage qualification is deferred for the separate bounded pilot |
-| MVP-2: wire concurrent owners and pilot proof | Separate reader/collector lifecycle/routing, pilot-specific evidence/permission chain and no-reload renewal, default-off | Reader open preserves active collection; five-second freshness, joint two-second binding, absolute attempt expiry and known-invalidation/result fencing pass. Strict/native revision and durable Store gates remain separate | Synthetic main/broker/Coordinator plus Chrome pair-authorization wiring complete in `bc64be7`; offline pilot model in `b5ace3a`. User reprioritized on 2026-10-21: Home-parser edge cases deferred. Pilot/controller and existing main/broker/Coordinator fixture wiring now complete: 23 tests/66 subcases, six pilot main scenarios, and full 26-scenario main regression across four build modes. Logs 1bd7f9f5/e994a879/a50bfe65 record cleanup and untouched config/database. Next: minimum approved native adapter and dev acceptance. V4 diagnostic run `dc56485eb6b9449193026a9c7b458cb9` remains negative (`malformed_json`, identity unavailable); fixing this parser is not a prerequisite for synthetic wiring or the only acceptable native evidence route. Reuse MVP-1 overlap; no new parser/native campaign, fabricated identity, Store bypass or activation |
+| MVP-2: wire concurrent owners and pilot proof | Separate reader/collector lifecycle/routing and manual V2 initial-evidence chain, default-off; V1 renewal remains a reference fixture | Reader open preserves active collection; initial five-second freshness and joint two-second binding, absolute 60-second attempt expiry and known-invalidation/result fencing pass. Strict/native revision and durable Store gates remain separate | Synthetic main/broker/Coordinator integration published as `6320295`: 23 pilot tests/66 subcases and full 26-scenario main regression. Manual V2 private receipt adapter passed 11 tests/63 subcases, four tag gates and two Engine builds. Next: accepted startup-recipe producer/manual controller connection, then bounded native acceptance. No renewed Home-parser investigation or fabricated identity. No native producer is registered and no Store/runtime activation occurred |
 | MVP-3: narrow dev acceptance and activation | Bounded integrated pilot/failure evidence, explicit limitation acknowledgement, persistent-ingestion compatibility, opt-out and rollback | Pilot behavior and separately approved durable compatibility pass; main-dev activation gets separate explicit authorization | Pending pilot adapter/native timing and durable compatibility. No runtime activation authorized |
 
 ### Execution rules for speed
