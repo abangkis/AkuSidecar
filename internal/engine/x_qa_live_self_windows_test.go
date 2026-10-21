@@ -35,7 +35,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 	var report xQALiveSelf
 	invalid := errors.New("live current-self projection rejected")
 	fields, ok := xQAShortDecodeExact(raw, 4096, []string{"schema", "source", "outcome", "observation", "transport", "elapsedMS", "canAuthorize", "nativeQualified", "sessionTransferred"}, &report)
-	if !ok || report.Schema != "aku.x.qa-live-self-run.v3" || report.Source != "home_document_fetch.v3" ||
+	if !ok || report.Schema != "aku.x.qa-live-self-run.v4" || report.Source != "home_document_fetch.v4" ||
 		!bytes.Equal(fields["canAuthorize"], []byte("false")) || !bytes.Equal(fields["nativeQualified"], []byte("false")) || !bytes.Equal(fields["sessionTransferred"], []byte("false")) {
 		return report, invalid
 	}
@@ -72,7 +72,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 		SessionTransferred bool            `json:"sessionTransferred"`
 	}
 	obs, ok := xQAShortDecodeExact(report.Observation, 4096, []string{"schema", "outcome", "parserRejection", "identity", "bodyBytes", "initializerBytes", "status", "projection", "freshness", "canAuthorize", "nativeQualified", "sessionTransferred"}, &observation)
-	if !ok || observation.Schema != "aku.x.qa-live-self.v3" {
+	if !ok || observation.Schema != "aku.x.qa-live-self.v4" {
 		return report, invalid
 	}
 	if observation.Outcome == "parser_rejected" {
@@ -80,7 +80,7 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 			return report, invalid
 		}
 		switch *observation.ParserRejection {
-		case "malformed_json", "duplicate_key", "invalid_unicode", "unsafe_number", "depth_limit", "value_limit", "parser_internal", "projection_failed":
+		case "malformed_json", "duplicate_key", "invalid_unicode", "depth_limit", "value_limit", "parser_internal", "projection_failed":
 		default:
 			return report, invalid
 		}
@@ -185,11 +185,11 @@ func decodeXQALiveSelf(raw []byte) (xQALiveSelf, error) {
 }
 
 func TestXQALiveSelfOffline(t *testing.T) {
-	const negative = `{"schema":"aku.x.qa-live-self-run.v3","source":"home_document_fetch.v3","outcome":"body_limit","observation":{"schema":"aku.x.qa-live-self.v3","outcome":"body_limit","parserRejection":null,"identity":"unavailable","bodyBytes":524289,"initializerBytes":0,"status":200,"projection":null,"freshness":"unqualified","canAuthorize":false,"nativeQualified":false,"sessionTransferred":false},"transport":{"requests":1,"completed":false,"documentPreserved":true,"responseFresh":false},"elapsedMS":500,"canAuthorize":false,"nativeQualified":false,"sessionTransferred":false}`
+	const negative = `{"schema":"aku.x.qa-live-self-run.v4","source":"home_document_fetch.v4","outcome":"body_limit","observation":{"schema":"aku.x.qa-live-self.v4","outcome":"body_limit","parserRejection":null,"identity":"unavailable","bodyBytes":524289,"initializerBytes":0,"status":200,"projection":null,"freshness":"unqualified","canAuthorize":false,"nativeQualified":false,"sessionTransferred":false},"transport":{"requests":1,"completed":false,"documentPreserved":true,"responseFresh":false},"elapsedMS":500,"canAuthorize":false,"nativeQualified":false,"sessionTransferred":false}`
 	if _, err := decodeXQALiveSelf([]byte(negative)); err != nil {
 		t.Fatal("bounded negative source diagnostic rejected")
 	}
-	for _, reason := range []string{"malformed_json", "duplicate_key", "invalid_unicode", "unsafe_number", "depth_limit", "value_limit", "parser_internal", "projection_failed"} {
+	for _, reason := range []string{"malformed_json", "duplicate_key", "invalid_unicode", "depth_limit", "value_limit", "parser_internal", "projection_failed"} {
 		t.Run(reason, func(t *testing.T) {
 			var diagnostic map[string]any
 			_ = json.Unmarshal([]byte(negative), &diagnostic)
@@ -203,7 +203,7 @@ func TestXQALiveSelfOffline(t *testing.T) {
 			if _, err := decodeXQALiveSelf(raw); err != nil {
 				t.Fatal("closed parser category rejected")
 			}
-			for _, unsafe := range []any{nil, "", "PRIVATE_RAW_ERROR", 7, map[string]any{"message": "PRIVATE"}, []string{reason}} {
+			for _, unsafe := range []any{nil, "", "PRIVATE_RAW_ERROR", "unsafe_number", 7, map[string]any{"message": "PRIVATE"}, []string{reason}} {
 				observation["parserRejection"] = unsafe
 				raw, _ = json.Marshal(diagnostic)
 				if _, err := decodeXQALiveSelf(raw); err == nil {
@@ -226,12 +226,13 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		{`"responseFresh":false`, `"responseFresh":true`},
 		{`"outcome":"body_limit"`, `"outcome":"fresh_identity_observed"`},
 		{`"elapsedMS":500`, `"elapsedMS":null`},
-		{`"source":"home_document_fetch.v3"`, `"source":"other"`},
+		{`"source":"home_document_fetch.v4"`, `"source":"other"`},
 		{`"status":200`, `"status":null`},
 		{`"requests":1`, `"requests":1,"requests":1`},
 		{`"initializerBytes":0`, `"initializerBytes":262146`},
-		{`"schema":"aku.x.qa-live-self-run.v3"`, `"schema":"aku.x.qa-live-self-run.v1"`},
-		{`"schema":"aku.x.qa-live-self-run.v3"`, `"schema":"aku.x.qa-live-self-run.v2"`},
+		{`"schema":"aku.x.qa-live-self-run.v4"`, `"schema":"aku.x.qa-live-self-run.v1"`},
+		{`"schema":"aku.x.qa-live-self-run.v4"`, `"schema":"aku.x.qa-live-self-run.v2"`},
+		{`"schema":"aku.x.qa-live-self-run.v4"`, `"schema":"aku.x.qa-live-self-run.v3"`},
 		{`"parserRejection":null`, `"parserRejection":"malformed_json"`},
 		{`"parserRejection":null`, `"parserRejection":null,"parserRejection":null`},
 	} {
@@ -266,6 +267,15 @@ func TestXQALiveSelfOffline(t *testing.T) {
 		func() { observation["initializerBytes"] = xQALiveInitializerMax + 1 },
 		func() {
 			observation["projection"] = json.RawMessage(bytes.Replace([]byte(projection), []byte(`"normalizedUsers":"match"`), []byte(`"normalizedUsers":"absent"`), 1))
+		},
+		func() {
+			observation["projection"] = json.RawMessage(bytes.Replace([]byte(projection), []byte(`"user_id":"string"`), []byte(`"user_id":"invalid"`), 1))
+		},
+		func() {
+			observation["projection"] = json.RawMessage(bytes.Replace([]byte(projection), []byte(`"isActive":"true"`), []byte(`"isActive":"invalid"`), 1))
+		},
+		func() {
+			observation["projection"] = json.RawMessage(bytes.Replace([]byte(projection), []byte(`"rootUsers":"absent"`), []byte(`"rootUsers":"invalid"`), 1))
 		},
 	} {
 		_ = json.Unmarshal(encoded, &positive)

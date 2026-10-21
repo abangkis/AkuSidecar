@@ -11,7 +11,7 @@ it starts no login or headless collector and never changes the main profile.
 The single candidate is a fresh `GET https://x.com/home` HTML response fetched
 inside the existing Home document. It uses browser-owned same-origin credentials,
 `cache:no-store`, `redirect:error`, no custom headers and a two-second abort.
-The V3 helper reads at most 524,289 decoded response-body bytes (the extra byte
+The V4 helper reads at most 524,289 decoded response-body bytes (the extra byte
 detects the fixed 512 KiB HTML ceiling). It independently limits the initializer
 to 256 KiB UTF-8 before strict JSON parsing, with depth 24 and 16,384 value nodes.
 It rejects oversize data and never widens either cap automatically.
@@ -29,17 +29,39 @@ the four-second command watchdog remains failure/cleanup protection. Fixed failu
 categories distinguish HTML overflow, initializer overflow, HTML parsing rejection
 and strict-parser rejection. This is source qualification, not a renewal cadence.
 
-The closed V3 observation (`aku.x.qa-live-self.v3`) adds `parserRejection`:
-`malformed_json`, `duplicate_key`, `invalid_unicode`, `unsafe_number`,
+The closed V4 observation (`aku.x.qa-live-self.v4`) requires `parserRejection`:
+`malformed_json`, `duplicate_key`, `invalid_unicode`,
 `depth_limit`, `value_limit`, `parser_internal` or `projection_failed` only when
 the outcome is `parser_rejected`; all other outcomes require JSON null. The
-wrapper/source are `aku.x.qa-live-self-run.v3`/`home_document_fetch.v3`.
+wrapper/source are `aku.x.qa-live-self-run.v4`/`home_document_fetch.v4`.
 Both Node and Go reject missing/unknown/inconsistent categories and older schema
 versions. No error message, stack, input offset, field name, source fragment or
-raw content is returned. Legacy parser callers still receive the fixed
-`SyntaxError('invalid_json')`; the optional trusted callback receives only a fixed
-category. Parser acceptance rules, limits and authorization remain unchanged.
-V1/V2 native reports remain historical and are not assigned inferred categories.
+raw content is returned. The shared strict parser is unchanged. V4 uses the
+separate QA-only lossless parser described below, with the same syntax, duplicate
+key, Unicode, depth and value-count guards. V1/V2/V3 native reports remain
+historical and are not assigned inferred categories or replayed as V4.
+
+Every JSON numeric lexeme is held exactly in a private WeakMap behind an empty,
+frozen token. There is no numeric conversion, exponent arithmetic or numeric-to-ID
+string coercion. A separate bounded projection view maps these tokens to a
+private primitive Symbol. The existing bootstrap projector therefore rejects them
+as IDs, booleans or required records, while unrelated numeric fields cannot cause
+rounding or whole-document rejection. An original string ID must still match all
+present current-self/entity IDs. `NaN`, `Infinity`, malformed numbers and duplicate
+decoded keys remain invalid JSON. Valid huge exponents remain opaque text.
+Tokens, lexemes and the private view never cross CDP or enter reports/logs.
+The 512/256/4 KiB limits, two-second acceptance deadline and false authority flags
+are unchanged. The lossless path has offline evidence only; it authorizes no
+native probe, Store admission or main-dev activation.
+
+V4 offline preflight `20774f66ae0441fb88ae57b4f054bba4` passed 99 Node tests and
+one Go test with seven category subcases. The canonical `-LiveCurrentSelf` helper
+includes the new `x-qa-lossless-json.test.mjs` suite. It opens no browser or
+retained profile. Exact numeric representation, original-string identity guards,
+foreign-context rejection and previous size/deadline/privacy guards passed;
+the shared strict parser and bootstrap projector were unchanged. No V4 native
+result exists yet. The sanitized log uses the run ID under
+`runtime/qa/auth-session-sidecar/`; the disposable control root was removed.
 
 Offline run `784ee64c8314441ba6180fdc02e78a81` passed 84 Node tests and one Go
 test with eight category subcases. It covered category production, thrown parser/

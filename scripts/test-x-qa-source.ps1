@@ -60,7 +60,7 @@ try {
     $env:AKU_X_QA_SOURCE_REPORT_PATH = $report
     Write-Output ('QA source preflight run: ' + $runId)
     if ($LiveCurrentSelf) {
-        & $node --test --test-timeout=10000 --test-reporter=tap scripts/auth-session-fixture/x-qa-live-self.test.mjs scripts/auth-session-fixture/x-qa-live-self-transport.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-bootstrap-current-self.test.mjs scripts/auth-session-fixture/x-evidence-ingress.test.mjs 2>&1 | Tee-Object -FilePath $log
+        & $node --test --test-timeout=10000 --test-reporter=tap scripts/auth-session-fixture/x-qa-lossless-json.test.mjs scripts/auth-session-fixture/x-qa-live-self.test.mjs scripts/auth-session-fixture/x-qa-live-self-transport.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-bootstrap-current-self.test.mjs scripts/auth-session-fixture/x-evidence-ingress.test.mjs 2>&1 | Tee-Object -FilePath $log
         if ($LASTEXITCODE -ne 0) { throw 'Live current-self Node preflight failed.' }
         & go test -tags 'auth_session_dev auth_session_fixture' ./internal/engine -run '^TestXQALiveSelfOffline$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
         if ($LASTEXITCODE -ne 0) { throw 'Live current-self Go preflight failed.' }

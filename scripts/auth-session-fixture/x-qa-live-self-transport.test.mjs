@@ -46,12 +46,12 @@ test('probe command boundary forbids reload, navigation, debugger and cookie acc
   assert.equal(qaLiveSelfCommand('Runtime.evaluate', { expression: 'other', returnByValue: true, awaitPromise: true, userGesture: false }, 'fixed'), false);
   assert.equal(qaLiveSelfCommand('Runtime.evaluate', { expression: 'fixed', returnByValue: true, awaitPromise: true, userGesture: false }, 'fixed'), true);
 });
-test('v3 separates parser and initializer limits and rejects oversized result envelopes', () => {
+test('v4 separates parser and initializer limits and rejects oversized result envelopes', () => {
   const transport = { documentPreserved: true, responseFresh: false };
   for (const outcome of ['initializer_limit', 'parser_rejected']) {
     const report = finishQALiveSelf({ identity: 'unavailable', outcome }, transport, 500);
     assert.equal(report.outcome, outcome);
-    assert.equal(report.schema, 'aku.x.qa-live-self-run.v3');
+    assert.equal(report.schema, 'aku.x.qa-live-self-run.v4');
     assert.equal(report.canAuthorize, false);
   }
   assert.equal(finishQALiveSelf({ identity: 'unavailable', outcome: 'timeout' }, transport, 1999).outcome, 'deadline');

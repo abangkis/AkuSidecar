@@ -1,5 +1,5 @@
 import { BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { STRICT_JSON_PARSER_SOURCE } from './x-evidence-ingress.mjs';
+import { QA_LOSSLESS_JSON_SOURCE } from './x-qa-lossless-json.mjs';
 
 const MAX_BODY_BYTES = 512 * 1024;
 const MAX_INITIALIZER_BYTES = 256 * 1024;
@@ -9,7 +9,7 @@ const MAX_REPORTED_INITIALIZER_BYTES = MAX_INITIALIZER_BYTES + 1;
 const MAX_JSON_DEPTH = 24;
 const MAX_JSON_VALUES = 16_384;
 const MAX_DURATION_MS = 2_000;
-const RESULT_SCHEMA = 'aku.x.qa-live-self.v3';
+const RESULT_SCHEMA = 'aku.x.qa-live-self.v4';
 const RESULT_KEYS = [
   'schema',
   'outcome',
@@ -56,7 +56,7 @@ function strongCurrentSelf(projection) {
 function buildQALiveSelfDiagnostic(outcome, bodyBytes, initializerBytes, status, projection, parserRejection = null) {
   const candidate = outcome === 'candidate';
   return {
-    schema: 'aku.x.qa-live-self.v3',
+    schema: 'aku.x.qa-live-self.v4',
     outcome,
     parserRejection,
     identity: candidate ? 'candidate' : 'unavailable',
@@ -79,7 +79,7 @@ async function qaLiveSelfPageProbe(helpers) {
   const timeoutLimit = 2_000;
   const parseDepth = 24;
   const parseValues = 16_384;
-  const { parseStrictJSON, projectBootstrapCurrentSelf, strongCurrentSelf, buildDiagnostic } = helpers;
+  const { losslessJSON, projectBootstrapCurrentSelf, strongCurrentSelf, buildDiagnostic } = helpers;
 
   let bodyBytes = 0;
   let initializerBytes = 0;
@@ -434,11 +434,11 @@ async function qaLiveSelfPageProbe(helpers) {
           let parseFailed = false;
           let parserRejection = 'parser_internal';
           try {
-            parsed = parseStrictJSON(sourceJSON, {
+            parsed = losslessJSON.parse(sourceJSON, {
               maxJSONDepth: parseDepth,
               maxJSONTokens: parseValues,
             }, (reason) => {
-              if (['malformed_json', 'duplicate_key', 'invalid_unicode', 'unsafe_number', 'depth_limit', 'value_limit'].includes(reason)) {
+              if (['malformed_json', 'duplicate_key', 'invalid_unicode', 'depth_limit', 'value_limit'].includes(reason)) {
                 parserRejection = reason;
               }
             });
@@ -457,7 +457,7 @@ async function qaLiveSelfPageProbe(helpers) {
           try {
             projection = projectBootstrapCurrentSelf({
               location: { origin: 'https://x.com', pathname: '/home' },
-              __INITIAL_STATE__: parsed,
+              __INITIAL_STATE__: losslessJSON.forProjection(parsed),
             });
           } catch {
             projectionFailed = true;
@@ -482,7 +482,7 @@ async function qaLiveSelfPageProbe(helpers) {
 }
 
 export const QA_LIVE_SELF_EXPRESSION = `(${qaLiveSelfPageProbe.toString()})({
-  parseStrictJSON: ${STRICT_JSON_PARSER_SOURCE},
+  losslessJSON: ${QA_LOSSLESS_JSON_SOURCE},
   projectBootstrapCurrentSelf: ${BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE},
   strongCurrentSelf: (${strongCurrentSelf.toString()}),
   buildDiagnostic: (${buildQALiveSelfDiagnostic.toString()}),
@@ -525,7 +525,7 @@ export function validateQALiveSelfDiagnostic(value) {
     const result = exactDataRecord(value, RESULT_KEYS);
     if (result.schema !== RESULT_SCHEMA || !OUTCOMES.includes(result.outcome)) invalidReport();
     if (result.outcome === 'parser_rejected') {
-      if (!['malformed_json', 'duplicate_key', 'invalid_unicode', 'unsafe_number', 'depth_limit', 'value_limit', 'parser_internal', 'projection_failed'].includes(result.parserRejection)) invalidReport();
+      if (!['malformed_json', 'duplicate_key', 'invalid_unicode', 'depth_limit', 'value_limit', 'parser_internal', 'projection_failed'].includes(result.parserRejection)) invalidReport();
     } else if (result.parserRejection !== null) invalidReport();
     if (!['candidate', 'unavailable'].includes(result.identity)) invalidReport();
     if (!Number.isInteger(result.bodyBytes) || result.bodyBytes < 0 || result.bodyBytes > MAX_REPORTED_BODY_BYTES) invalidReport();
@@ -600,7 +600,7 @@ export function validateQALiveSelfDiagnostic(value) {
   }
 }
 
-// Only the closed v3 DTO is accepted. Raw source and historical reports fail.
+// Only the closed v4 DTO is accepted. Raw source and historical reports fail.
 export function validateQALiveSelfReport(value) {
   return validateQALiveSelfDiagnostic(value);
 }

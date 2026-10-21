@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { STRICT_JSON_PARSER_SOURCE } from './x-evidence-ingress.mjs';
+import { QA_LOSSLESS_JSON_SOURCE } from './x-qa-lossless-json.mjs';
 import { BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE } from './x-bootstrap-current-self.mjs';
 
 import {
@@ -263,7 +263,7 @@ test('executes one fixed GET and returns a bounded diagnostic from an inert temp
     'bodyBytes', 'canAuthorize', 'freshness', 'identity', 'initializerBytes', 'nativeQualified',
     'outcome', 'parserRejection', 'projection', 'schema', 'sessionTransferred', 'status',
   ]);
-  assert.equal(result.schema, 'aku.x.qa-live-self.v3');
+  assert.equal(result.schema, 'aku.x.qa-live-self.v4');
   assert.equal(result.outcome, 'candidate');
   assert.equal(result.parserRejection, null);
   assert.equal(result.bodyBytes, Buffer.byteLength(html));
@@ -351,12 +351,11 @@ test('distinguishes no exact initializer, duplicate markers, and HTML decode/tem
   assert.equal(contentRejected.result.outcome, 'html_rejected');
 });
 
-test('strictly rejects malformed, duplicate-key, unsafe-number, invalid-Unicode, depth, and token-budget JSON', async () => {
+test('strictly rejects malformed, duplicate-key, invalid-Unicode, depth, and token-budget JSON', async () => {
   const rejected = [
     '',
     '{broken',
     '{"session":{},"session":{}}',
-    '{"unsafe":9007199254740992}',
     '{"invalid":"\\uD800"}',
     `${'['.repeat(25)}0${']'.repeat(25)}`,
     `[${Array.from({ length: 16_384 }, () => '0').join(',')}]`,
@@ -384,8 +383,6 @@ test('returns only closed rejection categories for synthetic parser failures', a
     ['{"PRIVATE_FIELD":', 'malformed_json'],
     ['{"PRIVATE_FIELD":1,"PRIVATE_FIELD":2}', 'duplicate_key'],
     ['{"PRIVATE_FIELD":"\\uD800"}', 'invalid_unicode'],
-    ['{"PRIVATE_FIELD":9007199254740992}', 'unsafe_number'],
-    ['{"PRIVATE_FIELD":1e400}', 'unsafe_number'],
     [`${'['.repeat(25)}0${']'.repeat(25)}`, 'depth_limit'],
     [`[${Array.from({ length: 16_384 }, () => '0').join(',')}]`, 'value_limit'],
   ];
@@ -404,11 +401,11 @@ test('returns only closed rejection categories for synthetic parser failures', a
 });
 
 test('unexpected parser and projection faults never expose thrown messages', async () => {
-  for (const [helper, reason] of [
-    [STRICT_JSON_PARSER_SOURCE, 'parser_internal'],
-    [BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE, 'projection_failed'],
+  for (const [helper, replacement, reason] of [
+    [QA_LOSSLESS_JSON_SOURCE, '({parse(){ throw new Error("PRIVATE_THROWN_MESSAGE"); }})', 'parser_internal'],
+    [BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE, '(() => { throw new Error("PRIVATE_THROWN_MESSAGE"); })', 'projection_failed'],
   ]) {
-    const expression = QA_LIVE_SELF_EXPRESSION.replace(helper, '(() => { throw new Error("PRIVATE_THROWN_MESSAGE"); })');
+    const expression = QA_LIVE_SELF_EXPRESSION.replace(helper, replacement);
     assert.notEqual(expression, QA_LIVE_SELF_EXPRESSION);
     const harness = makeContext({ fetch: async () => responseFor(htmlForJSON(validSelfJSON())).response });
     const result = projectQALiveSelf(await vm.runInNewContext(expression, harness.context, { timeout: 1_000 }));
@@ -421,7 +418,7 @@ test('unexpected parser and projection faults never expose thrown messages', asy
 test('rejects missing, arbitrary, accessor and unrelated rejection categories', async () => {
   const page = await runPageProbe({ fetch: async () => responseFor(htmlForJSON('{broken')).response });
   const valid = projectQALiveSelf(page.result);
-  for (const reason of [null, '', 'PRIVATE_RAW_ERROR', {}, 7, ['malformed_json']]) {
+  for (const reason of [null, '', 'PRIVATE_RAW_ERROR', 'unsafe_number', {}, 7, ['malformed_json']]) {
     assert.throws(() => validateQALiveSelfDiagnostic({ ...valid, parserRejection: reason }), /qa_live_self_report_invalid/);
   }
   const missing = { ...valid };
@@ -435,6 +432,65 @@ test('rejects missing, arbitrary, accessor and unrelated rejection categories', 
   const other = await runPageProbe({ fetch: async () => responseFor('<html></html>').response });
   assert.throws(() => validateQALiveSelfDiagnostic({ ...other.result, parserRejection: 'malformed_json' }), /qa_live_self_report_invalid/);
   assert.throws(() => validateQALiveSelfDiagnostic({ ...valid, schema: 'aku.x.qa-live-self.v2' }), /qa_live_self_report_invalid/);
+  assert.throws(() => validateQALiveSelfDiagnostic({ ...valid, schema: 'aku.x.qa-live-self.v3' }), /qa_live_self_report_invalid/);
+});
+
+test('irrelevant exact numeric tokens permit strict string identity without leaking lexemes', async () => {
+  const original = validSelfJSON();
+  for (const literal of ['9007199254740993', '0.10000000000000001', '1e400', '-0', '0e-999999']) {
+    const source = `${original.slice(0, -1)},"irrelevantNumeric":${literal}}`;
+    const result = projectQALiveSelf((await runPageProbe({ fetch: async () => responseFor(htmlForJSON(source)).response })).result);
+    assert.equal(result.outcome, 'candidate');
+    assert.equal(result.parserRejection, null);
+    assert.equal(result.canAuthorize, false);
+    for (const privateValue of ['irrelevantNumeric', ID, source, '9007199254740993', '0.10000000000000001', '1e400']) {
+      assert.equal(JSON.stringify(result).includes(privateValue), false);
+    }
+  }
+});
+
+test('numeric tokens cannot supply identity, authentication, or required record structures', async () => {
+  const original = validSelfJSON();
+  const replacements = [
+    [`"user_id_str":"${ID}"`, `"user_id_str":9007199254740993`],
+    [`"user_id_str":"${ID}"`, '"user_id_str":123'],
+    [`"user_id_str":"${ID}"`, `"user_id_str":"${ID}","user_id":9007199254740993`],
+    [`"id_str":"${ID}"`, '"id_str":1e400'],
+    [`"id_str":"${ID}"`, `"id_str":"${ID}","id":9007199254740993`],
+    ['"session":', '"session":1e400,"unusedSession":'],
+    ['"entities":', '"entities":1e400,"unusedEntities":'],
+  ];
+  for (const [before, after] of replacements) {
+    assert.ok(original.includes(before));
+    const source = original.replace(before, after);
+    const result = projectQALiveSelf((await runPageProbe({ fetch: async () => responseFor(htmlForJSON(source)).response })).result);
+    assert.equal(result.outcome, 'self_unqualified');
+    assert.equal(result.identity, 'unavailable');
+    assert.equal(result.canAuthorize, false);
+  }
+  const auth = validSelfJSON({ session: { loggedIn: true } });
+  const source = auth.replace('"loggedIn":true', '"loggedIn":1');
+  const result = projectQALiveSelf((await runPageProbe({ fetch: async () => responseFor(htmlForJSON(source)).response })).result);
+  assert.equal(result.outcome, 'self_unqualified');
+  assert.equal(result.projection.authFields.loggedIn, 'invalid');
+});
+
+test('numeric structural tokens remain invalid rather than becoming missing optional evidence', async () => {
+  for (const mutate of [
+    state => { state.entities.users = 'QA_NUMERIC_PLACEHOLDER'; },
+    state => { state.entities.users.entities = 'QA_NUMERIC_PLACEHOLDER'; },
+    state => { state.entities.users.entities[ID] = 'QA_NUMERIC_PLACEHOLDER'; },
+    state => { state.users = 'QA_NUMERIC_PLACEHOLDER'; },
+    state => { state.users = { entities: 'QA_NUMERIC_PLACEHOLDER' }; },
+    state => { state.users = { entities: { [ID]: 'QA_NUMERIC_PLACEHOLDER' } }; },
+  ]) {
+    const state = JSON.parse(validSelfJSON());
+    mutate(state);
+    const source = JSON.stringify(state).replace('"QA_NUMERIC_PLACEHOLDER"', '1e400');
+    const result = projectQALiveSelf((await runPageProbe({ fetch: async () => responseFor(htmlForJSON(source)).response })).result);
+    assert.equal(result.outcome, 'self_unqualified');
+    assert.equal(result.identity, 'unavailable');
+  }
 });
 
 test('does not infer identity from numeric IDs, auth-false data, mismatches, or feed authors', async () => {
@@ -723,10 +779,10 @@ test('does not reload, navigate, enable debugger access, or reread the existing 
   assert.equal(forbiddenReads, 0);
 });
 
-test('closes v3 reports against raw source fields, extra keys, getters, and unsafe nested projections', async () => {
+test('closes v4 reports against raw source fields, extra keys, getters, and unsafe nested projections', async () => {
   const page = await runPageProbe({ fetch: async () => responseFor('<html></html>').response });
   const valid = projectQALiveSelf(page.result);
-  assert.equal(validateQALiveSelfReport(valid).schema, 'aku.x.qa-live-self.v3');
+  assert.equal(validateQALiveSelfReport(valid).schema, 'aku.x.qa-live-self.v4');
   assert.throws(() => validateQALiveSelfReport({ ...valid, sourceJSON: '{"private":true}' }), /qa_live_self_report_invalid/);
   assert.throws(() => validateQALiveSelfReport({ ...valid, privateID: 'must not pass' }), /qa_live_self_report_invalid/);
 

@@ -439,3 +439,67 @@ remain false. A next offline review may examine precision-preserving numeric
 handling confined to the QA projection without relaxing shared parser acceptance
 or the requirement that stable current-self IDs be original strings. This result
 does not authorize that implementation or another native probe.
+
+## V4 QA-only lossless numeric projection (offline, 2026-10-21)
+
+The user authorized a separate lossless parser and offline regressions after the
+numeric-handling review. The shared strict parser, bootstrap projector and Store
+policy remain unchanged. V4 replaces only the QA Home initializer parse path;
+observation/wrapper/source versions are `aku.x.qa-live-self.v4`,
+`aku.x.qa-live-self-run.v4` and `home_document_fetch.v4`. Historical native
+reports retain their original schema, result and qualification limits.
+
+The parser preserves every numeric lexeme, including fractions, negative zero and
+large positive/negative exponents, as private text. It never converts source
+numbers to JavaScript Number, BigInt, ID strings or computed decimal expansions.
+Each numeric token is an empty frozen null-prototype object, branded by its
+parser context's private WeakMap. JSON cannot manufacture that membership. The
+trusted context's token inspection is only for local processing/tests and is
+never part of the page result, RPC, persistence or logging boundary.
+
+A bounded private projection view replaces numeric tokens with a primitive
+Symbol and preserves original strings, booleans and record/array structure. The
+unchanged bootstrap projector then refuses numeric tokens at session/entity IDs,
+authentication fields and required record paths. A present numeric ID remains
+invalid even if another original string ID matches. Tokens cannot masquerade as
+records, missing fields or true booleans. Original string identity syntax,
+agreement, normalized entity matching, and strict positive classification remain
+mandatory. Numeric fields outside those paths may now survive parsing without
+invalidating unrelated string identity. This is a deliberate QA-only expansion
+of numeric representation, not a relaxation of identity acceptance or the shared
+parser's numeric rules. A native source may still fail on its actual identity
+shape; offline regressions do not establish native qualification.
+
+Input size remains at most 256 KiB UTF-8, depth 24 and 16,384 values. The view
+traversal is independently bounded and rejects unsupported values, accessors and
+cycles with fixed errors. No numeric conversion or exponent expansion is needed
+even for a long exponent. Strict syntax, duplicate decoded keys and invalid
+Unicode remain rejected, including malformed number syntax and bare NaN/Infinity.
+Token state and the extra view add bounded allocations; no peak-memory or CPU
+preemption guarantee is claimed. The page checks the existing monotonic deadline
+after parsing/projection; a late result cannot qualify. HTML stays 512 KiB,
+initializer 256 KiB and each diagnostic/combined report 4 KiB. All authority and
+transfer flags remain false.
+
+V4 no longer emits or accepts `unsafe_number` as a parser category because valid
+numeric lexemes are not converted to Number. The other closed parser categories
+remain; malformed numerals are `malformed_json`. Page, Node and Go agree on the
+new schema and fixed category set. No raw token, HTML, initializer, identifier,
+field name, source position or arbitrary error message is published.
+
+Offline preflight `20774f66ae0441fb88ae57b4f054bba4` passed 99 Node tests and
+one Go test with seven closed-category subcases. Coverage includes exact numeric
+lexemes, long exponents, byte/depth/value boundaries, serialized factory behavior,
+decoded-key duplicates, Unicode, foreign-context/token forgery, getters/cycles,
+exception-message privacy, strict session/entity/authentication handling and the
+existing source/transport/deadline regressions. Shared strict-parser regressions
+still reject unsafe numbers. No raw native data was read or retained.
+
+The sanitized log is
+`runtime/qa/auth-session-sidecar/x-qa-source-20774f66ae0441fb88ae57b4f054bba4.log.txt`;
+the disposable control root was removed. No browser, retained QA profile, login,
+Store, network listener or user runtime was opened. The shared parser and
+bootstrap projector have no working-tree delta against `972b152`. The accepted
+V3 native result remains `unsafe_number` at an unidentified field. V4 needs a
+separately authorized native observation before any claim that X identity passes;
+no native retry or activation was performed by this implementation.
