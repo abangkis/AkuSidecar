@@ -1,5 +1,14 @@
 # X concurrency MVP-2 integration design
 
+Current pilot policy (2026-10-21): the user selected
+[`aku.x.dev-pilot.snapshot.v1`](x-concurrency-dev-pilot-contract.md), a separate,
+default-off bounded dev policy with minimum account/login renewal without reload.
+Complete refresh/rotation and global continuity qualification are deferred for
+that policy. The strict production contract below is unchanged. This is an
+offline documentation decision, not implementation, Store compatibility or runtime
+activation. Pair-authorized synthetic main/Chrome integration is published as
+`bc64be767dae93f8607a12fff194523400f6d119`; reuse its accepted evidence.
+
 Status: the first offline synthetic controller increment was reviewed and
 published as `e87c1b27e730b61d0d4c99a819b43035332a40d8`, with origin/main
 verified. On 2026-10-21 the user additionally authorized default-off
@@ -215,6 +224,13 @@ The exact future format needs its guard-aware upgrade/downgrade matrix before
 native activation. No rollback, migration or runtime opt-out is executed here.
 
 ## Production pair and evidence-renewal contract (2026-10-21)
+
+Scope note: this is the strict production contract. The later
+[bounded dev snapshot pilot](x-concurrency-dev-pilot-contract.md) explicitly
+accepts unknown global continuity under a different mode/version. Its local
+permission renewal chain must never be relabeled as this contract's native
+session-lineage chain. Store admission remains unchanged and unavailable to the
+pilot until a separately authorized compatibility decision.
 
 Decision: use design contract `aku.x.concurrent-authorization.v1`, with proposed
 provider identifier `x-concurrent` and an explicit provider/evidence-schema

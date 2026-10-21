@@ -5559,6 +5559,25 @@ Evidence: `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 
 ## Session-reuse MVP: concurrency-first critical path (2026-10-19)
 
+### Current limited-pilot decision (2026-10-21)
+
+The user selected the separate
+[bounded dev snapshot pilot contract](x-concurrency-dev-pilot-contract.md),
+`aku.x.dev-pilot.snapshot.v1`. The immediate MVP path defers complete native
+refresh/rotation, fanout and global startup/worker/writer coverage qualification.
+It requires fresh per-role account/login proof, minimum renewal without reload,
+known-channel failure closure, fixed owner pairs and a 60-second absolute attempt
+limit. Partial global coverage remains explicit; it is not promoted to native
+lineage. The strict production contract still requires complete qualified
+continuity and is not weakened or automatically selected by the pilot.
+
+The policy decision is documentation-only. No implementation, native QA/transfer,
+login/main-profile access, Store change, runtime activation or rollback occurs.
+Store's accepted-revision and durable result gates remain unchanged; native
+persistent ingestion requires its own separately authorized compatibility work.
+Until then the pilot is fixture/QA with in-memory results. The following macro
+stages retain all accepted evidence; they are not restarted by this decision.
+
 Target: an explicitly enabled X-only pilot for one enrolled account, with a
 visible native reader and true-headless collector running concurrently in
 separate owned profiles. Preserve user windows, durable pending work and the
@@ -5584,16 +5603,17 @@ qualification, a real provider, Store admission or main-dev activation.
 
 | Step | Concrete deliverable | Exit gate | Status |
 | --- | --- | --- | --- |
-| MVP-1: qualify native X concurrency | Source-qualified account/login evidence, minimum approved one-way transfer, actual overlapping authenticated reads, and mutation/refresh feasibility | Same enrolled account without a second login; no observed cross-browser invalidation; coverage and native revision requirements fit unchanged policy; partial overlap is not durable-refresh qualification | Short feasibility accepted on 2026-10-20: four matched checkpoints, two-cookie seed, 447.68 ms overlap, preserved reader and verified cleanup. Durable mutation/refresh/coverage qualification remains explicitly deferred; no production authority granted |
-| MVP-2: wire concurrent owners and provider | Separate reader/collector lifecycle and routing, real-source provider metadata and compatibility plan, default-off integration | Reader open does not stop active batch; required verification, Store revisions, durable fences and stale-result rejection remain enforced | Ready for scoped integration design using accepted short-QA evidence; provider/enrollment/runtime gates remain unchanged |
-| MVP-3: narrow concurrent dev acceptance and activation | Focused integrated overlap/failure evidence, defined reader-close behavior, opt-out and guard-aware rollback | Preserved windows, retained queue, mutation/coverage-loss failure closure and parent death pass; separate explicit runtime-activation authorization | Pending MVP-2 |
+| MVP-1: qualify short native X concurrency | Qualified sampled account/login evidence, one approved seed and actual overlapping authenticated reads | No second login, same private account comparison, preserved reader and verified owned cleanup; no durability/rotation claim | Short feasibility accepted on 2026-10-20: four matched checkpoints, two-cookie seed and 447.68 ms overlap. Reuse it; complete refresh/coverage qualification is deferred for the separate bounded pilot |
+| MVP-2: wire concurrent owners and pilot proof | Separate reader/collector lifecycle/routing, pilot-specific evidence/permission chain and no-reload renewal, default-off | Reader open preserves active collection; five-second freshness, joint two-second binding, absolute attempt expiry and known-invalidation/result fencing pass. Strict/native revision and durable Store gates remain separate | Synthetic main/broker/Coordinator plus Chrome pair-authorization wiring complete in `bc64be7`: 51 core tests/87 subtests, 20 main scenarios and 10 Chrome scenarios. Pilot policy now selected; offline pilot model and native in-place source/timing remain unfinished |
+| MVP-3: narrow dev acceptance and activation | Bounded integrated pilot/failure evidence, explicit limitation acknowledgement, persistent-ingestion compatibility, opt-out and rollback | Pilot behavior and separately approved durable compatibility pass; main-dev activation gets separate explicit authorization | Pending pilot adapter/native timing and durable compatibility. No runtime activation authorized |
 
 ### Execution rules for speed
 
 - Reuse original broker/central concurrency evidence and the later ingress,
   synthetic verifier, ownership/Job cleanup, queue and checkpoint guards. The
-  latest reviewed source baseline is `d397cdd`; publishing it did not enable
-  native concurrency. Re-run only checks affected by future wiring.
+  latest published pair-authorized synthetic integration is `bc64be7`; publishing
+  it did not enable native concurrency. Re-run only checks affected by future
+  wiring; do not repeat successful source A/B/A controls or native overlap.
 - Keep one reader role and one collector role. Defer additional platforms,
   multiple collectors, seamless restart, broad media and extra exclusive
   close/reopen permutations. Do not defer reader-plus-collector concurrency.
@@ -5604,11 +5624,21 @@ qualification, a real provider, Store admission or main-dev activation.
 - End each bounded experiment with its qualified claims or a named native
   blocker. A short overlap without observed rotation is partial, not permission
   to activate a durable pilot; do not extend samples indefinitely to await refresh.
+  Complete rotation/global coverage is deferred for `aku.x.dev-pilot.snapshot.v1`.
+  Known evidence-channel failures still revoke; its weaker sampled policy cannot
+  satisfy the strict production contract or bypass Store admission.
 - Technical support for a real provider needs versioned metadata work; this
   does not authorize relaxing `AcceptedRevisions`, re-enrolling silently or
   converting user confirmation into missing authentication/session proof.
 
 ### MVP-1: minimum concurrency work and authorization boundary
+
+The following is the original 2026-10-19 procedure, retained for provenance.
+Source controls, the exact transfer and short overlap were subsequently accepted
+as summarized above; do not restart them. Its full refresh/coverage assessment
+is deferred from the newly selected bounded snapshot pilot. The current next
+delta is the [offline pilot acceptance model](x-concurrency-dev-pilot-contract.md#next-offline-acceptance-delta),
+not another native login/bootstrap or refresh campaign.
 
 1. Freeze the existing evidence and define one bounded concurrent experiment;
    use the retained QA owner and a fresh derived headless profile, never main login.
