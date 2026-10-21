@@ -92,6 +92,16 @@ export class QABoundObservation {
     return !this.#closed && this.#id !== null && (!this.#failure ||
       this.#failure === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation);
   }
+  // Called only at a verified normal startup pause, before identity evaluation.
+  // These are observed pins, not requested pins or a public QA projection.
+  startupPins(contextId) {
+    this.#tick();
+    if (this.#closed || this.#failure || this.#id !== null || !this.#loader ||
+        !this.#context || contextId !== this.#context) throw error();
+    return Object.freeze({ ownerId: String(this.#scope.owner), profileId: this.#scope.profileId,
+      contextId: String(this.#context), targetId: this.#scope.targetId,
+      frameId: this.#frame, documentId: this.#loader });
+  }
   observe(raw, scope) {
     if (this.#closed) return;
     this.#tick();

@@ -116,7 +116,8 @@ The private Node transport projector receives a new optional startup sink from
 protected-settings recipe succeeds, including source/body/freshness, cleanup and
 document/context guards. It is not called for deferred-cookie-mutation samples.
 Ordinary QA reports are unchanged and cannot supply receipts. The in-process
-`createOwnedManualStartupCaptures` hook connects the existing owned reader and
+`createOwnedManualStartupCaptures` hook (superseded by the two-phase owner hook
+below) connects the existing owned reader and
 collector recipes with a shared identity rendezvous. It is default-off, requires
 an already-owned QA pair and has no RPC command or main activation setting.
 It neither seeds credentials nor changes login. Its guard has offline coverage;
@@ -169,3 +170,76 @@ transfer, Store or user runtime was used. The remaining native connection is the
 trusted owner/main-broker instantiation and startup pin choreography, followed by
 a separately authorized bounded QA run. Passing this offline path does not claim
 that native Chrome or main dev is active.
+
+## Owner/broker startup binding (2026-10-21)
+
+The preceding 15-file startup/controller increment was reviewed and published as
+`ebc061ede87451b49c518f97285a5f1e00557894`, with remote main verified. The next
+authorized increment connects a private dev-only owner broker and two-phase Node
+actors. It fixes the ordering issue without accepting a wildcard document,
+relaxing identity, inventing OS ownership or reopening renewal/parser research.
+
+1. Broker construction is default-off. Admission stays closed; initial role
+   configuration contains only selected profile/parent references. Old document
+   pins are rejected as configuration, rather than overwritten after capture.
+   The original attempt clock starts before preparation or authorized seeding.
+2. Both owners prepare concurrently. Each driver reaches a verified normal
+   startup breakpoint before evaluating current-self. The binder derives actual
+   owner/profile/target/frame/loader/execution-context pins and the Node actor
+   returns an opaque ready handle while keeping that same pause held.
+3. Trusted Go owner ports inspect physical directories, process/image/creation,
+   Job/parent and generation, policy/consent and full reader inventory. Both
+   ready owners must pass before the exact pair is frozen. Document pins come
+   from the prepared startup document, not the old pre-reload document.
+4. The existing startup source issues new random challenges and acquires both
+   prepared handles concurrently. Acquisition releases the held pauses; there
+   is no second reload/navigation after binding. Callframe/context eligibility
+   is rechecked before evaluation. A different loader, execution context, role,
+   process or handle rejects the observation. Repeated empty bootstrap reads
+   remain limited to the same frozen startup context and existing pause budget.
+5. Only matching fresh account/login receipts open manual-controller admission.
+   The joint two-second evidence deadline begins after both owners are ready;
+   preparation still consumes the original absolute 60-second attempt window.
+   The existing startup capture retains its shorter five-second observation and
+   command deadlines. Reader requests, dispatch, claim and result publication
+   pass through the broker and existing manual-controller fences.
+
+The driver hook is now `createOwnedManualStartupOwners`; each role exposes
+prepare/acquire/abort rather than the earlier one-shot capture function. It is
+still an in-process, explicitly guarded hook with no public RPC or main provider
+registration. Trusted private owner/transport ports compose it with the broker.
+No cookie transfer, login operation, Store transaction or user-runtime activation
+is added. These injected ports must use actual Windows ownership checks for a
+native run; a Node ready handle is not an OS attestation or derivation receipt.
+
+Partial startup and invalidation cancel preparation and abort registered owners.
+The broker waits for registered and late prepare/abort acknowledgements under an
+independent two-second cleanup deadline, without holding its state lock. An
+uncooperative callback or failed cleanup yields permanent `cleanup-uncertain`;
+a late owner cannot turn it into a successful completion. Opt-out preserves the
+reader tree via the trusted owner port; parent exit requests retirement of both
+trees. That OS behavior remains the port's responsibility and was not exercised
+against Chrome in this increment. Synchronous effect callbacks stay local and
+non-reentrant; no native operation is authorized by an offline success flag.
+
+Canonical `scripts/test-native-manual-pilot-broker.ps1` run
+`245501fa56f24dd685b21ca51c26da19` passed 44 Node tests, 7 Go top-level tests/20
+subcases, four source/test tag gates and dev/combined Engine compilation. It
+includes two persistent accountless Node processes: prepare holds each actual
+synthetic document, Go freezes returned pins, acquire uses the same actor/handle,
+then broker reader admission and exactly-once in-memory result completion pass.
+The negative cross-language case rejects a wrong frozen document. Normal-pause
+tests reject context loss before identity evaluation. Broker cases cover partial
+and late prepare cleanup, uncooperative cleanup, policy/consent/process drift,
+original expiry/clock rollback, last reader and parent exit. A three-second
+synthetic preparation still requires a fresh sub-two-second acquisition afterward;
+it does not reset the original attempt clock.
+
+Log: `runtime/qa/auth-session-sidecar/native-manual-broker-245501fa56f24dd685b21ca51c26da19.log.txt`.
+The owned temporary root was removed. OS/process/directory/Job claims in this test
+are explicitly invented; actual normal-pause behavior is tested with the local
+VM/handoff harness, not Chrome. No browser/profile, account, transfer, Store or
+user runtime was used. The owner/broker binding code is connected and verified
+offline; native Windows ownership/transport instantiation and bounded native QA
+acceptance remain unproven. Main-dev activation still requires its own explicit
+authorization, with the existing Store compatibility boundary unchanged.

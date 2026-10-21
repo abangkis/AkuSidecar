@@ -5,7 +5,7 @@ import { BootstrapHandoffCapture, BootstrapBreakpointHandoff } from './x-bootstr
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
 
-function fixture(fault, boundIdentity = false) {
+function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => {}) {
   let capture;
   let index = 0;
   let phase = 'instrumentation';
@@ -31,6 +31,7 @@ function fixture(fault, boundIdentity = false) {
   };
   capture = new BootstrapHandoffCapture({
     boundIdentity,
+    beforeIdentityRead,
     send: async (method, params, purpose) => {
       if (method === 'Page.getFrameTree') return { frameId: 'private-root' };
       if (method === 'Debugger.setInstrumentationBreakpoint') return { breakpointId: 'private-instrumentation' };
@@ -83,8 +84,35 @@ function fixture(fault, boundIdentity = false) {
       return { acknowledged: true };
     },
   });
-  return { capture, evaluations: () => evaluations };
+  return { capture, evaluations: () => evaluations, observe };
 }
+
+test('owner prepare holds a verified normal pause before identity evaluation until broker acquisition', async () => {
+  let release, entered;
+  const held = new Promise(resolve => { release = resolve; });
+  const ready = new Promise(resolve => { entered = resolve; });
+  const { capture, evaluations } = fixture(undefined, true, async contextId => {
+    assert.equal(contextId, 1); entered(); await held;
+  });
+  const result = capture.run();
+  await ready;
+  assert.equal(evaluations(), 0);
+  release();
+  assert.equal((await result).stopReason, 'captured');
+});
+
+test('startup context loss while the broker holds prepare is rejected before any identity evaluation', async () => {
+  let release, entered;
+  const held = new Promise(resolve => { release = resolve; });
+  const ready = new Promise(resolve => { entered = resolve; });
+  const { capture, evaluations, observe } = fixture(undefined, true, async () => { entered(); await held; });
+  const result = capture.run();
+  await ready;
+  observe({ type: 'context_destroyed', contextId: 1 });
+  release();
+  assert.notEqual((await result).stopReason, 'captured');
+  assert.equal(evaluations(), 0);
+});
 
 test('native handoff adapter reads only verified normal hits with the fixed guarded projector', async () => {
   const { capture, evaluations } = fixture();

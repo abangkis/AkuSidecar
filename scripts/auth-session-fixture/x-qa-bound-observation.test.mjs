@@ -87,6 +87,16 @@ test('one reload binds current-self and protected settings without exporting any
   }
   await assert.rejects(s.b.finish(true));
 });
+test('startup owner pins come from the new document before self acquisition and reject stale contexts', () => {
+  const s = setup();
+  assert.throws(() => s.b.startupPins(7));
+  s.document();
+  assert.deepEqual(s.b.startupPins(7), { ownerId: '1', profileId: scope.profileId, contextId: '7',
+    targetId: scope.targetId, frameId: 'frame', documentId: 'loader' });
+  assert.throws(() => s.b.startupPins(8));
+  s.identity();
+  assert.throws(() => s.b.startupPins(7));
+});
 test('fixed paused expression uses direct string self ID and rejects conflicting or accessor sources', () => {
   for (const [modify, expected] of [[() => {}, '12345'], [p => { p.__INITIAL_STATE__.session.user_id_str = '54321'; }, null],
     [p => { p.__INITIAL_STATE__.session.user_id = 12345; }, null],

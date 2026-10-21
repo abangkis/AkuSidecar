@@ -157,6 +157,26 @@ remain unfinished. These helpers open no
 Chrome/profile/login/listener, transfer no session and access no Store/user
 runtime. The snapshot V1 helper and its evidence below remain unchanged.
 
+Run `.\scripts\test-native-manual-pilot-broker.ps1` for the subsequent two-phase
+owner/broker connection. Both role actors prepare at the new startup document
+before any identity evaluation, return observed context/frame/loader pins and an
+opaque handle, then acquire on the same handle after Go inspects/freezes the
+pair. Admission stays closed until the existing manual controller accepts both
+roles. There is no post-binding reload or wildcard/stale-document adoption.
+This uses the guarded in-process `createOwnedManualStartupOwners` driver hook,
+not a new main/runtime activation endpoint.
+
+Accountless run `245501fa56f24dd685b21ca51c26da19` passed 44 Node tests and 7 Go
+tests/20 subcases, four tag gates and two Engine builds. Persistent Node stdio
+tests cover same-owner preparation/acquisition, reader admission and single
+result publication; normal-pause tests reject context loss before evaluation.
+Partial/late startup and failed/uncooperative cleanup are covered. Native OS
+ownership facts are invented, while document pins are actually derived from
+the fixed synthetic document. No Chrome/profile/account/transfer, Store or user
+runtime is used. The temporary build root was removed. Details and native
+acceptance limits are in the
+[owner/broker checkpoint](../../docs/x-native-manual-pilot.md#ownerbroker-startup-binding-2026-10-21).
+
 ## Offline bounded dev snapshot pilot (V1 reference)
 
 The separate pilot model follows

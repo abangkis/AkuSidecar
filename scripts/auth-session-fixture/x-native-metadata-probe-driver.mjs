@@ -28,7 +28,7 @@ import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-
 import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
 import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs';
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
-import { createManualStartupCapture } from './x-manual-startup-source.mjs';
+import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -1625,7 +1625,7 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
   return boundCheckpoint(current, cookieWriteScope);
 }
 
-async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity) {
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   try {
@@ -1640,6 +1640,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
     let synchronized = false;
     current.earlyCapture = new BootstrapHandoffCapture({ boundIdentity: true,
+      beforeIdentityRead: contextId => beforeIdentityRead?.(bound.binder.startupPins(contextId)),
       send: async (method, params, purpose) => {
         const result = await send(method, params, current.sessionId, purpose);
         if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && bound.binder.identityReady()) {
@@ -1723,7 +1724,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup) {
+async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead) {
   const s = current.shortFeasibility;
   if (!s.navigated) {
     s.navigated = true;
@@ -1795,7 +1796,8 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     sampling = true;
     await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
     await command('Network.setCacheDisabled', { cacheDisabled: true });
-    capture = new BootstrapHandoffCapture({ boundIdentity: true, send: command, beforeRuntimeDisable: async () => {
+    capture = new BootstrapHandoffCapture({ boundIdentity: true, send: command,
+      beforeIdentityRead: contextId => beforeIdentityRead?.(binder.startupPins(contextId)), beforeRuntimeDisable: async () => {
       let timer;
       try { await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]); }
       finally { clearTimeout(timer); sampling = false; }
@@ -1817,26 +1819,26 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
 // A future explicitly authorized private bridge must bind actual startup pins
 // and invoke both captures together. This hook never seeds cookies or adopts a
 // different document/context to make a requested binding pass.
-export function createOwnedManualStartupCaptures(message) {
+export function createOwnedManualStartupOwners(message) {
   if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
   const current = requireOwner(message), collector = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
       current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted ||
       !collector || collector.closed || !collector.contextId || !collector.sessionId) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
-  const capture = role => createManualStartupCapture({ run: async (request, sink) => {
-    if (request.role !== role || sink.signal?.aborted) throw probeError('manual_startup_unavailable');
+  const owner = role => createManualStartupOwner({ run: async sink => {
+    if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
     try {
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
         await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup }, () => rendezvous.arrive(role));
-      } else await collectorShortCheckpoint(current, () => rendezvous.arrive(role), sink.onPrivateStartup);
+          onPrivateStartup: sink.onPrivateStartup }, () => rendezvous.arrive(role), sink.beforeIdentityRead);
+      } else await collectorShortCheckpoint(current, () => rendezvous.arrive(role), sink.onPrivateStartup, sink.beforeIdentityRead);
     } finally { sink.signal?.removeEventListener('abort', abort); }
   } });
-  return Object.freeze({ reader: capture('reader'), collector: capture('collector') });
+  return Object.freeze({ reader: owner('reader'), collector: owner('collector') });
 }
 
 async function runShortConcurrency(message, synchronize = false) {

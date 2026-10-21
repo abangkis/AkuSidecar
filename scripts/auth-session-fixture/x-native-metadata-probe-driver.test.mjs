@@ -9,7 +9,7 @@ import {
   projectCDPEvent,
   sanitizeEarlyHandoffDiagnostics,
   projectNetworkEvent,
-  createOwnedManualStartupCaptures,
+  createOwnedManualStartupOwners,
 } from './x-native-metadata-probe-driver.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
@@ -19,9 +19,9 @@ test('manual startup owner hook is default-off and is not a public driver comman
   const previous = process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;
   try {
     delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;
-    assert.throws(() => createOwnedManualStartupCaptures({}), /manual_startup_disabled/);
+    assert.throws(() => createOwnedManualStartupOwners({}), /manual_startup_disabled/);
     process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED = '1';
-    assert.throws(() => createOwnedManualStartupCaptures({}));
+    assert.throws(() => createOwnedManualStartupOwners({}));
   } finally {
     if (previous === undefined) delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;
     else process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED = previous;

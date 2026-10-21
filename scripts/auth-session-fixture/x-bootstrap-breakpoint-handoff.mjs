@@ -174,8 +174,8 @@ export class BootstrapBreakpointHandoff {
 // Native QA adapter. Instrumentation only installs; verified normal hits alone
 // receive the fixed projector with all original evaluation guards.
 export class BootstrapHandoffCapture {
-  constructor({ send, record = () => {}, boundIdentity = false, beforeRuntimeDisable } = {}) {
-    if (typeof send !== 'function' || typeof record !== 'function' || typeof boundIdentity !== 'boolean') throw fail();
+  constructor({ send, record = () => {}, boundIdentity = false, beforeRuntimeDisable, beforeIdentityRead = async () => {} } = {}) {
+    if (typeof send !== 'function' || typeof record !== 'function' || typeof boundIdentity !== 'boolean' || typeof beforeIdentityRead !== 'function') throw fail();
     this.instrumentationPauses = 0;
     this.otherPauses = 0;
     this.evaluationAttempts = 0;
@@ -201,6 +201,8 @@ export class BootstrapHandoffCapture {
         }
         this.evaluationAttempts += 1;
         try {
+          await beforeIdentityRead(contextId);
+          if (!this.capture.canRead(contextId) || !this.capture.canReadCallFrame(callFrameId) || !this.handoff.canEvaluate(callFrameId)) throw fail();
           return await send('Debugger.evaluateOnCallFrame', { callFrameId, expression: boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION,
             returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
             includeCommandLineAPI: false, generatePreview: false });
