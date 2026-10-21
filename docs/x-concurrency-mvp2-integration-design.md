@@ -391,6 +391,53 @@ acceptance, and explicitly authorized default-off main-dev activation. Reuse the
 accepted MVP-1 overlap and MVP-2 Chrome ownership evidence where unchanged.
 This section authorizes none of those implementation, test or runtime actions.
 
+## Offline pair authorization implementation checkpoint (2026-10-21)
+
+The user subsequently authorized publishing the design decision and implementing
+its offline synthetic contract. Design commit
+`86d69b20781c18b1fb491409534c604dc8fb1b31` was pushed and origin/main verified
+before implementation. This increment adds only the private dual-tag
+`development_concurrent_authorization.go` authority and its separate tests,
+`scripts/test-concurrency-authorization.ps1`, and documentation. The existing
+controller, Chrome adapter, main/broker routing and Store remain unchanged.
+
+The authority accepts only the invented `synthetic-x-concurrent` provider and
+explicit private fixture grants; `x-concurrent` is rejected. Its model supports
+immutable enrolled account/reader scope, distinct owners, instance-bound one-shot
+derivation, challenged per-role identity/authentication/lineage evidence,
+separate reader/collector revisions, serialized renewal and an uninterrupted
+evidence-version chain. Original tickets are never retagged. Claims and memory
+sink commits require lifecycle checkpoints through their actual fake-clock
+barriers, not merely an unexpired permit. Non-final reader inventory changes
+preserve stable owner identity; final loss revokes dependent authority.
+
+Evidence acquisition uses a cooperative two-second context and publication
+rechecks the five-second age ceiling, provider-specific earlier deadlines,
+owner/policy/fence state and predecessor validity. Expiry is driven by explicit
+clock checks in this offline model, not by a production deadline scheduler.
+Revoke/opt-out and memory commits share one mutex. This does not establish
+durable transaction behavior, real process ownership, native continuity or
+non-disruptive native observation latency. All public-facing qualification
+flags remain false; the component is not wired into any runnable provider.
+
+The canonical helper executes only the two named Go files, inspects source/test
+inclusion in four build-tag modes and compiles the combined dual-tag Engine
+package without executing its initializers or package tests. It uses project-local
+temporary/cache paths, disables dependency network access and opens no browser,
+Store/database, profile, native session or user runtime. Synthetic logs are
+retained under `runtime/qa/auth-session-sidecar/concurrent-authorization-<run>.log.txt`.
+
+Accepted run `40b28739e91f4dff9d2d7127c05d7463` passed 19 top-level tests and
+28 subtests, all four source/test tag gates and combined dual-tag Engine
+compilation. The owned temporary build root was removed. Coverage includes a
+twelve-second synthetic capture across three uninterrupted renewals, distinct
+per-role revisions, cross-instance derivation/evidence replay, exact frame/request
+binding, provider-specific earlier expiry, missing barrier coverage, coverage
+gaps, cancellation, reader inventory changes and stale/canceled/duplicate results.
+Blocked-renewal tests let revoke, policy change and owner drift win before
+publication. Commit-before-revoke and revoke-before-commit are tested as ordered
+in-memory outcomes; no race detector or durable transaction claim is made.
+
 ## First implementation and acceptance boundary
 
 The first implementation is an offline synthetic pair controller with fake

@@ -1,5 +1,32 @@
 # Local one-login concurrency fixture
 
+## Offline pair authorization and evidence renewal
+
+Run `.\scripts\test-concurrency-authorization.ps1` from the repository root.
+This separate helper qualifies the
+[pair authorization contract](../../docs/x-concurrency-mvp2-integration-design.md#production-pair-and-evidence-renewal-contract-2026-10-21)
+with invented enrollment, owner, derivation and lifecycle evidence, an injected
+clock and an in-memory work/result sink. It has no native-run option and does
+not wire the authority into main, the broker or the existing Chrome controller.
+
+Only `development_concurrent_authorization.go` and its regression source execute
+in named-file Go tests. The helper checks both files against all four build-tag
+modes and compiles the combined dual-tag Engine package without running its
+initializers or package tests. It uses project-local temporary/cache paths and
+keeps a synthetic log under
+`runtime/qa/auth-session-sidecar/concurrent-authorization-<run>.log.txt`.
+No Store/database, browser, login, credential, listener or user runtime is opened.
+Native/production authorization remains unavailable even when fixture permits
+and uninterrupted renewal succeed. Model atomicity is not durable transaction
+acceptance; native continuity and source latency remain separately unqualified.
+
+Accepted run `40b28739e91f4dff9d2d7127c05d7463` passed 19 top-level tests and
+28 subtests, four tag gates and combined Engine compilation. A twelve-second
+fake-clock capture completes through three uninterrupted renewals; gaps, expiry,
+revision change and concurrent invalidation deny authority. The temporary build
+root was removed. Expiry uses explicit clock checks, and evidence callbacks must
+cooperate with their two-second context; no native scheduler is qualified.
+
 ## Chrome-backed main, broker and Coordinator integration
 
 The separate `scripts/test-concurrency-chrome-integration.ps1` helper tests the
