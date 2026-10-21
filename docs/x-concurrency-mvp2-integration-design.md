@@ -438,6 +438,75 @@ Blocked-renewal tests let revoke, policy change and owner drift win before
 publication. Commit-before-revoke and revoke-before-commit are tested as ordered
 in-memory outcomes; no race detector or durable transaction claim is made.
 
+## Synthetic controller authorization wiring (2026-10-21)
+
+The five-file offline authority increment was reviewed and published as
+`2363080e87bcf98f5de932d2c386a6d3ff037861`, with origin/main verified. The user
+then authorized connecting that authority to the existing synthetic controller
+and running offline regression tests, still excluding Store, browsers, native
+sessions and user-runtime operations.
+
+The new private `newAuthorizedConcurrentController` constructor explicitly
+selects a fixture-only adapter in `development_concurrent_authorized_controller.go`.
+It requires the existing dev/fixture/controller grants plus the authority's
+private synthetic grant. The old constructor retains its legacy verifier/permit
+path. No main option, native provider, broker endpoint, runtime setting or Chrome
+adapter binding is added. Ordinary and single-tag builds exclude the component.
+
+Startup keeps controller admission closed while the adapter pins the actual
+synthetic controller/attempt/epoch/pair and both returned owner snapshots. It
+checks the independently configured enrolled account/reader profile, maps
+`synthetic:` references injectively to the authority's `synthetic-` namespace,
+records one invented derivation receipt and consumes challenged per-role evidence.
+No cookie read or transfer occurs. Fixture startup inventory entries are model
+state, not evidence of a physical Chrome window or native startup coverage.
+The selected path accepts distinct role revisions and never calls the legacy
+verifier or unconditional permit grant to authorize work.
+
+`RenewEvidence` calls the authority outside the controller's state and window
+operation locks, then validates owner/controller fences before publication and
+before returning. Renewal preserves the collector PID, generation and driver,
+controller pair and original ticket evidence version. Revoke, Disable, policy
+change, owner drift and parent cancellation can invalidate blocked renewal.
+Expiry is driven by injected-clock checks, including Snapshot; no production
+renewal/deadline scheduler or native observation latency is qualified.
+
+Claim, completion and cancellation use local callbacks under the controller's
+already-held mutex and the authority mutex, in that order. Callbacks may neither
+re-enter those locks nor perform external work. Result validation and both memory
+sink transitions share the authority commit point; callback failure commits
+neither sink. Operation/parent cancellation is rechecked at this final mutation
+barrier, including after waiting for authority. This is an in-memory guarantee,
+not a database transaction or proof of durable Store fencing.
+
+Non-final window changes retain authority. Last reader closure revokes dependent
+admission and denies independent continuation. After Disable has retained reader
+windows, closing the final reader completes cleanup without requesting a new
+collector permit. Unknown ownership or cleanup still blocks replacement.
+
+The canonical helper is `scripts/test-concurrency-authorized-controller.ps1`.
+Accepted run `4ebf169674ee491fb051999a89074b8b` passed 48 top-level tests and
+78 subtests across the legacy controller, authority and integrated bridge, all
+four source/test tag gates, standalone named-file compile compatibility for both
+original components, and combined dual-tag Engine compilation. Its log is
+`runtime/qa/auth-session-sidecar/concurrent-authorized-controller-4ebf169674ee491fb051999a89074b8b.log.txt`;
+the owned temporary build root was removed.
+
+The integrated suite includes a twelve-second fake-clock capture with three
+renewals and unchanged collector stamps, replay/cross-work/cross-controller
+rejection, missing coverage and expiry, blocked-renewal invalidations,
+commit/revoke ordering at both sinks, cancellation at a blocked mutation barrier,
+and Disable followed by final-reader cleanup. A legacy parent-cancellation test
+was made deterministic: the fake probe observes `ctx.Done()` before its release
+channel is closed, instead of racing asynchronous `context.AfterFunc` delivery.
+Production cancellation behavior was not changed to accommodate that test.
+
+No Chrome or main/broker acceptance was rerun or newly claimed for this wiring.
+Earlier Chrome runs remain their scoped historical baseline. Native source,
+continuity/timing, separately approved Store compatibility and durable acceptance,
+and main-dev activation remain outside this increment. Qualification flags stay
+false and the feature remains unavailable to ordinary runtime startup.
+
 ## First implementation and acceptance boundary
 
 The first implementation is an offline synthetic pair controller with fake

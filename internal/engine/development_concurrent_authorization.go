@@ -617,6 +617,13 @@ func (a *concurrentAuthorization) failInitialLocked(reason authorizationReason, 
 }
 
 func (a *concurrentAuthorization) renew(ctx context.Context, collect evidenceCollector) error {
+	return a.renewValidated(ctx, collect, nil)
+}
+
+// renewValidated executes the supplied controller-fence validation after
+// evidence collection and before the permit's atomic publication. The
+// callback must use only its own synchronization and must not hold auth.mu.
+func (a *concurrentAuthorization) renewValidated(ctx context.Context, collect evidenceCollector, validate func(context.Context) error) error {
 	if err := a.acquireRenewalSlot(ctx); err != nil {
 		return err
 	}
@@ -656,6 +663,11 @@ func (a *concurrentAuthorization) renew(ctx context.Context, collect evidenceCol
 	}
 	if err := contextError(ctx); err != nil {
 		return a.failRenewal(err, reasonContextCancelled)
+	}
+	if validate != nil {
+		if err := validate(ctx); err != nil {
+			return a.failRenewal(err, reasonOwnerDrift)
+		}
 	}
 
 	a.mu.Lock()
@@ -1054,6 +1066,13 @@ func ticketExistsForCommand(tickets map[string]*ticketRecord, commandID string) 
 }
 
 func (a *concurrentAuthorization) claim(ticket workTicket) error {
+	return a.claimWithCommit(ticket, nil)
+}
+
+// claimWithCommit couples the controller's active-work transition to the
+// authority ticket transition. The callback runs under auth.mu and the caller
+// may already hold its controller mutex; callbacks must never re-enter auth.
+func (a *concurrentAuthorization) claimWithCommit(ticket workTicket, commit func() error) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, err := a.readClockLocked(); err != nil {
@@ -1078,12 +1097,24 @@ func (a *concurrentAuthorization) claim(ticket workTicket) error {
 	if err := a.validateChainLocked(record.ticket.evidenceVersion, a.permit.evidenceVersion); err != nil {
 		return err
 	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return authErrorWithCause(reasonConcurrentInvalid, err)
+		}
+	}
 	record.status = workClaimed
 	a.sideEffects++ // Synthetic fixture capture claim only.
 	return nil
 }
 
 func (a *concurrentAuthorization) complete(ticket workTicket, result fixtureResult) error {
+	return a.completeWithCommit(ticket, result, nil)
+}
+
+// completeWithCommit makes the fixture memory sink and the controller's
+// result sink share one authority commit point. Its callback must be local,
+// non-reentrant, and safe to run while auth.mu is held.
+func (a *concurrentAuthorization) completeWithCommit(ticket workTicket, result fixtureResult, commit func() error) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, err := a.readClockLocked(); err != nil {
@@ -1121,6 +1152,11 @@ func (a *concurrentAuthorization) complete(ticket workTicket, result fixtureResu
 	if _, exists := a.memorySink[canonical.ticketID]; exists {
 		return authError(reasonDuplicateResult)
 	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return authErrorWithCause(reasonConcurrentInvalid, err)
+		}
+	}
 	// Result validation and memory-sink commit share this lock with revoke.
 	a.memorySink[canonical.ticketID] = result
 	record.status = workCompleted
@@ -1133,6 +1169,10 @@ func validResult(result fixtureResult, ticket workTicket) bool {
 }
 
 func (a *concurrentAuthorization) cancel(ticket workTicket) error {
+	return a.cancelWithCommit(ticket, nil)
+}
+
+func (a *concurrentAuthorization) cancelWithCommit(ticket workTicket, commit func() error) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, err := a.readClockLocked(); err != nil {
@@ -1147,6 +1187,11 @@ func (a *concurrentAuthorization) cancel(ticket workTicket) error {
 	}
 	if record.status == workCancelled {
 		return authError(reasonTicketCancelled)
+	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return authErrorWithCause(reasonConcurrentInvalid, err)
+		}
 	}
 	record.status = workCancelled
 	return nil

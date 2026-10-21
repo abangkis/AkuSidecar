@@ -1,5 +1,33 @@
 # Local one-login concurrency fixture
 
+## Offline controller with pair authorization
+
+Run `.\scripts\test-concurrency-authorized-controller.ps1` from the repository
+root to exercise the private pair authority through the existing synthetic
+controller. The selection is an explicitly granted in-process fixture seam,
+not a main option, native provider or runtime setting. The legacy nil-seam path
+remains separate, including the previously accepted Chrome ownership fixture.
+
+The helper checks source/test exclusion in all four build-tag modes, compiles
+each original standalone named-file test pair without executing its cases, then
+runs the combined controller, authority and bridge regressions once. It also
+compiles the dual-tag Engine without executing its initializers or package tests.
+Temporary files and build caches stay project-local. Synthetic logs use
+`runtime/qa/auth-session-sidecar/concurrent-authorized-controller-<run>.log.txt`.
+There is no native-run switch, browser, Store/database, login, network listener
+or user-runtime access. In-memory result ordering is not durable Store acceptance.
+
+Accepted run `4ebf169674ee491fb051999a89074b8b` passed 48 top-level tests and
+78 subtests, all tag/standalone compatibility gates and combined Engine compile.
+The owned temporary build root was removed. Tests exercise a twelve-second
+fake-clock capture through three renewals, unchanged collector stamps, original
+ticket evidence versions, blocked-renewal invalidation and cancellation at the
+final claim/commit barrier. Disable retains reader windows; their final close
+finishes cleanup. A focused legacy fake-probe synchronization fix removes an
+`AfterFunc` scheduling race without changing production cancellation semantics.
+See the [controller wiring checkpoint](../../docs/x-concurrency-mvp2-integration-design.md#synthetic-controller-authorization-wiring-2026-10-21)
+for the exact scope and remaining native/durable integration limits.
+
 ## Offline pair authorization and evidence renewal
 
 Run `.\scripts\test-concurrency-authorization.ps1` from the repository root.

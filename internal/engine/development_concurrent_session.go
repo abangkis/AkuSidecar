@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -139,6 +140,46 @@ type concurrentPorts struct {
 	permit   concurrentPermitPort
 }
 
+// concurrentAuthorizationBinding is the controller's exact in-memory fence
+// snapshot passed to the optional private authorization seam. It carries no
+// native process attestation and is only consumed by the dual-tag fixture.
+type concurrentAuthorizationBinding struct {
+	ControllerID   string
+	AttemptID      string
+	ParentID       string
+	Epoch          uint64
+	PairGeneration uint64
+	AccountID      string
+	Reader         concurrentOwner
+	Collector      concurrentOwner
+	ReaderWindows  []string
+}
+
+type concurrentAuthorizationTicket struct {
+	ID              string
+	EvidenceVersion uint64
+	WorkID          string
+}
+
+// The seam is optional so the original controller source and tests remain
+// independently named-file testable. Commit callbacks run with c.mu already
+// held and must be local, non-reentrant mutations; implementations must never
+// call back to reacquire c.mu while holding authority state locks.
+type concurrentAuthorizationSeam interface {
+	Start(context.Context, concurrentAuthorizationBinding) error
+	RenewEvidence(context.Context, concurrentAuthorizationBinding, func(context.Context) error) error
+	Ticket(string) (concurrentAuthorizationTicket, error)
+	Claim(concurrentAuthorizationTicket, func() error) error
+	Complete(concurrentAuthorizationTicket, string, func() error) error
+	Cancel(concurrentAuthorizationTicket, func() error) error
+	Check() error
+	Revoke(string)
+	PolicyChanged(uint64, uint64, bool)
+	OwnerChanged(concurrentRole)
+	UpdateReaderWindows([]string) error
+	RequestIndependentCollector() error
+}
+
 type concurrentConfig struct {
 	Enabled              bool
 	DevBuild             bool
@@ -175,16 +216,18 @@ type concurrentWork struct {
 
 // concurrentTicket pins work to one controller fence and collector owner.
 type concurrentTicket struct {
-	ControllerID        string
-	AttemptID           string
-	WorkID              string
-	Epoch               uint64
-	PairGeneration      uint64
-	CollectorID         string
-	CollectorGeneration uint64
-	CollectorPID        int
-	CollectorCreation   string
-	CollectorDriver     string
+	ControllerID          string
+	AttemptID             string
+	WorkID                string
+	Epoch                 uint64
+	PairGeneration        uint64
+	CollectorID           string
+	CollectorGeneration   uint64
+	CollectorPID          int
+	CollectorCreation     string
+	CollectorDriver       string
+	EvidenceVersion       uint64
+	authorizationTicketID string
 }
 
 type concurrentLifecycle string
@@ -217,9 +260,10 @@ type concurrentSnapshot struct {
 }
 
 type concurrentController struct {
-	parent context.Context
-	cfg    concurrentConfig
-	ports  concurrentPorts
+	parent        context.Context
+	cfg           concurrentConfig
+	ports         concurrentPorts
+	authorization concurrentAuthorizationSeam
 
 	opMu sync.Mutex
 	mu   sync.Mutex
@@ -259,18 +303,7 @@ type concurrentController struct {
 // newConcurrentController is private to the dual-tag fixture. An all-zero
 // config creates a default-off controller without touching any port.
 func newConcurrentController(parent context.Context, cfg concurrentConfig, ports concurrentPorts) (*concurrentController, error) {
-	c := &concurrentController{
-		parent:         parent,
-		cfg:            cfg,
-		ports:          ports,
-		lifecycle:      concurrentNew,
-		readerWindows:  make(map[string]string),
-		proofs:         make(map[concurrentRole]concurrentProof),
-		usedChallenges: make(map[string]bool),
-		work:           make(map[string]*concurrentWork),
-		sink:           make(map[string]string),
-		parentDone:     make(chan struct{}),
-	}
+	c := newConcurrentControllerShell(parent, cfg, ports)
 	if !cfg.Enabled {
 		return c, nil
 	}
@@ -299,6 +332,56 @@ func newConcurrentController(parent context.Context, cfg concurrentConfig, ports
 	if cfg.now == nil {
 		c.cfg.now = time.Now
 	}
+	c.enabled = true
+	return c, nil
+}
+
+func newConcurrentControllerShell(parent context.Context, cfg concurrentConfig, ports concurrentPorts) *concurrentController {
+	return &concurrentController{
+		parent:         parent,
+		cfg:            cfg,
+		ports:          ports,
+		lifecycle:      concurrentNew,
+		readerWindows:  make(map[string]string),
+		proofs:         make(map[concurrentRole]concurrentProof),
+		usedChallenges: make(map[string]bool),
+		work:           make(map[string]*concurrentWork),
+		sink:           make(map[string]string),
+		parentDone:     make(chan struct{}),
+	}
+}
+
+// newConcurrentControllerWithAuthorization is a separate fixture-only
+// constructor. The optional seam intentionally bypasses the legacy shared
+// ExpectedRevision gate; its own one-shot derivation pins role revisions.
+func newConcurrentControllerWithAuthorization(parent context.Context, cfg concurrentConfig, ports concurrentPorts, authorization concurrentAuthorizationSeam) (*concurrentController, error) {
+	c := newConcurrentControllerShell(parent, cfg, ports)
+	if !cfg.Enabled {
+		return c, nil
+	}
+	if parent == nil || !cfg.DevBuild || !cfg.FixtureBuild || !cfg.OwnerGrant || !cfg.ControllerGrant || cfg.Provider != concurrentProvider || authorization == nil || cfg.IndependentCollector {
+		return nil, errConcurrentUnavailable
+	}
+	if !isSyntheticID(cfg.AttemptID) || !isSyntheticID(cfg.ParentID) || !isSyntheticID(cfg.ExpectedAccountID) ||
+		!isSyntheticID(cfg.ReaderProfileID) || !isSyntheticID(cfg.ReaderDirectoryID) ||
+		!isSyntheticID(cfg.CollectorProfileID) || !isSyntheticID(cfg.CollectorDirectoryID) ||
+		cfg.ReaderProfileID == cfg.CollectorProfileID || cfg.ReaderDirectoryID == cfg.CollectorDirectoryID || ports.owners == nil {
+		return nil, errConcurrentUnavailable
+	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, errConcurrentUnavailable
+	}
+	c.controllerID = "synthetic:controller:" + hex.EncodeToString(nonce[:])
+	c.epoch = uint64(nonce[0]) | uint64(nonce[1])<<8 | uint64(nonce[2])<<16 | uint64(nonce[3])<<24 |
+		uint64(nonce[4])<<32 | uint64(nonce[5])<<40 | uint64(nonce[6])<<48 | uint64(nonce[7])<<56
+	if c.epoch == 0 {
+		c.epoch = 1
+	}
+	if cfg.now == nil {
+		c.cfg.now = time.Now
+	}
+	c.authorization = authorization
 	c.enabled = true
 	return c, nil
 }
@@ -416,6 +499,9 @@ func (c *concurrentController) Start(ctx context.Context) error {
 	if err := c.checkStartFence(epoch, pairGeneration, ctx); err != nil {
 		return c.failStart(err)
 	}
+	if c.authorization != nil {
+		return c.startAuthorized(ctx, epoch, pairGeneration, reader, collector)
+	}
 
 	bindingStart := c.now()
 	bindingCtx, cancelBinding := context.WithTimeout(ctx, concurrentBindingDeadline)
@@ -485,6 +571,51 @@ func (c *concurrentController) Start(ctx context.Context) error {
 	c.lifecycle = concurrentRunning
 	c.mu.Unlock()
 	return nil
+}
+
+func (c *concurrentController) startAuthorized(ctx context.Context, epoch, pairGeneration uint64, reader, collector concurrentOwner) error {
+	started := c.now()
+	bindingCtx, cancel := context.WithTimeout(ctx, concurrentBindingDeadline)
+	defer cancel()
+	binding := c.authorizationBinding(epoch, pairGeneration, reader, collector)
+	if err := c.checkOwnerCurrent(bindingCtx, reader); err != nil {
+		return c.failStart(errConcurrentStale)
+	}
+	if err := c.checkOwnerCurrent(bindingCtx, collector); err != nil {
+		return c.failStart(errConcurrentStale)
+	}
+	if err := c.authorization.Start(bindingCtx, binding); err != nil {
+		return c.failStart(err)
+	}
+	if err := c.checkOwnerCurrent(bindingCtx, reader); err != nil {
+		return c.failStart(errConcurrentStale)
+	}
+	if err := c.checkOwnerCurrent(bindingCtx, collector); err != nil {
+		return c.failStart(errConcurrentStale)
+	}
+	if bindingCtx.Err() != nil || c.now().Sub(started) >= concurrentBindingDeadline {
+		return c.failStart(errConcurrentProof)
+	}
+	c.mu.Lock()
+	if c.epoch != epoch || c.pairGeneration != pairGeneration || c.parent.Err() != nil || bindingCtx.Err() != nil || c.revoked || c.disabled || c.authorization.Check() != nil {
+		c.mu.Unlock()
+		return c.failStart(errConcurrentStale)
+	}
+	c.admissionOpen = true
+	c.lifecycle = concurrentRunning
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *concurrentController) authorizationBinding(epoch, pairGeneration uint64, reader, collector concurrentOwner) concurrentAuthorizationBinding {
+	c.mu.Lock()
+	windows := c.authorizationWindowsLocked()
+	c.mu.Unlock()
+	return concurrentAuthorizationBinding{
+		ControllerID: c.controllerID, AttemptID: c.cfg.AttemptID, ParentID: c.cfg.ParentID,
+		Epoch: epoch, PairGeneration: pairGeneration, AccountID: c.cfg.ExpectedAccountID,
+		Reader: reader, Collector: collector, ReaderWindows: windows,
+	}
 }
 
 func (c *concurrentController) checkStartFence(epoch, pairGeneration uint64, ctx context.Context) error {
@@ -594,7 +725,7 @@ func (c *concurrentController) QueueWork(payload string) (string, error) {
 func (c *concurrentController) Ticket(workID string) (concurrentTicket, error) {
 	c.mu.Lock()
 	work := c.work[workID]
-	if c.admissionOpen && !c.proofsFreshLocked(c.now()) {
+	if c.admissionOpen && !c.admissionFreshLocked() {
 		c.mu.Unlock()
 		c.invalidate("proof-expired")
 		return concurrentTicket{}, errConcurrentProof
@@ -604,6 +735,15 @@ func (c *concurrentController) Ticket(workID string) (concurrentTicket, error) {
 		return concurrentTicket{}, errConcurrentUnavailable
 	}
 	ticket := c.ticketLocked(workID)
+	if c.authorization != nil {
+		authorityTicket, err := c.authorization.Ticket(workID)
+		if err != nil {
+			c.mu.Unlock()
+			return concurrentTicket{}, errors.Join(errConcurrentProof, err)
+		}
+		ticket.EvidenceVersion = authorityTicket.EvidenceVersion
+		ticket.authorizationTicketID = authorityTicket.ID
+	}
 	c.mu.Unlock()
 	return ticket, nil
 }
@@ -629,6 +769,15 @@ func (c *concurrentController) proofsFreshLocked(now time.Time) bool {
 	return ok && proofFresh(reader, now)
 }
 
+// admissionFreshLocked must be called with c.mu held. The authority adapter
+// performs only a local, in-memory check and never calls back into c.
+func (c *concurrentController) admissionFreshLocked() bool {
+	if c.authorization != nil {
+		return c.authorization.Check() == nil
+	}
+	return c.proofsFreshLocked(c.now())
+}
+
 func (c *concurrentController) Claim(ctx context.Context, ticket concurrentTicket) error {
 	if !c.enabled {
 		return errConcurrentDisabled
@@ -636,7 +785,7 @@ func (c *concurrentController) Claim(ctx context.Context, ticket concurrentTicke
 	ctx, cancel := c.operationContext(ctx, concurrentCleanupTimeout)
 	defer cancel()
 	c.mu.Lock()
-	if c.admissionOpen && !c.proofsFreshLocked(c.now()) {
+	if c.admissionOpen && !c.admissionFreshLocked() {
 		c.mu.Unlock()
 		c.invalidate("proof-expired")
 		return errConcurrentProof
@@ -666,7 +815,7 @@ func (c *concurrentController) Claim(ctx context.Context, ticket concurrentTicke
 	}
 	c.mu.Lock()
 	work := c.work[ticket.WorkID]
-	if c.admissionOpen && !c.proofsFreshLocked(c.now()) {
+	if c.admissionOpen && !c.admissionFreshLocked() {
 		c.mu.Unlock()
 		c.invalidate("proof-expired")
 		return errConcurrentProof
@@ -674,6 +823,24 @@ func (c *concurrentController) Claim(ctx context.Context, ticket concurrentTicke
 	if ctx.Err() != nil || !c.ticketCurrentLocked(ticket) || work == nil || work.state != concurrentWorkQueued {
 		c.mu.Unlock()
 		return errConcurrentStale
+	}
+	if c.authorization != nil {
+		authorityTicket := concurrentAuthorizationTicket{ID: ticket.authorizationTicketID, EvidenceVersion: ticket.EvidenceVersion, WorkID: ticket.WorkID}
+		err := c.authorization.Claim(authorityTicket, func() error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if !c.ticketCurrentLocked(ticket) || work.state != concurrentWorkQueued {
+				return errConcurrentStale
+			}
+			work.state = concurrentWorkActive
+			return nil
+		})
+		c.mu.Unlock()
+		if err != nil {
+			return errors.Join(errConcurrentProof, err)
+		}
+		return nil
 	}
 	work.state = concurrentWorkActive
 	c.mu.Unlock()
@@ -683,6 +850,9 @@ func (c *concurrentController) Claim(ctx context.Context, ticket concurrentTicke
 func (c *concurrentController) ticketCurrentLocked(ticket concurrentTicket) bool {
 	if !c.admissionOpen || c.parent.Err() != nil || c.pendingRevocations > 0 || c.continuationBlocked || c.collector == nil || ticket.ControllerID != c.controllerID || ticket.AttemptID != c.cfg.AttemptID ||
 		ticket.Epoch != c.epoch || ticket.PairGeneration != c.pairGeneration {
+		return false
+	}
+	if c.authorization != nil && (ticket.authorizationTicketID == "" || ticket.EvidenceVersion == 0) {
 		return false
 	}
 	owner := *c.collector
@@ -702,7 +872,7 @@ func (c *concurrentController) Complete(ctx context.Context, ticket concurrentTi
 	ctx, cancel := c.operationContext(ctx, concurrentCleanupTimeout)
 	defer cancel()
 	c.mu.Lock()
-	if c.admissionOpen && !c.proofsFreshLocked(c.now()) {
+	if c.admissionOpen && !c.admissionFreshLocked() {
 		c.mu.Unlock()
 		c.invalidate("proof-expired")
 		return errConcurrentProof
@@ -730,7 +900,7 @@ func (c *concurrentController) Complete(ctx context.Context, ticket concurrentTi
 	}
 	c.mu.Lock()
 	work := c.work[ticket.WorkID]
-	if c.admissionOpen && !c.proofsFreshLocked(c.now()) {
+	if c.admissionOpen && !c.admissionFreshLocked() {
 		c.mu.Unlock()
 		c.invalidate("proof-expired")
 		return errConcurrentProof
@@ -738,6 +908,25 @@ func (c *concurrentController) Complete(ctx context.Context, ticket concurrentTi
 	if ctx.Err() != nil || !c.ticketCurrentLocked(ticket) || work == nil || work.state != concurrentWorkActive {
 		c.mu.Unlock()
 		return errConcurrentStale
+	}
+	if c.authorization != nil {
+		authorityTicket := concurrentAuthorizationTicket{ID: ticket.authorizationTicketID, EvidenceVersion: ticket.EvidenceVersion, WorkID: ticket.WorkID}
+		err := c.authorization.Complete(authorityTicket, result, func() error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if !c.ticketCurrentLocked(ticket) || work.state != concurrentWorkActive {
+				return errConcurrentStale
+			}
+			c.sink[ticket.WorkID] = result
+			work.state = concurrentWorkComplete
+			return nil
+		})
+		c.mu.Unlock()
+		if err != nil {
+			return errors.Join(errConcurrentProof, err)
+		}
+		return nil
 	}
 	c.sink[ticket.WorkID] = result
 	work.state = concurrentWorkComplete
@@ -759,6 +948,20 @@ func (c *concurrentController) Cancel(ticket concurrentTicket) error {
 		ticket.PairGeneration != c.pairGeneration || c.collector == nil || !c.ticketMatchesOwnerLocked(ticket) {
 		return errConcurrentStale
 	}
+	if c.authorization != nil {
+		authorityTicket := concurrentAuthorizationTicket{ID: ticket.authorizationTicketID, EvidenceVersion: ticket.EvidenceVersion, WorkID: ticket.WorkID}
+		err := c.authorization.Cancel(authorityTicket, func() error {
+			if work.state == concurrentWorkComplete || work.state == concurrentWorkCancelled {
+				return errConcurrentStale
+			}
+			work.state = concurrentWorkCancelled
+			return nil
+		})
+		if err != nil {
+			return errors.Join(errConcurrentProof, err)
+		}
+		return nil
+	}
 	work.state = concurrentWorkCancelled
 	return nil
 }
@@ -767,6 +970,15 @@ func (c *concurrentController) ticketMatchesOwnerLocked(ticket concurrentTicket)
 	owner := *c.collector
 	return ticket.CollectorID == owner.ID && ticket.CollectorGeneration == owner.Generation && ticket.CollectorPID == owner.PID &&
 		ticket.CollectorCreation == owner.CreationIdentity && ticket.CollectorDriver == owner.Driver
+}
+
+func (c *concurrentController) authorizationWindowsLocked() []string {
+	windows := make([]string, 0, len(c.readerWindows))
+	for id := range c.readerWindows {
+		windows = append(windows, id)
+	}
+	sort.Strings(windows)
+	return windows
 }
 
 // OpenReaderWindow changes only the tracked reader inventory. It never calls a
@@ -783,7 +995,7 @@ func (c *concurrentController) OpenReaderWindow(ctx context.Context, id, target 
 	c.opMu.Lock()
 	defer c.opMu.Unlock()
 	c.mu.Lock()
-	if c.admissionOpen && !c.proofsFreshLocked(c.now()) {
+	if c.admissionOpen && !c.admissionFreshLocked() {
 		c.mu.Unlock()
 		c.invalidate("proof-expired")
 		return errConcurrentProof
@@ -814,6 +1026,15 @@ func (c *concurrentController) OpenReaderWindow(ctx context.Context, id, target 
 		return errConcurrentStale
 	}
 	c.readerWindows[id] = target
+	if c.authorization != nil {
+		if err := c.authorization.UpdateReaderWindows(c.authorizationWindowsLocked()); err != nil {
+			delete(c.readerWindows, id)
+			c.mu.Unlock()
+			_ = c.ports.owners.CloseReaderWindow(ctx, reader, id)
+			c.invalidate("reader-inventory-update-failed")
+			return errConcurrentProof
+		}
+	}
 	c.mu.Unlock()
 	return nil
 }
@@ -844,6 +1065,13 @@ func (c *concurrentController) CloseReaderWindow(ctx context.Context, id string)
 	}
 	c.mu.Lock()
 	delete(c.readerWindows, id)
+	if !last && c.authorization != nil {
+		if err := c.authorization.UpdateReaderWindows(c.authorizationWindowsLocked()); err != nil {
+			c.mu.Unlock()
+			c.invalidate("reader-inventory-update-failed")
+			return errConcurrentProof
+		}
+	}
 	c.mu.Unlock()
 	if !last {
 		return nil
@@ -878,6 +1106,11 @@ func (c *concurrentController) readerRetiredDecision(ctx context.Context) error 
 		c.updateCleanupStateLocked()
 		c.mu.Unlock()
 		return nil
+	}
+	if c.authorization != nil {
+		authorization := c.authorization
+		c.mu.Unlock()
+		return authorization.RequestIndependentCollector()
 	}
 	if !c.cfg.IndependentCollector || c.collector == nil {
 		c.mu.Unlock()
@@ -1020,6 +1253,105 @@ func (c *concurrentController) Revoke(reason string) {
 	c.invalidate(reason)
 }
 
+// PolicyChanged fences the selected authority synchronously. Policy values
+// are scoped fixture inputs and never written to a Store or external service.
+func (c *concurrentController) PolicyChanged(policyGeneration, holdGeneration uint64, enabled bool) {
+	if !c.enabled {
+		return
+	}
+	c.mu.Lock()
+	c.continuationBlocked = true
+	if c.authorization != nil {
+		c.authorization.PolicyChanged(policyGeneration, holdGeneration, enabled)
+	}
+	c.mu.Unlock()
+	c.invalidate("policy-changed")
+}
+
+// OwnerChanged is the explicit owner-fence notification used by the private
+// fixture seam. It never closes or replaces an owner itself.
+func (c *concurrentController) OwnerChanged(role concurrentRole) {
+	if !c.enabled {
+		return
+	}
+	c.mu.Lock()
+	c.continuationBlocked = true
+	if c.authorization != nil {
+		c.authorization.OwnerChanged(role)
+	}
+	c.mu.Unlock()
+	c.invalidate("owner-changed")
+}
+
+// RenewEvidence advances the selected pair authority without holding opMu or
+// c.mu during evidence acquisition. The validator runs after collection and
+// before the authority publishes its next evidence version.
+func (c *concurrentController) RenewEvidence(ctx context.Context) error {
+	if !c.enabled {
+		return errConcurrentDisabled
+	}
+	if c.authorization == nil {
+		return errConcurrentUnavailable
+	}
+	renewCtx, cancel := c.operationContext(ctx, concurrentBindingDeadline)
+	defer cancel()
+	c.mu.Lock()
+	if !c.admissionOpen || c.disabled || c.cleanupFailed || c.revoked || c.parent.Err() != nil || c.reader == nil || c.collector == nil || c.pendingRevocations > 0 {
+		c.mu.Unlock()
+		return errConcurrentUnavailable
+	}
+	if c.authorization.Check() != nil {
+		c.mu.Unlock()
+		c.invalidate("authority-expired-before-renewal")
+		return errConcurrentProof
+	}
+	epoch, pairGeneration := c.epoch, c.pairGeneration
+	reader, collector := *c.reader, *c.collector
+	c.mu.Unlock()
+	binding := c.authorizationBinding(epoch, pairGeneration, reader, collector)
+
+	validate := func(checkCtx context.Context) error {
+		if err := checkCtx.Err(); err != nil {
+			return err
+		}
+		if err := c.checkOwnerCurrent(checkCtx, reader); err != nil {
+			return errConcurrentStale
+		}
+		if err := c.checkOwnerCurrent(checkCtx, collector); err != nil {
+			return errConcurrentStale
+		}
+		c.mu.Lock()
+		valid := c.admissionOpen && !c.disabled && !c.cleanupFailed && !c.revoked && c.parent.Err() == nil && c.pendingRevocations == 0 &&
+			c.epoch == epoch && c.pairGeneration == pairGeneration && c.reader != nil && c.collector != nil &&
+			sameOwner(*c.reader, reader) && sameOwner(*c.collector, collector)
+		c.mu.Unlock()
+		if !valid {
+			return errConcurrentStale
+		}
+		return nil
+	}
+	if err := validate(renewCtx); err != nil {
+		c.invalidate("owner-or-controller-drift-before-renewal")
+		return errors.Join(errConcurrentStale, err)
+	}
+	if err := c.authorization.RenewEvidence(renewCtx, binding, validate); err != nil {
+		c.invalidate("evidence-renewal-failed")
+		return errors.Join(errConcurrentProof, err)
+	}
+	if err := validate(renewCtx); err != nil {
+		c.invalidate("owner-or-controller-drift-after-renewal")
+		return errors.Join(errConcurrentStale, err)
+	}
+	c.mu.Lock()
+	valid := c.admissionOpen && c.epoch == epoch && c.pairGeneration == pairGeneration && c.parent.Err() == nil && c.authorization.Check() == nil
+	c.mu.Unlock()
+	if !valid {
+		c.invalidate("authority-changed-after-renewal")
+		return errConcurrentStale
+	}
+	return nil
+}
+
 func (c *concurrentController) rememberPermit(permit concurrentPermit, epoch uint64) {
 	if !permit.Granted || permit.ID == "" {
 		return
@@ -1031,10 +1363,41 @@ func (c *concurrentController) rememberPermit(permit concurrentPermit, epoch uin
 	c.mu.Unlock()
 }
 
-// invalidate is the admission linearization point. It never calls a port while
-// holding mu; active work is cancelled and queued work remains pending.
-func (c *concurrentController) invalidate(_ string) error {
+// invalidate is the admission linearization point. The legacy external permit
+// port runs outside mu; the optional authority is strictly local and non-reentrant.
+// Active work is cancelled and queued work remains pending.
+func (c *concurrentController) invalidate(reason string) error {
 	c.mu.Lock()
+	wasOpen, permit, epoch := c.invalidateLocked(reason)
+	c.mu.Unlock()
+	if wasOpen {
+		revokeCtx, cancel := context.WithTimeout(context.Background(), concurrentCleanupTimeout)
+		err := c.ports.permit.Revoke(revokeCtx, permit.ID, epoch)
+		cancel()
+		c.mu.Lock()
+		c.pendingRevocations--
+		if c.pendingRevocations == 0 && c.pendingRevocationsDone != nil {
+			close(c.pendingRevocationsDone)
+			c.pendingRevocationsDone = nil
+		}
+		if err != nil {
+			c.markCleanupFailedLocked()
+		}
+		c.mu.Unlock()
+		if err != nil {
+			return errors.Join(errConcurrentCleanup, err)
+		}
+	}
+	return nil
+}
+
+// invalidateLocked is shared with snapshots that discover local expiry. It
+// revokes the optional authority while preserving c.mu -> authority lock
+// ordering; the authority implementation must not callback into c.
+func (c *concurrentController) invalidateLocked(reason string) (bool, concurrentPermit, uint64) {
+	if c.authorization != nil {
+		c.authorization.Revoke(reason)
+	}
 	wasOpen := c.permitOpen && c.ports.permit != nil
 	permit := c.permit
 	epoch := c.permitEpoch
@@ -1059,26 +1422,7 @@ func (c *concurrentController) invalidate(_ string) error {
 	if !c.disabled && c.lifecycle != concurrentCleanupFailed && c.lifecycle != concurrentCollectorLost {
 		c.lifecycle = concurrentStarting
 	}
-	c.mu.Unlock()
-	if wasOpen {
-		revokeCtx, cancel := context.WithTimeout(context.Background(), concurrentCleanupTimeout)
-		err := c.ports.permit.Revoke(revokeCtx, permit.ID, epoch)
-		cancel()
-		c.mu.Lock()
-		c.pendingRevocations--
-		if c.pendingRevocations == 0 && c.pendingRevocationsDone != nil {
-			close(c.pendingRevocationsDone)
-			c.pendingRevocationsDone = nil
-		}
-		if err != nil {
-			c.markCleanupFailedLocked()
-		}
-		c.mu.Unlock()
-		if err != nil {
-			return errors.Join(errConcurrentCleanup, err)
-		}
-	}
-	return nil
+	return wasOpen, permit, epoch
 }
 
 func (c *concurrentController) failStart(cause error) error {
@@ -1149,6 +1493,9 @@ func (c *concurrentController) markCleanupFailed() {
 }
 
 func (c *concurrentController) markCleanupFailedLocked() {
+	if c.authorization != nil {
+		c.authorization.Revoke("cleanup-failed")
+	}
 	c.cleanupFailed = true
 	c.admissionOpen = false
 	c.continuationBlocked = true
@@ -1188,6 +1535,12 @@ func (c *concurrentController) updateCleanupStateLocked() {
 }
 
 func (c *concurrentController) Snapshot() concurrentSnapshot {
+	c.mu.Lock()
+	authorization, admission := c.authorization, c.admissionOpen
+	c.mu.Unlock()
+	if authorization != nil && admission && authorization.Check() != nil {
+		c.invalidate("authorization-expired")
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	snapshot := concurrentSnapshot{

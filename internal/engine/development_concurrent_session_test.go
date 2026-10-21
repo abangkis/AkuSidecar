@@ -166,25 +166,26 @@ func (p *fakeConcurrentOwnerPort) has(role concurrentRole) bool {
 }
 
 type fakeConcurrentVerifier struct {
-	mu               sync.Mutex
-	clock            *concurrentTestClock
-	account          string
-	revision         string
-	state            map[concurrentRole]concurrentAuthState
-	wrongChallenge   bool
-	wrongAccount     bool
-	wrongRevision    bool
-	wrongOwner       bool
-	staleBy          time.Duration
-	replay           bool
-	last             concurrentProof
-	calls            []concurrentProofRequest
-	advanceAfter     concurrentRole
-	advanceBy        time.Duration
-	blockRole        concurrentRole
-	entered          chan struct{}
-	release          chan struct{}
-	seenCancellation chan struct{}
+	mu                 sync.Mutex
+	clock              *concurrentTestClock
+	account            string
+	revision           string
+	state              map[concurrentRole]concurrentAuthState
+	wrongChallenge     bool
+	wrongAccount       bool
+	wrongRevision      bool
+	wrongOwner         bool
+	staleBy            time.Duration
+	replay             bool
+	last               concurrentProof
+	calls              []concurrentProofRequest
+	advanceAfter       concurrentRole
+	advanceBy          time.Duration
+	blockRole          concurrentRole
+	entered            chan struct{}
+	release            chan struct{}
+	seenCancellation   chan struct{}
+	cancelWhileBlocked bool
 }
 
 func newFakeConcurrentVerifier(clock *concurrentTestClock) *fakeConcurrentVerifier {
@@ -212,7 +213,21 @@ func (p *fakeConcurrentVerifier) Prove(ctx context.Context, request concurrentPr
 		case entered <- struct{}{}:
 		default:
 		}
-		<-release
+		if p.cancelWhileBlocked {
+			select {
+			case <-ctx.Done():
+				if p.seenCancellation != nil {
+					select {
+					case p.seenCancellation <- struct{}{}:
+					default:
+					}
+				}
+				return concurrentProof{}, ctx.Err()
+			case <-release:
+			}
+		} else {
+			<-release
+		}
 	}
 	if ctx.Err() != nil && p.seenCancellation != nil {
 		select {
@@ -987,6 +1002,7 @@ func TestConcurrentParentDeathInvalidatesWhileProbeBlockedAndCleansOwnedTree(t *
 	verifier.entered = make(chan struct{}, 1)
 	verifier.release = make(chan struct{})
 	verifier.seenCancellation = make(chan struct{}, 1)
+	verifier.cancelWhileBlocked = true
 	permit := &fakeConcurrentPermit{clock: clock}
 	controller, err := newConcurrentController(parent, concurrentTestConfig(parent, clock, false), concurrentPorts{owners: owners, verifier: verifier, permit: permit})
 	if err != nil {
@@ -1005,14 +1021,14 @@ func TestConcurrentParentDeathInvalidatesWhileProbeBlockedAndCleansOwnedTree(t *
 	if controller.Snapshot().AdmissionOpen {
 		t.Fatal("parent death left admission open during a blocked probe")
 	}
-	close(verifier.release)
-	if err := <-startDone; err == nil {
-		t.Fatal("startup succeeded after parent cancellation")
-	}
 	select {
 	case <-verifier.seenCancellation:
 	case <-time.After(time.Second):
 		t.Fatal("parent cancellation did not reach the blocked probe context")
+	}
+	close(verifier.release)
+	if err := <-startDone; err == nil {
+		t.Fatal("startup succeeded after parent cancellation")
 	}
 	ctx, done := context.WithTimeout(context.Background(), 2*time.Second)
 	defer done()
