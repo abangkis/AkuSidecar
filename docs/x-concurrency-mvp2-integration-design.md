@@ -13,6 +13,11 @@ modification, installation and user-runtime operations remain excluded. Proposed
 native integration surfaces below remain unavailable. This document does not
 itself grant execution permission.
 
+The documentation-only decision on 2026-10-21 fixes the
+[production pair and evidence-renewal contract](#production-pair-and-evidence-renewal-contract-2026-10-21).
+It does not implement a provider, change Store policy, qualify native continuity,
+authorize a transfer or activate the feature.
+
 ## Accepted baseline and immediate outcome
 
 Commit `2fbf338bf0258140f56cb1da567a1145834c5fd8` publishes the reviewed
@@ -155,7 +160,7 @@ fresh challenge/consumption path within the applicable limits before admission.
 | Open an X reader during active collection | Validate the existing post-open request and obtain a reader-only lease. Reuse/create its tracked window. Do not touch collector generation, batch admission or active leases. |
 | Capture completes while reader remains open | Release only the capture lease. Reader windows retain their own owner/profile lease. Count every window, including bootstrap windows. |
 | Another reader window opens/closes | Update the owned reader inventory. Closing one tab is not proof that its window or profile owner exited. |
-| Last reader closes naturally | Retire the reader role and verify its full tree/lease release. Do not replace the collector. Continue collection only if the provider's collector authority remains valid independently; otherwise close admission and retain queued work. Native continuity for this case is not qualified by short QA. Never reopen a window or log in automatically. |
+| Last reader closes naturally | Retire the reader role and verify its full tree/lease release. Do not replace the collector. The initial native contract disables independent continuation: revoke dependent admission and retain queued work. The synthetic independent-authority case remains fixture evidence only. A future capability needs separate qualification and approval. Never reopen a window or log in automatically. |
 | Account mismatch, logout, challenge, proof expiry, required coverage loss or owner/context change | Close admission, increment the pair fence, revoke permits and reject late results. Preserve unstarted work. Classify the actual failure; unknown source data is not logged out. |
 | Collector dies | Close admission and reject its generation. Keep user reader windows. No implicit reseed, reverse transfer or switch to exclusive mode. |
 | Reader dies unexpectedly | Revoke any authority depending on that reader; collector activity cannot silently prove its own lineage. Keep batch work pending until the separate permit authority can establish a permitted continuation. |
@@ -188,14 +193,14 @@ using the in-memory admission/sink port. This is runnable synthetic controller
 qualification, not queue persistence or main-dev activation. No Store source,
 schema, policy, API, database or guard key changes are proposed for that increment.
 
-Before real ingestion, a separate compatibility decision must specify the exact
-mapping of authority enrollment and physical collector proof, native provider
-version and accepted revision semantics. It must determine whether existing
-guard-aware APIs can express that mapping truthfully or require an explicitly
-approved versioned extension. This design does not assume that no Store change
-will ever be needed, nor authorize one now. Cookie-writer qualification is not
-a prerequisite for designing the controller, but unknown lineage cannot satisfy
-the unchanged production permit gate.
+The production pair contract below selects separate enrollment, physical owner
+and per-role revision bindings. It requires a distinct versioned authorization
+interface rather than relabeling a collector in the single-profile interface.
+Before real ingestion, a separately authorized Store compatibility review must
+still specify persistence encoding, guard-aware APIs, migration and downgrade
+behavior for that contract. No Store change is authorized here. Cookie-writer
+qualification is not a prerequisite for designing the controller, but unknown
+lineage cannot satisfy the unchanged production permit gate.
 
 Opt-out closes admission and revokes the pair first, drains/cancels active work
 according to its existing ownership rules, then closes and verifies only the
@@ -208,6 +213,183 @@ Real-provider rollback must retain guard metadata and queued work, reject older
 unaware builds, and never delete required markers to make collection resume.
 The exact future format needs its guard-aware upgrade/downgrade matrix before
 native activation. No rollback, migration or runtime opt-out is executed here.
+
+## Production pair and evidence-renewal contract (2026-10-21)
+
+Decision: use design contract `aku.x.concurrent-authorization.v1`, with proposed
+provider identifier `x-concurrent` and an explicit provider/evidence-schema
+version. These are design identifiers, not registered providers, implemented
+DTOs or Store schema versions. Preserve all existing synthetic interfaces and
+formats. Reject unsupported versions; never dispatch native values through
+`synthetic-fixture` or convert a QA report into an authorization receipt.
+
+The accepted eight Chrome scenarios establish synthetic routing and ownership.
+They do not implement this contract. In particular, the current fixture compares
+both roles against one invented `ExpectedRevision`, has no normal evidence-renewal
+operation, and serializes result/revocation only against an in-memory sink.
+Those limitations remain explicit until separately authorized implementation.
+
+### Enrollment, owner pair and derivation
+
+| Private record | Required binding and meaning |
+| --- | --- |
+| Enrollment | Provider/version, X source, database scope, enrollment/policy generation, confirmed stable account reference and enrolled reader profile identity. Persisted intent is not current login or a permit. Changing the account or enrolled reader profile requires the explicit enrollment workflow. |
+| Reader owner | Enrolled reader profile plus pinned physical directory identity, process image/handle/creation identity, Sidecar lifetime, context, reader generation and complete window inventory. A matching path or PID alone is insufficient. |
+| Collector owner | Distinct fresh profile/directory, disposable context, process/Job identity and collector Manager epoch/generation/driver. This is a derived runtime owner, not a second permanent enrollment. |
+| Pair | Controller/Sidecar epoch, unique attempt, monotonic pair generation, exact enrollment/policy snapshot and both owner records. Equal accounts must not collapse the two physical identities. |
+| Derivation receipt | Trusted private record of one approved one-way seed from the exact reader owner/baseline into the exact empty collector context, bound to this pair and the reviewed transfer manifest version. It records scope and successful application without retaining cookie values or fingerprints. It proves the relationship of that seed, not login, continuity or authority to capture. |
+
+Use only the existing reviewed two-cookie transfer ceiling if native execution
+is separately authorized. No profile/database copy, expanded credential set,
+reverse merge, reseed or automatic login is implied by the derivation record.
+Collector replacement starts a new attempt and requires new authorization;
+it cannot inherit the previous owner's seed receipt or permit.
+
+The trusted owner adapter supplies these bindings out of band. Page content,
+broker callers and public RPC cannot choose or attest profile, process, account,
+coverage, revision or permit fields. Credentials and raw response bodies never
+enter enrollment, pair metadata, result stamps, logs or public status. Stable
+account IDs remain private; public diagnostics expose fixed reason categories.
+
+### Evidence and session revisions
+
+Each role supplies a separate one-use challenged vector. Bind it to the exact
+contract/provider/schema, source and selected origin/operation, enrollment,
+attempt, pair generation, role, owner/context/frame/request and observation
+times. Preserve the existing bounded source projections, provenance, cache and
+correlation checks; caller declarations do not establish coverage.
+
+Identity must equal the confirmed enrolled account in both roles. Authentication
+must be freshly established by the qualified source predicate in that role.
+Enrollment, cookie possession and the other browser's successful response cannot
+substitute for either check. Missing, ambiguous, unsupported or conflicting
+evidence closes admission and retains its actual reason; unknown is not logout.
+
+Keep `ReaderSessionRevision` and `CollectorSessionRevision` as separate accepted
+native-lineage bindings. Do not require them to be equal merely because a seed
+was copied, and do not ignore a later change within either role. A qualified
+provider must establish each revision's meaning, baseline and covered transitions,
+as well as the derivation relationship. Local epochs, permit/evidence numbers,
+timestamps and cookie equality/hashes are not session revisions. Native continuity
+remains unknown today; no native accepted revision is created by this document.
+
+Coverage must extend from the accepted baseline through each required claim,
+renewal and result-acceptance barrier. An unobserved startup, detach, overflow,
+relevant unsupported worker or context replacement is a gap, not an unchanged
+session. Equal account/login snapshots after a gap do not repair that interval.
+This retains the strict production continuity requirement. A limited pilot that
+accepts weaker guarantees needs a separate explicit policy decision and version;
+it cannot satisfy this contract by silently treating unknown as proven.
+
+### Collector permit and evidence renewal
+
+Only the separate trusted permit authority may grant a collector permit.
+It must validate enrollment/policy enablement, both physical owner bindings,
+derivation, fresh account/login proof and qualified per-role continuity. Bind the
+permit to provider/version, database/source/account scope, enrollment/policy
+generation, current durable hold/fence, pair generation, collector owner,
+accepted per-role revisions, evidence version, permitted operations and expiry.
+Only supported X collection and its matching result ingestion are in scope;
+reader actions cannot become collector results or native-site write authority.
+
+Use the following renewal rules; they are requirements, not implemented behavior:
+
+1. Start with admission closed before either owner starts. Register exit and
+   revocation observers before exposing work. Initial authorization consumes a
+   complete per-role vector, not the fixture's unconditional permit grant.
+2. Keep the five-second evidence-age ceiling and two-second binding deadline,
+   measured from starting challenged-vector acquisition through permit publication.
+   Each evidence item must remain valid at consumption. Permit expiry
+   must be no later than the earliest evidence-age, qualified coverage or
+   provider-specific validity deadline; no long-lived permit extends old proof.
+   Use monotonic elapsed-time checks for deadlines and reject inconsistent time
+   bindings. These ceilings are not evidence that the native sources can meet them.
+3. Before expiry, a single serialized renewal obtains new challenges and fresh
+   per-role evidence, with uninterrupted qualified coverage connecting the prior
+   accepted vector to the new vector. It does not reopen Chrome, reseed cookies,
+   repeat login, invoke exclusive handoff or change the collector Manager.
+   Source observation must be supported without disrupting reader windows or
+   active capture; inability to obtain it is unavailable evidence, not a fallback
+   to synthetic proof or permission to reload user windows.
+4. Immediately before publishing renewed authority, recheck the exact owners,
+   context, enrollment/policy, durable fence, pair generation and pending
+   revocations. Atomically replace the permit/evidence version only while its
+   predecessor remains valid. Concurrent readers of authority must see one
+   coherent version. Renewal cannot race past opt-out or revive a revoked permit.
+5. Successful renewal advances a distinct monotonic evidence version. It leaves
+   pair generation, accepted session revisions and collector epoch/generation/
+   driver unchanged. A work ticket retains its original authority version; a
+   newer version may support that work only through an explicitly recorded,
+   uninterrupted renewal chain for the same pair and revisions. Never retag old
+   results as though they were dispatched under a newer permit.
+6. Expiry, failed renewal, changed session/account, required coverage loss or
+   owner drift closes admission, advances the pair fence and revokes authority.
+   Reject unfinished results under that invalidated fence and preserve pending
+   work. No successful later probe retroactively authorizes the gap. Recovery
+   begins a separately verified authorization attempt; a real session/account
+   change follows the explicit recovery/confirmation contract, not automatic
+   revision replacement. No automatic reseed, relogin or retry loop is selected.
+
+A long capture is acceptable only if qualified coverage and valid renewal
+authority span dispatch through result acceptance. A fresh final snapshot alone
+cannot authorize a capture that crossed an invalid interval. Expiry/revocation
+must close admission on time; checks at claim and acceptance additionally reject
+stale work even if notification is delayed. Exact renewal scheduling and native
+source latency still require implementation/qualification; the design does not
+solve them by enlarging the current deadlines.
+
+### Claims, results and lifecycle boundaries
+
+Claim and result acceptance must bind the same database/source/enrollment scope,
+policy/hold, pair generation, collector identity and capture epoch/generation/
+driver. Include the work/command identity, dispatch authority version and current
+valid renewal chain. Account equality alone cannot adopt another pair's work.
+
+Durable result ingestion and durable revocation must share an atomic fence
+decision: either a result commits under still-valid authority or it is rejected
+after invalidation. A controller mutex followed by an independent database write
+is insufficient. Cancellation and duplicate protection remain mandatory. Exact
+transaction/API/schema mapping is reserved for a separately authorized Store
+review and synthetic-database acceptance; no existing durable guarantee is
+claimed or changed here.
+
+For the initial native capability, `independentCollector` is unsupported. Last
+reader closure or unexpected reader death revokes dependent authority and leaves
+unstarted work pending; it must not reopen reader windows or switch to exclusive
+mode. The fixture's successful independent-continuation scenario does not enable
+that capability for X. Opening or closing an ordinary non-final reader window
+does not revoke a healthy pair or replace/pause the collector.
+
+Opt-out revokes/closes admission first, invalidates unfinished result authority,
+then cancels/drains owned work and closes only the collector tree with verified
+cleanup. Preserve reader windows until user closure or Sidecar exit. Persisting
+opt-out failure must be reported; local closure is not proof of durable global
+disablement. Unknown cleanup blocks replacement and profile retirement.
+
+Both trees remain children of Sidecar. Restart inherits neither owner permits
+nor renewal chains; begin closed, reload confirmed expectations and obtain new
+owner proofs under a new attempt. A still-valid reader login may be reused only
+under its separately authorized profile policy; verification is not a demand for
+another login. Collector creation/seed still requires its own authorization.
+Persisted guards and pending work survive opt-out/rollback, with supported-binary
+compatibility established before any native migration or main-dev activation.
+
+### Acceptance boundary for the next increment
+
+The next executable proposal is offline, invented-data qualification of this
+contract, not a native provider or Store integration. Required cases include:
+distinct-profile enrollment mapping; forged/cross-role/replayed evidence; unknown
+or changed per-role lineage; renewal through several five-second windows without
+collector replacement; valid long-capture completion through its renewal chain;
+expiry during capture; final snapshot after a gap; owner/policy/revocation races;
+stale permit/version/duplicate/canceled results; and unsupported independent
+continuation. Offline atomicity tests qualify an in-memory model only.
+
+Separate future gates remain native source/continuity and timing qualification,
+approved Store compatibility plus disposable-database race/upgrade/downgrade
+acceptance, and explicitly authorized default-off main-dev activation. Reuse the
+accepted MVP-1 overlap and MVP-2 Chrome ownership evidence where unchanged.
+This section authorizes none of those implementation, test or runtime actions.
 
 ## First implementation and acceptance boundary
 
