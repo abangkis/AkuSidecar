@@ -1,4 +1,4 @@
-param()
+param([switch]$PilotOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
@@ -19,10 +19,16 @@ function Convert-ConcurrentFixtureReceipt([string]$Raw, [string]$ExpectedScenari
     $reply = $Raw | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
     if ($null -eq $reply -or $reply -is [array]) { throw 'Synthetic acceptance object rejected.' }
     $authorized = $ExpectedScenario.StartsWith('authorized-', [StringComparison]::Ordinal)
+    $pilot = $ExpectedScenario.StartsWith('pilot-', [StringComparison]::Ordinal)
     $allowed = @('passed','provider','scenario')
     if ($authorized) { $allowed += @('authoritySelected','automaticRenewals','originalTicketVersion','finalEvidenceVersion','canAuthorize','nativeQualified') }
+    if ($pilot) { $allowed += @('pilotSelected','canAuthorize','nativeQualified','storePermit') }
     $fields = @($reply.PSObject.Properties.Name | Sort-Object)
     if (($fields -join ',') -ne (($allowed | Sort-Object) -join ',') -or $reply.provider -isnot [string] -or $reply.scenario -isnot [string] -or $reply.passed -isnot [bool] -or !$reply.passed -or $reply.provider -ne 'synthetic-concurrent-fixture' -or $reply.scenario -ne $ExpectedScenario) { throw 'Synthetic acceptance response rejected.' }
+    if ($pilot) {
+        foreach ($name in @('pilotSelected','canAuthorize','nativeQualified','storePermit')) { if ($reply.$name -isnot [bool]) { throw 'Synthetic pilot flag type rejected.' } }
+        if (!$reply.pilotSelected -or $reply.canAuthorize -or $reply.nativeQualified -or $reply.storePermit) { throw 'Synthetic pilot authority boundary rejected.' }
+    }
     if ($authorized) {
         foreach ($name in @('authoritySelected','canAuthorize','nativeQualified')) { if ($reply.$name -isnot [bool]) { throw 'Synthetic authorized flag type rejected.' } }
         if (!$reply.authoritySelected -or $reply.canAuthorize -or $reply.nativeQualified) { throw 'Synthetic authority boundary rejected.' }
@@ -101,10 +107,29 @@ try {
         if (!$rejected) { throw 'Malformed synthetic authority receipt accepted.' }
     }
     Write-Output 'PASS: strict authorized receipt and 13 malformed-report rejections' | Tee-Object -FilePath $log -Append
+    $pilotReceipt = @{ provider='synthetic-concurrent-fixture'; scenario='pilot-overlap'; passed=$true; pilotSelected=$true; canAuthorize=$false; nativeQualified=$false; storePermit=$false }
+    Convert-ConcurrentFixtureReceipt ($pilotReceipt | ConvertTo-Json -Compress) 'pilot-overlap' | Out-Null
+    foreach ($change in @('unselected','authority','native','store','missing','wrongType','privateField')) {
+        $invalid = $pilotReceipt.Clone()
+        switch ($change) {
+            'unselected' { $invalid.pilotSelected = $false }
+            'authority' { $invalid.canAuthorize = $true }
+            'native' { $invalid.nativeQualified = $true }
+            'store' { $invalid.storePermit = $true }
+            'missing' { $invalid.Remove('storePermit') }
+            'wrongType' { $invalid.pilotSelected = 'true' }
+            'privateField' { $invalid.accountId = 'synthetic-private' }
+        }
+        $rejected = $false
+        try { Convert-ConcurrentFixtureReceipt ($invalid | ConvertTo-Json -Compress) 'pilot-overlap' | Out-Null } catch { $rejected = $true }
+        if (!$rejected) { throw 'Malformed synthetic pilot receipt accepted.' }
+    }
+    Write-Output 'PASS: closed pilot receipt and seven malformed-report rejections' | Tee-Object -FilePath $log -Append
     $missingConfig = Join-Path $taskRoot 'absent-config\sidecar.json'
     $missingDatabase = Join-Path $taskRoot 'absent-database\sidecar.db'
     $baseArguments = @('--dev-session-reuse', 'synthetic-concurrent-fixture', '--config', $missingConfig, '--database', $missingDatabase)
     $valid = '{"grant":"synthetic-owned-fixture","scenario":"overlap"}'
+    if ($PilotOnly) { $valid = '{"grant":"synthetic-owned-fixture","scenario":"pilot-overlap"}' }
     foreach ($mode in @('default', 'auth_session_dev', 'auth_session_fixture', 'auth_session_dev auth_session_fixture')) {
         $dual = $mode -eq 'auth_session_dev auth_session_fixture'
         $buildArguments = @('build', '-o', (Join-Path $taskRoot 'fixture.exe'))
@@ -120,7 +145,10 @@ try {
             Invoke-Fixture $executable ($baseArguments + '--dev') $payload $false 'strict bounded input rejects ungranted/unsupported payload'
         }
         Invoke-Fixture $executable @('--dev', '--dev-session-reuse', 'native-concurrent', '--config', $missingConfig, '--database', $missingDatabase) $valid $false 'native provider unavailable'
-        foreach ($scenario in @('overlap', 'last-close', 'last-close-denied', 'stale', 'cancel', 'revoked', 'parent-death', 'opt-out', 'strategy-gates', 'broker-gates', 'collector-loss', 'authorized-renewal', 'authorized-renewal-delay', 'authorized-renewal-failure', 'authorized-account-drift', 'authorized-policy-drift', 'authorized-coverage-gap', 'authorized-opt-out', 'authorized-last-close-denied', 'authorized-parent-cancel')) {
+        $scenarios = @('overlap', 'last-close', 'last-close-denied', 'stale', 'cancel', 'revoked', 'parent-death', 'opt-out', 'strategy-gates', 'broker-gates', 'collector-loss', 'authorized-renewal', 'authorized-renewal-delay', 'authorized-renewal-failure', 'authorized-account-drift', 'authorized-policy-drift', 'authorized-coverage-gap', 'authorized-opt-out', 'authorized-last-close-denied', 'authorized-parent-cancel')
+        $pilotScenarios = @('pilot-overlap', 'pilot-renewal-failure', 'pilot-policy-drift', 'pilot-opt-out', 'pilot-last-close', 'pilot-parent-cancel')
+        if ($PilotOnly) { $scenarios = $pilotScenarios } else { $scenarios += $pilotScenarios }
+        foreach ($scenario in $scenarios) {
             $payload = @{ grant = 'synthetic-owned-fixture'; scenario = $scenario } | ConvertTo-Json -Compress
             Invoke-Fixture $executable ($baseArguments + '--dev') $payload $true ('actual main ' + $scenario)
         }

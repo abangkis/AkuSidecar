@@ -7,9 +7,10 @@ foreach ($relative in @('runtime', 'runtime\qa', 'runtime\qa\auth-session-sideca
     if (!(Test-Path -LiteralPath $directory -PathType Container)) { New-Item -ItemType Directory -Path $directory | Out-Null }
     if ((Get-Item -LiteralPath $directory).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Pilot QA paths must not be reparse points.' }
 }
-$pilot = @('internal/engine/development_concurrent_pilot.go', 'internal/engine/development_concurrent_pilot_test.go', 'internal/engine/development_concurrent_pilot_boundary_test.go')
+$pilot = @('internal/engine/development_concurrent_pilot.go', 'internal/engine/development_concurrent_pilot_test.go', 'internal/engine/development_concurrent_pilot_boundary_test.go', 'internal/engine/development_concurrent_pilot_controller.go', 'internal/engine/development_concurrent_pilot_controller_test.go')
 $strict = @('internal/engine/development_concurrent_authorization.go', 'internal/engine/development_concurrent_authorization_test.go')
-$sources = $pilot + $strict
+$controller = @('internal/engine/development_concurrent_session.go', 'internal/engine/development_concurrent_session_test.go', 'internal/engine/development_concurrent_authorized_controller.go')
+$sources = $pilot + $strict + $controller
 foreach ($relative in $sources) {
     if (!(Test-Path -LiteralPath (Join-Path $projectRoot $relative) -PathType Leaf)) { throw 'Pilot model source unavailable.' }
 }
@@ -40,7 +41,7 @@ try {
         Write-Output ('PASS: pilot source/test build-tag gate ' + $mode) | Tee-Object -FilePath $log -Append
     }
     # Compile named stdlib sources only. Do not execute Engine initializers or Store tests.
-    # Old authority test helpers support the cross-policy test; its old cases are not rerun.
+    # Existing controller/authority helpers support the seam tests; unrelated cases are not rerun.
     $selection = @(& go test -tags 'auth_session_dev auth_session_fixture' -list '^TestConcurrentPilot' @sources 2>&1)
     if ($LASTEXITCODE -ne 0 -or @($selection | Where-Object { $_ -match '^TestConcurrentPilot' }).Count -lt 2) { throw 'Pilot regression selection unavailable.' }
     & go test -tags 'auth_session_dev auth_session_fixture' -run '^TestConcurrentPilot' -count=1 -timeout=60s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
@@ -48,7 +49,7 @@ try {
     & go build -tags 'auth_session_dev auth_session_fixture' ./internal/engine 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Pilot combined Engine compilation failed.' }
     Write-Output 'PASS: dual-tag Engine compilation; no package runtime executed.' | Tee-Object -FilePath $log -Append
-    Write-Output 'PASS: synthetic pilot model only; no Store/database, browser, login, network listener, profile or user runtime opened. Native and Store authority remain unavailable.' | Tee-Object -FilePath $log -Append
+    Write-Output 'PASS: synthetic pilot model/controller only; no Store/database, browser, login, network listener, profile or user runtime opened. Native and Store authority remain unavailable.' | Tee-Object -FilePath $log -Append
     Write-Output ('Pilot regression log: ' + $log)
 } finally {
     Pop-Location

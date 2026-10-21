@@ -51,17 +51,30 @@ present current-self/entity IDs. `NaN`, `Infinity`, malformed numbers and duplic
 decoded keys remain invalid JSON. Valid huge exponents remain opaque text.
 Tokens, lexemes and the private view never cross CDP or enter reports/logs.
 The 512/256/4 KiB limits, two-second acceptance deadline and false authority flags
-are unchanged. The lossless path has offline evidence only; it authorizes no
-native probe, Store admission or main-dev activation.
+are unchanged. Lossless parser correctness alone authorizes no native probe,
+Store admission or main-dev activation.
 
 V4 offline preflight `20774f66ae0441fb88ae57b4f054bba4` passed 99 Node tests and
 one Go test with seven category subcases. The canonical `-LiveCurrentSelf` helper
 includes the new `x-qa-lossless-json.test.mjs` suite. It opens no browser or
 retained profile. Exact numeric representation, original-string identity guards,
 foreign-context rejection and previous size/deadline/privacy guards passed;
-the shared strict parser and bootstrap projector were unchanged. No V4 native
-result exists yet. The sanitized log uses the run ID under
+the shared strict parser and bootstrap projector were unchanged. At that offline
+checkpoint no V4 native result existed. The sanitized log uses the run ID under
 `runtime/qa/auth-session-sidecar/`; the disposable control root was removed.
+
+After publication as `6e68702`, separately authorized native V4 run
+`dc56485eb6b9449193026a9c7b458cb9` repeated all 99 Node/one Go tests with seven
+category subcases and passed the native cleanup case. One fresh HTTP 200 response
+contained 311,797 HTML bytes and a 198,561-byte initializer. Processing returned
+`parser_rejected` / `malformed_json` in 1,406.4764 ms, with identity unavailable,
+projection null and unchanged document. No failing location/value was retained.
+This category also covers an unexpected internal parser exception mapped by the
+current parser fallback; it does not conclusively identify invalid source syntax.
+Graceful closure, complete owned-Job cleanup, retained state `clean` and disposable
+root removal were verified. No retry, transfer, new login, Store or main-runtime
+operation occurred. See the
+[V4 native checkpoint](../../docs/x-concurrency-dev-pilot-contract.md#v4-retained-qa-result-2026-10-21).
 
 Offline run `784ee64c8314441ba6180fdc02e78a81` passed 84 Node tests and one Go
 test with eight category subcases. It covered category production, thrown parser/
@@ -116,8 +129,9 @@ an injected clock, a probe-only synthetic source and an in-memory work/result si
 It opens no profile, login, browser, network listener, Store/database or user runtime.
 
 The model is private and dual-tagged (`auth_session_dev && auth_session_fixture`).
-It is independent from the strict pair authority and has no main/broker/controller
-wiring, runtime option, provider registration or activation endpoint. Its pilot
+It is independent from the strict pair authority. Its controller bridge is selected
+only by the existing early synthetic main fixture's six `pilot-*` scenarios, with
+an explicit fixture grant; there is no native provider or activation endpoint. Its pilot
 eligibility can be true while global coverage stays partial, continuity unknown
 and refresh unqualified. Native, production, Store and existing `canAuthorize`
 flags remain false. A local permission-version chain does not establish X lineage.
@@ -135,6 +149,26 @@ joint two-second acquisition/publication limit, same-document renewal without
 reload, immutable work tickets, known invalidation versus deferred coverage,
 mode/policy isolation, cancellation and bounded public reports. These model
 checks cannot qualify native in-place identity/login sources, timing or OS cleanup.
+
+The controller bridge passed 23 pilot tests/66 subcases and all four tag gates
+in run `1bd7f9f5e47147a98377dfbaeacb602b`. Run
+`.\scripts\test-concurrency-integration.ps1 -PilotOnly` for the six bounded actual
+main/broker/Coordinator cases: overlap, renewal failure, policy drift, opt-out,
+last close and parent cancellation. Run `e994a879ac934631a23277b6a6336a0a` passed
+these cases, all four actual-main build gates, closed receipt/input guards,
+untouched config/database sentinels and three default Coordinator regressions.
+It uses existing Managers with invented processes and an active capture lease;
+collector PID/generation/driver/lease preservation is checked during reader open
+and renewal. Cleanup verifies no owned references or active leases remain.
+Home-parser diagnostics are deferred by the user's MVP decision. This path opens
+no Chrome, profile, login, Store, listener or user runtime. Detailed claims and
+remaining native boundaries are in the
+[pilot integration checkpoint](../../docs/x-concurrency-dev-pilot-contract.md#pilot-controller-and-main-fixture-integration-2026-10-21).
+
+Full integration run `a50bfe651871439e872e6db89ae592c6` also passed all 26
+actual-main scenarios, four build gates and three default Coordinator tests after
+the shared fixture-clock correction. Existing overlap and strict-authority behavior
+remain covered. No native source or retained-profile probe was repeated.
 
 Accepted run `a718f7419b5440afaa41065e48e5071e` passed 18 top-level tests and
 57 subtests, four tag gates and combined Engine compilation. A twelve-second

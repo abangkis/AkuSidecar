@@ -43,6 +43,9 @@ func RunDevelopmentConcurrentFixture(input io.Reader, output io.Writer) error {
 		return errors.New("synthetic concurrent grant rejected")
 	}
 	allowed := map[string]bool{"overlap": true, "last-close": true, "last-close-denied": true, "stale": true, "cancel": true, "revoked": true, "parent-death": true, "opt-out": true, "strategy-gates": true, "broker-gates": true, "collector-loss": true}
+	for _, name := range pilotOfflineScenarios {
+		allowed[name] = true
+	}
 	for _, name := range authorizedOfflineScenarios {
 		allowed[name] = true
 	}
@@ -59,6 +62,17 @@ func RunDevelopmentConcurrentFixture(input io.Reader, output io.Writer) error {
 	cleanupErr := fixture.close()
 	if err := errors.Join(runErr, cleanupErr); err != nil {
 		return fmt.Errorf("synthetic concurrent acceptance failed: %w", err)
+	}
+	if fixture.pilot {
+		return json.NewEncoder(output).Encode(struct {
+			Provider        string `json:"provider"`
+			Scenario        string `json:"scenario"`
+			Passed          bool   `json:"passed"`
+			PilotSelected   bool   `json:"pilotSelected"`
+			CanAuthorize    bool   `json:"canAuthorize"`
+			NativeQualified bool   `json:"nativeQualified"`
+			StorePermit     bool   `json:"storePermit"`
+		}{"synthetic-concurrent-fixture", request.Scenario, true, true, false, false, false})
 	}
 	if fixture.authorized {
 		return json.NewEncoder(output).Encode(struct {
@@ -239,8 +253,11 @@ type concurrentIntegratedFixture struct {
 	gateWork                      string
 	launches                      int
 	ctx                           context.Context
+	clockMu                       sync.RWMutex
 	captureDone                   <-chan struct{}
 	collectorExited               chan struct{}
+	pilot                         bool
+	pilotScenario                 string
 	authorized                    bool
 	lifecycle                     *controlledSyntheticLifecycle
 	renewal                       *fixtureRenewalLoop
@@ -254,12 +271,24 @@ func newConcurrentIntegratedFixture(parent context.Context, grant concurrentFixt
 	ctx, cancel := context.WithCancel(parent)
 	f := &concurrentIntegratedFixture{ctx: ctx, cancel: cancel, now: time.Now().UTC(), collectorExited: make(chan struct{})}
 	f.owners = &concurrentFixtureOwners{owners: make(map[concurrentRole]concurrentOwner), managers: make(map[concurrentRole]*captureruntime.Manager), processes: make(map[concurrentRole]*concurrentFixtureProcess), windows: make(map[string]bool)}
-	f.proofs = &concurrentFixtureProofs{now: func() time.Time { return f.now }}
+	f.proofs = &concurrentFixtureProofs{now: f.fixtureNow}
 	f.permits = &concurrentFixturePermits{}
 	f.authorized = len(scenarios) == 1 && strings.HasPrefix(scenarios[0], "authorized-")
+	if len(scenarios) == 1 {
+		for _, name := range pilotOfflineScenarios {
+			if scenarios[0] == name {
+				f.pilot = true
+				f.pilotScenario = name
+			}
+		}
+	}
 	var err error
 	cfg := concurrentConfig{Enabled: true, DevBuild: true, FixtureBuild: true, OwnerGrant: grant.owned, ControllerGrant: grant.owned, Provider: concurrentProvider, AttemptID: "synthetic:attempt:fixture", ParentID: "synthetic:parent:fixture", ExpectedAccountID: "synthetic:account:fixture", ExpectedRevision: "synthetic:revision:fixture", ReaderProfileID: "synthetic:profile:reader", ReaderDirectoryID: "synthetic:directory:reader", CollectorProfileID: "synthetic:profile:collector", CollectorDirectoryID: "synthetic:directory:collector", IndependentCollector: independent, now: f.proofs.now}
-	if f.authorized {
+	if f.pilot {
+		cfg.ExpectedRevision = ""
+		cfg.IndependentCollector = false
+		f.c, err = newPilotConcurrentController(ctx, cfg, concurrentPorts{owners: f.owners}, f.pilotFixture())
+	} else if f.authorized {
 		cfg.now, cfg.ExpectedRevision, cfg.IndependentCollector = time.Now, "", false
 		f.lifecycle = newControlledSyntheticLifecycle("fixture")
 		f.c, err = newAuthorizedConcurrentController(ctx, cfg, concurrentPorts{owners: f.owners}, controlledFixtureAuthorization("fixture", f.lifecycle, f.collectAuthorized))
@@ -429,6 +458,9 @@ func (f *concurrentIntegratedFixture) captureStart(ctx context.Context) (concurr
 }
 
 func (f *concurrentIntegratedFixture) run(ctx context.Context, scenario string) error {
+	if f.pilot {
+		return f.runPilot(ctx, scenario)
+	}
 	if f.authorized {
 		return f.runAuthorized(ctx, scenario)
 	}
@@ -492,7 +524,7 @@ func (f *concurrentIntegratedFixture) run(ctx context.Context, scenario string) 
 	}
 	switch scenario {
 	case "stale":
-		f.now = f.now.Add(concurrentProofMaxAge + time.Second)
+		f.advanceFixtureClock(concurrentProofMaxAge + time.Second)
 	case "cancel":
 		if f.c.Cancel(ticket) != nil {
 			return errors.New("work cancellation failed")

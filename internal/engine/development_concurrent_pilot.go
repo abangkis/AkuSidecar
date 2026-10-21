@@ -913,7 +913,10 @@ func (m *concurrentPilot) dispatch(commandID string) (pilotWorkTicket, error) {
 	return ticket, nil
 }
 
-func (m *concurrentPilot) claim(ticket pilotWorkTicket) error {
+func (m *concurrentPilot) claim(ticket pilotWorkTicket) error { return m.claimWithCommit(ticket, nil) }
+
+// Commit callbacks are local, non-reentrant controller mutations.
+func (m *concurrentPilot) claimWithCommit(ticket pilotWorkTicket, commit func() error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.checkCurrentLocked(); err != nil {
@@ -929,11 +932,21 @@ func (m *concurrentPilot) claim(ticket pilotWorkTicket) error {
 	if record.status != pilotWorkPending || ticket.evidenceVersion > m.permit.evidenceVersion {
 		return pilotErr(pilotReasonStaleTicket)
 	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return err
+		}
+	}
 	record.status = pilotWorkClaimed
 	return nil
 }
 
 func (m *concurrentPilot) cancel(ticket pilotWorkTicket) error {
+	return m.cancelWithCommit(ticket, nil)
+}
+
+// Commit callbacks are local, non-reentrant controller mutations.
+func (m *concurrentPilot) cancelWithCommit(ticket pilotWorkTicket, commit func() error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	record, err := m.ticketRecordLocked(ticket)
@@ -946,11 +959,24 @@ func (m *concurrentPilot) cancel(ticket pilotWorkTicket) error {
 	if record.status == pilotWorkInvalidated {
 		return pilotErr(pilotReasonStaleTicket)
 	}
+	if record.status == pilotWorkCancelled {
+		return nil // Cancellation is idempotent; never invoke the commit twice.
+	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return err
+		}
+	}
 	record.status = pilotWorkCancelled
 	return nil
 }
 
 func (m *concurrentPilot) acceptResult(ticket pilotWorkTicket, result pilotResult) error {
+	return m.acceptResultWithCommit(ticket, result, nil)
+}
+
+// Commit callbacks are local, non-reentrant controller mutations.
+func (m *concurrentPilot) acceptResultWithCommit(ticket pilotWorkTicket, result pilotResult, commit func() error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.checkCurrentLocked(); err != nil {
@@ -980,6 +1006,11 @@ func (m *concurrentPilot) acceptResult(ticket pilotWorkTicket, result pilotResul
 	}
 	// Validation and the memory-sink commit share this lock with every revoke,
 	// cancellation and owner/policy transition, so a late result cannot win.
+	if commit != nil {
+		if err := commit(); err != nil {
+			return err
+		}
+	}
 	m.results[result.id] = result
 	m.resultByTicket[ticket.id] = result.id
 	record.status = pilotWorkCompleted

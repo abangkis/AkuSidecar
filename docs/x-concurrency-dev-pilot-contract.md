@@ -1,7 +1,8 @@
 # X bounded dev pilot contract
 
-Decision date: 2026-10-21. Status: selected policy with an implemented offline
-synthetic model; native adapter and runtime activation remain unavailable. The
+Decision date: 2026-10-21. Status: selected policy with an implemented synthetic
+model, controller bridge and main/broker/Coordinator fixture path; native adapter
+and runtime activation remain unavailable. The
 user authorized an offline definition of a limited dev pilot and
 minimum evidence renewal without reload, deferring complete refresh/rotation
 qualification. This change opens no browser/profile, transfers no session,
@@ -12,6 +13,28 @@ identifier `x-dev-pilot-snapshot`. Neither identifier is registered. It is
 separate from the strict production contract `aku.x.concurrent-authorization.v1`.
 Pilot observations never satisfy that contract by relabeling unknown continuity.
 The existing synthetic authority, qualification flags and QA reports are unchanged.
+
+## MVP execution priority (2026-10-21, supersedes source-investigation sequencing)
+
+The user explicitly deferred parser edge-case investigation to prioritize MVP
+delivery. V4's negative source result remains recorded below; it is no longer a
+prerequisite for implementing and testing pilot/controller wiring. Do not start
+another Home-parser diagnostic branch or native probe as part of this increment.
+Reuse accepted MVP-1 native overlap and synthetic lifecycle evidence.
+
+The immediate deliverable is the default-off synthetic pilot-to-controller seam:
+one reader/collector pair, collector preservation on reader open, atomic work/result
+fencing, opt-out/expiry/owner-policy invalidation and bounded reports. No native
+provider, Store compatibility or user-runtime activation is introduced. Existing
+pilot limits and identity checks are retained. A source's unavailable identity is
+not promoted into proof simply because its investigation is deferred.
+
+The seam and existing main/broker/Coordinator fixture path are implemented and
+validated in the checkpoint below. For native dev acceptance, use a separately reviewed
+minimal evidence adapter; fixing this particular Home parser is not prescribed
+as the sole route. Complete rotation, universal writer/worker coverage, seamless
+restart and richer parser diagnostics remain deferred. Main-dev activation and
+any broader credential/session-transfer run still require explicit authorization.
 
 ## Purpose, bounds and retained evidence
 
@@ -503,3 +526,92 @@ bootstrap projector have no working-tree delta against `972b152`. The accepted
 V3 native result remains `unsafe_number` at an unidentified field. V4 needs a
 separately authorized native observation before any claim that X identity passes;
 no native retry or activation was performed by this implementation.
+
+## V4 retained-QA result (2026-10-21)
+
+The ten-file lossless implementation was reviewed and published as
+`6e68702ba38a923c3743f549ddfb5ec903e7377f`. The user then authorized one retained
+QA probe. Run `dc56485eb6b9449193026a9c7b458cb9` repeated 99 Node tests and one
+Go preflight test with seven category subcases, all passing. The native case took
+5.87 seconds including startup/cleanup and recorded one fresh HTTP 200 Home
+response with preserved document/frame/loader. HTML was 311,797 bytes and the
+initializer 198,561 bytes, within the unchanged limits.
+
+The observation returned `parser_rejected` / `malformed_json` after
+1,406.4764 ms, with identity unavailable and projection null. V4 represents valid
+numeric lexemes without Number conversion and no longer emits `unsafe_number`;
+the source nevertheless remains unqualified. No invalid field, token or position
+was retained, and the historical V3 failure is not retrospectively classified.
+The current parser maps unexpected internal exceptions without an earlier fixed
+rejection callback to `malformed_json` as well. Consequently this observation
+cannot distinguish source syntax rejection from that fallback. It is not proof
+that X returned malformed JSON, that the account ID was numeric, or that the
+retained account was logged out. A next offline review should separate internal
+parser faults from syntax failures before considering another authorized probe;
+no syntax, numeric or identity check was relaxed here.
+
+Sanitized report:
+`runtime/qa/auth-session-sidecar/x-qa-source-dc56485eb6b9449193026a9c7b458cb9.report.json`;
+the same prefix has its log. Graceful closure, complete owned-Job cleanup,
+retained-profile state `clean` and removal of the disposable control root were
+verified. No second native attempt, transfer, new login, main-login access,
+Store or user runtime operation occurred. All authority/transfer flags remain
+false. Source qualification, two-role no-reload timing, pilot wiring and main-dev
+activation are not established by this negative result.
+
+## Pilot controller and main fixture integration (2026-10-21)
+
+Following the user's MVP reprioritization, Home parser research and further source
+probes were parked. Two concrete integration deltas were completed using invented
+evidence: the private `newPilotConcurrentController` bridge and the existing early
+main fixture path through reader broker, Coordinator and capture Managers. No
+native evidence/provider, real credential transfer, Store or user runtime was used.
+
+The constructor is default-off and requires explicit fixture opt-in, limitation
+acknowledgement, policy/consent generations, synthetic grant and evidence source.
+It binds the controller's reader/collector identities to the separate pilot model;
+strict production authority is never borrowed. Atomic claim/cancel/result callbacks
+share the pilot lock with revocation, preventing failed local commits from partially
+mutating pilot state. Cancellation remains idempotent. Original tickets survive
+successful renewal; expiry, missing/mismatched identity, policy/owner/channel loss,
+opt-out, last reader close and parent cancellation fence dependent results.
+
+Offline pilot run `1bd7f9f5e47147a98377dfbaeacb602b` passed 23 tests and 66
+subcases, four build-tag gates and dual-tag Engine compilation without package
+runtime execution. It explicitly claims work before reader open/renewal, verifies
+the unchanged collector binding and active work, rejects late/duplicate/cancelled
+results and confirms all native/production/Store authority flags remain false.
+
+The existing `synthetic-concurrent-fixture` main entry now accepts exactly six
+additional `pilot-*` scenarios under the existing bounded synthetic grant. A
+closed seven-field receipt adds `pilotSelected:true` and three false authority
+flags; it contains no identities or arbitrary errors. `-PilotOnly` on
+`scripts/test-concurrency-integration.ps1` selects these six main cases while
+retaining all four main build gates and default Coordinator regressions.
+
+Final narrow run `e994a879ac934631a23277b6a6336a0a` passed overlap, failed renewal,
+policy drift, opt-out, last close and parent cancellation through the existing
+main/broker/Coordinator path. A claimed capture and real Manager lease (with an
+invented process) remain active while the second reader opens and evidence renews;
+collector PID, driver, generation and lease count are preserved. The original
+ticket completes once only on the positive path. Negative paths reject late sink
+writes; opt-out retains reader windows. Full fixture cleanup drains captures and
+releases Managers/leases. Shared fake-clock accesses are synchronized.
+
+All four actual-main builds passed, ordinary builds rejected the provider, the
+dual-tag build required `--dev`, malformed input/receipt checks passed, and missing
+config/database sentinels remained absent after dispatch. Three default
+Coordinator regressions passed. Disposable project-owned roots were removed.
+These results establish synthetic integrated behavior; they do not establish
+native browser ownership or fresh X account/login evidence. Native admission and
+main-dev activation remain separate, while full rotation/coverage qualification
+and the parked parser investigations stay outside this increment.
+
+Because the shared fixture clock was synchronized, the full integration regression
+was also run once: `a50bfe651871439e872e6db89ae592c6` passed all 26 actual-main
+scenarios (20 existing plus six pilot), the four build gates, closed-report/input
+checks and the three default Coordinator tests. Its log has that run ID under
+`runtime/qa/auth-session-sidecar/`; the owned build root was removed. No additional
+native/source experiment was run. Both pilot/controller wiring and the synthetic
+main/broker/Coordinator acceptance are now complete; the next deliverable is the
+minimum approved native adapter/dev acceptance, using existing MVP-1 evidence.
