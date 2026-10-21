@@ -58,7 +58,8 @@ export class QABoundObservation {
     if (!scope || Object.keys(scope).sort().join(',') !== 'owner,profileId,sessionId,targetId' ||
         !Number.isSafeInteger(scope.owner) || scope.owner <= 0 || !['profileId', 'sessionId', 'targetId'].every(k => safe(scope[k])) ||
         !safe(frameId) || typeof now !== 'function' || typeof observeCookieWrites !== 'function' ||
-        !pointOptions || Object.keys(pointOptions).sort().join(',') !== 'deferCookieMutation,onPrivateResult' ||
+        !pointOptions || !['deferCookieMutation,onPrivateResult', 'deferCookieMutation,onPrivateResult,onPrivateStartup'].includes(Object.keys(pointOptions).sort().join(',')) ||
+        Object.hasOwn(pointOptions, 'onPrivateStartup') && typeof pointOptions.onPrivateStartup !== 'function' ||
         typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function') throw error();
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
@@ -156,6 +157,8 @@ export class QABoundObservation {
     this.#tick();
     if (this.capture.matching && (this.#needsExtra === null || this.#needsExtra === true && this.#extraStatus !== this.capture.status ||
         this.#needsExtra === false && this.#extraStatus !== null)) this.invalidate();
+    // The ordinary report deliberately discards this private request reference.
+    const settingsRequestId = this.capture.chosen;
     const source = await this.capture.finish();
     const t = this.#tick();
     this.#closed = true;
@@ -166,7 +169,20 @@ export class QABoundObservation {
       source.responseFresh === true && source.completed && source.bodyReadAttempts === 1 && source.body?.category === 'settings_match';
     const diagnostic = this.#failure ?? (!cleanupVerified ? 'cleanup_unverified' : !identity ? 'identity_unavailable' :
       !login ? 'source_unavailable' : !fresh ? 'stale_observation' : 'bound');
-    try { this.#pointOptions.onPrivateResult({ accountId: this.#id, start: this.#requestAt, end: this.#sourceAt, networkInterval: this.#networkInterval }); }
+    try {
+      this.#pointOptions.onPrivateResult({ accountId: this.#id, start: this.#requestAt, end: this.#sourceAt, networkInterval: this.#networkInterval });
+      // Only this fixed validated recipe can supply the optional private startup
+      // sink. Public QA output and deferred-mutation samples cannot supply it.
+      if (diagnostic === 'bound' && !this.#pointOptions.deferCookieMutation) {
+        this.#pointOptions.onPrivateStartup?.(Object.freeze({
+          accountId: this.#id, ownerId: String(this.#scope.owner), profileId: this.#scope.profileId,
+          contextId: String(this.#context), targetId: this.#scope.targetId,
+          frameId: this.#frame, documentId: this.#loader, settingsRequestId,
+          identityAt: this.#identityAt, settingsAt: this.#sourceAt,
+          qualification: QA_BOUND_QUALIFICATION,
+        }));
+      }
+    }
     finally { this.#id = null; this.#scope = null; this.#networkRequest = null; this.#networkInterval = null; }
     return Object.freeze({ schema: 'aku.x.qa-bound-observation.v1', sourceQualification: QA_BOUND_QUALIFICATION,
       diagnostic, identity: identity ? 'current_self_observed' : 'unknown', login: login ? 'protected_response_observed' : 'unknown',

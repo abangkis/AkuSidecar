@@ -140,10 +140,21 @@ Tests cover strict identity/pins, receipt replay, owner drift, absolute expiry,
 cancellation/revocation races and private diagnostics. Offline vectors cannot
 yield native eligibility. All native/Store authority flags stay false.
 
-No native producer, controller provider or activation endpoint is registered by
-this adapter. Connecting the accepted startup recipe and manual controller, then
-separately authorized QA acceptance, remain unfinished. This helper opens no
-Chrome/profile/login/listener, transfers no session and accesses no Store/user
+The adapter baseline is published as `eb12655`. Its subsequent private startup
+producer and manual controller are now connected offline; no native main/broker
+provider or activation endpoint is registered. Run
+`.\scripts\test-native-manual-pilot-startup.ps1` for concurrent per-role startup
+capture, the strict 16 KiB private receipt transport and dispatch/claim/result
+fencing. It runs Node projections, named-file Go tests (including an accountless
+Node stdio roundtrip), four tag gates and two Engine builds. Canonical run
+`9049d389eb4c4669b5f5ad2546edf043` passed 27 Node tests and 10 Go tests/49 subcases;
+one subsequent default-off driver-hook test brings the distinct Node set to 28.
+Its project-owned temporary build root was removed. Details, logs and the native
+startup document/context ownership limit are in the
+[connection checkpoint](../../docs/x-native-manual-pilot.md#startup-producer-and-manual-controller-connection-2026-10-21).
+Trusted owner/bridge instantiation and separately authorized native QA acceptance
+remain unfinished. These helpers open no
+Chrome/profile/login/listener, transfer no session and access no Store/user
 runtime. The snapshot V1 helper and its evidence below remain unchanged.
 
 ## Offline bounded dev snapshot pilot (V1 reference)

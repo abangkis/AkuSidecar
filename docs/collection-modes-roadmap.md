@@ -15,9 +15,15 @@ implemented: 11 tests/63 subcases, four tag gates and two Engine builds passed i
 run `8c439688d6f64d95be8f6ee85cb9a917`. Offline vectors cannot become native
 eligibility or Store authority. Startup producer/controller registration remains
 unfinished; no browser, retained profile, transfer, Store or user runtime ran.
-The next implementation is the minimum accepted startup-recipe producer and
-manual controller connection, followed by separately authorized bounded QA
-acceptance. Do not reopen the deferred no-reload identity/parser investigation.
+The subsequent startup producer/manual controller connection is now implemented
+and offline-verified: concurrent role acquisition, bounded private Node/Go receipt
+transport and one in-memory result passed 10 Go tests/49 subcases and 28 distinct
+Node tests, four tag gates and two Engine builds. The native driver hook remains
+default-off and unregistered with main/broker; actual startup document/context
+ownership must be bound before native acceptance. Next: trusted owner/bridge
+instantiation and separately authorized bounded QA, without reopening the deferred
+no-reload identity/parser investigation. See the
+[connection checkpoint](x-native-manual-pilot.md#startup-producer-and-manual-controller-connection-2026-10-21).
 The published synthetic integration is `6320295`; its snapshot V1 policy remains
 unchanged and is not silently reinterpreted as manual V2.
 
@@ -5628,7 +5634,7 @@ qualification, a real provider, Store admission or main-dev activation.
 | Step | Concrete deliverable | Exit gate | Status |
 | --- | --- | --- | --- |
 | MVP-1: qualify short native X concurrency | Qualified sampled account/login evidence, one approved seed and actual overlapping authenticated reads | No second login, same private account comparison, preserved reader and verified owned cleanup; no durability/rotation claim | Short feasibility accepted on 2026-10-20: four matched checkpoints, two-cookie seed and 447.68 ms overlap. Reuse it; complete refresh/coverage qualification is deferred for the separate bounded pilot |
-| MVP-2: wire concurrent owners and pilot proof | Separate reader/collector lifecycle/routing and manual V2 initial-evidence chain, default-off; V1 renewal remains a reference fixture | Reader open preserves active collection; initial five-second freshness and joint two-second binding, absolute 60-second attempt expiry and known-invalidation/result fencing pass. Strict/native revision and durable Store gates remain separate | Synthetic main/broker/Coordinator integration published as `6320295`: 23 pilot tests/66 subcases and full 26-scenario main regression. Manual V2 private receipt adapter passed 11 tests/63 subcases, four tag gates and two Engine builds. Next: accepted startup-recipe producer/manual controller connection, then bounded native acceptance. No renewed Home-parser investigation or fabricated identity. No native producer is registered and no Store/runtime activation occurred |
+| MVP-2: wire concurrent owners and pilot proof | Separate reader/collector lifecycle/routing and manual V2 initial-evidence chain, default-off; V1 renewal remains a reference fixture | Reader open preserves active collection; initial five-second freshness and joint two-second binding, absolute 60-second attempt expiry and known-invalidation/result fencing pass. Strict/native revision and durable Store gates remain separate | Synthetic integration `6320295` and private adapter `eb12655` published. Startup producer/adapter/manual controller connected offline: 10 Go tests/49 subcases, 28 distinct Node tests, four tag gates and two Engine builds. Next: trusted native owner/bridge instantiation with actual startup document/context pins, then bounded QA acceptance. No renewed Home-parser investigation or fabricated identity. No main/broker native provider is registered and no Store/runtime activation occurred |
 | MVP-3: narrow dev acceptance and activation | Bounded integrated pilot/failure evidence, explicit limitation acknowledgement, persistent-ingestion compatibility, opt-out and rollback | Pilot behavior and separately approved durable compatibility pass; main-dev activation gets separate explicit authorization | Pending pilot adapter/native timing and durable compatibility. No runtime activation authorized |
 
 ### Execution rules for speed

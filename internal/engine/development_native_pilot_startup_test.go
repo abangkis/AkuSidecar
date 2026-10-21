@@ -1,0 +1,202 @@
+//go:build auth_session_dev
+
+package engine
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// The existing invented-native fixture is reused without modifying its accepted
+// tests. Every capture here is explicitly offline; it echoes invented scope to
+// exercise wire transport, not real startup document acquisition choreography.
+func testNativeStartupWire(c nativePilotCaptureChallenge) map[string]any {
+	o := c.challenge.owner
+	at := float64(c.challenge.started.UnixMilli())
+	return map[string]any{"schema": nativePilotStartupWireSchema, "challenge": c.correlation, "role": c.challenge.role, "accountId": c.challenge.binding.account, "ownerId": o.owner, "profileId": o.profile, "contextId": o.context, "targetId": o.target, "frameId": o.frame, "documentId": o.document, "identityRequestId": "offline-identity-" + o.role, "settingsRequestId": "offline-settings-" + o.role, "identityObservedAtMS": at, "settingsObservedAtMS": at, "elapsedMS": 1.0, "qualification": nativePilotSettingsQualification}
+}
+func marshalNativeStartupWire(c nativePilotCaptureChallenge) ([]byte, error) {
+	return json.Marshal(testNativeStartupWire(c))
+}
+func testNativeStartupSource(t *testing.T, f *testNativePilotFixture, capture nativePilotCapture) *nativePilotStartupSource {
+	t.Helper()
+	if capture == nil {
+		capture = func(_ context.Context, c nativePilotCaptureChallenge) ([]byte, error) {
+			return marshalNativeStartupWire(c)
+		}
+	}
+	s, err := newNativePilotStartupSource(nativePilotStartupConfig{enabled: true, offlineOnly: true, binding: f.cfg.binding, capture: capture})
+	if err != nil {
+		t.Fatal("offline startup source unavailable")
+	}
+	f.ports.source = s
+	return s
+}
+
+func TestNativePilotStartupConcurrentPair(t *testing.T) {
+	f := newTestNativePilotFixture()
+	entered, release := make(chan string, 2), make(chan struct{})
+	var calls atomic.Int32
+	s := testNativeStartupSource(t, f, func(ctx context.Context, c nativePilotCaptureChallenge) ([]byte, error) {
+		calls.Add(1)
+		raw, err := c.requestJSON()
+		var fields map[string]string
+		if err != nil || json.Unmarshal(raw, &fields) != nil || len(fields) != 8 || fields["documentId"] != c.challenge.owner.document {
+			return nil, errors.New("offline request malformed")
+		}
+		entered <- c.challenge.role
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-release:
+		}
+		return marshalNativeStartupWire(c)
+	})
+	a := f.adapter(t)
+	type outcome struct {
+		v *nativePilotVector
+		d nativePilotDiagnostic
+	}
+	done := make(chan outcome, 1)
+	go func() { v, d := a.initialEvidence(context.Background()); done <- outcome{v, d} }()
+	roles := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case role := <-entered:
+			roles[role] = true
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatal("roles were not captured concurrently")
+		}
+	}
+	close(release)
+	out := <-done
+	assertNativePilotClosed(t, out.d, "startup-validated")
+	if out.v == nil || !out.d.OfflineValidated || calls.Load() != 2 || !roles["reader"] || !roles["collector"] {
+		t.Fatal("joint offline vector missing")
+	}
+	_, err := s.observe(context.Background(), s.collector)
+	if err == nil || calls.Load() != 2 {
+		t.Fatal("collector receipt replayed or recaptured")
+	}
+	for _, value := range []any{s, s.cfg, nativePilotCaptureChallenge{challenge: s.reader, correlation: "private-correlation"}} {
+		if strings.Contains(fmt.Sprintf("%#v", value), "private-correlation") || strings.Contains(fmt.Sprintf("%+v", value), f.cfg.binding.account) {
+			t.Fatal("private source formatting leaked")
+		}
+		raw, err := json.Marshal(value)
+		if err != nil || string(raw) != "{}" {
+			t.Fatal("private source serialized")
+		}
+	}
+}
+
+func TestNativePilotStartupStrictDecoder(t *testing.T) {
+	f := newTestNativePilotFixture()
+	ch := nativePilotChallenge{seal: &nativePilotSeal{}, vector: 1, role: "reader", binding: f.cfg.binding, owner: f.cfg.binding.reader, started: f.now}
+	c := nativePilotCaptureChallenge{challenge: ch, correlation: strings.Repeat("a", 48)}
+	valid, _ := marshalNativeStartupWire(c)
+	if _, err := decodeNativePilotStartup(valid, ch, c.correlation); err != nil {
+		t.Fatal("valid offline wire rejected")
+	}
+	cases := map[string]func(map[string]any){
+		"unknown":             func(m map[string]any) { m["canAuthorize"] = false },
+		"missing":             func(m map[string]any) { delete(m, "frameId") },
+		"null":                func(m map[string]any) { m["accountId"] = nil },
+		"number-id":           func(m map[string]any) { m["accountId"] = 1908123456789012345 },
+		"handle":              func(m map[string]any) { m["accountId"] = "@user" },
+		"synthetic-id":        func(m map[string]any) { m["accountId"] = "synthetic:account" },
+		"wrong-schema":        func(m map[string]any) { m["schema"] = "aku.x.qa-bound-observation.v1" },
+		"wrong-challenge":     func(m map[string]any) { m["challenge"] = "old-challenge" },
+		"wrong-role":          func(m map[string]any) { m["role"] = "collector" },
+		"wrong-owner":         func(m map[string]any) { m["ownerId"] = "different-owner" },
+		"wrong-context":       func(m map[string]any) { m["contextId"] = "different-context" },
+		"new-document":        func(m map[string]any) { m["documentId"] = "new-navigation-document" },
+		"wrong-qualification": func(m map[string]any) { m["qualification"] = "http200" },
+		"duplicate-request":   func(m map[string]any) { m["settingsRequestId"] = m["identityRequestId"] },
+		"long-request":        func(m map[string]any) { m["settingsRequestId"] = strings.Repeat("r", 513) },
+		"null-time":           func(m map[string]any) { m["identityObservedAtMS"] = nil },
+		"negative-elapsed":    func(m map[string]any) { m["elapsedMS"] = -1 },
+		"joint-limit":         func(m map[string]any) { m["elapsedMS"] = 2000 },
+		"overflow-time":       func(m map[string]any) { m["identityObservedAtMS"] = 9e18 },
+		"stale-bootstrap": func(m map[string]any) {
+			m["identityObservedAtMS"] = float64(ch.started.Add(-time.Millisecond).UnixMilli())
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := testNativeStartupWire(c)
+			mutate(m)
+			raw, _ := json.Marshal(m)
+			if _, err := decodeNativePilotStartup(raw, ch, c.correlation); err == nil {
+				t.Fatal("invalid private wire accepted")
+			}
+		})
+	}
+	for name, raw := range map[string][]byte{
+		"duplicate":         append(append([]byte{}, valid[:len(valid)-1]...), []byte(`,"role":"reader"}`)...),
+		"escaped-duplicate": append(append([]byte{}, valid[:len(valid)-1]...), []byte(`,"\u0072ole":"reader"}`)...),
+		"invalid-surrogate": bytes.Replace(valid, []byte(`"role":"reader"`), []byte(`"role":"\ud800"`), 1),
+		"invalid-utf8":      append([]byte{'{', '"', 255, '"', ':', '0', '}'}, ' '),
+		"trailing":          append(append([]byte{}, valid...), []byte(`{}`)...),
+		"too-large":         bytes.Repeat([]byte(" "), nativePilotStartupWireMax+1),
+		"public-qa-report":  []byte(`{"canAuthorize":false,"identity":"current_self_observed","login":"protected_response_observed"}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeNativePilotStartup(raw, ch, c.correlation); err == nil {
+				t.Fatal("malformed/private-report substitute accepted")
+			}
+		})
+	}
+	if !nativePilotStartupUnicode([]byte(`"\ud83d\ude00"`)) || nativePilotStartupUnicode([]byte(`"\ud83d"`)) {
+		t.Fatal("strict unicode validation regressed")
+	}
+}
+
+func TestNativePilotStartupPairFailureAndReplay(t *testing.T) {
+	for _, kind := range []string{"projection-failure", "account-mismatch", "owner-drift", "joint-timeout", "canceled"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var captures atomic.Int32
+			testNativeStartupSource(t, f, func(_ context.Context, c nativePilotCaptureChallenge) ([]byte, error) {
+				captures.Add(1)
+				if c.challenge.role == "collector" {
+					switch kind {
+					case "projection-failure":
+						return nil, errors.New("raw-private-secret")
+					case "account-mismatch":
+						m := testNativeStartupWire(c)
+						m["accountId"] = "1908123456789012346"
+						return json.Marshal(m)
+					case "owner-drift":
+						f.mu.Lock()
+						f.state.binding.collector.creation = "replacement-process"
+						f.mu.Unlock()
+					case "joint-timeout":
+						f.advance(nativePilotJoint)
+					case "canceled":
+						cancel()
+					}
+				}
+				return marshalNativeStartupWire(c)
+			})
+			a := f.adapter(t)
+			v, d := a.initialEvidence(ctx)
+			if v != nil || d.OfflineValidated || d.ManualEligible || strings.Contains(d.Reason, "secret") {
+				t.Fatal("failed pair published")
+			}
+			_, d = a.initialEvidence(context.Background())
+			if !a.stopped || d.OfflineValidated || captures.Load() > 2 {
+				t.Fatal("failed startup replayed")
+			}
+		})
+	}
+}

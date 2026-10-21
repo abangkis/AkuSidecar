@@ -28,6 +28,7 @@ import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-
 import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
 import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs';
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
+import { createManualStartupCapture } from './x-manual-startup-source.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -1722,7 +1723,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-async function collectorShortCheckpoint(current, afterIdentity) {
+async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup) {
   const s = current.shortFeasibility;
   if (!s.navigated) {
     s.navigated = true;
@@ -1787,8 +1788,10 @@ async function collectorShortCheckpoint(current, afterIdentity) {
   });
   try {
     const { frameId } = await command('Page.getFrameTree');
+    const pointOptions = { deferCookieMutation: !onPrivateStartup, onPrivateResult: r => { privateResult = r; } };
+    if (onPrivateStartup) pointOptions.onPrivateStartup = onPrivateStartup;
     binder = new QABoundObservation(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
-      () => performance.now(), undefined, { deferCookieMutation: true, onPrivateResult: r => { privateResult = r; } });
+      () => performance.now(), undefined, pointOptions);
     sampling = true;
     await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
     await command('Network.setCacheDisabled', { cacheDisabled: true });
@@ -1808,6 +1811,32 @@ async function collectorShortCheckpoint(current, afterIdentity) {
     sampling = false; unsubscribe();
     if (!networkDisabled) await command('Network.disable').catch(() => {});
   }
+}
+
+// In-process owner-port hook only. No RPC command or main provider selects it.
+// A future explicitly authorized private bridge must bind actual startup pins
+// and invoke both captures together. This hook never seeds cookies or adopts a
+// different document/context to make a requested binding pass.
+export function createOwnedManualStartupCaptures(message) {
+  if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
+  const current = requireOwner(message), collector = current.shortFeasibility;
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
+      current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted ||
+      !collector || collector.closed || !collector.contextId || !collector.sessionId) throw probeError('manual_startup_unavailable');
+  const rendezvous = new QACheckpointRendezvous();
+  const capture = role => createManualStartupCapture({ run: async (request, sink) => {
+    if (request.role !== role || sink.signal?.aborted) throw probeError('manual_startup_unavailable');
+    const abort = () => rendezvous.cancel();
+    sink.signal?.addEventListener('abort', abort, { once: true });
+    try {
+      if (role === 'reader') {
+        current.gate.beginObservation(); current.earlyAttempted = true;
+        await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
+          onPrivateStartup: sink.onPrivateStartup }, () => rendezvous.arrive(role));
+      } else await collectorShortCheckpoint(current, () => rendezvous.arrive(role), sink.onPrivateStartup);
+    } finally { sink.signal?.removeEventListener('abort', abort); }
+  } });
+  return Object.freeze({ reader: capture('reader'), collector: capture('collector') });
 }
 
 async function runShortConcurrency(message, synchronize = false) {
