@@ -305,3 +305,71 @@ synthetic Windows/Chrome ownership check, not native X evidence or main-dev
 activation. The next bounded step is review of the native-X owner-port composition
 and its explicit QA authorization boundary; the deferred renewal/rotation work
 does not become a prerequisite for this manual policy.
+
+## Private X owner-port composition (2026-10-22)
+
+The 11-file synthetic Windows/Chrome checkpoint was reviewed and published as
+`c77dc3a52906da0056b25074c02ac271d68c0357`, with origin/main verified. The next
+increment connects the existing X startup recipe to the same manual broker and
+controller through a private QA owner port. It registers no main provider,
+activation endpoint or persistent setting and remains default-off.
+
+The Windows constructor accepts only already-owned QA role records: pinned
+Node/Chrome/parent creation identities, live Chrome handles, actual Job membership
+and physical root/profile handles. It launches nothing, acquires no retained
+profile lease and seeds no session. Reader and collector must have distinct
+Chrome processes and physical profiles; they may share their owned Node and Job.
+Native provenance is fixed in the compiled Windows backend. Offline tests use a
+different backend that can produce only offline provenance; no request/config
+boolean can promote a sanitized QA report into native evidence.
+
+The fixed private stdio operations are `manual_inventory`, `manual_prepare`,
+`manual_inspect`, `manual_acquire` and `manual_abort`, each scoped to the existing
+reader protocol owner and one exact role. They add no arbitrary URL, expression,
+body, cookie or transfer operation. Both prepare/acquire calls can run concurrently
+on one Node, preserving the existing identity rendezvous. The Go bridge reuses
+its correlated writes/replies without serializing one role behind the other.
+Other QA workflows are rejected once this port is selected, except release.
+
+Preparation binds the actual Chrome PID and canonical owned profile, replacing
+the old diagnostic-only protocol-owner/profile labels in manual mode only. It
+holds the existing verified startup pause, returns the actual document pins and
+requires matching live frame/loader/context observations before acquisition.
+Each role creates a separate Page/Runtime observer session before release of the
+held pause. The startup capture still performs its real cleanup; the observer
+retains context/document loss observation afterward. Reader inventory includes
+every page window and the original bootstrap window. This is limited lifecycle
+observation, not complete cookie/worker/rotation coverage or identity renewal.
+
+The same original attempt clock, initial account/login predicate, five-second
+sample age and joint sub-two-second acquisition/publication bound apply. Work
+dispatch, claim and result completion still pass through the existing controller.
+Lost/malformed PREPARE replies can be cancelled with a null handle through the
+trusted role port; cancellation revokes the actor before readiness and emits no
+evidence. Uncertain cleanup stays uncertain, including after a later retry.
+Reader-preserving cleanup can escalate to full retirement on parent exit.
+
+Run `scripts/test-x-manual-pilot-owner.ps1` for the accountless regression suite,
+including one shared real Node stdio process feeding the strict Go source and
+manual controller, four tag gates and standalone Windows-backend compilation.
+The staged binary excludes Engine initialization and Store. The helper has no
+native execution switch and opens no Chrome or retained profile. It does not
+perform an X request or transfer a real session. Native X acceptance, including
+the additional observer-session behavior, remains unmeasured until a separately
+authorized QA run. Main-dev activation remains a separate authorization boundary.
+
+Canonical owner-port run `915ed92f84984779a7bc03704f386617` passed 30 Node tests,
+eight Go top-level tests plus ten subcases, all four source tag gates and the
+staged Windows-backend compilation. The shared-Node case feeds the real private
+stdio protocol through the strict Go startup source, broker and controller,
+then verifies dispatch/claim, one result and duplicate rejection. Regressions
+cover lost prepare cleanup, role/process/document drift, policy/observer loss,
+expiry, null/case-aliased/duplicate JSON fields and post-capture context loss.
+The fake backend uses a deterministic whole-second clock to avoid synthetic
+epoch-float rounding against one Windows clock tick. The compiled native Windows
+backend retains `time.Now`; no timestamp tolerance or production deadline changed.
+
+Evidence: `runtime/qa/auth-session-sidecar/x-manual-owner-915ed92f84984779a7bc03704f386617.log.txt`
+and the adjacent `.provenance.json`. The accountless build root was removed.
+This run executed neither Chrome nor the native Windows ownership backend;
+the earlier synthetic Chrome evidence remains scoped to its original fixture.

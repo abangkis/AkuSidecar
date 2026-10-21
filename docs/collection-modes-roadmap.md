@@ -24,7 +24,8 @@ four tag gates and two Engine builds. Partial/late cleanup and changed documents
 fail closed. That initial binding acceptance used invented OS ownership;
 the subsequent actual Windows/Chrome synthetic check is recorded below.
 The private driver hook remains default-off; no main provider is registered.
-Native X owner/transport composition and bounded QA acceptance remain before dev activation. Do not
+Native X QA acceptance remains before dev activation; the private owner-port
+composition update is recorded below. Do not
 reopen the deferred no-reload identity/parser investigation. See the
 [owner/broker checkpoint](x-native-manual-pilot.md#ownerbroker-startup-binding-2026-10-21).
 The owner/broker increment is now published as `80b73a6`. Subsequent fresh-profile
@@ -37,9 +38,22 @@ tag checks also passed. An adapter regression fixes process-scoped CDP context
 IDs without relaxing complete owner/receipt binding (12 tests/67 subcases,
 four tag checks and two compilation modes). See the
 [Windows/Chrome checkpoint](x-native-manual-pilot.md#windowschrome-synthetic-ownership-checkpoint-2026-10-22).
-This closes synthetic OS ownership only. Native X owner-port composition and its
-separate QA authorization remain before main-dev activation; all authority flags
+This closes synthetic OS ownership only. Native X acceptance and its separate
+QA authorization remain before main-dev activation; all authority flags
 stay false, with no main provider, Store or user-runtime change.
+The next private X owner-port composition is implemented and remains default-off:
+actual Windows handles bind the fixed startup recipe to the existing broker and
+controller, with concurrent role RPCs on a shared Node and separate lifecycle
+observer sessions. Its accountless helper is
+`scripts/test-x-manual-pilot-owner.ps1`; it includes a real Node stdio roundtrip
+and Windows-backend compilation without Engine/Store initialization. No retained
+profile, X request or session transfer is executed by that helper. Native X QA
+acceptance and main-dev activation remain separate boundaries; this connection
+does not reopen deferred renewal/rotation qualification. See the
+[X owner-port checkpoint](x-native-manual-pilot.md#private-x-owner-port-composition-2026-10-22).
+Canonical run `915ed92f84984779a7bc03704f386617` passed 30 Node tests, eight Go
+tests plus ten subcases, four tag gates and the staged Windows compilation.
+No Chrome/native X acceptance is claimed by that accountless run.
 The published synthetic integration is `6320295`; its snapshot V1 policy remains
 unchanged and is not silently reinterpreted as manual V2.
 

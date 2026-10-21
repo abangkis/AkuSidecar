@@ -194,6 +194,22 @@ no retained profile and transfers no real session. It neither registers a main
 provider nor touches Store or user runtime. Full evidence and limits are in the
 [Windows/Chrome checkpoint](../../docs/x-native-manual-pilot.md#windowschrome-synthetic-ownership-checkpoint-2026-10-22).
 
+Run `.\scripts\test-x-manual-pilot-owner.ps1` for the subsequent private X
+owner-port composition. Its accountless Node/Go checks exercise concurrent role
+acquisition, exact pinned scope, controller work/result fences, null-handle
+cancellation and cleanup uncertainty. Four tag checks and exact-source Windows
+backend compilation keep the native constructor confined to dev+fixture builds.
+The helper runs no Chrome/native QA/retained profile or real session transfer,
+has no native switch, and excludes Engine initialization and Store. The fixed
+native backend accepts already-owned Windows handles; it never launches or seeds
+a session. No main provider or runtime endpoint is registered. Details and the
+unmeasured native observer-session boundary are in the
+[X owner-port checkpoint](../../docs/x-native-manual-pilot.md#private-x-owner-port-composition-2026-10-22).
+Canonical run `915ed92f84984779a7bc03704f386617` passed 30 Node tests, eight Go
+tests plus ten subcases, four tag checks and Windows-backend compilation. The
+accountless build root was removed; bounded logs and source provenance remain
+under project-local QA. This does not qualify native X operation or activate dev.
+
 ## Offline bounded dev snapshot pilot (V1 reference)
 
 The separate pilot model follows

@@ -16,7 +16,18 @@ const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const files = ['chrome_fixture_windows.go', 'development_native_pilot_adapter.go',
   'development_native_pilot_startup.go', 'development_native_pilot_controller.go',
   'development_native_pilot_broker.go', 'native_manual_pilot_chrome_windows_test.go'];
+if(process.argv[3]!==undefined){
+  if(process.argv[3]!=='x-owner-port')throw new Error('standalone_stage_mode_invalid');
+  files.push('development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_windows.go');
+}
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
+if(process.argv[3]==='x-owner-port'){
+  manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
+    'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs'].map(file=>{
+    const source='scripts/auth-session-fixture/'+file;
+    return {source,sha256:hash(fs.readFileSync(path.join(project,source)))};
+  });
+}
 for (const file of files) {
   const relative = `internal/engine/${file}`, bytes = fs.readFileSync(path.join(project, relative));
   fs.writeFileSync(path.join(stage, file), bytes, { flag: 'wx' });

@@ -29,6 +29,7 @@ import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
 import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs';
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
+import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -551,7 +552,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Page.getFrameTree': {
       const frame = result.frameTree?.frame;
       if (!isObject(frame) || !safeId(frame.id) || !(['qa_guest', 'qa_ab'].includes(projectionKind) ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
-      if (projectionKind === 'qa_live_self') {
+      if (projectionKind === 'qa_live_self' || projectionKind === 'manual_frame') {
         if (!safeId(frame.loaderId)) throw probeError('qa_live_document_invalid');
         return { frameId: frame.id, loaderId: frame.loaderId };
       }
@@ -605,10 +606,11 @@ function projectCDPResult(method, result, projectionKind = null) {
       if (!Array.isArray(result.targetInfos) || result.targetInfos.length > 128) throw probeError('target_inventory_invalid');
       const matches = [];
       for (const target of result.targetInfos) {
-        if (isObject(target) && target.type === 'page' && isTargetURL(target.url) && safeId(target.targetId)) {
+        if (isObject(target) && target.type === 'page' && (projectionKind === 'manual_inventory' || isTargetURL(target.url)) && safeId(target.targetId)) {
           matches.push(target.targetId);
         }
       }
+      if(projectionKind==='manual_inventory')active.manualInventoryTargets=new Set(matches);
       return { targetIds: matches };
     }
     case 'Browser.getWindowForTarget':
@@ -807,11 +809,17 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
+  const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
+    method==='Target.getTargets'&&sessionId===undefined&&Object.keys(params).length===0||
+    method==='Browser.getWindowForTarget'&&sessionId===undefined&&Object.keys(params).join(',')==='targetId'&&active.manualInventoryTargets?.has(params.targetId)||
+    method==='Target.attachToTarget'&&sessionId===undefined&&Object.keys(params).sort().join(',')==='flatten,targetId'&&params.flatten===true&&params.targetId===active.targetId||
+    ['Page.enable','Runtime.enable'].includes(method)&&sessionId===active.manualObserver?.sessionId&&Object.keys(params).length===0||
+    ['Page.getFrameTree','Runtime.disable'].includes(method)&&sessionId===active.sessionId&&Object.keys(params).length===0);
   const liveCommand = active?.liveSelf?.running === true;
   if (liveCommand && (!qualificationMode(driverMode) || process.env.AKU_X_QA_LIVE_SELF !== '1' ||
       sessionId !== active.sessionId || purpose !== null || !qaLiveSelfCommand(method, params, QA_LIVE_SELF_EXPRESSION))) return Promise.reject(probeError('qa_live_command_denied'));
   const shortCookieExport = method === 'Network.getCookies' && active?.shortFeasibility?.exporting === true;
-  if (method === 'Browser.getWindowForTarget' && (!active?.shortFeasibility || sessionId !== undefined ||
+  if (method === 'Browser.getWindowForTarget' && !manualControl && (!active?.shortFeasibility || sessionId !== undefined ||
       Object.keys(params).join(',') !== 'targetId' || params.targetId !== active.targetId)) return Promise.reject(probeError('qa_short_window_denied'));
   const bound = active?.bound;
   const boundNetwork = bound?.running && sessionId === active.sessionId && method.startsWith('Network.');
@@ -835,7 +843,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   if (abCommand && (!qualificationMode(driverMode) || !qaABCommand(method, params, sessionId, active.ab))) return Promise.reject(probeError('qa_ab_command_not_authorized'));
   if (!abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
-  if (purpose !== null && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
+  if (purpose !== null && !manualControl && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
   if (shortCookieExport && (process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1' || active.shortFeasibility.exportIssued ||
       sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest('api_v1')))) return Promise.reject(probeError('qa_short_transfer_denied'));
@@ -851,7 +859,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (method === 'Network.setCacheDisabled' && !webCommand && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
+  if (!manualControl && !liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -867,6 +875,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     }
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  if(manualControl)projectionKind=method==='Page.getFrameTree'?'manual_frame':method==='Target.getTargets'?'manual_inventory':null;
   if (liveCommand) projectionKind = 'qa_live_self';
   if (shortCookieExport) projectionKind = 'qa_short_cookies';
   if (boundNetwork && method === 'Network.getResponseBody') projectionKind = 'qa_bound';
@@ -917,6 +926,7 @@ function rejectPending(code) {
 }
 
 function failCDP(code) {
+  active?.manualStartupPort?.invalidate();
   active?.bound?.binder?.invalidate();
   if (!cdpFailure) cdpFailure = /^[a-z0-9_]{1,80}$/u.test(code) ? code : 'cdp_protocol_failed';
   cdpFrames.reset();
@@ -940,6 +950,11 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    if(active?.manualObserver&&raw.sessionId===active.manualObserver.sessionId&&raw.method==='Runtime.executionContextCreated'){
+      const context=raw.params?.context;
+      if(context?.auxData?.isDefault&&context.auxData.frameId===active.manualObserver.frameId&&context.origin===X_ORIGIN)active.manualObserver.context=context.id;
+    }
+    active?.manualStartupPort?.observe('reader',raw);
     if (active?.liveSelf?.running) active.liveSelf.capture?.observe(raw);
     if (active?.bound?.sampling) active.bound.binder?.observe(raw, boundScope(active));
     if (active?.webABA?.running && raw.sessionId === active.sessionId && typeof raw.method === 'string' && raw.method.startsWith('Network.')) {
@@ -1592,7 +1607,7 @@ async function qualifyDirectAB(message) {
 }
 
 function boundScope(current) {
-  return { owner: current.owner, profileId: current.profileId, sessionId: current.sessionId, targetId: current.targetId };
+  return { owner: current.manualStartupSelected ? current.pid : current.owner, profileId: current.profileId, sessionId: current.sessionId, targetId: current.targetId };
 }
 
 async function qualifyLiveSelf(message) {
@@ -1742,7 +1757,8 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     if (!ready) return { checkpoint: shortQACheckpoint(null), accountId: null, start: null, end: null };
   }
   let binder, capture, instrumentationId, sampling = false, networkDisabled = false, synchronized = false, privateResult = {};
-  const scope = { owner: current.owner + 1, profileId: 'derived-headless-owned-context', sessionId: s.sessionId, targetId: s.targetId };
+  const owned = current.manualStartupSelected ? s.transport.ownership() : null;
+  const scope = { owner: owned ? owned.pid : current.owner + 1, profileId: owned ? owned.profileId : 'derived-headless-owned-context', sessionId: s.sessionId, targetId: s.targetId };
   const project = (method, r) => {
     if (!isObject(r)) throw probeError('qa_short_collector_invalid');
     if (method === 'Page.getFrameTree') {
@@ -1815,9 +1831,9 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
   }
 }
 
-// In-process owner-port hook only. No RPC command or main provider selects it.
-// A future explicitly authorized private bridge must bind actual startup pins
-// and invoke both captures together. This hook never seeds cookies or adopts a
+// Owner actor factory selected only by the guarded private QA role protocol.
+// No main provider selects it. The trusted bridge binds actual startup pins and
+// invokes both captures together. This hook never seeds cookies or adopts a
 // different document/context to make a requested binding pass.
 export function createOwnedManualStartupOwners(message) {
   if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
@@ -1839,6 +1855,82 @@ export function createOwnedManualStartupOwners(message) {
     } finally { sink.signal?.removeEventListener('abort', abort); }
   } });
   return Object.freeze({ reader: owner('reader'), collector: owner('collector') });
+}
+
+async function manualReaderInventory(current) {
+  const {targetIds}=await send('Target.getTargets',{},undefined,'manual_owner');
+  const windows=new Set();let bootstrapWindow;
+  for(const targetId of targetIds){
+    const {windowId}=await send('Browser.getWindowForTarget',{targetId},undefined,'manual_owner');
+    windows.add(windowId);if(targetId===current.targetId)bootstrapWindow=windowId;
+  }
+  return {windowCount:windows.size,bootstrapCount:bootstrapWindow&&windows.has(bootstrapWindow)?1:0};
+}
+
+// Fixed private owner RPCs are intentionally concurrent: the two actors meet at
+// the existing post-identity rendezvous. Serializing ACQUIRE would deadlock it.
+export async function executeManualOwnerRPC(message) {
+  if(process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1')throw probeError('manual_startup_disabled');
+  manualOwnerOperation(message);
+  const current=requireOwner(message), collector=current.shortFeasibility;
+  if(!current.manualStartupPort){
+    current.manualStartupSelected=true;
+    try{
+      current.manualStartupPort=createXManualOwnerPort({enabled:true,owner:current.owner,
+        createOwners:()=>createOwnedManualStartupOwners(message),
+        snapshot:async(role,document,pins)=>{
+          const reader=role==='reader', owned=reader?{pid:current.pid,profileId:current.profileId,alive:!childExited&&!cdpFailure}:collector.transport.ownership();
+          const targetId=reader?current.targetId:collector.targetId;
+          if(document){
+            const state=reader?current:collector;
+            if(!state.manualObserver){
+              const attached=reader?await send('Target.attachToTarget',{targetId,flatten:true},undefined,'manual_owner'):
+                await collector.transport.send('Target.attachToTarget',{targetId,flatten:true},undefined,r=>{
+                  if(!safeId(r.sessionId))throw probeError('manual_owner_unavailable');return{sessionId:r.sessionId};});
+              state.manualObserver={sessionId:attached.sessionId,context:null,frameId:pins.frameId};
+              for(const method of ['Page.enable','Runtime.enable']){
+                if(reader)await send(method,{},attached.sessionId,'manual_owner');
+                else await collector.transport.send(method,{},attached.sessionId,()=>({acknowledged:true}));
+              }
+            }
+          }
+          const observer=(reader?current:collector).manualObserver;
+          let frame;
+          if(document){
+            if(reader)frame=await send('Page.getFrameTree',{},current.sessionId,'manual_owner');
+            else frame=await collector.transport.send('Page.getFrameTree',{},collector.sessionId,r=>{
+              const value=r.frameTree?.frame;
+              if(!value||!isHomeTarget(value.url)||!safeId(value.id)||!safeId(value.loaderId))throw probeError('manual_owner_unavailable');
+              return{frameId:value.id,loaderId:value.loaderId};});
+          }
+          return {ownerId:String(owned.pid),profileId:owned.profileId,targetId,
+            sessionId:observer?.sessionId??(reader?current.sessionId:collector.sessionId),
+            alive:owned.alive,headless:!reader,...(reader?await manualReaderInventory(current):{windowCount:0,bootstrapCount:0}),
+            frameId:frame?.frameId,documentId:frame?.loaderId,contextId:String(observer?.context??''),
+            lifecycleReady:!!observer&&Number.isSafeInteger(observer.context)&&observer.context>0};
+        },
+        retire:async(role,preserveReader)=>{
+          if(role==='reader'){
+            if(!preserveReader){const closed=await closeChrome();if(!closed.exited)throw probeError('chrome_exit_unverified');}
+            // A preserved reader keeps its observation session until its owned
+            // tree exits; no unobserved restart or admission is permitted.
+          }else{
+            if(!await closeShortCollector(current))throw probeError('chrome_exit_unverified');
+            current.manualCollectorUnsubscribe?.();
+          }
+        },
+      });
+      current.manualCollectorUnsubscribe=collector.transport.subscribe(raw=>{
+        const observer=collector.manualObserver;
+        if(observer&&raw.sessionId===observer.sessionId&&raw.method==='Runtime.executionContextCreated'){
+          const context=raw.params?.context;
+          if(context?.auxData?.isDefault&&context.auxData.frameId===observer.frameId&&context.origin===X_ORIGIN)observer.context=context.id;
+        }
+        current.manualStartupPort.observe('collector',raw);
+      });
+    }catch{current.manualStartupSelected=false;throw probeError('manual_owner_unavailable');}
+  }
+  return current.manualStartupPort.execute(message);
 }
 
 async function runShortConcurrency(message, synchronize = false) {
@@ -1954,6 +2046,8 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   if (process.env.AKU_X_QA_LIVE_SELF === '1' && !['qa_profile_scope', 'launch', 'login_state', 'qualify_live_self', 'release'].includes(message.op)) throw probeError('qa_live_mode_operation_denied');
+  if(message.op.startsWith('manual_'))return executeManualOwnerRPC(message);
+  if(active?.manualStartupPort&&message.op!=='release')throw probeError('manual_owner_operation_denied');
   switch (message.op) {
     case 'qualify_live_self':
       exactKeys(message, ['id', 'op', 'owner'], 'rpc_fields_invalid');
@@ -2049,7 +2143,20 @@ async function handleControlLine(raw) {
       return;
     }
     const id = message.id;
-    try { emitReply(id, await execute(message)); }
+    try {
+      if(typeof message.op==='string'&&message.op.startsWith('manual_')){
+        // Only the bounded fixed manual operations bypass the serialized QA
+        // chain. Per-role state rejects replay and other modes remain serial.
+        void (async()=>{
+          let result;
+          try{
+            result=await execute(message);
+            emitReply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result);
+          }catch(error){emitReply(id,undefined,safeCode(error));}
+          finally{if(Buffer.isBuffer(result))result.fill(0);}
+        })();
+      }else emitReply(id,await execute(message));
+    }
     catch (error) { emitReply(id, undefined, safeCode(error)); }
   } finally {
     message = null;

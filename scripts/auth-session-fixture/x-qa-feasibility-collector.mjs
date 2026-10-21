@@ -379,6 +379,7 @@ export function createQAFeasibilityCollector({
   let processExited = false;
   let cookieSeedUsed = false;
   let closePromise;
+  let ownedProfile;
   const pending = new Map();
   const listeners = new Set();
 
@@ -463,6 +464,7 @@ export function createQAFeasibilityCollector({
     let profile;
     try {
       profile = await validateAndCreateProfile(root, executable);
+      ownedProfile = profile;
     } catch (error) {
       state = 'failed';
       if (error?.message?.startsWith('qa_')) throw error;
@@ -620,6 +622,11 @@ export function createQAFeasibilityCollector({
     return closePromise;
   };
 
-  return Object.freeze({ launch, send, subscribe, close });
+  // Private owner binding only. No credentials, body or account projection.
+  const ownership = () => {
+    if(!child || !ownedProfile) throw fixedError('qa_transport_unavailable');
+    return Object.freeze({pid:child.pid,profileId:ownedProfile,alive:state==='launched'&&!transportFailed&&!processExited});
+  };
+  return Object.freeze({ launch, send, subscribe, close, ownership });
 }
 

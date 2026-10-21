@@ -10,16 +10,18 @@ import {
   sanitizeEarlyHandoffDiagnostics,
   projectNetworkEvent,
   createOwnedManualStartupOwners,
+  executeManualOwnerRPC,
 } from './x-native-metadata-probe-driver.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 
-test('manual startup owner hook is default-off and is not a public driver command', () => {
+test('manual startup hook and private owner RPC are default-off without a main provider', async () => {
   const previous = process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;
   try {
     delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;
     assert.throws(() => createOwnedManualStartupOwners({}), /manual_startup_disabled/);
+    await assert.rejects(executeManualOwnerRPC({id:1,op:'manual_inventory',owner:1,role:'reader'}), /manual_startup_disabled/);
     process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED = '1';
     assert.throws(() => createOwnedManualStartupOwners({}));
   } finally {

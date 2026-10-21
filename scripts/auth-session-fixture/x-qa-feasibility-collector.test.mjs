@@ -155,10 +155,12 @@ test('uses an isolated headless profile and BrowserContext with a one-use, bound
   process.env[environmentKey] = 'do-not-inherit-this-value';
   const collector = createCollector(root, spawnChrome);
   try {
+    assert.throws(()=>collector.ownership(),/qa_transport_unavailable/);
     const launched = await collector.launch();
     assert.deepEqual(Object.keys(launched), ['pid']);
     assert.equal(launched.pid, child.pid);
     const profile = join(root, 'derived-headless');
+    assert.deepEqual(collector.ownership(),{pid:child.pid,profileId:profile,alive:true});
     assert.equal(spawnArguments.executable, process.execPath);
     assert.deepEqual(spawnArguments.args, [
       `--user-data-dir=${profile}`,

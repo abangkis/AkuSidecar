@@ -40,6 +40,11 @@ export function createManualStartupOwner({ run, now, wallNow }) {
     signal?.addEventListener('abort', close, { once: true });
     return () => signal?.removeEventListener('abort', close);
   };
+  const retire = async () => {
+    close();
+    try { await running; } catch { /* Closed outcome only. */ }
+    sink = actual = null;
+  };
   const capture = createManualStartupCapture({ now, wallNow, run: async (request, output) => {
     if (state !== 'ready' || !actual || FIELDS.some(k => actual[k] !== request[k])) throw unavailable();
     state = 'acquiring'; sink = output.onPrivateStartup; release.resolve();
@@ -81,11 +86,12 @@ export function createManualStartupOwner({ run, now, wallNow }) {
     },
     async abort(token) {
       if (token !== handle) throw unavailable();
-      close();
       // The trusted runner must resume/clean its paused resources on rejection.
       // Native Job retirement belongs to the Go owner port, not this actor.
-      try { await running; } catch { /* Closed outcome only. */ }
-      sink = actual = null;
+      await retire();
     },
+    // Trusted owner cleanup when PREPARE has not yet delivered its opaque handle.
+    // This only revokes; it never supplies evidence or releases admission.
+    cancel: retire,
   });
 }
