@@ -30,7 +30,8 @@ import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
-import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnostic, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
+import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
+import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -64,6 +65,7 @@ const SAFE_REST_OPERATIONS = new Set([
 const CDP_METHODS = Object.freeze({
   'Target.getTargets': 'target_get_targets',
   'Target.attachToTarget': 'target_attach',
+  'Target.detachFromTarget': 'target_detach',
   'Target.closeTarget': 'qa_ab_close_target',
   'Target.createBrowserContext': 'qa_guest_context',
   'Target.createTarget': 'qa_guest_target',
@@ -546,6 +548,7 @@ function isTargetURL(rawURL) {
 
 function projectCDPResult(method, result, projectionKind = null) {
   if (!isObject(result)) throw probeError('cdp_result_invalid');
+  if(projectionKind==='manual_enrollment_capture')return active.manualEnrollment.project(method,result);
   switch (method) {
     case 'Page.addScriptToEvaluateOnNewDocument':
       if (!safeId(result.identifier)) throw probeError('qa_web_identifier_invalid');
@@ -628,9 +631,6 @@ function projectCDPResult(method, result, projectionKind = null) {
       return { acknowledged: true };
     case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
-      if(projectionKind==='manual_enrollment'){
-        return projectManualEnrollmentResult(result);
-      }
       if (projectionKind === 'qa_live_self') {
         if (!active?.liveSelf?.running || own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'object') throw probeError('qa_live_result_invalid');
         try { return projectQALiveSelf(result.result.value); } catch { throw probeError('qa_live_projection_invalid'); }
@@ -802,37 +802,6 @@ export async function executeManualReply(message,executeCommand=execute,reply=em
   finally{if(Buffer.isBuffer(result))result.fill(0);}
 }
 
-export function manualEnrollmentCommand(current,method,params,sessionId,purpose,transferAllowed){
-  return current?.manualEnrollmentReading===true&&purpose==='manual_setup'&&transferAllowed===true&&sessionId===current.sessionId&&(
-    method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Runtime.evaluate'&&
-    JSON.stringify(params)===JSON.stringify({expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500}));
-}
-
-export function projectManualEnrollmentResult(result){
-  try{
-    if(!isObject(result)||own(result,'exceptionDetails')||result.result?.type!=='object')throw manualSeedFailure('enrollment_project','rejected');
-    let accountId=null;
-    const projection=projectBoundBootstrap(result.result.value,id=>{accountId=id;});
-    if(accountId===null){
-      const reason=['bootstrap_missing','bootstrap_invalid','wrong_page','inspection_failed'].includes(projection.diagnostic)?projection.diagnostic:'candidate_absent';
-      throw manualSeedFailure('enrollment_project',reason);
-    }
-    return {accountId};
-  }catch(error){throw manualSeedDiagnostic(error)?error:manualSeedFailure('enrollment_project','rejected');}
-}
-
-export async function readManualEnrollment(sendCommand){
-  let phase='frame_before';
-  try{
-    const before=await sendCommand('Page.getFrameTree',{});
-    phase='enrollment_evaluate';
-    const result=await sendCommand('Runtime.evaluate',{expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500});
-    phase='frame_after';const after=await sendCommand('Page.getFrameTree',{});
-    if(before.frameId!==after.frameId||before.loaderId!==after.loaderId)throw manualSeedFailure(phase,'document_changed');
-    return result.accountId;
-  }catch(error){throw manualSeedDiagnostic(error)?error:manualSeedFailure(phase,'unavailable');}
-}
-
 function cdpWrite(message) {
   if (cdpFailure) throw probeError(cdpFailure);
   if (!child || childExited || !child.stdio?.[3] || pending.size >= MAX_PENDING_COMMANDS) throw probeError('cdp_unavailable');
@@ -866,7 +835,8 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
-  const manualEnrollment=manualEnrollmentCommand(active,method,params,sessionId,purpose,process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1');
+  const manualEnrollment=purpose==='manual_enrollment'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&qualificationMode(driverMode)&&active?.manualEnrollment?.command(method,params,sessionId)===true;
+  if(method==='Target.detachFromTarget'&&!manualEnrollment)return Promise.reject(probeError('manual_enrollment_detach_denied'));
   const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
     method==='Target.getTargets'&&sessionId===undefined&&Object.keys(params).length===0||
     method==='Browser.getWindowForTarget'&&sessionId===undefined&&Object.keys(params).join(',')==='targetId'&&active.manualInventoryTargets?.has(params.targetId)||
@@ -900,7 +870,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     method === 'Target.closeTarget' || !!active.ab?.sessionId && sessionId === active.ab.sessionId);
   if (method === 'Target.closeTarget' && !abCommand) return Promise.reject(probeError('qa_ab_command_not_authorized'));
   if (abCommand && (!qualificationMode(driverMode) || !qaABCommand(method, params, sessionId, active.ab))) return Promise.reject(probeError('qa_ab_command_not_authorized'));
-  if (!manualControl && !abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
+  if (!manualEnrollment && !manualControl && !abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
   if (purpose !== null && !manualControl && !manualEnrollment && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
@@ -935,12 +905,12 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
   if(manualControl)projectionKind=method==='Page.getFrameTree'?'manual_frame':method==='Target.getTargets'?'manual_inventory':null;
-  if(manualEnrollment)projectionKind=method==='Page.getFrameTree'?'manual_frame':'manual_enrollment';
+  if(manualEnrollment)projectionKind='manual_enrollment_capture';
   if (liveCommand) projectionKind = 'qa_live_self';
   if (shortCookieExport) projectionKind = 'qa_short_cookies';
   if (boundNetwork && method === 'Network.getResponseBody') projectionKind = 'qa_bound';
   if (webCommand && method === 'Network.getResponseBody' && webState.qualify401 && webState.stage === 'b') projectionKind = 'qa_web_401';
-  if (method === 'Debugger.evaluateOnCallFrame') {
+  if (method === 'Debugger.evaluateOnCallFrame'&&!manualEnrollment) {
     if (!(driverMode === 'retained_bootstrap' || bound?.running) || !active?.earlyRunning || active.gate.observationStarted && !bound?.running ||
         sessionId !== active.sessionId || !isEarlyBootstrapCallFrameRead(params, active.earlyCapture, bound?.running === true)) {
       return Promise.reject(probeError('early_call_frame_not_authorized'));
@@ -986,6 +956,7 @@ function rejectPending(code) {
 }
 
 function failCDP(code) {
+  active?.manualEnrollment?.invalidate();
   active?.manualStartupPort?.invalidate();
   active?.bound?.binder?.invalidate();
   if (!cdpFailure) cdpFailure = /^[a-z0-9_]{1,80}$/u.test(code) ? code : 'cdp_protocol_failed';
@@ -1010,6 +981,7 @@ function handleNetworkEvent(event) {
 function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
+    active?.manualEnrollment?.observe(raw);
     if(active?.manualObserver&&raw.sessionId===active.manualObserver.sessionId&&raw.method==='Runtime.executionContextCreated'){
       const context=raw.params?.context;
       if(context?.auxData?.isDefault&&context.auxData.frameId===active.manualObserver.frameId&&context.origin===X_ORIGIN)active.manualObserver.context=context.id;
@@ -1898,9 +1870,7 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
 export function createOwnedManualStartupOwners(message) {
   if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
   const current = requireOwner(message), collector = current.shortFeasibility;
-  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
-      current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted ||
-      !collector || collector.closed || !collector.contextId || !collector.sessionId || !current.manualSeeded) throw probeError('manual_startup_unavailable');
+  if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
   const owner = role => createManualStartupOwner({ run: async sink => {
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
@@ -1915,6 +1885,11 @@ export function createOwnedManualStartupOwners(message) {
     } finally { sink.signal?.removeEventListener('abort', abort); }
   } });
   return Object.freeze({ reader: owner('reader'), collector: owner('collector') });
+}
+
+export function manualStartupStateReady(current){
+  const collector=current?.shortFeasibility;
+  return !!(current?.gate?.loginVisible&&!current.gate.observationStarted&&!current.earlyAttempted&&!current.qualificationAttempted&&collector&&!collector.closed&&collector.contextId&&collector.sessionId&&current.manualSeeded);
 }
 
 async function manualReaderInventory(current) {
@@ -2006,24 +1981,35 @@ export async function seedRetainedManualPilot(message){
     !s||s.closed||s.ran||s.exportIssued||current.manualStartupPort||current.manualSetup)throw manualSeedFailure('preconditions',current.manualSetup?'replay':'rejected',current.manualSetup?'unknown':'not_attempted');
   current.manualSetup=createRetainedManualSetup({enabled:true,transferAllowed:true,
     ownership:async()=>{
+      if(current.manualEnrollment)await current.manualEnrollment.check();
       const owned=s.transport.ownership();if(childExited||cdpFailure||!owned.alive)throw probeError('manual_setup_unavailable');
       return {readerPID:current.pid,readerProfile:current.profileId,collectorPID:owned.pid,collectorProfile:owned.profileId};
     },
     readEnrollment:async()=>{
-      current.manualEnrollmentReading=true;
-      try{
-        return await readManualEnrollment((method,params)=>send(method,params,current.sessionId,'manual_setup'));
-      }finally{current.manualEnrollmentReading=false;}
+      current.manualEnrollment=new ManualEnrollmentCapture({
+        scope:{pid:current.pid,profileId:current.profileId,targetId:current.targetId,sessionId:current.sessionId},
+        send:(method,params,sessionId)=>send(method,params,sessionId,'manual_enrollment'),
+        snapshot:async()=>({pid:current.pid,profileId:current.profileId,targetId:current.targetId,sessionId:current.sessionId,alive:!childExited&&!cdpFailure}),
+        projectEvent:projectCDPEvent,
+      });
+      return current.manualEnrollment.run();
     },
     readAllowedCookies:async()=>{
+      await current.manualEnrollment.check();
       s.exporting=true;
-      try{return await send('Network.getCookies',qaCookieRequest('api_v1'),current.sessionId);}
+      try{const selected=await send('Network.getCookies',qaCookieRequest('api_v1'),current.sessionId);await current.manualEnrollment.check();return selected;}
       finally{s.exporting=false;}
     },
+    beforeWrite:()=>current.manualEnrollment.check(),
     writeAllowedCookies:async cookies=>{
-      await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>({acknowledged:true}));return true;
+      current.manualEnrollment.assertCurrent();
+      await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>({acknowledged:true}));
+      return true;
     },
+    cleanupEnrollment:async()=>{if(current.manualEnrollment)await current.manualEnrollment.close();},
   });
+  // homeReady retains the earlier fixed UI check's meaning; the enrollment
+  // reload does not assert a new UI check or grant identity/login authority.
   const result=await current.manualSetup();current.manualSeeded=true;return result;
 }
 

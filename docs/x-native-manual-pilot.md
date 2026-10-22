@@ -488,3 +488,65 @@ document drift, exception/getter suppression, asynchronous reply lifetime,
 one-shot replay and uncertain write acknowledgement. No browser, X request,
 credential transfer, Store or user-runtime action ran. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-dfa00d8aa5de44ec8faf3685859e8f33.prepare.log.txt`.
+
+### Early enrollment follow-up (2026-10-22)
+
+Source `b41d0b1cb5ce3df55aa5c3c75e9310638cdc29a6` was attempted once under a
+new explicit one-transfer authorization. It failed after 2.96 seconds with
+`phase=enrollment_project reason=bootstrap_missing write=not_attempted`.
+The descriptor-only bootstrap source was absent when enrollment read it after
+Home readiness; this does not establish when or why it became absent. Cookie
+reading/writing and broker startup were not reached. Cleanup verified an empty
+owned Job and a clean retained lease, removed the disposable collector/build
+root and preserved the retained QA profile. No retry ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-dfa00d8aa5de44ec8faf3685859e8f33.run.log.txt`.
+
+The authorized follow-up is a separate one-shot early-bootstrap enrollment
+stage and offline regressions. Reuse the existing instrumentation-to-normal
+breakpoint handoff with the fixed side-effect-checked identity projection.
+Enrollment must complete with verified cleanup and a matching reader scope
+before any cookie read or write. The candidate account is private enrollment
+metadata only; after seeding, both roles must still produce the existing fresh,
+challenge-bound startup evidence matching that candidate.
+
+The enrollment stage owns separate state. It must not consume or reset the
+startup observation gate, reuse a startup challenge, or treat an earlier
+enrollment document as the later startup document. All preparation remains
+inside the original absolute 60-second attempt. This follow-up authorizes no
+browser execution, retained-profile access, credential transfer, Store change,
+main-provider activation or user-runtime operation.
+
+The enrollment adapter must retain an independently attached Runtime observer
+on the exact owned reader target through the cookie handoff. Capture cleanup
+disables its own Runtime session; that cleanup alone cannot establish continued
+context observation. The independent observer binds the observed default
+context, root frame and loader to the same reader process/profile/target and
+rejects replacement, navigation, detach or crash. Scope checks are required
+before cookie export, after the awaited read, before seed write and after its
+acknowledgement. The observer is then detached; failed teardown is a rejected
+outcome even when a write was already acknowledged.
+
+Offline acceptance covers a valid synthetic bootstrap, exactly one reload,
+fixed-expression/normal-hit guards, unrelated or changed scope, capture cleanup
+failure, mid-handoff invalidation, observer teardown failure, one-shot replay,
+safe diagnostics and the unchanged later startup gate. None of these results
+constitutes native X acceptance or authorizes another transfer attempt.
+
+Implemented in `x-manual-enrollment-capture.mjs`; the superseded post-Home
+`Runtime.evaluate` enrollment route is removed. The shared bootstrap handoff and
+capture implementations are reused unchanged. `enrollment_cleanup` is a closed
+diagnostic phase in both Node and Go. Successful seed replies still have seven
+fields; `homeReady` describes the earlier fixed UI check and does not claim a new
+UI-readiness check after the enrollment reload. Both-role startup evidence still
+supplies the actual account/login authorization boundary.
+
+Canonical offline preparation `a3a1823152eb4769a12387424cb42294` passed 39 Node
+tests, two Go tests (including the accountless Node-to-Go diagnostic bridge),
+four build tag gates and standalone Windows compilation. Tests include old
+context-clear ordering across the two sessions and cleanup that crosses the
+deadline; late success is rejected while preserving acknowledged-write state.
+The native entry skipped before lease/profile access with all four gates off.
+No browser, X request, credential transfer, Store or user-runtime action ran.
+The new native capture timing and dual-session ordering remain unmeasured.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-a3a1823152eb4769a12387424cb42294.prepare.log.txt`.

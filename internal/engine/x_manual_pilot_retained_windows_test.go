@@ -109,7 +109,7 @@ func xManualRetainedSeedRPCDiagnostic(err error) string {
 		return "phase=reply_decode reason=rejected write=unknown"
 	}
 	code := err.Error()
-	for _, phase := range []string{"preconditions", "owner_before", "frame_before", "enrollment_evaluate", "enrollment_project", "frame_after", "cookie_read", "cookie_select", "seed_write", "owner_after"} {
+	for _, phase := range []string{"preconditions", "owner_before", "frame_before", "enrollment_evaluate", "enrollment_project", "enrollment_cleanup", "frame_after", "cookie_read", "cookie_select", "seed_write", "owner_after"} {
 		for _, reason := range []string{"disabled", "replay", "unavailable", "rejected", "candidate_absent", "bootstrap_missing", "bootstrap_invalid", "wrong_page", "inspection_failed", "document_changed", "ownership_changed", "deadline", "clock_regressed"} {
 			for _, write := range []string{"not_attempted", "unknown", "acknowledged"} {
 				if code == "manual_seed_"+phase+"_"+reason+"_"+write {
@@ -404,6 +404,7 @@ func TestXManualPilotRetainedSeedDiagnostics(t *testing.T) {
 		{errors.New("manual_seed_enrollment_project_bootstrap_missing_not_attempted"), "phase=enrollment_project reason=bootstrap_missing write=not_attempted"},
 		{errors.New("manual_seed_seed_write_unavailable_unknown"), "phase=seed_write reason=unavailable write=unknown"},
 		{errors.New("manual_seed_owner_after_ownership_changed_acknowledged"), "phase=owner_after reason=ownership_changed write=acknowledged"},
+		{errors.New("manual_seed_enrollment_cleanup_unavailable_acknowledged"), "phase=enrollment_cleanup reason=unavailable write=acknowledged"},
 		{errors.New("manual_seed_owner_after_PRIVATE_acknowledged"), "phase=rpc reason=unavailable write=unknown"},
 		{errors.New("xnp_private_cookie_body"), "phase=rpc reason=unavailable write=unknown"},
 		{context.DeadlineExceeded, "phase=rpc reason=deadline write=unknown"},

@@ -66,6 +66,17 @@ test('false write acknowledgement remains unknown and a post-ack deadline remain
     assert.equal(writes,outcome==='selection'?0:1);
   }
 });
+
+test('observer cleanup still runs but cannot publish seed success at the original sixty-second boundary',async()=>{
+  let clock=0,cleaned=0;
+  const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>clock,
+    ownership:async()=>({readerPID:1,readerProfile:'r',collectorPID:2,collectorProfile:'c'}),
+    readEnrollment:async()=> '123',readAllowedCookies:async()=>[{},{}],writeAllowedCookies:async()=>true,
+    cleanupEnrollment:async()=>{await Promise.resolve();cleaned++;clock=60000;},
+  });
+  await assert.rejects(run(),error=>{assert.deepEqual(manualSeedDiagnostic(error),{phase:'enrollment_cleanup',reason:'deadline',write:'acknowledged'});return true;});
+  assert.equal(cleaned,1);await assert.rejects(run(),error=>manualSeedDiagnostic(error).reason==='replay');
+});
 test('one setup emits only private enrollment/owner metadata and cannot transfer twice',async()=>{
   const f=fixture(),reply=await f.run();
   assert.equal(reply.seeded,true);assert.equal(reply.homeReady,true);

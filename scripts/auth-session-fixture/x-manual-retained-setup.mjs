@@ -1,7 +1,7 @@
 // One-shot private QA setup. Diagnostics contain only closed categories; the
 // success DTO remains private enrollment metadata, never an evidence receipt.
 import {performance} from 'node:perf_hooks';
-export const MANUAL_SEED_PHASES=Object.freeze(['preconditions','owner_before','frame_before','enrollment_evaluate','enrollment_project','frame_after','cookie_read','cookie_select','seed_write','owner_after']);
+export const MANUAL_SEED_PHASES=Object.freeze(['preconditions','owner_before','frame_before','enrollment_evaluate','enrollment_project','enrollment_cleanup','frame_after','cookie_read','cookie_select','seed_write','owner_after']);
 export const MANUAL_SEED_REASONS=Object.freeze(['disabled','replay','unavailable','rejected','candidate_absent','bootstrap_missing','bootstrap_invalid','wrong_page','inspection_failed','document_changed','ownership_changed','deadline','clock_regressed']);
 export const MANUAL_SEED_WRITES=Object.freeze(['not_attempted','unknown','acknowledged']);
 const diagnostics=new WeakMap();
@@ -25,12 +25,12 @@ function checkedOwnership(value){
     !['readerProfile','collectorProfile'].every(k=>typeof value[k]==='string'&&value[k].length>0&&Buffer.byteLength(value[k])<=512)||value.readerProfile===value.collectorProfile)throw manualSeedFailure('owner_before','rejected');
   return Object.freeze({...value});
 }
-export function createRetainedManualSetup({enabled=false,transferAllowed=false,ownership,readEnrollment,readAllowedCookies,writeAllowedCookies,now=()=>performance.now()}={}){
-  if(enabled!==true||transferAllowed!==true||![ownership,readEnrollment,readAllowedCookies,writeAllowedCookies,now].every(v=>typeof v==='function'))throw manualSeedFailure('preconditions','disabled');
+export function createRetainedManualSetup({enabled=false,transferAllowed=false,ownership,readEnrollment,readAllowedCookies,beforeWrite=async()=>{},writeAllowedCookies,cleanupEnrollment=async()=>{},now=()=>performance.now()}={}){
+  if(enabled!==true||transferAllowed!==true||![ownership,readEnrollment,readAllowedCookies,beforeWrite,writeAllowedCookies,cleanupEnrollment,now].every(v=>typeof v==='function'))throw manualSeedFailure('preconditions','disabled');
   let used=false,write='not_attempted';
   return async()=>{
     if(used)throw manualSeedFailure('preconditions','replay',write);used=true;
-    let phase='owner_before',start,last,selected=null;
+    let phase='owner_before',start,last,selected=null,successful=false;
     const tick=()=>{const t=now();if(!Number.isFinite(start)||!Number.isFinite(t)||t<last)throw manualSeedFailure(phase,'clock_regressed',write);if(t-start>=60000)throw manualSeedFailure(phase,'deadline',write);last=t;};
     try{
       start=last=now();tick();const actual=checkedOwnership(await ownership());tick();
@@ -38,18 +38,22 @@ export function createRetainedManualSetup({enabled=false,transferAllowed=false,o
       phase='enrollment_project';if(typeof accountId!=='string'||!/^[1-9][0-9]{0,19}$/.test(accountId))throw manualSeedFailure(phase,'candidate_absent',write);
       phase='cookie_read';selected=await readAllowedCookies();tick();
       phase='cookie_select';if(!Array.isArray(selected)||selected.length!==2)throw manualSeedFailure(phase,'rejected',write);
-      phase='seed_write';write='unknown';
+      phase='seed_write';await beforeWrite();tick();write='unknown';
       if(await writeAllowedCookies(selected)!==true)throw manualSeedFailure(phase,'unavailable',write);
       write='acknowledged';tick();
       phase='owner_after';const after=checkedOwnership(await ownership());tick();
       if(keys.some(k=>actual[k]!==after[k]))throw manualSeedFailure(phase,'ownership_changed',write);
-      return Object.freeze({accountId,...actual,seeded:true,homeReady:true});
+      successful=true;return Object.freeze({accountId,...actual,seeded:true,homeReady:true});
     }catch(error){
       // Only our WeakMap brand may supply a phase/reason. Arbitrary exception
       // messages, getters, properties, causes and cookie values are discarded.
       const safe=manualSeedDiagnostic(error);
-      const known=phase==='enrollment_evaluate'&&safe&&['frame_before','enrollment_evaluate','enrollment_project','frame_after'].includes(safe.phase)||phase==='cookie_read'&&safe?.phase==='cookie_select';
+      const known=safe?.phase==='enrollment_cleanup'||phase==='enrollment_evaluate'&&safe&&['frame_before','enrollment_evaluate','enrollment_project','frame_after'].includes(safe.phase)||phase==='cookie_read'&&safe&&['cookie_select','frame_after'].includes(safe.phase)||phase==='seed_write'&&safe?.phase==='frame_after';
       throw manualSeedFailure(known?safe.phase:phase,safe?.reason??'unavailable',write);
-    }finally{selected=null;}
+    }finally{
+      selected=null;
+      try{await cleanupEnrollment();}catch{throw manualSeedFailure('enrollment_cleanup','unavailable',write);}
+      if(successful){phase='enrollment_cleanup';tick();}
+    }
   };
 }

@@ -25,7 +25,9 @@ if(mode!==undefined){
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
 if(mode!==undefined){
   manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
-    'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs'].map(file=>{
+    'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs',
+    'x-manual-enrollment-capture.mjs','x-manual-enrollment-capture.test.mjs',
+    'x-bootstrap-breakpoint-handoff.mjs','x-early-bootstrap-capture.mjs'].map(file=>{
     const source='scripts/auth-session-fixture/'+file;
     return {source,sha256:hash(fs.readFileSync(path.join(project,source)))};
   });
