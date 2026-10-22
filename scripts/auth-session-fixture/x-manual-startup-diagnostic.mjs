@@ -3,13 +3,14 @@
 export const STARTUP_ROLES=Object.freeze(['reader','collector','pair','unknown']);
 export const STARTUP_PHASES=Object.freeze(['prepare','inspect_before','inspect_after','acquire_rpc','identity','rendezvous','settings','cleanup','bound_finish','wire_decode','joint']);
 export const STARTUP_REASONS=Object.freeze(['unavailable','rejected','identity_unavailable','source_unavailable','stale_observation','cleanup_unverified','scope_lost','observed_cookie_write','deadline','canceled','replay','sample_missing','sample_duplicate','invalid_shape','scope_mismatch','time_invalid']);
+export const STARTUP_GUARD_CAUSES=Object.freeze(['guard_request_unbound','guard_request_budget','guard_header_classification','guard_response_correlation','guard_metadata_shape','guard_completion_missing','guard_header_budget','guard_event_budget']);
 // Append-only catalog order is the versioned private V2 wire contract.
 export const STARTUP_TRACE=Object.freeze({
-  firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed']),
+  firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed',...STARTUP_GUARD_CAUSES]),
   terminal:Object.freeze(['unknown',...STARTUP_REASONS,'bound']),
   early:Object.freeze(['unknown','captured','deadline','script_limit','wrong_page','unexpected_pause','evaluation_failed','setup_failed']),
   handoff:Object.freeze(['unknown','accepted','rejected']),
-  cookie:Object.freeze(['unknown','not_observed','candidate_observed','ambiguous','other_only']),
+  cookie:Object.freeze(['unknown','not_observed','candidate_observed','ambiguous','other_only',...STARTUP_GUARD_CAUSES]),
   extra:Object.freeze(['unknown','not_selected','not_required','required_pending','complete','missing','status_mismatch','unexpected','invalid']),
 });
 const boundTraces=new WeakMap();
@@ -65,7 +66,7 @@ export function requireBoundStartup(observation,role,diagnostics){
   const diagnostic=observation!==null&&typeof observation==='object'?Object.getOwnPropertyDescriptor(observation,'diagnostic')?.value:undefined;
   if(diagnostic==='bound')return;
   const trace=observation!==null&&typeof observation==='object'?boundTraces.get(observation):null;
-  const reason=trace?.firstCause==='cookie_candidate'||trace?.firstCause==='cookie_ambiguous'?'observed_cookie_write':STARTUP_REASONS.includes(diagnostic)?diagnostic:'unavailable';
+  const reason=['cookie_candidate','cookie_ambiguous',...STARTUP_GUARD_CAUSES].includes(trace?.firstCause)?'observed_cookie_write':STARTUP_REASONS.includes(diagnostic)?diagnostic:'unavailable';
   const phase=reason==='identity_unavailable'?'identity':reason==='source_unavailable'?'settings':reason==='cleanup_unverified'?'cleanup':'bound_finish';
   throw diagnostics.record(startupFailure(role,phase,reason,false,undefined,trace),role,phase,reason);
 }

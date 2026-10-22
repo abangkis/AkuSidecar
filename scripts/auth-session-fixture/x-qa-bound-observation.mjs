@@ -4,7 +4,7 @@ import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from 
 import { QADirectCapture } from './x-qa-direct-ab.mjs';
 import { qaSourceRoute } from './x-qa-source-qualification.mjs';
 import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
-import { closedStartupTrace, rememberBoundStartup } from './x-manual-startup-diagnostic.mjs';
+import { closedStartupTrace, rememberBoundStartup, STARTUP_GUARD_CAUSES } from './x-manual-startup-diagnostic.mjs';
 
 const own = (v, k) => Object.getOwnPropertyDescriptor(v, k)?.value;
 const stableId = v => typeof v === 'string' && /^[1-9][0-9]{0,19}$/.test(v);
@@ -113,7 +113,7 @@ export class QABoundObservation {
       this.invalidate('scope_lost','navigation'); throw error();
     }
     try { this.#manualCookieGuard.armReload(oldLoader); }
-    catch { this.invalidate('observed_cookie_write','cookie_ambiguous'); throw error(); }
+    catch { this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection()); throw error(); }
   }
   acceptIdentity(id, projection) {
     const t = this.#tick();
@@ -159,7 +159,7 @@ export class QABoundObservation {
       if (this.#context !== null || p.context.origin !== 'https://x.com' || !Number.isSafeInteger(p.context.id) || p.context.id <= 0) this.invalidate('scope_lost','context_lost');
       else this.#context = p.context.id;
     }
-    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.category()==='candidate_observed'?'cookie_candidate':'cookie_ambiguous');
+    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection());
     if (!raw.method?.startsWith('Network.')) return;
     this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
     if (!this.#loader) return; // Do not adopt old-document requests.
@@ -220,7 +220,7 @@ export class QABoundObservation {
     const settingsRequestId = this.capture.chosen;
     const source = await this.capture.finish();
     const cookieGuard = this.#manualCookieGuard?.finish();
-    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate('observed_cookie_write',cookieGuard.candidateAttempts?'cookie_candidate':'cookie_ambiguous');
+    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection());
     const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
@@ -253,6 +253,6 @@ export class QABoundObservation {
       ...(cookieGuard ? { manualCookieGuard: cookieGuard } : {}),
       enrollment: 'not_verified', continuity: 'unknown', canAuthorize: false, sessionTransferred: false });
     return this.#manualCookieGuard ? rememberBoundStartup(report,{firstCause:this.#firstCause,terminal:diagnostic,
-      early:this.#early,handoff:this.#handoff,cookie:cookieGuard.diagnostic,extra:this.#extraSummary()}) : report;
+      early:this.#early,handoff:this.#handoff,cookie:STARTUP_GUARD_CAUSES.includes(this.#manualCookieGuard.rejection())?this.#manualCookieGuard.rejection():cookieGuard.diagnostic,extra:this.#extraSummary()}) : report;
   }
 }

@@ -506,7 +506,7 @@ func (p *xManualInitialOfflineBackend) cleanup(ctx context.Context, role, handle
 }
 
 func TestXManualPilotRetainedStartupDiagnostic(t *testing.T) {
-	for _, role := range []string{"reader", "collector", "peer-first", "trace-reader", "trace-collector", "trace-ambiguous", "trace-peer-first"} {
+	for _, role := range []string{"reader", "collector", "peer-first", "trace-reader", "trace-collector", "trace-ambiguous", "trace-peer-first", "trace-priority", "trace-priority-collector", "trace-budget", "trace-unbound", "trace-response", "trace-metadata", "trace-completion", "trace-context-priority", "trace-guard-peer-first", "trace-budget-candidate", "trace-candidate-budget"} {
 		t.Run(role, func(t *testing.T) {
 			project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
 			if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
@@ -518,12 +518,12 @@ const {offlineXManualOwnerPort}=await import(pathToFileURL(process.argv[1]));
 const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
 const {startupFailure}=await import(pathToFileURL(process.argv[3]));
 const {offlineFirstCausePair}=await import(pathToFileURL(process.argv[5]));
-const fault=process.argv[4],traced=fault.startsWith('trace-'),trace=traced?offlineFirstCausePair({faultRole:fault==='trace-collector'?'collector':'reader',fault:fault==='trace-ambiguous'?'ambiguous':'cookie'}):null;
-const port=trace?trace.port:offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}}),peerFirst=fault==='peer-first'||fault==='trace-peer-first';
+const fault=process.argv[4],guardFaults={'trace-priority':'guard-priority','trace-priority-collector':'guard-priority','trace-budget':'guard-budget','trace-unbound':'guard-unbound','trace-response':'guard-response','trace-metadata':'guard-metadata','trace-completion':'guard-completion','trace-context-priority':'context-priority','trace-guard-peer-first':'guard-priority','trace-budget-candidate':'budget-candidate','trace-candidate-budget':'candidate-budget'},traced=fault.startsWith('trace-'),trace=traced?offlineFirstCausePair({faultRole:['trace-collector','trace-priority-collector'].includes(fault)?'collector':'reader',fault:guardFaults[fault]??(fault==='trace-ambiguous'?'ambiguous':'cookie')}):null;
+const port=trace?trace.port:offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}}),peerFirst=['peer-first','trace-peer-first','trace-guard-peer-first'].includes(fault);
 let fired=false,releasePeer;const peerDone=new Promise(resolve=>{releasePeer=resolve;});
 console.log(JSON.stringify({ready:true}));
 const tasks=new Set();for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line),task=executeManualReply(q,async()=>{
-if(peerFirst&&q.op==='manual_acquire'&&!fired){fired=true;if(trace){trace.fail('reader');port.invalidate('collector');}else port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
+if(peerFirst&&q.op==='manual_acquire'&&!fired){fired=true;if(trace){trace.fail('reader',fault==='trace-guard-peer-first'?'guard-priority':'cookie');port.invalidate('collector');}else port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
 if(peerFirst&&fired&&q.role==='reader'&&['manual_inspect','manual_acquire'].includes(q.op))await peerDone;
 return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})}));if(code&&q.role==='collector')releasePeer();});tasks.add(task);void task.finally(()=>tasks.delete(task));}await Promise.allSettled(tasks);`
 			dir := filepath.Join(project, "scripts", "auth-session-fixture")
@@ -593,20 +593,33 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 			}
 			if strings.HasPrefix(role, "trace-") {
 				wantRole, wantPhase, wantReason = "reader", "bound_finish", "observed_cookie_write"
-				if role == "trace-collector" {
+				if role == "trace-collector" || role == "trace-priority-collector" {
 					wantRole = "collector"
 				}
 				if detail.trace == nil {
 					t.Fatal("private trace lost across startup bridge")
 				}
 				wantFirst, wantCookie := "cookie_candidate", "candidate_observed"
-				if role == "trace-ambiguous" {
-					wantFirst, wantCookie = "cookie_ambiguous", "ambiguous"
+				switch role {
+				case "trace-ambiguous", "trace-priority", "trace-priority-collector", "trace-guard-peer-first":
+					wantFirst, wantCookie = "guard_header_classification", "guard_header_classification"
+				case "trace-budget", "trace-budget-candidate":
+					wantFirst, wantCookie = "guard_request_budget", "guard_request_budget"
+				case "trace-unbound":
+					wantFirst, wantCookie = "guard_request_unbound", "guard_request_unbound"
+				case "trace-response":
+					wantFirst, wantCookie = "guard_response_correlation", "guard_response_correlation"
+				case "trace-metadata":
+					wantFirst, wantCookie = "guard_metadata_shape", "guard_metadata_shape"
+				case "trace-completion":
+					wantFirst, wantCookie, wantReason = "generic_early", "guard_completion_missing", "scope_lost"
+				case "trace-context-priority":
+					wantFirst, wantCookie, wantReason = "context_lost", "guard_header_classification", "scope_lost"
 				}
 				if detail.trace.firstCause != wantFirst {
 					t.Fatalf("first cause lost: %s", detail)
 				}
-				if role == "trace-peer-first" {
+				if role == "trace-peer-first" || role == "trace-guard-peer-first" {
 					if !detail.peer || detail.trace.terminal != "unknown" {
 						t.Fatal("peer trace invented terminal outcome")
 					}
@@ -645,6 +658,10 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	want = append(want, nativePilotTraceCatalogs...)
 	if !reflect.DeepEqual(payload.Catalogs, want) || len(payload.Codes) < 40 {
 		t.Fatal("Node/Go trace catalog order diverged")
+	}
+	legacy, ok := nativePilotInitialCode("manual_initial_v2_0_8_7_0_2_7_6_2_3_0")
+	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" {
+		t.Fatal("legacy V2 catalog index changed")
 	}
 	for _, code := range payload.Codes {
 		detail, ok := nativePilotInitialCode(code)

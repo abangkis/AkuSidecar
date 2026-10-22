@@ -74,7 +74,7 @@ test('arming is single use, requires a predecessor and cannot follow adopted doc
   assert.equal(noParams.g.finish().diagnostic,'not_observed');
 });
 
-async function handoffFixture({role='reader',order='before-commit',cookie='lang=en; Path=/',fault}={}){
+async function handoffFixture({role='reader',order='before-commit',cookie='lang=en; Path=/',fault,resourceMode}={}){
   const scope={owner:role==='reader'?1:2,profileId:'private-profile-'+role,sessionId:session,targetId:'private-target-'+role},diagnostics=startupFailureLatch();
   let binder,capture,index=0,phase='instrumentation',normal=null,instrumentation=true,evaluations=0,receipts=0,settings=false;
   const context=vm.createContext({location:{origin:'https://x.com',pathname:'/home'}});
@@ -82,7 +82,12 @@ async function handoffFixture({role='reader',order='before-commit',cookie='lang=
   const emit=(method,params,binding=scope)=>binder.observe({method,params,sessionId:session},binding);
   const commit=()=>{emit('Page.frameNavigated',{frame:{id:frame,loaderId:next,url:home}});capture.observe({type:'frame_navigated',frameId:frame,isHome:true});};
   const created=()=>{emit('Runtime.executionContextCreated',{context:{id:1,origin:'https://x.com',auxData:{isDefault:true,frameId:frame}}});capture.observe({type:'context_created',frameId:frame,contextId:1,isDefault:true});};
-  const root=()=>{emit('Network.requestWillBeSent',rootRequest());emit('Network.responseReceivedExtraInfo',rootExtra(cookie?{'Set-Cookie':cookie}:{}));emit('Network.responseReceived',rootResponse());};
+  const root=(line=cookie)=>{emit('Network.requestWillBeSent',rootRequest());emit('Network.responseReceivedExtraInfo',rootExtra(line?{'Set-Cookie':line}:{}));emit('Network.responseReceived',rootResponse());};
+  const assetRequest=()=>emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://x.com/asset'}});
+  const assetResponse=()=>{
+    emit('Network.responseReceived',{requestId:'asset',frameId:frame,loaderId:next,hasExtraInfo:true,response:{url:'https://x.com/asset',status:200,headers:cookie?{'Set-Cookie':cookie}:{}}});
+    emit('Network.responseReceivedExtraInfo',{requestId:'asset',statusCode:200,headers:{}});
+  };
   const source=()=>{
     const url='https://api.x.com/1.1/account/settings.json';
     emit('Network.requestWillBeSent',{requestId:'settings',frameId:frame,loaderId:next,request:{method:'GET',url}});
@@ -107,7 +112,13 @@ async function handoffFixture({role='reader',order='before-commit',cookie='lang=
     if(method==='Page.getFrameTree')return manualReloadFrameProjection({frameId:frame,loaderId:oldLoader},frame,oldLoader);
     if(method==='Page.reload'){
       binder.armManualReload(oldLoader);
-      if(order==='before-commit')root();commit();if(order==='before-context')root();created();if(order==='after-context')root();pause();
+      if(resourceMode){
+        root(null);commit();
+        if(fault==='resource-budget')for(let i=0;i<128;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+        if(resourceMode!=='after-context')assetRequest();if(resourceMode==='response-before-context')assetResponse();created();
+        if(resourceMode==='after-context')assetRequest();if(resourceMode!=='response-before-context')assetResponse();
+      }else{if(order==='before-commit')root();commit();if(order==='before-context')root();created();if(order==='after-context')root();}
+      pause();
     }
     if(method==='Debugger.setInstrumentationBreakpoint')return{breakpointId:'private-instrumentation'};
     if(method==='Debugger.setBreakpoint'){normal='private-normal-'+index;capture.handoff.created(normal);return{breakpointId:normal,actualLocation:{...params.location}};}
@@ -130,6 +141,67 @@ for(const role of ['reader','collector'])test(`${role} actual handoff accepts ro
     assert.equal(r.observation.diagnostic,'bound');assert.equal(r.observation.manualCookieGuard.diagnostic,'other_only');assert.equal(r.receipts,1);assert.ok(r.evaluations>0);
     assert.equal(r.observation.continuity,'unknown');assert.equal(r.observation.canAuthorize,false);
   }
+});
+
+function resourceFixture(){
+  const s=guardFixture();
+  const request=(patch={})=>s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://x.com/asset'},...patch});
+  const response=(headers={},patch={})=>s.emit('Network.responseReceived',{requestId:'asset',frameId:frame,loaderId:next,hasExtraInfo:true,response:{url:'https://x.com/asset',status:200,headers},...patch});
+  const extra=(headers={},patch={})=>s.emit('Network.responseReceivedExtraInfo',{requestId:'asset',statusCode:200,headers,...patch});
+  const ready=()=>{s.arm();s.request();s.response({}, {hasExtraInfo:false});s.commit();};
+  return {...s,assetRequest:request,assetResponse:response,assetExtra:extra,ready};
+}
+test('same-document provisional GET resource may finish before or after its matching default context',()=>{
+  for(const contextFirst of [false,true])for(const extraFirst of [false,true]){
+    const s=resourceFixture();s.ready();assert.equal(s.assetRequest(),false);if(contextFirst)s.context();
+    if(extraFirst)assert.equal(s.assetExtra({'Set-Cookie':'lang=en; Path=/'}),false);
+    assert.equal(s.assetResponse(extraFirst?{}:{'Set-Cookie':'lang=en; Path=/'}),false);if(!extraFirst)s.assetExtra();
+    if(!contextFirst)s.context();assert.equal(s.g.finish().diagnostic,'other_only');assert.equal(s.g.rejection(),'unknown');
+  }
+});
+test('pending resource without final context, response or ExtraInfo fails closed with completion reason',()=>{
+  for(const missing of ['context','response','extra']){
+    const s=resourceFixture();s.ready();s.assetRequest();if(missing!=='response')s.assetResponse({'Set-Cookie':'lang=en; Path=/'});
+    if(missing!=='extra')s.assetExtra(missing==='response'?{'Set-Cookie':'lang=en; Path=/'}:{});if(missing!=='context')s.context();
+    assert.equal(s.g.finish().diagnostic,'ambiguous');assert.equal(s.g.rejection(),'guard_completion_missing');
+  }
+});
+test('resource provisional boundary rejects old, pre-commit, pre-epoch, foreign, reused and redirect metadata',()=>{
+  for(const fault of ['pre-commit','pre-epoch','old-loader','frame','foreign-session','foreign-url','method','type','reuse','redirect']){
+    const s=resourceFixture();if(fault==='pre-epoch')s.assetRequest();s.arm();s.request();s.response({}, {hasExtraInfo:false});
+    if(fault==='pre-commit')s.assetRequest();s.commit();
+    if(fault==='foreign-session')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://x.com/asset'}},'foreign');
+    else if(fault!=='pre-commit')s.assetRequest(fault==='old-loader'?{loaderId:oldLoader}:fault==='frame'?{frameId:'child'}:fault==='foreign-url'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:fault==='method'?{request:{method:'POST',url:'https://x.com/asset'}}:fault==='type'?{type:'UnknownType'}:fault==='redirect'?{redirectResponse:{headers:{}}}:{});
+    if(fault==='reuse')s.assetRequest();s.context();assert.equal(s.assetResponse({'Set-Cookie':'lang=en; Path=/'}),true);s.assetExtra();
+    assert.equal(s.g.rejection(),'guard_request_unbound',fault);assert.equal(s.g.finish().diagnostic,'ambiguous');
+  }
+});
+test('guard first rejection distinguishes unbound, classification, correlation, shape and unchanged budgets',()=>{
+  const unbound=resourceFixture();unbound.ready();unbound.assetResponse({'Set-Cookie':'lang=en; Path=/'});assert.equal(unbound.g.rejection(),'guard_request_unbound');
+  const priority=resourceFixture();priority.ready();priority.assetRequest();priority.assetResponse({'Set-Cookie':'lang=en; Path=/; Priority=High'});assert.equal(priority.g.rejection(),'guard_header_classification');
+  const wrong=resourceFixture();wrong.ready();wrong.assetRequest();wrong.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'other'});assert.equal(wrong.g.rejection(),'guard_response_correlation');
+  const shape=resourceFixture();shape.ready();shape.assetRequest();shape.assetResponse({'Set-Cookie':['lang=x']});assert.equal(shape.g.rejection(),'guard_metadata_shape');
+  const budget=resourceFixture();budget.ready();for(let i=0;i<128;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+  assert.equal(budget.g.rejection(),'guard_request_budget');const report=budget.g.finish();assert.equal(report.candidateAttempts,0);assert.equal(report.otherAttempts,0);
+  for(const mode of ['header','event']){
+    const s=resourceFixture();s.ready();s.assetRequest();
+    if(mode==='header')s.assetResponse({'Set-Cookie':new Array(33).fill('lang=x; Path=/').join('\n')});
+    else for(let i=0;i<65;i++)s.assetExtra({'Set-Cookie':'ct0=x; Path=/'});
+    // A candidate in an earlier event remains the first rejection across later budgets.
+    assert.equal(s.g.rejection(),mode==='header'?'guard_header_budget':'cookie_candidate');
+  }
+});
+for(const role of ['reader','collector'])test(`${role} actual handoff accepts committed resource-before-context ordering only after full resolution`,async()=>{
+  for(const resourceMode of ['response-after-context','response-before-context','after-context']){
+    const r=await handoffFixture({role,resourceMode});assert.equal(r.early.stopReason,'captured');assert.equal(r.observation.diagnostic,'bound');assert.equal(r.observation.manualCookieGuard.diagnostic,'other_only');assert.equal(r.receipts,1);
+  }
+  const none=await handoffFixture({role,resourceMode:'response-after-context',cookie:null});assert.equal(none.observation.diagnostic,'bound');assert.equal(none.observation.manualCookieGuard.diagnostic,'not_observed');
+  for(const [cookie,cause]of [['ct0=; Path=/; Max-Age=0','cookie_candidate'],['lang=en; Path=/; Priority=High','guard_header_classification']]){
+    const r=await handoffFixture({role,resourceMode:'response-after-context',cookie});assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
+    assert.throws(()=>requireBoundStartup(r.observation,role,r.diagnostics),error=>{assert.equal(startupDiagnostic(error).trace.firstCause,cause);return true;});
+  }
+  const capped=await handoffFixture({role,resourceMode:'response-after-context',cookie:null,fault:'resource-budget'});assert.equal(capped.receipts,0);assert.equal(capped.observation.manualCookieGuard.candidateAttempts,0);assert.equal(capped.observation.manualCookieGuard.otherAttempts,0);
+  assert.throws(()=>requireBoundStartup(capped.observation,role,capped.diagnostics),error=>{const d=startupDiagnostic(error);assert.equal(d.trace.firstCause,'guard_request_budget');assert.equal(d.trace.cookie,'guard_request_budget');return true;});
 });
 test('actual handoff no-header control passes, candidates and observed scope/context loss never publish',async()=>{
   const none=await handoffFixture({cookie:null});assert.equal(none.observation.diagnostic,'bound');assert.equal(none.observation.manualCookieGuard.diagnostic,'not_observed');

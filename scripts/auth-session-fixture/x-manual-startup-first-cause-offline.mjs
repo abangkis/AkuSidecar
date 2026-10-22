@@ -10,11 +10,24 @@ const settingsURL='https://api.x.com/1.1/account/settings.json';
 const projection=inspectBootstrapCurrentSelf({location:{origin:'https://x.com',pathname:'/home'},__INITIAL_STATE__:{session:{user_id:'1908123456789012345'},entities:{users:{entities:{'1908123456789012345':{id_str:'1908123456789012345'}}}}}});
 
 export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
-  if(!['reader','collector'].includes(faultRole)||!['cookie','ambiguous','context-first','cookie-context','settings-order','extra-missing','extra-status','early-deadline','early-rejected','cleanup'].includes(fault))throw new Error('offline_diagnostic_invalid');
+  if(!['reader','collector'].includes(faultRole)||!['cookie','ambiguous','context-first','cookie-context','settings-order','extra-missing','extra-status','early-deadline','early-rejected','cleanup','guard-priority','guard-budget','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority','generic-priority','budget-candidate','candidate-budget'].includes(fault))throw new Error('offline_diagnostic_invalid');
   const diagnostics=startupFailureLatch(),states={},reports={};
   const fail=(role,kind='cookie')=>{
     const s=states[role];if(!s)throw new Error('offline_diagnostic_unready');
+    if(kind==='budget-candidate'){fail(role,'guard-budget');fail(role,'cookie');return;}
+    if(kind==='candidate-budget'){fail(role,'cookie');fail(role,'guard-budget');return;}
+    if(kind==='generic-priority'){s.binder.earlyOutcome('evaluation_failed',true);fail(role,'guard-priority');return;}
     if(kind==='context-first')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
+    if(kind==='context-priority')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
+    if(kind==='guard-budget'){
+      s.emit('Network.requestWillBeSent',{requestId:'root',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://x.com/home'}});
+      for(let i=0;i<128;i++)s.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+    }
+    if(['guard-priority','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority'].includes(kind)){
+      if(kind!=='guard-unbound')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://x.com/asset'}});
+      const header=kind==='guard-metadata'?['lang=en']:kind==='guard-priority'||kind==='context-priority'?'lang=en; Path=/; Priority=High':'lang=en; Path=/';
+      s.emit('Network.responseReceived',{requestId:'asset',frameId:kind==='guard-response'?'foreign-frame':s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:kind==='guard-completion',response:{url:'https://x.com/asset',status:200,headers:{'Set-Cookie':header}}});
+    }
     if(['cookie','ambiguous','context-first','cookie-context','cleanup'].includes(kind)){
       s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,request:{method:'GET',url:'https://x.com/asset'}});
       s.emit('Network.responseReceived',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:false,response:{url:'https://x.com/asset',status:200,headers:{'Set-Cookie':kind==='ambiguous'?'unknown_private=x; Path=/':'ct0=PRIVATE; Path=/'}}});

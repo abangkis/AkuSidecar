@@ -19,9 +19,9 @@ for(const role of ['reader','collector'])test(`${role} first observed cookie or 
   for(const fault of ['cookie','ambiguous','cookie-context','cleanup']){
     const {f,d}=await run(fault,role);
     assert.equal(d.role,role);assert.equal(d.reason,'observed_cookie_write');
-    assert.equal(d.trace.firstCause,fault==='ambiguous'?'cookie_ambiguous':'cookie_candidate');
+    assert.equal(d.trace.firstCause,fault==='ambiguous'?'guard_header_classification':'cookie_candidate');
     assert.equal(d.trace.terminal,'scope_lost');assert.equal(d.trace.early,'evaluation_failed');assert.equal(d.trace.handoff,'rejected');
-    assert.equal(d.trace.cookie,fault==='ambiguous'?'ambiguous':'candidate_observed');
+    assert.equal(d.trace.cookie,fault==='ambiguous'?'guard_header_classification':'candidate_observed');
     assert.equal(f.reports[role].diagnostic,'scope_lost');assert.equal(f.reports[role].canAuthorize,false);
     assert.equal(f.reports[role].cleanupVerified,fault!=='cleanup');
     assert.equal(JSON.stringify(d).includes('PRIVATE'),false);
@@ -116,4 +116,15 @@ test('ExtraInfo summary freezes final metadata after awaited body projection wit
   assert.throws(()=>requireBoundStartup(report,'reader',s.diagnostics),error=>{final=startupDiagnostic(error);return true;});
   assert.equal(final.trace.firstCause,'extra_missing');assert.equal(final.trace.extra,'complete');
   s.emit('Runtime.executionContextsCleared',{});assert.equal(final.trace.firstCause,'extra_missing');assert.ok(Object.isFrozen(final.trace));
+});
+test('guard subreason survives fallback and remains visible after a prior non-guard invalidation',async()=>{
+  for(const [fault,first,cookie]of [['guard-priority','guard_header_classification','guard_header_classification'],['guard-budget','guard_request_budget','guard_request_budget'],['guard-unbound','guard_request_unbound','guard_request_unbound'],['guard-response','guard_response_correlation','guard_response_correlation'],['guard-metadata','guard_metadata_shape','guard_metadata_shape'],['guard-completion','generic_early','guard_completion_missing'],['context-priority','context_lost','guard_header_classification'],['generic-priority','generic_early','guard_header_classification'],['budget-candidate','guard_request_budget','guard_request_budget'],['candidate-budget','cookie_candidate','candidate_observed']]){
+    const {d}=await run(fault,'reader');assert.equal(d.trace.firstCause,first,fault);assert.equal(d.trace.cookie,cookie,fault);assert.equal(d.trace.terminal,'scope_lost');
+  }
+});
+test('peer-first delivery preserves the specific first guard reason without borrowing peer summaries',async()=>{
+  const f=offlineFirstCausePair();await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_prepare',r))));
+  f.fail('reader','guard-priority');f.port.invalidate('collector');
+  await assert.rejects(f.port.execute(q('manual_inspect','collector')),error=>{const d=startupDiagnostic(error);assert.equal(d.role,'reader');assert.equal(d.peer,true);assert.equal(d.trace.firstCause,'guard_header_classification');assert.equal(d.trace.cookie,'unknown');return true;});
+  await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_abort',r,{handle:null,preserveReader:r==='reader'}))));
 });

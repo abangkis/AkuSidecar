@@ -143,6 +143,12 @@ evidence during the trusted reload. Only parsed known non-candidate headers may
 wait; candidate attempts and truly ambiguous headers still reject immediately.
 Unresolved or contradictory pending state cannot publish a startup receipt.
 
+The [post-commit request extension and distinct guard reasons](../../docs/x-native-manual-pilot.md#post-commit-requests-and-distinct-guard-reasons-2026-10-22)
+also let bounded same-document resources wait for the default context after a
+verified new-root commit. Private diagnostics distinguish binding, capacity,
+classification and metadata/completion failures; the first cause remains intact.
+Parser rules, observation limits and admission authority are unchanged.
+
 Manual startup diagnostics also retain the [first cause separately from terminal
 failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).
 Generic early-capture fallback must not hide a prior cookie/scope rejection.

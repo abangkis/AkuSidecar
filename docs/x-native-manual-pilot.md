@@ -66,7 +66,7 @@ its separately authorized seed has completed and before startup admission.
 | --- | --- |
 | An `auth_token` or `ct0` write/attempt after seed | Reject, including before identity capture, deletion/expiry, blocked attempts and a candidate mixed with other or malformed lines |
 | Only clearly classified other cookies with supported, correlated X scope | Keep a bounded diagnostic; this alone does not reject startup |
-| Ambiguous name, syntax, scope, unsupported attributes, unresolved correlation or exhausted observation bounds | Reject; only the bounded root-navigation correlation below may remain pending until its document evidence arrives |
+| Ambiguous name, syntax, scope, unsupported attributes, unresolved correlation or exhausted observation bounds | Reject; only the bounded startup correlations below may remain pending until their document evidence arrives |
 
 The guard classifies header attempts, not accepted writes or value changes. It
 does not read cookie storage, compare values, prove unchanged session lineage or
@@ -157,6 +157,81 @@ ran. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-7f479c23ec7c4b42ac6f19babfcda73b.prepare.log.txt`.
 This proves the offline ordering correction only; native acceptance remains
 unverified.
+
+### Post-commit requests and distinct guard reasons (2026-10-22)
+
+The single authorized run of source `0ee3311` rejected startup after 8.53 seconds
+with the same broad `cookie_ambiguous` first cause. Seed setup passed, admission
+stayed closed, and final owned-Job cleanup and retained-lease release passed.
+The collector/build root was removed and the retained profile preserved. No
+retry ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-7f479c23ec7c4b42ac6f19babfcda73b.run.log.txt`.
+
+Astra verified that the root correction works offline but is not sufficient to
+identify the native cause. A same-document image request registered after commit
+but before default-context creation still became permanently unbound. Its known
+non-candidate response after context creation reproduced the same failure trace;
+the corresponding no-cookie and after-context controls passed. A separate
+capacity probe reproduced that trace using foreign requests with no cookie
+headers. Unsupported header attributes also reproduced it, as an intentional
+conservative policy rejection. These are distinct source paths, not proof of
+which one occurred in native QA.
+
+The correction extends pending correlation only to bounded `GET` resource
+requests that start after the trusted reload and verified new-root commit,
+before its default context exists. Request session, root frame and loader must
+match the observed committed document. The resource types are `Image`, `Script`,
+`Stylesheet`, `Font`, `Media`, `TextTrack`, `Manifest`, `XHR`, `Fetch` and `Other`;
+only HTTPS X/API setter scopes qualify. Earlier resource requests, old documents, redirects,
+reused IDs, foreign scope and contradictory metadata are not adopted. Pending
+known non-candidate classifications bind only to the actual matching context and
+must resolve response/required ExtraInfo before finish. Candidate, unknown or
+malformed cookie evidence still rejects immediately; failed pending state cannot
+publish a receipt.
+
+Guard diagnostics distinguish request binding, request capacity, header
+classification, response correlation, metadata shape, completion and observation
+bounds. The first guard rejection is immutable. Private startup output retains
+that detail even when a non-guard failure occurred first, without replacing the
+original first cause. Closed labels are appended to the existing Node/Go V2
+catalogs; previous indices and legacy codes remain supported. Coarse public QA
+categories and terminal behavior remain compatible. In particular, a legacy
+`observed_cookie_write` terminal label alone is not proof that a cookie header
+was observed: request-capacity rejection may have no cookie evidence.
+
+| Private guard reason | Rejection boundary |
+| --- | --- |
+| `guard_request_unbound` | Request cannot be adopted into the owned document |
+| `guard_request_budget` | Existing request-record limit exhausted |
+| `guard_header_classification` | Cookie name, syntax, scope or attributes cannot be classified safely |
+| `guard_response_correlation` | Response, ExtraInfo or document evidence contradicts the request |
+| `guard_metadata_shape` | Observed metadata has an invalid shape |
+| `guard_completion_missing` | Pending context, response or required ExtraInfo never completes |
+| `guard_header_budget` | Existing header size/count bound exhausted |
+| `guard_event_budget` | Existing cookie-header event bound exhausted |
+
+The private `trace.cookie` field carries the first guard reason when available;
+the public guard report keeps its existing coarse category and counts. An
+observed candidate keeps `cookie_candidate` and immediate rejection behavior.
+
+This increment does not raise limits, discard foreign traffic, broaden the cookie
+parser or change Store/admission policy. Default-off gates, startup receipts,
+account/login evidence, timing and the original attempt horizon are unchanged.
+Implementation and regression are offline only; no new retained-profile access,
+credential transfer or user-runtime operation is authorized.
+
+Validation: `scripts/prepare-x-manual-retained-qa.ps1` passed 99 Node tests, four
+standalone Go tests with 18 actual Node/Windows-RPC/Go startup-diagnostic subcases,
+four build-tag gates and Windows compilation. The actual binder/handoff tests
+cover both roles, resource responses before/after context, unchanged candidate
+rejection, missing/contradictory completion and request exhaustion without cookie
+headers. Private bridge tests retain guard detail after earlier context failure,
+preserve the first guard reason across later candidate/budget failures, and
+verify legacy V2 indices and Node/Go catalog parity. Native QA was skipped before
+lease/profile access. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-047a5b35eb56488fae50dc756e0b3f10.prepare.log.txt`.
+This confirms the offline correction and diagnostics; the original native cause
+and native acceptance remain unverified.
 
 ## Implementation and execution boundary
 

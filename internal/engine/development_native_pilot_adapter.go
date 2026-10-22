@@ -129,11 +129,11 @@ type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cooki
 
 // Append-only V2 index catalogs; order is shared with STARTUP_TRACE in Node.
 var nativePilotTraceCatalogs = [][]string{
-	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed"},
+	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget"},
 	{"unknown", "unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid", "bound"},
 	{"unknown", "captured", "deadline", "script_limit", "wrong_page", "unexpected_pause", "evaluation_failed", "setup_failed"},
 	{"unknown", "accepted", "rejected"},
-	{"unknown", "not_observed", "candidate_observed", "ambiguous", "other_only"},
+	{"unknown", "not_observed", "candidate_observed", "ambiguous", "other_only", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget"},
 	{"unknown", "not_selected", "not_required", "required_pending", "complete", "missing", "status_mismatch", "unexpected", "invalid"},
 }
 
